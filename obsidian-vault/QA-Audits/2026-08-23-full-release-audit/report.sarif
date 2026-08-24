@@ -1,0 +1,750 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "ProjectSentinel",
+          "informationUri": "internal",
+          "version": "1.0.0",
+          "rules": [
+            {
+              "id": "layering-violation-admin-bypass",
+              "shortDescription": {
+                "text": "layering-violation-admin-bypass"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "authorization-bypass",
+              "shortDescription": {
+                "text": "authorization-bypass"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "tenant-isolation-gap",
+              "shortDescription": {
+                "text": "tenant-isolation-gap"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "contract-mismatch",
+              "shortDescription": {
+                "text": "contract-mismatch"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "unbounded-response",
+              "shortDescription": {
+                "text": "unbounded-response"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "missing-input-validation",
+              "shortDescription": {
+                "text": "missing-input-validation"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "authorization-order-defect",
+              "shortDescription": {
+                "text": "authorization-order-defect"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "silent-error-swallowing",
+              "shortDescription": {
+                "text": "silent-error-swallowing"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "missing-ci-gate",
+              "shortDescription": {
+                "text": "missing-ci-gate"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "timezone-naive-date-boundary",
+              "shortDescription": {
+                "text": "timezone-naive-date-boundary"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "swallowed-exception",
+              "shortDescription": {
+                "text": "swallowed-exception"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "layering-violation",
+              "shortDescription": {
+                "text": "layering-violation"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "single-point-of-failure",
+              "shortDescription": {
+                "text": "single-point-of-failure"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "missing-audit-coverage",
+              "shortDescription": {
+                "text": "missing-audit-coverage"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "policy-mismatch-forbidden-linkage-pattern",
+              "shortDescription": {
+                "text": "policy-mismatch-forbidden-linkage-pattern"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "manual-step-not-automated-duplicate-logic",
+              "shortDescription": {
+                "text": "manual-step-not-automated-duplicate-logic"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "missing-overflow-wrap-on-free-text",
+              "shortDescription": {
+                "text": "missing-overflow-wrap-on-free-text"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "audit-drift-confirmation",
+              "shortDescription": {
+                "text": "audit-drift-confirmation"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "bare-except",
+              "shortDescription": {
+                "text": "bare-except"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "lint-baseline",
+              "shortDescription": {
+                "text": "lint-baseline"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "layering-violation-admin-bypass",
+          "level": "error",
+          "message": {
+            "text": "[RES-000001] Django Admin registers business/workflow models (EmployeeStatus, SecondmentRequest, StatusChangeHistory, StatusDocument, EmployeeTransferHistory, Employee), bypassing service-layer invariants and the audit trail"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "organization_management/apps/statuses/admin.py"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "authorization-bypass",
+          "level": "error",
+          "message": {
+            "text": "[RES-000002] ReportViewSet.generate (POST /api/reports/generate/) and status/download actions have no permission_classes and rely solely on the project-wide AllowAny default, letting unauthenticated requests reach report-generation business logic"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/reports/api/views.py"
+                },
+                "region": {
+                  "startLine": 18
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "tenant-isolation-gap",
+          "level": "error",
+          "message": {
+            "text": "[RES-000003] EmployeeStatusViewSet (GET/POST/PATCH/DELETE /api/statuses/) applies no role or division filtering -- any authenticated user can list, create, extend, terminate, or cancel status records (leave, absence, secondment, etc.) for every employee in the organization"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/statuses/api/views.py"
+                },
+                "region": {
+                  "startLine": 65
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "authorization-bypass",
+          "level": "error",
+          "message": {
+            "text": "[RES-000004] DivisionViewSet (/api/divisions/) allows full CRUD -- create/update/delete/restore of organizational divisions -- to any authenticated user with no role or ownership check"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/divisions/api/views.py"
+                },
+                "region": {
+                  "startLine": 33
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "tenant-isolation-gap",
+          "level": "error",
+          "message": {
+            "text": "[RES-000005] core.EmployeeViewSet (GET /api/core/employees/) returns the entire company's personnel table to any holder of the global 'personnel.view' permission, unlike sibling viewsets (documents.AttachmentViewSet, operations StatusViewSet/Secondment) which scope results to the caller's granted division subtree"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/core/api/views.py"
+                },
+                "region": {
+                  "startLine": 54
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "authorization-bypass",
+          "level": "note",
+          "message": {
+            "text": "[RES-000006] staff_unit.PositionViewSet.get_permissions() has a dead if/else branch that resolves to plain IsAuthenticated for both safe and unsafe HTTP methods, so any authenticated user can create/update/delete Position dictionary entries despite RoleBasedPermission classes being imported for this exact purpose in the same file"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/staff_unit/views.py"
+                },
+                "region": {
+                  "startLine": 48
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "contract-mismatch",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000008] GET /api/statuses/planned/ schema declares single EmployeeStatusSerializer but response is a {current, planned} wrapper object"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/statuses/api/views.py"
+                },
+                "region": {
+                  "startLine": 391
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "contract-mismatch",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000009] GET /api/statuses/{id}/history/ schema declares responses={200: EmployeeStatusSerializer} (single object) but handler returns a many=True list"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/statuses/api/views.py"
+                },
+                "region": {
+                  "startLine": 338
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "contract-mismatch",
+          "level": "note",
+          "message": {
+            "text": "[RES-000010] GET /api/notifications/unread/ has no @extend_schema at all for a many=True list action"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/notifications/api/views.py"
+                },
+                "region": {
+                  "startLine": 29
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "unbounded-response",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000011] GET /api/secondments/incoming/ and /api/secondments/outgoing/ never call paginate_queryset — response is an unbounded, unpaginated list, and also has no @extend_schema"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/secondments/api/views.py"
+                },
+                "region": {
+                  "startLine": 211
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "missing-input-validation",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000012] POST /api/employees/{id}/transfer/ takes division_id/position_id directly from request.data with no serializer validation — non-numeric division_id raises unhandled ValueError (int(division_id)); non-existent division_id/position_id reaches employee.save() and can raise a raw IntegrityError instead of a clean 400"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/api/views.py"
+                },
+                "region": {
+                  "startLine": 114
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "authorization-order-defect",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000013] POST /api/employees/{id}/transfer/ writes EmployeeTransferHistory (and would apply staffing counters) BEFORE the DIRECTORATE_HEAD/DIVISION_HEAD scope check; the scope check's 403 Response is returned from inside the same transaction.atomic() block, which commits normally on a plain return (no exception raised) — so a rejected/forbidden transfer still permanently persists a history row describing a transfer that never actually happened (employee.division was never reassigned, since employee.save() at line 163 is after the 403 return)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/api/views.py"
+                },
+                "region": {
+                  "startLine": 129
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "missing-input-validation",
+          "level": "note",
+          "message": {
+            "text": "[RES-000014] POST /api/employees/{id}/dismiss/ assigns request.data.get('dismissal_date') straight to a model DateField with no serializer/format validation; a malformed value is not caught before employee.save() and can surface as a raw DB error instead of a 400"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/api/views.py"
+                },
+                "region": {
+                  "startLine": 167
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "missing-input-validation",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000015] POST /api/divisions/{id}/move/ calls int(parent_id) on raw request.data with no prior type check — a non-numeric parent_id (e.g. a string) raises an unhandled ValueError and surfaces as a 500 instead of a 400"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/divisions/api/views.py"
+                },
+                "region": {
+                  "startLine": 84
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "silent-error-swallowing",
+          "level": "note",
+          "message": {
+            "text": "[RES-000016] EmployeeViewSet.perform_create wraps the initial EmployeeStatus.objects.create() call in a bare `except Exception: pass`, silently discarding any error (validation failure, IntegrityError, etc.) during initial status assignment on employee creation with no logging or client-visible signal"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/api/views.py"
+                },
+                "region": {
+                  "startLine": 66
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "missing-ci-gate",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000017] CI workflow runs only makemigrations --check; the 3107-test pytest suite and ruff lint never execute in CI"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "timezone-naive-date-boundary",
+          "level": "error",
+          "message": {
+            "text": "[RES-000018] Legacy statuses app derives \"today\" from timezone.now().date() (UTC), not local Asia/Almaty date — status state and day-boundary checks drift by one calendar day during ~00:00-05:00 local time"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/statuses/models.py"
+                },
+                "region": {
+                  "startLine": 253
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "swallowed-exception",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000019] Status-edit dialog discards the backend's specific validation/conflict message and shows a fixed generic string, hiding why an edit was rejected"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/PersonalRecordFront/features/employee-status-update/ui/PlannedStatusesDialog.tsx"
+                },
+                "region": {
+                  "startLine": 238
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "layering-violation",
+          "level": "note",
+          "message": {
+            "text": "[RES-000021] entities/employee imports from features/, reversing FSD dependency direction"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/PersonalRecordFront/entities/employee/ui/EmployeeTable.tsx"
+                },
+                "region": {
+                  "startLine": 35
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "single-point-of-failure",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000022] PLANNED-to-ACTIVE status transition depends solely on a Celery task that does not run on the local stand, with no read-time reconciliation (unlike the parallel EXPIRED-status path, which does have one)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/statuses/tasks.py"
+                },
+                "region": {
+                  "startLine": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "missing-audit-coverage",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000023] AuditMiddleware's id-extraction-from-JSON-response contract silently drops audit logging for the operations bulk status-create endpoint (and any other action returning a list/summary body without a top-level 'id')"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/operations/api/views.py"
+                },
+                "region": {
+                  "startLine": 1107
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "policy-mismatch-forbidden-linkage-pattern",
+          "level": "warning",
+          "message": {
+            "text": "[RES-000024] GVO registry \"Mine\" filter links events to the current user by exact FIO string match (`ownerName === user.name`) — the documented forbidden pattern is live, not merely absent"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/gvo/page.tsx"
+                },
+                "region": {
+                  "startLine": 66
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "manual-step-not-automated-duplicate-logic",
+          "level": "note",
+          "message": {
+            "text": "[RES-000025] Four files hand-roll a local `formatMoment(iso)` timestamp formatter instead of using the project's canonical `formatIsoDateTime` helper that the Aug-2026 date-formatting rollout introduced"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/feedback/page.tsx"
+                },
+                "region": {
+                  "startLine": 29
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "missing-overflow-wrap-on-free-text",
+          "level": "note",
+          "message": {
+            "text": "[RES-000026] User-submitted free text (comment body, feedback description/steps/contact) renders in plain `<p>` tags with zero break-words/overflow-wrap handling anywhere in the security-ops feature/app tree"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/PersonalRecordFront/app/security-ops/feedback/[feedbackId]/page.tsx"
+                },
+                "region": {
+                  "startLine": 269
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "audit-drift-confirmation",
+          "level": "note",
+          "message": {
+            "text": "[RES-000027] DRIFT (fixed): C1 from the 2026-08-17 audit — Tailwind v4-only utility classes (`shadow-xs`, `rounded-xs`, `outline-hidden`, `field-sizing-content`) — no longer present; 0 hits across app/ and components/"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/PersonalRecordFront/components/ui/button.tsx"
+                },
+                "region": {
+                  "startLine": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "audit-drift-confirmation",
+          "level": "note",
+          "message": {
+            "text": "[RES-000028] DRIFT (fixed): 2026-08-17 audit's dead `styles/globals.css` (Tailwind v4, divergent palette) — file deleted entirely in commit `1cc83efe`; `app/globals.css` remains the sole live stylesheet"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/PersonalRecordFront/app/layout.tsx"
+                },
+                "region": {
+                  "startLine": 4
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "audit-drift-confirmation",
+          "level": "note",
+          "message": {
+            "text": "[RES-000029] DRIFT (unchanged): `@tanstack/react-virtual` remains an installed, still-unused dependency, as reported 2026-08-17"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/PersonalRecordFront/package.json"
+                },
+                "region": {
+                  "startLine": 48
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "bare-except",
+          "level": "note",
+          "message": {
+            "text": "[RES-000055] Bare except: clauses swallow all exceptions around employee/staff_unit lookups in JWT claims and admin display"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records/organization_management/apps/common/jwt_serializers.py"
+                },
+                "region": {
+                  "startLine": 56
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "lint-baseline",
+          "level": "note",
+          "message": {
+            "text": "[RES-000057] ruff check reports 1518 violations project-wide (397 auto-fixable); no committed project ruff config found -- measured baseline, supersedes earlier unverified note"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Backend/PersonnelStatus/Personnel-Records"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
