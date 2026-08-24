@@ -768,3 +768,123 @@ def test_same_object_not_added_to_event_twice(manager):
             passport_binding=None,
             position=1,
         )
+
+
+def test_add_visit_object_binds_passport_and_person(manager):
+    """Объект дописывается к бюллетеню позже — с привязкой и своим лицом.
+
+    Заказчик заводит ОМ, когда маршрут ещё не согласован, и дописывает объекты
+    по мере уточнения; привязка версии паспорта считается на дату ОМ так же,
+    как при создании.
+    """
+    obj = make_object(with_passport=True)
+    second = make_object(code="OBJ-2", name="Концертный зал", with_passport=True)
+    person = OpsProtectedPerson.objects.create(
+        name="Ким Е. С.", category=OpsProtectedPerson.Category.OURS
+    )
+    event_id = create_event(manager, obj).json()["id"]
+
+    resp = manager.post(
+        f"{URL}{event_id}/visit-objects/",
+        {"objectId": str(second.pk), "protectedPersonId": str(person.pk)},
+        format="json",
+    )
+    assert resp.status_code == 201
+    visits = resp.json()["visitObjects"]
+    assert [v["objectName"] for v in visits] == ["Резиденция", "Концертный зал"]
+    assert [v["position"] for v in visits] == [0, 1]
+    added = visits[1]
+    assert added["protectedPersonName"] == "Ким Е. С."
+    assert added["passportBinding"]["versionNumber"] == 1
+
+
+def test_add_visit_object_rejects_duplicate_and_unknown(manager):
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+
+    # Тот же объект второй раз — беда поля, а не конверт про ограничение базы.
+    resp = manager.post(
+        f"{URL}{event_id}/visit-objects/",
+        {"objectId": str(obj.pk)},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["details"]["objectId"] == [
+        "Этот объект уже добавлен в мероприятие."
+    ]
+
+    resp = manager.post(
+        f"{URL}{event_id}/visit-objects/", {"objectId": "9999"}, format="json"
+    )
+    assert resp.status_code == 400
+    assert resp.json()["details"]["objectId"] == ["Объект не найден в реестре."]
+
+
+def test_remove_visit_object(manager):
+    obj = make_object(with_passport=True)
+    second = make_object(code="OBJ-2", name="Концертный зал")
+    event_id = create_event(manager, obj).json()["id"]
+    added = manager.post(
+        f"{URL}{event_id}/visit-objects/",
+        {"objectId": str(second.pk)},
+        format="json",
+    ).json()["visitObjects"][1]
+
+    resp = manager.delete(f"{URL}{event_id}/visit-objects/{added['id']}/")
+    assert resp.status_code == 200
+    assert [v["objectName"] for v in resp.json()["visitObjects"]] == ["Резиденция"]
+
+    # Повторное удаление — 404 с конвертом, а не тихий успех.
+    resp = manager.delete(f"{URL}{event_id}/visit-objects/{added['id']}/")
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"
+
+
+def test_remove_visit_object_with_posts_is_refused(manager):
+    """Объект с постами в расчёте не удаляется молча — посты осиротели бы."""
+    obj = make_object(with_passport=True)
+    second = make_object(code="OBJ-2", name="Концертный зал")
+    event_id = create_event(manager, obj).json()["id"]
+    added = manager.post(
+        f"{URL}{event_id}/visit-objects/",
+        {"objectId": str(second.pk)},
+        format="json",
+    ).json()["visitObjects"][1]
+
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.recon_sector_posts = [
+        {
+            "id": "post-1",
+            "sector": "Периметр",
+            "post": "Пост 1",
+            "task": "",
+            "need": 1,
+            "requirements": "",
+            "result": None,
+            "comment": "",
+            "sourceSectorId": None,
+            "sourcePostId": None,
+            "minRating": None,
+            "visitObjectId": added["id"],
+        }
+    ]
+    event.save(update_fields=["recon_sector_posts"])
+
+    resp = manager.delete(f"{URL}{event_id}/visit-objects/{added['id']}/")
+    assert resp.status_code == 422
+    assert "посты в расчёте" in resp.json()["message"]
+    assert OpsSecurityEventVisitObject.objects.filter(pk=added["id"]).exists()
+
+
+def test_visit_objects_need_manage_permission(viewer, manager):
+    """Право на просмотр реестра не даёт править маршрут мероприятия."""
+    obj = make_object(with_passport=True)
+    second = make_object(code="OBJ-2", name="Концертный зал")
+    event_id = create_event(manager, obj).json()["id"]
+
+    resp = viewer.post(
+        f"{URL}{event_id}/visit-objects/",
+        {"objectId": str(second.pk)},
+        format="json",
+    )
+    assert resp.status_code == 403

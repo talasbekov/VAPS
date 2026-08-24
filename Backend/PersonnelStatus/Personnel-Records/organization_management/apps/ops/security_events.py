@@ -300,6 +300,131 @@ def create_event(
     return event
 
 
+# ── Объекты посещения ───────────────────────────────────────────────────────
+
+
+@transaction.atomic
+def add_visit_object(event_id, *, object_id, protected_person_id=None):
+    """Добавить объект посещения к мероприятию.
+
+    Объекты посещения появляются ПОЗЖЕ бюллетеня — заказчик заводит ОМ, когда
+    маршрут ещё не известен, и дописывает объекты по мере согласования. Поэтому
+    операция разрешена на любой живой стадии; закрытое мероприятие — история, и
+    дописывать в неё маршрут нельзя.
+
+    Привязка версии паспорта считается на дату ОМ тем же правилом, что при
+    создании: у объекта посещения свой снимок, а не ссылка на общий.
+
+    Журнал мутаций раздела здесь не пишется — по правилу модуля
+    (audit_service: у ОМ пишутся заведение и закрытие, промежуточные правки
+    агрегата свой след оставляют в самой карточке).
+    """
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — объекты посещения не меняются.",
+        )
+
+    field_errors = {}
+    raw_object = str(object_id or "").strip()
+    security_object = None
+    if raw_object == "":
+        field_errors["objectId"] = ["Обязательное поле."]
+    else:
+        security_object = (
+            OpsSecurityObject.objects.filter(pk=raw_object).first()
+            if raw_object.isdigit()
+            else None
+        )
+        if security_object is None:
+            field_errors["objectId"] = ["Объект не найден в реестре."]
+        elif event.visit_objects.filter(
+            security_object_id=security_object.pk
+        ).exists():
+            # Отбиваем ДО INSERT: уникальность в базе отдала бы конверт про
+            # ограничение, а человеку нужно имя поля и понятная причина.
+            field_errors["objectId"] = [
+                "Этот объект уже добавлен в мероприятие."
+            ]
+
+    person = None
+    raw_person = str(protected_person_id or "").strip()
+    if raw_person != "":
+        person = (
+            OpsProtectedPerson.objects.filter(
+                pk=raw_person, is_active=True
+            ).first()
+            if raw_person.isdigit()
+            else None
+        )
+        if person is None:
+            field_errors["protectedPersonId"] = [
+                "Охраняемое лицо не найдено в справочнике."
+            ]
+    if field_errors:
+        raise _validation(field_errors)
+
+    binding = None
+    applicable = resolve_applicable_version(security_object, event.business_date)
+    if applicable is not None:
+        binding = bind_passport_version(security_object, applicable, _now_iso())
+
+    # Позиция — следующая по порядку человека, а не по id: удаление строки из
+    # середины не должно перетасовывать оставшиеся.
+    last = event.visit_objects.order_by("-position").first()
+    OpsSecurityEventVisitObject.objects.create(
+        event=event,
+        security_object=security_object,
+        object_name=security_object.name,
+        passport_binding=binding,
+        protected_person=person,
+        protected_person_name=person.name if person is not None else "",
+        position=0 if last is None else last.position + 1,
+    )
+    event.refresh_from_db()
+    return event
+
+
+@transaction.atomic
+def remove_visit_object(event_id, visit_object_id):
+    """Убрать объект посещения. Закрытое мероприятие не правится."""
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — объекты посещения не меняются.",
+        )
+    visit = (
+        event.visit_objects.filter(pk=visit_object_id).first()
+        if str(visit_object_id).isdigit()
+        else None
+    )
+    if visit is None:
+        raise _not_found("Объект посещения не найден.", visit_object_id)
+    # Посты, размеченные за этим объектом, остались бы сиротами — расчёт
+    # считает их «ничьими», и готовность объекта исчезла бы молча.
+    scoped_posts = [
+        p
+        for p in (event.recon_sector_posts or [])
+        if str(p.get("visitObjectId") or "") == str(visit.pk)
+    ]
+    if scoped_posts:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            422,
+            message=(
+                "У объекта есть посты в расчёте — сначала снимите или "
+                "перенесите их."
+            ),
+        )
+    visit.delete()
+    event.refresh_from_db()
+    return event
+
+
 # ── Бюллетень ───────────────────────────────────────────────────────────────
 
 
