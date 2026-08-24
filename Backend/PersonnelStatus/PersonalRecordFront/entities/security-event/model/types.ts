@@ -267,6 +267,17 @@ export function visitObjectDetailPath(
   return `${visitObjectsPath(eventId)}${visitObjectId}/`;
 }
 
+/**
+ * Подпись объекта мероприятия для экранов. Пустое имя — «объект не выбран»
+ * (ОМ заводят до согласования маршрута), и это надо СКАЗАТЬ: пустое место в
+ * строке «Объект: » читается как потерянное значение.
+ */
+export function objectLabel(event: {
+  objectName: string;
+}): string {
+  return event.objectName === "" ? "не выбран" : event.objectName;
+}
+
 /** Строка реестра объектов для выбора: подпись и наличие паспорта. */
 export interface BindableObject {
   id: string;

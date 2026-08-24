@@ -26,6 +26,7 @@ import {
   NO_OBJECT_TEXT,
   NO_PUBLISHED_VERSION_TEXT,
   StageBadge,
+  objectLabel,
 } from "@/entities/security-event";
 import type { SecurityEvent, SecurityEventStage } from "@/entities/security-event";
 import { formatIsoDate } from "@/shared/lib/date";
@@ -130,11 +131,11 @@ function SecurityEventScreen() {
                 href={`/security-ops/objects/${event.objectId}`}
                 className="font-semibold text-primary-ink"
               >
-                Объект: {event.objectName} →
+                Объект: {objectLabel(event)} →
               </Link>
             ) : (
               <span className="text-muted-foreground">
-                Объект: {event.objectName}
+                Объект: {objectLabel(event)}
               </span>
             )}
             <span aria-hidden className="text-muted-foreground">

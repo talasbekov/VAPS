@@ -20,7 +20,7 @@ import { Lock } from "lucide-react";
 // подписью.
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
+import { JOURNAL_TYPE_LABEL, objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
@@ -65,7 +65,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
             Архив · {event.code}
           </h2>
           <p className="text-xs text-muted-foreground">
-            {event.title} · {eventPeriod(event)} · {event.objectName}
+            {event.title} · {eventPeriod(event)} · {objectLabel(event)}
           </p>
         </div>
         <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
@@ -124,7 +124,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <Fact label="Дата проведения" value={eventPeriod(event)} />
-          <Fact label="Объект" value={event.objectName} />
+          <Fact label="Объект" value={objectLabel(event)} />
           <Fact
             label="Краткое описание"
             value={event.briefDescription === "" ? "—" : event.briefDescription}
