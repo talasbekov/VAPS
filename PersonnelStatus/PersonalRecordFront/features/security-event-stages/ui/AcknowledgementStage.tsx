@@ -30,6 +30,7 @@ import {
   useCompleteAcknowledgement,
   usePersonnelMe,
 } from "@/hooks/use-security-event-stages";
+import { objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
@@ -235,7 +236,7 @@ function MyAssignment({
     <div className="mt-2 space-y-2">
       <p className="text-sm font-semibold">Ваше назначение · {event.code}</p>
       <dl className="space-y-1 text-xs">
-        <Row label="Объект" value={event.objectName} />
+        <Row label="Объект" value={objectLabel(event)} />
         <Row
           label="Сектор / пост"
           value={post ? `${post.sector} · ${post.post}` : mine.postId}

@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
+import { ObjectPicker } from "./ObjectPicker";
 import {
   useBindableObjects,
   useCreateSecurityEvent,
@@ -82,7 +83,10 @@ const formSchema = z
       .regex(/^(\d{2}:\d{2})?$/, "Укажите время в формате ЧЧ:ММ."),
     protectedPersonId: z.string(),
     location: z.string().max(255, "Не длиннее 255 символов."),
-    objectId: z.string().trim().min(1, "Обязательное поле."),
+    // Объект НЕОБЯЗАТЕЛЕН (решение заказчика 24.08, ClickUp 86eyqf7a7):
+    // бюллетень заводят до согласования маршрута, объекты дописывают позже
+    // кнопкой у строки реестра.
+    objectId: z.string(),
     chiefEmployeeId: z.string(),
   })
   // Ту же пару сверяет сервер, но ждать от него отказа незачем: человек видит
@@ -187,10 +191,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
   // ВИДОМ, а не `disabled`: нажать её можно, и тогда форма скажет, чего именно
   // не хватает, вместо молчаливого тупика.
   const incomplete =
-    title.trim() === "" ||
-    kind === "" ||
-    objectId.trim() === "" ||
-    businessDate === "";
+    title.trim() === "" || kind === "" || businessDate === "";
 
   return (
     <Dialog
@@ -454,50 +455,40 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             </Field>
           </div>
 
-          {/* Отклонение от эталона, оставленное сознательно: в прототипе
-              объект выбирает старший наряда позже, здесь — сразу. Без объекта
-              не к чему привязать версию паспорта, а из неё растёт весь расчёт
-              постов на рекогносцировке. */}
+          {/* Эталон здесь снова в силе: объект НЕОБЯЗАТЕЛЕН — старший наряда
+              определяет его позже (решение заказчика 24.08 отменяет обратное
+              решение от 23.08). Без объекта не будет привязки паспорта, и
+              импорт постов на рекогносцировке отвечает своим отказом, пока
+              объект не добавлен кнопкой у строки реестра. */}
           <Field
             name="objectId"
             label="Объект"
             labelClassName={LABEL_CLASS}
-            hint="Версия паспорта на дату ОМ привязывается по объекту"
+            hint="Необязательно: без объекта версия паспорта не привяжется — объекты можно добавить позже"
             hintClassName={HINT_CLASS}
             error={errors.objectId}
             className="space-y-1.5"
           >
-            {(field) => (
+            {() => (
               <>
-                <select
-                  {...field}
-                  className={SELECT_CLASS}
-                  defaultValue=""
-                  aria-required="true"
-                  disabled={objectsQuery.isPending}
-                  {...register("objectId")}
-                >
-                  <option value="">
-                    {objectsQuery.isPending
-                      ? "Загрузка реестра…"
-                      : "— выберите объект —"}
-                  </option>
-                  {(objectsQuery.data?.results ?? []).map((object) => (
-                    <option key={object.id} value={object.id}>
-                      {/* отсутствие опубликованного паспорта названо прямо в списке:
-                          узнать об этом после создания ОМ поздно; выбирать такой
-                          объект при этом можно — вести мероприятие не запрещено */}
-                      {object.code} · {object.name}
-                      {object.publishedVersionCount === 0
-                        ? " — паспорт не опубликован"
-                        : ""}
-                    </option>
-                  ))}
-                </select>
+                {/* Поле РЕГИСТРИРУЕТСЯ, хотя вводится поповером — ровно та же
+                    яма, что у «Типа мероприятия» выше: `setValue` по
+                    незарегистрированному имени не будит `watch`, и выбранный
+                    объект не появился бы в подписи кнопки. */}
+                <input type="hidden" {...register("objectId")} />
+                <ObjectPicker
+                  objects={objectsQuery.data?.results ?? []}
+                  isLoading={objectsQuery.isPending}
+                  value={objectId}
+                  onChange={(next) =>
+                    setValue("objectId", next, { shouldDirty: true })
+                  }
+                  controlClassName={SELECT_CLASS}
+                />
                 {objectsQuery.isError && (
                   <p className="text-xs text-destructive-ink" role="alert">
-                    Реестр объектов недоступен — мероприятие нельзя привязать к
-                    объекту.
+                    Реестр объектов недоступен — выбрать объект не из чего;
+                    мероприятие можно завести и без него.
                   </p>
                 )}
               </>

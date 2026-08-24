@@ -69,6 +69,19 @@ async function objectName(token: string, objectId: string): Promise<string> {
   return ((await res.json()) as { name: string }).name
 }
 
+/** Выбрать первый объект реестра в поповере окна создания ОМ. */
+async function pickFirstObject(page: Page, dialog: ReturnType<Page['getByRole']>): Promise<void> {
+  const picker = dialog.getByRole('combobox', { name: 'Объект' })
+  await expect(picker).toBeEnabled({ timeout: 20_000 })
+  await picker.click()
+  // Первый пункт списка — «объект не выбран»; берём следующий за ним.
+  // Поповер живёт в ПОРТАЛЕ — вне узла окна, поэтому ищем его от страницы.
+  const options = page.locator('[data-slot="popover-content"] li button')
+  await expect(options.nth(1)).toBeVisible({ timeout: 20_000 })
+  await options.nth(1).click()
+  await expect(picker).not.toHaveText(/объект не выбран/)
+}
+
 test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
@@ -233,9 +246,9 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const submit = dialog.getByRole('button', { name: 'Создать бюллетень' })
     await dialog.getByLabel('Название ОМ').fill(title)
     await dialog.getByRole('button', { name: 'Внутреннее' }).click()
-    const objectSelect = dialog.getByLabel('Объект')
-    await expect(objectSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
-    await objectSelect.selectOption({ index: 1 })
+    // Объект выбирается ПОПОВЕРОМ с поиском, а не <select> (24.08): в родном
+    // списке искать было нечем, а реестр объектов растёт.
+    await pickFirstObject(page, dialog)
     await dialog.getByLabel('Дата начала').fill('2026-09-10')
     await dialog.getByLabel('Дата окончания').fill('2026-09-12')
 
@@ -306,9 +319,9 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await dialog.getByRole('button', { name: 'С участием иностранцев' }).click()
     await expect(dialog.getByLabel('Старший ГВО')).toBeVisible()
 
-    const objectSelect = dialog.getByLabel('Объект')
-    await expect(objectSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
-    await objectSelect.selectOption({ index: 1 })
+    // Объект выбирается ПОПОВЕРОМ с поиском, а не <select> (24.08): в родном
+    // списке искать было нечем, а реестр объектов растёт.
+    await pickFirstObject(page, dialog)
     await dialog.getByLabel('Дата начала').fill('2026-09-14')
     await dialog.getByLabel('Время').fill('09:30')
     await dialog.getByLabel('Локация').fill('г. Алматы')
@@ -347,21 +360,20 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const res = await fetch(`${API}/api/ops/security-events/?page_size=20`, {
       headers: { Authorization: `Bearer ${token}` },
     })
+    // Берём первое ОМ С ОБЪЕКТАМИ, а не просто первое: с 24.08 бюллетень
+    // заводится и без объекта, и такая строка может оказаться первой — проба
+    // тогда падала бы на состоянии реестра, а не на предмете.
     const first = ((await res.json()) as {
       results: (EventRow & {
         visitObjects: { objectName: string; placementNeed: number | null }[]
       })[]
-    }).results[0]
-    expect(first, 'реестр стенда пуст').toBeDefined()
-    expect(
-      first.visitObjects.length,
-      'у ОМ нет объектов посещения — бэкфилл 0035 не проходил',
-    ).toBeGreaterThan(0)
+    }).results.find((e) => e.visitObjects.length > 0)
+    expect(first, 'на первой странице реестра нет ОМ с объектами посещения').toBeDefined()
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/`)
     const toggle = page.getByRole('button', {
-      name: `Развернуть объекты посещения ${first.code}`,
+      name: `Развернуть объекты посещения ${first!.code}`,
     })
     await expect(toggle).toBeVisible({ timeout: 15_000 })
 
@@ -374,13 +386,13 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await toggle.click()
     await expect(details).toBeVisible()
     await expect(page).toHaveURL(/\/security-ops\/events\/?$/)
-    for (const visit of first.visitObjects) {
+    for (const visit of first!.visitObjects) {
       await expect(details).toContainText(visit.objectName)
     }
     // Готовность расстановки названа словами: доля — когда посты объекта
     // известны, причина — когда расчёт по объектам не разнесён.
     await expect(details).toContainText(
-      first.visitObjects[0].placementNeed === null
+      first!.visitObjects[0].placementNeed === null
         ? /по объекту не разнесена/
         : /расстановка \d+ из \d+|посты не рассчитаны/,
     )
@@ -388,7 +400,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // Свернуть: у той же кнопки МЕНЯЕТСЯ подпись — «Развернуть» → «Свернуть».
     // Ищем по новой подписи: локатор по старой ждал бы кнопку, которой уже нет.
     await page
-      .getByRole('button', { name: `Свернуть объекты посещения ${first.code}` })
+      .getByRole('button', { name: `Свернуть объекты посещения ${first!.code}` })
       .click()
     await expect(details).toBeHidden()
   })
@@ -470,6 +482,69 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
       await fetch(`${API}/api/ops/security-events/${created.id}/`, { headers })
     ).json()) as { visitObjects: unknown[] }
     expect(restored.visitObjects).toHaveLength(1)
+  })
+
+  test('бюллетень заводится БЕЗ объекта, объект выбирается поиском', async ({ page }) => {
+    // Решение заказчика 24.08 (ClickUp 86eyqf7a7) отменяет обратное от 23.08:
+    // объект в окне создания необязателен. Проба ведёт оба пути — создание без
+    // объекта и выбор объекта поиском — и следит, чтобы пустой объект был
+    // НАЗВАН словами, а не оставлял пустую ячейку.
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}` }
+    const title = `Проба без объекта (e2e) ${Date.now()}`
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 15_000 })
+
+    await dialog.getByLabel('Название ОМ').fill(title)
+    await dialog.getByRole('button', { name: 'Внутреннее' }).click()
+    await dialog.getByLabel('Дата начала').fill('2026-09-18')
+
+    // Объект НЕ трогаем вовсе — кнопка обязана сработать.
+    await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
+    await expect(dialog).toBeHidden({ timeout: 15_000 })
+
+    const created = ((await (
+      await fetch(`${API}/api/ops/security-events/?search=${encodeURIComponent(title)}`, {
+        headers,
+      })
+    ).json()) as { results: { id: string; code: string; objectId: string | null; visitObjects: unknown[] }[] })
+      .results[0]
+    expect(created, 'ОМ без объекта не завелось').toBeDefined()
+    expect(created.objectId).toBeNull()
+    expect(created.visitObjects).toHaveLength(0)
+
+    // В реестре пустой объект НАЗВАН, а не оставлен пустой ячейкой.
+    await page.goto(`${APP}/security-ops/events/?search=${encodeURIComponent(created.code)}`)
+    const row = page.locator('tbody tr').first()
+    await expect(row).toContainText('объект не выбран', { timeout: 15_000 })
+
+    // Второй путь: поиск в списке объектов сужает выбор и выбирает объект.
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    const picker = page.getByRole('combobox', { name: 'Объект' })
+    await expect(picker).toHaveText(/объект не выбран/)
+    await picker.click()
+    const objects = (await (
+      await fetch(`${API}/api/ops/security-events/bindable-objects/`, { headers })
+    ).json()) as { results: { name: string; code: string }[] }
+    const target = objects.results[0]
+    await page.getByLabel('Поиск объекта').fill(target.name)
+    await page.getByRole('button', { name: new RegExp(`${target.code}`) }).click()
+    await expect(picker).toHaveText(new RegExp(target.code))
+
+    // Заведение отсутствующего объекта: проба НЕ создаёт объект (реестр
+    // объектов чистить нечем — DELETE у него нет), а проверяет проводку до
+    // сервера и показ его отказа на месте, у поля названия.
+    await picker.click()
+    await page.getByRole('button', { name: /Объекта нет в списке/ }).click()
+    await page.getByLabel('Название нового объекта').fill(target.name)
+    await page.getByRole('button', { name: 'Завести' }).click()
+    await expect(page.getByRole('alert')).toContainText('уже есть в реестре', {
+      timeout: 15_000,
+    })
   })
 
   test('этап «Запрос сил» ведёт в «Сбор сил на ОМ»', async ({ page }) => {

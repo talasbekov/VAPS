@@ -437,11 +437,16 @@ function EventRow({
                 </TableCell>
 
                 <TableCell className="text-muted-foreground">
-                  {event.objectName}
+                  {/* Пустое имя — «объект не выбран», а не пустая ячейка: ОМ
+                      заводят до согласования маршрута, и объекты дописывают
+                      позже кнопкой в первой колонке. */}
+                  {event.objectName === "" ? "объект не выбран" : event.objectName}
                   <span className="mt-[3px] block text-[11px] text-muted-foreground/80">
-                    {event.passportBinding === null
-                      ? "паспорт не привязан"
-                      : `паспорт вер. ${event.passportBinding.versionNumber}`}
+                    {event.objectName === ""
+                      ? "объекты добавляются кнопкой «+»"
+                      : event.passportBinding === null
+                        ? "паспорт не привязан"
+                        : `паспорт вер. ${event.passportBinding.versionNumber}`}
                   </span>
                 </TableCell>
 
@@ -883,8 +888,8 @@ function EventsCalendar({
                     {event.title}
                   </Link>
                   <span className="text-xs text-muted-foreground">
-                    {event.objectName} · потребность {event.forceNeed} ·{" "}
-                    {event.ownerName}
+                    {event.objectName === "" ? "объект не выбран" : event.objectName} ·
+                    потребность {event.forceNeed} · {event.ownerName}
                   </span>
                 </li>
               ))}

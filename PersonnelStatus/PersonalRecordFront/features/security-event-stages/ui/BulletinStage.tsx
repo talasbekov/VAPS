@@ -35,6 +35,7 @@ import {
   SECURITY_EVENT_KIND_LABEL,
   STAGE_LABEL,
 } from "@/entities/security-event";
+import { objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { daySpanInclusive, ruDate, ruDaysLabel, ruWeekdayName } from "@/lib/ru-date";
 import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
@@ -245,7 +246,7 @@ function EventFacts({ event }: { event: SecurityEvent }) {
               : SECURITY_EVENT_KIND_LABEL[event.kind]
           }
         />
-        <Fact label="Объект проведения" value={event.objectName} />
+        <Fact label="Объект проведения" value={objectLabel(event)} />
         <Fact label="Место / адрес" value={address} />
         <Fact
           label="Локация"
