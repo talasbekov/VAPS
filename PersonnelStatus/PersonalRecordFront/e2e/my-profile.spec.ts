@@ -17,6 +17,7 @@
  * не работает, а раздел живой и мок ему не нужен.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -97,7 +98,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
   test('карточка и назначения собраны вокруг СВОЕЙ кадровой записи', async ({ page }) => {
-    const token = await tokenFor('admin', 'admin123')
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const me = await get<MyEmployee>(token, '/api/operations/my-employee/')
     expect(me.employee, 'у admin нет кадровой записи — проба вакуумна').not.toBeNull()
     const employee = me.employee as CoreEmployee
@@ -134,7 +135,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     expect(rank, 'звание не разрешается справочником').toBeDefined()
     expect(position, 'должность не разрешается справочником').toBeDefined()
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto(`${APP}${SCREEN}`)
     await expect(page.getByRole('heading', { name: employee.full_name })).toBeVisible({
       timeout: 20_000,
@@ -183,7 +184,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
   })
 
   test('другая учётка получает ДРУГУЮ запись и свои статусы', async ({ page }) => {
-    const adminToken = await tokenFor('admin', 'admin123')
+    const adminToken = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const otherToken = await tokenFor('erda', 'erda123')
     const mineAsAdmin = await get<MyEmployee>(adminToken, '/api/operations/my-employee/')
     const mineAsOther = await get<MyEmployee>(otherToken, '/api/operations/my-employee/')

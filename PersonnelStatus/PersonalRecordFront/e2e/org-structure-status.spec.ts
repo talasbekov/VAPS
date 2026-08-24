@@ -22,6 +22,7 @@
  * Третья проба — обратная: убрав фолбэк, легко потерять и настоящие статусы.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -46,7 +47,7 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
   test.skip(!LIVE, 'нужен живой стенд: SMOKE_LIVE=1')
 
   test('вакантная должность не подписана «В строю» и не светится зелёным', async ({ page }) => {
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
 
@@ -93,7 +94,7 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
 
   test('сотрудник с настоящим статусом по-прежнему им подписан', async ({ page }) => {
     // Обратная сторона: убрав фолбэк, легко потерять и настоящие статусы.
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
     await expect(page.getByText('Вакантная должность').first()).toBeVisible({ timeout: 25_000 })
@@ -152,7 +153,7 @@ test.describe(LIVE ? 'оргструктура: статус' : 'оргстру�
       },
     )
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
 

@@ -37,6 +37,7 @@
  * запросы приложения.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -62,7 +63,7 @@ async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+    body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
   })
   return ((await res.json()) as { access: string }).access
 }
@@ -76,7 +77,7 @@ async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
   await api.post(`${APP}/api/auth/callback/credentials/`, {
-    form: { csrfToken: csrf.csrfToken, username: 'admin', password: 'admin123', json: 'true' },
+    form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
   })
 }
 
@@ -105,7 +106,7 @@ function fakeSubmission(divisionId: string, businessDate: string) {
     version: 1,
     is_current: true,
     event: 'CHANGED',
-    submitted_by: 'admin',
+    submitted_by: STAND_USERNAME,
     submitted_at: new Date().toISOString(),
     late: false,
   }

@@ -9,6 +9,7 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -23,7 +24,7 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
  */
 const PERSON = 'Салимова Гульнара Ержановна'
 
-async function signIn(page: Page, username = 'admin', password = 'admin123'): Promise<void> {
+async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PASSWORD): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as {
     csrfToken: string
@@ -151,7 +152,7 @@ async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+    body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
   })
   return ((await res.json()) as { access: string }).access
 }

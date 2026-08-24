@@ -7,16 +7,42 @@ from organization_management.apps.divisions.models import Division, DivisionType
 from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.employees.models import Employee
 
+def _stand_admin_password():
+    """Пароль стендового admin: из окружения, иначе из файла вне репозитория.
+
+    Литерала пароля в скрипте больше нет (был `admin123` — он же стоял в 30
+    e2e-спеках). Файл `~/.config/vaps/stand-admin-password` (права 600) —
+    то же единственное место правды, откуда пароль берут пробы.
+    """
+    import os
+    from pathlib import Path
+
+    value = os.environ.get("SMOKE_PASSWORD")
+    if value:
+        return value
+    stored = Path.home() / ".config" / "vaps" / "stand-admin-password"
+    try:
+        return stored.read_text(encoding="utf-8").strip()
+    except OSError:
+        raise SystemExit(
+            "Пароль стенда не задан: положите его в "
+            "~/.config/vaps/stand-admin-password или передайте SMOKE_PASSWORD."
+        )
+
+
 # Создаем суперпользователя (если еще нет)
 if not User.objects.filter(username='admin').exists():
     admin_user = User.objects.create_superuser(
         username='admin',
         email='admin@example.com',
-        password='admin123',
+        password=_stand_admin_password(),
         first_name='Admin',
         last_name='System'
     )
-    print("Создан суперпользователь: admin / admin123")
+    print(
+        "Создан суперпользователь: admin "
+        "(пароль — из ~/.config/vaps/stand-admin-password)"
+    )
 else:
     admin_user = User.objects.get(username='admin')
     print("Суперпользователь admin уже существует")
@@ -98,5 +124,5 @@ else:
 
 print("\n=== Готово! ===")
 print("Теперь вы можете войти с учетными данными:")
-print("1. admin / admin123 (суперпользователь)")
+print("1. admin (суперпользователь; пароль — из ~/.config/vaps/stand-admin-password)")
 print("2. erda / string (обычный пользователь с ролью 3)")

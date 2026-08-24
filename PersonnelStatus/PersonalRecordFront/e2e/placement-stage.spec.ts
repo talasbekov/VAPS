@@ -14,6 +14,7 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -30,7 +31,7 @@ async function apiToken(username: string, password: string): Promise<string> {
   return body.access
 }
 
-async function signIn(page: Page, username = 'admin', password = 'admin123'): Promise<void> {
+async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PASSWORD): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as {
     csrfToken: string
@@ -50,7 +51,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       if (m.type() === 'error') errors.push(m.text())
     })
 
-    const token = await apiToken('admin', 'admin123')
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
 
     // Берём ОМ на стадии расстановки; расчёт постов заводим сами, чтобы проба
