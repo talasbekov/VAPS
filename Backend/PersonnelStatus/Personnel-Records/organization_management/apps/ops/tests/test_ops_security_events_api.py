@@ -16,10 +16,12 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.audit_service import (
     SECURITY_EVENT_CLOSED,
     SECURITY_EVENT_CREATED,
+    SECURITY_EVENT_STAGE_OVERRIDDEN,
 )
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
+    OpsSecurityEventTransition,
     OpsSecurityEventVisitObject,
 )
 from organization_management.apps.operations.models_gvo import OpsProtectedPerson
@@ -1000,3 +1002,132 @@ def test_create_object_needs_manage_permission(manager):
         "/api/ops/objects/", {"name": "Чужой объект"}, format="json"
     )
     assert resp.status_code == 403
+
+
+# ── Перевод на любой этап (админ) ────────────────────────────────────────────
+
+
+@pytest.fixture
+def stage_admin():
+    """Персона с правом обхода. ОТДЕЛЬНАЯ от manager: весь смысл проб ниже в
+    том, что право обхода не выводится из права вести мероприятие."""
+    api, _ = client_for(
+        "ev-stage-admin",
+        "EV_STAGE_ADMIN",
+        perms=("event.view", "event.manage", "event.stage_override"),
+    )
+    return api
+
+
+def test_stage_override_jumps_forward_and_back(stage_admin):
+    """Админ проходит цепочку в любом порядке, не выполняя условий этапов."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(stage_admin, obj).json()["id"]
+    url = f"{URL}{event_id}/stage/"
+
+    # Прыжок ЧЕРЕЗ этапы: с бюллетеня сразу на согласование. По правилам
+    # цепочки сюда нельзя — ни расчёта постов, ни расстановки нет.
+    resp = stage_admin.post(url, {"stage": "APPROVAL"}, format="json")
+    assert resp.status_code == 200
+    assert resp.json()["stage"] == "APPROVAL"
+    # Готовность едет за стадией — иначе карточка показывала бы 0% на
+    # согласовании.
+    assert resp.json()["readinessPercent"] == 75
+    # Ассерт из БАЗЫ, а не из ответа: ответ мог бы собраться из входа.
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    assert event.stage == "APPROVAL"
+
+    # И назад — на рекогносцировку.
+    resp = stage_admin.post(url, {"stage": "RECON"}, format="json")
+    assert resp.status_code == 200
+    assert OpsSecurityEvent.objects.get(pk=event_id).stage == "RECON"
+
+    # Журнал переходов различает направление: возврат не должен считаться
+    # прогрессом воронки.
+    kinds = list(
+        OpsSecurityEventTransition.objects.filter(event_id=event_id)
+        .order_by("id")
+        .values_list("from_stage", "to_stage", "kind")
+    )
+    # Первая строка журнала — заведение ОМ (None → BULLETIN), она не наша:
+    # сверяем ХВОСТ, а не весь список, иначе проба ломалась бы от любого
+    # нового перехода, записанного при создании.
+    assert kinds[-2:] == [
+        ("BULLETIN", "APPROVAL", "FORWARD"),
+        ("APPROVAL", "RECON", "RETURN"),
+    ]
+
+    # Обход условий — решение человека, и он поимённо в журнале мутаций.
+    rows = OpsAuditLog.objects.filter(action=SECURITY_EVENT_STAGE_OVERRIDDEN)
+    assert rows.count() == 2
+    assert rows.order_by("id").first().new_value["stage"] == "APPROVAL"
+
+
+def test_stage_override_needs_its_own_permission(manager):
+    """Право вести мероприятие НЕ даёт обходить этапы."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    resp = manager.post(
+        f"{URL}{event_id}/stage/", {"stage": "APPROVAL"}, format="json"
+    )
+    assert resp.status_code == 403
+    # Отказ обязан быть без последствий: стадия осталась прежней.
+    assert OpsSecurityEvent.objects.get(pk=event_id).stage == "BULLETIN"
+
+
+def test_stage_override_refuses_closed_and_unknown(stage_admin):
+    """Закрытие — по итогам, а не переводом; неизвестная стадия — ошибка поля."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(stage_admin, obj).json()["id"]
+    url = f"{URL}{event_id}/stage/"
+
+    # CLOSED завёл бы архив без итогов направлений и без времени закрытия.
+    resp = stage_admin.post(url, {"stage": "CLOSED"}, format="json")
+    assert resp.status_code == 400
+    assert resp.json()["details"]["stage"] == ["Недопустимый этап для перевода."]
+
+    for bad in ("FORCES", "ЧТО-ТО", ""):
+        assert stage_admin.post(url, {"stage": bad}, format="json").status_code == 400
+    assert OpsSecurityEvent.objects.get(pk=event_id).stage == "BULLETIN"
+
+
+def test_stage_override_to_current_stage_writes_nothing(stage_admin):
+    """Повтор запроса не должен писать переход из этапа в него же."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(stage_admin, obj).json()["id"]
+    url = f"{URL}{event_id}/stage/"
+    stage_admin.post(url, {"stage": "RECON"}, format="json")
+    before = OpsSecurityEventTransition.objects.filter(event_id=event_id).count()
+
+    resp = stage_admin.post(url, {"stage": "RECON"}, format="json")
+    assert resp.status_code == 200
+    assert resp.json()["stage"] == "RECON"
+    assert (
+        OpsSecurityEventTransition.objects.filter(event_id=event_id).count() == before
+    )
+
+
+def test_stage_override_out_of_closed_clears_closed_at(stage_admin):
+    """Возврат из закрытия снимает время закрытия, но не стирает итоги."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(stage_admin, obj).json()["id"]
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.stage = "CLOSED"
+    event.closed_at = "2026-08-20T10:00:00+00:00"
+    event.closure_direction_summaries = [
+        {"direction": "Периметр", "summary": "без замечаний"}
+    ]
+    event.save()
+
+    resp = stage_admin.post(
+        f"{URL}{event_id}/stage/", {"stage": "CONDUCT"}, format="json"
+    )
+    assert resp.status_code == 200
+    event.refresh_from_db()
+    assert event.stage == "CONDUCT"
+    # Живое мероприятие со штампом «закрыто в …» врало бы в карточке и выгрузках.
+    assert event.closed_at is None
+    # А собранные итоги — факт, а не следствие стадии: они остаются.
+    assert event.closure_direction_summaries == [
+        {"direction": "Периметр", "summary": "без замечаний"}
+    ]

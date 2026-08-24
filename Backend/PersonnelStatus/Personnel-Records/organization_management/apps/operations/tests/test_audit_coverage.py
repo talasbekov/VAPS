@@ -780,6 +780,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         om.pk, brief_description="покрытие", initial_tasks="покрытие"
     )
     event_service.complete_bulletin(om.pk)
+    # Перевод админом на произвольный этап и обратно: обход условий пишет свой
+    # вид журнала. Возврат ОБЯЗАТЕЛЕН — иначе ОМ уехало бы с рекогносцировки, и
+    # цепочка ниже пошла бы не с той стадии.
+    event_service.override_stage(om.pk, stage="ACKNOWLEDGEMENT", actor=ACTOR)
+    event_service.override_stage(om.pk, stage="RECON", actor=ACTOR)
+    om.refresh_from_db()
     event_service.update_recon(
         om.pk,
         checklist=[

@@ -97,6 +97,14 @@ PASSPORT_VERSION_PUBLISHED = "PASSPORT_VERSION_PUBLISHED"
 # агрегат (журнал штаба, назначения), а не журнал мутаций раздела.
 SECURITY_EVENT_CREATED = "SECURITY_EVENT_CREATED"
 SECURITY_EVENT_CLOSED = "SECURITY_EVENT_CLOSED"
+# Ручной перевод ОМ на произвольный этап администратором. Исключение из
+# правила выше («промежуточные стадии событий не пишут»): обычный переход —
+# это пройденный этап, и его след живёт в журнале переходов, а перевод
+# админом ОБХОДИТ условия этапа, то есть является решением человека, а не
+# следствием работы. Без записи в журнале мутаций разбирательство «почему
+# ОМ оказалось на согласовании с пустой расстановкой» упиралось бы в
+# безымянный RETURN.
+SECURITY_EVENT_STAGE_OVERRIDDEN = "SECURITY_EVENT_STAGE_OVERRIDDEN"
 # Смена дежурства: заведение и отмена — решения с обоснованием (обход отдыха,
 # причина отмены); ознакомление/заступление/завершение следа в журнале
 # мутаций не оставляют — их след живёт на самой смене (штампы времени).
@@ -146,6 +154,7 @@ ACTIONS = frozenset(
         PASSPORT_VERSION_PUBLISHED,
         SECURITY_EVENT_CREATED,
         SECURITY_EVENT_CLOSED,
+        SECURITY_EVENT_STAGE_OVERRIDDEN,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,

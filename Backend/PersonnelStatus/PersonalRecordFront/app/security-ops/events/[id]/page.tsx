@@ -9,11 +9,13 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvent } from "@/hooks/use-security-events";
+import { useOverrideStage } from "@/hooks/use-security-event-stages";
 import { EventStepper } from "@/widgets/security-event-stepper";
-import { EVENT_STEPS } from "@/entities/security-event";
+import { EVENT_STEPS, STEP_ENTRY_STAGE, stepIndexOfStage } from "@/entities/security-event";
 import {
   AcknowledgementStage,
   ApprovalStage,
@@ -92,6 +94,19 @@ function SecurityEventScreen() {
   }, [replaceVisit, selectedVisit, visitParam]);
 
 
+  // Просматриваемый шаг цепочки живёт в АДРЕСЕ (`?step=` — номер шага, как его
+  // видит человек, с единицы), а не в состоянии вкладки: «покажи мне этап N
+  // вот этого ОМ» — ссылка, которую пересылают на разборе.
+  const stepParam = searchParams.get("step");
+  const selectStep = useCallback(
+    (index: number) => {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("step", String(index + 1));
+      router.replace(`?${next.toString()}`, { scroll: false });
+    },
+    [router, searchParams]
+  );
+
   // Гвард прав ВЫШЕ ветки ошибки запроса: без него deep link в обход реестра
   // отдавал 403 в query, и отказ по правам печатался как «Мероприятие не
   // найдено или недоступно» — то есть как отсутствие объекта.
@@ -123,6 +138,28 @@ function SecurityEventScreen() {
   }
 
   const event = query.data;
+  // Обход этапов — админ-полномочие; у всех остальных цепочка остаётся такой,
+  // какой была: показывает, где мероприятие, и никуда не ведёт.
+  const canOverrideStage = hasPermission("event.stage_override");
+  const currentIndex = stepIndexOfStage(event.stage);
+  // Номер шага из адреса чинится, а не доверяется: чужая ссылка с `step=99`
+  // не должна открывать пустоту, а без права обхода параметр не действует
+  // вовсе — иначе он был бы дырой в обход гварда.
+  const parsedStep = Number.parseInt(stepParam ?? "", 10);
+  const viewedIndex =
+    canOverrideStage &&
+    Number.isInteger(parsedStep) &&
+    parsedStep >= 1 &&
+    parsedStep <= EVENT_STEPS.length
+      ? parsedStep - 1
+      : currentIndex;
+  const viewingOtherStep = viewedIndex !== currentIndex;
+  // Внутри своего шага показываем РЕАЛЬНУЮ стадию мероприятия (иначе на шаге
+  // «Расстановка» карточка открывала бы «Потребность», когда ОМ уже на
+  // расстановке), а в чужом — входную стадию шага.
+  const viewedStage = viewingOtherStep
+    ? STEP_ENTRY_STAGE[EVENT_STEPS[viewedIndex].key]
+    : event.stage;
 
   return (
     <DashboardLayout>
@@ -200,7 +237,11 @@ function SecurityEventScreen() {
             onSelect={replaceVisit}
           />
           <div className="mt-3">
-            <EventStepper stage={event.stage} />
+            <EventStepper
+              stage={event.stage}
+              viewedIndex={viewedIndex}
+              onSelect={canOverrideStage ? selectStep : undefined}
+            />
           </div>
         </CardContent>
       </Card>
@@ -213,16 +254,36 @@ function SecurityEventScreen() {
         onDirtyChange={setBulletinDirty}
       />
 
-      <StageHeading stage={event.stage} />
+      <StageHeading stage={viewedStage} />
+
+      {viewingOtherStep && (
+        <StageViewNotice
+          eventId={event.id}
+          currentStage={event.stage}
+          viewedStage={viewedStage}
+          viewedStepIndex={viewedIndex}
+          onLeaveView={() => selectStep(currentIndex)}
+        />
+      )}
 
       {/* Ключ — ЭТАП, а не версия данных: смена этапа это новая форма, а
           обновление карточки (своя же мутация в соседней панели, инвалидация,
-          чужая правка) не должно пересобирать форму и терять набранное. */}
-      <ActiveStage
-        key={event.stage}
-        event={event}
-        bulletinDirty={bulletinDirty}
-      />
+          чужая правка) не должно пересобирать форму и терять набранное.
+          В режиме просмотра чужого шага панель ЦЕЛИКОМ выключена `inert`:
+          поля и значения видны (прятать их значило бы скрыть предмет
+          просмотра), но ни клик, ни Tab внутрь не проходят — иначе форма
+          принимала бы ввод, который сервер на этой стадии отвергнет. */}
+      <div
+        inert={viewingOtherStep || undefined}
+        className={viewingOtherStep ? "opacity-60" : undefined}
+      >
+        <ActiveStage
+          key={viewedStage}
+          event={event}
+          stage={viewedStage}
+          bulletinDirty={bulletinDirty}
+        />
+      </div>
     </DashboardLayout>
   );
 }
@@ -311,14 +372,87 @@ function StageHeading({ stage }: { stage: SecurityEventStage }) {
   );
 }
 
+/**
+ * Полоса режима просмотра: админ смотрит НЕ тот шаг, на котором стоит ОМ.
+ *
+ * Она обязана говорить три вещи и говорить их словами, а не оттенком: что
+ * показан чужой шаг, где мероприятие на самом деле, и что правки здесь сервер
+ * не примет. Последнее — не пугалка: гварды стадий живы, и форма под полосой
+ * выключена именно потому, что отправка вернула бы 422.
+ *
+ * Кнопка «Перевести ОМ сюда» — тот самый обход под правом
+ * `event.stage_override`: она не «разблокирует форму на клиенте», а меняет
+ * стадию на сервере, после чего панель оживает сама, потому что шаг стал
+ * текущим. Переход попадает и в журнал переходов, и в журнал мутаций.
+ */
+function StageViewNotice({
+  eventId,
+  currentStage,
+  viewedStage,
+  viewedStepIndex,
+  onLeaveView,
+}: {
+  eventId: string;
+  currentStage: SecurityEventStage;
+  viewedStage: SecurityEventStage;
+  viewedStepIndex: number;
+  onLeaveView: () => void;
+}) {
+  const override = useOverrideStage(eventId);
+  const currentStepIndex = stepIndexOfStage(currentStage);
+  return (
+    <div
+      className="border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 mb-3 rounded-md border px-3 py-2"
+      data-slot="stage-view-notice"
+      role="status"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[12.5px]">
+          <p className="font-semibold text-amber-900 dark:text-amber-100">
+            Просмотр шага {viewedStepIndex + 1} из {EVENT_STEPS.length} —
+            мероприятие стоит на шаге {currentStepIndex + 1}
+            {" «"}
+            {EVENT_STEPS[currentStepIndex].label}
+            {"»"}
+          </p>
+          <p className="text-amber-800 dark:text-amber-200/90">
+            Форма ниже показана целиком, но выключена: на этой стадии сервер
+            правки не примет.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onLeaveView}>
+            К текущему шагу
+          </Button>
+          <Button
+            size="sm"
+            disabled={override.isPending}
+            onClick={() => override.mutate({ stage: viewedStage })}
+          >
+            {override.isPending ? "Перевод…" : "Перевести ОМ сюда"}
+          </Button>
+        </div>
+      </div>
+      {override.error !== null && (
+        <p className="text-destructive-ink mt-1.5 text-xs">
+          {override.error.message}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ActiveStage({
   event,
+  stage,
   bulletinDirty,
 }: {
   event: SecurityEvent;
+  /** Показываемая стадия: своя у мероприятия либо выбранная админом к просмотру. */
+  stage: SecurityEventStage;
   bulletinDirty: boolean;
 }) {
-  switch (event.stage) {
+  switch (stage) {
     case "BULLETIN":
       return <AwaitingReconStage event={event} bulletinDirty={bulletinDirty} />;
     case "RECON":

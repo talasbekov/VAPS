@@ -33,12 +33,14 @@ import {
   securityEventReconImportPath,
   securityEventReconPath,
   securityEventReplaceAssignmentPath,
+  securityEventStagePath,
 } from "@/entities/security-event";
 import type {
   AddJournalEntryRequest,
   AssignPlacementRequest,
   CloseSecurityEventRequest,
   ListPersonnelResponse,
+  OverrideStageRequest,
   PersonnelSummarySnapshot,
   ReplaceAssignmentRequest,
   AddApproverRequest,
@@ -220,6 +222,21 @@ export function useReplaceAssignment(id: string, options?: StageMutationOptions)
         securityEventReplaceAssignmentPath(id),
         body
       ),
+    options
+  );
+}
+
+/**
+ * Перевод ОМ на выбранный этап в обход условий — только у права
+ * `event.stage_override` (у остальных сервер ответит 403). Идёт тем же
+ * каналом, что и остальные мутации этапа: ответ — ЦЕЛОЕ мероприятие, оно
+ * ложится в кэш детали, и карточка перерисовывается от серверного факта, а
+ * не от догадки клиента о новой стадии.
+ */
+export function useOverrideStage(id: string, options?: StageMutationOptions) {
+  return useEventMutation<OverrideStageRequest>(
+    id,
+    (body) => opsApiClient.post<SecurityEvent>(securityEventStagePath(id), body),
     options
   );
 }

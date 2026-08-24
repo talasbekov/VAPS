@@ -16,6 +16,7 @@ import {
   securityEventBulletinCompletePath,
   securityEventBulletinPath,
   securityEventClosePath,
+  securityEventStagePath,
   securityEventDemandApprovePath,
   securityEventDetailPath,
   securityEventForceAllocationPath,
@@ -1117,6 +1118,48 @@ export const securityEventsHandlers = [
       );
     }
   ),
+
+  // ── Перевод на любой этап (админ) ──────────────────────────────────────
+  // Зеркало override_stage бэкенда: без него мок-слой отвечал бы 404 на живую
+  // ручку, и режим просмотра выглядел бы сломанным ровно там, где его удобнее
+  // всего разбирать. Право здесь не проверяется — мок прав не знает вовсе
+  // (гейт живёт на сервере и в гварде экрана).
+  http.post(`*${securityEventStagePath(":id")}`, async ({ params, request }) => {
+    const { event, response } = findEvent(params.id as string);
+    if (event === null) return response;
+    const body = (await request.json()) as { stage?: string };
+    const readiness: Record<string, number> = {
+      BULLETIN: 0,
+      RECON: 15,
+      DEMAND: 30,
+      APPROVAL: 75,
+      ACKNOWLEDGEMENT: 85,
+      CONDUCT: 95,
+    };
+    const target = body.stage ?? "";
+    // CLOSED сюда не входит намеренно — закрывают по итогам направлений.
+    if (!(target in readiness)) {
+      return validationError({ stage: ["Недопустимый этап для перевода."] });
+    }
+    if (event.stage === target) return HttpResponse.json(event);
+    appendAudit({
+      action: "security_event.stage_override",
+      entityType: "SecurityEvent",
+      entityId: event.code,
+      oldValue: { stage: event.stage },
+      newValue: { stage: target },
+    });
+    return HttpResponse.json(
+      saveEvent({
+        ...event,
+        stage: target as typeof event.stage,
+        readinessPercent: readiness[target],
+        // Выход из закрытия снимает штамп закрытия — как на сервере.
+        closedAt: event.stage === "CLOSED" ? null : event.closedAt,
+        updatedAt: nowIso(),
+      })
+    );
+  }),
 
   // ── Закрытие ───────────────────────────────────────────────────────────
   http.post(

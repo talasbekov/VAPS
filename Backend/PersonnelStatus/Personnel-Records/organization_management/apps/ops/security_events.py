@@ -1137,6 +1137,68 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
 # ── Закрытие ────────────────────────────────────────────────────────────────
 
 
+# Стадии, на которые администратор переводит ОМ вручную — ВХОДНЫЕ стадии пяти
+# шагов цепочки, а не все девять: шаг «Расстановка» начинается с «Потребности»,
+# шаг «Закрытие» — с «Проведения», и предлагать середину шага значило бы
+# показывать в интерфейсе стадии, которых цепочка не называет.
+#
+# CLOSED в списке НЕТ намеренно. Закрытие несёт итоги направлений и время
+# закрытия; «перевести сюда» без них завело бы архив, которого не было, — а
+# закрытое ОМ читают отчёты и выгрузки. Закрывают через close_event, по итогам.
+STAGE_OVERRIDE_TARGETS = [
+    "BULLETIN", "RECON", "DEMAND", "APPROVAL", "ACKNOWLEDGEMENT", "CONDUCT",
+]
+
+
+@transaction.atomic
+def override_stage(event_id, *, stage, actor):
+    """Перевод ОМ на выбранный этап в обход условий — админ-полномочие.
+
+    Обычная цепочка проверяет готовность каждого этапа (`_require_stage` и
+    проверки полноты), и это правильно для того, кто ведёт мероприятие.
+    Администратору нужен другой инструмент: пройти карточку целиком, посмотреть
+    любой этап и вернуть ОМ назад — на разборе, демонстрации и при исправлении
+    чужой ошибки. Поэтому обход НЕ ослабляет гварды этапов, а стоит рядом с
+    ними отдельной операцией под отдельным правом.
+
+    След остаётся двойной: переход в журнале переходов (FORWARD/RETURN считает
+    `record_transition`) и запись в журнале мутаций — обход условий это решение
+    человека, и по нему разбираются поимённо.
+    """
+    event = lock_event(event_id)
+    if stage not in STAGE_OVERRIDE_TARGETS:
+        raise _validation(
+            {"stage": ["Недопустимый этап для перевода."]},
+            message="На этот этап перевести нельзя.",
+        )
+    old_stage = event.stage
+    # Идемпотентность: перевод на текущий этап — не ошибка, а «уже там».
+    # Иначе повтор запроса (двойной клик, ретрай сети) писал бы в журнал
+    # переход из этапа в него же.
+    if old_stage == stage:
+        return event
+    event.stage = stage
+    event.readiness_percent = STAGE_READINESS[stage]
+    fields = ["stage", "readiness_percent", "updated_at"]
+    # Выход из закрытия снимает время закрытия: живое мероприятие со штампом
+    # «закрыто в …» врало бы и в карточке, и в выгрузках. Итоги направлений
+    # при этом ОСТАЮТСЯ — это собранный факт, а не следствие стадии.
+    if old_stage == "CLOSED":
+        event.closed_at = None
+        fields.append("closed_at")
+    event.save(update_fields=fields)
+    record_transition(event, old_stage, stage)
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECURITY_EVENT_STAGE_OVERRIDDEN,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value={"stage": old_stage},
+        new_value={"stage": stage, "code": event.code},
+    )
+    return event
+
+
 @transaction.atomic
 def close_event(event_id, *, direction_summaries, actor):
     event = lock_event(event_id)

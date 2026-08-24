@@ -497,3 +497,13 @@ export function securityEventReplaceAssignmentPath(id: string): string {
 export function securityEventClosePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/close/`;
 }
+
+/** Перевод ОМ на выбранный этап в обход условий — админ-полномочие
+ * (`event.stage_override`), см. apps/ops/security_events.py::override_stage. */
+export function securityEventStagePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/stage/`;
+}
+
+export interface OverrideStageRequest extends Record<string, unknown> {
+  stage: SecurityEventStage;
+}

@@ -95,6 +95,20 @@ export const EVENT_STEPS = [
   stages: readonly SecurityEventStage[];
 }[];
 
+/**
+ * Стадия, на которую переводит шаг цепочки, — ВХОДНАЯ стадия шага, а не любая
+ * из его стадий: шаг «Расстановка» начинается с «Потребности», шаг «Закрытие» —
+ * с «Проведения». Список зеркалит STAGE_OVERRIDE_TARGETS бэкенда; `CLOSED`
+ * сюда не попадает намеренно — закрывают по итогам, а не переводом.
+ */
+export const STEP_ENTRY_STAGE: Record<string, SecurityEventStage> = {
+  RECON: "RECON",
+  PLACEMENT: "DEMAND",
+  APPROVAL: "APPROVAL",
+  ACKNOWLEDGEMENT: "ACKNOWLEDGEMENT",
+  CLOSURE: "CONDUCT",
+};
+
 /** Индекс шага цепочки для стадии бэкенда; -1 не бывает — покрыты все девять. */
 export function stepIndexOfStage(stage: SecurityEventStage): number {
   return EVENT_STEPS.findIndex((step) =>

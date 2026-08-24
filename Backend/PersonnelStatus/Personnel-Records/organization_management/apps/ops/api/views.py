@@ -183,6 +183,7 @@ from organization_management.apps.ops.api.serializers import (
 
 _READ_EVENT_PERMISSION = "event.view"
 _MANAGE_EVENT_PERMISSION = "event.manage"
+_STAGE_OVERRIDE_PERMISSION = "event.stage_override"
 
 
 class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -224,6 +225,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "journal": _MANAGE_EVENT_PERMISSION,
         "conduct_replace": _MANAGE_EVENT_PERMISSION,
         "close": _MANAGE_EVENT_PERMISSION,
+        # Перевод на произвольный этап — СВОЁ право, не event.manage:
+        # ведущий мероприятие проходит цепочку по правилам, обход правил
+        # остаётся администратору.
+        "stage_override": _STAGE_OVERRIDE_PERMISSION,
     }
     http_method_names = ["get", "post", "patch", "delete", "options"]
 
@@ -542,6 +547,17 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 assignment_id=data.get("assignmentId"),
                 incoming_employee_id=data.get("incomingEmployeeId"),
                 reason_code=data.get("reasonCode"),
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="stage")
+    def stage_override(self, request, pk=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.override_stage(
+                pk,
+                stage=data.get("stage"),
+                actor=resolve_actor_id(request),
             )
         )
 
