@@ -138,9 +138,12 @@ def create_event(
     title = str(title or "").strip()
     if title == "":
         field_errors["title"] = ["Обязательное поле."]
+    # Объект НЕОБЯЗАТЕЛЕН (решение заказчика 24.08): бюллетень заводят, когда
+    # маршрут ещё не согласован, и объекты дописывают позже кнопкой у строки
+    # реестра. Без объекта не будет привязки паспорта — а значит и импорта
+    # постов на рекогносцировке; это не молчаливая потеря: импорт отвечает
+    # NO_PASSPORT_VERSION со своим текстом.
     object_id = str(object_id or "").strip()
-    if object_id == "":
-        field_errors["objectId"] = ["Обязательное поле."]
     # Тип — обязателен: от него зависят маршрут согласования и старший. У
     # строк, заведённых до появления поля, он NULL, но новые без него не
     # заводятся (иначе легаси-пробел рос бы дальше).
@@ -206,7 +209,7 @@ def create_event(
             field_errors["chiefEmployeeId"] = ["Сотрудник не найден."]
 
     security_object = None
-    if not field_errors:
+    if not field_errors and object_id != "":
         security_object = (
             OpsSecurityObject.objects.filter(pk=object_id).first()
             if object_id.isdigit()
@@ -223,14 +226,17 @@ def create_event(
     # CONSTRAINT_ERROR_MAP, а не второй такой же номер.
     number = OpsSecurityEvent.objects.count() + 1
     binding = None
-    applicable = resolve_applicable_version(security_object, parsed_date)
-    if applicable is not None:
-        binding = bind_passport_version(security_object, applicable, now)
+    if security_object is not None:
+        applicable = resolve_applicable_version(security_object, parsed_date)
+        if applicable is not None:
+            binding = bind_passport_version(security_object, applicable, now)
     event = OpsSecurityEvent.objects.create(
         code=f"ОМ-{parsed_date.year}-{number}",
         title=title,
         security_object=security_object,
-        object_name=security_object.name,
+        # Пустое имя — «объект не выбран», а не «объект без названия»: экраны
+        # различают это словами (см. реестр и карточку ОМ).
+        object_name="" if security_object is None else security_object.name,
         passport_binding=binding,
         business_date=parsed_date,
         business_date_end=parsed_end,
@@ -273,18 +279,19 @@ def create_event(
         closure_direction_summaries=[],
         closed_at=None,
     )
-    # Объект посещения заводится вместе с бюллетенем: реестр раскрывает строку
-    # мероприятия именно этим списком, и ОМ без единой строки в нём выглядело
-    # бы как «объекты не заведены», хотя объект выбран в окне создания.
-    OpsSecurityEventVisitObject.objects.create(
-        event=event,
-        security_object=security_object,
-        object_name=security_object.name,
-        passport_binding=binding,
-        protected_person=person,
-        protected_person_name=person.name if person is not None else "",
-        position=0,
-    )
+    # Объект посещения заводится вместе с бюллетенем — но только если объект
+    # ВЫБРАН: у ОМ без объекта раскрытие строки честно пусто («объекты
+    # посещения не заведены»), и там же стоит кнопка их добавить.
+    if security_object is not None:
+        OpsSecurityEventVisitObject.objects.create(
+            event=event,
+            security_object=security_object,
+            object_name=security_object.name,
+            passport_binding=binding,
+            protected_person=person,
+            protected_person_name=person.name if person is not None else "",
+            position=0,
+        )
     record_transition(event, None, "BULLETIN")
     audit_service.record(
         actor=actor,

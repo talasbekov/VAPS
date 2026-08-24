@@ -146,18 +146,69 @@ def test_create_without_applicable_version_leaves_binding_null(manager):
 
 
 def test_create_validation(manager):
+    """Обязательны название, дата и тип. Объект — НЕТ (решение 24.08).
+
+    Пустой objectId в списке ошибок больше не ждём: бюллетень заводят до
+    согласования маршрута, а объекты дописывают позже (ClickUp 86eyqf7a7).
+    """
     resp = manager.post(
         URL,
         {"title": " ", "objectId": "", "businessDate": "10.08.2026"},
         format="json",
     )
     assert resp.status_code == 400
-    assert set(resp.json()["details"]) == {
-        "title",
-        "objectId",
-        "businessDate",
-        "kind",
-    }
+    assert set(resp.json()["details"]) == {"title", "businessDate", "kind"}
+
+
+def test_create_without_object(manager):
+    """ОМ без объекта заводится: ни привязки, ни объекта посещения.
+
+    Пустое имя объекта — «не выбран», а не «объект без названия»; раскрытие
+    строки реестра у такого ОМ честно пусто, и объекты добавляются кнопкой.
+    """
+    resp = manager.post(
+        URL,
+        {
+            "title": "Визит без маршрута",
+            "businessDate": "2026-08-10",
+            "kind": "INTERNAL",
+        },
+        format="json",
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["objectId"] is None
+    assert data["objectName"] == ""
+    assert data["passportBinding"] is None
+    assert data["visitObjects"] == []
+
+    # Импорт постов из паспорта у такого ОМ отвечает СВОИМ отказом, а не 500.
+    base = f"{URL}{data['id']}/"
+    manager.patch(
+        f"{base}bulletin/",
+        {"briefDescription": "x", "initialTasks": "y"},
+        format="json",
+    )
+    manager.post(f"{base}bulletin/complete/")
+    failed = manager.post(f"{base}recon/import-from-passport/")
+    assert failed.status_code == 422
+    assert failed.json()["error_code"] == "NO_PASSPORT_VERSION"
+
+
+def test_create_with_unknown_object_still_refused(manager):
+    """Необязательное поле не значит «любое значение»: чужой id — ошибка."""
+    resp = manager.post(
+        URL,
+        {
+            "title": "Визит",
+            "objectId": "9999",
+            "businessDate": "2026-08-10",
+            "kind": "INTERNAL",
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["details"]["objectId"] == ["Объект не найден в реестре."]
 
 
 def test_create_carries_bulletin_fields(manager):
@@ -886,5 +937,66 @@ def test_visit_objects_need_manage_permission(viewer, manager):
         f"{URL}{event_id}/visit-objects/",
         {"objectId": str(second.pk)},
         format="json",
+    )
+    assert resp.status_code == 403
+
+
+# ── Заведение объекта из окна создания ОМ ────────────────────────────────────
+
+
+def test_create_object_from_event_dialog(manager):
+    """«Объекта нет в списке — добавить»: минимальная карточка, код по порядку.
+
+    Паспорт у новой карточки НЕ оформлен — это факт: секторы и посты заводит
+    владелец объекта, и привязывать к мероприятию до публикации версии нечего.
+    """
+    make_object(code="OBJ-1", name="Резиденция")
+    api, _ = client_for(
+        "obj-manager", "OBJ_MANAGER", perms=("object.view", "object.manage")
+    )
+    resp = api.post(
+        "/api/ops/objects/",
+        {
+            "name": "Новый концертный зал",
+            "objectType": "Культура",
+            "region": "г. Астана",
+            "address": "ул. Кунаева, 1",
+        },
+        format="json",
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["name"] == "Новый концертный зал"
+    assert data["code"] == "OBJ-002"
+    assert data["passportState"] == "RED"
+    assert data["objectState"] == "ACTIVE"
+
+    # Заведённый объект сразу виден в списке выбора окна создания ОМ.
+    listed = manager.get("/api/ops/security-events/bindable-objects/").json()
+    assert data["id"] in [row["id"] for row in listed["results"]]
+
+
+def test_create_object_refuses_blank_and_duplicate_name(manager):
+    make_object(code="OBJ-1", name="Резиденция")
+    api, _ = client_for(
+        "obj-manager2", "OBJ_MANAGER2", perms=("object.view", "object.manage")
+    )
+    resp = api.post("/api/ops/objects/", {"name": "  "}, format="json")
+    assert resp.status_code == 400
+    assert resp.json()["details"]["name"] == ["Обязательное поле."]
+
+    # Тёзка — почти всегда повтор ввода: две одинаковые строки в списке
+    # выбора потом неразличимы.
+    resp = api.post("/api/ops/objects/", {"name": "резиденция"}, format="json")
+    assert resp.status_code == 400
+    assert resp.json()["details"]["name"] == [
+        "Объект с таким названием уже есть в реестре."
+    ]
+
+
+def test_create_object_needs_manage_permission(manager):
+    """Право вести мероприятия не даёт заводить объекты в реестре."""
+    resp = manager.post(
+        "/api/ops/objects/", {"name": "Чужой объект"}, format="json"
     )
     assert resp.status_code == 403

@@ -67,9 +67,25 @@ class SecurityObjectViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSe
     permission_map = {
         "list": _READ_OBJECT_PERMISSION,
         "retrieve": _READ_OBJECT_PERMISSION,
+        "create": _MANAGE_OBJECT_PERMISSION,
         "passport": _MANAGE_OBJECT_PERMISSION,
         "passport_versions": _MANAGE_OBJECT_PERMISSION,
     }
+
+    # Заведение объекта прямо из окна создания ОМ: «объекта нет в списке —
+    # добавить» (ClickUp 86eyqf7a7). Карточка МИНИМАЛЬНАЯ, паспорт не оформлен —
+    # его ведёт владелец объекта в своём разделе.
+    def create(self, request):
+        security_object = passport_service.create_object(
+            name=request.data.get("name"),
+            object_type=request.data.get("objectType"),
+            region=request.data.get("region"),
+            address=request.data.get("address"),
+            ownership=request.data.get("ownership"),
+        )
+        return Response(
+            SecurityObjectSerializer(security_object).data, status=201
+        )
 
     def get_queryset(self):
         # Порядок задаёт Meta.ordering модели, и владелец у него ОДИН.

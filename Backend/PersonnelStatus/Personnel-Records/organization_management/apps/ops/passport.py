@@ -19,6 +19,7 @@ from organization_management.apps.operations.models_object import (
     OpsObjectSector,
     OpsPassportFreshnessPolicy,
     OpsPassportVersion,
+    OpsSecurityObject,
     OpsSecurityPost,
 )
 
@@ -141,6 +142,70 @@ def _validate_sectors_payload(sectors):
                 ]
     if field_errors:
         raise _validation(field_errors)
+
+
+@transaction.atomic
+def create_object(*, name, object_type, region, address, ownership=None):
+    """Завести объект охраны прямо из окна создания ОМ.
+
+    Реестр объектов ведёт владелец объекта, но заказчику нужен путь «объекта
+    нет в списке — добавить» на месте (ClickUp 86eyqf7a7): иначе бюллетень
+    упирается в чужой процесс. Поэтому заводится МИНИМАЛЬНАЯ карточка, а не
+    полная: имя обязательно, остальное — то, что человек знает в этот момент.
+
+    Код НЕ спрашивается у человека: он уникален в реестре, и придуманный на
+    ходу дубль отбивался бы ограничением базы уже после заполнения формы.
+    Номер выдаётся по порядку реестра.
+
+    Паспорт у новой карточки НЕ оформлен (RED) — это факт, а не заготовка:
+    секторы и посты заводит владелец объекта в своём разделе, и до публикации
+    версии привязывать к мероприятию нечего.
+    """
+    field_errors = {}
+    name = str(name or "").strip()
+    if name == "":
+        field_errors["name"] = ["Обязательное поле."]
+    elif len(name) > 255:
+        field_errors["name"] = ["Не длиннее 255 символов."]
+    elif OpsSecurityObject.objects.filter(name__iexact=name).exists():
+        # Тёзка в реестре — почти всегда повтор ввода, а не второй объект с
+        # тем же именем: две одинаковые строки в выпадающем списке потом
+        # неразличимы.
+        field_errors["name"] = ["Объект с таким названием уже есть в реестре."]
+
+    object_type = str(object_type or "").strip()
+    region = str(region or "").strip()
+    address = str(address or "").strip()
+    for field, value, limit in (
+        ("objectType", object_type, 100),
+        ("region", region, 255),
+        ("address", address, 500),
+    ):
+        if len(value) > limit:
+            field_errors[field] = [f"Не длиннее {limit} символов."]
+
+    ownership = str(ownership or OpsSecurityObject.Ownership.GUARDED).strip()
+    if ownership not in dict(OpsSecurityObject.Ownership.choices):
+        field_errors["ownership"] = ["Неизвестный вид принадлежности."]
+    if field_errors:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail=field_errors,
+            message="Проверьте заполнение карточки объекта.",
+        )
+
+    number = OpsSecurityObject.objects.count() + 1
+    return OpsSecurityObject.objects.create(
+        name=name,
+        code=f"OBJ-{number:03d}",
+        object_type=object_type,
+        region=region,
+        address=address,
+        object_state=OpsSecurityObject.ObjectState.ACTIVE,
+        passport_state=OpsSecurityObject.PassportState.RED,
+        ownership=ownership,
+    )
 
 
 @transaction.atomic
