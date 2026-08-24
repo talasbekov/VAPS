@@ -183,6 +183,10 @@ async function prepareEvent(token: string): Promise<string> {
     title: 'Проба ознакомления (e2e)',
     objectId: object.id,
     businessDate: '2026-08-22',
+    // `kind` обязателен с 23.08: без него сервер отдаёт 400, `created.id`
+    // выходит undefined, и проба падает не на своём предмете, а на строке
+    // «не удалось подготовить фикстуру».
+    kind: 'INTERNAL',
   })) as unknown as { id: string; code: string }
   const id = created.id
   const base = `/api/ops/security-events/${id}`
