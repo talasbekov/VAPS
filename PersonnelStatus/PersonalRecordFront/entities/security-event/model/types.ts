@@ -255,6 +255,26 @@ export function securityEventDetailPath(id: string): string {
 
 export const BINDABLE_OBJECTS_PATH = `${SECURITY_EVENTS_PATH}bindable-objects/`;
 
+/** Объекты посещения мероприятия: добавление и снятие. */
+export function visitObjectsPath(eventId: string): string {
+  return `${securityEventDetailPath(eventId)}visit-objects/`;
+}
+
+export function visitObjectDetailPath(
+  eventId: string,
+  visitObjectId: string
+): string {
+  return `${visitObjectsPath(eventId)}${visitObjectId}/`;
+}
+
+/** Строка реестра объектов для выбора: подпись и наличие паспорта. */
+export interface BindableObject {
+  id: string;
+  name: string;
+  code: string;
+  publishedVersionCount: number;
+}
+
 export interface ListSecurityEventsParams {
   search: string;
   stage: SecurityEventStage | "ALL";
