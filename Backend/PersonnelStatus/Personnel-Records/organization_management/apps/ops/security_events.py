@@ -1970,6 +1970,22 @@ def assign_placement(
     if post is None:
         raise _not_found("Пост не найден.", post_id)
     employee_key = str(employee.pk)
+    # Кандидаты — СОСТАВ мероприятия: расставляют тех, кого штаб отдал
+    # (Plane №73, шаг «СС-6»). У мероприятий без состава (их вели прежним
+    # путём, числами по группам) правило не включается — иначе новая цепочка
+    # заперла бы им расстановку.
+    if event.force_roster and all(
+        str(member.get("employeeId")) != employee_key
+        for member in event.force_roster
+    ):
+        raise DomainError(
+            "NOT_IN_ROSTER",
+            422,
+            message=(
+                f"{personnel_display_name(employee)} не в составе мероприятия — "
+                "на посты ставят тех, кого штаб принял в «Сборе сил»."
+            ),
+        )
     # hard-правило: сотрудник не может занимать два поста одного ОМ
     if any(
         a.get("employeeId") == employee_key and a.get("postId") != post_id
