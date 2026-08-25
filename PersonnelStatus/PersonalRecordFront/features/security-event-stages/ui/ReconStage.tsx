@@ -37,10 +37,17 @@ import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDate } from "@/shared/lib/date";
 
-let localSeq = 0;
+// Пометка ещё не сохранённой строки. Была счётчиком, обнулявшимся на каждой
+// загрузке страницы, — и так как сервер писал присланный id как есть, у одного
+// ОМ накапливались посты с одинаковым `recon-local-1` (Plane №30). Теперь id
+// строке выдаёт СЕРВЕР, а это имя живёт только до сохранения: оно должно быть
+// уникальным в пределах вкладки, потому что служит ключом React.
 function nextLocalId(): string {
-  localSeq += 1;
-  return `recon-local-${localSeq}`;
+  const unique =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+  return `recon-local-${unique}`;
 }
 
 export function ReconStage({ event }: { event: SecurityEvent }) {
@@ -58,8 +65,18 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     null
   );
 
+  // Ответ сохранения переносится в форму: id строкам выдаёт сервер, и без
+  // переноса форма осталась бы с локальными именами — «Сохранить» считало бы
+  // черновик изменённым навсегда, а «Завершить» осталось бы заблокированным.
   const update = useUpdateRecon(event.id, {
     onFormError: (details) => setFieldErrors(details),
+    onEvent: (fresh) => {
+      setChecklist(fresh.reconChecklist);
+      setRows(fresh.reconSectorPosts);
+      setForceRequest(
+        fresh.reconForceRequest === 0 ? "" : String(fresh.reconForceRequest)
+      );
+    },
   });
   // Импорт добавляет строки на СЕРВЕРЕ, поэтому его ответ переносится в форму
   // явно: карточка ОМ больше не пересобирается на каждом обновлении данных, и

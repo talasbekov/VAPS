@@ -788,7 +788,9 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.override_stage(om.pk, stage="ACKNOWLEDGEMENT", actor=ACTOR)
     event_service.override_stage(om.pk, stage="RECON", actor=ACTOR)
     om.refresh_from_db()
-    event_service.update_recon(
+    # Id строке расчёта выдаёт СЕРВЕР (Plane №30) — «row-1» это пометка
+    # черновика клиента, в сохранённом расчёте её нет. Берём выданный.
+    recon_post_id = event_service.update_recon(
         om.pk,
         checklist=[
             {**item, "done": True} for item in om.recon_checklist
@@ -811,7 +813,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         # Запрос личного состава — условие завершения рекогносцировки
         # (Plane «Реестр ОМ-23»): её итог адресуется штабу 2-го департамента.
         force_request=12,
-    )
+    ).recon_sector_posts[0]["id"]
     event_service.complete_recon(om.pk)
     event_service.approve_demand(
         om.pk,
@@ -839,7 +841,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     roster_employee = employee_in(home)
     event_service.assign_placement(
         om.pk,
-        post_id="row-1",
+        post_id=recon_post_id,
         employee_id=str(roster_employee.pk),
         override=None,
         override_reason=None,
