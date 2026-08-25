@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useOpsAuditLogs } from "@/hooks/use-ops-audit";
+import { auditActionLabel, isKnownAuditAction } from "@/entities/audit-log";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
 import { LoadFailure } from "@/components/load-failure";
@@ -31,7 +32,10 @@ export default function OpsAuditPage() {
     const q = search.trim().toLowerCase();
     if (q === "") return all;
     return all.filter((log) =>
-      `${log.action} ${log.entityType} ${log.entityId} ${log.actorUserId} ${log.reason}`
+      // Поиск идёт и ПО ПОДПИСИ, а не только по коду: человек ищет
+      // «замещающ», а не `SECURITY_EVENT_DEPUTY_ASSIGNED`. Код тоже остаётся
+      // искомым — по нему ищут те, кто пришёл из кода или из отчёта.
+      `${auditActionLabel(log.action)} ${log.action} ${log.entityType} ${log.entityId} ${log.actorUserId} ${log.reason}`
         .toLowerCase()
         .includes(q)
     );
@@ -108,7 +112,18 @@ export default function OpsAuditPage() {
                     <TableCell className="tabular-nums">
                       ID {log.actorUserId}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{log.action}</TableCell>
+                    {/* Подпись действия, а не код: журнал читают вслух при
+                        разбирательстве. Действие без подписи печатается кодом
+                        и моноширинным — так видно, что подписи нет; полноту
+                        карты стережёт проба на стороне сервера. */}
+                    <TableCell
+                      className={
+                        isKnownAuditAction(log.action) ? "" : "font-mono text-xs"
+                      }
+                      title={isKnownAuditAction(log.action) ? log.action : undefined}
+                    >
+                      {auditActionLabel(log.action)}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {log.entityType} · {log.entityId}
                     </TableCell>
