@@ -482,6 +482,36 @@ export interface ListPersonnelResponse {
   results: PersonnelSummarySnapshot[];
 }
 
+/**
+ * Страница кадрового списка («Реестр ОМ-35.3»). Приходит ТОЛЬКО когда клиент
+ * попросил постраничку (`page`/`pageSize`); без них ручка отдаёт весь снимок
+ * в `ListPersonnelResponse` — экраны расстановки и ознакомления читают его
+ * целиком, и обрезка сузила бы им выбор людей.
+ *
+ * `next`/`previous` — НОМЕРА страниц (контракт раздела), `null` — края списка.
+ */
+export interface PersonnelPageResponse extends ListPersonnelResponse {
+  /** Сколько НАЙДЕНО всего — с учётом поиска, а не на странице. */
+  count: number;
+  next: string | null;
+  previous: string | null;
+}
+
+/** Поиск идёт НА СЕРВЕР: фильтр по загруженной странице отвечал бы «такого
+ * сотрудника нет», имея в виду «нет на этой странице». */
+export function opsPersonnelPagePath(params: {
+  search: string;
+  page: number;
+  pageSize: number;
+}): string {
+  const query = new URLSearchParams({
+    page: String(params.page),
+    page_size: String(params.pageSize),
+  });
+  if (params.search.trim() !== "") query.set("search", params.search.trim());
+  return `${OPS_PERSONNEL_PATH}?${query.toString()}`;
+}
+
 export function securityEventBulletinPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/bulletin/`;
 }

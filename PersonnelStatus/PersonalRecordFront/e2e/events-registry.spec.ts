@@ -816,6 +816,36 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const submit = dialog.getByRole('button', { name: 'Назначить' })
     await expect(submit).toBeDisabled()
 
+    // Поиск идёт НА СЕРВЕР («Реестр ОМ-35.3»): вводим часть фамилии первого
+    // в списке и проверяем, что счётчик найденного СУЗИЛСЯ. Клиентский фильтр
+    // по загруженной странице такого счётчика дать не может — он не знает,
+    // сколько нашлось всего.
+    const firstName = (
+      await dialog.locator('li button span span').first().innerText()
+    ).trim()
+    const term = firstName.split(' ')[0]
+    // Ожидаемое число берём У СЕРВЕРА той же ручкой: ассерт «стало не больше»
+    // был бы вечнозелёным, а «стало меньше» — ложным, если фамилия у всех
+    // одна. Совпадение с ответом сервера доказывает, что поиск ушёл туда.
+    const expected = (await (
+      await fetch(
+        `${API}/api/ops/personnel/?page_size=1&search=${encodeURIComponent(term)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+    ).json()) as { count: number }
+    await dialog.getByRole('textbox', { name: 'Поиск сотрудника' }).fill(term)
+    await expect
+      .poll(
+        async () => {
+          const line = await dialog.getByText(/^Найдено \d+/).innerText()
+          // Берём ПЕРВОЕ число: в строке рядом стоит номер страницы, и
+          // «выкинуть все нецифры» склеило бы «Найдено 1 · страница 1» в 11.
+          return Number(/Найдено (\d+)/.exec(line)?.[1] ?? -1)
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(expected.count)
+
     const person = dialog.locator('li button').first()
     const personName = (await person.locator('span span').first().innerText()).trim()
     await person.click()
