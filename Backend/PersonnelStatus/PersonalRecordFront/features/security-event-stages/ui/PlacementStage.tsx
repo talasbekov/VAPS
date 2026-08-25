@@ -389,6 +389,26 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     return parts.length === 0 ? null : parts.join("; ");
   })();
 
+  /** Смена поста — из строк ПОТРЕБНОСТИ: у самого поста поля смены нет.
+   *
+   * Совпадение ищется по сектору и задаче — по ним строка потребности и
+   * заводилась. Копию смены в пост не пишем: она разошлась бы с потребностью
+   * при первой же её правке, а «расширять, не подменять» здесь означает
+   * читать факт у владельца. Совпадений нет — смена не показывается вовсе,
+   * а не рисуется прочерком: прочерк читается как «смена не назначена».
+   */
+  function shiftOfPost(post: ReconSectorPost): string {
+    const shifts = event.demandRows
+      .filter(
+        (row) =>
+          row.sector.trim() === post.sector.trim() &&
+          row.task.trim() === post.task.trim() &&
+          row.shift.trim() !== ""
+      )
+      .map((row) => row.shift.trim());
+    return [...new Set(shifts)].join(", ");
+  }
+
   const sectors = useMemo(() => {
     const list: { name: string; posts: ReconSectorPost[] }[] = [];
     for (const post of posts) {
@@ -681,6 +701,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               />
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate">{post.post}</span>
+                                {shiftOfPost(post) !== "" && (
+                                  <span className="block truncate text-[10px] text-muted-foreground">
+                                    {shiftOfPost(post)}
+                                  </span>
+                                )}
                                 {/* Кто на посту — прямо в дереве, как в
                                     прототипе: иначе «кто где стоит» читается
                                     только по одному посту за раз, а расстановку
@@ -717,7 +742,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold">{selected.post}</p>
-                    <p className="text-xs text-muted-foreground">{selected.sector}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {selected.sector}
+                      {shiftOfPost(selected) === ""
+                        ? ""
+                        : ` · ${shiftOfPost(selected)}`}
+                    </p>
                   </div>
                   <span
                     className={
