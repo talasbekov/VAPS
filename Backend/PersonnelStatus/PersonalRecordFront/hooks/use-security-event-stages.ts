@@ -10,7 +10,6 @@ import { useOpsMutation } from "@/hooks/use-ops-mutation";
 import type { UseOpsMutationResult } from "@/hooks/use-ops-mutation";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
-  OPS_PERSONNEL_PATH,
   opsPersonnelPagePath,
   OPS_PERSONNEL_ME_PATH,
   securityEventAcknowledgePath,
@@ -40,7 +39,6 @@ import type {
   AddJournalEntryRequest,
   AssignPlacementRequest,
   CloseSecurityEventRequest,
-  ListPersonnelResponse,
   PersonnelPageResponse,
   OverrideStageRequest,
   PersonnelSummarySnapshot,
@@ -79,20 +77,14 @@ function useEventMutation<TVariables extends Record<string, unknown>>(
   });
 }
 
-export function usePersonnelRoster() {
-  return useQuery<ListPersonnelResponse, OpsApiFailure>({
-    queryKey: ["ops-personnel"],
-    queryFn: () => opsApiClient.get<ListPersonnelResponse>(OPS_PERSONNEL_PATH),
-  });
-}
-
 /**
  * СТРАНИЦА кадрового списка с поиском на сервере («Реестр ОМ-35.3»).
  *
- * Отдельный хук, а не параметры к `usePersonnelRoster`: у них разные ответы
- * (страница несёт `count`/`next`) и разные читатели. Экраны, которым нужен
- * весь снимок, продолжают брать его целиком — обрезка сузила бы им выбор
- * людей молча.
+ * ЕДИНСТВЕННЫЙ способ прочитать кадры: хук «весь снимок целиком»
+ * (`usePersonnelRoster`) снят вместе с безстраничной веткой ручки (Plane
+ * №61). Пока он был, четыре экрана тянули всю кадровую базу одним ответом и
+ * фильтровали её на клиенте — «поиск», который отвечает «никого не нашлось»,
+ * имея в виду «нет в загруженном».
  *
  * `placeholderData` держит предыдущую страницу на экране, пока грузится
  * следующая: без него список мигает в пустоту на каждом нажатии «Дальше», и

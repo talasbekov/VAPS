@@ -28,6 +28,14 @@ export interface PersonnelPickerProps {
   /** Сбрасывает поиск и страницу: окно открылось заново — начинаем с чистого
    *  листа, а не с прошлого запроса. */
   resetKey?: unknown;
+  /**
+   * Id поля поиска. Нужен, когда подбор стоит внутри поля формы со СВОЕЙ
+   * подписью (`<label for>`): без id подпись осталась бы висеть в пустоте, а
+   * со своим `aria-label` поле имело бы два имени — и побеждало бы внутреннее,
+   * то есть подпись поля («Старший наряда») до человека не дошла бы вовсе.
+   * Поэтому вместе с id снимается и внутренний `aria-label`.
+   */
+  searchInputId?: string;
 }
 
 export function PersonnelPicker({
@@ -37,6 +45,7 @@ export function PersonnelPicker({
   disabledNote = "недоступен",
   pageSize = 20,
   resetKey,
+  searchInputId,
 }: PersonnelPickerProps) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -64,19 +73,22 @@ export function PersonnelPicker({
   const blocked = disabledIds ?? new Set<string>();
 
   return (
-    <div className="space-y-2">
+    // Метка узла нужна пробам: подбор стоит внутри окон, где есть и другие
+    // списки, и «первая кнопка в списке» без неё цепляла бы чужой.
+    <div className="space-y-2" data-slot="personnel-picker">
       <div className="relative">
         <Search
           className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden="true"
         />
         <Input
+          id={searchInputId}
           className="pl-8"
           // Короткая подсказка: длинная обрезалась на полуслове в окне
           // шириной 520 px — «табельному ном…» читается как сбой, а не как
           // подсказка. Полный список полей поиска живёт в докстринге ручки.
           placeholder="Поиск: ФИО, звание, подразделение"
-          aria-label="Поиск сотрудника"
+          aria-label={searchInputId === undefined ? "Поиск сотрудника" : undefined}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -115,9 +127,14 @@ export function PersonnelPicker({
                 >
                   <span className="min-w-0">
                     <span className="block font-medium">{person.name}</span>
+                    {/* Разделитель ставится только МЕЖДУ непустыми частями: у
+                        сотрудника без звания строка начиналась с висящей
+                        точки («· Управление»), и это читалось как потерянное
+                        значение. */}
                     <span className="block text-[11px] text-muted-foreground">
-                      {person.rankLabel}
-                      {person.unit === "" ? "" : ` · ${person.unit}`}
+                      {[person.rankLabel, person.unit]
+                        .filter((part) => part !== "")
+                        .join(" · ")}
                     </span>
                   </span>
                   {already && (
