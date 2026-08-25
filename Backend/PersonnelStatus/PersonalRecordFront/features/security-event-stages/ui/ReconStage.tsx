@@ -146,7 +146,21 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         <ObjectFacts event={event} />
 
         <section>
-          <h3 className="mb-2 text-sm font-semibold">Чек-лист объекта</h3>
+          {/* Счётчик выполненного — из эталона («Выполнено: N»). Без него
+              длину осмотра приходилось оценивать глазом по галочкам, а
+              «сколько осталось» — единственное, что от чек-листа нужно на
+              бегу. Считается по ЧЕРНОВИКУ формы, а не по сохранённому ОМ:
+              галочка ставится до сохранения, и отставший счётчик читался бы
+              как «не засчиталось». Живым регионом НЕ объявлен: счёт меняет
+              сам человек своей же галочкой, и объявлять ему его действие —
+              шум. */}
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold">Чек-лист объекта</h3>
+            <span className="text-xs text-muted-foreground">
+              Выполнено: {checklist.filter((item) => item.done).length} из{" "}
+              {checklist.length}
+            </span>
+          </div>
           <div className="flex flex-col gap-2">
             {checklist.map((item) => (
               <div

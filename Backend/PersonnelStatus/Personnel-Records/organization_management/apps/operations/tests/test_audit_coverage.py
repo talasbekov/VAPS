@@ -776,10 +776,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         kind="INTERNAL",
         actor=ACTOR,
     )
+    # ОМ с объектом заводится СРАЗУ на рекогносцировке (Plane «Реестр ОМ-5»),
+    # завершать бюллетень нечего — своего шага у него нет. Сведения бюллетеня
+    # при этом правятся на любой стадии, кроме закрытой.
     event_service.update_bulletin(
         om.pk, brief_description="покрытие", initial_tasks="покрытие"
     )
-    event_service.complete_bulletin(om.pk)
     # Перевод админом на произвольный этап и обратно: обход условий пишет свой
     # вид журнала. Возврат ОБЯЗАТЕЛЕН — иначе ОМ уехало бы с рекогносцировки, и
     # цепочка ниже пошла бы не с той стадии.

@@ -439,7 +439,9 @@ def test_operations_levels_and_event_card(analyst_api, ops_world):
     buckets = {
         b["stateCode"]: b["count"] for b in top["lifecycleDistribution"]
     }
-    assert buckets["BULLETIN"] == 1
+    # ОМ С ОБЪЕКТОМ заводится сразу на рекогносцировке (Plane «Реестр ОМ-5»):
+    # стадии «Бюллетень» у него не бывает вовсе, и распределение это видит.
+    assert buckets["RECON"] == 1
 
     event_level = analyst_api.get(
         OPERATIONS, {"level": "EVENT", "event_id": str(ops_world.pk)}
@@ -462,11 +464,11 @@ def test_operations_levels_and_event_card(analyst_api, ops_world):
 
 
 def test_funnel_built_from_transition_journal(analyst_api, ops_world):
-    """Журнал пишут операции стадий: заведение даёт вход в BULLETIN, возврат
-    с согласования — переход RETURN, и воронка их различает."""
+    """Журнал пишут операции стадий: заведение ОМ с объектом даёт вход в
+    RECON, возврат с согласования — переход RETURN, и воронка их различает."""
     # Достроим путь до согласования и вернём на доработку.
     OpsSecurityEventTransition.objects.create(
-        event=ops_world, from_stage="BULLETIN", to_stage="APPROVAL",
+        event=ops_world, from_stage="RECON", to_stage="APPROVAL",
         kind="FORWARD", occurred_at=Clock.now(),
     )
     OpsSecurityEvent.objects.filter(pk=ops_world.pk).update(stage="APPROVAL")
@@ -474,7 +476,7 @@ def test_funnel_built_from_transition_journal(analyst_api, ops_world):
     data = analyst_api.get(OPERATIONS).json()["data"]
     funnel = data["funnel"]
     stages = {s["stateCode"]: s["values"] for s in funnel["stages"]}
-    assert stages["BULLETIN"]["REACHED"] == 1
+    assert stages["RECON"]["REACHED"] == 1
     assert stages["PLACEMENT"]["TRANSITIONS"] == 1
     assert stages["PLACEMENT"]["RETURNS"] == 1
     # Незакрытый интервал (ОМ стоит на PLACEMENT) в среднее не попадает.
@@ -482,9 +484,10 @@ def test_funnel_built_from_transition_journal(analyst_api, ops_world):
     assert funnel["transitionCount"] == 3
 
 
-def test_create_event_records_bulletin_transition(ops_world):
+def test_create_event_records_entry_transition(ops_world):
+    # Вход в цепочку у ОМ с объектом — сразу RECON, а не BULLETIN.
     row = OpsSecurityEventTransition.objects.filter(
-        event=ops_world, to_stage="BULLETIN"
+        event=ops_world, to_stage="RECON"
     ).get()
     assert row.from_stage is None
     assert row.kind == "FORWARD"
