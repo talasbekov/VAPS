@@ -68,10 +68,16 @@ class SecurityObjectViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSe
     permission_map = {
         "list": _READ_OBJECT_PERMISSION,
         "retrieve": _READ_OBJECT_PERMISSION,
+        "history": _READ_OBJECT_PERMISSION,
         "create": _MANAGE_OBJECT_PERMISSION,
         "passport": _MANAGE_OBJECT_PERMISSION,
         "passport_versions": _MANAGE_OBJECT_PERMISSION,
     }
+
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        """История ОМ на объекте и лица, его посещавшие (Plane №38)."""
+        return Response({"results": gvo_service.object_event_history(pk)})
 
     # Заведение объекта прямо из окна создания ОМ: «объекта нет в списке —
     # добавить» (ClickUp 86eyqf7a7). Карточка МИНИМАЛЬНАЯ, паспорт не оформлен —
@@ -2297,10 +2303,19 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     Только чтение с фронта; правка — Django Admin (Admin = справочники).
     """
 
-    permission_map = {"list": "event.view"}
+    permission_map = {"list": "event.view", "history": "event.view"}
 
     def list(self, request):
         return Response({"results": gvo_service.list_persons()})
+
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        """История ОМ охраняемого лица (задача заказчика Plane №38).
+
+        Право то же, что у справочника: история — это те же мероприятия, что
+        видны в реестре, собранные по лицу.
+        """
+        return Response({"results": gvo_service.person_event_history(pk)})
 
 
 class OpsLegalDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):

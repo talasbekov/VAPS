@@ -7,7 +7,10 @@
 from django.core.exceptions import ValidationError
 
 from organization_management.apps.operations import audit_service
-from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.operations.models_event import (
+    OpsSecurityEvent,
+    OpsSecurityEventVisitObject,
+)
 from organization_management.apps.operations.models_gvo import (
     OpsGvoSummaryPatch,
     OpsProtectedPerson,
@@ -54,6 +57,148 @@ def list_persons():
         }
         for p in OpsProtectedPerson.objects.filter(is_active=True)
     ]
+
+
+# ── История мероприятий (задача заказчика Plane №38) ────────────────────────
+#
+# «Когда закрывается мероприятие, то как история в модулях Охраняемые лица и
+# Объекты и паспорта должна быть кнопка история».
+#
+# ТОЛЬКО ЗАКРЫТЫЕ. История — это то, что уже случилось; действующее ОМ живёт в
+# реестре и меняется, и показывать его в истории значило бы показывать
+# незаконченное как факт.
+#
+# Связь «лицо ↔ объект» живёт на ОБЪЕКТЕ ПОСЕЩЕНИЯ, а не на мероприятии: в
+# одном бюллетене лицо посещает свои объекты, и у длинного ОМ объекты разных
+# лиц идут одной строкой реестра. Поэтому в истории лица показываются НЕ все
+# объекты мероприятия, а только его собственные — ровно как просил заказчик.
+
+CLOSED_STAGE = "CLOSED"
+
+
+def _history_event(event):
+    return {
+        "eventId": str(event.pk),
+        "code": event.code,
+        "title": event.title,
+        "kind": event.kind,
+        "businessDate": event.business_date.isoformat(),
+        "businessDateEnd": (
+            event.business_date_end.isoformat()
+            if event.business_date_end is not None
+            else None
+        ),
+        "closedAt": event.closed_at.isoformat() if event.closed_at else None,
+        "chiefName": event.chief_name,
+    }
+
+
+def person_event_history(person_id):
+    """Закрытые ОМ, в которых участвовало охраняемое лицо.
+
+    Лицо привязано ДВУМЯ способами: полем бюллетеня (`protected_person` у ОМ) и
+    объектом посещения. Оба означают участие, и брать только одно значило бы
+    терять половину истории — у ОМ, заведённых до появления объектов посещения,
+    связь есть только в бюллетене.
+    """
+    visits = (
+        OpsSecurityEventVisitObject.objects.filter(
+            protected_person_id=person_id, event__stage=CLOSED_STAGE
+        )
+        .select_related("event")
+        .order_by("event__business_date", "position", "id")
+    )
+    by_event = {}
+    order = []
+    for visit in visits:
+        if visit.event_id not in by_event:
+            by_event[visit.event_id] = {
+                **_history_event(visit.event),
+                "objects": [],
+            }
+            order.append(visit.event_id)
+        by_event[visit.event_id]["objects"].append(
+            {
+                "visitObjectId": str(visit.pk),
+                "objectId": (
+                    str(visit.security_object_id)
+                    if visit.security_object_id is not None
+                    else None
+                ),
+                "objectName": visit.object_name,
+                "visitDay": (
+                    visit.visit_day.isoformat()
+                    if visit.visit_day is not None
+                    else None
+                ),
+                "note": visit.note,
+            }
+        )
+    # ОМ, где лицо названо ТОЛЬКО в бюллетене: объектов у него в истории нет —
+    # и это факт, а не пропуск, поэтому строка всё равно показывается.
+    bulletin_only = (
+        OpsSecurityEvent.objects.filter(
+            protected_person_id=person_id, stage=CLOSED_STAGE
+        )
+        .exclude(pk__in=by_event.keys())
+        .order_by("business_date", "id")
+    )
+    for event in bulletin_only:
+        by_event[event.pk] = {**_history_event(event), "objects": []}
+        order.append(event.pk)
+    # Новые сверху: историю читают от последнего.
+    rows = [by_event[key] for key in order]
+    rows.sort(key=lambda row: (row["businessDate"], row["code"]), reverse=True)
+    return rows
+
+
+def object_event_history(object_id):
+    """Закрытые ОМ, проходившие на объекте, и лица, посещавшие его.
+
+    Лица берутся С ОБЪЕКТА ПОСЕЩЕНИЯ этого мероприятия, а не из бюллетеня: в
+    длинном ОМ на разных объектах разные лица, и лицо из бюллетеня в истории
+    объекта означало бы «посещал», хотя он мог там и не быть.
+    """
+    visits = (
+        OpsSecurityEventVisitObject.objects.filter(
+            security_object_id=object_id, event__stage=CLOSED_STAGE
+        )
+        .select_related("event")
+        .order_by("event__business_date", "position", "id")
+    )
+    by_event = {}
+    order = []
+    for visit in visits:
+        row = by_event.get(visit.event_id)
+        if row is None:
+            row = {**_history_event(visit.event), "persons": []}
+            by_event[visit.event_id] = row
+            order.append(visit.event_id)
+        name = visit.protected_person_name.strip()
+        # Дедупа тут НЕТ намеренно: один объект не заводится в одно ОМ дважды
+        # (ограничение `uniq_ops_event_visit_object`), значит на пару
+        # «мероприятие + объект» приходится ровно одна строка и ровно одно
+        # лицо. Проверка «нет ли уже такого имени» была бы кодом, который не
+        # исполняется, и пробой, которая ничего не стережёт.
+        if name != "":
+            row["persons"].append(
+                {
+                    "personId": (
+                        str(visit.protected_person_id)
+                        if visit.protected_person_id is not None
+                        else None
+                    ),
+                    "name": name,
+                    "visitDay": (
+                        visit.visit_day.isoformat()
+                        if visit.visit_day is not None
+                        else None
+                    ),
+                }
+            )
+    rows = [by_event[key] for key in order]
+    rows.sort(key=lambda row: (row["businessDate"], row["code"]), reverse=True)
+    return rows
 
 
 def _event_or_none(om_code):

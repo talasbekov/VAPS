@@ -7,7 +7,11 @@
 // BACKEND_URL (http://localhost:8100), и относительный путь резолвился бы от
 // origin документа (:3106) — запрос молча ушёл бы в сеть мимо мока.
 import { http, HttpResponse } from "msw";
-import { PROTECTED_PERSONS_PATH } from "@/entities/protected-person";
+import {
+  PROTECTED_PERSONS_PATH,
+  protectedPersonHistoryPath,
+} from "@/entities/protected-person";
+import { readEventsStore } from "./security-events-handlers";
 import type {
   ListProtectedPersonsResponse,
   ProtectedPerson,
@@ -53,6 +57,51 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
 ];
 
 export const protectedPersonsHandlers = [
+  // История ОМ лица (Plane №38). ПЕРЕД списком: путь списка иначе съел бы
+  // `/{id}/history/` более ранним совпадением.
+  //
+  // Мок собирает её из своего же стора мероприятий по тем же правилам, что
+  // сервер: только ЗАКРЫТЫЕ ОМ, и объекты — только те, где названо ЭТО лицо.
+  http.get(`*${protectedPersonHistoryPath(":id")}`, ({ params }) => {
+    const id = params.id as string;
+    const rows = readEventsStore()
+      .filter((event) => event.stage === "CLOSED")
+      .map((event) => ({
+        event,
+        objects: event.visitObjects.filter(
+          (visit) => visit.protectedPersonId === id
+        ),
+      }))
+      .filter(
+        ({ event, objects }) =>
+          objects.length > 0 || event.protectedPersonId === id
+      )
+      .map(({ event, objects }) => ({
+        eventId: event.id,
+        code: event.code,
+        title: event.title,
+        kind: event.kind,
+        businessDate: event.businessDate,
+        businessDateEnd: event.businessDateEnd,
+        closedAt: event.closedAt,
+        chiefName: event.chiefName,
+        objects: objects.map((visit) => ({
+          visitObjectId: visit.id,
+          objectId: visit.objectId,
+          objectName: visit.objectName,
+          visitDay: visit.visitDay,
+          note: visit.note,
+        })),
+      }))
+      // Новые сверху: историю читают от последнего.
+      .sort((a, b) =>
+        a.businessDate === b.businessDate
+          ? b.code.localeCompare(a.code)
+          : b.businessDate.localeCompare(a.businessDate)
+      );
+    return HttpResponse.json({ results: rows });
+  }),
+
   http.get(`*${PROTECTED_PERSONS_PATH}`, () =>
     HttpResponse.json<ListProtectedPersonsResponse>({
       results: PROTECTED_PERSONS_CATALOG,

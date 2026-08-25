@@ -337,6 +337,12 @@ function persist(next: SecurityEvent[]): void {
   }
 }
 
+/** Стор мероприятий для соседних мок-модулей: историю ОМ собирают карточки
+ * лица и объекта, и второй копии стора у них быть не должно. */
+export function readEventsStore(): SecurityEvent[] {
+  return getEvents();
+}
+
 function getEvents(): SecurityEvent[] {
   if (events === null) {
     events = loadPersisted() ?? buildSeed();

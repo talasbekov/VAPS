@@ -6,10 +6,12 @@ import {
   buildObjectsKpi,
   resolveFreshness,
   OPS_OBJECTS_PATH,
+  objectHistoryPath,
   objectDetailPath,
   objectPassportPath,
   objectPassportVersionsPath,
 } from "@/entities/security-object";
+import { readEventsStore } from "./security-events-handlers";
 import type {
   ListObjectsResponse,
   PassportVersion,
@@ -121,6 +123,43 @@ export const objectsHandlers = [
       unavailableKpi: UNAVAILABLE_OBJECT_KPI,
     };
     return HttpResponse.json(response);
+  }),
+
+  // История ОМ на объекте (Plane №38): закрытые мероприятия и лица, посещавшие
+  // ИМЕННО его. Стоит ПЕРЕД деталью объекта — иначе `/{id}/history/` съел бы
+  // более ранний путь детали.
+  http.get(`*${objectHistoryPath(":id")}`, ({ params }) => {
+    const id = params.id as string;
+    const rows = readEventsStore()
+      .filter((event) => event.stage === "CLOSED")
+      .map((event) => ({
+        event,
+        visits: event.visitObjects.filter((visit) => visit.objectId === id),
+      }))
+      .filter(({ visits }) => visits.length > 0)
+      .map(({ event, visits }) => ({
+        eventId: event.id,
+        code: event.code,
+        title: event.title,
+        kind: event.kind,
+        businessDate: event.businessDate,
+        businessDateEnd: event.businessDateEnd,
+        closedAt: event.closedAt,
+        chiefName: event.chiefName,
+        persons: visits
+          .filter((visit) => visit.protectedPersonName.trim() !== "")
+          .map((visit) => ({
+            personId: visit.protectedPersonId,
+            name: visit.protectedPersonName,
+            visitDay: visit.visitDay,
+          })),
+      }))
+      .sort((a, b) =>
+        a.businessDate === b.businessDate
+          ? b.code.localeCompare(a.code)
+          : b.businessDate.localeCompare(a.businessDate)
+      );
+    return HttpResponse.json({ results: rows });
   }),
 
   http.get(`*${objectDetailPath(":id")}`, ({ params }) => {

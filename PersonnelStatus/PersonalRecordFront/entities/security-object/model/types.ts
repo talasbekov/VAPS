@@ -151,6 +151,11 @@ export interface PublishPassportVersionRequest extends Record<string, unknown> {
 // устарела и снята: по ней экран числился бы моком.
 export const OPS_OBJECTS_PATH = "/api/ops/objects/";
 
+/** История ОМ на объекте (задача заказчика Plane №38). */
+export function objectHistoryPath(id: string): string {
+  return `${OPS_OBJECTS_PATH}${encodeURIComponent(id)}/history/`;
+}
+
 export function objectDetailPath(id: string): string {
   return `${OPS_OBJECTS_PATH}${id}/`;
 }
