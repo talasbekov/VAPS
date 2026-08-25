@@ -844,6 +844,48 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         override=None,
         override_reason=None,
     )
+    # Замещающие на объекте посещения: выдача и отзыв права — решения,
+    # раздающие ВОЗМОЖНОСТЬ править чужую расстановку, и они именные. Плюс
+    # сама операция расстановки, сделанная замещающим: она пишет журнал
+    # только в этом случае — обычная расстановка следа не оставляет.
+    from organization_management.apps.employees.models import Employee
+
+    visit = om.visit_objects.first()
+    deputy_employee = Employee.objects.create(
+        personnel_number="P-DEP",
+        last_name="Замещающий",
+        first_name="Пётр",
+        birth_date="1990-01-01",
+        gender="M",
+        iin="940000009999",
+        hire_date="2015-01-01",
+        employment_status="working",
+    )
+    event_service.add_visit_object_deputy(
+        om.pk,
+        visit.pk,
+        employee_id=str(deputy_employee.pk),
+        can_edit_placement=True,
+        actor=ACTOR,
+    )
+    om.refresh_from_db()
+    event_service.assign_placement(
+        om.pk,
+        post_id=om.recon_sector_posts[0]["id"],
+        employee_id=str(deputy_employee.pk),
+        override=None,
+        override_reason=None,
+        deputy=deputy_employee,
+    )
+    om.refresh_from_db()
+    event_service.unassign_placement(
+        om.pk, om.placement_assignments[-1]["id"], deputy=deputy_employee
+    )
+    deputy_row = visit.deputies.get()
+    event_service.remove_visit_object_deputy(
+        om.pk, visit.pk, deputy_row.pk, actor=ACTOR
+    )
+
     event_service.complete_placement(om.pk)
     event_service.approve_placement(om.pk)
     om.refresh_from_db()

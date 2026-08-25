@@ -42,6 +42,11 @@ interface EventRow {
   stage: string
   objectId: string | null
   objectName: string
+  visitObjects?: {
+    id: string
+    objectName: string
+    deputies: { id: string; employeeName: string; canEditPlacement: boolean }[]
+  }[]
 }
 
 async function events(token: string, stage = ''): Promise<EventRow[]> {
@@ -582,4 +587,79 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
       page.getByRole('group', { name: 'Личный состав на сбор' }),
     ).toBeVisible({ timeout: 15_000 })
   })
+
+  test('замещающие назначаются из строки объекта и видны с их правом', async ({
+    page,
+  }) => {
+    // Задача заказчика «Реестр ОМ-24». Проба идёт ЧЕРЕЗ ЭКРАН — раскрытие
+    // строки, окно, выбор человека, — а не дёргает ручку: предмет требования
+    // это кнопка «рядом со строкой объекта», и ассерт на API её не стережёт.
+    const token = await apiToken()
+    const rows = await events(token)
+    const target = rows.find(
+      (r) =>
+        (r.visitObjects ?? []).length > 0 &&
+        (r.visitObjects ?? []).every((v) => v.deputies.length === 0) &&
+        r.stage !== 'CLOSED',
+    )
+    test.skip(
+      target === undefined,
+      'на стенде нет ОМ с объектом посещения и без замещающих',
+    )
+    const visit = target!.visitObjects![0]
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page
+      .getByRole('button', {
+        name: new RegExp(`объекты посещения ${target!.code}`, 'i'),
+      })
+      .first()
+      .click()
+
+    // Ищем СТРОКУ ОБЪЕКТА во врезке (`li`), а не `tr`: имя объекта стоит и в
+    // колонке самого бюллетеня, и `tr` с ним находится у каждого ОМ на этом
+    // объекте — их на стенде десятки.
+    const row = page.locator('li').filter({ hasText: visit.objectName }).first()
+    // Регистр из РАЗМЕТКИ, а не с экрана: капс делает `uppercase`, а
+    // `toContainText` читает textContent и капса не видит.
+    await expect(row).toContainText('Замещающие:', { timeout: 15_000 })
+    await expect(row).toContainText('не назначены')
+
+    await row
+      .getByRole('button', {
+        name: `Добавить замещающего на объект ${visit.objectName}`,
+      })
+      .click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Замещающий на объекте')
+    // Кнопка заперта, пока человек не выбран: назначать некого.
+    const submit = dialog.getByRole('button', { name: 'Назначить' })
+    await expect(submit).toBeDisabled()
+
+    const person = dialog.locator('li button').first()
+    const personName = (await person.locator('span span').first().innerText()).trim()
+    await person.click()
+    await expect(submit).toBeEnabled()
+    await submit.click()
+
+    // Право названо СЛОВОМ, а не только присутствием в списке: наблюдателя от
+    // правящего по одному имени в строке не отличить.
+    await expect(row).toContainText(personName, { timeout: 15_000 })
+    await expect(row).toContainText('правит расстановку')
+
+    // И это видит сервер, а не только экран.
+    const fresh = (await events(token)).find((r) => r.id === target!.id)
+    const savedVisit = (fresh?.visitObjects ?? []).find((v) => v.id === visit.id)
+    expect(savedVisit?.deputies.map((d) => d.canEditPlacement)).toEqual([true])
+
+    // Снятие уносит право — фикстура не копится между прогонами.
+    await row
+      .getByRole('button', {
+        name: `Снять замещающего ${personName} с объекта ${visit.objectName}`,
+      })
+      .click()
+    await expect(row).toContainText('не назначены', { timeout: 15_000 })
+  })
+
 })
