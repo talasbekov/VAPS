@@ -36,6 +36,7 @@ from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
     OpsSecurityPost,
 )
+from organization_management.apps.ops.api.views import OpsPersonnelViewSet
 from organization_management.apps.ops.passport import publish_version
 from organization_management.apps.operations.tests.test_bulk_status_api import (
     client_for,
@@ -380,6 +381,93 @@ def test_personnel_snapshot_shape(manager):
             "unit": "Отдел охраны объектов",
         }
     ]
+
+
+def test_personnel_search_and_pagination_on_the_server(manager):
+    """Поиск и постраничка кадрового списка идут НА СЕРВЕР («Реестр ОМ-35.3»).
+
+    Требование заказчика — «выпадающий список с пагинацией сотрудников с
+    возможностью поиска». Поиск обязан идти сюда: фильтр по загруженной
+    странице отвечал бы «такого нет», имея в виду «нет на этой странице».
+
+    Проба держит и обратную половину контракта: БЕЗ параметров ответ прежний —
+    весь список без конверта постранички, потому что экраны расстановки и
+    ознакомления читают снимок целиком, и молчаливая обрезка сузила бы им
+    выбор людей.
+    """
+    division = Division.objects.create(
+        name="Отдел охраны объектов", code="D-OO", division_type="division"
+    )
+    people = [
+        make_employee(last_name=name, first_name="Иван")
+        for name in ("Абенов", "Битен", "Ваулин", "Гуров", "Дюсенов")
+    ]
+    StaffUnit.objects.create(division=division, employee=people[0], index=1)
+
+    # Без параметров — весь список, конверта постранички нет.
+    plain = manager.get("/api/ops/personnel/").json()
+    assert len(plain["results"]) == 5
+    assert "count" not in plain
+
+    # Страница — ровно своего размера, с номерами соседних страниц.
+    first = manager.get("/api/ops/personnel/?page_size=2").json()
+    assert [p["name"] for p in first["results"]] == ["Абенов И.", "Битен И."]
+    assert first["count"] == 5
+    assert first["next"] == "2"
+    assert first["previous"] is None
+
+    third = manager.get("/api/ops/personnel/?page=3&page_size=2").json()
+    assert [p["name"] for p in third["results"]] == ["Дюсенов И."]
+    # Последняя страница НЕ обещает следующую: иначе список листался бы в
+    # пустоту.
+    assert third["next"] is None
+    assert third["previous"] == "2"
+
+    # Поиск сужает ВСЮ выборку, а не страницу: count тоже про найденное.
+    found = manager.get("/api/ops/personnel/?search=улин&page_size=2").json()
+    assert [p["name"] for p in found["results"]] == ["Ваулин И."]
+    assert found["count"] == 1
+
+    # Искать можно и по подразделению — оно видно в строке списка.
+    by_unit = manager.get(
+        "/api/ops/personnel/?search=охраны объектов&page_size=10"
+    ).json()
+    assert [p["name"] for p in by_unit["results"]] == ["Абенов И."]
+
+    # Мусор в параметрах не роняет ручку — страница по умолчанию.
+    junk = manager.get("/api/ops/personnel/?page=abc&page_size=xyz").json()
+    assert junk["count"] == 5
+    assert len(junk["results"]) == 5
+
+
+def test_personnel_page_size_has_a_ceiling(manager):
+    """`?page_size=1000000` не отдаёт кадры целиком: потолок ставит сервер.
+
+    Проба заводит БОЛЬШЕ сотрудников, чем потолок: на пяти строках «обрезано»
+    и «столько и было» неразличимы, и ассерт был бы вакуумным.
+    """
+    ceiling = OpsPersonnelViewSet.MAX_PAGE_SIZE
+    Employee.objects.bulk_create(
+        [
+            Employee(
+                personnel_number=f"P-C{i:04d}",
+                last_name=f"Кадр{i:04d}",
+                first_name="Иван",
+                birth_date="1990-01-01",
+                gender="M",
+                iin=str(960000000000 + i),
+                hire_date="2015-01-01",
+                employment_status="working",
+            )
+            for i in range(ceiling + 1)
+        ]
+    )
+
+    capped = manager.get("/api/ops/personnel/?page_size=1000000").json()
+    assert capped["count"] == ceiling + 1
+    assert len(capped["results"]) == ceiling
+    # Следующая страница ОБЕЩАНА: остаток за потолком не потерян.
+    assert capped["next"] == "2"
 
 
 # ── Сквозной проход всех девяти стадий ───────────────────────────────────────

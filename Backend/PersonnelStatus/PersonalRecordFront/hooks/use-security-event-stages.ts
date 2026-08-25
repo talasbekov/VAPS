@@ -11,6 +11,7 @@ import type { UseOpsMutationResult } from "@/hooks/use-ops-mutation";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
   OPS_PERSONNEL_PATH,
+  opsPersonnelPagePath,
   OPS_PERSONNEL_ME_PATH,
   securityEventAcknowledgePath,
   securityEventAcknowledgementCompletePath,
@@ -40,6 +41,7 @@ import type {
   AssignPlacementRequest,
   CloseSecurityEventRequest,
   ListPersonnelResponse,
+  PersonnelPageResponse,
   OverrideStageRequest,
   PersonnelSummarySnapshot,
   ReplaceAssignmentRequest,
@@ -81,6 +83,40 @@ export function usePersonnelRoster() {
   return useQuery<ListPersonnelResponse, OpsApiFailure>({
     queryKey: ["ops-personnel"],
     queryFn: () => opsApiClient.get<ListPersonnelResponse>(OPS_PERSONNEL_PATH),
+  });
+}
+
+/**
+ * СТРАНИЦА кадрового списка с поиском на сервере («Реестр ОМ-35.3»).
+ *
+ * Отдельный хук, а не параметры к `usePersonnelRoster`: у них разные ответы
+ * (страница несёт `count`/`next`) и разные читатели. Экраны, которым нужен
+ * весь снимок, продолжают брать его целиком — обрезка сузила бы им выбор
+ * людей молча.
+ *
+ * `placeholderData` держит предыдущую страницу на экране, пока грузится
+ * следующая: без него список мигает в пустоту на каждом нажатии «Дальше», и
+ * человек теряет место в перечне.
+ */
+export function usePersonnelPage(params: {
+  search: string;
+  page: number;
+  pageSize?: number;
+  enabled?: boolean;
+}) {
+  const pageSize = params.pageSize ?? 20;
+  return useQuery<PersonnelPageResponse, OpsApiFailure>({
+    queryKey: ["ops-personnel", "page", params.search, params.page, pageSize],
+    queryFn: () =>
+      opsApiClient.get<PersonnelPageResponse>(
+        opsPersonnelPagePath({
+          search: params.search,
+          page: params.page,
+          pageSize,
+        })
+      ),
+    enabled: params.enabled !== false,
+    placeholderData: (previous) => previous,
   });
 }
 

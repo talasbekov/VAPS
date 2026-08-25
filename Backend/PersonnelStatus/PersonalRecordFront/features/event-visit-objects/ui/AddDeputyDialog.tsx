@@ -12,7 +12,7 @@
 //   принимаются они в один момент.
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Search } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -23,10 +23,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/shared/hooks/use-toast";
-import { usePersonnelRoster } from "@/hooks/use-security-event-stages";
+import { PersonnelPicker } from "@/features/personnel-picker";
 import type { SecurityEvent, VisitObject } from "@/entities/security-event";
 import { addVisitObjectDeputy } from "../api/visit-objects-api";
 
@@ -43,7 +42,6 @@ export function AddDeputyDialog({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [canEditPlacement, setCanEditPlacement] = useState(true);
 
@@ -51,29 +49,17 @@ export function AddDeputyDialog({
   // начинаем с чистого листа, а не с прошлого выбора.
   useEffect(() => {
     if (open) {
-      setSearch("");
       setPicked(null);
       setCanEditPlacement(true);
     }
   }, [open]);
 
-  const roster = usePersonnelRoster();
   // Уже назначенные не предлагаются: сервер отобьёт повтор ошибкой поля, а
   // строка в списке обещала бы действие, которое гарантированно не пройдёт.
   const assigned = useMemo(
     () => new Set(visit.deputies.map((deputy) => deputy.employeeId)),
     [visit.deputies]
   );
-  const people = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return (roster.data?.results ?? []).filter(
-      (person) =>
-        query === "" ||
-        person.name.toLowerCase().includes(query) ||
-        person.unit.toLowerCase().includes(query)
-    );
-  }, [roster.data, search]);
-
   const save = useMutation({
     mutationFn: addVisitObjectDeputy,
     onSuccess: () => {
@@ -112,74 +98,16 @@ export function AddDeputyDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="relative">
-            <Search
-              className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              className="pl-8"
-              placeholder="Поиск по ФИО или подразделению"
-              aria-label="Поиск сотрудника"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <div className="max-h-64 overflow-y-auto rounded-md border">
-            {roster.isPending && (
-              <p className="px-3 py-4 text-xs text-muted-foreground">
-                Загрузка кадрового списка…
-              </p>
-            )}
-            {roster.isError && (
-              <p className="px-3 py-4 text-xs text-muted-foreground">
-                Кадровый список сейчас недоступен.
-              </p>
-            )}
-            {roster.data && people.length === 0 && (
-              <p className="px-3 py-4 text-xs text-muted-foreground">
-                По запросу никого не нашлось.
-              </p>
-            )}
-            <ul>
-              {people.map((person) => {
-                const already = assigned.has(person.id);
-                return (
-                  <li key={person.id} className="border-b last:border-0">
-                    <button
-                      type="button"
-                      disabled={already}
-                      onClick={() => setPicked(person.id)}
-                      className={`flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${
-                        picked === person.id ? "bg-muted" : ""
-                      }`}
-                    >
-                      <span className="min-w-0">
-                        <span className="block font-medium">{person.name}</span>
-                        <span className="block text-[11px] text-muted-foreground">
-                          {person.rankLabel}
-                          {person.unit === "" ? "" : ` · ${person.unit}`}
-                        </span>
-                      </span>
-                      {/* Причина недоступности названа словом: серая строка
-                          без объяснения читается как сбой списка. */}
-                      {already && (
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
-                          уже назначен
-                        </span>
-                      )}
-                      {!already && picked === person.id && (
-                        <span className="shrink-0 text-[11px] font-semibold text-primary-ink">
-                          выбран
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          {/* Поиск и страницы — на сервере (Plane «Реестр ОМ-35.3»): раньше
+              окно грузило кадровый снимок целиком и фильтровало загруженное,
+              то есть отвечало «никого не нашлось» про непрогруженных. */}
+          <PersonnelPicker
+            value={picked}
+            onPick={setPicked}
+            disabledIds={assigned}
+            disabledNote="уже назначен"
+            resetKey={open}
+          />
 
           <div className="flex items-start gap-2 rounded-md border p-3">
             <Checkbox

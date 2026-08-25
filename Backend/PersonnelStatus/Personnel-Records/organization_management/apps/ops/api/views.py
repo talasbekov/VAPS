@@ -751,7 +751,27 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "me": _READ_EVENT_PERMISSION,
     }
 
+    #: Потолок страницы. Без него `?page_size=1000000` отдаёт кадры целиком
+    #: одним ответом — размер страницы назначал бы спросивший.
+    MAX_PAGE_SIZE = 100
+
     def list(self, request):
+        """Кадровый снимок: поиск и постраничка НА СЕРВЕРЕ («Реестр ОМ-35.3»).
+
+        Требование заказчика — «выпадающий список с пагинацией сотрудников с
+        возможностью поиска». Поиск обязан идти сюда, а не фильтровать
+        загруженное: фильтр по странице отвечает «такого сотрудника нет», имея
+        в виду «нет на этой странице», — худший вид вранья в подборе людей.
+
+        Постраничка включается ТОЛЬКО по просьбе (`page` или `page_size`).
+        Без них ответ прежний — весь список: экраны расстановки, ознакомления и
+        окно создания ОМ читают снимок целиком и фильтруют его на клиенте, и
+        молчаливая обрезка до двадцати строк сузила бы им выбор людей, ничего
+        не сказав. Переезд этих экранов на серверный поиск — свой шаг
+        (карточка в «Предложено Claude»), а не побочный эффект этого.
+        """
+        from django.db.models import Q
+
         from organization_management.apps.employees.models import Employee
         from organization_management.apps.ops.security_events import (
             personnel_display_name,
@@ -762,6 +782,40 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
             .select_related("rank", "staff_unit__division")
             .order_by("last_name", "first_name", "id")
         )
+
+        # Поиск по тому, что человек видит в строке списка: ФИО, звание,
+        # подразделение и табельный номер. Искать по невидимому полю значит
+        # отдавать строки, про которые непонятно, почему они нашлись.
+        search = (request.query_params.get("search") or "").strip()
+        if search != "":
+            employees = employees.filter(
+                Q(last_name__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(middle_name__icontains=search)
+                | Q(personnel_number__icontains=search)
+                | Q(rank__name__icontains=search)
+                | Q(staff_unit__division__name__icontains=search)
+            ).distinct()
+
+        paginated = (
+            "page" in request.query_params or "page_size" in request.query_params
+        )
+        total = employees.count() if paginated else None
+        page = 1
+        page_size = self.MAX_PAGE_SIZE
+        if paginated:
+            try:
+                page = max(int(request.query_params.get("page", "1")), 1)
+            except ValueError:
+                page = 1
+            try:
+                page_size = max(int(request.query_params.get("page_size", "20")), 1)
+            except ValueError:
+                page_size = 20
+            page_size = min(page_size, self.MAX_PAGE_SIZE)
+            start = (page - 1) * page_size
+            employees = employees[start : start + page_size]
+
         results = []
         for employee in employees:
             # обратный OneToOne без строки бросает RelatedObjectDoesNotExist
@@ -782,7 +836,23 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "unit": unit,
                 }
             )
-        return Response({"results": results})
+        if not paginated:
+            return Response({"results": results})
+        # `next`/`previous` — НОМЕРА страниц, как у реестра ОМ: контракт
+        # раздела один, и второй его вид (ссылки) заставил бы клиента угадывать,
+        # что ему пришло.
+        return Response(
+            {
+                "count": total,
+                "next": (
+                    str(page + 1)
+                    if (page - 1) * page_size + page_size < total
+                    else None
+                ),
+                "previous": str(page - 1) if page > 1 else None,
+                "results": results,
+            }
+        )
 
     @action(detail=False, methods=["get"], url_path="me")
     def me(self, request):
