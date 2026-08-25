@@ -602,6 +602,39 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     })
   })
 
+  test('дерево постов называет назначенного и считает сектор', async ({ page }) => {
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    const name = prepared.roster[0]
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const tree = page.getByRole('main').getByText('Объекты и посты').locator('..').locator('..')
+    await expect(tree).toContainText('Периметр', { timeout: 25_000 })
+    // До назначения имени в дереве НЕТ — иначе ассерт ниже проходил бы всегда.
+    await expect(tree).not.toContainText(name)
+    // Счётчик СЕКТОРА, а не поста: у них разные знаменатели, и ассерт по
+    // «0/» ловил бы любой из них — то есть не проверял бы ничего.
+    const card = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
+    const post = card.reconSectorPosts.find((row: any) => row.id === prepared.postId)
+    const sectorNeed = card.reconSectorPosts
+      .filter((row: any) => row.sector === post.sector)
+      .reduce((sum: number, row: any) => sum + row.need, 0)
+    expect(sectorNeed, 'сектор из одного поста — счётчики сектора и поста совпадут').toBeGreaterThan(
+      post.need,
+    )
+    await expect(tree).toContainText(`0/${sectorNeed}`)
+
+    await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+    })
+    await page.reload()
+    await expect(tree).toContainText(name, { timeout: 25_000 })
+    await expect(tree).toContainText(`1/${sectorNeed}`)
+  })
+
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
