@@ -29,6 +29,7 @@ from organization_management.apps.operations.models_object import (
     OpsPassportFreshnessPolicy,
     OpsSecurityObject,
 )
+from organization_management.apps.operations.models_gvo import OpsProtectedPerson
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.status_types import StatusType
 from organization_management.apps.staff_unit.models import StaffUnit
@@ -81,7 +82,16 @@ def policy():
 
 
 @pytest.fixture
-def stand(dictionary, structure, policy):
+def persons_catalog():
+    """Два охраняемых лица: фикстура истории разводит их по разным объектам."""
+    return [
+        OpsProtectedPerson.objects.create(name="Первое лицо", category="FOREIGN"),
+        OpsProtectedPerson.objects.create(name="Второе лицо", category="OURS"),
+    ]
+
+
+@pytest.fixture
+def stand(dictionary, structure, policy, persons_catalog):
     return structure
 
 
@@ -213,6 +223,34 @@ def test_a_recon_fixture_moved_on_is_rebuilt(stand):
 
     rebuilt = OpsSecurityEvent.objects.get(title=seed_smoke_fixtures.RECON_TITLE)
     assert rebuilt.stage == "RECON"
+
+
+# ── Закрытое мероприятие для истории ─────────────────────────────────────
+
+
+def test_the_closed_fixture_has_two_persons_on_two_objects(stand):
+    """История лица показывает объекты, которые посетило ИМЕННО оно (Plane
+    №38). На фикстуре с одним лицом это правило не проверяется и не
+    показывается: «отобрали по лицу» выглядит так же, как «взяли всё
+    мероприятие»."""
+    seed()
+
+    event = OpsSecurityEvent.objects.get(title=seed_smoke_fixtures.CLOSED_TITLE)
+    visits = list(event.visit_objects.all())
+    assert event.stage == "CLOSED"
+    assert len({visit.security_object_id for visit in visits}) == 2
+    assert len({visit.protected_person_id for visit in visits}) == 2
+
+
+def test_the_closed_fixture_refuses_without_two_persons(
+    dictionary, structure, policy  # noqa: F811
+):
+    """Отказ обязан назвать, чего не хватает: молча собранная фикстура с одним
+    лицом сделала бы историю нечитаемой, а причина осталась бы неизвестной."""
+    with pytest.raises(CommandError) as exc:
+        seed()
+
+    assert "seed_protected_persons" in str(exc.value)
 
 
 # ── Объект с готовым паспортом ───────────────────────────────────────────

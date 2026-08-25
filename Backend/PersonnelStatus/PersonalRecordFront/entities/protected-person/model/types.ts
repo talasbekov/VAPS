@@ -35,3 +35,52 @@ export const PROTECTED_PERSONS_PATH = "/api/ops/protected-persons/";
 export interface ListProtectedPersonsResponse {
   results: ProtectedPerson[];
 }
+
+// ── История мероприятий (задача заказчика Plane №38) ─────────────────────
+
+/**
+ * Строка истории: ЗАКРЫТОЕ мероприятие и то, что связывает его с карточкой,
+ * из которой историю открыли. У охраняемого лица это объекты, которые он ЛИЧНО
+ * посетил (в мероприятии их может быть больше — чужие сюда не едут); у объекта
+ * — лица, посещавшие именно его.
+ */
+export interface EventHistoryRow {
+  eventId: string;
+  code: string;
+  title: string;
+  kind: string | null;
+  businessDate: string;
+  businessDateEnd: string | null;
+  closedAt: string | null;
+  chiefName: string;
+}
+
+export interface PersonHistoryRow extends EventHistoryRow {
+  objects: {
+    visitObjectId: string;
+    objectId: string | null;
+    objectName: string;
+    visitDay: string | null;
+    note: string;
+  }[];
+}
+
+export interface ObjectHistoryRow extends EventHistoryRow {
+  persons: {
+    personId: string | null;
+    name: string;
+    visitDay: string | null;
+  }[];
+}
+
+export function protectedPersonHistoryPath(id: string): string {
+  return `${PROTECTED_PERSONS_PATH}${encodeURIComponent(id)}/history/`;
+}
+
+export interface ListPersonHistoryResponse {
+  results: PersonHistoryRow[];
+}
+
+export interface ListObjectHistoryResponse {
+  results: ObjectHistoryRow[];
+}

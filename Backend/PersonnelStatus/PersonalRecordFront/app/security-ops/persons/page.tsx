@@ -18,7 +18,11 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
-import { useProtectedPersons } from "@/hooks/use-protected-persons";
+import {
+  useProtectedPersons,
+  usePersonEventHistory,
+} from "@/hooks/use-protected-persons";
+import { EventHistoryDialog } from "@/features/event-history";
 import {
   PROTECTED_PERSON_CATEGORIES,
   PROTECTED_PERSON_CATEGORY_LABEL,
@@ -53,6 +57,10 @@ type Disclosure = { personId: string; kind: "events" | "objects" } | null;
 export default function ProtectedPersonsPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const [category, setCategory] = useState<ProtectedPersonCategory>("OURS");
+  // История открывается по кнопке и грузится только тогда: список закрытых ОМ
+  // нужен по запросу, а не всем строкам каталога сразу.
+  const [historyFor, setHistoryFor] = useState<ProtectedPerson | null>(null);
+  const historyQuery = usePersonEventHistory(historyFor?.id ?? null);
   const [disclosure, setDisclosure] = useState<Disclosure>(null);
 
   const canView = hasPermission("event.view");
@@ -147,11 +155,43 @@ export default function ProtectedPersonsPage() {
                       : { personId: person.id, kind }
                   )
                 }
+                onHistory={setHistoryFor}
               />
             ))}
           </div>
         )}
       </div>
+
+      <EventHistoryDialog
+        open={historyFor !== null}
+        onClose={() => setHistoryFor(null)}
+        subject={historyFor?.name ?? ""}
+        relatedLabel="Объекты, которые лицо посетило в этом мероприятии"
+        // Пустой список объектов — ФАКТ, а не пропуск: у ОМ, заведённых до
+        // появления объектов посещения, лицо названо только в бюллетене.
+        relatedEmpty="Объекты посещения у мероприятия не заведены — лицо названо в бюллетене"
+        isLoading={historyQuery.isLoading}
+        isError={historyQuery.isError}
+        rows={(historyQuery.data?.results ?? []).map((row) => ({
+          eventId: row.eventId,
+          code: row.code,
+          title: row.title,
+          businessDate: row.businessDate,
+          businessDateEnd: row.businessDateEnd,
+          closedAt: row.closedAt,
+          chiefName: row.chiefName,
+          related: row.objects.map((item) => ({
+            key: item.visitObjectId,
+            label: item.objectName,
+            note: [
+              item.visitDay === null ? "" : `день ${item.visitDay}`,
+              item.note,
+            ]
+              .filter((part) => part !== "")
+              .join(" · "),
+          })),
+        }))}
+      />
     </DashboardLayout>
   );
 }
@@ -163,6 +203,7 @@ function PersonCard({
   isErrorLinks,
   disclosure,
   onDisclose,
+  onHistory,
 }: {
   person: ProtectedPerson;
   events: SecurityEvent[];
@@ -170,6 +211,7 @@ function PersonCard({
   isErrorLinks: boolean;
   disclosure: "events" | "objects" | null;
   onDisclose: (kind: "events" | "objects") => void;
+  onHistory: (person: ProtectedPerson) => void;
 }) {
   return (
     /* from-card, а не хардкод from-white из прототипа: тот же приём, что
@@ -223,6 +265,18 @@ function PersonCard({
             onClick={() => onDisclose("objects")}
           >
             Объекты ОЛ
+          </Button>
+          {/* История — ЗАКРЫТЫЕ мероприятия лица с объектами, которые он лично
+              посетил (задача заказчика Plane №38). Отдельно от «Все
+              мероприятия с ОЛ»: та кнопка показывает действующие связи, эта —
+              то, что уже случилось. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-[34px] whitespace-nowrap px-4 text-[12px] font-medium"
+            onClick={() => onHistory(person)}
+          >
+            История
           </Button>
         </div>
       </div>

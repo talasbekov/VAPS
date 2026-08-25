@@ -47,6 +47,7 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.operations.models_gvo import OpsProtectedPerson
 from organization_management.apps.operations.models_object import OpsSecurityObject
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.status_types import StatusType
@@ -65,6 +66,8 @@ ASSIGNED_COUNT = 3
 # Объект с готовым паспортом — вторая фикстура: проба паспорта сторожит
 # «нет готового объекта — молчание баннера не проверяется».
 READY_OBJECT_NAME = "Стенд: объект с готовым паспортом"
+CLOSED_TITLE = "Стенд: закрытое мероприятие (фикстура истории)"
+SECOND_OBJECT_NAME = "Стенд: второй объект посещения"
 # Численность заявок фикстуры. Числа НЕ произвольны: проба недобора подменяет
 # первую заявку на «запрошено 9, выделено 4» и ищет на экране ровно
 # «не отдано 5» — значит ни у одной другой заявки недобор не должен равняться
@@ -96,12 +99,14 @@ class Command(BaseCommand):
         event = self._forces_event(day)
         security_object, freshness = self._ready_object(day)
         recon = self._recon_event(day, security_object)
+        closed = self._closed_event(day, security_object)
 
         for employee in assigned:
             self.stdout.write(f"STAND_ASSIGNED={employee.id} {employee.last_name}")
         self.stdout.write(f"STAND_DAY={day.isoformat()}")
         self.stdout.write(f"STAND_FORCES_EVENT={event.code}")
         self.stdout.write(f"STAND_RECON_EVENT={recon.code}")
+        self.stdout.write(f"STAND_CLOSED_EVENT={closed.code}")
         self.stdout.write(
             f"STAND_READY_OBJECT={security_object.code} "
             f"{security_object.passport_state}/{freshness}"
@@ -411,4 +416,73 @@ class Command(BaseCommand):
                     "minRating": None,
                 }
             ],
+        )
+
+    # ── Закрытое мероприятие для истории ────────────────────────────────────
+
+    def _closed_event(self, day, security_object):
+        """Закрытое ОМ с ДВУМЯ объектами посещения у РАЗНЫХ лиц.
+
+        История в карточке лица показывает объекты, которые посетило ИМЕННО
+        оно (задача заказчика Plane №38). На фикстуре с одним лицом это
+        правило не проверяется и не показывается: «отобрали по лицу» выглядит
+        так же, как «взяли всё мероприятие».
+
+        Стадия ставится ПЕРЕВОДОМ ЭТАПА, а не записью в поле: перевод — штатное
+        действие администратора, оно оставляет след в журнале переходов, и
+        закрытое ОМ на стенде получается тем же путём, что в жизни.
+        """
+        existing = OpsSecurityEvent.objects.filter(title=CLOSED_TITLE).first()
+        if existing is not None and existing.stage == "CLOSED":
+            return existing
+        persons = list(OpsProtectedPerson.objects.filter(is_active=True)[:2])
+        if len(persons) < 2:
+            raise CommandError(
+                "в справочнике меньше двух охраняемых лиц — засейте их "
+                "(seed_protected_persons)"
+            )
+        second_object = OpsSecurityObject.objects.filter(
+            name=SECOND_OBJECT_NAME
+        ).first()
+        if second_object is None:
+            # Через сервис, а не вставкой: код объекта выдаёт он, и придуманный
+            # на месте номер уперся бы в уникальность реестра.
+            second_object = passport_service.create_object(
+                name=SECOND_OBJECT_NAME,
+                object_type="Государственное учреждение",
+                region="г. Астана",
+                address="пр. Мәңгілік Ел, 2",
+            )
+        event = event_service.create_event(
+            title=CLOSED_TITLE,
+            object_id=str(security_object.pk),
+            business_date=day - timedelta(days=7),
+            kind=OpsSecurityEvent.Kind.FOREIGN,
+            protected_person_id=str(persons[0].pk),
+            actor=ACTOR,
+        )
+        # Второй объект — с ДРУГИМ лицом: ровно та пара, на которой видно, что
+        # история лица показывает его объекты, а не все объекты мероприятия.
+        event_service.add_visit_object(
+            event.id,
+            object_id=str(second_object.pk),
+            protected_person_id=str(persons[1].pk),
+        )
+        # На «Закрыто» перевода нет и быть не должно: закрывают ИТОГАМИ
+        # направлений, а не переводом этапа. Поэтому фикстура доводится до
+        # «Проведения» переводом (админ-полномочие) и закрывается штатно —
+        # с итогом по каждому направлению расчёта.
+        event = event_service.override_stage(
+            event.id, stage="CONDUCT", actor=ACTOR
+        )
+        directions = sorted(
+            {row.get("sector") for row in (event.recon_sector_posts or [])}
+        )
+        return event_service.close_event(
+            event.id,
+            direction_summaries=[
+                {"direction": direction, "summary": "Замечаний нет."}
+                for direction in directions
+            ],
+            actor=ACTOR,
         )

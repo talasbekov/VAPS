@@ -27,7 +27,7 @@
 //     своё число дней.
 // Все фильтры и поиск живут в URL — состояние экрана переживает перезагрузку
 // и делится ссылкой.
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -62,7 +62,11 @@ import {
   Search,
   Warehouse,
 } from "lucide-react";
-import { useSecurityObjects } from "@/hooks/use-security-objects";
+import {
+  useObjectEventHistory,
+  useSecurityObjects,
+} from "@/hooks/use-security-objects";
+import { EventHistoryDialog } from "@/features/event-history";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import {
@@ -278,6 +282,10 @@ export default function SecurityObjectsPage() {
     return query === "" ? "" : `?back=${encodeURIComponent(query)}`;
   })();
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  // История открывается по кнопке строки и грузится только тогда: список
+  // закрытых ОМ нужен по запросу, а не всем строкам реестра сразу.
+  const [historyFor, setHistoryFor] = useState<SecurityObject | null>(null);
+  const historyQuery = useObjectEventHistory(historyFor?.id ?? null);
 
   const search = searchParams.get("search") ?? "";
   const rawTab = searchParams.get("tab") ?? "";
@@ -581,8 +589,35 @@ export default function SecurityObjectsPage() {
             isError={query.isError}
             objects={filtered}
             freshnessById={freshnessById}
+            onHistory={setHistoryFor}
           />
         </div>
+
+      <EventHistoryDialog
+        open={historyFor !== null}
+        onClose={() => setHistoryFor(null)}
+        subject={historyFor === null ? "" : `${historyFor.code} · ${historyFor.name}`}
+        relatedLabel="Охраняемые лица, посещавшие объект в этом мероприятии"
+        // Пусто — лицо у объекта посещения не названо: у части ОМ его и не
+        // указывают, и «никто не посещал» тут было бы неправдой.
+        relatedEmpty="Охраняемые лица у этого объекта не названы"
+        isLoading={historyQuery.isLoading}
+        isError={historyQuery.isError}
+        rows={(historyQuery.data?.results ?? []).map((row) => ({
+          eventId: row.eventId,
+          code: row.code,
+          title: row.title,
+          businessDate: row.businessDate,
+          businessDateEnd: row.businessDateEnd,
+          closedAt: row.closedAt,
+          chiefName: row.chiefName,
+          related: row.persons.map((item, index) => ({
+            key: `${row.eventId}-${item.personId ?? index}`,
+            label: item.name,
+            note: item.visitDay === null ? "" : `день ${item.visitDay}`,
+          })),
+        }))}
+      />
       </div>
     </DashboardLayout>
   );
@@ -654,6 +689,7 @@ function ObjectsRegistry({
   isError,
   objects,
   freshnessById,
+  onHistory,
 }: {
   /** Текущий отбор реестра — уезжает в карточку для возврата на него. */
   backSuffix: string;
@@ -662,6 +698,7 @@ function ObjectsRegistry({
   isError: boolean;
   objects: SecurityObject[];
   freshnessById: Map<string, PassportFreshness>;
+  onHistory: (object: SecurityObject) => void;
 }) {
   if (isLoading) {
     return (
@@ -697,6 +734,7 @@ function ObjectsRegistry({
       backSuffix={backSuffix}
       objects={objects}
       freshnessById={freshnessById}
+      onHistory={onHistory}
     />
   );
 }
@@ -708,10 +746,12 @@ function ObjectsTable({
   backSuffix,
   objects,
   freshnessById,
+  onHistory,
 }: {
   backSuffix: string;
   objects: SecurityObject[];
   freshnessById: Map<string, PassportFreshness>;
+  onHistory: (object: SecurityObject) => void;
 }) {
   return (
     <Card className="overflow-hidden py-0">
@@ -795,6 +835,17 @@ function ObjectsTable({
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
+                    {/* История — ЗАКРЫТЫЕ ОМ на этом объекте и лица, его
+                        посещавшие (задача заказчика Plane №38). */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mr-1 h-7 px-2 text-[11px]"
+                      aria-label={`История мероприятий: ${object.name}`}
+                      onClick={() => onHistory(object)}
+                    >
+                      История
+                    </Button>
                     <Link
                       href={`/security-ops/objects/${object.id}${backSuffix}`}
                       aria-label={`Открыть объект ${object.name}`}
