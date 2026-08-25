@@ -33,6 +33,9 @@ if (process.env.SMOKE_PASSWORD === undefined) {
 
 export default defineConfig({
   testDir: path.join(__dirname, 'e2e'),
+  // Уборка стенда после прогона: пробные ОМ снимаются с реестра (Plane №62).
+  // Здесь, а не в `afterAll` каждого спека, — см. шапку файла уборки.
+  globalTeardown: path.join(__dirname, 'e2e', 'global-teardown.ts'),
   // Обход и точечные пробы по живому стенду перечислены явно: `**/*.spec.ts`
   // затянул бы сюда любую будущую спеку, которой живой стенд не нужен, и она
   // падала бы у всех, кто его не поднял.
