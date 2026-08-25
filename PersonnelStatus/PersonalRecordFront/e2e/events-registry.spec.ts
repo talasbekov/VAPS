@@ -62,6 +62,8 @@ interface EventRow {
   businessDateEnd?: string | null
   objectId: string | null
   objectName: string
+  /** `null` — ОМ заведено до появления типа: тип не назван. */
+  kind?: 'INTERNAL' | 'FOREIGN' | null
   visitObjects?: {
     id: string
     objectName: string
@@ -177,31 +179,35 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     ).toBeVisible({ timeout: 15_000 })
   })
 
-  test('карточка ОМ: ссылка на сводку ГВО открывает сводку этого ОМ', async ({ page }) => {
+  test('карточка ОМ: мёртвых ссылок на снятый модуль ГВО не осталось', async ({
+    page,
+  }) => {
+    // Модуль «Реестр ГВО» снят (Plane «Реестр ОМ-35.8»). Раньше эта проба
+    // стерегла ссылку «Сводка ГВО →» из шапки карточки; теперь она стережёт
+    // ОБРАТНОЕ: ссылки нет, а её работу делает кнопка «Информация по ГВО»
+    // рядом. Ссылка на удалённый маршрут — 404 в лицо человеку, и молча её
+    // возвращать нельзя.
     const token = await apiToken()
     const rows = await events(token)
-    // Стадия НЕ «Бюллетень» намеренно: там своя ссылка на сводку уже стоит
-    // внутри блока «Сведения об ОМ» с 21.08 — эта проба стережёт ссылку,
-    // видимую на карточке ОБЩО, вне зависимости от активного этапа.
-    const target = rows.find((r) => r.stage !== 'BULLETIN')
-    expect(target, 'на стенде нет ни одного ОМ вне стадии «Бюллетень»').toBeDefined()
+    const target = rows.find((r) => r.stage !== 'BULLETIN' && r.kind !== 'INTERNAL')
+    expect(
+      target,
+      'на стенде нет ОМ с иностранным ОЛ вне стадии «Бюллетень»',
+    ).toBeDefined()
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
-    // Имя ТОЧНОЕ, а не подстрокой: с 25.08 панель бюллетеня раскрывается и на
-    // стадиях после «Бюллетеня», когда он пуст (Plane «Реестр ОМ-5»), и внутри
-    // неё стоит вторая ссылка на ту же сводку («сводки ГВО» в поясняющей
-    // строке). Подстрочный матчер ловил обе и падал строгим режимом. Предмет
-    // этой пробы — ссылка ШАПКИ карточки, видимая на любом этапе.
-    const link = page.getByRole('main').getByRole('link', { name: 'Сводка ГВО →' })
-    await expect(link).toBeVisible({ timeout: 15_000 })
-    await link.click()
-
-    await expect(page).toHaveURL(new RegExp(`/security-ops/gvo/${target!.id}/?$`))
+    const main = page.getByRole('main')
     await expect(
-      page.getByRole('heading', { name: 'Сводные данные' }),
+      main.getByRole('button', { name: 'Информация по ГВО' }),
     ).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText(target!.code)).toBeVisible()
+    await expect(main.getByRole('link', { name: 'Сводка ГВО →' })).toHaveCount(0)
+    // Ни одна ссылка карточки не ведёт на снятый маршрут — проверяем адреса,
+    // а не подписи: подпись могли и переименовать.
+    const deadHrefs = await main
+      .locator('a[href*="/security-ops/gvo"]')
+      .count()
+    expect(deadHrefs, 'на карточке осталась ссылка на снятый модуль ГВО').toBe(0)
   })
 
   test('колонки таблицы и календарь — по прототипу', async ({ page }) => {

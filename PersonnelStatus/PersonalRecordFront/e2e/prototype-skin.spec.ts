@@ -236,7 +236,11 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     // человека, ведущая в «Мой профиль», и она пунктом меню не является.
     const total = groups.reduce((sum, group) => sum + group.links, 0)
     expect(await aside.locator('nav a').count()).toBe(total)
-    expect(total).toBe(19)
+    // 18, а не 19: пункт «Реестр ГВО» снят вместе с модулем (Plane «Реестр
+    // ОМ-35.8») — сводка живёт панелью в карточке ОМ, сводный взгляд вкладкой
+    // реестра. Число правится ОСОЗНАННО: оно стережёт, что пункты не
+    // расползаются мимо категорий и не рисуются дважды.
+    expect(total).toBe(18)
 
     // Подвал: карточка человека ведёт в профиль, и статус связи подписан.
     await expect(aside.locator('[data-slot="sidebar-link-status"]')).toContainText(
@@ -247,7 +251,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   test('меню читается: кегль 14px, строка 36px, шаг 40px', async ({ page }) => {
     await signIn(page)
     // 🔴 Этот сторож пришёл на смену прежнему «меню целиком влезает в
-    // 1366×648». Тот требовал невозможного: 19 пунктов на вьюпорте ноутбука
+    // 1366×648». Тот требовал невозможного: 18 пунктов на вьюпорте ноутбука
     // помещаются только сжатием строки до пола WCAG 2.2 AA 2.5.8 (24px шаг),
     // и получившееся меню заказчик прочитал как «мелкое и некрасивое».
     // Требование отменено: размер строки НЕ разменивается на количество
@@ -275,7 +279,8 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
         pitch: b.getBoundingClientRect().top - a.getBoundingClientRect().top,
       }
     })
-    expect(metrics.links, 'меню недосчиталось пунктов — замеры были бы не о том меню').toBe(19)
+    // 18 — см. выше: «Реестр ГВО» снят (Plane «Реестр ОМ-35.8»).
+    expect(metrics.links, 'меню недосчиталось пунктов — замеры были бы не о том меню').toBe(18)
     expect(metrics.fontPx, `кегль пункта ${metrics.fontPx}px — мельче 14px меню не читается`).toBeGreaterThanOrEqual(14)
     expect(
       metrics.headingPx,
@@ -886,7 +891,8 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     // Охранные мероприятия и объекты
     { path: '/security-ops/command-center/', title: 'Командный центр', eyebrow: 'Ежедневный расход' },
     { path: '/security-ops/events/', title: 'Реестр ОМ', eyebrow: 'Охранные мероприятия' },
-    { path: '/security-ops/gvo/', title: 'Реестр ГВО', eyebrow: 'Охранные мероприятия' },
+    // «Реестр ГВО» снят из меню и с маршрутов (Plane «Реестр ОМ-35.8»):
+    // сводка живёт панелью в карточке ОМ, сводный взгляд — вкладкой реестра.
     { path: '/security-ops/persons/', title: 'Охраняемые лица', eyebrow: 'Охранные мероприятия' },
     { path: '/security-ops/objects/', title: 'Объекты и паспорта', eyebrow: 'Объекты' },
     { path: '/security-ops/laws/', title: 'Законы об ОМ', eyebrow: 'Охранные мероприятия' },
@@ -948,7 +954,6 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   const DETAIL_ROUTES: Array<{ registry: string; name: string }> = [
     { registry: '/security-ops/events/', name: 'карточка ОМ' },
     { registry: '/security-ops/objects/', name: 'карточка объекта' },
-    { registry: '/security-ops/gvo/', name: 'карточка ГВО' },
   ]
 
   for (const { registry, name } of DETAIL_ROUTES) {
