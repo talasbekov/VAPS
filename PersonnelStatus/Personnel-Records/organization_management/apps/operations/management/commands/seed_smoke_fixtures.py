@@ -13,6 +13,12 @@
    `EVENT_ASSIGNMENT` на СЕГОДНЯШНЮЮ деловую дату. Привлечённость в домене —
    это обычный статус, отдельной сущности у неё нет.
 2. **Мероприятие на стадии «Запрос сил»** с непустым `force_requests`.
+3. **Мероприятие на стадии «Рекогносцировка»** — по нему проба слоя прототипа
+   проверяет, что отбор реестра по этапу сужает выдачу. До 25.08.2026 эту роль
+   играл МУСОР: на стенде копились пробные строки, и отбор находил их. Уборка
+   за пробами (Plane №62) мусор снесла — и вместе с ним данные, на которых
+   проба стояла. Фикстура заменяет случайность явным условием.
+4. **Объект с готовым паспортом** — «зелёный» и со свежей версией сразу.
 
 ЧЕГО КОМАНДА НЕ ДЕЛАЕТ. Дня не сдаёт и документов не выпускает: этим занят
 `seed_expense_chain`, и его сдача краснит `day-submission` (см.
@@ -51,6 +57,7 @@ from organization_management.apps.staff_unit.models import StaffUnit
 ACTOR = "stand-seed"
 ASSIGNMENT_CODE = "EVENT_ASSIGNMENT"
 EVENT_TITLE = "Стенд: мероприятие на запросе сил (фикстура смоука)"
+RECON_TITLE = "Стенд: мероприятие на рекогносцировке (фикстура смоука)"
 # Сколько человек выставляем на мероприятие. Три, а не один: проба разносит
 # людей по управлениям и сверяет счётчик вкладки со строками таблицы — на
 # одном человеке разнесение не проверяется вовсе.
@@ -88,11 +95,13 @@ class Command(BaseCommand):
         assigned = self._assignments(day, options["assigned"])
         event = self._forces_event(day)
         security_object, freshness = self._ready_object(day)
+        recon = self._recon_event(day, security_object)
 
         for employee in assigned:
             self.stdout.write(f"STAND_ASSIGNED={employee.id} {employee.last_name}")
         self.stdout.write(f"STAND_DAY={day.isoformat()}")
         self.stdout.write(f"STAND_FORCES_EVENT={event.code}")
+        self.stdout.write(f"STAND_RECON_EVENT={recon.code}")
         self.stdout.write(
             f"STAND_READY_OBJECT={security_object.code} "
             f"{security_object.passport_state}/{freshness}"
@@ -346,3 +355,60 @@ class Command(BaseCommand):
             security_object.passport_state = "GREEN"
             security_object.save(update_fields=["passport_state", "updated_at"])
         return security_object, freshness["state"]
+
+    # ── Мероприятие на стадии «Рекогносцировка» ─────────────────────────────
+
+    def _recon_event(self, day, security_object):
+        """ОМ, остановленное НА рекогносцировке.
+
+        Нужно отбору реестра по этапу: без единой строки на этом этапе проба
+        «Сбросить фильтры» видит пустую таблицу и падает — причём падает
+        честно, потому что сужение отбора на пустоте не проверяется.
+
+        ОМ заводится С ОБЪЕКТОМ: такое стартует сразу с рекогносцировки, и
+        цепочку бюллетеня проходить не нужно. Расчёт постов заполняется, чтобы
+        карточку можно было открыть и посмотреть глазом.
+        """
+        existing = OpsSecurityEvent.objects.filter(title=RECON_TITLE).first()
+        if existing is not None and existing.stage == "RECON":
+            return existing
+        for stale in OpsSecurityEvent.objects.filter(title=RECON_TITLE):
+            try:
+                event_service.delete_event(stale.id, actor=ACTOR, force=True)
+            except DomainError as error:
+                self.stderr.write(
+                    f"старая фикстура {stale.code} не убрана ({error.code})"
+                )
+        event = event_service.create_event(
+            title=RECON_TITLE,
+            object_id=str(security_object.pk),
+            business_date=day,
+            kind=OpsSecurityEvent.Kind.INTERNAL,
+            actor=ACTOR,
+        )
+        event = event_service.update_bulletin(
+            event.id,
+            brief_description="Фикстура стенда: мероприятие стоит на рекогносцировке.",
+            initial_tasks="Осмотреть объект, составить расчёт постов.",
+        )
+        if event.stage == "BULLETIN":
+            event = event_service.complete_bulletin(event.id)
+        return event_service.update_recon(
+            event.id,
+            checklist=list(event.recon_checklist or []),
+            sector_posts=[
+                {
+                    "id": "seed-recon-post-1",
+                    "sector": "Периметр",
+                    "post": "Пост 1",
+                    "task": "Охрана периметра",
+                    "need": 2,
+                    "requirements": "Допуск",
+                    "result": None,
+                    "comment": "",
+                    "sourceSectorId": None,
+                    "sourcePostId": None,
+                    "minRating": None,
+                }
+            ],
+        )
