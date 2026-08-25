@@ -683,13 +683,13 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     ).toBeVisible({ timeout: 15_000 })
   })
 
-  test('старший объекта назван в строке объекта и снимается оттуда же', async ({
+  test('старший объекта назначается из строки объекта и снимается оттуда же', async ({
     page,
   }) => {
-    // Задача заказчика «Реестр ОМ-35.2». Кнопки НАЗНАЧЕНИЯ на экране пока нет
-    // (она приходит с выпадающим списком сотрудников — «ОМ-35.3»/«ОМ-35.7»),
-    // поэтому старший ставится ручкой, а проба стережёт то, что уже есть на
-    // экране: подпись строки объекта и снятие через крестик.
+    // Задачи заказчика «Реестр ОМ-35.2» (поле и ручки) и «ОМ-35.7» (кнопка
+    // рядом со строкой объекта, выпадающий список с поиском). Проба идёт
+    // ЧЕРЕЗ ЭКРАН: предмет требования — именно кнопка и список, и ассерт на
+    // ручку их не стережёт.
     const token = await apiToken()
     const rows = await events(token)
     const target = rows.find(
@@ -703,27 +703,6 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
       'на стенде нет ОМ с объектом посещения и без старшего',
     )
     const visit = target!.visitObjects![0]
-
-    const roster = (await (
-      await fetch(`${API}/api/ops/personnel/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    ).json()) as { results: { id: string; name: string }[] }
-    test.skip(roster.results.length === 0, 'кадровый снимок стенда пуст')
-    const person = roster.results[0]
-
-    const assigned = await fetch(
-      `${API}/api/ops/security-events/${target!.id}/visit-objects/${visit.id}/chief/`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ employeeId: person.id }),
-      },
-    )
-    expect(assigned.status).toBe(200)
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/`)
@@ -740,23 +719,52 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // Ведём по СВОЕЙ группе, а не по всей строке объекта: «не назначен»
     // входит подстрокой в «Замещающие: не назначены», и ассерт по строке
     // зеленел бы, ничего не проверяя.
-    // Регистр из РАЗМЕТКИ: капс делает `uppercase`, textContent его не видит.
+    // Текст БЕЗ пробелов между словами кнопки и подписи: соседние span'ы
+    // разведены отступом CSS (gap), а textContent пробела оттуда не получает.
     const chief = row.getByRole('group', {
       name: `Старший объекта ${visit.objectName}`,
     })
-    // Без пробела между подписью и именем: соседние span'ы разведены
-    // ОТСТУПОМ CSS (gap), а textContent пробела оттуда не получает.
-    await expect(chief).toContainText(`Старший объекта:${person.name}`, {
+    await expect(chief).toHaveText('Старший объекта:не назначен+ Старший', {
       timeout: 15_000,
     })
+
+    await chief
+      .getByRole('button', {
+        name: `Назначить старшего объекта ${visit.objectName}`,
+      })
+      .click()
+    const chiefDialog = page.getByRole('dialog')
+    await expect(chiefDialog).toContainText('Старший объекта')
+    // Кнопка заперта, пока человек не выбран: назначать некого.
+    const assign = chiefDialog.getByRole('button', { name: 'Назначить' })
+    await expect(assign).toBeDisabled()
+
+    const candidate = chiefDialog.locator('li button').first()
+    const personName = (
+      await candidate.locator('span span').first().innerText()
+    ).trim()
+    await candidate.click()
+    await expect(assign).toBeEnabled()
+    await assign.click()
+    await expect(chiefDialog).toHaveCount(0, { timeout: 15_000 })
+
+    await expect(chief).toContainText(`Старший объекта:${personName}`, {
+      timeout: 15_000,
+    })
+    // И это видит сервер, а не только экран.
+    const afterAssign = (await events(token)).find((r) => r.id === target!.id)
+    const assignedVisit = (afterAssign?.visitObjects ?? []).find(
+      (v) => v.id === visit.id,
+    )
+    expect(assignedVisit?.chiefName).toEqual(personName)
 
     // Снятие уносит имя — и фикстура не копится между прогонами.
     await chief
       .getByRole('button', {
-        name: `Снять старшего ${person.name} с объекта ${visit.objectName}`,
+        name: `Снять старшего ${personName} с объекта ${visit.objectName}`,
       })
       .click()
-    await expect(chief).toHaveText('Старший объекта:не назначен', {
+    await expect(chief).toHaveText('Старший объекта:не назначен+ Старший', {
       timeout: 15_000,
     })
 

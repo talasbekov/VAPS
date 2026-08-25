@@ -1,5 +1,6 @@
 export { AddVisitObjectsDialog } from "./ui/AddVisitObjectsDialog";
 export { AddDeputyDialog } from "./ui/AddDeputyDialog";
+export { AssignChiefDialog } from "./ui/AssignChiefDialog";
 export {
   addVisitObject,
   assignVisitObjectChief,
