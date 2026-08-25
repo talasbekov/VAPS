@@ -545,12 +545,37 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 </p>
               </div>
               <div className="max-h-[420px] overflow-y-auto p-2">
-                {sectors.map((sector) => (
+                {sectors.map((sector) => {
+                  // Счётчик сектора — как в прототипе: сколько людей уже стоит
+                  // из скольких нужно. Без него сектор молчал о своей
+                  // готовности, и её приходилось складывать глазами по постам.
+                  const sectorNeed = sector.posts.reduce(
+                    (sum, post) => sum + post.need,
+                    0
+                  );
+                  const sectorAssigned = sector.posts.reduce(
+                    (sum, post) => sum + assignmentsOf(post.id).length,
+                    0
+                  );
+                  const sectorFull = sectorAssigned >= sectorNeed;
+                  return (
                   <div key={sector.name} className="mb-2">
-                    <p className="px-1 py-1 text-xs font-semibold">{sector.name}</p>
+                    <p className="flex items-center justify-between gap-2 px-1 py-1 text-xs font-semibold">
+                      <span className="min-w-0 truncate">{sector.name}</span>
+                      <span
+                        className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${
+                          sectorFull
+                            ? "bg-green-100 text-green-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {sectorAssigned}/{sectorNeed}
+                      </span>
+                    </p>
                     <ul className="flex flex-col gap-1">
                       {sector.posts.map((post) => {
-                        const count = assignmentsOf(post.id).length;
+                        const placed = assignmentsOf(post.id);
+                        const count = placed.length;
                         const full = count >= post.need;
                         return (
                           <li key={post.id}>
@@ -569,9 +594,25 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                                 aria-hidden
                                 className={`h-2 w-2 shrink-0 rounded-full ${full ? "bg-green-500" : "bg-amber-500"}`}
                               />
-                              <span className="flex-1 truncate">{post.post}</span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate">{post.post}</span>
+                                {/* Кто на посту — прямо в дереве, как в
+                                    прототипе: иначе «кто где стоит» читается
+                                    только по одному посту за раз, а расстановку
+                                    смотрят целиком. Больше двух имён —
+                                    остаток числом, строка не растёт. */}
+                                {count > 0 && (
+                                  <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                                    {placed
+                                      .slice(0, 2)
+                                      .map((a) => a.employeeName)
+                                      .join(", ")}
+                                    {count > 2 ? ` и ещё ${count - 2}` : ""}
+                                  </span>
+                                )}
+                              </span>
                               <span
-                                className={`shrink-0 tabular-nums ${full ? "text-muted-foreground" : "text-amber-700"}`}
+                                className={`shrink-0 self-start tabular-nums ${full ? "text-muted-foreground" : "text-amber-700"}`}
                               >
                                 {count}/{post.need}
                               </span>
@@ -581,7 +622,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       })}
                     </ul>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </aside>
 
