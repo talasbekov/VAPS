@@ -930,6 +930,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         deputy=deputy_employee,
     )
     om.refresh_from_db()
+    # Старший сектора — именное назначение ответственного (Plane №65, «Р-4»):
+    # действие ОДНО на назначение и снятие, поэтому и запись здесь одна.
+    event_service.set_sector_senior(
+        om.pk, om.placement_assignments[-1]["id"], senior=True, actor=ACTOR
+    )
+    om.refresh_from_db()
     event_service.unassign_placement(
         om.pk, om.placement_assignments[-1]["id"], deputy=deputy_employee
     )

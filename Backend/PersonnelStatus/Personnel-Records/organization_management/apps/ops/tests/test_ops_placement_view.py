@@ -205,3 +205,112 @@ def test_roster_carries_day_status(manager):  # noqa: F811
     # статус дня; null здесь означал бы, что состав про статусы молчит.
     assert member["statusCode"] == "EVENT_ASSIGNMENT"
     assert member["statusLabel"] != ""
+
+
+# ── Шаг «Р-4»: старший сектора ──────────────────────────────────────────────
+
+
+def two_assignments_in_one_sector(manager):  # noqa: F811
+    """ОМ с двумя людьми в ОДНОМ секторе: правило единственности проверять
+    нечем, если сектор один человек."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj, business_date=BUSINESS_DATE).json()["id"]
+    base = f"{URL}{event_id}/"
+    data = manager.post(f"{base}recon/import-from-passport/").json()
+    imported = data["reconSectorPosts"]
+    sector = imported[0]["sector"]
+    # Второй пост В ТОМ ЖЕ СЕКТОРЕ дописывается расчётом: у паспорта фикстуры
+    # сектор из одного поста, и на нём правило «один старший на сектор» было
+    # бы неотличимо от «один старший на пост».
+    manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": data["reconChecklist"],
+            "sectorPosts": [
+                *imported,
+                {**imported[0], "id": "post-sector-twin", "post": "Пост-двойник"},
+            ],
+        },
+        format="json",
+    )
+    posts = manager.get(base).json()["reconSectorPosts"]
+    same = [p for p in posts if p["sector"] == sector]
+    assert len(same) >= 2, "в секторе один пост — двух людей туда не поставить"
+    first = employee_in_division(
+        Division.objects.create(
+            name="Управление №11", division_type=Division.DivisionType.DIRECTORATE
+        ),
+        last_name="Первый",
+    )
+    second = make_employee(last_name="Второй")
+    ids = []
+    for post, employee in zip(same[:2], (first, second)):
+        resp = manager.post(
+            f"{base}placement/assign/",
+            {"postId": post["id"], "employeeId": str(employee.pk)},
+            format="json",
+        )
+        assert resp.status_code == 200, resp.json()
+        ids.append(resp.json()["placementAssignments"][-1]["id"])
+    return base, ids, sector
+
+
+def test_sector_has_exactly_one_senior(manager):  # noqa: F811
+    """Назначение старшим снимает прежнего: старший на сектор ОДИН."""
+    base, ids, _ = two_assignments_in_one_sector(manager)
+
+    first = manager.post(f"{base}placement/{ids[0]}/senior/", {}, format="json")
+    assert first.status_code == 200, first.json()
+    seniors = {
+        a["id"]: a["isSectorSenior"] for a in first.json()["placementAssignments"]
+    }
+    assert seniors[ids[0]] is True
+    assert seniors[ids[1]] is False
+
+    second = manager.post(f"{base}placement/{ids[1]}/senior/", {}, format="json")
+
+    seniors = {
+        a["id"]: a["isSectorSenior"] for a in second.json()["placementAssignments"]
+    }
+    assert seniors[ids[0]] is False, "в секторе оказалось два старших"
+    assert seniors[ids[1]] is True
+
+
+def test_sector_senior_can_be_cleared(manager):  # noqa: F811
+    """Старшего можно снять, не назначая другого."""
+    base, ids, _ = two_assignments_in_one_sector(manager)
+    manager.post(f"{base}placement/{ids[0]}/senior/", {}, format="json")
+
+    cleared = manager.post(
+        f"{base}placement/{ids[0]}/senior/", {"senior": False}, format="json"
+    )
+
+    seniors = [
+        a["isSectorSenior"] for a in cleared.json()["placementAssignments"]
+    ]
+    assert seniors == [False, False]
+
+
+def test_sector_senior_is_written_to_the_audit_log(manager):  # noqa: F811
+    """Именное назначение оставляет след: прежний старший стоит рядом с новым."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    base, ids, sector = two_assignments_in_one_sector(manager)
+    manager.post(f"{base}placement/{ids[0]}/senior/", {}, format="json")
+    manager.post(f"{base}placement/{ids[1]}/senior/", {}, format="json")
+
+    rows = list(
+        OpsAuditLog.objects.filter(action="PLACEMENT_SECTOR_SENIOR_SET").order_by("id")
+    )
+
+    assert len(rows) == 2
+    assert rows[0].old_value is None, "первый старший подменил кого-то"
+    assert rows[1].old_value["employeeName"] == "Первый С."
+    assert rows[1].new_value["sector"] == sector
+
+
+def test_unknown_assignment_is_not_found(manager):  # noqa: F811
+    """Незнакомое назначение — 404, а не тихое ничего."""
+    base, _, _ = two_assignments_in_one_sector(manager)
+
+    assert manager.post(f"{base}placement/нет-такого/senior/", {}, format="json").status_code == 404

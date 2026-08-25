@@ -1583,6 +1583,10 @@ def placement_assignments_view(event):
                 "divisionName": division_name,
                 "statusCode": code,
                 "statusLabel": label,
+                # Явный bool: строки, заведённые до появления старшего сектора,
+                # ключа не несут вовсе, и клиенту незачем знать разницу между
+                # «не старший» и «поля не было».
+                "isSectorSenior": bool(row.get("isSectorSenior")),
             }
         )
     return view
@@ -2153,6 +2157,86 @@ def unassign_placement(event_id, assignment_id, *, deputy=None):
     _record_deputy_placement(
         event, deputy, {"operation": "UNASSIGN", "assignmentId": str(assignment_id)}
     )
+    return event
+
+
+def _post_of_assignment(event, assignment):
+    """Пост назначения или None: сектор человека известен только через пост."""
+    for post in event.recon_sector_posts or []:
+        if str(post.get("id")) == str(assignment.get("postId")):
+            return post
+    return None
+
+
+@transaction.atomic
+def set_sector_senior(event_id, assignment_id, *, senior, actor):
+    """Старший сектора на расстановке (Plane №65, шаг «Р-4»).
+
+    Старший — ОДИН на сектор: назначение снимает признак у остальных
+    назначений того же сектора. Двое старших означали бы, что доклад с сектора
+    спрашивать не с кого конкретно, — а ради этого признак и заводится.
+
+    Сектор берётся у ПОСТА назначения: своего поля сектора у назначения нет и
+    быть не должно — пост уже знает свой сектор, и вторая копия разошлась бы
+    с ним при переносе поста.
+    """
+    event = lock_event(event_id)
+    target = next(
+        (a for a in event.placement_assignments if a.get("id") == assignment_id),
+        None,
+    )
+    if target is None:
+        raise _not_found("Назначение не найдено.", assignment_id)
+    post = _post_of_assignment(event, target)
+    if post is None:
+        raise DomainError(
+            "POST_NOT_FOUND",
+            422,
+            message="Пост назначения не найден — сектор определить нечем.",
+        )
+    sector = str(post.get("sector") or "")
+    previous = next(
+        (
+            a
+            for a in event.placement_assignments
+            if bool(a.get("isSectorSenior"))
+            and str((_post_of_assignment(event, a) or {}).get("sector") or "")
+            == sector
+        ),
+        None,
+    )
+    rows = []
+    for row in event.placement_assignments:
+        if row.get("id") == assignment_id:
+            rows.append({**row, "isSectorSenior": bool(senior)})
+            continue
+        same_sector = (
+            str((_post_of_assignment(event, row) or {}).get("sector") or "") == sector
+        )
+        rows.append({**row, "isSectorSenior": False} if same_sector else row)
+    event.placement_assignments = rows
+    event.save(update_fields=["placement_assignments", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.PLACEMENT_SECTOR_SENIOR_SET,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value=(
+            None
+            if previous is None
+            else {
+                "employeeId": str(previous.get("employeeId")),
+                "employeeName": previous.get("employeeName"),
+            }
+        ),
+        new_value={
+            "code": event.code,
+            "sector": sector,
+            "employeeId": str(target.get("employeeId")) if senior else None,
+            "employeeName": target.get("employeeName") if senior else None,
+        },
+    )
+    event.refresh_from_db()
     return event
 
 

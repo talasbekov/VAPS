@@ -30,6 +30,7 @@ import {
   useCompleteForces,
   useCompletePlacement,
   usePersonnelPage,
+  useSetSectorSenior,
   useUnassignPlacement,
   useUpdateForceAllocation,
   useUpdateRecon,
@@ -301,6 +302,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const [sort, setSort] = useState<SortOption>("Рекомендуемые");
   const [band, setBand] = useState<RateOption>("Все");
   const [comment, setComment] = useState<string | null>(null);
+  const setSenior = useSetSectorSenior(event.id);
   // Мероприятие, прошедшее «Сбор сил», расставляет ТОЛЬКО свой состав —
   // людей, которых штаб принял и отдал (Plane №73, шаг «СС-6»). Кадровый
   // список тогда не спрашивается вовсе: предлагать в подборе тех, кого сервер
@@ -558,6 +560,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     0
                   );
                   const sectorFull = sectorAssigned >= sectorNeed;
+                  const sectorSenior = sector.posts
+                    .flatMap((post) => assignmentsOf(post.id))
+                    .find((a) => a.isSectorSenior);
                   return (
                   <div key={sector.name} className="mb-2">
                     <p className="flex items-center justify-between gap-2 px-1 py-1 text-xs font-semibold">
@@ -571,6 +576,15 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       >
                         {sectorAssigned}/{sectorNeed}
                       </span>
+                    </p>
+                    {/* Старший сектора назван в дереве: спрашивать доклад с
+                        сектора будут с него, и знать это надо ДО того, как
+                        открыт конкретный пост. */}
+                    <p className="px-1 pb-1 text-[10px] text-muted-foreground">
+                      Старший:{" "}
+                      {sectorSenior === undefined
+                        ? "не назначен"
+                        : sectorSenior.employeeName}
                     </p>
                     <ul className="flex flex-col gap-1">
                       {sector.posts.map((post) => {
@@ -690,6 +704,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               {ratingOf(assignment.employeeId)}
                             </span>
                           )}
+                          {assignment.isSectorSenior && (
+                            <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">
+                              Старший сектора
+                            </span>
+                          )}
                           {assignment.ratingOverrideReason !== null && (
                             <span className="text-xs text-amber-700">
                               обход: {assignment.ratingOverrideReason}
@@ -715,6 +734,25 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           они съедают ширину у имени с подразделением, и то
                           обрезалось на «Отдел охраны объек…». */}
                       <span className="flex shrink-0 flex-col gap-1">
+                      {/* Старший сектора — ОДИН: сервер снимает прежнего сам,
+                          и кнопка не спрашивает «а кто сейчас старший». */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-xs"
+                        disabled={setSenior.isPending}
+                        onClick={() =>
+                          setSenior.mutate({
+                            assignmentId: assignment.id,
+                            senior: !assignment.isSectorSenior,
+                          })
+                        }
+                      >
+                        {assignment.isSectorSenior
+                          ? "Снять старшего"
+                          : "Старший сектора"}
+                      </Button>
                       <select
                         aria-label={`Переместить: ${assignment.employeeName}`}
                         className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -968,6 +1006,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         <StageError error={assign.error} />
         <StageError error={unassign.error} />
         <StageError error={updateRecon.error} />
+        <StageError error={setSenior.error} />
         <StageError error={complete.error} />
 
         <ConflictDialog

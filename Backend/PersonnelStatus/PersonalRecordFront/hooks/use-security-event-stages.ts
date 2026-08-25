@@ -40,6 +40,7 @@ import {
   securityEventJournalPath,
   securityEventPlacementAssignPath,
   securityEventPlacementCompletePath,
+  securityEventPlacementSeniorPath,
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
   securityEventReconImportPath,
@@ -308,6 +309,18 @@ export function useUnassignPlacement(id: string) {
     opsApiClient.del<SecurityEvent>(
       securityEventPlacementUnassignPath(id, assignmentId)
     )
+  );
+}
+
+/** Старший сектора: назначить (`senior: true`) или снять. */
+export function useSetSectorSenior(id: string) {
+  return useEventMutation<{ assignmentId: string; senior: boolean }>(
+    id,
+    ({ assignmentId, senior }) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventPlacementSeniorPath(id, assignmentId),
+        { senior }
+      )
   );
 }
 
