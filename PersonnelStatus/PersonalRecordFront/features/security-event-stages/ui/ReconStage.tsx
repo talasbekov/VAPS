@@ -48,6 +48,12 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     event.reconChecklist
   );
   const [rows, setRows] = useState<ReconSectorPost[]>(event.reconSectorPosts);
+  // Запрос личного состава держится СТРОКОЙ, а не числом: пустое поле должно
+  // остаться пустым, а `Number("")` даёт 0 — и человек видел бы ноль, которого
+  // не вводил, в поле, помеченном звёздочкой.
+  const [forceRequest, setForceRequest] = useState(
+    event.reconForceRequest === 0 ? "" : String(event.reconForceRequest)
+  );
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
   );
@@ -69,11 +75,19 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   const complete = useCompleteRecon(event.id);
 
   const dirty =
-    JSON.stringify({ checklist, rows }) !==
+    JSON.stringify({ checklist, rows, forceRequest }) !==
     JSON.stringify({
       checklist: event.reconChecklist,
       rows: event.reconSectorPosts,
+      forceRequest:
+        event.reconForceRequest === 0 ? "" : String(event.reconForceRequest),
     });
+
+  /** Расчёт по постам — ПОДСКАЗКА, а не значение поля. В эталоне число вводит
+   * старший наряда: осмотр даёт поправку на местность, которой в расчёте
+   * постов нет. Подставлять сумму молча значило бы выдавать расчёт за его
+   * оценку. */
+  const needFromPosts = rows.reduce((sum, row) => sum + (row.need || 0), 0);
 
   function patchItem(id: string, patch: Partial<ReconChecklistItem>): void {
     setChecklist((prev) =>
@@ -375,6 +389,56 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
           )}
         </section>
 
+        {/* «Итог рекогносцировки» из эталона (Plane «Реестр ОМ-23»): запрос
+            личного состава — то, ради чего этап и завершают. Число уходит
+            штабу 2-го департамента, который раскладывает его по департаментам
+            в «Сборе сил на ОМ»; до завершения этапа это черновик старшего
+            наряда, и штаб его не видит. */}
+        <section className="rounded-md border p-3">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold">Итог рекогносцировки</h3>
+            <span className="text-xs text-muted-foreground">
+              {event.reconForceRequestedAt === null
+                ? "запрос ещё не направлен"
+                : `запрос направлен ${formatIsoDate(event.reconForceRequestedAt)}`}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1">
+              <label
+                htmlFor="recon-force-request"
+                className="text-xs font-semibold"
+              >
+                Требуемое число сотрудников *
+              </label>
+              <Input
+                id="recon-force-request"
+                className="h-9 w-36 tabular-nums"
+                type="number"
+                min={1}
+                value={forceRequest}
+                onChange={(e) => setForceRequest(e.target.value)}
+              />
+            </div>
+            <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+              {/* Подсказка называет расчёт, но НЕ подставляет его: оценка
+                  старшего наряда и сумма по постам — разные числа, и на их
+                  разнице работает штаб. */}
+              Расчёт по постам даёт {needFromPosts}
+              {needFromPosts === 0 && " (постов пока нет)"}. Штаб 2-го
+              департамента получит указанное число и разложит его по
+              департаментам в разделе{" "}
+              <Link
+                href="/employees"
+                className="font-semibold text-primary-ink"
+              >
+                «Сбор сил на ОМ»
+              </Link>
+              .
+            </p>
+          </div>
+        </section>
+
         <FieldErrors errors={fieldErrors} />
         <StageError error={update.error} />
         <StageError error={importPosts.error} />
@@ -387,7 +451,14 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
             disabled={!dirty || update.isPending}
             onClick={() => {
               setFieldErrors(null);
-              update.mutate({ checklist, sectorPosts: rows });
+              update.mutate({
+                checklist,
+                sectorPosts: rows,
+                // Пустое поле — это НОЛЬ («запрос снят»), а не «не трогать»:
+                // человек стёр число намеренно, и молча оставить прежнее
+                // значило бы отправить штабу то, что он только что убрал.
+                forceRequest: forceRequest.trim() === "" ? 0 : Number(forceRequest),
+              });
             }}
           >
             {update.isPending ? "Сохранение…" : "Сохранить рекогносцировку"}
@@ -398,7 +469,9 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
             title={dirty ? "Сначала сохраните изменения." : undefined}
             onClick={() => complete.mutate({})}
           >
-            {complete.isPending ? "Завершение…" : "Завершить этап → Потребность"}
+            {complete.isPending
+              ? "Завершение…"
+              : "Завершить рекогносцировку → запрос штабу"}
           </Button>
         </div>
       </CardContent>

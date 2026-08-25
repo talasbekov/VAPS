@@ -161,7 +161,12 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
-    const link = page.getByRole('main').getByRole('link', { name: /сводк.*гво/i })
+    // Имя ТОЧНОЕ, а не подстрокой: с 25.08 панель бюллетеня раскрывается и на
+    // стадиях после «Бюллетеня», когда он пуст (Plane «Реестр ОМ-5»), и внутри
+    // неё стоит вторая ссылка на ту же сводку («сводки ГВО» в поясняющей
+    // строке). Подстрочный матчер ловил обе и падал строгим режимом. Предмет
+    // этой пробы — ссылка ШАПКИ карточки, видимая на любом этапе.
+    const link = page.getByRole('main').getByRole('link', { name: 'Сводка ГВО →' })
     await expect(link).toBeVisible({ timeout: 15_000 })
     await link.click()
 

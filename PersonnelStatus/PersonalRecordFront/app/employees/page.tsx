@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -49,6 +50,7 @@ import { formatIsoDate } from "@/shared/lib/date";
 import { Progress } from "@/components/ui/progress";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useForcesGathering } from "@/hooks/use-forces-gathering";
+import { objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee } from "@/entities/employee/model/types";
@@ -294,6 +296,35 @@ function EmployeesScreen() {
     () => forcesEvents.data?.results ?? [],
     [forcesEvents.data]
   );
+  // Входящие штаба 2-го департамента: запрос личного состава, направленный
+  // ЗАВЕРШЕНИЕМ рекогносцировки (Plane «Реестр ОМ-23»). Такое ОМ стоит на
+  // стадии «Потребность» — раскладка запроса по департаментам это и есть она,
+  // — и в блок «Запрос сил по мероприятиям» ниже ещё не попадает: тот ведёт
+  // УЖЕ утверждённые заявки. Без отдельного запроса штаб узнавал бы о числе
+  // только после того, как кто-то потребность утвердит, то есть последним.
+  const inboundEvents = useSecurityEvents({
+    search: "",
+    stage: "DEMAND",
+    from: "",
+    to: "",
+    owner: "",
+    page: 1,
+    pageSize: 50,
+  });
+  const inboundRows = useMemo(
+    () =>
+      (inboundEvents.data?.results ?? []).filter(
+        // Черновик старшего наряда штабу не показываем: запрос считается
+        // направленным только с момента, который ставит завершение этапа.
+        (event) => event.reconForceRequestedAt !== null
+      ),
+    [inboundEvents.data]
+  );
+  const inboundTotal = useMemo(
+    () => inboundRows.reduce((sum, event) => sum + event.reconForceRequest, 0),
+    [inboundRows]
+  );
+
   const forcesDemand = useMemo(() => {
     let requested = 0;
     let allocated = 0;
@@ -586,6 +617,70 @@ function EmployeesScreen() {
             caption="«В строю» минус отданные: иначе счёт двойной"
           />
         </div>
+
+        {/* Входящие штаба: запросы, пришедшие С РЕКОГНОСЦИРОВКИ и ещё не
+            разложенные по департаментам. Стоят ВЫШЕ заявок: это работа,
+            которую штаб ещё не начал, а заявки ниже — та, что уже идёт. */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex flex-wrap items-baseline justify-between gap-2 text-base">
+              <span className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                Запросы с рекогносцировки — ждут распределения
+              </span>
+              {inboundTotal > 0 && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  всего запрошено {inboundTotal} чел.
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {inboundEvents.isPending && (
+              <p className="text-xs text-muted-foreground">Загрузка запросов…</p>
+            )}
+            {inboundEvents.isError && (
+              <p className="text-xs text-muted-foreground">
+                Реестр мероприятий сейчас недоступен.
+              </p>
+            )}
+            {inboundEvents.data && inboundRows.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Новых запросов с рекогносцировки нет — старшие нарядов ещё не
+                завершили осмотр либо их запросы уже разложены.
+              </p>
+            )}
+            {inboundRows.map((event) => (
+              <div
+                key={event.id}
+                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border p-3"
+              >
+                <div className="min-w-0">
+                  <Link
+                    href={`/security-ops/events/${event.id}`}
+                    className="truncate text-sm font-semibold text-primary-ink"
+                  >
+                    {event.title}
+                  </Link>
+                  <p className="text-xs text-muted-foreground">
+                    {event.code} · {formatIsoDate(event.businessDate)} ·{" "}
+                    {objectLabel(event)}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-semibold tabular-nums">
+                    {event.reconForceRequest} чел.
+                  </p>
+                  {/* Кто просит — старший наряда; его подпись стоит рядом с
+                      числом: запрос это оценка ЧЕЛОВЕКА, а не выход расчёта. */}
+                  <p className="text-xs text-muted-foreground">
+                    запросил {event.chiefName.trim() === "" ? event.ownerName : event.chiefName}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
         {/* Заявки на силы: план против факта. Отвечает на вопрос «чем
             добирать» — недобор виден и по мероприятию, и по департаменту. */}

@@ -23,6 +23,10 @@ interface EventRow {
   stage: string
   objectId: string | null
   objectName: string
+  title?: string
+  reconForceRequest?: number
+  reconForceRequestedAt?: string | null
+  reconChecklist?: { id: string; done: boolean }[]
   passportBinding: { versionId: string; versionNumber: number } | null
   reconSectorPosts: {
     id: string
@@ -184,6 +188,27 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await expect(stage).toContainText('Выполнено: 1 из')
   })
 
+
+  test('запрос личного состава с рекогносцировки доходит до штаба', async ({ page }) => {
+    // Задача заказчика «Реестр ОМ-23». Проба ведёт число ЧЕРЕЗ ВЕСЬ путь:
+    // ввод старшим наряда на этапе → завершение этапа → экран «Сбор сил на
+    // ОМ». Ассерт только на карточке ОМ был бы ассертом на своё же поле.
+    const token = await apiToken()
+    const call = await apiCall(token)
+    const created = await createRequestFixture(call)
+    const want = created.request
+
+    await signIn(page)
+    // Штаб видит ИМЕННО это число и именно у этого мероприятия.
+    await page.goto(`${APP}/employees/`)
+    const inbox = page.locator('[data-slot="card"]', {
+      has: page.getByText('Запросы с рекогносцировки — ждут распределения'),
+    })
+    await expect(inbox).toBeVisible({ timeout: 15_000 })
+    const row = inbox.locator('div').filter({ hasText: created.code }).first()
+    await expect(row).toContainText(`${want} чел.`, { timeout: 15_000 })
+  })
+
 })
 
 /** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта. */
@@ -244,4 +269,58 @@ async function createWithObject(token: string): Promise<EventRow> {
     businessDate: '2026-08-25',
     kind: 'INTERNAL',
   })) as EventRow
+}
+
+/** Обёртка над API стенда: заголовки и разбор один раз на файл. */
+async function apiCall(
+  token: string,
+): Promise<(method: string, path: string, body?: unknown) => Promise<any>> {
+  const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+  return async (method, path, body) => {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return res.json().catch(() => ({}))
+  }
+}
+
+/** Заводит ОМ, доводит рекогносцировку до конца с запросом личного состава и
+ * возвращает код мероприятия и запрошенное число. Число УНИКАЛЬНО на прогон:
+ * на стенде уже есть чужие запросы, и совпавшее число дало бы ассерт,
+ * зелёный по чужой строке. */
+async function createRequestFixture(
+  call: (method: string, path: string, body?: unknown) => Promise<any>,
+): Promise<{ code: string; request: number }> {
+  const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
+  const object = objects.results.find(
+    (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
+  )
+  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+  const created = await call('POST', '/api/ops/security-events/', {
+    title: 'Проба запроса штабу (e2e)',
+    objectId: object.id,
+    businessDate: '2026-08-25',
+    kind: 'INTERNAL',
+  })
+  const base = `/api/ops/security-events/${created.id}`
+  const withPosts = await call('POST', `${base}/recon/import-from-passport/`)
+  // 300-899: за пределами правдоподобных чужих чисел на стенде и в пределах
+  // трёх знаков, чтобы подстрока не совпала с частью чужого числа.
+  const request = 300 + (Date.now() % 600)
+  await call('PATCH', `${base}/recon/`, {
+    checklist: (withPosts.reconChecklist ?? []).map((i: { id: string }) => ({
+      ...i,
+      done: true,
+    })),
+    sectorPosts: withPosts.reconSectorPosts,
+    forceRequest: request,
+  })
+  const done = await call('POST', `${base}/recon/complete/`)
+  expect(done.stage, 'рекогносцировка не завершилась — фикстура непригодна').toBe(
+    'DEMAND',
+  )
+  expect(done.reconForceRequestedAt, 'момент отправки штабу не проставлен').not.toBeNull()
+  return { code: created.code, request }
 }
