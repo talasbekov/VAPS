@@ -2,6 +2,20 @@
 // создание с привязкой версии паспорта по бизнес-дате, деталь,
 // bindable-objects. Сид строится от живого стора объектов (не литеральные id).
 // Персист — sessionStorage (sidebar ходит по <a>, полная перезагрузка).
+//
+// 🔴 МОК ЗЕРКАЛИТ ПРАВИЛА СЕРВЕРА, а не свои представления о них. Разошедшийся
+// мок зелен там, где живой стек ведёт себя иначе, — и находят это не тестом, а
+// через несколько задач (Plane №45: мок полгода требовал объект при создании
+// ОМ, хотя бэк сделал его необязательным 24.08, и сценарий «бюллетень без
+// маршрута» на моке был невоспроизводим).
+//
+// Правила создания, снятые с `create_event` (`apps/ops/security_events.py`):
+// название обязательно; тип обязателен и только INTERNAL/FOREIGN; дата — ISO;
+// дата окончания, если есть, — ISO и НЕ раньше начала; время, если есть, —
+// ЧЧ:ММ; локация не длиннее 255; охраняемое лицо и старший — из справочников;
+// объект НЕОБЯЗАТЕЛЕН, но выдуманный id отбивается. ОМ с объектом стартует с
+// «Рекогносцировки» и получает объект посещения, без объекта — с «Бюллетеня» и
+// без него. Меняется правило на сервере — правится и здесь, в тот же заход.
 import { http, HttpResponse } from "msw";
 import {
   bindPassportVersion,
@@ -460,18 +474,33 @@ export const securityEventsHandlers = [
     if (body.title.trim() === "") {
       fieldErrors.title = ["Обязательное поле."];
     }
-    if (body.objectId.trim() === "") {
-      fieldErrors.objectId = ["Обязательное поле."];
-    }
+    // Объект НЕОБЯЗАТЕЛЕН (решение заказчика 24.08, порт правила бэка, Plane
+    // №45): бюллетень заводят, когда маршрут ещё не согласован, а объекты
+    // дописывают позже кнопкой у строки реестра. Мок отбивал такое создание —
+    // и сценарий «бюллетень без маршрута» на моке был невоспроизводим.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.businessDate)) {
       fieldErrors.businessDate = ["Укажите дату в формате ГГГГ-ММ-ДД."];
     }
     if (body.kind !== "INTERNAL" && body.kind !== "FOREIGN") {
       fieldErrors.kind = ["Обязательное поле."];
     }
+    // Окончание: формат И порядок дат. Порядок мок не проверял вовсе, а бэк
+    // проверяет — «окончание раньше начала» это не пустое поле, а неверный
+    // факт: из такой пары нельзя посчитать ни продолжительность, ни убытие.
+    const rawEnd = (body.businessDateEnd ?? "").trim();
+    if (rawEnd !== "") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(rawEnd)) {
+        fieldErrors.businessDateEnd = ["Укажите дату в формате ГГГГ-ММ-ДД."];
+      } else if (rawEnd < body.businessDate) {
+        fieldErrors.businessDateEnd = ["Дата окончания раньше даты начала."];
+      }
+    }
     const rawTime = body.eventTime ?? "";
     if (rawTime !== "" && !/^\d{2}:\d{2}$/.test(rawTime)) {
       fieldErrors.eventTime = ["Укажите время в формате ЧЧ:ММ."];
+    }
+    if ((body.location ?? "").trim().length > 255) {
+      fieldErrors.location = ["Не длиннее 255 символов."];
     }
     const rawPerson = body.protectedPersonId ?? "";
     const person =
@@ -488,9 +517,14 @@ export const securityEventsHandlers = [
     if (rawChief !== "" && chief === null) {
       fieldErrors.chiefEmployeeId = ["Сотрудник не найден."];
     }
+    const rawObject = (body.objectId ?? "").trim();
     const object =
-      readObjectsStore().find((o) => o.id === body.objectId) ?? null;
-    if (Object.keys(fieldErrors).length === 0 && object === null) {
+      rawObject === ""
+        ? null
+        : (readObjectsStore().find((o) => o.id === rawObject) ?? null);
+    // Отказ ТОЛЬКО на НЕСУЩЕСТВУЮЩЕМ объекте: пустой — это «не выбран», а
+    // выдуманный id — ошибка, и молчать о ней нельзя.
+    if (rawObject !== "" && object === null) {
       fieldErrors.objectId = ["Объект не найден в реестре."];
     }
     if (Object.keys(fieldErrors).length > 0) {
@@ -509,11 +543,17 @@ export const securityEventsHandlers = [
       id,
       `ОМ-${body.businessDate.slice(0, 4)}-${all.length + 1}`,
       body.title.trim(),
-      object!.id,
-      object!.name,
+      object === null ? null : object.id,
+      // Пустое имя — «объект не выбран», а не «объект без названия»: экраны
+      // различают это словами (порт правила бэка).
+      object === null ? "" : object.name,
       body.businessDate,
       now
     );
+    // Объект посещения заводится вместе с бюллетенем — но только если объект
+    // ВЫБРАН: у ОМ без объекта раскрытие строки честно пусто, и там же стоит
+    // кнопка их добавить.
+    if (object === null) created.visitObjects = [];
     created.businessDateEnd =
       body.businessDateEnd === undefined || body.businessDateEnd === ""
         ? null
@@ -527,14 +567,18 @@ export const securityEventsHandlers = [
     created.chiefName = chief === null ? "" : chief.name;
     // версия паспорта выбирается по бизнес-дате ОМ; её отсутствие — не ошибка
     // создания, расчёт постов будет ручным (карточка скажет об этом)
-    const applicable = resolveApplicableVersion(object!, body.businessDate);
-    if (applicable !== null) {
-      created.passportBinding = bindPassportVersion(object!, applicable, now);
+    const applicable =
+      object === null
+        ? null
+        : resolveApplicableVersion(object, body.businessDate);
+    if (object !== null && applicable !== null) {
+      created.passportBinding = bindPassportVersion(object, applicable, now);
     }
-    // ОМ с объектом открывается СРАЗУ рекогносцировкой (порт правила бэка,
-    // Plane «Реестр ОМ-5»): в эталоне это первый шаг цепочки.
-    created.stage = "RECON";
-    created.readinessPercent = 15;
+    // ОМ С ОБЪЕКТОМ открывается СРАЗУ рекогносцировкой (порт правила бэка,
+    // Plane «Реестр ОМ-5»): в эталоне это первый шаг цепочки. Без объекта
+    // осматривать нечего — ОМ остаётся на бюллетене.
+    created.stage = object === null ? "BULLETIN" : "RECON";
+    created.readinessPercent = object === null ? 0 : 15;
     addEvent(created);
     appendAudit({
       action: "security_event.create",
