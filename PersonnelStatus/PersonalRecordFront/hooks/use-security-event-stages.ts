@@ -18,6 +18,10 @@ import {
   securityEventApprovalRoutePath,
   securityEventApproverPath,
   securityEventApproverDecidePath,
+  securityEventApproverMovePath,
+  securityEventApprovalSendPath,
+  securityEventApprovalWithdrawPath,
+  securityEventRemarkResolvePath,
   securityEventApprovalReturnPath,
   securityEventBulletinCompletePath,
   securityEventBulletinPath,
@@ -45,6 +49,8 @@ import type {
   ReplaceAssignmentRequest,
   AddApproverRequest,
   DecideApproverRequest,
+  MoveApproverRequest,
+  ResolveRemarkRequest,
   ReturnPlacementRequest,
   SecurityEvent,
   UpdateBulletinRequest,
@@ -306,6 +312,48 @@ export function useRemoveApprover(id: string, options?: StageMutationOptions) {
     id,
     ({ approverId }) =>
       opsApiClient.del<SecurityEvent>(securityEventApproverPath(id, approverId)),
+    options
+  );
+}
+
+/** Отправить расстановку согласующим: до отправки маршрут — список людей, а
+ * не процесс. Отправка фиксирует на сервере снимок состава. */
+export function useSendForApproval(id: string, options?: StageMutationOptions) {
+  return useEventMutation<Record<string, never>>(
+    id,
+    () => opsApiClient.post<SecurityEvent>(securityEventApprovalSendPath(id)),
+    options
+  );
+}
+
+export function useWithdrawApproval(id: string, options?: StageMutationOptions) {
+  return useEventMutation<Record<string, never>>(
+    id,
+    () => opsApiClient.post<SecurityEvent>(securityEventApprovalWithdrawPath(id)),
+    options
+  );
+}
+
+export function useMoveApprover(id: string, options?: StageMutationOptions) {
+  return useEventMutation<{ approverId: string } & MoveApproverRequest>(
+    id,
+    ({ approverId, ...body }) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventApproverMovePath(id, approverId),
+        body
+      ),
+    options
+  );
+}
+
+export function useResolveRemark(id: string, options?: StageMutationOptions) {
+  return useEventMutation<{ remarkId: string } & ResolveRemarkRequest>(
+    id,
+    ({ remarkId, ...body }) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventRemarkResolvePath(id, remarkId),
+        body
+      ),
     options
   );
 }

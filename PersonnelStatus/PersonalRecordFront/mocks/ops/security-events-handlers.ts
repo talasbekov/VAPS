@@ -27,6 +27,13 @@ import {
   securityEventAcknowledgementCompletePath,
   securityEventApprovalApprovePath,
   securityEventApprovalReturnPath,
+  securityEventApprovalRoutePath,
+  securityEventApprovalSendPath,
+  securityEventApprovalWithdrawPath,
+  securityEventApproverDecidePath,
+  securityEventApproverMovePath,
+  securityEventApproverPath,
+  securityEventRemarkResolvePath,
   securityEventBulletinCompletePath,
   securityEventBulletinPath,
   securityEventClosePath,
@@ -46,11 +53,15 @@ import {
   NO_PUBLISHED_VERSION_TEXT,
 } from "@/entities/security-event";
 import type {
+  AddApproverRequest,
   AddJournalEntryRequest,
   AssignPlacementRequest,
   BindableObject,
   CloseSecurityEventRequest,
   CreateSecurityEventRequest,
+  DecideApproverRequest,
+  MoveApproverRequest,
+  ResolveRemarkRequest,
   ForceRequest,
   JournalEntry,
   ListSecurityEventsResponse,
@@ -121,6 +132,32 @@ function normalizePostIds<T extends { id: string; parentPostId?: string }>(
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+/** Подпись расстановки: ЧТО именно согласуют. Сортированная — порядок
+ * назначений в списке деталь хранения, а не факт о составе (порт правила
+ * сервера, «ОМ-37.3»). */
+function placementSignature(event: SecurityEvent): string {
+  return [...event.placementAssignments]
+    .map((item) => `${item.postId}:${item.employeeId}`)
+    .sort()
+    .join(";");
+}
+
+/** Снимки, зафиксированные отправкой на согласование. Живут рядом с моком, а
+ * не в самом мероприятии: сервер их наружу не отдаёт, и поле в контракте было
+ * бы выдумкой мока. */
+const approvalSnapshots = new Map<string, string>();
+
+/** Событие с пересчитанным признаком «расстановка изменилась после отправки».
+ * Зовётся отовсюду, где меняется состав. */
+function withStaleFlag(event: SecurityEvent): SecurityEvent {
+  const snapshot = approvalSnapshots.get(event.id);
+  return {
+    ...event,
+    approvalStale:
+      snapshot !== undefined && snapshot !== placementSignature(event),
+  };
 }
 
 function businessDate(): string {
@@ -200,6 +237,8 @@ function emptyEvent(
     approvalStatus: "PENDING",
     approvalComment: "",
     approvalRoute: [],
+    approvalRemarks: [],
+    approvalStale: false,
     journalEntries: [],
     closureDirectionSummaries: [],
     closedAt: null,
@@ -1016,8 +1055,10 @@ export const securityEventsHandlers = [
       };
       return HttpResponse.json(
         saveEvent({
-          ...event,
-          placementAssignments: [...event.placementAssignments, assignment],
+          ...withStaleFlag({
+            ...event,
+            placementAssignments: [...event.placementAssignments, assignment],
+          }),
           updatedAt: nowIso(),
         })
       );
@@ -1054,10 +1095,12 @@ export const securityEventsHandlers = [
       const assignmentId = params.assignmentId as string;
       return HttpResponse.json(
         saveEvent({
-          ...event,
-          placementAssignments: event.placementAssignments.filter(
-            (a) => a.id !== assignmentId
-          ),
+          ...withStaleFlag({
+            ...event,
+            placementAssignments: event.placementAssignments.filter(
+              (a) => a.id !== assignmentId
+            ),
+          }),
           updatedAt: nowIso(),
         })
       );
@@ -1065,6 +1108,261 @@ export const securityEventsHandlers = [
   ),
 
   // ── Согласование ───────────────────────────────────────────────────────
+  //
+  // Маршрут согласующих, отправка и замечания — порт правил сервера
+  // (`apps/ops/security_events.py`, задача заказчика «ОМ-37.3»). Согласуют не
+  // «мероприятие вообще», а КОНКРЕТНУЮ расстановку: отправка фиксирует снимок
+  // состава, изменение состава после отправки сбрасывает согласование.
+  http.post(
+    `*${securityEventApprovalRoutePath(":id")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const body = (await request.json()) as AddApproverRequest;
+      if ((body.name ?? "").trim() === "") {
+        return validationError({ name: ["Обязательное поле."] });
+      }
+      const numbers = event.approvalRoute.map((a) =>
+        Number(a.id.split("-").pop() ?? 0)
+      );
+      const next = numbers.length === 0 ? 1 : Math.max(...numbers) + 1;
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          approvalRoute: [
+            ...event.approvalRoute,
+            {
+              id: `approver-${next}`,
+              name: body.name.trim(),
+              unit: (body.unit ?? "").trim(),
+              position: (body.position ?? "").trim(),
+              // «Не отправлено»: человека внесли в маршрут, но расстановку
+              // ему ещё не присылали — решать нечего.
+              status: "NOT_SENT",
+              decidedAt: null,
+              comment: "",
+            },
+          ],
+          updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
+  http.post(
+    `*${securityEventApproverMovePath(":id", ":approverId")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const body = (await request.json()) as MoveApproverRequest;
+      const route = [...event.approvalRoute];
+      const index = route.findIndex((a) => a.id === params.approverId);
+      if (index === -1) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Согласующий не найден.",
+          { id: params.approverId },
+          404
+        );
+      }
+      const target = body.direction === "UP" ? index - 1 : index + 1;
+      // Край списка — не ошибка, а «дальше некуда».
+      if (target >= 0 && target < route.length) {
+        [route[index], route[target]] = [route[target]!, route[index]!];
+      }
+      return HttpResponse.json(
+        saveEvent({ ...event, approvalRoute: route, updatedAt: nowIso() })
+      );
+    }
+  ),
+
+  http.post(`*${securityEventApprovalSendPath(":id")}`, ({ params }) => {
+    const { event, response } = findEvent(params.id as string);
+    if (event === null) return response;
+    // Снимок фиксируется ИМЕННО отправкой: до неё согласовывать нечего, и
+    // сравнивать состав не с чем.
+    approvalSnapshots.set(event.id, placementSignature(event));
+    if (event.stage !== "APPROVAL") {
+      return businessRuleError(
+        "INVALID_STAGE_TRANSITION",
+        "Отправить на согласование можно только на этапе «Согласование»."
+      );
+    }
+    if (event.approvalRoute.length === 0) {
+      return businessRuleError(
+        "APPROVAL_ROUTE_EMPTY",
+        "Маршрут согласования пуст — добавьте хотя бы одного согласующего."
+      );
+    }
+    if (event.placementAssignments.length === 0) {
+      return businessRuleError(
+        "PLACEMENT_EMPTY",
+        "Расстановка пуста — согласовывать нечего."
+      );
+    }
+    return HttpResponse.json(
+      saveEvent({
+        ...event,
+        approvalRoute: event.approvalRoute.map((approver) => ({
+          ...approver,
+          status: "PENDING" as const,
+          decidedAt: null,
+          // Причина возврата остаётся: она объясняет, что чинили. «Без
+          // замечаний» от прошлого состава — нет.
+          comment: approver.status === "RETURNED" ? approver.comment : "",
+        })),
+        approvalStale: false,
+        updatedAt: nowIso(),
+      })
+    );
+  }),
+
+  http.post(`*${securityEventApprovalWithdrawPath(":id")}`, ({ params }) => {
+    const { event, response } = findEvent(params.id as string);
+    if (event === null) return response;
+    if (event.stage !== "APPROVAL") {
+      return businessRuleError(
+        "INVALID_STAGE_TRANSITION",
+        "Отозвать с согласования можно только на этапе «Согласование»."
+      );
+    }
+    // Принятые решения отзыв не отменяет: стирать чужое решение значило бы
+    // переписывать историю.
+    return HttpResponse.json(
+      saveEvent({
+        ...event,
+        approvalRoute: event.approvalRoute.map((approver) =>
+          approver.status === "PENDING"
+            ? { ...approver, status: "NOT_SENT" as const }
+            : approver
+        ),
+        updatedAt: nowIso(),
+      })
+    );
+  }),
+
+  http.post(
+    `*${securityEventRemarkResolvePath(":id", ":remarkId")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const body = (await request.json()) as ResolveRemarkRequest;
+      const found = event.approvalRemarks.some((r) => r.id === params.remarkId);
+      if (!found) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Замечание не найдено.",
+          { id: params.remarkId },
+          404
+        );
+      }
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          approvalRemarks: event.approvalRemarks.map((remark) =>
+            remark.id === params.remarkId
+              ? {
+                  ...remark,
+                  resolved: body.resolved,
+                  resolvedAt: body.resolved ? nowIso() : null,
+                }
+              : remark
+          ),
+          updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
+  http.post(
+    `*${securityEventApproverDecidePath(":id", ":approverId")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const body = (await request.json()) as DecideApproverRequest;
+      const target = event.approvalRoute.find((a) => a.id === params.approverId);
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Согласующий не найден.",
+          { id: params.approverId },
+          404
+        );
+      }
+      if (body.decision !== "APPROVED" && body.decision !== "RETURNED") {
+        return validationError({ decision: ["Допустимо APPROVED или RETURNED."] });
+      }
+      const comment = (body.comment ?? "").trim();
+      if (body.decision === "RETURNED" && comment === "") {
+        return validationError({ comment: ["Укажите причину возврата."] });
+      }
+      if (target.status === "NOT_SENT") {
+        return businessRuleError(
+          "APPROVAL_NOT_SENT",
+          "Расстановка не отправлена на согласование — решать нечего."
+        );
+      }
+      const now = nowIso();
+      const route = event.approvalRoute.map((approver) =>
+        approver.id === target.id
+          ? {
+              ...approver,
+              status: body.decision,
+              decidedAt: now,
+              // При согласовании комментарий не спрашивают — пустая графа
+              // читалась бы как «забыли написать».
+              comment: body.decision === "RETURNED" ? comment : "Без замечаний",
+            }
+          : approver
+      );
+      const remarks =
+        body.decision === "RETURNED"
+          ? [
+              ...event.approvalRemarks,
+              {
+                id: `remark-${event.approvalRemarks.length + 1}-${target.id}`,
+                approverId: target.id,
+                author: target.name,
+                createdAt: now,
+                text: comment,
+                resolved: false,
+                resolvedAt: null,
+              },
+            ]
+          : event.approvalRemarks;
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          approvalRoute: route,
+          approvalRemarks: remarks,
+          updatedAt: now,
+        })
+      );
+    }
+  ),
+
+  http.delete(
+    `*${securityEventApproverPath(":id", ":approverId")}`,
+    ({ params }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const route = event.approvalRoute.filter(
+        (a) => a.id !== params.approverId
+      );
+      if (route.length === event.approvalRoute.length) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Согласующий не найден.",
+          { id: params.approverId },
+          404
+        );
+      }
+      return HttpResponse.json(
+        saveEvent({ ...event, approvalRoute: route, updatedAt: nowIso() })
+      );
+    }
+  ),
+
   http.post(`*${securityEventApprovalApprovePath(":id")}`, ({ params }) => {
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;
@@ -1072,6 +1370,40 @@ export const securityEventsHandlers = [
       return businessRuleError(
         "INVALID_STAGE_TRANSITION",
         "Согласовать расстановку можно только на этапе «Согласование»."
+      );
+    }
+    // Условия завершения — из эталона; у каждого свой текст, потому что
+    // чинятся они по-разному.
+    if (event.approvalRoute.length === 0) {
+      return businessRuleError(
+        "APPROVAL_ROUTE_EMPTY",
+        "Маршрут согласования пуст — добавьте согласующих и отправьте им расстановку."
+      );
+    }
+    if (event.approvalStale) {
+      return businessRuleError(
+        "APPROVAL_STALE",
+        "Расстановка изменилась после отправки — отправьте её на повторное согласование."
+      );
+    }
+    if (event.approvalRoute.some((a) => a.status === "RETURNED")) {
+      return businessRuleError(
+        "APPROVAL_RETURNED",
+        "Есть возврат на доработку — устраните замечания и отправьте расстановку повторно."
+      );
+    }
+    if (event.approvalRoute.some((a) => a.status !== "APPROVED")) {
+      return businessRuleError(
+        "APPROVAL_INCOMPLETE",
+        event.approvalRoute.some((a) => a.status === "PENDING")
+          ? "Не все согласующие приняли решение."
+          : "Расстановка не отправлена на согласование."
+      );
+    }
+    if (event.approvalRemarks.some((remark) => !remark.resolved)) {
+      return businessRuleError(
+        "APPROVAL_REMARKS_OPEN",
+        "Есть неустранённые замечания — закройте их перед завершением этапа."
       );
     }
     // утверждение сразу открывает «Ознакомление», без отдельного клика

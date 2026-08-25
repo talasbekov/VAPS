@@ -229,6 +229,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "approval_route_add": _MANAGE_EVENT_PERMISSION,
         "approval_route_remove": _MANAGE_EVENT_PERMISSION,
         "approval_route_decide": _MANAGE_EVENT_PERMISSION,
+        "approval_route_move": _MANAGE_EVENT_PERMISSION,
+        "approval_send": _MANAGE_EVENT_PERMISSION,
+        "approval_withdraw": _MANAGE_EVENT_PERMISSION,
+        "approval_remark_resolve": _MANAGE_EVENT_PERMISSION,
         "approval_return": _MANAGE_EVENT_PERMISSION,
         "acknowledge": _MANAGE_EVENT_PERMISSION,
         "acknowledgement_complete": _MANAGE_EVENT_PERMISSION,
@@ -660,6 +664,40 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 approver_id=approver_id,
                 decision=data.get("decision"),
                 comment=data.get("comment"),
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="approval/send")
+    def approval_send(self, request, pk=None):
+        return self._event_response(event_service.send_for_approval(pk))
+
+    @action(detail=True, methods=["post"], url_path="approval/withdraw")
+    def approval_withdraw(self, request, pk=None):
+        return self._event_response(event_service.withdraw_from_approval(pk))
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"approval/route/(?P<approver_id>[^/]+)/move",
+    )
+    def approval_route_move(self, request, pk=None, approver_id=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.move_approver(
+                pk, approver_id, direction=data.get("direction")
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"approval/remarks/(?P<remark_id>[^/]+)/resolve",
+    )
+    def approval_remark_resolve(self, request, pk=None, remark_id=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.resolve_remark(
+                pk, remark_id, resolved=bool(data.get("resolved", True))
             )
         )
 

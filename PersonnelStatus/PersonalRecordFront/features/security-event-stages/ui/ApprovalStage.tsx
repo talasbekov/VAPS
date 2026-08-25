@@ -9,24 +9,32 @@ import { X } from "lucide-react";
 // расстановки»): сводка сверху, расчёт по секторам, отдельный блок с тем, что
 // согласующий обязан увидеть до решения, и решение внизу.
 //
+// Приведён к эталону задачей заказчика «ОМ-37.3»: маршрут согласующих
+// таблицей с порядком, «Отправить на согласование» / «Отозвать», решение по
+// каждому, замечания от возвратов и баннер «расстановка изменилась» — сервер
+// хранит снимок состава, под которым подписывались.
+//
 // Чего из прототипа НЕТ и почему:
 //
-// * МАРШРУТ СОГЛАСОВАНИЯ (несколько согласующих по порядку, «отправить/
-//   отозвать», решение по каждому) — модели согласующих у бэка нет вовсе:
-//   ручка одна, решение принимает тот, кто открыл этап. Нарисовать список с
-//   порядком и статусами значило бы изобразить процесс, которого не
-//   существует;
-// * ЭЦП и «расстановка изменена — нужно повторное согласование»: подписи и
-//   версий расстановки бэк не хранит, отличить изменённую от согласованной
-//   нечем;
+// * ЭЦП: подписи домен не хранит вовсе. В эталоне, к слову, её тоже нет —
+//   подзаголовок про ЭЦП есть, а кнопки подписи нет ни одной;
+// * «ЛИЧНЫЙ СОСТАВ: ЗАПРОС И УТВЕРЖДЕНИЕ» (руководство срезает запрошенную
+//   численность): у нас это живёт шагом РАНЬШЕ — на «Запросе сил», где
+//   выделение считается по заявкам департаментов с реальными числами. Второй
+//   вход в то же решение развёл бы правду о численности по двум экранам;
 // * «КОНФЛИКТЫ ТЕКУЩЕЙ РАССТАНОВКИ» отдельной таблицей: поле conflictsCount
 //   заводится нулём и НИКОГДА не пересчитывается — таблица из него всегда
 //   говорила бы «конфликтов не выявлено», то есть врала бы уверенно. Вместо
 //   него показано то, что бэк действительно записывает: обходы мягкого
 //   предупреждения по рейтингу с причиной, введённой при назначении.
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,8 +43,12 @@ import {
   useAddApprover,
   useApprovePlacement,
   useDecideApprover,
+  useMoveApprover,
   useRemoveApprover,
+  useResolveRemark,
   useReturnPlacement,
+  useSendForApproval,
+  useWithdrawApproval,
 } from "@/hooks/use-security-event-stages";
 import type { SecurityEvent } from "@/entities/security-event";
 import { FieldErrors, StageError } from "./StageErrors";
@@ -85,6 +97,18 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           </Alert>
         )}
 
+        {/* Баннер эталона. Признак считает СЕРВЕР: по нему же он блокирует
+            завершение этапа, и второй расчёт на клиенте разошёлся бы с ним
+            молча. */}
+        {event.approvalStale && (
+          <Alert className="border-amber-300 bg-amber-50">
+            <AlertDescription className="text-amber-900">
+              Расстановка изменилась после отправки. Необходимо повторное
+              согласование — отправьте её согласующим заново.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex flex-wrap gap-4 rounded-md border bg-muted/40 px-3 py-2 text-xs">
           <Kpi value={String(event.reconSectorPosts.length)} label="постов" />
           <Kpi
@@ -105,6 +129,8 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
         </div>
 
         <ApprovalRoute event={event} />
+
+        <ApprovalRemarks event={event} />
 
         <section>
           <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
@@ -186,7 +212,9 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
             disabled={approve.isPending}
             onClick={() => approve.mutate({})}
           >
-            {approve.isPending ? "Утверждение…" : "Утвердить → Ознакомление"}
+            {approve.isPending
+              ? "Утверждение…"
+              : "Завершить этап и перейти далее"}
           </Button>
         </div>
       </CardContent>
@@ -214,14 +242,30 @@ function Kpi({
 }
 
 const APPROVER_STATUS_LABEL: Record<string, string> = {
-  PENDING: "Ожидает решения",
+  NOT_SENT: "Не отправлено",
+  PENDING: "На согласовании",
   APPROVED: "Согласовано",
   RETURNED: "Возвращено",
 };
 
+const APPROVER_STATUS_CLASS: Record<string, string> = {
+  NOT_SENT: "bg-secondary text-secondary-foreground",
+  PENDING: "bg-blue-100 text-blue-800",
+  APPROVED: "bg-green-100 text-green-800",
+  RETURNED: "bg-red-100 text-red-800",
+};
+
 /**
- * Маршрут согласования из прототипа: кто согласует, в каком порядке и с каким
- * решением. Порядок — позиция в списке, номер строки её и показывает.
+ * Маршрут согласования из эталона: кто согласует, в каком порядке и с каким
+ * решением.
+ *
+ * ТАБЛИЦЕЙ, а не списком: у согласующего шесть граф (порядок, ФИО,
+ * подразделение, должность, статус, дата, комментарий), и в свободной строке
+ * они сливались в предложение, которое приходится разбирать глазами.
+ *
+ * Порядок — позиция в списке, и он значим: по нему читают, кто согласует
+ * первым. Меняется стрелками, а не перетаскиванием: перетаскивание в таблице
+ * с полями ввода отбирает клик у самих полей.
  */
 function ApprovalRoute({ event }: { event: SecurityEvent }) {
   const [adding, setAdding] = useState(false);
@@ -240,6 +284,9 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
     },
   });
   const remove = useRemoveApprover(event.id);
+  const move = useMoveApprover(event.id);
+  const send = useSendForApproval(event.id);
+  const withdraw = useWithdrawApproval(event.id);
   // Детали 400 показываем полем: без onFormError пользователь видел бы только
   // общее «Проверьте заполнение формы», а причина отказа («укажите причину
   // возврата») оставалась бы в ответе сервера.
@@ -255,18 +302,52 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
     },
   });
 
+  const route = event.approvalRoute;
+  const sent = route.some((approver) => approver.status !== "NOT_SENT");
+  const subtitle = event.approvalStale
+    ? "Согласование сброшено: расстановка изменена"
+    : sent
+      ? "Отправлено на согласование"
+      : "Не отправлено";
+
   return (
     <section className="rounded-md border">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-        <p className="text-xs font-semibold">Маршрут согласования</p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setAdding((prev) => !prev)}
-        >
-          + Добавить согласующего
-        </Button>
+        <div>
+          <p className="text-xs font-semibold">Маршрут согласования</p>
+          <p className="text-[11px] text-muted-foreground">{subtitle}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setAdding((prev) => !prev)}
+          >
+            + Добавить согласующего
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={withdraw.isPending || !sent}
+            title={sent ? undefined : "Расстановка ещё не отправлена."}
+            onClick={() => withdraw.mutate({})}
+          >
+            Отозвать с согласования
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={send.isPending || route.length === 0}
+            title={
+              route.length === 0 ? "Маршрут согласования пуст." : undefined
+            }
+            onClick={() => send.mutate({})}
+          >
+            {send.isPending ? "Отправка…" : "Отправить на согласование"}
+          </Button>
+        </div>
       </div>
 
       {adding && (
@@ -300,122 +381,270 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
           >
             Добавить
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setAdding(false)}
+          >
+            Отмена
+          </Button>
         </div>
       )}
 
-      {event.approvalRoute.length === 0 ? (
+      {route.length === 0 ? (
         <p className="px-3 py-3 text-xs text-muted-foreground">
           Маршрут пуст — согласующие не назначены.
         </p>
       ) : (
-        <ul className="divide-y">
-          {event.approvalRoute.map((approver, index) => (
-            <li key={approver.id} className="space-y-1 p-2 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="w-5 text-xs text-muted-foreground tabular-nums">
-                  {index + 1}
-                </span>
-                <span className="font-semibold">{approver.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {approver.unit}
-                  {approver.position === "" ? "" : ` · ${approver.position}`}
-                </span>
-                <span
-                  className={
-                    approver.status === "APPROVED"
-                      ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
-                      : approver.status === "RETURNED"
-                        ? "inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
-                        : "inline-flex rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold"
-                  }
-                >
-                  {APPROVER_STATUS_LABEL[approver.status]}
-                </span>
-                {approver.decidedAt !== null && (
-                  <span className="text-xs text-muted-foreground">
-                    {formatIsoDateTime(approver.decidedAt)}
-                  </span>
-                )}
-                {approver.status === "PENDING" && (
-                  <span className="ml-auto flex gap-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={decide.isPending}
-                      onClick={() =>
-                        decide.mutate({
-                          approverId: approver.id,
-                          decision: "APPROVED",
-                          comment: "",
-                        })
-                      }
-                    >
-                      Согласовать
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setReturnFor((prev) =>
-                          prev === approver.id ? null : approver.id
-                        )
-                      }
-                    >
-                      Вернуть
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      aria-label={`Снять согласующего ${approver.name}`}
-                      disabled={remove.isPending}
-                      onClick={() => remove.mutate({ approverId: approver.id })}
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </Button>
-                  </span>
-                )}
-              </div>
-              {approver.comment !== "" && (
-                <p className="pl-7 text-xs text-muted-foreground">
-                  {approver.comment}
-                </p>
-              )}
-              {returnFor === approver.id && (
-                <div className="flex flex-wrap gap-2 pl-7">
-                  <Input
-                    className="h-8 w-72 text-xs"
-                    placeholder="Укажите, что необходимо исправить"
-                    aria-label={`Причина возврата: ${approver.name}`}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={decide.isPending}
-                    onClick={() =>
-                      decide.mutate({
-                        approverId: approver.id,
-                        decision: "RETURNED",
-                        comment: reason,
-                      })
-                    }
-                  >
-                    Подтвердить возврат
-                  </Button>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+        /* Семь граф не сжимаются до читаемости — скроллится таблица, а не
+           страница (тот же приём, что в расчёте постов). */
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] table-fixed border-collapse text-left">
+            <thead>
+              <tr className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                <th scope="col" className="w-[86px] px-2 py-1">Порядок</th>
+                <th scope="col" className="px-2 py-1">ФИО</th>
+                <th scope="col" className="px-2 py-1">Подразделение</th>
+                <th scope="col" className="px-2 py-1">Должность</th>
+                <th scope="col" className="w-[130px] px-2 py-1">Статус</th>
+                <th scope="col" className="w-[120px] px-2 py-1">Дата решения</th>
+                <th scope="col" className="px-2 py-1">Комментарий</th>
+                <th scope="col" className="w-[186px] px-2 py-1">
+                  <span className="sr-only">Действия</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {route.map((approver, index) => (
+                <Fragment key={approver.id}>
+                  <tr className="border-t align-top text-xs">
+                    <td className="px-2 py-1.5">
+                      <span className="flex items-center gap-0.5">
+                        <span className="tabular-nums">{index + 1}</span>
+                        <button
+                          type="button"
+                          className="rounded px-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
+                          aria-label={`Выше: ${approver.name}`}
+                          disabled={index === 0 || move.isPending}
+                          onClick={() =>
+                            move.mutate({
+                              approverId: approver.id,
+                              direction: "UP",
+                            })
+                          }
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded px-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
+                          aria-label={`Ниже: ${approver.name}`}
+                          disabled={index === route.length - 1 || move.isPending}
+                          onClick={() =>
+                            move.mutate({
+                              approverId: approver.id,
+                              direction: "DOWN",
+                            })
+                          }
+                        >
+                          ▼
+                        </button>
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 font-semibold">{approver.name}</td>
+                    <td className="px-2 py-1.5 text-muted-foreground">
+                      {approver.unit === "" ? "—" : approver.unit}
+                    </td>
+                    <td className="px-2 py-1.5 text-muted-foreground">
+                      {approver.position === "" ? "—" : approver.position}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${APPROVER_STATUS_CLASS[approver.status]}`}
+                      >
+                        {APPROVER_STATUS_LABEL[approver.status]}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 text-muted-foreground tabular-nums">
+                      {approver.decidedAt === null
+                        ? "—"
+                        : formatIsoDateTime(approver.decidedAt)}
+                    </td>
+                    <td className="px-2 py-1.5 text-muted-foreground">
+                      {approver.comment === "" ? "—" : approver.comment}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <span className="flex flex-wrap gap-1">
+                        {/* Решают только те, кому ОТПРАВИЛИ: у остальных
+                            кнопок решения нет, как и в эталоне. */}
+                        {approver.status === "PENDING" && (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={decide.isPending}
+                              onClick={() =>
+                                decide.mutate({
+                                  approverId: approver.id,
+                                  decision: "APPROVED",
+                                  comment: "",
+                                })
+                              }
+                            >
+                              Согласовать
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setReturnFor((prev) =>
+                                  prev === approver.id ? null : approver.id
+                                )
+                              }
+                            >
+                              Вернуть
+                            </Button>
+                          </>
+                        )}
+                        {approver.status === "NOT_SENT" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            aria-label={`Снять согласующего ${approver.name}`}
+                            disabled={remove.isPending}
+                            onClick={() =>
+                              remove.mutate({ approverId: approver.id })
+                            }
+                          >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                  {returnFor === approver.id && (
+                    <tr className="text-xs">
+                      <td />
+                      <td className="px-2 pb-2" colSpan={7}>
+                        <span className="flex flex-wrap items-center gap-2">
+                          <label
+                            className="text-[11px] font-semibold"
+                            htmlFor={`return-${approver.id}`}
+                          >
+                            Причина возврата *
+                          </label>
+                          <Input
+                            id={`return-${approver.id}`}
+                            className="h-8 w-72 text-xs"
+                            placeholder="Укажите, что необходимо исправить"
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={decide.isPending}
+                            onClick={() =>
+                              decide.mutate({
+                                approverId: approver.id,
+                                decision: "RETURNED",
+                                comment: reason,
+                              })
+                            }
+                          >
+                            Подтвердить возврат
+                          </Button>
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       <FieldErrors errors={decideErrors} />
       <StageError error={add.error} />
       <StageError error={remove.error} />
+      <StageError error={move.error} />
+      <StageError error={send.error} />
+      <StageError error={withdraw.error} />
       <StageError error={decide.error} />
+    </section>
+  );
+}
+
+/**
+ * Замечания — то, что порождают ВОЗВРАТЫ согласующих. Отдельным списком, а не
+ * строкой у согласующего: один человек возвращает дважды по разным поводам, и
+ * закрывают их по одному. Пока хоть одно открыто, этап не завершается — это
+ * правило сервера, экран только называет его вслух.
+ */
+function ApprovalRemarks({ event }: { event: SecurityEvent }) {
+  const resolve = useResolveRemark(event.id);
+  const remarks = event.approvalRemarks;
+  const open = remarks.filter((remark) => !remark.resolved).length;
+
+  return (
+    <section className="rounded-md border">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-3 py-2">
+        <p className="text-xs font-semibold">Замечания</p>
+        <p className="text-[11px] text-muted-foreground">
+          Формируются при возврате на доработку ·{" "}
+          {remarks.length === 0
+            ? "замечаний нет"
+            : `${open} не устранено · ${remarks.length} всего`}
+        </p>
+      </div>
+      {remarks.length === 0 ? (
+        <p className="px-3 py-3 text-xs text-muted-foreground">
+          Замечаний нет — возвратов на доработку не было.
+        </p>
+      ) : (
+        <ul className="divide-y">
+          {remarks.map((remark) => (
+            <li
+              key={remark.id}
+              className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block">{remark.text}</span>
+                <span className="block text-[11px] text-muted-foreground">
+                  {remark.author} · {formatIsoDateTime(remark.createdAt)}
+                </span>
+              </span>
+              <span
+                className={
+                  remark.resolved
+                    ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
+                    : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                }
+              >
+                {remark.resolved ? "Устранено" : "Не устранено"}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={resolve.isPending}
+                onClick={() =>
+                  resolve.mutate({
+                    remarkId: remark.id,
+                    resolved: !remark.resolved,
+                  })
+                }
+              >
+                {remark.resolved ? "Вернуть в работу" : "Отметить устранённым"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <StageError error={resolve.error} />
     </section>
   );
 }

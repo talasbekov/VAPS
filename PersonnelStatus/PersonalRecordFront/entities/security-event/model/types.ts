@@ -120,15 +120,37 @@ export type ApprovalStatus = "PENDING" | "APPROVED" | "RETURNED";
  * с каким решением. Порядок — позиция в списке; отдельного поля под номер нет,
  * иначе появились бы два источника правды.
  */
+/**
+ * Состояние согласующего в маршруте. `NOT_SENT` — начальное: человека внесли
+ * в маршрут, но расстановку ему ещё не ОТПРАВЛЯЛИ, и решать ему нечего.
+ * `PENDING` значит «на согласовании» — отправлено, решения нет.
+ */
+export type ApproverStatus = "NOT_SENT" | "PENDING" | "APPROVED" | "RETURNED";
+
 export interface Approver {
   id: string;
   name: string;
   unit: string;
   position: string;
-  status: ApprovalStatus;
+  status: ApproverStatus;
   /** null — решение ещё не принято. */
   decidedAt: string | null;
   comment: string;
+}
+
+/**
+ * Замечание, порождённое ВОЗВРАТОМ согласующего. Отдельный список, а не поле
+ * у согласующего: один человек возвращает дважды по разным поводам, и вторая
+ * причина затёрла бы первую, хотя закрывают их по одной.
+ */
+export interface ApprovalRemark {
+  id: string;
+  approverId: string;
+  author: string;
+  createdAt: string;
+  text: string;
+  resolved: boolean;
+  resolvedAt: string | null;
 }
 
 /** Внешний кадровый read-only снимок — только для подбора кандидатов. */
@@ -280,6 +302,12 @@ export interface SecurityEvent {
   approvalStatus: ApprovalStatus;
   approvalComment: string;
   approvalRoute: Approver[];
+  /** Замечания от возвратов; закрываются по одному. */
+  approvalRemarks: ApprovalRemark[];
+  /** Расстановка изменилась ПОСЛЕ отправки на согласование. Считает сервер:
+   * по этому же признаку он блокирует завершение этапа, и вторая реализация
+   * правила на клиенте разошлась бы с ним молча. */
+  approvalStale: boolean;
   journalEntries: JournalEntry[];
   closureDirectionSummaries: ClosureDirectionSummary[];
   closedAt: string | null;
@@ -570,6 +598,34 @@ export interface AddApproverRequest extends Record<string, unknown> {
 export interface DecideApproverRequest extends Record<string, unknown> {
   decision: "APPROVED" | "RETURNED";
   comment: string;
+}
+
+export function securityEventApproverMovePath(
+  id: string,
+  approverId: string
+): string {
+  return `${securityEventApproverPath(id, approverId)}move/`;
+}
+
+export interface MoveApproverRequest extends Record<string, unknown> {
+  direction: "UP" | "DOWN";
+}
+
+export function securityEventApprovalSendPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/send/`;
+}
+export function securityEventApprovalWithdrawPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/withdraw/`;
+}
+export function securityEventRemarkResolvePath(
+  id: string,
+  remarkId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/remarks/${encodeURIComponent(remarkId)}/resolve/`;
+}
+
+export interface ResolveRemarkRequest extends Record<string, unknown> {
+  resolved: boolean;
 }
 
 export function securityEventApprovalApprovePath(id: string): string {

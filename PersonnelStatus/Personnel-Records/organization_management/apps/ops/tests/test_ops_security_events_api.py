@@ -594,6 +594,59 @@ def test_full_lifecycle_walkthrough(manager):
     assert (data["stage"], data["approvalStatus"]) == ("PLACEMENT", "RETURNED")
     assert data["approvalComment"] == "уточнить посты"
     data = manager.post(f"{base}placement/complete/").json()
+
+    # Согласование по эталону («ОМ-37.3»): без маршрута и без отправки этап не
+    # завершается — подпись под составом, которого согласующий не видел, это
+    # не согласование.
+    resp = manager.post(f"{base}approval/approve/")
+    assert resp.json()["error_code"] == "APPROVAL_ROUTE_EMPTY"
+    approver = manager.post(
+        f"{base}approval/route/",
+        {"name": "К. Оразов", "unit": "Департамент охраны", "position": "Зам."},
+        format="json",
+    ).json()["approvalRoute"][0]
+    assert approver["status"] == "NOT_SENT"
+    # Решать по неотправленному нечего.
+    resp = manager.post(
+        f"{base}approval/route/{approver['id']}/decide/",
+        {"decision": "APPROVED", "comment": ""},
+        format="json",
+    )
+    assert resp.json()["error_code"] == "APPROVAL_NOT_SENT"
+    resp = manager.post(f"{base}approval/approve/")
+    assert resp.json()["error_code"] == "APPROVAL_INCOMPLETE"
+
+    data = manager.post(f"{base}approval/send/").json()
+    assert data["approvalRoute"][0]["status"] == "PENDING"
+    assert data["approvalStale"] is False
+    # Возврат согласующего порождает замечание и блокирует завершение.
+    data = manager.post(
+        f"{base}approval/route/{approver['id']}/decide/",
+        {"decision": "RETURNED", "comment": "уточнить пост 1"},
+        format="json",
+    ).json()
+    remark = data["approvalRemarks"][0]
+    assert (remark["text"], remark["resolved"]) == ("уточнить пост 1", False)
+    resp = manager.post(f"{base}approval/approve/")
+    assert resp.json()["error_code"] == "APPROVAL_RETURNED"
+
+    data = manager.post(f"{base}approval/send/").json()
+    data = manager.post(
+        f"{base}approval/route/{approver['id']}/decide/",
+        {"decision": "APPROVED", "comment": ""},
+        format="json",
+    ).json()
+    # Комментарий согласования проставляет СЕРВЕР — его не спрашивают.
+    assert data["approvalRoute"][0]["comment"] == "Без замечаний"
+    # Замечание ещё открыто — этап не завершить.
+    resp = manager.post(f"{base}approval/approve/")
+    assert resp.json()["error_code"] == "APPROVAL_REMARKS_OPEN"
+    manager.post(
+        f"{base}approval/remarks/{remark['id']}/resolve/",
+        {"resolved": True},
+        format="json",
+    )
+
     data = manager.post(f"{base}approval/approve/").json()
     assert (data["stage"], data["approvalStatus"]) == (
         "ACKNOWLEDGEMENT",

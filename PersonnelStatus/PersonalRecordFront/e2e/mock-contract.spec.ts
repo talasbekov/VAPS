@@ -72,5 +72,69 @@ test.describe(
       await expect(main).toContainText(title)
       await expect(main).toContainText('Бюллетень')
     })
+
+    test('согласование в моке требует маршрута и отправки', async ({ page }) => {
+      // Правила сервера («ОМ-37.3»): внесённый в маршрут ещё НЕ на
+      // согласовании, решать по неотправленному нечего, а завершение этапа
+      // без решений отбивается. Пока мок этого не знал, он зеленел там, где
+      // живой стек отказывает.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      // Мок-сид держит ОМ на «Расстановке». Доводим его до согласования
+      // переводом этапа — ручкой, а не кликами: предмет пробы здесь правила
+      // СОГЛАСОВАНИЯ, и путь к нему не должен их заслонять. Запрос идёт ИЗ
+      // СТРАНИЦЫ: перехватывает мок service worker, и запрос мимо браузера он
+      // не увидит.
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+      await page.evaluate(async () => {
+        await fetch('/api/ops/security-events/se-1/stage/', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ stage: 'APPROVAL' }),
+        })
+      })
+      await page.reload()
+
+      const route = page
+        .locator('section', { hasText: 'Маршрут согласования' })
+        .first()
+      await expect(route).toBeVisible({ timeout: 20_000 })
+      await route.getByRole('button', { name: '+ Добавить согласующего' }).click()
+      await route.getByLabel('ФИО согласующего').fill('Проба мока')
+      await route.getByRole('button', { name: 'Добавить', exact: true }).click()
+
+      const row = route.locator('tr', { hasText: 'Проба мока' }).first()
+      await expect(row).toContainText('Не отправлено', { timeout: 20_000 })
+      // Решения по неотправленному нет — кнопок нет.
+      await expect(row.getByRole('button', { name: 'Согласовать' })).toHaveCount(0)
+
+      // Отправлять нечего: у мок-сида этого ОМ расстановки нет. Отказ ТОТ ЖЕ,
+      // что у сервера, — мок обязан отбивать в тех же местах.
+      await route.getByRole('button', { name: 'Отправить на согласование' }).click()
+      await expect(page.getByRole('main')).toContainText(
+        'Расстановка пуста — согласовывать нечего',
+        { timeout: 20_000 },
+      )
+
+      // И завершение этапа отбивается — маршрут есть, но решений нет.
+      await page
+        .getByRole('button', { name: 'Завершить этап и перейти далее' })
+        .click()
+      await expect(page.getByRole('main')).toContainText(
+        'Расстановка не отправлена на согласование',
+        { timeout: 20_000 },
+      )
+    })
   },
 )
