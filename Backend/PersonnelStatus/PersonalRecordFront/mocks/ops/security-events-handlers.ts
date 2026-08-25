@@ -41,6 +41,7 @@ import {
   securityEventDemandApprovePath,
   securityEventDetailPath,
   securityEventForceAllocationPath,
+  securityEventForcesSplitPath,
   securityEventForcesCompletePath,
   securityEventJournalPath,
   securityEventPlacementAssignPath,
@@ -62,6 +63,7 @@ import type {
   DecideApproverRequest,
   MoveApproverRequest,
   ResolveRemarkRequest,
+  ForceAllocationRow,
   ForceRequest,
   JournalEntry,
   ListSecurityEventsResponse,
@@ -72,6 +74,7 @@ import type {
   ReturnPlacementRequest,
   SecurityEvent,
   SecurityEventStage,
+  SplitForceDemandRequest,
   StaffingDemandRow,
   UpdateBulletinRequest,
   UpdateDemandRequest,
@@ -233,6 +236,8 @@ function emptyEvent(
     demandRows: [],
     demandApproved: false,
     forceRequests: [],
+    forceAllocation: [],
+    forceDemandTotal: 0,
     placementAssignments: [],
     approvalStatus: "PENDING",
     approvalComment: "",
@@ -399,9 +404,17 @@ function softConflict(message: string, conflicts: Record<string, unknown>[]) {
 }
 
 function saveEvent(updated: SecurityEvent): SecurityEvent {
-  events = getEvents().map((e) => (e.id === updated.id ? updated : e));
+  // `forceDemandTotal` — ВЫВОД, а не поле: сервер считает его при каждой
+  // выдаче. В моке он пересчитывается здесь, на общем пути сохранения, иначе
+  // каждая ручка обязана была бы помнить про него — и первая же забывшая
+  // отдала бы клиенту раскладку с нулевой потребностью.
+  const withTotal: SecurityEvent = {
+    ...updated,
+    forceDemandTotal: updated.reconForceRequest || updated.forceNeed,
+  };
+  events = getEvents().map((e) => (e.id === withTotal.id ? withTotal : e));
   persist(events);
-  return updated;
+  return withTotal;
 }
 
 /** Либо ОМ, либо готовый 404-ответ — вызывающий обязан проверить `response`. */
@@ -928,6 +941,92 @@ export const securityEventsHandlers = [
           readinessPercent: 45,
           updatedAt: nowIso(),
         })
+      );
+    }
+  ),
+
+  // ── Раскладка потребности по департаментам (Plane №73, СС-1) ───────────
+  //
+  // Стоит ВЫШЕ ручки выделения сил: та ловит `forces/:requestId/`, и слово
+  // `allocation` для неё — такой же id (метод другой, но соседство слишком
+  // близкое, чтобы полагаться на него молча).
+  http.post(
+    `*${securityEventForcesSplitPath(":id")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const body = (await request.json()) as SplitForceDemandRequest;
+      const rows = body.rows ?? [];
+      if (event.stage !== "DEMAND" && event.stage !== "FORCES") {
+        return businessRuleError(
+          "INVALID_STAGE_TRANSITION",
+          "Раскладывать потребность можно на этапах «Потребность» и «Запрос сил»."
+        );
+      }
+      const fieldErrors: Record<string, string[]> = {};
+      const seen = new Set<string>();
+      rows.forEach((row, index) => {
+        const key = String(row.departmentId ?? "").trim();
+        if (key === "")
+          fieldErrors[`rows.${index}.departmentId`] = ["Выберите департамент."];
+        else if (seen.has(key))
+          fieldErrors[`rows.${index}.departmentId`] = [
+            "Департамент уже есть в раскладке.",
+          ];
+        seen.add(key);
+        if (row.need < 1)
+          fieldErrors[`rows.${index}.need`] = ["Должно быть не меньше 1."];
+      });
+      if (Object.keys(fieldErrors).length > 0) return validationError(fieldErrors);
+
+      const total = event.reconForceRequest || event.forceNeed;
+      const requested = rows.reduce((sum, row) => sum + row.need, 0);
+      if (total > 0 && requested > total) {
+        return businessRuleError(
+          "ALLOCATION_OVER_DEMAND",
+          `Разложено ${requested} человек при потребности ${total} — уберите лишних.`
+        );
+      }
+
+      const previous = new Map(
+        event.forceAllocation.map((row) => [row.departmentId, row])
+      );
+      const dropped = event.forceAllocation.filter(
+        (row) => !seen.has(row.departmentId) && row.status !== "DRAFT"
+      );
+      if (dropped.length > 0) {
+        return businessRuleError(
+          "ALLOCATION_LOCKED",
+          `Заявка уже ушла в департамент (${dropped
+            .map((row) => row.departmentName || "—")
+            .join(", ")}) — снять его из раскладки нельзя.`
+        );
+      }
+
+      const forceAllocation: ForceAllocationRow[] = rows.map((row) => {
+        const key = String(row.departmentId).trim();
+        const kept = previous.get(key);
+        return {
+          id: kept?.id ?? `force-allocation-${key}-${nowIso()}`,
+          departmentId: key,
+          // Имя департамента на сервере берётся из справочника подразделений;
+          // мок ops его не держит, поэтому здесь стоит ЗАМЕТНАЯ подстановка, а
+          // не выдумка похожего названия: правила проверяются мок-пробами,
+          // подписи — живым стендом.
+          departmentName: kept?.departmentName ?? `Департамент ${key}`,
+          need: row.need,
+          status: kept?.status ?? "DRAFT",
+          comment: (row.comment ?? "").trim(),
+          notifiedAt: kept?.notifiedAt ?? null,
+          submittedAt: kept?.submittedAt ?? null,
+          decidedAt: kept?.decidedAt ?? null,
+          decisionComment: kept?.decisionComment ?? "",
+          directorates: kept?.directorates ?? [],
+          members: kept?.members ?? [],
+        };
+      });
+      return HttpResponse.json(
+        saveEvent({ ...event, forceAllocation, updatedAt: nowIso() })
       );
     }
   ),

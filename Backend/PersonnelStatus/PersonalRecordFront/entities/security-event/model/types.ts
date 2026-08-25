@@ -101,6 +101,55 @@ export interface ForceRequest {
   comment: string;
 }
 
+/** Состояние заявки департаменту в цепочке «Сбор сил на ОМ» (Plane №73).
+ *
+ * `DRAFT` — штаб разложил, но департаменту ещё не сказали; дальше по цепочке
+ * идут оповещение управлений, отправка списка и решение штаба (шаги СС-2…СС-5).
+ */
+export type ForceAllocationStatus =
+  | "DRAFT"
+  | "NOTIFIED"
+  | "SUBMITTED"
+  | "ACCEPTED"
+  | "RETURNED";
+
+/** Управление внутри департамента, которому ушла заявка (заполняется СС-2). */
+export interface ForceAllocationDirectorate {
+  id: string;
+  divisionId: string;
+  name: string;
+  notifiedAt: string | null;
+}
+
+/** Выделенный управлением сотрудник (заполняется СС-3). */
+export interface ForceAllocationMember {
+  employeeId: string;
+  name: string;
+  divisionId: string;
+  divisionName: string;
+  addedAt: string;
+}
+
+/** Заявка ДЕПАРТАМЕНТУ: сколько людей он должен выделить на мероприятие.
+ *
+ * Не путать с `ForceRequest`: там числа по свободным «группам» утверждённой
+ * потребности, адресата у них нет вовсе.
+ */
+export interface ForceAllocationRow {
+  id: string;
+  departmentId: string;
+  departmentName: string;
+  need: number;
+  status: ForceAllocationStatus;
+  comment: string;
+  notifiedAt: string | null;
+  submittedAt: string | null;
+  decidedAt: string | null;
+  decisionComment: string;
+  directorates: ForceAllocationDirectorate[];
+  members: ForceAllocationMember[];
+}
+
 /** Назначение сотрудника на пост. Двойное назначение внутри одного ОМ запрещено. */
 export interface PlacementAssignment {
   id: string;
@@ -298,6 +347,11 @@ export interface SecurityEvent {
   demandRows: StaffingDemandRow[];
   demandApproved: boolean;
   forceRequests: ForceRequest[];
+  /** Раскладка потребности по департаментам — первое звено «Сбора сил». */
+  forceAllocation: ForceAllocationRow[];
+  /** Сколько всего людей делит штаб. Считает СЕРВЕР: по этому же числу он
+   * отбивает перебор, и второй счёт на клиенте разошёлся бы с ним молча. */
+  forceDemandTotal: number;
   placementAssignments: PlacementAssignment[];
   approvalStatus: ApprovalStatus;
   approvalComment: string;
@@ -465,6 +519,11 @@ export interface UpdateForceAllocationRequest extends Record<string, unknown> {
   comment: string;
 }
 
+/** Раскладка потребности по департаментам: список целиком (Plane №73, СС-1). */
+export interface SplitForceDemandRequest extends Record<string, unknown> {
+  rows: { departmentId: string; need: number; comment?: string }[];
+}
+
 export interface AssignPlacementRequest extends Record<string, unknown> {
   postId: string;
   employeeId: string;
@@ -560,6 +619,12 @@ export function securityEventForceAllocationPath(
   requestId: string
 ): string {
   return `${SECURITY_EVENTS_PATH}${id}/forces/${requestId}/`;
+}
+/** Раскладка потребности по департаментам — список ЦЕЛИКОМ одним запросом:
+ * «кому сколько» это одно решение штаба, и построчное сохранение позволяло бы
+ * сумме уехать за потребность между двумя запросами. */
+export function securityEventForcesSplitPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/`;
 }
 export function securityEventForcesCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/forces/complete/`;

@@ -23,6 +23,7 @@ export function StageError({ error }: { error: OpsApiFailure | null }) {
  */
 const FIELD_LABEL: Record<string, string> = {
   group: "Группа",
+  departmentId: "Департамент",
   shift: "Смена",
   sector: "Направление",
   post: "Пост",

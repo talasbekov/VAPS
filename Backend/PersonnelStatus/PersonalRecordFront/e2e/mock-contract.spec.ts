@@ -136,5 +136,97 @@ test.describe(
         { timeout: 20_000 },
       )
     })
+
+    test('раскладка сил в моке живёт по правилам сервера', async ({ page }) => {
+      // Правила сервера (Plane №73, «СС-1»): раскладка правится только на
+      // «Потребности»/«Запросе сил», сумма не может превысить потребность, а
+      // один департамент не встречается дважды. Мок, не знающий этих правил,
+      // зеленел бы там, где живой стек отказывает.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      // Фикстура: доводим мок-ОМ до «Потребности» с ненулевым расчётом —
+      // иначе проверка перебора прошла бы вакуумно (сравнивать не с чем).
+      const prepared = await page.evaluate(async () => {
+        const call = async (path: string, body?: unknown) =>
+          (
+            await fetch(path, {
+              method: body === undefined ? 'POST' : 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: body === undefined ? undefined : JSON.stringify(body),
+            })
+          ).json()
+        const base = '/api/ops/security-events/se-1/'
+        await call(`${base}stage/`, { stage: 'RECON' })
+        await call(`${base}recon/import-from-passport/`)
+        const fresh = await (await fetch(base)).json()
+        await fetch(`${base}recon/`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            checklist: fresh.reconChecklist.map((item: Record<string, unknown>) => ({
+              ...item,
+              done: true,
+              result: 'MATCHES',
+            })),
+            sectorPosts: fresh.reconSectorPosts.map(
+              (post: Record<string, unknown>, index: number) =>
+                index === 0 ? { ...post, need: 4 } : post,
+            ),
+          }),
+        })
+        return (await call(`${base}recon/complete/`)) as {
+          stage: string
+          forceDemandTotal: number
+        }
+      })
+      expect(prepared.stage).toBe('DEMAND')
+      expect(
+        prepared.forceDemandTotal,
+        'мок-фикстура без потребности — делить нечего',
+      ).toBeGreaterThan(1)
+
+      const outcome = await page.evaluate(async (total: number) => {
+        const post = async (rows: unknown) => {
+          const res = await fetch('/api/ops/security-events/se-1/forces/allocation/', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ rows }),
+          })
+          return { status: res.status, body: await res.json() }
+        }
+        return {
+          over: await post([{ departmentId: '2', need: total + 1 }]),
+          repeated: await post([
+            { departmentId: '2', need: 1 },
+            { departmentId: '2', need: 1 },
+          ]),
+          saved: await post([{ departmentId: '2', need: total - 1 }]),
+        }
+      }, prepared.forceDemandTotal)
+
+      expect(outcome.over.status).toBe(422)
+      expect(outcome.over.body.error_code).toBe('ALLOCATION_OVER_DEMAND')
+      expect(outcome.repeated.status).toBe(400)
+      expect(outcome.repeated.body.details['rows.1.departmentId']).toBeTruthy()
+      expect(outcome.saved.status).toBe(200)
+      expect(outcome.saved.body.forceAllocation).toHaveLength(1)
+      expect(outcome.saved.body.forceAllocation[0].status).toBe('DRAFT')
+      expect(outcome.saved.body.forceAllocation[0].need).toBe(
+        prepared.forceDemandTotal - 1,
+      )
+    })
   },
 )

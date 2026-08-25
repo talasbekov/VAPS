@@ -312,6 +312,10 @@ export interface CoreDivision {
   name: string;
   code: string | null;
   parent: number | null;
+  /** Тип узла оргструктуры: organization / department / directorate / division.
+   * Ручка отдавала его и раньше — читателя не было. Читает «Сбор сил на ОМ»:
+   * адресатом заявки бывает только ДЕПАРТАМЕНТ (Plane №73). */
+  type_code: string;
 }
 
 /**

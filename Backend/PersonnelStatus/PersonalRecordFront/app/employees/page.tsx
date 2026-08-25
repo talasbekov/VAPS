@@ -50,6 +50,7 @@ import { formatIsoDate } from "@/shared/lib/date";
 import { Progress } from "@/components/ui/progress";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useForcesGathering } from "@/hooks/use-forces-gathering";
+import { ForcesSplitPanel } from "@/features/forces-split/ui/ForcesSplitPanel";
 import { objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { personnelFields } from "@/entities/employee/model/from-api";
@@ -651,10 +652,8 @@ function EmployeesScreen() {
               </p>
             )}
             {inboundRows.map((event) => (
-              <div
-                key={event.id}
-                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border p-3"
-              >
+              <div key={event.id} className="rounded-lg border p-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <div className="min-w-0">
                   <Link
                     href={`/security-ops/events/${event.id}`}
@@ -677,6 +676,11 @@ function EmployeesScreen() {
                     запросил {event.chiefName.trim() === "" ? event.ownerName : event.chiefName}
                   </p>
                 </div>
+                </div>
+                {/* Раскладка живёт ЗДЕСЬ, а не на своём экране: разложить
+                    пришедшее число — продолжение той же строки, в которой оно
+                    показано (Plane №73, шаг «СС-1»). */}
+                <ForcesSplitPanel event={event} />
               </div>
             ))}
           </CardContent>

@@ -57,6 +57,10 @@ CODES = {
     "APPROVAL_REMARKS_OPEN": frozenset({422}),
     "PLACEMENT_EMPTY": frozenset({422}),
     "FORCE_ALLOCATION_INCOMPLETE": frozenset({422}),
+    # Раскладка потребности по департаментам (Plane №73): перебор над
+    # запрошенным и попытка снять департамент, которому заявка уже ушла.
+    "ALLOCATION_OVER_DEMAND": frozenset({422}),
+    "ALLOCATION_LOCKED": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
     "PLACEMENT_INCOMPLETE": frozenset({422}),
     "ACKNOWLEDGEMENT_INCOMPLETE": frozenset({422}),
