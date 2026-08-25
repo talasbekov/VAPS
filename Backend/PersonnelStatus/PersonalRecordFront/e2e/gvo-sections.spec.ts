@@ -27,6 +27,8 @@ const PERSONS_REGISTRY_GAP_LINE =
 interface EventRow {
   id: string
   code: string
+  /** `null` — ОМ заведено до появления типа: тип не назван. */
+  kind?: 'INTERNAL' | 'FOREIGN' | null
   visitObjects?: { id: string; objectName: string }[]
 }
 
@@ -209,12 +211,16 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // переходит мероприятию — кнопка справа в шапке карточки, панель
     // раскрывается НА МЕСТЕ. Проба ведёт именно кнопку: уход на другой экран
     // вернул бы разрыв контекста, из-за которого модуль и убирают.
-    const rows = await registryEvents()
-    const target = rows[0]
-    expect(target, 'реестр стенда пуст — панель не на чем открыть').toBeTruthy()
+    // Тип НЕ внутренний: у внутреннего ОМ кнопки нет по правилу «ОМ-35.5», и
+    // «первое в реестре» упиралось бы в её отсутствие.
+    const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
+    expect(
+      target,
+      'в реестре нет ОМ с иностранным ОЛ — панель не на чем открыть',
+    ).toBeTruthy()
 
     await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${target.id}`)
+    await page.goto(`${APP}/security-ops/events/${target!.id}`)
     const open = page.getByRole('button', { name: 'Информация по ГВО' })
     await expect(open).toBeVisible({ timeout: 20_000 })
 
@@ -224,12 +230,12 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await expect(page.getByText('Сводные данные ГВО')).toHaveCount(0)
 
     const codesBeforeOpen = await page
-      .getByText(target.code, { exact: true })
+      .getByText(target!.code, { exact: true })
       .count()
 
     await open.click()
     // Адрес НЕ сменился — панель раскрылась на месте, а не увела на экран.
-    expect(page.url()).toContain(`/security-ops/events/${target.id}`)
+    expect(page.url()).toContain(`/security-ops/events/${target!.id}`)
     await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
       timeout: 15_000,
     })
@@ -237,7 +243,7 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await expect(page.getByRole('heading', { name: 'Охраняемые лица' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Объекты посещения' })).toBeVisible()
     const codesAfterOpen = await page
-      .getByText(target.code, { exact: true })
+      .getByText(target!.code, { exact: true })
       .count()
     // Код ОМ панель НЕ добавляет: он уже стоит в шапке карточки, и второй раз
     // тем же текстом ловил бы substring-пробы других экранов в
@@ -248,6 +254,67 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // Повторное нажатие закрывает — кнопка меняет и подпись, и состояние.
     await page.getByRole('button', { name: 'Скрыть информацию по ГВО' }).click()
     await expect(page.getByText('Сводные данные ГВО')).toHaveCount(0)
+  })
+
+  test('у внутреннего мероприятия кнопки «Информация по ГВО» нет', async ({
+    page,
+  }) => {
+    // Задача заказчика «Реестр ОМ-35.5»: сводка ГВО — про выездную охрану
+    // иностранного ОЛ. У внутреннего ОМ её нет, и кнопка обещала бы пустоту.
+    //
+    // Мероприятие заводится ПРОБОЙ и снимается в конце: искать внутреннее ОМ в
+    // реестре значит зависеть от того, что кто-то его там оставил, — молчаливый
+    // скип вместо проверки.
+    const token = await apiToken()
+    const created = (await (
+      await fetch(`${API}/api/ops/security-events/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: `Внутреннее ОМ (e2e) ${Date.now()}`,
+          businessDate: '2026-09-01',
+          kind: 'INTERNAL',
+        }),
+      })
+    ).json()) as { id: string; code: string }
+    expect(created.code, 'фикстура внутреннего ОМ не завелась').toBeTruthy()
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${created.id}`)
+      // Ждём ЖИВУЮ карточку, а не таймаут: иначе «кнопки нет» сойдётся и на
+      // незагруженной странице.
+      await expect(
+        page.getByText(created.code, { exact: true }).first(),
+      ).toBeVisible({ timeout: 20_000 })
+      await expect(
+        page.getByRole('button', { name: 'Информация по ГВО' }),
+      ).toHaveCount(0)
+
+      // Контроль: у мероприятия НЕ внутреннего типа кнопка на месте — иначе
+      // проба выше зеленела бы и от того, что кнопку сняли совсем. Тип берём
+      // из ответа сервера: на стенде внутренних ОМ больше половины, и «второе
+      // в списке» оказалось бы таким же внутренним.
+      const foreign = (await registryEvents()).find(
+        (r) => r.id !== created.id && r.kind !== 'INTERNAL',
+      )
+      expect(
+        foreign,
+        'в реестре нет ОМ с иностранным ОЛ (или без типа) для контроля',
+      ).toBeTruthy()
+      await page.goto(`${APP}/security-ops/events/${foreign!.id}`)
+      await expect(
+        page.getByRole('button', { name: 'Информация по ГВО' }),
+      ).toBeVisible({ timeout: 20_000 })
+    } finally {
+      await fetch(`${API}/api/ops/security-events/${created.id}/`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    }
   })
 
   // Гейт раздела показывается персоной, у которой права НЕТ: под админом
