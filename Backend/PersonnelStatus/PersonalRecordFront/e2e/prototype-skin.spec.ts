@@ -903,7 +903,10 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     { path: '/security-ops/service-reports/history/', title: 'История отчётов', eyebrow: 'Охранные мероприятия' },
     // Администрирование
     { path: '/security-ops/dictionaries/', title: 'Справочники', eyebrow: 'Администрирование' },
-    { path: '/security-ops/settings/', title: 'Настройки ОМ', eyebrow: 'Администрирование' },
+        // Переименовано 25.08.2026 по требованию заказчика (Plane «Реестр ОМ-37»):
+    // «Настройки ОМ» → «Администрирование». Надзаголовок — имя КАТЕГОРИИ меню,
+    // и он совпал с именем пункта; расхождение записано в Decisions.
+    { path: '/security-ops/settings/', title: 'Администрирование', eyebrow: 'Администрирование' },
     { path: '/security-ops/feedback/', title: 'Обратная связь', eyebrow: 'Обратная связь' },
     { path: '/security-ops/audit/', title: 'Аудит', eyebrow: 'Администрирование' },
     // Личный кабинет

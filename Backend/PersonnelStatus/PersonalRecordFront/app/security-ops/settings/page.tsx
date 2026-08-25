@@ -53,7 +53,7 @@ export default function OpsSettingsPage() {
       <div className="space-y-4">
         <PageHeader
           eyebrow="Администрирование"
-          title="Настройки ОМ"
+          title="Администрирование"
           description="Политики, которые читают другие разделы — правка меняет исход операций, а не окраску экрана"
         />
 
