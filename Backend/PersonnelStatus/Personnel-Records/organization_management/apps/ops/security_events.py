@@ -1352,6 +1352,120 @@ def split_force_demand(event_id, *, rows):
     return event
 
 
+def _find_allocation(event, allocation_id):
+    row = next(
+        (
+            item
+            for item in (event.force_allocation or [])
+            if item.get("id") == allocation_id
+        ),
+        None,
+    )
+    if row is None:
+        raise _not_found("Заявка департаменту не найдена.", allocation_id)
+    return row
+
+
+@transaction.atomic
+def notify_directorates(event_id, allocation_id, *, actor):
+    """Оповестить управления департамента о заявке (Plane №73, шаг «СС-2»).
+
+    Оповещение — МОМЕНТ у управления, а не булев флаг: департамент оповещает
+    повторно (добавилось управление, потерялся ответ), и «оповещено ли» без
+    времени не отвечает на вопрос «когда сказали».
+
+    Персональной рассылки нет сознательно: `notifications.Notification`
+    адресуется пользователю, а связи «учётка ↔ начальник управления» в системе
+    до задачи №36 нет вовсе. Адресат заявки при этом хранится — разделение по
+    ролям (№74) начнётся с прав, а не с переписывания модели.
+    """
+    from organization_management.apps.divisions.models import Division
+
+    event = lock_event(event_id)
+    if event.stage not in _ALLOCATION_STAGES:
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message=(
+                "Оповещать управления можно на этапах «Потребность» и "
+                "«Запрос сил»."
+            ),
+        )
+    target = _find_allocation(event, allocation_id)
+
+    directorates = list(
+        Division.objects.filter(
+            parent_id=target["departmentId"],
+            division_type=Division.DivisionType.DIRECTORATE,
+            is_active=True,
+        )
+        .order_by("lft", "id")
+        .values_list("pk", "name")
+    )
+    if not directorates:
+        raise DomainError(
+            "ALLOCATION_NO_DIRECTORATES",
+            422,
+            message=(
+                f"У департамента «{target['departmentName']}» нет действующих "
+                "управлений — оповещать некого."
+            ),
+        )
+
+    now = _now_iso()
+    known = {
+        str(row.get("divisionId")): row for row in target.get("directorates", [])
+    }
+    rows = []
+    for pk, name in directorates:
+        key = str(pk)
+        kept = known.get(key)
+        rows.append(
+            {
+                "id": (kept or {}).get("id") or f"force-directorate-{key}",
+                "divisionId": key,
+                "name": name,
+                # Уже оповещённому момент НЕ переписывается: повторное нажатие
+                # добирает тех, кому не сказали, а не объявляет всех
+                # оповещёнными заново — иначе «когда сказали» стало бы
+                # временем последнего нажатия у всех сразу.
+                "notifiedAt": (kept or {}).get("notifiedAt") or now,
+            }
+        )
+    # Управление, выбывшее из департамента, из заявки не стирается: оповещение
+    # состоялось, и его след — факт, а не текущая принадлежность.
+    for key, kept in known.items():
+        if all(row["divisionId"] != key for row in rows):
+            rows.append(kept)
+
+    event.force_allocation = [
+        {
+            **item,
+            "directorates": rows,
+            "status": "NOTIFIED" if item.get("status") == "DRAFT" else item["status"],
+            "notifiedAt": item.get("notifiedAt") or now,
+        }
+        if item.get("id") == allocation_id
+        else item
+        for item in event.force_allocation
+    ]
+    event.save(update_fields=["force_allocation", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.FORCE_ALLOCATION_NOTIFIED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "departmentId": target["departmentId"],
+            "departmentName": target["departmentName"],
+            "need": target["need"],
+            "directorates": [row["name"] for row in rows],
+        },
+    )
+    return event
+
+
 # ── Выделение сил ───────────────────────────────────────────────────────────
 
 

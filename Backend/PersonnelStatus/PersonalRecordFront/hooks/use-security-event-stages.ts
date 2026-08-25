@@ -29,6 +29,7 @@ import {
   securityEventDemandApprovePath,
   securityEventForceAllocationPath,
   securityEventForcesSplitPath,
+  securityEventForcesNotifyPath,
   securityEventForcesCompletePath,
   securityEventJournalPath,
   securityEventPlacementAssignPath,
@@ -185,6 +186,15 @@ export function useSplitForceDemand(id: string, options?: StageMutationOptions) 
     (body) =>
       opsApiClient.post<SecurityEvent>(securityEventForcesSplitPath(id), body),
     options
+  );
+}
+
+/** «Оповестить управления» у заявки департаменту (Plane №73, шаг СС-2). */
+export function useNotifyDirectorates(id: string, allocationId: string) {
+  return useEventMutation<Record<string, never>>(id, () =>
+    opsApiClient.post<SecurityEvent>(
+      securityEventForcesNotifyPath(id, allocationId)
+    )
   );
 }
 

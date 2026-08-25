@@ -19,17 +19,30 @@ import {
   FieldErrors,
   StageError,
 } from "@/features/security-event-stages/ui/StageErrors";
-import { useSplitForceDemand } from "@/hooks/use-security-event-stages";
+import {
+  useNotifyDirectorates,
+  useSplitForceDemand,
+} from "@/hooks/use-security-event-stages";
 import { apiClient, type CoreDivision } from "@/lib/api";
-import type { SecurityEvent } from "@/entities/security-event";
+import type {
+  ForceAllocationRow,
+  ForceAllocationStatus,
+  SecurityEvent,
+} from "@/entities/security-event";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
-/** Строка формы. `key` — своя, стабильная: departmentId ещё может быть пуст. */
+/** Строка формы. `key` — своя, стабильная: departmentId ещё может быть пуст.
+ *
+ * Признака «заявка уже ушла» здесь НЕТ сознательно: он живёт на сервере и
+ * меняется мимо этой формы (оповещение управлений, решение штаба). Копия в
+ * состоянии формы протухала бы молча — ровно на этом и упала первая проба
+ * оповещения: кнопка снятия оставалась живой у заявки, уже ушедшей в
+ * департамент.
+ */
 interface DraftRow {
   key: string;
   departmentId: string;
   need: string;
-  /** Заявка уже ушла в департамент: снять такую строку сервер не даст. */
-  locked: boolean;
   departmentName: string;
 }
 
@@ -38,7 +51,6 @@ function seedRows(event: SecurityEvent): DraftRow[] {
     key: row.id,
     departmentId: row.departmentId,
     need: String(row.need),
-    locked: row.status !== "DRAFT",
     departmentName: row.departmentName,
   }));
 }
@@ -77,6 +89,11 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
   };
 
   const taken = new Set(rows.map((row) => row.departmentId).filter(Boolean));
+  // Состояние заявки живёт на СЕРВЕРЕ и в форме не редактируется: форма про
+  // «кому сколько», а оповещение и списки — про то, что с заявкой уже сделали.
+  const stored = new Map(
+    event.forceAllocation.map((row) => [row.departmentId, row])
+  );
 
   return (
     <div className="mt-3 border-t pt-3" data-slot="forces-split">
@@ -104,13 +121,18 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
       )}
 
       <div className="mt-2 flex flex-col gap-2">
-        {rows.map((row, index) => (
+        {rows.map((row, index) => {
+          const storedRow = stored.get(row.departmentId);
+          const locked = storedRow !== undefined && storedRow.status !== "DRAFT";
+          return (
           <div key={row.key} className="flex flex-wrap items-center gap-2">
             <select
               aria-label={`Департамент, строка ${index + 1}`}
-              className="h-9 min-w-[14rem] flex-1 rounded-md border border-input bg-background px-2 text-sm"
+              // Гашение видно: у собственного <select> нет disabled-стиля shadcn,
+              // и заблокированная строка выглядела бы обычной.
+              className="h-9 min-w-[14rem] flex-1 rounded-md border border-input bg-background px-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               value={row.departmentId}
-              disabled={row.locked}
+              disabled={locked}
               onChange={(e) => patch(row.key, { departmentId: e.target.value })}
             >
               <option value="">
@@ -156,9 +178,9 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
               className="h-9 w-9"
               // Строку, ушедшую в департамент, снимает не форма: там уже могут
               // быть оповещённые управления и выделенные люди.
-              disabled={row.locked}
+              disabled={locked}
               title={
-                row.locked
+                locked
                   ? "Заявка уже ушла в департамент — снять её нельзя"
                   : "Убрать департамент из раскладки"
               }
@@ -170,8 +192,10 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
             >
               <X className="h-4 w-4" />
             </Button>
+            <AllocationState event={event} row={storedRow} />
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -187,7 +211,6 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
                 key: `draft-${current.length}-${Date.now()}`,
                 departmentId: "",
                 need: remainder > 0 ? String(remainder) : "1",
-                locked: false,
                 departmentName: "",
               },
             ]);
@@ -225,6 +248,75 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
         <StageError error={split.error} />
         <FieldErrors errors={fieldErrors} />
       </div>
+    </div>
+  );
+}
+
+const STATUS_LABEL: Record<ForceAllocationStatus, string> = {
+  DRAFT: "В департамент не отправлено",
+  NOTIFIED: "Управления оповещены",
+  SUBMITTED: "Список отправлен в штаб",
+  ACCEPTED: "Принято штабом",
+  RETURNED: "Возвращено департаменту",
+};
+
+/**
+ * Состояние СОХРАНЁННОЙ заявки: подпись, кнопка оповещения управлений и
+ * список тех, кому уже сказали, с моментом.
+ *
+ * Момент показан у каждого управления, а не один на заявку: повторное
+ * оповещение добирает новых, и общее «оповещено такого-то числа» врало бы про
+ * тех, кто узнал позже.
+ */
+function AllocationState({
+  event,
+  row,
+}: {
+  event: SecurityEvent;
+  row: ForceAllocationRow | undefined;
+}) {
+  const notify = useNotifyDirectorates(event.id, row?.id ?? "");
+  if (row === undefined) {
+    return (
+      <p className="basis-full text-xs text-muted-foreground">
+        Строка не сохранена — оповестить управления можно после сохранения.
+      </p>
+    );
+  }
+  return (
+    <div className="basis-full" data-slot="allocation-state">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-muted-foreground">
+          {STATUS_LABEL[row.status]}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={notify.isPending}
+          onClick={() => notify.mutate({})}
+        >
+          {notify.isPending
+            ? "Оповещаю…"
+            : row.directorates.length === 0
+              ? "Оповестить управления"
+              : "Оповестить ещё раз"}
+        </Button>
+      </div>
+      {row.directorates.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+          {row.directorates.map((directorate) => (
+            <li key={directorate.id}>
+              {directorate.name}
+              {directorate.notifiedAt !== null && (
+                <> · оповещено {formatIsoDateTime(directorate.notifiedAt)}</>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <StageError error={notify.error} />
     </div>
   );
 }

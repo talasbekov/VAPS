@@ -227,6 +227,30 @@ test.describe(
       expect(outcome.saved.body.forceAllocation[0].need).toBe(
         prepared.forceDemandTotal - 1,
       )
+
+      // Оповещение управлений (СС-2): незнакомая заявка — 404, своя переводит
+      // заявку в «оповещено», а повтор НЕ переписывает момент уже оповещённым.
+      const allocationId = outcome.saved.body.forceAllocation[0].id as string
+      const notified = await page.evaluate(async (id: string) => {
+        const call = async (path: string) => {
+          const res = await fetch(path, { method: 'POST' })
+          return { status: res.status, body: await res.json() }
+        }
+        const base = '/api/ops/security-events/se-1/forces/allocation/'
+        return {
+          missing: await call(`${base}no-such-request/notify/`),
+          first: await call(`${base}${id}/notify/`),
+          again: await call(`${base}${id}/notify/`),
+        }
+      }, allocationId)
+
+      expect(notified.missing.status).toBe(404)
+      expect(notified.first.status).toBe(200)
+      expect(notified.first.body.forceAllocation[0].status).toBe('NOTIFIED')
+      expect(notified.first.body.forceAllocation[0].directorates.length).toBeGreaterThan(0)
+      expect(notified.again.body.forceAllocation[0].directorates[0].notifiedAt).toBe(
+        notified.first.body.forceAllocation[0].directorates[0].notifiedAt,
+      )
     })
   },
 )
