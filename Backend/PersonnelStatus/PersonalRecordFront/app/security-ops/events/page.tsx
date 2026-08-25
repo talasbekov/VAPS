@@ -38,6 +38,7 @@ import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { CreateSecurityEventDialog } from "@/features/create-security-event";
 import {
   AddDeputyDialog,
+  AssignChiefDialog,
   AddVisitObjectsDialog,
   deleteSecurityEvent,
   removeVisitObject,
@@ -829,6 +830,7 @@ function ChiefLine({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [assignOpen, setAssignOpen] = useState(false);
   const removal = useMutation({
     mutationFn: removeVisitObjectChief,
     onSuccess: () => {
@@ -891,6 +893,30 @@ function ChiefLine({
             </button>
           )}
         </span>
+      )}
+      {canEdit && (
+        <button
+          type="button"
+          onClick={() => setAssignOpen(true)}
+          // Имя называет ОБЪЕКТ: таких кнопок в раскрытой строке столько же,
+          // сколько объектов, и на слух они были бы неразличимы.
+          aria-label={
+            visit.chiefEmployeeId === null
+              ? `Назначить старшего объекта ${visit.objectName}`
+              : `Заменить старшего объекта ${visit.objectName}`
+          }
+          className="rounded px-1.5 py-0.5 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {visit.chiefEmployeeId === null ? "+ Старший" : "Заменить"}
+        </button>
+      )}
+      {assignOpen && (
+        <AssignChiefDialog
+          event={event}
+          visit={visit}
+          open={assignOpen}
+          onClose={() => setAssignOpen(false)}
+        />
       )}
     </span>
   );
