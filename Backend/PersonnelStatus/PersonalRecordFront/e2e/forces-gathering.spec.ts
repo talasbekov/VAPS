@@ -733,6 +733,32 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(page.getByRole('dialog')).toHaveCount(0)
   })
 
+  test('предупреждение этапа и объяснение автоподбора', async ({ page }) => {
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Задача поста', { timeout: 25_000 })
+    // Посты пусты — предупреждение называет ЧИСЛО незаполненных.
+    const card = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
+    const unfilled = card.reconSectorPosts.length
+    expect(unfilled, 'постов нет — предупреждать не о чем').toBeGreaterThan(0)
+    await expect(main).toContainText(`не укомплектовано постов: ${unfilled}`)
+    // Объяснения автоподбора ДО нажатия нет — иначе ассерт ниже вечнозелёный.
+    await expect(main).not.toContainText('Рекомендация автоподбора')
+
+    await main.getByRole('button', { name: 'Сформировать автоматически' }).click()
+
+    await expect(main).toContainText('Рекомендация автоподбора', { timeout: 20_000 })
+    await expect(main).toContainText('совпадение')
+    // Предупреждение НЕ исчезло: в составе один человек, а первый пост
+    // просит четверых — ровно то, ради чего плашка и нужна. Число то же,
+    // и это факт о данных, а не о вёрстке.
+    await expect(main).toContainText(`не укомплектовано постов: ${unfilled}`)
+  })
+
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
