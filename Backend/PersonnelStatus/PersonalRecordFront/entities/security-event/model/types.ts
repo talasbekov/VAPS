@@ -176,6 +176,14 @@ export interface PlacementAssignment {
   acknowledgedAt: string | null;
   /** Обоснование обхода предупреждения по рейтингу; заполнено только если предупреждение было. */
   ratingOverrideReason: string | null;
+  /** Подразделение сотрудника; пусто — штатной единицы у него нет. */
+  divisionName: string;
+  /** Статус на ДЕЛОВУЮ дату мероприятия. null — действующего статуса нет,
+   * что и есть «в строю»: строки «в строю» в справочнике не существует, и
+   * подписывает её клиент. Оба поля считаются сервером на чтении — копия,
+   * записанная в момент назначения, соврала бы к утру. */
+  statusCode: string | null;
+  statusLabel: string | null;
 }
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "RETURNED";

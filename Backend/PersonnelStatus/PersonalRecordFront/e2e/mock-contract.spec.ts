@@ -371,6 +371,15 @@ test.describe(
       expect(placed.outsider.status).toBe(422)
       expect(placed.outsider.body.error_code).toBe('NOT_IN_ROSTER')
       expect(placed.member.status).toBe(200)
+
+      // Р-1: строка назначения несёт подразделение и статус дня. Тип
+      // проверяется строго — `not.toBe('')` прошёл бы на `undefined`, то есть
+      // ровно на моке, который этих полей не отдаёт.
+      const row = placed.member.body.placementAssignments.at(-1)
+      expect(typeof row.divisionName).toBe('string')
+      expect(row.divisionName).not.toBe('')
+      expect(row).toHaveProperty('statusCode')
+      expect(row).toHaveProperty('statusLabel')
     })
   },
 )

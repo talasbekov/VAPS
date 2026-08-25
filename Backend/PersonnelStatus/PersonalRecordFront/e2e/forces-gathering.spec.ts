@@ -130,7 +130,12 @@ async function prepareDemandEvent(
 /** ОМ на «Расстановке», прошедшее цепочку сбора сил: в составе один человек. */
 async function prepareEventOnPlacement(
   token: string,
-): Promise<{ id: string; roster: string[] }> {
+): Promise<{
+  id: string
+  roster: string[]
+  employeeId: string
+  postId: string
+}> {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
   const call = async (method: string, path: string, body?: unknown): Promise<any> => {
     const res = await fetch(`${API}${path}`, {
@@ -182,7 +187,12 @@ async function prepareEventOnPlacement(
     throw new Error(`фикстура не дошла до расстановки: ${JSON.stringify(placement)}`)
   }
   expect(total).toBeGreaterThan(0)
-  return { id, roster: placement.forceRoster.map((member: any) => member.name) }
+  return {
+    id,
+    roster: placement.forceRoster.map((member: any) => member.name),
+    employeeId: String(person.id),
+    postId: placement.reconSectorPosts[0].id as string,
+  }
 }
 
 test.use({ serviceWorkers: 'block' })
@@ -528,6 +538,37 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(main).toContainText('Кандидаты — люди, принятые штабом')
     // Ни одного постороннего: имена в панели подбора — ровно состав.
     await expect(main).toContainText(prepared.roster[0])
+  })
+
+  test('назначенный на пост назван подразделением и статусом дня', async ({ page }) => {
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    const assigned = await fetch(
+      `${API}/api/ops/security-events/${prepared.id}/placement/assign/`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+      },
+    )
+    expect(assigned.status, 'человек из состава не встал на пост').toBe(200)
+    const row = ((await assigned.json()) as any).placementAssignments[0]
+    // Сторож фикстуры СТРОГИЙ по типу: `not.toBe('')` и `not.toBeNull()`
+    // проходят на `undefined`, то есть на ответе сервера, который этих полей
+    // не отдаёт вовсе, — так проба и зеленела против стенда, поднятого до
+    // правки сериализатора.
+    expect(typeof row.divisionName, 'сервер не отдал divisionName').toBe('string')
+    expect(row.divisionName, 'подразделение пустое — проверять нечего').not.toBe('')
+    expect(typeof row.statusLabel, 'сервер не отдал statusLabel').toBe('string')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Расстановка', { timeout: 25_000 })
+    // Подразделение спрашивается У ОТВЕТА, а не у управления фикстуры: человек
+    // числится в ОТДЕЛЕ внутри управления, и совпадение имён было бы случайным.
+    await expect(main).toContainText(row.divisionName as string)
+    await expect(main).toContainText(row.statusLabel as string)
   })
 
   test('реестр личного состава остался достижим', async ({ page }) => {

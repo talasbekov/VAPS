@@ -82,7 +82,11 @@ import type {
   UpdateReconRequest,
 } from "@/entities/security-event";
 import { readObjectsStore } from "./objects-handlers";
-import { findPersonnel, PERSONNEL_ROSTER } from "./fixtures/personnel";
+import {
+  findPersonnel,
+  personnelDayStatus,
+  PERSONNEL_ROSTER,
+} from "./fixtures/personnel";
 import { PROTECTED_PERSONS_CATALOG } from "./protected-persons-handlers";
 import { appendAudit } from "./audit-store";
 
@@ -1519,6 +1523,11 @@ export const securityEventsHandlers = [
         postId: body.postId,
         employeeId: body.employeeId,
         employeeName: employee.name,
+        // Подразделение и статус дня — сервер считает их на чтении (Plane
+        // №65, «Р-1»); мок повторяет форму ответа, иначе экран зелен на моке
+        // и пуст на живом стенде.
+        divisionName: employee.unit,
+        ...personnelDayStatus(employee.id),
         acknowledgedAt: null,
         // обоснование сохраняется только при реально возникшем предупреждении
         ratingOverrideReason:
@@ -2048,6 +2057,8 @@ export const securityEventsHandlers = [
         postId: outgoing.postId,
         employeeId: body.incomingEmployeeId,
         employeeName: incoming.name,
+        divisionName: incoming.unit,
+        ...personnelDayStatus(incoming.id),
         acknowledgedAt: null,
         // замена в ходе проведения — не расстановка: обхода не было
         ratingOverrideReason: null,

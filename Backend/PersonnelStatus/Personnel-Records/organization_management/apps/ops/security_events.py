@@ -1488,6 +1488,67 @@ def _employee_division(employee):
     return str(staff_unit.division_id), staff_unit.division.name
 
 
+def placement_assignments_view(event):
+    """Назначения на посты С ПОДРАЗДЕЛЕНИЕМ и статусом дня (Plane №65, «Р-1»).
+
+    Оба факта считаются НА ЧТЕНИИ, а не хранятся в строке назначения: статус
+    сотрудника меняется мимо мероприятия (отпуск оформили вечером), и копия,
+    записанная в момент назначения, соврала бы уже к утру. Подразделение по
+    той же причине: перевод человека не должен требовать правки чужих строк.
+
+    Статус берётся тем же предикатом, что и расход дня
+    (`EmployeeStatusSelector`), — второй способ решить «какая строка действует
+    на дату» разошёлся бы с расходом молча. Дата — деловая дата мероприятия:
+    расстановка отвечает на вопрос «кто будет в строю В ДЕНЬ ОМ», а не «кто в
+    строю сейчас».
+
+    `statusCode`/`statusLabel` = null означает «действующего статуса нет», что
+    и есть «в строю»; подписывает это клиент, потому что «в строю» — не строка
+    справочника, а его отсутствие.
+    """
+    from organization_management.apps.employees.models import Employee
+    from organization_management.apps.operations.selectors import (
+        EmployeeStatusSelector,
+        StatusTypeSelector,
+    )
+
+    rows = event.placement_assignments or []
+    if not rows:
+        return []
+    keys = {str(row.get("employeeId")) for row in rows}
+    numeric = [int(key) for key in keys if key.isdigit()]
+    employees = {
+        str(employee.pk): employee
+        for employee in Employee.objects.filter(pk__in=numeric).select_related(
+            "staff_unit__division"
+        )
+    }
+    status_by_employee = {
+        str(row["employee_id"]): row["status_type_code"]
+        for row in EmployeeStatusSelector.overlapping_on(
+            event.business_date, employee_ids=numeric
+        )
+    }
+    names = StatusTypeSelector.names_map()
+    view = []
+    for row in rows:
+        key = str(row.get("employeeId"))
+        employee = employees.get(key)
+        _, division_name = (
+            _employee_division(employee) if employee is not None else (None, "")
+        )
+        code = status_by_employee.get(key)
+        view.append(
+            {
+                **row,
+                "divisionName": division_name,
+                "statusCode": code,
+                "statusLabel": None if code is None else names.get(code, code),
+            }
+        )
+    return view
+
+
 @transaction.atomic
 def add_allocation_member(
     event_id, allocation_id, *, employee_id, actor, override=False, override_reason=""

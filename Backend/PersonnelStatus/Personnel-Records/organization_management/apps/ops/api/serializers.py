@@ -235,7 +235,9 @@ def serialize_security_event(event):
         # расстановка берёт кандидатов.
         "forceRoster": event.force_roster or [],
         "forceDemandTotal": security_events.force_demand_total(event),
-        "placementAssignments": event.placement_assignments,
+        # Назначения идут с подразделением и статусом дня — они считаются
+        # на чтении (см. security_events.placement_assignments_view).
+        "placementAssignments": security_events.placement_assignments_view(event),
         "approvalStatus": event.approval_status,
         "approvalComment": event.approval_comment,
         "journalEntries": event.journal_entries,

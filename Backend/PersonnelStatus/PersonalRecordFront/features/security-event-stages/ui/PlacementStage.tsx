@@ -611,22 +611,50 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   {assignmentsOf(selected.id).map((assignment) => (
                     <li
                       key={assignment.id}
-                      className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm"
+                      className="flex flex-wrap items-start gap-2 rounded-md border p-2 text-sm"
                     >
-                      <span className="font-semibold">{assignment.employeeName}</span>
-                      {ratingOf(assignment.employeeId) !== null && (
-                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold tabular-nums">
-                          {ratingOf(assignment.employeeId)}
+                      <Initials
+                        name={assignment.employeeName}
+                        tone={statusTone(assignment.statusCode)}
+                      />
+                      <span className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold">
+                            {assignment.employeeName}
+                          </span>
+                          {ratingOf(assignment.employeeId) !== null && (
+                            <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold tabular-nums">
+                              {ratingOf(assignment.employeeId)}
+                            </span>
+                          )}
+                          {assignment.ratingOverrideReason !== null && (
+                            <span className="text-xs text-amber-700">
+                              обход: {assignment.ratingOverrideReason}
+                            </span>
+                          )}
                         </span>
-                      )}
-                      {assignment.ratingOverrideReason !== null && (
-                        <span className="text-xs text-amber-700">
-                          обход: {assignment.ratingOverrideReason}
+                        {/* Подразделение и статус дня приходят с сервера
+                            (Plane №65, «Р-1»): без них строка называла человека,
+                            но не говорила, откуда он и свободен ли в день ОМ. */}
+                        <span className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                          <span className="min-w-0 truncate">
+                            {assignment.divisionName === ""
+                              ? "подразделение не указано"
+                              : assignment.divisionName}
+                          </span>
+                          <StatusBadge
+                            code={assignment.statusCode}
+                            label={assignment.statusLabel}
+                          />
                         </span>
-                      )}
+                      </span>
+                      {/* Действия — колонкой справа, как в прототипе: в ряд
+                          они съедают ширину у имени с подразделением, и то
+                          обрезалось на «Отдел охраны объек…». */}
+                      <span className="flex shrink-0 flex-col gap-1">
                       <select
                         aria-label={`Переместить: ${assignment.employeeName}`}
-                        className="ml-auto h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                         value=""
                         onChange={(e) => {
                           const target = e.target.value;
@@ -653,10 +681,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="h-8 px-2 text-xs"
                         onClick={() => unassign.mutate({ assignmentId: assignment.id })}
                       >
                         Удалить с поста
                       </Button>
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -887,6 +917,85 @@ function Kpi({
         {value}
       </b>
       <span className="text-muted-foreground">{label}</span>
+    </span>
+  );
+}
+
+/** Тон статуса дня. Пары те же, что у дизайн-системы прототипа
+ * (`bg-<цвет>-100 text-<цвет>-800`), и разложены ПО СМЫСЛУ, а не по коду:
+ * человека либо можно ставить на пост, либо нет, и цвет обязан это сказать
+ * раньше, чем прочтётся подпись. Неизвестный код — нейтральный тон: выдумывать
+ * трактовку новой строки справочника хуже, чем промолчать. */
+type StatusTone = "free" | "duty" | "away";
+
+const AWAY_CODES = new Set([
+  "VACATION",
+  "SICK_LEAVE",
+  "BUSINESS_TRIP",
+  "TRAINING",
+  "CONFERENCE",
+  "COMPETITION",
+  "LEAVE_BY_REPORT",
+  "OTHER_ABSENCE",
+  "SECONDED_TO",
+]);
+const DUTY_CODES = new Set([
+  "ON_DUTY",
+  "AFTER_DUTY",
+  "EVENT_ASSIGNMENT",
+  "IN_SERVICE",
+  "SECONDED_FROM",
+]);
+
+function statusTone(code: string | null): StatusTone {
+  if (code === null) return "free";
+  if (AWAY_CODES.has(code)) return "away";
+  if (DUTY_CODES.has(code)) return "duty";
+  return "duty";
+}
+
+const STATUS_TONE_CLASS: Record<StatusTone, string> = {
+  free: "bg-green-100 text-green-800",
+  duty: "bg-blue-100 text-blue-800",
+  away: "bg-amber-100 text-amber-800",
+};
+
+/** Бейдж статуса дня. `null` подписывается «в строю» ЗДЕСЬ: строки «в строю» в
+ * справочнике нет — это отсутствие действующего статуса, и сервер честно
+ * отдаёт null вместо выдуманного кода. */
+function StatusBadge({
+  code,
+  label,
+}: {
+  code: string | null;
+  label: string | null;
+}) {
+  return (
+    <span
+      className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_TONE_CLASS[statusTone(code)]}`}
+    >
+      {label ?? "в строю"}
+    </span>
+  );
+}
+
+/** Аватар-инициалы из прототипа. Картинок сотрудников в системе нет, и
+ * заглушка-силуэт не сказала бы ничего: инициалы отличают строки друг от
+ * друга при беглом просмотре списка. Для скринридера он `aria-hidden` —
+ * имя стоит рядом словами. */
+function Initials({ name, tone }: { name: string; tone: StatusTone }) {
+  const short = name
+    .split(/\s+/)
+    .filter((part) => part !== "")
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+  return (
+    <span
+      aria-hidden
+      className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-[11px] font-bold ${STATUS_TONE_CLASS[tone]}`}
+    >
+      {short === "" ? "—" : short}
     </span>
   );
 }
