@@ -1,24 +1,39 @@
 "use client";
 
-import { X } from "lucide-react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 
-// Этап 2 «Рекогносцировка»: чек-лист объекта и event-specific расчёт постов.
+// Этап «Рекогносцировка»: чек-лист объекта и event-specific расчёт постов.
 // Импорт из привязанной версии паспорта ДОБАВЛЯЕТ строки (ручные не
 // затираются), повторный импорт дубли не плодит. «Требует изменений» в
 // чек-листе обязывает к комментарию.
 //
-// Из прототипа Smart Josparlau (экран «Рекогносцировка объекта») добавлены:
-// сведения об объекте из паспорта, «результат проверки» и комментарий по
-// КАЖДОМУ посту (поля result/comment у поста были в контракте и сохранялись
-// сервером, но экран их не показывал — рекогносцировка сводилась к описи
-// постов без итога осмотра) и вход в историю ОМ по объекту.
+// Экран приведён к эталону прототипа (задача заказчика Plane №64): заголовок
+// «Рекогносцировка объекта» с подписью, чек-лист рекогносцировки с обязательными
+// пунктами, расчёт постов ИЕРАРХИЕЙ «сектор → пост → подпост» со сворачиванием
+// секторов, подпись «Расчёт для текущего ОМ · …», кнопки «+ Добавить сектор» и
+// «Сохранить расчёт», переход «Завершить этап и перейти далее».
 //
-// Чего из прототипа НЕТ: фотографии к пунктам чек-листа — вложений у пункта
-// не хранит ни бэк, ни контракт, приложить файл некуда.
-import { useState } from "react";
+// Чего из прототипа НЕТ и почему:
+//
+// * «Запрос личного состава» и поле «Требуемое число сотрудников» — заказчик
+//   снял их с этого этапа явно («запрос сил не нужно делать на этом этапе»).
+//   Штаб получает РАСЧЁТ ПО ПОСТАМ, который сервер считает сам на завершении
+//   этапа, — см. `complete_recon`;
+// * фотографии к пунктам чек-листа и «Материалы рекогносцировки» — файлового
+//   хранилища у системы нет, приложить файл некуда. Названо строкой на экране,
+//   а не нарисовано пустой кнопкой;
+// * «Задача поста» в эталоне — выбор из кодов приказов; у нас это текст из
+//   паспорта объекта, справочника нарядов в данных нет.
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -37,6 +52,11 @@ import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDate } from "@/shared/lib/date";
 
+/** Тип поста из эталона. Список закрытый, но чужое значение не выбрасывается:
+ * строки паспорта могли прийти с типом вне списка, и молча заменить его на
+ * «—» значило бы стереть данные объекта. */
+const POST_TYPES = ["Группа досмотра", "Группа БВС", "Физнаряд"] as const;
+
 // Пометка ещё не сохранённой строки. Была счётчиком, обнулявшимся на каждой
 // загрузке страницы, — и так как сервер писал присланный id как есть, у одного
 // ОМ накапливались посты с одинаковым `recon-local-1` (Plane №30). Теперь id
@@ -50,17 +70,23 @@ function nextLocalId(): string {
   return `recon-local-${unique}`;
 }
 
+/** Сектор расчёта: имя и его строки в порядке таблицы. */
+interface SectorGroup {
+  name: string;
+  rows: ReconSectorPost[];
+}
+
 export function ReconStage({ event }: { event: SecurityEvent }) {
   const [checklist, setChecklist] = useState<ReconChecklistItem[]>(
     event.reconChecklist
   );
   const [rows, setRows] = useState<ReconSectorPost[]>(event.reconSectorPosts);
-  // Запрос личного состава держится СТРОКОЙ, а не числом: пустое поле должно
-  // остаться пустым, а `Number("")` даёт 0 — и человек видел бы ноль, которого
-  // не вводил, в поле, помеченном звёздочкой.
-  const [forceRequest, setForceRequest] = useState(
-    event.reconForceRequest === 0 ? "" : String(event.reconForceRequest)
-  );
+  // Секторы, у которых ещё нет ни одного поста. Живут ОТДЕЛЬНО от строк:
+  // сектор — заголовок группы, а не запись расчёта, и сервер про пустой сектор
+  // не знает. Заведённый и не наполненный сектор исчезнет при перезагрузке —
+  // это честно: сохранять нечего.
+  const [emptySectors, setEmptySectors] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
   );
@@ -73,8 +99,12 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     onEvent: (fresh) => {
       setChecklist(fresh.reconChecklist);
       setRows(fresh.reconSectorPosts);
-      setForceRequest(
-        fresh.reconForceRequest === 0 ? "" : String(fresh.reconForceRequest)
+      // Сектор, в котором появились посты, больше не пустой — иначе он остался
+      // бы вторым заголовком с тем же именем.
+      setEmptySectors((prev) =>
+        prev.filter(
+          (name) => !fresh.reconSectorPosts.some((row) => row.sector === name)
+        )
       );
     },
   });
@@ -92,19 +122,38 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   const complete = useCompleteRecon(event.id);
 
   const dirty =
-    JSON.stringify({ checklist, rows, forceRequest }) !==
+    JSON.stringify({ checklist, rows }) !==
     JSON.stringify({
       checklist: event.reconChecklist,
       rows: event.reconSectorPosts,
-      forceRequest:
-        event.reconForceRequest === 0 ? "" : String(event.reconForceRequest),
     });
 
-  /** Расчёт по постам — ПОДСКАЗКА, а не значение поля. В эталоне число вводит
-   * старший наряда: осмотр даёт поправку на местность, которой в расчёте
-   * постов нет. Подставлять сумму молча значило бы выдавать расчёт за его
-   * оценку. */
+  /** Расчёт по постам — то самое число, которое завершение этапа отправит
+   * штабу 2-го департамента. Считает его СЕРВЕР; здесь оно показывается,
+   * чтобы старший наряда видел, что уходит. */
   const needFromPosts = rows.reduce((sum, row) => sum + (row.need || 0), 0);
+
+  /** Группы «сектор → строки» в порядке появления строк. Пустые секторы
+   * дописываются в хвост. */
+  const groups: SectorGroup[] = useMemo(() => {
+    const order: string[] = [];
+    const byName = new Map<string, ReconSectorPost[]>();
+    for (const row of rows) {
+      let bucket = byName.get(row.sector);
+      if (bucket === undefined) {
+        bucket = [];
+        byName.set(row.sector, bucket);
+        order.push(row.sector);
+      }
+      bucket.push(row);
+    }
+    for (const name of emptySectors) {
+      if (byName.has(name)) continue;
+      byName.set(name, []);
+      order.push(name);
+    }
+    return order.map((name) => ({ name, rows: byName.get(name) ?? [] }));
+  }, [rows, emptySectors]);
 
   function patchItem(id: string, patch: Partial<ReconChecklistItem>): void {
     setChecklist((prev) =>
@@ -118,60 +167,110 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     );
   }
 
-  function addRow(): void {
-    setRows((prev) => [
-      ...prev,
-      {
-        id: nextLocalId(),
-        sector: "",
-        post: "",
-        task: "",
-        need: 1,
-        requirements: "",
-        result: null,
-        comment: "",
-        sourceSectorId: null,
-        sourcePostId: null,
-        minRating: null,
-        postType: "",
-        weapon: "",
-        uniform: "",
-        parentPostId: "",
-      },
-    ]);
+  function blankRow(sector: string, patch: Partial<ReconSectorPost> = {}): ReconSectorPost {
+    return {
+      id: nextLocalId(),
+      sector,
+      post: "",
+      task: "",
+      need: 1,
+      requirements: "",
+      result: null,
+      comment: "",
+      sourceSectorId: null,
+      sourcePostId: null,
+      minRating: null,
+      postType: "",
+      weapon: "",
+      uniform: "",
+      parentPostId: "",
+      ...patch,
+    };
+  }
+
+  function addSector(): void {
+    // Имя обязано быть уникальным: группы строятся ПО ИМЕНИ, и второй «Новый
+    // сектор» слился бы с первым в одну группу.
+    const taken = new Set(groups.map((group) => group.name));
+    let index = taken.size + 1;
+    let name = `Сектор ${index}`;
+    while (taken.has(name)) name = `Сектор ${++index}`;
+    setEmptySectors((prev) => [...prev, name]);
+  }
+
+  function renameSector(from: string, to: string): void {
+    setRows((prev) =>
+      prev.map((row) => (row.sector === from ? { ...row, sector: to } : row))
+    );
+    setEmptySectors((prev) => prev.map((name) => (name === from ? to : name)));
+    setCollapsed((prev) => prev.map((name) => (name === from ? to : name)));
+  }
+
+  function removeSector(name: string): void {
+    setRows((prev) => prev.filter((row) => row.sector !== name));
+    setEmptySectors((prev) => prev.filter((item) => item !== name));
+    setCollapsed((prev) => prev.filter((item) => item !== name));
+  }
+
+  /** Пост встаёт в КОНЕЦ СВОЕЙ группы, а не в конец таблицы: расчёт читают по
+   * секторам, и строка, уехавшая в хвост, потеряла бы сектор из виду. */
+  function addPost(sector: string): void {
+    setRows((prev) => {
+      const lastInSector = prev.reduce(
+        (found, row, index) => (row.sector === sector ? index : found),
+        -1
+      );
+      const row = blankRow(sector);
+      if (lastInSector === -1) return [...prev, row];
+      return [
+        ...prev.slice(0, lastInSector + 1),
+        row,
+        ...prev.slice(lastInSector + 1),
+      ];
+    });
+    setEmptySectors((prev) => prev.filter((name) => name !== sector));
   }
 
   /** Подпост из прототипа: строка, привязанная к посту-родителю. */
-  function addSubRow(parent: ReconSectorPost): void {
+  function addSubPost(parent: ReconSectorPost): void {
     setRows((prev) => {
       const index = prev.findIndex((row) => row.id === parent.id);
-      const sub: ReconSectorPost = {
-        id: nextLocalId(),
-        sector: parent.sector,
+      const sub = blankRow(parent.sector, {
         post: `${parent.post} / Подпост`,
-        task: "",
-        need: 1,
         requirements: parent.requirements,
-        result: null,
-        comment: "",
-        sourceSectorId: null,
-        sourcePostId: null,
         minRating: parent.minRating,
         postType: parent.postType ?? "",
         weapon: parent.weapon ?? "",
         uniform: parent.uniform ?? "",
         parentPostId: parent.id,
-      };
+      });
       // Подпост встаёт СРАЗУ за родителем: расчёт читают сверху вниз, и
       // строка в конце таблицы потеряла бы связь с постом.
       return [...prev.slice(0, index + 1), sub, ...prev.slice(index + 1)];
     });
   }
 
+  function removeRow(row: ReconSectorPost): void {
+    // Вместе с постом уходят его подпосты: осиротевший подпост ссылался бы на
+    // несуществующий `parentPostId` и рисовался бы отдельной строкой без
+    // родителя.
+    setRows((prev) =>
+      prev.filter((item) => item.id !== row.id && item.parentPostId !== row.id)
+    );
+  }
+
+  function save(): void {
+    setFieldErrors(null);
+    update.mutate({ checklist, sectorPosts: rows });
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Рекогносцировка</CardTitle>
+        <CardTitle>Рекогносцировка объекта</CardTitle>
+        <CardDescription>
+          Зоны и посты, необходимые направления, предварительные риски
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <ObjectFacts event={event} />
@@ -186,59 +285,85 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               сам человек своей же галочкой, и объявлять ему его действие —
               шум. */}
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold">Чек-лист объекта</h3>
+            <h3 className="text-sm font-semibold">Чек-лист рекогносцировки</h3>
             <span className="text-xs text-muted-foreground">
               Выполнено: {checklist.filter((item) => item.done).length} из{" "}
               {checklist.length}
             </span>
           </div>
           <div className="flex flex-col gap-2">
-            {checklist.map((item) => (
-              <div
-                key={item.id}
-                className="grid grid-cols-1 items-center gap-2 border-b pb-2 last:border-0 md:grid-cols-[auto_1fr_170px_1fr]"
-              >
-                <Checkbox
-                  aria-label={`Выполнено: ${item.label}`}
-                  checked={item.done}
-                  onCheckedChange={(checked) =>
-                    patchItem(item.id, { done: checked === true })
-                  }
-                />
-                <span className="text-sm">{item.label}</span>
-                <select
-                  aria-label={`Результат: ${item.label}`}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                  value={item.result ?? ""}
-                  onChange={(e) =>
-                    patchItem(item.id, {
-                      result:
-                        e.target.value === ""
-                          ? null
-                          : (e.target.value as "MATCHES" | "NEEDS_CHANGES"),
-                    })
-                  }
+            {checklist.map((item) => {
+              // Та же проверка, что и на сервере, — но названная СРАЗУ, у
+              // поля: иначе про обязательный комментарий человек узнаёт
+              // отказом сохранения, уже уйдя с пункта.
+              const needsComment =
+                item.result === "NEEDS_CHANGES" && item.comment.trim() === "";
+              return (
+                <div
+                  key={item.id}
+                  className="grid grid-cols-1 items-start gap-2 border-b pb-2 last:border-0 md:grid-cols-[auto_1fr_170px_1fr]"
                 >
-                  <option value="">— не проверено —</option>
-                  <option value="MATCHES">Соответствует</option>
-                  <option value="NEEDS_CHANGES">Требует изменений</option>
-                </select>
-                <Input
-                  className="h-8 text-xs"
-                  placeholder="Комментарий"
-                  aria-label={`Комментарий: ${item.label}`}
-                  value={item.comment}
-                  onChange={(e) => patchItem(item.id, { comment: e.target.value })}
-                />
-              </div>
-            ))}
+                  <Checkbox
+                    className="mt-1"
+                    aria-label={`Выполнено: ${item.label}`}
+                    checked={item.done}
+                    onCheckedChange={(checked) =>
+                      patchItem(item.id, { done: checked === true })
+                    }
+                  />
+                  <span className="text-sm">
+                    {item.label} <span aria-hidden="true">*</span>
+                  </span>
+                  <select
+                    aria-label={`Результат: ${item.label}`}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                    value={item.result ?? ""}
+                    onChange={(e) =>
+                      patchItem(item.id, {
+                        result:
+                          e.target.value === ""
+                            ? null
+                            : (e.target.value as "MATCHES" | "NEEDS_CHANGES"),
+                      })
+                    }
+                  >
+                    <option value="">— не проверено —</option>
+                    <option value="MATCHES">Соответствует</option>
+                    <option value="NEEDS_CHANGES">Требует изменений</option>
+                  </select>
+                  <div className="space-y-1">
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="Комментарий"
+                      aria-label={`Комментарий: ${item.label}`}
+                      aria-invalid={needsComment || undefined}
+                      value={item.comment}
+                      onChange={(e) =>
+                        patchItem(item.id, { comment: e.target.value })
+                      }
+                    />
+                    {needsComment && (
+                      <p className="text-xs text-destructive">
+                        Укажите комментарий
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
 
         <section>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Посты и секторы</h3>
-            <div className="flex gap-2">
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold">Посты и секторы</h3>
+              <p className="text-xs text-muted-foreground">
+                Расчёт для текущего ОМ ·{" "}
+                {dirty ? "есть несохранённые изменения" : "изменения сохранены"}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -253,207 +378,292 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               >
                 {importPosts.isPending ? "Импорт…" : "Импорт из паспорта"}
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={addRow}>
-                + Пост
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addSector}
+              >
+                + Добавить сектор
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!dirty || update.isPending}
+                onClick={save}
+              >
+                {update.isPending ? "Сохранение…" : "Сохранить расчёт"}
               </Button>
             </div>
           </div>
-          {rows.length === 0 ? (
+          {groups.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              Постов пока нет — импортируйте из паспорта или добавьте вручную.
+              Постов пока нет — добавьте сектор или импортируйте из паспорта.
             </p>
           ) : (
-            <div className="flex flex-col gap-2">
-              {/* Шапка колонок из прототипа. До неё расчёт был рядом голых
-                  полей: подписи жили только в aria-label, и глазом колонку
-                  «Мин. рейтинг» от «Требований» отличить было нельзя —
-                  плейсхолдер исчезает, как только в поле что-то введено.
-                  Скринридеру шапка не нужна (у каждого поля своё имя) —
-                  поэтому aria-hidden, чтобы не читать заголовки дважды. */}
-              <div
-                aria-hidden="true"
-                className="text-muted-foreground hidden gap-2 px-1 text-[10px] font-bold uppercase tracking-wider md:grid md:grid-cols-[1fr_1fr_1.4fr_70px_1.1fr_80px_1fr_1fr_1fr_1.2fr_auto_auto]"
-              >
-                <span>Сектор</span>
-                <span>Пост</span>
-                <span>Задача поста</span>
-                <span>Кол-во</span>
-                <span>Требования</span>
-                <span>Рейтинг</span>
-                <span>Тип</span>
-                <span>Вооружение</span>
-                <span>Форма одежды</span>
-                <span>Примечание</span>
-                <span />
-                <span />
-              </div>
-              {rows.map((row) => (
-                <div
-                  key={row.id}
-                  style={
-                    (row.parentPostId ?? "") !== ""
-                      ? { paddingLeft: 16 }
-                      : undefined
-                  }
-                  className="grid grid-cols-2 gap-2 border-b pb-2 last:border-0 md:grid-cols-[1fr_1fr_1.4fr_70px_1.1fr_80px_1fr_1fr_1fr_1.2fr_auto_auto]"
-                >
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Сектор"
-                    aria-label="Сектор"
-                    value={row.sector}
-                    onChange={(e) => patchRow(row.id, { sector: e.target.value })}
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Пост"
-                    aria-label="Пост"
-                    value={row.post}
-                    onChange={(e) => patchRow(row.id, { post: e.target.value })}
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Задача"
-                    aria-label="Задача"
-                    value={row.task}
-                    onChange={(e) => patchRow(row.id, { task: e.target.value })}
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    type="number"
-                    min={1}
-                    aria-label="Потребность"
-                    value={row.need}
-                    onChange={(e) =>
-                      patchRow(row.id, { need: Number(e.target.value) || 0 })
-                    }
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Требования"
-                    aria-label="Требования"
-                    value={row.requirements}
-                    onChange={(e) =>
-                      patchRow(row.id, { requirements: e.target.value })
-                    }
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    type="number"
-                    placeholder="Мин. рейтинг"
-                    aria-label="Минимальный рейтинг"
-                    value={row.minRating ?? ""}
-                    onChange={(e) =>
-                      patchRow(row.id, {
-                        minRating:
-                          e.target.value === "" ? null : Number(e.target.value),
-                      })
-                    }
-                  />
-                  {/* Колонки таблицы прототипа: тип поста, вооружение, форма
-                      одежды, примечание. */}
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Тип"
-                    aria-label={`Тип поста: ${row.post || "новый"}`}
-                    value={row.postType ?? ""}
-                    onChange={(e) => patchRow(row.id, { postType: e.target.value })}
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Вооружение"
-                    aria-label={`Вооружение: ${row.post || "новый"}`}
-                    value={row.weapon ?? ""}
-                    onChange={(e) => patchRow(row.id, { weapon: e.target.value })}
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Форма одежды"
-                    aria-label={`Форма одежды: ${row.post || "новый"}`}
-                    value={row.uniform ?? ""}
-                    onChange={(e) => patchRow(row.id, { uniform: e.target.value })}
-                  />
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Примечание"
-                    aria-label={`Примечание к посту: ${row.post || "новый"}`}
-                    value={row.comment}
-                    onChange={(e) => patchRow(row.id, { comment: e.target.value })}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={`Добавить подпост: ${row.post || "новый"}`}
-                    onClick={() => addSubRow(row)}
-                  >
-                    + Подпост
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label="Удалить пост"
-                    onClick={() =>
-                      setRows((prev) => prev.filter((r) => r.id !== row.id))
-                    }
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              ))}
+            /* Таблица шире экрана: десять колонок расчёта не сжимаются до
+               читаемости. Скроллится ОНА, а не страница. */
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1060px] table-fixed border-collapse text-left">
+                <thead>
+                  <tr className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <th scope="col" className="w-8 pb-1">
+                      <span className="sr-only">Свернуть сектор</span>
+                    </th>
+                    <th scope="col" className="w-[180px] pb-1">Сектор / Пост</th>
+                    <th scope="col" className="pb-1 pl-2">Задача поста</th>
+                    <th scope="col" className="w-[92px] pb-1 pl-2">Сотрудники</th>
+                    <th scope="col" className="w-[128px] pb-1 pl-2">Тип</th>
+                    <th scope="col" className="pb-1 pl-2">Вооружение</th>
+                    <th scope="col" className="pb-1 pl-2">Форма одежды</th>
+                    <th scope="col" className="pb-1 pl-2">Примечание</th>
+                    {/* Колонок эталона тут две лишних — их читает расстановка:
+                        по «Требованиям» и «Мин. рейтингу» она считает пригодность
+                        кандидата. Убрать поля значило бы сделать эти данные
+                        нередактируемыми. */}
+                    <th scope="col" className="pb-1 pl-2">Требования</th>
+                    <th scope="col" className="w-[72px] pb-1 pl-2">Мин. рейтинг</th>
+                    <th scope="col" className="w-[136px] pb-1 pl-2">
+                      <span className="sr-only">Действия</span>
+                    </th>
+                  </tr>
+                </thead>
+                {groups.map((group) => {
+                  const isCollapsed = collapsed.includes(group.name);
+                  return (
+                    <tbody key={group.name} className="border-t">
+                      <tr className="bg-muted/40">
+                        <td className="py-1">
+                          <button
+                            type="button"
+                            className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
+                            aria-expanded={!isCollapsed}
+                            aria-label={`Сектор ${group.name}`}
+                            onClick={() =>
+                              setCollapsed((prev) =>
+                                isCollapsed
+                                  ? prev.filter((name) => name !== group.name)
+                                  : [...prev, group.name]
+                              )
+                            }
+                          >
+                            {isCollapsed ? (
+                              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="py-1">
+                          <Input
+                            className="h-8 text-xs font-semibold"
+                            aria-label={`Название сектора: ${group.name}`}
+                            value={group.name}
+                            onChange={(e) =>
+                              renameSector(group.name, e.target.value)
+                            }
+                          />
+                        </td>
+                        <td className="py-1 pl-2 text-xs text-muted-foreground" colSpan={6}>
+                          {group.rows.length === 0
+                            ? "постов в секторе нет"
+                            : `постов: ${group.rows.length} · сотрудников: ${group.rows.reduce(
+                                (sum, row) => sum + (row.need || 0),
+                                0
+                              )}`}
+                        </td>
+                        <td className="py-1" colSpan={2} />
+                        <td className="py-1 pl-2">
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => addPost(group.name)}
+                            >
+                              + Пост
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Удалить сектор ${group.name}`}
+                              onClick={() => removeSector(group.name)}
+                            >
+                              Удалить
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {!isCollapsed &&
+                        group.rows.map((row) => {
+                          const isSub = (row.parentPostId ?? "") !== "";
+                          return (
+                            <tr key={row.id} className="align-top">
+                              <td />
+                              <td className="py-1">
+                                <Input
+                                  className="h-8 text-xs"
+                                  style={isSub ? { marginLeft: 24 } : undefined}
+                                  placeholder={isSub ? "Подпост" : "Пост"}
+                                  aria-label={isSub ? "Подпост" : "Пост"}
+                                  value={row.post}
+                                  onChange={(e) =>
+                                    patchRow(row.id, { post: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <Input
+                                  className="h-8 text-xs"
+                                  placeholder="Задача"
+                                  aria-label="Задача"
+                                  value={row.task}
+                                  onChange={(e) =>
+                                    patchRow(row.id, { task: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <Input
+                                  className="h-8 text-xs"
+                                  type="number"
+                                  min={1}
+                                  aria-label="Потребность"
+                                  value={row.need}
+                                  onChange={(e) =>
+                                    patchRow(row.id, {
+                                      need: Number(e.target.value) || 0,
+                                    })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <select
+                                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                  aria-label={`Тип поста: ${row.post || "новый"}`}
+                                  value={row.postType ?? ""}
+                                  onChange={(e) =>
+                                    patchRow(row.id, { postType: e.target.value })
+                                  }
+                                >
+                                  <option value="">—</option>
+                                  {POST_TYPES.map((type) => (
+                                    <option key={type} value={type}>
+                                      {type}
+                                    </option>
+                                  ))}
+                                  {(row.postType ?? "") !== "" &&
+                                    !POST_TYPES.includes(
+                                      row.postType as (typeof POST_TYPES)[number]
+                                    ) && (
+                                      <option value={row.postType}>
+                                        {row.postType}
+                                      </option>
+                                    )}
+                                </select>
+                              </td>
+                              <td className="py-1 pl-2">
+                                <Input
+                                  className="h-8 text-xs"
+                                  placeholder="—"
+                                  aria-label={`Вооружение: ${row.post || "новый"}`}
+                                  value={row.weapon ?? ""}
+                                  onChange={(e) =>
+                                    patchRow(row.id, { weapon: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <Input
+                                  className="h-8 text-xs"
+                                  placeholder="—"
+                                  aria-label={`Форма одежды: ${row.post || "новый"}`}
+                                  value={row.uniform ?? ""}
+                                  onChange={(e) =>
+                                    patchRow(row.id, { uniform: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <Input
+                                  className="h-8 text-xs"
+                                  placeholder="—"
+                                  aria-label={`Примечание к посту: ${row.post || "новый"}`}
+                                  value={row.comment}
+                                  onChange={(e) =>
+                                    patchRow(row.id, { comment: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <Input
+                                  className="h-8 text-xs"
+                                  placeholder="Требования"
+                                  aria-label="Требования"
+                                  value={row.requirements}
+                                  onChange={(e) =>
+                                    patchRow(row.id, { requirements: e.target.value })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <Input
+                                  className="h-8 text-xs"
+                                  type="number"
+                                  aria-label="Минимальный рейтинг"
+                                  value={row.minRating ?? ""}
+                                  onChange={(e) =>
+                                    patchRow(row.id, {
+                                      minRating:
+                                        e.target.value === ""
+                                          ? null
+                                          : Number(e.target.value),
+                                    })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <div className="flex gap-1">
+                                  {!isSub && (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      aria-label={`Добавить подпост: ${row.post || "новый"}`}
+                                      onClick={() => addSubPost(row)}
+                                    >
+                                      + Подпост
+                                    </Button>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    aria-label={
+                                      isSub ? "Удалить подпост" : "Удалить пост"
+                                    }
+                                    onClick={() => removeRow(row)}
+                                  >
+                                    <X className="h-4 w-4" aria-hidden="true" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  );
+                })}
+              </table>
             </div>
           )}
-        </section>
-
-        {/* «Итог рекогносцировки» из эталона (Plane «Реестр ОМ-23»): запрос
-            личного состава — то, ради чего этап и завершают. Число уходит
-            штабу 2-го департамента, который раскладывает его по департаментам
-            в «Сборе сил на ОМ»; до завершения этапа это черновик старшего
-            наряда, и штаб его не видит. */}
-        <section className="rounded-md border p-3">
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold">Итог рекогносцировки</h3>
-            <span className="text-xs text-muted-foreground">
-              {event.reconForceRequestedAt === null
-                ? "запрос ещё не направлен"
-                : `запрос направлен ${formatIsoDate(event.reconForceRequestedAt)}`}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1">
-              <label
-                htmlFor="recon-force-request"
-                className="text-xs font-semibold"
-              >
-                Требуемое число сотрудников *
-              </label>
-              <Input
-                id="recon-force-request"
-                className="h-9 w-36 tabular-nums"
-                type="number"
-                min={1}
-                value={forceRequest}
-                onChange={(e) => setForceRequest(e.target.value)}
-              />
-            </div>
-            <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-              {/* Подсказка называет расчёт, но НЕ подставляет его: оценка
-                  старшего наряда и сумма по постам — разные числа, и на их
-                  разнице работает штаб. */}
-              Расчёт по постам даёт {needFromPosts}
-              {needFromPosts === 0 && " (постов пока нет)"}. Штаб 2-го
-              департамента получит указанное число и разложит его по
-              департаментам в разделе{" "}
-              <Link
-                href="/employees"
-                className="font-semibold text-primary-ink"
-              >
-                «Сбор сил на ОМ»
-              </Link>
-              .
-            </p>
-          </div>
+          {/* Названо вслух, а не нарисовано: «Материалы рекогносцировки» из
+              эталона класть некуда — файлового хранилища у системы нет. */}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Материалы рекогносцировки (фотографии, схемы, документы) система не
+            хранит — файлового хранилища нет.
+          </p>
         </section>
 
         <FieldErrors errors={fieldErrors} />
@@ -461,34 +671,26 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         <StageError error={importPosts.error} />
         <StageError error={complete.error} />
 
-        <div className="flex justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!dirty || update.isPending}
-            onClick={() => {
-              setFieldErrors(null);
-              update.mutate({
-                checklist,
-                sectorPosts: rows,
-                // Пустое поле — это НОЛЬ («запрос снят»), а не «не трогать»:
-                // человек стёр число намеренно, и молча оставить прежнее
-                // значило бы отправить штабу то, что он только что убрал.
-                forceRequest: forceRequest.trim() === "" ? 0 : Number(forceRequest),
-              });
-            }}
-          >
-            {update.isPending ? "Сохранение…" : "Сохранить рекогносцировку"}
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+            Расчёт по постам: {needFromPosts}
+            {needFromPosts === 0 && " (постов пока нет)"}. Завершение этапа
+            направит это число штабу 2-го департамента — он разложит его по
+            департаментам в разделе{" "}
+            <Link href="/employees" className="font-semibold text-primary-ink">
+              «Сбор сил на ОМ»
+            </Link>
+            .
+          </p>
           <Button
             type="button"
             disabled={complete.isPending || dirty}
-            title={dirty ? "Сначала сохраните изменения." : undefined}
+            title={dirty ? "Сохраните расчёт перед завершением этапа." : undefined}
             onClick={() => complete.mutate({})}
           >
             {complete.isPending
               ? "Завершение…"
-              : "Завершить рекогносцировку → запрос штабу"}
+              : "Завершить этап и перейти далее"}
           </Button>
         </div>
       </CardContent>
@@ -532,7 +734,7 @@ function ObjectFacts({ event }: { event: SecurityEvent }) {
           href={`/security-ops/events?search=${encodeURIComponent(event.objectName)}`}
           className="text-xs font-semibold text-primary-ink"
         >
-          История ОМ по объекту →
+          История прошлых ОМ по объекту →
         </Link>
       </div>
       {query.isLoading ? (

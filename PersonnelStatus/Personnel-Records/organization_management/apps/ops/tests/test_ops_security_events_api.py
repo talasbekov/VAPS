@@ -516,21 +516,14 @@ def test_full_lifecycle_walkthrough(manager):
         format="json",
     )
     assert resp.status_code == 200
-    # Запрос личного состава пуст — рекогносцировка не завершается: её итог
-    # адресуется штабу 2-го департамента, и пустой запрос ему не отправляют.
-    resp = manager.post(f"{base}recon/complete/")
-    assert resp.status_code == 422
-    assert resp.json()["error_code"] == "RECON_FORCE_REQUEST_EMPTY"
-    resp = manager.patch(
-        f"{base}recon/",
-        {"checklist": checklist, "sectorPosts": posts, "forceRequest": 64},
-        format="json",
-    )
-    assert resp.json()["reconForceRequest"] == 64
-    # До завершения этапа запрос — черновик старшего наряда: штаб его не видит.
+    # Числа сотрудников на этапе никто не вводит (Plane №64 — запрос сил снят
+    # с рекогносцировки): до завершения запрос пуст и штабу не виден.
+    assert resp.json()["reconForceRequest"] == 0
     assert resp.json()["reconForceRequestedAt"] is None
     data = manager.post(f"{base}recon/complete/").json()
     assert (data["stage"], data["readinessPercent"]) == ("DEMAND", 30)
+    # Штабу уходит РАСЧЁТ ПО ПОСТАМ, посчитанный сервером на завершении.
+    assert data["reconForceRequest"] == sum(row["need"] for row in posts)
     assert data["reconForceRequestedAt"] is not None
 
     # DEMAND: утверждение строк агрегирует запросы сил по группам

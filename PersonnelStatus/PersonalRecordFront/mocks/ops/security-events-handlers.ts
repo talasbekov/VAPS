@@ -738,18 +738,21 @@ export const securityEventsHandlers = [
         "Добавьте хотя бы один пост, прежде чем завершать этап."
       );
     }
-    if (event.reconForceRequest < 1) {
-      return businessRuleError(
-        "RECON_FORCE_REQUEST_EMPTY",
-        "Укажите требуемое число сотрудников: завершение рекогносцировки направляет запрос штабу 2-го департамента."
-      );
-    }
+    // Штабу уходит РАСЧЁТ ПО ПОСТАМ: запроса личного состава на этапе больше
+    // нет (Plane №64). Уже сохранённый ручной ввод не затирается — порт
+    // правила бэка.
+    const requestedFromPosts = event.reconSectorPosts.reduce(
+      (sum, row) => sum + Math.max(row.need || 0, 0),
+      0
+    );
     return HttpResponse.json(
       saveEvent({
         ...event,
         stage: "DEMAND",
         readinessPercent: 30,
-        // Момент отправки штабу ставит ЗАВЕРШЕНИЕ этапа, а не правка числа.
+        reconForceRequest:
+          event.reconForceRequest < 1 ? requestedFromPosts : event.reconForceRequest,
+        // Момент отправки штабу ставит ЗАВЕРШЕНИЕ этапа, а не правка расчёта.
         reconForceRequestedAt: nowIso(),
         updatedAt: nowIso(),
       })

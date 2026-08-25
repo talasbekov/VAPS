@@ -30,6 +30,7 @@ interface EventRow {
   passportBinding: { versionId: string; versionNumber: number } | null
   reconSectorPosts: {
     id: string
+    sector: string
     post: string
     postType?: string
     weapon?: string
@@ -107,18 +108,21 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       await expect(stage).toContainText(`№ ${target.passportBinding.versionNumber}`)
     }
     await expect(
-      stage.getByRole('link', { name: 'История ОМ по объекту →' }),
+      stage.getByRole('link', { name: 'История прошлых ОМ по объекту →' }),
     ).toHaveAttribute('href', new RegExp(encodeURIComponent(target.objectName)))
 
     // Колонки таблицы прототипа: тип, вооружение, форма одежды, примечание.
     // Заполняем и сверяем с тем, что вернул БЭК, а не с полем на экране.
+    // «Тип поста» с 25.08 — ВЫБОР из списка эталона, а не свободный текст.
     const post = target.reconSectorPosts[0]
     const note = `Проба осмотра ${Date.now()}`
-    await stage.getByLabel(`Тип поста: ${post.post}`, { exact: true }).fill('Стационарный')
+    await stage
+      .getByLabel(`Тип поста: ${post.post}`, { exact: true })
+      .selectOption('Группа досмотра')
     await stage.getByLabel(`Вооружение: ${post.post}`, { exact: true }).fill('АКС-74У')
     await stage.getByLabel(`Форма одежды: ${post.post}`, { exact: true }).fill('Повседневная')
     await stage.getByLabel(`Примечание к посту: ${post.post}`, { exact: true }).fill(note)
-    await stage.getByRole('button', { name: 'Сохранить рекогносцировку' }).click()
+    await stage.getByRole('button', { name: 'Сохранить расчёт' }).click()
 
     await expect
       .poll(
@@ -129,7 +133,7 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
         },
         { timeout: 15_000 },
       )
-      .toBe(`Стационарный|АКС-74У|Повседневная|${note}`)
+      .toBe(`Группа досмотра|АКС-74У|Повседневная|${note}`)
 
     // Подпост из прототипа: строка встаёт за родителем и доезжает до сервера.
     // Ожидание считается ОТ ИСХОДНОГО состояния фикстуры: проба добавляет
@@ -140,7 +144,7 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       (r) => (r.parentPostId ?? '') !== '',
     ).length
     await stage.getByLabel(`Добавить подпост: ${post.post}`, { exact: true }).click()
-    await stage.getByRole('button', { name: 'Сохранить рекогносцировку' }).click()
+    await stage.getByRole('button', { name: 'Сохранить расчёт' }).click()
     await expect
       .poll(
         async () => {
@@ -217,6 +221,51 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
 
     // Проба убирает за собой — см. `dropEvent`.
     await dropEvent(call, created.id)
+  })
+
+
+  test('сектор заводится на экране, и пост внутри него доезжает до сервера', async ({
+    page,
+  }) => {
+    // Задача заказчика Plane №64: расчёт постов в эталоне — ИЕРАРХИЯ
+    // «сектор → пост». Проба судит по тому, что вернул СЕРВЕР: сектор живёт
+    // полем строки расчёта, и группа, существующая только в состоянии
+    // компонента, была бы зелёной на экране и пустой в БД.
+    const token = await apiToken()
+    const call = await apiCall(token)
+    // Своё мероприятие, а не чужая строка стенда: проба ДОБАВЛЯЕТ расчёт, и
+    // на общей фикстуре она копила бы посты каждым прогоном.
+    const fixture = await createWithObject(token)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${fixture.id}/`)
+    const stage = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Рекогносцировка' }),
+    })
+    await expect(stage).toBeVisible({ timeout: 15_000 })
+
+    // Имя УНИКАЛЬНО на прогон: на стенде уже есть секторы из паспортов, и
+    // совпавшее имя дало бы ассерт, зелёный по чужой строке.
+    const sector = `Сектор пробы ${Date.now()}`
+    const post = `Пост пробы ${Date.now()}`
+    await stage.getByRole('button', { name: '+ Добавить сектор' }).click()
+    await stage.getByLabel(/^Название сектора: /).last().fill(sector)
+    await stage.getByRole('button', { name: '+ Пост' }).last().click()
+    await stage.getByLabel('Пост', { exact: true }).last().fill(post)
+    await stage.getByRole('button', { name: 'Сохранить расчёт' }).click()
+
+    await expect
+      .poll(
+        async () => {
+          const fresh = (await events(token)).find((e) => e.id === fixture.id)
+          const row = fresh?.reconSectorPosts.find((r) => r.post === post)
+          return row?.sector ?? null
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(sector)
+
+    await dropEvent(call, fixture.id)
   })
 
 })
