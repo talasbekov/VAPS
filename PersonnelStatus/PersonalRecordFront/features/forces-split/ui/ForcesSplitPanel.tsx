@@ -24,6 +24,8 @@ import {
   useNotifyDirectorates,
   useRemoveAllocationMember,
   useSplitForceDemand,
+  useSubmitAllocation,
+  useWithdrawAllocation,
 } from "@/hooks/use-security-event-stages";
 import { PersonnelPicker } from "@/features/personnel-picker";
 import { apiClient, type CoreDivision } from "@/lib/api";
@@ -281,6 +283,8 @@ function AllocationState({
   const notify = useNotifyDirectorates(event.id, row?.id ?? "");
   const add = useAddAllocationMember(event.id, row?.id ?? "");
   const remove = useRemoveAllocationMember(event.id, row?.id ?? "");
+  const submit = useSubmitAllocation(event.id, row?.id ?? "");
+  const withdraw = useWithdrawAllocation(event.id, row?.id ?? "");
   // Какое управление сейчас подбирает людей; null — окно подбора закрыто.
   const [picking, setPicking] = useState<string | null>(null);
   if (row === undefined) {
@@ -391,6 +395,42 @@ function AllocationState({
           ))}
         </ul>
         <StageError error={remove.error} />
+        {/* Отправка списка штабу: доступна оповещённому и возвращённому, а
+            отзыв — пока штаб не решил. Кнопки не гадают за сервер: он и
+            отвечает словами, если состояние другое. */}
+        {(row.status === "NOTIFIED" || row.status === "RETURNED") && (
+          <div className="mt-2">
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={submit.isPending}
+              onClick={() => submit.mutate({})}
+            >
+              {submit.isPending ? "Отправляю…" : "Отправить список в штаб"}
+            </Button>
+            <StageError error={submit.error} />
+          </div>
+        )}
+        {row.status === "SUBMITTED" && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              Отправлено {formatIsoDateTime(row.submittedAt ?? "")} — ждёт
+              решения штаба
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={withdraw.isPending}
+              onClick={() => withdraw.mutate({})}
+            >
+              {withdraw.isPending ? "Отзываю…" : "Отозвать список"}
+            </Button>
+            <StageError error={withdraw.error} />
+          </div>
+        )}
       </div>
       <StageError error={notify.error} />
     </div>

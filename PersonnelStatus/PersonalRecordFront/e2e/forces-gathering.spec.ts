@@ -366,7 +366,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(card.getByRole('button', { name: 'Убрать департамент, строка 1', exact: true })).toBeDisabled()
   })
 
-  test('управление выделяет человека, и он получает статус привлечения', async ({
+  test('управление выделяет человека, отправляет список и может его отозвать', async ({
     page,
   }) => {
     const token = await apiToken()
@@ -414,6 +414,15 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
       `/api/operations/statuses/?business_date=2027-06-01&status_type_code=${EVENT_ASSIGNMENT}&page_size=200`,
     )
     expect(statuses.results.length, 'статуса привлечения на дату ОМ нет').toBeGreaterThan(0)
+
+    // Отправка списка штабу (СС-4): отправляется НЕДОБОР — решает штаб, а не
+    // форма, — и отправленное можно отозвать, пока штаб не решил.
+    await expect(state).toContainText('недобор')
+    await state.getByRole('button', { name: 'Отправить список в штаб' }).click()
+    await expect(state).toContainText('Список отправлен в штаб', { timeout: 20_000 })
+    await expect(state).toContainText('ждёт решения штаба')
+    await state.getByRole('button', { name: 'Отозвать список' }).click()
+    await expect(state).toContainText('Управления оповещены', { timeout: 20_000 })
 
     // Снятие до начала мероприятия убирает и строку, и статус.
     await state.getByRole('button', { name: 'Снять' }).first().click()

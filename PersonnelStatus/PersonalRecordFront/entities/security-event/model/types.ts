@@ -664,6 +664,23 @@ export function securityEventForcesMemberPath(
     employeeId
   )}/`;
 }
+/** Отправка окончательного списка штабу и её отзыв (Plane №73, СС-4). */
+export function securityEventForcesSubmitPath(
+  id: string,
+  allocationId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
+    allocationId
+  )}/submit/`;
+}
+export function securityEventForcesWithdrawPath(
+  id: string,
+  allocationId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
+    allocationId
+  )}/withdraw/`;
+}
 export function securityEventForcesCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/forces/complete/`;
 }

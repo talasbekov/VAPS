@@ -32,6 +32,8 @@ import {
   securityEventForcesNotifyPath,
   securityEventForcesMembersPath,
   securityEventForcesMemberPath,
+  securityEventForcesSubmitPath,
+  securityEventForcesWithdrawPath,
   securityEventForcesCompletePath,
   securityEventJournalPath,
   securityEventPlacementAssignPath,
@@ -229,6 +231,23 @@ export function useRemoveAllocationMember(id: string, allocationId: string) {
   return useEventMutation<{ employeeId: string }>(id, ({ employeeId }) =>
     opsApiClient.del<SecurityEvent>(
       securityEventForcesMemberPath(id, allocationId, employeeId)
+    )
+  );
+}
+
+/** Отправить окончательный список штабу / отозвать его (Plane №73, СС-4). */
+export function useSubmitAllocation(id: string, allocationId: string) {
+  return useEventMutation<Record<string, never>>(id, () =>
+    opsApiClient.post<SecurityEvent>(
+      securityEventForcesSubmitPath(id, allocationId)
+    )
+  );
+}
+
+export function useWithdrawAllocation(id: string, allocationId: string) {
+  return useEventMutation<Record<string, never>>(id, () =>
+    opsApiClient.post<SecurityEvent>(
+      securityEventForcesWithdrawPath(id, allocationId)
     )
   );
 }

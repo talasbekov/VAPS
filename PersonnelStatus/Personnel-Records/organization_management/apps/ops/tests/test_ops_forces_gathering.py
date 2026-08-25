@@ -516,3 +516,104 @@ def test_personnel_list_can_be_narrowed_to_a_division(manager):  # noqa: F811
     # должна молча расширять выбор.
     empty = manager.get("/api/ops/personnel/?division_id=999999").json()
     assert empty["results"] == []
+
+
+# ── Шаг «СС-4»: отправка окончательного списка штабу ────────────────────────
+
+
+def notified_event_with_member(manager):  # noqa: F811
+    """Заявка, дошедшая до «оповещено», с одним выделенным человеком."""
+    make_assignment_status_type()
+    department = make_department()
+    make_directorate(department)
+    employee = make_employee("Сериков")
+    base, allocation_id = allocated_event(manager, department, FUTURE_DATE)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    return base, allocation_id, employee
+
+
+def test_submitting_the_list_hands_it_to_the_staff(manager):  # noqa: F811
+    """Отправка помечает заявку и МОМЕНТОМ, и событием журнала."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    base, allocation_id, employee = notified_event_with_member(manager)
+
+    data = manager.post(f"{base}forces/allocation/{allocation_id}/submit/").json()
+
+    row = data["forceAllocation"][0]
+    assert row["status"] == "SUBMITTED"
+    assert row["submittedAt"] is not None
+    recorded = OpsAuditLog.objects.filter(
+        action="FORCE_ALLOCATION_SUBMITTED"
+    ).order_by("-id").first()
+    assert recorded is not None
+    # В журнале названы ЛЮДИ: с этого момента за них отвечает штаб, и список
+    # «кого именно передали» обязан иметь след.
+    assert recorded.new_value["members"] == [
+        f"{employee.last_name} {employee.first_name[0]}."
+    ]
+
+
+def test_empty_list_is_not_submitted(manager):  # noqa: F811
+    """Никого не выделили — отправлять нечего."""
+    department = make_department()
+    make_directorate(department)
+    base, allocation_id = allocated_event(manager, department, FUTURE_DATE)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    resp = manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "ALLOCATION_EMPTY"
+
+
+def test_short_list_is_submitted_anyway(manager):  # noqa: F811
+    """Недобор отправить МОЖНО: решает штаб, а не форма."""
+    base, allocation_id, _ = notified_event_with_member(manager)
+
+    data = manager.post(f"{base}forces/allocation/{allocation_id}/submit/").json()
+
+    row = data["forceAllocation"][0]
+    assert row["status"] == "SUBMITTED"
+    # Сторож: у заявки потребность БОЛЬШЕ одного человека — иначе «недобор»
+    # проверялся бы на полном списке.
+    assert row["need"] > len(row["members"])
+
+
+def test_not_notified_department_cannot_submit(manager):  # noqa: F811
+    """Пока заявку не передали департаменту, отправлять ему нечего."""
+    make_assignment_status_type()
+    department = make_department()
+    employee = make_employee("Сериков")
+    base, allocation_id = allocated_event(manager, department, FUTURE_DATE)
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+
+    resp = manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "ALLOCATION_NOT_SUBMITTABLE"
+
+
+def test_submitted_list_can_be_withdrawn_but_only_once(manager):  # noqa: F811
+    """Отзыв возвращает заявку департаменту; повтор отзывать уже нечего."""
+    base, allocation_id, _ = notified_event_with_member(manager)
+    manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
+
+    data = manager.post(
+        f"{base}forces/allocation/{allocation_id}/withdraw/"
+    ).json()
+
+    row = data["forceAllocation"][0]
+    assert (row["status"], row["submittedAt"]) == ("NOTIFIED", None)
+    again = manager.post(f"{base}forces/allocation/{allocation_id}/withdraw/")
+    assert again.status_code == 422
+    assert again.json()["error_code"] == "ALLOCATION_NOT_WITHDRAWABLE"

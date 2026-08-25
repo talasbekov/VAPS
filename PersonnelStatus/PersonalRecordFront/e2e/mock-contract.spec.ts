@@ -286,6 +286,39 @@ test.describe(
       expect(members.unknown.status).toBe(400)
       expect(members.removed.status).toBe(200)
       expect(members.removed.body.forceAllocation[0].members).toHaveLength(0)
+
+      // Отправка списка (СС-4): пустой список не отправляется, а отправленный
+      // отзывается ровно один раз.
+      const submitted = await page.evaluate(
+        async ({ id, employeeId }: { id: string; employeeId: string }) => {
+          const base = `/api/ops/security-events/se-1/forces/allocation/${id}/`
+          const post = async (path: string) => {
+            const res = await fetch(`${base}${path}`, { method: 'POST' })
+            return { status: res.status, body: await res.json() }
+          }
+          const empty = await post('submit/')
+          await fetch(`${base}members/`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ employeeId }),
+          })
+          return {
+            empty,
+            ok: await post('submit/'),
+            withdrawn: await post('withdraw/'),
+            again: await post('withdraw/'),
+          }
+        },
+        { id: allocationId, employeeId: members.employeeId },
+      )
+
+      expect(submitted.empty.status).toBe(422)
+      expect(submitted.empty.body.error_code).toBe('ALLOCATION_EMPTY')
+      expect(submitted.ok.body.forceAllocation[0].status).toBe('SUBMITTED')
+      expect(submitted.ok.body.forceAllocation[0].submittedAt).not.toBeNull()
+      expect(submitted.withdrawn.body.forceAllocation[0].status).toBe('NOTIFIED')
+      expect(submitted.again.status).toBe(422)
+      expect(submitted.again.body.error_code).toBe('ALLOCATION_NOT_WITHDRAWABLE')
     })
   },
 )

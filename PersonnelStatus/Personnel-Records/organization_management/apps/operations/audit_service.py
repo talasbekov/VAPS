@@ -132,6 +132,10 @@ VISIT_OBJECT_CHIEF_ASSIGNED = "VISIT_OBJECT_CHIEF_ASSIGNED"
 # мероприятия: «нам не говорили» разбирается по строке журнала, а не по
 # памяти дежурного.
 FORCE_ALLOCATION_NOTIFIED = "FORCE_ALLOCATION_NOTIFIED"
+# Отправка окончательного списка штабу: с этого момента за людей отвечает уже
+# не департамент. Момент перехода ответственности — то, ради чего журнал и
+# ведут.
+FORCE_ALLOCATION_SUBMITTED = "FORCE_ALLOCATION_SUBMITTED"
 VISIT_OBJECT_CHIEF_REVOKED = "VISIT_OBJECT_CHIEF_REVOKED"
 # Смена дежурства: заведение и отмена — решения с обоснованием (обход отдыха,
 # причина отмены); ознакомление/заступление/завершение следа в журнале
@@ -189,6 +193,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
         VISIT_OBJECT_CHIEF_ASSIGNED,
         FORCE_ALLOCATION_NOTIFIED,
+        FORCE_ALLOCATION_SUBMITTED,
         VISIT_OBJECT_CHIEF_REVOKED,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,

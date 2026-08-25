@@ -231,6 +231,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_notify": _MANAGE_EVENT_PERMISSION,
         "forces_member_add": _MANAGE_EVENT_PERMISSION,
         "forces_member_remove": _MANAGE_EVENT_PERMISSION,
+        "forces_submit": _MANAGE_EVENT_PERMISSION,
+        "forces_withdraw": _MANAGE_EVENT_PERMISSION,
         "force_allocation": _MANAGE_EVENT_PERMISSION,
         "forces_complete": _MANAGE_EVENT_PERMISSION,
         "placement_assign": _MANAGE_EVENT_PERMISSION,
@@ -590,6 +592,31 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 allocation_id,
                 employee_id,
                 actor=resolve_actor_id(request),
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/submit",
+    )
+    def forces_submit(self, request, pk=None, allocation_id=None):
+        """Департамент отправляет список штабу (Plane №73, шаг «СС-4»)."""
+        return self._event_response(
+            event_service.submit_allocation(
+                pk, allocation_id, actor=resolve_actor_id(request)
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/withdraw",
+    )
+    def forces_withdraw(self, request, pk=None, allocation_id=None):
+        return self._event_response(
+            event_service.withdraw_allocation(
+                pk, allocation_id, actor=resolve_actor_id(request)
             )
         )
 

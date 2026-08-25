@@ -1201,6 +1201,85 @@ export const securityEventsHandlers = [
     }
   ),
 
+  // ── Отправка списка штабу и её отзыв (Plane №73, СС-4) ─────────────────
+  http.post(
+    `*${securityEventForcesSplitPath(":id")}:allocationId/submit/`,
+    ({ params }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const target = event.forceAllocation.find(
+        (row) => row.id === (params.allocationId as string)
+      );
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Заявка департаменту не найдена.",
+          { id: params.allocationId as string },
+          404
+        );
+      }
+      if (target.status !== "NOTIFIED" && target.status !== "RETURNED") {
+        return businessRuleError(
+          "ALLOCATION_NOT_SUBMITTABLE",
+          "Отправить список может департамент, которому заявку уже передали и который её ещё не отправил."
+        );
+      }
+      if (target.members.length === 0) {
+        return businessRuleError(
+          "ALLOCATION_EMPTY",
+          "Никто не выделен — отправлять нечего."
+        );
+      }
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          forceAllocation: event.forceAllocation.map((row) =>
+            row.id === target.id
+              ? { ...row, status: "SUBMITTED", submittedAt: nowIso() }
+              : row
+          ),
+          updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
+  http.post(
+    `*${securityEventForcesSplitPath(":id")}:allocationId/withdraw/`,
+    ({ params }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const target = event.forceAllocation.find(
+        (row) => row.id === (params.allocationId as string)
+      );
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Заявка департаменту не найдена.",
+          { id: params.allocationId as string },
+          404
+        );
+      }
+      if (target.status !== "SUBMITTED") {
+        return businessRuleError(
+          "ALLOCATION_NOT_WITHDRAWABLE",
+          "Отозвать можно только отправленный и ещё не решённый список."
+        );
+      }
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          forceAllocation: event.forceAllocation.map((row) =>
+            row.id === target.id
+              ? { ...row, status: "NOTIFIED", submittedAt: null }
+              : row
+          ),
+          updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
   // ── Выделение сил ──────────────────────────────────────────────────────
   http.patch(
     `*${securityEventForceAllocationPath(":id", ":requestId")}`,
