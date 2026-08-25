@@ -1,12 +1,18 @@
 "use client";
 
-// Реестр ГВО: по строке на каждое ОМ реестра. Запись здесь не заводится
-// руками — она появляется вместе с бюллетенем ОМ, поэтому кнопки «создать»
-// на экране нет вовсе, а список строится поверх реестра ОМ.
+// Вкладка «Визиты иностранных ОЛ» в реестре ОМ (Plane «Реестр ОМ-35.8»).
+//
+// Заказчик снял модуль «Реестр ГВО» из меню, но сводный взгляд оставил:
+// «список „кто едет“ никуда не девается — он становится вкладкой внутри
+// Реестра ОМ». Поэтому таблица переехала сюда целиком, а не была написана
+// заново: колонки, подписи и пины проб те же.
+//
+// Отбор — `kind !== "INTERNAL"`, то же правило, что у кнопки «Информация по
+// ГВО» (`ОМ-35.5`): у внутреннего ОМ выездной охраны нет, а ОМ без типа
+// (заведённое до появления поля) из вкладки не выпадает — иначе его сводка
+// стала бы недостижимой.
 import { useState } from "react";
 import Link from "next/link";
-import { DashboardLayout } from "@/components/dashboard-layout";
-import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -16,8 +22,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { OpsAccessDenied } from "@/components/ops-access-denied";
-import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
 import { useAuth } from "@/lib/auth";
@@ -33,8 +37,8 @@ import {
 } from "@/entities/gvo-summary";
 import type { GvoSummaryPatch } from "@/entities/gvo-summary";
 
-// Реестр ГВО не листается: сводки смотрят по всему реестру ОМ сразу, а
-// фильтр здесь один — «Мои / Все».
+// Вкладка не листается: сводки смотрят по всем визитам сразу, а фильтр здесь
+// один — «Мои / Все».
 const PAGE_SIZE = 200;
 
 type Scope = "mine" | "all";
@@ -47,86 +51,75 @@ function pluralEvents(count: number): string {
   return "мероприятий";
 }
 
-export default function GvoRegistryPage() {
-  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+export function GvoVisitsRegistry() {
   const { user } = useAuth();
   const [scope, setScope] = useState<Scope>("all");
 
-  const canView = hasPermission("event.view");
-  const eventsQuery = useSecurityEvents(
-    { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: PAGE_SIZE },
-    { enabled: canView }
-  );
-  const patchesQuery = useGvoPatches({ enabled: canView });
-
-  if (!permissionsLoading && !canView) {
-    return <OpsAccessDenied what="реестра ГВО" />;
-  }
+  const eventsQuery = useSecurityEvents({
+    search: "",
+    stage: "ALL",
+    from: "",
+    to: "",
+    owner: "",
+    page: 1,
+    pageSize: PAGE_SIZE,
+  });
+  const patchesQuery = useGvoPatches({ enabled: true });
 
   const patches = patchesByCode(patchesQuery.data);
-  const events = eventsQuery.data?.results ?? [];
+  const visits = (eventsQuery.data?.results ?? []).filter(
+    (event) => event.kind !== "INTERNAL"
+  );
   // «Моё мероприятие» — то, где текущий пользователь ответственный. Без
-  // host-логина (раздел открыт и анониму) владельца определить нечем, и
-  // фильтр честно отдаёт пустой список, а не весь реестр под видом «моих».
-  const mine = events.filter(
+  // host-логина владельца определить нечем, и фильтр честно отдаёт пустой
+  // список, а не весь реестр под видом «моих».
+  const mine = visits.filter(
     (event) => user !== null && event.ownerName === user.name
   );
-  const visible = scope === "mine" ? mine : events;
+  const visible = scope === "mine" ? mine : visits;
 
   return (
-    <DashboardLayout>
-      <div className="space-y-4">
-        <PageHeader
-          eyebrow="Охранные мероприятия"
-          title="Реестр ГВО"
-          description="Сводные данные по каждому ОМ — запись появляется сразу после создания бюллетеня"
-        />
-
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          {/* bg-muted вместо хардкода hsl(210 40% 93%) (Task 9, fix round 1):
-              тот же баг-класс, что у трёх карточек сводки — не переопределён
-              под тёмную тему. Неактивная вкладка использует text-muted-foreground
-              (тоже themed), контраст деградировал, но не исчезал — Minor. */}
-          <div className="inline-flex gap-[3px] rounded-[9px] bg-muted p-[3px]">
-            {(
-              [
-                ["mine", "Мои"],
-                ["all", "Все"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={scope === value}
-                onClick={() => setScope(value)}
-                className={
-                  scope === value
-                    ? "h-[30px] rounded-[7px] bg-card px-3 text-[12.5px] font-semibold shadow-sm"
-                    : "h-[30px] rounded-[7px] px-3 text-[12.5px] font-semibold text-muted-foreground"
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <span className="text-[12px] text-muted-foreground">
-            {visible.length} {pluralEvents(visible.length)} из реестра ОМ
-          </span>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="inline-flex gap-[3px] rounded-[9px] bg-muted p-[3px]">
+          {(
+            [
+              ["mine", "Мои"],
+              ["all", "Все"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={scope === value}
+              onClick={() => setScope(value)}
+              className={
+                scope === value
+                  ? "h-[30px] rounded-[7px] bg-card px-3 text-[12.5px] font-semibold shadow-sm"
+                  : "h-[30px] rounded-[7px] px-3 text-[12.5px] font-semibold text-muted-foreground"
+              }
+            >
+              {label}
+            </button>
+          ))}
         </div>
-
-        <RegistryTable
-          isLoading={eventsQuery.isLoading || patchesQuery.isLoading}
-          isError={eventsQuery.isError}
-          events={visible}
-          patches={patches}
-          emptyText={
-            scope === "mine" && user === null
-              ? "Владелец мероприятия определяется по учётной записи — войдите, чтобы увидеть свои"
-              : "В этой категории мероприятий нет"
-          }
-        />
+        <span className="text-[12px] text-muted-foreground">
+          {visible.length} {pluralEvents(visible.length)} с иностранным ОЛ
+        </span>
       </div>
-    </DashboardLayout>
+
+      <RegistryTable
+        isLoading={eventsQuery.isLoading || patchesQuery.isLoading}
+        isError={eventsQuery.isError}
+        events={visible}
+        patches={patches}
+        emptyText={
+          scope === "mine" && user === null
+            ? "Владелец мероприятия определяется по учётной записи — войдите, чтобы увидеть свои"
+            : "Мероприятий с иностранным охраняемым лицом нет"
+        }
+      />
+    </div>
   );
 }
 
@@ -192,7 +185,12 @@ function RegistryTable({
             const summary = mergeGvoSummary(deriveGvoSummary(event), patch);
             const filled = isGvoSummaryFilled(patch);
             const staff = gvoStaffCount(summary);
-            const href = `/security-ops/gvo/${event.id}`;
+            // Ведём в КАРТОЧКУ мероприятия с раскрытой панелью, а не на свой
+            // экран сводки: модуля больше нет, сводка живёт в карточке
+            // («Реестр ОМ-35.4»), и `?gvo=1` открывает панель сразу — человек
+            // нажал именно на сводку, второе нажатие было бы платой за
+            // переезд.
+            const href = `/security-ops/events/${event.id}?gvo=1`;
             return (
               <TableRow key={event.id}>
                 <TableCell>

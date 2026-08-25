@@ -36,6 +36,7 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { CreateSecurityEventDialog } from "@/features/create-security-event";
+import { GvoVisitsRegistry } from "@/widgets/gvo-visits-registry";
 import {
   AddDeputyDialog,
   AssignChiefDialog,
@@ -100,8 +101,18 @@ export default function SecurityEventsPage() {
   // Календарь показывает МЕСЯЦ целиком, а таблица — страницу отбора. Это два
   // разных запроса, и делать один на двоих нельзя: страница в 20 строк не
   // покрывает месяц, а месяц не знает о постраничности.
-  const view = searchParams.get("view") === "calendar" ? "calendar" : "list";
-  const query = useSecurityEvents(view === "calendar" ? { ...params, pageSize: 200 } : params);
+  // Три вида, а не два: «Визиты иностранных ОЛ» — вкладка, в которую переехал
+  // снятый модуль «Реестр ГВО» (Plane «Реестр ОМ-35.8»). Вид живёт в адресе
+  // рядом с фильтрами: ссылкой делятся вместе с отбором.
+  const viewParam = searchParams.get("view");
+  const view =
+    viewParam === "calendar" ? "calendar" : viewParam === "gvo" ? "gvo" : "list";
+  // Во вкладке визитов таблица реестра не рисуется, но запрос отменять
+  // НЕЛЬЗЯ: из него берётся список ответственных для фильтра, и он же держит
+  // счётчик страниц при возврате на список.
+  const query = useSecurityEvents(
+    view === "calendar" ? { ...params, pageSize: 200 } : params
+  );
 
   // Поиск фиксируется с задержкой: в URL и в запрос уезжает набранное слово, а
   // не каждая его буква. Само поле отвечает мгновенно — оно живёт в черновике.
@@ -137,14 +148,18 @@ export default function SecurityEventsPage() {
               {/* Переключатель «Календарь ⇄ Список» из прототипа. Режим живёт
                   в URL рядом с фильтрами: ссылкой делятся вместе с отбором, а
                   возврат из карточки попадает в тот же вид, из которого ушли. */}
-              <Button
-                variant="outline"
-                onClick={() =>
-                  updateParam("view", view === "calendar" ? "" : "calendar")
-                }
-              >
-                {view === "calendar" ? "К списку" : "Календарь"}
-              </Button>
+              {/* Календарь — про мероприятия; во вкладке визитов его нет:
+                  кнопка «Календарь» там уводила бы из вкладки в сторону. */}
+              {view !== "gvo" && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    updateParam("view", view === "calendar" ? "" : "calendar")
+                  }
+                >
+                  {view === "calendar" ? "К списку" : "Календарь"}
+                </Button>
+              )}
               <Button onClick={() => setDialogOpen(true)}>
                 + Создать бюллетень
               </Button>
@@ -152,6 +167,44 @@ export default function SecurityEventsPage() {
           }
         />
 
+        {/* Вкладки реестра. «Визиты иностранных ОЛ» — сводный взгляд снятого
+            модуля «Реестр ГВО» (Plane «Реестр ОМ-35.8»): заказчик убрал пункт
+            меню, но список «кто едет» оставил внутри реестра ОМ. */}
+        <div
+          role="tablist"
+          aria-label="Вид реестра"
+          className="inline-flex gap-[3px] rounded-[9px] bg-muted p-[3px]"
+        >
+          {(
+            [
+              ["", "Мероприятия"],
+              ["gvo", "Визиты иностранных ОЛ"],
+            ] as const
+          ).map(([value, label]) => {
+            const active = value === "gvo" ? view === "gvo" : view !== "gvo";
+            return (
+              <button
+                key={label}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => updateParam("view", value)}
+                className={
+                  active
+                    ? "h-[30px] rounded-[7px] bg-card px-3 text-[12.5px] font-semibold shadow-sm"
+                    : "h-[30px] rounded-[7px] px-3 text-[12.5px] font-semibold text-muted-foreground"
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {view === "gvo" ? (
+          <GvoVisitsRegistry />
+        ) : (
+        <>
         <FilterBar
           onReset={
             params.search !== "" ||
@@ -238,6 +291,8 @@ export default function SecurityEventsPage() {
             events={query.data?.results ?? []}
             isEmpty={query.data !== undefined && query.data.results.length === 0}
           />
+        )}
+        </>
         )}
 
         <CreateSecurityEventDialog

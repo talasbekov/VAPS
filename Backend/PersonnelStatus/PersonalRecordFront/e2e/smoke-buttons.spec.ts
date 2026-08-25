@@ -166,10 +166,10 @@ const ROUTES: readonly RouteSpec[] = [
   // дня (ОМ)» удалены 21.08.2026 вместе с экранами — обходить нечего.
   { template: '/security-ops/events' },
   { template: '/security-ops/events/{eventId}', needs: ['eventId'] },
-  // Реестр ГВО — та же сущность, что и ОМ: карточка сводки открывается по id
-  // мероприятия, поэтому резолвер тот же `eventId`.
-  { template: '/security-ops/gvo' },
-  { template: '/security-ops/gvo/{eventId}', needs: ['eventId'] },
+  // Маршрутов «Реестр ГВО» здесь БОЛЬШЕ НЕТ (Plane «Реестр ОМ-35.8»): модуль
+  // снят, сводка открывается панелью в карточке ОМ, сводный взгляд — вкладкой
+  // `?view=gvo` реестра, и обход проходит их вместе со своими экранами.
+
   { template: '/security-ops/persons' },
   { template: '/security-ops/laws' },
   { template: '/security-ops/objects' },

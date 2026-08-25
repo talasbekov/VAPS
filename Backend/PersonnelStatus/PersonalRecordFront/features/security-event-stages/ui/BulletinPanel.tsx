@@ -369,15 +369,19 @@ function EventFacts({ event }: { event: SecurityEvent }) {
           value={staff === 0 ? UNSPECIFIED : String(staff)}
         />
       </dl>
+      {/* Модуля «Реестр ГВО» больше нет (Plane «Реестр ОМ-35.8»): сводка
+          живёт панелью в ЭТОЙ же карточке, и ссылка ведёт в неё —
+          `?gvo=1` раскрывает панель. Уводить на отдельный экран было бы
+          обещанием страницы, которой не существует. */}
       <p className="mt-2 text-xs text-muted-foreground">
         Охраняемые лица, старший ГВО и численность выводятся из{" "}
         <Link
-          href={`/security-ops/gvo/${event.id}`}
+          href={`/security-ops/events/${event.id}?gvo=1`}
           className="font-semibold text-primary-ink"
         >
           сводки ГВО
         </Link>
-        {" "}— заполняются там же.
+        {" "}— кнопка «Информация по ГВО» в шапке карточки.
       </p>
     </section>
   );

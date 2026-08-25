@@ -69,7 +69,7 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
     })
 
     // Вносим лицо в сводку ГВО первого ОМ реестра
-    await page.goto(`${APP}/security-ops/gvo/`)
+    await page.goto(`${APP}/security-ops/events/?view=gvo`)
     const row = page.locator('tbody tr').first()
     const omCode = (await row.locator('td').first().innerText()).split('\n')[0]
     await row.locator('a').first().click()
@@ -77,7 +77,12 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
     await page.getByRole('textbox', { name: 'ФИО' }).fill(PERSON)
     await page.getByRole('textbox', { name: 'Должность' }).fill('Куратор визитов')
     await page.getByRole('button', { name: 'Сохранить' }).click()
-    await expect(page.locator('main').getByText(PERSON)).toBeVisible({ timeout: 10_000 })
+    // `.first()`: сводка теперь панель в КАРТОЧКЕ ОМ (Plane «Реестр ОМ-35.8»),
+    // и то же имя выводится ещё и в «Сведениях об ОМ» бюллетеня — строгий
+    // режим ловил оба вхождения.
+    await expect(page.locator('main').getByText(PERSON).first()).toBeVisible({
+      timeout: 10_000,
+    })
 
     // Связь появилась: карточка лица ведёт на ту самую сводку и её объект
     await page.goto(`${APP}/security-ops/persons/`)
@@ -95,7 +100,7 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
     // чистого состояния (тот же класс дефекта уже нашёлся у ОМ-2026-80 /
     // 'Оспанов Бахыт Дюсенбаевич'). Тот же приём, что в
     // e2e/gvo-sections.spec.ts — «Вернуть исходные» по разделу «persons».
-    await page.goto(`${APP}/security-ops/gvo/`)
+    await page.goto(`${APP}/security-ops/events/?view=gvo`)
     await page.locator('tbody tr', { hasText: omCode }).locator('a').first().click()
     await page.getByRole('button', { name: 'Изменить список охраняемых лиц' }).click()
     await page.getByRole('button', { name: 'Вернуть исходные' }).click()

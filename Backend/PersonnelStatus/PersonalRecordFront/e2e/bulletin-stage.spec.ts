@@ -222,10 +222,12 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     // подпись факта сводки уточнена, чтобы две строки не совпадали.
     await expect(facts).toContainText('Старший группы ГВО:')
     await expect(facts).toContainText('Численность ГВО:')
-    // Слэш на конце добавляет Next (trailingSlash), в разметке его нет
+    // Ссылка ведёт в СВОЮ карточку с раскрытой панелью (Plane «Реестр
+    // ОМ-35.8»): отдельного экрана сводки больше нет.
     await expect(facts.getByRole('link', { name: 'сводки ГВО' })).toHaveAttribute(
       'href',
-      `/security-ops/gvo/${target.id}/`,
+      // Слэш перед «?» добавляет Next (trailingSlash), в разметке его нет.
+      `/security-ops/events/${target.id}/?gvo=1`,
     )
   })
 

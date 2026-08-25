@@ -69,7 +69,13 @@ function SecurityEventScreen() {
   const [bulletinDirty, setBulletinDirty] = useState(false);
   // Панель ГВО закрыта по умолчанию: сводка — это четыре сотни строк разметки
   // и свой запрос, и раскрытая всегда она отодвинула бы этапы за сгиб.
-  const [gvoOpen, setGvoOpen] = useState(false);
+  //
+  // Исключение — приход ИЗ вкладки «Визиты иностранных ОЛ» (`?gvo=1`, «Реестр
+  // ОМ-35.8»): там человек нажал именно на сводку, и карточка со свёрнутой
+  // панелью заставила бы его нажать второй раз на то же самое.
+  const [gvoOpen, setGvoOpen] = useState(
+    searchParams.get("gvo") === "1"
+  );
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   // Объекты посещения и выбранный из них считаются ДО ранних веток: ниже
@@ -208,10 +214,11 @@ function SecurityEventScreen() {
                 : ""
             } · ответственный: ${event.ownerName}`}
           />
-          {/* Карточка ОМ — хаб: объект и сводка ГВО кликабельны отсюда на
-              ЛЮБОМ этапе. Сводка ГВО адресуется id самого мероприятия — своей
-              записи у неё нет (см. entities/gvo-summary), поэтому ссылка
-              жива всегда. */}
+          {/* Карточка ОМ — хаб: объект кликабелен отсюда на любом этапе.
+              Ссылки «Сводка ГВО →» здесь БОЛЬШЕ НЕТ (Plane «Реестр ОМ-35.8»):
+              отдельного экрана сводки не существует, а её панель раскрывает
+              кнопка «Информация по ГВО» в этой же шапке — вторая ссылка на то
+              же место рядом с кнопкой только сбивала бы. */}
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs">
             {event.objectId !== null ? (
               <Link
@@ -225,15 +232,6 @@ function SecurityEventScreen() {
                 Объект: {objectLabel(event)}
               </span>
             )}
-            <span aria-hidden className="text-muted-foreground">
-              ·
-            </span>
-            <Link
-              href={`/security-ops/gvo/${event.id}`}
-              className="font-semibold text-primary-ink"
-            >
-              Сводка ГВО →
-            </Link>
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {event.passportBinding !== null

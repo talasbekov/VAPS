@@ -19,7 +19,7 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
-// Пин дословно совпадает с константой на экране (app/security-ops/gvo/[id]/page.tsx)
+// Пин дословно совпадает с константой виджета (widgets/gvo-summary)
 // — проба ловит расхождение текста, а не только факт наличия какой-то строки.
 const PERSONS_REGISTRY_GAP_LINE =
   'С реестром «Охраняемые лица» эти карточки не связаны — модель ГВО хранит только текст бюллетеня, без ссылки на запись каталога; появится бэк-этапом.'
@@ -49,6 +49,40 @@ async function registryEvents(): Promise<EventRow[]> {
   return ((await res.json()) as { results: EventRow[] }).results
 }
 
+/**
+ * Сброс сводки ОМ к черновику ЧЕРЕЗ API — предусловие пробы, а не проверка.
+ *
+ * Прерванный прогон (упавший на любом шаге) оставляет патч, и следующий
+ * стартует не с «Черновика»: проба была бы красной по чужой причине. Разделы
+ * перечислены все, а не только правимые ниже: остаток любого из них держит
+ * статус «Заполнена».
+ */
+async function resetSummary(omCode: string): Promise<void> {
+  const token = await apiToken()
+  for (const section of [
+    'head',
+    'persons',
+    'arrival',
+    'departure',
+    'org',
+    'groups',
+    'resp',
+    'transport',
+  ]) {
+    await fetch(
+      `${API}/api/ops/gvo-summaries/${encodeURIComponent(omCode)}/reset/`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ section }),
+      },
+    )
+  }
+}
+
 async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PASSWORD): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as {
@@ -75,21 +109,44 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     })
 
     await signIn(page)
-    await page.goto(`${APP}/security-ops/gvo/`)
-    await expect(page.getByRole('heading', { name: 'Реестр ГВО' })).toBeVisible()
+    // Модуля «Реестр ГВО» больше нет (Plane «Реестр ОМ-35.8»): сводный взгляд
+    // живёт вкладкой реестра ОМ, сводка — панелью карточки.
+    await page.goto(`${APP}/security-ops/events/?view=gvo`)
+    await expect(page.getByRole('tab', { name: 'Визиты иностранных ОЛ' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
 
     // Мероприятие берётся не «первое в реестре», а первое С ОБЪЕКТОМ
     // ПОСЕЩЕНИЯ: с «Реестр ОМ-35.1» раздел «Объекты посещения» читает таблицу
     // объектов, и у ОМ без объекта окно правки честно пусто — проба на таком
     // мероприятии молча проверяла бы пустоту.
+    // Тип НЕ внутренний: вкладка показывает визиты иностранных ОЛ («ОМ-35.5»),
+    // и внутреннего мероприятия в ней нет.
     const registry = await registryEvents()
-    const target = registry.find((row) => (row.visitObjects ?? []).length > 0)
-    expect(target, 'на стенде нет ОМ с объектом посещения — проба вакуумна').toBeTruthy()
+    const target = registry.find(
+      (row) => (row.visitObjects ?? []).length > 0 && row.kind !== 'INTERNAL',
+    )
+    expect(
+      target,
+      'на стенде нет ОМ с иностранным ОЛ и объектом посещения — проба вакуумна',
+    ).toBeTruthy()
     const omCode = (target as EventRow).code
+    await resetSummary(omCode)
+    await page.reload()
+
+    // Ждём ЖИВУЮ таблицу вкладки: она собирается из двух запросов (реестр и
+    // патчи), и ассерт по строке до их прихода падал бы «строки нет».
+    await expect(page.locator('tbody tr').first()).toBeVisible({
+      timeout: 20_000,
+    })
     const eventRow = page.locator('tbody tr', { hasText: omCode })
-    await expect(eventRow).toContainText('Черновик')
+    await expect(eventRow).toContainText('Черновик', { timeout: 15_000 })
+    // Строка вкладки ведёт в карточку с РАСКРЫТОЙ панелью (`?gvo=1`).
     await eventRow.locator('a').first().click()
-    await expect(page.getByRole('heading', { name: 'Сводные данные' })).toBeVisible()
+    await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
+      timeout: 15_000,
+    })
 
     // Охраняемое лицо: «параметр = значение» построчно
     await page.getByRole('button', { name: '＋ Добавить лицо' }).click()
@@ -100,9 +157,13 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
       .fill('Группа крови = А (II) Rh +\nРост = 185 см')
     await page.getByRole('button', { name: 'Сохранить' }).click()
     const main = page.locator('main')
-    await expect(main.getByText('Яков Милатович')).toBeVisible({ timeout: 10_000 })
-    await expect(main.getByText('А (II) Rh +')).toBeVisible()
-    await expect(main.getByText('185 см')).toBeVisible()
+    // `.first()`: панель стоит в карточке ОМ, и то же имя выводится ещё и в
+    // «Сведениях об ОМ» бюллетеня (факты ГВО) — строгий режим ловил обе.
+    await expect(main.getByText('Яков Милатович').first()).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(main.getByText('А (II) Rh +').first()).toBeVisible()
+    await expect(main.getByText('185 см').first()).toBeVisible()
 
     // Группа ГВО: «Фамилия | позывной | роль»; счётчик состава пересчитывается
     await page.getByRole('button', { name: '＋ Группа' }).click()
@@ -111,8 +172,8 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
       .getByRole('textbox', { name: 'Состав группы' })
       .fill('Булатаев | 2-27 | старший ГВО\nБайболов | 7-41 | прикреплённый')
     await page.getByRole('button', { name: 'Сохранить' }).click()
-    await expect(main.getByText('2-27')).toBeVisible({ timeout: 10_000 })
-    await expect(main.getByText('старший ГВО')).toBeVisible()
+    await expect(main.getByText('2-27').first()).toBeVisible({ timeout: 10_000 })
+    await expect(main.getByText('старший ГВО').first()).toBeVisible()
     await expect(main.getByText('2 чел.').first()).toBeVisible()
 
     // Транспорт: «код | марка | примечание»
@@ -157,17 +218,43 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
       timeout: 10_000,
     })
     await expect(main.getByText(nextNote)).toBeVisible()
-    await expect(main.getByText(visitObjectName as string)).toBeVisible()
+    // `.first()`: имя объекта на карточке ОМ встречается ещё и в шапке, и в
+    // подписи выбранного объекта посещения — предмет ассерта в том, что оно
+    // ВООБЩЕ доехало в панель, а не в единственности вхождения.
+    await expect(main.getByText(visitObjectName as string).first()).toBeVisible()
 
-    // Реестр читает ту же сводку: статус, старший ГВО и охраняемые лица
-    await page.getByRole('link', { name: '← Назад к реестру ГВО' }).click()
+    // Вкладка читает ту же сводку: статус, старший ГВО и охраняемые лица.
+    // Возврат — адресом вкладки: ссылки «← Назад к реестру ГВО» больше нет,
+    // экран снят вместе с модулем.
+    await page.goto(`${APP}/security-ops/events/?view=gvo`)
     const row = page.locator('tbody tr', { hasText: omCode })
     await expect(row).toContainText('Заполнена', { timeout: 10_000 })
     await expect(row).toContainText('Булатаев · 2-27')
     await expect(row).toContainText('Яков Милатович')
 
-    // Удаление элемента списка возвращает раздел в пустое состояние
+    // Удаление ЭЛЕМЕНТА списка возвращает раздел в пустое состояние.
+    //
+    // Перед этим список сводится к ОДНОМУ лицу разделом целиком: база сводки
+    // уже несёт охраняемое лицо из бюллетеня, если оно там названо, и «удалить
+    // первое и ждать пустоту» держалось лишь на том, что у выбранного ОМ лица
+    // не было. Цикл «удалять, пока есть» здесь не годится: панель после
+    // каждого ответа пересобирается, и клик по едущей карточке не доходит.
     await row.locator('a').first().click()
+    await expect(
+      page.getByRole('button', { name: 'Изменить список охраняемых лиц' }),
+    ).toBeVisible({ timeout: 15_000 })
+    await page
+      .getByRole('button', { name: 'Изменить список охраняемых лиц' })
+      .click()
+    await page
+      .getByRole('textbox', { name: 'Список охраняемых лиц' })
+      .fill('Яков Милатович | Президент Черногории')
+    await page.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 10_000 })
+    await expect(
+      page.getByRole('button', { name: 'Изменить данные лица 2' }),
+    ).toHaveCount(0, { timeout: 10_000 })
+
     await page.getByRole('button', { name: 'Изменить данные лица 1' }).click()
     await page.getByRole('button', { name: 'Удалить лицо' }).click()
     await expect(
@@ -319,11 +406,18 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
 
   // Гейт раздела показывается персоной, у которой права НЕТ: под админом
   // (`*`) закрытое состояние недостижимо в принципе.
-  test('без event.view реестр ГВО закрыт', async ({ page }) => {
+  test('без event.view вкладка визитов закрыта вместе с реестром ОМ', async ({
+    page,
+  }) => {
     await signIn(page, 'observer', 'observer123')
-    await page.goto(`${APP}/security-ops/gvo/`)
-    await expect(page.getByText('реестра ГВО')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('heading', { name: 'Реестр ГВО' })).toBeHidden()
+    // Своего гейта у вкладки нет и быть не должно: она часть реестра ОМ, и
+    // право на неё то же — `event.view`. Отдельный гейт означал бы второе
+    // правило доступа к одним данным.
+    await page.goto(`${APP}/security-ops/events/?view=gvo`)
+    await expect(page.getByText('реестра ОМ')).toBeVisible({ timeout: 15_000 })
+    await expect(
+      page.getByRole('tab', { name: 'Визиты иностранных ОЛ' }),
+    ).toHaveCount(0)
   })
 })
 
@@ -343,30 +437,29 @@ test.describe(
   () => {
     test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-    test('ссылка со сводки ведёт на карточку СВОЕГО ОМ', async ({ page }) => {
+    test('панель показывает сводку СВОЕГО ОМ, а не соседнего', async ({ page }) => {
+      // Раньше это стерегла ссылка «К мероприятию →» на отдельном экране
+      // сводки: своей записи у сводки нет, и ссылка обязана была вести на ТОТ
+      // ЖЕ id. Экран снят («ОМ-35.8»), но вопрос остался: панель в карточке
+      // обязана показывать сводку ЭТОГО мероприятия. Ассерт на адрес его не
+      // ловит — форма адреса совпала бы и с чужой записью под ней.
       const rows = await registryEvents()
-      // id «1» зарезервирован под красную пробу отчёта — цель теста должна
-      // гарантированно от него отличаться.
-      const target = rows.find((r) => r.id !== '1') ?? rows[0]
-      expect(target, 'на стенде нет ни одного ОМ').toBeDefined()
+      const target = rows.find((r) => r.kind !== 'INTERNAL')
+      const other = rows.find((r) => r.id !== target?.id)
+      expect(target, 'на стенде нет ОМ с иностранным ОЛ').toBeDefined()
+      expect(other, 'на стенде одно ОМ — подмену не с чем спутать').toBeDefined()
 
       await signIn(page)
-      await page.goto(`${APP}/security-ops/gvo/${target!.id}/`)
-      await expect(page.getByRole('heading', { name: 'Сводные данные' })).toBeVisible({
+      await page.goto(`${APP}/security-ops/events/${target!.id}?gvo=1`)
+      await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
         timeout: 15_000,
       })
 
-      const link = page.getByRole('main').getByRole('link', { name: /мероприятию/i })
-      await expect(link).toBeVisible()
-      await link.click()
-
-      await expect(page).toHaveURL(new RegExp(`/security-ops/events/${target!.id}/?$`))
-      // Landed-identity: код мероприятия на КАРТОЧКЕ ОМ, а не только форма URL.
-      // .first() — на этапе «Бюллетень» код мероприятия дублируется в фактах
-      // шага; первый в DOM — код-бейдж шапки карточки, оба варианта верны.
-      await expect(
-        page.getByRole('main').getByText(target!.code, { exact: true }).first(),
-      ).toBeVisible({ timeout: 15_000 })
+      const main = page.getByRole('main')
+      await expect(main.getByText(target!.code, { exact: true }).first()).toBeVisible()
+      // Код СОСЕДНЕГО ОМ на странице не появляется: панель не подмешивает
+      // чужую сводку.
+      await expect(main.getByText(other!.code, { exact: true })).toHaveCount(0)
     })
 
     test('сводка честно называет отсутствие связи с реестром лиц', async ({ page }) => {
@@ -375,8 +468,8 @@ test.describe(
       expect(target, 'на стенде нет ни одного ОМ').toBeDefined()
 
       await signIn(page)
-      await page.goto(`${APP}/security-ops/gvo/${target!.id}/`)
-      await expect(page.getByRole('heading', { name: 'Сводные данные' })).toBeVisible({
+      await page.goto(`${APP}/security-ops/events/${target!.id}?gvo=1`)
+      await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
         timeout: 15_000,
       })
       await expect(
@@ -435,8 +528,8 @@ test.describe(
       expect(target, 'на стенде нет ни одного ОМ').toBeDefined()
 
       await signIn(page)
-      await page.goto(`${APP}/security-ops/gvo/${target!.id}/`)
-      await expect(page.getByRole('heading', { name: 'Сводные данные' })).toBeVisible({
+      await page.goto(`${APP}/security-ops/events/${target!.id}?gvo=1`)
+      await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
         timeout: 15_000,
       })
 
