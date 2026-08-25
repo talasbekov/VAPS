@@ -1013,8 +1013,31 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         start = (page - 1) * page_size
         employees = employees[start : start + page_size]
 
+        # Статус НА ДАТУ (Plane №65, шаг «Р-2»): подбор кандидатов обязан
+        # показывать, свободен ли человек в день мероприятия, — предлагать
+        # занятого значит предлагать конфликт. Дату спрашивает КЛИЕНТ и берёт
+        # её у мероприятия: считать «сегодня» за него нельзя, расстановка
+        # ведётся на будущий день.
+        #
+        # Без параметра оба поля равны null и означают «не спрашивали» — форма
+        # ответа одна на оба случая: две формы заставили бы читателя гадать,
+        # что ему пришло.
+        from organization_management.apps.ops.security_events import (
+            day_status_map,
+        )
+
+        rows = list(employees)
+        # Разбор даты — общий `_parse_date_param` (мусор → 400), а не свой:
+        # у правила «что считается датой в query» один владелец.
+        business_date = _parse_date_param(request, "business_date")
+        statuses = (
+            {}
+            if business_date is None
+            else day_status_map([e.pk for e in rows], business_date)
+        )
+
         results = []
-        for employee in employees:
+        for employee in rows:
             # обратный OneToOne без строки бросает RelatedObjectDoesNotExist
             try:
                 staff_unit = employee.staff_unit
@@ -1025,12 +1048,15 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 if staff_unit is not None and staff_unit.division is not None
                 else ""
             )
+            code, label = statuses.get(str(employee.pk), (None, None))
             results.append(
                 {
                     "id": str(employee.pk),
                     "name": personnel_display_name(employee),
                     "rankLabel": employee.rank.name if employee.rank else "",
                     "unit": unit,
+                    "statusCode": code,
+                    "statusLabel": label,
                 }
             )
         # `next`/`previous` — НОМЕРА страниц, как у реестра ОМ: контракт

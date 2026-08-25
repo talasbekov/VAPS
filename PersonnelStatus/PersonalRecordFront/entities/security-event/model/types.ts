@@ -164,6 +164,9 @@ export interface ForceRosterMember {
   departmentName: string;
   /** null — состав выведен из расстановки миграцией, решения штаба не было. */
   acceptedAt: string | null;
+  /** Статус на деловую дату ОМ; null — статуса нет, что и есть «в строю». */
+  statusCode: string | null;
+  statusLabel: string | null;
 }
 
 /** Назначение сотрудника на пост. Двойное назначение внутри одного ОМ запрещено. */
@@ -232,6 +235,11 @@ export interface PersonnelSummarySnapshot {
   name: string;
   rankLabel: string;
   unit: string;
+  /** Статус на дату, СПРОШЕННУЮ клиентом (`business_date`). null — либо даты
+   * не спрашивали, либо статуса на неё нет: форма ответа одна на оба случая,
+   * две заставили бы читателя гадать, что ему пришло. */
+  statusCode: string | null;
+  statusLabel: string | null;
 }
 
 export type JournalEntryType = "INSTRUCTION" | "ORDER" | "INCIDENT" | "REPLACEMENT";
@@ -627,6 +635,10 @@ export function opsPersonnelPagePath(params: {
    * Сервер отбирает по ПОДДЕРЕВУ — человек числится в отделе, а не в
    * управлении. */
   divisionId?: string;
+  /** Деловая дата, НА КОТОРУЮ спрашивается статус (Plane №65, «Р-2»). Дату
+   * даёт мероприятие: считать «сегодня» за клиента сервер не станет —
+   * расстановка ведётся на будущий день. */
+  businessDate?: string;
 }): string {
   const query = new URLSearchParams({
     page: String(params.page),
@@ -635,6 +647,8 @@ export function opsPersonnelPagePath(params: {
   if (params.search.trim() !== "") query.set("search", params.search.trim());
   if ((params.divisionId ?? "").trim() !== "")
     query.set("division_id", (params.divisionId as string).trim());
+  if ((params.businessDate ?? "").trim() !== "")
+    query.set("business_date", (params.businessDate as string).trim());
   return `${OPS_PERSONNEL_PATH}?${query.toString()}`;
 }
 

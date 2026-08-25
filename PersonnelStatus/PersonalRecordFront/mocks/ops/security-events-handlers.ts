@@ -85,6 +85,7 @@ import { readObjectsStore } from "./objects-handlers";
 import {
   findPersonnel,
   personnelDayStatus,
+  personnelRowOn,
   PERSONNEL_ROSTER,
 } from "./fixtures/personnel";
 import { PROTECTED_PERSONS_CATALOG } from "./protected-persons-handlers";
@@ -677,8 +678,13 @@ export const securityEventsHandlers = [
       100
     );
     const start = (page - 1) * pageSize;
+    // Статус — только на СПРОШЕННУЮ дату, как у сервера: без параметра оба
+    // поля остаются null и означают «не спрашивали» (Plane №65, «Р-2»).
+    const businessDate = (url.searchParams.get("business_date") ?? "").trim();
     return HttpResponse.json({
-      results: found.slice(start, start + pageSize),
+      results: found
+        .slice(start, start + pageSize)
+        .map((row) => personnelRowOn(row, businessDate)),
       count: found.length,
       next: start + pageSize < found.length ? String(page + 1) : null,
       previous: page > 1 ? String(page - 1) : null,
@@ -1320,6 +1326,9 @@ export const securityEventsHandlers = [
           departmentId: target.departmentId,
           departmentName: target.departmentName,
           acceptedAt: now,
+          // Статус дня — как у сервера, рядом с человеком: состав и есть
+          // источник кандидатов подбора (Plane №65, «Р-2»).
+          ...personnelDayStatus(member.employeeId),
         }));
       return HttpResponse.json(
         saveEvent({

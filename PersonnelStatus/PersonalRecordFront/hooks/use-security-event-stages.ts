@@ -114,9 +114,12 @@ export function usePersonnelPage(params: {
   enabled?: boolean;
   /** Подразделение-владелец: пусто — вся служба (прежнее поведение). */
   divisionId?: string;
+  /** Дата, на которую спрашивается статус кандидата; пусто — не спрашивать. */
+  businessDate?: string;
 }) {
   const pageSize = params.pageSize ?? 20;
   const divisionId = params.divisionId ?? "";
+  const businessDate = params.businessDate ?? "";
   return useQuery<PersonnelPageResponse, OpsApiFailure>({
     // Подразделение — ЧАСТЬ ключа: без него страница чужого управления
     // отдалась бы из кэша как своя.
@@ -127,6 +130,9 @@ export function usePersonnelPage(params: {
       params.page,
       pageSize,
       divisionId,
+      // Дата — ЧАСТЬ ключа: страница, спрошенная на другой день, несёт другие
+      // статусы, и отдать её из кэша значило бы показать чужой день.
+      businessDate,
     ],
     queryFn: () =>
       opsApiClient.get<PersonnelPageResponse>(
@@ -135,6 +141,7 @@ export function usePersonnelPage(params: {
           page: params.page,
           pageSize,
           divisionId,
+          businessDate,
         })
       ),
     enabled: params.enabled !== false,

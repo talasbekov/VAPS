@@ -380,6 +380,21 @@ test.describe(
       expect(row.divisionName).not.toBe('')
       expect(row).toHaveProperty('statusCode')
       expect(row).toHaveProperty('statusLabel')
+
+      // Р-2: статус в кадровом снимке — только на СПРОШЕННУЮ дату; без неё
+      // мок молчит, как и сервер. Обе половины обязательны: без первой проба
+      // доказывала бы, что статусов нет вовсе.
+      const personnel = await page.evaluate(async () => {
+        const one = async (query: string) =>
+          (await (await fetch(`/api/ops/personnel/?page=1&page_size=10${query}`)).json())
+            .results
+        return {
+          bare: await one(''),
+          dated: await one('&business_date=2026-08-10'),
+        }
+      })
+      expect(personnel.bare.every((r: any) => r.statusCode === null)).toBe(true)
+      expect(personnel.dated.some((r: any) => r.statusCode !== null)).toBe(true)
     })
   },
 )
