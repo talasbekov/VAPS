@@ -1537,6 +1537,9 @@ export const securityEventsHandlers = [
         // и пуст на живом стенде.
         divisionName: employee.unit,
         ...personnelDayStatus(employee.id),
+        // Старший сектора назначается отдельной ручкой; поставленный на пост
+        // старшим по умолчанию не становится (Plane №65, «Р-4»).
+        isSectorSenior: false,
         acknowledgedAt: null,
         // обоснование сохраняется только при реально возникшем предупреждении
         ratingOverrideReason:
@@ -1548,6 +1551,55 @@ export const securityEventsHandlers = [
             ...event,
             placementAssignments: [...event.placementAssignments, assignment],
           }),
+          updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
+  // Старший сектора (Plane №65, «Р-4»): один на сектор, как у сервера.
+  http.post(
+    // Шаблон СОБИРАЕТСЯ ВРУЧНУЮ: построитель пути прогоняет id назначения
+    // через encodeURIComponent, и `:assignmentId` превратился бы в
+    // `%3AassignmentId` — обработчик не сматчился бы никогда (та же яма, что
+    // у маршрута согласования, карточка №82).
+    `*${SECURITY_EVENTS_PATH}:id/placement/:assignmentId/senior/`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const assignmentId = decodeURIComponent(params.assignmentId as string);
+      const target = event.placementAssignments.find((a) => a.id === assignmentId);
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Назначение не найдено.",
+          { id: assignmentId },
+          404
+        );
+      }
+      const post = event.reconSectorPosts.find((p) => p.id === target.postId);
+      if (post === undefined) {
+        return businessRuleError(
+          "POST_NOT_FOUND",
+          "Пост назначения не найден — сектор определить нечем."
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as {
+        senior?: boolean;
+      };
+      const senior = body.senior ?? true;
+      const sectorOf = (assignmentPostId: string) =>
+        event.reconSectorPosts.find((p) => p.id === assignmentPostId)?.sector ?? "";
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          placementAssignments: event.placementAssignments.map((a) =>
+            a.id === assignmentId
+              ? { ...a, isSectorSenior: senior }
+              : sectorOf(a.postId) === post.sector
+                ? { ...a, isSectorSenior: false }
+                : a
+          ),
           updatedAt: nowIso(),
         })
       );
@@ -2068,6 +2120,7 @@ export const securityEventsHandlers = [
         employeeName: incoming.name,
         divisionName: incoming.unit,
         ...personnelDayStatus(incoming.id),
+        isSectorSenior: false,
         acknowledgedAt: null,
         // замена в ходе проведения — не расстановка: обхода не было
         ratingOverrideReason: null,

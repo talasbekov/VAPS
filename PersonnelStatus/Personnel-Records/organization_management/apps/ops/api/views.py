@@ -240,6 +240,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "placement_assign": _MANAGE_EVENT_PERMISSION,
         "placement_unassign": _MANAGE_EVENT_PERMISSION,
         "placement_complete": _MANAGE_EVENT_PERMISSION,
+        "placement_sector_senior": _MANAGE_EVENT_PERMISSION,
         "approval_approve": _MANAGE_EVENT_PERMISSION,
         # Маршрут согласования правит тот же, кто ведёт мероприятие: action без
         # записи в карте провалился бы в автоопределение и остался без права.
@@ -763,6 +764,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.unassign_placement(
                 pk, assignment_id, deputy=self._deputy_actor()
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"placement/(?P<assignment_id>[^/]+)/senior",
+    )
+    def placement_sector_senior(self, request, pk=None, assignment_id=None):
+        """Старший сектора: назначить или снять (Plane №65, «Р-4»)."""
+        data = request.data or {}
+        return self._event_response(
+            event_service.set_sector_senior(
+                pk,
+                assignment_id,
+                senior=bool(data.get("senior", True)),
+                actor=request.user,
             )
         )
 

@@ -187,6 +187,8 @@ export interface PlacementAssignment {
    * записанная в момент назначения, соврала бы к утру. */
   statusCode: string | null;
   statusLabel: string | null;
+  /** Старший СЕКТОРА (сектор берётся у поста): один на сектор. */
+  isSectorSenior: boolean;
 }
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "RETURNED";
@@ -650,6 +652,14 @@ export function opsPersonnelPagePath(params: {
   if ((params.businessDate ?? "").trim() !== "")
     query.set("business_date", (params.businessDate as string).trim());
   return `${OPS_PERSONNEL_PATH}?${query.toString()}`;
+}
+
+/** Старший сектора: назначить или снять (Plane №65, «Р-4»). */
+export function securityEventPlacementSeniorPath(
+  id: string,
+  assignmentId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/${encodeURIComponent(assignmentId)}/senior/`;
 }
 
 export function securityEventBulletinPath(id: string): string {

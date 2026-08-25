@@ -68,6 +68,9 @@ CODES = {
     "ALLOCATION_EMPTY": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
+    # Старший сектора (Plane №65): сектор берётся у поста назначения, и без
+    # поста определять его нечем.
+    "POST_NOT_FOUND": frozenset({422}),
     "PLACEMENT_INCOMPLETE": frozenset({422}),
     "ACKNOWLEDGEMENT_INCOMPLETE": frozenset({422}),
     "CLOSURE_DIRECTIONS_INCOMPLETE": frozenset({422}),

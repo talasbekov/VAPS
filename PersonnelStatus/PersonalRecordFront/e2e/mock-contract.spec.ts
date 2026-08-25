@@ -395,6 +395,40 @@ test.describe(
       })
       expect(personnel.bare.every((r: any) => r.statusCode === null)).toBe(true)
       expect(personnel.dated.some((r: any) => r.statusCode !== null)).toBe(true)
+
+      // Р-4: старший сектора в моке — один, как у сервера.
+      const senior = await page.evaluate(async (assignmentId: string) => {
+        const call = async () =>
+          (
+            await fetch(
+              `/api/ops/security-events/se-1/placement/${encodeURIComponent(assignmentId)}/senior/`,
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ senior: true }),
+              },
+            )
+          ).json()
+        const set = await call()
+        const cleared = await (
+          await fetch(
+            `/api/ops/security-events/se-1/placement/${encodeURIComponent(assignmentId)}/senior/`,
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ senior: false }),
+            },
+          )
+        ).json()
+        return { set, cleared }
+      }, placed.member.body.placementAssignments.at(-1).id)
+
+      expect(
+        senior.set.placementAssignments.filter((a: any) => a.isSectorSenior),
+      ).toHaveLength(1)
+      expect(
+        senior.cleared.placementAssignments.filter((a: any) => a.isSectorSenior),
+      ).toHaveLength(0)
     })
   },
 )

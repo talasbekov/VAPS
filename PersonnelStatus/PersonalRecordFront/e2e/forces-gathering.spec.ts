@@ -635,6 +635,32 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(tree).toContainText(`1/${sectorNeed}`)
   })
 
+  test('старший сектора назначается кнопкой и виден в дереве', async ({ page }) => {
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    const name = prepared.roster[0]
+    await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+    })
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Задача поста', { timeout: 25_000 })
+    // До нажатия сектор старшего НЕ имеет — иначе ассерт ниже вечнозелёный.
+    await expect(main).toContainText('Старший: не назначен')
+
+    await main.getByRole('button', { name: 'Старший сектора' }).click()
+
+    await expect(main).toContainText(`Старший: ${name}`, { timeout: 15_000 })
+    await expect(main.getByRole('button', { name: 'Снять старшего' })).toBeVisible()
+
+    await main.getByRole('button', { name: 'Снять старшего' }).click()
+    await expect(main).toContainText('Старший: не назначен', { timeout: 15_000 })
+  })
+
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)

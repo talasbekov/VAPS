@@ -142,6 +142,13 @@ FORCE_ALLOCATION_SUBMITTED = "FORCE_ALLOCATION_SUBMITTED"
 FORCE_ALLOCATION_ACCEPTED = "FORCE_ALLOCATION_ACCEPTED"
 FORCE_ALLOCATION_RETURNED = "FORCE_ALLOCATION_RETURNED"
 VISIT_OBJECT_CHIEF_REVOKED = "VISIT_OBJECT_CHIEF_REVOKED"
+# Старший сектора на расстановке (Plane №65, «Расстановка по прототипу»).
+# Пишется по тому же основанию, что и старший объекта: это именное назначение
+# ответственного, по нему спрашивают доклад с сектора. Действие ОДНО на оба
+# случая — назначение и снятие: вопрос «кто отвечает за сектор» один, и
+# разбирается он по одной ленте, где старое значение стоит рядом с новым
+# (снятие — это `new_value` без человека, а не отдельная история).
+PLACEMENT_SECTOR_SENIOR_SET = "PLACEMENT_SECTOR_SENIOR_SET"
 # Смена дежурства: заведение и отмена — решения с обоснованием (обход отдыха,
 # причина отмены); ознакомление/заступление/завершение следа в журнале
 # мутаций не оставляют — их след живёт на самой смене (штампы времени).
@@ -202,6 +209,7 @@ ACTIONS = frozenset(
         FORCE_ALLOCATION_ACCEPTED,
         FORCE_ALLOCATION_RETURNED,
         VISIT_OBJECT_CHIEF_REVOKED,
+        PLACEMENT_SECTOR_SENIOR_SET,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,
