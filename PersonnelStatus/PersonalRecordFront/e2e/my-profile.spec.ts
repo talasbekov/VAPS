@@ -92,6 +92,21 @@ function assignmentsOf(events: EventRow[], employeeId: number): Assignment[] {
   )
 }
 
+/** Назначения в ЖИВЫХ мероприятиях — ровно то, что считает бейдж «Предстоящие
+ * назначения». Закрытые ОМ в него не входят: они уехали во вкладку «История»
+ * (Plane «Реестр ОМ-40»). Пока в реестре не было закрытых ОМ с назначениями
+ * admin, разница не проявлялась — после чистки реестра (Plane «Реестр ОМ-34»)
+ * проявилась, и общий счёт стал считать не то. */
+function activeAssignmentsOf(
+  events: EventRow[],
+  employeeId: number,
+): Assignment[] {
+  return assignmentsOf(
+    events.filter((event) => event.stage !== 'CLOSED'),
+    employeeId,
+  )
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип: нет SMOKE_LIVE=1)', () => {
@@ -154,8 +169,9 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     // Назначения: ровно мои, ни одним больше. Счётчик стоит бейджем в шапке
     // карточки; ассерт ТОЧНЫЙ (не подстрока) — «29 назначений» иначе прошло бы
     // и на «129 назначений».
+    const active = activeAssignmentsOf(registry.results, employee.id)
     await expect(
-      page.getByText(new RegExp(`^${mine.length} назначени[ея]?й?$`)),
+      page.getByText(new RegExp(`^${active.length} назначени[ея]?й?$`)),
     ).toBeVisible()
 
     // «Требует внимания»: карточка правой колонки прототипа, у которой в
@@ -231,4 +247,59 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(page.getByRole('group', { name: 'Показатели службы' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Моя статистика' })).toHaveCount(0)
   })
+
+  test('вкладка «История» стоит после «Моей статистики» и несёт пост, форму и вооружение', async ({
+    page,
+  }) => {
+    // Задача заказчика «Реестр ОМ-40»: бокс истории переехал из вкладки
+    // «Охранные мероприятия» в свою вкладку ПОСЛЕ «Моей статистики», и в нём
+    // появились форма одежды, вооружение и балл.
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const profile = await get<MyEmployee>(token, '/api/operations/my-employee/')
+    const employee = profile.employee as CoreEmployee
+    const registry = await get<{ results: EventRow[] }>(
+      token,
+      '/api/ops/security-events/?page_size=100',
+    )
+    const closedMine = registry.results.filter(
+      (event) =>
+        event.stage === 'CLOSED' &&
+        event.placementAssignments.some(
+          (a) => String(a.employeeId) === String(employee.id),
+        ),
+    )
+
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto(`${APP}${SCREEN}`)
+    const tabs = page.getByRole('navigation', { name: 'Разделы профиля' })
+    await expect(tabs).toBeVisible({ timeout: 20_000 })
+
+    // Порядок вкладок — часть требования: «поставь её после Моей статистики».
+    const labels = (await tabs.getByRole('button').allInnerTexts()).map((t) =>
+      t.trim(),
+    )
+    expect(labels.indexOf('История')).toBe(labels.indexOf('Моя статистика') + 1)
+
+    // Со старой вкладки блок УШЁЛ — иначе «перенесли» означало бы «скопировали».
+    await tabs.getByRole('button', { name: 'Охранные мероприятия' }).click()
+    await expect(page.getByText('История заступлений на ОМ')).toHaveCount(0)
+
+    await tabs.getByRole('button', { name: 'История' }).click()
+    const card = page.locator('[data-slot="card"]', {
+      has: page.getByText('История заступлений на ОМ'),
+    })
+    await expect(card).toBeVisible()
+    for (const column of ['Форма одежды', 'Вооружение', 'Балл']) {
+      await expect(card).toContainText(column)
+    }
+
+    test.skip(
+      closedMine.length === 0,
+      'у admin нет закрытых ОМ с назначением — строки истории не проверить',
+    )
+    // Строка ТОГО САМОГО закрытого ОМ, а не любая: иначе проба зеленела бы на
+    // чужой истории.
+    await expect(card).toContainText(closedMine[0].code)
+  })
+
 })

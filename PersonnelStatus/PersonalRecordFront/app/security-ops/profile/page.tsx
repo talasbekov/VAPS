@@ -37,15 +37,25 @@ import {
 } from "@/entities/legal-document";
 import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
 import { STAGE_LABEL } from "@/entities/security-event";
+import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
+import { EMPTY_FILTERS } from "@/entities/operational-rating";
 import type { CoreEmployee, OpsEmployeeStatusRow } from "@/lib/api";
 import type { ReconSectorPost, SecurityEvent } from "@/entities/security-event";
 
-type ProfileTab = "events" | "calendar" | "stats" | "instructions";
+// «История» стоит ПОСЛЕ «Моей статистики» — так просил заказчик (Plane
+// «Реестр ОМ-40»). Порядок вкладок здесь и есть порядок на экране.
+type ProfileTab =
+  | "events"
+  | "calendar"
+  | "stats"
+  | "history"
+  | "instructions";
 
 const TAB_LABEL: Record<ProfileTab, string> = {
   events: "Охранные мероприятия",
   calendar: "Мой календарь",
   stats: "Моя статистика",
+  history: "История",
   instructions: "Инструкции",
 };
 
@@ -276,6 +286,14 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
           statuses={statuses.data ?? []}
           assignments={myAssignments}
           loading={statuses.isPending || events.isPending}
+        />
+      )}
+      {tab === "history" && (
+        <HistoryTab
+          assignments={myAssignments}
+          employeeId={String(employee.id)}
+          loading={events.isPending}
+          failed={events.isError}
         />
       )}
       {tab === "instructions" && (
@@ -519,64 +537,6 @@ function EventsTab({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-            <div>
-              <CardTitle>История участия в мероприятиях</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Закрытые ОМ — {past.length}
-              </p>
-            </div>
-            <Link
-              href="/security-ops/events"
-              className="shrink-0 text-sm font-semibold text-primary-ink hover:underline"
-            >
-              Вся история →
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {past.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Закрытых мероприятий с вашим участием нет.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <div className="min-w-[560px]">
-                  <div className="grid grid-cols-[1.6fr_1fr_100px_180px] gap-2 rounded-md bg-muted/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    <span>Мероприятие</span>
-                    <span>Пост</span>
-                    <span>Дата</span>
-                    <span>Ознакомление</span>
-                  </div>
-                  {past.map((item) => (
-                    <div
-                      key={`${item.event.id}:${item.postLabel}`}
-                      className="grid grid-cols-[1.6fr_1fr_100px_180px] items-baseline gap-2 border-b px-3 py-2.5 last:border-0"
-                    >
-                      <Link
-                        href={`/security-ops/events/${item.event.id}`}
-                        className="truncate text-sm font-semibold hover:underline"
-                      >
-                        {item.event.code} — {item.event.title}
-                      </Link>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {item.postLabel}
-                      </span>
-                      <span className="text-xs tabular-nums">
-                        {formatIsoDate(item.event.businessDate)}
-                      </span>
-                      <AckBadge acknowledgedAt={item.acknowledgedAt} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              Часов и итога участия здесь нет: назначение расстановки не несёт
-              интервалов времени, а результат службы модель не фиксирует.
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
       <div className="space-y-4">
@@ -585,6 +545,202 @@ function EventsTab({
         <AttentionCard assignments={upcoming} />
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Вкладка «История»                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * История заступлений на ОМ (Plane «Реестр ОМ-40»): где человек стоял, в чём и
+ * с чем, и какой балл ему за это поставили.
+ *
+ * Раньше этот блок жил внутри вкладки «Охранные мероприятия» рядом с
+ * действующими назначениями — заказчик потребовал вынести его в СВОЮ вкладку
+ * после «Моей статистики»: у истории другой вопрос («что было») и другой
+ * объём, и рядом с текущими назначениями она их отжимала.
+ *
+ * Форма одежды и вооружение берутся из СТРОКИ РАСЧЁТА поста, а не из
+ * назначения: назначение — это связь «человек ↔ пост», а чем пост оснащён,
+ * решает рекогносцировка. Пропавшая строка расчёта поэтому означает «пост не
+ * найден», а не пустые ячейки.
+ *
+ * Балл приходит из реестра оценок участников ОМ и МОЖЕТ БЫТЬ НЕДОСТУПЕН:
+ * оперативный рейтинг ведётся обезличенно, реестр открывается по своему праву
+ * (`ratings.*`), и у человека без него запрос отвечает отказом. Тогда в
+ * колонке стоит причина, а не прочерк: прочерк читался бы как «балла нет».
+ */
+function HistoryTab({
+  assignments,
+  employeeId,
+  loading,
+  failed,
+}: {
+  assignments: MyAssignment[];
+  employeeId: string;
+  loading: boolean;
+  failed: boolean;
+}) {
+  const past = assignments.filter((item) => item.event.stage === "CLOSED");
+  // Реестр оценок — СВОЙ запрос и сужен по себе: чужие баллы сюда не едут.
+  const evaluations = useEvaluationRegistry({
+    ...EMPTY_FILTERS,
+    employee: employeeId,
+  });
+  const scoreByEvent = useMemo(() => {
+    const map = new Map<string, number | null>();
+    for (const row of evaluations.data?.results ?? []) {
+      if (String(row.employeeId) !== employeeId) continue;
+      map.set(row.eventNumber, row.aggregateRating);
+    }
+    return map;
+  }, [evaluations.data, employeeId]);
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center text-sm text-muted-foreground">
+          Загрузка истории…
+        </CardContent>
+      </Card>
+    );
+  }
+  if (failed) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center text-sm text-destructive-ink">
+          Реестр мероприятий сейчас недоступен — историю показать не из чего.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle>История заступлений на ОМ</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Закрытые мероприятия — {past.length}
+          </p>
+        </div>
+        <Link
+          href="/security-ops/events"
+          className="shrink-0 text-sm font-semibold text-primary-ink hover:underline"
+        >
+          Реестр ОМ →
+        </Link>
+      </CardHeader>
+      <CardContent>
+        {past.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Закрытых мероприятий с вашим участием нет.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="min-w-[900px]">
+              <div className="grid grid-cols-[1.6fr_1.1fr_96px_1fr_1fr_84px_150px] gap-2 rounded-md bg-muted/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                <span>Мероприятие</span>
+                <span>Пост</span>
+                <span>Дата</span>
+                <span>Форма одежды</span>
+                <span>Вооружение</span>
+                <span>Балл</span>
+                <span>Ознакомление</span>
+              </div>
+              {past.map((item) => (
+                <div
+                  key={`${item.event.id}:${item.postLabel}`}
+                  className="grid grid-cols-[1.6fr_1.1fr_96px_1fr_1fr_84px_150px] items-baseline gap-2 border-b px-3 py-2.5 last:border-0"
+                >
+                  <Link
+                    href={`/security-ops/events/${item.event.id}`}
+                    className="truncate text-sm font-semibold hover:underline"
+                  >
+                    {item.event.code} — {item.event.title}
+                  </Link>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {item.postLabel}
+                  </span>
+                  <span className="text-xs tabular-nums">
+                    {formatIsoDate(item.event.businessDate)}
+                  </span>
+                  {/* Пустое поле поста — «не указано», а не пустая ячейка:
+                      рекогносцировка эти графы заполняет не всегда, и пустое
+                      место читалось бы как потерянное значение. */}
+                  <span className="truncate text-xs text-muted-foreground">
+                    {item.post === null
+                      ? "—"
+                      : (item.post.uniform ?? "").trim() === ""
+                        ? "не указана"
+                        : item.post.uniform}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {item.post === null
+                      ? "—"
+                      : (item.post.weapon ?? "").trim() === ""
+                        ? "не указано"
+                        : item.post.weapon}
+                  </span>
+                  <ScoreCell
+                    score={scoreByEvent.get(item.event.code)}
+                    known={scoreByEvent.has(item.event.code)}
+                    denied={evaluations.isError}
+                    loading={evaluations.isPending}
+                  />
+                  <AckBadge acknowledgedAt={item.acknowledgedAt} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+          Часов службы здесь нет: назначение расстановки не несёт интервалов
+          времени, а присутствие домен не учитывает. Форма одежды и вооружение
+          — из расчёта постов мероприятия, а не из карточки человека.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Балл за участие. Четыре РАЗНЫХ ответа, и путать их нельзя: «загрузка»,
+ * «нет права», «оценки не было» и само число. Прочерк на все случаи сразу
+ * читался бы как «ноль баллов». */
+function ScoreCell({
+  score,
+  known,
+  denied,
+  loading,
+}: {
+  score: number | null | undefined;
+  known: boolean;
+  denied: boolean;
+  loading: boolean;
+}) {
+  if (loading) {
+    return <span className="text-[11px] text-muted-foreground">…</span>;
+  }
+  if (denied) {
+    return (
+      <span
+        className="text-[11px] text-muted-foreground"
+        title="Оперативный рейтинг ведётся обезличенно и открывается по своему праву."
+      >
+        нет доступа
+      </span>
+    );
+  }
+  if (!known || score === null || score === undefined) {
+    return (
+      <span className="text-[11px] text-muted-foreground">не оценивалось</span>
+    );
+  }
+  return (
+    <span className="text-sm font-semibold tabular-nums">
+      {score.toFixed(1)}
+    </span>
   );
 }
 
