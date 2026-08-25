@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useAddJournalEntry,
   useCloseSecurityEvent,
-  usePersonnelRoster,
   useReplaceAssignment,
 } from "@/hooks/use-security-event-stages";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
@@ -22,6 +21,7 @@ import type {
   JournalEntryType,
   SecurityEvent,
 } from "@/entities/security-event";
+import { PersonnelPicker } from "@/features/personnel-picker";
 import { FieldErrors, StageError } from "./StageErrors";
 import { JournalList } from "./JournalList";
 
@@ -234,7 +234,6 @@ function JournalPanel({ event }: { event: SecurityEvent }) {
 }
 
 function ReplacementPanel({ event }: { event: SecurityEvent }) {
-  const roster = usePersonnelRoster();
   const [assignmentId, setAssignmentId] = useState("");
   const [incomingEmployeeId, setIncomingEmployeeId] = useState("");
   const [reasonCode, setReasonCode] = useState("");
@@ -273,22 +272,9 @@ function ReplacementPanel({ event }: { event: SecurityEvent }) {
               })}
             </select>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="replace-incoming">Кем</Label>
-            <select
-              id="replace-incoming"
-              className="h-9 min-w-56 rounded-md border border-input bg-background px-2 text-sm"
-              value={incomingEmployeeId}
-              onChange={(e) => setIncomingEmployeeId(e.target.value)}
-            >
-              <option value="">— выберите сотрудника —</option>
-              {(roster.data?.results ?? []).map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.name} · {person.rankLabel}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* «Кем» стоит НЕ в этой строке, а ниже — подбор человека это
+              поиск со страницами, а не выпадающий список: см. блок под
+              строкой. */}
           <div className="min-w-48 flex-1 space-y-1">
             <Label htmlFor="replace-reason">Причина *</Label>
             <Input
@@ -311,6 +297,19 @@ function ReplacementPanel({ event }: { event: SecurityEvent }) {
           >
             {replace.isPending ? "Замена…" : "Заменить"}
           </Button>
+        </div>
+        {/* Кем заменяем — поиск и страницы НА СЕРВЕРЕ (Plane №61). Раньше тут
+            стоял `select`, набитый ВСЕМ кадровым снимком: на живой базе это
+            тысячи строк одним ответом и прокрутка вместо поиска. */}
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Кем заменить</p>
+          <PersonnelPicker
+            value={incomingEmployeeId === "" ? null : incomingEmployeeId}
+            onPick={(id) =>
+              setIncomingEmployeeId((current) => (current === id ? "" : id))
+            }
+            pageSize={8}
+          />
         </div>
         <FieldErrors errors={fieldErrors} />
         <StageError error={replace.error} />

@@ -17,7 +17,7 @@
 // * «Отменить ОМ» — ручки отмены нет;
 // * поимённый состав выделенных сил — бэк хранит выделение ЧИСЛОМ, поэтому
 //   подбор идёт по кадровому снимку, а числа выделения показаны чипами.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +29,7 @@ import {
   useAssignPlacement,
   useCompleteForces,
   useCompletePlacement,
-  usePersonnelRoster,
+  usePersonnelPage,
   useUnassignPlacement,
   useUpdateForceAllocation,
   useUpdateRecon,
@@ -275,10 +275,14 @@ function AllocationRow({
   );
 }
 
+/** Размер страницы подбора. Крупнее окна выбора человека: здесь список не
+ * выбирают одним кликом, а просматривают — отбор по рейтингу и автоподбор
+ * работают по показанному, и страница в двадцать строк резала бы им основание. */
+const CANDIDATE_PAGE_SIZE = 50;
+
 // ── Расстановка: три колонки прототипа ───────────────────────────────────
 
 function PlacementBoard({ event }: { event: SecurityEvent }) {
-  const roster = usePersonnelRoster();
   const assign = useAssignPlacement(event.id);
   const unassign = useUnassignPlacement(event.id);
   const complete = useCompletePlacement(event.id);
@@ -289,9 +293,23 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
 
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Запрос уходит на СЕРВЕР с задержкой (Plane №61): раньше экран тянул весь
+  // кадровый снимок одним ответом и фильтровал его на клиенте — такой «поиск»
+  // отвечает «никого не нашлось», имея в виду «нет в загруженном».
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [sort, setSort] = useState<SortOption>("Рекомендуемые");
   const [band, setBand] = useState<RateOption>("Все");
   const [comment, setComment] = useState<string | null>(null);
+  const roster = usePersonnelPage({ search, page, pageSize: CANDIDATE_PAGE_SIZE });
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(query);
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const posts = event.reconSectorPosts;
   const selected = posts.find((p) => p.id === selectedPostId) ?? posts[0] ?? null;
@@ -362,15 +380,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     }
   }
 
+  /** Кандидаты СТРАНИЦЫ, а не всей базы: поиск и листание считает сервер.
+   *
+   * Отбор по рейтингу и сортировка остаются здесь и применяются к показанной
+   * странице — рейтинг живёт в своей ручке под своим правом, и сервер кадров
+   * о нём не знает. Панель говорит это вслух, а не делает вид, что отобрала
+   * по всей базе; перенос отбора на сервер заведён отдельной карточкой. */
   const candidates = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const list = (roster.data?.results ?? [])
-      .filter((person) =>
-        needle === ""
-          ? true
-          : `${person.name} ${person.unit}`.toLowerCase().includes(needle)
-      )
-      .filter((person) => inBand(ratingOf(person.id)));
+    const list = (roster.data?.results ?? []).filter((person) =>
+      inBand(ratingOf(person.id))
+    );
     const withFit = list.map((person) => ({
       person,
       fit: fitOf(person),
@@ -390,7 +409,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roster.data, query, sort, band, selected, ratings.data, assignedIds.size]);
+  }, [roster.data, sort, band, selected, ratings.data, assignedIds.size]);
 
   /** Автоподбор: реальные назначения свободных кандидатов на недобранные посты. */
   function autoFill(): void {
@@ -693,10 +712,55 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   <Chip>Свободны {free}</Chip>
                   <Chip>Назначены {assignedCount}</Chip>
                 </div>
+                {/* «Найдено N» считает СЕРВЕР, а не длина страницы: счётчик по
+                    странице обещал бы, что список кончился, ровно на её краю.
+                    Рядом сказано, что отбор по рейтингу и сортировка идут по
+                    показанному, — иначе «нет кандидатов» читалось бы как «их
+                    нет в кадрах». */}
+                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span aria-live="polite">
+                    Найдено {roster.data?.count ?? 0} · страница {page}
+                  </span>
+                  <span className="flex gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[11px]"
+                      disabled={roster.data?.previous === null || roster.isFetching}
+                      onClick={() => setPage((current) => Math.max(current - 1, 1))}
+                    >
+                      Назад
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[11px]"
+                      disabled={roster.data?.next === null || roster.isFetching}
+                      onClick={() => setPage((current) => current + 1)}
+                    >
+                      Дальше
+                    </Button>
+                  </span>
+                </div>
+                {(roster.data?.next !== null || page > 1) && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Отбор по рейтингу, сортировка и автоподбор считаются по
+                    показанной странице. Нужен конкретный человек — ищите его по
+                    фамилии.
+                  </p>
+                )}
                 <div className="max-h-[360px] space-y-1 overflow-y-auto">
                   {candidates.length === 0 ? (
                     <p className="px-1 py-3 text-center text-xs text-muted-foreground">
-                      Нет кандидатов под выбранный фильтр рейтинга
+                      {roster.isPending
+                        ? "Загрузка кадрового списка…"
+                        : roster.isError
+                          ? "Кадровый список сейчас недоступен."
+                          : (roster.data?.count ?? 0) === 0
+                            ? "По запросу никого не нашлось."
+                            : "На этой странице нет кандидатов под выбранный фильтр рейтинга"}
                     </p>
                   ) : (
                     candidates.map(({ person, fit, rating, busy }) => (

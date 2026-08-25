@@ -373,6 +373,8 @@ def test_personnel_snapshot_shape(manager):
     )
     StaffUnit.objects.create(division=division, employee=employee, index=1)
     data = manager.get("/api/ops/personnel/").json()
+    # Ответ ВСЕГДА страница (Plane №61): безстраничной ветки у ручки больше нет.
+    assert data["count"] == 1
     assert data["results"] == [
         {
             "id": str(employee.pk),
@@ -390,10 +392,10 @@ def test_personnel_search_and_pagination_on_the_server(manager):
     возможностью поиска». Поиск обязан идти сюда: фильтр по загруженной
     странице отвечал бы «такого нет», имея в виду «нет на этой странице».
 
-    Проба держит и обратную половину контракта: БЕЗ параметров ответ прежний —
-    весь список без конверта постранички, потому что экраны расстановки и
-    ознакомления читают снимок целиком, и молчаливая обрезка сузила бы им
-    выбор людей.
+    Проба держит и обратную половину контракта: ответ ВСЕГДА в конверте
+    постранички, даже без параметров (Plane №61). Пока безстраничная ветка
+    существовала, четыре экрана читали снимок целиком и фильтровали его на
+    клиенте — два способа читать один список расходятся молча.
     """
     division = Division.objects.create(
         name="Отдел охраны объектов", code="D-OO", division_type="division"
@@ -404,10 +406,13 @@ def test_personnel_search_and_pagination_on_the_server(manager):
     ]
     StaffUnit.objects.create(division=division, employee=people[0], index=1)
 
-    # Без параметров — весь список, конверта постранички нет.
+    # Без параметров — ПЕРВАЯ страница размером с потолок, и она объявляет
+    # `count`: клиент видит, что показано не всё, а не думает, что это весь
+    # кадровый список.
     plain = manager.get("/api/ops/personnel/").json()
     assert len(plain["results"]) == 5
-    assert "count" not in plain
+    assert plain["count"] == 5
+    assert plain["next"] is None
 
     # Страница — ровно своего размера, с номерами соседних страниц.
     first = manager.get("/api/ops/personnel/?page_size=2").json()
@@ -468,6 +473,13 @@ def test_personnel_page_size_has_a_ceiling(manager):
     assert len(capped["results"]) == ceiling
     # Следующая страница ОБЕЩАНА: остаток за потолком не потерян.
     assert capped["next"] == "2"
+
+    # И ЗАПРОС БЕЗ ПАРАМЕТРОВ упирается в тот же потолок (Plane №61). Это и
+    # есть смысл снятой безстраничной ветки: раньше именно так — не прося
+    # ничего — клиент получал всю кадровую базу одним ответом.
+    plain = manager.get("/api/ops/personnel/").json()
+    assert len(plain["results"]) == ceiling
+    assert plain["next"] == "2"
 
 
 # ── Сквозной проход всех девяти стадий ───────────────────────────────────────

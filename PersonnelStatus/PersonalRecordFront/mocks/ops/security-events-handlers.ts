@@ -545,10 +545,38 @@ export const securityEventsHandlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
-  // ── Кадровый снимок для расстановки ────────────────────────────────────
-  http.get(`*${OPS_PERSONNEL_PATH}`, () =>
-    HttpResponse.json({ results: PERSONNEL_ROSTER })
-  ),
+  // ── Кадровый список: поиск и страницы (Plane №61) ──────────────────────
+  //
+  // Мок обязан отвечать ТАК ЖЕ, как живая ручка: пока он отдавал весь список
+  // и молча игнорировал `search`/`page`, на моке поиск «работал» всегда и
+  // страницы не кончались — то есть мок был зелен там, где живой стек ведёт
+  // себя иначе.
+  http.get(`*${OPS_PERSONNEL_PATH}`, ({ request }) => {
+    const url = new URL(request.url);
+    const search = (url.searchParams.get("search") ?? "").trim().toLowerCase();
+    const found =
+      search === ""
+        ? PERSONNEL_ROSTER
+        : PERSONNEL_ROSTER.filter((person) =>
+            `${person.name} ${person.rankLabel} ${person.unit}`
+              .toLowerCase()
+              .includes(search)
+          );
+    const page = Math.max(Number(url.searchParams.get("page") ?? "1") || 1, 1);
+    // Потолок страницы тот же, что у сервера: размер страницы назначает не
+    // спросивший.
+    const pageSize = Math.min(
+      Math.max(Number(url.searchParams.get("page_size") ?? "20") || 20, 1),
+      100
+    );
+    const start = (page - 1) * pageSize;
+    return HttpResponse.json({
+      results: found.slice(start, start + pageSize),
+      count: found.length,
+      next: start + pageSize < found.length ? String(page + 1) : null,
+      previous: page > 1 ? String(page - 1) : null,
+    });
+  }),
 
   // ── Бюллетень ──────────────────────────────────────────────────────────
   http.patch(`*${securityEventBulletinPath(":id")}`, async ({ params, request }) => {

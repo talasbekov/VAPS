@@ -449,10 +449,17 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const personName = (await personSelect.locator('option').nth(1).textContent()) ?? ''
     await personSelect.selectOption({ index: 1 })
 
-    const chiefSelect = dialog.getByLabel('Старший ГВО')
-    await expect(chiefSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
-    const chiefLabel = (await chiefSelect.locator('option').nth(1).textContent()) ?? ''
-    await chiefSelect.selectOption({ index: 1 })
+    // Старший выбирается ПОДБОРОМ с поиском на сервере, а не <select> (Plane
+    // №61): в родном списке искать было нечем, а кадровая база растёт. Подпись
+    // поля ведёт на поле поиска — оно и есть контрол выбора.
+    const chiefSearch = dialog.getByLabel('Старший ГВО')
+    await expect(chiefSearch).toBeVisible({ timeout: 20_000 })
+    const chiefOption = dialog
+      .locator('[data-slot="personnel-picker"] li button')
+      .first()
+    await expect(chiefOption).toBeVisible({ timeout: 20_000 })
+    const chiefLabel = (await chiefOption.locator('span > span').first().textContent()) ?? ''
+    await chiefOption.click()
 
     await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
     await expect(page).toHaveURL(/\/security-ops\/events\/\d+/, { timeout: 30_000 })
@@ -466,7 +473,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // Подписи выпадающих списков несут разделитель « · » — на карточке
     // стоит только имя, поэтому сверяем по первой части подписи.
     await expect(facts).toContainText(personName.split(' · ')[0]!.trim())
-    await expect(facts).toContainText(chiefLabel.split(' · ')[0]!.trim())
+    await expect(facts).toContainText(chiefLabel.trim())
   })
 
   test('строка бюллетени раскрывается в объекты посещения', async ({ page }) => {

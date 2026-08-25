@@ -763,12 +763,16 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         загруженное: фильтр по странице отвечает «такого сотрудника нет», имея
         в виду «нет на этой странице», — худший вид вранья в подборе людей.
 
-        Постраничка включается ТОЛЬКО по просьбе (`page` или `page_size`).
-        Без них ответ прежний — весь список: экраны расстановки, ознакомления и
-        окно создания ОМ читают снимок целиком и фильтруют его на клиенте, и
-        молчаливая обрезка до двадцати строк сузила бы им выбор людей, ничего
-        не сказав. Переезд этих экранов на серверный поиск — свой шаг
-        (карточка в «Предложено Claude»), а не побочный эффект этого.
+        Ответ ВСЕГДА страница. Безстраничная ветка («нет параметров — весь
+        список») жила ровно столько, сколько на ней стояли старые читатели:
+        расстановка, проведение и окно создания ОМ фильтровали снимок на
+        клиенте, и обрезка сузила бы им выбор людей молча. Все четыре переехали
+        на серверный поиск (Plane №61), и ветка снята: два способа читать один
+        список расходятся тем вернее, чем реже смотрят на второй.
+
+        Клиент, не приславший `page`/`page_size`, получает ПЕРВУЮ страницу
+        размером с потолок — это честнее прежнего «всего списка»: он видит
+        `count` и знает, что показано не всё.
         """
         from django.db.models import Q
 
@@ -797,24 +801,21 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 | Q(staff_unit__division__name__icontains=search)
             ).distinct()
 
-        paginated = (
-            "page" in request.query_params or "page_size" in request.query_params
-        )
-        total = employees.count() if paginated else None
-        page = 1
-        page_size = self.MAX_PAGE_SIZE
-        if paginated:
-            try:
-                page = max(int(request.query_params.get("page", "1")), 1)
-            except ValueError:
-                page = 1
-            try:
-                page_size = max(int(request.query_params.get("page_size", "20")), 1)
-            except ValueError:
-                page_size = 20
-            page_size = min(page_size, self.MAX_PAGE_SIZE)
-            start = (page - 1) * page_size
-            employees = employees[start : start + page_size]
+        total = employees.count()
+        try:
+            page = max(int(request.query_params.get("page", "1")), 1)
+        except ValueError:
+            page = 1
+        try:
+            page_size = max(
+                int(request.query_params.get("page_size", str(self.MAX_PAGE_SIZE))),
+                1,
+            )
+        except ValueError:
+            page_size = self.MAX_PAGE_SIZE
+        page_size = min(page_size, self.MAX_PAGE_SIZE)
+        start = (page - 1) * page_size
+        employees = employees[start : start + page_size]
 
         results = []
         for employee in employees:
@@ -836,8 +837,6 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "unit": unit,
                 }
             )
-        if not paginated:
-            return Response({"results": results})
         # `next`/`previous` — НОМЕРА страниц, как у реестра ОМ: контракт
         # раздела один, и второй его вид (ссылки) заставил бы клиента угадывать,
         # что ему пришло.

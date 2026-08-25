@@ -478,19 +478,16 @@ export const OPS_PERSONNEL_PATH = "/api/ops/personnel/";
  */
 export const OPS_PERSONNEL_ME_PATH = "/api/ops/personnel/me/";
 
-export interface ListPersonnelResponse {
-  results: PersonnelSummarySnapshot[];
-}
-
 /**
- * Страница кадрового списка («Реестр ОМ-35.3»). Приходит ТОЛЬКО когда клиент
- * попросил постраничку (`page`/`pageSize`); без них ручка отдаёт весь снимок
- * в `ListPersonnelResponse` — экраны расстановки и ознакомления читают его
- * целиком, и обрезка сузила бы им выбор людей.
+ * Страница кадрового списка. ЕДИНСТВЕННЫЙ вид ответа ручки: безстраничная
+ * ветка («весь снимок целиком») снята вместе с последним её читателем (Plane
+ * №61) — два способа читать один список расходятся молча, а снимок на живой
+ * кадровой базе это тысячи строк одним ответом.
  *
  * `next`/`previous` — НОМЕРА страниц (контракт раздела), `null` — края списка.
  */
-export interface PersonnelPageResponse extends ListPersonnelResponse {
+export interface PersonnelPageResponse {
+  results: PersonnelSummarySnapshot[];
   /** Сколько НАЙДЕНО всего — с учётом поиска, а не на странице. */
   count: number;
   next: string | null;

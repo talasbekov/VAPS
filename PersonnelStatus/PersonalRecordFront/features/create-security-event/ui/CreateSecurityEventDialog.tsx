@@ -34,7 +34,7 @@ import {
   useCreateSecurityEvent,
 } from "@/hooks/use-create-security-event";
 import { useProtectedPersons } from "@/hooks/use-protected-persons";
-import { usePersonnelRoster } from "@/hooks/use-security-event-stages";
+import { PersonnelPicker } from "@/features/personnel-picker";
 import type { SecurityEventKind } from "@/entities/security-event";
 
 const KINDS = ["INTERNAL", "FOREIGN"] as const;
@@ -146,7 +146,6 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const objectsQuery = useBindableObjects();
   const personsQuery = useProtectedPersons();
-  const personnelQuery = usePersonnelRoster();
 
   const {
     register,
@@ -163,6 +162,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
   const objectId = watch("objectId");
   const businessDate = watch("businessDate");
   const businessDateEnd = watch("businessDateEnd");
+  const chiefEmployeeId = watch("chiefEmployeeId") ?? "";
   // Старший наряда или ГВО — по типу мероприятия: у визита иностранного лица
   // старший другой, и подпись поля обязана это называть до выбора, а не после.
   const foreign = kind === "FOREIGN";
@@ -504,32 +504,35 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             error={errors.chiefEmployeeId}
             className="space-y-1.5"
           >
-            {(field) => (
+            {() => (
               <>
-                <select
-                  {...field}
-                  className={SELECT_CLASS}
-                  defaultValue=""
-                  disabled={personnelQuery.isPending}
-                  {...register("chiefEmployeeId")}
-                >
-                  <option value="">
-                    {personnelQuery.isPending
-                      ? "Загрузка личного состава…"
-                      : "— не выбран —"}
-                  </option>
-                  {(personnelQuery.data?.results ?? []).map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.name} · {person.rankLabel}
-                    </option>
-                  ))}
-                </select>
-                {personnelQuery.isError && (
-                  <p className="text-xs text-destructive-ink" role="alert">
-                    Личный состав недоступен — старшего можно назначить позже в
-                    карточке.
-                  </p>
-                )}
+                {/* Поле остаётся ЗАРЕГИСТРИРОВАННЫМ в форме, хотя человек
+                    выбирает мышью: `setValue` по незарегистрированному полю
+                    кладёт значение, но не будит `watch` — первый выбор
+                    выглядел бы «не сработавшим». */}
+                <input type="hidden" {...register("chiefEmployeeId")} />
+                {/* Список кадров — с поиском и страницами НА СЕРВЕРЕ (Plane
+                    №61). Раньше здесь стоял `select` со ВСЕМ кадровым
+                    снимком: на живой базе это тысячи строк одним ответом и
+                    прокрутка вместо поиска. */}
+                <PersonnelPicker
+                  value={chiefEmployeeId === "" ? null : chiefEmployeeId}
+                  onPick={(id) =>
+                    setValue(
+                      "chiefEmployeeId",
+                      // Повторный клик по выбранному СНИМАЕТ выбор: старший
+                      // необязателен, и назначить «никого» иначе было бы
+                      // нечем — очистить список выбором нельзя.
+                      id === chiefEmployeeId ? "" : id,
+                      { shouldValidate: true, shouldDirty: true },
+                    )
+                  }
+                  pageSize={8}
+                  // Подпись поля («Старший наряда» / «Старший ГВО») ведёт
+                  // именно сюда: иначе `<label for>` указывал бы на скрытое
+                  // поле формы, то есть в никуда.
+                  searchInputId="chiefEmployeeId"
+                />
               </>
             )}
           </Field>
