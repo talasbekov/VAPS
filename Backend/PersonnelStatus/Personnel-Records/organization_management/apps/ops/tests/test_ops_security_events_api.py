@@ -666,12 +666,16 @@ def test_double_assignment_rejected(manager):
             "sourceSectorId": None, "sourcePostId": None, "minRating": None,
         }
     ]
-    manager.patch(
+    # Id ручной строке выдаёт СЕРВЕР (Plane №30): «manual-1» — клиентская
+    # пометка черновика, в сохранённом расчёте её нет. Оба id берутся из
+    # ответа сохранения — так их и читает карточка.
+    saved = manager.patch(
         f"{base}recon/",
         {"checklist": data["reconChecklist"], "sectorPosts": posts},
         format="json",
-    )
-    first_post = posts[0]["id"]
+    ).json()["reconSectorPosts"]
+    first_post, manual_post = saved[0]["id"], saved[1]["id"]
+    assert manual_post != "manual-1"
     resp = manager.post(
         f"{base}placement/assign/",
         {"postId": first_post, "employeeId": str(employee.pk)},
@@ -680,7 +684,7 @@ def test_double_assignment_rejected(manager):
     assert resp.status_code == 200
     resp = manager.post(
         f"{base}placement/assign/",
-        {"postId": "manual-1", "employeeId": str(employee.pk)},
+        {"postId": manual_post, "employeeId": str(employee.pk)},
         format="json",
     )
     assert resp.status_code == 422
@@ -1913,3 +1917,97 @@ def test_purge_probe_events_force_takes_worked_rows(manager):
         "forced"
     ] is True
 
+
+
+def test_recon_post_ids_are_issued_by_server(manager):
+    """Id строки расчёта постов выдаёт сервер, а не клиент (Plane №30).
+
+    Клиент помечает не сохранённые строки именем из счётчика вкладки
+    (`recon-local-N`), и счётчик начинается заново на каждой перезагрузке.
+    Пока сервер писал присланное имя как есть, у одного ОМ набиралось шесть
+    постов с `recon-local-1`, и `placement/assign` по такому id попадал в
+    первый совпавший — назначение уезжало на чужую строку.
+
+    Проба держит три факта сразу: присланные одинаковые имена расходятся;
+    выданный сервером id ПЕРЕЖИВАЕТ следующую правку (иначе на него нельзя
+    было бы сослаться из расстановки); ссылка подпоста на родителя
+    переписывается на новый id родителя, а не остаётся клиентским именем.
+    """
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    base = f"{URL}{event_id}/"
+    checklist = manager.get(base).json()["reconChecklist"]
+
+    def row(row_id, post, **extra):
+        return {
+            "id": row_id, "sector": "Периметр", "post": post, "task": "",
+            "need": 1, "requirements": "", "result": None, "comment": "",
+            "sourceSectorId": None, "sourcePostId": None, "minRating": None,
+            **extra,
+        }
+
+    saved = manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": checklist,
+            "sectorPosts": [
+                row("recon-local-1", "Пост 1"),
+                row("recon-local-1", "Пост 2"),
+                row("recon-local-1", "Подпост", parentPostId="recon-local-1"),
+                row("", "Пост без имени"),
+            ],
+        },
+        format="json",
+    )
+    assert saved.status_code == 200
+    posts = saved.json()["reconSectorPosts"]
+    ids = [p["id"] for p in posts]
+    assert [p["post"] for p in posts] == [
+        "Пост 1", "Пост 2", "Подпост", "Пост без имени",
+    ]
+    assert len(set(ids)) == 4, ids
+    assert not any(i.startswith("recon-local-") or i == "" for i in ids), ids
+    # Подпост ссылается на ПЕРВОЕ вхождение — туда и целился клиент.
+    assert posts[2]["parentPostId"] == ids[0]
+
+    # Повторная правка сохранённых строк их id не меняет: на него ссылается
+    # расстановка, и «новый id на каждом сохранении» рвал бы назначения.
+    again = manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": checklist,
+            "sectorPosts": [{**posts[0], "task": "Досмотр"}, posts[1]],
+        },
+        format="json",
+    )
+    assert again.status_code == 200
+    again_posts = again.json()["reconSectorPosts"]
+    assert [p["id"] for p in again_posts] == ids[:2]
+    assert again_posts[0]["task"] == "Досмотр"
+
+
+def test_recon_import_ids_do_not_collide_across_imports(manager):
+    """Импорт из паспорта тоже выдаёт уникальные id.
+
+    Раньше id склеивался из отметки времени и счётчика, начинавшегося с
+    единицы на КАЖДЫЙ импорт: два импорта в одну секунду (разные версии
+    паспорта, разные объекты посещения) дали бы одинаковые имена.
+    """
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    base = f"{URL}{event_id}/"
+    imported = manager.post(f"{base}recon/import-from-passport/").json()
+    first_ids = [p["id"] for p in imported["reconSectorPosts"]]
+    assert first_ids and len(set(first_ids)) == len(first_ids)
+
+    # Строку из паспорта убираем из расчёта и импортируем заново — id новой
+    # строки не повторяет ни одного прежнего.
+    manager.patch(
+        f"{base}recon/",
+        {"checklist": imported["reconChecklist"], "sectorPosts": []},
+        format="json",
+    )
+    again = manager.post(f"{base}recon/import-from-passport/").json()
+    second_ids = [p["id"] for p in again["reconSectorPosts"]]
+    assert len(set(second_ids)) == len(second_ids)
+    assert not (set(second_ids) & set(first_ids))

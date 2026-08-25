@@ -12,6 +12,7 @@ handlers.ts) ДОСЛОВНО — он был первой реализацие�
 исполняются ПОСЛЕ замка — по свежей строке, а не по той, что видел клиент.
 """
 import datetime as dt
+from uuid import uuid4
 
 from django.db import transaction
 
@@ -916,6 +917,51 @@ def _advance(event, stage):
 # ── Рекогносцировка ─────────────────────────────────────────────────────────
 
 
+def _new_post_id() -> str:
+    return f"post-{uuid4().hex[:12]}"
+
+
+def _normalize_post_ids(rows, *, known_ids):
+    """Идентификаторы строк расчёта постов выдаёт СЕРВЕР, а не клиент.
+
+    Клиент обязан чем-то помечать ещё не сохранённые строки (React требует
+    ключ), но его счётчик живёт в памяти вкладки и обнуляется на перезагрузке.
+    Пока сервер писал присланный id как есть, у одного ОМ набиралось шесть
+    постов с `recon-local-1` — и `placement/assign` по такому id попадал в
+    ПЕРВЫЙ совпавший пост, то есть назначение уезжало на чужую строку
+    (Plane №30).
+
+    Здесь id сохраняется только если он уже принадлежит этому ОМ и в этой
+    правке встречается впервые; всё остальное — новая строка и получает
+    собственный id. Так переживают правку ссылки на посты (расстановка,
+    ознакомление), а неизвестное клиентское имя не становится ключом.
+    """
+    used = set()
+    remap = {}
+    normalized = []
+    for row in rows:
+        original = str(row.get("id") or "").strip()
+        row_id = original
+        if not row_id or row_id not in known_ids or row_id in used:
+            row_id = _new_post_id()
+            while row_id in used or row_id in known_ids:
+                row_id = _new_post_id()
+        used.add(row_id)
+        if original and original not in remap:
+            remap[original] = row_id
+        normalized.append({**row, "id": row_id})
+    # Подпост ссылается на родителя ЕГО ЖЕ id (`parentPostId`), и родитель мог
+    # приехать в этой же правке — тогда ссылка вела бы на клиентское имя,
+    # которого в сохранённом расчёте нет. Переписываем по первому вхождению:
+    # именно в него и целился клиент, отображая подпост под родителем.
+    for row in normalized:
+        parent = str(row.get("parentPostId") or "").strip()
+        if parent and parent in remap:
+            row["parentPostId"] = remap[parent]
+    return normalized
+
+
+
 @transaction.atomic
 def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     """Правка рекогносцировки. `force_request` — запрос личного состава
@@ -954,17 +1000,23 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
         {**item, "comment": str(item.get("comment", "")).strip()}
         for item in checklist
     ]
-    event.recon_sector_posts = [
-        {
-            **row,
-            "sector": str(row.get("sector", "")).strip(),
-            "post": str(row.get("post", "")).strip(),
-            "task": str(row.get("task", "")).strip(),
-            "requirements": str(row.get("requirements", "")).strip(),
-            "comment": str(row.get("comment", "")).strip(),
-        }
-        for row in sector_posts
-    ]
+    known_ids = {
+        str(row.get("id") or "") for row in (event.recon_sector_posts or [])
+    }
+    event.recon_sector_posts = _normalize_post_ids(
+        [
+            {
+                **row,
+                "sector": str(row.get("sector", "")).strip(),
+                "post": str(row.get("post", "")).strip(),
+                "task": str(row.get("task", "")).strip(),
+                "requirements": str(row.get("requirements", "")).strip(),
+                "comment": str(row.get("comment", "")).strip(),
+            }
+            for row in sector_posts
+        ],
+        known_ids=known_ids,
+    )
     fields = ["recon_checklist", "recon_sector_posts", "updated_at"]
     if parsed_request is not None:
         event.recon_force_request = parsed_request
@@ -1000,17 +1052,14 @@ def import_recon_from_passport(event_id):
         for row in event.recon_sector_posts
         if row.get("sourcePostId") is not None
     }
-    now = _now_iso()
     added = []
-    counter = 0
     for sector in version.sectors_snapshot:
         for post in sector.get("posts", []):
             if post.get("id") in already_imported:
                 continue
-            counter += 1
             added.append(
                 {
-                    "id": f"imported-{now}-{counter}",
+                    "id": _new_post_id(),
                     "sector": sector.get("name", ""),
                     "post": post.get("name", ""),
                     "task": post.get("task", ""),

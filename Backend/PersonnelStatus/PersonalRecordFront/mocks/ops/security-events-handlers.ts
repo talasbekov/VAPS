@@ -69,6 +69,42 @@ const RECON_CHECKLIST_TEMPLATE = [
   "Связь и электропитание",
 ];
 
+// Идентификаторы строк расчёта постов выдаёт СЕРВЕР (порт правила бэка,
+// Plane №30): клиентская пометка не сохранённой строки живёт в памяти вкладки
+// и после перезагрузки повторяется, а назначение по повторённому id уезжает в
+// первый совпавший пост. Id сохраняется, только если он уже принадлежит этому
+// ОМ и в этой правке встречается впервые.
+function newPostId(): string {
+  return `post-${Math.random().toString(16).slice(2, 14)}`;
+}
+
+function normalizePostIds<T extends { id: string; parentPostId?: string }>(
+  rows: T[],
+  knownIds: Set<string>
+): T[] {
+  const used = new Set<string>();
+  const remap = new Map<string, string>();
+  const normalized = rows.map((row) => {
+    const original = (row.id ?? "").trim();
+    let id = original;
+    if (id === "" || !knownIds.has(id) || used.has(id)) {
+      id = newPostId();
+      while (used.has(id) || knownIds.has(id)) id = newPostId();
+    }
+    used.add(id);
+    if (original !== "" && !remap.has(original)) remap.set(original, id);
+    return { ...row, id };
+  });
+  // Подпост ссылается на родителя его же id, и родитель мог приехать в этой
+  // же правке — ссылка на клиентское имя не пережила бы сохранение.
+  return normalized.map((row) => {
+    const parent = (row.parentPostId ?? "").trim();
+    return parent !== "" && remap.has(parent)
+      ? { ...row, parentPostId: remap.get(parent) as string }
+      : row;
+  });
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -588,14 +624,18 @@ export const securityEventsHandlers = [
       ...item,
       comment: item.comment.trim(),
     }));
-    const sectorPosts: ReconSectorPost[] = body.sectorPosts.map((row) => ({
-      ...row,
-      sector: row.sector.trim(),
-      post: row.post.trim(),
-      task: row.task.trim(),
-      requirements: row.requirements.trim(),
-      comment: row.comment.trim(),
-    }));
+    const knownIds = new Set(event.reconSectorPosts.map((row) => row.id));
+    const sectorPosts: ReconSectorPost[] = normalizePostIds(
+      body.sectorPosts.map((row) => ({
+        ...row,
+        sector: row.sector.trim(),
+        post: row.post.trim(),
+        task: row.task.trim(),
+        requirements: row.requirements.trim(),
+        comment: row.comment.trim(),
+      })),
+      knownIds
+    );
     return HttpResponse.json(
       saveEvent({
         ...event,
@@ -641,15 +681,12 @@ export const securityEventsHandlers = [
         .map((row) => row.sourcePostId)
         .filter((sourcePostId): sourcePostId is string => sourcePostId !== null)
     );
-    const now = nowIso();
-    let counter = 0;
     const added: ReconSectorPost[] = [];
     for (const sector of version.sectors) {
       for (const post of sector.posts) {
         if (alreadyImported.has(post.id)) continue;
-        counter += 1;
         added.push({
-          id: `${event.id}-imported-${now}-${counter}`,
+          id: newPostId(),
           sector: sector.name,
           post: post.name,
           task: post.task,
@@ -675,7 +712,7 @@ export const securityEventsHandlers = [
       saveEvent({
         ...event,
         reconSectorPosts: [...event.reconSectorPosts, ...added],
-        updatedAt: now,
+        updatedAt: nowIso(),
       })
     );
   }),
