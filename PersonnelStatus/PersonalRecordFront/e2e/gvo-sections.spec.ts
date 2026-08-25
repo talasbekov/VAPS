@@ -138,14 +138,23 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
       ?.replace('День посещения — ', '')
       .trim()
     expect(visitObjectName ?? '').not.toEqual('')
-    await dayField.first().fill('2026-06-19')
-    await noteField.first().fill('Мухамадиев, позывной 2-13')
+    // Значения берутся ОТ ТЕКУЩИХ, а не литералами: «Сохранить» заперта, пока
+    // ничего не изменилось, и прогон по уже проставленному дню упирался бы в
+    // недоступную кнопку — проба один раз зелёная, дальше вечно красная.
+    const wasDay = await dayField.first().inputValue()
+    const nextDay = wasDay === '2026-06-19' ? '2026-06-20' : '2026-06-19'
+    const nextNote = `Мухамадиев, позывной 2-13 · проба ${Date.now()}`
+    await dayField.first().fill(nextDay)
+    await noteField.first().fill(nextNote)
     await visitsDialog.getByRole('button', { name: 'Сохранить' }).click()
     await expect(visitsDialog).toBeHidden({ timeout: 10_000 })
     // День строки виден в карточке в русском виде, примечание — рядом с
     // объектом. Ассерт на ДАННЫЕ строки, а не на факт закрытия окна.
-    await expect(main.getByText('19.06.2026')).toBeVisible({ timeout: 10_000 })
-    await expect(main.getByText('Мухамадиев, позывной 2-13')).toBeVisible()
+    const [year, month, day] = nextDay.split('-')
+    await expect(main.getByText(`${day}.${month}.${year}`)).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(main.getByText(nextNote)).toBeVisible()
     await expect(main.getByText(visitObjectName as string)).toBeVisible()
 
     // Реестр читает ту же сводку: статус, старший ГВО и охраняемые лица
@@ -182,8 +191,63 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     }
     await expect(main.getByText('Черновик сводки')).toBeVisible({ timeout: 10_000 })
 
+    // День и примечание объектов патчем не считаются, поэтому в цикле сброса
+    // выше их нет — снимаем отдельно, иначе следующий прогон начнётся с
+    // проставленного дня, а «Сохранить» заперта, пока ничего не менялось.
+    await page.getByRole('button', { name: 'Изменить объекты посещения' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Вернуть исходные' }).click()
+    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 10_000 })
+
     // CLIENT_FETCH_ERROR — обрыв навигации NextAuth, не дефект экрана
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
+  })
+
+  test('сводка ГВО раскрывается панелью в карточке мероприятия', async ({
+    page,
+  }) => {
+    // Задача заказчика «Реестр ОМ-35.4»: функционал модуля «Реестр ГВО»
+    // переходит мероприятию — кнопка справа в шапке карточки, панель
+    // раскрывается НА МЕСТЕ. Проба ведёт именно кнопку: уход на другой экран
+    // вернул бы разрыв контекста, из-за которого модуль и убирают.
+    const rows = await registryEvents()
+    const target = rows[0]
+    expect(target, 'реестр стенда пуст — панель не на чем открыть').toBeTruthy()
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}`)
+    const open = page.getByRole('button', { name: 'Информация по ГВО' })
+    await expect(open).toBeVisible({ timeout: 20_000 })
+
+    // Панели нет, пока не нажали: разделы сводки не должны висеть на карточке
+    // всегда — они отодвинули бы этапы за сгиб.
+    await expect(page.getByRole('heading', { name: 'Состав ГВО СГО РК' })).toHaveCount(0)
+    await expect(page.getByText('Сводные данные ГВО')).toHaveCount(0)
+
+    const codesBeforeOpen = await page
+      .getByText(target.code, { exact: true })
+      .count()
+
+    await open.click()
+    // Адрес НЕ сменился — панель раскрылась на месте, а не увела на экран.
+    expect(page.url()).toContain(`/security-ops/events/${target.id}`)
+    await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
+      timeout: 15_000,
+    })
+    // Разделы приехали целиком, а не одна шапка.
+    await expect(page.getByRole('heading', { name: 'Охраняемые лица' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Объекты посещения' })).toBeVisible()
+    const codesAfterOpen = await page
+      .getByText(target.code, { exact: true })
+      .count()
+    // Код ОМ панель НЕ добавляет: он уже стоит в шапке карточки, и второй раз
+    // тем же текстом ловил бы substring-пробы других экранов в
+    // неоднозначность. Сравниваем с числом ДО раскрытия, а не с единицей: на
+    // карточке код встречается и в шапке, и в подписи выбранного объекта.
+    expect(codesAfterOpen).toEqual(codesBeforeOpen)
+
+    // Повторное нажатие закрывает — кнопка меняет и подпись, и состояние.
+    await page.getByRole('button', { name: 'Скрыть информацию по ГВО' }).click()
+    await expect(page.getByText('Сводные данные ГВО')).toHaveCount(0)
   })
 
   // Гейт раздела показывается персоной, у которой права НЕТ: под админом

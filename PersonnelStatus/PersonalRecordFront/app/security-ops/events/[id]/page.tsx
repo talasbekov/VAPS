@@ -9,6 +9,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
+import { GvoSummaryPanel } from "@/widgets/gvo-summary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -66,6 +67,9 @@ function SecurityEventScreen() {
   // рекогносцировку» — в области этапа, и без этого сигнала переход стирал бы
   // набранный текст (после смены стадии сервер правку бюллетеня не примет).
   const [bulletinDirty, setBulletinDirty] = useState(false);
+  // Панель ГВО закрыта по умолчанию: сводка — это четыре сотни строк разметки
+  // и свой запрос, и раскрытая всегда она отодвинула бы этапы за сгиб.
+  const [gvoOpen, setGvoOpen] = useState(false);
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   // Объекты посещения и выбранный из них считаются ДО ранних веток: ниже
@@ -172,6 +176,13 @@ function SecurityEventScreen() {
 
       <Card className="mb-4">
         <CardContent className="p-4">
+          {/* Шапка в две колонки: сведения слева, кнопка «Информация по ГВО»
+              справа — так её просил заказчик («с правой стороны должна
+              появляться кнопка»). Обёртка нужна именно здесь: содержимое
+              карточки было вертикальным стеком, и кнопка встала бы под
+              паспортом, а не рядом с названием. */}
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-64 flex-1">
           <div className="mb-1 flex items-center gap-2">
             <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
               {event.code}
@@ -231,6 +242,23 @@ function SecurityEventScreen() {
                 ? NO_PUBLISHED_VERSION_TEXT
                 : NO_OBJECT_TEXT}
           </p>
+            </div>
+            {/* Функционал модуля «Реестр ГВО» переехал сюда (Plane «Реестр
+                ОМ-35.4»): панель раскрывается НА МЕСТЕ, а не уводит на другой
+                экран — заказчик убирает модуль, и уход со страницы вернул бы
+                тот же разрыв контекста, из-за которого его убирают. */}
+            <Button
+              type="button"
+              variant={gvoOpen ? "default" : "outline"}
+              size="sm"
+              className="shrink-0"
+              aria-expanded={gvoOpen}
+              aria-controls="gvo-summary-panel"
+              onClick={() => setGvoOpen((open) => !open)}
+            >
+              {gvoOpen ? "Скрыть информацию по ГВО" : "Информация по ГВО"}
+            </Button>
+          </div>
           <VisitObjectContext
             event={event}
             selected={selectedVisit}
@@ -245,6 +273,15 @@ function SecurityEventScreen() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Панель «Информация по ГВО» — СРАЗУ под шапкой, до бюллетеня и
+          этапов: это сведения о самом визите (кто едет, чем прибывает, какие
+          объекты), и читаются они раньше, чем ход подготовки. */}
+      {gvoOpen && (
+        <div id="gvo-summary-panel" className="mb-4">
+          <GvoSummaryPanel event={event} variant="embedded" />
+        </div>
+      )}
 
       {/* Бюллетень — НАД этапами: он больше не шаг цепочки, а сведения о
           мероприятии, нужные на каждом этапе. */}
