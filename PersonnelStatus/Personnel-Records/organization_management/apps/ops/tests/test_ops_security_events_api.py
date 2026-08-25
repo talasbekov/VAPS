@@ -956,6 +956,66 @@ def test_remove_visit_object_with_posts_is_refused(manager):
     assert OpsSecurityEventVisitObject.objects.filter(pk=added["id"]).exists()
 
 
+def test_update_visit_object_day_and_note(manager):
+    """День посещения и примечание правятся ручкой объекта, а не патчем сводки.
+
+    До «Реестр ОМ-35.1» эти два факта жили свободным текстом патча ГВО, и
+    список объектов там расходился со списком мероприятия. Проба держит
+    ОБРАТНЫЙ путь тоже: пустой `visitDay` снимает день, возвращая объект в
+    дату мероприятия, — это ответ, а не отсутствие ответа.
+    """
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"visitDay": "2026-06-19", "note": "основной объект"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    row = resp.json()["visitObjects"][0]
+    assert row["visitDay"] == "2026-06-19"
+    assert row["note"] == "основной объект"
+    # Из базы, а не из ответа: правка должна была лечь в строку.
+    saved = OpsSecurityEventVisitObject.objects.get(pk=visit_id)
+    assert saved.visit_day.isoformat() == "2026-06-19"
+    assert saved.note == "основной объект"
+
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"visitDay": "", "note": ""},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["visitObjects"][0]["visitDay"] is None
+    assert resp.json()["visitObjects"][0]["note"] == ""
+
+
+def test_update_visit_object_rejects_bad_day_and_unknown_row(manager):
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"visitDay": "19.06.2026"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["details"]["visitDay"] == [
+        "Укажите дату в формате ГГГГ-ММ-ДД."
+    ]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/9999/",
+        {"note": "нет такой строки"},
+        format="json",
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"
+
+
 def test_visit_objects_need_manage_permission(viewer, manager):
     """Право на просмотр реестра не даёт править маршрут мероприятия."""
     obj = make_object(with_passport=True)
@@ -965,6 +1025,15 @@ def test_visit_objects_need_manage_permission(viewer, manager):
     resp = viewer.post(
         f"{URL}{event_id}/visit-objects/",
         {"objectId": str(second.pk)},
+        format="json",
+    )
+    assert resp.status_code == 403
+
+    # Правка дня и примечания — та же грань: она меняет сводку ГВО.
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+    resp = viewer.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "чужая правка"},
         format="json",
     )
     assert resp.status_code == 403

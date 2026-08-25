@@ -27,6 +27,7 @@ const PERSONS_REGISTRY_GAP_LINE =
 interface EventRow {
   id: string
   code: string
+  visitObjects?: { id: string; objectName: string }[]
 }
 
 async function apiToken(): Promise<string> {
@@ -75,10 +76,17 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await page.goto(`${APP}/security-ops/gvo/`)
     await expect(page.getByRole('heading', { name: 'Реестр ГВО' })).toBeVisible()
 
-    const firstRow = page.locator('tbody tr').first()
-    await expect(firstRow).toContainText('Черновик')
-    const omCode = (await firstRow.locator('td').first().innerText()).split('\n')[0]
-    await firstRow.locator('a').first().click()
+    // Мероприятие берётся не «первое в реестре», а первое С ОБЪЕКТОМ
+    // ПОСЕЩЕНИЯ: с «Реестр ОМ-35.1» раздел «Объекты посещения» читает таблицу
+    // объектов, и у ОМ без объекта окно правки честно пусто — проба на таком
+    // мероприятии молча проверяла бы пустоту.
+    const registry = await registryEvents()
+    const target = registry.find((row) => (row.visitObjects ?? []).length > 0)
+    expect(target, 'на стенде нет ОМ с объектом посещения — проба вакуумна').toBeTruthy()
+    const omCode = (target as EventRow).code
+    const eventRow = page.locator('tbody tr', { hasText: omCode })
+    await expect(eventRow).toContainText('Черновик')
+    await eventRow.locator('a').first().click()
     await expect(page.getByRole('heading', { name: 'Сводные данные' })).toBeVisible()
 
     // Охраняемое лицо: «параметр = значение» построчно
@@ -116,17 +124,29 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     ).toBeVisible({ timeout: 10_000 })
     await expect(main.getByText('бронь, гостевой парк')).toBeVisible()
 
-    // Объекты посещения: блок на день, блоки разделены пустой строкой
+    // Объекты посещения: НЕ текст патча, а строки объектов мероприятия
+    // («Реестр ОМ-35.1»). Правятся день и примечание КОНКРЕТНОГО объекта —
+    // поля подписаны его именем, потому что объектов у ОМ может быть много.
     await page.getByRole('button', { name: 'Изменить объекты посещения' }).click()
-    await page
-      .getByRole('textbox', { name: 'Объекты по дням' })
-      .fill(
-        '18.06.2026 | четверг\nМейрам | «ночь» — Офис\n\n19.06.2026 | пятница\nТарлан | Мухамадиев, позывной 2-13',
-      )
-    await page.getByRole('button', { name: 'Сохранить' }).click()
-    await expect(main.getByText('18.06.2026')).toBeVisible({ timeout: 10_000 })
-    await expect(main.getByText('19.06.2026')).toBeVisible()
+    const visitsDialog = page.getByRole('dialog')
+    // getByLabel, а не getByRole('textbox'): у input[type=date] роли textbox
+    // нет, и запрос по роли молча не нашёл бы поле дня.
+    const dayField = visitsDialog.getByLabel(/^День посещения — /)
+    const noteField = visitsDialog.getByLabel(/^Примечание — /)
+    // Имя объекта в подписи — то же, что в карточке: список ОДИН.
+    const visitObjectName = (await dayField.first().getAttribute('aria-label'))
+      ?.replace('День посещения — ', '')
+      .trim()
+    expect(visitObjectName ?? '').not.toEqual('')
+    await dayField.first().fill('2026-06-19')
+    await noteField.first().fill('Мухамадиев, позывной 2-13')
+    await visitsDialog.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(visitsDialog).toBeHidden({ timeout: 10_000 })
+    // День строки виден в карточке в русском виде, примечание — рядом с
+    // объектом. Ассерт на ДАННЫЕ строки, а не на факт закрытия окна.
+    await expect(main.getByText('19.06.2026')).toBeVisible({ timeout: 10_000 })
     await expect(main.getByText('Мухамадиев, позывной 2-13')).toBeVisible()
+    await expect(main.getByText(visitObjectName as string)).toBeVisible()
 
     // Реестр читает ту же сводку: статус, старший ГВО и охраняемые лица
     await page.getByRole('link', { name: '← Назад к реестру ГВО' }).click()
@@ -148,9 +168,11 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // считается — пустой список это тоже ручная правка, и статус остаётся
     // «Заполнена», пока раздел не сброшен явно.
     await expect(main.getByText('Сводка заполнена')).toBeVisible()
+    // «Изменить объекты посещения» из этого списка ВЫНУТ: объекты живут
+    // таблицей мероприятия, их день и примечание патчем сводки не считаются, и
+    // статус «Заполнена» от них не зависит («Реестр ОМ-35.1»).
     for (const button of [
       'Изменить транспорт',
-      'Изменить объекты посещения',
       'Изменить список охраняемых лиц',
       'Изменить состав ГВО',
     ]) {

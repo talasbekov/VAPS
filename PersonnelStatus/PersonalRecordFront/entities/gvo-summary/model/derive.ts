@@ -8,6 +8,7 @@ import type {
   GvoGroup,
   GvoSummary,
   GvoSummaryPatch,
+  GvoVisitDay,
 } from "./types";
 
 // Сам разбор дат живёт в lib/ru-date (его же читают «Сведения об ОМ» в
@@ -26,9 +27,9 @@ export function ruWeekday(isoDate: string): string {
 
 /**
  * Сводка-черновик из бюллетеня. Переносится ровно то, что бюллетень хоста
- * действительно знает: дата ОМ → прибытие и убытие, объект → «Объекты
- * посещения» одним днём, ответственный ОМ → «Ответственный», охраняемое лицо
- * бюллетеня → «Охраняемые лица». Бортов, состава ГВО и транспорта в бюллетене
+ * действительно знает: дата ОМ → прибытие и убытие, ответственный ОМ →
+ * «Ответственный», охраняемое лицо бюллетеня → «Охраняемые лица». «Объекты
+ * посещения» приходят из таблицы объектов мероприятия (см. gvoVisitDays). Бортов, состава ГВО и транспорта в бюллетене
  * нет — они остаются пустыми и заполняются вручную по разделам.
  *
  * Расстановка (placementAssignments) СОЗНАТЕЛЬНО не подмешивается в состав
@@ -80,14 +81,43 @@ export function deriveGvoSummary(event: SecurityEvent): GvoSummary {
         : { name: event.ownerName, callsign: UNSPECIFIED, role: "ответственный" },
     groups: [emptyGroup],
     transport: [],
-    visits: [
-      {
-        day,
-        weekday: ruWeekday(event.businessDate),
-        items: [{ obj: event.objectName, note: UNSPECIFIED }],
-      },
-    ],
+    visits: gvoVisitDays(event),
   };
+}
+
+/**
+ * «Объекты посещения» — из ТАБЛИЦЫ объектов мероприятия, а не из патча сводки
+ * («Реестр ОМ-35.1»). До этого список жил в двух местах: объекты мероприятия
+ * (по ним идёт расстановка) и свободный текст патча, — и они расходились
+ * молча: объект, дописанный в сводке, не получал ни постов, ни готовности.
+ *
+ * День берётся у строки; пустой — объект показывается в дате мероприятия.
+ * Дни идут по возрастанию даты, а внутри дня объекты — в порядке, в котором
+ * их завёл человек (`position`, он же порядок раскрытия строки реестра).
+ */
+export function gvoVisitDays(event: SecurityEvent): GvoVisitDay[] {
+  const byDay = new Map<string, GvoVisitDay>();
+  const ordered = [...event.visitObjects].sort((a, b) => a.position - b.position);
+  for (const visit of ordered) {
+    const iso = visit.visitDay ?? event.businessDate;
+    const existing = byDay.get(iso);
+    const item = {
+      obj: visit.objectName,
+      note: visit.note.trim() === "" ? UNSPECIFIED : visit.note,
+    };
+    if (existing === undefined) {
+      byDay.set(iso, {
+        day: formatRuDate(iso),
+        weekday: ruWeekday(iso),
+        items: [item],
+      });
+      continue;
+    }
+    existing.items.push(item);
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, day]) => day);
 }
 
 /** База + патч. Вложенные объекты сливаются глубоко: патч раздела «Прибытие»
