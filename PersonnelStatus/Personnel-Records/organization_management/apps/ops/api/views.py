@@ -224,6 +224,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "recon_import": _MANAGE_EVENT_PERMISSION,
         "recon_complete": _MANAGE_EVENT_PERMISSION,
         "demand_approve": _MANAGE_EVENT_PERMISSION,
+        # Раскладка потребности по департаментам — работа штаба. Своего права
+        # у неё пока нет: заказчик просил цепочку «Сбора сил» общим доступом,
+        # разделение по ролям идёт отдельной задачей (Plane №74).
+        "forces_split": _MANAGE_EVENT_PERMISSION,
         "force_allocation": _MANAGE_EVENT_PERMISSION,
         "forces_complete": _MANAGE_EVENT_PERMISSION,
         "placement_assign": _MANAGE_EVENT_PERMISSION,
@@ -520,13 +524,26 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             event_service.approve_demand(pk, rows=data.get("rows"))
         )
 
+    @action(detail=True, methods=["post"], url_path="forces/allocation")
+    def forces_split(self, request, pk=None):
+        """Раскладка потребности по департаментам (Plane №73, шаг «СС-1»).
+
+        Список целиком, а не строка: «кому сколько» — одно решение штаба.
+        """
+        data = request.data or {}
+        return self._event_response(
+            event_service.split_force_demand(pk, rows=data.get("rows"))
+        )
+
     @action(
         detail=True,
         methods=["patch"],
-        # lookahead: слово complete — не id запроса; порядок регистрации extra-
-        # actions у DRF алфавитный, и без него forces/complete/ съедался бы
-        # этим маршрутом (ровно та же ловушка, что у path-to-regexp в моке).
-        url_path=r"forces/(?P<request_id>(?!complete/)[^/]+)",
+        # lookahead: слова complete и allocation — не id запроса; порядок
+        # регистрации extra-actions у DRF алфавитный, и без него forces/complete/
+        # съедался бы этим маршрутом (ровно та же ловушка, что у path-to-regexp
+        # в моке). `allocation` попал сюда по той же причине: POST на него иначе
+        # доезжает до этого маршрута и отбивается 405 вместо работы.
+        url_path=r"forces/(?P<request_id>(?!complete/|allocation/)[^/]+)",
     )
     def force_allocation(self, request, pk=None, request_id=None):
         data = request.data or {}

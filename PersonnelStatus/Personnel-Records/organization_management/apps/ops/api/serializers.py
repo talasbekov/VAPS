@@ -227,6 +227,11 @@ def serialize_security_event(event):
         "demandRows": event.demand_rows,
         "demandApproved": event.demand_approved,
         "forceRequests": event.force_requests,
+        # Раскладка потребности по департаментам и её итог. Итог считает
+        # сервер: «сколько ещё не разложено» — правило, по которому он же
+        # отбивает перебор, и второй счёт на клиенте разошёлся бы с ним молча.
+        "forceAllocation": event.force_allocation or [],
+        "forceDemandTotal": security_events.force_demand_total(event),
         "placementAssignments": event.placement_assignments,
         "approvalStatus": event.approval_status,
         "approvalComment": event.approval_comment,

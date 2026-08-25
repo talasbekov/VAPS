@@ -1197,6 +1197,161 @@ def approve_demand(event_id, *, rows):
     return event
 
 
+# ── Раскладка потребности по департаментам ──────────────────────────────────
+#
+# Первое звено цепочки «Сбор сил на ОМ» (задача заказчика Plane №73): штаб
+# получает с рекогносцировки ЧИСЛО и делит его между департаментами. Дальше
+# по этой же раскладке пойдут оповещение управлений (СС-2), выделение людей
+# (СС-3), отправка списка (СС-4) и приёмка штабом (СС-5).
+
+# Стадии, на которых раскладку правят: она заводится сразу после
+# рекогносцировки («Потребность») и остаётся живой, пока идёт выделение сил.
+_ALLOCATION_STAGES = ("DEMAND", "FORCES")
+
+# Статус заявки департаменту. Правится раскладка только у тех, кого ещё не
+# оповещали: у остальных внутри уже живут управления и выделенные люди.
+_ALLOCATION_DRAFT = "DRAFT"
+
+
+def force_demand_total(event):
+    """Сколько всего людей делит штаб.
+
+    Число берётся у запроса с рекогносцировки (`recon_force_request`) —
+    именно оно приходит штабу и именно его он раскладывает. `force_need`
+    (сумма утверждённой потребности) — другой факт и появляется позже;
+    у мероприятий, доехавших до утверждения, он подставляется запасным, иначе
+    раскладка старых строк упёрлась бы в ноль и не сохранилась бы вовсе.
+    """
+    return int(event.recon_force_request or 0) or int(event.force_need or 0)
+
+
+def _department_directory(ids):
+    """Департаменты по идентификаторам: {id: имя}.
+
+    Проверка «это департамент» делается ЗДЕСЬ, а не на клиенте: выбор из
+    справочника подсказывает, но не запрещает — запрос приходит и мимо формы.
+    """
+    from organization_management.apps.divisions.models import Division
+
+    rows = Division.objects.filter(
+        pk__in=[i for i in ids if str(i).isdigit()],
+        division_type=Division.DivisionType.DEPARTMENT,
+        is_active=True,
+    ).values_list("pk", "name")
+    return {str(pk): name for pk, name in rows}
+
+
+@transaction.atomic
+def split_force_demand(event_id, *, rows):
+    """Сохранить раскладку потребности по департаментам.
+
+    Правится целиком списком, а не по строке: раскладка — одно решение штаба
+    («кому сколько»), и построчное сохранение позволяло бы сумме уехать за
+    потребность между двумя запросами.
+    """
+    event = lock_event(event_id)
+    if event.stage not in _ALLOCATION_STAGES:
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message=(
+                "Раскладывать потребность можно на этапах «Потребность» и "
+                "«Запрос сил»."
+            ),
+        )
+    rows = rows or []
+    field_errors = {}
+    for index, row in enumerate(rows):
+        if not str(row.get("departmentId", "")).strip():
+            field_errors[f"rows.{index}.departmentId"] = ["Выберите департамент."]
+        try:
+            need = int(row.get("need", 0))
+        except (TypeError, ValueError):
+            need = 0
+        if need < 1:
+            field_errors[f"rows.{index}.need"] = ["Должно быть не меньше 1."]
+    if field_errors:
+        raise _validation(field_errors)
+
+    known = _department_directory([row.get("departmentId") for row in rows])
+    seen = set()
+    for index, row in enumerate(rows):
+        key = str(row.get("departmentId")).strip()
+        if key not in known:
+            field_errors[f"rows.{index}.departmentId"] = [
+                "Такого департамента нет в справочнике."
+            ]
+        elif key in seen:
+            # Дважды один департамент — не «сумма двух строк», а ошибка ввода:
+            # у департамента один ответственный и одна заявка.
+            field_errors[f"rows.{index}.departmentId"] = [
+                "Департамент уже есть в раскладке."
+            ]
+        seen.add(key)
+    if field_errors:
+        raise _validation(field_errors)
+
+    total = force_demand_total(event)
+    requested = sum(int(row.get("need", 0)) for row in rows)
+    if total and requested > total:
+        raise DomainError(
+            "ALLOCATION_OVER_DEMAND",
+            422,
+            message=(
+                f"Разложено {requested} человек при потребности {total} — "
+                "уберите лишних."
+            ),
+        )
+
+    previous = {
+        str(item.get("departmentId")): item for item in (event.force_allocation or [])
+    }
+    # Департамент, которому уже сказали собирать людей, из раскладки молча не
+    # исчезает: его управления оповещены, а люди, возможно, уже выделены.
+    dropped = [
+        item
+        for key, item in previous.items()
+        if key not in seen and item.get("status") != _ALLOCATION_DRAFT
+    ]
+    if dropped:
+        names = ", ".join(str(item.get("departmentName") or "—") for item in dropped)
+        raise DomainError(
+            "ALLOCATION_LOCKED",
+            422,
+            message=(
+                f"Заявка уже ушла в департамент ({names}) — снять его из "
+                "раскладки нельзя."
+            ),
+        )
+
+    saved = []
+    for row in rows:
+        key = str(row.get("departmentId")).strip()
+        kept = previous.get(key, {})
+        saved.append(
+            {
+                # Не `**kept`: состав строки перечислен явно ниже, и спред
+                # лишь тащил бы в неё ключи прежних форм. Красная проба на
+                # него зелёная — это и есть признак лишнего гарда.
+                "id": kept.get("id") or f"force-allocation-{key}-{_now_iso()}",
+                "departmentId": key,
+                "departmentName": known[key],
+                "need": int(row.get("need", 0)),
+                "status": kept.get("status") or _ALLOCATION_DRAFT,
+                "comment": str(row.get("comment") or "").strip(),
+                "notifiedAt": kept.get("notifiedAt"),
+                "submittedAt": kept.get("submittedAt"),
+                "decidedAt": kept.get("decidedAt"),
+                "decisionComment": kept.get("decisionComment", ""),
+                "directorates": kept.get("directorates", []),
+                "members": kept.get("members", []),
+            }
+        )
+    event.force_allocation = saved
+    event.save(update_fields=["force_allocation", "updated_at"])
+    return event
+
+
 # ── Выделение сил ───────────────────────────────────────────────────────────
 
 

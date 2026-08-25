@@ -28,6 +28,7 @@ import {
   securityEventClosePath,
   securityEventDemandApprovePath,
   securityEventForceAllocationPath,
+  securityEventForcesSplitPath,
   securityEventForcesCompletePath,
   securityEventJournalPath,
   securityEventPlacementAssignPath,
@@ -53,6 +54,7 @@ import type {
   ResolveRemarkRequest,
   ReturnPlacementRequest,
   SecurityEvent,
+  SplitForceDemandRequest,
   UpdateBulletinRequest,
   UpdateDemandRequest,
   UpdateForceAllocationRequest,
@@ -168,6 +170,20 @@ export function useApproveDemand(id: string, options?: StageMutationOptions) {
     id,
     (body) =>
       opsApiClient.post<SecurityEvent>(securityEventDemandApprovePath(id), body),
+    options
+  );
+}
+
+/** Раскладка потребности по департаментам — весь список одним запросом.
+ *
+ * Своя мутация, а не повтор `useUpdateForceAllocation`: тот правит ЧИСЛО у
+ * одной строки утверждённой потребности, эта — адресную раскладку штаба.
+ */
+export function useSplitForceDemand(id: string, options?: StageMutationOptions) {
+  return useEventMutation<SplitForceDemandRequest>(
+    id,
+    (body) =>
+      opsApiClient.post<SecurityEvent>(securityEventForcesSplitPath(id), body),
     options
   );
 }

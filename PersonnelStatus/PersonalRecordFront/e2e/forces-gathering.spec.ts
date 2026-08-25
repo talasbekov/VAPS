@@ -70,6 +70,59 @@ function metric(page: Page, label: string) {
     .first()
 }
 
+
+/** ОМ, доведённое до «Потребности»: расчёт постов ушёл штабу числом.
+ *
+ * Строится ПОД пробу, а не ищется на стенде: лента входящих показывает те ОМ,
+ * что кто-то уже мог разложить, и проба «сохранилось» на чужой строке ничего
+ * бы не доказала.
+ */
+async function prepareDemandEvent(token: string): Promise<{ code: string; total: number }> {
+  const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+  const call = async (method: string, path: string, body?: unknown): Promise<any> => {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return res.json().catch(() => ({}))
+  }
+  const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
+  const object = objects.results.find(
+    (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
+  )
+  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+
+  const created = await call('POST', '/api/ops/security-events/', {
+    title: 'Проба раскладки сил (e2e)',
+    objectId: object.id,
+    businessDate: '2026-08-26',
+    kind: 'INTERNAL',
+  })
+  const base = `/api/ops/security-events/${created.id}`
+  await call('PATCH', `${base}/bulletin/`, {
+    briefDescription: 'Проба раскладки.',
+    initialTasks: '—',
+  })
+  await call('POST', `${base}/bulletin/complete/`)
+  await call('POST', `${base}/recon/import-from-passport/`)
+  const afterImport = await call('GET', `${base}/`)
+  const posts = afterImport.reconSectorPosts.map(
+    (post: Record<string, unknown>, index: number) =>
+      index === 0 ? { ...post, need: 4 } : post,
+  )
+  await call('PATCH', `${base}/recon/`, {
+    checklist: afterImport.reconChecklist.map((item: Record<string, unknown>) => ({
+      ...item,
+      done: true,
+      result: 'MATCHES',
+    })),
+    sectorPosts: posts,
+  })
+  const demand = await call('POST', `${base}/recon/complete/`)
+  return { code: demand.code, total: demand.forceDemandTotal }
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (скип: нет SMOKE_LIVE=1)', () => {
@@ -220,6 +273,49 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // Строка департамента обязана назвать СВОЙ недобор: сумма отвечает
     // «сколько не хватает», строка — «с кого недобрали».
     await expect(page.getByText('не отдано 5')).toBeVisible()
+  })
+
+
+  test('раскладка по департаментам сохраняется, перебор отбивается', async ({ page }) => {
+    const token = await apiToken()
+    const { code, total } = await prepareDemandEvent(token)
+    // Сторож фикстуры: делить нечего, если расчёт постов просит одного —
+    // тогда и «остаток», и «перебор» проверялись бы вакуумно.
+    expect(total, 'у пробного ОМ потребность меньше двух — делить нечего').toBeGreaterThan(1)
+    const departments = await get<{ results: { id: number; name: string; type_code: string }[] }>(
+      token,
+      '/api/core/divisions/?page_size=200',
+    )
+    const department = departments.results.find((row) => row.type_code === 'department')
+    expect(department, 'в справочнике стенда нет департамента — выбирать нечего').toBeTruthy()
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const card = page
+      .locator('div.rounded-lg.border')
+      .filter({ hasText: code })
+      .first()
+    await expect(card, 'пробного запроса нет в ленте штаба').toBeVisible({ timeout: 25_000 })
+    await expect(card.locator('[data-slot="forces-split"]')).toBeVisible()
+
+    // Перебор: сервер отбивает своим текстом, и он же виден на экране.
+    await card.getByRole('button', { name: 'Департамент', exact: true }).click()
+    await card.getByLabel('Департамент, строка 1', { exact: true }).selectOption(String(department!.id))
+    await card.getByLabel('Сколько человек, строка 1', { exact: true }).fill(String(total + 1))
+    await card.getByRole('button', { name: 'Сохранить раскладку' }).click()
+    await expect(card.getByRole('alert')).toContainText(`при потребности ${total}`)
+
+    // Разложенное сохраняется НА СЕРВЕРЕ: после перезагрузки строка на месте.
+    await card.getByLabel('Сколько человек, строка 1', { exact: true }).fill(String(total - 1))
+    await card.getByRole('button', { name: 'Сохранить раскладку' }).click()
+    await expect(card.getByText('Раскладка сохранена')).toBeVisible()
+    await page.reload()
+    const saved = page.locator('div.rounded-lg.border').filter({ hasText: code }).first()
+    await expect(saved.locator('[data-slot="forces-split-total"]')).toContainText(
+      `разложено ${total - 1} из ${total}`,
+      { timeout: 25_000 },
+    )
+    await expect(saved.getByLabel('Департамент, строка 1', { exact: true })).toHaveValue(String(department!.id))
   })
 
   test('реестр личного состава остался достижим', async ({ page }) => {
