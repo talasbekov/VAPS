@@ -304,6 +304,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const [band, setBand] = useState<RateOption>("Все");
   const [comment, setComment] = useState<string | null>(null);
   const setSenior = useSetSectorSenior(event.id);
+  /** Объяснение автоподбора живёт ТОЛЬКО в этой сессии экрана: сервер факта
+   * «поставлено автоматически» не хранит, и заводить под него поле, которое
+   * ни на что не влияет, значило бы врать про происхождение записи. После
+   * перезагрузки блок исчезает — отклонение записано в решениях. */
+  const [autoReasons, setAutoReasons] = useState<Record<string, string[]>>({});
   /** Чей рейтинг открыт: null — модалка закрыта. Человек, а не флаг: иначе
    * пришлось бы держать имя и подразделение отдельной парой полей. */
   const [ratingBriefFor, setRatingOf] = useState<{
@@ -367,6 +372,22 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     (a) => a.ratingOverrideReason !== null
   ).length;
   const free = Math.max(0, allocated - assignedCount);
+  /** Что мешает завершить этап — словами и в одном месте.
+   *
+   * Порядок не случаен: недобор запирает завершение (сервер отбивает
+   * `PLACEMENT_INCOMPLETE`), обходы рейтинга — нет, их просто надо видеть.
+   * Пусто — значит завершать можно, и молчание здесь честнее «всё хорошо».
+   */
+  const placementWarning: string | null = (() => {
+    const parts: string[] = [];
+    if (posts.length > 0 && unfilled > 0)
+      parts.push(
+        `не укомплектовано постов: ${unfilled} — этап не завершится, пока на каждом посту есть люди`
+      );
+    if (conflicts > 0)
+      parts.push(`назначений с обходом предупреждения по рейтингу: ${conflicts}`);
+    return parts.length === 0 ? null : parts.join("; ");
+  })();
 
   const sectors = useMemo(() => {
     const list: { name: string; posts: ReconSectorPost[] }[] = [];
@@ -481,6 +502,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   /** Автоподбор: реальные назначения свободных кандидатов на недобранные посты. */
   function autoFill(): void {
     const taken = new Set(assignedIds);
+    const reasons: Record<string, string[]> = { ...autoReasons };
     for (const post of posts) {
       let missing = post.need - assignmentsOf(post.id).length;
       for (const candidate of candidates) {
@@ -488,9 +510,37 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         if (taken.has(candidate.person.id)) continue;
         taken.add(candidate.person.id);
         missing -= 1;
+        reasons[`${post.id}:${candidate.person.id}`] = autoReasonsFor(
+          candidate,
+          post
+        );
         assign.mutate({ postId: post.id, employeeId: candidate.person.id });
       }
     }
+    setAutoReasons(reasons);
+  }
+
+  /** Почему автоподбор выбрал ЭТОГО человека на ЭТОТ пост.
+   *
+   * Причины — те же числа, по которым он и выбирал: другой список означал бы
+   * объяснение задним числом, не совпадающее с решением. */
+  function autoReasonsFor(
+    candidate: {
+      person: PersonnelSummarySnapshot;
+      fit: number;
+      rating: number | null;
+    },
+    post: ReconSectorPost
+  ): string[] {
+    const list = [`совпадение ${candidate.fit}%`];
+    // Статус попадает в причины ТОЛЬКО когда он в плюс. «✓ статус дня:
+    // отпуск» читалось бы как довод за человека, хотя это довод против; сам
+    // статус и так виден бейджем рядом.
+    if (candidate.person.statusLabel === null) list.push("в строю в день ОМ");
+    if (post.minRating === null) list.push("пост не требует рейтинга");
+    else if (candidate.rating !== null && candidate.rating >= post.minRating)
+      list.push(`рейтинг ${candidate.rating} не ниже ${post.minRating}`);
+    return list;
   }
 
   return (
@@ -540,6 +590,19 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           Назначения уходят на сервер сразу — отдельного сохранения и версий
           расстановки у мероприятия нет.
         </p>
+
+        {/* Предупреждение этапа из прототипа: одной строкой то, что мешает
+            завершить расстановку. Считается по тем же числам, что и сводка
+            выше, — второй счёт разошёлся бы с ней на глазах. Нечего сказать —
+            плашки НЕТ: постоянная плашка перестаёт читаться. */}
+        {placementWarning !== null && (
+          <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">
+            <span aria-hidden className="font-extrabold">
+              ℹ
+            </span>
+            <span>{placementWarning}</span>
+          </div>
+        )}
 
         {posts.length === 0 ? (
           <p className="text-xs text-muted-foreground">
@@ -752,6 +815,29 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                             label={assignment.statusLabel}
                           />
                         </span>
+                        {(
+                          autoReasons[
+                            `${assignment.postId}:${assignment.employeeId}`
+                          ] ?? []
+                        ).length > 0 && (
+                          <span className="mt-1 block rounded-md border bg-muted/40 p-1.5">
+                            <span className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                              Рекомендация автоподбора
+                            </span>
+                            <span className="mt-1 flex flex-wrap gap-1">
+                              {autoReasons[
+                                `${assignment.postId}:${assignment.employeeId}`
+                              ].map((reason) => (
+                                <span
+                                  key={reason}
+                                  className="inline-flex whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground"
+                                >
+                                  ✓ {reason}
+                                </span>
+                              ))}
+                            </span>
+                          </span>
+                        )}
                       </span>
                       {/* Действия — колонкой справа, как в прототипе: в ряд
                           они съедают ширину у имени с подразделением, и то
