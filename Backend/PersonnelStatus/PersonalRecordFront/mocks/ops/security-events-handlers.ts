@@ -109,6 +109,9 @@ function emptyEvent(
         // называть день второй раз незачем.
         visitDay: null,
         note: "",
+        // Старший объекта не назначен: у свежего ОМ маршрут только заведён.
+        chiefEmployeeId: null,
+        chiefName: "",
         placementNeed: 0,
         placementAssigned: 0,
         deputies: [],

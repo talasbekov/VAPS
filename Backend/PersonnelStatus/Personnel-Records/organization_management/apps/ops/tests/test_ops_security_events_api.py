@@ -1016,6 +1016,98 @@ def test_update_visit_object_rejects_bad_day_and_unknown_row(manager):
     assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"
 
 
+# ── Старший объекта посещения (Plane «Реестр ОМ-35.2») ──────────────────────
+
+
+def test_assign_and_replace_visit_object_chief(manager):
+    """Назначение, ЗАМЕНА и снятие старшего объекта — с журналом на каждое.
+
+    Замена идёт тем же POST: у объекта старший один, и «сначала снимите»
+    превратило бы обычную замену в две операции. Журнал при замене обязан
+    назвать и прежнего, и нового — иначе цепочка «кто стоял на объекте»
+    рвётся.
+    """
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+    first = make_employee(last_name="Битен", first_name="Асхат")
+    second = make_employee(last_name="Тлесов", first_name="Ерлан")
+
+    resp = manager.post(
+        f"{URL}{event_id}/visit-objects/{visit_id}/chief/",
+        {"employeeId": str(first.pk)},
+        format="json",
+    )
+    assert resp.status_code == 200
+    row = resp.json()["visitObjects"][0]
+    assert row["chiefEmployeeId"] == str(first.pk)
+    assert "Битен" in row["chiefName"]
+
+    resp = manager.post(
+        f"{URL}{event_id}/visit-objects/{visit_id}/chief/",
+        {"employeeId": str(second.pk)},
+        format="json",
+    )
+    assert resp.status_code == 200
+    saved = OpsSecurityEventVisitObject.objects.get(pk=visit_id)
+    assert saved.chief_employee_id == second.pk
+    assert "Тлесов" in saved.chief_name
+
+    replaced = OpsAuditLog.objects.filter(
+        action="VISIT_OBJECT_CHIEF_ASSIGNED"
+    ).order_by("-pk").first()
+    # Замена названа с двух концов: кого сняли и кого поставили.
+    assert replaced.old_value["employeeId"] == str(first.pk)
+    assert replaced.new_value["employeeId"] == str(second.pk)
+    assert replaced.new_value["objectName"] == saved.object_name
+
+    resp = manager.delete(f"{URL}{event_id}/visit-objects/{visit_id}/chief/")
+    assert resp.status_code == 200
+    assert resp.json()["visitObjects"][0]["chiefEmployeeId"] is None
+    assert resp.json()["visitObjects"][0]["chiefName"] == ""
+    saved.refresh_from_db()
+    assert saved.chief_employee_id is None
+    revoked = OpsAuditLog.objects.filter(
+        action="VISIT_OBJECT_CHIEF_REVOKED"
+    ).order_by("-pk").first()
+    assert revoked.old_value["employeeId"] == str(second.pk)
+
+
+def test_visit_object_chief_rejects_unknown_employee_and_empty_removal(manager):
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+
+    resp = manager.post(
+        f"{URL}{event_id}/visit-objects/{visit_id}/chief/",
+        {"employeeId": "9999"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["details"]["employeeId"] == ["Сотрудник не найден."]
+
+    # Снимать некого — 404 с конвертом, а не тихий успех.
+    resp = manager.delete(f"{URL}{event_id}/visit-objects/{visit_id}/chief/")
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"
+
+
+def test_visit_object_chief_needs_manage_permission(viewer, manager):
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+    employee = make_employee(last_name="Асаинов", first_name="Дамир")
+
+    resp = viewer.post(
+        f"{URL}{event_id}/visit-objects/{visit_id}/chief/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    assert resp.status_code == 403
+
+
 def test_visit_objects_need_manage_permission(viewer, manager):
     """Право на просмотр реестра не даёт править маршрут мероприятия."""
     obj = make_object(with_passport=True)

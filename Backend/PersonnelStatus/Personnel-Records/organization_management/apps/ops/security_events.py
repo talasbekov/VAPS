@@ -737,6 +737,102 @@ def remove_visit_object_deputy(event_id, visit_object_id, deputy_id, *, actor):
     return event
 
 
+# ── Старший объекта посещения ───────────────────────────────────────────────
+
+
+@transaction.atomic
+def assign_visit_object_chief(event_id, visit_object_id, *, employee_id, actor):
+    """Назначить старшего НА ОБЪЕКТ посещения (Plane «Реестр ОМ-35.2»).
+
+    Старший объекта — не старший мероприятия: у визита иностранного ОЛ
+    объектов несколько, и на каждом свой ответственный. Назначение именное и
+    попадает в журнал мутаций — по нему спрашивают доклад, и «кто его
+    поставил» обязано иметь ответ.
+
+    Замена старшего идёт этой же ручкой: снимать перед назначением не нужно —
+    у объекта старший ОДИН, и требование «сначала снимите» превратило бы
+    обычную замену в две операции. В журнале при замене остаётся и прежняя
+    подпись (old_value), и новая.
+    """
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — старший объекта не меняется.",
+        )
+    visit = _visit_object_or_404(event, visit_object_id)
+
+    employee = _find_personnel(employee_id)
+    if employee is None:
+        raise _validation({"employeeId": ["Сотрудник не найден."]})
+
+    previous = (
+        {
+            "employeeId": str(visit.chief_employee_id),
+            "employeeName": visit.chief_name,
+        }
+        if visit.chief_employee_id is not None
+        else None
+    )
+    visit.chief_employee_id = employee.pk
+    visit.chief_name = personnel_display_name(employee)
+    visit.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.VISIT_OBJECT_CHIEF_ASSIGNED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value=previous,
+        new_value={
+            "code": event.code,
+            "visitObjectId": str(visit.pk),
+            "objectName": visit.object_name,
+            "employeeId": str(visit.chief_employee_id),
+            "employeeName": visit.chief_name,
+        },
+    )
+    event.refresh_from_db()
+    return event
+
+
+@transaction.atomic
+def remove_visit_object_chief(event_id, visit_object_id, *, actor):
+    """Снять старшего с объекта посещения. Некого снимать — 404 с конвертом, а
+    не тихий успех: «снял того, кого не было» это ошибка вызывающего."""
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — старший объекта не меняется.",
+        )
+    visit = _visit_object_or_404(event, visit_object_id)
+    if visit.chief_employee_id is None:
+        raise _not_found("У объекта не назначен старший.", visit_object_id)
+
+    # Снимок ДО очистки: журнал обязан назвать, кого сняли.
+    removed = {
+        "code": event.code,
+        "visitObjectId": str(visit.pk),
+        "objectName": visit.object_name,
+        "employeeId": str(visit.chief_employee_id),
+        "employeeName": visit.chief_name,
+    }
+    visit.chief_employee_id = None
+    visit.chief_name = ""
+    visit.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.VISIT_OBJECT_CHIEF_REVOKED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value=removed,
+    )
+    event.refresh_from_db()
+    return event
+
+
 # ── Бюллетень ───────────────────────────────────────────────────────────────
 
 

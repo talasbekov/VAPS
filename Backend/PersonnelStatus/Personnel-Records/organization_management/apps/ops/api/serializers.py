@@ -145,6 +145,15 @@ def serialize_visit_object(event, visit, *, single):
             visit.visit_day.isoformat() if visit.visit_day is not None else None
         ),
         "note": visit.note,
+        # Старший ОБЪЕКТА («Реестр ОМ-35.2») — не старший мероприятия: у
+        # визита иностранного ОЛ объектов несколько, ответственный у каждого
+        # свой. null — не назначен, и это ответ.
+        "chiefEmployeeId": (
+            str(visit.chief_employee_id)
+            if visit.chief_employee_id is not None
+            else None
+        ),
+        "chiefName": visit.chief_name,
         # null — «неизвестно» (расчёт постов не размечен по объектам), 0 —
         # «посты не рассчитаны». Экран различает эти два случая словами.
         "placementNeed": need,

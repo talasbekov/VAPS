@@ -121,6 +121,13 @@ SECURITY_EVENT_DEPUTY_REVOKED = "SECURITY_EVENT_DEPUTY_REVOKED"
 # этапа админом: действие совершено в обход общего права, по роли в данных, и
 # его след обязан быть в журнале мутаций, а не только в самом агрегате.
 SECURITY_EVENT_PLACEMENT_BY_DEPUTY = "SECURITY_EVENT_PLACEMENT_BY_DEPUTY"
+# Старший объекта посещения: назначение и снятие (Plane «Реестр ОМ-35.2»).
+# Пишется по тому же основанию, что и замещающий: это ИМЕННОЕ назначение
+# ответственного за объект — по нему спрашивают доклад и расстановку. Без
+# записи разбирательство «кто поставил его на объект и когда сняли» упиралось
+# бы в поле без автора.
+VISIT_OBJECT_CHIEF_ASSIGNED = "VISIT_OBJECT_CHIEF_ASSIGNED"
+VISIT_OBJECT_CHIEF_REVOKED = "VISIT_OBJECT_CHIEF_REVOKED"
 # Смена дежурства: заведение и отмена — решения с обоснованием (обход отдыха,
 # причина отмены); ознакомление/заступление/завершение следа в журнале
 # мутаций не оставляют — их след живёт на самой смене (штампы времени).
@@ -175,6 +182,8 @@ ACTIONS = frozenset(
         SECURITY_EVENT_DEPUTY_ASSIGNED,
         SECURITY_EVENT_DEPUTY_REVOKED,
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
+        VISIT_OBJECT_CHIEF_ASSIGNED,
+        VISIT_OBJECT_CHIEF_REVOKED,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,

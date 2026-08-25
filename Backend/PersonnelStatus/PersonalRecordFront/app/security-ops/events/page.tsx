@@ -41,6 +41,7 @@ import {
   AddVisitObjectsDialog,
   deleteSecurityEvent,
   removeVisitObject,
+  removeVisitObjectChief,
   removeVisitObjectDeputy,
 } from "@/features/event-visit-objects";
 import {
@@ -782,6 +783,12 @@ function VisitObjectList({
                 </button>
               )}
 
+              {/* Старший объекта — ПЕРВОЙ строкой врезки, до замещающих:
+                  замещающий определяется относительно него («вместо
+                  старшего»), и читать список замещающих раньше, чем имя того,
+                  кого замещают, нельзя. */}
+              <ChiefLine event={event} visit={visit} canEdit={canEdit} />
+
               {/* Замещающие — ВТОРАЯ строка объекта, а не ещё одна колонка:
                   их может не быть, может быть трое, и колонка переменной
                   длины ломала бы выравнивание остальных. Занимает всю ширину
@@ -797,6 +804,95 @@ function VisitObjectList({
         })}
       </ul>
     </div>
+  );
+}
+
+/**
+ * Старший ОБЪЕКТА посещения (Plane «Реестр ОМ-35.2»).
+ *
+ * Показывается всегда — и когда не назначен: у визита иностранного ОЛ объектов
+ * несколько, и «на этом объекте старшего нет» такой же факт маршрута, как имя.
+ * Пустое место вместо этой строки читалось бы как «данные не пришли».
+ *
+ * Кнопки назначения здесь пока нет — она приходит вместе с выпадающим списком
+ * сотрудников с постраничкой и поиском (Plane «Реестр ОМ-35.3» и «ОМ-35.7»);
+ * снятие уже здесь: ему список не нужен.
+ */
+function ChiefLine({
+  event,
+  visit,
+  canEdit,
+}: {
+  event: SecurityEvent;
+  visit: VisitObject;
+  canEdit: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const removal = useMutation({
+    mutationFn: removeVisitObjectChief,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      toast({ title: "Старший снят с объекта" });
+    },
+    onError: (error: unknown) => {
+      const message =
+        typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "";
+      toast({
+        title: "Старший не снят",
+        description:
+          message === ""
+            ? "Сервис временно недоступен. Попробуйте ещё раз."
+            : message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    // Своя группа с ИМЕНЕМ ОБЪЕКТА: строк «Старший объекта: …» в раскрытии
+    // столько же, сколько объектов, и без имени ни человек со скринридером,
+    // ни проба не отличат одну от другой. Подпись «не назначен» тоже входит
+    // подстрокой в «Замещающие: не назначены» — ассерт по всей строке объекта
+    // был бы вакуумным.
+    <span
+      role="group"
+      aria-label={`Старший объекта ${visit.objectName}`}
+      className="mt-0.5 flex basis-full flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
+    >
+      <span className="font-semibold uppercase tracking-wide">
+        Старший объекта:
+      </span>
+      {visit.chiefEmployeeId === null ? (
+        <span>не назначен</span>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5">
+          <span className="font-medium text-foreground">{visit.chiefName}</span>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() =>
+                removal.mutate({
+                  eventId: event.id,
+                  visitObjectId: visit.id,
+                })
+              }
+              disabled={removal.isPending}
+              // Имя называет ОБЪЕКТ: таких кнопок в раскрытой строке столько
+              // же, сколько объектов, и список скринридера был бы рядом
+              // одинаковых «снять старшего».
+              aria-label={`Снять старшего ${visit.chiefName} с объекта ${visit.objectName}`}
+              title="Снять старшего с объекта"
+              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          )}
+        </span>
+      )}
+    </span>
   );
 }
 
