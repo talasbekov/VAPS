@@ -884,11 +884,28 @@ function EventsCalendar({
   const year = base.getUTCFullYear();
   const month = base.getUTCMonth();
 
+  // Мероприятие занимает ВЕСЬ свой период, а не только день начала. До этой
+  // правки трёхдневное ОМ ставило отметку на первый день, и на второй-третий
+  // календарь показывал пустой день — то есть врал ровно там, где его и
+  // открывают: «что у нас в этот день».
   const byDate = new Map<string, SecurityEvent[]>();
   for (const event of events) {
-    const list = byDate.get(event.businessDate) ?? [];
-    list.push(event);
-    byDate.set(event.businessDate, list);
+    const last =
+      event.businessDateEnd === null || event.businessDateEnd < event.businessDate
+        ? event.businessDate
+        : event.businessDateEnd;
+    // Идём по календарным суткам UTC: даты у мероприятия — деловые, без часа,
+    // и локальная полночь на минусовых зонах сдвинула бы период на день.
+    for (
+      let cursor = new Date(`${event.businessDate}T00:00:00Z`);
+      cursor.toISOString().slice(0, 10) <= last;
+      cursor = new Date(cursor.getTime() + 86_400_000)
+    ) {
+      const iso = cursor.toISOString().slice(0, 10);
+      const list = byDate.get(iso) ?? [];
+      list.push(event);
+      byDate.set(iso, list);
+    }
   }
 
   const first = new Date(Date.UTC(year, month, 1));
@@ -899,16 +916,25 @@ function EventsCalendar({
   const dayIso = (day: number): string =>
     `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
-  // Список справа показывает выбранный день; пока день не выбран — тот, к
-  // которому открылся календарь. Смена месяца выбор не переносит: показывать
-  // «мероприятия 27 июля» над сеткой августа было бы враньём заголовка.
+  // День МОЖЕТ быть не выбран — тогда справа стоят все мероприятия месяца, как
+  // в эталоне («Все предстоящие мероприятия»). Прежняя редакция всегда
+  // подставляла какой-нибудь день, и панель отвечала на вопрос, которого никто
+  // не задавал; вернуться к обзору было нечем.
+  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+  // Смена месяца снимает выбор: показывать «мероприятия 27 июля» над сеткой
+  // августа было бы враньём заголовка.
   const listDate =
-    selected !== null && selected.slice(0, 7) === `${year}-${String(month + 1).padStart(2, "0")}`
-      ? selected
-      : anchor.slice(0, 7) === `${year}-${String(month + 1).padStart(2, "0")}`
-        ? anchor
-        : dayIso(1);
-  const listEvents = byDate.get(listDate) ?? [];
+    selected !== null && selected.slice(0, 7) === monthKey ? selected : null;
+  const monthEvents = Array.from(
+    new Map(
+      Array.from(byDate.entries())
+        .filter(([iso]) => iso.slice(0, 7) === monthKey)
+        .flatMap(([, list]) => list)
+        .map((event) => [event.id, event] as const)
+    ).values()
+  ).sort((a, b) => a.businessDate.localeCompare(b.businessDate));
+  const listEvents =
+    listDate === null ? monthEvents : (byDate.get(listDate) ?? []);
 
   return (
     <div className="grid items-start gap-4 xl:grid-cols-[1.35fr_1fr]">
@@ -964,14 +990,18 @@ function EventsCalendar({
                   key={iso}
                   type="button"
                   disabled={dayEvents.length === 0}
-                  onClick={() => setSelected(iso)}
+                  // Повторный клик по выбранному дню СНИМАЕТ отбор (как в
+                  // эталоне): иначе вернуться к обзору месяца было бы нечем —
+                  // «показать всё» пришлось бы искать в смене месяца туда и
+                  // обратно.
+                  onClick={() => setSelected(isSelected ? null : iso)}
                   aria-pressed={isSelected}
                   aria-label={`${day} ${MONTH_NAME[month]}: мероприятий ${dayEvents.length}`}
                   className={`flex h-14 flex-col items-center justify-center gap-1 rounded-lg border text-xs transition-colors ${
                     isSelected
-                      ? "border-primary bg-primary/5"
+                      ? "border-primary bg-primary/10"
                       : dayEvents.length > 0
-                        ? "hover:bg-muted"
+                        ? "bg-primary/5 hover:bg-muted"
                         : "text-muted-foreground/50"
                   }`}
                 >
@@ -983,15 +1013,33 @@ function EventsCalendar({
               );
             })}
           </div>
+          {/* Легенда эталона. Отметка — единственное, что отличает день с
+              мероприятием от пустого, и её значение должно быть названо, а не
+              угадываться по цвету. */}
+          <p className="mt-3 flex items-center gap-2 border-t pt-3 text-[11px] text-muted-foreground">
+            <span className="bg-primary size-2.5 rounded-full" aria-hidden="true" />
+            Есть мероприятие
+            <span className="ml-auto">
+              {listDate === null
+                ? "день не выбран — справа весь месяц"
+                : "повторный клик по дню снимает отбор"}
+            </span>
+          </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div>
-            <CardTitle>Мероприятия дня</CardTitle>
+            <CardTitle>
+              {listDate === null
+                ? "Все мероприятия месяца"
+                : "Мероприятия дня"}
+            </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {formatIsoDate(listDate)}
+              {listDate === null
+                ? `${MONTH_NAME[month]} ${year}`
+                : formatIsoDate(listDate)}
             </p>
           </div>
           <span
@@ -1004,7 +1052,9 @@ function EventsCalendar({
         <CardContent>
           {listEvents.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              В этот день мероприятий нет.
+              {listDate === null
+                ? "В этом месяце мероприятий нет."
+                : "В этот день мероприятий нет."}
             </p>
           ) : (
             <ul className="divide-y">
@@ -1023,6 +1073,19 @@ function EventsCalendar({
                     {event.title}
                   </Link>
                   <span className="text-xs text-muted-foreground">
+                    {/* Дата в строке нужна ИМЕННО в обзоре месяца: без неё
+                        список выглядит как «мероприятия одного дня», хотя
+                        собран со всего месяца. При выбранном дне она уже
+                        стоит в заголовке панели и повторялась бы. */}
+                    {listDate === null && (
+                      <>
+                        {formatIsoDate(event.businessDate)}
+                        {event.businessDateEnd !== null &&
+                          event.businessDateEnd !== event.businessDate &&
+                          ` — ${formatIsoDate(event.businessDateEnd)}`}{" "}
+                        ·{" "}
+                      </>
+                    )}
                     {event.objectName === "" ? "объект не выбран" : event.objectName} ·
                     потребность {event.forceNeed} · {event.ownerName}
                   </span>
