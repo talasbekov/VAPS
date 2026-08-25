@@ -896,6 +896,18 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.remove_visit_object_chief(om.pk, visit.pk, actor=ACTOR)
 
     event_service.complete_placement(om.pk)
+    # Согласование по эталону («ОМ-37.3») требует маршрута, отправки и решения:
+    # завершить этап «просто так» больше нельзя.
+    om.refresh_from_db()
+    event_service.add_approver(
+        om.pk, name="К. Оразов", unit="Департамент охраны", position="Зам."
+    )
+    om.refresh_from_db()
+    approver_id = om.approval_route[0]["id"]
+    event_service.send_for_approval(om.pk)
+    event_service.decide_approver(
+        om.pk, approver_id=approver_id, decision="APPROVED", comment=""
+    )
     event_service.approve_placement(om.pk)
     om.refresh_from_db()
     event_service.acknowledge_assignment(

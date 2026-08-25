@@ -250,6 +250,20 @@ async function prepareEvent(token: string): Promise<string> {
     })
   }
   await call('POST', `${base}/placement/complete/`)
+  // Согласование с 25.08 (Plane «ОМ-37.3») — это маршрут, отправка и решение:
+  // завершить этап «просто так» больше нельзя. Фикстуре нужен один
+  // согласующий, доведённый до «Согласовано».
+  const withRoute = (await call('POST', `${base}/approval/route/`, {
+    name: 'Согласующий пробы',
+    unit: 'Управление ОМ',
+    position: 'полковник',
+  })) as unknown as { approvalRoute: { id: string }[] }
+  await call('POST', `${base}/approval/send/`)
+  await call(
+    'POST',
+    `${base}/approval/route/${withRoute.approvalRoute[0]!.id}/decide/`,
+    { decision: 'APPROVED', comment: '' },
+  )
   await call('POST', `${base}/approval/approve/`)
   return created.code
 }

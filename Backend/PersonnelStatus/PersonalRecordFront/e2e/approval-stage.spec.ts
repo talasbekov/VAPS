@@ -123,7 +123,9 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     await route.getByLabel('Должность согласующего').fill('полковник')
     await route.getByRole('button', { name: 'Добавить', exact: true }).click()
     await expect(route).toContainText(who, { timeout: 15_000 })
-    await expect(route).toContainText('Ожидает решения')
+    // Внесённый в маршрут — ещё НЕ на согласовании: расстановку ему не
+    // отправляли (эталон, задача «ОМ-37.3»).
+    await expect(route).toContainText('Не отправлено')
 
     const added = await expect
       .poll(async () => {
@@ -133,15 +135,24 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
       .not.toBeNull()
     void added
 
+    // Решать по неотправленному нечего — кнопок решения у строки нет.
+    const row = route.locator('tr', { hasText: who }).first()
+    await expect(row.getByRole('button', { name: 'Вернуть' })).toHaveCount(0)
+
+    // Отправка переводит ВЕСЬ маршрут в «На согласовании».
+    await route.getByRole('button', { name: 'Отправить на согласование' }).click()
+    await expect(row).toContainText('На согласовании', { timeout: 15_000 })
+
     // Возврат требует причины — отказ приходит от сервера
-    const row = route.locator('li', { hasText: who })
     await row.getByRole('button', { name: 'Вернуть' }).click()
-    await row.getByRole('button', { name: 'Подтвердить возврат' }).click()
+    await route.getByRole('button', { name: 'Подтвердить возврат' }).click()
     await expect(card).toContainText('Укажите причину возврата', { timeout: 15_000 })
 
     // С причиной решение фиксируется, и его видит бэк
-    await row.getByLabel(`Причина возврата: ${who}`).fill('Уточнить расчёт постов')
-    await row.getByRole('button', { name: 'Подтвердить возврат' }).click()
+    await route
+      .getByPlaceholder('Укажите, что необходимо исправить')
+      .fill('Уточнить расчёт постов')
+    await route.getByRole('button', { name: 'Подтвердить возврат' }).click()
     await expect
       .poll(async () => {
         const fresh = (await events(token)).find((e) => e.id === target.id)
@@ -149,6 +160,12 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
         return `${mine?.status}|${mine?.comment}`
       }, { timeout: 15_000 })
       .toBe('RETURNED|Уточнить расчёт постов')
+
+    // Возврат согласующего порождает ЗАМЕЧАНИЕ — экран показывает его
+    // отдельным списком, и закрывается оно по одному.
+    const remarks = card.locator('section', { hasText: 'Замечания' }).first()
+    await expect(remarks).toContainText('Уточнить расчёт постов', { timeout: 15_000 })
+    await expect(remarks).toContainText('Не устранено')
 
     // Пустую причину возврата отбивает сервер; стадия не двигается
     await card.getByRole('button', { name: 'Вернуть на доработку' }).click()

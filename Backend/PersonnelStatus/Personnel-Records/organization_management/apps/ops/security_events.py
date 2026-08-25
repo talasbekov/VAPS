@@ -1426,7 +1426,11 @@ def add_approver(event_id, *, name, unit, position):
             "name": clean_name,
             "unit": str(unit or "").strip(),
             "position": str(position or "").strip(),
-            "status": "PENDING",
+            # «Не отправлено» — начальное состояние эталона: согласующего
+            # вносят в маршрут заранее, а решать он начинает только после
+            # ОТПРАВКИ. До неё «ожидает решения» было бы неправдой: ему ещё
+            # ничего не присылали.
+            "status": "NOT_SENT",
             "decidedAt": None,
             "comment": "",
         }
@@ -1458,18 +1462,175 @@ def decide_approver(event_id, *, approver_id, decision, comment):
     if decision == "RETURNED" and clean_comment == "":
         raise _validation({"comment": ["Укажите причину возврата."]})
     route = list(event.approval_route or [])
-    found = False
+    target = next(
+        (item for item in route if item.get("id") == approver_id), None
+    )
+    if target is None:
+        raise _not_found("Согласующий не найден.", approver_id)
+    # Решает только тот, кому ОТПРАВИЛИ. Решение по неотправленному маршруту —
+    # подпись под составом, которого согласующий не видел (эталон: кнопки
+    # решения появляются лишь у статуса «На согласовании»).
+    if target.get("status") == "NOT_SENT":
+        raise DomainError("APPROVAL_NOT_SENT", 422, message=
+            "Расстановка не отправлена на согласование — решать нечего.",
+        )
+    now = _now_iso()
+    target["status"] = decision
+    target["decidedAt"] = now
+    # При согласовании комментарий не спрашивают: эталон проставляет «Без
+    # замечаний» сам, и пустая графа читалась бы как «забыли написать».
+    target["comment"] = clean_comment if decision == "RETURNED" else "Без замечаний"
+    event.approval_route = route
+    fields = ["approval_route", "updated_at"]
+    if decision == "RETURNED":
+        # Возврат порождает ЗАМЕЧАНИЕ: решение согласующего живёт в его
+        # строке, а работа по нему — в списке, который закрывают по одному.
+        remarks = list(event.approval_remarks or [])
+        remarks.append(
+            {
+                "id": f"remark-{len(remarks) + 1}-{approver_id}",
+                "approverId": approver_id,
+                "author": target.get("name", ""),
+                "createdAt": now,
+                "text": clean_comment,
+                "resolved": False,
+                "resolvedAt": None,
+            }
+        )
+        event.approval_remarks = remarks
+        fields.insert(1, "approval_remarks")
+    event.save(update_fields=fields)
+    return event
+
+
+def placement_signature(event):
+    """Подпись расстановки: что именно согласуют.
+
+    Сортированная, потому что порядок назначений в списке — деталь хранения, а
+    не факт о расстановке: перестановка тех же людей по тем же постам не
+    является изменением, и «расстановка изменилась» на неё было бы ложной
+    тревогой. В подпись входят пост и человек — ровно то, что подписывают.
+    """
+    pairs = sorted(
+        f"{item.get('postId')}:{item.get('employeeId')}"
+        for item in (event.placement_assignments or [])
+    )
+    return ";".join(pairs)
+
+
+def approval_is_stale(event):
+    """Расстановка изменилась ПОСЛЕ отправки на согласование.
+
+    Пустой снимок — «не отправляли», а не «не изменилась»: до отправки
+    сравнивать не с чем, и баннер о повторном согласовании там был бы шумом.
+    """
+    if event.approval_snapshot == "":
+        return False
+    return event.approval_snapshot != placement_signature(event)
+
+
+@transaction.atomic
+def send_for_approval(event_id):
+    """Отправить расстановку согласующим.
+
+    До отправки маршрут — это список людей, а не процесс: решать им нечего.
+    Отправка фиксирует СНИМОК расстановки — тот состав, под которым они
+    подпишутся.
+    """
+    event = lock_event(event_id)
+    _require_stage(
+        event,
+        "APPROVAL",
+        "Отправить на согласование можно только на этапе «Согласование».",
+    )
+    route = list(event.approval_route or [])
+    if not route:
+        raise DomainError("APPROVAL_ROUTE_EMPTY", 422, message=
+            "Маршрут согласования пуст — добавьте хотя бы одного согласующего.",
+        )
+    if not event.placement_assignments:
+        raise DomainError("PLACEMENT_EMPTY", 422, message=
+            "Расстановка пуста — согласовывать нечего.",
+        )
     for item in route:
-        if item.get("id") == approver_id:
-            item["status"] = decision
-            item["decidedAt"] = _now_iso()
-            item["comment"] = clean_comment
+        # Прежнее состояние читается ДО присвоения: причина возврата не
+        # стирается (она объясняет, что чинили, и нужна тому же согласующему
+        # при повторном решении), а «без замечаний» от прошлого согласования
+        # к новому составу отношения не имеет.
+        was_returned = item.get("status") == "RETURNED"
+        item["status"] = "PENDING"
+        item["decidedAt"] = None
+        if not was_returned:
+            item["comment"] = ""
+    event.approval_route = route
+    event.approval_snapshot = placement_signature(event)
+    event.save(
+        update_fields=["approval_route", "approval_snapshot", "updated_at"]
+    )
+    return event
+
+
+@transaction.atomic
+def withdraw_from_approval(event_id):
+    """Отозвать с согласования.
+
+    Уже принятые решения не отменяются: согласовавший согласовал, вернувший
+    вернул — стирать чужое решение отзывом значило бы переписывать историю.
+    Снимок тоже остаётся: отзыв не меняет расстановку.
+    """
+    event = lock_event(event_id)
+    _require_stage(
+        event,
+        "APPROVAL",
+        "Отозвать с согласования можно только на этапе «Согласование».",
+    )
+    route = list(event.approval_route or [])
+    for item in route:
+        if item.get("status") == "PENDING":
+            item["status"] = "NOT_SENT"
+    event.approval_route = route
+    event.save(update_fields=["approval_route", "updated_at"])
+    return event
+
+
+@transaction.atomic
+def move_approver(event_id, approver_id, *, direction):
+    """Переставить согласующего в маршруте на позицию вверх или вниз."""
+    event = lock_event(event_id)
+    if direction not in ("UP", "DOWN"):
+        raise _validation({"direction": ["Допустимо UP или DOWN."]})
+    route = list(event.approval_route or [])
+    index = next(
+        (i for i, item in enumerate(route) if item.get("id") == approver_id), None
+    )
+    if index is None:
+        raise _not_found("Согласующий не найден.", approver_id)
+    target = index - 1 if direction == "UP" else index + 1
+    # Край списка — не ошибка, а «дальше некуда»: отказ здесь заставлял бы
+    # клиента считать границы, которые сервер и так знает.
+    if 0 <= target < len(route):
+        route[index], route[target] = route[target], route[index]
+        event.approval_route = route
+        event.save(update_fields=["approval_route", "updated_at"])
+    return event
+
+
+@transaction.atomic
+def resolve_remark(event_id, remark_id, *, resolved):
+    """Отметить замечание устранённым (или вернуть его в работу)."""
+    event = lock_event(event_id)
+    remarks = list(event.approval_remarks or [])
+    found = False
+    for item in remarks:
+        if item.get("id") == remark_id:
+            item["resolved"] = bool(resolved)
+            item["resolvedAt"] = _now_iso() if resolved else None
             found = True
             break
     if not found:
-        raise _not_found("Согласующий не найден.", approver_id)
-    event.approval_route = route
-    event.save(update_fields=["approval_route", "updated_at"])
+        raise _not_found("Замечание не найдено.", remark_id)
+    event.approval_remarks = remarks
+    event.save(update_fields=["approval_remarks", "updated_at"])
     return event
 
 
@@ -1481,6 +1642,39 @@ def approve_placement(event_id):
         "APPROVAL",
         "Согласовать расстановку можно только на этапе «Согласование».",
     )
+    # Условия завершения этапа — из эталона (задача заказчика «ОМ-37.3»).
+    # Каждое отвечает на свой вопрос, поэтому и текст у каждого свой: «не
+    # получилось» без причины не подсказывает, что чинить.
+    route = list(event.approval_route or [])
+    if not route:
+        raise DomainError("APPROVAL_ROUTE_EMPTY", 422, message=
+            "Маршрут согласования пуст — добавьте согласующих и отправьте им "
+            "расстановку.",
+        )
+    if approval_is_stale(event):
+        raise DomainError("APPROVAL_STALE", 422, message=
+            "Расстановка изменилась после отправки — отправьте её на "
+            "повторное согласование.",
+        )
+    if any(item.get("status") == "RETURNED" for item in route):
+        raise DomainError("APPROVAL_RETURNED", 422, message=
+            "Есть возврат на доработку — устраните замечания и отправьте "
+            "расстановку повторно.",
+        )
+    if any(item.get("status") != "APPROVED" for item in route):
+        # Два разных состояния и два разных ответа: «ещё не решили» и «даже не
+        # отправляли» чинятся по-разному.
+        pending = any(item.get("status") == "PENDING" for item in route)
+        raise DomainError("APPROVAL_INCOMPLETE", 422, message=
+            "Не все согласующие приняли решение."
+            if pending
+            else "Расстановка не отправлена на согласование.",
+        )
+    if any(not item.get("resolved") for item in (event.approval_remarks or [])):
+        raise DomainError("APPROVAL_REMARKS_OPEN", 422, message=
+            "Есть неустранённые замечания — закройте их перед завершением "
+            "этапа.",
+        )
     # утверждение сразу открывает «Ознакомление», без отдельного клика
     event.approval_status = "APPROVED"
     event.approval_comment = ""

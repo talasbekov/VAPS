@@ -47,6 +47,15 @@ CODES = {
     "RECON_SECTOR_POSTS_EMPTY": frozenset({422}),
     "EVENT_DELETE_FORBIDDEN": frozenset({422}),
     "DEMAND_ROWS_EMPTY": frozenset({422}),
+    # Согласование по эталону («ОМ-37.3»): у каждого условия завершения свой
+    # код, потому что чинятся они по-разному.
+    "APPROVAL_ROUTE_EMPTY": frozenset({422}),
+    "APPROVAL_NOT_SENT": frozenset({422}),
+    "APPROVAL_STALE": frozenset({422}),
+    "APPROVAL_RETURNED": frozenset({422}),
+    "APPROVAL_INCOMPLETE": frozenset({422}),
+    "APPROVAL_REMARKS_OPEN": frozenset({422}),
+    "PLACEMENT_EMPTY": frozenset({422}),
     "FORCE_ALLOCATION_INCOMPLETE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
     "PLACEMENT_INCOMPLETE": frozenset({422}),

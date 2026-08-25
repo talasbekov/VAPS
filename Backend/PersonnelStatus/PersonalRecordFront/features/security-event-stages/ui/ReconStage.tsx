@@ -30,7 +30,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -266,11 +265,12 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
 
   return (
     <Card>
+      {/* Имя этапа и подпись стоят и НАД карточкой, в шапке страницы («Этап 1
+          из 5 · Рекогносцировка объекта»), поэтому здесь — короткая форма:
+          дословный повтор читался бы как вложенный раздел, которого нет.
+          Повтор целиком — общая беда всех пяти этапов, заведена карточкой. */}
       <CardHeader>
-        <CardTitle>Рекогносцировка объекта</CardTitle>
-        <CardDescription>
-          Зоны и посты, необходимые направления, предварительные риски
-        </CardDescription>
+        <CardTitle>Рекогносцировка</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
         <ObjectFacts event={event} />

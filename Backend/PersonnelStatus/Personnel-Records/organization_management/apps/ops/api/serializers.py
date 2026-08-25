@@ -12,6 +12,7 @@ from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
 )
 from organization_management.apps.ops.passport import snapshot_sectors
+from organization_management.apps.ops import security_events
 
 
 class SecurityObjectSerializer(serializers.ModelSerializer):
@@ -258,6 +259,11 @@ def serialize_security_event(event):
         ),
         "chiefName": event.chief_name,
         "approvalRoute": event.approval_route or [],
+        "approvalRemarks": event.approval_remarks or [],
+        # ВЫВОД, а не поле: «расстановка изменилась после отправки» клиент
+        # иначе считал бы сам — то есть завёл бы вторую реализацию правила,
+        # по которой сервер завершение этапа не блокирует.
+        "approvalStale": security_events.approval_is_stale(event),
         # Объекты посещения бюллетеня. Пустой список — только у строк, не
         # прошедших бэкфилл 0035 (их быть не должно); объект мероприятия сюда
         # перенесён как первый.
