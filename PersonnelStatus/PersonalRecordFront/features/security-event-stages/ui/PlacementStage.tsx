@@ -301,7 +301,28 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const [sort, setSort] = useState<SortOption>("Рекомендуемые");
   const [band, setBand] = useState<RateOption>("Все");
   const [comment, setComment] = useState<string | null>(null);
-  const roster = usePersonnelPage({ search, page, pageSize: CANDIDATE_PAGE_SIZE });
+  // Мероприятие, прошедшее «Сбор сил», расставляет ТОЛЬКО свой состав —
+  // людей, которых штаб принял и отдал (Plane №73, шаг «СС-6»). Кадровый
+  // список тогда не спрашивается вовсе: предлагать в подборе тех, кого сервер
+  // всё равно откажется ставить, значит обещать невозможное.
+  const fromRoster = event.forceRoster.length > 0;
+  const roster = usePersonnelPage({
+    search,
+    page,
+    pageSize: CANDIDATE_PAGE_SIZE,
+    enabled: !fromRoster,
+  });
+  /** Состав мероприятия в форме кадровой строки подбора. */
+  const rosterPeople = useMemo(
+    () =>
+      event.forceRoster.map((member) => ({
+        id: member.employeeId,
+        name: member.name,
+        rankLabel: "",
+        unit: member.divisionName,
+      })),
+    [event.forceRoster]
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -387,9 +408,14 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * о нём не знает. Панель говорит это вслух, а не делает вид, что отобрала
    * по всей базе; перенос отбора на сервер заведён отдельной карточкой. */
   const candidates = useMemo(() => {
-    const list = (roster.data?.results ?? []).filter((person) =>
-      inBand(ratingOf(person.id))
-    );
+    // Поиск по составу идёт НА КЛИЕНТЕ: состав — десятки строк, они уже на
+    // руках, и круг к серверу за подстрокой в них ничего бы не уточнил.
+    const source = fromRoster
+      ? rosterPeople.filter((person) =>
+          person.name.toLowerCase().includes(query.trim().toLowerCase())
+        )
+      : (roster.data?.results ?? []);
+    const list = source.filter((person) => inBand(ratingOf(person.id)));
     const withFit = list.map((person) => ({
       person,
       fit: fitOf(person),
@@ -409,7 +435,17 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roster.data, sort, band, selected, ratings.data, assignedIds.size]);
+  }, [
+    roster.data,
+    rosterPeople,
+    fromRoster,
+    query,
+    sort,
+    band,
+    selected,
+    ratings.data,
+    assignedIds.size,
+  ]);
 
   /** Автоподбор: реальные назначения свободных кандидатов на недобранные посты. */
   function autoFill(): void {
@@ -719,9 +755,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     нет в кадрах». */}
                 <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                   <span aria-live="polite">
-                    Найдено {roster.data?.count ?? 0} · страница {page}
+                    {fromRoster
+                      ? `Состав мероприятия: ${rosterPeople.length} чел.`
+                      : `Найдено ${roster.data?.count ?? 0} · страница ${page}`}
                   </span>
-                  <span className="flex gap-1">
+                  <span className={fromRoster ? "hidden" : "flex gap-1"}>
                     <Button
                       type="button"
                       variant="outline"
@@ -744,7 +782,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     </Button>
                   </span>
                 </div>
-                {(roster.data?.next !== null || page > 1) && (
+                {fromRoster && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Кандидаты — люди, принятые штабом в «Сборе сил на ОМ».
+                    Постороннего на пост сервер не поставит.
+                  </p>
+                )}
+                {!fromRoster && (roster.data?.next !== null || page > 1) && (
                   <p className="text-[11px] text-muted-foreground">
                     Отбор по рейтингу, сортировка и автоподбор считаются по
                     показанной странице. Нужен конкретный человек — ищите его по
@@ -754,13 +798,17 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 <div className="max-h-[360px] space-y-1 overflow-y-auto">
                   {candidates.length === 0 ? (
                     <p className="px-1 py-3 text-center text-xs text-muted-foreground">
-                      {roster.isPending
-                        ? "Загрузка кадрового списка…"
-                        : roster.isError
-                          ? "Кадровый список сейчас недоступен."
-                          : (roster.data?.count ?? 0) === 0
-                            ? "По запросу никого не нашлось."
-                            : "На этой странице нет кандидатов под выбранный фильтр рейтинга"}
+                      {fromRoster
+                        ? rosterPeople.length === 0
+                          ? "Состав мероприятия пуст — соберите людей в «Сборе сил на ОМ»."
+                          : "В составе никто не подходит под выбранный фильтр рейтинга"
+                        : roster.isPending
+                          ? "Загрузка кадрового списка…"
+                          : roster.isError
+                            ? "Кадровый список сейчас недоступен."
+                            : (roster.data?.count ?? 0) === 0
+                              ? "По запросу никого не нашлось."
+                              : "На этой странице нет кандидатов под выбранный фильтр рейтинга"}
                     </p>
                   ) : (
                     candidates.map(({ person, fit, rating, busy }) => (

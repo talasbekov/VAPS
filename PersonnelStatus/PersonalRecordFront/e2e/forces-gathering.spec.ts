@@ -126,6 +126,65 @@ async function prepareDemandEvent(
   return { code: demand.code, total: demand.forceDemandTotal }
 }
 
+
+/** ОМ на «Расстановке», прошедшее цепочку сбора сил: в составе один человек. */
+async function prepareEventOnPlacement(
+  token: string,
+): Promise<{ id: string; roster: string[] }> {
+  const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+  const call = async (method: string, path: string, body?: unknown): Promise<any> => {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return res.json().catch(() => ({}))
+  }
+  const { code, total } = await prepareDemandEvent(token, '2027-06-01')
+  const found = await call('GET', `/api/ops/security-events/?search=${encodeURIComponent(code)}`)
+  const id = found.results[0].id as string
+  const base = `/api/ops/security-events/${id}`
+
+  const divisions = await call('GET', '/api/core/divisions/?page_size=200')
+  const department = divisions.results.find((row: any) => row.type_code === 'department')
+  const directorate = divisions.results.find((row: any) => row.type_code === 'directorate')
+  const roster = await call('GET', `/api/ops/personnel/?division_id=${directorate.id}&page_size=1`)
+  const person = roster.results[0]
+
+  const split = await call('POST', `${base}/forces/allocation/`, {
+    rows: [{ departmentId: String(department.id), need: 1 }],
+  })
+  const allocationId = split.forceAllocation[0].id as string
+  await call('POST', `${base}/forces/allocation/${encodeURIComponent(allocationId)}/notify/`)
+  await call('POST', `${base}/forces/allocation/${encodeURIComponent(allocationId)}/members/`, {
+    employeeId: person.id,
+  })
+  await call('POST', `${base}/forces/allocation/${encodeURIComponent(allocationId)}/submit/`)
+  await call('POST', `${base}/forces/allocation/${encodeURIComponent(allocationId)}/accept/`)
+
+  // Стадию двигает прежний путь: потребность утверждается строками, и только
+  // после этого этап «Запрос сил» можно завершить.
+  const fresh = await call('GET', `${base}/`)
+  await call('POST', `${base}/demand/approve/`, {
+    rows: fresh.reconSectorPosts.map((post: any, index: number) => ({
+      id: `row-${index + 1}`,
+      sector: post.sector,
+      task: post.task,
+      shift: 'Дневная',
+      need: post.need,
+      group: 'Физическая охрана',
+      requirements: post.requirements,
+      comment: '',
+    })),
+  })
+  const placement = await call('POST', `${base}/forces/complete/`)
+  if (placement.stage !== 'PLACEMENT') {
+    throw new Error(`фикстура не дошла до расстановки: ${JSON.stringify(placement)}`)
+  }
+  expect(total).toBeGreaterThan(0)
+  return { id, roster: placement.forceRoster.map((member: any) => member.name) }
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (скип: нет SMOKE_LIVE=1)', () => {
@@ -448,6 +507,27 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     )
 
     expect(candidateName, 'подбор отдал пустую строку').not.toBe('')
+  })
+
+  test('расстановка предлагает СОСТАВ мероприятия, а не весь кадровый список', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    expect(prepared.roster.length, 'состав пуст — предлагать нечего').toBe(1)
+    // Сторож: в кадрах людей БОЛЬШЕ, чем в составе, иначе «панель показывает
+    // только состав» неотличимо от «показывает всех».
+    const all = await get<{ count: number }>(token, '/api/ops/personnel/?page_size=1')
+    expect(all.count, 'в кадрах не больше одного человека — проба вакуумна').toBeGreaterThan(1)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Расстановка', { timeout: 25_000 })
+    await expect(main).toContainText(`Состав мероприятия: ${prepared.roster.length} чел.`)
+    await expect(main).toContainText('Кандидаты — люди, принятые штабом')
+    // Ни одного постороннего: имена в панели подбора — ровно состав.
+    await expect(main).toContainText(prepared.roster[0])
   })
 
   test('реестр личного состава остался достижим', async ({ page }) => {

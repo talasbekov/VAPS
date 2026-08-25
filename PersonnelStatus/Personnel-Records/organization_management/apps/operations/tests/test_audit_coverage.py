@@ -859,12 +859,31 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # Отправка списка штабу — второй след цепочки: с неё за людей отвечает
     # уже не департамент. Выделенный человек нужен и для неё (пустой список
     # отправить нельзя).
-    event_service.add_allocation_member(
-        om.pk,
-        allocation["id"],
-        employee_id=employee_in(home).pk,
-        actor=ACTOR,
+    from organization_management.apps.employees.models import Employee
+
+    # Оба человека, которых ниже ставят на посты, попадают в состав ЧЕРЕЗ саму
+    # цепочку: с шага «СС-6» расстановка берёт кандидатов из состава ОМ, и
+    # посторонний на пост не встаёт (Plane №73). Замещающий заводится уже
+    # здесь, хотя право править расстановку получит ниже: в состав он обязан
+    # попасть до отправки списка штабу.
+    roster_employee = employee_in(home)
+    deputy_employee = Employee.objects.create(
+        personnel_number="P-DEP",
+        last_name="Замещающий",
+        first_name="Пётр",
+        birth_date="1990-01-01",
+        gender="M",
+        iin="940000009999",
+        hire_date="2015-01-01",
+        employment_status="working",
     )
+    for member in (roster_employee, deputy_employee):
+        event_service.add_allocation_member(
+            om.pk,
+            allocation["id"],
+            employee_id=member.pk,
+            actor=ACTOR,
+        )
     event_service.submit_allocation(om.pk, allocation["id"], actor=ACTOR)
     # Решение штаба — два разных акта, и оба спрашиваются потом поимённо:
     # возврат с причиной, затем повторная отправка и приёмка.
@@ -882,7 +901,6 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         comment="",
     )
     event_service.complete_forces(om.pk)
-    roster_employee = employee_in(home)
     event_service.assign_placement(
         om.pk,
         post_id=recon_post_id,
@@ -894,19 +912,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # раздающие ВОЗМОЖНОСТЬ править чужую расстановку, и они именные. Плюс
     # сама операция расстановки, сделанная замещающим: она пишет журнал
     # только в этом случае — обычная расстановка следа не оставляет.
-    from organization_management.apps.employees.models import Employee
-
     visit = om.visit_objects.first()
-    deputy_employee = Employee.objects.create(
-        personnel_number="P-DEP",
-        last_name="Замещающий",
-        first_name="Пётр",
-        birth_date="1990-01-01",
-        gender="M",
-        iin="940000009999",
-        hire_date="2015-01-01",
-        employment_status="working",
-    )
     event_service.add_visit_object_deputy(
         om.pk,
         visit.pk,

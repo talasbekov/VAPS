@@ -769,3 +769,85 @@ def test_forces_stage_completes_when_the_roster_covers_the_split(manager):  # no
     data = manager.post(f"{base}forces/complete/").json()
 
     assert data["stage"] == "PLACEMENT"
+
+
+# ── Шаг «СС-6»: расстановка берёт людей из состава ОМ ───────────────────────
+
+
+def event_on_placement_with_roster(manager):  # noqa: F811
+    """ОМ на «Расстановке», прошедшее цепочку сбора: в составе один человек."""
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    make_assignment_status_type()
+    department = make_department()
+    make_directorate(department)
+    employee = make_employee("Сериков")
+    base, _ = event_on_demand(manager, FUTURE_DATE)
+    allocation_id = manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(department.pk), "need": 1}]},
+        format="json",
+    ).json()["forceAllocation"][0]["id"]
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
+    manager.post(f"{base}forces/allocation/{allocation_id}/accept/")
+    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
+    event.stage = "FORCES"
+    event.save(update_fields=["stage"])
+    fresh = manager.post(f"{base}forces/complete/").json()
+    assert fresh["stage"] == "PLACEMENT"
+    return base, employee, fresh["reconSectorPosts"][0]["id"]
+
+
+def test_placement_takes_only_people_from_the_roster(manager):  # noqa: F811
+    """На пост ставят того, кого штаб принял; чужого — отказ с объяснением."""
+    base, employee, post_id = event_on_placement_with_roster(manager)
+    stranger = make_employee("Посторонний")
+
+    refused = manager.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(stranger.pk)},
+        format="json",
+    )
+
+    assert refused.status_code == 422
+    assert refused.json()["error_code"] == "NOT_IN_ROSTER"
+    assert "Сборе сил" in refused.json()["message"]
+
+    # Зелёная половина: человек ИЗ состава на пост встаёт — иначе проба
+    # доказывала бы лишь, что расстановка не работает вовсе.
+    ok = manager.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(employee.pk)},
+        format="json",
+    )
+    assert ok.status_code == 200
+    assert [a["employeeId"] for a in ok.json()["placementAssignments"]] == [
+        str(employee.pk)
+    ]
+
+
+def test_event_without_roster_places_anyone(manager):  # noqa: F811
+    """Мероприятие, которое вели прежним путём, расстановкой не заперто."""
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    base, _ = event_on_demand(manager)
+    employee = make_employee("Прежний")
+    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
+    event.stage = "PLACEMENT"
+    event.save(update_fields=["stage"])
+    assert event.force_roster == [], "у фикстуры есть состав — проба вакуумна"
+    post_id = manager.get(base).json()["reconSectorPosts"][0]["id"]
+
+    resp = manager.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(employee.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 200

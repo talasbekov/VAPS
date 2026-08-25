@@ -1471,6 +1471,18 @@ export const securityEventsHandlers = [
           404
         );
       }
+      // Состав мероприятия (Plane №73, СС-6): у ОМ, прошедшего «Сбор сил»,
+      // на посты ставят только принятых штабом. Пустой состав — прежний путь,
+      // правило не включается.
+      if (
+        event.forceRoster.length > 0 &&
+        !event.forceRoster.some((member) => member.employeeId === body.employeeId)
+      ) {
+        return businessRuleError(
+          "NOT_IN_ROSTER",
+          `${employee.name} не в составе мероприятия — на посты ставят тех, кого штаб принял в «Сборе сил».`
+        );
+      }
       // hard-правило: сотрудник не может занимать два поста одного ОМ
       const alreadyOnAnotherPost = event.placementAssignments.some(
         (a) => a.employeeId === body.employeeId && a.postId !== body.postId

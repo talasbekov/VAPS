@@ -347,6 +347,30 @@ test.describe(
       )
       expect(decided.accepted.body.forceAllocation[0].status).toBe('ACCEPTED')
       expect(decided.accepted.body.forceRoster).toHaveLength(1)
+
+      // Расстановка (СС-6): у ОМ с составом посторонний на пост не встаёт, а
+      // принятый — встаёт. Без второй половины проба доказывала бы лишь, что
+      // расстановка сломана.
+      const placed = await page.evaluate(async (rosterId: string) => {
+        const fresh = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const postId = fresh.reconSectorPosts[0]?.id
+        const roster = await (await fetch('/api/ops/personnel/?page=1&page_size=5')).json()
+        const stranger = roster.results.find((row: any) => row.id !== rosterId)
+        const assign = async (employeeId: string) => {
+          const res = await fetch('/api/ops/security-events/se-1/placement/assign/', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ postId, employeeId, override: true, override_reason: 'проба' }),
+          })
+          return { status: res.status, body: await res.json() }
+        }
+        return { postId, outsider: await assign(stranger.id), member: await assign(rosterId) }
+      }, members.employeeId)
+
+      expect(placed.postId, 'у мок-ОМ нет постов — расстановку проверять негде').toBeTruthy()
+      expect(placed.outsider.status).toBe(422)
+      expect(placed.outsider.body.error_code).toBe('NOT_IN_ROSTER')
+      expect(placed.member.status).toBe(200)
     })
   },
 )
