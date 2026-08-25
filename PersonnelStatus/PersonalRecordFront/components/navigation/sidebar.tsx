@@ -120,7 +120,7 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
     title: "Администрирование",
     items: [
       { name: "Справочники", href: "/security-ops/dictionaries", icon: ClipboardList },
-      { name: "Настройки ОМ", href: "/security-ops/settings", icon: Settings },
+      { name: "Администрирование", href: "/security-ops/settings", icon: Settings },
       { name: "Аудит", href: "/security-ops/audit", icon: ScrollText },
       { name: "Журнал изменений", href: "/security-ops/changelog", icon: ClipboardList },
     ],

@@ -44,7 +44,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   dictionaries: "Справочники",
   audit: "Аудит",
   changelog: "Журнал",
-  settings: "Настройки ОМ",
+  settings: "Администрирование",
   feedback: "Обратная связь",
   profile: "Мой профиль",
   dashboard: "Обзор",
