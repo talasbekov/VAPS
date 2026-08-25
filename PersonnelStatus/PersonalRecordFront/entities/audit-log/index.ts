@@ -73,6 +73,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   DICTIONARY_ENTRY_SET_ACTIVE: "Значение справочника включено или выключено",
   DICTIONARY_ENTRY_DELETED: "Значение справочника удалено",
   GVO_SUMMARY_PATCHED: "Сводка ГВО поправлена вручную",
+  FORCE_ALLOCATION_NOTIFIED: "Управления оповещены о заявке на силы",
   GVO_SUMMARY_RESET: "Ручная правка сводки ГВО сброшена",
 };
 

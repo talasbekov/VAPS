@@ -830,6 +830,23 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             }
         ],
     )
+    # Сбор сил (Plane №73): раскладка потребности по департаментам сама следа
+    # не оставляет — это решение штаба внутри мероприятия, — а вот ОПОВЕЩЕНИЕ
+    # управлений пишет журнал: с него начинается ответственность людей вне ОМ.
+    coverage_department = Division.objects.create(
+        name="Департамент покрытия", division_type="department"
+    )
+    Division.objects.create(
+        name="Управление покрытия",
+        division_type="directorate",
+        parent=coverage_department,
+    )
+    om.refresh_from_db()
+    allocation = event_service.split_force_demand(
+        om.pk, rows=[{"departmentId": str(coverage_department.pk), "need": 1}]
+    ).force_allocation[0]
+    event_service.notify_directorates(om.pk, allocation["id"], actor=ACTOR)
+
     om.refresh_from_db()
     event_service.update_force_allocation(
         om.pk,

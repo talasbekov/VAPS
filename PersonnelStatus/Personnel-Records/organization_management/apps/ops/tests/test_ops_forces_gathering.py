@@ -207,3 +207,128 @@ def test_split_only_while_forces_are_gathered(manager):  # noqa: F811
 
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "INVALID_STAGE_TRANSITION"
+
+
+# ── Шаг «СС-2»: оповещение управлений департамента ──────────────────────────
+
+
+def make_directorate(department, name="Управление №1"):
+    return Division.objects.create(
+        name=name,
+        division_type=Division.DivisionType.DIRECTORATE,
+        parent=department,
+    )
+
+
+def allocated_event(manager, department):  # noqa: F811
+    """ОМ с сохранённой заявкой одному департаменту."""
+    base, total = event_on_demand(manager)
+    data = manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(department.pk), "need": total}]},
+        format="json",
+    ).json()
+    return base, data["forceAllocation"][0]["id"]
+
+
+def test_notify_reaches_every_directorate_of_the_department(manager):  # noqa: F811
+    """Оповещение адресовано управлениям ИМЕННО этого департамента."""
+    department = make_department()
+    first = make_directorate(department, "Управление охраны")
+    second = make_directorate(department, "Управление сопровождения")
+    # Управление ЧУЖОГО департамента — контрольное: без него проба не отличила
+    # бы «оповестили своих» от «оповестили всех подряд».
+    other = make_department("Департамент связи")
+    foreign = make_directorate(other, "Управление связи")
+    base, allocation_id = allocated_event(manager, department)
+
+    data = manager.post(
+        f"{base}forces/allocation/{allocation_id}/notify/"
+    ).json()
+
+    row = data["forceAllocation"][0]
+    assert row["status"] == "NOTIFIED"
+    assert row["notifiedAt"] is not None
+    names = {item["name"] for item in row["directorates"]}
+    assert names == {first.name, second.name}
+    assert foreign.name not in names
+    assert all(item["notifiedAt"] is not None for item in row["directorates"])
+
+
+def test_notify_keeps_the_moment_of_those_already_told(manager):  # noqa: F811
+    """Повтор добирает неоповещённых, а сказанному раньше время не переписывает."""
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    first = manager.post(f"{base}forces/allocation/{allocation_id}/notify/").json()
+    told_at = first["forceAllocation"][0]["directorates"][0]["notifiedAt"]
+
+    # Управление появилось ПОСЛЕ первого оповещения — второе нажатие обязано
+    # добрать его, не трогая момент у прежнего.
+    make_directorate(department, "Управление сопровождения")
+    second = manager.post(f"{base}forces/allocation/{allocation_id}/notify/").json()
+
+    rows = {item["name"]: item for item in second["forceAllocation"][0]["directorates"]}
+    assert len(rows) == 2
+    assert rows["Управление охраны"]["notifiedAt"] == told_at
+    assert rows["Управление сопровождения"]["notifiedAt"] is not None
+
+
+def test_notify_refuses_department_without_directorates(manager):  # noqa: F811
+    """Департамент без действующих управлений — отказ, а не тихий успех."""
+    department = make_department()
+    inactive = make_directorate(department, "Управление расформированное")
+    inactive.is_active = False
+    inactive.save(update_fields=["is_active"])
+    base, allocation_id = allocated_event(manager, department)
+
+    resp = manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "ALLOCATION_NO_DIRECTORATES"
+    assert department.name in resp.json()["message"]
+
+
+def test_notified_department_cannot_be_dropped_from_the_split(manager):  # noqa: F811
+    """Замок раскладки включается именно оповещением, а не руками теста."""
+    department = make_department()
+    make_directorate(department)
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    resp = manager.post(f"{base}forces/allocation/", {"rows": []}, format="json")
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "ALLOCATION_LOCKED"
+
+
+def test_notify_is_recorded_in_the_audit_trail(manager):  # noqa: F811
+    """«Нам не говорили» разбирается по журналу, а не по памяти дежурного."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    before = OpsAuditLog.objects.filter(
+        action="FORCE_ALLOCATION_NOTIFIED"
+    ).count()
+
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    entries = OpsAuditLog.objects.filter(action="FORCE_ALLOCATION_NOTIFIED")
+    assert entries.count() == before + 1
+    recorded = entries.order_by("-id").first()
+    assert recorded.new_value["departmentName"] == department.name
+    assert recorded.new_value["directorates"] == ["Управление охраны"]
+
+
+def test_notify_unknown_allocation_is_404(manager):  # noqa: F811
+    """Незнакомая заявка — 404 с конвертом, а не 500."""
+    department = make_department()
+    make_directorate(department)
+    base, _ = allocated_event(manager, department)
+
+    resp = manager.post(f"{base}forces/allocation/no-such-request/notify/")
+
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"

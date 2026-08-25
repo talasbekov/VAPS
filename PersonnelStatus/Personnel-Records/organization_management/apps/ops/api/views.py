@@ -228,6 +228,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # у неё пока нет: заказчик просил цепочку «Сбора сил» общим доступом,
         # разделение по ролям идёт отдельной задачей (Plane №74).
         "forces_split": _MANAGE_EVENT_PERMISSION,
+        "forces_notify": _MANAGE_EVENT_PERMISSION,
         "force_allocation": _MANAGE_EVENT_PERMISSION,
         "forces_complete": _MANAGE_EVENT_PERMISSION,
         "placement_assign": _MANAGE_EVENT_PERMISSION,
@@ -533,6 +534,19 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         data = request.data or {}
         return self._event_response(
             event_service.split_force_demand(pk, rows=data.get("rows"))
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/notify",
+    )
+    def forces_notify(self, request, pk=None, allocation_id=None):
+        """Оповестить управления департамента (Plane №73, шаг «СС-2»)."""
+        return self._event_response(
+            event_service.notify_directorates(
+                pk, allocation_id, actor=resolve_actor_id(request)
+            )
         )
 
     @action(

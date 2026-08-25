@@ -1031,6 +1031,70 @@ export const securityEventsHandlers = [
     }
   ),
 
+  // ── Оповещение управлений (Plane №73, СС-2) ────────────────────────────
+  //
+  // Справочника подразделений мок ops не держит, поэтому управления здесь
+  // ПОДСТАВНЫЕ и названы так вслух: предмет мок-пробы — правила (стадия,
+  // незнакомая заявка, момент у уже оповещённых), а имена проверяет живой стенд.
+  // 🔴 Путь собирается ВРУЧНУЮ, а не хелпером: `securityEventForcesNotifyPath`
+  // прогоняет id заявки через `encodeURIComponent` (в нём живут `+` и `:` из
+  // отметки времени), и плейсхолдер `:allocationId` превратился бы в
+  // `%3AallocationId` — такой обработчик не сматчится НИКОГДА и молча пропустит
+  // запрос на живой бэк.
+  http.post(
+    `*${securityEventForcesSplitPath(":id")}:allocationId/notify/`,
+    ({ params }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const allocationId = params.allocationId as string;
+      if (event.stage !== "DEMAND" && event.stage !== "FORCES") {
+        return businessRuleError(
+          "INVALID_STAGE_TRANSITION",
+          "Оповещать управления можно на этапах «Потребность» и «Запрос сил»."
+        );
+      }
+      const target = event.forceAllocation.find((row) => row.id === allocationId);
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Заявка департаменту не найдена.",
+          { id: allocationId },
+          404
+        );
+      }
+      const now = nowIso();
+      const directorates = [
+        { divisionId: `${target.departmentId}-1`, name: "Управление №1" },
+        { divisionId: `${target.departmentId}-2`, name: "Управление №2" },
+      ].map((item) => {
+        const kept = target.directorates.find(
+          (row) => row.divisionId === item.divisionId
+        );
+        return {
+          id: kept?.id ?? `force-directorate-${item.divisionId}`,
+          divisionId: item.divisionId,
+          name: item.name,
+          // Момент у уже оповещённого не переписывается — как на сервере.
+          notifiedAt: kept?.notifiedAt ?? now,
+        };
+      });
+      const forceAllocation: ForceAllocationRow[] = event.forceAllocation.map(
+        (row) =>
+          row.id === allocationId
+            ? {
+                ...row,
+                directorates,
+                status: row.status === "DRAFT" ? "NOTIFIED" : row.status,
+                notifiedAt: row.notifiedAt ?? now,
+              }
+            : row
+      );
+      return HttpResponse.json(
+        saveEvent({ ...event, forceAllocation, updatedAt: nowIso() })
+      );
+    }
+  ),
+
   // ── Выделение сил ──────────────────────────────────────────────────────
   http.patch(
     `*${securityEventForceAllocationPath(":id", ":requestId")}`,

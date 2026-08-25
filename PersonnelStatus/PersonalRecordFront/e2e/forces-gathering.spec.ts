@@ -318,6 +318,51 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(saved.getByLabel('Департамент, строка 1', { exact: true })).toHaveValue(String(department!.id))
   })
 
+  test('оповещение управлений видно у заявки и повтор не переписывает момент', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const { code, total } = await prepareDemandEvent(token)
+    const departments = await get<{ results: { id: number; name: string; type_code: string }[] }>(
+      token,
+      '/api/core/divisions/?page_size=200',
+    )
+    const department = departments.results.find((row) => row.type_code === 'department')
+    expect(department, 'в справочнике стенда нет департамента').toBeTruthy()
+    // Сторож фикстуры: без управлений внутри департамента сервер отвечает
+    // отказом, и проба проверяла бы не оповещение, а его отсутствие.
+    const directorates = departments.results.filter(
+      (row) => row.type_code === 'directorate',
+    )
+    expect(directorates.length, 'у стенда нет управлений — оповещать некого').toBeGreaterThan(0)
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const card = page.locator('div.rounded-lg.border').filter({ hasText: code }).first()
+    await expect(card).toBeVisible({ timeout: 25_000 })
+
+    await card.getByRole('button', { name: 'Департамент', exact: true }).click()
+    await card.getByLabel('Департамент, строка 1', { exact: true }).selectOption(String(department!.id))
+    await card.getByLabel('Сколько человек, строка 1', { exact: true }).fill(String(total))
+    await card.getByRole('button', { name: 'Сохранить раскладку' }).click()
+    await expect(card.getByText('Раскладка сохранена')).toBeVisible()
+
+    const state = card.locator('[data-slot="allocation-state"]')
+    await expect(state).toContainText('В департамент не отправлено')
+    await state.getByRole('button', { name: 'Оповестить управления' }).click()
+    await expect(state).toContainText('Управления оповещены', { timeout: 20_000 })
+    const first = (await state.locator('li').first().textContent()) ?? ''
+    expect(first, 'у оповещённого управления нет момента').toContain('оповещено')
+
+    // Повтор добирает неоповещённых и НЕ переписывает момент уже оповещённым.
+    await state.getByRole('button', { name: 'Оповестить ещё раз' }).click()
+    await expect(state.locator('li').first()).toHaveText(first, { timeout: 20_000 })
+
+    // Оповещённый департамент из раскладки больше не снимается — замок
+    // ставит сервер, и кнопка снятия у строки погашена.
+    await expect(card.getByRole('button', { name: 'Убрать департамент, строка 1', exact: true })).toBeDisabled()
+  })
+
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)

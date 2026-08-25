@@ -626,6 +626,15 @@ export function securityEventForceAllocationPath(
 export function securityEventForcesSplitPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/`;
 }
+/** Оповещение управлений департамента о заявке (Plane №73, шаг СС-2). */
+export function securityEventForcesNotifyPath(
+  id: string,
+  allocationId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
+    allocationId
+  )}/notify/`;
+}
 export function securityEventForcesCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/forces/complete/`;
 }
