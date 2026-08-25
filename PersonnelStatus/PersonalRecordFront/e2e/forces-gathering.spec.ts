@@ -759,6 +759,26 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(main).toContainText(`не укомплектовано постов: ${unfilled}`)
   })
 
+  test('смена, введённая на потребности, видна на расстановке', async ({ page }) => {
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    const card = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
+    const post = card.reconSectorPosts.find((row: any) => row.id === prepared.postId)
+    const demand = card.demandRows.find(
+      (row: any) => row.sector === post.sector && row.task === post.task,
+    )
+    // Сторожа: смена приходит СО СТРОКИ ПОТРЕБНОСТИ, и в самом посте её нет —
+    // иначе проба не отличала бы «взяли у потребности» от «взяли у поста».
+    expect(demand?.shift, 'у строки потребности нет смены — проверять нечего').toBeTruthy()
+    expect(post.shift, 'у поста появилась своя смена — правило чтения изменилось').toBeUndefined()
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Задача поста', { timeout: 25_000 })
+    await expect(main).toContainText(`${post.sector} · ${demand.shift}`)
+  })
+
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
