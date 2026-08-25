@@ -17,7 +17,7 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvent } from "@/hooks/use-security-events";
 import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
 import { StageBadge } from "@/entities/security-event";
-import { GvoSectionDialog } from "@/features/gvo-section-edit";
+import { GvoSectionDialog, GvoVisitsDialog } from "@/features/gvo-section-edit";
 import {
   Table,
   TableBody,
@@ -45,6 +45,10 @@ export default function GvoSummaryPage() {
   const id = typeof params.id === "string" ? params.id : "";
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const [section, setSection] = useState<GvoSection | null>(null);
+  // Объекты посещения правятся своим окном, а не разделом патча («Реестр
+  // ОМ-35.1»): список объектов принадлежит мероприятию, и разделом сводки он
+  // был вторым списком тех же объектов.
+  const [visitsOpen, setVisitsOpen] = useState(false);
 
   const canView = hasPermission("event.view");
   const canEdit = hasPermission("event.manage");
@@ -442,8 +446,22 @@ export default function GvoSummaryPage() {
         {/* Объекты посещения */}
         <Section
           title="Объекты посещения"
-          action={edit !== null && <EditButton onClick={edit("visits")} label="Изменить объекты посещения" />}
+          action={
+            canEdit && (
+              <EditButton
+                onClick={() => setVisitsOpen(true)}
+                label="Изменить объекты посещения"
+              />
+            )
+          }
         >
+          {/* Пусто — у мероприятия НЕ ДОБАВЛЕН ни один объект посещения: с
+              «Реестр ОМ-35.1» раздел читает таблицу объектов, и пустой список
+              это факт бюллетеня, а не сбой загрузки. Без этой подписи секция
+              выглядела бы просто оборванной. */}
+          {summary.visits.length === 0 ? (
+            <EmptyBox text="Объекты посещения не добавлены в мероприятие" />
+          ) : (
           <div className="grid gap-[11px] [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
             {summary.visits.map((visit, index) => (
               <div key={`${visit.day}-${index}`} className="overflow-hidden rounded-[10px] border">
@@ -471,6 +489,7 @@ export default function GvoSummaryPage() {
               </div>
             ))}
           </div>
+          )}
         </Section>
       </div>
 
@@ -482,6 +501,10 @@ export default function GvoSummaryPage() {
           summary={summary}
           onClose={() => setSection(null)}
         />
+      )}
+
+      {visitsOpen && (
+        <GvoVisitsDialog event={event} onClose={() => setVisitsOpen(false)} />
       )}
     </DashboardLayout>
   );

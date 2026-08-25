@@ -34,8 +34,13 @@ ALLOWED_PATCH_KEYS = (
     "responsible",
     "groups",
     "transport",
-    "visits",
 )
+# `visits` СНЯТ («Реестр ОМ-35.1»): объекты посещения живут таблицей
+# `ops_security_event_visit_objects`, и патч сводки был вторым списком тех же
+# объектов — они расходились молча. Правка дня и примечания идёт ручкой
+# PATCH .../visit-objects/{id}/, добавление и снятие объекта — теми же
+# ручками, что у реестра. Ключ остаётся в этом комментарии нарочно: чтобы
+# следующий заход не вернул его «за компанию» с новой секцией.
 
 
 def list_persons():
@@ -81,7 +86,6 @@ SECTION_PATCH_KEYS = {
     "groups": ("responsible", "groups"),
     "resp": ("responsible",),
     "transport": ("transport",),
-    "visits": ("visits",),
 }
 
 

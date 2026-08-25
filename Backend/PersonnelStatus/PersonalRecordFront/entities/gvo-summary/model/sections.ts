@@ -16,7 +16,6 @@ import type {
   GvoSummary,
   GvoSummaryPatch,
   GvoTransportRow,
-  GvoVisitDay,
 } from "./types";
 
 export interface GvoFieldSpec {
@@ -140,18 +139,12 @@ const WHOLE_SECTION_SPECS: Record<string, GvoSectionSpec> = {
       ),
     ],
   },
-  visits: {
-    title: "Объекты посещения",
-    fields: [
-      area(
-        "visits",
-        "Объекты по дням",
-        "Блок на день: первая строка «18.06.2026 | четверг», далее «Объект | примечание». Блоки разделяйте пустой строкой.",
-        14
-      ),
-    ],
-  },
 };
+
+// Раздела «Объекты посещения» здесь НЕТ («Реестр ОМ-35.1»): объекты живут
+// таблицей мероприятия, а не свободным текстом патча, и правит их своё окно
+// (features/gvo-section-edit/ui/GvoVisitsDialog) — по строке на объект, с
+// днём и примечанием. Свободный текст вернул бы второй список объектов.
 
 export function gvoSectionSpec(section: GvoSection): GvoSectionSpec {
   if (isGroupSection(section)) {
@@ -285,17 +278,6 @@ export function gvoFormFromSummary(
           .map((row) => `${row.code} | ${row.car} | ${row.note}`)
           .join("\n"),
       };
-    case "visits":
-      return {
-        visits: summary.visits
-          .map((visit) =>
-            [
-              `${clean(visit.day)} | ${clean(visit.weekday)}`,
-              ...visit.items.map((item) => `${clean(item.obj)} | ${clean(item.note)}`),
-            ].join("\n")
-          )
-          .join("\n\n"),
-      };
     default:
       return {};
   }
@@ -369,23 +351,6 @@ function parseTransport(value: string | undefined): GvoTransportRow[] {
       code: code ?? UNSPECIFIED,
       car: car === undefined || car === "" ? UNSPECIFIED : car,
       note: note ?? "",
-    };
-  });
-}
-
-function parseVisits(value: string | undefined): GvoVisitDay[] {
-  return blocks(value).map((block) => {
-    const [day, weekday] = parts(block[0]);
-    return {
-      day: day ?? UNSPECIFIED,
-      weekday: weekday ?? "",
-      items: block.slice(1).map((line) => {
-        const [obj, note] = parts(line);
-        return {
-          obj: obj ?? UNSPECIFIED,
-          note: note === undefined || note === "" ? UNSPECIFIED : note,
-        };
-      }),
     };
   });
 }
@@ -485,8 +450,6 @@ export function gvoPatchFromForm(
       return { responsible: parseResponsible(form.resp) };
     case "transport":
       return { transport: parseTransport(form.transport) };
-    case "visits":
-      return { visits: parseVisits(form.visits) };
     default:
       return {};
   }
@@ -496,7 +459,9 @@ export function gvoPatchFromForm(
  * Ключи патча, которые снимает «Вернуть исходные». Совпадают с ключами,
  * которые кладёт gvoPatchFromForm того же раздела.
  */
-export function gvoSectionPatchKeys(section: GvoSection): (keyof GvoSummary)[] {
+export function gvoSectionPatchKeys(
+  section: GvoSection
+): (keyof GvoSummaryPatch)[] {
   if (isGroupSection(section)) return ["groups"];
   if (isPersonSection(section)) return ["persons"];
   switch (section) {
@@ -516,8 +481,6 @@ export function gvoSectionPatchKeys(section: GvoSection): (keyof GvoSummary)[] {
       return ["responsible"];
     case "transport":
       return ["transport"];
-    case "visits":
-      return ["visits"];
     default:
       return [];
   }

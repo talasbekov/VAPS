@@ -413,6 +413,50 @@ def add_visit_object(event_id, *, object_id, protected_person_id=None):
 
 
 @transaction.atomic
+def update_visit_object(event_id, visit_object_id, *, visit_day, note):
+    """Правка дня посещения и примечания у объекта посещения.
+
+    Оба поля переехали сюда из патча сводки ГВО (ключ `visits`, «Реестр
+    ОМ-35.1»): список объектов теперь один — таблица, — и править его подпись
+    надо там же, где он живёт. Сам объект здесь не меняется: подмена объекта
+    посещения — это снятие одной строки и добавление другой, у них своя
+    расстановка и свои замещающие.
+
+    `visitDay` пустой (не пришёл, `null` или пустая строка) — день посещения
+    снимается, и сводка снова показывает объект в дате мероприятия. Это ОТВЕТ,
+    а не отсутствие ответа: «в день ОМ» — нормальное состояние строки.
+    """
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — объекты посещения не меняются.",
+        )
+    visit = _visit_object_or_404(event, visit_object_id)
+
+    raw_day = str(visit_day or "").strip()
+    day = None
+    if raw_day != "":
+        try:
+            day = dt.date.fromisoformat(raw_day)
+        except ValueError:
+            raise _validation(
+                {"visitDay": ["Укажите дату в формате ГГГГ-ММ-ДД."]}
+            ) from None
+
+    raw_note = str(note or "").strip()
+    if len(raw_note) > 255:
+        raise _validation({"note": ["Не длиннее 255 символов."]})
+
+    visit.visit_day = day
+    visit.note = raw_note
+    visit.save(update_fields=["visit_day", "note", "updated_at"])
+    event.refresh_from_db()
+    return event
+
+
+@transaction.atomic
 def remove_visit_object(event_id, visit_object_id):
     """Убрать объект посещения. Закрытое мероприятие не правится."""
     event = lock_event(event_id)

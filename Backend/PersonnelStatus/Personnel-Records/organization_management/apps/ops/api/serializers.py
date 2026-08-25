@@ -138,6 +138,13 @@ def serialize_visit_object(event, visit, *, single):
         ),
         "protectedPersonName": visit.protected_person_name,
         "position": visit.position,
+        # День посещения и примечание переехали из патча сводки ГВО («Реестр
+        # ОМ-35.1»): null в `visitDay` — «в день мероприятия», а не «не
+        # знаем».
+        "visitDay": (
+            visit.visit_day.isoformat() if visit.visit_day is not None else None
+        ),
+        "note": visit.note,
         # null — «неизвестно» (расчёт постов не размечен по объектам), 0 —
         # «посты не рассчитаны». Экран различает эти два случая словами.
         "placementNeed": need,

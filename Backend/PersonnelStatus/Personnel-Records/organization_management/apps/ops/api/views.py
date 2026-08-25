@@ -206,7 +206,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "destroy": _DELETE_EVENT_PERMISSION,
         "bindable_objects": _MANAGE_EVENT_PERMISSION,
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
-        "visit_object_remove": _MANAGE_EVENT_PERMISSION,
+        "visit_object_detail": _MANAGE_EVENT_PERMISSION,
         # Раздача права — работа ведущего мероприятие, а не замещающего:
         # иначе назначенный смог бы назначить себе смену и разрастить круг.
         "visit_object_deputy_add": _MANAGE_EVENT_PERMISSION,
@@ -375,12 +375,26 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             status=201,
         )
 
+    # DELETE и PATCH — ОДИН экшен: у роутера DRF два экшена с одинаковым
+    # url_path дают два маршрута, и первый по алфавиту забирает оба метода,
+    # отвечая 405 на второй. Ветка по методу здесь честнее, чем маршрут,
+    # который молча не работает.
     @action(
         detail=True,
-        methods=["delete"],
+        methods=["delete", "patch"],
         url_path=r"visit-objects/(?P<visit_object_id>[^/.]+)",
     )
-    def visit_object_remove(self, request, pk=None, visit_object_id=None):
+    def visit_object_detail(self, request, pk=None, visit_object_id=None):
+        if request.method.lower() == "patch":
+            data = request.data or {}
+            return self._event_response(
+                event_service.update_visit_object(
+                    pk,
+                    visit_object_id,
+                    visit_day=data.get("visitDay"),
+                    note=data.get("note"),
+                )
+            )
         return self._event_response(
             event_service.remove_visit_object(pk, visit_object_id)
         )

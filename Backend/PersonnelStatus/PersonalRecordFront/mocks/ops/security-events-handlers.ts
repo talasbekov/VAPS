@@ -105,6 +105,10 @@ function emptyEvent(
         protectedPersonId: null,
         protectedPersonName: "",
         position: 0,
+        // Пустой день — «в дату мероприятия»: у свежего ОМ объект один, и
+        // называть день второй раз незачем.
+        visitDay: null,
+        note: "",
         placementNeed: 0,
         placementAssigned: 0,
         deputies: [],

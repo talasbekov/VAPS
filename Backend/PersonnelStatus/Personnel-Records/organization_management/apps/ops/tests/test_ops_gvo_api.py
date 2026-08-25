@@ -203,3 +203,24 @@ def test_gvo_patch_writes_new_audit_row():
     new_rows = OpsAuditLog.objects.exclude(pk__in=before_pks)
     # Новый pk, не счётчик: строка именно ОБ ЭТОЙ правке.
     assert new_rows.filter(action="GVO_SUMMARY_PATCHED").count() == 1
+
+
+def test_gvo_patch_rejects_retired_visits_section():
+    """Раздел «Объекты посещения» патчем больше НЕ правится («Реестр ОМ-35.1»).
+
+    Объекты посещения живут таблицей мероприятия; пока патч принимал ключ
+    `visits`, у одного вопроса было два ответа, и они расходились молча.
+    Отказ здесь громкий нарочно: молчаливое сохранение похоронило бы правку в
+    списке, который никто не читает.
+    """
+    make_event("ОМ-Т-17")
+    api, _ = manager("gvo-visits-retired")
+    r = api.patch(
+        f"{GVO_URL}ОМ-Т-17/",
+        {"section": "visits", "values": {"visits": []}},
+        format="json",
+    )
+    assert r.status_code == 400
+    assert "visits" in str(r.json())
+    r = api.post(f"{GVO_URL}ОМ-Т-17/reset/", {"section": "visits"}, format="json")
+    assert r.status_code == 400

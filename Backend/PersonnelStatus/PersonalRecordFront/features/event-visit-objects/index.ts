@@ -6,4 +6,5 @@ export {
   addVisitObjectDeputy,
   removeVisitObject,
   removeVisitObjectDeputy,
+  updateVisitObject,
 } from "./api/visit-objects-api";

@@ -87,8 +87,12 @@ export interface GvoSummary {
 /**
  * Патч ручных правок. Вложенные объекты приходят целиком (сливаются глубоко —
  * см. mergeGvoSummary), остальные ключи заменяют значение базы.
+ *
+ * `visits` в патч НЕ входит («Реестр ОМ-35.1»): объекты посещения живут
+ * таблицей мероприятия, и патч с этим ключом был вторым списком тех же
+ * объектов. Сервер такой ключ отбивает — `Omit` не даёт отправить его молча.
  */
-export type GvoSummaryPatch = Partial<GvoSummary>;
+export type GvoSummaryPatch = Partial<Omit<GvoSummary, "visits">>;
 
 export interface GvoSummaryPatchRecord {
   omCode: string;
@@ -101,6 +105,9 @@ export interface GvoSummaryPatchRecord {
 /**
  * Раздел модального окна. `person:<i>` / `group:<i>` правят один элемент
  * списка, `person:new` / `group:new` добавляют; остальные — секции целиком.
+ *
+ * «Объекты посещения» разделом НЕ являются («Реестр ОМ-35.1»): они живут
+ * таблицей мероприятия и правятся своим окном, а не патчем сводки.
  */
 export type GvoSection =
   | "head"
@@ -111,7 +118,6 @@ export type GvoSection =
   | "resp"
   | "groups"
   | "transport"
-  | "visits"
   | `person:${number}`
   | "person:new"
   | `group:${number}`
