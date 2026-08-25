@@ -105,6 +105,18 @@ SECURITY_EVENT_CLOSED = "SECURITY_EVENT_CLOSED"
 # ОМ оказалось на согласовании с пустой расстановкой» упиралось бы в
 # безымянный RETURN.
 SECURITY_EVENT_STAGE_OVERRIDDEN = "SECURITY_EVENT_STAGE_OVERRIDDEN"
+# Замещающий на объекте посещения: выдача и отзыв права (Plane «Реестр
+# ОМ-24»). Это раздача ПРАВА в данных — человек получает возможность править
+# расстановку своего объекта, не имея общего `event.manage`. Такое решение
+# обязано быть именным: без записи разбирательство «кто пустил его в
+# расстановку» упиралось бы в строку таблицы без автора.
+SECURITY_EVENT_DEPUTY_ASSIGNED = "SECURITY_EVENT_DEPUTY_ASSIGNED"
+SECURITY_EVENT_DEPUTY_REVOKED = "SECURITY_EVENT_DEPUTY_REVOKED"
+# Операция расстановки, СДЕЛАННАЯ замещающим. Исключение из правила
+# «промежуточные стадии следа не пишут» по тому же основанию, что и перевод
+# этапа админом: действие совершено в обход общего права, по роли в данных, и
+# его след обязан быть в журнале мутаций, а не только в самом агрегате.
+SECURITY_EVENT_PLACEMENT_BY_DEPUTY = "SECURITY_EVENT_PLACEMENT_BY_DEPUTY"
 # Смена дежурства: заведение и отмена — решения с обоснованием (обход отдыха,
 # причина отмены); ознакомление/заступление/завершение следа в журнале
 # мутаций не оставляют — их след живёт на самой смене (штампы времени).
@@ -155,6 +167,9 @@ ACTIONS = frozenset(
         SECURITY_EVENT_CREATED,
         SECURITY_EVENT_CLOSED,
         SECURITY_EVENT_STAGE_OVERRIDDEN,
+        SECURITY_EVENT_DEPUTY_ASSIGNED,
+        SECURITY_EVENT_DEPUTY_REVOKED,
+        SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,

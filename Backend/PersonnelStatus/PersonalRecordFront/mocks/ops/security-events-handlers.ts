@@ -107,6 +107,7 @@ function emptyEvent(
         position: 0,
         placementNeed: 0,
         placementAssigned: 0,
+        deputies: [],
       },
     ],
     businessDate: date,

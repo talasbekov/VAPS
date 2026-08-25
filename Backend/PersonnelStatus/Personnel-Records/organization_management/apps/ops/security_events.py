@@ -22,6 +22,7 @@ from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
     OpsSecurityEventTransition,
     OpsSecurityEventVisitObject,
+    OpsVisitObjectDeputy,
 )
 from organization_management.apps.operations.models_gvo import (
     OpsProtectedPerson,
@@ -439,6 +440,171 @@ def remove_visit_object(event_id, visit_object_id):
     return event
 
 
+# ── Замещающие на объекте посещения ─────────────────────────────────────────
+
+
+def _visit_object_or_404(event, visit_object_id):
+    visit = (
+        event.visit_objects.filter(pk=visit_object_id).first()
+        if str(visit_object_id).isdigit()
+        else None
+    )
+    if visit is None:
+        raise _not_found("Объект посещения не найден.", visit_object_id)
+    return visit
+
+
+def deputy_can_edit_placement(event, employee_id, post):
+    """Может ли этот сотрудник править расстановку ЭТОГО поста как замещающий.
+
+    Право выдаётся ПО ОБЪЕКТУ ПОСЕЩЕНИЯ, а операция идёт по посту — связать их
+    можно только разметкой поста (`visitObjectId` в строке расчёта). Разметки
+    сегодня нет у большинства ОМ: расчёт постов ведётся на мероприятии целиком
+    (решение 24.08). Поэтому правило такое:
+
+    * пост РАЗМЕЧЕН — право проверяется по его объекту, и только по нему;
+    * пост НЕ размечен, а объект посещения у ОМ ОДИН — все посты его, и
+      замещающий этого объекта правит их (это ровно то, что видит человек на
+      экране: один объект, один расчёт);
+    * пост не размечен, а объектов НЕСКОЛЬКО — чей это пост, неизвестно, и
+      право не выдаётся. Ошибиться здесь значит пустить человека в чужую
+      расстановку; отказ он увидит и попросит разметить расчёт.
+    """
+    if employee_id is None:
+        return False
+    scoped = str((post or {}).get("visitObjectId") or "")
+    if scoped != "":
+        return OpsVisitObjectDeputy.objects.filter(
+            visit_object_id=scoped,
+            visit_object__event_id=event.pk,
+            employee_id=employee_id,
+            can_edit_placement=True,
+        ).exists()
+    visits = list(event.visit_objects.all()[:2])
+    if len(visits) != 1:
+        return False
+    return OpsVisitObjectDeputy.objects.filter(
+        visit_object_id=visits[0].pk,
+        employee_id=employee_id,
+        can_edit_placement=True,
+    ).exists()
+
+
+def _record_deputy_placement(event, deputy, payload):
+    """Журнал мутаций для операции расстановки, сделанной ЗАМЕЩАЮЩИМ.
+
+    Обычная расстановка следа в журнале мутаций не оставляет — её след живёт
+    в самом агрегате. Здесь исключение по тому же основанию, что у перевода
+    этапа админом: действие совершено в обход общего права, по роли в данных,
+    и обязано быть именным.
+    """
+    if deputy is None:
+        return
+    audit_service.record(
+        actor=deputy.user if getattr(deputy, "user", None) is not None else deputy,
+        action=audit_service.SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "deputyId": str(deputy.pk),
+            "deputyName": personnel_display_name(deputy),
+            **payload,
+        },
+    )
+
+
+@transaction.atomic
+def add_visit_object_deputy(
+    event_id, visit_object_id, *, employee_id, can_edit_placement, actor
+):
+    """Назначить замещающего на объект посещения.
+
+    Журнал мутаций здесь пишется — в отличие от остальных правок агрегата: это
+    раздача ПРАВА, а не данных (см. `audit_service`).
+    """
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — замещающие не назначаются.",
+        )
+    visit = _visit_object_or_404(event, visit_object_id)
+
+    employee = _find_personnel(employee_id)
+    if employee is None:
+        raise _validation({"employeeId": ["Сотрудник не найден."]})
+    if visit.deputies.filter(employee_id=employee.pk).exists():
+        # Отбиваем ДО INSERT: уникальность базы отдала бы конверт про
+        # ограничение, а человеку нужно имя поля и причина.
+        raise _validation(
+            {"employeeId": ["Этот сотрудник уже назначен замещающим."]}
+        )
+
+    deputy = OpsVisitObjectDeputy.objects.create(
+        visit_object=visit,
+        employee_id=employee.pk,
+        employee_name=personnel_display_name(employee),
+        can_edit_placement=can_edit_placement is not False,
+        assigned_by=actor_display_name(actor),
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECURITY_EVENT_DEPUTY_ASSIGNED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "visitObjectId": str(visit.pk),
+            "objectName": visit.object_name,
+            "employeeId": str(deputy.employee_id),
+            "employeeName": deputy.employee_name,
+            "canEditPlacement": deputy.can_edit_placement,
+        },
+    )
+    event.refresh_from_db()
+    return event
+
+
+@transaction.atomic
+def remove_visit_object_deputy(event_id, visit_object_id, deputy_id, *, actor):
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — замещающие не меняются.",
+        )
+    visit = _visit_object_or_404(event, visit_object_id)
+    deputy = (
+        visit.deputies.filter(pk=deputy_id).first()
+        if str(deputy_id).isdigit()
+        else None
+    )
+    if deputy is None:
+        raise _not_found("Замещающий не найден.", deputy_id)
+    # Снимок ДО удаления: журнал обязан назвать, у кого сняли право, а после
+    # `delete()` строки уже нет.
+    removed = {
+        "code": event.code,
+        "visitObjectId": str(visit.pk),
+        "objectName": visit.object_name,
+        "employeeId": str(deputy.employee_id),
+        "employeeName": deputy.employee_name,
+    }
+    deputy.delete()
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECURITY_EVENT_DEPUTY_REVOKED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value=removed,
+    )
+    event.refresh_from_db()
+    return event
+
+
 # ── Бюллетень ───────────────────────────────────────────────────────────────
 
 
@@ -839,7 +1005,9 @@ def actor_display_name(actor):
 
 
 @transaction.atomic
-def assign_placement(event_id, *, post_id, employee_id, override, override_reason):
+def assign_placement(
+    event_id, *, post_id, employee_id, override, override_reason, deputy=None
+):
     event = lock_event(event_id)
     employee = _find_personnel(employee_id)
     if employee is None:
@@ -895,16 +1063,28 @@ def assign_placement(event_id, *, post_id, employee_id, override, override_reaso
     }
     event.placement_assignments = [*event.placement_assignments, assignment]
     event.save(update_fields=["placement_assignments", "updated_at"])
+    _record_deputy_placement(
+        event,
+        deputy,
+        {
+            "operation": "ASSIGN",
+            "postId": str(post_id),
+            "employeeId": employee_key,
+        },
+    )
     return event
 
 
 @transaction.atomic
-def unassign_placement(event_id, assignment_id):
+def unassign_placement(event_id, assignment_id, *, deputy=None):
     event = lock_event(event_id)
     event.placement_assignments = [
         a for a in event.placement_assignments if a.get("id") != assignment_id
     ]
     event.save(update_fields=["placement_assignments", "updated_at"])
+    _record_deputy_placement(
+        event, deputy, {"operation": "UNASSIGN", "assignmentId": str(assignment_id)}
+    )
     return event
 
 

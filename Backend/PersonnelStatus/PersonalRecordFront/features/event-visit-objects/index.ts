@@ -1,2 +1,8 @@
 export { AddVisitObjectsDialog } from "./ui/AddVisitObjectsDialog";
-export { addVisitObject, removeVisitObject } from "./api/visit-objects-api";
+export { AddDeputyDialog } from "./ui/AddDeputyDialog";
+export {
+  addVisitObject,
+  addVisitObjectDeputy,
+  removeVisitObject,
+  removeVisitObjectDeputy,
+} from "./api/visit-objects-api";

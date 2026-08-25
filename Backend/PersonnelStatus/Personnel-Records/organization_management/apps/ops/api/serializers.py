@@ -142,6 +142,20 @@ def serialize_visit_object(event, visit, *, single):
         # «посты не рассчитаны». Экран различает эти два случая словами.
         "placementNeed": need,
         "placementAssigned": assigned,
+        # Замещающие — часть строки объекта, а не отдельный запрос: экран
+        # показывает их в том же раскрытии реестра, и второй круг за списком
+        # на каждую строку превратил бы раскрытие в N+1.
+        "deputies": [
+            {
+                "id": str(d.pk),
+                "employeeId": str(d.employee_id),
+                "employeeName": d.employee_name,
+                "canEditPlacement": d.can_edit_placement,
+                "assignedBy": d.assigned_by,
+                "assignedAt": d.created_at.isoformat(),
+            }
+            for d in visit.deputies.all()
+        ],
     }
 
 
@@ -151,7 +165,7 @@ def _serialize_visit_objects(event):
     `single` считается ОДИН раз по всему списку: от него зависит, можно ли
     отнести нерасписанный расчёт постов к объекту (см. `_visit_placement`).
     """
-    visits = list(event.visit_objects.all())
+    visits = list(event.visit_objects.prefetch_related("deputies"))
     single = len(visits) == 1
     return [serialize_visit_object(event, v, single=single) for v in visits]
 

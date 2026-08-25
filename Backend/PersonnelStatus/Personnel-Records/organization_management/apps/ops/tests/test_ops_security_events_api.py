@@ -16,6 +16,9 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.audit_service import (
     SECURITY_EVENT_CLOSED,
     SECURITY_EVENT_CREATED,
+    SECURITY_EVENT_DEPUTY_ASSIGNED,
+    SECURITY_EVENT_DEPUTY_REVOKED,
+    SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
     SECURITY_EVENT_STAGE_OVERRIDDEN,
 )
 from organization_management.apps.operations.models_audit import OpsAuditLog
@@ -23,6 +26,7 @@ from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
     OpsSecurityEventTransition,
     OpsSecurityEventVisitObject,
+    OpsVisitObjectDeputy,
 )
 from organization_management.apps.operations.models_gvo import OpsProtectedPerson
 from organization_management.apps.operations.models_object import (
@@ -1302,4 +1306,201 @@ def test_recon_force_request_reaches_the_registry_row(manager):
     row = next(r for r in rows if r["id"] == str(event_id))
     assert row["reconForceRequest"] == 41
     assert row["reconForceRequestedAt"] is not None
+
+
+# ── Замещающие на объекте посещения (Plane «Реестр ОМ-24») ───────────────────
+
+
+def _deputy_persona(employee, username="ev-deputy"):
+    """Учётка БЕЗ права `event.manage`, привязанная к сотруднику.
+
+    Персона без права обязательна: с полными правами проба зеленела бы и без
+    механизма замещающих — она проверяла бы право, а не назначение.
+    """
+    api, user = client_for(username, "EV_DEPUTY", perms=("event.view",))
+    employee.user = user
+    employee.save(update_fields=["user"])
+    return api
+
+
+def test_deputy_assignment_is_named_in_the_audit_log(manager):
+    obj = make_object(with_passport=True)
+    employee = make_employee(last_name="Замещающий", first_name="Пётр")
+    data = create_event(manager, obj).json()
+    visit_id = data["visitObjects"][0]["id"]
+    url = f"{URL}{data['id']}/visit-objects/{visit_id}/deputies/"
+
+    resp = manager.post(url, {"employeeId": str(employee.pk)}, format="json")
+    assert resp.status_code == 201
+    deputies = resp.json()["visitObjects"][0]["deputies"]
+    assert len(deputies) == 1
+    assert deputies[0]["employeeId"] == str(employee.pk)
+    assert deputies[0]["canEditPlacement"] is True
+    # Подпись, а не id учётки: журнал отвечает «кто пустил».
+    assert deputies[0]["assignedBy"] != ""
+    assert not deputies[0]["assignedBy"].isdigit()
+
+    row = OpsAuditLog.objects.get(action=SECURITY_EVENT_DEPUTY_ASSIGNED)
+    assert row.new_value["employeeId"] == str(employee.pk)
+    assert row.new_value["visitObjectId"] == visit_id
+
+    # Повтор — ошибка ПОЛЯ, а не конверт про ограничение базы.
+    again = manager.post(url, {"employeeId": str(employee.pk)}, format="json")
+    assert again.status_code == 400
+    assert again.json()["details"]["employeeId"] == [
+        "Этот сотрудник уже назначен замещающим."
+    ]
+
+    # Отзыв уносит право и называет, у кого сняли.
+    deputy_id = deputies[0]["id"]
+    gone = manager.delete(f"{url}{deputy_id}/")
+    assert gone.status_code == 200
+    assert gone.json()["visitObjects"][0]["deputies"] == []
+    revoked = OpsAuditLog.objects.get(action=SECURITY_EVENT_DEPUTY_REVOKED)
+    assert revoked.old_value["employeeName"].startswith("Замещающий")
+
+
+def test_deputy_edits_placement_of_own_object_without_manage_right(manager):
+    """Суть задачи: замещающий правит расстановку СВОЕГО объекта, не имея
+    общего `event.manage`, и каждое его действие попадает в журнал."""
+    obj = make_object(with_passport=True)
+    deputy_employee = make_employee(last_name="Замещающий", first_name="Пётр")
+    assignee = make_employee(last_name="Назначаемый", first_name="Иван")
+    data = create_event(manager, obj).json()
+    base = f"{URL}{data['id']}/"
+    visit_id = data["visitObjects"][0]["id"]
+
+    imported = manager.post(f"{base}recon/import-from-passport/").json()
+    post_id = imported["reconSectorPosts"][0]["id"]
+
+    deputy_api = _deputy_persona(deputy_employee)
+    payload = {"postId": post_id, "employeeId": str(assignee.pk)}
+
+    # ДО назначения замещающим — отказ гейта: право даёт назначение, а не
+    # сама по себе привязка учётки к сотруднику.
+    denied = deputy_api.post(f"{base}placement/assign/", payload, format="json")
+    assert denied.status_code == 403
+
+    manager.post(
+        f"{base}visit-objects/{visit_id}/deputies/",
+        {"employeeId": str(deputy_employee.pk)},
+        format="json",
+    )
+
+    ok = deputy_api.post(f"{base}placement/assign/", payload, format="json")
+    assert ok.status_code == 200
+    assignments = ok.json()["placementAssignments"]
+    assert [a["employeeId"] for a in assignments] == [str(assignee.pk)]
+
+    # Действие замещающего названо в журнале: без записи разбирательство
+    # «кто ставил людей» упиралось бы в безымянную строку агрегата.
+    trace = OpsAuditLog.objects.filter(
+        action=SECURITY_EVENT_PLACEMENT_BY_DEPUTY
+    ).order_by("id")
+    assert trace.count() == 1
+    assert trace.first().new_value["operation"] == "ASSIGN"
+    assert trace.first().new_value["deputyId"] == str(deputy_employee.pk)
+
+    # Снятие — тоже его работа и тоже в журнале.
+    removed = deputy_api.delete(f"{base}placement/{assignments[0]['id']}/")
+    assert removed.status_code == 200
+    assert removed.json()["placementAssignments"] == []
+    assert trace.count() == 2
+    assert trace.last().new_value["operation"] == "UNASSIGN"
+
+    # Завершение этапа замещающему НЕ открыто: это переход цепочки.
+    assert deputy_api.post(f"{base}placement/complete/").status_code == 403
+
+
+def test_deputy_of_one_object_cannot_touch_unmarked_posts_of_a_multi_object_event(
+    manager,
+):
+    """Право выдаётся ПО ОБЪЕКТУ. Пока расчёт постов не размечен по объектам,
+    у ОМ с НЕСКОЛЬКИМИ объектами чей пост — неизвестно, и замещающий не
+    получает ничего: ошибка здесь пускает человека в чужую расстановку."""
+    obj = make_object(with_passport=True)
+    other = make_object(name="Конгресс-центр", code="OBJ-B", with_passport=True)
+    deputy_employee = make_employee(last_name="Замещающий", first_name="Пётр")
+    assignee = make_employee(last_name="Назначаемый", first_name="Иван")
+    data = create_event(manager, obj).json()
+    base = f"{URL}{data['id']}/"
+    first_visit = data["visitObjects"][0]["id"]
+
+    imported = manager.post(f"{base}recon/import-from-passport/").json()
+    post_id = imported["reconSectorPosts"][0]["id"]
+    manager.post(
+        f"{base}visit-objects/{first_visit}/deputies/",
+        {"employeeId": str(deputy_employee.pk)},
+        format="json",
+    )
+    deputy_api = _deputy_persona(deputy_employee)
+    payload = {"postId": post_id, "employeeId": str(assignee.pk)}
+
+    # Пока объект ОДИН — нерасписанный расчёт его, и правка проходит.
+    first = deputy_api.post(f"{base}placement/assign/", payload, format="json")
+    assert first.status_code == 200
+    manager.delete(
+        f"{base}placement/{first.json()['placementAssignments'][0]['id']}/"
+    )
+
+    # Появился ВТОРОЙ объект — принадлежность нерасписанного поста стала
+    # неизвестной, и то же действие теперь отбивается.
+    manager.post(f"{base}visit-objects/", {"objectId": str(other.pk)}, format="json")
+    assert (
+        deputy_api.post(
+            f"{base}placement/assign/", payload, format="json"
+        ).status_code
+        == 403
+    )
+
+    # Разметка поста за СВОИМ объектом право возвращает.
+    posts = manager.get(f"{URL}{data['id']}/").json()["reconSectorPosts"]
+    manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": data["reconChecklist"],
+            "sectorPosts": [
+                {**p, "visitObjectId": first_visit} if p["id"] == post_id else p
+                for p in posts
+            ],
+        },
+        format="json",
+    )
+    assert (
+        deputy_api.post(
+            f"{base}placement/assign/", payload, format="json"
+        ).status_code
+        == 200
+    )
+
+
+def test_deputy_without_edit_right_is_an_observer(manager):
+    """Флаг `canEditPlacement=false` — назначенный наблюдатель: он в списке
+    объекта, но расстановку не правит. Без флага «назначен» означало бы
+    «может», и развести просмотр с правкой (как в эталоне) было бы нечем."""
+    obj = make_object(with_passport=True)
+    deputy_employee = make_employee(last_name="Наблюдатель", first_name="Пётр")
+    assignee = make_employee(last_name="Назначаемый", first_name="Иван")
+    data = create_event(manager, obj).json()
+    base = f"{URL}{data['id']}/"
+    visit_id = data["visitObjects"][0]["id"]
+    post_id = manager.post(f"{base}recon/import-from-passport/").json()[
+        "reconSectorPosts"
+    ][0]["id"]
+
+    created = manager.post(
+        f"{base}visit-objects/{visit_id}/deputies/",
+        {"employeeId": str(deputy_employee.pk), "canEditPlacement": False},
+        format="json",
+    ).json()
+    assert created["visitObjects"][0]["deputies"][0]["canEditPlacement"] is False
+    assert OpsVisitObjectDeputy.objects.get().can_edit_placement is False
+
+    deputy_api = _deputy_persona(deputy_employee)
+    refused = deputy_api.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(assignee.pk)},
+        format="json",
+    )
+    assert refused.status_code == 403
 

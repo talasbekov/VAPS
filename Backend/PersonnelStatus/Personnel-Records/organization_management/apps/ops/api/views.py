@@ -10,6 +10,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
 )
@@ -202,6 +203,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "bindable_objects": _MANAGE_EVENT_PERMISSION,
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_remove": _MANAGE_EVENT_PERMISSION,
+        # Раздача права — работа ведущего мероприятие, а не замещающего:
+        # иначе назначенный смог бы назначить себе смену и разрастить круг.
+        "visit_object_deputy_add": _MANAGE_EVENT_PERMISSION,
+        "visit_object_deputy_remove": _MANAGE_EVENT_PERMISSION,
         "bulletin": _MANAGE_EVENT_PERMISSION,
         "bulletin_complete": _MANAGE_EVENT_PERMISSION,
         "recon": _MANAGE_EVENT_PERMISSION,
@@ -261,7 +266,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # prefetch объектов посещения: без него каждая строка реестра
         # добирала бы свой список отдельным запросом (страница в 20 строк —
         # 20 лишних round-trip, календарь берёт 200).
-        rows = list(OpsSecurityEvent.objects.prefetch_related("visit_objects"))
+        rows = list(OpsSecurityEvent.objects.prefetch_related("visit_objects__deputies"))
         if stage:
             rows = [e for e in rows if e.stage == stage]
         if date_from:
@@ -370,6 +375,43 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             event_service.remove_visit_object(pk, visit_object_id)
         )
 
+    # ── Замещающие на объекте посещения ─────────────────────────────────
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"visit-objects/(?P<visit_object_id>[^/.]+)/deputies",
+    )
+    def visit_object_deputy_add(self, request, pk=None, visit_object_id=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.add_visit_object_deputy(
+                pk,
+                visit_object_id,
+                employee_id=data.get("employeeId"),
+                can_edit_placement=data.get("canEditPlacement"),
+                actor=request.user,
+            ),
+            status=201,
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=(
+            r"visit-objects/(?P<visit_object_id>[^/.]+)"
+            r"/deputies/(?P<deputy_id>[^/.]+)"
+        ),
+    )
+    def visit_object_deputy_remove(
+        self, request, pk=None, visit_object_id=None, deputy_id=None
+    ):
+        return self._event_response(
+            event_service.remove_visit_object_deputy(
+                pk, visit_object_id, deputy_id, actor=request.user
+            )
+        )
+
     # ── Стадии ──────────────────────────────────────────────────────────
 
     @action(detail=True, methods=["patch"], url_path="bulletin")
@@ -439,6 +481,67 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def forces_complete(self, request, pk=None):
         return self._event_response(event_service.complete_forces(pk))
 
+    # ── Исключение гейта: замещающий правит расстановку своего объекта ──
+
+    _DEPUTY_ACTIONS = frozenset({"placement_assign", "placement_unassign"})
+
+    def permission_override(self, request):
+        """Замещающий на объекте посещения правит расстановку ЭТОГО объекта.
+
+        Открываются только два действия — назначить и снять; завершение этапа
+        (`placement_complete`) остаётся у ведущего мероприятие: это переход
+        цепочки, а не работа по объекту.
+
+        Признак запоминается на вьюхе, чтобы операция попала в журнал мутаций
+        поимённо: действие в обход общего права обязано быть названным.
+        """
+        self._acting_as_deputy = False
+        if self.action not in self._DEPUTY_ACTIONS:
+            return False
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None:
+            return False
+        post = self._deputy_target_post(event)
+        if post is None:
+            return False
+        allowed = event_service.deputy_can_edit_placement(
+            event, employee.pk, post
+        )
+        self._acting_as_deputy = allowed
+        self._deputy_employee = employee if allowed else None
+        return allowed
+
+    def _deputy_actor(self):
+        """Сотрудник, действующий замещающим, либо `None` — обычное право."""
+        if not getattr(self, "_acting_as_deputy", False):
+            return None
+        return getattr(self, "_deputy_employee", None)
+
+    def _deputy_target_post(self, event):
+        """Строка расчёта, которой касается операция.
+
+        У назначения пост приходит телом, у снятия — известен только id
+        назначения, и пост восстанавливается по нему: право проверяется по
+        ОБЪЕКТУ поста, а не по факту «что-то делаю в этом ОМ».
+        """
+        posts = {str(p.get("id")): p for p in (event.recon_sector_posts or [])}
+        if self.action == "placement_assign":
+            return posts.get(str((self.request.data or {}).get("postId")))
+        assignment = next(
+            (
+                a
+                for a in (event.placement_assignments or [])
+                if str(a.get("id")) == str(self.kwargs.get("assignment_id"))
+            ),
+            None,
+        )
+        if assignment is None:
+            return None
+        return posts.get(str(assignment.get("postId")))
+
     @action(detail=True, methods=["post"], url_path="placement/assign")
     def placement_assign(self, request, pk=None):
         data = request.data or {}
@@ -449,6 +552,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 employee_id=data.get("employeeId"),
                 override=data.get("override"),
                 override_reason=data.get("override_reason"),
+                # Кто действует ролью в данных, а не правом. Журнал мутаций
+                # пишет СЕРВИС: у него транзакция операции, и запись «действие
+                # замещающего» не может разъехаться с самим действием.
+                deputy=self._deputy_actor(),
             )
         )
 
@@ -459,7 +566,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     )
     def placement_unassign(self, request, pk=None, assignment_id=None):
         return self._event_response(
-            event_service.unassign_placement(pk, assignment_id)
+            event_service.unassign_placement(
+                pk, assignment_id, deputy=self._deputy_actor()
+            )
         )
 
     @action(detail=True, methods=["post"], url_path="placement/complete")

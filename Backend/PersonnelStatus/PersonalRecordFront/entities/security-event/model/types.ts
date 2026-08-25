@@ -188,6 +188,24 @@ export interface VisitObject {
    */
   placementNeed: number | null;
   placementAssigned: number | null;
+  /** Замещающие старшего на этом объекте: кто может править его расстановку,
+   * не имея общего права вести мероприятие. Приходят вместе со строкой
+   * объекта — раскрытие реестра иначе стучалось бы за списком на каждую. */
+  deputies: VisitObjectDeputy[];
+}
+
+/** Замещающий на объекте посещения (Plane «Реестр ОМ-24»). */
+export interface VisitObjectDeputy {
+  id: string;
+  employeeId: string;
+  /** Снимок подписи: увольнение не превращает журнал в набор номеров. */
+  employeeName: string;
+  /** Право править расстановку СВОЕГО объекта. `false` — назначенный
+   * наблюдатель: он в списке, но расстановку не трогает. */
+  canEditPlacement: boolean;
+  /** Кто выдал право — подпись человека, а не id учётки. */
+  assignedBy: string;
+  assignedAt: string;
 }
 
 export interface SecurityEvent {
@@ -272,6 +290,22 @@ export function visitObjectDetailPath(
   visitObjectId: string
 ): string {
   return `${visitObjectsPath(eventId)}${visitObjectId}/`;
+}
+
+/** Замещающие на объекте посещения: назначение и отзыв права. */
+export function visitObjectDeputiesPath(
+  eventId: string,
+  visitObjectId: string
+): string {
+  return `${visitObjectDetailPath(eventId, visitObjectId)}deputies/`;
+}
+
+export function visitObjectDeputyDetailPath(
+  eventId: string,
+  visitObjectId: string,
+  deputyId: string
+): string {
+  return `${visitObjectDeputiesPath(eventId, visitObjectId)}${deputyId}/`;
 }
 
 /**

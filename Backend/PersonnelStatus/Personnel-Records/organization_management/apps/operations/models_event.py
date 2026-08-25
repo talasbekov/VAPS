@@ -305,3 +305,58 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
 
     def __str__(self):
         return f"{self.event_id}: {self.object_name}"
+
+
+class OpsVisitObjectDeputy(TimeStampedModel):
+    """Замещающий старшего на объекте посещения (Plane «Реестр ОМ-24»).
+
+    Зачем отдельная таблица, а не список в JSON у объекта посещения: строка
+    несёт ПРАВО. Право обязано быть проверяемым запросом (`exists()` на
+    каждую операцию расстановки), а не разбором JSON в память; у него своя
+    жизнь — выдаётся, отзывается, переживает правку объекта; и оно попадает в
+    журнал мутаций поимённо. JSONB такого читателя обслуживает плохо.
+
+    `employee_id` — плоская ссылка без FK, идиома раздела ОМ (см.
+    `chief_employee_id` у мероприятия): контексты разделены, и каскад кадровой
+    структуры не вправе стирать факт «этому человеку выдавали право».
+    Подпись рядом — снимок: увольнение не должно превращать журнал в набор
+    номеров.
+    """
+
+    visit_object = models.ForeignKey(
+        OpsSecurityEventVisitObject,
+        on_delete=models.CASCADE,
+        related_name="deputies",
+    )
+    employee_id = models.PositiveIntegerField()
+    employee_name = models.CharField(max_length=255)
+    # Право правки расстановки СВОЕГО объекта. Отдельным флагом, а не «раз
+    # назначен — значит может»: эталон разводит просмотр и правку («Просмотр
+    # без права правки» стоит там третьей карточкой), и замещающий без флага
+    # — это наблюдатель, которого назначили официально.
+    can_edit_placement = models.BooleanField(default=True)
+    # Кто выдал право — подпись, как owner_name у ОМ: журнал отвечает на
+    # вопрос «кто пустил», а не «под каким номером учётки».
+    assigned_by = models.CharField(max_length=255)
+
+    class Meta:
+        db_table = "ops_visit_object_deputies"
+        verbose_name = "Замещающий на объекте посещения"
+        verbose_name_plural = "Замещающие на объектах посещения"
+        ordering = ["id"]
+        constraints = [
+            # Одному человеку право выдаётся один раз: две строки означали бы
+            # два разных ответа на вопрос «может ли он править».
+            models.UniqueConstraint(
+                fields=["visit_object", "employee_id"],
+                name="uniq_ops_visit_object_deputy",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(employee_name__regex=r"\S"),
+                name="chk_ops_visit_object_deputy_name",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.visit_object_id}: {self.employee_name}"
+

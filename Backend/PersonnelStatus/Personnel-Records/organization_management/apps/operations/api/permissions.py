@@ -71,4 +71,19 @@ class RequirePermissionMixin:
         code = self.permission_map.get(self.action)
         if code is None:
             raise PermissionDenied("PERMISSION_DENIED")
+        # Роль В ДАННЫХ может открыть действие человеку без кода права —
+        # например, замещающий на объекте посещения правит расстановку своего
+        # объекта, не имея общего `event.manage` (Plane «Реестр ОМ-24»).
+        # Хук НЕ ослабляет карту: действие вне карты по-прежнему запрещено, а
+        # исключение видно поимённо в том вьюсете, который его выдаёт.
+        if self.permission_override(request):
+            return
         require_permission(request, code)
+
+    def permission_override(self, request):
+        """Разрешено ли действие ролью в данных, а не кодом права.
+
+        По умолчанию — нет: гейт остаётся fail-closed, и подмешать исключение
+        можно только явным переопределением в конкретном вьюсете.
+        """
+        return False

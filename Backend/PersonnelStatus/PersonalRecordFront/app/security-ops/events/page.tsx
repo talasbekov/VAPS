@@ -29,8 +29,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { CreateSecurityEventDialog } from "@/features/create-security-event";
 import {
+  AddDeputyDialog,
   AddVisitObjectsDialog,
   removeVisitObject,
+  removeVisitObjectDeputy,
 } from "@/features/event-visit-objects";
 import {
   SECURITY_EVENT_STAGES,
@@ -694,11 +696,124 @@ function VisitObjectList({
                   <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               )}
+
+              {/* Замещающие — ВТОРАЯ строка объекта, а не ещё одна колонка:
+                  их может не быть, может быть трое, и колонка переменной
+                  длины ломала бы выравнивание остальных. Занимает всю ширину
+                  врезки (basis-full), поэтому переносится под свой объект, а
+                  не встраивается в поток. */}
+              <DeputyLine
+                event={event}
+                visit={visit}
+                canEdit={canEdit}
+              />
             </li>
           );
         })}
       </ul>
     </div>
+  );
+}
+
+/**
+ * Замещающие на объекте посещения: кто может вести его расстановку вместо
+ * старшего (Plane «Реестр ОМ-24»).
+ *
+ * Право показывается СЛОВОМ, а не только присутствием в списке: замещающий без
+ * права правки — назначенный наблюдатель, и отличить его от правящего по одному
+ * лишь имени в строке нельзя.
+ */
+function DeputyLine({
+  event,
+  visit,
+  canEdit,
+}: {
+  event: SecurityEvent;
+  visit: VisitObject;
+  canEdit: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [addOpen, setAddOpen] = useState(false);
+  const removal = useMutation({
+    mutationFn: removeVisitObjectDeputy,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      toast({ title: "Замещающий снят" });
+    },
+    onError: (error: unknown) => {
+      const message =
+        typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "";
+      toast({
+        title: "Замещающий не снят",
+        description:
+          message === ""
+            ? "Сервис временно недоступен. Попробуйте ещё раз."
+            : message,
+        variant: "destructive",
+      });
+    },
+  });
+  const deputies = visit.deputies ?? [];
+
+  return (
+    <span className="mt-0.5 flex basis-full flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+      <span className="font-semibold uppercase tracking-wide">Замещающие:</span>
+      {deputies.length === 0 && <span>не назначены</span>}
+      {deputies.map((deputy) => (
+        <span
+          key={deputy.id}
+          className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5"
+        >
+          <span className="font-medium text-foreground">
+            {deputy.employeeName}
+          </span>
+          <span>
+            {deputy.canEditPlacement ? "правит расстановку" : "только просмотр"}
+          </span>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() =>
+                removal.mutate({
+                  eventId: event.id,
+                  visitObjectId: visit.id,
+                  deputyId: deputy.id,
+                })
+              }
+              disabled={removal.isPending}
+              aria-label={`Снять замещающего ${deputy.employeeName} с объекта ${visit.objectName}`}
+              title="Снять замещающего"
+              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          )}
+        </span>
+      ))}
+      {canEdit && (
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          // Имя называет ОБЪЕКТ: таких кнопок в раскрытой строке столько же,
+          // сколько объектов, и список скринридера был бы рядом одинаковых.
+          aria-label={`Добавить замещающего на объект ${visit.objectName}`}
+          className="rounded px-1.5 py-0.5 font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          + Замещающий
+        </button>
+      )}
+      {addOpen && (
+        <AddDeputyDialog
+          event={event}
+          visit={visit}
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
+    </span>
   );
 }
 
