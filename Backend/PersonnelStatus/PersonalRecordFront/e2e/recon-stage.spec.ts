@@ -162,6 +162,7 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     const token = await apiToken()
     // Судим по СВЕЖЕЗАВЕДЁННОМУ ОМ: старая строка стенда могла попасть на
     // рекогносцировку переходом, и на ней правило заведения не проверяется.
+    const call = await apiCall(token)
     const fixture = await createWithObject(token)
     expect(fixture.stage, 'ОМ с объектом заведено не на рекогносцировке').toBe(
       'RECON',
@@ -186,6 +187,12 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await expect(stage).toContainText('Выполнено: 0 из')
     await stage.getByLabel(/^Выполнено: /).first().check()
     await expect(stage).toContainText('Выполнено: 1 из')
+
+    // Проба УБИРАЕТ за собой: предмет проверки — состояние ЗАВЕДЕНИЯ, значит
+    // строку приходится заводить каждый прогон, и без уборки реестр копил бы
+    // её бесконечно (24.08.2026: 188 пробных строк из 194 — Plane «Реестр
+    // ОМ-34»). Удаление — та же ручка, что у кнопки реестра.
+    await dropEvent(call, fixture.id)
   })
 
 
@@ -207,6 +214,9 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await expect(inbox).toBeVisible({ timeout: 15_000 })
     const row = inbox.locator('div').filter({ hasText: created.code }).first()
     await expect(row).toContainText(`${want} чел.`, { timeout: 15_000 })
+
+    // Проба убирает за собой — см. `dropEvent`.
+    await dropEvent(call, created.id)
   })
 
 })
@@ -292,7 +302,7 @@ async function apiCall(
  * зелёный по чужой строке. */
 async function createRequestFixture(
   call: (method: string, path: string, body?: unknown) => Promise<any>,
-): Promise<{ code: string; request: number }> {
+): Promise<{ code: string; request: number; id: string }> {
   const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
   const object = objects.results.find(
     (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
@@ -322,5 +332,18 @@ async function createRequestFixture(
     'DEMAND',
   )
   expect(done.reconForceRequestedAt, 'момент отправки штабу не проставлен').not.toBeNull()
-  return { code: created.code, request }
+  return { code: created.code, request, id: String(created.id) }
+}
+
+/** Убрать за собой заведённую пробой строку реестра.
+ *
+ * Отказ НЕ роняет пробу: удаление — уборка, а не предмет проверки, и падать
+ * на нём значило бы красить зелёный прогон по причине, к нему не относящейся.
+ * Не удалённое подберёт `manage.py purge_probe_events`.
+ */
+async function dropEvent(
+  call: (method: string, path: string, body?: unknown) => Promise<any>,
+  eventId: string,
+): Promise<void> {
+  await call('DELETE', `/api/ops/security-events/${eventId}/`).catch(() => ({}))
 }

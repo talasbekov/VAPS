@@ -755,4 +755,66 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(row).toContainText('не назначены', { timeout: 15_000 })
   })
 
+
+  test('ошибочно заведённый бюллетень удаляется из реестра', async ({ page }) => {
+    // Задача заказчика «Реестр ОМ-34»: убрать бюллетень было НЕЧЕМ, и реестр
+    // копил мусор. Проба ведёт удаление ЧЕРЕЗ ЭКРАН и сверяет исчезновение с
+    // сервером: пропасть из таблицы строка может и от фильтра.
+    const token = await apiToken()
+    const doomed = await createDoomedEvent(token)
+
+    await signIn(page)
+    await page.goto(
+      `${APP}/security-ops/events/?search=${encodeURIComponent(DOOMED_TITLE)}`,
+    )
+    await expect(page.getByText(doomed.code, { exact: true }).first()).toBeVisible({
+      timeout: 20_000,
+    })
+
+    await page
+      .getByRole('button', { name: `Удалить мероприятие ${doomed.code}` })
+      .click()
+    const dialog = page.getByRole('dialog')
+    // Спрашиваем ИМЕНЕМ того, что исчезнет: иначе человек соглашается вслепую.
+    await expect(dialog).toContainText(`Удалить ${doomed.code}?`)
+    await dialog.getByRole('button', { name: 'Удалить' }).click()
+
+    // Окно закрывается ОТВЕТОМ сервера — сначала дожидаемся этого, иначе код
+    // ОМ находится в заголовке ещё открытого окна и счётчик ноля не дождётся.
+    await expect(dialog).toHaveCount(0, { timeout: 15_000 })
+    // Имя ТОЧНОЕ: «ОМ-2026-12» подстрокой входит в «ОМ-2026-123», и ноль
+    // никогда бы не сошёлся — по чужой строке, а не по своей.
+    await expect(
+      page.getByText(doomed.code, { exact: true }),
+    ).toHaveCount(0, { timeout: 15_000 })
+    // Сервер, а не только таблица: из списка строка могла бы уйти отбором.
+    const rows = await events(token)
+    expect(rows.some((row) => row.code === doomed.code)).toBe(false)
+  })
+
 })
+
+const DOOMED_TITLE = 'Проба удаления (e2e)'
+
+/** Заводит заведомо удаляемое ОМ: без объекта, без работы — ровно тот случай,
+ * ради которого удаление и заведено (опечатка, дубль, ошибка ввода). */
+async function createDoomedEvent(
+  token: string,
+): Promise<{ id: string; code: string }> {
+  const res = await fetch(`${API}/api/ops/security-events/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      title: DOOMED_TITLE,
+      businessDate: '2026-08-25',
+      kind: 'INTERNAL',
+    }),
+  })
+  const created = (await res.json()) as { id: string; code: string }
+  expect(created.code, 'фикстура удаления не завелась').toBeTruthy()
+  return created
+}
+

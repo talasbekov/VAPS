@@ -229,10 +229,20 @@ def create_event(
     # стадии. Без объекта осматривать нечего: ОМ остаётся на «Бюллетене», и
     # карточка зовёт добавить объект посещения.
     initial_stage = "RECON" if security_object is not None else "BULLETIN"
-    # Номер — порядковый по реестру (порт мока: count+1). Гонку двух создателей
-    # останавливает уникальность кода: проигравший получает конверт по
-    # CONSTRAINT_ERROR_MAP, а не второй такой же номер.
-    number = OpsSecurityEvent.objects.count() + 1
+    # Номер — СЛЕДУЮЩИЙ ЗА НАИБОЛЬШИМ выданным в этом году, а не «count + 1».
+    # Счёт строк ломается от удаления: после чистки реестра от пробных строк
+    # (Plane «Реестр ОМ-34», 230 удалённых) `count + 1` стал указывать на
+    # номера, которые давно заняты, и КАЖДОЕ создание падало 500 на
+    # уникальности кода. Номер — не количество строк, а счётчик выданных.
+    prefix = f"ОМ-{parsed_date.year}-"
+    issued = [
+        int(code[len(prefix):])
+        for code in OpsSecurityEvent.objects.filter(
+            code__startswith=prefix
+        ).values_list("code", flat=True)
+        if code[len(prefix):].isdigit()
+    ]
+    number = (max(issued) + 1) if issued else 1
     binding = None
     if security_object is not None:
         applicable = resolve_applicable_version(security_object, parsed_date)
@@ -438,6 +448,84 @@ def remove_visit_object(event_id, visit_object_id):
     visit.delete()
     event.refresh_from_db()
     return event
+
+
+# ── Удаление мероприятия ────────────────────────────────────────────────────
+
+
+#: Мероприятия, которые НЕЛЬЗЯ удалить: у них есть внешний след.
+DELETE_FORBIDDEN_STAGES = frozenset({"CLOSED"})
+
+
+@transaction.atomic
+def delete_event(event_id, *, actor, force=False):
+    """Убрать мероприятие из реестра.
+
+    Зачем удаление вообще: бюллетень, заведённый по ошибке (опечатка в
+    названии, дубль, пробный прогон), убрать было НЕЧЕМ — реестр копил мусор,
+    и на 24.08.2026 из 194 строк 188 были пробными. Реестр, который нельзя
+    почистить, перестаёт читаться глазом, и проверка UI идёт по мусору.
+
+    Чего удаление НЕ делает:
+
+    * закрытое ОМ не трогает — у него внешний след (номер в бумаге, итоги
+      направлений, ознакомления), и стирать его значило бы терять историю;
+    * ОМ с назначениями и записями журнала штаба не трогает — там уже была
+      работа людей, и «удалить» вместо «отменить» скрыло бы её;
+    * прав не смягчает: своё право `event.delete`, отдельное от `event.manage`
+      (ведущий правит мероприятие, стирает — админ).
+
+    `force` снимает ОБА запрета и предназначен ровно одному вызывающему —
+    команде чистки пробных строк (`purge_probe_events`). Права он не заменяет:
+    команду запускает администратор с консоли, а API `force` не передаёт
+    НИКОГДА — иначе запрет, ради которого он и заведён, снимался бы кнопкой.
+    Пробная строка не история и не работа людей: её пометил прогон, и именно
+    метка, а не стадия, определяет, что она мусор.
+
+    Журнал мутаций пишется ДО удаления и снимком целиком: строка исчезает, и
+    журнал остаётся единственным следом того, что она была.
+    """
+    event = lock_event(event_id)
+    if not force and event.stage in DELETE_FORBIDDEN_STAGES:
+        raise DomainError(
+            "EVENT_DELETE_FORBIDDEN",
+            422,
+            message=(
+                "Закрытое мероприятие не удаляется — это история: итоги "
+                "направлений и ознакомления остаются его следом."
+            ),
+        )
+    if not force and (event.placement_assignments or event.journal_entries):
+        raise DomainError(
+            "EVENT_DELETE_FORBIDDEN",
+            422,
+            message=(
+                "В мероприятии есть расстановка или записи журнала штаба — "
+                "это работа людей. Такое ОМ проводят или закрывают, а не "
+                "стирают из реестра."
+            ),
+        )
+    snapshot = {
+        "code": event.code,
+        "title": event.title,
+        "stage": event.stage,
+        "businessDate": event.business_date.isoformat(),
+        "objectName": event.object_name,
+        "ownerName": event.owner_name,
+        # Обход запретов виден В ЖУРНАЛЕ: удаление отработавшего ОМ и удаление
+        # пустого бюллетеня — разные по последствиям события, и различать их
+        # задним числом надо уметь.
+        "forced": bool(force),
+    }
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECURITY_EVENT_DELETED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value=snapshot,
+    )
+    event.delete()
+    return snapshot
 
 
 # ── Замещающие на объекте посещения ─────────────────────────────────────────

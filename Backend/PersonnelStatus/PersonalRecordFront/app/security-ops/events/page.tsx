@@ -5,7 +5,15 @@
 import { useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -31,6 +39,7 @@ import { CreateSecurityEventDialog } from "@/features/create-security-event";
 import {
   AddDeputyDialog,
   AddVisitObjectsDialog,
+  deleteSecurityEvent,
   removeVisitObject,
   removeVisitObjectDeputy,
 } from "@/features/event-visit-objects";
@@ -358,13 +367,43 @@ function EventRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const detailsId = useId();
   const visits = event.visitObjects ?? [];
   const { hasPermission } = useOpsPermissions();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   // Закрытое мероприятие — история: сервер маршрут в нём менять не даст, и
   // кнопка, которая гарантированно получит отказ, — обещание, а не действие.
   const canEditObjects =
     hasPermission("event.manage") && event.stage !== "CLOSED";
+  // Закрытое ОМ сервер удалять отказывается по той же причине.
+  const canDeleteEvent =
+    hasPermission("event.delete") && event.stage !== "CLOSED";
+  const removal = useMutation({
+    mutationFn: deleteSecurityEvent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      toast({ title: `Мероприятие ${event.code} удалено` });
+      setDeleteOpen(false);
+    },
+    // Отказ ОБЪЯСНЯЕТСЯ: сервер не даёт стереть ОМ с расстановкой или
+    // записями журнала, и человеку нужна эта причина, а не «не получилось».
+    onError: (error: unknown) => {
+      const message =
+        typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "";
+      toast({
+        title: "Мероприятие не удалено",
+        description:
+          message === ""
+            ? "Сервис временно недоступен. Попробуйте ещё раз."
+            : message,
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <>
@@ -408,6 +447,21 @@ function EventRow({
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+            {/* Удаление ошибочно заведённого бюллетеня. Отдельное право
+                `event.delete`: ведущий мероприятие его правит, стирает из
+                реестра администратор. Кнопки НЕТ у того, кто не может
+                удалять, — кнопка, обречённая на 403, это обещание. */}
+            {canDeleteEvent && (
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(true)}
+                aria-label={`Удалить мероприятие ${event.code}`}
+                title="Удалить мероприятие"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             )}
           </span>
@@ -513,6 +567,37 @@ function EventRow({
           onClose={() => setAddOpen(false)}
         />
       )}
+
+      {/* Подтверждение — окно, а не `confirm()`: удаление необратимо, и
+          спросить надо ИМЕНЕМ того, что исчезнет, иначе человек соглашается
+          вслепую. */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Удалить {event.code}?</DialogTitle>
+            <DialogDescription>
+              «{event.title}» исчезнет из реестра вместе с объектами посещения и
+              расчётом постов. Отменить это нельзя; след останется только в
+              журнале действий. Мероприятия с расстановкой или записями журнала
+              штаба сервер удалять не даёт — их проводят или закрывают.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Отмена
+            </Button>
+            {/* Окно закрывается ОТВЕТОМ сервера, а не кликом: отказ («есть
+                расстановка») человек должен увидеть здесь же. */}
+            <Button
+              variant="destructive"
+              disabled={removal.isPending}
+              onClick={() => removal.mutate({ eventId: event.id })}
+            >
+              {removal.isPending ? "Удаление…" : "Удалить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -185,6 +185,7 @@ from organization_management.apps.ops.api.serializers import (
 _READ_EVENT_PERMISSION = "event.view"
 _MANAGE_EVENT_PERMISSION = "event.manage"
 _STAGE_OVERRIDE_PERMISSION = "event.stage_override"
+_DELETE_EVENT_PERMISSION = "event.delete"
 
 
 class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -200,6 +201,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "list": _READ_EVENT_PERMISSION,
         "retrieve": _READ_EVENT_PERMISSION,
         "create": _MANAGE_EVENT_PERMISSION,
+        # Удаление — СВОЁ право: ведущий мероприятие его правит, стирает из
+        # реестра администратор (та же мерка, что у stage_override).
+        "destroy": _DELETE_EVENT_PERMISSION,
         "bindable_objects": _MANAGE_EVENT_PERMISSION,
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_remove": _MANAGE_EVENT_PERMISSION,
@@ -317,6 +321,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 message="Мероприятие не найдено.",
             )
         return self._event_response(event)
+
+    def destroy(self, request, pk=None):
+        # Ответ — 204 без тела: удалённого мероприятия больше нет, и
+        # возвращать его «в форме контракта» значило бы отдавать призрак.
+        event_service.delete_event(pk, actor=request.user)
+        return Response(status=204)
 
     def create(self, request):
         data = request.data or {}
