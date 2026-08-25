@@ -2285,14 +2285,52 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     та же семантика, что у мока MSW (list / patch / reset).
     """
 
+    # Правка сводки — своё право (Plane «Реестр ОМ-35.6»): её заполняет
+    # старший ГВО, а не всякий, кто ведёт мероприятие. ЧТЕНИЕ остаётся на
+    # `event.view`: сводку смотрят и те, кто её не заполняет (командный центр,
+    # реестр, карточка ОМ), и закрыть просмотр правом правки значило бы
+    # спрятать данные от их читателей.
     permission_map = {
         "list": "event.view",
-        "partial_update": "event.manage",
-        "reset": "event.manage",
+        "partial_update": "gvo.manage",
+        "reset": "gvo.manage",
     }
     # Код ОМ содержит кириллицу и дефисы («ОМ-2026-1») — дефолтный lookup
     # [^/.]+ подходит, но объявим явно ради читаемости.
     lookup_value_regex = r"[^/]+"
+
+    #: Действия, которые открывает роль В ДАННЫХ (не код права).
+    _CHIEF_ACTIONS = frozenset({"partial_update", "reset"})
+
+    def permission_override(self, request):
+        """Старший ГВО правит сводку СВОЕГО мероприятия без `gvo.manage`.
+
+        «Старший ГВО или админ» — требование заказчика дословно. Админ проходит
+        по «*», а старший — по роли в данных: старший мероприятия
+        (`chief_employee_id` бюллетеня) у визита иностранного ОЛ и есть
+        старший ГВО (подпись факта сводки уточнена 23.08 ровно поэтому).
+
+        Почему не «старший группы ГВО» из самой сводки: там он ТЕКСТ патча
+        («Фамилия | позывной | старший ГВО»), без ссылки на кадровую запись.
+        Пускать по совпадению фамилии нельзя — тёзка получил бы правку чужой
+        сводки, а сама строка правится тем же окном, то есть право выдавало бы
+        себя само.
+
+        Старший ОБЪЕКТА посещения (`ОМ-35.2`) сюда НЕ входит: его полномочия
+        кончаются на его объекте, а сводка — про мероприятие целиком.
+
+        Только своё ОМ: код мероприятия берётся из адреса, и «я где-то
+        старший» права на чужую сводку не даёт.
+        """
+        if self.action not in self._CHIEF_ACTIONS:
+            return False
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
+        event = OpsSecurityEvent.objects.filter(code=self.kwargs.get("pk")).first()
+        if event is None:
+            return False
+        return event.chief_employee_id == employee.pk
 
     def list(self, request):
         return Response({"results": gvo_service.list_patches()})

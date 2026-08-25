@@ -8,6 +8,8 @@ export {
   gvoSenior,
   gvoStaffCount,
   gvoCountryAbbr,
+  gvoVisitDays,
+  canManageGvoSummary,
 } from "./model/derive";
 export {
   gvoSectionSpec,
