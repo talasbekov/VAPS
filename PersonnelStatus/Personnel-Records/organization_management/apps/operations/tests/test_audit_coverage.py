@@ -886,6 +886,13 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         om.pk, visit.pk, deputy_row.pk, actor=ACTOR
     )
 
+    # Старший объекта посещения: назначение и снятие — именные решения, по
+    # которым спрашивают доклад и расстановку объекта (Plane «Реестр ОМ-35.2»).
+    event_service.assign_visit_object_chief(
+        om.pk, visit.pk, employee_id=str(deputy_employee.pk), actor=ACTOR
+    )
+    event_service.remove_visit_object_chief(om.pk, visit.pk, actor=ACTOR)
+
     event_service.complete_placement(om.pk)
     event_service.approve_placement(om.pk)
     om.refresh_from_db()

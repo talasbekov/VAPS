@@ -7,6 +7,7 @@ import { opsApiClient } from "@/lib/ops-api";
 import {
   securityEventDeletePath,
   visitObjectDeputiesPath,
+  visitObjectChiefPath,
   visitObjectDeputyDetailPath,
   visitObjectDetailPath,
   visitObjectsPath,
@@ -44,6 +45,29 @@ export function updateVisitObject(variables: {
   return opsApiClient.patch<SecurityEvent>(
     visitObjectDetailPath(variables.eventId, variables.visitObjectId),
     { visitDay: variables.visitDay, note: variables.note }
+  );
+}
+
+/** Старший объекта посещения («Реестр ОМ-35.2»). Замена идёт этим же вызовом:
+ * старший у объекта ОДИН, и требовать «сначала снимите» значило бы разбить
+ * обычную замену на две операции. */
+export function assignVisitObjectChief(variables: {
+  eventId: string;
+  visitObjectId: string;
+  employeeId: string;
+}): Promise<SecurityEvent> {
+  return opsApiClient.post<SecurityEvent>(
+    visitObjectChiefPath(variables.eventId, variables.visitObjectId),
+    { employeeId: variables.employeeId }
+  );
+}
+
+export function removeVisitObjectChief(variables: {
+  eventId: string;
+  visitObjectId: string;
+}): Promise<SecurityEvent> {
+  return opsApiClient.del<SecurityEvent>(
+    visitObjectChiefPath(variables.eventId, variables.visitObjectId)
   );
 }
 

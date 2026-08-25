@@ -190,6 +190,15 @@ export interface VisitObject {
   /** Примечание к посещению («основной объект», время) — свободный текст. */
   note: string;
   /**
+   * Старший ЭТОГО объекта посещения — не старший мероприятия: у визита
+   * иностранного ОЛ объектов несколько, ответственный у каждого свой.
+   * `null` — не назначен, и это ответ: объект может стоять в маршруте
+   * раньше, чем под него нашли человека.
+   */
+  chiefEmployeeId: string | null;
+  /** Снимок подписи старшего: увольнение не превращает строку в номер. */
+  chiefName: string;
+  /**
    * Готовность расстановки: сколько людей нужно постам объекта и сколько
    * назначено. `null` — НЕИЗВЕСТНО (расчёт постов не размечен по объектам),
    * `0` — посты не рассчитаны. Это разные ответы, и экран их различает.
@@ -303,6 +312,14 @@ export function visitObjectDetailPath(
   visitObjectId: string
 ): string {
   return `${visitObjectsPath(eventId)}${visitObjectId}/`;
+}
+
+/** Старший объекта посещения: POST назначает (и заменяет), DELETE снимает. */
+export function visitObjectChiefPath(
+  eventId: string,
+  visitObjectId: string
+): string {
+  return `${visitObjectDetailPath(eventId, visitObjectId)}chief/`;
 }
 
 /** Замещающие на объекте посещения: назначение и отзыв права. */

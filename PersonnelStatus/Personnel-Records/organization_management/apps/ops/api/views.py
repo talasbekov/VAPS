@@ -207,6 +207,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "bindable_objects": _MANAGE_EVENT_PERMISSION,
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_detail": _MANAGE_EVENT_PERMISSION,
+        "visit_object_chief": _MANAGE_EVENT_PERMISSION,
         # Раздача права — работа ведущего мероприятие, а не замещающего:
         # иначе назначенный смог бы назначить себе смену и разрастить круг.
         "visit_object_deputy_add": _MANAGE_EVENT_PERMISSION,
@@ -433,6 +434,33 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.remove_visit_object_deputy(
                 pk, visit_object_id, deputy_id, actor=request.user
+            )
+        )
+
+    # ── Старший объекта посещения ───────────────────────────────────────
+
+    # POST назначает (и заменяет), DELETE снимает — один экшен по той же
+    # причине, что у visit_object_detail: два экшена на одном url_path дают
+    # маршрут, где первый по алфавиту забирает оба метода.
+    @action(
+        detail=True,
+        methods=["post", "delete"],
+        url_path=r"visit-objects/(?P<visit_object_id>[^/.]+)/chief",
+    )
+    def visit_object_chief(self, request, pk=None, visit_object_id=None):
+        if request.method.lower() == "delete":
+            return self._event_response(
+                event_service.remove_visit_object_chief(
+                    pk, visit_object_id, actor=request.user
+                )
+            )
+        data = request.data or {}
+        return self._event_response(
+            event_service.assign_visit_object_chief(
+                pk,
+                visit_object_id,
+                employee_id=data.get("employeeId"),
+                actor=request.user,
             )
         )
 

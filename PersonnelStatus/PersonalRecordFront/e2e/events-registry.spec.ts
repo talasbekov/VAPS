@@ -65,6 +65,8 @@ interface EventRow {
   visitObjects?: {
     id: string
     objectName: string
+    chiefEmployeeId: string | null
+    chiefName: string
     deputies: { id: string; employeeName: string; canEditPlacement: boolean }[]
   }[]
 }
@@ -679,6 +681,90 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(
       page.getByRole('group', { name: 'Личный состав на сбор' }),
     ).toBeVisible({ timeout: 15_000 })
+  })
+
+  test('старший объекта назван в строке объекта и снимается оттуда же', async ({
+    page,
+  }) => {
+    // Задача заказчика «Реестр ОМ-35.2». Кнопки НАЗНАЧЕНИЯ на экране пока нет
+    // (она приходит с выпадающим списком сотрудников — «ОМ-35.3»/«ОМ-35.7»),
+    // поэтому старший ставится ручкой, а проба стережёт то, что уже есть на
+    // экране: подпись строки объекта и снятие через крестик.
+    const token = await apiToken()
+    const rows = await events(token)
+    const target = rows.find(
+      (r) =>
+        (r.visitObjects ?? []).length > 0 &&
+        (r.visitObjects ?? []).every((v) => v.chiefEmployeeId === null) &&
+        r.stage !== 'CLOSED',
+    )
+    test.skip(
+      target === undefined,
+      'на стенде нет ОМ с объектом посещения и без старшего',
+    )
+    const visit = target!.visitObjects![0]
+
+    const roster = (await (
+      await fetch(`${API}/api/ops/personnel/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { results: { id: string; name: string }[] }
+    test.skip(roster.results.length === 0, 'кадровый снимок стенда пуст')
+    const person = roster.results[0]
+
+    const assigned = await fetch(
+      `${API}/api/ops/security-events/${target!.id}/visit-objects/${visit.id}/chief/`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ employeeId: person.id }),
+      },
+    )
+    expect(assigned.status).toBe(200)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page
+      .getByRole('button', {
+        name: new RegExp(`объекты посещения ${target!.code}`, 'i'),
+      })
+      .first()
+      .click()
+
+    // Строка ОБЪЕКТА во врезке (`li`), а не `tr`: имя объекта стоит и в
+    // колонке бюллетеня, и таких `tr` на стенде десятки.
+    const row = page.locator('li').filter({ hasText: visit.objectName }).first()
+    // Ведём по СВОЕЙ группе, а не по всей строке объекта: «не назначен»
+    // входит подстрокой в «Замещающие: не назначены», и ассерт по строке
+    // зеленел бы, ничего не проверяя.
+    // Регистр из РАЗМЕТКИ: капс делает `uppercase`, textContent его не видит.
+    const chief = row.getByRole('group', {
+      name: `Старший объекта ${visit.objectName}`,
+    })
+    // Без пробела между подписью и именем: соседние span'ы разведены
+    // ОТСТУПОМ CSS (gap), а textContent пробела оттуда не получает.
+    await expect(chief).toContainText(`Старший объекта:${person.name}`, {
+      timeout: 15_000,
+    })
+
+    // Снятие уносит имя — и фикстура не копится между прогонами.
+    await chief
+      .getByRole('button', {
+        name: `Снять старшего ${person.name} с объекта ${visit.objectName}`,
+      })
+      .click()
+    await expect(chief).toHaveText('Старший объекта:не назначен', {
+      timeout: 15_000,
+    })
+
+    // Сервер, а не только экран: подпись могла бы уйти рефетчем списка.
+    const fresh = (await events(token)).find((r) => r.id === target!.id)
+    const savedVisit = (fresh?.visitObjects ?? []).find((v) => v.id === visit.id)
+    expect(savedVisit?.chiefEmployeeId).toBeNull()
+    expect(savedVisit?.chiefName).toEqual('')
   })
 
   test('замещающие назначаются из строки объекта и видны с их правом', async ({
