@@ -45,7 +45,7 @@ export default function OpsAuditPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Администрирование"
+          eyebrow="Система"
           title="Аудит"
           description="Журнал действий раздела ОМ — только для чтения"
         />

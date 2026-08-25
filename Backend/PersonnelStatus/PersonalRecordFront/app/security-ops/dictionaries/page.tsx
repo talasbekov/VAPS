@@ -30,7 +30,7 @@ export default function DictionariesPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Администрирование"
+          eyebrow="Система"
           title="Справочники"
           description="Значения, которые читают формы раздела ОМ"
         />
