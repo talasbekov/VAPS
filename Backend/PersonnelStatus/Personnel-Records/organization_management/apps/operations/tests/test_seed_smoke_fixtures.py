@@ -173,6 +173,48 @@ def test_no_request_shortfall_collides_with_the_probes_number(stand):
     assert 5 not in shortfalls
 
 
+# ── Мероприятие на «Рекогносцировке» ─────────────────────────────────────
+
+
+def test_a_recon_event_exists_for_the_stage_filter(stand):
+    """Отбор реестра по этапу проверяется пробой слоя прототипа, и до 25.08
+    она стояла на МУСОРЕ — пробных строках, которые никто не убирал. Уборка
+    мусор снесла, и без явной фикстуры проба видит пустую таблицу."""
+    seed()
+
+    event = OpsSecurityEvent.objects.get(title=seed_smoke_fixtures.RECON_TITLE)
+    assert event.stage == "RECON"
+    # Расчёт заполнен: карточку открывают глазом, и пустой этап показывал бы
+    # не то состояние, ради которого фикстура заведена.
+    assert event.recon_sector_posts != []
+
+
+def test_running_it_twice_leaves_one_recon_event(stand):
+    seed()
+    seed()
+
+    assert (
+        OpsSecurityEvent.objects.filter(
+            title=seed_smoke_fixtures.RECON_TITLE
+        ).count()
+        == 1
+    )
+
+
+def test_a_recon_fixture_moved_on_is_rebuilt(stand):
+    """Фикстуру могли двинуть дальше по цепочке рукой или прогоном — тогда
+    этап снова пуст, и переиспользовать её по одному лишь названию нельзя."""
+    seed()
+    moved = OpsSecurityEvent.objects.get(title=seed_smoke_fixtures.RECON_TITLE)
+    moved.stage = "APPROVAL"
+    moved.save(update_fields=["stage"])
+
+    seed()
+
+    rebuilt = OpsSecurityEvent.objects.get(title=seed_smoke_fixtures.RECON_TITLE)
+    assert rebuilt.stage == "RECON"
+
+
 # ── Объект с готовым паспортом ───────────────────────────────────────────
 
 
