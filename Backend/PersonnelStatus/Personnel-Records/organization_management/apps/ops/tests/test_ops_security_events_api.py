@@ -423,8 +423,22 @@ def test_full_lifecycle_walkthrough(manager):
         format="json",
     )
     assert resp.status_code == 200
+    # Запрос личного состава пуст — рекогносцировка не завершается: её итог
+    # адресуется штабу 2-го департамента, и пустой запрос ему не отправляют.
+    resp = manager.post(f"{base}recon/complete/")
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "RECON_FORCE_REQUEST_EMPTY"
+    resp = manager.patch(
+        f"{base}recon/",
+        {"checklist": checklist, "sectorPosts": posts, "forceRequest": 64},
+        format="json",
+    )
+    assert resp.json()["reconForceRequest"] == 64
+    # До завершения этапа запрос — черновик старшего наряда: штаб его не видит.
+    assert resp.json()["reconForceRequestedAt"] is None
     data = manager.post(f"{base}recon/complete/").json()
     assert (data["stage"], data["readinessPercent"]) == ("DEMAND", 30)
+    assert data["reconForceRequestedAt"] is not None
 
     # DEMAND: утверждение строк агрегирует запросы сил по группам
     rows = [
@@ -1210,3 +1224,82 @@ def test_bulletin_complete_opens_recon_when_object_present(manager):
     refused = manager.post(f"{URL}{bare['id']}/bulletin/complete/")
     assert refused.status_code == 422
     assert refused.json()["error_code"] == "BULLETIN_INCOMPLETE"
+
+
+def test_recon_force_request_survives_saves_without_the_field(manager):
+    """Задача заказчика «Реестр ОМ-23»: запрос личного состава с
+    рекогносцировки доходит до штаба 2-го департамента.
+
+    Стережётся не «поле сохраняется», а то, что его НЕ СТИРАЕТ чужое
+    сохранение: мок-слой и старые клиенты шлют тело рекогносцировки без
+    `forceRequest`, и трактовка «нет ключа = ноль» обнуляла бы запрос при
+    каждой правке расчёта постов — молча, между двумя заходами штаба.
+    """
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    base = f"{URL}{event_id}/"
+    data = manager.post(f"{base}recon/import-from-passport/").json()
+    posts = data["reconSectorPosts"]
+
+    saved = manager.patch(
+        f"{base}recon/",
+        {"checklist": data["reconChecklist"], "sectorPosts": posts, "forceRequest": 64},
+        format="json",
+    ).json()
+    assert saved["reconForceRequest"] == 64
+
+    # Правка расчёта БЕЗ поля запроса — запрос на месте.
+    again = manager.patch(
+        f"{base}recon/",
+        {"checklist": data["reconChecklist"], "sectorPosts": posts},
+        format="json",
+    ).json()
+    assert again["reconForceRequest"] == 64
+    # И из БАЗЫ, а не из ответа: ответ мог бы собраться из входа.
+    assert OpsSecurityEvent.objects.get(pk=event_id).recon_force_request == 64
+
+    # Явный ноль — это правка, а не «не прислали»: старший наряда снимает
+    # запрос тем же полем, каким его ставил.
+    zeroed = manager.patch(
+        f"{base}recon/",
+        {"checklist": data["reconChecklist"], "sectorPosts": posts, "forceRequest": 0},
+        format="json",
+    ).json()
+    assert zeroed["reconForceRequest"] == 0
+
+    # Отрицательное — ошибка ПОЛЯ, а не молчаливый ноль.
+    bad = manager.patch(
+        f"{base}recon/",
+        {"checklist": data["reconChecklist"], "sectorPosts": posts, "forceRequest": -3},
+        format="json",
+    )
+    assert bad.status_code == 400
+    assert bad.json()["details"]["forceRequest"] == [
+        "Укажите целое число не меньше нуля."
+    ]
+
+
+def test_recon_force_request_reaches_the_registry_row(manager):
+    """Штаб 2-го департамента читает запрос из РЕЕСТРА мероприятий (экран
+    «Сбор сил на ОМ» строится на нём), а не из карточки — значит число и
+    момент отправки обязаны быть в строке списка, а не только в детали."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    base = f"{URL}{event_id}/"
+    data = manager.post(f"{base}recon/import-from-passport/").json()
+    manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": [{**i, "done": True} for i in data["reconChecklist"]],
+            "sectorPosts": data["reconSectorPosts"],
+            "forceRequest": 41,
+        },
+        format="json",
+    )
+    manager.post(f"{base}recon/complete/")
+
+    rows = manager.get(URL).json()["results"]
+    row = next(r for r in rows if r["id"] == str(event_id))
+    assert row["reconForceRequest"] == 41
+    assert row["reconForceRequestedAt"] is not None
+

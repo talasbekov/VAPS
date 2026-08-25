@@ -185,6 +185,14 @@ def serialize_security_event(event):
         "initialTasks": event.initial_tasks,
         "reconChecklist": event.recon_checklist,
         "reconSectorPosts": event.recon_sector_posts,
+        # Запрос личного состава с рекогносцировки: число и МОМЕНТ отправки
+        # штабу. Момент нужен «Сбору сил» — лента штаба ведётся по нему.
+        "reconForceRequest": event.recon_force_request,
+        "reconForceRequestedAt": (
+            None
+            if event.recon_force_requested_at is None
+            else event.recon_force_requested_at.isoformat()
+        ),
         "demandRows": event.demand_rows,
         "demandApproved": event.demand_approved,
         "forceRequests": event.force_requests,

@@ -395,6 +395,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 pk,
                 checklist=data.get("checklist"),
                 sector_posts=data.get("sectorPosts"),
+                # Ключа может не быть — тогда сохранённый запрос не трогаем
+                # (см. `update_recon`): «нет ключа» это не «ноль».
+                force_request=data.get("forceRequest"),
             )
         )
 

@@ -133,6 +133,8 @@ function emptyEvent(
       comment: "",
     })),
     reconSectorPosts: [],
+    reconForceRequest: 0,
+    reconForceRequestedAt: null,
     demandRows: [],
     demandApproved: false,
     forceRequests: [],
@@ -591,6 +593,12 @@ export const securityEventsHandlers = [
         ...event,
         reconChecklist: checklist,
         reconSectorPosts: sectorPosts,
+        // «Нет ключа» — не «ноль»: без этого правка расчёта постов стирала бы
+        // запрос штабу (порт правила бэка, Plane «Реестр ОМ-23»).
+        reconForceRequest:
+          body.forceRequest === undefined
+            ? event.reconForceRequest
+            : body.forceRequest,
         updatedAt: nowIso(),
       })
     );
@@ -685,8 +693,21 @@ export const securityEventsHandlers = [
         "Добавьте хотя бы один пост, прежде чем завершать этап."
       );
     }
+    if (event.reconForceRequest < 1) {
+      return businessRuleError(
+        "RECON_FORCE_REQUEST_EMPTY",
+        "Укажите требуемое число сотрудников: завершение рекогносцировки направляет запрос штабу 2-го департамента."
+      );
+    }
     return HttpResponse.json(
-      saveEvent({ ...event, stage: "DEMAND", readinessPercent: 30, updatedAt: nowIso() })
+      saveEvent({
+        ...event,
+        stage: "DEMAND",
+        readinessPercent: 30,
+        // Момент отправки штабу ставит ЗАВЕРШЕНИЕ этапа, а не правка числа.
+        reconForceRequestedAt: nowIso(),
+        updatedAt: nowIso(),
+      })
     );
   }),
 

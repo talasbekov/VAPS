@@ -231,6 +231,13 @@ export interface SecurityEvent {
   initialTasks: string;
   reconChecklist: ReconChecklistItem[];
   reconSectorPosts: ReconSectorPost[];
+  /** Запрос личного состава с рекогносцировки — ОЦЕНКА старшего наряда,
+   * которую получает штаб 2-го департамента. Не путать с `forceNeed`: тот
+   * считается системой из утверждённой потребности тремя шагами позже. */
+  reconForceRequest: number;
+  /** Момент отправки запроса штабу (проставляется завершением этапа), либо
+   * `null` — запрос ещё черновик и штабу не виден. */
+  reconForceRequestedAt: string | null;
   demandRows: StaffingDemandRow[];
   demandApproved: boolean;
   forceRequests: ForceRequest[];
@@ -349,6 +356,10 @@ export interface UpdateBulletinRequest extends Record<string, unknown> {
 export interface UpdateReconRequest extends Record<string, unknown> {
   checklist: ReconChecklistItem[];
   sectorPosts: ReconSectorPost[];
+  /** Запрос личного состава. Необязателен: тело БЕЗ ключа оставляет
+   * сохранённое число (сервер трактует «нет ключа» как «не трогать»), и
+   * правка расчёта постов запрос штабу не стирает. */
+  forceRequest?: number;
 }
 
 /** Секция потребности не даёт отдельного «сохранить черновик» — одна операция

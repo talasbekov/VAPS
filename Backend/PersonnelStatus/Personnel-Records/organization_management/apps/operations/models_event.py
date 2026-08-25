@@ -115,6 +115,20 @@ class OpsSecurityEvent(TimeStampedModel):
     initial_tasks = models.TextField(blank=True)
     recon_checklist = models.JSONField()
     recon_sector_posts = models.JSONField()
+    # Запрос личного состава с рекогносцировки (Plane «Реестр ОМ-23»): оценка
+    # СТАРШЕГО НАРЯДА по итогам осмотра, которую получает штаб 2-го
+    # департамента и раскладывает по департаментам в «Сборе сил на ОМ».
+    #
+    # Отдельное поле, а не `force_need`: `force_need` считается СИСТЕМОЙ из
+    # утверждённой потребности (`approve_demand`), то есть появляется на три
+    # шага позже и означает другое — «сколько выходит по расчёту», а не
+    # «сколько просит старший наряда». Держать их одним числом значило бы
+    # затирать запрос расчётом и терять разницу между ними, а именно на этой
+    # разнице штаб и работает.
+    recon_force_request = models.PositiveIntegerField(default=0)
+    # Момент отправки запроса — не булев флаг: «отправлено» это МОМЕНТ, и
+    # лента штаба ведётся по нему («что пришло с моего последнего захода»).
+    recon_force_requested_at = models.DateTimeField(null=True, blank=True)
     demand_rows = models.JSONField()
     demand_approved = models.BooleanField()
     force_requests = models.JSONField()

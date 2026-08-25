@@ -808,6 +808,9 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
                 "minRating": None,
             }
         ],
+        # Запрос личного состава — условие завершения рекогносцировки
+        # (Plane «Реестр ОМ-23»): её итог адресуется штабу 2-го департамента.
+        force_request=12,
     )
     event_service.complete_recon(om.pk)
     event_service.approve_demand(

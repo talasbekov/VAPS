@@ -523,11 +523,25 @@ def _advance(event, stage):
 
 
 @transaction.atomic
-def update_recon(event_id, *, checklist, sector_posts):
+def update_recon(event_id, *, checklist, sector_posts, force_request=None):
+    """Правка рекогносцировки. `force_request` — запрос личного состава
+    (Plane «Реестр ОМ-23»); `None` означает «поле не прислали» и оставляет
+    сохранённое значение, а не обнуляет его: старые клиенты и мок-слой шлют
+    тело без этого поля, и трактовка «нет ключа = ноль» стирала бы запрос при
+    каждом чужом сохранении."""
     event = lock_event(event_id)
     checklist = checklist or []
     sector_posts = sector_posts or []
     field_errors = {}
+    if force_request is not None:
+        try:
+            parsed_request = int(force_request)
+        except (TypeError, ValueError):
+            parsed_request = -1
+        if parsed_request < 0:
+            field_errors["forceRequest"] = ["Укажите целое число не меньше нуля."]
+    else:
+        parsed_request = None
     for index, item in enumerate(checklist):
         if item.get("result") == "NEEDS_CHANGES" and not str(
             item.get("comment", "")
@@ -557,9 +571,11 @@ def update_recon(event_id, *, checklist, sector_posts):
         }
         for row in sector_posts
     ]
-    event.save(
-        update_fields=["recon_checklist", "recon_sector_posts", "updated_at"]
-    )
+    fields = ["recon_checklist", "recon_sector_posts", "updated_at"]
+    if parsed_request is not None:
+        event.recon_force_request = parsed_request
+        fields.append("recon_force_request")
+    event.save(update_fields=fields)
     return event
 
 
@@ -639,6 +655,20 @@ def complete_recon(event_id):
         raise DomainError("RECON_SECTOR_POSTS_EMPTY", 422, message=
             "Добавьте хотя бы один пост, прежде чем завершать этап.",
         )
+    # Запрос личного состава — ИТОГ рекогносцировки, а не приложение к ней:
+    # завершение этапа адресует его штабу 2-го департамента, и завершать
+    # рекогносцировку без числа значило бы отправлять штабу пустой запрос
+    # (Plane «Реестр ОМ-23», эталонный блок «Итог рекогносцировки»).
+    if event.recon_force_request < 1:
+        raise DomainError("RECON_FORCE_REQUEST_EMPTY", 422, message=
+            "Укажите требуемое число сотрудников: завершение рекогносцировки "
+            "направляет запрос штабу 2-го департамента.",
+        )
+    # Момент отправки запроса штабу. Проставляется ЗДЕСЬ, а не при правке
+    # числа: до завершения этапа число — черновик старшего наряда, штаб его
+    # не видит, и лента «что пришло нового» считала бы черновики.
+    event.recon_force_requested_at = Clock.now()
+    event.save(update_fields=["recon_force_requested_at", "updated_at"])
     return _advance(event, "DEMAND")
 
 
