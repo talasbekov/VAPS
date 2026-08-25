@@ -16,6 +16,7 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.audit_service import (
     SECURITY_EVENT_CLOSED,
     SECURITY_EVENT_CREATED,
+    SECURITY_EVENT_DELETED,
     SECURITY_EVENT_DEPUTY_ASSIGNED,
     SECURITY_EVENT_DEPUTY_REVOKED,
     SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
@@ -1503,4 +1504,163 @@ def test_deputy_without_edit_right_is_an_observer(manager):
         format="json",
     )
     assert refused.status_code == 403
+
+
+# ── Удаление мероприятия (Plane «Реестр ОМ-34») ──────────────────────────────
+
+
+def test_next_code_survives_deletion(manager):
+    """Номер ОМ — счётчик ВЫДАННЫХ, а не количество строк.
+
+    Красная проба к дефекту, который вскрыла чистка реестра: при `count + 1`
+    удаление старых строк возвращало счётчик на занятые номера, и КАЖДОЕ
+    создание падало 500 на уникальности кода. Проба стережёт именно это —
+    удаляем середину и заводим новое ОМ.
+    """
+    obj = make_object(with_passport=True)
+    first = create_event(manager, obj, title="Первое").json()
+    second = create_event(manager, obj, title="Второе").json()
+    assert second["code"].endswith("-2")
+
+    remover, _ = client_for(
+        "ev-remover-3", "EV_REMOVER_3", perms=("event.view", "event.delete")
+    )
+    assert remover.delete(f"{URL}{first['id']}/").status_code == 204
+
+    third = create_event(manager, obj, title="Третье")
+    assert third.status_code == 201, third.content
+    # Номер идёт ДАЛЬШЕ выданного, а не занимает освободившийся: код ОМ уходит
+    # в бумагу, и переиспользование номера означало бы два разных дела под
+    # одним номером.
+    assert third.json()["code"].endswith("-3")
+
+
+def test_event_delete_needs_its_own_permission(manager):
+    """Право ВЕСТИ мероприятие не даёт стирать его из реестра."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    resp = manager.delete(f"{URL}{event_id}/")
+    assert resp.status_code == 403
+    # Отказ без последствий: строка на месте.
+    assert OpsSecurityEvent.objects.filter(pk=event_id).exists()
+
+
+def test_event_delete_removes_the_row_and_leaves_a_trace(manager):
+    """Строка исчезает целиком — значит журнал остаётся ЕДИНСТВЕННЫМ следом
+    того, что она была, и обязан нести снимок, а не один id."""
+    obj = make_object(with_passport=True)
+    data = create_event(manager, obj, title="Опечатка в названии").json()
+    remover, _ = client_for(
+        "ev-remover", "EV_REMOVER", perms=("event.view", "event.delete")
+    )
+
+    resp = remover.delete(f"{URL}{data['id']}/")
+    assert resp.status_code == 204
+    assert not OpsSecurityEvent.objects.filter(pk=data["id"]).exists()
+    # Объекты посещения уезжают каскадом вместе с ОМ — сирот не остаётся.
+    assert not OpsSecurityEventVisitObject.objects.filter(
+        event_id=data["id"]
+    ).exists()
+
+    row = OpsAuditLog.objects.get(action=SECURITY_EVENT_DELETED)
+    assert row.old_value["code"] == data["code"]
+    assert row.old_value["title"] == "Опечатка в названии"
+    assert row.old_value["stage"] == "RECON"
+
+
+def test_event_delete_refuses_closed_and_worked_events(manager):
+    """Удаление — для ошибок ввода, а не для истории и не вместо отмены."""
+    obj = make_object(with_passport=True)
+    employee = make_employee()
+    data = create_event(manager, obj).json()
+    base = f"{URL}{data['id']}/"
+    remover, _ = client_for(
+        "ev-remover-2", "EV_REMOVER_2", perms=("event.view", "event.delete")
+    )
+
+    imported = manager.post(f"{base}recon/import-from-passport/").json()
+    manager.post(
+        f"{base}placement/assign/",
+        {
+            "postId": imported["reconSectorPosts"][0]["id"],
+            "employeeId": str(employee.pk),
+        },
+        format="json",
+    )
+    refused = remover.delete(base)
+    assert refused.status_code == 422
+    assert refused.json()["error_code"] == "EVENT_DELETE_FORBIDDEN"
+    assert "работа людей" in refused.json()["message"]
+    assert OpsSecurityEvent.objects.filter(pk=data["id"]).exists()
+
+    # Закрытое ОМ — история: своя причина отказа, а не та же самая.
+    OpsSecurityEvent.objects.filter(pk=data["id"]).update(
+        stage="CLOSED", placement_assignments=[], journal_entries=[]
+    )
+    closed = remover.delete(base)
+    assert closed.status_code == 422
+    assert closed.json()["error_code"] == "EVENT_DELETE_FORBIDDEN"
+    assert "история" in closed.json()["message"]
+
+
+def test_purge_probe_events_is_dry_by_default(manager):
+    """Команда чистки не удаляет с первого запуска: команда, которая стирает
+    без спроса, рано или поздно снесёт живое."""
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    obj = make_object(with_passport=True)
+    probe = create_event(manager, obj, title="Проба чего-нибудь (e2e)").json()
+    live = create_event(manager, obj, title="Визит делегации").json()
+
+    out = StringIO()
+    call_command("purge_probe_events", stdout=out)
+    assert "Сухой прогон" in out.getvalue()
+    assert OpsSecurityEvent.objects.filter(pk=probe["id"]).exists()
+
+    out = StringIO()
+    call_command("purge_probe_events", "--yes", stdout=out)
+    assert "Удалено: 1" in out.getvalue()
+    assert not OpsSecurityEvent.objects.filter(pk=probe["id"]).exists()
+    # Живая строка не тронута: метку «(e2e)» ставят только прогоны.
+    assert OpsSecurityEvent.objects.filter(pk=live["id"]).exists()
+
+
+def test_purge_probe_events_force_takes_worked_rows(manager):
+    """Пробную строку с расстановкой обычный запрет НЕ отдаёт — и правильно
+    делает: на живом ОМ это работа людей. Но у пробы основание другое: её
+    пометил прогон. `--force` для этого и заведён, и обход виден в журнале."""
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    obj = make_object(with_passport=True)
+    employee = make_employee()
+    data = create_event(manager, obj, title="Проба с работой (e2e)").json()
+    base = f"{URL}{data['id']}/"
+    imported = manager.post(f"{base}recon/import-from-passport/").json()
+    manager.post(
+        f"{base}placement/assign/",
+        {
+            "postId": imported["reconSectorPosts"][0]["id"],
+            "employeeId": str(employee.pk),
+        },
+        format="json",
+    )
+
+    out = StringIO()
+    call_command("purge_probe_events", "--yes", stdout=out)
+    assert "Оставлено (сервер отказал): 1" in out.getvalue()
+    assert OpsSecurityEvent.objects.filter(pk=data["id"]).exists()
+
+    out = StringIO()
+    call_command("purge_probe_events", "--yes", "--force", stdout=out)
+    assert "Удалено: 1" in out.getvalue()
+    assert not OpsSecurityEvent.objects.filter(pk=data["id"]).exists()
+    # Обход запрета помечен в журнале: удаление отработавшего ОМ и удаление
+    # пустого бюллетеня — разные события.
+    assert OpsAuditLog.objects.get(action=SECURITY_EVENT_DELETED).old_value[
+        "forced"
+    ] is True
 

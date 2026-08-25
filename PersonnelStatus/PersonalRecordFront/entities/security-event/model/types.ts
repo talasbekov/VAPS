@@ -278,6 +278,11 @@ export function securityEventDetailPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/`;
 }
 
+/** Удаление мероприятия: своё право `event.delete`, ответ 204 без тела. */
+export function securityEventDeletePath(id: string): string {
+  return securityEventDetailPath(id);
+}
+
 export const BINDABLE_OBJECTS_PATH = `${SECURITY_EVENTS_PATH}bindable-objects/`;
 
 /** Объекты посещения мероприятия: добавление и снятие. */

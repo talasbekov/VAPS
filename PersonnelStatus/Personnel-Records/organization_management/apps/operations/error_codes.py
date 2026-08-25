@@ -46,6 +46,7 @@ CODES = {
     "RECON_CHECKLIST_INCOMPLETE": frozenset({422}),
     "RECON_SECTOR_POSTS_EMPTY": frozenset({422}),
     "RECON_FORCE_REQUEST_EMPTY": frozenset({422}),
+    "EVENT_DELETE_FORBIDDEN": frozenset({422}),
     "DEMAND_ROWS_EMPTY": frozenset({422}),
     "FORCE_ALLOCATION_INCOMPLETE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),

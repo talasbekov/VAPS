@@ -972,6 +972,19 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     dict_service.delete_entry(tracked.pk, actor=ACTOR)
 
+    # Удаление ОМ: строка исчезает целиком, и журнал остаётся её единственным
+    # следом. Удаляется ОТДЕЛЬНОЕ мероприятие — то, по которому шла цепочка
+    # выше, к этому моменту закрыто, а закрытое сервис не отдаёт (и правильно
+    # делает: это история).
+    doomed = event_service.create_event(
+        title="Заведено по ошибке",
+        object_id=str(secured.pk),
+        business_date=TODAY.isoformat(),
+        kind="INTERNAL",
+        actor=ACTOR,
+    )
+    event_service.delete_event(doomed.pk, actor=ACTOR)
+
     # ГВО: ручная правка сводки и её сброс — оба пишут журнал (сводные
     # данные уходят в бумагу); база сводки — производная бюллетеня, следа
     # не оставляет.

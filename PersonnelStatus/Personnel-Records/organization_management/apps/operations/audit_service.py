@@ -97,6 +97,10 @@ PASSPORT_VERSION_PUBLISHED = "PASSPORT_VERSION_PUBLISHED"
 # агрегат (журнал штаба, назначения), а не журнал мутаций раздела.
 SECURITY_EVENT_CREATED = "SECURITY_EVENT_CREATED"
 SECURITY_EVENT_CLOSED = "SECURITY_EVENT_CLOSED"
+# Удаление ОМ из реестра. Строка исчезает целиком — значит журнал мутаций
+# остаётся ЕДИНСТВЕННЫМ следом того, что она вообще была: снимок кладётся в
+# old_value целиком, иначе «куда делось ОМ-2026-118» останется без ответа.
+SECURITY_EVENT_DELETED = "SECURITY_EVENT_DELETED"
 # Ручной перевод ОМ на произвольный этап администратором. Исключение из
 # правила выше («промежуточные стадии событий не пишут»): обычный переход —
 # это пройденный этап, и его след живёт в журнале переходов, а перевод
@@ -166,6 +170,7 @@ ACTIONS = frozenset(
         PASSPORT_VERSION_PUBLISHED,
         SECURITY_EVENT_CREATED,
         SECURITY_EVENT_CLOSED,
+        SECURITY_EVENT_DELETED,
         SECURITY_EVENT_STAGE_OVERRIDDEN,
         SECURITY_EVENT_DEPUTY_ASSIGNED,
         SECURITY_EVENT_DEPUTY_REVOKED,

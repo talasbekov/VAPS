@@ -41,6 +41,10 @@ CONSTRAINT_ERROR_MAP = {
     # проигравший гонку получает тот же отказ, что и при обычном дубле даты.
     "uniq_ops_passport_version_effective_from": ("VALIDATION_ERROR", 400, False),
     "uniq_ops_passport_version_number": ("VALIDATION_ERROR", 400, False),
+    # Два ОМ с одним номером, разошедшиеся с расчётом следующего номера:
+    # проигравший гонку получает конверт, а не 500. Ограничение заводится
+    # AUTO-именем Postgres (`<таблица>_<колонка>_key`), поэтому и ключ такой.
+    "ops_security_events_code_key": ("VALIDATION_ERROR", 400, False),
 }
 
 

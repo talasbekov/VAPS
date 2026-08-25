@@ -5,6 +5,7 @@
 // место, а не собирать список объектов из ответа по кускам.
 import { opsApiClient } from "@/lib/ops-api";
 import {
+  securityEventDeletePath,
   visitObjectDeputiesPath,
   visitObjectDeputyDetailPath,
   visitObjectDetailPath,
@@ -60,4 +61,13 @@ export function removeVisitObjectDeputy(variables: {
       variables.deputyId
     )
   );
+}
+
+/** Удаление мероприятия целиком (Plane «Реестр ОМ-34»). Ответ 204 без тела:
+ * удалённого ОМ больше нет, и отдавать его «в форме контракта» значило бы
+ * возвращать призрак — реестр после успеха просто перезапрашивает список. */
+export function deleteSecurityEvent(variables: {
+  eventId: string;
+}): Promise<void> {
+  return opsApiClient.del<void>(securityEventDeletePath(variables.eventId));
 }
