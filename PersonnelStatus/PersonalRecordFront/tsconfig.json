@@ -31,9 +31,15 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-build/types/**/*.ts",
+    ".next-load-a/types/**/*.ts",
+    ".next-load-b/types/**/*.ts",
+    ".next-load-base/types/**/*.ts",
+    ".next-measure-turbo/types/**/*.ts",
+    ".next-measure-webpack/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-build/types/**/*.ts"
+    ".next-load-c/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
