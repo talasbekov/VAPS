@@ -30,6 +30,8 @@ import {
   securityEventForceAllocationPath,
   securityEventForcesSplitPath,
   securityEventForcesNotifyPath,
+  securityEventForcesMembersPath,
+  securityEventForcesMemberPath,
   securityEventForcesCompletePath,
   securityEventJournalPath,
   securityEventPlacementAssignPath,
@@ -55,6 +57,7 @@ import type {
   ResolveRemarkRequest,
   ReturnPlacementRequest,
   SecurityEvent,
+  AddAllocationMemberRequest,
   SplitForceDemandRequest,
   UpdateBulletinRequest,
   UpdateDemandRequest,
@@ -104,16 +107,29 @@ export function usePersonnelPage(params: {
   page: number;
   pageSize?: number;
   enabled?: boolean;
+  /** Подразделение-владелец: пусто — вся служба (прежнее поведение). */
+  divisionId?: string;
 }) {
   const pageSize = params.pageSize ?? 20;
+  const divisionId = params.divisionId ?? "";
   return useQuery<PersonnelPageResponse, OpsApiFailure>({
-    queryKey: ["ops-personnel", "page", params.search, params.page, pageSize],
+    // Подразделение — ЧАСТЬ ключа: без него страница чужого управления
+    // отдалась бы из кэша как своя.
+    queryKey: [
+      "ops-personnel",
+      "page",
+      params.search,
+      params.page,
+      pageSize,
+      divisionId,
+    ],
     queryFn: () =>
       opsApiClient.get<PersonnelPageResponse>(
         opsPersonnelPagePath({
           search: params.search,
           page: params.page,
           pageSize,
+          divisionId,
         })
       ),
     enabled: params.enabled !== false,
@@ -194,6 +210,25 @@ export function useNotifyDirectorates(id: string, allocationId: string) {
   return useEventMutation<Record<string, never>>(id, () =>
     opsApiClient.post<SecurityEvent>(
       securityEventForcesNotifyPath(id, allocationId)
+    )
+  );
+}
+
+/** Управление выделяет человека (Plane №73, шаг СС-3). */
+export function useAddAllocationMember(id: string, allocationId: string) {
+  return useEventMutation<AddAllocationMemberRequest>(id, (body) =>
+    opsApiClient.post<SecurityEvent>(
+      securityEventForcesMembersPath(id, allocationId),
+      body
+    )
+  );
+}
+
+/** Снять выделенного: сервер отменит его статус привлечения. */
+export function useRemoveAllocationMember(id: string, allocationId: string) {
+  return useEventMutation<{ employeeId: string }>(id, ({ employeeId }) =>
+    opsApiClient.del<SecurityEvent>(
+      securityEventForcesMemberPath(id, allocationId, employeeId)
     )
   );
 }

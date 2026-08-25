@@ -1466,6 +1466,177 @@ def notify_directorates(event_id, allocation_id, *, actor):
     return event
 
 
+# Статус привлечения на мероприятие. Код справочника, а не своя строка: расход
+# дня и «Сбор сил» считают привлечённых именно по нему.
+ASSIGNMENT_STATUS_CODE = "EVENT_ASSIGNMENT"
+
+
+def _employee_division(employee):
+    """Подразделение сотрудника — через штатную единицу.
+
+    У `Employee` своего подразделения НЕТ: связь идёт через `staff_unit`, и
+    строки у неё может не быть вовсе (обратный OneToOne бросает исключение).
+    """
+    from organization_management.apps.employees.models import Employee
+
+    try:
+        staff_unit = employee.staff_unit
+    except Employee.staff_unit.RelatedObjectDoesNotExist:
+        return None, ""
+    if staff_unit is None or staff_unit.division is None:
+        return None, ""
+    return str(staff_unit.division_id), staff_unit.division.name
+
+
+@transaction.atomic
+def add_allocation_member(
+    event_id, allocation_id, *, employee_id, actor, override=False, override_reason=""
+):
+    """Управление выделяет человека на мероприятие (Plane №73, шаг «СС-3»).
+
+    Выделение — не запись в списке, а СТАТУС: расход дня и счётчики «Сбора
+    сил» считают привлечённых по `EVENT_ASSIGNMENT`, и человек, попавший в
+    список без статуса, для всей остальной системы остался бы в строю.
+
+    Поэтому же здесь работает обычный протокол статусов: пересечение с чужим
+    статусом отдаёт свой отказ (жёсткое — 422, мягкое — 409 с обходом по
+    причине). Своей проверки занятости раздел не заводит — вторая реализация
+    правила разошлась бы с расходом.
+    """
+    from organization_management.apps.operations import status_service
+
+    event = lock_event(event_id)
+    if event.stage not in _ALLOCATION_STAGES:
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message=(
+                "Выделять людей можно на этапах «Потребность» и «Запрос сил»."
+            ),
+        )
+    target = _find_allocation(event, allocation_id)
+    employee = _find_personnel(employee_id)
+    if employee is None:
+        raise _validation({"employeeId": ["Сотрудник не найден."]})
+    employee_key = str(employee.pk)
+    for row in event.force_allocation:
+        if any(m.get("employeeId") == employee_key for m in row.get("members", [])):
+            raise DomainError(
+                "DOUBLE_ASSIGNMENT",
+                422,
+                message=(
+                    f"{personnel_display_name(employee)} уже выделен(а) на это "
+                    f"мероприятие департаментом «{row.get('departmentName')}»."
+                ),
+            )
+
+    division_id, division_name = _employee_division(employee)
+    status = status_service.create_status(
+        employee_id=employee.pk,
+        status_type_code=ASSIGNMENT_STATUS_CODE,
+        date_start=event.business_date,
+        # Полуинтервал [начало, окончание): день мероприятия закрывается
+        # следующим днём, иначе строка пуста и статуса нет ни одного дня.
+        date_end=(event.business_date_end or event.business_date)
+        + dt.timedelta(days=1),
+        actor=actor,
+        comment=f"Привлечение на мероприятие {event.code}",
+        source_ref=f"security-event:{event.pk}",
+        override=override,
+        override_reason=override_reason,
+    )
+    member = {
+        "employeeId": employee_key,
+        "name": personnel_display_name(employee),
+        "divisionId": division_id,
+        "divisionName": division_name,
+        "addedAt": _now_iso(),
+        # Ссылка на статус — то, чем выделение снимается: без неё снятие
+        # искало бы «похожий» статус и однажды закрыло бы чужой.
+        "statusId": str(status.pk),
+    }
+    event.force_allocation = [
+        {**row, "members": [*row.get("members", []), member]}
+        if row.get("id") == allocation_id
+        else row
+        for row in event.force_allocation
+    ]
+    event.save(update_fields=["force_allocation", "updated_at"])
+    return event
+
+
+@transaction.atomic
+def remove_allocation_member(event_id, allocation_id, employee_id, *, actor):
+    """Снять выделенного человека — вместе с его статусом привлечения.
+
+    Начавшееся привлечение НЕ снимается: статус, который уже идёт, — факт, и
+    домен статусов отменяет только не начавшиеся строки (`cancel_status`).
+    Раздел ОМ своего исключения из этого правила не заводит: «человека сегодня
+    привлекли, а потом сделали вид, что не привлекали» — это переписывание
+    расхода задним числом.
+    """
+    from organization_management.apps.operations import status_service
+    from organization_management.apps.operations.models_status import (
+        LifecycleState,
+        OpsEmployeeStatus,
+    )
+
+    event = lock_event(event_id)
+    target = _find_allocation(event, allocation_id)
+    member = next(
+        (
+            m
+            for m in target.get("members", [])
+            if m.get("employeeId") == str(employee_id)
+        ),
+        None,
+    )
+    if member is None:
+        raise _not_found("Выделенный сотрудник не найден в заявке.", employee_id)
+
+    status = (
+        OpsEmployeeStatus.objects.filter(pk=member.get("statusId")).first()
+        if member.get("statusId")
+        else None
+    )
+    if status is not None and status.state in (
+        LifecycleState.ACTIVE,
+        LifecycleState.COMPLETED,
+    ):
+        # И начавшееся, и уже закончившееся привлечение — случившийся факт;
+        # отменяют только не начавшееся (см. cancel_status).
+        raise DomainError(
+            "ASSIGNMENT_ALREADY_STARTED",
+            422,
+            message=(
+                f"{member.get('name')} уже привлечён(а) — снять можно только "
+                "до начала мероприятия."
+            ),
+        )
+    if status is not None and status.state == LifecycleState.PLANNED:
+        status_service.cancel_status(
+            status,
+            actor=actor,
+            reason=f"Снят(а) с выделения на мероприятие {event.code}",
+        )
+
+    event.force_allocation = [
+        {
+            **row,
+            "members": [
+                m
+                for m in row.get("members", [])
+                if m.get("employeeId") != str(employee_id)
+            ],
+        }
+        if row.get("id") == allocation_id
+        else row
+        for row in event.force_allocation
+    ]
+    event.save(update_fields=["force_allocation", "updated_at"])
+    return event
+
+
 # ── Выделение сил ───────────────────────────────────────────────────────────
 
 

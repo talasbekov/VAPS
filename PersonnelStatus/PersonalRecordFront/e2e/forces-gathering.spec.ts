@@ -77,7 +77,10 @@ function metric(page: Page, label: string) {
  * что кто-то уже мог разложить, и проба «сохранилось» на чужой строке ничего
  * бы не доказала.
  */
-async function prepareDemandEvent(token: string): Promise<{ code: string; total: number }> {
+async function prepareDemandEvent(
+  token: string,
+  businessDate = '2026-08-26',
+): Promise<{ code: string; total: number }> {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
   const call = async (method: string, path: string, body?: unknown): Promise<any> => {
     const res = await fetch(`${API}${path}`, {
@@ -96,7 +99,7 @@ async function prepareDemandEvent(token: string): Promise<{ code: string; total:
   const created = await call('POST', '/api/ops/security-events/', {
     title: 'Проба раскладки сил (e2e)',
     objectId: object.id,
-    businessDate: '2026-08-26',
+    businessDate,
     kind: 'INTERNAL',
   })
   const base = `/api/ops/security-events/${created.id}`
@@ -361,6 +364,61 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // Оповещённый департамент из раскладки больше не снимается — замок
     // ставит сервер, и кнопка снятия у строки погашена.
     await expect(card.getByRole('button', { name: 'Убрать департамент, строка 1', exact: true })).toBeDisabled()
+  })
+
+  test('управление выделяет человека, и он получает статус привлечения', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    // Мероприятие БУДУЩЕЙ датой: статус привлечения тогда ещё не начался, и
+    // проба может проверить снятие. На сегодняшнем ОМ снятие запрещено самим
+    // доменом статусов — это правило, а не обходимая помеха.
+    const { code } = await prepareDemandEvent(token, '2027-06-01')
+    const departments = await get<{ results: { id: number; name: string; type_code: string }[] }>(
+      token,
+      '/api/core/divisions/?page_size=200',
+    )
+    const department = departments.results.find((row) => row.type_code === 'department')
+    const directorate = departments.results.find((row) => row.type_code === 'directorate')
+    expect(directorate, 'у стенда нет управления — выделять некому').toBeTruthy()
+    const roster = await get<{ count: number }>(
+      token,
+      `/api/ops/personnel/?division_id=${directorate!.id}&page_size=1`,
+    )
+    expect(roster.count, 'в управлении стенда нет людей — выделять некого').toBeGreaterThan(0)
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const card = page.locator('div.rounded-lg.border').filter({ hasText: code }).first()
+    await expect(card).toBeVisible({ timeout: 25_000 })
+    await card.getByRole('button', { name: 'Департамент', exact: true }).click()
+    await card.getByLabel('Департамент, строка 1', { exact: true }).selectOption(String(department!.id))
+    await card.getByRole('button', { name: 'Сохранить раскладку' }).click()
+    await expect(card.getByText('Раскладка сохранена')).toBeVisible()
+    const state = card.locator('[data-slot="allocation-state"]')
+    await state.getByRole('button', { name: 'Оповестить управления' }).click()
+    await expect(state).toContainText('Управления оповещены', { timeout: 20_000 })
+
+    await state.getByRole('button', { name: 'Выделить людей' }).first().click()
+    const picker = state.locator('[data-slot="personnel-picker"]')
+    await expect(picker).toBeVisible()
+    const candidate = picker.getByRole('button').filter({ hasNotText: 'Дальше' }).nth(1)
+    const candidateName = ((await candidate.textContent()) ?? '').trim()
+    await candidate.click()
+    await expect(state).toContainText('Выделено 1 из', { timeout: 20_000 })
+
+    // Человек получил СТАТУС, а не только строку в списке: расход считает по
+    // статусу, и запись без него для остальной системы ничего не значит.
+    const statuses = await get<{ results: { employee_id: number }[] }>(
+      token,
+      `/api/operations/statuses/?business_date=2027-06-01&status_type_code=${EVENT_ASSIGNMENT}&page_size=200`,
+    )
+    expect(statuses.results.length, 'статуса привлечения на дату ОМ нет').toBeGreaterThan(0)
+
+    // Снятие до начала мероприятия убирает и строку, и статус.
+    await state.getByRole('button', { name: 'Снять' }).first().click()
+    await expect(state).toContainText('Выделено 0 из', { timeout: 20_000 })
+    expect(candidateName, 'подбор отдал пустую строку').not.toBe('')
   })
 
   test('реестр личного состава остался достижим', async ({ page }) => {
