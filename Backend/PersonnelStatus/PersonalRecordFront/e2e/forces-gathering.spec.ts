@@ -571,6 +571,37 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(main).toContainText(row.statusLabel as string)
   })
 
+  test('кандидат в подборе назван статусом дня, а занятый — занятым', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    // Сторож: состав отдаёт статус, иначе бейдж внизу проверял бы подпись
+    // «в строю», которую клиент печатает и на пустом ответе.
+    const card = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
+    const member = card.forceRoster[0]
+    expect(typeof member.statusLabel, 'состав не несёт статуса дня').toBe('string')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Расстановка', { timeout: 25_000 })
+    await expect(main).toContainText(member.statusLabel as string)
+    // Занятость подписывается только ПОСЛЕ назначения — иначе строка была бы
+    // на экране всегда и ничего не значила.
+    await expect(main).not.toContainText('уже назначен на пост этого мероприятия')
+
+    await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+    })
+    await page.reload()
+    await expect(main).toContainText('уже назначен на пост этого мероприятия', {
+      timeout: 25_000,
+    })
+  })
+
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)

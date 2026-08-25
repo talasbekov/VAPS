@@ -311,6 +311,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     page,
     pageSize: CANDIDATE_PAGE_SIZE,
     enabled: !fromRoster,
+    // Статус спрашивается на день МЕРОПРИЯТИЯ: подбор отвечает на вопрос
+    // «свободен ли он тогда», а не «свободен ли он сейчас» (Plane №65, «Р-2»).
+    businessDate: event.businessDate,
   });
   /** Состав мероприятия в форме кадровой строки подбора. */
   const rosterPeople = useMemo(
@@ -320,6 +323,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         name: member.name,
         rankLabel: "",
         unit: member.divisionName,
+        statusCode: member.statusCode,
+        statusLabel: member.statusLabel,
       })),
     [event.forceRoster]
   );
@@ -384,6 +389,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     return Math.min(100, fit);
   }
 
+  /** Предупреждение по кандидату — словами, до нажатия.
+   *
+   * Только то, что известно ТОЧНО: требование поста к рейтингу и его нехватка.
+   * Занятость чужой службой сказана бейджем статуса, а не здесь: «в отпуске»
+   * не запрещает поставить человека, это решение расстановщика.
+   */
+  function warnOf(person: PersonnelSummarySnapshot): string | null {
+    if (selected === null || selected.minRating === null) return null;
+    const rating = ratingOf(person.id);
+    if (rating === null) return "рейтинга нет — требование поста не проверить";
+    if (rating < selected.minRating)
+      return `рейтинг ${rating} ниже требования поста ${selected.minRating}`;
+    return null;
+  }
+
   function inBand(rating: number | null): boolean {
     switch (band) {
       case "Все":
@@ -421,6 +441,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
       fit: fitOf(person),
       rating: ratingOf(person.id),
       busy: assignedIds.has(person.id),
+      warn: warnOf(person),
     }));
     switch (sort) {
       case "По рейтингу":
@@ -841,7 +862,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               : "На этой странице нет кандидатов под выбранный фильтр рейтинга"}
                     </p>
                   ) : (
-                    candidates.map(({ person, fit, rating, busy }) => (
+                    candidates.map(({ person, fit, rating, busy, warn }) => (
                       <button
                         key={person.id}
                         type="button"
@@ -852,14 +873,22 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         }
                         className="flex w-full items-start gap-2 rounded-md border p-2 text-left text-xs hover:bg-muted disabled:opacity-50"
                       >
-                        <span className="flex-1">
+                        <Initials
+                          name={person.name}
+                          tone={statusTone(person.statusCode)}
+                        />
+                        <span className="min-w-0 flex-1">
                           <span className="block font-semibold">
                             {person.rankLabel} {person.name}
                           </span>
-                          <span className="block text-muted-foreground">
+                          <span className="block truncate text-muted-foreground">
                             {person.unit}
                           </span>
                           <span className="mt-0.5 flex flex-wrap items-center gap-1">
+                            <StatusBadge
+                              code={person.statusCode}
+                              label={person.statusLabel}
+                            />
                             {rating !== null && (
                               <span className="rounded-full bg-secondary px-1.5 py-0.5 tabular-nums">
                                 {rating}
@@ -868,10 +897,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                             <span className="text-muted-foreground">
                               Совпадение {fit}%
                             </span>
-                            {busy && (
-                              <span className="text-amber-700">уже назначен</span>
-                            )}
                           </span>
+                          {busy && (
+                            <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                              уже назначен на пост этого мероприятия
+                            </span>
+                          )}
+                          {/* Красным — то, что мешает поставить человека
+                              ПРЯМО СЕЙЧАС: рейтинг ниже требования поста
+                              сервер отдаст мягким конфликтом с обходом, и
+                              честнее сказать это до нажатия. */}
+                          {warn !== null && (
+                            <span className="mt-0.5 block text-[10px] font-bold text-red-700">
+                              {warn}
+                            </span>
+                          )}
                         </span>
                         <b className="tabular-nums">{fit}</b>
                       </button>

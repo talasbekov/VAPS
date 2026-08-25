@@ -1488,6 +1488,55 @@ def _employee_division(employee):
     return str(staff_unit.division_id), staff_unit.division.name
 
 
+def day_status_map(employee_ids, on_date):
+    """{id сотрудника: (код статуса, подпись)} на дату, ОДИН запрос.
+
+    Предикат «какая строка действует на дату» берётся у расхода
+    (`EmployeeStatusSelector`) — второй способ решить тот же вопрос разошёлся
+    бы с ним молча. Отсутствие ключа значит «действующего статуса нет», что и
+    есть «в строю»: строки «в строю» в справочнике не существует.
+    """
+    from organization_management.apps.operations.selectors import (
+        EmployeeStatusSelector,
+        StatusTypeSelector,
+    )
+
+    numeric = [int(key) for key in employee_ids if str(key).isdigit()]
+    if not numeric:
+        return {}
+    names = StatusTypeSelector.names_map()
+    return {
+        str(row["employee_id"]): (
+            row["status_type_code"],
+            names.get(row["status_type_code"], row["status_type_code"]),
+        )
+        for row in EmployeeStatusSelector.overlapping_on(
+            on_date, employee_ids=numeric
+        )
+    }
+
+
+def force_roster_view(event):
+    """Состав мероприятия со статусом дня (Plane №65, шаг «Р-2»).
+
+    Состав — источник кандидатов расстановки с шага «СС-6», и подбор обязан
+    показывать, свободен ли человек в день ОМ: предлагать занятого значит
+    предлагать конфликт. Статус считается НА ЧТЕНИИ по той же причине, что и у
+    назначения, — записанная копия соврала бы к утру.
+    """
+    rows = event.force_roster or []
+    if not rows:
+        return []
+    statuses = day_status_map(
+        {str(row.get("employeeId")) for row in rows}, event.business_date
+    )
+    view = []
+    for row in rows:
+        code, label = statuses.get(str(row.get("employeeId")), (None, None))
+        view.append({**row, "statusCode": code, "statusLabel": label})
+    return view
+
+
 def placement_assignments_view(event):
     """Назначения на посты С ПОДРАЗДЕЛЕНИЕМ и статусом дня (Plane №65, «Р-1»).
 
@@ -1507,10 +1556,6 @@ def placement_assignments_view(event):
     справочника, а его отсутствие.
     """
     from organization_management.apps.employees.models import Employee
-    from organization_management.apps.operations.selectors import (
-        EmployeeStatusSelector,
-        StatusTypeSelector,
-    )
 
     rows = event.placement_assignments or []
     if not rows:
@@ -1523,13 +1568,7 @@ def placement_assignments_view(event):
             "staff_unit__division"
         )
     }
-    status_by_employee = {
-        str(row["employee_id"]): row["status_type_code"]
-        for row in EmployeeStatusSelector.overlapping_on(
-            event.business_date, employee_ids=numeric
-        )
-    }
-    names = StatusTypeSelector.names_map()
+    statuses = day_status_map(keys, event.business_date)
     view = []
     for row in rows:
         key = str(row.get("employeeId"))
@@ -1537,13 +1576,13 @@ def placement_assignments_view(event):
         _, division_name = (
             _employee_division(employee) if employee is not None else (None, "")
         )
-        code = status_by_employee.get(key)
+        code, label = statuses.get(key, (None, None))
         view.append(
             {
                 **row,
                 "divisionName": division_name,
                 "statusCode": code,
-                "statusLabel": None if code is None else names.get(code, code),
+                "statusLabel": label,
             }
         )
     return view

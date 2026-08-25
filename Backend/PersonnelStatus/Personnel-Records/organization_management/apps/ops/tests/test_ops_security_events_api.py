@@ -375,12 +375,18 @@ def test_personnel_snapshot_shape(manager):
     data = manager.get("/api/ops/personnel/").json()
     # Ответ ВСЕГДА страница (Plane №61): безстраничной ветки у ручки больше нет.
     assert data["count"] == 1
+    # Форма ответа ОДНА на оба случая (Plane №65, «Р-2»): без
+    # `business_date` статус равен null и означает «не спрашивали». Две формы
+    # заставили бы читателя гадать, что ему пришло, поэтому ключи стоят
+    # всегда — пин расширен ОСОЗНАННО, а не подогнан под новый вывод.
     assert data["results"] == [
         {
             "id": str(employee.pk),
             "name": "Абенов С.",
             "rankLabel": "Майор",
             "unit": "Отдел охраны объектов",
+            "statusCode": None,
+            "statusLabel": None,
         }
     ]
 

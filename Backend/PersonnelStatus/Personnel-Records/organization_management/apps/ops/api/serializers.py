@@ -233,7 +233,7 @@ def serialize_security_event(event):
         "forceAllocation": event.force_allocation or [],
         # Состав мероприятия — принятые штабом люди (шаг «СС-5»): из него
         # расстановка берёт кандидатов.
-        "forceRoster": event.force_roster or [],
+        "forceRoster": security_events.force_roster_view(event),
         "forceDemandTotal": security_events.force_demand_total(event),
         # Назначения идут с подразделением и статусом дня — они считаются
         # на чтении (см. security_events.placement_assignments_view).
