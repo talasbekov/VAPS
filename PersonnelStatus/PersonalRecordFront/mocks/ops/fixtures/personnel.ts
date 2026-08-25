@@ -15,6 +15,29 @@ export const PERSONNEL_ROSTER: PersonnelSummarySnapshot[] = [
   { id: "emp-10", name: "Есимов Б.", rankLabel: "Прапорщик", unit: "Отдел пропускного режима" },
 ];
 
+/** Статус дня у демо-сотрудников (Plane №65, шаг «Р-1»).
+ *
+ * На сервере статус СЧИТАЕТСЯ на деловую дату по строкам расхода; у мока
+ * расхода нет, поэтому здесь он задан таблицей — ровно чтобы бейдж статуса на
+ * расстановке было чем проверить. Отсутствие строки = статуса нет, что и есть
+ * «в строю»: строки «в строю» в справочнике не существует.
+ */
+export const PERSONNEL_DAY_STATUS: Record<string, { code: string; label: string }> = {
+  "emp-3": { code: "VACATION", label: "Отпуск" },
+  "emp-7": { code: "ON_DUTY", label: "На дежурстве" },
+};
+
+export function personnelDayStatus(id: string): {
+  statusCode: string | null;
+  statusLabel: string | null;
+} {
+  const row = PERSONNEL_DAY_STATUS[id];
+  return {
+    statusCode: row?.code ?? null,
+    statusLabel: row?.label ?? null,
+  };
+}
+
 export function findPersonnel(id: string): PersonnelSummarySnapshot | undefined {
   return PERSONNEL_ROSTER.find((p) => p.id === id);
 }
