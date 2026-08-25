@@ -28,7 +28,9 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
+import { usePersonnelMe } from "@/hooks/use-security-event-stages";
 import {
+  canManageGvoSummary,
   deriveGvoSummary,
   gvoCountryAbbr,
   gvoStaffCount,
@@ -59,7 +61,15 @@ export function GvoSummaryPanel({
   variant = "page",
 }: GvoSummaryPanelProps) {
   const { hasPermission } = useOpsPermissions();
-  const canEdit = hasPermission("event.manage");
+  // Правка сводки — своё право (Plane «Реестр ОМ-35.6»): `gvo.manage` либо
+  // старший ЭТОГО мероприятия. Кадровая запись учётки нужна именно для второй
+  // половины: связь «учётка → сотрудник» существует только на сервере.
+  const me = usePersonnelMe();
+  const canEdit = canManageGvoSummary({
+    hasPermission,
+    myEmployeeId: me.data?.id ?? null,
+    event,
+  });
   const [section, setSection] = useState<GvoSection | null>(null);
   // Объекты посещения правятся своим окном, а не разделом патча («Реестр
   // ОМ-35.1»): список объектов принадлежит мероприятию.

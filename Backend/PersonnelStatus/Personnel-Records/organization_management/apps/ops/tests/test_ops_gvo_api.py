@@ -35,6 +35,16 @@ def viewer(name="ops-gvo-viewer"):
 
 
 def manager(name="ops-gvo-manager"):
+    """Персона, которая ПРАВИТ сводку: с «Реестр ОМ-35.6» это своё право
+    `gvo.manage`, а не общее `event.manage` — сводку заполняет старший ГВО, а
+    не всякий, кто ведёт мероприятие."""
+    api, user = client_for(name, "MANAGER", ["event.view", "gvo.manage"])
+    return api, user
+
+
+def event_manager(name="ops-gvo-event-manager"):
+    """Ведущий мероприятие БЕЗ права правки сводки — персона, на которой видно,
+    что новый гейт работает: у неё есть `event.manage`, и раньше этого хватало."""
     api, user = client_for(name, "MANAGER", ["event.view", "event.manage"])
     return api, user
 
@@ -224,3 +234,110 @@ def test_gvo_patch_rejects_retired_visits_section():
     assert "visits" in str(r.json())
     r = api.post(f"{GVO_URL}ОМ-Т-17/reset/", {"section": "visits"}, format="json")
     assert r.status_code == 400
+
+
+# ── Право правки сводки: старший ГВО и админ (Plane «Реестр ОМ-35.6») ────────
+
+
+def _employee(last_name="Булатаев", first_name="Асхат"):
+    from organization_management.apps.dictionaries.models import Rank
+    from organization_management.apps.employees.models import Employee
+
+    iin = str(970000000000 + Employee.objects.count())
+    rank = Rank.objects.get_or_create(
+        name="Подполковник", defaults={"level": 2, "code": "LTCOL"}
+    )[0]
+    return Employee.objects.create(
+        personnel_number=f"G-{iin[-4:]}",
+        last_name=last_name,
+        first_name=first_name,
+        birth_date="1985-01-01",
+        gender="M",
+        iin=iin,
+        rank=rank,
+        hire_date="2010-01-01",
+        employment_status="working",
+    )
+
+
+def test_event_manage_alone_no_longer_edits_the_summary():
+    """Ведущий мероприятие сводку НЕ правит: у неё своё право.
+
+    Это и есть смысл задачи: раньше хватало `event.manage`. Персона взята с
+    правом ведения ОМ нарочно — на персоне вообще без прав гейт был бы зелен и
+    до правки.
+    """
+    make_event("ОМ-Т-20")
+    api, _ = event_manager("gvo-only-event-manage")
+
+    r = api.patch(
+        f"{GVO_URL}ОМ-Т-20/",
+        {"section": "head", "values": {"country": "Черногория"}},
+        format="json",
+    )
+    assert r.status_code == 403
+    r = api.post(f"{GVO_URL}ОМ-Т-20/reset/", {"section": "head"}, format="json")
+    assert r.status_code == 403
+    # ЧТЕНИЕ при этом остаётся: сводку смотрят и те, кто её не заполняет.
+    assert api.get(GVO_URL).status_code == 200
+
+
+def test_event_chief_edits_own_summary_without_gvo_manage():
+    """Старший ГВО правит сводку СВОЕГО ОМ по роли в данных, а не по коду права.
+
+    Проба держит обе половины: своё мероприятие правится, ЧУЖОЕ — нет. Без
+    второй половины «право» означало бы «я где-то старший — правлю везде».
+    """
+    chief = _employee()
+    mine = make_event("ОМ-Т-21")
+    mine.chief_employee_id = chief.pk
+    mine.chief_name = "Булатаев А."
+    mine.save(update_fields=["chief_employee_id", "chief_name"])
+    make_event("ОМ-Т-22")  # чужое: старшего нет
+
+    # Права правки сводки у него НЕТ — только чтение реестра.
+    api, user = client_for("gvo-chief", "VIEWER", ["event.view"])
+    chief.user = user
+    chief.save(update_fields=["user"])
+
+    r = api.patch(
+        f"{GVO_URL}ОМ-Т-21/",
+        {"section": "head", "values": {"country": "Черногория"}},
+        format="json",
+    )
+    assert r.status_code == 200
+    assert r.json()["patch"]["country"] == "Черногория"
+
+    # Чужое мероприятие — 403: старшинство не переносится на соседнее ОМ.
+    r = api.patch(
+        f"{GVO_URL}ОМ-Т-22/",
+        {"section": "head", "values": {"country": "Черногория"}},
+        format="json",
+    )
+    assert r.status_code == 403
+
+    # И сброс своего раздела ему тоже открыт: «добавлять, редактировать,
+    # удалять всё» — требование заказчика дословно.
+    r = api.post(f"{GVO_URL}ОМ-Т-21/reset/", {"section": "head"}, format="json")
+    assert r.status_code == 200
+
+
+def test_unlinked_user_is_not_a_chief():
+    """Учётка без кадровой привязки старшим не считается.
+
+    `Employee.user` — единственное место, где связь существует; сопоставление
+    по ФИО пустило бы тёзку в чужую сводку.
+    """
+    chief = _employee(last_name="Тлесов", first_name="Ерлан")
+    event = make_event("ОМ-Т-23")
+    event.chief_employee_id = chief.pk
+    event.save(update_fields=["chief_employee_id"])
+
+    api, _ = client_for("gvo-namesake", "VIEWER", ["event.view"])
+    r = api.patch(
+        f"{GVO_URL}ОМ-Т-23/",
+        {"section": "head", "values": {"country": "Черногория"}},
+        format="json",
+    )
+    assert r.status_code == 403
+
