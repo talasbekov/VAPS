@@ -62,6 +62,7 @@ CODES = {
     "ALLOCATION_OVER_DEMAND": frozenset({422}),
     "ALLOCATION_LOCKED": frozenset({422}),
     "ALLOCATION_NO_DIRECTORATES": frozenset({422}),
+    "ASSIGNMENT_ALREADY_STARTED": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
     "PLACEMENT_INCOMPLETE": frozenset({422}),
     "ACKNOWLEDGEMENT_INCOMPLETE": frozenset({422}),

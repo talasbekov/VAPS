@@ -229,6 +229,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # разделение по ролям идёт отдельной задачей (Plane №74).
         "forces_split": _MANAGE_EVENT_PERMISSION,
         "forces_notify": _MANAGE_EVENT_PERMISSION,
+        "forces_member_add": _MANAGE_EVENT_PERMISSION,
+        "forces_member_remove": _MANAGE_EVENT_PERMISSION,
         "force_allocation": _MANAGE_EVENT_PERMISSION,
         "forces_complete": _MANAGE_EVENT_PERMISSION,
         "placement_assign": _MANAGE_EVENT_PERMISSION,
@@ -551,6 +553,48 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(
         detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/members",
+    )
+    def forces_member_add(self, request, pk=None, allocation_id=None):
+        """Управление выделяет человека (Plane №73, шаг «СС-3»)."""
+        data = request.data or {}
+        return self._event_response(
+            event_service.add_allocation_member(
+                pk,
+                allocation_id,
+                employee_id=data.get("employeeId"),
+                actor=resolve_actor_id(request),
+                # Протокол обхода мягкого конфликта — общий для раздела:
+                # пересечения статусов ловит status_service, и повтор с
+                # причиной приходит теми же полями, что у расстановки.
+                override=data.get("override") is True,
+                override_reason=data.get("override_reason") or "",
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=(
+            r"forces/allocation/(?P<allocation_id>[^/]+)"
+            r"/members/(?P<employee_id>[^/]+)"
+        ),
+    )
+    def forces_member_remove(
+        self, request, pk=None, allocation_id=None, employee_id=None
+    ):
+        return self._event_response(
+            event_service.remove_allocation_member(
+                pk,
+                allocation_id,
+                employee_id,
+                actor=resolve_actor_id(request),
+            )
+        )
+
+    @action(
+        detail=True,
         methods=["patch"],
         # lookahead: слова complete и allocation — не id запроса; порядок
         # регистрации extra-actions у DRF алфавитный, и без него forces/complete/
@@ -861,6 +905,25 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
             .select_related("rank", "staff_unit__division")
             .order_by("last_name", "first_name", "id")
         )
+
+        # Отбор по подразделению: управление выделяет СВОИХ людей, и без
+        # фильтра окно подбора предлагало бы ему всю службу (Plane №73, СС-3).
+        # Поддерево, а не один узел: у управления есть отделы, и человек
+        # числится в отделе, а не в управлении.
+        division_id = (request.query_params.get("division_id") or "").strip()
+        if division_id.isdigit():
+            from organization_management.apps.divisions.models import Division
+
+            node = Division.objects.filter(pk=division_id).first()
+            employees = (
+                employees.filter(
+                    staff_unit__division__in=node.get_descendants(include_self=True)
+                )
+                if node is not None
+                # Незнакомое подразделение — пустой список, а не «все»: иначе
+                # опечатка в фильтре молча расширяла бы выбор.
+                else employees.none()
+            )
 
         # Поиск по тому, что человек видит в строке списка: ФИО, звание,
         # подразделение и табельный номер. Искать по невидимому полю значит

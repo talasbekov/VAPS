@@ -7,12 +7,15 @@
 Сквозной проход стадий лежит в `test_ops_security_events_api`; сюда вынесены
 правила, которых он не показывает.
 """
+import datetime as dt
+
 import pytest
 
 from organization_management.apps.divisions.models import Division
 
 from .test_ops_security_events_api import (  # noqa: F401
     create_event,
+    make_employee,
     make_object,
     manager,
 )
@@ -21,6 +24,10 @@ pytestmark = pytest.mark.django_db
 
 URL = "/api/ops/security-events/"
 
+# Дата, до которой статус привлечения ещё не начался: снять выделенного можно
+# только до начала мероприятия, и пробы снятия обязаны стоять в будущем.
+FUTURE_DATE = "2027-06-01"
+
 
 def make_department(name="Департамент охраны"):
     return Division.objects.create(
@@ -28,10 +35,14 @@ def make_department(name="Департамент охраны"):
     )
 
 
-def event_on_demand(manager):  # noqa: F811
-    """ОМ, доведённое до «Потребности»: расчёт постов ушёл штабу числом."""
+def event_on_demand(manager, business_date="2026-08-10"):  # noqa: F811
+    """ОМ, доведённое до «Потребности»: расчёт постов ушёл штабу числом.
+
+    Дата по умолчанию прошлая (как у соседних проб жизненного цикла); шаги,
+    которым нужен НЕ начавшийся статус привлечения, передают будущую.
+    """
     obj = make_object(with_passport=True)
-    event_id = create_event(manager, obj).json()["id"]
+    event_id = create_event(manager, obj, business_date=business_date).json()["id"]
     base = f"{URL}{event_id}/"
     data = manager.post(f"{base}recon/import-from-passport/").json()
     # Пост из паспорта просит одного человека — делить такую потребность
@@ -220,9 +231,9 @@ def make_directorate(department, name="Управление №1"):
     )
 
 
-def allocated_event(manager, department):  # noqa: F811
+def allocated_event(manager, department, business_date="2026-08-10"):  # noqa: F811
     """ОМ с сохранённой заявкой одному департаменту."""
-    base, total = event_on_demand(manager)
+    base, total = event_on_demand(manager, business_date)
     data = manager.post(
         f"{base}forces/allocation/",
         {"rows": [{"departmentId": str(department.pk), "need": total}]},
@@ -332,3 +343,176 @@ def test_notify_unknown_allocation_is_404(manager):  # noqa: F811
 
     assert resp.status_code == 404
     assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"
+
+
+# ── Шаг «СС-3»: управление выделяет людей статусом «Участие в ОМ» ───────────
+
+
+def make_assignment_status_type():
+    """Тип статуса привлечения: без него выделение отбивается справочником."""
+    from organization_management.apps.operations.models import StatusType
+
+    return StatusType.objects.get_or_create(
+        code="EVENT_ASSIGNMENT",
+        defaults={
+            "name": "Привлечён на мероприятие",
+            "priority": 80,
+            "report_column_code": "IN_SERVICE",
+            "is_hard_block": False,
+        },
+    )[0]
+
+
+def test_selected_employee_gets_the_assignment_status(manager):  # noqa: F811
+    """Выделение — это СТАТУС, а не строка в списке: расход считает по нему."""
+    from organization_management.apps.operations.models_status import (
+        OpsEmployeeStatus,
+    )
+
+    make_assignment_status_type()
+    department = make_department()
+    employee = make_employee("Сериков")
+    base, allocation_id = allocated_event(manager, department)
+
+    data = manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    ).json()
+
+    members = data["forceAllocation"][0]["members"]
+    assert [m["employeeId"] for m in members] == [str(employee.pk)]
+    status = OpsEmployeeStatus.objects.get(pk=members[0]["statusId"])
+    assert status.employee_id == employee.pk
+    assert status.status_type_code == "EVENT_ASSIGNMENT"
+    # Полуинтервал: день мероприятия закрывается СЛЕДУЮЩИМ днём — иначе
+    # строка пуста и статуса нет ни одного дня.
+    assert status.date_end > status.date_start
+    assert str(event_pk(base)) in status.source_ref
+
+
+def event_pk(base):
+    return base.rstrip("/").rsplit("/", 1)[-1]
+
+
+def test_same_person_is_not_allocated_twice_to_one_event(manager):  # noqa: F811
+    """Один человек — одно выделение на ОМ, даже из разных департаментов."""
+    make_assignment_status_type()
+    first = make_department("Департамент охраны")
+    second = make_department("Департамент сопровождения")
+    employee = make_employee("Сериков")
+    base, total = event_on_demand(manager)
+    rows = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(second.pk), "need": 1},
+            ]
+        },
+        format="json",
+    ).json()["forceAllocation"]
+    manager.post(
+        f"{base}forces/allocation/{rows[0]['id']}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+
+    resp = manager.post(
+        f"{base}forces/allocation/{rows[1]['id']}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "DOUBLE_ASSIGNMENT"
+    # Отказ НАЗЫВАЕТ департамент, который человека уже забрал: иначе штаб не
+    # знает, с кем договариваться.
+    assert first.name in resp.json()["message"]
+
+
+def test_removing_a_planned_selection_cancels_its_status(manager):  # noqa: F811
+    """Снятие до начала отменяет статус, а не оставляет его висеть."""
+    from organization_management.apps.operations.models_status import (
+        OpsEmployeeStatus,
+    )
+
+    make_assignment_status_type()
+    department = make_department()
+    employee = make_employee("Сериков")
+    base, allocation_id = allocated_event(manager, department, FUTURE_DATE)
+    added = manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    ).json()
+    status_id = added["forceAllocation"][0]["members"][0]["statusId"]
+
+    data = manager.delete(
+        f"{base}forces/allocation/{allocation_id}/members/{employee.pk}/"
+    ).json()
+
+    assert data["forceAllocation"][0]["members"] == []
+    assert OpsEmployeeStatus.objects.get(pk=status_id).cancelled_at is not None
+
+
+def test_started_selection_is_not_removed(manager):  # noqa: F811
+    """Начавшееся привлечение — факт: снять его задним числом нельзя."""
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models_status import (
+        OpsEmployeeStatus,
+    )
+
+    make_assignment_status_type()
+    department = make_department()
+    employee = make_employee("Сериков")
+    base, allocation_id = allocated_event(manager, department, FUTURE_DATE)
+    added = manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    ).json()
+    status_id = added["forceAllocation"][0]["members"][0]["statusId"]
+    # Мероприятие фикстуры стоит будущей датой; привлечение «начинается»
+    # переносом строки на сегодня — состояние выводится из дат, не хранится.
+    today = Clock.today_local()
+    OpsEmployeeStatus.objects.filter(pk=status_id).update(
+        date_start=today, date_end=today + dt.timedelta(days=1)
+    )
+
+    resp = manager.delete(
+        f"{base}forces/allocation/{allocation_id}/members/{employee.pk}/"
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "ASSIGNMENT_ALREADY_STARTED"
+    assert employee.last_name in resp.json()["message"]
+
+
+def test_personnel_list_can_be_narrowed_to_a_division(manager):  # noqa: F811
+    """Управление подбирает СВОИХ: отбор идёт по поддереву подразделения."""
+    from organization_management.apps.staff_unit.models import StaffUnit
+
+    department = make_department()
+    directorate = make_directorate(department)
+    mine = make_employee("Свой")
+    stranger = make_employee("Чужой")
+    unit = Division.objects.create(
+        name="Отдел охраны",
+        division_type=Division.DivisionType.DIVISION,
+        parent=directorate,
+    )
+    StaffUnit.objects.create(division=unit, employee=mine, index=1)
+    StaffUnit.objects.create(
+        division=make_department("Департамент связи"), employee=stranger, index=2
+    )
+
+    data = manager.get(f"/api/ops/personnel/?division_id={directorate.pk}").json()
+
+    names = [row["name"] for row in data["results"]]
+    assert any("Свой" in name for name in names)
+    assert not any("Чужой" in name for name in names)
+    # Незнакомое подразделение — пусто, а не «все»: опечатка в фильтре не
+    # должна молча расширять выбор.
+    empty = manager.get("/api/ops/personnel/?division_id=999999").json()
+    assert empty["results"] == []

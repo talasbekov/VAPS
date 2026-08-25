@@ -36,6 +36,9 @@ export interface PersonnelPickerProps {
    * Поэтому вместе с id снимается и внутренний `aria-label`.
    */
   searchInputId?: string;
+  /** Отбор по подразделению-владельцу: управление подбирает СВОИХ людей
+   *  (Plane №73, СС-3). Пусто — вся служба, как было. */
+  divisionId?: string;
 }
 
 export function PersonnelPicker({
@@ -46,6 +49,7 @@ export function PersonnelPicker({
   pageSize = 20,
   resetKey,
   searchInputId,
+  divisionId,
 }: PersonnelPickerProps) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -67,7 +71,7 @@ export function PersonnelPicker({
     return () => clearTimeout(timer);
   }, [search]);
 
-  const roster = usePersonnelPage({ search: query, page, pageSize });
+  const roster = usePersonnelPage({ search: query, page, pageSize, divisionId });
   const people = roster.data?.results ?? [];
   const total = roster.data?.count ?? 0;
   const blocked = disabledIds ?? new Set<string>();

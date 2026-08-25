@@ -1095,6 +1095,112 @@ export const securityEventsHandlers = [
     }
   ),
 
+  // ── Выделенные управлением люди (Plane №73, СС-3) ──────────────────────
+  //
+  // Статуса привлечения мок НЕ ставит: домена статусов у него нет вовсе, и
+  // подделка статуса врала бы про главное правило шага. Проверяются здесь те
+  // правила, что живут в самом мероприятии: стадия, незнакомая заявка и
+  // запрет второго выделения одного человека.
+  http.post(
+    `*${securityEventForcesSplitPath(":id")}:allocationId/members/`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const allocationId = params.allocationId as string;
+      const body = (await request.json()) as { employeeId: string };
+      if (event.stage !== "DEMAND" && event.stage !== "FORCES") {
+        return businessRuleError(
+          "INVALID_STAGE_TRANSITION",
+          "Выделять людей можно на этапах «Потребность» и «Запрос сил»."
+        );
+      }
+      const target = event.forceAllocation.find((row) => row.id === allocationId);
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Заявка департаменту не найдена.",
+          { id: allocationId },
+          404
+        );
+      }
+      const person = findPersonnel(body.employeeId);
+      if (person === undefined) {
+        return validationError({ employeeId: ["Сотрудник не найден."] });
+      }
+      const taken = event.forceAllocation.find((row) =>
+        row.members.some((member) => member.employeeId === body.employeeId)
+      );
+      if (taken !== undefined) {
+        return businessRuleError(
+          "DOUBLE_ASSIGNMENT",
+          `${person.name} уже выделен(а) на это мероприятие департаментом «${taken.departmentName}».`
+        );
+      }
+      const forceAllocation: ForceAllocationRow[] = event.forceAllocation.map(
+        (row) =>
+          row.id === allocationId
+            ? {
+                ...row,
+                members: [
+                  ...row.members,
+                  {
+                    employeeId: body.employeeId,
+                    name: person.name,
+                    divisionId: "",
+                    divisionName: person.unit,
+                    addedAt: nowIso(),
+                  },
+                ],
+              }
+            : row
+      );
+      return HttpResponse.json(
+        saveEvent({ ...event, forceAllocation, updatedAt: nowIso() })
+      );
+    }
+  ),
+
+  http.delete(
+    `*${securityEventForcesSplitPath(":id")}:allocationId/members/:employeeId/`,
+    ({ params }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const allocationId = params.allocationId as string;
+      const employeeId = params.employeeId as string;
+      const target = event.forceAllocation.find((row) => row.id === allocationId);
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Заявка департаменту не найдена.",
+          { id: allocationId },
+          404
+        );
+      }
+      if (!target.members.some((member) => member.employeeId === employeeId)) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Выделенный сотрудник не найден в заявке.",
+          { id: employeeId },
+          404
+        );
+      }
+      const forceAllocation: ForceAllocationRow[] = event.forceAllocation.map(
+        (row) =>
+          row.id === allocationId
+            ? {
+                ...row,
+                members: row.members.filter(
+                  (member) => member.employeeId !== employeeId
+                ),
+              }
+            : row
+      );
+      return HttpResponse.json(
+        saveEvent({ ...event, forceAllocation, updatedAt: nowIso() })
+      );
+    }
+  ),
+
   // ── Выделение сил ──────────────────────────────────────────────────────
   http.patch(
     `*${securityEventForceAllocationPath(":id", ":requestId")}`,

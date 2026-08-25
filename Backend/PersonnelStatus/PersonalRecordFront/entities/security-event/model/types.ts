@@ -519,6 +519,11 @@ export interface UpdateForceAllocationRequest extends Record<string, unknown> {
   comment: string;
 }
 
+/** Выделение сотрудника управлением (Plane №73, СС-3). */
+export interface AddAllocationMemberRequest extends Record<string, unknown> {
+  employeeId: string;
+}
+
 /** Раскладка потребности по департаментам: список целиком (Plane №73, СС-1). */
 export interface SplitForceDemandRequest extends Record<string, unknown> {
   rows: { departmentId: string; need: number; comment?: string }[];
@@ -587,12 +592,18 @@ export function opsPersonnelPagePath(params: {
   search: string;
   page: number;
   pageSize: number;
+  /** Подразделение-владелец: управление подбирает СВОИХ (Plane №73, СС-3).
+   * Сервер отбирает по ПОДДЕРЕВУ — человек числится в отделе, а не в
+   * управлении. */
+  divisionId?: string;
 }): string {
   const query = new URLSearchParams({
     page: String(params.page),
     page_size: String(params.pageSize),
   });
   if (params.search.trim() !== "") query.set("search", params.search.trim());
+  if ((params.divisionId ?? "").trim() !== "")
+    query.set("division_id", (params.divisionId as string).trim());
   return `${OPS_PERSONNEL_PATH}?${query.toString()}`;
 }
 
@@ -634,6 +645,24 @@ export function securityEventForcesNotifyPath(
   return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
     allocationId
   )}/notify/`;
+}
+/** Выделенные управлением люди у заявки департаменту (Plane №73, СС-3). */
+export function securityEventForcesMembersPath(
+  id: string,
+  allocationId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
+    allocationId
+  )}/members/`;
+}
+export function securityEventForcesMemberPath(
+  id: string,
+  allocationId: string,
+  employeeId: string
+): string {
+  return `${securityEventForcesMembersPath(id, allocationId)}${encodeURIComponent(
+    employeeId
+  )}/`;
 }
 export function securityEventForcesCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/forces/complete/`;

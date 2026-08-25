@@ -251,6 +251,41 @@ test.describe(
       expect(notified.again.body.forceAllocation[0].directorates[0].notifiedAt).toBe(
         notified.first.body.forceAllocation[0].directorates[0].notifiedAt,
       )
+
+      // Выделение людей (СС-3): незнакомый сотрудник — 400, второй раз тот же
+      // человек — 422 с названием департамента, снятие убирает строку.
+      const members = await page.evaluate(async (id: string) => {
+        const base = `/api/ops/security-events/se-1/forces/allocation/${id}/members/`
+        const post = async (employeeId: string) => {
+          const res = await fetch(base, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ employeeId }),
+          })
+          return { status: res.status, body: await res.json() }
+        }
+        const roster = await (await fetch('/api/ops/personnel/?page=1&page_size=1')).json()
+        const employeeId = roster.results[0].id as string
+        const added = await post(employeeId)
+        const twice = await post(employeeId)
+        const unknown = await post('no-such-employee')
+        const removed = await fetch(`${base}${employeeId}/`, { method: 'DELETE' })
+        return {
+          employeeId,
+          added,
+          twice,
+          unknown,
+          removed: { status: removed.status, body: await removed.json() },
+        }
+      }, allocationId)
+
+      expect(members.added.status).toBe(200)
+      expect(members.added.body.forceAllocation[0].members).toHaveLength(1)
+      expect(members.twice.status).toBe(422)
+      expect(members.twice.body.error_code).toBe('DOUBLE_ASSIGNMENT')
+      expect(members.unknown.status).toBe(400)
+      expect(members.removed.status).toBe(200)
+      expect(members.removed.body.forceAllocation[0].members).toHaveLength(0)
     })
   },
 )

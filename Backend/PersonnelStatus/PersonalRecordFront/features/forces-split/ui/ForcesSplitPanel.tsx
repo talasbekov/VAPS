@@ -20,9 +20,12 @@ import {
   StageError,
 } from "@/features/security-event-stages/ui/StageErrors";
 import {
+  useAddAllocationMember,
   useNotifyDirectorates,
+  useRemoveAllocationMember,
   useSplitForceDemand,
 } from "@/hooks/use-security-event-stages";
+import { PersonnelPicker } from "@/features/personnel-picker";
 import { apiClient, type CoreDivision } from "@/lib/api";
 import type {
   ForceAllocationRow,
@@ -276,6 +279,10 @@ function AllocationState({
   row: ForceAllocationRow | undefined;
 }) {
   const notify = useNotifyDirectorates(event.id, row?.id ?? "");
+  const add = useAddAllocationMember(event.id, row?.id ?? "");
+  const remove = useRemoveAllocationMember(event.id, row?.id ?? "");
+  // Какое управление сейчас подбирает людей; null — окно подбора закрыто.
+  const [picking, setPicking] = useState<string | null>(null);
   if (row === undefined) {
     return (
       <p className="basis-full text-xs text-muted-foreground">
@@ -305,17 +312,86 @@ function AllocationState({
         </Button>
       </div>
       {row.directorates.length > 0 && (
-        <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+        <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
           {row.directorates.map((directorate) => (
-            <li key={directorate.id}>
-              {directorate.name}
-              {directorate.notifiedAt !== null && (
-                <> · оповещено {formatIsoDateTime(directorate.notifiedAt)}</>
-              )}
+            <li key={directorate.id} className="flex flex-wrap items-center gap-2">
+              <span>
+                {directorate.name}
+                {directorate.notifiedAt !== null && (
+                  <> · оповещено {formatIsoDateTime(directorate.notifiedAt)}</>
+                )}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() =>
+                  setPicking(picking === directorate.id ? null : directorate.id)
+                }
+              >
+                {picking === directorate.id ? "Свернуть" : "Выделить людей"}
+              </Button>
             </li>
           ))}
         </ul>
       )}
+      {picking !== null && (
+        // Подбор идёт ПО УПРАВЛЕНИЮ: список сужает сервер по поддереву — у
+        // управления есть отделы, и человек числится в отделе.
+        <div className="mt-2 rounded-md border p-2">
+          <PersonnelPicker
+            value={null}
+            divisionId={
+              row.directorates.find((item) => item.id === picking)?.divisionId
+            }
+            resetKey={picking}
+            disabledIds={new Set(row.members.map((member) => member.employeeId))}
+            disabledNote="уже выделен"
+            onPick={(employeeId) => add.mutate({ employeeId })}
+          />
+          <StageError error={add.error} />
+        </div>
+      )}
+      <div className="mt-2">
+        <p className="text-xs text-muted-foreground">
+          Выделено{" "}
+          <b className="tabular-nums text-foreground">{row.members.length}</b>{" "}
+          из {row.need}
+          {row.members.length < row.need && (
+            <> · недобор {row.need - row.members.length}</>
+          )}
+        </p>
+        <ul className="mt-1 space-y-0.5">
+          {row.members.map((member) => (
+            <li
+              key={member.employeeId}
+              className="flex flex-wrap items-center gap-2 text-xs"
+            >
+              <span className="font-medium">{member.name}</span>
+              {member.divisionName !== "" && (
+                <span className="text-muted-foreground">
+                  {member.divisionName}
+                </span>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                disabled={remove.isPending}
+                // Снять можно только до начала привлечения — отказ приходит
+                // с сервера словами, кнопка его не предугадывает: состояние
+                // статуса живёт там же, где сам статус.
+                onClick={() => remove.mutate({ employeeId: member.employeeId })}
+              >
+                Снять
+              </Button>
+            </li>
+          ))}
+        </ul>
+        <StageError error={remove.error} />
+      </div>
       <StageError error={notify.error} />
     </div>
   );
