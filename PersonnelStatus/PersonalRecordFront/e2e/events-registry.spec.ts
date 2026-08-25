@@ -36,10 +36,30 @@ async function signIn(page: Page): Promise<void> {
   })
 }
 
+// Подписи месяцев — как на экране (`MONTH_NAME` реестра): проба листает
+// календарь по его же заголовку, и расхождение регистра увело бы её в
+// бесконечную прокрутку.
+const MONTHS = [
+  'Январь',
+  'Февраль',
+  'Март',
+  'Апрель',
+  'Май',
+  'Июнь',
+  'Июль',
+  'Август',
+  'Сентябрь',
+  'Октябрь',
+  'Ноябрь',
+  'Декабрь',
+]
+
 interface EventRow {
   id: string
   code: string
   stage: string
+  businessDate: string
+  businessDateEnd?: string | null
   objectId: string | null
   objectName: string
   visitObjects?: {
@@ -242,6 +262,79 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // ОМ и в дате, красная проба с константой 999 оставалась зелёной.
     await expect(page.locator('[data-slot="events-day-count"]')).toHaveText(
       String(expected),
+    )
+
+    // Повторный клик по выбранному дню СНИМАЕТ отбор и возвращает обзор
+    // месяца — как в эталоне. Без этого вернуться к «показать всё» было бы
+    // нечем: панель отвечала бы на вопрос про день навсегда.
+    await marks.first().click()
+    // Заголовок панели — `CardTitle`, а не заголовок документа: ищем текстом.
+    await expect(page.getByText('Все мероприятия месяца')).toBeVisible()
+  })
+
+  test('календарь отмечает ВЕСЬ период мероприятия, а не день начала', async ({
+    page,
+  }) => {
+    // Задача заказчика «Реестр ОМ-22». До правки трёхдневное ОМ ставило
+    // отметку на первый день, и на второй-третий календарь показывал пустой
+    // день — врал ровно там, где его открывают.
+    const token = await apiToken()
+    const rows = await events(token)
+    const multi = rows.find(
+      (r) =>
+        r.businessDateEnd !== null &&
+        r.businessDateEnd !== undefined &&
+        r.businessDateEnd > r.businessDate &&
+        r.businessDate.slice(0, 7) === r.businessDateEnd.slice(0, 7),
+    )
+    test.skip(
+      multi === undefined,
+      'на стенде нет многодневного ОМ в пределах одного месяца',
+    )
+    const lastDay = Number(multi!.businessDateEnd!.slice(8, 10))
+    const firstDay = Number(multi!.businessDate.slice(8, 10))
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page.getByRole('button', { name: 'Календарь' }).click()
+    await expect(page.getByText(/^Календарь мероприятий · /)).toBeVisible({
+      timeout: 15_000,
+    })
+
+    // Календарь открывается на месяце с данными — доводим его до месяца
+    // фикстуры кнопками листания, а не надеждой на совпадение.
+    const monthOf = async (): Promise<string> => {
+      const text = (await page.getByText(/^Календарь мероприятий · /).innerText()).trim()
+      return text.replace('Календарь мероприятий · ', '')
+    }
+    const wanted = new Date(`${multi!.businessDate}T00:00:00Z`)
+    const wantedLabel = `${MONTHS[wanted.getUTCMonth()]} ${wanted.getUTCFullYear()}`
+    for (let step = 0; step < 24 && (await monthOf()) !== wantedLabel; step += 1) {
+      const current = await monthOf()
+      const [, yearText] = current.split(' ')
+      const forward =
+        Number(yearText) < wanted.getUTCFullYear() ||
+        (Number(yearText) === wanted.getUTCFullYear() &&
+          MONTHS.indexOf(current.split(' ')[0]) < wanted.getUTCMonth())
+      await page
+        .getByRole('button', { name: forward ? 'Следующий месяц' : 'Предыдущий месяц' })
+        .click()
+    }
+    expect(await monthOf(), 'не удалось долистать до месяца фикстуры').toBe(
+      wantedLabel,
+    )
+
+    // ПОСЛЕДНИЙ день периода тоже кликабелен: у пустого дня кнопка выключена,
+    // и «отметка есть» проверяется именно этим, а не наличием точки в разметке.
+    const last = page.locator(
+      `button[aria-label^="${lastDay} "][aria-label*="мероприятий"]`,
+    )
+    await expect(last).toBeEnabled()
+    await last.click()
+    // И это ТО САМОЕ мероприятие, а не соседнее того же дня.
+    await expect(page.getByText(multi!.code).last()).toBeVisible()
+    expect(lastDay, 'фикстура однодневная — проба вакуумна').toBeGreaterThan(
+      firstDay,
     )
   })
 
