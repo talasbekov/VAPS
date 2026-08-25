@@ -866,6 +866,13 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         actor=ACTOR,
     )
     event_service.submit_allocation(om.pk, allocation["id"], actor=ACTOR)
+    # Решение штаба — два разных акта, и оба спрашиваются потом поимённо:
+    # возврат с причиной, затем повторная отправка и приёмка.
+    event_service.return_allocation(
+        om.pk, allocation["id"], reason="Нужны люди с допуском", actor=ACTOR
+    )
+    event_service.submit_allocation(om.pk, allocation["id"], actor=ACTOR)
+    event_service.accept_allocation(om.pk, allocation["id"], actor=ACTOR)
 
     om.refresh_from_db()
     event_service.update_force_allocation(

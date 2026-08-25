@@ -617,3 +617,155 @@ def test_submitted_list_can_be_withdrawn_but_only_once(manager):  # noqa: F811
     again = manager.post(f"{base}forces/allocation/{allocation_id}/withdraw/")
     assert again.status_code == 422
     assert again.json()["error_code"] == "ALLOCATION_NOT_WITHDRAWABLE"
+
+
+# ── Шаг «СС-5»: штаб принимает список и отдаёт людей мероприятию ────────────
+
+
+def submitted_event(manager):  # noqa: F811
+    base, allocation_id, employee = notified_event_with_member(manager)
+    manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
+    return base, allocation_id, employee
+
+
+def test_accepted_people_join_the_event_roster(manager):  # noqa: F811
+    """Принятые уезжают в СОСТАВ мероприятия, а не только меняют статус заявки."""
+    base, allocation_id, employee = submitted_event(manager)
+
+    data = manager.post(f"{base}forces/allocation/{allocation_id}/accept/").json()
+
+    row = data["forceAllocation"][0]
+    assert (row["status"], row["decidedAt"] is not None) == ("ACCEPTED", True)
+    assert [m["employeeId"] for m in data["forceRoster"]] == [str(employee.pk)]
+    # Состав НАЗЫВАЕТ департамент, который человека отдал: спрашивать за него
+    # будут с department, а не с мероприятия.
+    assert data["forceRoster"][0]["departmentName"] != ""
+    assert data["forceRoster"][0]["acceptedAt"] is not None
+
+
+def test_second_acceptance_does_not_duplicate_the_roster(manager):  # noqa: F811
+    """Отозвали, отправили заново, приняли снова — состав не удваивается."""
+    base, allocation_id, employee = submitted_event(manager)
+    manager.post(f"{base}forces/allocation/{allocation_id}/accept/")
+    # Возврат к «оповещено» и повторная отправка: цикл, который в жизни идёт
+    # после возврата штабом.
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
+    event.force_allocation = [
+        {**row, "status": "SUBMITTED"} for row in event.force_allocation
+    ]
+    event.save(update_fields=["force_allocation"])
+
+    data = manager.post(f"{base}forces/allocation/{allocation_id}/accept/").json()
+
+    assert [m["employeeId"] for m in data["forceRoster"]] == [str(employee.pk)]
+
+
+def test_return_needs_a_reason_and_sends_the_list_back(manager):  # noqa: F811
+    """Возврат без причины отбивается; с причиной — заявка снова у департамента."""
+    base, allocation_id, _ = submitted_event(manager)
+
+    empty = manager.post(
+        f"{base}forces/allocation/{allocation_id}/return/", {}, format="json"
+    )
+    assert empty.status_code == 400
+    assert "reason" in empty.json()["details"]
+
+    data = manager.post(
+        f"{base}forces/allocation/{allocation_id}/return/",
+        {"reason": "Нужны люди с допуском"},
+        format="json",
+    ).json()
+
+    row = data["forceAllocation"][0]
+    assert (row["status"], row["submittedAt"]) == ("RETURNED", None)
+    assert row["decisionComment"] == "Нужны люди с допуском"
+    # Возвращённых в составе нет: штаб их не принимал.
+    assert data["forceRoster"] == []
+
+
+def test_only_submitted_list_is_decided(manager):  # noqa: F811
+    """По неотправленному списку решать нечего."""
+    base, allocation_id, _ = notified_event_with_member(manager)
+
+    accept = manager.post(f"{base}forces/allocation/{allocation_id}/accept/")
+
+    assert accept.status_code == 422
+    assert accept.json()["error_code"] == "ALLOCATION_NOT_DECIDABLE"
+
+
+def test_forces_stage_completes_by_roster_not_by_numbers(manager):  # noqa: F811
+    """Завершение этапа считает ЛЮДЕЙ состава, а не обещанные числа."""
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    base, allocation_id, _ = submitted_event(manager)
+    manager.post(f"{base}forces/allocation/{allocation_id}/accept/")
+    # Числа по группам при этом ЗАКРЫТЫ полностью — старое правило пропустило
+    # бы этап; проба и стережёт, что решает теперь состав.
+    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
+    event.stage = "FORCES"
+    event.force_requests = [
+        {**r, "allocatedCount": r["requestedCount"]} for r in event.force_requests
+    ]
+    event.save(update_fields=["stage", "force_requests"])
+
+    resp = manager.post(f"{base}forces/complete/")
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "FORCE_ALLOCATION_INCOMPLETE"
+    # Отказ называет ЧИСЛА: «недобор» без цифры не говорит, сколько добирать.
+    assert "недобор" in resp.json()["message"]
+
+
+def test_forces_stage_waits_for_undecided_lists(manager):  # noqa: F811
+    """Пока список висит у штаба нерешённым, этап не завершается."""
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    base, allocation_id, _ = submitted_event(manager)
+    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
+    event.stage = "FORCES"
+    event.save(update_fields=["stage"])
+
+    resp = manager.post(f"{base}forces/complete/")
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "FORCE_ALLOCATION_INCOMPLETE"
+    # Отказ НАЗЫВАЕТ департамент, чей список ждёт решения.
+    assert "ждут решения штаба" in resp.json()["message"]
+
+
+def test_forces_stage_completes_when_the_roster_covers_the_split(manager):  # noqa: F811
+    """Состав покрыл разложенное — этап уходит на расстановку.
+
+    Зелёная половина правила: без неё пробы выше доказывали бы лишь то, что
+    завершение не проходит НИКОГДА.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    make_assignment_status_type()
+    department = make_department()
+    make_directorate(department)
+    employee = make_employee("Сериков")
+    base, _ = event_on_demand(manager, FUTURE_DATE)
+    # Раскладываем РОВНО одного человека: столько же, сколько выделим.
+    allocation_id = manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(department.pk), "need": 1}]},
+        format="json",
+    ).json()["forceAllocation"][0]["id"]
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
+    manager.post(f"{base}forces/allocation/{allocation_id}/accept/")
+    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
+    event.stage = "FORCES"
+    event.save(update_fields=["stage"])
+
+    data = manager.post(f"{base}forces/complete/").json()
+
+    assert data["stage"] == "PLACEMENT"

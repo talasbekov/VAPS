@@ -66,6 +66,7 @@ CODES = {
     "ALLOCATION_NOT_SUBMITTABLE": frozenset({422}),
     "ALLOCATION_NOT_WITHDRAWABLE": frozenset({422}),
     "ALLOCATION_EMPTY": frozenset({422}),
+    "ALLOCATION_NOT_DECIDABLE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
     "PLACEMENT_INCOMPLETE": frozenset({422}),
     "ACKNOWLEDGEMENT_INCOMPLETE": frozenset({422}),

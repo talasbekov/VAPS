@@ -231,6 +231,9 @@ def serialize_security_event(event):
         # сервер: «сколько ещё не разложено» — правило, по которому он же
         # отбивает перебор, и второй счёт на клиенте разошёлся бы с ним молча.
         "forceAllocation": event.force_allocation or [],
+        # Состав мероприятия — принятые штабом люди (шаг «СС-5»): из него
+        # расстановка берёт кандидатов.
+        "forceRoster": event.force_roster or [],
         "forceDemandTotal": security_events.force_demand_total(event),
         "placementAssignments": event.placement_assignments,
         "approvalStatus": event.approval_status,

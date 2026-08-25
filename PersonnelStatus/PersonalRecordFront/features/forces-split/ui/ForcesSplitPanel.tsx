@@ -26,6 +26,8 @@ import {
   useSplitForceDemand,
   useSubmitAllocation,
   useWithdrawAllocation,
+  useAcceptAllocation,
+  useReturnAllocation,
 } from "@/hooks/use-security-event-stages";
 import { PersonnelPicker } from "@/features/personnel-picker";
 import { apiClient, type CoreDivision } from "@/lib/api";
@@ -117,6 +119,19 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
           )}
         </p>
       </div>
+
+      {event.forceRoster.length > 0 && (
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          data-slot="forces-roster"
+        >
+          Состав мероприятия:{" "}
+          <b className="tabular-nums text-foreground">
+            {event.forceRoster.length}
+          </b>{" "}
+          чел. — {event.forceRoster.map((member) => member.name).join(", ")}
+        </p>
+      )}
 
       {rows.length === 0 && (
         <p className="mt-2 text-xs text-muted-foreground">
@@ -285,6 +300,11 @@ function AllocationState({
   const remove = useRemoveAllocationMember(event.id, row?.id ?? "");
   const submit = useSubmitAllocation(event.id, row?.id ?? "");
   const withdraw = useWithdrawAllocation(event.id, row?.id ?? "");
+  const accept = useAcceptAllocation(event.id, row?.id ?? "");
+  const back = useReturnAllocation(event.id, row?.id ?? "");
+  // Причина возврата: без неё департамент читает возврат как «сделай то же
+  // самое ещё раз», и следующий список приходит тем же.
+  const [reason, setReason] = useState("");
   // Какое управление сейчас подбирает людей; null — окно подбора закрыто.
   const [picking, setPicking] = useState<string | null>(null);
   if (row === undefined) {
@@ -413,23 +433,69 @@ function AllocationState({
           </div>
         )}
         {row.status === "SUBMITTED" && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              Отправлено {formatIsoDateTime(row.submittedAt ?? "")} — ждёт
-              решения штаба
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              disabled={withdraw.isPending}
-              onClick={() => withdraw.mutate({})}
-            >
-              {withdraw.isPending ? "Отзываю…" : "Отозвать список"}
-            </Button>
-            <StageError error={withdraw.error} />
+          <div className="mt-2 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                Отправлено {formatIsoDateTime(row.submittedAt ?? "")} — ждёт
+                решения штаба
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={withdraw.isPending}
+                onClick={() => withdraw.mutate({})}
+              >
+                {withdraw.isPending ? "Отзываю…" : "Отозвать список"}
+              </Button>
+              <StageError error={withdraw.error} />
+            </div>
+            {/* Решение штаба — здесь же: пришедший список и решение по нему
+                это один разговор, и разводить их по двум экранам значило бы
+                заставить штаб искать то, что он только что прочитал. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={accept.isPending}
+                onClick={() => accept.mutate({})}
+              >
+                {accept.isPending ? "Принимаю…" : "Принять в мероприятие"}
+              </Button>
+              <Input
+                aria-label="Причина возврата списка"
+                placeholder="Причина возврата"
+                className="h-7 max-w-[16rem] text-xs"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={back.isPending}
+                onClick={() => back.mutate({ reason })}
+              >
+                {back.isPending ? "Возвращаю…" : "Вернуть департаменту"}
+              </Button>
+            </div>
+            <StageError error={accept.error} />
+            <StageError error={back.error} />
           </div>
+        )}
+        {row.status === "RETURNED" && row.decisionComment !== "" && (
+          <p className="mt-2 text-xs text-destructive-ink">
+            Возвращено штабом: {row.decisionComment}
+          </p>
+        )}
+        {row.status === "ACCEPTED" && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Принято штабом {formatIsoDateTime(row.decidedAt ?? "")} — люди
+            переданы мероприятию
+          </p>
         )}
       </div>
       <StageError error={notify.error} />

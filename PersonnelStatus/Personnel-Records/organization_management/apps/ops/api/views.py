@@ -233,6 +233,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_member_remove": _MANAGE_EVENT_PERMISSION,
         "forces_submit": _MANAGE_EVENT_PERMISSION,
         "forces_withdraw": _MANAGE_EVENT_PERMISSION,
+        "forces_accept": _MANAGE_EVENT_PERMISSION,
+        "forces_return": _MANAGE_EVENT_PERMISSION,
         "force_allocation": _MANAGE_EVENT_PERMISSION,
         "forces_complete": _MANAGE_EVENT_PERMISSION,
         "placement_assign": _MANAGE_EVENT_PERMISSION,
@@ -617,6 +619,35 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.withdraw_allocation(
                 pk, allocation_id, actor=resolve_actor_id(request)
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/accept",
+    )
+    def forces_accept(self, request, pk=None, allocation_id=None):
+        """Штаб принимает список и отдаёт людей ОМ (Plane №73, шаг «СС-5»)."""
+        return self._event_response(
+            event_service.accept_allocation(
+                pk, allocation_id, actor=resolve_actor_id(request)
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/return",
+    )
+    def forces_return(self, request, pk=None, allocation_id=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.return_allocation(
+                pk,
+                allocation_id,
+                reason=data.get("reason"),
+                actor=resolve_actor_id(request),
             )
         )
 

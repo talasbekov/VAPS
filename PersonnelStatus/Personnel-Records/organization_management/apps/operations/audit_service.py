@@ -136,6 +136,11 @@ FORCE_ALLOCATION_NOTIFIED = "FORCE_ALLOCATION_NOTIFIED"
 # не департамент. Момент перехода ответственности — то, ради чего журнал и
 # ведут.
 FORCE_ALLOCATION_SUBMITTED = "FORCE_ALLOCATION_SUBMITTED"
+# Решение штаба по присланному списку: приёмка отдаёт людей мероприятию,
+# возврат отправляет заявку обратно с причиной. Оба — акты штаба, и оба
+# спрашиваются потом поимённо.
+FORCE_ALLOCATION_ACCEPTED = "FORCE_ALLOCATION_ACCEPTED"
+FORCE_ALLOCATION_RETURNED = "FORCE_ALLOCATION_RETURNED"
 VISIT_OBJECT_CHIEF_REVOKED = "VISIT_OBJECT_CHIEF_REVOKED"
 # Смена дежурства: заведение и отмена — решения с обоснованием (обход отдыха,
 # причина отмены); ознакомление/заступление/завершение следа в журнале
@@ -194,6 +199,8 @@ ACTIONS = frozenset(
         VISIT_OBJECT_CHIEF_ASSIGNED,
         FORCE_ALLOCATION_NOTIFIED,
         FORCE_ALLOCATION_SUBMITTED,
+        FORCE_ALLOCATION_ACCEPTED,
+        FORCE_ALLOCATION_RETURNED,
         VISIT_OBJECT_CHIEF_REVOKED,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,

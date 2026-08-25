@@ -33,6 +33,8 @@ import {
   securityEventForcesMembersPath,
   securityEventForcesMemberPath,
   securityEventForcesSubmitPath,
+  securityEventForcesAcceptPath,
+  securityEventForcesReturnPath,
   securityEventForcesWithdrawPath,
   securityEventForcesCompletePath,
   securityEventJournalPath,
@@ -60,6 +62,7 @@ import type {
   ReturnPlacementRequest,
   SecurityEvent,
   AddAllocationMemberRequest,
+  ReturnAllocationRequest,
   SplitForceDemandRequest,
   UpdateBulletinRequest,
   UpdateDemandRequest,
@@ -248,6 +251,24 @@ export function useWithdrawAllocation(id: string, allocationId: string) {
   return useEventMutation<Record<string, never>>(id, () =>
     opsApiClient.post<SecurityEvent>(
       securityEventForcesWithdrawPath(id, allocationId)
+    )
+  );
+}
+
+/** Решение штаба по присланному списку (Plane №73, шаг СС-5). */
+export function useAcceptAllocation(id: string, allocationId: string) {
+  return useEventMutation<Record<string, never>>(id, () =>
+    opsApiClient.post<SecurityEvent>(
+      securityEventForcesAcceptPath(id, allocationId)
+    )
+  );
+}
+
+export function useReturnAllocation(id: string, allocationId: string) {
+  return useEventMutation<ReturnAllocationRequest>(id, (body) =>
+    opsApiClient.post<SecurityEvent>(
+      securityEventForcesReturnPath(id, allocationId),
+      body
     )
   );
 }

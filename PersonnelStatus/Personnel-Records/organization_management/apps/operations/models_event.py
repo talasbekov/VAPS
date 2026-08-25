@@ -148,6 +148,13 @@ class OpsSecurityEvent(TimeStampedModel):
     # рекогносцировки: раскладка живёт и умирает вместе с ОМ, отдельной жизни
     # у строки заявки нет.
     force_allocation = models.JSONField(default=list, blank=True)
+    # СОСТАВ мероприятия: люди, которых штаб принял и отдал ОМ (шаг «СС-5»).
+    #
+    # Отдельно от `placement_assignments`: «кого дали на мероприятие» и «кто на
+    # каком посту» — разные факты. Человек приходит в состав до расстановки и
+    # остаётся в нём, когда его снимают с поста; сложить их в одно поле значило
+    # бы терять первый факт при каждом снятии.
+    force_roster = models.JSONField(default=list, blank=True)
     placement_assignments = models.JSONField()
     approval_status = models.CharField(
         max_length=20, choices=ApprovalStatus.choices

@@ -150,6 +150,22 @@ export interface ForceAllocationRow {
   members: ForceAllocationMember[];
 }
 
+/** Человек в СОСТАВЕ мероприятия: штаб принял его и отдал ОМ (шаг СС-5).
+ *
+ * Не то же, что назначение на пост: в состав человек приходит до расстановки и
+ * остаётся в нём, когда его с поста снимают.
+ */
+export interface ForceRosterMember {
+  employeeId: string;
+  name: string;
+  divisionId: string | null;
+  divisionName: string;
+  departmentId: string | null;
+  departmentName: string;
+  /** null — состав выведен из расстановки миграцией, решения штаба не было. */
+  acceptedAt: string | null;
+}
+
 /** Назначение сотрудника на пост. Двойное назначение внутри одного ОМ запрещено. */
 export interface PlacementAssignment {
   id: string;
@@ -349,6 +365,8 @@ export interface SecurityEvent {
   forceRequests: ForceRequest[];
   /** Раскладка потребности по департаментам — первое звено «Сбора сил». */
   forceAllocation: ForceAllocationRow[];
+  /** Состав мероприятия — принятые штабом люди (шаг СС-5). */
+  forceRoster: ForceRosterMember[];
   /** Сколько всего людей делит штаб. Считает СЕРВЕР: по этому же числу он
    * отбивает перебор, и второй счёт на клиенте разошёлся бы с ним молча. */
   forceDemandTotal: number;
@@ -524,6 +542,11 @@ export interface AddAllocationMemberRequest extends Record<string, unknown> {
   employeeId: string;
 }
 
+/** Возврат списка департаменту: причина обязательна (Plane №73, СС-5). */
+export interface ReturnAllocationRequest extends Record<string, unknown> {
+  reason: string;
+}
+
 /** Раскладка потребности по департаментам: список целиком (Plane №73, СС-1). */
 export interface SplitForceDemandRequest extends Record<string, unknown> {
   rows: { departmentId: string; need: number; comment?: string }[];
@@ -680,6 +703,23 @@ export function securityEventForcesWithdrawPath(
   return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
     allocationId
   )}/withdraw/`;
+}
+/** Решение штаба по присланному списку (Plane №73, СС-5). */
+export function securityEventForcesAcceptPath(
+  id: string,
+  allocationId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
+    allocationId
+  )}/accept/`;
+}
+export function securityEventForcesReturnPath(
+  id: string,
+  allocationId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
+    allocationId
+  )}/return/`;
 }
 export function securityEventForcesCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/forces/complete/`;
