@@ -61,7 +61,7 @@ export default function DictionaryDetailPage() {
 
       <div className="mb-4">
         <PageHeader
-          eyebrow="Администрирование"
+          eyebrow="Система"
           title={code}
           description="Значения и их связи; удаление возможно только при доказанном отсутствии связей."
         />
