@@ -846,6 +846,26 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         om.pk, rows=[{"departmentId": str(coverage_department.pk), "need": 1}]
     ).force_allocation[0]
     event_service.notify_directorates(om.pk, allocation["id"], actor=ACTOR)
+    # Тип статуса привлечения — свой: выделение ставит именно его, и без
+    # строки справочника оно отбивается раньше, чем дойдёт до журнала.
+    StatusType.objects.get_or_create(
+        code="EVENT_ASSIGNMENT",
+        defaults={
+            "name": "Привлечён на мероприятие",
+            "priority": 80,
+            "report_column_code": "IN_SERVICE",
+        },
+    )
+    # Отправка списка штабу — второй след цепочки: с неё за людей отвечает
+    # уже не департамент. Выделенный человек нужен и для неё (пустой список
+    # отправить нельзя).
+    event_service.add_allocation_member(
+        om.pk,
+        allocation["id"],
+        employee_id=employee_in(home).pk,
+        actor=ACTOR,
+    )
+    event_service.submit_allocation(om.pk, allocation["id"], actor=ACTOR)
 
     om.refresh_from_db()
     event_service.update_force_allocation(

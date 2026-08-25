@@ -1637,6 +1637,89 @@ def remove_allocation_member(event_id, allocation_id, employee_id, *, actor):
     return event
 
 
+def _update_allocation(event, allocation_id, patch):
+    """Заменить ОДНУ заявку в раскладке, не трогая соседние."""
+    event.force_allocation = [
+        {**row, **patch} if row.get("id") == allocation_id else row
+        for row in event.force_allocation
+    ]
+    event.save(update_fields=["force_allocation", "updated_at"])
+    return event
+
+
+@transaction.atomic
+def submit_allocation(event_id, allocation_id, *, actor):
+    """Департамент отправляет окончательный список штабу (Plane №73, «СС-4»).
+
+    Недобор отправить МОЖНО: решает штаб, а не форма. Он назван числом на
+    экране и виден в самой заявке — запрет здесь означал бы, что департамент,
+    не набравший людей, вообще ничего не может сообщить.
+    """
+    event = lock_event(event_id)
+    if event.stage not in _ALLOCATION_STAGES:
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message=(
+                "Отправлять список можно на этапах «Потребность» и «Запрос сил»."
+            ),
+        )
+    target = _find_allocation(event, allocation_id)
+    if target.get("status") not in ("NOTIFIED", "RETURNED"):
+        raise DomainError(
+            "ALLOCATION_NOT_SUBMITTABLE",
+            422,
+            message=(
+                "Отправить список может департамент, которому заявку уже "
+                "передали и который её ещё не отправил."
+            ),
+        )
+    if not target.get("members"):
+        raise DomainError(
+            "ALLOCATION_EMPTY",
+            422,
+            message="Никто не выделен — отправлять нечего.",
+        )
+    now = _now_iso()
+    event = _update_allocation(
+        event, allocation_id, {"status": "SUBMITTED", "submittedAt": now}
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.FORCE_ALLOCATION_SUBMITTED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "departmentId": target["departmentId"],
+            "departmentName": target["departmentName"],
+            "need": target["need"],
+            "members": [m.get("name") for m in target.get("members", [])],
+        },
+    )
+    return event
+
+
+@transaction.atomic
+def withdraw_allocation(event_id, allocation_id, *, actor):
+    """Отозвать отправленный список — пока штаб не решил.
+
+    Решённую заявку отзывать нечего: решение штаба — это уже его акт, и
+    «отзыв» после него означал бы отмену чужого решения задним числом.
+    """
+    event = lock_event(event_id)
+    target = _find_allocation(event, allocation_id)
+    if target.get("status") != "SUBMITTED":
+        raise DomainError(
+            "ALLOCATION_NOT_WITHDRAWABLE",
+            422,
+            message="Отозвать можно только отправленный и ещё не решённый список.",
+        )
+    return _update_allocation(
+        event, allocation_id, {"status": "NOTIFIED", "submittedAt": None}
+    )
+
+
 # ── Выделение сил ───────────────────────────────────────────────────────────
 
 
