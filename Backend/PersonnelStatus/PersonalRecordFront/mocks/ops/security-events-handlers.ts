@@ -237,6 +237,7 @@ function emptyEvent(
     demandApproved: false,
     forceRequests: [],
     forceAllocation: [],
+    forceRoster: [],
     forceDemandTotal: 0,
     placementAssignments: [],
     approvalStatus: "PENDING",
@@ -1275,6 +1276,110 @@ export const securityEventsHandlers = [
               : row
           ),
           updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
+  // ── Решение штаба по списку (Plane №73, СС-5) ──────────────────────────
+  http.post(
+    `*${securityEventForcesSplitPath(":id")}:allocationId/accept/`,
+    ({ params }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const target = event.forceAllocation.find(
+        (row) => row.id === (params.allocationId as string)
+      );
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Заявка департаменту не найдена.",
+          { id: params.allocationId as string },
+          404
+        );
+      }
+      if (target.status !== "SUBMITTED") {
+        return businessRuleError(
+          "ALLOCATION_NOT_DECIDABLE",
+          "Решать можно только по отправленному списку."
+        );
+      }
+      const now = nowIso();
+      const known = new Set(event.forceRoster.map((row) => row.employeeId));
+      const incoming = target.members
+        .filter((member) => !known.has(member.employeeId))
+        .map((member) => ({
+          employeeId: member.employeeId,
+          name: member.name,
+          divisionId: member.divisionId,
+          divisionName: member.divisionName,
+          departmentId: target.departmentId,
+          departmentName: target.departmentName,
+          acceptedAt: now,
+        }));
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          forceRoster: [...event.forceRoster, ...incoming],
+          forceAllocation: event.forceAllocation.map((row) =>
+            row.id === target.id
+              ? {
+                  ...row,
+                  status: "ACCEPTED",
+                  decidedAt: now,
+                  decisionComment: "",
+                }
+              : row
+          ),
+          updatedAt: now,
+        })
+      );
+    }
+  ),
+
+  http.post(
+    `*${securityEventForcesSplitPath(":id")}:allocationId/return/`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const body = (await request.json()) as { reason?: string };
+      const reason = (body.reason ?? "").trim();
+      if (reason === "") {
+        return validationError({ reason: ["Обязательное поле."] });
+      }
+      const target = event.forceAllocation.find(
+        (row) => row.id === (params.allocationId as string)
+      );
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Заявка департаменту не найдена.",
+          { id: params.allocationId as string },
+          404
+        );
+      }
+      if (target.status !== "SUBMITTED") {
+        return businessRuleError(
+          "ALLOCATION_NOT_DECIDABLE",
+          "Решать можно только по отправленному списку."
+        );
+      }
+      const now = nowIso();
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          forceAllocation: event.forceAllocation.map((row) =>
+            row.id === target.id
+              ? {
+                  ...row,
+                  status: "RETURNED",
+                  decidedAt: now,
+                  decisionComment: reason,
+                  submittedAt: null,
+                }
+              : row
+          ),
+          updatedAt: now,
         })
       );
     }

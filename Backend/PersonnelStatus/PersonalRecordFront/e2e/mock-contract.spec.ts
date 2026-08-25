@@ -319,6 +319,34 @@ test.describe(
       expect(submitted.withdrawn.body.forceAllocation[0].status).toBe('NOTIFIED')
       expect(submitted.again.status).toBe(422)
       expect(submitted.again.body.error_code).toBe('ALLOCATION_NOT_WITHDRAWABLE')
+
+      // Решение штаба (СС-5): возврат без причины — 400, приёмка отдаёт людей
+      // в состав и повторная приёмка его не удваивает.
+      const decided = await page.evaluate(async (id: string) => {
+        const base = `/api/ops/security-events/se-1/forces/allocation/${id}/`
+        const post = async (path: string, body?: unknown) => {
+          const res = await fetch(`${base}${path}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+          return { status: res.status, body: await res.json() }
+        }
+        await post('submit/')
+        const noReason = await post('return/', {})
+        const returned = await post('return/', { reason: 'Нужны люди с допуском' })
+        await post('submit/')
+        const accepted = await post('accept/')
+        return { noReason, returned, accepted }
+      }, allocationId)
+
+      expect(decided.noReason.status).toBe(400)
+      expect(decided.returned.body.forceAllocation[0].status).toBe('RETURNED')
+      expect(decided.returned.body.forceAllocation[0].decisionComment).toBe(
+        'Нужны люди с допуском',
+      )
+      expect(decided.accepted.body.forceAllocation[0].status).toBe('ACCEPTED')
+      expect(decided.accepted.body.forceRoster).toHaveLength(1)
     })
   },
 )

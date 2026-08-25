@@ -366,7 +366,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(card.getByRole('button', { name: 'Убрать департамент, строка 1', exact: true })).toBeDisabled()
   })
 
-  test('управление выделяет человека, отправляет список и может его отозвать', async ({
+  test('цепочка сбора сил доходит до состава мероприятия', async ({
     page,
   }) => {
     const token = await apiToken()
@@ -424,9 +424,29 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await state.getByRole('button', { name: 'Отозвать список' }).click()
     await expect(state).toContainText('Управления оповещены', { timeout: 20_000 })
 
-    // Снятие до начала мероприятия убирает и строку, и статус.
-    await state.getByRole('button', { name: 'Снять' }).first().click()
-    await expect(state).toContainText('Выделено 0 из', { timeout: 20_000 })
+    // Решение штаба (СС-5): возврат требует причины и объявляет её словами,
+    // приёмка отдаёт человека в СОСТАВ мероприятия.
+    await state.getByRole('button', { name: 'Отправить список в штаб' }).click()
+    await expect(state).toContainText('ждёт решения штаба', { timeout: 20_000 })
+    await state.getByRole('button', { name: 'Вернуть департаменту' }).click()
+    await expect(state.getByRole('alert')).toContainText('причина', {
+      timeout: 20_000,
+    })
+    await state.getByLabel('Причина возврата списка').fill('Нужны люди с допуском')
+    await state.getByRole('button', { name: 'Вернуть департаменту' }).click()
+    await expect(state).toContainText('Возвращено штабом: Нужны люди с допуском', {
+      timeout: 20_000,
+    })
+
+    await state.getByRole('button', { name: 'Отправить список в штаб' }).click()
+    await state.getByRole('button', { name: 'Принять в мероприятие' }).click()
+    await expect(state).toContainText('люди переданы мероприятию', {
+      timeout: 20_000,
+    })
+    await expect(card.locator('[data-slot="forces-roster"]')).toContainText(
+      'Состав мероприятия: 1 чел.',
+    )
+
     expect(candidateName, 'подбор отдал пустую строку').not.toBe('')
   })
 

@@ -1720,6 +1720,110 @@ def withdraw_allocation(event_id, allocation_id, *, actor):
     )
 
 
+@transaction.atomic
+def accept_allocation(event_id, allocation_id, *, actor):
+    """Штаб принимает список и отдаёт людей мероприятию (Plane №73, «СС-5»).
+
+    Принятые уезжают в СОСТАВ мероприятия (`force_roster`) — отдельный факт от
+    расстановки: человек приходит в состав до постов и остаётся в нём, когда
+    его снимают с поста.
+    """
+    event = lock_event(event_id)
+    target = _find_allocation(event, allocation_id)
+    if target.get("status") != "SUBMITTED":
+        raise DomainError(
+            "ALLOCATION_NOT_DECIDABLE",
+            422,
+            message="Решать можно только по отправленному списку.",
+        )
+    now = _now_iso()
+    known = {str(row.get("employeeId")) for row in (event.force_roster or [])}
+    incoming = [
+        {
+            "employeeId": str(member.get("employeeId")),
+            "name": member.get("name", ""),
+            "divisionId": member.get("divisionId"),
+            "divisionName": member.get("divisionName", ""),
+            "departmentId": target.get("departmentId"),
+            "departmentName": target.get("departmentName", ""),
+            "acceptedAt": now,
+        }
+        for member in target.get("members", [])
+        # Повторная приёмка того же человека состав не удваивает: список
+        # отзывают и отправляют заново, и второй проход тем же людям не
+        # обязан плодить строки.
+        if str(member.get("employeeId")) not in known
+    ]
+    event.force_roster = [*(event.force_roster or []), *incoming]
+    event.force_allocation = [
+        {**row, "status": "ACCEPTED", "decidedAt": now, "decisionComment": ""}
+        if row.get("id") == allocation_id
+        else row
+        for row in event.force_allocation
+    ]
+    event.save(update_fields=["force_roster", "force_allocation", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.FORCE_ALLOCATION_ACCEPTED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "departmentName": target.get("departmentName", ""),
+            "accepted": [row["name"] for row in incoming],
+        },
+    )
+    return event
+
+
+@transaction.atomic
+def return_allocation(event_id, allocation_id, *, reason, actor):
+    """Вернуть список департаменту с ПРИЧИНОЙ.
+
+    Причина обязательна: возврат без объяснения департамент читает как «сделай
+    ещё раз то же самое», и следующий список приходит тем же.
+    """
+    event = lock_event(event_id)
+    reason = str(reason or "").strip()
+    if reason == "":
+        raise _validation(
+            {"reason": ["Обязательное поле."]},
+            message="При возврате списка обязательна причина.",
+        )
+    target = _find_allocation(event, allocation_id)
+    if target.get("status") != "SUBMITTED":
+        raise DomainError(
+            "ALLOCATION_NOT_DECIDABLE",
+            422,
+            message="Решать можно только по отправленному списку.",
+        )
+    now = _now_iso()
+    event = _update_allocation(
+        event,
+        allocation_id,
+        {
+            "status": "RETURNED",
+            "decidedAt": now,
+            "decisionComment": reason,
+            # Момент отправки снимается: список снова у департамента, и
+            # «отправлено тогда-то» перестало быть правдой.
+            "submittedAt": None,
+        },
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.FORCE_ALLOCATION_RETURNED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "departmentName": target.get("departmentName", ""),
+        },
+        reason=reason,
+    )
+    return event
+
+
 # ── Выделение сил ───────────────────────────────────────────────────────────
 
 
@@ -1763,6 +1867,43 @@ def complete_forces(event_id):
         "FORCES",
         "Выделение сил можно завершить только на этапе «Запрос сил».",
     )
+    # У мероприятия, прошедшего цепочку «Сбора сил», состав ЛЮДЕЙ — главный
+    # факт: числа по группам говорят «сколько обещали», а расстановке нужны
+    # те, кого действительно отдали (Plane №73, шаг «СС-5»).
+    if event.force_allocation:
+        # Мерка — РАЗЛОЖЕННАЯ потребность, а не запрос с рекогносцировки:
+        # разложить меньше запрошенного — решение штаба (он же раскладывает в
+        # несколько заходов), и мерить завершение по числу, которое штаб
+        # осознанно не раздал, значило бы запирать этап его же решением.
+        pending = [
+            row
+            for row in event.force_allocation
+            if row.get("status") == "SUBMITTED"
+        ]
+        if pending:
+            names = ", ".join(row.get("departmentName", "—") for row in pending)
+            raise DomainError(
+                "FORCE_ALLOCATION_INCOMPLETE",
+                422,
+                message=(
+                    f"Списки ещё ждут решения штаба ({names}) — "
+                    "примите или верните их."
+                ),
+            )
+        accepted = len(event.force_roster or [])
+        planned = sum(int(row.get("need") or 0) for row in event.force_allocation)
+        if accepted < planned:
+            raise DomainError(
+                "FORCE_ALLOCATION_INCOMPLETE",
+                422,
+                message=(
+                    f"Штаб принял {accepted} человек из {planned} разложенных — "
+                    f"недобор {planned - accepted}."
+                ),
+            )
+        return _advance(event, "PLACEMENT")
+    # Старый путь — для мероприятий БЕЗ раскладки: их вели числами по группам,
+    # и запирать им завершение новым правилом значило бы сломать заведённое.
     requests = event.force_requests
     if not requests or not all(
         int(r.get("allocatedCount", 0)) >= int(r.get("requestedCount", 0))
