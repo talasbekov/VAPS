@@ -221,6 +221,13 @@ def create_event(
         raise _validation(field_errors)
 
     now = _now_iso()
+    # Мероприятие С ОБЪЕКТОМ заводится СРАЗУ на рекогносцировке (задача
+    # заказчика «Реестр ОМ-5»): в эталоне рекогносцировка — первый шаг
+    # цепочки, а стадия «Бюллетень» своего шага не имеет с 24.08.2026 —
+    # сведения бюллетеня заполняются панелью НАД этапами и правятся на любой
+    # стадии. Без объекта осматривать нечего: ОМ остаётся на «Бюллетене», и
+    # карточка зовёт добавить объект посещения.
+    initial_stage = "RECON" if security_object is not None else "BULLETIN"
     # Номер — порядковый по реестру (порт мока: count+1). Гонку двух создателей
     # останавливает уникальность кода: проигравший получает конверт по
     # CONSTRAINT_ERROR_MAP, а не второй такой же номер.
@@ -249,8 +256,8 @@ def create_event(
         location=location,
         chief_employee_id=chief.pk if chief is not None else None,
         chief_name=personnel_display_name(chief) if chief is not None else "",
-        stage="BULLETIN",
-        readiness_percent=STAGE_READINESS["BULLETIN"],
+        stage=initial_stage,
+        readiness_percent=STAGE_READINESS[initial_stage],
         force_need=0,
         conflicts_count=0,
         # Подпись, а не id учётки: поле уходит на экран карточки и в значения
@@ -292,7 +299,7 @@ def create_event(
             protected_person_name=person.name if person is not None else "",
             position=0,
         )
-    record_transition(event, None, "BULLETIN")
+    record_transition(event, None, initial_stage)
     audit_service.record(
         actor=actor,
         action=audit_service.SECURITY_EVENT_CREATED,
@@ -459,10 +466,22 @@ def complete_bulletin(event_id):
     _require_stage(
         event, "BULLETIN", "Бюллетень можно завершить только на этапе «Бюллетень»."
     )
-    if event.brief_description.strip() == "" or event.initial_tasks.strip() == "":
+    # Гейт держит ОБЪЕКТ, а не текст бюллетеня. Новые ОМ с объектом заводятся
+    # сразу на рекогносцировке (см. `create_event`), и требовать описание с
+    # задачами от ОМ, заведённых до этого правила, значило бы держать две
+    # разные цепочки для одного и того же состояния. Осматривать нечего ровно
+    # тогда, когда объекта нет — там текст бюллетеня остаётся условием: он
+    # единственное, что старший наряда получает до выезда.
+    has_object = (
+        event.security_object_id is not None
+        or event.visit_objects.exists()
+    )
+    if not has_object and (
+        event.brief_description.strip() == "" or event.initial_tasks.strip() == ""
+    ):
         raise DomainError("BULLETIN_INCOMPLETE", 422, message=
-            "Заполните и сохраните описание и первичные задачи, прежде чем "
-            "завершать этап.",
+            "Заполните и сохраните описание и первичные задачи либо добавьте "
+            "объект посещения, прежде чем открывать рекогносцировку.",
         )
     return _advance(event, "RECON")
 

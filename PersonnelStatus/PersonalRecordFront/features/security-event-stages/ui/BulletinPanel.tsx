@@ -10,9 +10,11 @@
 // раскрыта; дальше это справка о мероприятии — свёрнута, чтобы не отжимать
 // активный этап вниз.
 //
-// Правка полей возможна только на стадии «Бюллетень»: PATCH бюллетеня сервер
-// принимает лишь там. На остальных стадиях панель показывает сохранённый
-// текст, а не поля, которые вернут отказ.
+// Правка полей возможна на ЛЮБОЙ стадии, кроме закрытой: PATCH бюллетеня
+// сервер принимает всегда, а с 25.08.2026 ОМ с объектом заводится сразу на
+// рекогносцировке (Plane «Реестр ОМ-5») — привязка правки к стадии
+// «Бюллетень» означала бы, что описание и задачи такому ОМ уже НИКОГДА не
+// вписать. У закрытого ОМ панель — справка: закрытое дело не правят.
 //
 // СОЗНАТЕЛЬНО не перенесено из прототипа:
 // * «Редактировать ОМ» — правки названия, даты и объекта бэк не принимает:
@@ -58,8 +60,9 @@ export function BulletinPanel({
    * без этого сигнала набранный текст молча пропадал бы вместе с формой. */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const editable = event.stage === "BULLETIN";
-  const [open, setOpen] = useState(editable);
+  const editable = event.stage !== "CLOSED";
+  // Рекогносцировка ещё не открыта — бюллетень сейчас ЗАПОЛНЯЮТ.
+  const awaitingRecon = event.stage === "BULLETIN";
   const [briefDescription, setBriefDescription] = useState(event.briefDescription);
   const [initialTasks, setInitialTasks] = useState(event.initialTasks);
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
@@ -85,6 +88,13 @@ export function BulletinPanel({
   const savedTasks = event.initialTasks.trim() !== "";
   const ready = savedBrief && savedTasks;
 
+  // Раскрыта, пока бюллетень — предмет работы: до открытия рекогносцировки
+  // его заполняют, и после неё тоже, если он пуст (ОМ с объектом стартует с
+  // рекогносцировки, и свёрнутая панель спрятала бы ЕДИНСТВЕННОЕ место, где
+  // описание и задачи вписывают). Заполненный бюллетень дальше по цепочке —
+  // справка: он свёрнут, чтобы не отжимать активный этап вниз.
+  const [open, setOpen] = useState(awaitingRecon || (!ready && editable));
+
   return (
     <Card className="mb-4" data-testid="bulletin-panel">
       <CardContent className="p-0">
@@ -102,11 +112,11 @@ export function BulletinPanel({
           )}
           <span className="text-sm font-semibold">Бюллетень мероприятия</span>
           <span className="text-xs text-muted-foreground">
-            {editable
-              ? ready
+            {!editable
+              ? "сведения об ОМ"
+              : ready
                 ? "заполнен"
-                : "заполнен не полностью"
-              : "сведения об ОМ"}
+                : "заполнен не полностью"}
           </span>
         </button>
 
@@ -146,12 +156,20 @@ export function BulletinPanel({
                     держит сервер, и второй гард рядом маскировал бы его
                     отказ. Здесь только видимое состояние. */}
                 <div className="rounded-md border px-3 py-2 text-xs">
-                  <p className="mb-1 font-semibold">
-                    Готовность бюллетеня:{" "}
-                    <span className={ready ? "text-green-700" : "text-amber-700"}>
-                      {ready ? "можно открывать рекогносцировку" : "заполнено не всё"}
-                    </span>
-                  </p>
+                  {/* Строка готовности — про переход, поэтому она стоит
+                      только там, где переход есть: на рекогносцировке и
+                      дальше «можно открывать рекогносцировку» было бы
+                      обещанием уже случившегося. */}
+                  {awaitingRecon && (
+                    <p className="mb-1 font-semibold">
+                      Готовность бюллетеня:{" "}
+                      <span className={ready ? "text-green-700" : "text-amber-700"}>
+                        {ready
+                          ? "можно открывать рекогносцировку"
+                          : "заполнено не всё"}
+                      </span>
+                    </p>
+                  )}
                   <ul className="space-y-0.5 text-muted-foreground">
                     <li>
                       Краткое описание — {savedBrief ? "сохранено" : "не заполнено"}

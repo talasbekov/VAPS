@@ -485,6 +485,10 @@ export const securityEventsHandlers = [
     if (applicable !== null) {
       created.passportBinding = bindPassportVersion(object!, applicable, now);
     }
+    // ОМ с объектом открывается СРАЗУ рекогносцировкой (порт правила бэка,
+    // Plane «Реестр ОМ-5»): в эталоне это первый шаг цепочки.
+    created.stage = "RECON";
+    created.readinessPercent = 15;
     addEvent(created);
     appendAudit({
       action: "security_event.create",
@@ -532,11 +536,17 @@ export const securityEventsHandlers = [
         "Бюллетень можно завершить только на этапе «Бюллетень»."
       );
     }
-    // пустой бюллетень не завершается: рекогносцировке не с чем работать
-    if (event.briefDescription.trim() === "" || event.initialTasks.trim() === "") {
+    // гейт держит ОБЪЕКТ, а не текст: осматривать нечего ровно тогда, когда
+    // объекта нет (порт правила бэка, Plane «Реестр ОМ-5»)
+    const hasObject =
+      event.objectId !== null || (event.visitObjects ?? []).length > 0;
+    if (
+      !hasObject &&
+      (event.briefDescription.trim() === "" || event.initialTasks.trim() === "")
+    ) {
       return businessRuleError(
         "BULLETIN_INCOMPLETE",
-        "Заполните и сохраните описание и первичные задачи, прежде чем завершать этап."
+        "Заполните и сохраните описание и первичные задачи либо добавьте объект посещения, прежде чем открывать рекогносцировку."
       );
     }
     return HttpResponse.json(

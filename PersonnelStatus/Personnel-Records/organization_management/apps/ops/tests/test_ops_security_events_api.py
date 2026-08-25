@@ -126,7 +126,10 @@ def test_create_binds_applicable_passport_version(manager):
     resp = create_event(manager, obj)
     assert resp.status_code == 201
     data = resp.json()
-    assert data["stage"] == "BULLETIN"
+    # ОМ с объектом заводится СРАЗУ на рекогносцировке (Plane «Реестр ОМ-5»):
+    # рекогносцировка — первый шаг эталонной цепочки, а бюллетень своего шага
+    # не имеет с 24.08.2026 и правится панелью над этапами.
+    assert data["stage"] == "RECON"
     assert data["code"].startswith("ОМ-2026-")
     assert data["passportBinding"]["versionNumber"] == 1
     assert data["passportBinding"]["objectName"] == "Резиденция"
@@ -183,6 +186,8 @@ def test_create_without_object(manager):
     assert data["objectName"] == ""
     assert data["passportBinding"] is None
     assert data["visitObjects"] == []
+    # Осматривать нечего — ОМ остаётся на «Бюллетене» (Plane «Реестр ОМ-5»).
+    assert data["stage"] == "BULLETIN"
 
     # Импорт постов из паспорта у такого ОМ отвечает СВОИМ отказом, а не 500.
     base = f"{URL}{data['id']}/"
@@ -381,17 +386,20 @@ def test_full_lifecycle_walkthrough(manager):
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
 
-    # BULLETIN: завершение пустого — 422; после заполнения — RECON
+    # ОМ с объектом стартует с рекогносцировки — завершать бюллетень нечего:
+    # своего шага у него нет, и сервер отвечает отказом «не на этом этапе».
     resp = manager.post(f"{base}bulletin/complete/")
     assert resp.status_code == 422
-    assert resp.json()["error_code"] == "BULLETIN_INCOMPLETE"
+    assert resp.json()["error_code"] == "INVALID_STAGE_TRANSITION"
+    # Сведения бюллетеня при этом правятся на любой стадии — панель над
+    # этапами живёт всю жизнь ОМ.
     resp = manager.patch(
         f"{base}bulletin/",
         {"briefDescription": "Обеспечение визита.", "initialTasks": "Усиление."},
         format="json",
     )
     assert resp.status_code == 200
-    data = manager.post(f"{base}bulletin/complete/").json()
+    data = resp.json()
     assert (data["stage"], data["readinessPercent"]) == ("RECON", 15)
 
     # RECON: импорт из паспорта, повторный импорт — 422 NOTHING_TO_IMPORT
@@ -1025,7 +1033,7 @@ def test_stage_override_jumps_forward_and_back(stage_admin):
     event_id = create_event(stage_admin, obj).json()["id"]
     url = f"{URL}{event_id}/stage/"
 
-    # Прыжок ЧЕРЕЗ этапы: с бюллетеня сразу на согласование. По правилам
+    # Прыжок ЧЕРЕЗ этапы: с рекогносцировки сразу на согласование. По правилам
     # цепочки сюда нельзя — ни расчёта постов, ни расстановки нет.
     resp = stage_admin.post(url, {"stage": "APPROVAL"}, format="json")
     assert resp.status_code == 200
@@ -1053,7 +1061,7 @@ def test_stage_override_jumps_forward_and_back(stage_admin):
     # сверяем ХВОСТ, а не весь список, иначе проба ломалась бы от любого
     # нового перехода, записанного при создании.
     assert kinds[-2:] == [
-        ("BULLETIN", "APPROVAL", "FORWARD"),
+        ("RECON", "APPROVAL", "FORWARD"),
         ("APPROVAL", "RECON", "RETURN"),
     ]
 
@@ -1071,8 +1079,9 @@ def test_stage_override_needs_its_own_permission(manager):
         f"{URL}{event_id}/stage/", {"stage": "APPROVAL"}, format="json"
     )
     assert resp.status_code == 403
-    # Отказ обязан быть без последствий: стадия осталась прежней.
-    assert OpsSecurityEvent.objects.get(pk=event_id).stage == "BULLETIN"
+    # Отказ обязан быть без последствий: стадия осталась прежней (у ОМ с
+    # объектом это стадия заведения — RECON).
+    assert OpsSecurityEvent.objects.get(pk=event_id).stage == "RECON"
 
 
 def test_stage_override_refuses_closed_and_unknown(stage_admin):
@@ -1088,7 +1097,7 @@ def test_stage_override_refuses_closed_and_unknown(stage_admin):
 
     for bad in ("FORCES", "ЧТО-ТО", ""):
         assert stage_admin.post(url, {"stage": bad}, format="json").status_code == 400
-    assert OpsSecurityEvent.objects.get(pk=event_id).stage == "BULLETIN"
+    assert OpsSecurityEvent.objects.get(pk=event_id).stage == "RECON"
 
 
 def test_stage_override_to_current_stage_writes_nothing(stage_admin):
@@ -1131,3 +1140,73 @@ def test_stage_override_out_of_closed_clears_closed_at(stage_admin):
     assert event.closure_direction_summaries == [
         {"direction": "Периметр", "summary": "без замечаний"}
     ]
+
+
+def test_event_with_object_opens_on_recon(manager):
+    """Задача заказчика «Реестр ОМ-5»: ОМ с объектом открывается СРАЗУ
+    рекогносцировкой — ни стадии «Бюллетень», ни лишнего клика «Открыть
+    рекогносцировку» у него нет.
+
+    Проверяется не только поле ответа: рекогносцировка должна ПРИНИМАТЬ
+    правку сразу после заведения — иначе «открылась» означало бы только
+    подпись, а форма получала бы отказ этапа.
+    """
+    obj = make_object(with_passport=True)
+    data = create_event(manager, obj).json()
+    assert (data["stage"], data["readinessPercent"]) == ("RECON", 15)
+
+    event = OpsSecurityEvent.objects.get(pk=data["id"])
+    assert event.stage == "RECON"
+    # Вход в цепочку записан рекогносцировкой, а не бюллетенем.
+    entry = OpsSecurityEventTransition.objects.get(event=event, from_stage=None)
+    assert (entry.to_stage, entry.kind) == ("RECON", "FORWARD")
+
+    base = f"{URL}{data['id']}/"
+    saved = manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": data["reconChecklist"],
+            "sectorPosts": [
+                {
+                    "id": "recon-local-1",
+                    "sector": "Сектор A",
+                    "post": "Пост 1",
+                    "task": "Досмотр",
+                    "need": 2,
+                    "requirements": "",
+                    "result": None,
+                    "comment": "",
+                }
+            ],
+        },
+        format="json",
+    )
+    assert saved.status_code == 200
+    assert [row["post"] for row in saved.json()["reconSectorPosts"]] == ["Пост 1"]
+
+
+def test_bulletin_complete_opens_recon_when_object_present(manager):
+    """ОМ, заведённые ДО правила (стадия «Бюллетень») и имеющие объект, тоже
+    открывают рекогносцировку без заполненного бюллетеня: гейт держит объект,
+    а не текст. Без объекта текст остаётся условием — старшему наряда больше
+    ничего не приходит до выезда."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    # Возвращаем ОМ в состояние «до правила» напрямую: сервисом такой стадии
+    # у ОМ с объектом больше не получить.
+    OpsSecurityEvent.objects.filter(pk=event_id).update(
+        stage="BULLETIN", brief_description="", initial_tasks=""
+    )
+    resp = manager.post(f"{URL}{event_id}/bulletin/complete/")
+    assert resp.status_code == 200
+    assert resp.json()["stage"] == "RECON"
+
+    # А ОМ без объекта — по-прежнему через заполненный бюллетень.
+    bare = manager.post(
+        URL,
+        {"title": "Без маршрута", "businessDate": "2026-08-10", "kind": "INTERNAL"},
+        format="json",
+    ).json()
+    refused = manager.post(f"{URL}{bare['id']}/bulletin/complete/")
+    assert refused.status_code == 422
+    assert refused.json()["error_code"] == "BULLETIN_INCOMPLETE"

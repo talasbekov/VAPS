@@ -150,6 +150,40 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       )
       .toEqual({ total: before + 1, subs: subsBefore + 1 })
   })
+
+  test('ОМ с объектом открывается СРАЗУ рекогносцировкой', async ({ page }) => {
+    // Задача заказчика «Реестр ОМ-5». Проба судит по ФОРМЕ, а не по подписи
+    // шага: «этап открылся» означает, что расчёт постов можно править, а не
+    // что на экране написано слово «Рекогносцировка».
+    const token = await apiToken()
+    // Судим по СВЕЖЕЗАВЕДЁННОМУ ОМ: старая строка стенда могла попасть на
+    // рекогносцировку переходом, и на ней правило заведения не проверяется.
+    const fixture = await createWithObject(token)
+    expect(fixture.stage, 'ОМ с объектом заведено не на рекогносцировке').toBe(
+      'RECON',
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${fixture.id}/`)
+    const stage = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Рекогносцировка' }),
+    })
+    await expect(stage).toBeVisible({ timeout: 15_000 })
+    // Промежуточного шага «Открыть рекогносцировку» у такого ОМ нет вовсе.
+    await expect(
+      page.getByRole('button', { name: 'Открыть рекогносцировку' }),
+    ).toHaveCount(0)
+    // Панель бюллетеня при этом ПРАВИТСЯ: иначе описание и задачи такому ОМ
+    // уже никогда не вписать.
+    const panel = page.getByTestId('bulletin-panel')
+    await expect(panel.getByLabel('Краткое описание *')).toBeVisible()
+
+    // Счётчик чек-листа из эталона считает по черновику формы.
+    await expect(stage).toContainText('Выполнено: 0 из')
+    await stage.getByLabel(/^Выполнено: /).first().check()
+    await expect(stage).toContainText('Выполнено: 1 из')
+  })
+
 })
 
 /** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта. */
@@ -181,6 +215,33 @@ async function prepareEvent(token: string): Promise<void> {
     briefDescription: 'Проба рекогносцировки.',
     initialTasks: '—',
   })
-  await call('POST', `${base}/bulletin/complete/`)
+  // Завершать бюллетень больше НЕ нужно: ОМ с объектом заводится сразу на
+  // рекогносцировке (Plane «Реестр ОМ-5»), и `bulletin/complete/` ответил бы
+  // отказом «не на этом этапе».
   await call('POST', `${base}/recon/import-from-passport/`)
+}
+
+/** Заводит ОМ С ОБЪЕКТОМ и возвращает ответ сервера — предмет пробы именно
+ * состояние ЗАВЕДЕНИЯ, а не состояние случайной строки стенда. */
+async function createWithObject(token: string): Promise<EventRow> {
+  const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+  const call = async (method: string, path: string, body?: unknown): Promise<any> => {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return res.json().catch(() => ({}))
+  }
+  const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
+  const object = objects.results.find(
+    (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
+  )
+  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+  return (await call('POST', '/api/ops/security-events/', {
+    title: 'Проба старта с рекогносцировки (e2e)',
+    objectId: object.id,
+    businessDate: '2026-08-25',
+    kind: 'INTERNAL',
+  })) as EventRow
 }

@@ -15,6 +15,12 @@
  *
  * Фикстуры проба готовит сама и переиспользует по названию; этапы не
  * завершает — иначе фикстура одноразовая.
+ *
+ * С 25.08.2026 (Plane «Реестр ОМ-5») ОМ С ОБЪЕКТОМ заводится сразу на
+ * рекогносцировке, и стадия «Бюллетень» достижима ТОЛЬКО у ОМ без объекта —
+ * фикстуры готовности заводятся без него намеренно. Панель бюллетеня при
+ * этом правится на любой стадии, кроме закрытой: у ОМ, стартовавшего с
+ * рекогносцировки, это единственное место, где описание и задачи вписывают.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
@@ -26,6 +32,18 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 // Фикстура «Сведений об ОМ»: даты выбраны так, что и дни недели, и
 // продолжительность различимы (вторник → четверг, три дня включительно).
 const FACTS_TITLE = 'Проба сведений об ОМ (e2e)'
+const BULLETIN_TITLE = 'Проба бюллетеня без объекта (e2e)'
+const STAGE_LABEL: Record<string, string> = {
+  BULLETIN: 'Бюллетень',
+  RECON: 'Рекогносцировка',
+  DEMAND: 'Потребность',
+  FORCES: 'Запрос сил',
+  PLACEMENT: 'Расстановка',
+  APPROVAL: 'Согласование',
+  ACKNOWLEDGEMENT: 'Ознакомление',
+  CONDUCT: 'Проведение',
+  CLOSED: 'Закрыто',
+}
 const FACTS_START = '2026-09-01'
 const FACTS_END = '2026-09-03'
 
@@ -89,6 +107,9 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
       rows.find(
         (e) =>
           e.stage === 'BULLETIN' &&
+          // Без объекта: строка готовности «можно открывать рекогносцировку»
+          // живёт только там, где переход ещё предстоит.
+          e.objectId === null &&
           (e.briefDescription.trim() === '' || e.initialTasks.trim() === ''),
       )
     let event = suitable(await events(token))
@@ -98,7 +119,7 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
       // перевалил за page_size, и только что созданное ОМ в первые 50 строк
       // не попадало — проба падала на «не удалось подготовить фикстуру»,
       // хотя фикстура была создана.
-      event = suitable(await events(token, 'Проба бюллетеня (e2e)'))
+      event = suitable(await events(token, BULLETIN_TITLE))
       expect(event, 'не удалось подготовить фикстуру').toBeDefined()
     }
     const target = event!
@@ -133,11 +154,11 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     // набранный текст молча (после смены стадии сервер правку не примет).
     const token = await apiToken()
     const suitable = (rows: EventRow[]): EventRow | undefined =>
-      rows.find((e) => e.stage === 'BULLETIN')
+      rows.find((e) => e.stage === 'BULLETIN' && e.objectId === null)
     let event = suitable(await events(token))
     if (event === undefined) {
       await prepareEvent(token)
-      event = suitable(await events(token, 'Проба бюллетеня (e2e)'))
+      event = suitable(await events(token, BULLETIN_TITLE))
     }
     expect(event, 'на стенде нет ОМ на стадии «Бюллетень»').toBeDefined()
 
@@ -146,11 +167,15 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     const open = page.getByRole('button', { name: 'Открыть рекогносцировку' })
     await expect(open).toBeEnabled({ timeout: 15_000 })
 
-    // Набранное, но НЕ сохранённое запирает переход и говорит почему
+    // Набранное, но НЕ сохранённое запирает переход и говорит почему.
+    // Текст черновика УНИКАЛЕН на прогон: фикстура переиспользуется, и в
+    // прошлый раз проба СОХРАНИЛА в неё свой же черновик — повтор той же
+    // строки не менял бы поле, признак `dirty` не вставал, и замок «не
+    // сработал» по причине, не имеющей к нему отношения. В одиночку проба
+    // при этом зеленела: там ей доставалась свежая фикстура.
     const panel = page.getByTestId('bulletin-panel')
-    await panel
-      .getByLabel('Краткое описание *')
-      .fill('Черновик, который нельзя потерять.')
+    const draft = `Черновик, который нельзя потерять. ${Date.now()}`
+    await panel.getByLabel('Краткое описание *').fill(draft)
     await expect(open).toBeDisabled()
     await expect(page.getByText('иначе переход их потеряет')).toBeVisible()
 
@@ -181,7 +206,10 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     await expect(facts).toContainText('Дата начала: 01.09.2026, вторник')
     await expect(facts).toContainText('Дата окончания: 03.09.2026, четверг')
     await expect(facts).toContainText('Продолжительность: 3 дня')
-    await expect(facts).toContainText('Текущий статус: Бюллетень')
+    // Статус читается из ОТВЕТА сервера, а не пинится литералом: стадия
+    // заведения менялась (24.08 и 25.08), и литерал краснел бы при каждой
+    // такой правке, ничего не стерегя.
+    await expect(facts).toContainText(`Текущий статус: ${STAGE_LABEL[target.stage]}`)
     // Ответственный — подпись человека, а не id учётки, которым он вошёл
     expect(target.ownerName, 'в ответе сервера id вместо подписи').not.toMatch(/^\d+$/)
     await expect(facts).toContainText(`Ответственный за ОМ: ${target.ownerName}`)
@@ -253,11 +281,13 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
   })
 })
 
-/** Заводит пустое ОМ на этапе «Бюллетень». */
+/** Заводит пустое ОМ на этапе «Бюллетень» — БЕЗ объекта: с объектом сервер
+ * ставит ОМ сразу на рекогносцировку, и стадии «Бюллетень» у него не бывает. */
 async function prepareEvent(token: string): Promise<void> {
   await createEvent(token, {
-    title: 'Проба бюллетеня (e2e)',
+    title: BULLETIN_TITLE,
     businessDate: '2026-08-25',
+    withObject: false,
   })
 }
 
@@ -268,7 +298,9 @@ async function factsEvent(token: string): Promise<EventRow> {
     rows.find(
       (e) =>
         e.title === FACTS_TITLE &&
-        e.stage === 'BULLETIN' &&
+        // Стадию НЕ пиним: фикстура нужна ради дат и объекта, а стадия
+        // заведения сменилась 25.08 — пин отправлял бы пробу заводить новое
+        // ОМ каждый прогон и засорял реестр.
         e.businessDate === FACTS_START &&
         e.businessDateEnd === FACTS_END,
     )
@@ -288,7 +320,13 @@ async function factsEvent(token: string): Promise<EventRow> {
 /** Создаёт ОМ на первом объекте с опубликованным паспортом. */
 async function createEvent(
   token: string,
-  body: { title: string; businessDate: string; businessDateEnd?: string },
+  body: {
+    title: string
+    businessDate: string
+    businessDateEnd?: string
+    /** Без объекта ОМ остаётся на «Бюллетене»; с объектом — сразу RECON. */
+    withObject?: boolean
+  },
 ): Promise<void> {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
   const call = async (method: string, path: string, payload?: unknown): Promise<any> => {
@@ -299,10 +337,19 @@ async function createEvent(
     })
     return res.json().catch(() => ({}))
   }
+  const { withObject = true, ...payload } = body
+  if (!withObject) {
+    await call('POST', '/api/ops/security-events/', { ...payload, kind: 'INTERNAL' })
+    return
+  }
   const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
   const object = objects.results.find(
     (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
   )
   if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
-  await call('POST', '/api/ops/security-events/', { ...body, objectId: object.id })
+  await call('POST', '/api/ops/security-events/', {
+    ...payload,
+    kind: 'INTERNAL',
+    objectId: object.id,
+  })
 }
