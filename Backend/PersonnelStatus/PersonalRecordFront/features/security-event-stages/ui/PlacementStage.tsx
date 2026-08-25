@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
+import { RatingBriefDialog } from "./RatingBriefDialog";
 import {
   useApproveDemand,
   useAssignPlacement,
@@ -303,6 +304,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const [band, setBand] = useState<RateOption>("Все");
   const [comment, setComment] = useState<string | null>(null);
   const setSenior = useSetSectorSenior(event.id);
+  /** Чей рейтинг открыт: null — модалка закрыта. Человек, а не флаг: иначе
+   * пришлось бы держать имя и подразделение отдельной парой полей. */
+  const [ratingBriefFor, setRatingOf] = useState<{
+    id: string;
+    name: string;
+    unit: string;
+  } | null>(null);
   // Мероприятие, прошедшее «Сбор сил», расставляет ТОЛЬКО свой состав —
   // людей, которых штаб принял и отдал (Plane №73, шаг «СС-6»). Кадровый
   // список тогда не спрашивается вовсе: предлагать в подборе тех, кого сервер
@@ -700,9 +708,24 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                             {assignment.employeeName}
                           </span>
                           {ratingOf(assignment.employeeId) !== null && (
-                            <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold tabular-nums">
+                            <button
+                              type="button"
+                              // aria-label, а не title: у кнопки есть текст
+                              // (само число), и title в доступное имя не
+                              // попадает — кнопка звалась бы «8,4».
+                              aria-label={`Открыть краткую информацию о рейтинге: ${assignment.employeeName}`}
+                              title="Открыть краткую информацию о рейтинге"
+                              className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold tabular-nums hover:brightness-95"
+                              onClick={() =>
+                                setRatingOf({
+                                  id: assignment.employeeId,
+                                  name: assignment.employeeName,
+                                  unit: assignment.divisionName,
+                                })
+                              }
+                            >
                               {ratingOf(assignment.employeeId)}
-                            </span>
+                            </button>
                           )}
                           {assignment.isSectorSenior && (
                             <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">
@@ -1008,6 +1031,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         <StageError error={updateRecon.error} />
         <StageError error={setSenior.error} />
         <StageError error={complete.error} />
+
+        <RatingBriefDialog
+          employeeId={ratingBriefFor?.id ?? null}
+          employeeName={ratingBriefFor?.name ?? ""}
+          unit={ratingBriefFor?.unit ?? ""}
+          rating={
+            ratingBriefFor === null ? null : ratingOf(ratingBriefFor.id)
+          }
+          onClose={() => setRatingOf(null)}
+        />
 
         <ConflictDialog
           conflict={assign.conflict}

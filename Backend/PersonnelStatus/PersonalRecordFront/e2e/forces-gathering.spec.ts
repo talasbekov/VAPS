@@ -661,6 +661,78 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(main).toContainText('Старший: не назначен', { timeout: 15_000 })
   })
 
+  test('бейдж рейтинга открывает краткую информацию о рейтинге', async ({ page }) => {
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    const name = prepared.roster[0]
+    await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+    })
+    // Агрегат ПОДМЕНЯЕТСЯ: рейтинг живёт в своём пространстве участников
+    // (`participant_code`) и с кадрами не связан вовсе — на живом стенде
+    // бейджа не бывает ни у кого (заведено карточкой). Проба стережёт
+    // ПОВЕДЕНИЕ модалки, поэтому агрегат подставляется перехватом; SW в этой
+    // спеке заблокирован, иначе перехват молча промахнулся бы.
+    const real = await get<any>(token, '/api/ops/operational-ratings/')
+    expect(
+      (real.results ?? []).some((r: any) => String(r.employeeId) === prepared.employeeId),
+      'рейтинг внезапно сошёлся с кадрами — подмена больше не нужна',
+    ).toBe(false)
+    await page.route(
+      (url) => url.pathname === '/api/ops/operational-ratings/',
+      async (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            results: [
+              {
+                employeeId: prepared.employeeId,
+                safeLabel: name,
+                aggregateRating: 8.4,
+                evaluationsCount: 5,
+                periodStartsAt: '2026-05-01',
+                periodEndsAt: '2026-08-01',
+                calculationPolicyVersion: 'OPERATIONAL-RATING-2026.07.1',
+                calculatedAt: '2026-08-01T00:00:00+00:00',
+                dataState: 'READY',
+              },
+            ],
+            unavailableViews: [],
+          }),
+        }),
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Задача поста', { timeout: 25_000 })
+    // Модалки НЕТ, пока бейдж не нажат.
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    await main
+      .getByRole('button', { name: `Открыть краткую информацию о рейтинге: ${name}` })
+      .first()
+      .click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Краткая информация о рейтинге')
+    await expect(dialog).toContainText('изменение недоступно на этапе')
+    // Модалка про ТОГО человека, чей бейдж нажали.
+    await expect(dialog).toContainText(name)
+    // Ассертится то, что модалка показывает ВСЕГДА: подмена агрегата и
+    // заголовок блока оценок. «Методика» живёт в блоке фактов, который
+    // исчезает при ошибке ручки подробностей, — ассерт по ней был бы
+    // нестабильным (рейтинг с кадрами не связан, см. карточку).
+    await expect(dialog).toContainText('8.4')
+    await expect(dialog).toContainText('Последние 3 оценки')
+
+    await dialog.getByRole('button', { name: 'Закрыть' }).first().click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
