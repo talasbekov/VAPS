@@ -66,18 +66,30 @@ test.describe(LIVE ? 'роли в настройках' : 'роли в наст�
     await registry.getByRole('button', { name: PROBE_ROLE }).click()
     await expect(page.getByText('Состав прав')).toBeVisible()
 
-    // Выдача: право уезжает из «выдать» в «состав».
+    // Выдача: право уезжает из «выдать» в «состав». Локатор строки — по CSS,
+    // а НЕ по роли: пока диалог открыт и закрывается, Radix прячет фон от
+    // дерева доступности, и любой `getByRole` по фону вернёт ноль независимо
+    // от содержимого — такой ассерт зеленел бы, ничего не проверяя.
     await page.getByLabel('Поиск права для выдачи роли').fill('admin.roles')
-    const grant = page.getByRole('button', { name: 'Выдать' }).first()
-    await grant.click()
-    const composition = page.getByRole('button', { name: 'Снять' })
-    await expect(composition).toHaveCount(1)
+    // Дождаться, что список ПРЕДЛОЖЕНИЯ сузился: поиск отложенный, и клик по
+    // первой кнопке «Выдать» сразу после ввода выдавал роли ПЕРВОЕ право
+    // справочника — на стенде это оказался `*` (полный доступ). Проба при
+    // этом зеленела: снимала она то, что нашла, а не то, что выдала.
+    const offered = page.locator('ul[aria-label="Права, которые можно выдать"] li')
+    await expect(offered).toHaveCount(1)
+    await expect(offered.first()).toContainText('admin.roles')
+    await offered.getByRole('button', { name: 'Выдать' }).click()
+    const grantedRow = page
+      .locator('ul[aria-label="Состав прав роли"] li')
+      .filter({ hasText: 'admin.roles' })
+    await expect(grantedRow.getByRole('button', { name: 'Снять' })).toHaveCount(1)
 
     // Снятие спрашивает подтверждение: доступ пропадает у всех, кому роль выдана.
-    await composition.click()
+    await grantedRow.getByRole('button', { name: 'Снять' }).click()
     await expect(page.getByRole('heading', { name: 'Снять право с роли?' })).toBeVisible()
     await page.getByRole('button', { name: 'Снять', exact: true }).last().click()
-    await expect(page.getByRole('button', { name: 'Снять' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Снять право с роли?' })).toHaveCount(0)
+    await expect(page.locator('ul[aria-label="Состав прав роли"] li')).toHaveCount(0)
 
     await page.screenshot({ path: 'smoke-results/access-roles.png', fullPage: true })
 
