@@ -10,7 +10,9 @@
     "build:check": "NEXT_DIST_DIR=.next-build next build",
     "gate:front": "tsc --noEmit && npm run build:check",
     "start": "next start",
-    "dev:guard": "bash scripts/dev-guard.sh"
+    "dev:guard": "bash scripts/dev-guard.sh",
+    "stand:prod": "bash scripts/prod-stand.sh",
+    "smoke:prod": "SMOKE_LIVE=1 SMOKE_BASE_URL=http://localhost:3108 SMOKE_APP=http://localhost:3108 playwright test --config playwright.smoke.config.ts"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.19",

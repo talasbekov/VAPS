@@ -7,6 +7,10 @@
 /.next/
 # каталог проверочной сборки (NEXT_DIST_DIR), чтобы не трогать .next стенда
 /.next-build/
+# каталог прод-стенда для гейта (scripts/prod-stand.sh, Plane №173)
+/.next-prod/
+# каталог мок-стенда (NEXT_PUBLIC_OPS_MOCK_DOMAINS на :3107)
+/.next-mock/
 /out/
 
 # production
