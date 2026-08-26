@@ -39,3 +39,24 @@ export function saveFile(fileName: string, content: string): void {
   link.click();
   URL.revokeObjectURL(url);
 }
+
+/** Сохранить ДВОИЧНЫЙ файл, пришедший в base64 (Plane №159, шаг ПД-3).
+ *
+ * Рядом с `saveFile`, а не вместо него: тот собирает Blob как `text/csv`, и
+ * PDF, сохранённый им, открылся бы битым. Разные типы файлов — разные
+ * функции, потому что ошибка здесь не видна до попытки открыть документ. */
+export function saveBinaryFile(
+  fileName: string,
+  contentBase64: string,
+  contentType: string
+): void {
+  const binary = atob(contentBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes], { type: contentType }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}

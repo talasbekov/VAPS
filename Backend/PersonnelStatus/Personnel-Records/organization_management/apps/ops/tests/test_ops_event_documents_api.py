@@ -103,3 +103,22 @@ def test_registry_hides_the_difference_in_renderer_signatures():
     assert documents_registry.KINDS["bulletin"]["needs_event"] is False
     assert documents_registry.KINDS["arrival"]["needs_event"] is False
     assert documents_registry.KINDS["departure"]["needs_event"] is False
+
+
+def test_document_comes_back_as_a_real_pdf(reader):
+    """Ответ несёт НАСТОЯЩИЙ PDF, а не просто непустую строку.
+
+    Отдаётся JSON с содержимым, а не файл потоком, — по контракту раздела
+    (`download_artifact` устроен так же) и потому, что клиент шлёт токен
+    ЗАГОЛОВКОМ: открыть файл прямой ссылкой нельзя, токена в ней нет.
+
+    Проверяется подпись формата, а не длина: «файл не пустой» зеленело бы и на
+    строке с текстом ошибки.
+    """
+    import base64
+
+    body = reader.get(RENDER_URL, {"kind": "bulletin"}).json()
+
+    assert body["fileName"].endswith(".pdf")
+    assert body["contentType"] == "application/pdf"
+    assert base64.b64decode(body["contentBase64"])[:4] == b"%PDF"

@@ -12,6 +12,8 @@ import { PageHeader } from "@/components/page-header";
 import {
   useCreateReportJob,
   useDownloadArtifact,
+  useEventDocumentKinds,
+  useRenderEventDocument,
   useReportJobs,
   useReportTypes,
 } from "@/hooks/use-ops-reports";
@@ -20,6 +22,7 @@ import {
   formatMoment,
   formatSize,
   saveFile,
+  saveBinaryFile,
 } from "@/features/ops-reports/report-shared";
 import type {
   ReportArtifactSummary,
@@ -46,6 +49,29 @@ export default function ServiceReportsPage() {
   const jobsQuery = useReportJobs();
   const createJob = useCreateReportJob();
   const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content));
+
+  // Документы ОМ (Plane №159, шаг ПД-3). Список видов приходит С СЕРВЕРА:
+  // свой список на экране разошёлся бы с реестром сборщиков и предложил бы
+  // документ, которого ручка не соберёт.
+  const documentKinds = useEventDocumentKinds();
+  const [documentKind, setDocumentKind] = useState("");
+  const [documentEvent, setDocumentEvent] = useState("");
+  const [documentSaved, setDocumentSaved] = useState<string | null>(null);
+  const renderDocument = useRenderEventDocument((file) => {
+    saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
+    setDocumentSaved(file.fileName);
+  });
+  const chosenKind =
+    documentKinds.data?.results.find((row) => row.kind === documentKind) ?? null;
+  // Кнопка выключается ровно тогда, когда собрать НЕЛЬЗЯ, и причина
+  // называется словами рядом — выключенная кнопка без объяснения оставляет
+  // человека гадать, что он сделал не так.
+  const documentBlocker =
+    chosenKind === null
+      ? "Выберите вид документа"
+      : chosenKind.needsEvent && documentEvent.trim() === ""
+        ? `Документ «${chosenKind.label}» строится по мероприятию — укажите его код`
+        : null;
 
   const reportType = typesQuery.data?.results[0] ?? null;
   const [from, setFrom] = useState("");
@@ -196,6 +222,101 @@ export default function ServiceReportsPage() {
             )}
           </section>
         )}
+
+        {/* Документы ОМ. Отдельная секция, а не строка в форме отчёта:
+            отчёт — это ЗАДАНИЕ (очередь, срок, повтор, ревизия), а документ
+            собирается одним ответом и ничего после себя не оставляет. Свести
+            их в одно место значило бы обещать документу жизненный цикл,
+            которого у него нет. */}
+        <section
+          role="group"
+          aria-label="Выгрузка документов ОМ"
+          className="rounded-xl border bg-card p-4"
+        >
+          <h2 className="mb-1 text-sm font-semibold">Документы по мероприятию</h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Готовый файл в PDF по форме документа. Собирается сразу, в очередь
+            работ не попадает.
+          </p>
+          {documentKinds.isPending ? (
+            <p className="text-sm text-muted-foreground">Загрузка видов документов…</p>
+          ) : documentKinds.data === undefined ? (
+            <p className="text-sm text-muted-foreground">
+              Список документов сейчас недоступен.
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                Вид документа
+                <select
+                  aria-label="Вид документа"
+                  className="mt-0.5 block h-9 w-56 rounded-md border border-input bg-background px-2 text-sm"
+                  value={documentKind}
+                  onChange={(e) => {
+                    setDocumentKind(e.target.value);
+                    setDocumentSaved(null);
+                  }}
+                >
+                  <option value="">— выберите —</option>
+                  {documentKinds.data.results.map((row) => (
+                    <option key={row.kind} value={row.kind}>
+                      {row.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {/* Поле мероприятия показывается ТОЛЬКО тем видам, которым оно
+                  нужно: спрашивать код ОМ у бюллетеня, который строится по
+                  всем мероприятиям, значило бы требовать лишнее. */}
+              {chosenKind?.needsEvent === true && (
+                <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                  Код мероприятия
+                  <input
+                    aria-label="Код мероприятия"
+                    className="mt-0.5 block h-9 w-44 rounded-md border border-input bg-background px-2 text-sm"
+                    placeholder="ОМ-2026-1"
+                    value={documentEvent}
+                    onChange={(e) => {
+                      setDocumentEvent(e.target.value);
+                      setDocumentSaved(null);
+                    }}
+                  />
+                </label>
+              )}
+              <button
+                type="button"
+                className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={documentBlocker !== null || renderDocument.isPending}
+                aria-busy={renderDocument.isPending}
+                onClick={() => {
+                  setDocumentSaved(null);
+                  renderDocument.mutate({
+                    kind: documentKind,
+                    eventCode: documentEvent,
+                  });
+                }}
+              >
+                {renderDocument.isPending ? "Собираем…" : "Выгрузить PDF"}
+              </button>
+            </div>
+          )}
+          {/* Ответ на нажатие обязателен: клик без отклика читается как
+              поломка. Сборка занимает доли секунды, поэтому здесь не спиннер
+              поверх экрана, а подпись у самой кнопки. */}
+          {documentBlocker !== null && (
+            <p className="mt-2 text-xs text-muted-foreground">{documentBlocker}</p>
+          )}
+          {renderDocument.error !== null && (
+            <p className="mt-2 text-xs text-red-700" role="alert">
+              Документ не собрался: {renderDocument.error.message}
+            </p>
+          )}
+          {documentSaved !== null && (
+            <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
+              Сохранён файл «{documentSaved}».
+            </p>
+          )}
+        </section>
 
         <section className="rounded-xl border bg-card p-4">
           <h2 className="mb-2 text-sm font-semibold">Работы и артефакты</h2>
