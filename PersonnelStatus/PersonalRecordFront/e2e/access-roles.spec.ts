@@ -13,6 +13,7 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { confirmInDialog } from './dialog'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -86,9 +87,7 @@ test.describe(LIVE ? 'роли в настройках' : 'роли в наст�
 
     // Снятие спрашивает подтверждение: доступ пропадает у всех, кому роль выдана.
     await grantedRow.getByRole('button', { name: 'Снять' }).click()
-    await expect(page.getByRole('heading', { name: 'Снять право с роли?' })).toBeVisible()
-    await page.getByRole('button', { name: 'Снять', exact: true }).last().click()
-    await expect(page.getByRole('heading', { name: 'Снять право с роли?' })).toHaveCount(0)
+    await confirmInDialog(page, { title: 'Снять право с роли?', button: 'Снять' })
     await expect(page.locator('ul[aria-label="Состав прав роли"] li')).toHaveCount(0)
 
     await page.screenshot({ path: 'smoke-results/access-roles.png', fullPage: true })

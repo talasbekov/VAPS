@@ -11,6 +11,7 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { confirmInDialog } from './dialog'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -83,7 +84,7 @@ test.describe(LIVE ? 'пользователи в настройках' : 'по�
       .filter({ hasText: PROBE_ROLE })
     if ((await probeRow.count()) > 0) {
       await probeRow.getByRole('button', { name: 'Снять' }).click()
-      await page.getByRole('button', { name: 'Снять', exact: true }).last().click()
+      await confirmInDialog(page, { title: 'Снять роль?', button: 'Снять' })
       await expect(probeRow).toHaveCount(0)
     }
     await page.getByLabel('Роль', { exact: true }).selectOption(PROBE_ROLE)
@@ -104,11 +105,9 @@ test.describe(LIVE ? 'пользователи в настройках' : 'по�
 
     // Уборка тем же экраном — заодно проверка снятия с подтверждением.
     await probeRow.getByRole('button', { name: 'Снять' }).click()
-    await expect(page.getByRole('heading', { name: 'Снять роль?' })).toBeVisible()
-    await page.getByRole('button', { name: 'Снять', exact: true }).last().click()
-    // Сперва дождаться, что диалог УШЁЛ: пока он на экране, фон и без того
-    // не виден проверке, и ассерт ниже прошёл бы, ничего не проверив.
-    await expect(page.getByRole('heading', { name: 'Снять роль?' })).toHaveCount(0)
+    // Подтверждение — ВНУТРИ окна, и управление вернётся только когда окно
+    // ушло: ассерт по фону при открытом окне проходит всегда (Plane №109).
+    await confirmInDialog(page, { title: 'Снять роль?', button: 'Снять' })
     await expect(probeRow).toHaveCount(0)
 
     expect(errors).toEqual([])
