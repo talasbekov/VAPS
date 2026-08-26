@@ -25,6 +25,7 @@ import {
   OpsPermissionsUnavailable,
   isPermissionsCheckFailure,
 } from "@/components/ops-permissions-unavailable";
+import { useOpsMockWorker } from "@/hooks/use-ops-mock-worker";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { startOpsWs, stopOpsWs } from "@/lib/ops-ws";
 
@@ -33,25 +34,13 @@ export default function SecurityOpsLayout({
 }: {
   children: ReactNode;
 }) {
-  const [ready, setReady] = useState(false);
+  // Старт мок-слоя — общий хук: тот же мок нужен экранам доступа на
+  // /settings/*, и две копии эффекта разошлись бы при первой правке.
+  const ready = useOpsMockWorker();
   const queryClient = useQueryClient();
   const { error: permissionsError, isLoading: permissionsLoading } =
     useOpsPermissions();
   const [isRetrying, setIsRetrying] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    // динамический импорт: msw и мок-код не попадают в чанк, пока страница
-    // раздела не открыта
-    import("@/mocks/ops/browser")
-      .then(({ startOpsMockWorker }) => startOpsMockWorker())
-      .finally(() => {
-        if (!cancelled) setReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     // Транспорт стартует ПОСЛЕ готовности мок-слоя: его REST-инвалидации

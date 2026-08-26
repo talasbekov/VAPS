@@ -10,7 +10,7 @@
  *
  * Как гонять. Нужен ВТОРОЙ dev-сервер, поднятый на моке (основной стенд живой):
  *
- *   NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,objects \
+ *   NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,objects,access \
  *   NEXT_DIST_DIR=.next-mock npx next dev -p 3107
  *   SMOKE_MOCK_APP=http://localhost:3107 npx playwright test \
  *     -c playwright.smoke.config.ts e2e/mock-contract.spec.ts
@@ -192,7 +192,8 @@ test.describe(
           forceDemandTotal: number
         }
       })
-      expect(prepared.stage).toBe('DEMAND')
+      // Мок зеркалит автопроход стадий сервера (Plane №110).
+      expect(prepared.stage).toBe('PLACEMENT')
       expect(
         prepared.forceDemandTotal,
         'мок-фикстура без потребности — делить нечего',
@@ -429,6 +430,80 @@ test.describe(
       expect(
         senior.cleared.placementAssignments.filter((a: any) => a.isSectorSenior),
       ).toHaveLength(0)
+    })
+
+    test('раздел доступа в моке живёт по правилам сервера', async ({ page }) => {
+      // Правила сервера (шаги «П-2»…«П-5»): удаления учётки нет вовсе,
+      // временный пароль приходит один раз при заведении, повторная выдача
+      // той же роли в той же области второго назначения не заводит. Мок,
+      // разрешающий больше живого, зеленил бы экраны там, где живой стек
+      // отказывает, — ровно та яма, ради которой эта спека и заведена.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+
+      await page.goto(`${MOCK_APP}/settings/users/`)
+      await expect(
+        page.getByRole('heading', { name: 'Пользователи', exact: true }),
+      ).toBeVisible({ timeout: 30_000 })
+
+      await page.getByRole('button', { name: 'Завести учётку' }).click()
+      // Логин ПОСТОЯННЫЙ, а не уникальный на прогон: если мок вдруг не
+      // перехватит (так уже было — на /settings/* он не стартовал вовсе),
+      // уникальное имя заводило бы на живом стенде по учётке за прогон, а
+      // удаления учёток в API нет. Стор мока живёт в памяти вкладки и на
+      // каждый переход обнуляется, так что повтора имени в моке не бывает.
+      await page.getByLabel('Логин').fill('mock_probe_account')
+      await page.getByRole('button', { name: 'Завести', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Временный пароль' })).toBeVisible()
+      const shown = (await page.locator('code.select-all').innerText()).trim()
+      expect(shown.length).toBeGreaterThan(7)
+      await page.getByRole('button', { name: 'Закрыть', exact: true }).first().click()
+
+      // Запросы идут ИЗ СТРАНИЦЫ: перехватывает service worker, запрос мимо
+      // браузера мок не увидит.
+      const rules = await page.evaluate(async () => {
+        const deleted = await fetch('/api/operations/accounts/1/', { method: 'DELETE' })
+        const passwordPatch = await fetch('/api/operations/accounts/1/', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ password: 'whatever-123' }),
+        })
+        const body = { user_id: '3', role_code: 'OBSERVER', scope_division_id: null }
+        const post = async () =>
+          fetch('/api/operations/user-roles/', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+        const first = (await (await post()).json()) as { id: number }
+        const second = (await (await post()).json()) as { id: number }
+        const listed = (await (
+          await fetch('/api/operations/user-roles/?user_id=3')
+        ).json()) as { results: Array<{ role_code: string; is_active: boolean }> }
+        return {
+          deleteStatus: deleted.status,
+          passwordPatchStatus: passwordPatch.status,
+          sameAssignment: first.id === second.id,
+          observerRows: listed.results.filter(
+            (row) => row.role_code === 'OBSERVER' && row.is_active,
+          ).length,
+        }
+      })
+
+      expect(rules.deleteStatus).toEqual(405)
+      expect(rules.passwordPatchStatus).toEqual(400)
+      expect(rules.sameAssignment).toBe(true)
+      expect(rules.observerRows).toEqual(1)
     })
   },
 )

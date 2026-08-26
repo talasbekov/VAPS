@@ -94,3 +94,7 @@ export function isOpsFeedbackLive(): boolean {
   return isDomainLive("feedback");
 }
 
+
+export function isOpsAccessLive(): boolean {
+  return isDomainLive("access");
+}
