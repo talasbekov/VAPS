@@ -1075,5 +1075,17 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     gvo_service.reset_patch(om.code, {"section": "head"}, actor=ACTOR)
 
+    # Справочник прав (Plane №36, «П-2»): заведение и правка — одно действие,
+    # поэтому и запись здесь одна.
+    from organization_management.apps.operations.services import RoleAdminService
+
+    RoleAdminService.save_permission(
+        "coverage.permission",
+        name="Право покрытия журнала",
+        description="",
+        is_active=True,
+        actor=ACTOR,
+    )
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

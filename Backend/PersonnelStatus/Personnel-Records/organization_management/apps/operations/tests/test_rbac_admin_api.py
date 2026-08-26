@@ -260,3 +260,96 @@ class TestTemporaryDutyWrites:
         results = api.get(TEMP_DUTY_URL).json()["results"]
         starts = [row["starts_at"] for row in results]
         assert starts == sorted(starts, reverse=True)
+
+
+# ── Plane №36, шаг «П-2»: справочник прав дорос до записи и поиска ──────────
+
+
+@pytest.mark.django_db
+def test_permissions_search_looks_at_code_name_and_description():
+    """Поиск идёт НА СЕРВЕР и смотрит на всё, что видно в строке списка."""
+    admin, _ = client_for("perm-admin", "ADMIN", perms=("admin.roles",))
+    Permission.objects.create(
+        code="reports.export", name="Выгрузка отчётов", description="в Excel"
+    )
+    Permission.objects.create(code="event.view", name="Просмотр мероприятий")
+
+    by_code = admin.get(f"{PERMISSIONS_URL}?search=reports").json()["results"]
+    by_name = admin.get(f"{PERMISSIONS_URL}?search=Выгрузка").json()["results"]
+    by_description = admin.get(f"{PERMISSIONS_URL}?search=Excel").json()["results"]
+    everything = admin.get(PERMISSIONS_URL).json()["results"]
+
+    assert [row["code"] for row in by_code] == ["reports.export"]
+    assert [row["code"] for row in by_name] == ["reports.export"]
+    assert [row["code"] for row in by_description] == ["reports.export"]
+    # Сторож: без поиска строк БОЛЬШЕ — иначе проба не отличала бы фильтр от
+    # его отсутствия.
+    assert len(everything) > len(by_code)
+
+
+@pytest.mark.django_db
+def test_permission_is_created_and_leaves_a_trace():
+    """Заведение права — именное решение: в журнале есть строка с кодом."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    admin, user = client_for("perm-author", "ADMIN", perms=("admin.roles",))
+
+    response = admin.post(
+        PERMISSIONS_URL,
+        {"code": "reports.export", "name": "Выгрузка отчётов", "is_active": True},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert Permission.objects.filter(code="reports.export").exists()
+    entry = OpsAuditLog.objects.get(action="ACCESS_PERMISSION_SAVED")
+    # Ключ строки — КОД, а не число: у права числового идентификатора нет.
+    assert entry.entity_key == "reports.export"
+    assert entry.entity_id is None
+    assert entry.old_value is None
+    assert entry.actor_user_id == str(user.pk)
+
+
+@pytest.mark.django_db
+def test_permission_edit_keeps_the_previous_value_in_the_trace():
+    """Правка кладёт прежнее значение рядом с новым."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    admin, _ = client_for("perm-editor", "ADMIN", perms=("admin.roles",))
+    Permission.objects.create(code="reports.export", name="Старое имя")
+
+    admin.patch(
+        f"{PERMISSIONS_URL}reports.export/",
+        {"name": "Выгрузка отчётов", "is_active": False},
+        format="json",
+    )
+
+    entry = OpsAuditLog.objects.filter(action="ACCESS_PERMISSION_SAVED").latest("id")
+    assert entry.old_value["name"] == "Старое имя"
+    assert entry.new_value["name"] == "Выгрузка отчётов"
+    assert Permission.objects.get(code="reports.export").is_active is False
+
+
+@pytest.mark.django_db
+def test_permission_cannot_be_deleted():
+    """Удаления нет: код права стоит в гейтах живых ручек."""
+    admin, _ = client_for("perm-remover", "ADMIN", perms=("admin.roles",))
+    Permission.objects.create(code="reports.export", name="Выгрузка отчётов")
+
+    response = admin.delete(f"{PERMISSIONS_URL}reports.export/")
+
+    assert response.status_code == 405
+    assert Permission.objects.filter(code="reports.export").exists()
+
+
+@pytest.mark.django_db
+def test_writing_permissions_is_closed_to_those_who_do_not_manage_access():
+    """Заводить права может только тот, кто управляет доступом."""
+    stranger, _ = client_for("perm-stranger", "READER", perms=("event.view",))
+
+    response = stranger.post(
+        PERMISSIONS_URL, {"code": "sneaky", "name": "Тихо"}, format="json"
+    )
+
+    assert response.status_code == 403
+    assert not Permission.objects.filter(code="sneaky").exists()

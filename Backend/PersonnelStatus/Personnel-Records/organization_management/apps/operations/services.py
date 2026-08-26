@@ -134,6 +134,56 @@ class RoleAdminService:
 
     @staticmethod
     @transaction.atomic
+    def save_permission(code, *, name, description="", is_active=True, actor):
+        """Завести или изменить право справочника (Plane №36, «П-2»).
+
+        Запись идёт ЧЕРЕЗ сервис, а не из вьюхи: у правила «изменение доступа
+        оставляет именной след» один владелец, и вторая запись журнала из
+        другого места разошлась бы с ним при первой же новой ручке.
+
+        Удаления здесь нет: код права стоит в гейтах живых ручек, и снятие
+        строки справочника оставило бы закрытую ручку без объяснения, чем
+        именно она закрыта. Право снимается с работы деактивацией.
+        """
+        from organization_management.apps.operations import audit_service
+        from organization_management.apps.operations.models import Permission
+
+        existing = Permission.objects.filter(code=code).first()
+        old_value = (
+            None
+            if existing is None
+            else {
+                "code": existing.code,
+                "name": existing.name,
+                "description": existing.description,
+                "is_active": existing.is_active,
+            }
+        )
+        permission, _ = Permission.objects.update_or_create(
+            code=code,
+            defaults={
+                "name": name,
+                "description": description,
+                "is_active": is_active,
+            },
+        )
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_PERMISSION_SAVED,
+            entity_type=audit_service.ENTITY_PERMISSION,
+            entity_key=permission.code,
+            old_value=old_value,
+            new_value={
+                "code": permission.code,
+                "name": permission.name,
+                "description": permission.description,
+                "is_active": permission.is_active,
+            },
+        )
+        return permission
+
+    @staticmethod
+    @transaction.atomic
     def revoke_role(user_id, role_code, scope_division_id=None):
         UserRole.objects.filter(
             user_id=user_id, role_code_id=role_code, scope_division_id=scope_division_id

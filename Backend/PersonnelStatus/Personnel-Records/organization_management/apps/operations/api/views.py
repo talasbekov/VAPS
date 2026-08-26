@@ -21,7 +21,7 @@ from drf_spectacular.utils import (
     extend_schema_serializer,
     inline_serializer,
 )
-from rest_framework import serializers, status, viewsets
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import LimitOffsetPagination
@@ -392,10 +392,44 @@ class RoleViewSet(viewsets.ReadOnlyModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
 
-class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
+class PermissionViewSet(
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.ReadOnlyModelViewSet,
+):
+    """Справочник прав: чтение было, запись добавлена (Plane №36, «П-2»).
+
+    Удаления НЕТ намеренно, и это не забывчивость: код права стоит в картах
+    `permission_map` живых ручек. Удалить строку справочника значило бы
+    оставить гейт без словаря — ручка осталась бы закрытой, а объяснить, чем
+    именно, стало бы нечем. Право снимается с работы деактивацией.
+
+    Метод `destroy` не объявлен ВОВСЕ, а не объявлен с отказом: объявленный
+    метод создаёт маршрут `DELETE`, и сторож покрытия гейтов справедливо
+    требовал бы от него 401/403 анониму, а он отвечал бы 405 раньше проверки.
+    """
+
     serializer_class = PermissionSerializer
     pagination_class = DefaultPagination
     queryset = Permission.objects.all().order_by("code")
+    # Ключ — КОД с точкой (`event.manage`), а роутер по умолчанию точку в
+    # идентификатор не пускает (`[^/.]+`, чтобы отличать `.json`-суффикс):
+    # без этой строки карточка права отвечала бы 404 на собственный код.
+    lookup_value_regex = "[^/]+"
+
+    def get_queryset(self):
+        # Поиск — требование заказчика («чтобы ручным способом не искать»), и
+        # он идёт НА СЕРВЕР: фильтр по странице отвечал бы «такого права нет»,
+        # имея в виду «нет на этой странице».
+        queryset = super().get_queryset()
+        search = (self.request.query_params.get("search") or "").strip()
+        if search != "":
+            queryset = queryset.filter(
+                Q(code__icontains=search)
+                | Q(name__icontains=search)
+                | Q(description__icontains=search)
+            )
+        return queryset
 
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
@@ -404,6 +438,42 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
         return super().retrieve(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        form = PermissionSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        # Запись — через сервис: у правила «изменение доступа оставляет след»
+        # один владелец, и вьюха своей записи журнала не заводит.
+        permission = RoleAdminService.save_permission(
+            form.validated_data["code"],
+            name=form.validated_data["name"],
+            description=form.validated_data.get("description") or "",
+            is_active=form.validated_data.get("is_active", True),
+            actor=resolve_actor_id(request),
+        )
+        return Response(
+            PermissionSerializer(permission).data, status=status.HTTP_201_CREATED
+        )
+
+    def update(self, request, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        current = self.get_object()
+        form = PermissionSerializer(
+            current, data=request.data, partial=kwargs.get("partial", False)
+        )
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+        permission = RoleAdminService.save_permission(
+            current.code,
+            name=data.get("name", current.name),
+            description=data.get("description", current.description) or "",
+            is_active=data.get("is_active", current.is_active),
+            actor=resolve_actor_id(request),
+        )
+        return Response(PermissionSerializer(permission).data)
+
+
 
 
 class UserRoleViewSet(viewsets.ViewSet):

@@ -205,3 +205,42 @@ def test_status_snapshot_carries_cancellation_facts():
     assert snapshot["cancelled_by"] == "9"
     assert snapshot["cancelled_reason"] == "приказ отменён"
     assert snapshot["cancelled_at"] is not None
+
+
+# ── Plane №36: ключ строки журнала — числовой ИЛИ кодовый, но ровно один ────
+
+
+def test_entry_with_a_string_key_is_written():
+    """Сущность без числового id (право, роль) опознаётся кодом."""
+    entry = audit_service.record(
+        actor=ACTOR,
+        action=audit_service.ACCESS_PERMISSION_SAVED,
+        entity_type=audit_service.ENTITY_PERMISSION,
+        entity_key="event.manage",
+        new_value={"code": "event.manage"},
+    )
+
+    assert entry.entity_key == "event.manage"
+    assert entry.entity_id is None
+
+
+def test_entry_without_any_key_is_refused():
+    """Строка без ключа не указывает ни на что — это дефект вызывающего."""
+    with pytest.raises(ValueError):
+        audit_service.record(
+            actor=ACTOR,
+            action=audit_service.ACCESS_PERMISSION_SAVED,
+            entity_type=audit_service.ENTITY_PERMISSION,
+        )
+
+
+def test_entry_with_both_keys_is_refused():
+    """Два ключа указывают на два разных объекта — тоже дефект."""
+    with pytest.raises(ValueError):
+        audit_service.record(
+            actor=ACTOR,
+            action=audit_service.ACCESS_PERMISSION_SAVED,
+            entity_type=audit_service.ENTITY_PERMISSION,
+            entity_id=1,
+            entity_key="event.manage",
+        )
