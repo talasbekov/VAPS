@@ -2237,3 +2237,106 @@ def download_rating_export(actor, perms, artifact_code):
             outcome="SUCCESS", request_id=job.idempotency_key,
         )
         return {"fileName": artifact.file_name, "content": artifact.content}
+
+
+# ── Оценивание, заведённое закрытием ОМ ─────────────────────────────────────
+#
+# Заказчик: «Рейтинг необходимо добавить в систему, оценивание на каждом ОМ»
+# (Plane №96). До этого мероприятия оценивания заводил ТОЛЬКО сид: из живого
+# реестра ОМ не создавалось ни одного, и рейтинг у настоящих людей взяться не
+# мог ниоткуда — даже после того, как участника связали с кадрами.
+#
+# Момент заведения — ЗАКРЫТИЕ ОМ, а не создание: оценивать нечего, пока люди
+# не отработали, и пустое мероприятие оценивания висело бы в очереди оценщика
+# с первого дня.
+
+
+def _participant_code_for(employee_id):
+    """Код участника по кадровому id. Форма та же, что разбирает миграция
+    0048, — иначе связь пришлось бы описывать в двух местах по-разному."""
+    return f"employee-{employee_id}"
+
+
+@transaction.atomic
+def open_evaluation_for_event(event, *, actor):
+    """Завести мероприятие оценивания по закрытому ОМ и задания по составу.
+
+    Возвращает `OpsEvaluationEvent` либо `None`, когда оценивать некого.
+
+    Повторный вызов НИЧЕГО не плодит: код мероприятия оценивания выводится из
+    кода ОМ, а задания — из пары «мероприятие + участник». Закрытие ОМ бывает
+    один раз, но ручку зовут и миграции, и возможный повтор после отката.
+    """
+    assignments = [
+        row for row in (event.placement_assignments or [])
+        if str(row.get("employeeId") or "").isdigit()
+    ]
+    if not assignments:
+        # Расстановки нет — оценивать некого. Пустое мероприятие оценивания
+        # было бы шумом в очереди: оценщик открыл бы его и закрыл.
+        return None
+
+    event_code = f"security-event-{event.pk}"
+    starts_at = event.closed_at or Clock.now()
+    evaluation_event, _ = OpsEvaluationEvent.objects.update_or_create(
+        event_code=event_code,
+        defaults={
+            "event_run_code": f"{event_code}-run-1",
+            "number": event.code,
+            "title": event.title,
+            "object_label": event.object_name or "",
+            "actual_starts_at": starts_at,
+            "actual_ends_at": starts_at,
+            "state_label": "Завершено",
+            "security_event_id": event.pk,
+        },
+    )
+
+    posts = {str(row.get("id")): row for row in (event.recon_sector_posts or [])}
+    for assignment in assignments:
+        employee_id = int(assignment["employeeId"])
+        code = _participant_code_for(employee_id)
+        post = posts.get(str(assignment.get("postId")), {})
+        participant, _ = OpsRatedParticipant.objects.update_or_create(
+            participant_code=code,
+            defaults={
+                # Подпись безопасная — идентификатора в ней нет (§19.14).
+                "safe_label": assignment.get("employeeName") or code,
+                # Группа рейтинга — подразделение человека на момент
+                # мероприятия: рейтинг сравнивают внутри группы, и брать
+                # сегодняшнее подразделение значило бы менять группу задним
+                # числом при каждом переводе.
+                "group_code": str(assignment.get("divisionId") or "unknown"),
+                "employee_id": employee_id,
+            },
+        )
+        OpsEvaluationWorkItem.objects.update_or_create(
+            work_item_code=f"{event_code}-{code}",
+            defaults={
+                "event_code": event_code,
+                "event_run_code": evaluation_event.event_run_code,
+                "assignment_code": str(assignment.get("id") or ""),
+                # Оценивает ТОТ, КТО ЗАКРЫЛ мероприятие: он его вёл и видел
+                # людей на постах. Приписать оценивание старшему объекта
+                # нельзя — `chief_employee_id` это КАДРОВАЯ запись, а задание
+                # адресуется учётной записи, и однозначного моста между ними
+                # в системе нет.
+                "evaluator_user_id": str(actor or ""),
+                "target_participant_code": participant.participant_code,
+                "target_group_code": None,
+                "target_safe_label": participant.safe_label,
+                "target_safe_unit_label": assignment.get("divisionName") or "",
+                "post_label": post.get("post") or post.get("task") or "",
+                "actual_starts_at": evaluation_event.actual_starts_at,
+                "actual_ends_at": evaluation_event.actual_ends_at,
+                "participated": True,
+                "evaluation_direction": "SENIOR_TO_EMPLOYEE",
+                # Начальное значение даёт СЕРВЕР (§19.8), не оценщик.
+                "initial_score": RATING_DEFAULT_SCORE,
+                "status": "PENDING",
+                "revision": 1,
+                "submitted_evaluation_code": None,
+                "submitted_at": None,
+            },
+        )
+    return evaluation_event

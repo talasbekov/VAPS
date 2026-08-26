@@ -3076,6 +3076,11 @@ def close_event(event_id, *, direction_summaries, actor):
         ]
     )
     record_transition(event, old_stage, "CLOSED")
+    # Оценивание заводится ЗАКРЫТИЕМ (задача заказчика Plane №96: «оценивание
+    # на каждом ОМ»). Импорт локальный: модуль рейтинга читает мероприятия ОМ,
+    # и импорт на уровне модуля замкнул бы их друг на друга.
+    from organization_management.apps.ops import ratings as ratings_service
+    ratings_service.open_evaluation_for_event(event, actor=actor)
     audit_service.record(
         actor=actor,
         action=audit_service.SECURITY_EVENT_CLOSED,
