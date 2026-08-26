@@ -35,6 +35,10 @@ import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
 import { RatingBriefDialog } from "./RatingBriefDialog";
 import {
+  PLACEMENT_MANAGE,
+  useChainAccess,
+} from "@/features/forces-split/ui/chain-access";
+import {
   useAssignPlacement,
   useCompletePlacement,
   usePersonnelPage,
@@ -89,6 +93,10 @@ const CANDIDATE_PAGE_SIZE = 50;
 // ── Расстановка: три колонки прототипа ───────────────────────────────────
 
 function PlacementBoard({ event }: { event: SecurityEvent }) {
+  // Расстановку заказчик закрепил за старшим объекта/мероприятия (Plane №74).
+  // Клиент гейтит по КОДУ права; «его ли это мероприятие» знает сервер — он же
+  // и отвечает словами, если нет.
+  const access = useChainAccess();
   const assign = useAssignPlacement(event.id);
   const unassign = useUnassignPlacement(event.id);
   const complete = useCompletePlacement(event.id);
@@ -373,6 +381,19 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         <CardTitle>Расстановка</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Причина недоступности — СЛОВАМИ и один раз на шаг: у доски действий
+            много (автоподбор, назначение, снятие, старший сектора), и повтор
+            одной строки у каждого превратил бы экран в частокол. Подсказка
+            `title` остаётся у каждой кнопки — для тех, кто пришёл к ней
+            напрямую с клавиатуры. */}
+        {access.reason(PLACEMENT_MANAGE) !== "" && (
+          <p
+            className="text-[11px] text-muted-foreground"
+            data-slot="access-note"
+          >
+            {access.reason(PLACEMENT_MANAGE)}
+          </p>
+        )}
         {event.approvalStatus === "RETURNED" && event.approvalComment !== "" && (
           <Alert variant="destructive">
             <AlertDescription>
@@ -395,7 +416,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
               type="button"
               variant="outline"
               size="sm"
-              disabled={assign.isPending || unfilled === 0}
+              disabled={
+                assign.isPending || unfilled === 0 || !access.can(PLACEMENT_MANAGE)
+              }
+              aria-disabled={!access.can(PLACEMENT_MANAGE)}
+              title={access.reason(PLACEMENT_MANAGE)}
               onClick={autoFill}
             >
               Сформировать автоматически
@@ -684,7 +709,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         variant="outline"
                         size="sm"
                         className="h-8 px-2 text-xs"
-                        disabled={setSenior.isPending}
+                        disabled={setSenior.isPending || !access.can(PLACEMENT_MANAGE)}
+                        aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                        title={access.reason(PLACEMENT_MANAGE)}
                         onClick={() =>
                           setSenior.mutate({
                             assignmentId: assignment.id,
@@ -726,6 +753,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         variant="outline"
                         size="sm"
                         className="h-8 px-2 text-xs"
+                        disabled={!access.can(PLACEMENT_MANAGE)}
+                        aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                        title={access.reason(PLACEMENT_MANAGE)}
                         onClick={() => unassign.mutate({ assignmentId: assignment.id })}
                       >
                         Удалить с поста
@@ -902,7 +932,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       <button
                         key={person.id}
                         type="button"
-                        disabled={selected === null || assign.isPending}
+                        disabled={
+                          selected === null ||
+                          assign.isPending ||
+                          !access.can(PLACEMENT_MANAGE)
+                        }
+                        aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                        title={access.reason(PLACEMENT_MANAGE)}
                         onClick={() =>
                           selected !== null &&
                           assign.mutate({ postId: selected.id, employeeId: person.id })

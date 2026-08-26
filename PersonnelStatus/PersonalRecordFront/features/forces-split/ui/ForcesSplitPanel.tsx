@@ -30,6 +30,12 @@ import {
   useReturnAllocation,
 } from "@/hooks/use-security-event-stages";
 import { PersonnelPicker } from "@/features/personnel-picker";
+import {
+  FORCES_ALLOCATE,
+  FORCES_COMMAND,
+  FORCES_SELECT,
+  useChainAccess,
+} from "./chain-access";
 import { apiClient, type CoreDivision } from "@/lib/api";
 import type {
   ForceAllocationRow,
@@ -63,6 +69,7 @@ function seedRows(event: SecurityEvent): DraftRow[] {
 }
 
 export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
+  const access = useChainAccess();
   const [rows, setRows] = useState<DraftRow[]>(() => seedRows(event));
   const [saved, setSaved] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
@@ -248,7 +255,9 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
           <Button
             type="button"
             size="sm"
-            disabled={split.isPending}
+            disabled={split.isPending || !access.can(FORCES_COMMAND)}
+            aria-disabled={!access.can(FORCES_COMMAND)}
+            title={access.reason(FORCES_COMMAND)}
             onClick={() => {
               setSaved(false);
               split.mutate({
@@ -265,10 +274,26 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
       </div>
 
       <div className="mt-2 space-y-1">
+        {/* Причина — СЛОВАМИ и рядом с действием. Подсказки `title` мало:
+            её не видит ни скринридер, ни человек с сенсорного экрана, а
+            выключенная кнопка без объяснения читается как поломка. */}
+        <AccessNote reason={access.reason(FORCES_COMMAND)} />
         <StageError error={split.error} />
         <FieldErrors errors={fieldErrors} />
       </div>
     </div>
+  );
+}
+
+/** Строка «почему кнопка выключена». Пусто — действие доступно, и молчание
+ * здесь честнее, чем «у вас есть права»: сообщение появляется только тогда,
+ * когда человеку нужно объяснение. */
+function AccessNote({ reason }: { reason: string }) {
+  if (reason === "") return null;
+  return (
+    <p className="text-[11px] text-muted-foreground" data-slot="access-note">
+      {reason}
+    </p>
   );
 }
 
@@ -295,6 +320,7 @@ function AllocationState({
   event: SecurityEvent;
   row: ForceAllocationRow | undefined;
 }) {
+  const access = useChainAccess();
   const notify = useNotifyDirectorates(event.id, row?.id ?? "");
   const add = useAddAllocationMember(event.id, row?.id ?? "");
   const remove = useRemoveAllocationMember(event.id, row?.id ?? "");
@@ -325,7 +351,9 @@ function AllocationState({
           variant="outline"
           size="sm"
           className="h-7 text-xs"
-          disabled={notify.isPending}
+          disabled={notify.isPending || !access.can(FORCES_ALLOCATE)}
+          aria-disabled={!access.can(FORCES_ALLOCATE)}
+          title={access.reason(FORCES_ALLOCATE)}
           onClick={() => notify.mutate({})}
         >
           {notify.isPending
@@ -350,6 +378,9 @@ function AllocationState({
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs"
+                disabled={!access.can(FORCES_SELECT)}
+                aria-disabled={!access.can(FORCES_SELECT)}
+                title={access.reason(FORCES_SELECT)}
                 onClick={() =>
                   setPicking(picking === directorate.id ? null : directorate.id)
                 }
@@ -403,10 +434,14 @@ function AllocationState({
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs"
-                disabled={remove.isPending}
+                disabled={remove.isPending || !access.can(FORCES_SELECT)}
+                aria-disabled={!access.can(FORCES_SELECT)}
+                title={access.reason(FORCES_SELECT)}
                 // Снять можно только до начала привлечения — отказ приходит
                 // с сервера словами, кнопка его не предугадывает: состояние
-                // статуса живёт там же, где сам статус.
+                // статуса живёт там же, где сам статус. Право — ТО ЖЕ, что у
+                // выделения: своего человека выделяет и снимает своё
+                // управление (Plane №74).
                 onClick={() => remove.mutate({ employeeId: member.employeeId })}
               >
                 Снять
@@ -414,6 +449,7 @@ function AllocationState({
             </li>
           ))}
         </ul>
+        <AccessNote reason={access.reason(FORCES_SELECT)} />
         <StageError error={remove.error} />
         {/* Отправка списка штабу: доступна оповещённому и возвращённому, а
             отзыв — пока штаб не решил. Кнопки не гадают за сервер: он и
@@ -424,11 +460,14 @@ function AllocationState({
               type="button"
               size="sm"
               className="h-7 text-xs"
-              disabled={submit.isPending}
+              disabled={submit.isPending || !access.can(FORCES_ALLOCATE)}
+              aria-disabled={!access.can(FORCES_ALLOCATE)}
+              title={access.reason(FORCES_ALLOCATE)}
               onClick={() => submit.mutate({})}
             >
               {submit.isPending ? "Отправляю…" : "Отправить список в штаб"}
             </Button>
+            <AccessNote reason={access.reason(FORCES_ALLOCATE)} />
             <StageError error={submit.error} />
           </div>
         )}
@@ -444,7 +483,9 @@ function AllocationState({
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs"
-                disabled={withdraw.isPending}
+                disabled={withdraw.isPending || !access.can(FORCES_ALLOCATE)}
+                aria-disabled={!access.can(FORCES_ALLOCATE)}
+                title={access.reason(FORCES_ALLOCATE)}
                 onClick={() => withdraw.mutate({})}
               >
                 {withdraw.isPending ? "Отзываю…" : "Отозвать список"}
@@ -454,12 +495,15 @@ function AllocationState({
             {/* Решение штаба — здесь же: пришедший список и решение по нему
                 это один разговор, и разводить их по двум экранам значило бы
                 заставить штаб искать то, что он только что прочитал. */}
+            <AccessNote reason={access.reason(FORCES_COMMAND)} />
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 size="sm"
                 className="h-7 text-xs"
-                disabled={accept.isPending}
+                disabled={accept.isPending || !access.can(FORCES_COMMAND)}
+                aria-disabled={!access.can(FORCES_COMMAND)}
+                title={access.reason(FORCES_COMMAND)}
                 onClick={() => accept.mutate({})}
               >
                 {accept.isPending ? "Принимаю…" : "Принять в мероприятие"}
@@ -476,7 +520,9 @@ function AllocationState({
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs"
-                disabled={back.isPending}
+                disabled={back.isPending || !access.can(FORCES_COMMAND)}
+                aria-disabled={!access.can(FORCES_COMMAND)}
+                title={access.reason(FORCES_COMMAND)}
                 onClick={() => back.mutate({ reason })}
               >
                 {back.isPending ? "Возвращаю…" : "Вернуть департаменту"}
