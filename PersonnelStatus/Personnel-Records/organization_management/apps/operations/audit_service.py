@@ -170,6 +170,17 @@ ACCESS_ROLE_PERMISSIONS_CHANGED = "ACCESS_ROLE_PERMISSIONS_CHANGED"
 # не появляется НИ В КАКОМ виде.
 ACCESS_ACCOUNT_SAVED = "ACCESS_ACCOUNT_SAVED"
 ACCESS_ACCOUNT_PASSWORD_RESET = "ACCESS_ACCOUNT_PASSWORD_RESET"
+# Выдача роли ЧЕЛОВЕКУ и её снятие (Plane №107). Именно эти два действия
+# меняют, кто и что может делать в системе, — и до 26.08.2026 они НЕ оставляли
+# следа вовсе: справочники прав и ролей писались в журнал, а раздача — нет.
+# Разбирательство «кто дал ему это право» упиралось в текущее состояние базы:
+# по нему видно, что роль есть, и не видно, кто и когда её выдал.
+#
+# Выдача и снятие — РАЗНЫЕ действия, а не одно с флагом: их спрашивают
+# порознь («кому раздавали за месяц», «у кого снимали»), и общий код заставил
+# бы читателя ленты разбирать содержимое new_value.
+ACCESS_ROLE_GRANTED = "ACCESS_ROLE_GRANTED"
+ACCESS_ROLE_REVOKED = "ACCESS_ROLE_REVOKED"
 DUTY_SHIFT_CREATED = "DUTY_SHIFT_CREATED"
 DUTY_SHIFT_CANCELLED = "DUTY_SHIFT_CANCELLED"
 # Настройки: принятая правка правила — решение с причиной и версией политики.
@@ -233,6 +244,8 @@ ACTIONS = frozenset(
         ACCESS_ROLE_PERMISSIONS_CHANGED,
         ACCESS_ACCOUNT_SAVED,
         ACCESS_ACCOUNT_PASSWORD_RESET,
+        ACCESS_ROLE_GRANTED,
+        ACCESS_ROLE_REVOKED,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,
@@ -275,6 +288,9 @@ ENTITY_DICTIONARY_ENTRY = "dictionary_entry"
 ENTITY_PERMISSION = "access_permission"
 ENTITY_ROLE = "access_role"
 ENTITY_ACCOUNT = "access_account"
+# Назначение роли человеку: сущность отдельная от роли и от учётки, потому что
+# отвечает на свой вопрос — «кому, что и в какой области».
+ENTITY_USER_ROLE = "access_user_role"
 
 ENTITY_TYPES = frozenset(
     {
@@ -293,6 +309,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_PERMISSION,
         ENTITY_ROLE,
         ENTITY_ACCOUNT,
+        ENTITY_USER_ROLE,
     }
 )
 

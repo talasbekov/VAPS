@@ -131,12 +131,20 @@ JOURNAL_URL = "/api/operations/audit-logs/"
 CEILING = 1000
 
 
+# Актор строк пробы. Ответ журнала фильтруется ИМ (Plane №107): выдача роли
+# сама пишется в журнал, а `client_for` роль раздаёт — то есть в ленте рядом со
+# строками пробы лежит ещё и строка её собственного сетапа. Без фильтра
+# `count` считал бы и её, и проба про потолок страницы падала бы на арифметике
+# сетапа, ничего не говоря о потолке.
+JOURNAL_ACTOR = "7"
+
+
 def _fill_journal(rows):
     from organization_management.apps.operations import audit_service
 
     for index in range(rows):
         audit_service.record(
-            actor="7",
+            actor=JOURNAL_ACTOR,
             action=audit_service.STATUS_CREATED,
             entity_type=audit_service.ENTITY_STATUS,
             entity_id=index,
@@ -159,7 +167,7 @@ def test_a_huge_limit_does_not_pull_the_whole_table():
 
     assert DefaultPagination.max_limit == CEILING
 
-    body = api.get(JOURNAL_URL, {"limit": 1000000}).json()
+    body = api.get(JOURNAL_URL, {"limit": 1000000, "actor": JOURNAL_ACTOR}).json()
     assert body["count"] == 3
     assert len(body["results"]) <= CEILING
 
@@ -183,7 +191,7 @@ def test_the_ceiling_is_the_number_actually_served():
     assert original is not None
     try:
         views.DefaultPagination.max_limit = 3
-        body = api.get(JOURNAL_URL, {"limit": 1000000}).json()
+        body = api.get(JOURNAL_URL, {"limit": 1000000, "actor": JOURNAL_ACTOR}).json()
     finally:
         views.DefaultPagination.max_limit = original
 
@@ -200,7 +208,7 @@ def test_a_limit_under_the_ceiling_is_obeyed_as_asked():
     api, _ = client_for("page-ceiling3", "ADMIN", ["*"])
     _fill_journal(5)
 
-    body = api.get(JOURNAL_URL, {"limit": 2}).json()
+    body = api.get(JOURNAL_URL, {"limit": 2, "actor": JOURNAL_ACTOR}).json()
 
     assert len(body["results"]) == 2
     assert body["count"] == 5

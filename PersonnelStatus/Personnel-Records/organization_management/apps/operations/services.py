@@ -153,15 +153,36 @@ class RoleAdminService:
         # Пустой actor размывал бы конвенцию «NULL = честно без актора».
         if not actor or not actor.strip():
             raise ValidationError("actor must be a non-empty string")
+        from organization_management.apps.operations import audit_service
+
         # created_by фиксирует создателя СТРОКИ (append-once): реактивация
         # существующего назначения не должна переписать исходного создателя —
         # отсюда create_defaults (Django 5.0+), не defaults.
-        user_role, _ = UserRole.objects.update_or_create(
+        user_role, created = UserRole.objects.update_or_create(
             user_id=user_id,
             role_code_id=role_code,
             scope_division_id=scope_division_id,
             defaults={"is_active": True},
             create_defaults={"is_active": True, "created_by": actor},
+        )
+        # След в журнале (Plane №107). Пишется и при ПОВТОРНОЙ выдаче тоже:
+        # реактивация снятой роли — такое же изменение доступа, как первая
+        # выдача, и молчать о ней значит терять ровно тот случай, который
+        # спрашивают на разбирательстве («её же снимали — кто вернул?»).
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_ROLE_GRANTED,
+            entity_type=audit_service.ENTITY_USER_ROLE,
+            # РОВНО один ключ — правило журнала: у назначения есть числовой
+            # идентификатор строки, и он точнее пары «человек + роль»
+            # (одна и та же роль живёт у человека в разных областях).
+            entity_id=user_role.id,
+            new_value={
+                "user_id": str(user_id),
+                "role_code": role_code,
+                "scope_division_id": scope_division_id,
+                "created": created,
+            },
         )
         return user_role
 
@@ -313,11 +334,46 @@ class RoleAdminService:
 
     @staticmethod
     @transaction.atomic
-    def revoke_role(user_id, role_code, scope_division_id=None):
-        """Снять роль: деактивация, не удаление — история выдач остаётся."""
+    def revoke_role(user_id, role_code, scope_division_id=None, *, actor: str):
+        """Снять роль: деактивация, не удаление — история выдач остаётся.
+
+        `actor` ОБЯЗАТЕЛЕН (Plane №107): снятие роли меняет доступ человека, и
+        запись без имени того, кто это сделал, отвечает на вопрос «что
+        случилось», но не на вопрос «с кого спрашивать». Аргумент именованный
+        и без умолчания — иначе новый вызывающий тихо не передал бы его.
+        """
+        if not actor or not actor.strip():
+            raise ValidationError("actor must be a non-empty string")
+        from organization_management.apps.operations import audit_service
+
+        rows = list(
+            UserRole.objects.filter(
+                user_id=user_id,
+                role_code_id=role_code,
+                scope_division_id=scope_division_id,
+            )
+        )
         UserRole.objects.filter(
             user_id=user_id, role_code_id=role_code, scope_division_id=scope_division_id
         ).update(is_active=False)
+        # Запись только о том, что ДЕЙСТВИТЕЛЬНО действовало: снятие уже
+        # снятой роли ничего не меняет, и строка в ленте о нём была бы шумом.
+        for row in rows:
+            if not row.is_active:
+                continue
+            audit_service.record(
+                actor=actor,
+                action=audit_service.ACCESS_ROLE_REVOKED,
+                entity_type=audit_service.ENTITY_USER_ROLE,
+                entity_id=row.id,
+                old_value={
+                    "user_id": str(user_id),
+                    "role_code": role_code,
+                    "scope_division_id": scope_division_id,
+                    "is_active": True,
+                },
+                new_value={"is_active": False},
+            )
 
     @classmethod
     def keeps_access_admin_without(cls, user_id, *, excluded_user_role_id) -> bool:

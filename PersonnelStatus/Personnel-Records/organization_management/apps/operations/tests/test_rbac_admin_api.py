@@ -624,6 +624,107 @@ def test_assignments_search_by_person_and_by_role():
 
 
 @pytest.mark.django_db
+def test_granting_a_role_leaves_a_named_trace():
+    """Выдача роли пишется в журнал ИМЕНЕМ того, кто её выдал (Plane №107).
+
+    До 26.08.2026 раздача ролей следа не оставляла вовсе: справочники прав и
+    ролей в журнал писались, а «кому что выдали» — нет. На разбирательстве
+    вопрос «кто дал ему это право» упирался в текущее состояние базы: по нему
+    видно, что роль есть, и не видно, кто и когда её выдал.
+    """
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    admin, actor = client_for("grant-author", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+    target = User.objects.create_user(username="grantee", password="x")
+
+    response = admin.post(
+        USER_ROLES_URL,
+        {"user_id": str(target.pk), "role_code": "ARCHIVIST"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    # Запись ИМЕННО этой выдачи: фикстура `client_for` сама раздаёт роль
+    # администратору, и её выдача теперь тоже пишется в журнал — `get()` по
+    # одному действию поймал бы две строки.
+    entry = OpsAuditLog.objects.get(
+        action="ACCESS_ROLE_GRANTED", entity_id=response.json()["id"]
+    )
+    assert entry.actor_user_id == str(actor.pk)
+    assert entry.entity_type == "access_user_role"
+    # Ключ строки — числовой идентификатор НАЗНАЧЕНИЯ: одна и та же роль
+    # живёт у человека в разных областях, и пара «человек + роль» их не
+    # различает.
+    assert entry.entity_id is not None
+    assert entry.entity_key is None
+    assert entry.new_value["role_code"] == "ARCHIVIST"
+    assert entry.new_value["user_id"] == str(target.pk)
+
+
+@pytest.mark.django_db
+def test_revoking_a_role_leaves_a_named_trace_with_the_previous_state():
+    """Снятие — своё действие, и в записи видно, что роль ДЕЙСТВОВАЛА."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    admin, actor = client_for("revoke-author", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+    target = User.objects.create_user(username="revokee", password="x")
+    granted = RoleAdminService.assign_role(str(target.pk), "ARCHIVIST", actor="test")
+
+    response = admin.delete(f"{USER_ROLES_URL}{granted.id}/")
+
+    assert response.status_code == 204
+    entry = OpsAuditLog.objects.get(action="ACCESS_ROLE_REVOKED")
+    assert entry.actor_user_id == str(actor.pk)
+    assert entry.entity_id == granted.id
+    assert entry.old_value["is_active"] is True
+    assert entry.new_value["is_active"] is False
+
+
+@pytest.mark.django_db
+def test_revoking_an_already_revoked_role_writes_nothing():
+    """Снятие снятого ничего не меняет — и строки в ленте о нём быть не должно:
+    лента для того и нужна, чтобы в ней стояли ИЗМЕНЕНИЯ, а не обращения."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    seed_role("ARCHIVIST", ["document.view"])
+    target = User.objects.create_user(username="twice-revoked", password="x")
+    RoleAdminService.assign_role(str(target.pk), "ARCHIVIST", actor="test")
+    RoleAdminService.revoke_role(str(target.pk), "ARCHIVIST", actor="test")
+    before = OpsAuditLog.objects.filter(action="ACCESS_ROLE_REVOKED").count()
+
+    RoleAdminService.revoke_role(str(target.pk), "ARCHIVIST", actor="test")
+
+    assert before == 1
+    assert OpsAuditLog.objects.filter(action="ACCESS_ROLE_REVOKED").count() == 1
+
+
+@pytest.mark.django_db
+def test_regranting_a_revoked_role_is_written_too():
+    """Возврат снятой роли — такое же изменение доступа, как первая выдача.
+
+    Это и есть случай, который спрашивают на разбирательстве: «её же снимали —
+    кто вернул?». Молчание здесь потеряло бы ровно его.
+    """
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    seed_role("ARCHIVIST", ["document.view"])
+    target = User.objects.create_user(username="regranted", password="x")
+    RoleAdminService.assign_role(str(target.pk), "ARCHIVIST", actor="first")
+    RoleAdminService.revoke_role(str(target.pk), "ARCHIVIST", actor="first")
+
+    RoleAdminService.assign_role(str(target.pk), "ARCHIVIST", actor="second")
+
+    grants = list(
+        OpsAuditLog.objects.filter(action="ACCESS_ROLE_GRANTED").order_by("id")
+    )
+    assert [entry.actor_user_id for entry in grants] == ["first", "second"]
+    assert grants[0].new_value["created"] is True
+    assert grants[1].new_value["created"] is False
+
+
+@pytest.mark.django_db
 def test_assignment_carries_names_of_person_role_and_scope():
     """Строка назначения читается словами: кто, какая роль, какая область."""
     admin, _ = client_for("assign-namer", "ADMIN", perms=("admin.roles",))
