@@ -2,6 +2,7 @@
 from rest_framework.routers import DefaultRouter
 
 from organization_management.apps.ops.api.views import (
+    AccessCatalogViewSet,
     OpsGvoSummariesViewSet,
     OpsLegalDocumentsViewSet,
     OpsProtectedPersonsViewSet,
@@ -208,6 +209,11 @@ router.register(
 router.register(
     "legal-documents", OpsLegalDocumentsViewSet,
     basename="ops-legal-documents",
+)
+
+# Каталог функций права (Plane №36, «П-1»): read-only карта гейтов.
+router.register(
+    "access-catalog", AccessCatalogViewSet, basename="ops-access-catalog",
 )
 
 urlpatterns = router.urls
