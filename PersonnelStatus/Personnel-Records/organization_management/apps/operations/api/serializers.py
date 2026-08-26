@@ -169,6 +169,54 @@ class TemporaryDutySerializer(serializers.ModelSerializer):
         ]
 
 
+class AccountSerializer(serializers.ModelSerializer):
+    """Учётная запись раздела доступа (Plane №36, «П-5»).
+
+    Пароля в ответе нет ни в каком виде — ни хеша, ни признака: хеш это
+    материал для перебора, и отдавать его тому, кто просто открыл список
+    людей, незачем. Временный пароль приходит ОТДЕЛЬНЫМ полем ответа и только
+    у двух действий (заведение и сброс), один раз.
+    """
+
+    full_name = serializers.SerializerMethodField()
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        from django.contrib.auth.models import User as _User
+
+        model = _User
+        fields = [
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "full_name",
+            "email",
+            "is_active",
+            "last_login",
+            "password",
+        ]
+        read_only_fields = ["id", "last_login"]
+
+    def get_full_name(self, user) -> str | None:
+        return user.get_full_name() or None
+
+    def validate_password(self, value):
+        if not value:
+            return value
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        try:
+            # Правила стойкости — те же, что у остальных входов в систему:
+            # свой набор здесь означал бы, что заведённая администратором
+            # учётка слабее заведённой любым другим путём.
+            validate_password(value)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(list(error.messages))
+        return value
+
+
 class AssignRoleRequestSerializer(serializers.Serializer):
     user_id = serializers.CharField(max_length=100)
     role_code = serializers.PrimaryKeyRelatedField(

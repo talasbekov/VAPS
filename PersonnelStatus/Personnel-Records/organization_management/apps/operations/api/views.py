@@ -33,6 +33,7 @@ from organization_management.apps.operations.api.permissions import (
     resolve_actor_id,
 )
 from organization_management.apps.operations.api.serializers import (
+    AccountSerializer,
     StatusCreateSerializer,
     StatusCompleteSerializer,
     StatusExtendSerializer,
@@ -134,6 +135,7 @@ from organization_management.apps.operations.selectors import (
 )
 from organization_management.apps.operations.services import (
     PermissionService,
+    AccountAdminService,
     RoleAdminService,
 )
 from organization_management.apps.operations.secondment_service import (
@@ -696,6 +698,106 @@ class UserRoleViewSet(viewsets.ViewSet):
             user_role.user_id, user_role.role_code_id, user_role.scope_division_id
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AccountViewSet(
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.ReadOnlyModelViewSet,
+):
+    """Учётные записи из интерфейса (Plane №36, «П-5»).
+
+    Удаления НЕТ: учётка держит на себе назначения ролей (`UserRole.user_id`)
+    и авторство записей журнала — удалённый пользователь превратил бы их в
+    ссылки в пустоту. Учётка снимается с работы блокировкой (`is_active`),
+    после которой человек просто не входит.
+    """
+
+    serializer_class = AccountSerializer
+    pagination_class = DefaultPagination
+
+    def get_queryset(self):
+        from django.contrib.auth.models import User
+
+        queryset = User.objects.all().order_by("username")
+        search = (self.request.query_params.get("search") or "").strip()
+        if search != "":
+            queryset = queryset.filter(
+                Q(username__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(email__icontains=search)
+            )
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        return super().retrieve(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        form = AccountSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+        user, temporary = AccountAdminService.create_account(
+            username=data["username"],
+            password=data.get("password") or None,
+            first_name=data.get("first_name", ""),
+            last_name=data.get("last_name", ""),
+            email=data.get("email", ""),
+            is_active=data.get("is_active", True),
+            actor=resolve_actor_id(request),
+        )
+        payload = AccountSerializer(user).data
+        if temporary is not None:
+            # Пароль показывается ОДИН раз и только здесь: сохранить его
+            # негде, повторить — только новым сбросом.
+            payload["temporary_password"] = temporary
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        user = self.get_object()
+        form = AccountSerializer(
+            user, data=request.data, partial=kwargs.get("partial", False)
+        )
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+        if data.get("password"):
+            # Смена пароля идёт своим действием со своим следом; принять её
+            # тихо здесь значило бы завести второй путь без записи.
+            raise ValidationError(
+                {"password": "Пароль меняется действием reset-password/."}
+            )
+        user = AccountAdminService.save_account(
+            user,
+            first_name=data.get("first_name"),
+            last_name=data.get("last_name"),
+            email=data.get("email"),
+            is_active=data.get("is_active"),
+            actor=resolve_actor_id(request),
+        )
+        return Response(AccountSerializer(user).data)
+
+    @extend_schema(
+        request=None,
+        responses=inline_serializer(
+            name="AccountPasswordResetResponse",
+            fields={"temporary_password": serializers.CharField()},
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="reset-password")
+    def reset_password(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        user = self.get_object()
+        temporary = AccountAdminService.reset_password(
+            user, actor=resolve_actor_id(request)
+        )
+        return Response({"temporary_password": temporary})
 
 
 class TemporaryDutyViewSet(viewsets.ViewSet):

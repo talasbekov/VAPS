@@ -1100,5 +1100,13 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         "COVERAGE_ROLE", add=["coverage.permission"], actor=ACTOR
     )
 
+    # Учётные записи (Plane №36, «П-5»): заведение/правка и сброс пароля.
+    from organization_management.apps.operations.services import AccountAdminService
+
+    coverage_account, _ = AccountAdminService.create_account(
+        username="coverage-account", actor=ACTOR
+    )
+    AccountAdminService.reset_password(coverage_account, actor=ACTOR)
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

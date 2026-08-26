@@ -751,3 +751,243 @@ def test_revoking_someone_elses_last_admin_role_is_allowed():
     victim = RoleAdminService.assign_role("42", "ACCESS_ADMIN", actor="test")
 
     assert admin.delete(f"{USER_ROLES_URL}{victim.id}/").status_code == 204
+
+
+# ── Plane №36, шаг «П-5»: учётные записи из интерфейса ──────────────────────
+
+ACCOUNTS_URL = "/api/operations/accounts/"
+
+
+def _audit_dump():
+    """Весь журнал строками — чтобы искать в нём то, чего там быть не должно."""
+    import json
+
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    return json.dumps(
+        [
+            {
+                "action": row.action,
+                "old": row.old_value,
+                "new": row.new_value,
+            }
+            for row in OpsAuditLog.objects.all()
+        ],
+        ensure_ascii=False,
+    )
+
+
+@pytest.mark.django_db
+def test_accounts_are_closed_to_those_who_do_not_manage_access():
+    stranger, _ = client_for("acc-stranger", "READER", perms=("event.view",))
+    User.objects.create_user(username="victim", password="x")
+
+    listed = stranger.get(ACCOUNTS_URL)
+    created = stranger.post(
+        ACCOUNTS_URL, {"username": "sneaky"}, format="json"
+    )
+
+    assert listed.status_code == 403
+    assert created.status_code == 403
+    assert not User.objects.filter(username="sneaky").exists()
+
+
+@pytest.mark.django_db
+def test_accounts_search_looks_at_login_name_and_email():
+    admin, _ = client_for("acc-admin", "ADMIN", perms=("admin.roles",))
+    User.objects.create_user(
+        username="ivanov",
+        password="x",
+        first_name="Иван",
+        last_name="Иванов",
+        email="ivanov@example.kz",
+    )
+    User.objects.create_user(username="petrov", password="x")
+
+    by_login = admin.get(f"{ACCOUNTS_URL}?search=ivanov").json()["results"]
+    by_surname = admin.get(f"{ACCOUNTS_URL}?search=Иванов").json()["results"]
+    by_email = admin.get(f"{ACCOUNTS_URL}?search=example.kz").json()["results"]
+    everything = admin.get(ACCOUNTS_URL).json()["results"]
+
+    assert [row["username"] for row in by_login] == ["ivanov"]
+    assert [row["username"] for row in by_surname] == ["ivanov"]
+    assert [row["username"] for row in by_email] == ["ivanov"]
+    # Сторож: без поиска строк БОЛЬШЕ.
+    assert len(everything) > len(by_login)
+
+
+@pytest.mark.django_db
+def test_account_is_created_with_a_temporary_password_shown_once():
+    """Пароль показывается ровно один раз — и им действительно входят."""
+    from django.contrib.auth import authenticate
+
+    admin, actor = client_for("acc-author", "ADMIN", perms=("admin.roles",))
+
+    response = admin.post(
+        ACCOUNTS_URL,
+        {"username": "novikov", "first_name": "Пётр", "last_name": "Новиков"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    temporary = response.json()["temporary_password"]
+    assert temporary
+    assert authenticate(username="novikov", password=temporary) is not None
+    # Второй раз пароль не показывается ниоткуда: ни в списке, ни в карточке.
+    card = admin.get(f"{ACCOUNTS_URL}{response.json()['id']}/").json()
+    assert "temporary_password" not in card
+    assert "password" not in card
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    entry = OpsAuditLog.objects.get(action="ACCESS_ACCOUNT_SAVED")
+    assert entry.entity_id == response.json()["id"]
+    assert entry.actor_user_id == str(actor.pk)
+    assert temporary not in _audit_dump()
+
+
+@pytest.mark.django_db
+def test_given_password_is_used_and_never_returned():
+    from django.contrib.auth import authenticate
+
+    admin, _ = client_for("acc-given-pass", "ADMIN", perms=("admin.roles",))
+
+    response = admin.post(
+        ACCOUNTS_URL,
+        {"username": "novikov", "password": "Тс9-очень-длинный-пароль"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    # Свой пароль администратор уже знает — временного в ответе нет.
+    assert "temporary_password" not in response.json()
+    assert (
+        authenticate(username="novikov", password="Тс9-очень-длинный-пароль")
+        is not None
+    )
+    assert "Тс9-очень-длинный-пароль" not in _audit_dump()
+
+
+@pytest.mark.django_db
+def test_weak_password_is_400_and_no_account_appears():
+    admin, _ = client_for("acc-weak-pass", "ADMIN", perms=("admin.roles",))
+
+    response = admin.post(
+        ACCOUNTS_URL, {"username": "novikov", "password": "123"}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert not User.objects.filter(username="novikov").exists()
+
+
+@pytest.mark.django_db
+def test_duplicate_login_is_400():
+    admin, _ = client_for("acc-dup", "ADMIN", perms=("admin.roles",))
+    User.objects.create_user(username="novikov", password="x")
+
+    response = admin.post(ACCOUNTS_URL, {"username": "novikov"}, format="json")
+
+    assert response.status_code == 400
+    assert User.objects.filter(username="novikov").count() == 1
+
+
+@pytest.mark.django_db
+def test_blocked_account_does_not_get_in():
+    """Блокировка — это отказ входа, а не пометка в списке."""
+    from django.contrib.auth import authenticate
+
+    admin, _ = client_for("acc-blocker", "ADMIN", perms=("admin.roles",))
+    victim = User.objects.create_user(
+        username="novikov", password="Тс9-очень-длинный-пароль"
+    )
+
+    response = admin.patch(
+        f"{ACCOUNTS_URL}{victim.pk}/", {"is_active": False}, format="json"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+    assert (
+        authenticate(username="novikov", password="Тс9-очень-длинный-пароль")
+        is None
+    )
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    entry = OpsAuditLog.objects.filter(action="ACCESS_ACCOUNT_SAVED").latest("id")
+    assert entry.old_value["is_active"] is True
+    assert entry.new_value["is_active"] is False
+
+
+@pytest.mark.django_db
+def test_password_cannot_be_changed_past_the_reset_action():
+    """Второй путь смены пароля — путь без следа; его нет."""
+    from django.contrib.auth import authenticate
+
+    admin, _ = client_for("acc-sneaky-pass", "ADMIN", perms=("admin.roles",))
+    victim = User.objects.create_user(
+        username="novikov", password="Тс9-очень-длинный-пароль"
+    )
+
+    response = admin.patch(
+        f"{ACCOUNTS_URL}{victim.pk}/",
+        {"password": "Др7-совершенно-другой"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert (
+        authenticate(username="novikov", password="Тс9-очень-длинный-пароль")
+        is not None
+    )
+
+
+@pytest.mark.django_db
+def test_reset_password_replaces_the_old_one_and_leaves_no_password_in_the_trace():
+    from django.contrib.auth import authenticate
+
+    admin, actor = client_for("acc-resetter", "ADMIN", perms=("admin.roles",))
+    victim = User.objects.create_user(
+        username="novikov", password="Тс9-очень-длинный-пароль"
+    )
+
+    response = admin.post(f"{ACCOUNTS_URL}{victim.pk}/reset-password/")
+
+    assert response.status_code == 200
+    temporary = response.json()["temporary_password"]
+    assert authenticate(username="novikov", password=temporary) is not None
+    # Старый пароль перестал работать — иначе сброс не сброс.
+    assert (
+        authenticate(username="novikov", password="Тс9-очень-длинный-пароль")
+        is None
+    )
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    entry = OpsAuditLog.objects.get(action="ACCESS_ACCOUNT_PASSWORD_RESET")
+    assert entry.entity_id == victim.pk
+    assert entry.actor_user_id == str(actor.pk)
+    assert temporary not in _audit_dump()
+
+
+@pytest.mark.django_db
+def test_accounts_cannot_be_deleted():
+    """Удаление унесло бы назначения и авторство записей в пустоту."""
+    admin, _ = client_for("acc-remover", "ADMIN", perms=("admin.roles",))
+    victim = User.objects.create_user(username="novikov", password="x")
+
+    response = admin.delete(f"{ACCOUNTS_URL}{victim.pk}/")
+
+    assert response.status_code == 405
+    assert User.objects.filter(username="novikov").exists()
+
+
+@pytest.mark.django_db
+def test_temporary_passwords_differ_between_resets():
+    """Постоянный «временный» пароль был бы общим ключом ко всем учёткам."""
+    admin, _ = client_for("acc-two-resets", "ADMIN", perms=("admin.roles",))
+    first_user = User.objects.create_user(username="novikov", password="x")
+    second_user = User.objects.create_user(username="petrov", password="x")
+
+    first = admin.post(f"{ACCOUNTS_URL}{first_user.pk}/reset-password/").json()
+    second = admin.post(f"{ACCOUNTS_URL}{second_user.pk}/reset-password/").json()
+
+    assert first["temporary_password"] != second["temporary_password"]
+    assert len(first["temporary_password"]) >= 12

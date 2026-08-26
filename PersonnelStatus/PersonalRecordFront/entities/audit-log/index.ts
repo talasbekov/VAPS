@@ -70,6 +70,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   ACCESS_PERMISSION_SAVED: "Право заведено или изменено",
   ACCESS_ROLE_SAVED: "Роль заведена или изменена",
   ACCESS_ROLE_PERMISSIONS_CHANGED: "Состав прав роли изменён",
+  ACCESS_ACCOUNT_SAVED: "Учётная запись заведена или изменена",
+  ACCESS_ACCOUNT_PASSWORD_RESET: "Пароль учётной записи сброшен",
   DUTY_SHIFT_CREATED: "Смена дежурства заведена",
   DUTY_SHIFT_CANCELLED: "Смена дежурства отменена",
   SETTINGS_UPDATED: "Правило настроек изменено",
