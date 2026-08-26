@@ -1091,5 +1091,15 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     AccountAdminService.reset_password(coverage_account, actor=ACTOR)
 
+    # Раздача ролей ЧЕЛОВЕКУ (Plane №107): выдача и снятие — два действия, и
+    # записей здесь тоже две. Именно они отвечают на вопрос «кто дал ему это
+    # право», и до 26.08.2026 их не было в журнале вовсе.
+    RoleAdminService.assign_role(
+        str(coverage_account.pk), "COVERAGE_ROLE", actor=ACTOR
+    )
+    RoleAdminService.revoke_role(
+        str(coverage_account.pk), "COVERAGE_ROLE", actor=ACTOR
+    )
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

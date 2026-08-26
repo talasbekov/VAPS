@@ -74,7 +74,7 @@ class TestPermissionService:
     def test_revoked_role_gone(self):
         seed_role("VIEWER", ["status.view"])
         RoleAdminService.assign_role("77", "VIEWER", actor="test")
-        RoleAdminService.revoke_role("77", "VIEWER")
+        RoleAdminService.revoke_role("77", "VIEWER", actor="test")
         assert PermissionService.effective_permissions("77") == set()
 
     def test_scope_narrows_division_checks(self):

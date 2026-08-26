@@ -695,7 +695,12 @@ class UserRoleViewSet(viewsets.ViewSet):
                 ),
             )
         RoleAdminService.revoke_role(
-            user_role.user_id, user_role.role_code_id, user_role.scope_division_id
+            user_role.user_id,
+            user_role.role_code_id,
+            user_role.scope_division_id,
+            # Кто снял — из контракта аутентификации: без имени запись журнала
+            # отвечает «что случилось», но не «с кого спрашивать» (Plane №107).
+            actor=actor,
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 

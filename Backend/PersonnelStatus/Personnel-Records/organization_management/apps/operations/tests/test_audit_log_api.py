@@ -44,7 +44,32 @@ def write(action=None, entity_type=None, entity_id=1, actor="7", at=None, **extr
 
 
 def reader(username="aud-reader"):
-    return client_for(username, "ORGD", ["audit.view"])[0]
+    """Читатель журнала. Роль выдаётся НАПРЯМУЮ, минуя `RoleAdminService`.
+
+    С 26.08.2026 выдача роли сама пишется в журнал (Plane №107) — это верное
+    продакшен-поведение, и его проверяют свои пробы в `test_rbac_admin_api`.
+    Но здесь роль раздаётся ради ПРАВА ЧИТАТЬ журнал, то есть это сетап, а не
+    предмет: строка сетапа попадала бы в каждую выдачу и ломала счётчики,
+    окна и порядок, ничего не говоря о вьюхе.
+    Убрать её после нельзя — таблица журнала append-only на уровне БД
+    (триггер `ops_audit_logs_append_only`), и DELETE запрещён; поэтому строка
+    не создаётся вовсе.
+    """
+    from django.contrib.auth.models import User
+
+    from organization_management.apps.operations.models import UserRole
+    from organization_management.apps.operations.tests.test_bulk_status_api import (
+        seed_role,
+    )
+
+    user = User.objects.create_user(username=username, password="x")
+    seed_role("ORGD", ["audit.view"])
+    UserRole.objects.create(
+        user_id=str(user.pk), role_code_id="ORGD", is_active=True, created_by="test"
+    )
+    api = APIClient()
+    api.force_authenticate(user)
+    return api
 
 
 def get(api, url=URL, **params):
