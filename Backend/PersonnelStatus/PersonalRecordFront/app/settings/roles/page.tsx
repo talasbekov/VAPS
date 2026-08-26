@@ -9,7 +9,7 @@
 // (тоже на сервере — прав больше, чем помещается в голову).
 //
 // Поиск и выбор живут в URL: как на экране «Права» и в реестре ОМ.
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -49,6 +49,15 @@ import type { AccessPermission, AccessRole } from "@/entities/access";
 const ACCESS_ADMIN_PERMISSION = "admin.roles";
 
 export default function AccessRolesPage() {
+  // useSearchParams требует границы Suspense — иначе пререндер падает на сборке.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <AccessRolesScreen />
+    </Suspense>
+  );
+}
+
+function AccessRolesScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

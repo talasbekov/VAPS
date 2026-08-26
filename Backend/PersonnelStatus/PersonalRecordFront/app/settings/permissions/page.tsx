@@ -10,7 +10,7 @@
 //
 // Выбор и поиск живут в URL: обновление страницы не сбрасывает разбор, а
 // ссылкой на конкретное право можно поделиться — как в реестре ОМ и в законах.
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -50,6 +50,15 @@ import type { AccessCatalogEntry, AccessPermission } from "@/entities/access";
 const ACCESS_ADMIN_PERMISSION = "admin.roles";
 
 export default function AccessPermissionsPage() {
+  // useSearchParams требует границы Suspense — иначе пререндер падает на сборке.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <AccessPermissionsScreen />
+    </Suspense>
+  );
+}
+
+function AccessPermissionsScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

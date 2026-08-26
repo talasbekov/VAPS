@@ -9,7 +9,7 @@
 //
 // Заведение учётки, блокировка и сброс пароля — шаг «П-9»; здесь только
 // чтение учёток и раздача ролей.
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -55,6 +55,15 @@ const ACCESS_ADMIN_PERMISSION = "admin.roles";
 const WHOLE_SERVICE_VALUE = "WHOLE_SERVICE";
 
 export default function AccessUsersPage() {
+  // useSearchParams требует границы Suspense — иначе пререндер падает на сборке.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <AccessUsersScreen />
+    </Suspense>
+  );
+}
+
+function AccessUsersScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
