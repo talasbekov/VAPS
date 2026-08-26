@@ -167,22 +167,12 @@ async function prepareEventOnPlacement(
   await call('POST', `${base}/forces/allocation/${encodeURIComponent(allocationId)}/submit/`)
   await call('POST', `${base}/forces/allocation/${encodeURIComponent(allocationId)}/accept/`)
 
-  // Стадию двигает прежний путь: потребность утверждается строками, и только
-  // после этого этап «Запрос сил» можно завершить.
-  const fresh = await call('GET', `${base}/`)
-  await call('POST', `${base}/demand/approve/`, {
-    rows: fresh.reconSectorPosts.map((post: any, index: number) => ({
-      id: `row-${index + 1}`,
-      sector: post.sector,
-      task: post.task,
-      shift: 'Дневная',
-      need: post.need,
-      group: 'Физическая охрана',
-      requirements: post.requirements,
-      comment: '',
-    })),
-  })
-  const placement = await call('POST', `${base}/forces/complete/`)
+  // Стадию никто больше не двигает руками (Plane №110): «Потребность» и
+  // «Запрос сил» прошёл сервер на завершении рекогносцировки, и весь сбор
+  // выше шёл, пока ОМ уже стояло на «Расстановке». Ручные `demand/approve/`
+  // и `forces/complete/` здесь стояли до задачи — теперь они отбились бы
+  // «не на этом этапе».
+  const placement = await call('GET', `${base}/`)
   if (placement.stage !== 'PLACEMENT') {
     throw new Error(`фикстура не дошла до расстановки: ${JSON.stringify(placement)}`)
   }
@@ -322,19 +312,33 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
 
   test('недобор по заявке назван поимённо, а не только суммой', async ({ page }) => {
     await signIn(page)
-    // Такой ответ бэк вернуть МОЖЕТ: ровно эта форма приходит у мероприятия на
-    // стадии «Запрос сил» — департамент отдал меньше запрошенного.
+    // Такой ответ бэк вернуть МОЖЕТ: ровно эта форма приходит у мероприятия,
+    // по которому идёт сбор, — департамент отдал меньше запрошенного.
+    // Подменённое мероприятие запоминаем ПОИМЁННО. С Plane №110 лента ведёт
+    // окно сбора из трёх стадий, и на экране её строк десятки: «не отдано 5»
+    // законно встречается у многих ОМ, а строгий режим Playwright не терпит
+    // нескольких совпадений. Ищем недобор ВНУТРИ карточки того мероприятия,
+    // которому мы его и подставили, — иначе проба зеленела бы на чужой строке.
+    let patchedTitle = ''
     await page.route(
       (url) => url.pathname.includes('/api/ops/security-events/') && !url.pathname.match(/security-events\/[^/]+\//),
       async (route) => {
         const response = await route.fetch()
         const body = (await response.json()) as {
-          results?: { forceRequests?: { requestedCount: number; allocatedCount: number }[] }[]
+          results?: {
+            title?: string
+            forceRequests?: { requestedCount: number; allocatedCount: number }[]
+          }[]
         }
-        const first = body.results?.[0]
+        // Берём ПЕРВОЕ мероприятие С ЗАЯВКАМИ, а не просто первое: у ОМ с
+        // нулевым расчётом постов заявок нет вовсе, и подменять было бы
+        // нечего — проба падала бы «реестр вернул пустой список», имея в виду
+        // «первым оказался ОМ без потребности».
+        const first = body.results?.find((row) => row.forceRequests?.length)
         if (first?.forceRequests?.length) {
           first.forceRequests[0].requestedCount = 9
           first.forceRequests[0].allocatedCount = 4
+          patchedTitle = first.title ?? ''
         }
         await route.fulfill({ json: body })
       },
@@ -342,9 +346,22 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await page.goto(`${APP}${SCREEN}`)
     const block = page.getByText('Запрос сил по мероприятиям')
     await expect(block).toBeVisible({ timeout: 25_000 })
+    // ЖДЁМ ответ, а не читаем сразу: заголовок ленты рисуется ещё на загрузке,
+    // и синхронная проверка успевала раньше запроса — проба падала за 700 мс
+    // «реестр вернул пустой список», имея в виду «ответ ещё не пришёл».
+    await expect
+      .poll(() => patchedTitle, {
+        timeout: 25_000,
+        message: 'подмену некуда было применить — реестр не вернул ОМ с заявками',
+      })
+      .not.toBe('')
     // Строка департамента обязана назвать СВОЙ недобор: сумма отвечает
     // «сколько не хватает», строка — «с кого недобрали».
-    await expect(page.getByText('не отдано 5')).toBeVisible()
+    const patchedCard = page
+      .locator('div.rounded-lg.border')
+      .filter({ hasText: patchedTitle })
+      .first()
+    await expect(patchedCard.getByText('не отдано 5')).toBeVisible()
   })
 
 
@@ -759,25 +776,16 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(main).toContainText(`не укомплектовано постов: ${unfilled}`)
   })
 
-  test('смена, введённая на потребности, видна на расстановке', async ({ page }) => {
-    const token = await apiToken()
-    const prepared = await prepareEventOnPlacement(token)
-    const card = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
-    const post = card.reconSectorPosts.find((row: any) => row.id === prepared.postId)
-    const demand = card.demandRows.find(
-      (row: any) => row.sector === post.sector && row.task === post.task,
-    )
-    // Сторожа: смена приходит СО СТРОКИ ПОТРЕБНОСТИ, и в самом посте её нет —
-    // иначе проба не отличала бы «взяли у потребности» от «взяли у поста».
-    expect(demand?.shift, 'у строки потребности нет смены — проверять нечего').toBeTruthy()
-    expect(post.shift, 'у поста появилась своя смена — правило чтения изменилось').toBeUndefined()
-
-    await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
-    const main = page.getByRole('main')
-    await expect(main).toContainText('Задача поста', { timeout: 25_000 })
-    await expect(main).toContainText(`${post.sector} · ${demand.shift}`)
-  })
+  // Проба «смена, введённая на потребности, видна на расстановке» СНЯТА
+  // 26.08.2026 (Plane №110). Смену вводил человек в боксе «подготовка
+  // расчёта», а бокс снят по решению заказчика — заводить смену больше негде,
+  // и строки потребности приходят с пустой сменой всегда. Проба сторожила
+  // поле, которое нечем заполнить: оставить её значило бы держать вечно
+  // красный прогон, а заменить на skip — вечно молчаливый.
+  //
+  // САМА ПОТЕРЯ ЗАПИСАНА КАРТОЧКОЙ в «Предложено Claude»: колонка смены на
+  // доске расстановки теперь пуста у всех новых мероприятий. Чтение смены со
+  // строки потребности в коде осталось — у заведённых до задачи ОМ она есть.
 
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)

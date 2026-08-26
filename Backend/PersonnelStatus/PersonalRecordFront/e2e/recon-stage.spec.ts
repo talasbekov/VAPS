@@ -212,8 +212,12 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await signIn(page)
     // Штаб видит ИМЕННО это число и именно у этого мероприятия.
     await page.goto(`${APP}/employees/`)
+    // Заголовок ленты сменился осознанно (Plane №110): две ленты сбора сведены
+    // в одну — «Запрос сил по мероприятиям». Разводили их стадии, которых
+    // больше нет, и любой признак деления заставлял карточку прыгать из блока
+    // в блок посреди работы штаба.
     const inbox = page.locator('[data-slot="card"]', {
-      has: page.getByText('Запросы с рекогносцировки — ждут распределения'),
+      has: page.getByText('Запрос сил по мероприятиям'),
     })
     await expect(inbox).toBeVisible({ timeout: 15_000 })
     const row = inbox.locator('div').filter({ hasText: created.code }).first()
@@ -377,8 +381,10 @@ async function createRequestFixture(
     forceRequest: request,
   })
   const done = await call('POST', `${base}/recon/complete/`)
+  // Пин перенацелен осознанно (Plane №110): завершение осмотра проходит
+  // «Потребность» и «Запрос сил» само и оставляет ОМ на «Расстановке».
   expect(done.stage, 'рекогносцировка не завершилась — фикстура непригодна').toBe(
-    'DEMAND',
+    'PLACEMENT',
   )
   expect(done.reconForceRequestedAt, 'момент отправки штабу не проставлен').not.toBeNull()
   return { code: created.code, request, id: String(created.id) }

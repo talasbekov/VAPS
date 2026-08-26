@@ -230,26 +230,10 @@ async function prepareEvent(token: string): Promise<void> {
     sectorPosts: posts,
   })
   await call('POST', `${base}/recon/complete/`)
-  await call('POST', `${base}/demand/approve/`, {
-    rows: posts.map((post: Record<string, string | number>, index: number) => ({
-      id: `row-${index + 1}`,
-      sector: post.sector,
-      task: post.task,
-      shift: 'Дневная',
-      need: post.need,
-      group: 'Физическая охрана',
-      requirements: post.requirements,
-      comment: '',
-    })),
-  })
-  const afterDemand = await call('GET', `${base}/`)
-  for (const request of afterDemand.forceRequests) {
-    await call('PATCH', `${base}/forces/${encodeURIComponent(request.id)}/`, {
-      allocatedCount: request.requestedCount,
-      comment: 'проба',
-    })
-  }
-  await call('POST', `${base}/forces/complete/`)
+  // Стадии «Потребность» и «Запрос сил» проходит СЕРВЕР на завершении
+  // рекогносцировки (Plane №110): форм у них нет, и ручные `demand/approve/`,
+  // `forces/<id>/`, `forces/complete/` здесь отбились бы «не на этом этапе».
+  // ОМ уже стоит на «Расстановке» — фикстура идёт сразу к назначениям.
   const roster = await call('GET', '/api/ops/personnel/')
   for (const [index, post] of posts.entries()) {
     await call('POST', `${base}/placement/assign/`, {

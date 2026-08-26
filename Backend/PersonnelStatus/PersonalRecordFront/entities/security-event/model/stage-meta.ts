@@ -97,13 +97,17 @@ export const EVENT_STEPS = [
 
 /**
  * Стадия, на которую переводит шаг цепочки, — ВХОДНАЯ стадия шага, а не любая
- * из его стадий: шаг «Расстановка» начинается с «Потребности», шаг «Закрытие» —
- * с «Проведения». Список зеркалит STAGE_OVERRIDE_TARGETS бэкенда; `CLOSED`
- * сюда не попадает намеренно — закрывают по итогам, а не переводом.
+ * из его стадий: шаг «Закрытие» начинается с «Проведения». Список зеркалит
+ * STAGE_OVERRIDE_TARGETS бэкенда; `CLOSED` сюда не попадает намеренно —
+ * закрывают по итогам, а не переводом.
+ *
+ * Вход шага «Расстановка» — `PLACEMENT`, а не `DEMAND` (Plane №110): форм у
+ * «Потребности» и «Запроса сил» больше нет, и перевод ОМ на них запер бы
+ * мероприятие — двигать его дальше было бы нечем.
  */
 export const STEP_ENTRY_STAGE: Record<string, SecurityEventStage> = {
   RECON: "RECON",
-  PLACEMENT: "DEMAND",
+  PLACEMENT: "PLACEMENT",
   APPROVAL: "APPROVAL",
   ACKNOWLEDGEMENT: "ACKNOWLEDGEMENT",
   CLOSURE: "CONDUCT",
@@ -123,8 +127,11 @@ export function stepIndexOfStage(stage: SecurityEventStage): number {
 export const STAGE_WITHIN_STEP: Record<SecurityEventStage, string> = {
   BULLETIN: "Бюллетень заполняется над этапами",
   RECON: "",
-  DEMAND: "Подготовка расчёта: потребность",
-  FORCES: "Подготовка расчёта: выделение сил",
+  // Пусто, а не подпись: обе стадии проходит сервер (Plane №110), человек на
+  // них не останавливается, и обещать «подготовку расчёта» шагу, у которого
+  // нет её формы, значило бы называть работу, которой не будет.
+  DEMAND: "",
+  FORCES: "",
   PLACEMENT: "",
   APPROVAL: "",
   ACKNOWLEDGEMENT: "",

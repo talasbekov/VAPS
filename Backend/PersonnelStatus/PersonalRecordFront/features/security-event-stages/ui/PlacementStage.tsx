@@ -35,14 +35,11 @@ import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
 import { RatingBriefDialog } from "./RatingBriefDialog";
 import {
-  useApproveDemand,
   useAssignPlacement,
-  useCompleteForces,
   useCompletePlacement,
   usePersonnelPage,
   useSetSectorSenior,
   useUnassignPlacement,
-  useUpdateForceAllocation,
   useUpdateRecon,
 } from "@/hooks/use-security-event-stages";
 import { useOperationalRatings } from "@/hooks/use-ops-ratings";
@@ -52,9 +49,8 @@ import type {
   PlacementAssignment,
   ReconSectorPost,
   SecurityEvent,
-  StaffingDemandRow,
 } from "@/entities/security-event";
-import { FieldErrors, StageError } from "./StageErrors";
+import { StageError } from "./StageErrors";
 
 const SORT_OPTIONS = [
   "Рекомендуемые",
@@ -76,214 +72,13 @@ type SortOption = (typeof SORT_OPTIONS)[number];
 type RateOption = (typeof RATE_OPTIONS)[number];
 
 export function PlacementStage({ event }: { event: SecurityEvent }) {
-  // Сбор группы и выделение сил — стадии DEMAND и FORCES: пока они не
-  // пройдены, подбирать некого, поэтому экран открывается своей подготовкой.
-  if (event.stage === "DEMAND") return <DemandPanel event={event} />;
-  if (event.stage === "FORCES") return <ForcesPanel event={event} />;
+  // Шаг всегда открывается ДОСКОЙ подбора (задача заказчика Plane №110: «убери
+  // с этапа Расстановка эти боксы они не нужны»). Двух подготовительных форм —
+  // строк потребности и выделения сил по группам — здесь больше нет: стадии
+  // `DEMAND` и `FORCES` проходит сервер расчётом рекогносцировки, и человек их
+  // не видит вовсе. Состав мероприятия при этом собирается как собирался — на
+  // экране «Сбор сил на ОМ», пока ОМ уже стоит на расстановке.
   return <PlacementBoard event={event} />;
-}
-
-// ── Подготовка: потребность (группа по каждой строке) ────────────────────
-
-function seedRows(event: SecurityEvent): StaffingDemandRow[] {
-  if (event.demandRows.length > 0) return event.demandRows;
-  return event.reconSectorPosts.map((post, index) => ({
-    id: `demand-${index + 1}`,
-    sector: post.sector,
-    task: post.task !== "" ? post.task : post.post,
-    shift: "",
-    need: post.need,
-    group: "",
-    requirements: post.requirements,
-    comment: "",
-  }));
-}
-
-function DemandPanel({ event }: { event: SecurityEvent }) {
-  const [rows, setRows] = useState<StaffingDemandRow[]>(() => seedRows(event));
-  const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
-    null
-  );
-  const approve = useApproveDemand(event.id, {
-    onFormError: (details) => setFieldErrors(details),
-  });
-
-  function patch(id: string, next: Partial<StaffingDemandRow>): void {
-    setRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...next } : row)));
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Расстановка · подготовка расчёта</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Группа по каждой строке — то, из чего собирается пул подбора. Строки
-          преднаполнены расчётом рекогносцировки; смену и группу задайте вручную.
-        </p>
-        <div className="flex flex-col gap-2">
-          {/* Шапка колонок: та же беда, что была у расчёта рекогносцировки —
-              подписи жили только в aria-label, а плейсхолдер исчезает, как
-              только в поле что-то введено. «Смена» от «Группы» глазом не
-              отличались. Скринридеру шапка не нужна (у каждого поля своё имя). */}
-          <div
-            aria-hidden="true"
-            className="text-muted-foreground hidden gap-2 px-1 text-[10px] font-bold uppercase tracking-wider md:grid md:grid-cols-[1fr_1.4fr_1fr_70px_1.2fr]"
-          >
-            <span>Направление</span>
-            <span>Задача</span>
-            <span>Смена</span>
-            <span>Кол-во</span>
-            <span>Группа</span>
-          </div>
-          {rows.map((row) => (
-            <div
-              key={row.id}
-              className="grid grid-cols-2 gap-2 border-b pb-2 last:border-0 md:grid-cols-[1fr_1.4fr_1fr_70px_1.2fr]"
-            >
-              <Input
-                className="h-8 text-xs"
-                aria-label={`Сектор строки ${row.id}`}
-                value={row.sector}
-                onChange={(e) => patch(row.id, { sector: e.target.value })}
-              />
-              <Input
-                className="h-8 text-xs"
-                aria-label={`Задача строки ${row.id}`}
-                value={row.task}
-                onChange={(e) => patch(row.id, { task: e.target.value })}
-              />
-              <Input
-                className="h-8 text-xs"
-                placeholder="Смена"
-                aria-label={`Смена строки ${row.id}`}
-                value={row.shift}
-                onChange={(e) => patch(row.id, { shift: e.target.value })}
-              />
-              <Input
-                className="h-8 text-xs"
-                type="number"
-                min={1}
-                aria-label={`Потребность строки ${row.id}`}
-                value={row.need}
-                onChange={(e) => patch(row.id, { need: Number(e.target.value) || 0 })}
-              />
-              <Input
-                className="h-8 text-xs"
-                placeholder="Группа"
-                aria-label={`Группа строки ${row.id}`}
-                value={row.group}
-                onChange={(e) => patch(row.id, { group: e.target.value })}
-              />
-            </div>
-          ))}
-        </div>
-        <FieldErrors errors={fieldErrors} />
-        <StageError error={approve.error} />
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            disabled={approve.isPending}
-            onClick={() => {
-              setFieldErrors(null);
-              approve.mutate({ rows });
-            }}
-          >
-            {approve.isPending ? "Утверждение…" : "Утвердить потребность → выделение сил"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── Подготовка: выделение сил по группам ─────────────────────────────────
-
-function ForcesPanel({ event }: { event: SecurityEvent }) {
-  const complete = useCompleteForces(event.id);
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Расстановка · выделение сил</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Выделенная численность по группам — она же даёт размер пула подбора на
-          расстановке.
-        </p>
-        {/* «Сбор сил на ОМ» — отдельный модуль (Tasks 1-2): кого отдали на
-            мероприятия и кто остался. Экран выделения читает только числа по
-            группам; поимённый список собирает тот модуль. */}
-        <Link
-          href="/employees?view=forces"
-          className="inline-block text-xs font-semibold text-primary-ink"
-        >
-          Открыть «Сбор сил на ОМ» →
-        </Link>
-        {event.forceRequests.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Запросов нет — потребность не утверждена.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {event.forceRequests.map((request) => (
-              <AllocationRow key={request.id} event={event} request={request} />
-            ))}
-          </div>
-        )}
-        <StageError error={complete.error} />
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            disabled={complete.isPending}
-            onClick={() => complete.mutate({})}
-          >
-            {complete.isPending ? "Завершение…" : "Завершить выделение → расстановка"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function AllocationRow({
-  event,
-  request,
-}: {
-  event: SecurityEvent;
-  request: SecurityEvent["forceRequests"][number];
-}) {
-  const [allocated, setAllocated] = useState(String(request.allocatedCount));
-  const update = useUpdateForceAllocation(event.id, request.id);
-  return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border p-2.5 text-sm">
-      <span className="font-semibold">{request.group}</span>
-      <span className="text-xs text-muted-foreground">
-        запрошено {request.requestedCount}
-      </span>
-      <Input
-        className="h-8 w-24 text-xs"
-        type="number"
-        min={0}
-        aria-label={`Выделено: ${request.group}`}
-        value={allocated}
-        onChange={(e) => setAllocated(e.target.value)}
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={update.isPending}
-        onClick={() =>
-          update.mutate({ allocatedCount: Number(allocated) || 0, comment: "" })
-        }
-      >
-        Выделить
-      </Button>
-      <StageError error={update.error} />
-    </div>
-  );
 }
 
 /** Размер страницы подбора. Крупнее окна выбора человека: здесь список не
@@ -982,9 +777,22 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             <aside className="rounded-md border">
               <div className="border-b px-3 py-2">
                 <p className="text-xs font-semibold">Доступные сотрудники</p>
+                {/* Откуда пул — словами. Форм потребности и выделения сил на
+                    шаге больше нет (Plane №110), и без этой строки человек не
+                    узнал бы, ПОЧЕМУ здесь именно эти люди и что делать, если
+                    нужных нет. Две подписи, а не одна: состав мероприятия и
+                    кадровый список — разные основания подбора. */}
                 <p className="text-[11px] text-muted-foreground">
-                  Подбор по требованиям поста
+                  {fromRoster
+                    ? "Состав мероприятия: те, кого штаб принял в «Сборе сил»"
+                    : "Кадровый список: состав мероприятия ещё не собран"}
                 </p>
+                <Link
+                  href="/employees?view=forces"
+                  className="mt-0.5 inline-block text-[11px] font-semibold text-primary-ink"
+                >
+                  Открыть «Сбор сил на ОМ» →
+                </Link>
               </div>
               <div className="space-y-2 p-2">
                 <Input

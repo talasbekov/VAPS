@@ -672,12 +672,16 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     })
   })
 
-  test('этап «Запрос сил» ведёт в «Сбор сил на ОМ»', async ({ page }) => {
+  test('шаг «Расстановка» ведёт в «Сбор сил на ОМ»', async ({ page }) => {
     const token = await apiToken()
-    const forces = await events(token, 'FORCES')
+    // Стадия сменилась осознанно (Plane №110): бокс «выделение сил», в котором
+    // жила ссылка, снят, и ОМ на стадии FORCES больше не бывает — проба ушла
+    // бы в вечный skip. Ссылка переехала в колонку подбора на «Расстановке»,
+    // где она и нужна: пул кандидатов собирает именно «Сбор сил».
+    const forces = await events(token, 'PLACEMENT')
     const target = forces[0]
     // Не молчаливый skip: причина явно записана в отчёте прогона.
-    test.skip(target === undefined, 'на стенде нет ОМ на стадии FORCES («Запрос сил»)')
+    test.skip(target === undefined, 'на стенде нет ОМ на стадии PLACEMENT («Расстановка»)')
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
