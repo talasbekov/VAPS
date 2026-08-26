@@ -565,22 +565,84 @@ class PermissionViewSet(
 
 
 
+def _user_role_context(rows):
+    """Справочники имён для страницы назначений: {user_id: User}, {id: имя}.
+
+    По ОДНОЙ выборке на страницу, а не по запросу на строку: список
+    назначений — самый длинный экран раздела доступа.
+    """
+    from django.contrib.auth.models import User
+
+    from organization_management.apps.divisions.models import Division
+
+    user_ids = {str(row.user_id) for row in rows}
+    numeric_ids = [value for value in user_ids if value.isdigit()]
+    users = {
+        str(user.pk): user for user in User.objects.filter(pk__in=numeric_ids)
+    }
+    division_ids = {
+        row.scope_division_id for row in rows if row.scope_division_id is not None
+    }
+    divisions = dict(
+        Division.objects.filter(id__in=division_ids).values_list("id", "name")
+    )
+    return {"users": users, "divisions": divisions}
+
+
 class UserRoleViewSet(viewsets.ViewSet):
     pagination_class = DefaultPagination
 
-    @extend_schema(responses=UserRoleSerializer(many=True))
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "user_id", str, description="Только назначения этого человека"
+            ),
+            OpenApiParameter(
+                "search",
+                str,
+                description="Поиск по логину, ФИО, коду и имени роли",
+            ),
+        ],
+        responses=UserRoleSerializer(many=True),
+    )
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
         # id последним ключом — ОБЯЗАТЕЛЬНО, а не для красоты: у одного
         # человека ролей много, порядок при равном user_id база не обещает, и
         # страничная выдача теряла бы и дублировала строки между страницами.
-        qs = UserRole.objects.all().order_by("user_id", "id")
+        qs = (
+            UserRole.objects.all()
+            .select_related("role_code")
+            .order_by("user_id", "id")
+        )
         if user_id := request.query_params.get("user_id"):
             qs = qs.filter(user_id=user_id)
+        search = (request.query_params.get("search") or "").strip()
+        if search != "":
+            from django.contrib.auth.models import User
+
+            # Человек ищется по СВОЕЙ таблице: назначение держит только
+            # строковый user_id, и искать по нему значило бы требовать от
+            # администратора помнить числа.
+            matched_user_ids = [
+                str(pk)
+                for pk in User.objects.filter(
+                    Q(username__icontains=search)
+                    | Q(first_name__icontains=search)
+                    | Q(last_name__icontains=search)
+                ).values_list("pk", flat=True)
+            ]
+            qs = qs.filter(
+                Q(user_id__in=matched_user_ids)
+                | Q(role_code__code__icontains=search)
+                | Q(role_code__name__icontains=search)
+            )
         paginator = DefaultPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(
-            UserRoleSerializer(page, many=True).data
+            UserRoleSerializer(
+                page, many=True, context=_user_role_context(page)
+            ).data
         )
 
     @extend_schema(
@@ -599,7 +661,10 @@ class UserRoleViewSet(viewsets.ViewSet):
             actor=resolve_actor_id(request),
         )
         return Response(
-            UserRoleSerializer(user_role).data, status=status.HTTP_201_CREATED
+            UserRoleSerializer(
+                user_role, context=_user_role_context([user_role])
+            ).data,
+            status=status.HTTP_201_CREATED,
         )
 
     def destroy(self, request, pk=None, *args, **kwargs):
@@ -607,6 +672,26 @@ class UserRoleViewSet(viewsets.ViewSet):
         user_role = UserRole.objects.filter(id=pk).first()
         if user_role is None:
             return Response(status=status.HTTP_404_NOT_FOUND)
+        actor = resolve_actor_id(request)
+        if (
+            user_role.is_active
+            and str(user_role.user_id) == str(actor)
+            and not RoleAdminService.keeps_access_admin_without(
+                user_role.user_id, excluded_user_role_id=user_role.id
+            )
+        ):
+            # Снять с себя последнюю административную роль — запереть раздел:
+            # вернуть доступ смог бы только тот, у кого он ещё есть, а в
+            # маленькой службе такого может и не быть. Отбой дешевле, чем
+            # правка прав руками в базе.
+            raise DomainError(
+                "LAST_ACCESS_ADMIN_ROLE",
+                422,
+                message=(
+                    "Нельзя снять с себя последнюю роль, дающую управление "
+                    "доступом."
+                ),
+            )
         RoleAdminService.revoke_role(
             user_role.user_id, user_role.role_code_id, user_role.scope_division_id
         )

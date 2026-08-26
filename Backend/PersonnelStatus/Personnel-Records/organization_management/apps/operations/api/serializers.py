@@ -102,10 +102,62 @@ class PermissionSerializer(serializers.ModelSerializer):
 
 class UserRoleSerializer(serializers.ModelSerializer):
     role_code = serializers.SlugRelatedField(slug_field="code", read_only=True)
+    # Имена — рядом с идентификаторами (Plane №36, «П-4»), а не вместо них:
+    # экран показывает человека и область словами, а клиент продолжает
+    # ветвиться по кодам. Разрешение идёт СПРАВОЧНИКАМИ ИЗ КОНТЕКСТА (одна
+    # выборка на страницу во вьюхе), иначе список делал бы по два запроса на
+    # строку.
+    #
+    # null у имени — не «поле забыли»: назначение живёт на строковом user_id
+    # без внешнего ключа (источник идентичности сменный), и у выданной роли
+    # удалённого пользователя имени действительно нет. Пустое имя рядом с
+    # живым id честнее, чем скрытая строка.
+    user_login = serializers.SerializerMethodField()
+    user_full_name = serializers.SerializerMethodField()
+    role_name = serializers.SerializerMethodField()
+    scope_division_name = serializers.SerializerMethodField()
 
     class Meta:
         model = UserRole
-        fields = ["id", "user_id", "role_code", "scope_division_id", "is_active"]
+        fields = [
+            "id",
+            "user_id",
+            "user_login",
+            "user_full_name",
+            "role_code",
+            "role_name",
+            "scope_division_id",
+            "scope_division_name",
+            "is_active",
+        ]
+
+    def _user(self, user_role):
+        return (self.context.get("users") or {}).get(str(user_role.user_id))
+
+    def get_user_login(self, user_role) -> str | None:
+        user = self._user(user_role)
+        return user.username if user is not None else None
+
+    def get_user_full_name(self, user_role) -> str | None:
+        user = self._user(user_role)
+        if user is None:
+            return None
+        return user.get_full_name() or None
+
+    def get_role_name(self, user_role) -> str | None:
+        role = user_role.role_code
+        return role.name if role is not None else None
+
+    def get_scope_division_name(self, user_role) -> str | None:
+        if user_role.scope_division_id is None:
+            # Безобластное назначение — «вся служба»; подписывает его КЛИЕНТ:
+            # строки «вся служба» в справочнике подразделений нет, и выдумывать
+            # её на сервере значило бы отдать клиенту имя несуществующей
+            # записи.
+            return None
+        return (self.context.get("divisions") or {}).get(
+            user_role.scope_division_id
+        )
 
 
 class TemporaryDutySerializer(serializers.ModelSerializer):
@@ -123,6 +175,19 @@ class AssignRoleRequestSerializer(serializers.Serializer):
         queryset=Role.objects.all(), pk_field=serializers.CharField()
     )
     scope_division_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_scope_division_id(self, value):
+        # Область — не свободное число: внешнего ключа у поля нет (оно
+        # переживает переезд справочника), и без этой проверки опечатка в id
+        # завела бы роль с областью, которой не существует, — человек молча
+        # не увидел бы НИЧЕГО, а причина не читалась бы ниоткуда.
+        if value is None:
+            return value
+        from organization_management.apps.divisions.models import Division
+
+        if not Division.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Подразделения с таким id нет.")
+        return value
 
 
 class GrantTemporaryDutyRequestSerializer(serializers.Serializer):

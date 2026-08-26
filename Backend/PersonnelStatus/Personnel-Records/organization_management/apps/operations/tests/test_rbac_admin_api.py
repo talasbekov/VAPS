@@ -11,6 +11,7 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models import (
     Permission,
@@ -140,13 +141,21 @@ class TestUserRoleWrites:
     def test_scope_is_stored(self, admin_client):
         api, _admin = admin_client
         seed_role("VIEWER", ["status.view"])
+        # Область — РЕАЛЬНОЕ подразделение (пин правлен осознанно, Plane №36,
+        # шаг «П-4»): с шага область проверяется по справочнику, и прежнее
+        # выдуманное `7` проверяло бы теперь отказ, а не хранение.
+        division = Division.objects.create(name="Управление области")
         response = api.post(
             USER_ROLES_URL,
-            {"user_id": "42", "role_code": "VIEWER", "scope_division_id": 7},
+            {
+                "user_id": "42",
+                "role_code": "VIEWER",
+                "scope_division_id": division.id,
+            },
             format="json",
         )
         assert response.status_code == 201
-        assert UserRole.objects.get(user_id="42").scope_division_id == 7
+        assert UserRole.objects.get(user_id="42").scope_division_id == division.id
 
     def test_missing_field_is_400_not_500(self, admin_client):
         api, _admin = admin_client
@@ -571,3 +580,174 @@ def test_writing_roles_is_closed_to_those_who_do_not_manage_access():
     assert composed.status_code == 403
     assert not Role.objects.filter(code="SNEAKY").exists()
     assert RoleAdminService.role_permission_codes("ARCHIVIST") == ["document.view"]
+
+
+# ── Plane №36, шаг «П-4»: назначение ролей с областью, поиск и имена ────────
+
+
+@pytest.mark.django_db
+def test_assignments_search_by_person_and_by_role():
+    """Ищут человека и роль словами, а не числовым user_id."""
+    admin, _ = client_for("assign-admin", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+    seed_role("READER", ["document.view"])
+    ivanov = User.objects.create_user(
+        username="ivanov", password="x", first_name="Иван", last_name="Иванов"
+    )
+    petrov = User.objects.create_user(username="petrov", password="x")
+    RoleAdminService.assign_role(str(ivanov.pk), "ARCHIVIST", actor="test")
+    RoleAdminService.assign_role(str(petrov.pk), "READER", actor="test")
+
+    by_login = admin.get(f"{USER_ROLES_URL}?search=ivanov").json()["results"]
+    by_surname = admin.get(f"{USER_ROLES_URL}?search=Иванов").json()["results"]
+    by_role = admin.get(f"{USER_ROLES_URL}?search=READER").json()["results"]
+    everything = admin.get(USER_ROLES_URL).json()["results"]
+
+    assert [row["user_id"] for row in by_login] == [str(ivanov.pk)]
+    assert [row["user_id"] for row in by_surname] == [str(ivanov.pk)]
+    assert [row["user_id"] for row in by_role] == [str(petrov.pk)]
+    # Сторож: без поиска строк БОЛЬШЕ — иначе проба не отличала бы фильтр от
+    # его отсутствия.
+    assert len(everything) > len(by_login)
+
+
+@pytest.mark.django_db
+def test_assignment_carries_names_of_person_role_and_scope():
+    """Строка назначения читается словами: кто, какая роль, какая область."""
+    admin, _ = client_for("assign-namer", "ADMIN", perms=("admin.roles",))
+    Role.objects.create(code="ARCHIVIST", name="Архивариус")
+    division = Division.objects.create(name="Первое управление")
+    ivanov = User.objects.create_user(
+        username="ivanov", password="x", first_name="Иван", last_name="Иванов"
+    )
+    RoleAdminService.assign_role(
+        str(ivanov.pk), "ARCHIVIST", division.id, actor="test"
+    )
+
+    row = next(
+        r
+        for r in admin.get(f"{USER_ROLES_URL}?user_id={ivanov.pk}").json()["results"]
+        if r["role_code"] == "ARCHIVIST"
+    )
+
+    assert row["user_login"] == "ivanov"
+    assert row["user_full_name"] == "Иван Иванов"
+    assert row["role_name"] == "Архивариус"
+    assert row["scope_division_name"] == "Первое управление"
+
+
+@pytest.mark.django_db
+def test_assignment_without_scope_has_no_division_name():
+    """«Вся служба» подписывает клиент: такой записи в справочнике нет."""
+    admin, _ = client_for("assign-global", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+    RoleAdminService.assign_role("42", "ARCHIVIST", actor="test")
+
+    row = next(
+        r
+        for r in admin.get(f"{USER_ROLES_URL}?user_id=42").json()["results"]
+        if r["role_code"] == "ARCHIVIST"
+    )
+
+    assert row["scope_division_id"] is None
+    assert row["scope_division_name"] is None
+
+
+@pytest.mark.django_db
+def test_two_scopes_of_one_role_live_side_by_side():
+    """Одна роль в разных областях — два РАЗНЫХ назначения, не перезапись."""
+    admin, _ = client_for("assign-two-scopes", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+    first = Division.objects.create(name="Первое управление")
+    second = Division.objects.create(name="Второе управление")
+
+    for division in (first, second):
+        assert (
+            admin.post(
+                USER_ROLES_URL,
+                {
+                    "user_id": "42",
+                    "role_code": "ARCHIVIST",
+                    "scope_division_id": division.id,
+                },
+                format="json",
+            ).status_code
+            == 201
+        )
+
+    scopes = sorted(
+        UserRole.objects.filter(user_id="42").values_list(
+            "scope_division_id", flat=True
+        )
+    )
+    assert scopes == sorted([first.id, second.id])
+
+
+@pytest.mark.django_db
+def test_repeated_assignment_does_not_double_the_row():
+    """Повтор выдачи не заводит второе назначение той же области."""
+    admin, _ = client_for("assign-repeater", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+    payload = {"user_id": "42", "role_code": "ARCHIVIST"}
+
+    first = admin.post(USER_ROLES_URL, payload, format="json")
+    second = admin.post(USER_ROLES_URL, payload, format="json")
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert UserRole.objects.filter(user_id="42").count() == 1
+    # Реактивация тоже не заводит второй строки: назначение опознаётся
+    # тройкой «человек + роль + область», и повтор попадает в ту же.
+    assert UserRole.objects.get(user_id="42").is_active is True
+
+
+@pytest.mark.django_db
+def test_ghost_scope_is_400_and_nothing_is_assigned():
+    """Область, которой нет: молча выданная роль не показала бы НИЧЕГО."""
+    admin, _ = client_for("assign-ghost", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+
+    response = admin.post(
+        USER_ROLES_URL,
+        {"user_id": "42", "role_code": "ARCHIVIST", "scope_division_id": 999999},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert not UserRole.objects.filter(user_id="42").exists()
+
+
+@pytest.mark.django_db
+def test_last_own_access_admin_role_cannot_be_revoked():
+    """Снять с себя последнюю административную роль — запереть раздел."""
+    admin, user = client_for("assign-selfharm", "ACCESS_ADMIN", perms=("admin.roles",))
+    own = UserRole.objects.get(user_id=str(user.pk))
+
+    response = admin.delete(f"{USER_ROLES_URL}{own.id}/")
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "LAST_ACCESS_ADMIN_ROLE"
+    own.refresh_from_db()
+    assert own.is_active is True
+
+
+@pytest.mark.django_db
+def test_own_role_can_be_revoked_while_another_admin_grant_remains():
+    """Отбой стережёт ПОСЛЕДНЮЮ роль, а не всякую свою."""
+    admin, user = client_for("assign-second-grant", "ACCESS_ADMIN", perms=("admin.roles",))
+    division = Division.objects.create(name="Первое управление")
+    spare = RoleAdminService.assign_role(
+        str(user.pk), "ACCESS_ADMIN", division.id, actor="test"
+    )
+
+    assert admin.delete(f"{USER_ROLES_URL}{spare.id}/").status_code == 204
+
+
+@pytest.mark.django_db
+def test_revoking_someone_elses_last_admin_role_is_allowed():
+    """Отбой — про СЕБЯ: чужой доступ администратор снимать вправе."""
+    admin, _ = client_for("assign-other", "ADMIN", perms=("admin.roles",))
+    seed_role("ACCESS_ADMIN", ["admin.roles"])
+    victim = RoleAdminService.assign_role("42", "ACCESS_ADMIN", actor="test")
+
+    assert admin.delete(f"{USER_ROLES_URL}{victim.id}/").status_code == 204
