@@ -16,6 +16,13 @@
 должен ни падать, ни плодить второе «Управление» рядом с первым.
 
 Прод-путей команда не трогает: она только зовёт то, что и так есть.
+
+⚠️ СДАЧА ДНЯ — ПОБОЧНЫЙ ЭФФЕКТ, О КОТОРОМ НАДО ЗНАТЬ (Plane №72). Пробы
+`day-submission` показывают путь «день ещё не сдан → сдаём → сдан», и на
+стенде, где день уже сдан этой командой, две из них краснеют: сдавать нечего.
+Раньше это лечилось запретом «не звать сид перед смоуком» — то есть человек
+должен был помнить. Теперь у команды есть `--no-submit`: люди и статусы
+заводятся, день остаётся НЕ СДАННЫМ, и обе пробы проходят свой путь целиком.
 """
 from datetime import timedelta
 
@@ -63,6 +70,15 @@ class Command(BaseCommand):
             action="store_true",
             help="Остановиться на сданном дне, документ не выпускать.",
         )
+        parser.add_argument(
+            "--no-submit",
+            action="store_true",
+            help=(
+                "Остановиться на статусах: день НЕ сдавать и документ не "
+                "выпускать. Ровно этот режим нужен перед смоуком — пробы "
+                "day-submission сдают день сами (Plane №72)."
+            ),
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -70,15 +86,30 @@ class Command(BaseCommand):
         division = self._division()
         self._people(division)
         self._statuses(division, day)
-        submission = self._submission(division, day)
-        issued = None if options["no_release"] else self._release(division, day)
+        # `--no-submit` сильнее `--no-release`: выпускать документ по
+        # НЕ СДАННОМУ дню нечем, и молча сдать день ради выпуска значило бы
+        # обойти флаг, ради которого его и завели.
+        submission = None if options["no_submit"] else self._submission(division, day)
+        issued = (
+            None
+            if options["no_submit"] or options["no_release"]
+            else self._release(division, day)
+        )
 
         self.stdout.write(f"STAND_DIVISION={division.id}")
         self.stdout.write(f"STAND_DAY={day.isoformat()}")
-        self.stdout.write(f"STAND_SUBMISSION={submission.pk}")
+        if submission is not None:
+            self.stdout.write(f"STAND_SUBMISSION={submission.pk}")
+        else:
+            self.stdout.write("STAND_SUBMISSION=нет (--no-submit): день не сдан")
         if issued is not None:
             self.stdout.write(f"STAND_DOCUMENT=№{issued.number}/{issued.year}")
-        self.stdout.write(self.style.SUCCESS("цепочка расхода готова"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                "цепочка расхода готова"
+                + (" до статусов: день НЕ сдан" if options["no_submit"] else "")
+            )
+        )
 
     def _division(self):
         division, _ = Division.objects.get_or_create(name=DIVISION_NAME)

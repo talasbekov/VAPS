@@ -20,6 +20,7 @@ from organization_management.apps.operations.management.commands import (
     seed_expense_chain,
 )
 from organization_management.apps.operations.models_document import OpsIssuedDocument
+from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.models_submission import (
     OpsDailySubmission,
 )
@@ -140,6 +141,33 @@ def test_it_can_stop_before_the_release(storage, types):  # noqa: F811
     seed(no_release=True)
 
     assert OpsDailySubmission.objects.count() == 1
+    assert OpsIssuedDocument.objects.count() == 0
+
+
+def test_it_can_stop_before_the_submission(storage, types):  # noqa: F811
+    """`--no-submit`: люди и статусы есть, день НЕ сдан (Plane №72).
+
+    Пробы `day-submission` показывают путь «день не сдан → сдаём → сдан», и на
+    стенде, где день уже сдан сидом, две из них краснеют: сдавать нечего.
+    Раньше это лечилось памятью человека («не звать сид перед смоуком»), теперь
+    — флагом.
+
+    Проба держит ОБА конца: статусы на месте (иначе флаг превратил бы сид в
+    пустышку) и сдачи нет ни одной.
+    """
+    seed(no_submit=True)
+
+    assert OpsEmployeeStatus.objects.count() > 0, "статусы не заведены — сид пуст"
+    assert OpsDailySubmission.objects.count() == 0
+    assert OpsIssuedDocument.objects.count() == 0
+
+
+def test_no_submit_wins_over_the_release(storage, types):  # noqa: F811
+    """`--no-submit` сильнее `--no-release`: выпускать документ по несданному
+    дню нечем, и тихая сдача ради выпуска обошла бы флаг."""
+    seed(no_submit=True, no_release=False)
+
+    assert OpsDailySubmission.objects.count() == 0
     assert OpsIssuedDocument.objects.count() == 0
 
 
