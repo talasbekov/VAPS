@@ -56,6 +56,16 @@ const nextConfig = {
         source: "/api/dictionaries/:path*",
         destination: `${backendUrl}/api/dictionaries/:path*/`,
       },
+      // 🔴 Правило было ПРОПУЩЕНО (Plane №174). В dev браузер ходит в бэкенд
+      // по абсолютному адресу и перезаписей не касается вовсе — поэтому
+      // пропажа не проявлялась ни разу. В проде клиент ходит относительными
+      // путями, и `/api/core/ranks|positions|divisions` отвечали 404: справочники
+      // званий, должностей и подразделений оказывались пустыми. Нашлось при
+      // попытке погонять смоук по прод-сборке.
+      {
+        source: "/api/core/:path*",
+        destination: `${backendUrl}/api/core/:path*/`,
+      },
       {
         source: "/api/statuses/:path*",
         destination: `${backendUrl}/api/statuses/:path*/`,
