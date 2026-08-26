@@ -80,6 +80,8 @@ import {
   findPersonnel,
   personnelDayStatus,
   personnelRowOn,
+  personnelRating,
+  RATING_BAND_MATCHES,
   PERSONNEL_ROSTER,
 } from "./fixtures/personnel";
 import { PROTECTED_PERSONS_CATALOG } from "./protected-persons-handlers";
@@ -717,12 +719,49 @@ export const securityEventsHandlers = [
     // Статус — только на СПРОШЕННУЮ дату, как у сервера: без параметра оба
     // поля остаются null и означают «не спрашивали» (Plane №65, «Р-2»).
     const businessDate = (url.searchParams.get("business_date") ?? "").trim();
+
+    // Рейтинг: отбор и порядок делает СЕРВЕР по всей выборке (Plane №67,
+    // РЙ-4/РЙ-5), и мок обязан повторять это правило — мок, который отбирает
+    // по-своему, зеленеет на контракте, которого нет.
+    //
+    // Право здесь не проверяется: в мок-режиме гейта прав нет вовсе, и
+    // изображать отказ значило бы выдумать поведение. Отсутствие поля у
+    // бесправного проверяется живой пробой, а не моком.
+    const band = (url.searchParams.get("rating_band") ?? "").trim();
+    const ordering = (url.searchParams.get("ordering") ?? "").trim();
+    let selected = found;
+    if (band !== "") {
+      const matches = RATING_BAND_MATCHES[band];
+      if (matches === undefined) {
+        return errorEnvelope(
+          "VALIDATION_ERROR",
+          "Проверьте заполнение формы.",
+          { rating_band: ["Неизвестная полоса рейтинга."] },
+          400
+        );
+      }
+      // Отбор ДО постранички — в этом вся задача РЙ-5.
+      selected = selected.filter((person) => matches(personnelRating(person.id)));
+    }
+    if (ordering === "rating") {
+      // Порядок по ВСЕЙ выборке; безоценочные в конец (`null` — не ноль),
+      // второй ключ — имя, иначе страницы «плавали» бы.
+      selected = [...selected].sort((a, b) => {
+        const left = personnelRating(a.id);
+        const right = personnelRating(b.id);
+        if (left === null && right === null) return a.name.localeCompare(b.name, "ru");
+        if (left === null) return 1;
+        if (right === null) return -1;
+        return right - left || a.name.localeCompare(b.name, "ru");
+      });
+    }
     return HttpResponse.json({
-      results: found
-        .slice(start, start + pageSize)
-        .map((row) => personnelRowOn(row, businessDate)),
-      count: found.length,
-      next: start + pageSize < found.length ? String(page + 1) : null,
+      results: selected.slice(start, start + pageSize).map((row) => ({
+        ...personnelRowOn(row, businessDate),
+        aggregateRating: personnelRating(row.id),
+      })),
+      count: selected.length,
+      next: start + pageSize < selected.length ? String(page + 1) : null,
       previous: page > 1 ? String(page - 1) : null,
     });
   }),

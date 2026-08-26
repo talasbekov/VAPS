@@ -150,4 +150,59 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
 
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })
+
+  test('отбор по рейтингу уходит НА СЕРВЕР, а не фильтрует страницу', async ({
+    page,
+    request,
+  }) => {
+    // Дефект, ради которого шаг делался (Plane №67): панель отбирала по
+    // рейтингу в пределах ЗАГРУЖЕННОЙ страницы, и «нет кандидатов» означало
+    // «нет на этой странице». Отличить это от правды с экрана было нельзя.
+    //
+    // Проба стережёт ровно наблюдаемое следствие переезда: выбор полосы
+    // ОТПРАВЛЯЕТ запрос кадров с `rating_band`. Вернётся клиентская фильтрация
+    // — параметра не будет, и проба покраснеет.
+    const auth = { Authorization: `Bearer ${await apiToken(STAND_USERNAME, STAND_PASSWORD)}` }
+    const events = (await (
+      await request.get(`${API}/api/ops/security-events/?stage=PLACEMENT`, { headers: auth })
+    ).json()) as { results: { id: string }[] }
+    test.skip(
+      events.results.length === 0,
+      'на стенде нет ОМ на стадии расстановки — проверять нечего',
+    )
+    const eventId = events.results[0].id
+
+    const asked: string[] = []
+    page.on('request', (req) => {
+      const url = new URL(req.url())
+      if (url.pathname === '/api/ops/personnel/') asked.push(url.search)
+    })
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${eventId}/`)
+    const aside = page.locator('aside')
+    await expect(aside.getByLabel('Фильтр по рейтингу')).toBeVisible({ timeout: 25_000 })
+
+    asked.length = 0
+    await aside.getByLabel('Фильтр по рейтингу').selectOption('9,0–10,0')
+
+    await expect
+      .poll(() => asked.some((query) => query.includes('rating_band=9_10')), {
+        timeout: 15_000,
+        message: 'отбор по рейтингу не ушёл на сервер — он снова считается по странице',
+      })
+      .toBe(true)
+
+    // И то же для порядка: ранжирование по баллу считает сервер по всей базе
+    // (решение заказчика 26.08.2026), а не страница сама себя.
+    asked.length = 0
+    await aside.getByLabel('Сортировка кандидатов').selectOption('По рейтингу')
+
+    await expect
+      .poll(() => asked.some((query) => query.includes('ordering=rating')), {
+        timeout: 15_000,
+        message: 'порядок по баллу не ушёл на сервер — страница переставляет себя',
+      })
+      .toBe(true)
+  })
 })

@@ -45,6 +45,45 @@ export function personnelDayStatus(id: string): {
   };
 }
 
+/** Агрегат рейтинга у демо-сотрудников (Plane №67, шаги РЙ-4/РЙ-5).
+ *
+ * На сервере агрегат СЧИТАЕТСЯ по оценкам и методике; у мока оценок в кадровой
+ * ручке нет, поэтому он задан таблицей — тем же приёмом, что и статус дня
+ * выше. Значения совпадают с участниками рейтинга мок-слоя (`emp-1`…`emp-6`
+ * связаны, `emp-7`…`emp-10` нет), иначе мок противоречил бы сам себе: бейдж на
+ * доске показывал бы одно, карточка рейтинга — другое.
+ *
+ * Отсутствие строки = `null` = «судить не по чему». Это НЕ ноль: ноль означал
+ * бы плохую оценку.
+ */
+export const PERSONNEL_RATING: Record<string, number> = {
+  "emp-1": 8.2,
+  "emp-2": 7.5,
+  "emp-3": 9.1,
+  "emp-4": 6.8,
+  "emp-5": 8.7,
+  "emp-6": 9.4,
+};
+
+/** Полосы рейтинга — те же границы и коды, что у сервера
+ * (`ratings.RATING_BANDS`). Разойтись они не имеют права: мок с другими
+ * границами отбирал бы не тех, кого отберёт живой стек, и проба мока зеленела
+ * бы на контракте, которого нет. */
+export const RATING_BAND_MATCHES: Record<
+  string,
+  (value: number | null) => boolean
+> = {
+  "9_10": (value) => value !== null && value >= 9,
+  "8_9": (value) => value !== null && value >= 8 && value < 9,
+  "7_8": (value) => value !== null && value >= 7 && value < 8,
+  below_7: (value) => value !== null && value < 7,
+  no_data: (value) => value === null,
+};
+
+export function personnelRating(id: string): number | null {
+  return PERSONNEL_RATING[id] ?? null;
+}
+
 /** Снимок БЕЗ статусов: как и сервер, мок отдаёт их только на спрошенную дату
  * (`business_date`), а без неё честно молчит. */
 export const PERSONNEL_ROSTER: PersonnelSummarySnapshot[] = SEED.map((row) => ({
