@@ -163,6 +163,13 @@ ACCESS_PERMISSION_SAVED = "ACCESS_PERMISSION_SAVED"
 # не делать.
 ACCESS_ROLE_SAVED = "ACCESS_ROLE_SAVED"
 ACCESS_ROLE_PERMISSIONS_CHANGED = "ACCESS_ROLE_PERMISSIONS_CHANGED"
+# Учётная запись (Plane №36, «П-5»). Заведение, правка и БЛОКИРОВКА — одно
+# действие: вопрос «что это за учётка и работает ли она» один, и старое
+# значение стоит в записи рядом с новым. Сброс пароля — своё действие: его
+# спрашивают отдельно («кому и когда меняли пароль»), и сам пароль в записи
+# не появляется НИ В КАКОМ виде.
+ACCESS_ACCOUNT_SAVED = "ACCESS_ACCOUNT_SAVED"
+ACCESS_ACCOUNT_PASSWORD_RESET = "ACCESS_ACCOUNT_PASSWORD_RESET"
 DUTY_SHIFT_CREATED = "DUTY_SHIFT_CREATED"
 DUTY_SHIFT_CANCELLED = "DUTY_SHIFT_CANCELLED"
 # Настройки: принятая правка правила — решение с причиной и версией политики.
@@ -224,6 +231,8 @@ ACTIONS = frozenset(
         ACCESS_PERMISSION_SAVED,
         ACCESS_ROLE_SAVED,
         ACCESS_ROLE_PERMISSIONS_CHANGED,
+        ACCESS_ACCOUNT_SAVED,
+        ACCESS_ACCOUNT_PASSWORD_RESET,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,
@@ -265,6 +274,7 @@ ENTITY_DICTIONARY_ENTRY = "dictionary_entry"
 # решение, по которому потом спрашивают «кто и когда открыл эту ручку».
 ENTITY_PERMISSION = "access_permission"
 ENTITY_ROLE = "access_role"
+ENTITY_ACCOUNT = "access_account"
 
 ENTITY_TYPES = frozenset(
     {
@@ -282,6 +292,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_DICTIONARY_ENTRY,
         ENTITY_PERMISSION,
         ENTITY_ROLE,
+        ENTITY_ACCOUNT,
     }
 )
 

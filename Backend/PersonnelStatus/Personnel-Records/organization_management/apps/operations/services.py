@@ -348,6 +348,136 @@ class RoleAdminService:
         TemporaryDutyPermission.objects.filter(id=grant_id).update(is_active=False)
 
 
+class AccountAdminService:
+    """Учётные записи из интерфейса (Plane №36, «П-5»).
+
+    Раньше учётка заводилась только Django-админкой или командой стенда. Здесь
+    те же действия, но с именным следом и одним владельцем правил: пароль
+    никогда не возвращается дважды и никогда не попадает в журнал.
+    """
+
+    # Длина временного пароля. 16 символов из 58-символьного алфавита — это
+    # ~94 бита: пароль живёт до первой смены, но живёт он в переписке и в
+    # чужой памяти, поэтому короткий «на пару дней» здесь не годится.
+    TEMPORARY_PASSWORD_LENGTH = 16
+    # Без похожих друг на друга символов: временный пароль ДИКТУЮТ и
+    # переписывают руками, и `l/1/I` с `O/0` возвращаются жалобой «не
+    # подходит», которую не отличить от настоящей ошибки.
+    TEMPORARY_PASSWORD_ALPHABET = (
+        "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    )
+
+    @classmethod
+    def generate_temporary_password(cls) -> str:
+        from django.utils.crypto import get_random_string
+
+        return get_random_string(
+            cls.TEMPORARY_PASSWORD_LENGTH, cls.TEMPORARY_PASSWORD_ALPHABET
+        )
+
+    @staticmethod
+    def _snapshot(user):
+        return {
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "is_active": user.is_active,
+        }
+
+    @classmethod
+    @transaction.atomic
+    def create_account(
+        cls,
+        *,
+        username,
+        password=None,
+        first_name="",
+        last_name="",
+        email="",
+        is_active=True,
+        actor,
+    ):
+        """Завести учётку; вернуть (пользователь, временный пароль или None).
+
+        Пароль возвращается ОДИН раз и только тому, кто заводил: хранить его в
+        читаемом виде негде и незачем, а показать его надо — иначе человеку
+        нечего сообщить новому сотруднику.
+        """
+        from django.contrib.auth.models import User
+
+        from organization_management.apps.operations import audit_service
+
+        temporary = None
+        if not password:
+            temporary = cls.generate_temporary_password()
+            password = temporary
+        user = User(
+            username=username,
+            first_name=first_name or "",
+            last_name=last_name or "",
+            email=email or "",
+            is_active=is_active,
+        )
+        user.set_password(password)
+        user.save()
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_ACCOUNT_SAVED,
+            entity_type=audit_service.ENTITY_ACCOUNT,
+            entity_id=user.pk,
+            new_value=cls._snapshot(user),
+        )
+        return user, temporary
+
+    @classmethod
+    @transaction.atomic
+    def save_account(cls, user, *, actor, **fields):
+        """Правка учётки, включая блокировку (`is_active`).
+
+        Пароль сюда НЕ приходит: смена пароля — своё действие со своим следом,
+        и общая правка не должна уметь менять его мимо него.
+        """
+        from organization_management.apps.operations import audit_service
+
+        old_value = cls._snapshot(user)
+        for name in ("first_name", "last_name", "email", "is_active"):
+            if name in fields and fields[name] is not None:
+                setattr(user, name, fields[name])
+        user.save()
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_ACCOUNT_SAVED,
+            entity_type=audit_service.ENTITY_ACCOUNT,
+            entity_id=user.pk,
+            old_value=old_value,
+            new_value=cls._snapshot(user),
+        )
+        return user
+
+    @classmethod
+    @transaction.atomic
+    def reset_password(cls, user, *, actor):
+        """Сбросить пароль и вернуть временный — один раз, вызывающему.
+
+        В журнал уходит ФАКТ сброса, и только он: пароль в ленте, которую
+        читают все, кто держит право на журнал, отменил бы самый смысл сброса.
+        """
+        from organization_management.apps.operations import audit_service
+
+        temporary = cls.generate_temporary_password()
+        user.set_password(temporary)
+        user.save(update_fields=["password"])
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_ACCOUNT_PASSWORD_RESET,
+            entity_type=audit_service.ENTITY_ACCOUNT,
+            entity_id=user.pk,
+            new_value={"username": user.username},
+        )
+        return temporary
+
+
 class LegacyRoleSync:
     """Мост на переходный период: назначение ops-ролей по старым учёткам.
 

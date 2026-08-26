@@ -6,6 +6,7 @@
 from rest_framework.routers import DefaultRouter
 
 from organization_management.apps.operations.api.views import (
+    AccountViewSet,
     AttachmentViewSet,
     AuditLogViewSet,
     DailySubmissionViewSet,
@@ -30,6 +31,7 @@ router = DefaultRouter()
 router.register("roles", RoleViewSet, basename="ops-role")
 router.register("permissions", PermissionViewSet, basename="ops-permission")
 router.register("user-roles", UserRoleViewSet, basename="ops-user-role")
+router.register("accounts", AccountViewSet, basename="ops-account")
 router.register("status-types", StatusTypeViewSet, basename="ops-status-type")
 router.register("statuses", StatusViewSet, basename="ops-status")
 router.register("secondments", SecondmentViewSet, basename="ops-secondment")
