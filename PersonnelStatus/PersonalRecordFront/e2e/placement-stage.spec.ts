@@ -15,6 +15,7 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -65,7 +66,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       })
     ).json()) as { results: { id: string; code: string; stage: string }[] }
     const target = list.results[0]
-    test.skip(target === undefined, 'на стенде нет ОМ на стадии расстановки')
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
     const before = (await (

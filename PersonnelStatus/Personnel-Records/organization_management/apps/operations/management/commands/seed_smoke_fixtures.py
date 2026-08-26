@@ -67,6 +67,11 @@ ASSIGNED_COUNT = 3
 # «нет готового объекта — молчание баннера не проверяется».
 READY_OBJECT_NAME = "Стенд: объект с готовым паспортом"
 CLOSED_TITLE = "Стенд: закрытое мероприятие (фикстура истории)"
+# ОМ, стоящее НА «Проведении». Без него ТРИ пробы закрытия молча уходили в
+# skip: «на стенде нет ОМ на стадии „Проведение“» (Plane №75). Закрытая
+# фикстура эту роль не играет — она проходит «Проведение» насквозь и
+# останавливается на «Закрыто».
+CONDUCT_TITLE = "Стенд: мероприятие на проведении (фикстура смоука)"
 SECOND_OBJECT_NAME = "Стенд: второй объект посещения"
 # Численность заявок фикстуры. Числа НЕ произвольны: проба недобора подменяет
 # первую заявку на «запрошено 9, выделено 4» и ищет на экране ровно
@@ -104,6 +109,7 @@ class Command(BaseCommand):
         security_object, freshness = self._ready_object(day)
         recon = self._recon_event(day, security_object)
         closed = self._closed_event(day, security_object)
+        conduct = self._conduct_event(day, security_object)
 
         for employee in assigned:
             self.stdout.write(f"STAND_ASSIGNED={employee.id} {employee.last_name}")
@@ -111,6 +117,7 @@ class Command(BaseCommand):
         self.stdout.write(f"STAND_FORCES_EVENT={event.code}")
         self.stdout.write(f"STAND_RECON_EVENT={recon.code}")
         self.stdout.write(f"STAND_CLOSED_EVENT={closed.code}")
+        self.stdout.write(f"STAND_CONDUCT_EVENT={conduct.code}")
         self.stdout.write(
             f"STAND_READY_OBJECT={security_object.code} "
             f"{security_object.passport_state}/{freshness}"
@@ -401,6 +408,147 @@ class Command(BaseCommand):
                 }
             ],
         )
+
+    # ── Мероприятие на «Проведении» ─────────────────────────────────────────
+
+    def _conduct_event(self, day, security_object):
+        """ОМ, остановленное НА «Проведении», с расчётом постов и расстановкой.
+
+        Три пробы закрытия (`готовность считается по итогам`, `контроль постов`
+        и `недобор на посту`) ищут такое ОМ на стенде и без него уходили в
+        skip — то есть молча ничего не проверяли, а прогон выглядел зелёным
+        (Plane №75). Закрытая фикстура их не спасает: она проходит «Проведение»
+        насквозь.
+
+        Человек на посту НУЖЕН: `complete_placement` требует хотя бы одного
+        назначенного, а проба контроля постов считает по расстановке
+        укомплектованность. Пост с `need: 3` и одним человеком — это и есть
+        недобор, который пробы показывают на экране.
+
+        Идемпотентна: если фикстура уже стоит на «Проведении», она возвращается
+        как есть; недоведённые остатки прошлых запусков сносятся.
+        """
+        existing = OpsSecurityEvent.objects.filter(title=CONDUCT_TITLE).first()
+        if existing is not None and existing.stage == "CONDUCT":
+            return existing
+        # Второй пост всегда просит одного, первый — двоих, если люди есть.
+        # Меньше двух сотрудников в кадрах — фикстуру не собрать вовсе, и об
+        # этом надо сказать словами, а не молча получить недобор.
+        available = self._employee_count()
+        if available < 2:
+            raise CommandError(
+                f"в кадрах {available} сотрудников, фикстуре «Проведения» нужно "
+                "минимум 2 — засейте кадры"
+            )
+        first_need = 2 if available >= 3 else 1
+        for stale in OpsSecurityEvent.objects.filter(title=CONDUCT_TITLE):
+            try:
+                event_service.delete_event(stale.id, actor=ACTOR, force=True)
+            except DomainError as error:
+                self.stderr.write(
+                    f"старая фикстура {stale.code} не убрана ({error.code})"
+                )
+        event = event_service.create_event(
+            title=CONDUCT_TITLE,
+            object_id=str(security_object.pk),
+            business_date=day,
+            kind=OpsSecurityEvent.Kind.INTERNAL,
+            actor=ACTOR,
+        )
+        if event.stage == "BULLETIN":
+            event = event_service.complete_bulletin(event.id)
+        event = event_service.update_recon(
+            event.id,
+            checklist=[{**item, "done": True} for item in (event.recon_checklist or [])],
+            # ДВА направления — требование самих проб, а не выдумка:
+            # «готовность считается по итогам» сторожит `фикстуре нужно ≥2
+            # направления` (на одном направлении «1 из 2 готовы» не
+            # проверяется вовсе).
+            #
+            # Потребность первого поста зависит от того, сколько людей есть в
+            # кадрах: расстановка должна быть УКОМПЛЕКТОВАНА ПОЛНОСТЬЮ (проба
+            # недобора поднимает потребность на два и ищет ровно «Недобор 2»),
+            # а людей на стенде много, но в пробах самого сида их бывает двое.
+            # Жёсткое «нужно три» ломало эти пробы — фикстура подстраивается.
+            sector_posts=[
+                {
+                    "id": "seed-conduct-post-1",
+                    "sector": "Периметр",
+                    "post": "Пост 1",
+                    "task": "Охрана периметра",
+                    "need": first_need,
+                    "requirements": "Допуск",
+                    "result": None,
+                    "comment": "",
+                    "sourceSectorId": None,
+                    "sourcePostId": None,
+                    "minRating": None,
+                },
+                {
+                    "id": "seed-conduct-post-2",
+                    "sector": "КПП",
+                    "post": "Пост 2",
+                    "task": "Пропускной режим",
+                    "need": 1,
+                    "requirements": "Допуск",
+                    "result": None,
+                    "comment": "",
+                    "sourceSectorId": None,
+                    "sourcePostId": None,
+                    "minRating": None,
+                },
+            ],
+        )
+        # Идентификаторы постов выдаёт СЕРВЕР: присланные «seed-conduct-post-N»
+        # он заменяет своими, и назначение по придуманному id отбивается 404.
+        posts = [
+            (row["id"], int(row.get("need") or 0)) for row in event.recon_sector_posts
+        ]
+        # Завершение рекогносцировки само проводит «Потребность» и «Запрос
+        # сил» и оставляет ОМ на «Расстановке» (Plane №110) — расставлять
+        # людей можно только там.
+        if event.stage == "RECON":
+            event = event_service.complete_recon(event.id)
+        # Расстановка УКОМПЛЕКТОВАНА ПОЛНОСТЬЮ: проба недобора поднимает
+        # потребность первого поста на два и ищет на экране ровно «Недобор 2».
+        # Оставь фикстуру недоукомплектованной — на экране будет другое число,
+        # и проба покраснеет не на дефекте, а на фикстуре.
+        people = self._some_employees(sum(need for _id, need in posts))
+        seat = 0
+        for post_id, need in posts:
+            for _ in range(need):
+                event = event_service.assign_placement(
+                    event.id,
+                    post_id=post_id,
+                    employee_id=str(people[seat].pk),
+                    override=None,
+                    override_reason=None,
+                )
+                seat += 1
+        # Перевод этапа — админ-полномочие и штатный путь: он оставляет след в
+        # журнале переходов, а запись в поле — нет.
+        return event_service.override_stage(event.id, stage="CONDUCT", actor=ACTOR)
+
+    def _employee_count(self):
+        from organization_management.apps.employees.models import Employee
+
+        return Employee.objects.count()
+
+    def _some_employees(self, count):
+        """Кто угодно из кадров: пробам важен факт назначения, а не человек.
+
+        Людей должно хватить на ВСЕ посты фикстуры — иначе расстановка выйдет
+        неполной, и проба недобора покраснеет на фикстуре, а не на дефекте.
+        """
+        from organization_management.apps.employees.models import Employee
+
+        people = list(Employee.objects.order_by("id")[:count])
+        if len(people) < count:
+            raise CommandError(
+                f"в кадрах {len(people)} сотрудников, фикстуре нужно {count} — "
+                "засейте кадры"
+            )
+        return people
 
     # ── Закрытое мероприятие для истории ────────────────────────────────────
 

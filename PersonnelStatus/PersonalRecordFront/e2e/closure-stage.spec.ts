@@ -20,6 +20,7 @@
  * одноразовой. Успешный путь закрытия покрыт снимком уже закрытого дела.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -94,9 +95,10 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     })
 
     const token = await apiToken()
-    const conduct = (await events(token, 'CONDUCT'))[0]
-    test.skip(conduct === undefined, 'на стенде нет ОМ на стадии «Проведение»')
-    const target = conduct!
+    const target = requireFixture(
+      (await events(token, 'CONDUCT'))[0],
+      'мероприятие на стадии «Проведение»',
+    )
     const directions = [...new Set(target.reconSectorPosts.map((p) => p.sector))]
     expect(directions.length, 'фикстуре нужно ≥2 направления').toBeGreaterThan(1)
 
@@ -160,11 +162,12 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
 
   test('архив дела собирает разделы закрытого ОМ', async ({ page }) => {
     const token = await apiToken()
-    const closed = (await events(token, 'CLOSED')).find(
-      (e) => e.closureDirectionSummaries.length > 0,
+    const target = requireFixture(
+      (await events(token, 'CLOSED')).find(
+        (e) => e.closureDirectionSummaries.length > 0,
+      ),
+      'закрытое мероприятие с итогами направлений',
     )
-    test.skip(closed === undefined, 'на стенде нет закрытого ОМ с итогами')
-    const target = closed!
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
@@ -275,9 +278,10 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
 
     test('контроль постов считает укомплектованность по живым данным карточки', async ({ page }) => {
       const token = await apiToken()
-      const conduct = (await events(token, 'CONDUCT'))[0]
-      test.skip(conduct === undefined, 'на стенде нет ОМ на стадии «Проведение»')
-      const target = conduct!
+      const target = requireFixture(
+        (await events(token, 'CONDUCT'))[0],
+        'мероприятие на стадии «Проведение»',
+      )
 
       // Ожидание считается из ОТВЕТА сервера, а не пишется числом: фикстура
       // стенда меняется, а пин литералом однажды начал бы сторожить прошлое.
@@ -323,11 +327,14 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       // перехватом ОТВЕТА. Сервер такой ответ вернуть может: это его же карточка
       // с другой потребностью, выдуманного состояния здесь нет.
       const token = await apiToken()
-      const conduct = (await events(token, 'CONDUCT'))[0]
-      test.skip(conduct === undefined, 'на стенде нет ОМ на стадии «Проведение»')
-      const target = conduct!
-      const first = target.reconSectorPosts[0]
-      test.skip(first === undefined, 'у фикстуры нет ни одного поста')
+      const target = requireFixture(
+        (await events(token, 'CONDUCT'))[0],
+        'мероприятие на стадии «Проведение»',
+      )
+      const first = requireFixture(
+        target.reconSectorPosts[0],
+        'расчёт постов у мероприятия на «Проведении»',
+      )
 
       const detail = await eventDetail(token, target.id)
       const patched = {
