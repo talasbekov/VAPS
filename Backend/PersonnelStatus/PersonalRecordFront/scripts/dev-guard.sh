@@ -36,12 +36,22 @@ LIMIT_MB="${LIMIT_MB:-2500}"
 # 64 ГБ и приговор на 16 ГБ. На машине разработки (15 ГБ, из них под нагрузкой
 # свободно меньше 4 ГБ) 40% дают ≈6 ГБ, и это ровно та граница, за которой
 # наблюдалось зависание.
+# ПОТОЛОК СВЕРХУ ОГРАНИЧЕН И АБСОЛЮТНЫМ ЧИСЛОМ (Plane №122, 26.08.2026).
+# Доли памяти машины мало: на 15 ГБ 40% дают ≈6 ГБ, и всё, что ниже, сторож
+# пропускает. Наблюдалось 3,76 ГБ у одного сервера — мягкий порог не сработал
+# (шёл часовой прогон, тишины не было ни секунды), жёсткий не сработал тоже
+# (до 6 ГБ не дошло). Сервер при этом уже рвал соединения. Выше ~3,5 ГБ
+# `next dev` сломан ПОВЕДЕНЧЕСКИ, сколько бы памяти ни было у машины, поэтому
+# потолок = min(40% памяти, ABS_HARD_CAP_MB).
+ABS_HARD_CAP_MB="${ABS_HARD_CAP_MB:-3500}"
+
 default_hard_limit() {
   local total_mb
   total_mb=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
-  [ -z "$total_mb" ] && { echo 6000; return; }
+  [ -z "$total_mb" ] && { echo "$ABS_HARD_CAP_MB"; return; }
   local computed=$((total_mb * 40 / 100))
   [ "$computed" -lt 3000 ] && computed=3000
+  [ "$computed" -gt "$ABS_HARD_CAP_MB" ] && computed="$ABS_HARD_CAP_MB"
   echo "$computed"
 }
 HARD_LIMIT_MB="${HARD_LIMIT_MB:-$(default_hard_limit)}"
@@ -50,6 +60,17 @@ IDLE="${IDLE:-20}"
 LOG="${LOG:-/tmp/next-dev-$PORT.log}"
 
 cd "$(dirname "$0")/.." || exit 1
+
+# Порт уже занят — ВЫХОД, а не второй сервер (Plane №122). Два `next dev` на
+# одном порту не уживаются вовсе, а на разных — делят машину и травят друг
+# другу память: так рядом со стендом жил забытый мок-сервер на :3107, и вдвоём
+# они забрали больше, чем каждому позволял бы потолок.
+if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+  exec 3<&- 2>/dev/null
+  echo "[dev-guard] порт $PORT уже занят — второй сервер не поднимаю."
+  echo "[dev-guard] кто там: ps -eo pid,rss,etime,args | grep -E 'next-server|next dev' | grep -v grep"
+  exit 1
+fi
 
 start_server() {
   : > "$LOG"
@@ -88,6 +109,22 @@ tree_rss_mb() {
   echo $((total / 1024))
 }
 
+# RSS ЧУЖИХ dev-серверов (мок-сервер на другом порту, забытый стенд соседа).
+# Память у машины общая: пока сторож считает только свой процесс, два сервера
+# по 3 ГБ каждый проходят любой персональный порог и вместе вешают машину.
+other_next_rss_mb() {
+  local mine total=0 rss pid
+  mine=" $(descendants "$SERVER_PID") "
+  while read -r pid rss; do
+    [ -z "$pid" ] && continue
+    case "$mine" in *" $pid "*) continue ;; esac
+    total=$((total + rss))
+  done <<EOF_OTHERS
+$(ps -eo pid=,rss=,comm= | awk '$3 ~ /^next-server/ {print $1, $2}')
+EOF_OTHERS
+  echo $((total / 1024))
+}
+
 seconds_since_log() {
   local mtime now
   mtime=$(stat -c %Y "$LOG" 2>/dev/null || echo 0)
@@ -110,6 +147,9 @@ trap 'echo "[dev-guard] выход"; stop_server; exit 0' INT TERM
 
 start_server
 restarts=0
+# Вес соседних dev-серверов на прошлой проверке: нужен, чтобы не повторять
+# строку о них каждые PERIOD секунд.
+last_others=0
 while true; do
   sleep "$PERIOD"
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -118,9 +158,23 @@ while true; do
     continue
   fi
   rss=$(tree_rss_mb)
-  if [ "$rss" -gt "$HARD_LIMIT_MB" ]; then
+  others=$(other_next_rss_mb)
+  budget="$HARD_LIMIT_MB"
+  if [ "$others" -gt 0 ]; then
+    # Чужие серверы съедают ОБЩИЙ бюджет: свой потолок опускается на их долю,
+    # но не ниже мягкого порога — иначе перезапуск шёл бы по кругу.
+    budget=$((HARD_LIMIT_MB - others))
+    [ "$budget" -lt "$LIMIT_MB" ] && budget="$LIMIT_MB"
+    # Говорим о соседе, только когда его вес ЗАМЕТНО изменился: строка раз в
+    # PERIOD секунд утопила бы в шуме сообщения о перезапусках.
+    if [ $((others > last_others ? others - last_others : last_others - others)) -gt 100 ]; then
+      echo "[dev-guard] рядом ещё next dev на ${others} МБ — мой потолок опущен до ${budget} МБ"
+      last_others="$others"
+    fi
+  fi
+  if [ "$rss" -gt "$budget" ]; then
     restarts=$((restarts + 1))
-    echo "[dev-guard] ${rss} МБ > жёсткого потолка ${HARD_LIMIT_MB} — перезапуск #${restarts} НЕ ДОЖИДАЯСЬ затишья (идущий прогон оборвётся)"
+    echo "[dev-guard] ${rss} МБ > жёсткого потолка ${budget} — перезапуск #${restarts} НЕ ДОЖИДАЯСЬ затишья (идущий прогон оборвётся)"
     stop_server
     start_server
     continue
