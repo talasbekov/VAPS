@@ -57,8 +57,13 @@ def test_base_comes_from_the_event_not_from_thin_air():
     assert result["persons"][0]["name"] == "Иван Петров"
     assert result["responsible"]["name"] == "Абенов"
     # Дата прибытия и убытия — ДЕЛОВАЯ ДАТА ОМ: другого источника у сервера нет.
-    assert result["arrival"]["date"] == "10.09.2026г."
-    assert result["departure"]["date"] == "10.09.2026г."
+    # 🔴 ПИН ИЗМЕНЁН ОСОЗНАННО (Plane №166): было «10.09.2026г.». Суффикс «г.»
+    # нужен ДОКУМЕНТУ (так в образце заказчика) и не нужен СВОДКЕ — экран
+    # показывает дату без него. Пока суффикс сидел в сборке сводки, экран и
+    # документ уже расходились в дате. Теперь он живёт в раскладке документа,
+    # и сводка отдаёт ровно то, что показывает экран.
+    assert result["arrival"]["date"] == "10.09.2026"
+    assert result["departure"]["date"] == "10.09.2026"
 
 
 def test_person_absent_in_the_bulletin_is_not_invented():
@@ -86,7 +91,7 @@ def test_patch_merges_deeply_and_does_not_wipe_neighbours(django_user_model):
     result = summary.summary_for_event(event)
 
     assert result["arrival"]["time"] == "12:00ч."
-    assert result["arrival"]["date"] == "10.09.2026г."
+    assert result["arrival"]["date"] == "10.09.2026"
     assert result["country"] == "Вымышляндия"
 
 
@@ -146,3 +151,33 @@ def test_every_template_key_gets_a_value():
 
     assert keys, "шаблон не содержит ни одного места подстановки — он сломан"
     assert set(filled) == keys
+
+
+def test_document_writes_the_date_with_g_and_the_summary_without_it():
+    """Документ и экран пишут дату ПО-РАЗНОМУ, и оба правы.
+
+    В образце заказчика дата стоит с «г.» и пробелом («17.06.2026 г.»), на
+    экране сводки — без него. Разница законная: это разные слои. Незаконно
+    было бы держать её В ОДНОМ значении, как было до Plane №166, — тогда
+    правка под документ молча меняет экран, и наоборот.
+
+    Проба стережёт обе формы сразу: поправить одну, забыв другую, не выйдет.
+    """
+    event = make_event(code="ОМ-Д-Г")
+
+    assert summary.summary_for_event(event)["arrival"]["date"] == "10.09.2026"
+    assert summary.document_values(event)["arrival_1"].startswith("10.09.2026 г.")
+
+
+def test_the_document_does_not_stamp_g_on_the_word_unspecified():
+    """«уточняется г.» — не дата, а мусор под подписью.
+
+    Суффикс приклеивается к ДАТЕ, а не ко всему, что стоит в поле даты.
+    """
+    event = make_event(code="ОМ-Д-У")
+    OpsGvoSummaryPatch.objects.create(
+        event=event, patch={"arrival": {"date": summary.UNSPECIFIED}}
+    )
+
+    assert summary.document_values(event)["arrival_1"].startswith("уточняется")
+    assert "уточняется г." not in summary.document_values(event)["arrival_1"]
