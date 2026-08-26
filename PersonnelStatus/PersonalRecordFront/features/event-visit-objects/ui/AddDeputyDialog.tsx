@@ -28,6 +28,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { PersonnelPicker } from "@/features/personnel-picker";
 import type { SecurityEvent, VisitObject } from "@/entities/security-event";
 import { addVisitObjectDeputy } from "../api/visit-objects-api";
+import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 
 export function AddDeputyDialog({
   event,
@@ -63,7 +64,7 @@ export function AddDeputyDialog({
   const save = useMutation({
     mutationFn: addVisitObjectDeputy,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
       toast({ title: "Замещающий назначен" });
       onClose();
     },

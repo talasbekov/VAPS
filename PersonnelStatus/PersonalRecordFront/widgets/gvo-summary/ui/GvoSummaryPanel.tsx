@@ -18,7 +18,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
+import { useGvoSummary } from "@/hooks/use-gvo-summaries";
 import { StageBadge } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { GvoSectionDialog, GvoVisitsDialog } from "@/features/gvo-section-edit";
@@ -31,11 +31,8 @@ import {
 import { usePersonnelMe } from "@/hooks/use-security-event-stages";
 import {
   canManageGvoSummary,
-  deriveGvoSummary,
   gvoCountryAbbr,
   gvoStaffCount,
-  isGvoSummaryFilled,
-  mergeGvoSummary,
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
 import type { GvoFlight, GvoSection } from "@/entities/gvo-summary";
@@ -74,9 +71,12 @@ export function GvoSummaryPanel({
   // Объекты посещения правятся своим окном, а не разделом патча («Реестр
   // ОМ-35.1»): список объектов принадлежит мероприятию.
   const [visitsOpen, setVisitsOpen] = useState(false);
-  const patchesQuery = useGvoPatches({ enabled: true });
+  // Сводка приходит СОБРАННОЙ с сервера (Plane №166): база из бюллетеня плюс
+  // ручные правки. Раньше базу выводил браузер, и та же сводка на экране и в
+  // документе успела разойтись.
+  const summaryQuery = useGvoSummary(event.code);
 
-  if (patchesQuery.isLoading) {
+  if (summaryQuery.isLoading) {
     return (
       <Card>
         <CardContent className="p-9 text-center text-sm text-muted-foreground">
@@ -86,9 +86,21 @@ export function GvoSummaryPanel({
     );
   }
 
-  const patch = patchesByCode(patchesQuery.data)[event.code];
-  const summary = mergeGvoSummary(deriveGvoSummary(event), patch);
-  const filled = isGvoSummaryFilled(patch);
+  // ОТКАЗ — своя ветка, а не пустая сводка. «Не заполнена» и «не удалось
+  // получить» выглядели бы одинаково: и там и там пусто под подписями, только
+  // в первом случае экран прав, а во втором врёт.
+  if (summaryQuery.isError || summaryQuery.data === undefined) {
+    return (
+      <Card>
+        <CardContent className="p-9 text-center text-sm text-destructive-ink">
+          Не удалось загрузить сводные данные.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const summary = summaryQuery.data.summary;
+  const filled = summaryQuery.data.filled;
   const staff = gvoStaffCount(summary);
   const edit = canEdit ? (next: GvoSection) => () => setSection(next) : null;
 

@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvents } from "@/hooks/use-security-events";
-import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
+import { useGvoSummaries, summariesByCode } from "@/hooks/use-gvo-summaries";
 import {
   useProtectedPersons,
   usePersonEventHistory,
@@ -31,7 +31,7 @@ import type {
   ProtectedPerson,
   ProtectedPersonCategory,
 } from "@/entities/protected-person";
-import { deriveGvoSummary, mergeGvoSummary } from "@/entities/gvo-summary";
+
 import type { SecurityEvent } from "@/entities/security-event";
 
 // Реестр ОМ читается целиком: связь с лицом ищется по сводкам, а не запросом
@@ -69,13 +69,16 @@ export default function ProtectedPersonsPage() {
     { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: PAGE_SIZE },
     { enabled: canView }
   );
-  const patchesQuery = useGvoPatches({ enabled: canView });
+  // Сводки — СОБРАННЫЕ, с сервера (Plane №166): связь «лицо → мероприятие»
+  // ищется по составу сводки, и считать её в браузере значило бы держать
+  // правило сборки во втором месте.
+  const summariesQuery = useGvoSummaries({ enabled: canView });
 
   if (!permissionsLoading && !canView) {
     return <OpsAccessDenied what="каталога охраняемых лиц" />;
   }
 
-  const patches = patchesByCode(patchesQuery.data);
+  const summaries = summariesByCode(summariesQuery.data);
   const events = eventsQuery.data?.results ?? [];
   const persons = (personsQuery.data?.results ?? []).filter(
     (person) => person.category === category
@@ -85,8 +88,10 @@ export default function ProtectedPersonsPage() {
   function eventsOf(person: ProtectedPerson): SecurityEvent[] {
     const needle = person.name.trim().toLowerCase();
     return events.filter((event) => {
-      const summary = mergeGvoSummary(deriveGvoSummary(event), patches[event.code]);
-      return summary.persons.some(
+      // Сводки нет — мероприятие в подборку НЕ попадает. Домысливать состав
+      // нечем: «лицо здесь названо» это факт из сводки, а не догадка.
+      const summary = summaries[event.code]?.summary;
+      return (summary?.persons ?? []).some(
         (item) => item.name.trim().toLowerCase() === needle
       );
     });
@@ -143,8 +148,8 @@ export default function ProtectedPersonsPage() {
                 key={person.id}
                 person={person}
                 events={eventsOf(person)}
-                isLoadingLinks={eventsQuery.isLoading || patchesQuery.isLoading}
-                isErrorLinks={eventsQuery.isError || patchesQuery.isError}
+                isLoadingLinks={eventsQuery.isLoading || summariesQuery.isLoading}
+                isErrorLinks={eventsQuery.isError || summariesQuery.isError}
                 disclosure={
                   disclosure?.personId === person.id ? disclosure.kind : null
                 }

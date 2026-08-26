@@ -3057,7 +3057,7 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 404,
                 message="Мероприятие с таким кодом не найдено.",
             )
-        return Response(documents_summary.summary_for_event(event))
+        return Response(documents_summary.summary_row(event))
 
     def partial_update(self, request, pk=None):
         try:

@@ -23,19 +23,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSecurityEvents } from "@/hooks/use-security-events";
-import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
+import { useGvoSummaries, summariesByCode } from "@/hooks/use-gvo-summaries";
 import { useAuth } from "@/lib/auth";
 import { StageBadge } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import {
-  deriveGvoSummary,
   gvoSenior,
   gvoStaffCount,
-  isGvoSummaryFilled,
-  mergeGvoSummary,
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
-import type { GvoSummaryPatch } from "@/entities/gvo-summary";
+import type { GvoSummaryRow } from "@/entities/gvo-summary";
 
 // Вкладка не листается: сводки смотрят по всем визитам сразу, а фильтр здесь
 // один — «Мои / Все».
@@ -64,9 +61,11 @@ export function GvoVisitsRegistry() {
     page: 1,
     pageSize: PAGE_SIZE,
   });
-  const patchesQuery = useGvoPatches({ enabled: true });
+  // Сводки приходят СОБРАННЫМИ с сервера, одним запросом на весь реестр
+  // (Plane №166): раньше каждая строка выводила базу из бюллетеня в браузере.
+  const summariesQuery = useGvoSummaries({ enabled: true });
 
-  const patches = patchesByCode(patchesQuery.data);
+  const summaries = summariesByCode(summariesQuery.data);
   const visits = (eventsQuery.data?.results ?? []).filter(
     (event) => event.kind !== "INTERNAL"
   );
@@ -109,10 +108,13 @@ export function GvoVisitsRegistry() {
       </div>
 
       <RegistryTable
-        isLoading={eventsQuery.isLoading || patchesQuery.isLoading}
-        isError={eventsQuery.isError}
+        isLoading={eventsQuery.isLoading || summariesQuery.isLoading}
+        // Отказ ЛЮБОГО из двух источников — отказ таблицы. Без сводок каждая
+        // строка показала бы «Черновик» и пустого старшего, то есть таблица
+        // выглядела бы полной и врала бы в каждой строке.
+        isError={eventsQuery.isError || summariesQuery.isError}
         events={visible}
-        patches={patches}
+        summaries={summaries}
         emptyText={
           scope === "mine" && user === null
             ? "Владелец мероприятия определяется по учётной записи — войдите, чтобы увидеть свои"
@@ -127,13 +129,13 @@ function RegistryTable({
   isLoading,
   isError,
   events,
-  patches,
+  summaries,
   emptyText,
 }: {
   isLoading: boolean;
   isError: boolean;
   events: SecurityEvent[];
-  patches: Record<string, GvoSummaryPatch>;
+  summaries: Record<string, GvoSummaryRow>;
   emptyText: string;
 }) {
   if (isLoading) {
@@ -149,7 +151,7 @@ function RegistryTable({
     return (
       <Card>
         <CardContent className="p-9 text-center text-sm text-destructive-ink">
-          Не удалось загрузить реестр ОМ. Попробуйте обновить страницу.
+          Не удалось загрузить реестр ГВО. Попробуйте обновить страницу.
         </CardContent>
       </Card>
     );
@@ -181,31 +183,51 @@ function RegistryTable({
         </TableHeader>
         <TableBody>
           {events.map((event) => {
-            const patch = patches[event.code];
-            const summary = mergeGvoSummary(deriveGvoSummary(event), patch);
-            const filled = isGvoSummaryFilled(patch);
-            const staff = gvoStaffCount(summary);
+            const row = summaries[event.code];
+            // Строки нет — сводку по этому ОМ сервер не прислал. Так бывает у
+            // мероприятия, заведённого между двумя запросами; показывать
+            // вместо неё выведенный черновик нечем, и строка честно говорит
+            // «нет сведений», а не притворяется заполненной.
+            const summary = row?.summary;
+            const filled = row?.filled ?? false;
+            const staff = summary === undefined ? 0 : gvoStaffCount(summary);
             // Ведём в КАРТОЧКУ мероприятия с раскрытой панелью, а не на свой
             // экран сводки: модуля больше нет, сводка живёт в карточке
             // («Реестр ОМ-35.4»), и `?gvo=1` открывает панель сразу — человек
             // нажал именно на сводку, второе нажатие было бы платой за
             // переезд.
             const href = `/security-ops/events/${event.id}?gvo=1`;
+            const eventCell = (
+              <TableCell>
+                <Link href={href} className="block">
+                  <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
+                    {event.code}
+                  </span>
+                  <span className="mt-1 block text-[12.5px] font-semibold">
+                    {event.title}
+                  </span>
+                  <span className="mt-1 inline-flex">
+                    <StageBadge stage={event.stage} />
+                  </span>
+                </Link>
+              </TableCell>
+            );
+            if (summary === undefined) {
+              return (
+                <TableRow key={event.id}>
+                  {eventCell}
+                  <TableCell
+                    colSpan={6}
+                    className="text-[12.5px] text-destructive-ink"
+                  >
+                    Сводка по этому мероприятию не получена
+                  </TableCell>
+                </TableRow>
+              );
+            }
             return (
               <TableRow key={event.id}>
-                <TableCell>
-                  <Link href={href} className="block">
-                    <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
-                      {event.code}
-                    </span>
-                    <span className="mt-1 block text-[12.5px] font-semibold">
-                      {event.title}
-                    </span>
-                    <span className="mt-1 inline-flex">
-                      <StageBadge stage={event.stage} />
-                    </span>
-                  </Link>
-                </TableCell>
+                {eventCell}
                 <TableCell className="text-[12.5px]">
                   <span className="block font-semibold text-foreground">
                     {summary.country}

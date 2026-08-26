@@ -28,6 +28,7 @@ import {
   type SecurityEvent,
 } from "@/entities/security-event";
 import { addVisitObject } from "../api/visit-objects-api";
+import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 
 export function AddVisitObjectsDialog({
   event,
@@ -91,7 +92,7 @@ export function AddVisitObjectsDialog({
       return failed;
     },
     onSuccess: (failed, objectIds) => {
-      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
       const added = objectIds.length - failed.length;
       if (failed.length === 0) {
         toast({

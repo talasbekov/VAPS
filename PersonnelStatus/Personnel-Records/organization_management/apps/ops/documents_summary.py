@@ -72,7 +72,12 @@ def visit_days(event):
     """
     # `visit_objects` — СВЯЗАННЫЕ ЗАПИСИ, а не поле JSON: порядок задаёт
     # `position` (он же порядок раскрытия строки реестра), а не порядок в базе.
-    rows = event.visit_objects.all().order_by("position", "id")
+    #
+    # Сортировка В ПАМЯТИ, а не `.order_by()`: тот строит НОВЫЙ запрос и
+    # проходит мимо `prefetch_related`, из-за чего реестр сводок ходил в базу
+    # за объектами каждого мероприятия отдельно (Plane №166). Объектов у ОМ
+    # единицы — сортировать их списком дешевле, чем ещё раз спрашивать базу.
+    rows = sorted(event.visit_objects.all(), key=lambda row: (row.position, row.id))
     by_day = {}
     for visit in rows:
         iso = str(visit.visit_day or event.business_date)
@@ -150,6 +155,62 @@ def summary_for_event(event):
         .first()
     )
     return _deep_merge(derive_summary(event), patch or {})
+
+
+def summary_row(event, record=None, *, fetch=True):
+    """Строка сводки: собранная сводка плюс признак «Заполнена».
+
+    `filled` считает СЕРВЕР, а не экран: признак живёт там же, откуда пришла
+    сводка, иначе он снова оказался бы правилом на клиенте.
+    """
+    if fetch:
+        from organization_management.apps.operations.models_gvo import (
+            OpsGvoSummaryPatch,
+        )
+
+        record = OpsGvoSummaryPatch.objects.filter(event_id=event.pk).first()
+    patch = (record.patch if record else None) or {}
+    return {
+        "omCode": event.code,
+        "summary": _deep_merge(derive_summary(event), patch),
+        # «Заполнена» — если по мероприятию есть хоть одна ручная правка.
+        # Иначе «Черновик»: всё показанное выведено из бюллетеня.
+        "filled": bool(patch),
+        # null — правок не было вовсе, а не «время неизвестно».
+        "updatedAt": record.updated_at.isoformat() if record else None,
+    }
+
+
+def assembled_summaries():
+    """Собранные сводки ВСЕХ мероприятий — по одной строке на мероприятие.
+
+    Реестрам (ГВО, охраняемые лица) нужна сводка каждого ОМ, а не только тех,
+    у кого есть ручные правки: у мероприятия без правок сводка не пустая, она
+    выведена из бюллетеня. Поэтому строка есть у каждого, а `filled` отличает
+    «Заполнена» от «Черновика».
+
+    Собирается ОДНИМ проходом, а не вызовом `summary_for_event` в цикле: тот
+    ходит в базу за патчем на каждое мероприятие, и реестр из сорока строк
+    стоил бы сорок запросов.
+    """
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEvent,
+    )
+    from organization_management.apps.operations.models_gvo import (
+        OpsGvoSummaryPatch,
+    )
+
+    patches = {
+        record.event_id: record
+        for record in OpsGvoSummaryPatch.objects.all()
+    }
+    events = OpsSecurityEvent.objects.prefetch_related("visit_objects").order_by(
+        "code"
+    )
+    return [
+        summary_row(event, patches.get(event.pk), fetch=False)
+        for event in events
+    ]
 
 
 def _person_lines(person):

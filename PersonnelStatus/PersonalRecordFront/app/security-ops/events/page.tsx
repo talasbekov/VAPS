@@ -58,6 +58,7 @@ import type {
   VisitObject,
 } from "@/entities/security-event";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 
 const PAGE_SIZE = 20;
 
@@ -440,7 +441,7 @@ function EventRow({
   const removal = useMutation({
     mutationFn: deleteSecurityEvent,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
       toast({ title: `Мероприятие ${event.code} удалено` });
       setDeleteOpen(false);
     },
@@ -686,7 +687,7 @@ function VisitObjectList({
   const removal = useMutation({
     mutationFn: removeVisitObject,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
       toast({ title: "Объект снят с мероприятия" });
     },
     // Отказ сервера ОБЪЯСНЯЕТСЯ: снять объект нельзя, пока за ним числятся
@@ -889,7 +890,7 @@ function ChiefLine({
   const removal = useMutation({
     mutationFn: removeVisitObjectChief,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
       toast({ title: "Старший снят с объекта" });
     },
     onError: (error: unknown) => {
@@ -1000,7 +1001,7 @@ function DeputyLine({
   const removal = useMutation({
     mutationFn: removeVisitObjectDeputy,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
       toast({ title: "Замещающий снят" });
     },
     onError: (error: unknown) => {

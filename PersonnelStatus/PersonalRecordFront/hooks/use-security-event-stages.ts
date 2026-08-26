@@ -67,6 +67,7 @@ import type {
   UpdateForceAllocationRequest,
   UpdateReconRequest,
 } from "@/entities/security-event";
+import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 
 interface StageMutationOptions {
   onFormError?: (details: Record<string, unknown>) => void;
@@ -85,7 +86,7 @@ function useEventMutation<TVariables extends Record<string, unknown>>(
     mutationFn,
     onSuccess: (data) => {
       queryClient.setQueryData(["ops-security-events", "detail", id], data);
-      void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
       options?.onEvent?.(data);
     },
     onFormError: options?.onFormError,

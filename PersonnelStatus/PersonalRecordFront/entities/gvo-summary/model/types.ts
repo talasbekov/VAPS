@@ -139,6 +139,34 @@ export interface ListGvoSummaryPatchesResponse {
   results: GvoSummaryPatchRecord[];
 }
 
+/**
+ * СОБРАННАЯ сводка мероприятия — то, что показывает экран. Приходит с сервера
+ * целиком (Plane №166): раньше базу выводил браузер, а сервер хранил только
+ * патч, и две сборки успели разойтись на форме даты.
+ *
+ * `filled` — «Заполнена» против «Черновика»: есть ли по мероприятию хоть одна
+ * ручная правка. Клиент это больше не вычисляет: признак приходит оттуда же,
+ * откуда сводка.
+ */
+export interface GvoSummaryRow {
+  omCode: string;
+  summary: GvoSummary;
+  filled: boolean;
+  /** null — правок не было вовсе, а не «время неизвестно». */
+  updatedAt: string | null;
+}
+
+export interface ListGvoSummariesResponse {
+  results: GvoSummaryRow[];
+}
+
+/** Собранные сводки ВСЕХ мероприятий — одним запросом, для реестров. */
+export const GVO_SUMMARIES_ASSEMBLED_PATH = `${GVO_SUMMARIES_PATH}assembled/`;
+
+/** Собранная сводка ОДНОГО мероприятия. Тот же адрес, что у правки: PATCH
+ * кладёт правки, GET отдаёт результат. */
+export const gvoSummaryPath = gvoSummaryPatchPath;
+
 export interface UpdateGvoSummaryRequest extends Record<string, unknown> {
   section: GvoSection;
   /** Разобранные значения формы — разбор текста живёт на клиенте. */
