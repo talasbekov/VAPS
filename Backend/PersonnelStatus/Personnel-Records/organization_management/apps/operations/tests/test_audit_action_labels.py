@@ -17,7 +17,7 @@
 import pathlib
 import re
 
-from organization_management.apps.operations.audit_service import ACTIONS
+from organization_management.apps.operations.audit_service import ACTIONS, ENTITY_TYPES
 
 # Фронт лежит соседом бэкенда в одном репозитории; путь считается от файла
 # пробы, а не от cwd — прогон зовут и из корня, и из каталога приложения.
@@ -31,6 +31,8 @@ LABELS_FILE = (
 # Ключ карты: `ИМЯ_ДЕЙСТВИЯ: "подпись",` — имена действий заглавные с
 # подчёркиваниями, поэтому чужие ключи файла под шаблон не попадают.
 KEY_PATTERN = re.compile(r"^\s{2}([A-Z][A-Z0-9_]+):\s*\"", re.MULTILINE)
+# Ключ карты сущностей — строчными с подчёркиваниями (`access_user_role`).
+ENTITY_KEY_PATTERN = re.compile(r"^\s{2}([a-z][a-z0-9_]+):\s*\"", re.MULTILINE)
 
 
 def labelled_actions():
@@ -69,5 +71,46 @@ def test_audit_action_labels_have_no_phantom_codes():
 
     assert phantom == set(), (
         "эти подписи не соответствуют ни одному действию сервера: "
+        f"{sorted(phantom)}"
+    )
+
+
+def labelled_entities():
+    """Ключи карты подписей ТИПОВ СУЩНОСТЕЙ (Plane №69)."""
+    source = LABELS_FILE.read_text(encoding="utf-8")
+    marker = "export const AUDIT_ENTITY_LABEL"
+    assert marker in source, (
+        "в файле нет карты AUDIT_ENTITY_LABEL — её переименовали или снесли; "
+        "без неё колонка «Объект» снова печатает машинные строки вида "
+        "`access_user_role · 12`"
+    )
+    body = source[source.index(marker) :]
+    body = body[: body.index("};")]
+    return set(ENTITY_KEY_PATTERN.findall(body))
+
+
+def test_audit_entity_labels_cover_every_entity_type():
+    """У каждого типа сущности есть русская подпись на экране.
+
+    Сторож — родной брат того, что стоит на действиях, и стоит по той же
+    причине: закрытый мир кодов ведёт сервер (`ENTITY_TYPES`), а подпись
+    дописывают на экране — или забывают, и человек читает `access_user_role`
+    вместо «Назначение роли».
+    """
+    missing = ENTITY_TYPES - labelled_entities()
+
+    assert missing == set(), (
+        "у этих типов сущностей нет подписи на экране аудита — они приедут "
+        f"туда машинной строкой: {sorted(missing)}"
+    )
+
+
+def test_audit_entity_labels_have_no_phantom_types():
+    """И обратно: подпись без типа переживает переименование на сервере и
+    делает вид, что подпись есть."""
+    phantom = labelled_entities() - ENTITY_TYPES
+
+    assert phantom == set(), (
+        "эти подписи не соответствуют ни одному типу сущности сервера: "
         f"{sorted(phantom)}"
     )
