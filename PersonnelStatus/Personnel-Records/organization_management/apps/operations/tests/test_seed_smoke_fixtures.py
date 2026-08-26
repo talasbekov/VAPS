@@ -151,13 +151,18 @@ def test_it_refuses_loudly_without_the_status_dictionary(structure, policy):
 def test_the_event_reaches_forces_through_the_real_chain(stand):
     """Признак штатного пути, а не вставки строкой: переходы стадий записаны.
 
-    Мероприятие с проставленным `stage="FORCES"` показало бы заявки без
-    потребности — состояние, которого система сама породить не может.
+    Мероприятие с проставленной стадией показало бы заявки без потребности —
+    состояние, которого система сама породить не может.
+
+    Стадия фикстуры сменилась на «Расстановку» осознанно (Plane №110):
+    «Потребность» и «Запрос сил» проходит сервер, и фикстура на них больше не
+    останавливается. Пин не снят — он по-прежнему стережёт, что обе стадии в
+    истории ЕСТЬ, то есть путь был штатным.
     """
     seed()
 
     event = fixture_event()
-    assert event.stage == "FORCES"
+    assert event.stage == "PLACEMENT"
     assert event.demand_approved is True
     stages = list(
         OpsSecurityEventTransition.objects.filter(event=event).values_list(
@@ -170,8 +175,11 @@ def test_the_event_reaches_forces_through_the_real_chain(stand):
 def test_no_request_shortfall_collides_with_the_probes_number(stand):
     """Проба недобора подменяет первую заявку на 9/4 и ищет «не отдано 5».
 
-    Вторая заявка обязана давать ДРУГОЕ число: два одинаковых текста на
-    экране роняют пробу строгим режимом.
+    Заявка теперь ОДНА на мероприятие (Plane №110): групп, по которым они
+    дробились, никто не вводит. Требование «вторая заявка даёт другое число»
+    отпало вместе со второй заявкой, но сторож остался — ни одна заявка
+    фикстуры не должна давать недобор 5, иначе на экране два одинаковых
+    текста и проба падает строгим режимом.
     """
     seed()
 
@@ -179,7 +187,7 @@ def test_no_request_shortfall_collides_with_the_probes_number(stand):
         int(row["requestedCount"]) - int(row["allocatedCount"])
         for row in fixture_event().force_requests
     }
-    assert len(fixture_event().force_requests) >= 2
+    assert len(fixture_event().force_requests) == 1
     assert 5 not in shortfalls
 
 

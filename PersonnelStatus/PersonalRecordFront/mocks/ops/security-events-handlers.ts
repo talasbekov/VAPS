@@ -91,6 +91,43 @@ import {
 import { PROTECTED_PERSONS_CATALOG } from "./protected-persons-handlers";
 import { appendAudit } from "./audit-store";
 
+/** Подпись автозаявки на силы — порт `AUTO_FORCE_REQUEST_GROUP` бэкенда
+ * (Plane №110). Не название пула, а источник числа: заявка одна на
+ * мероприятие и говорит, откуда взялась. */
+const AUTO_FORCE_REQUEST_GROUP = "По расчёту рекогносцировки";
+
+/** Окно, в котором живёт сбор сил, — порт `_ALLOCATION_STAGES` бэкенда. */
+const COLLECTION_STAGES: readonly SecurityEventStage[] = [
+  "DEMAND",
+  "FORCES",
+  "PLACEMENT",
+];
+
+/** Свести числа автозаявки с фактом сбора — порт `_sync_auto_force_request`.
+ *
+ * Трогается ТОЛЬКО автозаявка: у мероприятий, которые вели числами по группам,
+ * эти строки заполнял человек, и пересчёт затёр бы его работу. */
+function syncAutoForceRequest(
+  requests: SecurityEvent["forceRequests"],
+  accepted: number,
+  split = false
+): SecurityEvent["forceRequests"] {
+  if (requests.length !== 1 || requests[0].group !== AUTO_FORCE_REQUEST_GROUP) {
+    return requests;
+  }
+  const requested = requests[0].requestedCount;
+  const status =
+    accepted >= requested && requested > 0
+      ? "ALLOCATED"
+      : accepted > 0
+        ? "PARTIALLY_ALLOCATED"
+        : split
+          ? "SENT"
+          : "NOT_SENT";
+  return [{ ...requests[0], allocatedCount: accepted, status }];
+}
+
+
 const STORE_KEY = "ops-mock-security-events";
 
 /** Шаблон чек-листа рекогносцировки нового ОМ. */
@@ -476,7 +513,7 @@ export const securityEventsHandlers = [
   http.get(`*${SECURITY_EVENTS_PATH}`, ({ request }) => {
     const url = new URL(request.url);
     const search = (url.searchParams.get("search") ?? "").trim().toLowerCase();
-    const stage = url.searchParams.get("stage") as SecurityEventStage | null;
+    const stage = url.searchParams.get("stage");
     const page = Number(url.searchParams.get("page") ?? "1") || 1;
     const pageSize = Number(url.searchParams.get("page_size") ?? "20") || 20;
 
@@ -484,7 +521,12 @@ export const securityEventsHandlers = [
       b.createdAt.localeCompare(a.createdAt)
     );
     if (stage) {
-      filtered = filtered.filter((e) => e.stage === stage);
+      // Список стадий через запятую — порт правила бэка (Plane №110): ленты
+      // сбора сил спрашивают окно из трёх стадий одним запросом.
+      const wanted = new Set(
+        stage.split(",").map((part) => part.trim()).filter((part) => part !== "")
+      );
+      filtered = filtered.filter((e) => wanted.has(e.stage));
     }
     const from = url.searchParams.get("from") ?? "";
     const to = url.searchParams.get("to") ?? "";
@@ -886,11 +928,41 @@ export const securityEventsHandlers = [
       (sum, row) => sum + Math.max(row.need || 0, 0),
       0
     );
+    // Стадии «Потребность» и «Запрос сил» проходит сервер сам (Plane №110):
+    // форм у них больше нет, и завершение осмотра выводит ОМ на «Расстановку».
+    // Потребность собирается из расчёта постов, заявка на силы — одна.
+    const demandRows = event.reconSectorPosts.map((post, index) => ({
+      id: `demand-${index + 1}`,
+      sector: post.sector,
+      task: post.task !== "" ? post.task : post.post,
+      shift: "",
+      need: Math.max(post.need || 0, 0),
+      group: "",
+      requirements: post.requirements,
+      comment: "",
+    }));
+    const forceNeed = demandRows.reduce((sum, row) => sum + row.need, 0);
     return HttpResponse.json(
       saveEvent({
         ...event,
-        stage: "DEMAND",
-        readinessPercent: 30,
+        stage: "PLACEMENT",
+        readinessPercent: 60,
+        demandRows,
+        demandApproved: true,
+        forceNeed,
+        forceRequests:
+          forceNeed > 0
+            ? [
+                {
+                  id: "force-request-1",
+                  group: AUTO_FORCE_REQUEST_GROUP,
+                  requestedCount: forceNeed,
+                  allocatedCount: 0,
+                  status: "NOT_SENT" as const,
+                  comment: "",
+                },
+              ]
+            : [],
         reconForceRequest:
           event.reconForceRequest < 1 ? requestedFromPosts : event.reconForceRequest,
         // Момент отправки штабу ставит ЗАВЕРШЕНИЕ этапа, а не правка расчёта.
@@ -968,10 +1040,11 @@ export const securityEventsHandlers = [
       if (event === null) return response;
       const body = (await request.json()) as SplitForceDemandRequest;
       const rows = body.rows ?? [];
-      if (event.stage !== "DEMAND" && event.stage !== "FORCES") {
+      // «Расстановка» в окне сбора с Plane №110 — порт `_ALLOCATION_STAGES`.
+      if (!COLLECTION_STAGES.includes(event.stage)) {
         return businessRuleError(
           "INVALID_STAGE_TRANSITION",
-          "Раскладывать потребность можно на этапах «Потребность» и «Запрос сил»."
+          "Раскладывать потребность можно после рекогносцировки и до согласования расстановки."
         );
       }
       const fieldErrors: Record<string, string[]> = {};
@@ -1037,7 +1110,18 @@ export const securityEventsHandlers = [
         };
       });
       return HttpResponse.json(
-        saveEvent({ ...event, forceAllocation, updatedAt: nowIso() })
+        saveEvent({
+          ...event,
+          forceAllocation,
+          // Раскладка есть — значит заявка ушла из «не отправлена»: порт
+          // правила бэка (Plane №110).
+          forceRequests: syncAutoForceRequest(
+            event.forceRequests,
+            event.forceRoster.length,
+            forceAllocation.length > 0
+          ),
+          updatedAt: nowIso(),
+        })
       );
     }
   ),
@@ -1058,10 +1142,11 @@ export const securityEventsHandlers = [
       const { event, response } = findEvent(params.id as string);
       if (event === null) return response;
       const allocationId = params.allocationId as string;
-      if (event.stage !== "DEMAND" && event.stage !== "FORCES") {
+      // «Расстановка» в окне сбора с Plane №110 — порт `_ALLOCATION_STAGES`.
+      if (!COLLECTION_STAGES.includes(event.stage)) {
         return businessRuleError(
           "INVALID_STAGE_TRANSITION",
-          "Оповещать управления можно на этапах «Потребность» и «Запрос сил»."
+          "Оповещать управления можно после рекогносцировки и до согласования расстановки."
         );
       }
       const target = event.forceAllocation.find((row) => row.id === allocationId);
@@ -1119,10 +1204,11 @@ export const securityEventsHandlers = [
       if (event === null) return response;
       const allocationId = params.allocationId as string;
       const body = (await request.json()) as { employeeId: string };
-      if (event.stage !== "DEMAND" && event.stage !== "FORCES") {
+      // «Расстановка» в окне сбора с Plane №110 — порт `_ALLOCATION_STAGES`.
+      if (!COLLECTION_STAGES.includes(event.stage)) {
         return businessRuleError(
           "INVALID_STAGE_TRANSITION",
-          "Выделять людей можно на этапах «Потребность» и «Запрос сил»."
+          "Выделять людей можно после рекогносцировки и до согласования расстановки."
         );
       }
       const target = event.forceAllocation.find((row) => row.id === allocationId);
@@ -1330,10 +1416,11 @@ export const securityEventsHandlers = [
           // источник кандидатов подбора (Plane №65, «Р-2»).
           ...personnelDayStatus(member.employeeId),
         }));
+      const roster = [...event.forceRoster, ...incoming];
       return HttpResponse.json(
         saveEvent({
           ...event,
-          forceRoster: [...event.forceRoster, ...incoming],
+          forceRoster: roster,
           forceAllocation: event.forceAllocation.map((row) =>
             row.id === target.id
               ? {
@@ -1344,6 +1431,10 @@ export const securityEventsHandlers = [
                 }
               : row
           ),
+          // Числа автозаявки сводит с составом сервер — порт
+          // `_sync_auto_force_request` (Plane №110): без него лента штаба
+          // показывала бы вечный недобор при собранном составе.
+          forceRequests: syncAutoForceRequest(event.forceRequests, roster.length),
           updatedAt: now,
         })
       );

@@ -295,7 +295,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # 20 лишних round-trip, календарь берёт 200).
         rows = list(OpsSecurityEvent.objects.prefetch_related("visit_objects__deputies"))
         if stage:
-            rows = [e for e in rows if e.stage == stage]
+            # Список стадий через запятую, а не одна: ленты «Сбора сил на ОМ»
+            # спрашивают ОКНО, в котором сбор живёт («Потребность», «Запрос
+            # сил», «Расстановка»), а не одну стадию (Plane №110). Фильтровать
+            # такое окно на клиенте значило бы сузить только загруженную
+            # страницу — тот же вид вранья, что и с периодом выше.
+            wanted = {part.strip() for part in stage.split(",") if part.strip()}
+            rows = [e for e in rows if e.stage in wanted]
         if date_from:
             rows = [e for e in rows if str(e.business_date) >= date_from]
         if date_to:

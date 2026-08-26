@@ -815,21 +815,9 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         force_request=12,
     ).recon_sector_posts[0]["id"]
     event_service.complete_recon(om.pk)
-    event_service.approve_demand(
-        om.pk,
-        rows=[
-            {
-                "id": "demand-1",
-                "sector": "Периметр",
-                "task": "Охрана",
-                "shift": "день",
-                "need": 1,
-                "group": "ГР-1",
-                "requirements": "",
-                "comment": "",
-            }
-        ],
-    )
+    # Стадии «Потребность» и «Запрос сил» проходит сервер сам (Plane №110):
+    # завершение рекогносцировки оставляет ОМ уже на «Расстановке», и ручное
+    # утверждение потребности здесь отбилось бы «не на этом этапе».
     # Сбор сил (Plane №73): раскладка потребности по департаментам сама следа
     # не оставляет — это решение штаба внутри мероприятия, — а вот ОПОВЕЩЕНИЕ
     # управлений пишет журнал: с него начинается ответственность людей вне ОМ.
@@ -894,13 +882,8 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.accept_allocation(om.pk, allocation["id"], actor=ACTOR)
 
     om.refresh_from_db()
-    event_service.update_force_allocation(
-        om.pk,
-        om.force_requests[0]["id"],
-        allocated_count=1,
-        comment="",
-    )
-    event_service.complete_forces(om.pk)
+    # Числа автозаявки сводит с составом сам сервер (`_sync_auto_force_request`),
+    # а «завершить выделение» больше некому нажать: ОМ уже на «Расстановке».
     event_service.assign_placement(
         om.pk,
         post_id=recon_post_id,

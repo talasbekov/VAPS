@@ -52,7 +52,10 @@ async function events(token: string, stage = ''): Promise<EventRow[]> {
  * поиск по первой странице реестра перестаёт находить фикстуру, как только
  * стенд наберёт полсотни мероприятий, и проба уходит в молчаливый skip. */
 async function collapsedStageEvent(token: string): Promise<EventRow | undefined> {
-  for (const stage of ['DEMAND', 'FORCES', 'CONDUCT', 'CLOSED']) {
+  // «Потребность» и «Запрос сил» из списка убраны (Plane №110): их проходит
+  // сервер, ОМ на них не стоит, и первый же заход возвращал бы пусто —
+  // проба уходила бы в skip вместо проверки подписи свёрнутой стадии.
+  for (const stage of ['CONDUCT', 'CLOSED']) {
     const found = (await events(token, stage))[0]
     if (found !== undefined) return found
   }
@@ -115,8 +118,6 @@ test.describe(LIVE ? 'цепочка этапов' : 'цепочка этапо�
     test.skip(collapsed === undefined, 'на стенде нет ОМ на свёрнутой стадии')
     await page.goto(`${APP}/security-ops/events/${collapsed!.id}/`)
     const expected: Record<string, string> = {
-      DEMAND: 'Подготовка расчёта: потребность',
-      FORCES: 'Подготовка расчёта: выделение сил',
       CONDUCT: 'Проведение и закрытие',
       CLOSED: 'Дело закрыто',
     }

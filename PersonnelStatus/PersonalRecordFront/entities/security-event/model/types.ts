@@ -477,7 +477,9 @@ export interface BindableObject {
 
 export interface ListSecurityEventsParams {
   search: string;
-  stage: SecurityEventStage | "ALL";
+  /** Одна стадия, `"ALL"` — без отбора, либо НЕСКОЛЬКО стадий через запятую:
+   * ленты сбора сил спрашивают окно из трёх стадий одним запросом. */
+  stage: SecurityEventStage | "ALL" | `${SecurityEventStage},${string}`;
   /** Границы периода по бизнес-дате (YYYY-MM-DD); пусто — без границы. */
   from: string;
   to: string;

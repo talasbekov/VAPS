@@ -11,8 +11,9 @@
  * стадии «Проведение» (панель закрытия) и одно закрытое (снимок итогов). Нет
  * такого — проба СКИПАЕТСЯ, молча не зеленеет. Подготовить «Проведение» можно
  * через API: создать → bulletin/complete → recon/import-from-passport →
- * чек-лист → recon/complete → demand/approve → forces → placement/assign на
- * каждый пост → placement/complete → approval/approve → acknowledge каждого →
+ * чек-лист → recon/complete (он же проходит «Потребность» и «Запрос сил»,
+ * Plane №110) → placement/assign на каждый пост → placement/complete →
+ * approval/approve → acknowledge каждого →
  * acknowledgement/complete.
  *
  * Само закрытие проба НЕ выполняет: оно необратимо и сделало бы фикстуру

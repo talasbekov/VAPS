@@ -65,6 +65,11 @@ import type { Employee } from "@/entities/employee/model/types";
  * вместо прежних четырёх плиток, блок заявок на силы и две вкладки с тем же
  * списком, отобранным по статусу.
  */
+/** Окно, в котором живёт сбор сил: от завершения рекогносцировки до
+ * согласования расстановки. Зеркалит `_ALLOCATION_STAGES` бэкенда — лента не
+ * должна показывать мероприятие, действия в котором сервер отобьёт. */
+const COLLECTION_STAGES = "DEMAND,FORCES,PLACEMENT" as const;
+
 const FORCE_REQUEST_LABEL: Record<string, string> = {
   NOT_SENT: "Не отправлен",
   SENT: "Отправлен",
@@ -284,28 +289,19 @@ function EmployeesScreen() {
   // Разрез сбора сил. Живёт РЯДОМ с реестром, а не вместо него: список
   // сотрудников и его отбор — прежние, добавлен только вопрос «кого отдали».
   const gathering = useForcesGathering();
-  const forcesEvents = useSecurityEvents({
-    search: "",
-    stage: "FORCES",
-    from: "",
-    to: "",
-    owner: "",
-    page: 1,
-    pageSize: 50,
-  });
-  const forcesRows = useMemo(
-    () => forcesEvents.data?.results ?? [],
-    [forcesEvents.data]
-  );
   // Входящие штаба 2-го департамента: запрос личного состава, направленный
-  // ЗАВЕРШЕНИЕМ рекогносцировки (Plane «Реестр ОМ-23»). Такое ОМ стоит на
-  // стадии «Потребность» — раскладка запроса по департаментам это и есть она,
-  // — и в блок «Запрос сил по мероприятиям» ниже ещё не попадает: тот ведёт
-  // УЖЕ утверждённые заявки. Без отдельного запроса штаб узнавал бы о числе
-  // только после того, как кто-то потребность утвердит, то есть последним.
+  // ЗАВЕРШЕНИЕМ рекогносцировки (Plane «Реестр ОМ-23»).
+  //
+  // Спрашивается ОКНО СБОРА, а не одна стадия (Plane №110). «Потребность» и
+  // «Запрос сил» проходит сервер сам, и мероприятие приходит на «Расстановку»
+  // сразу с рекогносцировки — отбор по `stage=DEMAND` оставил бы ленту штаба
+  // пустой навсегда, то есть погасил бы всю цепочку сбора сил. Три стадии —
+  // ровно то окно, в котором сервер разрешает править раскладку
+  // (`_ALLOCATION_STAGES`): лента не должна показывать мероприятие, действия
+  // в котором сервер отобьёт.
   const inboundEvents = useSecurityEvents({
     search: "",
-    stage: "DEMAND",
+    stage: COLLECTION_STAGES,
     from: "",
     to: "",
     owner: "",
@@ -329,13 +325,13 @@ function EmployeesScreen() {
   const forcesDemand = useMemo(() => {
     let requested = 0;
     let allocated = 0;
-    for (const event of forcesRows) {
+    for (const event of inboundRows) {
       const totals = eventForceTotals(event);
       requested += totals.requested;
       allocated += totals.allocated;
     }
     return { requested, allocated };
-  }, [forcesRows]);
+  }, [inboundRows]);
 
   // Кто на мероприятии и кто в строю — по идентификаторам разреза сбора:
   // легаси-запись сотрудника кода «Участие в ОМ» не знает вовсе (у типа нет
@@ -619,19 +615,33 @@ function EmployeesScreen() {
           />
         </div>
 
-        {/* Входящие штаба: запросы, пришедшие С РЕКОГНОСЦИРОВКИ и ещё не
-            разложенные по департаментам. Стоят ВЫШЕ заявок: это работа,
-            которую штаб ещё не начал, а заявки ниже — та, что уже идёт. */}
+        {/* Сбор сил: ОДНА лента вместо двух (Plane №110).
+            До задачи их разводили СТАДИИ — «Потребность» ждала распределения,
+            «Запрос сил» вела план против факта. Стадии проходит сервер, обе
+            ленты стали описывать одно и то же множество, и любой признак,
+            которым их пробовали развести, заставлял карточку ПРЫГАТЬ из блока
+            в блок посреди работы: человек сохранял раскладку — и терял из-под
+            курсора панель, которой её ведёт. Один блок, одна карточка на ОМ,
+            план и факт в её шапке. */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex flex-wrap items-baseline justify-between gap-2 text-base">
               <span className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
-                Запросы с рекогносцировки — ждут распределения
+                Запрос сил по мероприятиям
               </span>
               {inboundTotal > 0 && (
                 <span className="text-xs font-normal text-muted-foreground">
                   всего запрошено {inboundTotal} чел.
+                  {forcesDemand.requested > 0 && (
+                    <>
+                      {" · "}выделено {forcesDemand.allocated} из{" "}
+                      {forcesDemand.requested}
+                      {forcesDemand.allocated < forcesDemand.requested && (
+                        <> · недобор {forcesDemand.requested - forcesDemand.allocated}</>
+                      )}
+                    </>
+                  )}
                 </span>
               )}
             </CardTitle>
@@ -677,108 +687,68 @@ function EmployeesScreen() {
                   </p>
                 </div>
                 </div>
+                {/* План против факта по ЭТОМУ мероприятию — перенесено из
+                    снятой второй ленты: недобор виден и суммой, и построчно. */}
+                {(() => {
+                  const totals = eventForceTotals(event);
+                  const gap = totals.requested - totals.allocated;
+                  if (totals.requested === 0) return null;
+                  return (
+                    <div className="mt-2">
+                      <p className="text-xs tabular-nums text-muted-foreground">
+                        {totals.allocated} из {totals.requested} · {totals.percent}%
+                        {gap > 0 && (
+                          <span className="ml-2 font-semibold text-amber-700">
+                            недобор {gap}
+                          </span>
+                        )}
+                      </p>
+                      <Progress value={totals.percent} className="mt-1 h-2" />
+                      <ul className="mt-2 space-y-1">
+                        {event.forceRequests.map((request) => {
+                          const short =
+                            request.requestedCount - request.allocatedCount;
+                          return (
+                            <li
+                              key={request.id}
+                              className="flex flex-wrap items-baseline gap-2 border-b py-1 text-xs last:border-0"
+                            >
+                              <span className="flex-1 truncate">{request.group}</span>
+                              <span className="tabular-nums text-muted-foreground">
+                                {request.allocatedCount} из {request.requestedCount}
+                              </span>
+                              {/* Недодача названа у КАЖДОЙ строки, а не только
+                                  суммой: сумма говорит «сколько», строка — «с кого». */}
+                              {short > 0 && (
+                                <span className="tabular-nums font-semibold text-amber-700">
+                                  не отдано {short}
+                                </span>
+                              )}
+                              <Badge
+                                variant="secondary"
+                                className={
+                                  FORCE_REQUEST_CLASS[request.status] ??
+                                  "bg-gray-100 text-gray-800"
+                                }
+                              >
+                                {FORCE_REQUEST_LABEL[request.status] ?? request.status}
+                              </Badge>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  );
+                })()}
                 {/* Раскладка живёт ЗДЕСЬ, а не на своём экране: разложить
                     пришедшее число — продолжение той же строки, в которой оно
                     показано (Plane №73, шаг «СС-1»). */}
                 <ForcesSplitPanel event={event} />
               </div>
             ))}
-          </CardContent>
-        </Card>
-
-        {/* Заявки на силы: план против факта. Отвечает на вопрос «чем
-            добирать» — недобор виден и по мероприятию, и по департаменту. */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex flex-wrap items-baseline justify-between gap-2 text-base">
-              <span className="flex items-center gap-2">
-                <Building2 className="h-4 w-4" />
-                Запрос сил по мероприятиям
-              </span>
-              {forcesDemand.requested > 0 && (
-                <span className="text-xs font-normal text-muted-foreground">
-                  выделено {forcesDemand.allocated} из {forcesDemand.requested}
-                  {forcesDemand.allocated < forcesDemand.requested && (
-                    <> · недобор {forcesDemand.requested - forcesDemand.allocated}</>
-                  )}
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {forcesEvents.isPending && (
-              <p className="text-xs text-muted-foreground">Загрузка сборов…</p>
-            )}
-            {forcesEvents.isError && (
-              <p className="text-xs text-muted-foreground">
-                Реестр мероприятий сейчас недоступен.
-              </p>
-            )}
-            {forcesEvents.data && forcesRows.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                Мероприятий на стадии «Запрос сил» нет — собирать не под что.
-              </p>
-            )}
-            {forcesRows.map((event) => {
-              const totals = eventForceTotals(event);
-              const gap = totals.requested - totals.allocated;
-              return (
-                <div key={event.id} className="rounded-lg border p-3">
-                  <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{event.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatIsoDate(event.businessDate)} · {event.objectName}
-                      </p>
-                    </div>
-                    <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {totals.allocated} из {totals.requested} · {totals.percent}%
-                      {gap > 0 && (
-                        <span className="ml-2 font-semibold text-amber-700">
-                          недобор {gap}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <Progress value={totals.percent} className="h-2" />
-                  {event.forceRequests.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {event.forceRequests.map((request) => {
-                        const short =
-                          request.requestedCount - request.allocatedCount;
-                        return (
-                          <li
-                            key={request.id}
-                            className="flex flex-wrap items-baseline gap-2 border-b py-1 text-xs last:border-0"
-                          >
-                            <span className="flex-1 truncate">{request.group}</span>
-                            <span className="tabular-nums text-muted-foreground">
-                              {request.allocatedCount} из {request.requestedCount}
-                            </span>
-                            {/* Недодача названа у КАЖДОЙ строки, а не только
-                                суммой: сумма говорит «сколько», строка — «с кого». */}
-                            {short > 0 && (
-                              <span className="tabular-nums font-semibold text-amber-700">
-                                не отдано {short}
-                              </span>
-                            )}
-                            <Badge
-                              variant="secondary"
-                              className={
-                                FORCE_REQUEST_CLASS[request.status] ??
-                                "bg-gray-100 text-gray-800"
-                              }
-                            >
-                              {FORCE_REQUEST_LABEL[request.status] ?? request.status}
-                            </Badge>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              );
-            })}
+            {/* Оговорка переехала из снятого второго блока: она про ЭТИ же
+                заявки, и потерять её вместе с блоком значило бы убрать
+                предупреждение, а не дубль. */}
             <p className="text-[11px] text-muted-foreground">
               Довыделение отдельной строкой раздел пока не хранит: заявка
               департаменту одна, и увеличение выделения переписывает её же —

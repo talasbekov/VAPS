@@ -539,44 +539,28 @@ def test_full_lifecycle_walkthrough(manager):
     assert resp.json()["reconForceRequest"] == 0
     assert resp.json()["reconForceRequestedAt"] is None
     data = manager.post(f"{base}recon/complete/").json()
-    assert (data["stage"], data["readinessPercent"]) == ("DEMAND", 30)
+    # Завершение осмотра проводит ОМ через «Потребность» и «Запрос сил» и
+    # оставляет на «Расстановке» (Plane №110): форм у этих двух стадий больше
+    # нет, и человек их не проходит.
+    assert (data["stage"], data["readinessPercent"]) == ("PLACEMENT", 60)
     # Штабу уходит РАСЧЁТ ПО ПОСТАМ, посчитанный сервером на завершении.
     assert data["reconForceRequest"] == sum(row["need"] for row in posts)
     assert data["reconForceRequestedAt"] is not None
-
-    # DEMAND: утверждение строк агрегирует запросы сил по группам
-    rows = [
-        {
-            "id": "d-1", "sector": "Периметр", "task": "Охрана", "shift": "день",
-            "need": 2, "group": "ГР-1", "requirements": "", "comment": "",
-        },
-        {
-            "id": "d-2", "sector": "Периметр", "task": "КПП", "shift": "ночь",
-            "need": 1, "group": "ГР-1", "requirements": "", "comment": "",
-        },
-    ]
-    data = manager.post(f"{base}demand/approve/", {"rows": rows}, format="json").json()
-    assert (data["stage"], data["forceNeed"]) == ("FORCES", 3)
+    # Потребность собрана из расчёта постов, а не выдумана: строк столько же,
+    # сколько постов, и сумма та же.
+    assert data["demandApproved"] is True
+    assert len(data["demandRows"]) == len(posts)
+    assert data["forceNeed"] == sum(row["need"] for row in posts)
     assert len(data["forceRequests"]) == 1
-    assert data["forceRequests"][0]["requestedCount"] == 3
-
-    # FORCES: частичное выделение не пропускает, полное — двигает
-    request_id = data["forceRequests"][0]["id"]
-    manager.patch(
-        f"{base}forces/{request_id}/",
-        {"allocatedCount": 1, "comment": "первая рота"},
-        format="json",
+    assert data["forceRequests"][0]["requestedCount"] == data["forceNeed"]
+    # История переходов обязана показать, что пройденные стадии БЫЛИ: иначе
+    # лента соврала бы про цепочку, по которой шло мероприятие.
+    passed = list(
+        OpsSecurityEventTransition.objects.filter(event_id=event_id)
+        .order_by("id")
+        .values_list("to_stage", flat=True)
     )
-    resp = manager.post(f"{base}forces/complete/")
-    assert resp.json()["error_code"] == "FORCE_ALLOCATION_INCOMPLETE"
-    data = manager.patch(
-        f"{base}forces/{request_id}/",
-        {"allocatedCount": 3, "comment": "полностью"},
-        format="json",
-    ).json()
-    assert data["forceRequests"][0]["status"] == "ALLOCATED"
-    data = manager.post(f"{base}forces/complete/").json()
-    assert (data["stage"], data["readinessPercent"]) == ("PLACEMENT", 60)
+    assert passed[-3:] == ["DEMAND", "FORCES", "PLACEMENT"]
 
     # PLACEMENT: назначение на пост; неукомплектованность держит стадию
     post_id = data["reconSectorPosts"][0]["id"]

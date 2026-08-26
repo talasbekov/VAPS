@@ -1123,7 +1123,11 @@ def complete_recon(event_id):
             "updated_at",
         ]
     )
-    return _advance(event, "DEMAND")
+    # Стадии «Потребность» и «Запрос сил» человек больше не ведёт руками
+    # (Plane №110): их проходит сервер расчётом рекогносцировки, и завершение
+    # осмотра выводит мероприятие сразу на «Расстановку».
+    _advance(event, "DEMAND")
+    return _autopass_demand_and_forces(event)
 
 
 # ── Потребность ─────────────────────────────────────────────────────────────
@@ -1197,6 +1201,121 @@ def approve_demand(event_id, *, rows):
     return event
 
 
+# ── Автопроход потребности и выделения сил ──────────────────────────────────
+#
+# Задача заказчика Plane №110: с шага «Расстановка» сняты боксы «подготовка
+# расчёта» и «выделение сил» — «они не нужны». Форм, которыми человек вёл
+# стадии `DEMAND` и `FORCES`, на клиенте больше нет, поэтому обе стадии
+# проходит сервер сам, в момент завершения рекогносцировки.
+#
+# Стадии НЕ удалены из модели, и ручки `approve_demand`/`complete_forces`
+# живы: по ним ведут мероприятия, заведённые прежним путём, и на них смотрит
+# история переходов. Автопроход именно ПРОХОДИТ их, а не вырезает —
+# «расширять, не подменять».
+#
+# Обе записи истории (`DEMAND→FORCES` и `FORCES→PLACEMENT`) пишутся: лента
+# переходов обязана показать, что стадии были, иначе она соврёт про цепочку,
+# по которой шло мероприятие.
+#
+# Потребность собирается ИЗ РАСЧЁТА ПОСТОВ рекогносцировки — другого источника
+# у неё нет. Группа у автострок пустая сознательно: группу задавал человек в
+# снятом боксе, и подставлять вместо него выдуманное название пула значило бы
+# записать в данные утверждение, которого никто не делал.
+
+
+# Подпись автозаявки на силы. Не название пула — его никто больше не вводит, —
+# а источник числа: заявка одна на мероприятие и говорит, откуда взялась.
+AUTO_FORCE_REQUEST_GROUP = "По расчёту рекогносцировки"
+
+
+def _sync_auto_force_request(event):
+    """Свести числа автозаявки с фактом цепочки «Сбор сил».
+
+    Заявку на силы правил человек в снятом боксе «выделение сил» (Plane №110);
+    без него `allocatedCount` остался бы нулём навсегда, и лента штаба
+    показывала бы вечный недобор при полностью собранном составе.
+
+    Трогается ТОЛЬКО автозаявка: у мероприятий, которые вели числами по
+    группам, эти строки заполнял человек, и пересчёт затёр бы его работу.
+    """
+    requests = event.force_requests or []
+    if len(requests) != 1 or requests[0].get("group") != AUTO_FORCE_REQUEST_GROUP:
+        return
+    accepted = len(event.force_roster or [])
+    requested = int(requests[0].get("requestedCount") or 0)
+    status = "NOT_SENT"
+    if accepted >= requested and requested > 0:
+        status = "ALLOCATED"
+    elif accepted > 0:
+        status = "PARTIALLY_ALLOCATED"
+    elif event.force_allocation:
+        status = "SENT"
+    event.force_requests = [
+        {**requests[0], "allocatedCount": accepted, "status": status}
+    ]
+
+
+def _autopass_demand_and_forces(event):
+    """Провести мероприятие через `DEMAND` и `FORCES` расчётом рекогносцировки.
+
+    Возвращает мероприятие уже на стадии `PLACEMENT`. Идемпотентности не
+    обещает: зовётся ровно из двух мест — завершения рекогносцировки и
+    миграции-бэкфилла, и оба проверяют стадию до вызова.
+    """
+    rows = [
+        {
+            "id": f"demand-{index}",
+            "sector": str(post.get("sector") or "").strip(),
+            "task": str(post.get("task") or post.get("post") or "").strip(),
+            "shift": "",
+            "need": max(int(post.get("need") or 0), 0),
+            "group": "",
+            "requirements": str(post.get("requirements") or "").strip(),
+            "comment": "",
+        }
+        for index, post in enumerate(event.recon_sector_posts, start=1)
+    ]
+    event.demand_rows = rows
+    event.demand_approved = True
+    event.force_need = sum(int(row["need"]) for row in rows)
+    # Заявка на силы — ОДНА на мероприятие, а не по группам: групп больше
+    # никто не вводит. Число в ней то же, что штаб видит во входящих, и
+    # расходиться с `force_need` оно не может — считается из тех же строк.
+    event.force_requests = (
+        [
+            {
+                "id": "force-request-1",
+                "group": AUTO_FORCE_REQUEST_GROUP,
+                "requestedCount": event.force_need,
+                "allocatedCount": 0,
+                "status": "NOT_SENT",
+                "comment": "",
+            }
+        ]
+        if event.force_need > 0
+        else []
+    )
+    from_stage = event.stage
+    event.stage = "PLACEMENT"
+    event.readiness_percent = STAGE_READINESS["PLACEMENT"]
+    event.save(
+        update_fields=[
+            "demand_rows",
+            "demand_approved",
+            "force_requests",
+            "force_need",
+            "stage",
+            "readiness_percent",
+            "updated_at",
+        ]
+    )
+    if from_stage != "FORCES":
+        record_transition(event, from_stage, "FORCES")
+        from_stage = "FORCES"
+    record_transition(event, from_stage, "PLACEMENT")
+    return event
+
+
 # ── Раскладка потребности по департаментам ──────────────────────────────────
 #
 # Первое звено цепочки «Сбор сил на ОМ» (задача заказчика Plane №73): штаб
@@ -1206,7 +1325,14 @@ def approve_demand(event_id, *, rows):
 
 # Стадии, на которых раскладку правят: она заводится сразу после
 # рекогносцировки («Потребность») и остаётся живой, пока идёт выделение сил.
-_ALLOCATION_STAGES = ("DEMAND", "FORCES")
+#
+# «Расстановка» в списке с 26.08.2026 (Plane №110). После того как стадии
+# «Потребность» и «Запрос сил» стал проходить сервер сам, мероприятие приходит
+# на «Расстановку» СРАЗУ с рекогносцировки — и если бы раскладка кончалась на
+# прежних двух стадиях, вся цепочка «Сбор сил на ОМ» (Plane №73) отбивалась бы
+# 422 у каждого нового мероприятия. Штаб раскладывает и принимает людей, пока
+# ОМ уже стоит на расстановке; пул подбора на доске растёт по мере приёмки.
+_ALLOCATION_STAGES = ("DEMAND", "FORCES", "PLACEMENT")
 
 # Статус заявки департаменту. Правится раскладка только у тех, кого ещё не
 # оповещали: у остальных внутри уже живут управления и выделенные люди.
@@ -1255,8 +1381,8 @@ def split_force_demand(event_id, *, rows):
             "INVALID_STAGE_TRANSITION",
             422,
             message=(
-                "Раскладывать потребность можно на этапах «Потребность» и "
-                "«Запрос сил»."
+                "Раскладывать потребность можно после рекогносцировки и до "
+                "согласования расстановки."
             ),
         )
     rows = rows or []
@@ -1348,7 +1474,10 @@ def split_force_demand(event_id, *, rows):
             }
         )
     event.force_allocation = saved
-    event.save(update_fields=["force_allocation", "updated_at"])
+    # Раскладка есть — значит заявка ушла из «не отправлена»: лента штаба
+    # обязана отличать «ещё не тронуто» от «раздано и ждём людей».
+    _sync_auto_force_request(event)
+    event.save(update_fields=["force_allocation", "force_requests", "updated_at"])
     return event
 
 
@@ -1387,8 +1516,8 @@ def notify_directorates(event_id, allocation_id, *, actor):
             "INVALID_STAGE_TRANSITION",
             422,
             message=(
-                "Оповещать управления можно на этапах «Потребность» и "
-                "«Запрос сил»."
+                "Оповещать управления можно после рекогносцировки и до "
+                "согласования расстановки."
             ),
         )
     target = _find_allocation(event, allocation_id)
@@ -1615,7 +1744,8 @@ def add_allocation_member(
             "INVALID_STAGE_TRANSITION",
             422,
             message=(
-                "Выделять людей можно на этапах «Потребность» и «Запрос сил»."
+                "Выделять людей можно после рекогносцировки и до согласования "
+                "расстановки."
             ),
         )
     target = _find_allocation(event, allocation_id)
@@ -1765,7 +1895,8 @@ def submit_allocation(event_id, allocation_id, *, actor):
             "INVALID_STAGE_TRANSITION",
             422,
             message=(
-                "Отправлять список можно на этапах «Потребность» и «Запрос сил»."
+                "Отправлять список можно после рекогносцировки и до согласования "
+                "расстановки."
             ),
         )
     target = _find_allocation(event, allocation_id)
@@ -1865,7 +1996,15 @@ def accept_allocation(event_id, allocation_id, *, actor):
         else row
         for row in event.force_allocation
     ]
-    event.save(update_fields=["force_roster", "force_allocation", "updated_at"])
+    _sync_auto_force_request(event)
+    event.save(
+        update_fields=[
+            "force_roster",
+            "force_allocation",
+            "force_requests",
+            "updated_at",
+        ]
+    )
     audit_service.record(
         actor=actor,
         action=audit_service.FORCE_ALLOCATION_ACCEPTED,
@@ -2713,15 +2852,20 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
 
 
 # Стадии, на которые администратор переводит ОМ вручную — ВХОДНЫЕ стадии пяти
-# шагов цепочки, а не все девять: шаг «Расстановка» начинается с «Потребности»,
-# шаг «Закрытие» — с «Проведения», и предлагать середину шага значило бы
-# показывать в интерфейсе стадии, которых цепочка не называет.
+# шагов цепочки, а не все девять: шаг «Закрытие» начинается с «Проведения», и
+# предлагать середину шага значило бы показывать в интерфейсе стадии, которых
+# цепочка не называет.
+#
+# Вход шага «Расстановка» — `PLACEMENT`, а не `DEMAND` (Plane №110). Стадии
+# «Потребность» и «Запрос сил» человек больше не ведёт: форм у них нет, и
+# перевод ОМ на них запирал бы мероприятие навсегда — двигать его дальше было
+# бы нечем.
 #
 # CLOSED в списке НЕТ намеренно. Закрытие несёт итоги направлений и время
 # закрытия; «перевести сюда» без них завело бы архив, которого не было, — а
 # закрытое ОМ читают отчёты и выгрузки. Закрывают через close_event, по итогам.
 STAGE_OVERRIDE_TARGETS = [
-    "BULLETIN", "RECON", "DEMAND", "APPROVAL", "ACKNOWLEDGEMENT", "CONDUCT",
+    "BULLETIN", "RECON", "PLACEMENT", "APPROVAL", "ACKNOWLEDGEMENT", "CONDUCT",
 ]
 
 
