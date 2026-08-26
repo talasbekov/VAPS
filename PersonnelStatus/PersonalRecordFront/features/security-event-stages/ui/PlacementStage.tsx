@@ -63,6 +63,19 @@ const SORT_OPTIONS = [
   "По алфавиту",
 ] as const;
 
+/** Подпись полосы на экране → КОД контракта ручки (Plane №67, шаг РЙ-5).
+ *
+ * Подпись живёт на экране и переводится, код — контракт. Полоса `Все` кода не
+ * имеет: «не отбирать» это отсутствие параметра, а не особое значение. */
+const BAND_CODE: Record<string, string | undefined> = {
+  Все: undefined,
+  "9,0–10,0": "9_10",
+  "8,0–8,9": "8_9",
+  "7,0–7,9": "7_8",
+  "Ниже 7,0": "below_7",
+  "Недостаточно данных": "no_data",
+};
+
 const RATE_OPTIONS = [
   "Все",
   "9,0–10,0",
@@ -133,11 +146,19 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // список тогда не спрашивается вовсе: предлагать в подборе тех, кого сервер
   // всё равно откажется ставить, значит обещать невозможное.
   const fromRoster = event.forceRoster.length > 0;
+  // Отбор и порядок уезжают на СЕРВЕР только для кадровой базы (Plane №67,
+  // шаг РЙ-5). У мероприятия со своим составом они остаются на клиенте
+  // ОСОЗНАННО: состав — десятки строк, они уже на руках, и круг к серверу за
+  // ними ничего бы не уточнил. Там же, где список листается страницами, отбор
+  // по показанному был прямым враньём — «нет кандидатов» означало «нет на этой
+  // странице».
   const roster = usePersonnelPage({
     search,
     page,
     pageSize: CANDIDATE_PAGE_SIZE,
     enabled: !fromRoster,
+    ratingBand: canSeeRatings ? BAND_CODE[band] : undefined,
+    ordering: canSeeRatings && sort === "По рейтингу" ? "rating" : undefined,
     // Статус спрашивается на день МЕРОПРИЯТИЯ: подбор отвечает на вопрос
     // «свободен ли он тогда», а не «свободен ли он сейчас» (Plane №65, «Р-2»).
     businessDate: event.businessDate,
@@ -183,6 +204,25 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const ratingOf = (employeeId: string): number | null =>
     ratings.data?.results.find((r) => r.personnelId === employeeId)
       ?.aggregateRating ?? null;
+
+  /** Рейтинг СТРОКИ подбора (Plane №67, шаг РЙ-5).
+   *
+   * Кадровая ручка сама отдаёт `aggregateRating` — значение приходит с тем же
+   * ответом, в котором пришёл человек, и доска больше ничего не вычисляет.
+   *
+   * `"aggregateRating" in person` — не придирка к стилю: ОТСУТСТВИЕ поля и
+   * `null` тут разные ответы. Поля нет — у смотрящего нет права видеть балл;
+   * `null` — балл видеть можно, но судить не по чему (нет оценок, мало оценок,
+   * функция выключена). Сложить их через `??` значило бы нарисовать «нет
+   * данных» тому, кому просто не показывают, — то есть соврать о сотруднике.
+   *
+   * Строки СОСТАВА мероприятия приходят не из кадровой ручки, а из карточки
+   * ОМ, и своего балла не несут — для них рейтинг по-прежнему берётся из
+   * сводки по `personnelId`. Это тоже сервер, просто другая его ручка. */
+  const ratingOfRow = (person: PersonnelSummarySnapshot): number | null =>
+    "aggregateRating" in person
+      ? (person.aggregateRating ?? null)
+      : ratingOf(person.id);
 
   const allocated = event.forceRequests.reduce(
     (sum, request) => sum + request.allocatedCount,
@@ -265,7 +305,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     const req = selected.requirements.trim().toLowerCase();
     if (req !== "" && `${person.unit} ${person.rankLabel}`.toLowerCase().includes(req))
       fit += 25;
-    const rating = ratingOf(person.id);
+    const rating = ratingOfRow(person);
     if (selected.minRating !== null && rating !== null && rating >= selected.minRating)
       fit += 15;
     else if (selected.minRating === null) fit += 15;
@@ -280,7 +320,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    */
   function warnOf(person: PersonnelSummarySnapshot): string | null {
     if (selected === null || selected.minRating === null) return null;
-    const rating = ratingOf(person.id);
+    const rating = ratingOfRow(person);
     if (rating === null) return "рейтинга нет — требование поста не проверить";
     if (rating < selected.minRating)
       return `рейтинг ${rating} ниже требования поста ${selected.minRating}`;
@@ -304,12 +344,19 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     }
   }
 
-  /** Кандидаты СТРАНИЦЫ, а не всей базы: поиск и листание считает сервер.
+  /** Кандидаты. Поиск, листание, ОТБОР ПО РЕЙТИНГУ и РАНЖИРОВАНИЕ по баллу
+   * считает СЕРВЕР — по всей базе, а не по показанной странице (Plane №67).
    *
-   * Отбор по рейтингу и сортировка остаются здесь и применяются к показанной
-   * странице — рейтинг живёт в своей ручке под своим правом, и сервер кадров
-   * о нём не знает. Панель говорит это вслух, а не делает вид, что отобрала
-   * по всей базе; перенос отбора на сервер заведён отдельной карточкой. */
+   * Клиенту осталось ровно то, чего сервер знать не может:
+   * — сортировка «по соответствию»: соответствие считается против ВЫБРАННОГО
+   *   поста, о котором кадровая ручка не знает;
+   * — «рекомендуемые»: тот же расчёт плюс занятость на этом мероприятии;
+   * — всё вместе для СОСТАВА мероприятия: он приходит карточкой ОМ целиком,
+   *   десятками строк, и круг к серверу за отбором в них ничего бы не уточнил.
+   *
+   * Отбор по полосе применяется здесь ТОЛЬКО к составу. Для кадровой базы он
+   * уже сделан сервером, и повторять его на клиенте нельзя: строка без права
+   * на балл не несёт поля вовсе, и повторный отбор выкинул бы всех. */
   const candidates = useMemo(() => {
     // Поиск по составу идёт НА КЛИЕНТЕ: состав — десятки строк, они уже на
     // руках, и круг к серверу за подстрокой в них ничего бы не уточнил.
@@ -318,17 +365,23 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           person.name.toLowerCase().includes(query.trim().toLowerCase())
         )
       : (roster.data?.results ?? []);
-    const list = source.filter((person) => inBand(ratingOf(person.id)));
+    const list = fromRoster
+      ? source.filter((person) => inBand(ratingOfRow(person)))
+      : source;
     const withFit = list.map((person) => ({
       person,
       fit: fitOf(person),
-      rating: ratingOf(person.id),
+      rating: ratingOfRow(person),
       busy: assignedIds.has(person.id),
       warn: warnOf(person),
     }));
     switch (sort) {
       case "По рейтингу":
-        return withFit.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+        // Порядок кадровой базы задал СЕРВЕР — пересортировать страницу здесь
+        // значило бы переставить её внутри себя и выдать это за ранжирование.
+        return fromRoster
+          ? withFit.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1))
+          : withFit;
       case "По соответствию":
         return withFit.sort((a, b) => b.fit - a.fit);
       case "По алфавиту":
@@ -862,7 +915,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       aria-label="Сортировка кандидатов"
                       className="mt-0.5 block h-8 w-full rounded-md border border-input bg-background px-1 text-xs"
                       value={sort}
-                      onChange={(e) => setSort(e.target.value as SortOption)}
+                      onChange={(e) => {
+                        setSort(e.target.value as SortOption);
+                        // Порядок теперь считает сервер: остаться на третьей
+                        // странице прежнего порядка значило бы показать кусок
+                        // из середины другого списка.
+                        setPage(1);
+                      }}
                     >
                       {SORT_OPTIONS.map((option) => (
                         <option key={option}>{option}</option>
@@ -875,7 +934,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       aria-label="Фильтр по рейтингу"
                       className="mt-0.5 block h-8 w-full rounded-md border border-input bg-background px-1 text-xs"
                       value={band}
-                      onChange={(e) => setBand(e.target.value as RateOption)}
+                      onChange={(e) => {
+                        setBand(e.target.value as RateOption);
+                        // Отбор считает сервер: страница прежнего отбора к
+                        // новому отношения не имеет.
+                        setPage(1);
+                      }}
                     >
                       {RATE_OPTIONS.map((option) => (
                         <option key={option}>{option}</option>
@@ -890,9 +954,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 </div>
                 {/* «Найдено N» считает СЕРВЕР, а не длина страницы: счётчик по
                     странице обещал бы, что список кончился, ровно на её краю.
-                    Рядом сказано, что отбор по рейтингу и сортировка идут по
-                    показанному, — иначе «нет кандидатов» читалось бы как «их
-                    нет в кадрах». */}
+                    С РЙ-5 это число — результат ОТБОРА ПО ВСЕЙ БАЗЕ, поэтому
+                    прежняя оговорка «отбор идёт по показанному» снята: она
+                    лечила словами то, что теперь вылечено кодом. */}
                 <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                   <span aria-live="polite">
                     {fromRoster
@@ -930,12 +994,25 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 )}
                 {!fromRoster && (roster.data?.next !== null || page > 1) && (
                   <p className="text-[11px] text-muted-foreground">
-                    Отбор по рейтингу, сортировка и автоподбор считаются по
-                    показанной странице. Нужен конкретный человек — ищите его по
-                    фамилии.
+                    Отбор по рейтингу и порядок по баллу считаются по всей базе.
+                    «По соответствию» и автоподбор — по показанной странице:
+                    соответствие считается против выбранного поста, о котором
+                    кадровый список не знает.
                   </p>
                 )}
-                <div className="max-h-[360px] space-y-1 overflow-y-auto">
+                {/* `aria-busy` вместо подмены списка спиннером (правило скилла
+                    «стабильный скелет с aria-busy; не мигать»): прежняя
+                    страница остаётся на экране, пока едет новая — за это
+                    отвечает `placeholderData` в хуке, — но пометка занятости
+                    обязана быть, иначе список выглядит готовым, а показывает
+                    прежний отбор. Полупрозрачность — ВТОРОЙ признак, не
+                    единственный: одним цветом состояние не кодируется. */}
+                <div
+                  aria-busy={roster.isFetching}
+                  className={`max-h-[360px] space-y-1 overflow-y-auto ${
+                    roster.isFetching ? "opacity-60" : ""
+                  }`}
+                >
                   {candidates.length === 0 ? (
                     <p className="px-1 py-3 text-center text-xs text-muted-foreground">
                       {fromRoster
@@ -946,9 +1023,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           ? "Загрузка кадрового списка…"
                           : roster.isError
                             ? "Кадровый список сейчас недоступен."
-                            : (roster.data?.count ?? 0) === 0
-                              ? "По запросу никого не нашлось."
-                              : "На этой странице нет кандидатов под выбранный фильтр рейтинга"}
+                            : band !== "Все"
+                              ? `Во всей базе нет никого с рейтингом «${band}» — отбор считал сервер, а не эта страница.`
+                              : "По запросу никого не нашлось."}
                     </p>
                   ) : (
                     candidates.map(({ person, fit, rating, busy, warn }) => (
@@ -984,11 +1061,25 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               code={person.statusCode}
                               label={person.statusLabel}
                             />
-                            {rating !== null && (
-                              <span className="rounded-full bg-secondary px-1.5 py-0.5 tabular-nums">
-                                {rating}
-                              </span>
-                            )}
+                            {/* Отсутствие рейтинга сказано СЛОВАМИ, а не
+                                пустым местом (правило скилла «бейдж сообщает
+                                состояние; не кодировать состояние цветом»).
+                                Ноль здесь был бы прямой ложью: ноль — плохая
+                                оценка, а тут судить не по чему. Пустота же
+                                читалась бы как «бейдж не загрузился».
+                                Показывается только тем, кто вправе видеть
+                                балл: у остальных строка поля не несёт вовсе, и
+                                сообщать им о чужих оценках нечего. */}
+                            {canSeeRatings &&
+                              (rating !== null ? (
+                                <span className="rounded-full bg-secondary px-1.5 py-0.5 tabular-nums">
+                                  {rating}
+                                </span>
+                              ) : (
+                                <span className="rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-muted-foreground">
+                                  нет оценок
+                                </span>
+                              ))}
                             <span className="text-muted-foreground">
                               Совпадение {fit}%
                             </span>

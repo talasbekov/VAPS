@@ -114,10 +114,18 @@ export function usePersonnelPage(params: {
   divisionId?: string;
   /** Дата, на которую спрашивается статус кандидата; пусто — не спрашивать. */
   businessDate?: string;
+  /** Полоса рейтинга: отбор идёт НА СЕРВЕРЕ и по всей базе (Plane №67).
+   * Пусто — не отбирать. */
+  ratingBand?: string;
+  /** Порядок: `rating` — ранжирование по баллу по всей выборке. Пусто —
+   * порядок по умолчанию (фамилия). */
+  ordering?: "rating";
 }) {
   const pageSize = params.pageSize ?? 20;
   const divisionId = params.divisionId ?? "";
   const businessDate = params.businessDate ?? "";
+  const ratingBand = params.ratingBand ?? "";
+  const ordering = params.ordering;
   return useQuery<PersonnelPageResponse, OpsApiFailure>({
     // Подразделение — ЧАСТЬ ключа: без него страница чужого управления
     // отдалась бы из кэша как своя.
@@ -131,6 +139,10 @@ export function usePersonnelPage(params: {
       // Дата — ЧАСТЬ ключа: страница, спрошенная на другой день, несёт другие
       // статусы, и отдать её из кэша значило бы показать чужой день.
       businessDate,
+      // Полоса и порядок — тоже ЧАСТЬ ключа: они меняют СОСТАВ страницы, и
+      // без них отбор «9,0+» отдался бы из кэша страницей без отбора.
+      ratingBand,
+      ordering ?? "",
     ],
     queryFn: () =>
       opsApiClient.get<PersonnelPageResponse>(
@@ -140,6 +152,8 @@ export function usePersonnelPage(params: {
           pageSize,
           divisionId,
           businessDate,
+          ratingBand,
+          ordering,
         })
       ),
     enabled: params.enabled !== false,
