@@ -171,6 +171,51 @@ def test_no_submit_wins_over_the_release(storage, types):  # noqa: F811
     assert OpsIssuedDocument.objects.count() == 0
 
 
+def test_a_run_on_the_next_day_does_not_collide_with_yesterday(storage, types):  # noqa: F811
+    """Второй день подряд — не IntegrityError (Plane №154).
+
+    Статус сида живёт ДВОЕ суток, а идемпотентность держалась на дате начала:
+    вчерашняя строка [вчера, завтра) не считалась «уже засеянной» для
+    сегодняшнего запуска, зато пересекалась с ней — и упиралась в исключающее
+    ограничение базы. Повтор в ТОТ ЖЕ день при этом проходил, поэтому дефект и
+    прожил незамеченным: стенд поднимали и проверяли в один день.
+    """
+    from datetime import timedelta
+
+    yesterday = MORNING - timedelta(days=1)
+    with clock.override(yesterday):
+        call_command("seed_expense_chain", no_submit=True)
+    before = OpsEmployeeStatus.objects.count()
+
+    # Ровно то, что делает человек, поднимая стенд на следующий день.
+    seed(no_submit=True)
+
+    assert OpsEmployeeStatus.objects.count() == before, (
+        "сид завёл вторую строку поверх вчерашней — она пересекается с ней "
+        "и в проде упёрлась бы в excl_hard_status_overlap"
+    )
+
+
+def test_it_does_not_touch_a_foreign_status_on_those_days(storage, types):  # noqa: F811
+    """Чужой статус на те же дни сид НЕ трогает и не падает.
+
+    На живом стенде у человека может стоять настоящий статус: сид обязан его
+    обойти, а не заводить поверх и не валиться.
+    """
+    seed(no_submit=True)
+    mine = OpsEmployeeStatus.objects.filter(created_by=seed_expense_chain.ACTOR).first()
+    assert mine is not None
+    OpsEmployeeStatus.objects.filter(pk=mine.pk).update(
+        status_type_code="STUDY", created_by="человек"
+    )
+    before = OpsEmployeeStatus.objects.count()
+
+    seed(no_submit=True)
+
+    assert OpsEmployeeStatus.objects.count() == before
+    assert OpsEmployeeStatus.objects.get(pk=mine.pk).status_type_code == "STUDY"
+
+
 def test_it_refuses_loudly_without_the_status_dictionary(storage):
     """Пустой справочник — самая частая беда свежего стенда.
 

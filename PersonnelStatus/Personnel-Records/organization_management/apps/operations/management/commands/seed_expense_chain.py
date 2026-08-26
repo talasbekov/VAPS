@@ -162,15 +162,39 @@ class Command(BaseCommand):
             employee = Employee.objects.get(
                 last_name=last_name, first_name=first_name
             )
-            OpsEmployeeStatus.objects.get_or_create(
+            start, end = day, day + timedelta(days=2)
+            # ИДЕМПОТЕНТНОСТЬ ПО ПЕРЕСЕЧЕНИЮ, а не по дате начала (Plane №154).
+            # `get_or_create` по `date_start=day` считает «уже есть» только
+            # строку, начатую СЕГОДНЯ. Но статус живёт двое суток, и вчерашний
+            # запуск оставил строку [вчера, завтра): сегодняшняя [сегодня,
+            # послезавтра) с ней пересекается, а в базе стоит исключающее
+            # ограничение `excl_hard_status_overlap` — команда падала
+            # IntegrityError, то есть стенд нельзя было поднять второй день
+            # подряд. Повтор В ТОТ ЖЕ день при этом проходил, поэтому дефект и
+            # прожил незамеченным.
+            #
+            # Пересекающаяся строка ТОГО ЖЕ типа — это и есть «уже засеяно»:
+            # трогать её не надо. Пересечение с ДРУГИМ типом — не наше дело
+            # (живой статус человека), и заводить поверх него сид не должен.
+            overlapping = OpsEmployeeStatus.objects.filter(
+                employee_id=employee.id,
+                date_start__lt=end,
+                date_end__gt=start,
+            ).first()
+            if overlapping is not None:
+                if overlapping.status_type_code != code:
+                    self.stdout.write(
+                        f"  у {last_name} на эти дни уже стоит "
+                        f"{overlapping.status_type_code} — сид не трогает"
+                    )
+                continue
+            OpsEmployeeStatus.objects.create(
                 employee_id=employee.id,
                 status_type_code=code,
-                date_start=day,
-                defaults={
-                    "date_end": day + timedelta(days=2),
-                    "source": OpsEmployeeStatus.Source.USER,
-                    "created_by": ACTOR,
-                },
+                date_start=start,
+                date_end=end,
+                source=OpsEmployeeStatus.Source.USER,
+                created_by=ACTOR,
             )
 
     def _submission(self, division, day):
