@@ -348,7 +348,9 @@ function RoleDetails({ role }: { role: AccessRole }) {
               заготовку заводят раньше, чем решают её состав.
             </p>
           ) : (
-            <ul className="space-y-1.5">
+            // Список именован: он читается как «состав прав роли», а не как
+            // безымянный перечень, и его же по этому имени находит проба.
+            <ul aria-label="Состав прав роли" className="space-y-1.5">
               {role.permissions.map((code) => (
                 <li
                   key={code}
@@ -409,7 +411,7 @@ function RoleDetails({ role }: { role: AccessRole }) {
                 : `По запросу «${permissionSearch}» свободных прав нет.`}
             </p>
           ) : (
-            <ul className="mt-2 space-y-1.5">
+            <ul aria-label="Права, которые можно выдать" className="mt-2 space-y-1.5">
               {offered.map((permission) => (
                 <OfferedPermission
                   key={permission.code}
