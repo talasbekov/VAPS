@@ -135,6 +135,44 @@ test.describe(
         'Расстановка не отправлена на согласование',
         { timeout: 20_000 },
       )
+
+      // Правка маршрута ходит по МОКУ, а не мимо него (Plane №82). Три
+      // обработчика — перемещение, решение и снятие согласующего — не
+      // сматчивались никогда: путь собирался хелпером, который прогоняет id
+      // через encodeURIComponent, и `:approverId` превращался в
+      // `%3AapproverId`. Запрос молча уходил на живой бэк, а мок-проба этого
+      // не замечала. Запросы идут ИЗ СТРАНИЦЫ: их перехватывает service worker.
+      const routeCalls = await page.evaluate(async () => {
+        // Маршрут читается из КАРТОЧКИ: отдельной ручки GET у маршрута нет
+        // ни на сервере, ни в моке — он приезжает полем мероприятия.
+        const event = await (
+          await fetch('/api/ops/security-events/se-1/')
+        ).json()
+        const approver = event.approvalRoute[event.approvalRoute.length - 1]
+        const base = `/api/ops/security-events/se-1/approval/route/${approver.id}`
+        const moved = await fetch(`${base}/move/`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ direction: 'UP' }),
+        })
+        const movedBody = await moved.json()
+        const removed = await fetch(`${base}/`, { method: 'DELETE' })
+        const removedBody = await removed.json()
+        return {
+          approverId: approver.id,
+          moveStatus: moved.status,
+          movedIds: (movedBody.approvalRoute ?? []).map((a: {id: string}) => a.id),
+          removeStatus: removed.status,
+          removedIds: (removedBody.approvalRoute ?? []).map((a: {id: string}) => a.id),
+        }
+      })
+
+      // Мок ответил СВОИМ телом (маршрут целиком), а не 404 живого бэка,
+      // которому идентификаторы мок-сида неизвестны.
+      expect(routeCalls.moveStatus).toEqual(200)
+      expect(routeCalls.movedIds).toContain(routeCalls.approverId)
+      expect(routeCalls.removeStatus).toEqual(200)
+      expect(routeCalls.removedIds).not.toContain(routeCalls.approverId)
     })
 
     test('раскладка сил в моке живёт по правилам сервера', async ({ page }) => {
