@@ -88,6 +88,126 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   GVO_SUMMARY_RESET: "Ручная правка сводки ГВО сброшена",
 };
 
+/**
+ * Подписи ТИПОВ СУЩНОСТЕЙ (Plane №69). Ключи зеркалят `ENTITY_TYPES` из
+ * `apps/operations/audit_service.py`; полноту стережёт проба на стороне
+ * сервера — там же, где растёт закрытый мир кодов.
+ *
+ * Колонка «Объект» печатала машинную строку `access_user_role · 12`, и
+ * читать её вслух на разбирательстве было нечем.
+ */
+export const AUDIT_ENTITY_LABEL: Record<string, string> = {
+  employee_status: "Статус сотрудника",
+  secondment: "Прикомандирование",
+  employee: "Сотрудник",
+  daily_submission: "Сданный день",
+  tomorrow_block_override: "Снятие запрета правки на завтра",
+  attachment: "Вложение документа",
+  issued_document: "Выпущенный документ",
+  security_object: "Охраняемый объект",
+  security_event: "Охранное мероприятие",
+  duty_shift: "Смена дежурства",
+  policy_setting: "Правило настроек",
+  dictionary_entry: "Значение справочника",
+  access_permission: "Право доступа",
+  access_role: "Роль",
+  access_account: "Учётная запись",
+  access_user_role: "Назначение роли",
+};
+
+export function auditEntityLabel(entityType: string): string {
+  return AUDIT_ENTITY_LABEL[entityType] ?? entityType;
+}
+
+export function isKnownAuditEntity(entityType: string): boolean {
+  return entityType in AUDIT_ENTITY_LABEL;
+}
+
+/**
+ * Подписи ПОЛЕЙ в старом и новом значении. Карта заведомо неполна и такой
+ * задумана: журнал пишут два десятка сервисов, поля у них свои, и обещать
+ * подпись каждому значило бы врать. Неизвестное поле печатается своим ключом
+ * моноширинным — так видно, что подписи нет, а не что поле называется
+ * странно (та же конвенция, что у неизвестного действия).
+ */
+export const AUDIT_FIELD_LABEL: Record<string, string> = {
+  is_active: "Действует",
+  code: "Код",
+  name: "Название",
+  description: "Описание",
+  username: "Логин",
+  email: "Почта",
+  first_name: "Имя",
+  last_name: "Фамилия",
+  role_code: "Роль",
+  user_id: "Пользователь",
+  scope_division_id: "Область (подразделение)",
+  permission_code: "Право",
+  stage: "Этап",
+  status: "Состояние",
+  created: "Заведено впервые",
+  reason: "Причина",
+  comment: "Комментарий",
+};
+
+export interface AuditChange {
+  key: string;
+  /** Подпись поля; равна ключу, если подписи нет. */
+  label: string;
+  isKnownField: boolean;
+  before: string | null;
+  after: string | null;
+}
+
+/** Значение поля словами: `true/false` — «да/нет», пусто — «—». */
+function readableValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "да" : "нет";
+  if (typeof value === "number" || typeof value === "string") return String(value);
+  if (Array.isArray(value)) {
+    return value.length === 0 ? "—" : value.map(readableValue).join(", ");
+  }
+  // Вложенный объект остаётся JSON: разбирать его на поля вслепую значило бы
+  // придумывать структуру, которой журнал не обещал.
+  return JSON.stringify(value);
+}
+
+/**
+ * Изменение по полям: что было и что стало, по одной строке на поле.
+ *
+ * Показываются ТОЛЬКО РАЗЛИЧИЯ. Строка «стало: {весь объект}» заставляла
+ * читателя сравнивать два JSON глазами — а вопрос у него один: что именно
+ * изменилось.
+ */
+export function auditChanges(
+  oldValue: unknown,
+  newValue: unknown
+): AuditChange[] {
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  const before = isRecord(oldValue) ? oldValue : {};
+  const after = isRecord(newValue) ? newValue : {};
+  if (!isRecord(oldValue) && !isRecord(newValue)) return [];
+
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  const changes: AuditChange[] = [];
+  for (const key of keys.sort()) {
+    const from = readableValue(before[key]);
+    const to = readableValue(after[key]);
+    // Поле, которое не менялось, в ленте — шум: строка «Название: Иванов →
+    // Иванов» отнимает место у той, где действительно что-то произошло.
+    if (key in before && key in after && from === to) continue;
+    changes.push({
+      key,
+      label: AUDIT_FIELD_LABEL[key] ?? key,
+      isKnownField: key in AUDIT_FIELD_LABEL,
+      before: key in before ? from : null,
+      after: key in after ? to : null,
+    });
+  }
+  return changes;
+}
+
 /** Подпись действия; НЕИЗВЕСТНЫЙ код возвращается как есть — прятать его за
  * «прочее» значило бы скрыть от разбирательства, что именно произошло. */
 export function auditActionLabel(action: string): string {
