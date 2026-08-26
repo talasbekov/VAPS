@@ -703,80 +703,21 @@ def test_only_submitted_list_is_decided(manager):  # noqa: F811
     assert accept.json()["error_code"] == "ALLOCATION_NOT_DECIDABLE"
 
 
-def test_forces_stage_completes_by_roster_not_by_numbers(manager):  # noqa: F811
-    """Завершение этапа считает ЛЮДЕЙ состава, а не обещанные числа."""
-    from organization_management.apps.operations.models_event import OpsSecurityEvent
-
-    base, allocation_id, _ = submitted_event(manager)
-    manager.post(f"{base}forces/allocation/{allocation_id}/accept/")
-    # Числа по группам при этом ЗАКРЫТЫ полностью — старое правило пропустило
-    # бы этап; проба и стережёт, что решает теперь состав.
-    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
-    event.stage = "FORCES"
-    event.force_requests = [
-        {**r, "allocatedCount": r["requestedCount"]} for r in event.force_requests
-    ]
-    event.save(update_fields=["stage", "force_requests"])
-
-    resp = manager.post(f"{base}forces/complete/")
-
-    assert resp.status_code == 422
-    assert resp.json()["error_code"] == "FORCE_ALLOCATION_INCOMPLETE"
-    # Отказ называет ЧИСЛА: «недобор» без цифры не говорит, сколько добирать.
-    assert "недобор" in resp.json()["message"]
-
-
-def test_forces_stage_waits_for_undecided_lists(manager):  # noqa: F811
-    """Пока список висит у штаба нерешённым, этап не завершается."""
-    from organization_management.apps.operations.models_event import OpsSecurityEvent
-
-    base, allocation_id, _ = submitted_event(manager)
-    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
-    event.stage = "FORCES"
-    event.save(update_fields=["stage"])
-
-    resp = manager.post(f"{base}forces/complete/")
-
-    assert resp.status_code == 422
-    assert resp.json()["error_code"] == "FORCE_ALLOCATION_INCOMPLETE"
-    # Отказ НАЗЫВАЕТ департамент, чей список ждёт решения.
-    assert "ждут решения штаба" in resp.json()["message"]
-
-
-def test_forces_stage_completes_when_the_roster_covers_the_split(manager):  # noqa: F811
-    """Состав покрыл разложенное — этап уходит на расстановку.
-
-    Зелёная половина правила: без неё пробы выше доказывали бы лишь то, что
-    завершение не проходит НИКОГДА.
-    """
-    from organization_management.apps.operations.models_event import OpsSecurityEvent
-
-    make_assignment_status_type()
-    department = make_department()
-    make_directorate(department)
-    employee = make_employee("Сериков")
-    base, _ = event_on_demand(manager, FUTURE_DATE)
-    # Раскладываем РОВНО одного человека: столько же, сколько выделим.
-    allocation_id = manager.post(
-        f"{base}forces/allocation/",
-        {"rows": [{"departmentId": str(department.pk), "need": 1}]},
-        format="json",
-    ).json()["forceAllocation"][0]["id"]
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
-    manager.post(
-        f"{base}forces/allocation/{allocation_id}/members/",
-        {"employeeId": str(employee.pk)},
-        format="json",
-    )
-    manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
-    manager.post(f"{base}forces/allocation/{allocation_id}/accept/")
-    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
-    event.stage = "FORCES"
-    event.save(update_fields=["stage"])
-
-    data = manager.post(f"{base}forces/complete/").json()
-
-    assert data["stage"] == "PLACEMENT"
+# ТРИ ПРОБЫ СНЯТЫ ВМЕСТЕ С РУЧКОЙ `forces/complete` (Plane №149).
+#
+# Они стерегли ПРАВИЛА завершения стадии «Запрос сил»: этап не закрывается,
+# пока список висит у штаба нерешённым; закрытие считает людей состава, а не
+# обещанные числа; принятый состав, покрывающий раскладку, этап закрывает.
+#
+# Правил больше нет — и не потому, что их отменили, а потому что стадии, на
+# которой они действовали, мероприятие больше не занимает: завершение
+# рекогносцировки проводит его сразу на «Расстановку» (Plane №110), а сбор сил
+# идёт уже ТАМ. Гейта «нельзя уйти с FORCES с недобором» не существует, потому
+# что уходить неоткуда.
+#
+# Что осталось стеречь и стережётся рядом: приёмка и возврат списков штабом
+# (`accept`/`return`), недобор в самих списках и правило расстановки
+# «человек — из состава» (`NOT_IN_ROSTER`, ниже в этом файле).
 
 
 # ── Шаг «СС-6»: расстановка берёт людей из состава ОМ ───────────────────────
@@ -804,11 +745,13 @@ def event_on_placement_with_roster(manager):  # noqa: F811
     )
     manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
     manager.post(f"{base}forces/allocation/{allocation_id}/accept/")
-    event = OpsSecurityEvent.objects.get(pk=event_pk(base))
-    event.stage = "FORCES"
-    event.save(update_fields=["stage"])
-    fresh = manager.post(f"{base}forces/complete/").json()
-    assert fresh["stage"] == "PLACEMENT"
+    # Мероприятие УЖЕ на «Расстановке»: туда его вывело завершение
+    # рекогносцировки (Plane №110), а сбор сил идёт там же. Прежде фикстура
+    # опускала ОМ на `FORCES` руками и поднимала снятой теперь ручкой
+    # `forces/complete` — путь, которого в системе больше нет (Plane №149).
+    fresh = manager.get(base).json()
+    assert fresh["stage"] == "PLACEMENT", "фикстура ждёт ОМ на «Расстановке»"
+    assert fresh["forceRoster"], "штаб принял состав — он обязан быть непустым"
     return base, employee, fresh["reconSectorPosts"][0]["id"]
 
 
@@ -861,53 +804,31 @@ def test_event_without_roster_places_anyone(manager):  # noqa: F811
     assert resp.status_code == 200
 
 
-# ── Plane №125: устаревшие ручки автопройденных стадий ─────────────────────
+# ── Plane №149: ручки автопройденных стадий СНЯТЫ ──────────────────────────
 
 
-def test_deprecated_stage_handles_still_work_and_are_marked(manager):  # noqa: F811
-    """`demand/approve` и `forces/complete` живы, но помечены устаревшими.
+def test_the_removed_stage_handles_are_gone(manager):  # noqa: F811
+    """`demand/approve` и `forces/complete` сняты и отвечают 404.
 
-    Стадии «Потребность» и «Запрос сил» проходит сервер (Plane №110), клиент
-    их форм не показывает, и звать эти ручки некому — мероприятий на этих
-    стадиях на стенде не осталось ни одного. Снять контракт наружу — решение
-    заказчика, а не побочный итог чужой задачи, поэтому ручки остаются
-    рабочими и помечены `deprecated` в схеме.
+    Проба стоит вместо прежней (№125), которая стерегла их устаревание: пока
+    ручки жили, надо было следить, что пометка на месте и старый путь работает;
+    теперь надо следить за обратным — что путь не вернулся молча вместе с
+    чьим-нибудь откатом.
 
-    Проба держит ОБА конца: пометка стоит (иначе устаревание — устная
-    договорённость) и ручка отвечает мероприятию, которое на этой стадии
-    ОКАЖЕТСЯ (иначе «жива» — это про адрес, а не про поведение).
+    404, а не 405: адреса больше нет вовсе, а не «метод не тот».
     """
-    from organization_management.apps.ops.api.views import SecurityEventViewSet
-    from organization_management.apps.operations.models_event import OpsSecurityEvent
-
-    for action_name in ("demand_approve", "forces_complete"):
-        schema = getattr(
-            getattr(SecurityEventViewSet, action_name), "kwargs", {}
-        ).get("schema")
-        assert schema is not None, (
-            f"у {action_name} снята пометка устаревания — схема снова обещает "
-            "ручку как обычную"
-        )
-
     base, _total = event_on_demand(manager)
-    event_id = base.rstrip("/").rsplit("/", 1)[-1]
-    # Мероприятие ВОЗВРАЩАЕТСЯ на стадию, которой у него больше не бывает, и
-    # получает состояние СТАРОГО пути ведения: числа по группам, выделенные
-    # полностью. Так проверяется, что работает сам путь, а не только адрес.
-    OpsSecurityEvent.objects.filter(pk=event_id).update(
-        stage="FORCES",
-        force_allocation=[],
-        force_requests=[
-            {
-                "id": "legacy-1",
-                "groupName": "Управление охраны",
-                "requestedCount": 2,
-                "allocatedCount": 2,
-            }
-        ],
-    )
 
-    resp = manager.post(f"{base}forces/complete/")
+    assert manager.post(f"{base}demand/approve/", {"rows": []}, format="json").status_code == 404
+    assert manager.post(f"{base}forces/complete/").status_code == 404
 
-    assert resp.status_code == 200, resp.json()
-    assert resp.json()["stage"] == "PLACEMENT"
+
+def test_recon_completion_still_leads_to_placement(manager):  # noqa: F811
+    """И главное: путь, который заменил снятые ручки, работает.
+
+    Снять ручки и не проверить замену значило бы убрать дорогу, не убедившись,
+    что рядом есть другая.
+    """
+    base, _total = event_on_demand(manager)
+
+    assert manager.get(base).json()["stage"] == "PLACEMENT"

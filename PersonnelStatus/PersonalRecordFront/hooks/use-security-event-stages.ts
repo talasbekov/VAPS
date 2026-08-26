@@ -26,7 +26,6 @@ import {
   securityEventBulletinCompletePath,
   securityEventBulletinPath,
   securityEventClosePath,
-  securityEventDemandApprovePath,
   securityEventForceAllocationPath,
   securityEventForcesSplitPath,
   securityEventForcesNotifyPath,
@@ -36,7 +35,6 @@ import {
   securityEventForcesAcceptPath,
   securityEventForcesReturnPath,
   securityEventForcesWithdrawPath,
-  securityEventForcesCompletePath,
   securityEventJournalPath,
   securityEventPlacementAssignPath,
   securityEventPlacementCompletePath,
@@ -66,7 +64,6 @@ import type {
   ReturnAllocationRequest,
   SplitForceDemandRequest,
   UpdateBulletinRequest,
-  UpdateDemandRequest,
   UpdateForceAllocationRequest,
   UpdateReconRequest,
 } from "@/entities/security-event";
@@ -195,14 +192,8 @@ export function useCompleteRecon(id: string) {
 
 // ── Потребность и силы ───────────────────────────────────────────────────
 
-export function useApproveDemand(id: string, options?: StageMutationOptions) {
-  return useEventMutation<UpdateDemandRequest>(
-    id,
-    (body) =>
-      opsApiClient.post<SecurityEvent>(securityEventDemandApprovePath(id), body),
-    options
-  );
-}
+// `useApproveDemand` СНЯТ вместе с ручкой `demand/approve` (Plane №149):
+// стадию «Потребность» проходит сервер, формы у неё на экране нет с №110.
 
 /** Раскладка потребности по департаментам — весь список одним запросом.
  *
@@ -290,11 +281,7 @@ export function useUpdateForceAllocation(id: string, requestId: string) {
   );
 }
 
-export function useCompleteForces(id: string) {
-  return useEventMutation<Record<string, never>>(id, () =>
-    opsApiClient.post<SecurityEvent>(securityEventForcesCompletePath(id))
-  );
-}
+// `useCompleteForces` СНЯТ вместе с ручкой `forces/complete` (Plane №149).
 
 // ── Расстановка и согласование ───────────────────────────────────────────
 

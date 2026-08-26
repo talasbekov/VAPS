@@ -51,7 +51,10 @@ CODES = {
     "RECON_CHECKLIST_INCOMPLETE": frozenset({422}),
     "RECON_SECTOR_POSTS_EMPTY": frozenset({422}),
     "EVENT_DELETE_FORBIDDEN": frozenset({422}),
-    "DEMAND_ROWS_EMPTY": frozenset({422}),
+    # `DEMAND_ROWS_EMPTY` СНЯТ 26.08.2026 (Plane №149) вместе с ручкой
+    # `demand/approve`: код поднимала только она, а объявленный код, которого
+    # никто не поднимает, — обещание отказа, которого не бывает. Сторож
+    # полноты (`test_error_codes_coverage`) на этом и сработал.
     # Согласование по эталону («ОМ-37.3»): у каждого условия завершения свой
     # код, потому что чинятся они по-разному.
     "APPROVAL_ROUTE_EMPTY": frozenset({422}),
@@ -61,7 +64,10 @@ CODES = {
     "APPROVAL_INCOMPLETE": frozenset({422}),
     "APPROVAL_REMARKS_OPEN": frozenset({422}),
     "PLACEMENT_EMPTY": frozenset({422}),
-    "FORCE_ALLOCATION_INCOMPLETE": frozenset({422}),
+    # `FORCE_ALLOCATION_INCOMPLETE` СНЯТ 26.08.2026 (Plane №149) вместе с
+    # ручкой `forces/complete`. Недобор в самих списках отбивается своими
+    # кодами приёмки (`ALLOCATION_NOT_DECIDABLE` и соседние) — правило не
+    # потеряно, потеряна стадия, на которой этот код поднимался.
     # Раскладка потребности по департаментам (Plane №73): перебор над
     # запрошенным и попытка снять департамент, которому заявка уже ушла.
     "ALLOCATION_OVER_DEMAND": frozenset({422}),

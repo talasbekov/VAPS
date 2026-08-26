@@ -689,9 +689,8 @@ export function securityEventReconImportPath(id: string): string {
 export function securityEventReconCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/recon/complete/`;
 }
-export function securityEventDemandApprovePath(id: string): string {
-  return `${SECURITY_EVENTS_PATH}${id}/demand/approve/`;
-}
+// `securityEventDemandApprovePath` СНЯТ вместе с ручкой (Plane №149): стадию
+// «Потребность» проходит сервер, формы у неё нет.
 export function securityEventForceAllocationPath(
   id: string,
   requestId: string
@@ -765,9 +764,7 @@ export function securityEventForcesReturnPath(
     allocationId
   )}/return/`;
 }
-export function securityEventForcesCompletePath(id: string): string {
-  return `${SECURITY_EVENTS_PATH}${id}/forces/complete/`;
-}
+// `securityEventForcesCompletePath` СНЯТ вместе с ручкой (Plane №149).
 export function securityEventPlacementAssignPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/placement/assign/`;
 }

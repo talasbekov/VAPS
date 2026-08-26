@@ -232,7 +232,6 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "recon": _MANAGE_EVENT_PERMISSION,
         "recon_import": _MANAGE_EVENT_PERMISSION,
         "recon_complete": _MANAGE_EVENT_PERMISSION,
-        "demand_approve": _MANAGE_EVENT_PERMISSION,
         # Цепочка «Сбор сил на ОМ» разделена по звеньям (Plane №74): деление
         # потребности и решения по спискам — штаб; оповещение и отправка —
         # ответственный за выделение в СВОЁМ департаменте; выделение людей —
@@ -251,7 +250,6 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # мероприятия, заведённые до автопрохода (Plane №110). Своего звена в
         # цепочке у них нет, и делить их по ролям заказчик не просил.
         "force_allocation": _MANAGE_EVENT_PERMISSION,
-        "forces_complete": _MANAGE_EVENT_PERMISSION,
         "placement_assign": _PLACEMENT_PERMISSION,
         "placement_unassign": _PLACEMENT_PERMISSION,
         "placement_sector_senior": _PLACEMENT_PERMISSION,
@@ -548,27 +546,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def recon_complete(self, request, pk=None):
         return self._event_response(event_service.complete_recon(pk))
 
-    @extend_schema(deprecated=True)
-    @action(detail=True, methods=["post"], url_path="demand/approve")
-    def demand_approve(self, request, pk=None):
-        """УСТАРЕВШАЯ ручка: стадию «Потребность» проходит сервер (Plane №125).
-
-        С Plane №110 завершение рекогносцировки само собирает потребность и
-        проводит мероприятие через `DEMAND` и `FORCES` на «Расстановку», а
-        миграция 0046 провела тем же путём всё, что стояло на этих стадиях
-        раньше. Клиент форм не показывает, звать её некому — на стенде
-        мероприятий на `DEMAND` не осталось ни одного.
-
-        Почему ручка ЖИВА, а не удалена: снять её — правка контракта наружу, а
-        такие делаются отдельным решением заказчика, а не заодно. Пока она
-        помечена устаревшей в схеме, и на неё заведена своя карточка. Работать
-        она обязана: мероприятие, которое как-то окажется на `DEMAND`, ведут
-        именно ей.
-        """
-        data = request.data or {}
-        return self._event_response(
-            event_service.approve_demand(pk, rows=data.get("rows"))
-        )
+    # Ручка `POST demand/approve/` СНЯТА 26.08.2026 (Plane №149): стадию
+    # «Потребность» проходит сервер (Plane №110), форм у неё на клиенте нет,
+    # мероприятий на этой стадии не осталось. Снятие — решение заказчика.
 
     @action(detail=True, methods=["post"], url_path="forces/allocation")
     def forces_split(self, request, pk=None):
@@ -755,16 +735,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         )
 
-    @extend_schema(deprecated=True)
-    @action(detail=True, methods=["post"], url_path="forces/complete")
-    def forces_complete(self, request, pk=None):
-        """УСТАРЕВШАЯ ручка: стадию «Запрос сил» проходит сервер (Plane №125).
-
-        Основание то же, что у `demand/approve` выше: автопроход стадий
-        (Plane №110) и миграция 0046. Ручка жива и работает — снятие контракта
-        наружу решает заказчик.
-        """
-        return self._event_response(event_service.complete_forces(pk))
+    # Ручка `POST forces/complete/` СНЯТА 26.08.2026 (Plane №149) — по тому же
+    # основанию, что и `demand/approve` выше.
 
     # ── Исключение гейта: замещающий правит расстановку своего объекта ──
 
