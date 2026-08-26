@@ -490,6 +490,24 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
 
         return Response(response_data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        parameters=[
+            # Обязательность объявлена ЯВНО: докстрока ниже говорила
+            # «(required)», а СХЕМА молчала — сгенерированный по ней клиент
+            # получал метод без аргументов, который всегда отвечает 400
+            # (Plane №151). Клиент читает флаг, а не докстроку.
+            OpenApiParameter(
+                "division_id", OpenApiTypes.INT, OpenApiParameter.QUERY,
+                required=True,
+                description="ID подразделения. Обязателен.",
+            ),
+            OpenApiParameter(
+                "date", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                required=False,
+                description="Дата, ГГГГ-ММ-ДД; по умолчанию сегодня.",
+            ),
+        ]
+    )
     @action(detail=False, methods=['get'])
     def division_headcount(self, request):
         """

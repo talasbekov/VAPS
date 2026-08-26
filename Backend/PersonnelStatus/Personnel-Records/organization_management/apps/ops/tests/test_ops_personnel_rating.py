@@ -264,3 +264,44 @@ def test_unknown_ordering_is_a_request_error(rater, rating_policy):
 
     assert response.status_code == 400
     assert response.json()["error_code"] == "VALIDATION_ERROR"
+
+
+# ── Рейтинг — ОБОГАЩЕНИЕ списка, а не его условие (Plane №151) ────────────
+
+
+def test_personnel_lists_even_when_rating_is_not_configured(rater):
+    """Кадровый список обязан работать там, где рейтинг не заводили вовсе.
+
+    Регресс, внесённый шагом РЙ-4 и найденный сторожем схемы: ручка кадров
+    стала звать расчёт рейтинга, а тот требует настроенных флагов и методики.
+    В окружении, где раздел рейтинга не сеяли, окно подбора сотрудника падало
+    целиком — из-за одной ненастроенной строки настроек.
+
+    Фикстура `rating_policy` здесь НЕ используется намеренно: в этом и смысл.
+    """
+    make_employee(last_name="Абенов")
+
+    response = rater.get(URL)
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    # Балла нет — и поля нет: показывать нечего, но и врать «нет данных» о
+    # человеке не за что.
+    assert "aggregateRating" not in response.json()["results"][0]
+
+
+def test_band_is_refused_when_rating_is_not_configured(rater):
+    """А вот ОТБОР по рейтингу без настроенного раздела молчать не имеет права.
+
+    Отдать полный список в ответ на «покажи девяток» — это молча
+    проигнорированный фильтр: спросивший решит, что отбор сработал. Ответ —
+    честный отказ с причиной «раздел не настроен».
+    """
+    make_employee(last_name="Абенов")
+
+    response = rater.get(URL, {"rating_band": "9_10"})
+
+    assert response.status_code == 422
+    assert response.json()["details"] == {
+        "flags": ["Флаги оперативного рейтинга не настроены."]
+    }

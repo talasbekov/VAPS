@@ -1826,8 +1826,9 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @extend_schema(
         parameters=[
-            OpenApiParameter("date_from", OpenApiTypes.DATE),
-            OpenApiParameter("date_to", OpenApiTypes.DATE),
+            # Обязательность объявлена ЯВНО — см. комментарий у `period`.
+            OpenApiParameter("date_from", OpenApiTypes.DATE, required=True),
+            OpenApiParameter("date_to", OpenApiTypes.DATE, required=True),
             OpenApiParameter("division_id", OpenApiTypes.INT),
         ],
         responses={(200, "text/csv"): OpenApiTypes.BINARY},
@@ -1849,14 +1850,21 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @extend_schema(
         parameters=[
+            # `required=True` — не косметика: раньше описание говорило
+            # «Обязателен», а ОБЪЯВЛЕНИЕ молчало, и сгенерированный по схеме
+            # клиент делал аргумент необязательным. Метод без дат отвечает 400
+            # всегда (Plane №151). Слово в описании клиент не читает — читает
+            # флаг.
             OpenApiParameter(
                 "date_from",
                 OpenApiTypes.DATE,
+                required=True,
                 description="Начало периода (включительно). Обязателен.",
             ),
             OpenApiParameter(
                 "date_to",
                 OpenApiTypes.DATE,
+                required=True,
                 description="Конец периода (включительно). Обязателен.",
             ),
             OpenApiParameter(

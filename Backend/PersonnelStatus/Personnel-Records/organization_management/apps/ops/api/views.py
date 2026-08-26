@@ -1176,7 +1176,26 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         ratings_by_employee = {}
         if rating_band != "" or order_by_rating or may_see_rating:
-            ratings_by_employee = ratings_service.aggregate_rating_by_personnel()
+            try:
+                ratings_by_employee = (
+                    ratings_service.aggregate_rating_by_personnel()
+                )
+            except DomainError:
+                # Раздел рейтинга не настроен (нет флагов, нет методики).
+                # Рейтинг здесь — ОБОГАЩЕНИЕ кадрового списка, а не его
+                # условие: подбор людей обязан работать и там, где рейтинг не
+                # заводили вовсе. Иначе одна ненастроенная строка настроек
+                # ломает окно выбора сотрудника целиком — это и был регресс,
+                # найденный сторожем схемы (Plane №151).
+                #
+                # НО: если по рейтингу просили ОТБОР или ПОРЯДОК — молчать
+                # нельзя. Спросивший увидел бы полный список в обычном порядке
+                # и решил, что фильтр сработал. Отказ пробрасывается как есть,
+                # с честной причиной «раздел не настроен».
+                if rating_band != "" or order_by_rating:
+                    raise
+                ratings_by_employee = {}
+                may_see_rating = False
         if order_by_rating and not may_see_rating:
             # Ранжировать по невидимому баллу нельзя: порядок сам по себе
             # РАССКАЗЫВАЕТ рейтинг — кто выше, тот сильнее. Право на агрегат
@@ -2242,6 +2261,30 @@ class ServiceAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     permission_map = {"list": analytics_service.VIEW_PERMISSION}
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "preset", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Код именованного периода. ЛИБО он, ЛИБО пара from/to — "
+                    "период считает сервер, чтобы «текущая неделя» не означала "
+                    "разные интервалы у разных вкладок. Не прислано НИЧЕГО — "
+                    "400 (Plane №151)."
+                ),
+            ),
+            OpenApiParameter(
+                "from", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                required=False,
+                description="Начало периода, ГГГГ-ММ-ДД. Обязателен вместе с to, если нет preset.",
+            ),
+            OpenApiParameter(
+                "to", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                required=False,
+                description="Конец периода, ГГГГ-ММ-ДД. Обязателен вместе с from, если нет preset.",
+            ),
+        ]
+    )
     def list(self, request):
         params = request.query_params
         return Response(
@@ -2275,6 +2318,30 @@ class ServiceAnalyticsDrilldownViewSet(RequirePermissionMixin, viewsets.ViewSet)
 
     permission_map = {"list": analytics_service.VIEW_PERMISSION}
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "preset", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Код именованного периода. ЛИБО он, ЛИБО пара from/to — "
+                    "период считает сервер, чтобы «текущая неделя» не означала "
+                    "разные интервалы у разных вкладок. Не прислано НИЧЕГО — "
+                    "400 (Plane №151)."
+                ),
+            ),
+            OpenApiParameter(
+                "from", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                required=False,
+                description="Начало периода, ГГГГ-ММ-ДД. Обязателен вместе с to, если нет preset.",
+            ),
+            OpenApiParameter(
+                "to", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                required=False,
+                description="Конец периода, ГГГГ-ММ-ДД. Обязателен вместе с from, если нет preset.",
+            ),
+        ]
+    )
     def list(self, request):
         params = request.query_params
         return Response(
@@ -2298,6 +2365,30 @@ class ServiceAnalyticsAttentionViewSet(RequirePermissionMixin, viewsets.ViewSet)
 
     permission_map = {"list": analytics_service.VIEW_PERMISSION}
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "preset", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Код именованного периода. ЛИБО он, ЛИБО пара from/to — "
+                    "период считает сервер, чтобы «текущая неделя» не означала "
+                    "разные интервалы у разных вкладок. Не прислано НИЧЕГО — "
+                    "400 (Plane №151)."
+                ),
+            ),
+            OpenApiParameter(
+                "from", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                required=False,
+                description="Начало периода, ГГГГ-ММ-ДД. Обязателен вместе с to, если нет preset.",
+            ),
+            OpenApiParameter(
+                "to", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                required=False,
+                description="Конец периода, ГГГГ-ММ-ДД. Обязателен вместе с from, если нет preset.",
+            ),
+        ]
+    )
     def list(self, request):
         params = request.query_params
         return Response(
@@ -2497,6 +2588,19 @@ class OpsDailyEmployeesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     permission_map = {"list": _DAILY_READ_PERMISSION}
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "division_id", OpenApiTypes.INT, OpenApiParameter.QUERY,
+                required=True,
+                description=(
+                    "Подразделение. ОБЯЗАТЕЛЕН: состав отдаётся по одному "
+                    "подразделению, «весь состав службы» эта ручка не отдаёт "
+                    "вовсе (Plane №151)."
+                ),
+            )
+        ]
+    )
     def list(self, request):
         division_id = _parse_int_param(request, "division_id")
         if division_id is None:
