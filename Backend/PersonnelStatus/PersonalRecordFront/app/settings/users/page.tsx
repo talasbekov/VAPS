@@ -7,9 +7,11 @@
 // и снятие. Область — подразделение или «вся служба»; без области роль
 // действует везде, и это надо видеть словами, а не по пустому полю.
 //
-// Заведение учётки, блокировка и сброс пароля — шаг «П-9»; здесь только
-// чтение учёток и раздача ролей.
-import { Suspense, useState } from "react";
+// Заведение учётки, блокировка и сброс пароля — шаг «П-9». Временный пароль
+// приходит с сервера ОДИН раз (хранится только хеш), поэтому показывается
+// отдельным окном, которое нельзя закрыть случайным кликом мимо, и с явным
+// предупреждением, что повтора не будет — только новый сброс.
+import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -42,11 +44,15 @@ import {
   useAccessRoles,
   useAccessUserRoles,
   useAssignAccessRole,
+  useCreateAccessAccount,
+  useResetAccessAccountPassword,
   useRevokeAccessRole,
+  useSetAccessAccountActive,
 } from "@/hooks/use-access-permissions";
 import { WHOLE_SERVICE_SCOPE_LABEL } from "@/entities/access";
 import type { AccessAccount, AccessUserRole } from "@/entities/access";
 import type { Division } from "@/lib/api";
+import { formatIsoDateTime } from "@/shared/lib/date";
 import { OpsApiError } from "@/lib/ops-errors";
 
 const ACCESS_ADMIN_PERMISSION = "admin.roles";
@@ -88,6 +94,15 @@ function AccessUsersScreen() {
   const [searchDraft, setSearchDraft] = useDebouncedCommit(search, (value) =>
     updateParam("search", value)
   );
+  const [isCreating, setCreating] = useState(false);
+  // Одноразовый секрет живёт на уровне экрана, а не карточки: его рождают два
+  // разных действия (заведение и сброс), и он обязан пережить закрытие окна,
+  // из которого пришёл.
+  const [secret, setSecret] = useState<{
+    login: string;
+    password: string;
+    reason: "created" | "reset";
+  } | null>(null);
 
   if (!permissionsLoading && !canManage) {
     return <OpsAccessDenied what="учётных записей" />;
@@ -106,13 +121,22 @@ function AccessUsersScreen() {
           description="Учётные записи и их роли. Роль выдаётся с областью: подразделением или всей службой."
         />
 
-        <Input
-          className="h-[38px] max-w-[420px] text-[13px]"
-          placeholder="Поиск по логину, имени, фамилии или почте…"
-          aria-label="Поиск по учётным записям"
-          value={searchDraft}
-          onChange={(event) => setSearchDraft(event.target.value)}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            className="h-[38px] max-w-[420px] text-[13px]"
+            placeholder="Поиск по логину, имени, фамилии или почте…"
+            aria-label="Поиск по учётным записям"
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.target.value)}
+          />
+          <Button
+            type="button"
+            className="h-[38px]"
+            onClick={() => setCreating(true)}
+          >
+            Завести учётку
+          </Button>
+        </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <Card>
@@ -184,10 +208,41 @@ function AccessUsersScreen() {
             // key по учётке: карточка держит своё состояние (выбранная роль и
             // область, открытое подтверждение), и оно обязано сброситься при
             // переходе на другого человека.
-            <AccountDetails key={selected.id} account={selected} />
+            <AccountDetails
+              key={selected.id}
+              account={selected}
+              onTemporaryPassword={(password) =>
+                setSecret({
+                  login: selected.username,
+                  password,
+                  reason: "reset",
+                })
+              }
+            />
           )}
         </div>
       </div>
+
+      <CreateAccountDialog
+        open={isCreating}
+        onOpenChange={setCreating}
+        onCreated={(account, temporaryPassword) => {
+          setCreating(false);
+          updateParam("user", String(account.id));
+          if (temporaryPassword !== undefined) {
+            setSecret({
+              login: account.username,
+              password: temporaryPassword,
+              reason: "created",
+            });
+          }
+        }}
+      />
+
+      <TemporaryPasswordDialog
+        secret={secret}
+        onClose={() => setSecret(null)}
+      />
     </DashboardLayout>
   );
 }
@@ -278,7 +333,13 @@ function flattenDivisions(
   );
 }
 
-function AccountDetails({ account }: { account: AccessAccount }) {
+function AccountDetails({
+  account,
+  onTemporaryPassword,
+}: {
+  account: AccessAccount;
+  onTemporaryPassword: (password: string) => void;
+}) {
   const userRolesQuery = useAccessUserRoles(account.id);
   const rolesQuery = useAccessRoles("");
   const divisionsQuery = useDivisionsTree();
@@ -289,6 +350,15 @@ function AccountDetails({ account }: { account: AccessAccount }) {
   const [scope, setScope] = useState<string>(WHOLE_SERVICE_VALUE);
   const [pendingRevocation, setPendingRevocation] =
     useState<AccessUserRole | null>(null);
+  const [pendingLock, setPendingLock] = useState(false);
+  const [pendingReset, setPendingReset] = useState(false);
+  const setActive = useSetAccessAccountActive();
+  const resetPassword = useResetAccessAccountPassword({
+    onDone: (temporaryPassword) => {
+      setPendingReset(false);
+      onTemporaryPassword(temporaryPassword);
+    },
+  });
 
   const divisions = flattenDivisions(divisionsQuery.data);
   // Показываются ДЕЙСТВУЮЩИЕ назначения: снятие оставляет строку в базе
@@ -310,6 +380,55 @@ function AccountDetails({ account }: { account: AccessAccount }) {
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="border-t pt-3">
+          <h3 className="mb-2 text-[13px] font-semibold">Учётная запись</h3>
+          <p className="mb-2 text-[12px] text-muted-foreground">
+            {account.is_active
+              ? "Входит в систему."
+              : "Заблокирована: человек не войдёт, но его роли и записи в журнале остаются."}
+            {account.last_login === null
+              ? " Ни разу не входил."
+              : ` Последний вход ${formatLastLogin(account.last_login)}.`}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={resetPassword.isPending}
+              onClick={() => setPendingReset(true)}
+            >
+              Сбросить пароль
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={account.is_active ? "outline" : "default"}
+              className="h-8"
+              disabled={setActive.isPending}
+              onClick={() => {
+                // Разблокировка подтверждения не требует: она ничего не
+                // отнимает и отменяется тем же действием.
+                if (account.is_active) setPendingLock(true);
+                else setActive.mutate({ id: account.id, is_active: true });
+              }}
+            >
+              {account.is_active ? "Заблокировать" : "Разблокировать"}
+            </Button>
+          </div>
+          {setActive.error !== null && (
+            <p className="mt-2 text-[12px] text-destructive">
+              Не удалось сменить состояние учётной записи. Попробуйте ещё раз.
+            </p>
+          )}
+          {resetPassword.error !== null && (
+            <p className="mt-2 text-[12px] text-destructive">
+              Не удалось сбросить пароль. Прежний пароль продолжает работать.
+            </p>
+          )}
+        </div>
+
         <div className="border-t pt-3">
           <h3 className="mb-2 text-[13px] font-semibold">
             Роли
@@ -434,6 +553,39 @@ function AccountDetails({ account }: { account: AccessAccount }) {
         </div>
       </CardContent>
 
+      <ConfirmDialog
+        open={pendingLock}
+        title="Заблокировать учётную запись?"
+        confirmLabel="Заблокировать"
+        isPending={setActive.isPending}
+        onCancel={() => setPendingLock(false)}
+        onConfirm={() => {
+          setActive.mutate({ id: account.id, is_active: false });
+          setPendingLock(false);
+        }}
+      >
+        <>
+          Пользователь <span className="font-mono">{account.username}</span>{" "}
+          перестанет входить в систему сразу. Роли и записи в журнале
+          сохранятся, разблокировать можно здесь же.
+        </>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingReset}
+        title="Сбросить пароль?"
+        confirmLabel="Сбросить"
+        isPending={resetPassword.isPending}
+        onCancel={() => setPendingReset(false)}
+        onConfirm={() => resetPassword.mutate({ id: account.id })}
+      >
+        <>
+          Прежний пароль <span className="font-mono">{account.username}</span>{" "}
+          перестанет работать немедленно. Новый временный пароль будет показан
+          один раз — передать его человеку нужно сразу.
+        </>
+      </ConfirmDialog>
+
       <ConfirmRevocationDialog
         row={pendingRevocation}
         isPending={revoke.isPending}
@@ -491,6 +643,346 @@ function ConfirmRevocationDialog({
           </Button>
           <Button type="button" disabled={isPending} onClick={onConfirm}>
             Снять
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function formatLastLogin(value: string): string {
+  return formatIsoDateTime(value, "неизвестно когда");
+}
+
+/** Одно окно подтверждения на все действия карточки: у них общий каркас
+ * (вопрос — последствие — два действия), а три копии расходились бы формой
+ * при первой же правке. */
+function ConfirmDialog({
+  open,
+  title,
+  confirmLabel,
+  isPending,
+  onCancel,
+  onConfirm,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  confirmLabel: string;
+  isPending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <p className="text-[13px] leading-[1.55]">{children}</p>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Отмена
+          </Button>
+          <Button type="button" disabled={isPending} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateAccountDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: (account: AccessAccount, temporaryPassword?: string) => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Колбэк родителя приходит стрелкой из JSX и пересоздаётся каждый рендер —
+  // в зависимостях эффекта ему не место, держим в ref.
+  const onCreatedRef = useRef(onCreated);
+  onCreatedRef.current = onCreated;
+
+  const create = useCreateAccessAccount({
+    onFormError: (details) => {
+      const collected: Record<string, string> = {};
+      for (const [field, value] of Object.entries(details)) {
+        collected[field] = Array.isArray(value)
+          ? String(value[0])
+          : String(value);
+      }
+      setFieldErrors(collected);
+    },
+  });
+
+  function close(next: boolean): void {
+    if (next) return;
+    setUsername("");
+    setLastName("");
+    setFirstName("");
+    setEmail("");
+    setPassword("");
+    setFieldErrors({});
+    create.reset();
+    onOpenChange(false);
+  }
+
+  function submit(): void {
+    setFieldErrors({});
+    create.mutate({
+      username: username.trim(),
+      last_name: lastName.trim(),
+      first_name: firstName.trim(),
+      email: email.trim(),
+      // Пустой пароль не отправляется вовсе: пустая строка на сервере — это
+      // «задан пустой пароль», а не «придумай сам».
+      ...(password === "" ? {} : { password }),
+    });
+  }
+
+  // Успех — в эффекте, а не в теле рендера: setState родителя прямо в рендере
+  // React отбивает предупреждением. Временный пароль отдаётся наверх ровно
+  // один раз, вместе с закрытием окна: запросить его повторно нельзя.
+  const created = create.data;
+  useEffect(() => {
+    if (created === undefined) return;
+    create.reset();
+    setUsername("");
+    setLastName("");
+    setFirstName("");
+    setEmail("");
+    setPassword("");
+    setFieldErrors({});
+    onCreatedRef.current(created, created.temporary_password);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [created]);
+
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Завести учётную запись</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="account-username">Логин</Label>
+            <Input
+              id="account-username"
+              className="h-[34px] font-mono text-[12.5px]"
+              autoComplete="off"
+              aria-describedby={
+                fieldErrors.username ? "account-username-error" : undefined
+              }
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+            />
+            {fieldErrors.username && (
+              <p
+                id="account-username-error"
+                className="text-[12px] text-destructive"
+              >
+                {fieldErrors.username}
+              </p>
+            )}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="account-last-name">Фамилия</Label>
+              <Input
+                id="account-last-name"
+                className="h-[34px] text-[12.5px]"
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="account-first-name">Имя</Label>
+              <Input
+                id="account-first-name"
+                className="h-[34px] text-[12.5px]"
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="account-email">Почта</Label>
+            <Input
+              id="account-email"
+              type="email"
+              className="h-[34px] text-[12.5px]"
+              autoComplete="off"
+              aria-describedby={
+                fieldErrors.email ? "account-email-error" : undefined
+              }
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+            {fieldErrors.email && (
+              <p
+                id="account-email-error"
+                className="text-[12px] text-destructive"
+              >
+                {fieldErrors.email}
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="account-password">Пароль (необязательно)</Label>
+            <Input
+              id="account-password"
+              type="password"
+              className="h-[34px] text-[12.5px]"
+              autoComplete="new-password"
+              aria-describedby="account-password-hint"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <p
+              id="account-password-hint"
+              className="text-[11.5px] text-muted-foreground"
+            >
+              Оставьте пустым — система выдаст временный пароль и покажет его
+              один раз.
+            </p>
+            {fieldErrors.password && (
+              <p className="text-[12px] text-destructive">
+                {fieldErrors.password}
+              </p>
+            )}
+          </div>
+          {create.error !== null && Object.keys(fieldErrors).length === 0 && (
+            <p className="text-[12px] text-destructive">
+              Не удалось завести учётную запись. Попробуйте ещё раз.
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => close(false)}>
+            Отмена
+          </Button>
+          <Button
+            type="button"
+            disabled={create.isPending || username.trim() === ""}
+            onClick={submit}
+          >
+            Завести
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Одноразовый секрет. Хранить его негде — сервер держит только хеш, — и
+ * потому окно говорит об этом прямо, а не прячет предупреждение в подпись:
+ * закрыть его, не переписав пароль, значит идти на новый сброс. */
+function TemporaryPasswordDialog({
+  secret,
+  onClose,
+}: {
+  secret: {
+    login: string;
+    password: string;
+    reason: "created" | "reset";
+  } | null;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy(): Promise<void> {
+    if (secret === null) return;
+    try {
+      // Стенд живёт на http по IP, а `navigator.clipboard` есть только в
+      // защищённом контексте: без запасного пути кнопка молча ничего бы не
+      // делала именно там, где ей пользуются.
+      if (window.isSecureContext && navigator.clipboard !== undefined) {
+        await navigator.clipboard.writeText(secret.password);
+      } else {
+        const field = document.createElement("textarea");
+        field.value = secret.password;
+        field.setAttribute("readonly", "");
+        field.style.position = "fixed";
+        field.style.opacity = "0";
+        document.body.appendChild(field);
+        field.select();
+        document.execCommand("copy");
+        document.body.removeChild(field);
+      }
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={secret !== null}
+      onOpenChange={(next) => {
+        if (!next) {
+          setCopied(false);
+          onClose();
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Временный пароль</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-[13px] leading-[1.55]">
+            {secret?.reason === "reset" ? (
+              <>
+                Пароль учётной записи{" "}
+                <span className="font-mono">{secret.login}</span> сброшен:
+                прежний больше не работает.
+              </>
+            ) : (
+              <>
+                Учётная запись{" "}
+                <span className="font-mono">{secret?.login}</span> заведена.
+              </>
+            )}{" "}
+            Пароль показывается <b>один раз</b>: система хранит только его
+            свёртку. Закроете окно — восстановить его будет нельзя, останется
+            сбросить заново.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 rounded-[10px] border bg-muted/40 px-3 py-2">
+            <code className="select-all font-mono text-[15px] tracking-wide">
+              {secret?.password}
+            </code>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="ml-auto h-8"
+              onClick={() => void copy()}
+            >
+              Скопировать
+            </Button>
+          </div>
+          <p role="status" className="min-h-[16px] text-[12px] text-muted-foreground">
+            {copied ? "Пароль скопирован в буфер обмена." : ""}
+          </p>
+          <p className="text-[12px] text-muted-foreground">
+            Передайте пароль человеку лично и потребуйте сменить его при первом
+            входе.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={onClose}>
+            Закрыть
           </Button>
         </DialogFooter>
       </DialogContent>

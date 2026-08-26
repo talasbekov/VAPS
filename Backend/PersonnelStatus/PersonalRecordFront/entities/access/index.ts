@@ -78,6 +78,39 @@ export interface AccessAccount {
   last_login: string | null;
 }
 
+export function accessAccountPath(id: number): string {
+  return `${ACCESS_ACCOUNTS_PATH}${id}/`;
+}
+
+/** Сброс пароля — отдельное действие со своим следом в журнале; PATCH на
+ * учётку пароль не принимает (сервер отбивает такую попытку словами). */
+export function accessAccountResetPasswordPath(id: number): string {
+  return `${ACCESS_ACCOUNTS_PATH}${id}/reset-password/`;
+}
+
+/** Заведение учётки (Plane №36, шаг «П-9»). Пароль НЕОБЯЗАТЕЛЕН: пустое поле
+ * означает «сервер придумает временный» — это основной путь, свой пароль
+ * администратор задаёт редко. */
+export interface CreateAccessAccountRequest {
+  [key: string]: unknown;
+  username: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  password?: string;
+}
+
+/** Ответ заведения: та же учётка плюс временный пароль — ОДИН раз и только
+ * здесь. Поля нет, если пароль задавал администратор: показывать ему то, что
+ * он сам ввёл, незачем. */
+export interface CreatedAccessAccount extends AccessAccount {
+  temporary_password?: string;
+}
+
+export interface ResetAccessAccountPasswordResponse {
+  temporary_password: string;
+}
+
 export interface ListAccessAccountsResponse {
   count: number;
   next: string | null;
