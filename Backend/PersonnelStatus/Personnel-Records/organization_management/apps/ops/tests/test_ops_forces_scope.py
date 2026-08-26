@@ -1,0 +1,336 @@
+"""Отказы цепочки «Сбор сил на ОМ» по ЧУЖОЙ области — на уровне API
+(Plane №74, шаг «Р-8»).
+
+Разграничение, которое просил заказчик, живёт в двух местах: `require_scoped_
+permission` отвечает на вопрос про область (его стерегут пробы
+`operations/tests/test_scoped_permission.py`), а ВЬЮХИ решают, какую именно
+область спросить у данных. Вторую половину пробы уровня функции не видят
+вовсе: подмени вьюха департамент строки раскладки департаментом из тела
+запроса — юнит остался бы зелёным, а граница исчезла бы.
+
+Поэтому здесь ходят настоящие запросы:
+
+* оповещение и отправка списка — область берётся из СТРОКИ РАСКЛАДКИ, и роль
+  департамента А не трогает заявку департамента Б;
+* выделение и снятие человека — область берётся из ШТАТНОЙ ЕДИНИЦЫ сотрудника,
+  и начальник управления А-1 не выделяет человека из А-2;
+* сотрудник без штатной единицы — область неразрешима: роль С областью
+  отбивается (иначе границу обходили бы «удобным» человеком из тела запроса),
+  роль БЕЗ области проходит;
+* расстановка — её ведёт старший мероприятия; чужому она отказывает, а когда
+  старшего не назначено нигде, проверка молчит (осознанное послабление).
+
+Мероприятие во всех пробах готовит `manager` (роль без области, как сегодня
+ведут цепочку): предмет проверки — ГЕЙТ действия, и путь к нему не должен
+упираться в тот же гейт.
+"""
+import pytest
+
+from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.staff_unit.models import StaffUnit
+
+from .test_ops_forces_gathering import (  # noqa: F401
+    allocated_event,
+    event_on_demand,
+    make_assignment_status_type,
+    make_department,
+    make_directorate,
+)
+from .test_ops_security_events_api import (  # noqa: F401
+    client_for,
+    make_employee,
+    make_object,
+    manager,
+)
+
+pytestmark = pytest.mark.django_db
+
+URL = "/api/ops/security-events/"
+CHAIN_PERMISSIONS = (
+    "event.view",
+    "event.manage",
+    "forces.command",
+    "forces.allocate",
+    "forces.select",
+    "placement.manage",
+)
+
+
+def scoped_client(username, role_code, scope_division_id):
+    """Человек цепочки с ролью, выданной С ОБЛАСТЬЮ.
+
+    Набор прав тот же, что у `manager`: разграничение проверяется ОБЛАСТЬЮ, а
+    не отсутствием кода — иначе проба зеленела бы по причине «права нет
+    вовсе» и молчала бы о границе.
+    """
+    api, _ = client_for(
+        username, role_code, perms=CHAIN_PERMISSIONS, scope_division_id=scope_division_id
+    )
+    return api
+
+
+def unscoped_client(username, role_code):
+    api, _ = client_for(username, role_code, perms=CHAIN_PERMISSIONS)
+    return api
+
+
+def employee_of(division, last_name):
+    employee = make_employee(last_name)
+    StaffUnit.objects.create(division=division, employee=employee, index=1)
+    return employee
+
+
+# ── Оповещение и отправка: область департамента строки раскладки ────────────
+
+
+def test_notify_of_a_foreign_department_is_refused(manager):  # noqa: F811
+    own = make_department("Департамент А")
+    foreign = make_department("Департамент Б")
+    make_directorate(foreign, "Управление Б-1")
+    base, allocation_id = allocated_event(manager, foreign)
+    dept_lead = scoped_client("forces-own-dept", "DEPT_LEAD_A", own.pk)
+
+    # Тело ВРЁТ про область: клиент называет свой департамент, а строка
+    # адресована чужому. Область обязана прийти из данных мероприятия —
+    # поверь вьюха телу, и граница обходилась бы одним полем (проверено
+    # мутацией: с областью из тела эта проба краснеет).
+    resp = dept_lead.post(
+        f"{base}forces/allocation/{allocation_id}/notify/",
+        {"departmentId": str(own.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 403
+
+
+def test_notify_of_own_department_passes(manager):  # noqa: F811
+    """Контроль к пробе выше: та же роль, та же ручка, СВОЯ строка — 200.
+
+    Без него отказ выше нельзя отличить от «эта ручка не работает ни у кого».
+    """
+    own = make_department("Департамент А")
+    make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-own-dept-ok", "DEPT_LEAD_A", own.pk)
+
+    resp = dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    assert resp.status_code == 200
+    assert resp.json()["forceAllocation"][0]["status"] == "NOTIFIED"
+
+
+def test_submit_of_a_foreign_department_is_refused(manager):  # noqa: F811
+    """Отправка списка закрыта той же областью, что и оповещение.
+
+    Проверка прав идёт ДО состояния заявки, поэтому проба не готовит список:
+    она стережёт границу, а не порядок шагов.
+    """
+    own = make_department("Департамент А")
+    foreign = make_department("Департамент Б")
+    base, allocation_id = allocated_event(manager, foreign)
+    dept_lead = scoped_client("forces-submit-foreign", "DEPT_LEAD_A2", own.pk)
+
+    resp = dept_lead.post(
+        f"{base}forces/allocation/{allocation_id}/submit/",
+        {"departmentId": str(own.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 403
+
+
+def test_directorate_of_own_department_is_not_foreign(manager):  # noqa: F811
+    """Область департамента покрывает его управления: строка, адресованная
+    департаменту, доступна ответственному, назначенному на этот департамент,
+    даже когда сам он сидит в управлении внутри него."""
+    department = make_department("Департамент А")
+    directorate = make_directorate(department, "Управление А-1")
+    base, allocation_id = allocated_event(manager, department)
+    # Роль выдана на ДЕПАРТАМЕНТ, а строка адресована ему же.
+    lead = scoped_client("forces-subtree", "DEPT_LEAD_A3", department.pk)
+
+    resp = lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    assert resp.status_code == 200
+    assert {row["name"] for row in resp.json()["forceAllocation"][0]["directorates"]} == {
+        directorate.name
+    }
+
+
+# ── Выделение людей: область управления СОТРУДНИКА ──────────────────────────
+
+
+def test_member_add_for_a_foreign_directorate_is_refused(manager):  # noqa: F811
+    make_assignment_status_type()
+    department = make_department("Департамент А")
+    mine = make_directorate(department, "Управление А-1")
+    theirs = make_directorate(department, "Управление А-2")
+    stranger = employee_of(theirs, "Чужаков")
+    base, allocation_id = allocated_event(manager, department)
+    chief = scoped_client("forces-dir-lead", "DIR_LEAD_A1", mine.pk)
+
+    # Область в теле — та же ложь: сотрудник из А-2, а клиент называет А-1.
+    resp = chief.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(stranger.pk), "divisionId": str(mine.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 403
+
+
+def test_member_add_for_own_directorate_passes(manager):  # noqa: F811
+    make_assignment_status_type()
+    department = make_department("Департамент А")
+    mine = make_directorate(department, "Управление А-1")
+    make_directorate(department, "Управление А-2")
+    own_person = employee_of(mine, "Своиков")
+    base, allocation_id = allocated_event(manager, department)
+    chief = scoped_client("forces-dir-lead-ok", "DIR_LEAD_A1b", mine.pk)
+
+    resp = chief.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(own_person.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+    members = resp.json()["forceAllocation"][0]["members"]
+    assert [m["employeeId"] for m in members] == [str(own_person.pk)]
+
+
+def test_member_remove_is_checked_by_the_same_employee(manager):  # noqa: F811
+    """Снятие спрашивает область ТОГО ЖЕ человека: иначе своего выделяло бы
+    своё управление, а снимало бы любое."""
+    make_assignment_status_type()
+    department = make_department("Департамент А")
+    mine = make_directorate(department, "Управление А-1")
+    theirs = make_directorate(department, "Управление А-2")
+    stranger = employee_of(theirs, "Чужаков")
+    # Дата в будущем: снять выделенного можно только до начала мероприятия.
+    base, allocation_id = allocated_event(manager, department, business_date="2027-06-01")
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(stranger.pk)},
+        format="json",
+    )
+    chief = scoped_client("forces-remove-foreign", "DIR_LEAD_A1c", mine.pk)
+
+    resp = chief.delete(
+        f"{base}forces/allocation/{allocation_id}/members/{stranger.pk}/"
+    )
+
+    assert resp.status_code == 403
+
+
+def test_employee_without_a_staff_unit_is_refused_for_a_scoped_role(manager):  # noqa: F811
+    """Область неразрешима — роль С областью отбивается.
+
+    Идентификатор сотрудника приходит ИЗ ТЕЛА ЗАПРОСА: пропусти проверка
+    человека без штатной единицы, и начальник управления А-1 выделял бы кого
+    угодно, подобрав «удобного» — граница обходилась бы телом запроса.
+    """
+    make_assignment_status_type()
+    department = make_department("Департамент А")
+    mine = make_directorate(department, "Управление А-1")
+    homeless = make_employee("Безштатов")  # штатной единицы нет вовсе
+    base, allocation_id = allocated_event(manager, department)
+    chief = scoped_client("forces-homeless-scoped", "DIR_LEAD_A1d", mine.pk)
+
+    resp = chief.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(homeless.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 403
+
+
+def test_employee_without_a_staff_unit_passes_for_a_role_without_scope(manager):  # noqa: F811
+    """Роль БЕЗ области неразрешимой областью не сужается: сузить её нечем ни
+    в одном подразделении, и отказ запер бы ровно тех, кто ведёт цепочку
+    сегодня, ничего не защитив."""
+    make_assignment_status_type()
+    department = make_department("Департамент А")
+    homeless = make_employee("Безштатов")
+    base, allocation_id = allocated_event(manager, department)
+    lead = unscoped_client("forces-homeless-global", "GLOBAL_LEAD_F")
+
+    resp = lead.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(homeless.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+
+
+# ── Расстановка: её ведёт старший мероприятия ───────────────────────────────
+
+
+def test_placement_assign_is_refused_to_a_stranger_when_a_chief_is_named(manager):  # noqa: F811
+    """Право `placement.manage` отвечает «может ли вообще», а старший — «его ли
+    это мероприятие». У мероприятия со старшим чужой не расставляет."""
+    department = make_department("Департамент А")
+    base, _allocation_id = allocated_event(manager, department)
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    chief_employee = make_employee("Старшинов")
+    event.chief_employee_id = chief_employee.pk
+    event.save(update_fields=["chief_employee_id"])
+    post_id = event.recon_sector_posts[0]["id"]
+    worker = employee_of(make_directorate(department, "Управление А-1"), "Постовой")
+    stranger = scoped_client("placement-stranger", "PLACE_LEAD", department.pk)
+
+    resp = stranger.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(worker.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 403
+
+
+def test_placement_assign_passes_when_no_chief_is_named_anywhere(manager):  # noqa: F811
+    """Старшего не назначили — проверка МОЛЧИТ: запирать расстановку
+    мероприятия, которому забыли назвать старшего, значит устраивать простой
+    вместо разграничения. Право при этом всё равно требуется.
+
+    Отклонение осознанное и записано в `Frontend/Decisions`; захочет заказчик
+    строгости — эта проба и укажет, где её включать.
+    """
+    department = make_department("Департамент А")
+    base, _allocation_id = allocated_event(manager, department)
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    assert event.chief_employee_id is None, "фикстура уже назвала старшего — проверять нечего"
+    post_id = event.recon_sector_posts[0]["id"]
+    worker = employee_of(make_directorate(department, "Управление А-1"), "Постовой")
+    lead = scoped_client("placement-no-chief", "PLACE_LEAD2", department.pk)
+
+    resp = lead.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(worker.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 200
+
+
+def test_placement_assign_is_refused_without_the_permission(manager):  # noqa: F811
+    """Старшинство НЕ выдаёт права: у кого нет `placement.manage`, тому и своё
+    мероприятие не помогает."""
+    department = make_department("Департамент А")
+    base, _allocation_id = allocated_event(manager, department)
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    post_id = OpsSecurityEvent.objects.get(pk=event_id).recon_sector_posts[0]["id"]
+    worker = employee_of(make_directorate(department, "Управление А-1"), "Постовой")
+    api, _user = client_for("placement-noperm", "PLACE_VIEWER", perms=("event.view",))
+
+    resp = api.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(worker.pk)},
+        format="json",
+    )
+
+    assert resp.status_code == 403
