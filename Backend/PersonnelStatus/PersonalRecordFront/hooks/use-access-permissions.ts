@@ -10,18 +10,26 @@ import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
   ACCESS_CATALOG_PATH,
   ACCESS_PERMISSIONS_PATH,
+  ACCESS_ACCOUNTS_PATH,
   ACCESS_ROLES_PATH,
+  ACCESS_USER_ROLES_PATH,
   accessPermissionPath,
   accessRolePath,
   accessRolePermissionsPath,
+  accessUserRolePath,
 } from "@/entities/access";
 import type {
+  AccessAccount,
   AccessCatalogResponse,
   AccessPermission,
   AccessRole,
+  AccessUserRole,
+  AssignAccessRoleRequest,
   ChangeRolePermissionsRequest,
+  ListAccessAccountsResponse,
   ListAccessPermissionsResponse,
   ListAccessRolesResponse,
+  ListAccessUserRolesResponse,
   SaveAccessPermissionRequest,
   SaveAccessRoleRequest,
 } from "@/entities/access";
@@ -141,5 +149,54 @@ export function useChangeRolePermissions(code: string) {
       void queryClient.invalidateQueries({ queryKey: ["ops-access-roles"] });
       void queryClient.invalidateQueries({ queryKey: ["ops-me"] });
     },
+  });
+}
+
+// ── Учётные записи и назначения ролей (Plane №36, шаг «П-8») ───────────────
+
+export function useAccessAccounts(search: string) {
+  return useQuery<ListAccessAccountsResponse, OpsApiFailure>({
+    queryKey: ["ops-access-accounts", search.trim()],
+    queryFn: () =>
+      opsApiClient.get<ListAccessAccountsResponse>(
+        withSearch(ACCESS_ACCOUNTS_PATH, search)
+      ),
+  });
+}
+
+/** Назначения ОДНОГО человека: список раздела длинный, и тянуть его целиком
+ * ради карточки незачем — фильтр по `user_id` есть на сервере. */
+export function useAccessUserRoles(userId: number | null) {
+  return useQuery<ListAccessUserRolesResponse, OpsApiFailure>({
+    queryKey: ["ops-access-user-roles", userId],
+    queryFn: () =>
+      opsApiClient.get<ListAccessUserRolesResponse>(
+        `${ACCESS_USER_ROLES_PATH}?user_id=${encodeURIComponent(String(userId))}`
+      ),
+    enabled: userId !== null,
+  });
+}
+
+function invalidateAccess(queryClient: ReturnType<typeof useQueryClient>): void {
+  void queryClient.invalidateQueries({ queryKey: ["ops-access-user-roles"] });
+  // Права текущего пользователя тоже перечитываются: администратор мог
+  // раздать или снять роль самому себе.
+  void queryClient.invalidateQueries({ queryKey: ["ops-me"] });
+}
+
+export function useAssignAccessRole() {
+  const queryClient = useQueryClient();
+  return useOpsMutation<AccessUserRole, AssignAccessRoleRequest>({
+    mutationFn: (body) =>
+      opsApiClient.post<AccessUserRole>(ACCESS_USER_ROLES_PATH, body),
+    onSuccess: () => invalidateAccess(queryClient),
+  });
+}
+
+export function useRevokeAccessRole() {
+  const queryClient = useQueryClient();
+  return useOpsMutation<void, { id: number }>({
+    mutationFn: ({ id }) => opsApiClient.del<void>(accessUserRolePath(id)),
+    onSuccess: () => invalidateAccess(queryClient),
   });
 }

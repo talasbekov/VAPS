@@ -9,6 +9,10 @@
 export const ACCESS_PERMISSIONS_PATH = "/api/operations/permissions/";
 /** Справочник ролей раздела. */
 export const ACCESS_ROLES_PATH = "/api/operations/roles/";
+/** Учётные записи раздела. */
+export const ACCESS_ACCOUNTS_PATH = "/api/operations/accounts/";
+/** Назначения ролей людям — с областью. */
+export const ACCESS_USER_ROLES_PATH = "/api/operations/user-roles/";
 /** Каталог применения: где каждое право работает. */
 export const ACCESS_CATALOG_PATH = "/api/ops/access-catalog/";
 
@@ -58,6 +62,62 @@ export interface ChangeRolePermissionsRequest {
   add?: string[];
   remove?: string[];
 }
+
+export function accessUserRolePath(id: number): string {
+  return `${ACCESS_USER_ROLES_PATH}${id}/`;
+}
+
+export interface AccessAccount {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  full_name: string | null;
+  email: string;
+  is_active: boolean;
+  last_login: string | null;
+}
+
+export interface ListAccessAccountsResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: AccessAccount[];
+}
+
+/** Назначение роли человеку. Имена приходят рядом с идентификаторами:
+ * область числом на экране бесполезна, а `null` у имени честен — назначение
+ * живёт на строковом `user_id` без внешнего ключа. */
+export interface AccessUserRole {
+  id: number;
+  user_id: string;
+  user_login: string | null;
+  user_full_name: string | null;
+  role_code: string;
+  role_name: string | null;
+  scope_division_id: number | null;
+  scope_division_name: string | null;
+  is_active: boolean;
+}
+
+export interface ListAccessUserRolesResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: AccessUserRole[];
+}
+
+export interface AssignAccessRoleRequest {
+  [key: string]: unknown;
+  user_id: string;
+  role_code: string;
+  scope_division_id?: number | null;
+}
+
+/** Подпись безобластного назначения. Строки «вся служба» в справочнике
+ * подразделений НЕТ — её подписывает клиент, и это единственное место, где
+ * такая подпись живёт. */
+export const WHOLE_SERVICE_SCOPE_LABEL = "Вся служба";
 
 export interface AccessPermission {
   code: string;
