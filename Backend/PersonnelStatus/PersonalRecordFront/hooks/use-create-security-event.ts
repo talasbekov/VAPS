@@ -12,6 +12,7 @@ import {
   type ListBindableObjectsResponse,
   type SecurityEvent,
 } from "@/entities/security-event";
+import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 
 export function useBindableObjects() {
   return useQuery<ListBindableObjectsResponse, OpsApiFailure>({
@@ -30,7 +31,7 @@ export function useCreateSecurityEvent(options?: {
       opsApiClient.post<SecurityEvent>(SECURITY_EVENTS_PATH, body),
     onSuccess: (data) => {
       queryClient.setQueryData(["ops-security-events", "detail", data.id], data);
-      void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
     },
     onFormError: options?.onFormError,
   });

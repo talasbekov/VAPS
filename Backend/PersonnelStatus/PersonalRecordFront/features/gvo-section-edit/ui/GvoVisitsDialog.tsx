@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/shared/hooks/use-toast";
 import { updateVisitObject } from "@/features/event-visit-objects";
 import type { SecurityEvent, VisitObject } from "@/entities/security-event";
+import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 
 export interface GvoVisitsDialogProps {
   event: SecurityEvent;
@@ -61,7 +62,7 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
   const save = useMutation({
     mutationFn: updateVisitObject,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
     },
   });
 

@@ -1,14 +1,11 @@
 export * from "./model/types";
+// Вывод базы сводки (deriveGvoSummary, mergeGvoSummary, gvoVisitDays) отсюда
+// СНЯТ (Plane №166): сводку собирает сервер. Мок держит свою копию правила в
+// `mocks/ops/gvo-derive.ts` — общей она больше не будет.
 export {
-  formatRuDate,
-  ruWeekday,
-  deriveGvoSummary,
-  mergeGvoSummary,
-  isGvoSummaryFilled,
   gvoSenior,
   gvoStaffCount,
   gvoCountryAbbr,
-  gvoVisitDays,
   canManageGvoSummary,
 } from "./model/derive";
 export {

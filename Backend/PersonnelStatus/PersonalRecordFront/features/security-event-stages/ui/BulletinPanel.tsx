@@ -39,13 +39,11 @@ import {
 import { objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { daySpanInclusive, ruDate, ruDaysLabel, ruWeekdayName } from "@/lib/ru-date";
-import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
+import { useGvoSummary } from "@/hooks/use-gvo-summaries";
 import {
   UNSPECIFIED,
-  deriveGvoSummary,
   gvoSenior,
   gvoStaffCount,
-  mergeGvoSummary,
 } from "@/entities/gvo-summary";
 import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
@@ -278,18 +276,22 @@ function EventFacts({ event }: { event: SecurityEvent }) {
   const objectId = event.objectId;
   const canViewObject = hasPermission("object.view") && objectId !== null;
   const objectQuery = useSecurityObject(canViewObject ? objectId : "");
-  // Сводка ГВО: та же сборка, что у реестра ГВО (база из бюллетеня + патч).
-  // Страница уже за гейтом event.view — отдельного права у сводки нет.
-  const patchesQuery = useGvoPatches();
-  const summary = mergeGvoSummary(
-    deriveGvoSummary(event),
-    patchesByCode(patchesQuery.data)[event.code]
-  );
+  // Сводка ГВО приходит СОБРАННОЙ с сервера (Plane №166). Страница уже за
+  // гейтом event.view — отдельного права у сводки нет.
+  const summaryQuery = useGvoSummary(event.code);
+  const summary = summaryQuery.data?.summary;
+  // Три факта ниже читаются из сводки. Её отсутствие — НЕ «уточняется»:
+  // «уточняется» значит «знаем, что нужно, и ещё не выяснили», а здесь мы не
+  // знаем вовсе. Подставить сюда «уточняется» значило бы выдать отказ за
+  // рабочее состояние бюллетеня.
+  const gone = summaryQuery.isLoading ? "загрузка сводки…" : "сводка недоступна";
   const personsLabel =
-    summary.persons.length === 0
-      ? UNSPECIFIED
-      : summary.persons.map((person) => person.name).join(", ");
-  const staff = gvoStaffCount(summary);
+    summary === undefined
+      ? gone
+      : summary.persons.length === 0
+        ? UNSPECIFIED
+        : summary.persons.map((person) => person.name).join(", ");
+  const staff = summary === undefined ? null : gvoStaffCount(summary);
 
   // Незагруженные права — это ЕЩЁ НЕ отказ: `hasPermission` до ответа
   // /my-permissions отвечает false, и без этой ветки блок успевал обвинить
@@ -358,15 +360,24 @@ function EventFacts({ event }: { event: SecurityEvent }) {
         <Fact label="Охраняемые лица" value={personsLabel} />
         <Fact
           label="Количество охраняемых лиц"
-          value={summary.persons.length === 0 ? UNSPECIFIED : String(summary.persons.length)}
+          value={
+            summary === undefined
+              ? gone
+              : summary.persons.length === 0
+                ? UNSPECIFIED
+                : String(summary.persons.length)
+          }
         />
         {/* Именно ГРУППЫ: `gvoSenior` ищет старшего среди состава ГВО в
             сводке. Старший мероприятия из бюллетеня стоит выше и это другой
             человек — одинаковая подпись у двух фактов путала бы. */}
-        <Fact label="Старший группы ГВО" value={gvoSenior(summary)} />
+        <Fact
+          label="Старший группы ГВО"
+          value={summary === undefined ? gone : gvoSenior(summary)}
+        />
         <Fact
           label="Численность ГВО"
-          value={staff === 0 ? UNSPECIFIED : String(staff)}
+          value={staff === null ? gone : staff === 0 ? UNSPECIFIED : String(staff)}
         />
       </dl>
       {/* Модуля «Реестр ГВО» больше нет (Plane «Реестр ОМ-35.8»): сводка

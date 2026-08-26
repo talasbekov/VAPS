@@ -1,5 +1,10 @@
-// MSW-handlers «Реестр ГВО». Хранится только патч ручных правок по коду ОМ —
-// база сводки выводится на клиенте из бюллетеня (entities/gvo-summary).
+// MSW-handlers «Реестр ГВО». Хранится только патч ручных правок по коду ОМ;
+// база сводки ВЫВОДИТСЯ ЗДЕСЬ, в мок-слое (mocks/ops/gvo-derive.ts).
+//
+// С Plane №166 сборку делает сервер, и экраны читают её у него. Мок обязан
+// отвечать тем же, иначе он зелен там, где живой бэк отвечал бы иначе, —
+// поэтому правило вывода переехало из entities СЮДА: экрану оно больше
+// недоступно, и случайно собрать сводку на клиенте уже нельзя.
 // С 20.08.2026 у раздела есть живой бэк (/api/ops/gvo-summaries/): домен
 // `gvo` живой по умолчанию, handlers регистрируются только когда домен
 // возвращён на мок (NEXT_PUBLIC_OPS_MOCK_DOMAINS) — см. mocks/ops/handlers.ts.
@@ -10,14 +15,18 @@
 // origin документа (:3106) — запрос молча ушёл бы в сеть мимо мока.
 import { http, HttpResponse } from "msw";
 import {
+  GVO_SUMMARIES_ASSEMBLED_PATH,
   GVO_SUMMARIES_PATH,
   gvoSectionPatchKeys,
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
+import { deriveGvoSummary, mergeGvoSummary } from "./gvo-derive";
 import type {
   GvoSummary,
   GvoSummaryPatch,
   GvoSummaryPatchRecord,
+  GvoSummaryRow,
+  ListGvoSummariesResponse,
   ListGvoSummaryPatchesResponse,
   ResetGvoSummaryRequest,
   UpdateGvoSummaryRequest,
@@ -239,10 +248,43 @@ function decodeCode(raw: string | readonly string[] | undefined): string {
   }
 }
 
+/** Строка собранной сводки — то же, что отдаёт сервер по одному ОМ. */
+function assembledRow(event: { code: string }): GvoSummaryRow {
+  const record = getRecords().find((item) => item.omCode === event.code);
+  const patch = record?.patch ?? {};
+  return {
+    omCode: event.code,
+    summary: mergeGvoSummary(deriveGvoSummary(event as never), patch),
+    filled: Object.keys(patch).length > 0,
+    updatedAt: record?.updatedAt ?? null,
+  };
+}
+
 export const gvoHandlers = [
+  // Собранные сводки ВСЕХ мероприятий. Порядок по коду — как на сервере.
+  // Стоит ПЕРЕД паттерном с `:omCode`: иначе «assembled» уехал бы в него
+  // сегментом и мок ответил бы сводкой мероприятия с таким кодом.
+  http.get(`*${GVO_SUMMARIES_ASSEMBLED_PATH}`, () =>
+    HttpResponse.json<ListGvoSummariesResponse>({
+      results: [...readSecurityEventsStore()]
+        .sort((a, b) => a.code.localeCompare(b.code))
+        .map(assembledRow),
+    })
+  ),
+
   http.get(`*${GVO_SUMMARIES_PATH}`, () =>
     HttpResponse.json<ListGvoSummaryPatchesResponse>({ results: getRecords() })
   ),
+
+  http.get(`*${GVO_SUMMARIES_PATH}:omCode/`, ({ params }) => {
+    const omCode = decodeCode(params.omCode);
+    const event = readSecurityEventsStore().find((item) => item.code === omCode);
+    // Мероприятия нет — 404, как на сервере. Пустая сводка читалась бы как
+    // «мероприятие есть, но не заполнено», и опечатка в коде выглядела бы
+    // рабочим экраном.
+    if (event === undefined) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json<GvoSummaryRow>(assembledRow(event));
+  }),
 
   // Паттерны собраны литералом, а не gvoSummaryPatchPath(":omCode"): хелпер
   // кодирует сегмент (кириллица в коде ОМ), и «:omCode» превратился бы в

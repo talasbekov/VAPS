@@ -28,6 +28,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { PersonnelPicker } from "@/features/personnel-picker";
 import type { SecurityEvent, VisitObject } from "@/entities/security-event";
 import { assignVisitObjectChief } from "../api/visit-objects-api";
+import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 
 export function AssignChiefDialog({
   event,
@@ -53,7 +54,7 @@ export function AssignChiefDialog({
   const save = useMutation({
     mutationFn: assignVisitObjectChief,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      invalidateSecurityEvents(queryClient);
       toast({
         title:
           visit.chiefEmployeeId === null

@@ -367,6 +367,12 @@ def test_gvo_retrieve_assembles_the_summary_on_the_server():
 
     assert response.status_code == 200
     body = response.json()
+    # Строка сводки, а не голая сводка: экрану нужен ещё и признак
+    # «Заполнена», и считать его на клиенте значило бы снова завести правило
+    # в двух местах.
+    assert body["omCode"] == "ОМ-СБ-1"
+    assert body["filled"] is False
+    body = body["summary"]
     assert body["persons"][0]["name"] == "Иван Петров"
     assert body["responsible"]["name"] == "Абенов"
     # Деловая дата ОМ — в прибытии и убытии, В ТОЙ ЖЕ ФОРМЕ, что на экране:
@@ -385,8 +391,10 @@ def test_gvo_retrieve_merges_the_saved_patch():
         event=event, patch={"country": "Вымышляндия", "arrival": {"time": "12:00ч."}}
     )
 
-    body = viewer("ops-gvo-sum-2").get(f"{GVO_URL}ОМ-СБ-2/").json()
+    row = viewer("ops-gvo-sum-2").get(f"{GVO_URL}ОМ-СБ-2/").json()
 
+    assert row["filled"] is True
+    body = row["summary"]
     assert body["country"] == "Вымышляндия"
     assert body["arrival"]["time"] == "12:00ч."
     # Глубокое слияние: правка времени не стёрла дату соседним ключом.
@@ -414,3 +422,62 @@ def test_gvo_retrieve_is_open_to_a_viewer_and_closed_to_nobody():
 
     assert viewer("ops-gvo-sum-4").get(f"{GVO_URL}ОМ-СБ-4/").status_code == 200
     assert nobody("ops-gvo-sum-5").get(f"{GVO_URL}ОМ-СБ-4/").status_code == 403
+
+
+def test_gvo_assembled_has_a_row_for_every_event_not_only_for_patched_ones():
+    """Строка есть у КАЖДОГО мероприятия, а не только у правленых.
+
+    У мероприятия без ручных правок сводка не пустая — она выведена из
+    бюллетеня. Реестр, получивший строки только по правленым, показал бы
+    остальные пустыми, хотя данные у них есть.
+    """
+    make_event(code="ОМ-СБ-6")
+    patched = make_event(code="ОМ-СБ-7")
+    OpsGvoSummaryPatch.objects.create(event=patched, patch={"country": "Вымышляндия"})
+
+    rows = viewer("ops-gvo-sum-6").get(f"{GVO_URL}assembled/").json()["results"]
+
+    by_code = {row["omCode"]: row for row in rows}
+    assert {"ОМ-СБ-6", "ОМ-СБ-7"} <= set(by_code)
+    # «Заполнена» против «Черновика» — по наличию ручных правок.
+    assert by_code["ОМ-СБ-6"]["filled"] is False
+    assert by_code["ОМ-СБ-7"]["filled"] is True
+    assert by_code["ОМ-СБ-7"]["summary"]["country"] == "Вымышляндия"
+    # У черновика сводка ВЫВЕДЕНА, а не пуста: дата на месте.
+    assert by_code["ОМ-СБ-6"]["summary"]["arrival"]["date"] == "21.08.2026"
+
+
+def test_gvo_assembled_does_not_query_the_database_once_per_event():
+    """Сорок мероприятий — не сорок запросов за патчами.
+
+    Сборка в цикле через `summary_for_event` ходила бы в базу на каждое ОМ, и
+    реестр дорожал бы линейно от числа мероприятий — незаметно, пока их
+    десяток.
+    """
+    from django.test.utils import CaptureQueriesContext
+    from django.db import connection
+
+    for number in range(6):
+        make_event(code=f"ОМ-СБ-N{number}")
+
+    api = viewer("ops-gvo-sum-7")
+    with CaptureQueriesContext(connection) as queries:
+        api.get(f"{GVO_URL}assembled/")
+    heavy = len(queries)
+
+    for number in range(6, 12):
+        make_event(code=f"ОМ-СБ-N{number}")
+    with CaptureQueriesContext(connection) as queries:
+        api.get(f"{GVO_URL}assembled/")
+
+    assert len(queries) == heavy, (
+        "число запросов выросло вместе с числом мероприятий — сборка ходит в "
+        "базу в цикле"
+    )
+
+
+def test_gvo_assembled_is_closed_to_nobody():
+    """Тот же гейт, что у чтения сводки: `event.view` и не меньше."""
+    make_event(code="ОМ-СБ-8")
+
+    assert nobody("ops-gvo-sum-8").get(f"{GVO_URL}assembled/").status_code == 403
