@@ -11,6 +11,7 @@
  * явной причиной.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -115,7 +116,7 @@ test.describe(LIVE ? 'цепочка этапов' : 'цепочка этапо�
 
     // Свёрнутая стадия подписана: где именно внутри шага стоит мероприятие
     const collapsed = await collapsedStageEvent(token)
-    test.skip(collapsed === undefined, 'на стенде нет ОМ на свёрнутой стадии')
+    requireFixture(collapsed, 'мероприятие на свёрнутой стадии («Проведение» или «Закрыто»)')
     await page.goto(`${APP}/security-ops/events/${collapsed!.id}/`)
     const expected: Record<string, string> = {
       CONDUCT: 'Проведение и закрытие',

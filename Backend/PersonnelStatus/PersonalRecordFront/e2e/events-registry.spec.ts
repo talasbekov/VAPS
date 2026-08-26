@@ -13,6 +13,7 @@
  * незамеченным (событие с частым объектом привело бы туда же по случайности).
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -681,7 +682,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const forces = await events(token, 'PLACEMENT')
     const target = forces[0]
     // Не молчаливый skip: причина явно записана в отчёте прогона.
-    test.skip(target === undefined, 'на стенде нет ОМ на стадии PLACEMENT («Расстановка»)')
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
