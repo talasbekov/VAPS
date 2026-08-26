@@ -39,7 +39,13 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def dictionary():
-    """Только тот тип, который сид ищет по имени."""
+    """Только те типы, которые сид ищет по имени.
+
+    Отпуск здесь не для полноты справочника: сид заводит им ОДНО отсутствие,
+    чтобы «в строю» отличалось от «по списку» (Plane №169). Колонка отчёта у
+    него намеренно НЕ `IN_SERVICE` — иначе строка появилась бы, а числа
+    остались бы равны.
+    """
     StatusType.objects.get_or_create(
         code=seed_smoke_fixtures.ASSIGNMENT_CODE,
         defaults={
@@ -48,17 +54,33 @@ def dictionary():
             "report_column_code": "IN_SERVICE",
         },
     )
+    StatusType.objects.get_or_create(
+        code=seed_smoke_fixtures.ABSENCE_CODE,
+        defaults={
+            "name": "Отпуск",
+            "priority": 20,
+            "report_column_code": "VACATION",
+            "is_hard_block": True,
+        },
+    )
 
 
 @pytest.fixture
 def structure():
-    """Корень с двумя отделами и человеком в каждом.
+    """Корень с четырьмя отделами и человеком в каждом.
 
-    Два отдела, а не один: сид обязан брать людей ИЗ РАЗНЫХ подразделений, и на
-    одном отделе это правило не проверяется вовсе.
+    Отделов несколько, а не один: сид обязан брать людей ИЗ РАЗНЫХ
+    подразделений, и на одном отделе это правило не проверяется вовсе.
+
+    ЛИШНИЙ человек нужен отсутствующему: сид берёт его ВНЕ привлечённых, и
+    ровно на трёх при умолчании `assigned=3` ему просто некого было бы
+    выбрать — отказ был бы свойством фикстуры, а не сида.
     """
     root = Division.objects.create(name="Департамент (тест)")
-    for index, title in enumerate(["Первый отдел", "Второй отдел"], start=1):
+    for index, title in enumerate(
+        ["Первый отдел", "Второй отдел", "Третий отдел", "Четвёртый отдел"],
+        start=1,
+    ):
         division = Division.objects.create(name=title, parent=root)
         employee = Employee.objects.create(
             last_name=f"Тестов{index}",
@@ -328,3 +350,66 @@ def test_a_fixture_with_stale_numbers_is_rebuilt(stand):
     assert sorted(
         int(row["requestedCount"]) for row in rebuilt.force_requests
     ) == seed_smoke_fixtures.EXPECTED_REQUESTED
+
+
+# ── Отсутствующий: «в строю» ≠ «по списку» ───────────────────────────────
+
+
+def test_the_seed_puts_exactly_one_person_out_of_service(stand):
+    """После сида «в строю» ОТЛИЧАЕТСЯ от «по списку» — и ровно на одного.
+
+    Без этой строки проба кадровых показателей аналитики службы падает
+    собственным сторожем: пока все в строю, плитка, взявшая не то поле,
+    показывала бы то же самое число, и сторожить было бы нечего (Plane №169).
+
+    «Ровно на одного» — не придирка: задача фикстуры развести два числа, а не
+    изобразить убыль, и каждый лишний отсутствующий двигает знаменатели, по
+    которым считают соседние пробы.
+    """
+    seed(assigned=2)
+
+    today = Clock.today_local()
+    absences = OpsEmployeeStatus.objects.filter(
+        status_type_code=seed_smoke_fixtures.ABSENCE_CODE,
+        date_start__lte=today,
+        date_end__gt=today,
+    )
+
+    assert absences.count() == 1
+
+
+def test_the_absent_person_is_not_one_of_the_assigned(stand):
+    """Отсутствующий взят ВНЕ привлечённых.
+
+    Отпуск — жёсткий статус: на человеке с привлечённостью он даёт конфликт,
+    и сид упал бы на собственной правильной проверке. Проба стережёт именно
+    выбор человека, а не факт записи.
+    """
+    seed(assigned=2)
+
+    assigned = set(
+        OpsEmployeeStatus.objects.filter(
+            status_type_code=seed_smoke_fixtures.ASSIGNMENT_CODE
+        ).values_list("employee_id", flat=True)
+    )
+    absent = set(
+        OpsEmployeeStatus.objects.filter(
+            status_type_code=seed_smoke_fixtures.ABSENCE_CODE
+        ).values_list("employee_id", flat=True)
+    )
+
+    assert absent and not (absent & assigned)
+
+
+def test_the_absence_is_reported_outside_in_service(stand):
+    """Тип отсутствия отчитывается НЕ в колонку «в строю».
+
+    Сид мог бы завести статус, который в отчёте всё равно считается строем —
+    так устроена сама привлечённость (`EVENT_ASSIGNMENT` отчитывается в
+    `IN_SERVICE`, и это верно по существу: человек на мероприятии в строю).
+    Тогда строка появилась бы, а числа остались бы равны, и проба выше
+    зеленела бы впустую.
+    """
+    absence_type = StatusType.objects.get(code=seed_smoke_fixtures.ABSENCE_CODE)
+
+    assert absence_type.report_column_code != "IN_SERVICE"
