@@ -38,7 +38,14 @@ class OpsAuditLog(models.Model):
     # UPPER_SNAKE-код из закрытого словаря (audit_service.ACTIONS).
     action = models.CharField(max_length=100)
     entity_type = models.CharField(max_length=100)
-    entity_id = models.IntegerField()
+    # Числовой идентификатор строки. NULL — у сущностей, опознаваемых КОДОМ
+    # (право, роль): их ключ лежит в `entity_key`. Поле не переделано в
+    # строковое намеренно — по нему фильтруют и индексируются 80 с лишним
+    # мест, и смена типа переписала бы им сравнение молча.
+    entity_id = models.IntegerField(null=True, blank=True)
+    # Строковый ключ сущности (Plane №36): код права или роли. Пусто — у
+    # сущностей с числовым идентификатором; двух ключей сразу не бывает.
+    entity_key = models.CharField(max_length=100, null=True, blank=True)
     # Снимки «до» и «после»: у создания нет «до», у удаления не было бы
     # «после» — отсюда null, а не пустой словарь (пустой означал бы «объект
     # был, и он был пуст»).

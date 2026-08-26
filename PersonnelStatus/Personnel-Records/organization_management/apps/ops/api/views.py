@@ -1783,7 +1783,14 @@ class OpsAuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
                         "actorUserId": row.actor_user_id,
                         "action": row.action,
                         "entityType": row.entity_type,
-                        "entityId": str(row.entity_id),
+                        # Ключ у строки ровно один: числовой или кодовый
+                        # (право, роль). Клиенту он приходит одним полем —
+                        # два заставили бы каждый экран гадать, какое читать.
+                        "entityId": (
+                            row.entity_key
+                            if row.entity_key is not None
+                            else str(row.entity_id)
+                        ),
                         "oldValue": row.old_value,
                         "newValue": row.new_value,
                         "reason": row.reason,

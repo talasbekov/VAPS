@@ -152,6 +152,10 @@ PLACEMENT_SECTOR_SENIOR_SET = "PLACEMENT_SECTOR_SENIOR_SET"
 # Смена дежурства: заведение и отмена — решения с обоснованием (обход отдыха,
 # причина отмены); ознакомление/заступление/завершение следа в журнале
 # мутаций не оставляют — их след живёт на самой смене (штампы времени).
+# Правка справочника прав (Plane №36, «П-2»). Одно действие на заведение и
+# правку: вопрос «что это за право и что оно открывает» один, и разбирается он
+# по одной ленте, где старое значение стоит рядом с новым.
+ACCESS_PERMISSION_SAVED = "ACCESS_PERMISSION_SAVED"
 DUTY_SHIFT_CREATED = "DUTY_SHIFT_CREATED"
 DUTY_SHIFT_CANCELLED = "DUTY_SHIFT_CANCELLED"
 # Настройки: принятая правка правила — решение с причиной и версией политики.
@@ -210,6 +214,7 @@ ACTIONS = frozenset(
         FORCE_ALLOCATION_RETURNED,
         VISIT_OBJECT_CHIEF_REVOKED,
         PLACEMENT_SECTOR_SENIOR_SET,
+        ACCESS_PERMISSION_SAVED,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,
@@ -247,6 +252,10 @@ ENTITY_SECURITY_EVENT = "security_event"
 ENTITY_DUTY_SHIFT = "duty_shift"
 ENTITY_POLICY_SETTING = "policy_setting"
 ENTITY_DICTIONARY_ENTRY = "dictionary_entry"
+# Справочники доступа (Plane №36): право и роль. Правка доступа — именное
+# решение, по которому потом спрашивают «кто и когда открыл эту ручку».
+ENTITY_PERMISSION = "access_permission"
+ENTITY_ROLE = "access_role"
 
 ENTITY_TYPES = frozenset(
     {
@@ -262,6 +271,8 @@ ENTITY_TYPES = frozenset(
         ENTITY_DUTY_SHIFT,
         ENTITY_POLICY_SETTING,
         ENTITY_DICTIONARY_ENTRY,
+        ENTITY_PERMISSION,
+        ENTITY_ROLE,
     }
 )
 
@@ -271,8 +282,9 @@ def _build(
     actor,
     action,
     entity_type,
-    entity_id,
-    created_at,
+    entity_id=None,
+    entity_key=None,
+    created_at=None,
     old_value=None,
     new_value=None,
     reason="",
@@ -290,11 +302,18 @@ def _build(
         raise ValueError(f"неизвестное событие журнала: {action!r}")
     if entity_type not in ENTITY_TYPES:
         raise ValueError(f"неизвестный тип сущности журнала: {entity_type!r}")
+    # Ключ обязателен, но ровно один: строка без обоих не указывает ни на
+    # что, а с обоими — на два разных объекта.
+    if (entity_id is None) == (entity_key is None):
+        raise ValueError(
+            "строка журнала требует РОВНО одного ключа: entity_id или entity_key"
+        )
     return OpsAuditLog(
         actor_user_id=str(actor),
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
+        entity_key=entity_key,
         old_value=old_value,
         new_value=new_value,
         reason=reason,
@@ -307,7 +326,8 @@ def record(
     actor,
     action,
     entity_type,
-    entity_id,
+    entity_id=None,
+    entity_key=None,
     old_value=None,
     new_value=None,
     reason="",
@@ -323,6 +343,7 @@ def record(
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
+        entity_key=entity_key,
         old_value=old_value,
         new_value=new_value,
         reason=reason,
