@@ -28,7 +28,17 @@ mkdir -p "$(dirname "$LOCK")" 2>/dev/null
 
 waited=0
 until mkdir "$LOCK" 2>/dev/null; do
-  owner=$(cat "$LOCK/owner" 2>/dev/null || echo "неизвестно кто")
+  owner=$(tr '\n' ' ' < "$LOCK/owner" 2>/dev/null || echo "неизвестно кто")
+  # Замок УМЕРШЕГО процесса — брошенный (Plane №148): задачу убили извне, а
+  # каталог остался и держит всех. Проверяется pid, а не время: «протух ли по
+  # сроку» — гадание, а живой процесс либо есть, либо нет. Проверка стоит ДО
+  # отказа, иначе брошенный замок так и остаётся ждать чужих рук.
+  stale_pid=$(sed -n "s/^pid=//p" "$LOCK/owner" 2>/dev/null | head -n 1)
+  if [ -n "$stale_pid" ] && ! kill -0 "$stale_pid" 2>/dev/null; then
+    echo "[pytest-lock] замок брошен (процесс $stale_pid мёртв, держал: $owner) — снимаю"
+    rm -rf "$LOCK"
+    continue
+  fi
   if [ "$WAIT" -le 0 ] || [ "$waited" -ge "$WAIT" ]; then
     echo "[pytest-lock] база занята: $owner"
     echo "[pytest-lock] подождать — PYTEST_LOCK_WAIT=300; снять брошенный замок — rm -rf $LOCK"
@@ -38,10 +48,25 @@ until mkdir "$LOCK" 2>/dev/null; do
   waited=$((waited + 5))
 done
 
-echo "$WHO" > "$LOCK/owner"
-# Замок снимается ДАЖЕ при падении прогона: брошенный замок хуже гонки — он
+# В owner — КТО, ЧЕЙ ПРОЦЕСС и КОГДА взят (Plane №148): по одному имени нельзя
+# отличить живой замок от брошенного задачей, которую убили извне, а такое
+# сегодня случалось четыре раза за день.
+printf '%s\npid=%s\nвзят=%s\n' "$WHO" "$$" "$(date '+%F %T')" > "$LOCK/owner"
+# Замок снимается ДАЖЕ при падении прогона: брошенный хуже гонки — он
 # останавливает всех, и снимать его пришлось бы руками.
-trap 'rm -rf "$LOCK"' EXIT INT TERM
+#
+# Но снимается ТОЛЬКО СВОЙ. Чужой `trap` уже снял чужой (мой) замок посреди
+# прогона: сессия написала `mkdir "$LOCK" 2>/dev/null` без `|| exit`, каталог
+# уже существовал, `mkdir` промолчал, а `rm -rf` в конце снёс общий замок.
+# Сверка владельца делает такую ошибку безобидной для соседа.
+release_lock() {
+  if [ "$(head -n 1 "$LOCK/owner" 2>/dev/null)" = "$WHO" ]; then
+    rm -rf "$LOCK"
+  else
+    echo "[pytest-lock] замок держит не мой прогон — не снимаю"
+  fi
+}
+trap release_lock EXIT INT TERM
 
-echo "[pytest-lock] база занята мной ($WHO)"
+echo "[pytest-lock] база занята мной ($WHO, pid $$)"
 "$@"

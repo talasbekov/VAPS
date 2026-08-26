@@ -65,9 +65,13 @@ ps -eo comm,args | awk '$1=="python" && /pytest/'   # НЕ `pgrep -f pytest`: о
 #    падении):
 bash scripts/pytest-lock.sh .venv/bin/python -m pytest <аргументы>
 PYTEST_LOCK_WAIT=600 bash scripts/pytest-lock.sh .venv/bin/python -m pytest …   # встать в очередь
-#    Занято — код возврата 75 и имя владельца. Брошенный замок (задачу убили
-#    извне) снимается руками: rm -rf /tmp/claude-1000/pytest.lock — но сначала
-#    убедись, что чужого прогона правда нет, командой выше.
+#    Занято — код возврата 75 и владелец (кто, pid, время взятия). Замок
+#    УМЕРШЕГО процесса подбирается сам: скрипт проверяет pid через `kill -0`,
+#    а не гадает «протух ли по сроку». Свой замок скрипт снимает и при
+#    падении, ЧУЖОЙ — не снимает никогда (сверяет владельца): ошибка соседа
+#    вроде `mkdir … 2>/dev/null` без `|| exit` больше не сносит чужой замок.
+#    Каталог замка руками НЕ трогать вообще — проверять сам замок надо на
+#    своём пути: PYTEST_LOCK=/tmp/claude-1000/pytest-lock-test.
 
 # Фронт: из /Backend/PersonnelStatus/PersonalRecordFront
 npm run gate:front        # tsc --noEmit && проверочная прод-сборка (~1,5 мин)
