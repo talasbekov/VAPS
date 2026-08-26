@@ -512,8 +512,38 @@ function norm(p: string): string {
   return (trimmed === '' ? '/' : trimmed) + (search === '' ? '' : `?${search}`)
 }
 
+/** Ждёт стенд, если он перезапускается прямо сейчас (полный прогон 26.08.2026).
+ *
+ * Обход длиннее часа; за это время `next dev` упирается в потолок памяти, и
+ * сторож перезапускает его НЕ ДОЖИДАЯСЬ затишья — по жёсткому потолку. Замер
+ * того же дня: за один обход это случилось четырежды, последний раз на
+ * 4008 МБ. Проба, попавшая в окно перезапуска, получает
+ * `ERR_CONNECTION_REFUSED` — это факт о стенде, а не находка о портале, и
+ * падать на нём значит красить прогон по чужой причине.
+ *
+ * Повтора самой пробы (`retries`) мало: перезапуск занимает секунды, а повтор
+ * идёт сразу. Поэтому ЖДЁМ подъёма и повторяем переход — но не бесконечно:
+ * стенд, не поднявшийся за минуту, это уже находка.
+ */
+async function gotoWaitingForStand(page: Page, url: string): Promise<void> {
+  const deadline = Date.now() + 60_000
+  for (;;) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded' })
+      return
+    } catch (error) {
+      const text = String(error)
+      const restarting =
+        text.includes('ERR_CONNECTION_REFUSED') || text.includes('ECONNREFUSED')
+      if (!restarting || Date.now() > deadline) throw error
+      console.log(`[обход] стенд перезапускается — жду и повторяю: ${url}`)
+      await page.waitForTimeout(3_000)
+    }
+  }
+}
+
 async function open(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: 'domcontentloaded' })
+  await gotoWaitingForStand(page, url)
   // networkidle недостижим при поллинге/сокете — таймаут здесь не отказ.
   await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => undefined)
   await page.waitForTimeout(300)
