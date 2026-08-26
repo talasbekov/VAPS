@@ -17,6 +17,10 @@ from organization_management.apps.operations.selectors import (
 )
 
 WILDCARD = "*"
+# Право управлять доступом. Вынесено константой, потому что его спрашивает не
+# только гейт ручки: на нём же держится отбой «снял админскую роль сам у
+# себя», и разъехавшийся литерал сделал бы отбой молча бесполезным.
+ACCESS_ADMIN_PERMISSION = "admin.roles"
 
 
 class PermissionService:
@@ -282,9 +286,34 @@ class RoleAdminService:
     @staticmethod
     @transaction.atomic
     def revoke_role(user_id, role_code, scope_division_id=None):
+        """Снять роль: деактивация, не удаление — история выдач остаётся."""
         UserRole.objects.filter(
             user_id=user_id, role_code_id=role_code, scope_division_id=scope_division_id
         ).update(is_active=False)
+
+    @classmethod
+    def keeps_access_admin_without(cls, user_id, *, excluded_user_role_id) -> bool:
+        """Останется ли у человека право управлять доступом БЕЗ этой выдачи.
+
+        Спрашивается перед снятием роли у самого себя: администратор, снявший
+        свою последнюю административную роль, запирает раздел — вернуть доступ
+        сможет только тот, у кого он ещё есть, а в маленькой службе такого
+        может и не быть. Дешевле отбить действие, чем чинить его руками в
+        базе.
+        """
+        role_codes = list(
+            UserRole.objects.filter(user_id=user_id, is_active=True)
+            .exclude(id=excluded_user_role_id)
+            .values_list("role_code_id", flat=True)
+        )
+        if not role_codes:
+            return False
+        codes = set(
+            RolePermission.objects.filter(role_code_id__in=role_codes).values_list(
+                "permission_code_id", flat=True
+            )
+        )
+        return WILDCARD in codes or ACCESS_ADMIN_PERMISSION in codes
 
     @staticmethod
     @transaction.atomic
