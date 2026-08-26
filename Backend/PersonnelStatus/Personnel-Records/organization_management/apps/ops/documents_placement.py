@@ -28,7 +28,7 @@ from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops.document_tables import fill_table_rows
-from organization_management.apps.ops.documents import docx_to_pdf, fill_template
+from organization_management.apps.ops.documents import emit, fill_template
 
 TEMPLATE = os.path.join(
     os.path.dirname(__file__), "document_templates", "placement.docx"
@@ -74,8 +74,8 @@ def placement_rows(event):
     return rows
 
 
-def render_placement(event_code, as_of=None):
-    """Байты PDF расстановки мероприятия по его коду."""
+def render_placement(event_code, as_of=None, fmt="pdf"):
+    """Байты расстановки мероприятия по его коду; `fmt` — «docx» либо «pdf»."""
     from docx import Document
 
     event = OpsSecurityEvent.objects.filter(code=event_code).first()
@@ -101,7 +101,7 @@ def render_placement(event_code, as_of=None):
         document = Document(filled_path)
         fill_table_rows(document.tables[0], placement_rows(event))
         document.save(filled_path)
-        return docx_to_pdf(filled_path)
+        return emit(filled_path, fmt)
     finally:
         try:
             os.unlink(filled_path)

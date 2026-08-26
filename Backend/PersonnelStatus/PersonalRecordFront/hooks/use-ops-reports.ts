@@ -24,6 +24,7 @@ import type {
   ReportJobDetailResponse,
   RerunMode,
   RerunReportJobResponse,
+  EventDocumentFormat,
   EventDocumentKindsResponse,
   EventDocumentResponse,
 } from "@/entities/service-report";
@@ -159,7 +160,7 @@ export function useRenderEventDocument(
 ) {
   return useOpsMutation<
     EventDocumentResponse,
-    { kind: string; eventCode?: string }
+    { kind: string; eventCode?: string; format?: EventDocumentFormat }
   >({
     mutationFn: (params) =>
       opsApiClient.get<EventDocumentResponse>(eventDocumentRenderPath(params)),

@@ -351,12 +351,15 @@ def template_keys(template_path):
     return keys
 
 
-def render_summary_pdf(event):
-    """«Сводные данные» мероприятия в PDF."""
+def render_summary_pdf(event, fmt="pdf"):
+    """«Сводные данные» мероприятия; `fmt` — «docx» либо «pdf»."""
     from organization_management.apps.ops.documents import (
+        render_docx_from_template,
         render_pdf_from_template,
     )
 
     path = summary_template_path()
     values = fill_all_keys(template_keys(path), document_values(event))
+    if fmt == "docx":
+        return render_docx_from_template(path, values)
     return render_pdf_from_template(path, values)

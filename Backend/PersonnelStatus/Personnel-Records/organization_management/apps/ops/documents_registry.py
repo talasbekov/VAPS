@@ -14,6 +14,7 @@
 документы бывают и чем собираются», а не «кому их видно».
 """
 from organization_management.apps.operations.exceptions import DomainError
+from organization_management.apps.ops.documents import CONTENT_TYPES, FORMATS
 
 #: Виды документов. `needs_event` — не украшение: бюллетень и графики строятся
 #: ПО ВСЕМ мероприятиям на момент среза, и требовать для них код ОМ значило бы
@@ -49,6 +50,20 @@ KINDS = {
 }
 
 
+def list_formats():
+    """Форматы для экрана. Порядок не случаен: DOCX первым, потому что
+    образцы заказчика — рабочие бланки Word, и выгружают их чаще, чтобы
+    дозаполнить руками."""
+    return [
+        {"format": "docx", "label": "DOCX (Word)"},
+        {"format": "pdf", "label": "PDF"},
+    ]
+
+
+def content_type(fmt):
+    return CONTENT_TYPES[fmt]
+
+
 def list_kinds():
     """Перечень для экрана: код, подпись и нужно ли мероприятие.
 
@@ -65,11 +80,21 @@ def list_kinds():
     ]
 
 
-def render(kind, *, event_code=None, as_of=None):
+def render(kind, *, event_code=None, as_of=None, fmt="pdf"):
     """Собрать документ выбранного вида. Возвращает пару (байты, имя файла).
 
     Разница в подписях сборщиков спрятана ЗДЕСЬ и только здесь.
+
+    `fmt` — «docx» либо «pdf». По умолчанию PDF: так вели себя все читатели
+    до появления выбора, и менять умолчание молча значило бы отдать им другой
+    файл под тем же вызовом.
     """
+    if fmt not in FORMATS:
+        raise DomainError(
+            "VALIDATION_ERROR", 400,
+            detail={"format": ["Формат бывает: " + ", ".join(FORMATS)]},
+            message="Проверьте заполнение формы.",
+        )
     meta = KINDS.get(kind)
     if meta is None:
         raise DomainError(
@@ -105,25 +130,25 @@ def render(kind, *, event_code=None, as_of=None):
                 "ENTITY_NOT_FOUND", 404, detail={"id": code},
                 message="Запись не найдена.",
             )
-        payload = render_summary_pdf(event)
+        payload = render_summary_pdf(event, fmt=fmt)
     elif kind == "placement":
         from organization_management.apps.ops.documents_placement import (
             render_placement,
         )
 
-        payload = render_placement(code, as_of=as_of)
+        payload = render_placement(code, as_of=as_of, fmt=fmt)
     elif kind == "bulletin":
         from organization_management.apps.ops.documents_bulletin import (
             render_bulletin,
         )
 
-        payload = render_bulletin(as_of=as_of)
+        payload = render_bulletin(as_of=as_of, fmt=fmt)
     else:
         from organization_management.apps.ops.documents_schedules import (
             render_schedule,
         )
 
-        payload = render_schedule(kind, as_of=as_of)
+        payload = render_schedule(kind, as_of=as_of, fmt=fmt)
 
-    name = meta["file"] + (f"-{code}" if code else "") + ".pdf"
+    name = meta["file"] + (f"-{code}" if code else "") + "." + fmt
     return payload, name

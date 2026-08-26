@@ -22,7 +22,7 @@ import os
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops.document_tables import fill_table_rows
-from organization_management.apps.ops.documents import docx_to_pdf, fill_template
+from organization_management.apps.ops.documents import emit, fill_template
 
 TEMPLATE = os.path.join(
     os.path.dirname(__file__), "document_templates", "bulletin.docx"
@@ -112,8 +112,12 @@ def bulletin_rows(as_of_date):
     return rows
 
 
-def render_bulletin(as_of=None):
-    """Байты PDF бюллетеня на момент среза (по умолчанию — сейчас)."""
+def render_bulletin(as_of=None, fmt="pdf"):
+    """Байты бюллетеня на момент среза (по умолчанию — сейчас).
+
+    `fmt` — «docx» либо «pdf». DOCX это то, что просил заказчик: бюллетень
+    дозаполняют руками после выгрузки.
+    """
     from docx import Document
 
     moment = as_of or Clock.now()
@@ -128,7 +132,7 @@ def render_bulletin(as_of=None):
         document = Document(filled_path)
         fill_table_rows(document.tables[0], bulletin_rows(moment.date()))
         document.save(filled_path)
-        return docx_to_pdf(filled_path)
+        return emit(filled_path, fmt)
     finally:
         try:
             os.unlink(filled_path)

@@ -27,6 +27,7 @@ import {
 import type {
   ReportArtifactSummary,
   ReportJobState,
+  EventDocumentFormat,
 } from "@/entities/service-report";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
@@ -56,6 +57,11 @@ export default function ServiceReportsPage() {
   const documentKinds = useEventDocumentKinds();
   const [documentKind, setDocumentKind] = useState("");
   const [documentEvent, setDocumentEvent] = useState("");
+  // DOCX по умолчанию: образцы заказчика это рабочие бланки Word, и выгружают
+  // их чаще, чтобы дозаполнить руками (Plane №156). У РУЧКИ умолчание другое
+  // — PDF, ради её прежних читателей; экран спрашивает формат всегда и явно,
+  // поэтому расхождения умолчаний человек не видит.
+  const [documentFormat, setDocumentFormat] = useState<EventDocumentFormat>("docx");
   const [documentSaved, setDocumentSaved] = useState<string | null>(null);
   const renderDocument = useRenderEventDocument((file) => {
     saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
@@ -235,8 +241,8 @@ export default function ServiceReportsPage() {
         >
           <h2 className="mb-1 text-sm font-semibold">Документы по мероприятию</h2>
           <p className="mb-3 text-xs text-muted-foreground">
-            Готовый файл в PDF по форме документа. Собирается сразу, в очередь
-            работ не попадает.
+            Готовый файл по форме документа: DOCX для правки руками, PDF для
+            печати и отправки. Собирается сразу, в очередь работ не попадает.
           </p>
           {documentKinds.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка видов документов…</p>
@@ -265,6 +271,34 @@ export default function ServiceReportsPage() {
                   ))}
                 </select>
               </label>
+              {/* Формат — тем же видом, что и вид документа: два разных
+                  органа управления для двух одинаковых по смыслу выборов
+                  заставили бы человека читать форму дважды. */}
+              {/* `?? []` не про типы: старый сервер (в разработке он живёт с
+                  `--noreload` и переживает правку) ответит без поля, и разбор
+                  списка уронил бы ВЕСЬ экран отчётов ради одного выбора. Без
+                  списка формат не спрашивается, и ручка отдаёт своё умолчание
+                  — PDF, как было до Plane №156. */}
+              {(documentKinds.data.formats ?? []).length > 0 && (
+                <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                  Формат
+                  <select
+                    aria-label="Формат документа"
+                    className="mt-0.5 block h-9 w-40 rounded-md border border-input bg-background px-2 text-sm"
+                    value={documentFormat}
+                    onChange={(e) => {
+                      setDocumentFormat(e.target.value as EventDocumentFormat);
+                      setDocumentSaved(null);
+                    }}
+                  >
+                    {(documentKinds.data.formats ?? []).map((row) => (
+                      <option key={row.format} value={row.format}>
+                        {row.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {/* Поле мероприятия показывается ТОЛЬКО тем видам, которым оно
                   нужно: спрашивать код ОМ у бюллетеня, который строится по
                   всем мероприятиям, значило бы требовать лишнее. */}
@@ -293,10 +327,22 @@ export default function ServiceReportsPage() {
                   renderDocument.mutate({
                     kind: documentKind,
                     eventCode: documentEvent,
+                    // Формат шлём только когда сервер его предложил: иначе
+                    // старая ручка получила бы незнакомый параметр.
+                    format:
+                      (documentKinds.data?.formats ?? []).length > 0
+                        ? documentFormat
+                        : undefined,
                   });
                 }}
               >
-                {renderDocument.isPending ? "Собираем…" : "Выгрузить PDF"}
+                {renderDocument.isPending
+                  ? "Собираем…"
+                  : `Выгрузить ${
+                      (documentKinds.data?.formats ?? []).length > 0
+                        ? documentFormat.toUpperCase()
+                        : "PDF"
+                    }`}
               </button>
             </div>
           )}
