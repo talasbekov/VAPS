@@ -1149,6 +1149,73 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 | Q(staff_unit__division__name__icontains=search)
             ).distinct()
 
+        # ── Рейтинг (Plane №67, шаг РЙ-4) ───────────────────────────────
+        # Заказчик: «Научи отдавать рейтинг». До этой правки доска подбора
+        # фильтровала по рейтингу В ПРЕДЕЛАХ ЗАГРУЖЕННОЙ СТРАНИЦЫ, и «нет
+        # кандидатов» означало «нет на этой странице» — на базе больше
+        # страницы это прямое враньё в подборе людей.
+        #
+        # Право уважается: без `rating.view_aggregate` поля НЕТ ВОВСЕ (а не
+        # `null`: null значил бы «рейтинга нет», хотя он есть и его просто не
+        # показывают), и отбор по нему недоступен — 403, а не молчаливое
+        # игнорирование параметра. Молча проигнорировать отбор хуже отказа:
+        # спросивший увидел бы полный список и решил, что фильтр сработал.
+        perms = effective_permissions(request)
+        may_see_rating = (
+            "*" in perms
+            or ratings_service.VIEW_AGGREGATE_PERMISSION in perms
+        )
+        rating_band = (request.query_params.get("rating_band") or "").strip()
+        ordering = (request.query_params.get("ordering") or "").strip()
+        order_by_rating = ordering == "rating"
+        if ordering not in ("", "rating"):
+            raise DomainError(
+                "VALIDATION_ERROR", 400,
+                detail={"ordering": ["Известен один порядок: rating."]},
+                message="Проверьте заполнение формы.",
+            )
+        ratings_by_employee = {}
+        if rating_band != "" or order_by_rating or may_see_rating:
+            ratings_by_employee = ratings_service.aggregate_rating_by_personnel()
+        if order_by_rating and not may_see_rating:
+            # Ранжировать по невидимому баллу нельзя: порядок сам по себе
+            # РАССКАЗЫВАЕТ рейтинг — кто выше, тот сильнее. Право на агрегат
+            # закрывает и значение, и порядок.
+            raise DomainError(
+                "PERMISSION_DENIED", 403,
+                detail={
+                    "permission": ratings_service.VIEW_AGGREGATE_PERMISSION
+                },
+                message="Недостаточно прав.",
+            )
+        if rating_band != "":
+            if not may_see_rating:
+                raise DomainError(
+                    "PERMISSION_DENIED", 403,
+                    detail={
+                        "permission": ratings_service.VIEW_AGGREGATE_PERMISSION
+                    },
+                    message="Недостаточно прав.",
+                )
+            matches = ratings_service.RATING_BANDS.get(rating_band)
+            if matches is None:
+                raise DomainError(
+                    "VALIDATION_ERROR", 400,
+                    detail={"rating_band": [
+                        "Неизвестная полоса рейтинга: "
+                        + ", ".join(sorted(ratings_service.RATING_BANDS))
+                    ]},
+                    message="Проверьте заполнение формы.",
+                )
+            # Отбор идёт ДО постранички — в этом вся задача. Список id, а не
+            # срез страницы: иначе полнота отбора снова стала бы зависеть от
+            # того, что успело загрузиться.
+            wanted = [
+                pk for pk in employees.values_list("pk", flat=True)
+                if matches(ratings_by_employee.get(str(pk)))
+            ]
+            employees = employees.filter(pk__in=wanted)
+
         total = employees.count()
         try:
             page = max(int(request.query_params.get("page", "1")), 1)
@@ -1163,7 +1230,33 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
             page_size = self.MAX_PAGE_SIZE
         page_size = min(page_size, self.MAX_PAGE_SIZE)
         start = (page - 1) * page_size
-        employees = employees[start : start + page_size]
+        if order_by_rating:
+            # Ранжирование по решению заказчика (26.08.2026): «надо разрешить
+            # ранжировать всю кадровую базу по баллу». Порядок считается по
+            # ВСЕЙ выборке и только потом режется на страницы — иначе вышла бы
+            # та же беда, что с отбором: страница, упорядоченная сама в себе.
+            #
+            # Агрегат считается в Python по методике (период, порог оценок,
+            # флаги), колонки с ним в базе нет — поэтому порядок задаётся
+            # списком id, а не `order_by`. Второй ключ — фамилия: без него
+            # равные баллы шли бы в порядке, который база не обещает, и
+            # страницы «плавали» бы между запросами.
+            ordered_pks = sorted(
+                employees.values_list("pk", "last_name", "first_name"),
+                key=lambda row: (
+                    # `None` — «судить не по чему»; такие идут В КОНЕЦ, а не
+                    # считаются нулём: ноль означал бы плохую оценку.
+                    ratings_by_employee.get(str(row[0])) is None,
+                    -(ratings_by_employee.get(str(row[0])) or 0),
+                    row[1],
+                    row[2],
+                ),
+            )
+            page_pks = [row[0] for row in ordered_pks[start : start + page_size]]
+            by_pk = {e.pk: e for e in employees.filter(pk__in=page_pks)}
+            employees = [by_pk[pk] for pk in page_pks if pk in by_pk]
+        else:
+            employees = employees[start : start + page_size]
 
         # Статус НА ДАТУ (Plane №65, шаг «Р-2»): подбор кандидатов обязан
         # показывать, свободен ли человек в день мероприятия, — предлагать
@@ -1211,6 +1304,13 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "statusLabel": label,
                 }
             )
+            if may_see_rating:
+                # `None` здесь значит «судить не по чему»: человек не связан с
+                # рейтингом, оценок меньше порога методики либо функция
+                # выключена. Для подбора это один и тот же случай.
+                results[-1]["aggregateRating"] = ratings_by_employee.get(
+                    str(employee.pk)
+                )
         # `next`/`previous` — НОМЕРА страниц, как у реестра ОМ: контракт
         # раздела один, и второй его вид (ссылки) заставил бы клиента угадывать,
         # что ему пришло.

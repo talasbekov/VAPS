@@ -252,6 +252,14 @@ export interface PersonnelSummarySnapshot {
    * две заставили бы читателя гадать, что ему пришло. */
   statusCode: string | null;
   statusLabel: string | null;
+  /** Агрегат оперативного рейтинга (Plane №67, шаг РЙ-4).
+   *
+   * Поля НЕТ ВОВСЕ, когда у спросившего нет права `rating.view_aggregate` —
+   * это НЕ то же самое, что `null`. `null` значит «судить не по чему»:
+   * человек не связан с рейтингом, оценок меньше порога методики либо
+   * функция выключена. Отсутствие поля значит «вам не показывают», и
+   * рисовать по нему «нет данных» нельзя — это соврало бы о сотруднике. */
+  aggregateRating?: number | null;
 }
 
 export type JournalEntryType = "INSTRUCTION" | "ORDER" | "INCIDENT" | "REPLACEMENT";
@@ -653,6 +661,23 @@ export function opsPersonnelPagePath(params: {
    * даёт мероприятие: считать «сегодня» за клиента сервер не станет —
    * расстановка ведётся на будущий день. */
   businessDate?: string;
+  /** Полоса рейтинга — КОД, а не подпись с экрана (Plane №67, шаг РЙ-4):
+   * `9_10`, `8_9`, `7_8`, `below_7`, `no_data`. Отбор идёт НА СЕРВЕРЕ и до
+   * постранички: пока он жил на клиенте, «нет кандидатов» означало «нет на
+   * этой странице». Без права на агрегат сервер ОТБИВАЕТ отбор (403), а не
+   * молчит: молча проигнорированный фильтр выглядел бы сработавшим. */
+  ratingBand?: string;
+  /** Порядок выдачи. `rating` — ранжирование по баллу ПО ВСЕЙ выборке
+   * (решение заказчика 26.08.2026), а не в пределах страницы.
+   *
+   * Закрыто тем же правом `rating.view_aggregate`, что и само значение:
+   * порядок САМ рассказывает балл — кто выше, тот сильнее. Без права сервер
+   * отвечает 403.
+   *
+   * Безоценочные идут В КОНЕЦ: `null` значит «судить не по чему», а не ноль.
+   * При равных баллах порядок задаёт фамилия — иначе страницы «плавали» бы
+   * между запросами. */
+  ordering?: "rating";
 }): string {
   const query = new URLSearchParams({
     page: String(params.page),
@@ -663,6 +688,9 @@ export function opsPersonnelPagePath(params: {
     query.set("division_id", (params.divisionId as string).trim());
   if ((params.businessDate ?? "").trim() !== "")
     query.set("business_date", (params.businessDate as string).trim());
+  if ((params.ratingBand ?? "").trim() !== "")
+    query.set("rating_band", (params.ratingBand as string).trim());
+  if (params.ordering !== undefined) query.set("ordering", params.ordering);
   return `${OPS_PERSONNEL_PATH}?${query.toString()}`;
 }
 
