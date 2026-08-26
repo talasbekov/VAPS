@@ -300,3 +300,23 @@ apps.get_model('operations','OpsDailySubmission').objects.filter(
 ```
 
 После снятия строки `day-submission` + `service-analytics` дают 13/13. Правильное решение (в бэклоге, карточка про фикстуры стенда) — развести: сид статусов отдельно от сида сдачи, либо своё подразделение для спеков сдачи.
+
+## Два одновременных `pytest` делят тестовую базу и врут падениями (повтор, 26.08.2026)
+
+Правило уже записано в бэклоге (25.08), но ловушка сработала снова: я запустил
+фоновый гейт `ops`+`operations` и, не дождавшись, погнал новую пробу шага. Все
+8 её тестов упали одинаково —
+
+```
+django.db.utils.IntegrityError: insert or update on table "auth_permission"
+violates foreign key constraint "auth_permission_content_type_id_..."
+DETAIL: Key (content_type_id)=(632) is not present in table "django_content_type".
+```
+
+Это НЕ дефект пробы: второй прогон пересоздаёт `django_content_type` под
+первым. Признак узнаваемый — падение на `auth_permission`/`django_content_type`
+при коммите, одинаковое у всех тестов файла.
+
+**Как избегать:** перед запуском любой пробы проверять `pgrep -f pytest`;
+фоновый гейт ждать до конца. Держать в голове «я же в фоне запустил» не
+работает — за длинную сессию фоновых прогонов десяток.

@@ -96,8 +96,26 @@ def make_employee(last_name="Абенов", first_name="Серик"):
 
 @pytest.fixture
 def manager():
+    # Права цепочки сбора сил и расстановки выданы РЯДОМ с `event.manage`, а не
+    # вместо него: ровно так их раздаёт бэкфилл миграции 0047 (Plane №74) —
+    # каждая роль, которая вела цепочку через `event.manage`, сохраняет к ней
+    # доступ через новые коды. Фикстура изображает того же человека, и
+    # разойтись с миграцией она не имеет права.
+    #
+    # Разграничение проверяют СВОИ пробы (`test_scoped_permission`,
+    # `test_ops_forces_scope`): там роль выдаётся с областью и отбивается на
+    # чужой. Здесь проверяется работа цепочки, а не её гейт.
     api, _ = client_for(
-        "ev-manager", "EV_MANAGER", perms=("event.view", "event.manage")
+        "ev-manager",
+        "EV_MANAGER",
+        perms=(
+            "event.view",
+            "event.manage",
+            "forces.command",
+            "forces.allocate",
+            "forces.select",
+            "placement.manage",
+        ),
     )
     return api
 

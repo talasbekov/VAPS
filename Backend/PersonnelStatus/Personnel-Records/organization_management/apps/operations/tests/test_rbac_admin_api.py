@@ -112,8 +112,20 @@ class TestReferenceReads:
         seed_role("VIEWER", ["status.view"])
         roles = api.get(ROLES_URL).json()["results"]
         assert [r["code"] for r in roles] == ["ADMIN", "VIEWER"]
-        perms = api.get(PERMISSIONS_URL).json()["results"]
-        assert [p["code"] for p in perms] == ["*", "status.view"]
+        perms = [p["code"] for p in api.get(PERMISSIONS_URL).json()["results"]]
+        # Права цепочки сбора сил заводит МИГРАЦИЯ 0047 (Plane №74), а не сид:
+        # справочник прав живёт и на заполненных базах, где `seed_operations`
+        # никто больше не запустит. Поэтому они есть в любой тестовой базе, и
+        # пин обновлён осознанно — он про ПОРЯДОК, а не про длину списка.
+        assert perms == sorted(perms)
+        assert perms == [
+            "*",
+            "forces.allocate",
+            "forces.command",
+            "forces.select",
+            "placement.manage",
+            "status.view",
+        ]
 
 
 @pytest.mark.django_db

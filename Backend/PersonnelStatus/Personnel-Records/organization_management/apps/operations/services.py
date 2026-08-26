@@ -56,6 +56,34 @@ class PermissionService:
         return grants
 
     @classmethod
+    def unscoped_permissions(cls, user_id) -> set:
+        """Права из грантов, выданных БЕЗ области (Plane №74).
+
+        Отвечает на вопрос, которого нет у `effective_permissions`: «есть ли у
+        человека это право БЕЗ привязки к подразделению». Нужен там, где
+        область установить не удалось: роль без области такой проверкой не
+        сужается вовсе, а роль С областью обязана быть отбита — иначе граница
+        департамента обходится подбором объекта, у которого подразделение не
+        читается.
+
+        `effective_permissions(user_id, None)` этот вопрос НЕ решает: при
+        `division_id is None` совпадает любая область, и ответ у обеих ролей
+        одинаковый.
+        """
+        role_codes = [
+            role_code
+            for scope_division_id, role_code in cls._active_grants(user_id)
+            if scope_division_id is None
+        ]
+        if not role_codes:
+            return set()
+        return set(
+            RolePermission.objects.filter(
+                role_code_id__in=role_codes
+            ).values_list("permission_code_id", flat=True)
+        )
+
+    @classmethod
     def effective_permissions(cls, user_id, division_id=None) -> set:
         matching_role_codes = [
             role_code
