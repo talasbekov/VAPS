@@ -413,6 +413,11 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                     <th scope="col" className="w-[180px] pb-1">Сектор / Пост</th>
                     <th scope="col" className="pb-1 pl-2">Задача поста</th>
                     <th scope="col" className="w-[92px] pb-1 pl-2">Сотрудники</th>
+                    {/* Смена — свойство ПОСТА, как в эталоне («Сектор A ·
+                        смена 07:00–15:00»). Стоит рядом с численностью:
+                        «сколько человек» и «когда стоят» читаются вместе, а
+                        расстановка показывает их одной строкой (Plane №123). */}
+                    <th scope="col" className="w-[116px] pb-1 pl-2">Смена</th>
                     <th scope="col" className="w-[128px] pb-1 pl-2">Тип</th>
                     <th scope="col" className="pb-1 pl-2">Вооружение</th>
                     <th scope="col" className="pb-1 pl-2">Форма одежды</th>
@@ -535,6 +540,17 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                                     patchRow(row.id, {
                                       need: Number(e.target.value) || 0,
                                     })
+                                  }
+                                />
+                              </td>
+                              <td className="py-1 pl-2">
+                                <Input
+                                  className="h-8 text-xs"
+                                  placeholder="07:00–15:00"
+                                  aria-label={`Смена поста: ${row.post || "новый"}`}
+                                  value={row.shift ?? ""}
+                                  onChange={(e) =>
+                                    patchRow(row.id, { shift: e.target.value })
                                   }
                                 />
                               </td>
