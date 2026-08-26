@@ -341,3 +341,76 @@ def test_unlinked_user_is_not_a_chief():
     )
     assert r.status_code == 403
 
+
+
+# ── Собранная сводка (Plane №166) ────────────────────────────────────────
+#
+# `list` отдаёт ПАТЧИ, `retrieve` — СОБРАННУЮ сводку. Разные вещи под одним
+# адресом: патч нужен реестру (отличить «Заполнена» от «Черновика»), сводка —
+# экрану, который её показывает.
+
+
+def test_gvo_retrieve_assembles_the_summary_on_the_server():
+    """Ручка отдаёт СОБРАННУЮ сводку, а не патч.
+
+    До №166 базу считал браузер, а сервер хранил только правки. Значит
+    содержимое экрана диктовал клиент, и две сборки уже разошлись на форме
+    даты. Проба стережёт, что сборка пришла С СЕРВЕРА: в ответе есть поля,
+    которых в патче нет вовсе.
+    """
+    event = make_event(code="ОМ-СБ-1")
+    event.protected_person_name = "Иван Петров"
+    event.owner_name = "Абенов"
+    event.save(update_fields=["protected_person_name", "owner_name"])
+
+    response = viewer("ops-gvo-sum-1").get(f"{GVO_URL}ОМ-СБ-1/")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["persons"][0]["name"] == "Иван Петров"
+    assert body["responsible"]["name"] == "Абенов"
+    # Деловая дата ОМ — в прибытии и убытии, В ТОЙ ЖЕ ФОРМЕ, что на экране:
+    # суффикс «г.» — свойство документа, а не сводки.
+    assert body["arrival"]["date"] == "21.08.2026"
+
+
+def test_gvo_retrieve_merges_the_saved_patch():
+    """Сохранённые правки уже слиты в ответ.
+
+    Иначе экрану пришлось бы сливать их самому — то есть правило слияния жило
+    бы в двух местах ровно так же, как жила сборка.
+    """
+    event = make_event(code="ОМ-СБ-2")
+    OpsGvoSummaryPatch.objects.create(
+        event=event, patch={"country": "Вымышляндия", "arrival": {"time": "12:00ч."}}
+    )
+
+    body = viewer("ops-gvo-sum-2").get(f"{GVO_URL}ОМ-СБ-2/").json()
+
+    assert body["country"] == "Вымышляндия"
+    assert body["arrival"]["time"] == "12:00ч."
+    # Глубокое слияние: правка времени не стёрла дату соседним ключом.
+    assert body["arrival"]["date"] == "21.08.2026"
+
+
+def test_gvo_retrieve_of_unknown_om_code_is_404():
+    """Мероприятия нет — внятный отказ, а не пустая сводка.
+
+    Пустая сводка на несуществующий код читалась бы как «мероприятие есть, но
+    ничего не заполнено», и опечатка в коде выглядела бы как рабочий экран.
+    """
+    response = viewer("ops-gvo-sum-3").get(f"{GVO_URL}ОМ-НЕТ-ТАКОГО/")
+
+    assert response.status_code == 404
+
+
+def test_gvo_retrieve_is_open_to_a_viewer_and_closed_to_nobody():
+    """Читают сводку и те, кто её не правит; посторонний не читает.
+
+    Гейт fail-closed: без персоны БЕЗ права закрытое состояние недостижимо и
+    проба вакуумна.
+    """
+    make_event(code="ОМ-СБ-4")
+
+    assert viewer("ops-gvo-sum-4").get(f"{GVO_URL}ОМ-СБ-4/").status_code == 200
+    assert nobody("ops-gvo-sum-5").get(f"{GVO_URL}ОМ-СБ-4/").status_code == 403

@@ -24,13 +24,13 @@ from organization_management.apps.operations.models_object import (
 from organization_management.apps.ops.api.serializers import (
     SecurityObjectSerializer,
 )
+from organization_management.apps.ops import documents_summary
 from organization_management.apps.ops import gvo as gvo_service
 from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.ops import analytics as analytics_service
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from organization_management.apps.ops import ratings as ratings_service
-from django.http import HttpResponse
-from django.utils.http import content_disposition_header
+import base64
 
 from organization_management.apps.ops import documents_registry
 from organization_management.apps.ops import reports as reports_service
@@ -2570,7 +2570,6 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 ),
             ),
         ],
-        responses={(200, "application/pdf"): OpenApiTypes.BINARY},
     )
     @action(detail=False, methods=["get"], url_path="render")
     def render_document(self, request):
@@ -2578,11 +2577,19 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
             (request.query_params.get("kind") or "").strip(),
             event_code=request.query_params.get("event"),
         )
-        response = HttpResponse(payload, content_type="application/pdf")
-        response["Content-Disposition"] = content_disposition_header(
-            as_attachment=True, filename=name
+        # Отдаём JSON с содержимым, а НЕ файл потоком, — по контракту раздела
+        # (`download_artifact` устроен так же). Причина не в красоте: клиент
+        # шлёт токен ЗАГОЛОВКОМ, и открыть файл прямой ссылкой нельзя — токена
+        # в ней нет. Значит клиенту в любом случае качать ответ самому, и два
+        # разных способа выдачи файла в одном разделе только развели бы
+        # обработку скачивания надвое.
+        return Response(
+            {
+                "fileName": name,
+                "contentBase64": base64.b64encode(payload).decode("ascii"),
+                "contentType": "application/pdf",
+            }
         )
-        return response
 
 
 class ServiceReportArtifactsViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -2962,10 +2969,16 @@ class OpsLegalDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
 
 class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """/api/ops/gvo-summaries/ — ручные правки сводок ГВО по коду ОМ.
+    """/api/ops/gvo-summaries/ — сводки ГВО по коду ОМ.
 
-    База сводки собирается на клиенте из бюллетеня; здесь только патчи —
-    та же семантика, что у мока MSW (list / patch / reset).
+    `list` отдаёт ПАТЧИ (ручные правки), `retrieve` — СОБРАННУЮ сводку: базу
+    из бюллетеня плюс эти правки. Разные вещи под одним адресом не по
+    небрежности: патч нужен реестру, чтобы отличить «Заполнена» от
+    «Черновик», а собранная сводка — экрану, который её показывает.
+
+    Сборка живёт НА СЕРВЕРЕ (Plane №166). Раньше база считалась в браузере
+    (`deriveGvoSummary`), а сервер хранил только патч — и две сборки успели
+    разойтись за один день на форме даты. Теперь правило одно и здесь.
     """
 
     # Правка сводки — своё право (Plane «Реестр ОМ-35.6»): её заполняет
@@ -2975,6 +2988,7 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # спрятать данные от их читателей.
     permission_map = {
         "list": "event.view",
+        "retrieve": "event.view",
         "partial_update": "gvo.manage",
         "reset": "gvo.manage",
     }
@@ -3017,6 +3031,21 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     def list(self, request):
         return Response({"results": gvo_service.list_patches()})
+
+    def retrieve(self, request, pk=None):
+        """Собранная сводка мероприятия: база из бюллетеня плюс правки.
+
+        Мероприятие ищется ЗДЕСЬ, а не внутри сборщика: «мероприятия нет» —
+        внятный 404, а не падение в середине сборки.
+        """
+        event = OpsSecurityEvent.objects.filter(code=pk).first()
+        if event is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                message="Мероприятие с таким кодом не найдено.",
+            )
+        return Response(documents_summary.summary_for_event(event))
 
     def partial_update(self, request, pk=None):
         try:
