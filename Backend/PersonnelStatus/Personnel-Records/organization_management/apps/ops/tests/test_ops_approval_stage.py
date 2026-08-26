@@ -40,33 +40,11 @@ def event_on_approval(manager):  # noqa: F811
         },
         format="json",
     )
+    # Завершение рекогносцировки САМО проводит «Потребность» и «Запрос сил» и
+    # оставляет ОМ на «Расстановке» (Plane №110); ручного ведения этих стадий
+    # больше нет — ручки сняты (Plane №149). Фикстура шла старым путём и
+    # держалась только на том, что снятые вызовы молча отбивались.
     manager.post(f"{base}recon/complete/")
-    manager.post(
-        f"{base}demand/approve/",
-        {
-            "rows": [
-                {
-                    "id": "d-1",
-                    "sector": "Периметр",
-                    "task": "Охрана",
-                    "shift": "день",
-                    "need": 1,
-                    "group": "ГР-1",
-                    "requirements": "",
-                    "comment": "",
-                }
-            ]
-        },
-        format="json",
-    )
-    fresh = manager.get(f"{base}").json()
-    for request in fresh["forceRequests"]:
-        manager.patch(
-            f"{base}forces/{request['id']}/",
-            {"allocatedCount": request["requestedCount"], "comment": ""},
-            format="json",
-        )
-    manager.post(f"{base}forces/complete/")
     fresh = manager.get(f"{base}").json()
     post_id = fresh["reconSectorPosts"][0]["id"]
     manager.post(

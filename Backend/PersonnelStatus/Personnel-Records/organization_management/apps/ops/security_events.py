@@ -1146,74 +1146,13 @@ def complete_recon(event_id):
 
 
 # ── Потребность ─────────────────────────────────────────────────────────────
-
-
-@transaction.atomic
-def approve_demand(event_id, *, rows):
-    event = lock_event(event_id)
-    rows = rows or []
-    field_errors = {}
-    for index, row in enumerate(rows):
-        if not str(row.get("sector", "")).strip():
-            field_errors[f"rows.{index}.sector"] = ["Обязательное поле."]
-        if not str(row.get("task", "")).strip():
-            field_errors[f"rows.{index}.task"] = ["Обязательное поле."]
-        if not str(row.get("group", "")).strip():
-            field_errors[f"rows.{index}.group"] = ["Выберите группу."]
-        if int(row.get("need", 0)) < 1:
-            field_errors[f"rows.{index}.need"] = ["Должно быть не меньше 1."]
-    if field_errors:
-        raise _validation(field_errors)
-    if not rows:
-        raise DomainError("DEMAND_ROWS_EMPTY", 422, message= "Добавьте хотя бы одну строку потребности.")
-    _require_stage(
-        event, "DEMAND", "Потребность можно утвердить только на этапе «Потребность»."
-    )
-    cleaned = [
-        {
-            **row,
-            "sector": str(row.get("sector", "")).strip(),
-            "task": str(row.get("task", "")).strip(),
-            "shift": str(row.get("shift", "")).strip(),
-            "group": str(row.get("group", "")).strip(),
-            "requirements": str(row.get("requirements", "")).strip(),
-            "comment": str(row.get("comment", "")).strip(),
-        }
-        for row in rows
-    ]
-    by_group = {}
-    for row in cleaned:
-        by_group[row["group"]] = by_group.get(row["group"], 0) + int(row["need"])
-    event.demand_rows = cleaned
-    event.demand_approved = True
-    event.force_requests = [
-        {
-            "id": f"force-request-{index}-{group}",
-            "group": group,
-            "requestedCount": requested,
-            "allocatedCount": 0,
-            "status": "NOT_SENT",
-            "comment": "",
-        }
-        for index, (group, requested) in enumerate(by_group.items())
-    ]
-    event.force_need = sum(int(row["need"]) for row in cleaned)
-    _forces_from_stage = event.stage
-    event.stage = "FORCES"
-    event.readiness_percent = STAGE_READINESS["FORCES"]
-    event.save(
-        update_fields=[
-            "demand_rows",
-            "demand_approved",
-            "force_requests",
-            "force_need",
-            "stage",
-            "readiness_percent",
-            "updated_at",
-        ]
-    )
-    record_transition(event, _forces_from_stage, "FORCES")
-    return event
+#
+# `approve_demand` СНЯТА 26.08.2026 (Plane №149). Стадию «Потребность»
+# проходит сервер (`_autopass_demand_and_forces`, Plane №110), миграция 0046
+# провела через неё всё заведённое, форм у неё на клиенте нет, и мероприятий
+# на этой стадии не осталось ни одного. Ручка `POST demand/approve/` снята
+# вместе с функцией по решению заказчика — контракт правится осознанно, а не
+# зарастает путями, которыми никто не ходит.
 
 
 # ── Автопроход потребности и выделения сил ──────────────────────────────────
@@ -2219,58 +2158,9 @@ def update_force_allocation(event_id, request_id, *, allocated_count, comment):
 
 
 @transaction.atomic
-def complete_forces(event_id):
-    event = lock_event(event_id)
-    _require_stage(
-        event,
-        "FORCES",
-        "Выделение сил можно завершить только на этапе «Запрос сил».",
-    )
-    # У мероприятия, прошедшего цепочку «Сбора сил», состав ЛЮДЕЙ — главный
-    # факт: числа по группам говорят «сколько обещали», а расстановке нужны
-    # те, кого действительно отдали (Plane №73, шаг «СС-5»).
-    if event.force_allocation:
-        # Мерка — РАЗЛОЖЕННАЯ потребность, а не запрос с рекогносцировки:
-        # разложить меньше запрошенного — решение штаба (он же раскладывает в
-        # несколько заходов), и мерить завершение по числу, которое штаб
-        # осознанно не раздал, значило бы запирать этап его же решением.
-        pending = [
-            row
-            for row in event.force_allocation
-            if row.get("status") == "SUBMITTED"
-        ]
-        if pending:
-            names = ", ".join(row.get("departmentName", "—") for row in pending)
-            raise DomainError(
-                "FORCE_ALLOCATION_INCOMPLETE",
-                422,
-                message=(
-                    f"Списки ещё ждут решения штаба ({names}) — "
-                    "примите или верните их."
-                ),
-            )
-        accepted = len(event.force_roster or [])
-        planned = sum(int(row.get("need") or 0) for row in event.force_allocation)
-        if accepted < planned:
-            raise DomainError(
-                "FORCE_ALLOCATION_INCOMPLETE",
-                422,
-                message=(
-                    f"Штаб принял {accepted} человек из {planned} разложенных — "
-                    f"недобор {planned - accepted}."
-                ),
-            )
-        return _advance(event, "PLACEMENT")
-    # Старый путь — для мероприятий БЕЗ раскладки: их вели числами по группам,
-    # и запирать им завершение новым правилом значило бы сломать заведённое.
-    requests = event.force_requests
-    if not requests or not all(
-        int(r.get("allocatedCount", 0)) >= int(r.get("requestedCount", 0))
-        for r in requests
-    ):
-        raise DomainError("FORCE_ALLOCATION_INCOMPLETE", 422, message= "Не все запросы полностью выделены."
-        )
-    return _advance(event, "PLACEMENT")
+# `complete_forces` СНЯТА 26.08.2026 (Plane №149) — по тому же основанию, что
+# и `approve_demand` выше: стадию «Запрос сил» проходит сервер, форм у неё нет,
+# мероприятий на ней не осталось.
 
 
 # ── Расстановка ─────────────────────────────────────────────────────────────

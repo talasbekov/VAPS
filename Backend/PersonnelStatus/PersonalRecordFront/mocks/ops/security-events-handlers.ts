@@ -35,11 +35,9 @@ import {
   securityEventBulletinPath,
   securityEventClosePath,
   securityEventStagePath,
-  securityEventDemandApprovePath,
   securityEventDetailPath,
   securityEventForceAllocationPath,
   securityEventForcesSplitPath,
-  securityEventForcesCompletePath,
   securityEventJournalPath,
   securityEventPlacementAssignPath,
   securityEventPlacementCompletePath,
@@ -74,7 +72,6 @@ import type {
   SplitForceDemandRequest,
   StaffingDemandRow,
   UpdateBulletinRequest,
-  UpdateDemandRequest,
   UpdateForceAllocationRequest,
   UpdateReconRequest,
 } from "@/entities/security-event";
@@ -974,61 +971,8 @@ export const securityEventsHandlers = [
     );
   }),
 
-  // ── Потребность ────────────────────────────────────────────────────────
-  http.post(
-    `*${securityEventDemandApprovePath(":id")}`,
-    async ({ params, request }) => {
-      const { event, response } = findEvent(params.id as string);
-      if (event === null) return response;
-      const body = (await request.json()) as UpdateDemandRequest;
-      const fieldErrors: Record<string, string[]> = {};
-      body.rows.forEach((row, index) => {
-        if (row.sector.trim() === "")
-          fieldErrors[`rows.${index}.sector`] = ["Обязательное поле."];
-        if (row.task.trim() === "")
-          fieldErrors[`rows.${index}.task`] = ["Обязательное поле."];
-        if (row.group.trim() === "")
-          fieldErrors[`rows.${index}.group`] = ["Выберите группу."];
-        if (row.need < 1)
-          fieldErrors[`rows.${index}.need`] = ["Должно быть не меньше 1."];
-      });
-      if (Object.keys(fieldErrors).length > 0) return validationError(fieldErrors);
-      if (body.rows.length === 0) {
-        return businessRuleError(
-          "DEMAND_ROWS_EMPTY",
-          "Добавьте хотя бы одну строку потребности."
-        );
-      }
-      if (event.stage !== "DEMAND") {
-        return businessRuleError(
-          "INVALID_STAGE_TRANSITION",
-          "Потребность можно утвердить только на этапе «Потребность»."
-        );
-      }
-      const rows: StaffingDemandRow[] = body.rows.map((row) => ({
-        ...row,
-        sector: row.sector.trim(),
-        task: row.task.trim(),
-        shift: row.shift.trim(),
-        group: row.group.trim(),
-        requirements: row.requirements.trim(),
-        comment: row.comment.trim(),
-      }));
-      const forceNeed = rows.reduce((sum, row) => sum + row.need, 0);
-      return HttpResponse.json(
-        saveEvent({
-          ...event,
-          demandRows: rows,
-          demandApproved: true,
-          forceRequests: aggregateForceRequests(event.id, rows),
-          forceNeed,
-          stage: "FORCES",
-          readinessPercent: 45,
-          updatedAt: nowIso(),
-        })
-      );
-    }
-  ),
+  // Обработчик `demand/approve` СНЯТ вместе с ручкой (Plane №149): мок
+  // повторяет сервер, а на сервере этого пути больше нет.
 
   // ── Раскладка потребности по департаментам (Plane №73, СС-1) ───────────
   //
@@ -1534,28 +1478,7 @@ export const securityEventsHandlers = [
     }
   ),
 
-  http.post(`*${securityEventForcesCompletePath(":id")}`, ({ params }) => {
-    const { event, response } = findEvent(params.id as string);
-    if (event === null) return response;
-    if (event.stage !== "FORCES") {
-      return businessRuleError(
-        "INVALID_STAGE_TRANSITION",
-        "Выделение сил можно завершить только на этапе «Запрос сил»."
-      );
-    }
-    if (
-      event.forceRequests.length === 0 ||
-      !event.forceRequests.every((r) => r.allocatedCount >= r.requestedCount)
-    ) {
-      return businessRuleError(
-        "FORCE_ALLOCATION_INCOMPLETE",
-        "Не все запросы полностью выделены."
-      );
-    }
-    return HttpResponse.json(
-      saveEvent({ ...event, stage: "PLACEMENT", readinessPercent: 60, updatedAt: nowIso() })
-    );
-  }),
+  // Обработчик `forces/complete` СНЯТ вместе с ручкой (Plane №149).
 
   // ── Расстановка ────────────────────────────────────────────────────────
   http.post(
