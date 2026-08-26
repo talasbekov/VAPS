@@ -16,6 +16,7 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { confirmInDialog } from './dialog'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -127,16 +128,16 @@ test.describe(LIVE ? 'учётные записи в настройках' : 'у
 
     // БЛОКИРОВКА: с подтверждением, состояние строки меняется словами.
     await page.getByRole('button', { name: 'Заблокировать' }).click()
-    await expect(page.getByRole('heading', { name: 'Заблокировать учётную запись?' })).toBeVisible()
-    await page.getByRole('button', { name: 'Заблокировать', exact: true }).last().click()
-    await expect(page.getByRole('heading', { name: 'Заблокировать учётную запись?' })).toHaveCount(0)
+    await confirmInDialog(page, {
+      title: 'Заблокировать учётную запись?',
+      button: 'Заблокировать',
+    })
     await expect(probeRow.getByText('Заблокирован')).toBeVisible()
 
     // СБРОС ПАРОЛЯ: новый пароль отличается от любого прежнего — иначе окно
     // показывало бы старый и «сброс» был бы обманом.
     await page.getByRole('button', { name: 'Сбросить пароль' }).click()
-    await expect(page.getByRole('heading', { name: 'Сбросить пароль?' })).toBeVisible()
-    await page.getByRole('button', { name: 'Сбросить', exact: true }).last().click()
+    await confirmInDialog(page, { title: 'Сбросить пароль?', button: 'Сбросить' })
     await expect(page.getByRole('heading', { name: 'Временный пароль' })).toBeVisible()
     const first = (await page.locator('code.select-all').innerText()).trim()
     expect(first.length).toBeGreaterThan(7)
@@ -149,7 +150,7 @@ test.describe(LIVE ? 'учётные записи в настройках' : 'у
     await closeSecret(page)
 
     await page.getByRole('button', { name: 'Сбросить пароль' }).click()
-    await page.getByRole('button', { name: 'Сбросить', exact: true }).last().click()
+    await confirmInDialog(page, { title: 'Сбросить пароль?', button: 'Сбросить' })
     await expect(page.getByRole('heading', { name: 'Временный пароль' })).toBeVisible()
     const second = (await page.locator('code.select-all').innerText()).trim()
     expect(second).not.toEqual(first)
