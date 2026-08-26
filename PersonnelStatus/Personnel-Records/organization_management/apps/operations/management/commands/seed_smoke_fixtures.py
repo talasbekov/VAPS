@@ -19,6 +19,12 @@
    за пробами (Plane №62) мусор снесла — и вместе с ним данные, на которых
    проба стояла. Фикстура заменяет случайность явным условием.
 4. **Объект с готовым паспортом** — «зелёный» и со свежей версией сразу.
+5. **Один отсутствующий** — строка `VACATION` на сегодня. Без неё «в строю»
+   РАВНО «по списку», и проба кадровых показателей аналитики службы падает
+   собственным сторожем: плитка, взявшая не то поле, показывала бы то же самое
+   число, и сторожить было бы нечего (Plane №169). Привлечённость для этого не
+   годится — `EVENT_ASSIGNMENT` отчитывается в колонку `IN_SERVICE`: человек на
+   мероприятии остаётся в строю, и это верно по существу.
 
 ЧЕГО КОМАНДА НЕ ДЕЛАЕТ. Дня не сдаёт и документов не выпускает: этим занят
 `seed_expense_chain`, и его сдача краснит `day-submission` (см.
@@ -57,6 +63,10 @@ from organization_management.apps.staff_unit.models import StaffUnit
 
 ACTOR = "stand-seed"
 ASSIGNMENT_CODE = "EVENT_ASSIGNMENT"
+#: Отсутствие для РАЗВЕДЕНИЯ «в строю» и «по списку». Отпуск, а не болезнь:
+#: болезнь — сведение о здоровье, и держать её выдумкой на стенде незачем,
+#: когда любой отпуск даёт ровно тот же эффект в отчёте.
+ABSENCE_CODE = "VACATION"
 EVENT_TITLE = "Стенд: мероприятие на запросе сил (фикстура смоука)"
 RECON_TITLE = "Стенд: мероприятие на рекогносцировке (фикстура смоука)"
 # Сколько человек выставляем на мероприятие. Три, а не один: проба разносит
@@ -110,7 +120,9 @@ class Command(BaseCommand):
         recon = self._recon_event(day, security_object)
         closed = self._closed_event(day, security_object)
         conduct = self._conduct_event(day, security_object)
+        absent = self._absence(day, assigned)
 
+        self.stdout.write(f"STAND_ABSENT={absent.id} {absent.last_name}")
         for employee in assigned:
             self.stdout.write(f"STAND_ASSIGNED={employee.id} {employee.last_name}")
         self.stdout.write(f"STAND_DAY={day.isoformat()}")
@@ -196,6 +208,60 @@ class Command(BaseCommand):
                 },
             )
         return picked
+
+    # ── Один отсутствующий ──────────────────────────────────────────────────
+
+    def _absence(self, day, assigned):
+        """Строка `VACATION` на сегодня — ровно одному человеку.
+
+        ЗАЧЕМ РОВНО ОДИН. Задача фикстуры — РАЗВЕСТИ «в строю» и «по списку»,
+        а не изобразить убыль. Чем больше отсутствующих, тем сильнее фикстура
+        двигает знаменатели, по которым считают соседние пробы.
+
+        ЗАЧЕМ ОДИН ДЕНЬ. Отпуск на неделю выглядел бы правдоподобнее, но он
+        менял бы отчёт и в те дни, когда фикстуру никто не звал, — то есть
+        стенд вёл бы себя по-разному в зависимости от того, гоняли ли смоук
+        неделю назад. Дневной статус повторяет уже принятое здесь решение по
+        привлечённости.
+
+        БЕРЁТСЯ НЕ ИЗ ПРИВЛЕЧЁННЫХ. Отпуск — жёсткий статус, и на человеке с
+        привлечённостью он даёт конфликт: фикстура упала бы на собственной
+        правильной проверке.
+        """
+        if not StatusType.objects.filter(code=ABSENCE_CODE).exists():
+            raise CommandError(
+                f"в справочнике нет типа {ABSENCE_CODE!r} — сначала засейте "
+                "типы статусов (seed_status_types)"
+            )
+        root = Division.objects.filter(level=0).order_by("pk").first()
+        taken = {employee.id for employee in assigned}
+        unit = (
+            StaffUnit.objects.filter(
+                division__in=root.get_descendants(include_self=True),
+                employee__isnull=False,
+                employee__employment_status=Employee.EmploymentStatus.WORKING,
+            )
+            .exclude(employee_id__in=taken)
+            .select_related("employee")
+            .order_by("division_id", "index", "id")
+            .first()
+        )
+        if unit is None:
+            raise CommandError(
+                "в поддереве корневого подразделения не нашлось работающего "
+                "сотрудника вне привлечённых — засейте кадры"
+            )
+        OpsEmployeeStatus.objects.get_or_create(
+            employee_id=unit.employee_id,
+            status_type_code=ABSENCE_CODE,
+            date_start=day,
+            defaults={
+                "date_end": day + timedelta(days=1),
+                "source": OpsEmployeeStatus.Source.USER,
+                "created_by": ACTOR,
+            },
+        )
+        return unit.employee
 
     # ── Мероприятие со сбором сил ───────────────────────────────────────────
 
