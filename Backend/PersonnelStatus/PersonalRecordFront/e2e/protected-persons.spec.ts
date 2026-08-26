@@ -142,10 +142,13 @@ interface CatalogPerson {
   category: 'OURS' | 'FOREIGN'
 }
 
-interface GvoPatchRecord {
+/** Строка СОБРАННОЙ сводки — то, что отдаёт `assembled/` (Plane №166).
+ * Раньше здесь был патч ручных правок: сводку собирал экран. */
+interface GvoSummaryRow {
   omCode: string
-  patch: { persons?: { name: string; role?: string }[] }
-  updatedAt?: string
+  summary: { persons?: { name: string; role?: string }[] }
+  filled?: boolean
+  updatedAt?: string | null
 }
 
 interface EventRow {
@@ -183,7 +186,7 @@ async function findNameIntersections(): Promise<{
   const token = await apiToken()
   const [catalog, patches, events] = await Promise.all([
     apiGet<{ results: CatalogPerson[] }>('/api/ops/protected-persons/', token),
-    apiGet<{ results: GvoPatchRecord[] }>('/api/ops/gvo-summaries/', token),
+    apiGet<{ results: GvoSummaryRow[] }>('/api/ops/gvo-summaries/assembled/', token),
     apiGet<{ results: EventRow[] }>('/api/ops/security-events/?page_size=200', token),
   ])
   const eventByCode = new Map(events.results.map((e) => [e.code, e]))
@@ -191,7 +194,7 @@ async function findNameIntersections(): Promise<{
   for (const record of patches.results) {
     const event = eventByCode.get(record.omCode)
     if (event === undefined) continue
-    for (const gvoPerson of record.patch.persons ?? []) {
+    for (const gvoPerson of record.summary.persons ?? []) {
       const needle = gvoPerson.name.trim().toLowerCase()
       const hit = catalog.results.find((c) => c.name.trim().toLowerCase() === needle)
       if (hit !== undefined) matches.push({ person: hit, event })
@@ -201,9 +204,15 @@ async function findNameIntersections(): Promise<{
 }
 
 /**
- * Перехватывает GET-список сводок ГВО (`/api/ops/gvo-summaries/`) и дописывает
- * в НАСТОЯЩИЙ ответ бэка одну запись: `personName` появляется среди персон
- * сводки `omCode`. Каталог лиц и реестр ОМ остаются ЖИВЫМИ и НЕ перехвачены —
+ * Перехватывает СОБРАННЫЕ сводки ГВО (`/api/ops/gvo-summaries/assembled/`) и
+ * дописывает в НАСТОЯЩИЙ ответ бэка одну запись: `personName` появляется среди
+ * персон сводки `omCode`.
+ *
+ * 🔴 ПИН ИЗМЕНЁН ОСОЗНАННО (Plane №166). Перехватывался адрес патчей
+ * (`/api/ops/gvo-summaries/`), и экран действительно ходил туда: сводку он
+ * собирал сам. Теперь сборку делает сервер, экран читает `assembled/`, и
+ * старый перехват не срабатывал ни разу — проба честно об этом сказала
+ * сторожем «экран запросил сводки другим путём» вместо тихой зелени. Каталог лиц и реестр ОМ остаются ЖИВЫМИ и НЕ перехвачены —
  * подменяется только payload сводки/патча, ровно как разрешает бриф.
  *
  * Имя вписывается С ЧУЖИМ РЕГИСТРОМ и лишними пробелами по краям — не
@@ -216,16 +225,21 @@ async function findNameIntersections(): Promise<{
 async function shapeGvoSummaryMatch(page: Page, omCode: string, personName: string): Promise<void> {
   const shapedName = `  ${personName.toUpperCase()}  `
   await page.route(
-    (url) => url.pathname === '/api/ops/gvo-summaries/',
+    (url) => url.pathname === '/api/ops/gvo-summaries/assembled/',
     async (route) => {
       const response = await route.fetch()
-      const body = (await response.json()) as { results: GvoPatchRecord[] }
+      const body = (await response.json()) as { results: GvoSummaryRow[] }
       const record = body.results.find((r) => r.omCode === omCode)
       const person = { name: shapedName, role: 'Куратор визитов' }
       if (record) {
-        record.patch.persons = [...(record.patch.persons ?? []), person]
+        record.summary.persons = [...(record.summary.persons ?? []), person]
       } else {
-        body.results.push({ omCode, patch: { persons: [person] }, updatedAt: new Date().toISOString() })
+        body.results.push({
+          omCode,
+          summary: { persons: [person] },
+          filled: true,
+          updatedAt: new Date().toISOString(),
+        })
       }
       await route.fulfill({ json: body })
     },
@@ -298,7 +312,8 @@ test.describe(
       const shapedRequests: string[] = []
       page.on('request', (request) => {
         const url = new URL(request.url())
-        if (url.pathname === '/api/ops/gvo-summaries/') shapedRequests.push(request.url())
+        if (url.pathname === '/api/ops/gvo-summaries/assembled/')
+          shapedRequests.push(request.url())
       })
       await shapeGvoSummaryMatch(page, matchedEvent.code, matchedPerson.name)
 
@@ -321,7 +336,8 @@ test.describe(
       await expect
         .poll(() => shapedRequests.length, {
           timeout: 15_000,
-          message: 'перехват GET /api/ops/gvo-summaries/ ни разу не сработал — экран запросил сводки другим путём',
+          message:
+            'перехват GET /api/ops/gvo-summaries/assembled/ ни разу не сработал — экран запросил сводки другим путём',
         })
         .toBeGreaterThan(0)
 
