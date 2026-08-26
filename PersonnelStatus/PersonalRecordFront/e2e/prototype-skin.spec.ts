@@ -148,6 +148,22 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(headerBg).not.toBe(bodyBg)
   })
 
+  test('крошка раздела без своей страницы — не ссылка', async ({ page }) => {
+    // У `/security-ops/` нет `page.tsx`: это раздел, а не экран. Крошка вела
+    // туда ссылкой, и нажатие давало 404 — а в прод-режиме Next ещё и
+    // ПРЕДЗАГРУЖАЛ её на каждом заходе (Plane №175). Проба смотрит именно на
+    // отсутствие ссылки, а не на текст: подпись остаётся, уходит обещание
+    // перехода.
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const crumbs = page.getByRole('navigation', { name: 'Хлебные крошки' })
+    await expect(crumbs).toContainText('Охранные мероприятия')
+
+    await expect(
+      crumbs.getByRole('link', { name: 'Охранные мероприятия', exact: true }),
+    ).toHaveCount(0)
+  })
+
   test('крошка называет страницу так же, как её h1', async ({ page }) => {
     await signIn(page)
     // Экран берётся такой, где подпись крошки СОВПАДАЕТ с h1. У части
