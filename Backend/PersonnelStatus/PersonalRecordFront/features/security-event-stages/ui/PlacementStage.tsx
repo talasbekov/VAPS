@@ -169,8 +169,19 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const assignmentsOf = (postId: string): PlacementAssignment[] =>
     event.placementAssignments.filter((a) => a.postId === postId);
 
+  /** Рейтинг сотрудника по КАДРОВОМУ id (Plane №96).
+   *
+   * Сверка идёт по `personnelId`, а не по `employeeId`: последний — код
+   * участника рейтинга (`employee-1`, исторические коды сида), и сравнение с
+   * кадровым id не совпадало НИКОГДА. Отсюда и симптом: бейдж не появлялся,
+   * фильтр «Рейтинг» отбирал пустоту, требование поста не проверялось. На
+   * моке коды совпадали с кадровыми — мок был зелен, живой стек молчал.
+   *
+   * Участник без связи (`personnelId === null`) не совпадает ни с кем: `null`
+   * здесь значит «не знаем, чей это рейтинг», и молчание честнее подстановки.
+   */
   const ratingOf = (employeeId: string): number | null =>
-    ratings.data?.results.find((r) => r.employeeId === employeeId)
+    ratings.data?.results.find((r) => r.personnelId === employeeId)
       ?.aggregateRating ?? null;
 
   const allocated = event.forceRequests.reduce(

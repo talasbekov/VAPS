@@ -706,15 +706,21 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
       headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
     })
-    // Агрегат ПОДМЕНЯЕТСЯ: рейтинг живёт в своём пространстве участников
-    // (`participant_code`) и с кадрами не связан вовсе — на живом стенде
-    // бейджа не бывает ни у кого (заведено карточкой). Проба стережёт
+    // Агрегат ПОДМЕНЯЕТСЯ, потому что у ЭТОГО человека оценок нет: рейтинг
+    // считается по оценкам, а пробное ОМ никто не оценивал. Проба стережёт
     // ПОВЕДЕНИЕ модалки, поэтому агрегат подставляется перехватом; SW в этой
     // спеке заблокирован, иначе перехват молча промахнулся бы.
+    //
+    // Связь с кадрами теперь ЕСТЬ (Plane №96): сводка отдаёт `personnelId`, и
+    // доска сверяет рейтинг по нему. Поэтому подставляется именно оно —
+    // подмена по `employeeId` (коду участника) с этого момента не сработала бы
+    // вовсе, и проба зеленела бы на пустом месте.
     const real = await get<any>(token, '/api/ops/operational-ratings/')
     expect(
-      (real.results ?? []).some((r: any) => String(r.employeeId) === prepared.employeeId),
-      'рейтинг внезапно сошёлся с кадрами — подмена больше не нужна',
+      (real.results ?? []).some(
+        (r: any) => String(r.personnelId ?? '') === prepared.employeeId,
+      ),
+      'у этого сотрудника ВНЕЗАПНО появился настоящий рейтинг — подмена лжёт',
     ).toBe(false)
     await page.route(
       (url) => url.pathname === '/api/ops/operational-ratings/',
@@ -725,7 +731,8 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
           body: JSON.stringify({
             results: [
               {
-                employeeId: prepared.employeeId,
+                employeeId: `employee-${prepared.employeeId}`,
+                personnelId: prepared.employeeId,
                 safeLabel: name,
                 aggregateRating: 8.4,
                 evaluationsCount: 5,

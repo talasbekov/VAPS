@@ -202,7 +202,15 @@ export type RatingDataState =
   | "FEATURE_DISABLED";
 
 export interface OperationalRatingSummary {
+  /** КОД УЧАСТНИКА рейтинга, а не кадровый id: по нему ходят экраны раздела
+   * и ручки `?employee=`. Имя неточное — это существующий контракт. */
   employeeId: string;
+  /** Кадровая запись участника; `null` — связи нет (Plane №96).
+   *
+   * Расстановка ищет рейтинг ПО НЕМУ: до появления поля она искала по
+   * `employeeId`, то есть по коду участника, и не находила ничего — весь
+   * рейтинговый функционал подбора был фикцией, видимой только на моке. */
+  personnelId: string | null;
   safeLabel: string;
   aggregateRating: number | null;
   evaluationsCount: number;
@@ -543,6 +551,8 @@ export function roundAggregate(value: number): number {
  */
 export function buildSummary(input: {
   employeeId: string;
+  /** Кадровая ссылка участника; не передали — связи нет (Plane №96). */
+  personnelId?: string | null;
   safeLabel: string;
   evaluations: readonly EventEvaluation[];
   policy: RatingPolicy | null;
@@ -552,6 +562,7 @@ export function buildSummary(input: {
 }): OperationalRatingSummary {
   const base = {
     employeeId: input.employeeId,
+    personnelId: input.personnelId ?? null,
     safeLabel: input.safeLabel,
     aggregateRating: null,
     evaluationsCount: 0,
