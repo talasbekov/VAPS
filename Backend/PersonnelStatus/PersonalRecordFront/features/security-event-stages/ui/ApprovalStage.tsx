@@ -29,12 +29,7 @@ import { X } from "lucide-react";
 //   предупреждения по рейтингу с причиной, введённой при назначении.
 import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,10 +79,13 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Согласование расстановки</CardTitle>
-      </CardHeader>
+    // Область с именем вместо снятого заголовка — см. ReconStage (Plane №70).
+    <Card role="region" aria-label="Согласование расстановки">
+      {/* Имени этапа здесь НЕТ намеренно (Plane №70): оно стоит НАД
+          карточкой, в шапке страницы («Этап N из 5 · …»). Второй заголовок
+          читался бы как вложенный раздел, которого нет, и отнимал строку у
+          содержимого. Подзаголовки внутри карточки остаются — они называют
+          блоки, а не этап. */}
       <CardContent className="space-y-4">
         {event.approvalStatus === "RETURNED" && event.approvalComment !== "" && (
           <Alert>

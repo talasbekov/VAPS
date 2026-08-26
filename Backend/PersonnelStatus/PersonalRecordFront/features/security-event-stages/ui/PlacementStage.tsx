@@ -29,7 +29,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
@@ -396,10 +396,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Расстановка</CardTitle>
-      </CardHeader>
+    // Область с именем вместо снятого заголовка — см. ReconStage (Plane №70).
+    <Card role="region" aria-label="Расстановка сил">
+      {/* Имени этапа здесь НЕТ намеренно (Plane №70): оно стоит НАД
+          карточкой, в шапке страницы («Этап N из 5 · …»). Второй заголовок
+          читался бы как вложенный раздел, которого нет, и отнимал строку у
+          содержимого. Подзаголовки внутри карточки остаются — они называют
+          блоки, а не этап. */}
       <CardContent className="space-y-4">
         {/* Причина недоступности — СЛОВАМИ и один раз на шаг: у доски действий
             много (автоподбор, назначение, снятие, старший сектора), и повтор

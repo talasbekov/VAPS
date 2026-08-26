@@ -88,11 +88,9 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
-    const card = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', {
-        hasText: 'Согласование расстановки',
-      }),
-    })
+    // По ИМЕНИ ОБЛАСТИ: видимый заголовок карточки снят как повтор шапки
+    // страницы (Plane №70).
+    const card = page.getByRole('region', { name: 'Согласование расстановки' })
     await expect(card).toBeVisible({ timeout: 15_000 })
 
     // Сводка — из расчёта, а не из воздуха
