@@ -896,3 +896,64 @@ def test_export_foreign_download_is_404(world, evaluator, viewer_api):
         f"/api/ops/rating-export-artifacts/{artifact_id}/download/"
     )
     assert foreign.status_code == 404
+
+
+# ── Plane №63: обязательный параметр объявлен и отвечает по смыслу ─────────
+
+
+def test_employee_detail_without_the_parameter_is_a_request_error(viewer_api):
+    """Не «записи нет», а «её не спросили».
+
+    До правки ручка отвечала 404 `ENTITY_NOT_FOUND` с пустым `details.id`:
+    клиент, сгенерированный по схеме, получал метод без аргументов, который
+    ВСЕГДА возвращал 404, и выяснялось это только в рантайме.
+    """
+    response = viewer_api.get(EMPLOYEE)
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"] == {"employee": ["Укажите сотрудника."]}
+
+
+def test_employee_detail_with_blank_parameter_is_the_same_error(viewer_api):
+    """Пустая строка — тот же случай: параметр есть, сотрудника в нём нет."""
+    response = viewer_api.get(EMPLOYEE, {"employee": "   "})
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+
+
+def test_schema_declares_employee_required_for_the_card(client):
+    """Схема обязана обещать ровно то, что ручка требует.
+
+    Сторож против возврата исходного дефекта: объявление снова разойдётся с
+    действительностью — проба покраснеет здесь, а не в чужом рантайме.
+    """
+    schema = client.get("/api/schema/?format=json").json()
+    params = schema["paths"]["/api/ops/operational-rating-employee/"]["get"].get(
+        "parameters", []
+    )
+    employee = next((p for p in params if p["name"] == "employee"), None)
+    assert employee is not None, "параметр employee не объявлен в схеме"
+    assert employee["required"] is True
+    assert employee["in"] == "query"
+
+
+def test_schema_declares_employee_optional_for_dynamics(client):
+    """У динамики параметр НЕ обязателен — и это тоже должно быть в схеме.
+
+    Поведение «не указан — первый заведённый участник» опирается на живого
+    читателя (`useRatingDynamics(null)`) и повторено в мок-слое, поэтому оно
+    не дефект, а умолчание. Дефектом было молчание схемы о нём.
+    """
+    schema = client.get("/api/schema/?format=json").json()
+    params = schema["paths"]["/api/ops/operational-rating-dynamics/"]["get"].get(
+        "parameters", []
+    )
+    employee = next((p for p in params if p["name"] == "employee"), None)
+    assert employee is not None, "параметр employee не объявлен в схеме"
+    # OpenAPI не печатает `required` для необязательного параметра — отсутствие
+    # ключа и есть «не обязателен». Ассерт `is False` по ключу здесь падал бы
+    # на верной схеме.
+    assert employee.get("required", False) is False

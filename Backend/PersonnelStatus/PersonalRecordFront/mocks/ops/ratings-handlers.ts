@@ -1779,6 +1779,17 @@ export const ratingsHandlers = [
     const s = getState();
     const url = new URL(request.url);
     const employeeId = url.searchParams.get("employee");
+    // Параметр ОБЯЗАТЕЛЕН, и его отсутствие — ошибка запроса, а не «записи
+    // нет» (Plane №63). Мок обязан отвечать тем же, чем живой сервер: мок,
+    // который молчит иначе, зеленеет на контракте, которого нет.
+    if ((employeeId ?? "").trim() === "") {
+      return errorEnvelope(
+        "VALIDATION_ERROR",
+        "Проверьте заполнение формы.",
+        { employee: ["Укажите сотрудника."] },
+        400
+      );
+    }
     const employee = RATED_EMPLOYEES.find(
       (item) => item.employeeId === employeeId
     );

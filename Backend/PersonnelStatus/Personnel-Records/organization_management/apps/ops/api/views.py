@@ -27,7 +27,7 @@ from organization_management.apps.ops.api.serializers import (
 from organization_management.apps.ops import gvo as gvo_service
 from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.ops import analytics as analytics_service
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from organization_management.apps.ops import ratings as ratings_service
 from organization_management.apps.ops import reports as reports_service
 from organization_management.apps.operations.api.permissions import (
@@ -1938,6 +1938,20 @@ class OperationalRatingDynamicsViewSet(RequirePermissionMixin, viewsets.ViewSet)
 
     permission_map = {"list": ratings_service.VIEW_AGGREGATE_PERMISSION}
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "employee", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Код участника рейтинга. НЕ УКАЗАН — отдаётся первый "
+                    "заведённый участник: у экрана динамики есть состояние "
+                    "«сотрудник ещё не выбран», и оно опирается на этот "
+                    "порядок (Plane №63)."
+                ),
+            )
+        ]
+    )
     def list(self, request):
         return Response(
             ratings_service.rating_dynamics(
@@ -1952,6 +1966,20 @@ class OperationalRatingEmployeeViewSet(RequirePermissionMixin, viewsets.ViewSet)
 
     permission_map = {"list": ratings_service.VIEW_AGGREGATE_PERMISSION}
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "employee", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=True,
+                description=(
+                    "Код участника рейтинга. ОБЯЗАТЕЛЕН: без него ручка "
+                    "отвечает 400. Раньше параметр в схеме не объявлялся "
+                    "вовсе, и сгенерированный по ней клиент получал метод "
+                    "без аргументов, который всегда отвечал 404 (Plane №63)."
+                ),
+            )
+        ]
+    )
     def list(self, request):
         return Response(
             ratings_service.rating_employee_detail(

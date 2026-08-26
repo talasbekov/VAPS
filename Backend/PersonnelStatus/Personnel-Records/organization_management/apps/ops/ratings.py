@@ -736,7 +736,20 @@ def rating_dynamics(employee_id):
 
 def rating_employee_detail(employee_id):
     """Карточка при праве только на агрегат (§19.17): ни одного поля
-    отдельных оценок и оценщиков."""
+    отдельных оценок и оценщиков.
+
+    `employee` ОБЯЗАТЕЛЕН. Без него ручка отвечала 404 `ENTITY_NOT_FOUND`
+    с пустым `details.id` (Plane №63) — а это неверно по смыслу: записи не
+    «нет», её не спросили. Отсутствие обязательного параметра — ошибка
+    запроса, и отвечать на неё надо так же, как соседние ручки отвечают на
+    неуказанный период или подразделение.
+    """
+    if not str(employee_id or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR", 400,
+            detail={"employee": ["Укажите сотрудника."]},
+            message="Проверьте заполнение формы.",
+        )
     flags = read_feature_flags()
     policy = read_rating_policy()
     participant = OpsRatedParticipant.objects.filter(
