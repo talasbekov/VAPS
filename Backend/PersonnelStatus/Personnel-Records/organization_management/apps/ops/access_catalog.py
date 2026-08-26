@@ -10,10 +10,30 @@
 
 Обход идёт по URL-резолверу, а не по списку роутеров: маршрут, подключённый
 мимо роутера, тоже гейтится и обязан попасть в каталог.
+
+ВТОРОЙ СПОСОБ ГЕЙТА — ПОСТРОЧНЫЙ (Plane №108). Часть ручек закрыта не картой,
+а вызовом прямо в теле метода: `require_permission(request, "admin.roles")` и
+`require_scoped_permission(request, CODE, …)`. Так закрыт ВЕСЬ админ-API
+раздела доступа (`/api/operations/{roles,permissions,accounts,user-roles}`) и
+звенья цепочки сбора сил, где право проверяется вместе с областью. Карты у них
+нет, и до 26.08.2026 каталог не показывал их вовсе: экран «Права» отвечал
+«право не стоит ни на одной ручке» ровно про то право, которым закрыт сам этот
+экран.
+
+Построчные вызовы читаются РАЗБОРОМ ИСХОДНИКА (ast), а не запуском кода:
+выполнить метод, чтобы узнать, что он проверяет, нельзя — у него запрос,
+транзакция и побочные действия. Разбор видит то же, что видит человек, читая
+метод, и не может ничего изменить.
 """
+import ast
+import inspect
 import re
+import textwrap
 
 from django.urls import URLPattern, URLResolver, get_resolver
+
+#: Имена функций, которыми право проверяют построчно.
+_INLINE_GUARDS = frozenset({"require_permission", "require_scoped_permission"})
 
 #: Именованная группа регекса → читаемый плейсхолдер: администратору нужен
 #: адрес ручки, а не выражение, по которому он матчится.
@@ -39,6 +59,65 @@ def _readable(path):
     return "/" + cleaned.lstrip("/")
 
 
+def _inline_codes(view_class):
+    """{действие: код права} — из построчных проверок в теле методов.
+
+    Возвращает пусто, если исходник недоступен (класс собран динамически) или
+    не разбирается: каталог обязан остаться работоспособным, даже когда одну
+    вьюху прочитать не удалось. Молчаливое исключение здесь опаснее пустоты —
+    оно уронило бы экран целиком.
+    """
+    cached = getattr(view_class, "_inline_permission_cache", None)
+    if cached is not None:
+        return cached
+    try:
+        source = textwrap.dedent(inspect.getsource(view_class))
+        tree = ast.parse(source)
+        module = inspect.getmodule(view_class)
+    except (OSError, TypeError, SyntaxError):
+        return {}
+
+    def code_of(call):
+        """Второй аргумент вызова: строка или модульная константа."""
+        if len(call.args) < 2:
+            return None
+        node = call.args[1]
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Name) and module is not None:
+            value = getattr(module, node.id, None)
+            return value if isinstance(value, str) else None
+        return None
+
+    found = {}
+    for class_node in ast.walk(tree):
+        if not isinstance(class_node, ast.ClassDef):
+            continue
+        for member in class_node.body:
+            if not isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for node in ast.walk(member):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = getattr(node.func, "id", None) or getattr(
+                    node.func, "attr", None
+                )
+                if name not in _INLINE_GUARDS:
+                    continue
+                code = code_of(node)
+                # Первая проверка в методе и есть его гейт: дальше в теле
+                # могут стоять проверки ДРУГИХ прав по ветвям, и показывать
+                # их как «функцию» права значило бы обещать вход, которого у
+                # него нет.
+                if code is not None and member.name not in found:
+                    found[member.name] = code
+    try:
+        view_class._inline_permission_cache = found
+    except (AttributeError, TypeError):
+        pass
+    return found
+
+
 def _walk(patterns, prefix=""):
     for entry in patterns:
         if isinstance(entry, URLResolver):
@@ -53,8 +132,14 @@ def _rows():
         view_class = getattr(entry.callback, "cls", None)
         if view_class is None:
             continue
-        permission_map = getattr(view_class, "permission_map", None)
-        if not permission_map:
+        permission_map = getattr(view_class, "permission_map", None) or {}
+        inline_map = _inline_codes(view_class)
+        # Пусто И там, и там — вьюха не гейтится вовсе, показывать нечего.
+        # Раньше здесь стоял выход по пустой КАРТЕ, и вьюсеты, закрытые только
+        # построчными вызовами, отсекались до разбора: весь админ-API раздела
+        # доступа не попадал в каталог, хотя закрыт правом `admin.roles`
+        # (Plane №108).
+        if not permission_map and not inline_map:
             continue
         # DRF кладёт карту «метод → действие» атрибутом `actions` на саму
         # view-функцию (не в `initkwargs` роутера — там только suffix и
@@ -80,6 +165,11 @@ def _rows():
             if method.lower() in ("head", "options"):
                 continue
             code = permission_map.get(action)
+            if code is None:
+                # Карта молчит — смотрим построчный гейт в теле метода
+                # (Plane №108). Порядок именно такой: карта — объявленное
+                # правило вьюсета, построчная проверка — частный случай.
+                code = inline_map.get(action)
             if code is None:
                 continue
             yield {
