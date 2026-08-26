@@ -10,13 +10,20 @@ import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
   ACCESS_CATALOG_PATH,
   ACCESS_PERMISSIONS_PATH,
+  ACCESS_ROLES_PATH,
   accessPermissionPath,
+  accessRolePath,
+  accessRolePermissionsPath,
 } from "@/entities/access";
 import type {
   AccessCatalogResponse,
   AccessPermission,
+  AccessRole,
+  ChangeRolePermissionsRequest,
   ListAccessPermissionsResponse,
+  ListAccessRolesResponse,
   SaveAccessPermissionRequest,
+  SaveAccessRoleRequest,
 } from "@/entities/access";
 
 function withSearch(path: string, search: string): string {
@@ -81,6 +88,58 @@ export function useSetAccessPermissionActive() {
         queryKey: ["ops-access-permissions"],
       });
       void queryClient.invalidateQueries({ queryKey: ["ops-access-catalog"] });
+    },
+  });
+}
+
+// ── Роли (Plane №36, шаг «П-7») ────────────────────────────────────────────
+
+export function useAccessRoles(search: string) {
+  return useQuery<ListAccessRolesResponse, OpsApiFailure>({
+    queryKey: ["ops-access-roles", search.trim()],
+    queryFn: () =>
+      opsApiClient.get<ListAccessRolesResponse>(
+        withSearch(ACCESS_ROLES_PATH, search)
+      ),
+  });
+}
+
+export function useCreateAccessRole(options?: {
+  onFormError?: (details: Record<string, unknown>) => void;
+}) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<AccessRole, SaveAccessRoleRequest>({
+    mutationFn: (body) =>
+      opsApiClient.post<AccessRole>(ACCESS_ROLES_PATH, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-access-roles"] });
+    },
+    onFormError: options?.onFormError,
+  });
+}
+
+export function useSetAccessRoleActive() {
+  const queryClient = useQueryClient();
+  return useOpsMutation<AccessRole, { code: string; is_active: boolean }>({
+    mutationFn: ({ code, is_active }) =>
+      opsApiClient.patch<AccessRole>(accessRolePath(code), { is_active }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-access-roles"] });
+    },
+  });
+}
+
+/** Состав прав роли: правка меняет ЖИВОЙ доступ у всех, кому роль выдана,
+ * поэтому вслед за ней перечитываются и права текущего пользователя — он мог
+ * править роль, которая выдана ему самому. */
+export function useChangeRolePermissions(code: string) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<AccessRole, ChangeRolePermissionsRequest>({
+    mutationFn: (body) =>
+      opsApiClient.post<AccessRole>(accessRolePermissionsPath(code), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-access-roles"] });
+      void queryClient.invalidateQueries({ queryKey: ["ops-me"] });
     },
   });
 }
