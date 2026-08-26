@@ -27,6 +27,7 @@ from organization_management.apps.ops.api.serializers import (
 from organization_management.apps.ops import gvo as gvo_service
 from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.ops import analytics as analytics_service
+from drf_spectacular.utils import extend_schema
 from organization_management.apps.ops import ratings as ratings_service
 from organization_management.apps.ops import reports as reports_service
 from organization_management.apps.operations.api.permissions import (
@@ -547,8 +548,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def recon_complete(self, request, pk=None):
         return self._event_response(event_service.complete_recon(pk))
 
+    @extend_schema(deprecated=True)
     @action(detail=True, methods=["post"], url_path="demand/approve")
     def demand_approve(self, request, pk=None):
+        """УСТАРЕВШАЯ ручка: стадию «Потребность» проходит сервер (Plane №125).
+
+        С Plane №110 завершение рекогносцировки само собирает потребность и
+        проводит мероприятие через `DEMAND` и `FORCES` на «Расстановку», а
+        миграция 0046 провела тем же путём всё, что стояло на этих стадиях
+        раньше. Клиент форм не показывает, звать её некому — на стенде
+        мероприятий на `DEMAND` не осталось ни одного.
+
+        Почему ручка ЖИВА, а не удалена: снять её — правка контракта наружу, а
+        такие делаются отдельным решением заказчика, а не заодно. Пока она
+        помечена устаревшей в схеме, и на неё заведена своя карточка. Работать
+        она обязана: мероприятие, которое как-то окажется на `DEMAND`, ведут
+        именно ей.
+        """
         data = request.data or {}
         return self._event_response(
             event_service.approve_demand(pk, rows=data.get("rows"))
@@ -739,8 +755,15 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         )
 
+    @extend_schema(deprecated=True)
     @action(detail=True, methods=["post"], url_path="forces/complete")
     def forces_complete(self, request, pk=None):
+        """УСТАРЕВШАЯ ручка: стадию «Запрос сил» проходит сервер (Plane №125).
+
+        Основание то же, что у `demand/approve` выше: автопроход стадий
+        (Plane №110) и миграция 0046. Ручка жива и работает — снятие контракта
+        наружу решает заказчик.
+        """
         return self._event_response(event_service.complete_forces(pk))
 
     # ── Исключение гейта: замещающий правит расстановку своего объекта ──

@@ -859,3 +859,55 @@ def test_event_without_roster_places_anyone(manager):  # noqa: F811
     )
 
     assert resp.status_code == 200
+
+
+# ── Plane №125: устаревшие ручки автопройденных стадий ─────────────────────
+
+
+def test_deprecated_stage_handles_still_work_and_are_marked(manager):  # noqa: F811
+    """`demand/approve` и `forces/complete` живы, но помечены устаревшими.
+
+    Стадии «Потребность» и «Запрос сил» проходит сервер (Plane №110), клиент
+    их форм не показывает, и звать эти ручки некому — мероприятий на этих
+    стадиях на стенде не осталось ни одного. Снять контракт наружу — решение
+    заказчика, а не побочный итог чужой задачи, поэтому ручки остаются
+    рабочими и помечены `deprecated` в схеме.
+
+    Проба держит ОБА конца: пометка стоит (иначе устаревание — устная
+    договорённость) и ручка отвечает мероприятию, которое на этой стадии
+    ОКАЖЕТСЯ (иначе «жива» — это про адрес, а не про поведение).
+    """
+    from organization_management.apps.ops.api.views import SecurityEventViewSet
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    for action_name in ("demand_approve", "forces_complete"):
+        schema = getattr(
+            getattr(SecurityEventViewSet, action_name), "kwargs", {}
+        ).get("schema")
+        assert schema is not None, (
+            f"у {action_name} снята пометка устаревания — схема снова обещает "
+            "ручку как обычную"
+        )
+
+    base, _total = event_on_demand(manager)
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    # Мероприятие ВОЗВРАЩАЕТСЯ на стадию, которой у него больше не бывает, и
+    # получает состояние СТАРОГО пути ведения: числа по группам, выделенные
+    # полностью. Так проверяется, что работает сам путь, а не только адрес.
+    OpsSecurityEvent.objects.filter(pk=event_id).update(
+        stage="FORCES",
+        force_allocation=[],
+        force_requests=[
+            {
+                "id": "legacy-1",
+                "groupName": "Управление охраны",
+                "requestedCount": 2,
+                "allocatedCount": 2,
+            }
+        ],
+    )
+
+    resp = manager.post(f"{base}forces/complete/")
+
+    assert resp.status_code == 200, resp.json()
+    assert resp.json()["stage"] == "PLACEMENT"
