@@ -27,6 +27,7 @@ from organization_management.apps.ops.api.views import (
     ServiceAnalyticsPresetsViewSet,
     ServiceAnalyticsViewSet,
     ServiceReportArtifactsViewSet,
+    OpsEventDocumentsViewSet,
     ServiceReportJobsViewSet,
     ServiceReportTypesViewSet,
     EvaluationWorkItemViewSet,
@@ -170,6 +171,13 @@ router.register(
 router.register(
     "service-report-artifacts", ServiceReportArtifactsViewSet,
     basename="ops-report-artifacts",
+)
+router.register(
+    # Документы ОМ в PDF (Plane №159, шаг ПД-3). Отдельный адрес, а не
+    # действие отчётов: отчёты — это ЗАДАНИЯ со своим жизненным циклом
+    # (очередь, повтор, ревизия), а документ собирается одним ответом.
+    "event-documents", OpsEventDocumentsViewSet,
+    basename="ops-event-documents",
 )
 
 # «Расход дня» раздела ОМ — адаптеры над живым /api/operations/ (своего
