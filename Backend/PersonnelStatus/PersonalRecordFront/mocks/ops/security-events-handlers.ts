@@ -30,9 +30,6 @@ import {
   securityEventApprovalRoutePath,
   securityEventApprovalSendPath,
   securityEventApprovalWithdrawPath,
-  securityEventApproverDecidePath,
-  securityEventApproverMovePath,
-  securityEventApproverPath,
   securityEventRemarkResolvePath,
   securityEventBulletinCompletePath,
   securityEventBulletinPath,
@@ -1787,7 +1784,12 @@ export const securityEventsHandlers = [
   ),
 
   http.post(
-    `*${securityEventApproverMovePath(":id", ":approverId")}`,
+    // 🔴 Путь собирается ВРУЧНУЮ (Plane №82): `securityEventApproverPath`
+    // прогоняет идентификатор согласующего через `encodeURIComponent`, и
+    // плейсхолдер `:approverId` превращался в `%3AapproverId` — обработчик не
+    // сматчивался НИКОГДА, а запрос молча уходил на живой бэк. Та же яма уже
+    // была у заявки сбора сил, см. выше.
+    `*${securityEventApprovalRoutePath(":id")}:approverId/move/`,
     async ({ params, request }) => {
       const { event, response } = findEvent(params.id as string);
       if (event === null) return response;
@@ -1912,7 +1914,7 @@ export const securityEventsHandlers = [
   ),
 
   http.post(
-    `*${securityEventApproverDecidePath(":id", ":approverId")}`,
+    `*${securityEventApprovalRoutePath(":id")}:approverId/decide/`,
     async ({ params, request }) => {
       const { event, response } = findEvent(params.id as string);
       if (event === null) return response;
@@ -1979,7 +1981,7 @@ export const securityEventsHandlers = [
   ),
 
   http.delete(
-    `*${securityEventApproverPath(":id", ":approverId")}`,
+    `*${securityEventApprovalRoutePath(":id")}:approverId/`,
     ({ params }) => {
       const { event, response } = findEvent(params.id as string);
       if (event === null) return response;
