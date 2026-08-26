@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   frontend:
     build:
@@ -15,6 +13,8 @@ services:
       - NODE_ENV=production
       - PORT=3100
       - HOSTNAME=0.0.0.0
+      # Куча V8 под mem_limit=1g. Меняется вместе с лимитом ниже.
+      - NODE_OPTIONS=--max-old-space-size=512
       - NEXTAUTH_URL=http://10.15.3.187:3100
       # Секрет приходит из окружения хоста (или .env рядом с компоузом) и в
       # git не хранится; без него compose откажется стартовать. Прежнее
@@ -23,4 +23,14 @@ services:
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
       # Бэкенд запущен бэкендером отдельно на том же сервере
       - BACKEND_URL=http://10.15.3.187:8100
+    mem_limit: 1g
+    mem_reservation: 512m
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 512m
+    tmpfs:
+      - /app/.next/cache:size=256m,mode=1777
     restart: unless-stopped
