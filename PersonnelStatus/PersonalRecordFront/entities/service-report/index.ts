@@ -557,3 +557,44 @@ export const UNAVAILABLE_ARTIFACT_FIELDS: readonly MaskedField[] = [
       "Версионируемой политики доступа в demo-срезе нет: права — плоский список кодов. Версии расчёта и маскирования при этом реальные и хранятся в артефакте.",
   },
 ];
+
+// ── Документы ОМ в PDF (Plane №159, шаг ПД-3) ─────────────────────────────
+// Документ и отчёт — РАЗНЫЕ вещи, и типы у них разные не для порядка.
+// Отчёт это ЗАДАНИЕ: его ставят в очередь, оно живёт своим сроком, у него
+// бывают повтор и ревизия. Документ собирается одним ответом за доли секунды
+// и никакого состояния после себя не оставляет.
+
+export const OPS_EVENT_DOCUMENTS_PATH = "/api/ops/event-documents/";
+export const OPS_EVENT_DOCUMENT_RENDER_PATH =
+  "/api/ops/event-documents/render/";
+
+export interface EventDocumentKind {
+  kind: string;
+  label: string;
+  /** Строится ПО мероприятию: без него собирать нечего. У бюллетеня и
+   * графиков это `false` — они идут по всем ОМ на момент среза. */
+  needsEvent: boolean;
+}
+
+export interface EventDocumentKindsResponse {
+  results: EventDocumentKind[];
+}
+
+/** Файл приходит содержимым в JSON, а не потоком: клиент шлёт токен
+ * ЗАГОЛОВКОМ, и открыть файл прямой ссылкой нельзя — токена в ней нет. Тот же
+ * контракт, что у скачивания артефакта отчёта. */
+export interface EventDocumentResponse {
+  fileName: string;
+  contentBase64: string;
+  contentType: string;
+}
+
+export function eventDocumentRenderPath(params: {
+  kind: string;
+  eventCode?: string;
+}): string {
+  const query = new URLSearchParams({ kind: params.kind });
+  if ((params.eventCode ?? "").trim() !== "")
+    query.set("event", (params.eventCode as string).trim());
+  return `${OPS_EVENT_DOCUMENT_RENDER_PATH}?${query.toString()}`;
+}

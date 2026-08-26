@@ -2988,6 +2988,7 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # спрятать данные от их читателей.
     permission_map = {
         "list": "event.view",
+        "assembled": "event.view",
         "retrieve": "event.view",
         "partial_update": "gvo.manage",
         "reset": "gvo.manage",
@@ -3031,6 +3032,17 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     def list(self, request):
         return Response({"results": gvo_service.list_patches()})
+
+    @action(detail=False, methods=["get"], url_path="assembled")
+    def assembled(self, request):
+        """Собранные сводки ВСЕХ мероприятий — для реестров.
+
+        Отдельным адресом, а не сменой смысла `list`: у `list` есть свои
+        читатели, и подменять им форму ответа значит ломать их молча. Старый
+        адрес живёт, пока его кто-то читает, и снимается отдельным шагом
+        после переезда читателей.
+        """
+        return Response({"results": documents_summary.assembled_summaries()})
 
     def retrieve(self, request, pk=None):
         """Собранная сводка мероприятия: база из бюллетеня плюс правки.

@@ -11,6 +11,8 @@ import {
   reportArtifactDownloadPath,
   reportJobDetailPath,
   reportJobRerunPath,
+  OPS_EVENT_DOCUMENTS_PATH,
+  eventDocumentRenderPath,
 } from "@/entities/service-report";
 import type {
   CreateReportJobRequest,
@@ -22,6 +24,8 @@ import type {
   ReportJobDetailResponse,
   RerunMode,
   RerunReportJobResponse,
+  EventDocumentKindsResponse,
+  EventDocumentResponse,
 } from "@/entities/service-report";
 
 export function useReportTypes() {
@@ -132,5 +136,36 @@ export function useDownloadArtifact(
     // Сохранение файла — в onSuccess, а не в эффекте по data: эффект сработал
     // бы повторно на ререндере и сохранил бы файл второй раз.
     onSuccess: onDownloaded,
+  });
+}
+
+// ── Документы ОМ в PDF (Plane №159, шаг ПД-3) ─────────────────────────────
+
+/** Какие документы бывают. Список приходит С СЕРВЕРА, а не задан на экране:
+ * свой список разошёлся бы с реестром сборщиков и предложил бы человеку
+ * документ, которого ручка не соберёт. */
+export function useEventDocumentKinds() {
+  return useQuery<EventDocumentKindsResponse, OpsApiFailure>({
+    queryKey: ["ops-event-documents", "kinds"],
+    queryFn: () =>
+      opsApiClient.get<EventDocumentKindsResponse>(OPS_EVENT_DOCUMENTS_PATH),
+  });
+}
+
+/** Собрать документ. Мутация, а не запрос: это ДЕЙСТВИЕ по нажатию, у него не
+ * бывает кэша и его не переспрашивают при возврате на экран. */
+export function useRenderEventDocument(
+  onReady: (file: EventDocumentResponse) => void
+) {
+  return useOpsMutation<
+    EventDocumentResponse,
+    { kind: string; eventCode?: string }
+  >({
+    mutationFn: (params) =>
+      opsApiClient.get<EventDocumentResponse>(eventDocumentRenderPath(params)),
+    // Сохранение — в onSuccess, а не в эффекте по data: эффект сработал бы
+    // повторно на ререндере и сохранил бы файл второй раз (та же причина, что
+    // у скачивания артефакта).
+    onSuccess: onReady,
   });
 }
