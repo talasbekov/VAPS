@@ -44,6 +44,58 @@ def require_permission(request, permission_code):
         raise PermissionDenied("PERMISSION_DENIED")
 
 
+def require_scoped_permission(request, permission_code, division_id):
+    """Гейт действия на право В ОБЛАСТИ подразделения (Plane №74).
+
+    Отличие от `require_permission` — в вопросе, который задаётся правам:
+    не «есть ли у человека это право вообще», а «есть ли оно у него ДЛЯ ЭТОГО
+    подразделения». Роль, назначенная с областью «Департамент А»
+    (`UserRole.scope_division_id`), проходит проверку для А и его управлений и
+    НЕ проходит для департамента Б — ровно то разграничение, которое просил
+    заказчик: «в своём департаменте, не в чужом».
+
+    Область берётся из ДАННЫХ мероприятия (департамент строки раскладки,
+    управление сотрудника), а не из тела запроса: присланная клиентом область
+    была бы утверждением проверяемого о том, что он проверяет.
+
+    `division_id is None` значит «область УСТАНОВИТЬ НЕ УДАЛОСЬ»: сотрудник без
+    штатной единицы, строка раскладки без департамента, нечисловой
+    идентификатор. Такой случай разбирается ПО ТИПУ ГРАНТА, а не одинаково для
+    всех:
+
+    * грант выдан БЕЗ области — пропускаем. Область его не сужает ни в одном
+      подразделении, и отказ здесь запер бы ровно тех, кто ведёт цепочку
+      сегодня, ничего не защитив;
+    * все гранты этого права выданы С областью — ОТКАЗ. Сверить область не с
+      чем, а пропустить значило бы отдать действие тому, чью границу мы не
+      смогли проверить. Идентификатор сотрудника приходит ИЗ ТЕЛА ЗАПРОСА, и
+      послабление здесь означало бы, что проверяемый сам подберёт «удобного»
+      человека — без подразделения — и перешагнёт границу департамента.
+
+    `effective_permissions(actor_id, None)` этот вопрос НЕ решает: при пустой
+    области совпадает любой грант, и ответ у обеих ролей одинаковый. Поэтому
+    спрашивается `unscoped_permissions`.
+
+    Кеш `effective_permissions(request)` используется только для быстрого
+    ответа «*»: он хранит ГЛОБАЛЬНЫЙ набор, и на вопрос про область ответ у
+    него другой.
+    """
+    actor_id = resolve_actor_id(request)
+    if actor_id is None:
+        raise PermissionDenied("PERMISSION_DENIED")
+    # «*» от подразделения не зависит — лишний обход дерева ни к чему.
+    if "*" in effective_permissions(request):
+        return
+    if division_id is None:
+        unscoped = PermissionService.unscoped_permissions(actor_id)
+        if "*" in unscoped or permission_code in unscoped:
+            return
+        raise PermissionDenied("PERMISSION_DENIED")
+    scoped = PermissionService.effective_permissions(actor_id, division_id)
+    if "*" not in scoped and permission_code not in scoped:
+        raise PermissionDenied("PERMISSION_DENIED")
+
+
 class RequirePermissionMixin:
     """ViewSet-миксин: каждое действие гейтится кодом права нового RBAC.
 

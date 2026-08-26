@@ -24,9 +24,39 @@ def test_catalog_names_real_routes_of_a_permission():
     paths = {(row["method"], row["path"]) for row in rows}
 
     assert ("POST", "/api/ops/security-events/") in paths
-    assert ("POST", "/api/ops/security-events/<pk>/placement/assign/") in paths
-    # Регексы и якори не протекают наружу: администратору нужен адрес, а не
-    # выражение, по которому маршрут матчится.
+    # Завершение этапа осталось у ведущего мероприятие: это переход цепочки,
+    # а не расстановка людей (Plane №74).
+    assert ("POST", "/api/ops/security-events/<pk>/placement/complete/") in paths
+
+
+def test_catalog_follows_the_gate_when_a_route_changes_its_permission():
+    """Каталог идёт ЗА картой гейта, а не за памятью о ней.
+
+    Назначение на пост переехало с `event.manage` на `placement.manage`
+    (Plane №74): расстановку заказчик закрепил за старшим объекта. Пин
+    перенацелен осознанно и стережёт обе стороны переезда — ручка появилась
+    у нового права И пропала у старого. Проверять только появление значило бы
+    не заметить, если бы она осталась и там, и там.
+    """
+    assign = ("POST", "/api/ops/security-events/<pk>/placement/assign/")
+
+    moved_to = {(row["method"], row["path"]) for row in catalog()["placement.manage"]}
+    stayed_at = {(row["method"], row["path"]) for row in catalog()["event.manage"]}
+
+    assert assign in moved_to
+    assert assign not in stayed_at
+
+
+def test_catalog_paths_are_addresses_not_patterns():
+    """Регексы и якори не протекают наружу: администратору нужен адрес.
+
+    Проверяется ВЕСЬ каталог, а не одно право: очистка пути общая, и привязка
+    к `event.manage` делала пробу заложницей того, какое право какую ручку
+    сторожит (после Plane №74 половина ручек переехала к своим кодам).
+    """
+    rows = [row for permission_rows in catalog().values() for row in permission_rows]
+    paths = {(row["method"], row["path"]) for row in rows}
+
     assert all("(?P<" not in row["path"] for row in rows)
     assert all(not row["path"].endswith("$") for row in rows)
     # Маршрут С ПРОВЕРОЧНОЙ ГРУППОЙ в паттерне (`(?!assign/|complete/)`)

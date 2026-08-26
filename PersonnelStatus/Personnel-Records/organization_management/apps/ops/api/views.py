@@ -8,6 +8,7 @@ documents: заводить второй механизм прав ради но
 from django.db.models import Exists, OuterRef
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from organization_management.apps.operations import audit_service
@@ -30,6 +31,7 @@ from organization_management.apps.ops import ratings as ratings_service
 from organization_management.apps.ops import reports as reports_service
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
+    require_scoped_permission,
     resolve_actor_id,
 )
 from organization_management.apps.operations.clock import Clock
@@ -192,6 +194,12 @@ _READ_EVENT_PERMISSION = "event.view"
 _MANAGE_EVENT_PERMISSION = "event.manage"
 _STAGE_OVERRIDE_PERMISSION = "event.stage_override"
 _DELETE_EVENT_PERMISSION = "event.delete"
+# Звенья цепочки «Сбор сил на ОМ» (Plane №74). Область у них не в коде права, а
+# в НАЗНАЧЕНИИ роли (`UserRole.scope_division_id`) — см. проверки в действиях.
+_FORCES_COMMAND_PERMISSION = "forces.command"
+_FORCES_ALLOCATE_PERMISSION = "forces.allocate"
+_FORCES_SELECT_PERMISSION = "forces.select"
+_PLACEMENT_PERMISSION = "placement.manage"
 
 
 class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -224,23 +232,31 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "recon_import": _MANAGE_EVENT_PERMISSION,
         "recon_complete": _MANAGE_EVENT_PERMISSION,
         "demand_approve": _MANAGE_EVENT_PERMISSION,
-        # Раскладка потребности по департаментам — работа штаба. Своего права
-        # у неё пока нет: заказчик просил цепочку «Сбора сил» общим доступом,
-        # разделение по ролям идёт отдельной задачей (Plane №74).
-        "forces_split": _MANAGE_EVENT_PERMISSION,
-        "forces_notify": _MANAGE_EVENT_PERMISSION,
-        "forces_member_add": _MANAGE_EVENT_PERMISSION,
-        "forces_member_remove": _MANAGE_EVENT_PERMISSION,
-        "forces_submit": _MANAGE_EVENT_PERMISSION,
-        "forces_withdraw": _MANAGE_EVENT_PERMISSION,
-        "forces_accept": _MANAGE_EVENT_PERMISSION,
-        "forces_return": _MANAGE_EVENT_PERMISSION,
+        # Цепочка «Сбор сил на ОМ» разделена по звеньям (Plane №74): деление
+        # потребности и решения по спискам — штаб; оповещение и отправка —
+        # ответственный за выделение в СВОЁМ департаменте; выделение людей —
+        # начальник управления по СВОЕМУ управлению. Карта даёт ответ «есть ли
+        # право вообще»; область сужают проверки внутри действий — они знают,
+        # о каком департаменте и управлении идёт речь, а карта не знает.
+        "forces_split": _FORCES_COMMAND_PERMISSION,
+        "forces_accept": _FORCES_COMMAND_PERMISSION,
+        "forces_return": _FORCES_COMMAND_PERMISSION,
+        "forces_notify": _FORCES_ALLOCATE_PERMISSION,
+        "forces_submit": _FORCES_ALLOCATE_PERMISSION,
+        "forces_withdraw": _FORCES_ALLOCATE_PERMISSION,
+        "forces_member_add": _FORCES_SELECT_PERMISSION,
+        "forces_member_remove": _FORCES_SELECT_PERMISSION,
+        # Числа по группам и завершение стадии — прежний путь, которым ведут
+        # мероприятия, заведённые до автопрохода (Plane №110). Своего звена в
+        # цепочке у них нет, и делить их по ролям заказчик не просил.
         "force_allocation": _MANAGE_EVENT_PERMISSION,
         "forces_complete": _MANAGE_EVENT_PERMISSION,
-        "placement_assign": _MANAGE_EVENT_PERMISSION,
-        "placement_unassign": _MANAGE_EVENT_PERMISSION,
+        "placement_assign": _PLACEMENT_PERMISSION,
+        "placement_unassign": _PLACEMENT_PERMISSION,
+        "placement_sector_senior": _PLACEMENT_PERMISSION,
+        # Завершение этапа — не расстановка людей, а переход мероприятия
+        # дальше по цепочке: его делает ведущий ОМ.
         "placement_complete": _MANAGE_EVENT_PERMISSION,
-        "placement_sector_senior": _MANAGE_EVENT_PERMISSION,
         "approval_approve": _MANAGE_EVENT_PERMISSION,
         # Маршрут согласования правит тот же, кто ведёт мероприятие: action без
         # записи в карте провалился бы в автоопределение и остался без права.
@@ -555,7 +571,17 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/notify",
     )
     def forces_notify(self, request, pk=None, allocation_id=None):
-        """Оповестить управления департамента (Plane №73, шаг «СС-2»)."""
+        """Оповестить управления департамента (Plane №73, шаг «СС-2»).
+
+        Область — департамент СТРОКИ РАСКЛАДКИ (Plane №74): оповещать свои
+        управления вправе ответственный за выделение в этом департаменте, а не
+        в чужом.
+        """
+        require_scoped_permission(
+            request,
+            _FORCES_ALLOCATE_PERMISSION,
+            event_service.allocation_scope_division(pk, allocation_id),
+        )
         return self._event_response(
             event_service.notify_directorates(
                 pk, allocation_id, actor=resolve_actor_id(request)
@@ -568,8 +594,19 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/members",
     )
     def forces_member_add(self, request, pk=None, allocation_id=None):
-        """Управление выделяет человека (Plane №73, шаг «СС-3»)."""
+        """Управление выделяет человека (Plane №73, шаг «СС-3»).
+
+        Область — управление САМОГО СОТРУДНИКА (Plane №74): начальник
+        управления выделяет своих людей и только своих. Именно это действие
+        проставляет статус «Участие на мероприятии», о котором говорил
+        заказчик, — отдельной ручки у статуса здесь нет.
+        """
         data = request.data or {}
+        require_scoped_permission(
+            request,
+            _FORCES_SELECT_PERMISSION,
+            event_service.employee_scope_division(data.get("employeeId")),
+        )
         return self._event_response(
             event_service.add_allocation_member(
                 pk,
@@ -595,6 +632,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def forces_member_remove(
         self, request, pk=None, allocation_id=None, employee_id=None
     ):
+        # Снятие проверяется по ТОМУ ЖЕ сотруднику, что и выделение: иначе
+        # своего человека выделяло бы своё управление, а снимало бы любое.
+        require_scoped_permission(
+            request,
+            _FORCES_SELECT_PERMISSION,
+            event_service.employee_scope_division(employee_id),
+        )
         return self._event_response(
             event_service.remove_allocation_member(
                 pk,
@@ -610,7 +654,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/submit",
     )
     def forces_submit(self, request, pk=None, allocation_id=None):
-        """Департамент отправляет список штабу (Plane №73, шаг «СС-4»)."""
+        """Департамент отправляет список штабу (Plane №73, шаг «СС-4»).
+
+        Область — департамент строки раскладки (Plane №74): отправляет свой
+        список тот, кто за него отвечает.
+        """
+        require_scoped_permission(
+            request,
+            _FORCES_ALLOCATE_PERMISSION,
+            event_service.allocation_scope_division(pk, allocation_id),
+        )
         return self._event_response(
             event_service.submit_allocation(
                 pk, allocation_id, actor=resolve_actor_id(request)
@@ -623,6 +676,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/withdraw",
     )
     def forces_withdraw(self, request, pk=None, allocation_id=None):
+        # Отзыв — оборотная сторона отправки, и область у него та же: свой
+        # список отзывает тот же, кто его отправлял (Plane №74).
+        require_scoped_permission(
+            request,
+            _FORCES_ALLOCATE_PERMISSION,
+            event_service.allocation_scope_division(pk, allocation_id),
+        )
         return self._event_response(
             event_service.withdraw_allocation(
                 pk, allocation_id, actor=resolve_actor_id(request)
@@ -716,6 +776,33 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._deputy_employee = employee if allowed else None
         return allowed
 
+    def _require_placement_lead(self, event_id):
+        """Расстановку ведёт СТАРШИЙ объекта/мероприятия (Plane №74).
+
+        Право `placement.manage` отвечает «может ли человек расставлять
+        вообще»; здесь спрашивается «его ли это мероприятие». Замещающий с
+        правом правки расстановки уже прошёл `permission_override` — его и
+        пропускаем: у него своя привязка, к посту.
+
+        Администратор («*») не сужается: у него проходит любая проверка
+        раздела, и обходить это исключение здесь было бы расхождением с
+        остальным гейтом.
+        """
+        if self._acting_as_deputy_now():
+            return
+        if "*" in effective_permissions(self.request):
+            return
+        event = OpsSecurityEvent.objects.filter(pk=event_id).first()
+        if event is None:
+            return
+        employee = getattr(self.request.user, "employee", None)
+        employee_id = employee.pk if employee is not None else None
+        if not event_service.placement_is_led_by(event, employee_id):
+            raise PermissionDenied("PERMISSION_DENIED")
+
+    def _acting_as_deputy_now(self):
+        return bool(getattr(self, "_acting_as_deputy", False))
+
     def _deputy_actor(self):
         """Сотрудник, действующий замещающим, либо `None` — обычное право."""
         if not getattr(self, "_acting_as_deputy", False):
@@ -747,6 +834,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @action(detail=True, methods=["post"], url_path="placement/assign")
     def placement_assign(self, request, pk=None):
         data = request.data or {}
+        self._require_placement_lead(pk)
         return self._event_response(
             event_service.assign_placement(
                 pk,
@@ -767,6 +855,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"placement/(?P<assignment_id>(?!assign/|complete/)[^/]+)",
     )
     def placement_unassign(self, request, pk=None, assignment_id=None):
+        self._require_placement_lead(pk)
         return self._event_response(
             event_service.unassign_placement(
                 pk, assignment_id, deputy=self._deputy_actor()
