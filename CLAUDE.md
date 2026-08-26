@@ -11,7 +11,7 @@ Smart Josparlau: Personnel Records (в разработке). Эталон фо�
 | Часть | Где | Гейт |
 |---|---|---|
 | Бэкенд — Django/DRF, PostgreSQL | `organization_management/apps/*` | `pytest` по всем приложениям; схема API — `schema.yaml` / `/api/schema/` |
-| Фронтенд — Next.js + TypeScript | `Backend/PersonnelStatus/PersonalRecordFront` (стенд `next dev`, :3106), `frontend/` | `npm run gate:front` (`tsc` + прод-сборка) + полный `playwright.smoke.config.ts` с `SMOKE_LIVE=1` |
+| Фронтенд — Next.js + TypeScript | `Backend/PersonnelStatus/PersonalRecordFront` (стенд `next dev`, :3106), `frontend/` | `npm run gate:front` (`tsc` + прод-сборка) + целевые пробы `playwright.smoke.config.ts` с `SMOKE_LIVE=1`; обход портала — отдельным `playwright.walk.config.ts` |
 | Задачи | Plane http://localhost:8090, workspace `vaps`, проект **Smart Josparlau** | `plane_task.py` (ниже) |
 | Знания, журнал, дефекты | `obsidian-vault/` — вход `00-Index.md` | — |
 | Секреты | `~/.config/vaps/` (ключ Plane, пароль стенда) | в репозиторий и в текст команд не попадают |
@@ -93,10 +93,15 @@ npm run build:check       # только сборка: NEXT_DIST_DIR=.next-build
 #    обращение к `window` в модуле), а Suspense-границы держатся конвенцией:
 #    тело экрана в `*Screen`, `export default` только с границей.
 SMOKE_LIVE=1 npx playwright test -c playwright.smoke.config.ts <спека>.spec.ts   # целевые живые пробы
-SMOKE_LIVE=1 npx playwright test -c playwright.smoke.config.ts                    # полный смоук
-#    ⚠️ Полный смоук за один заход НЕ проходит: он длиннее часа, а сторож
-#    памяти перезапускает стенд посреди прогона, и обход падает вместе с ним.
-#    Гонять блоками по 10-12 спек с замером RSS между блоками.
+SMOKE_LIVE=1 npx playwright test -c playwright.smoke.config.ts                    # ВСЕ целевые пробы (206 в 35 файлах)
+SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts                     # обход портала (133 пробы, >1 часа)
+#    ДВА КОНФИГА, а не один (Plane №94): обход портала ходит по всем маршрутам
+#    пятью персонами и идёт больше часа, а целевые пробы отвечают на вопрос
+#    «не сломал ли я это сейчас». Пока они стояли вместе, падение обхода
+#    уносило очередь: 26.08.2026 сторож памяти перезапустил стенд на 15-й
+#    пробе из 132, и целевые за ней не выполнились вовсе.
+#    ⚠️ Обход за один заход НЕ проходит: гонять блоками персон
+#    (`-g "persona admin"`) с замером RSS между блоками.
 #    Без SMOKE_LIVE=1 живые спеки молча скипаются, и скип читается как зелень.
 SMOKE_MOCK_APP=http://localhost:3107 npx playwright test -c playwright.smoke.config.ts e2e/mock-contract.spec.ts
 #    Мок-проба требует ВТОРОГО dev-сервера на моке (основной стенд живой):
@@ -203,7 +208,7 @@ Plane — вход задач, vault — их разбор и исполнени
 Состав прогона:
 1. **Фикстуры стенда**: `manage.py seed_smoke_fixtures` (без него три пробы падают сторожем «проверять нечего»). ⚠️ `seed_expense_chain` по умолчанию СДАЁТ ДЕНЬ и этим краснит две пробы `day-submission` (им нужен несданный день). Перед смоуком звать его с `--no-submit`: люди и статусы заводятся, день остаётся несданным, пробы проходят путь целиком (Plane №72).
 2. **Бэкенд весь**: `pytest` по всем `organization_management/apps`; обход API по схеме (`/api/schema/`, не по памяти) — каждый эндпоинт отвечает (не 5xx), включая нетронутые.
-3. **Фронтенд весь**: `npm run gate:front` (`tsc` + прод-сборка `NEXT_DIST_DIR=.next-build`); полный `playwright.smoke.config.ts` с `SMOKE_LIVE=1` (без переменной живые спеки молча скипаются, скип читается как зелень); консоль браузера — на ошибки.
+3. **Фронтенд весь**: `npm run gate:front` (`tsc` + прод-сборка `NEXT_DIST_DIR=.next-build`); целевые пробы `playwright.smoke.config.ts` И обход `playwright.walk.config.ts`, оба с `SMOKE_LIVE=1` (без переменной живые спеки молча скипаются, скип читается как зелень); консоль браузера — на ошибки.
 4. **Связка фронт ↔ бэк**: экраны проверяются на живых данных, не на моке (мок зелен и при 500).
 5. **Память стенда**: замер RSS до и после — раздувание тоже дефект. К концу полного смоука `next dev` уходит за 5 ГБ и начинает ронять пробы САМ: падение в конце длинного прогона сначала проверяется повтором на свежем стенде и только потом считается дефектом кода.
 6. **Уборка**: `manage.py purge_probe_events --yes --force`.
