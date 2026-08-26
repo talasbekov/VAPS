@@ -508,6 +508,17 @@ def resolve_period(request):
             ).isoformat(),
             "presetCode": preset.preset_code,
         }
+    # Параметра НЕ ПРИСЛАЛИ ВОВСЕ — это ошибка запроса (400), а не негодное
+    # значение (422). Разница не формальная: до этой правки обе беды отвечали
+    # одинаково, и клиент, вообще не знавший про период (а схема о нём
+    # молчала — Plane №151), получал «укажите период в формате ГГГГ-ММ-ДД» на
+    # запрос, в котором формата не было вовсе.
+    if not str(request.get("from") or "") and not str(request.get("to") or ""):
+        raise DomainError(
+            "VALIDATION_ERROR", 400,
+            detail={"from": ["Укажите период."], "to": ["Укажите период."]},
+            message="Проверьте заполнение формы.",
+        )
     try:
         from_date = dt.date.fromisoformat(str(request.get("from") or ""))
         to_date = dt.date.fromisoformat(str(request.get("to") or ""))
