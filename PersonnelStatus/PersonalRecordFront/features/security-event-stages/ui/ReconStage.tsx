@@ -27,12 +27,7 @@ import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -264,14 +259,16 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   }
 
   return (
-    <Card>
-      {/* Имя этапа и подпись стоят и НАД карточкой, в шапке страницы («Этап 1
-          из 5 · Рекогносцировка объекта»), поэтому здесь — короткая форма:
-          дословный повтор читался бы как вложенный раздел, которого нет.
-          Повтор целиком — общая беда всех пяти этапов, заведена карточкой. */}
-      <CardHeader>
-        <CardTitle>Рекогносцировка</CardTitle>
-      </CardHeader>
+    // Карточка этапа — ОБЛАСТЬ с именем: видимого заголовка внутри больше
+    // нет (Plane №70), а имя у блока быть обязано — им пользуются и чтение с
+    // экрана, и пробы, которым нужно указать на этап, а не на «первую
+    // карточку страницы».
+    <Card role="region" aria-label="Рекогносцировка объекта">
+      {/* Имени этапа здесь НЕТ намеренно (Plane №70): оно стоит НАД
+          карточкой, в шапке страницы («Этап N из 5 · …»). Второй заголовок
+          читался бы как вложенный раздел, которого нет, и отнимал строку у
+          содержимого. Подзаголовки внутри карточки остаются — они называют
+          блоки, а не этап. */}
       <CardContent className="space-y-5">
         <ObjectFacts event={event} />
 

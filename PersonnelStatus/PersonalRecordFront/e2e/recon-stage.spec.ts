@@ -92,9 +92,10 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
-    const stage = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Рекогносцировка' }),
-    })
+    // Карточка этапа ищется по ИМЕНИ ОБЛАСТИ, а не по заголовку внутри:
+    // видимый заголовок снят как повтор шапки страницы (Plane №70), и имя
+    // области — то, что осталось у блока как название.
+    const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
     await expect(stage).toBeVisible({ timeout: 15_000 })
 
     // Сведения — из карточки ОБЪЕКТА, а не из полей мероприятия: адрес и тип
@@ -174,9 +175,10 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${fixture.id}/`)
-    const stage = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Рекогносцировка' }),
-    })
+    // Карточка этапа ищется по ИМЕНИ ОБЛАСТИ, а не по заголовку внутри:
+    // видимый заголовок снят как повтор шапки страницы (Plane №70), и имя
+    // области — то, что осталось у блока как название.
+    const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
     await expect(stage).toBeVisible({ timeout: 15_000 })
     // Промежуточного шага «Открыть рекогносцировку» у такого ОМ нет вовсе.
     await expect(
@@ -243,9 +245,10 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${fixture.id}/`)
-    const stage = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Рекогносцировка' }),
-    })
+    // Карточка этапа ищется по ИМЕНИ ОБЛАСТИ, а не по заголовку внутри:
+    // видимый заголовок снят как повтор шапки страницы (Plane №70), и имя
+    // области — то, что осталось у блока как название.
+    const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
     await expect(stage).toBeVisible({ timeout: 15_000 })
 
     // Имя УНИКАЛЬНО на прогон: на стенде уже есть секторы из паспортов, и

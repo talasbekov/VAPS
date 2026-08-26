@@ -80,11 +80,9 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${eventId}/`)
-    // CardTitle рендерится <div data-slot="card-title">, а не заголовком —
-    // роль heading здесь не ищется.
-    const card = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Расстановка' }),
-    })
+    // Карточка этапа ищется по ИМЕНИ ОБЛАСТИ: видимый заголовок снят как
+    // повтор шапки страницы (Plane №70).
+    const card = page.getByRole('region', { name: 'Расстановка сил' })
     await expect(card).toBeVisible({ timeout: 15_000 })
 
     // Дерево слева перечисляет ИМЕННО посты расчёта, а не выдумку экрана
