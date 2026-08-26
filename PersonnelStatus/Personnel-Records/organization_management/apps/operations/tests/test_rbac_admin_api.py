@@ -353,3 +353,221 @@ def test_writing_permissions_is_closed_to_those_who_do_not_manage_access():
 
     assert response.status_code == 403
     assert not Permission.objects.filter(code="sneaky").exists()
+
+
+# ── Plane №36, шаг «П-3»: справочник ролей дорос до записи и состава прав ───
+
+
+@pytest.mark.django_db
+def test_roles_search_looks_at_code_name_and_description():
+    """Поиск по ролям идёт НА СЕРВЕР и смотрит на всё, что видно в строке."""
+    admin, _ = client_for("role-admin", "ADMIN", perms=("admin.roles",))
+    Role.objects.create(
+        code="ARCHIVIST", name="Архивариус", description="ведёт бумажный архив"
+    )
+    Role.objects.create(code="READER", name="Читатель")
+
+    by_code = admin.get(f"{ROLES_URL}?search=ARCHIV").json()["results"]
+    by_name = admin.get(f"{ROLES_URL}?search=Архивариус").json()["results"]
+    by_description = admin.get(f"{ROLES_URL}?search=бумажный").json()["results"]
+    everything = admin.get(ROLES_URL).json()["results"]
+
+    assert [row["code"] for row in by_code] == ["ARCHIVIST"]
+    assert [row["code"] for row in by_name] == ["ARCHIVIST"]
+    assert [row["code"] for row in by_description] == ["ARCHIVIST"]
+    # Сторож: без поиска строк БОЛЬШЕ — иначе проба не отличала бы фильтр от
+    # его отсутствия.
+    assert len(everything) > len(by_code)
+
+
+@pytest.mark.django_db
+def test_role_list_carries_its_permissions():
+    """Реестр отвечает не только «как называется», но и «что открывает»."""
+    admin, _ = client_for("role-reader", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view", "document.export"])
+
+    row = next(
+        r
+        for r in admin.get(ROLES_URL).json()["results"]
+        if r["code"] == "ARCHIVIST"
+    )
+
+    assert row["permissions"] == ["document.export", "document.view"]
+
+
+@pytest.mark.django_db
+def test_role_is_created_without_permissions_and_leaves_a_trace():
+    """Роль-заготовка без прав допустима; заведение — именное решение."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    admin, user = client_for("role-author", "ADMIN", perms=("admin.roles",))
+
+    response = admin.post(
+        ROLES_URL,
+        {"code": "ARCHIVIST", "name": "Архивариус", "is_active": True},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert response.json()["permissions"] == []
+    assert Role.objects.filter(code="ARCHIVIST").exists()
+    entry = OpsAuditLog.objects.get(action="ACCESS_ROLE_SAVED")
+    # Ключ строки — КОД, а не число: у роли числового идентификатора нет.
+    assert entry.entity_key == "ARCHIVIST"
+    assert entry.entity_id is None
+    assert entry.old_value is None
+    assert entry.actor_user_id == str(user.pk)
+
+
+@pytest.mark.django_db
+def test_role_edit_keeps_the_previous_value_in_the_trace():
+    admin, _ = client_for("role-editor", "ADMIN", perms=("admin.roles",))
+    Role.objects.create(code="ARCHIVIST", name="Старое имя")
+
+    admin.patch(
+        f"{ROLES_URL}ARCHIVIST/",
+        {"name": "Архивариус", "is_active": False},
+        format="json",
+    )
+
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    entry = OpsAuditLog.objects.filter(action="ACCESS_ROLE_SAVED").latest("id")
+    assert entry.old_value["name"] == "Старое имя"
+    assert entry.new_value["name"] == "Архивариус"
+    assert Role.objects.get(code="ARCHIVIST").is_active is False
+
+
+@pytest.mark.django_db
+def test_role_cannot_be_deleted():
+    """Удаления нет: код роли стоит в назначениях, роль деактивируется."""
+    admin, _ = client_for("role-remover", "ADMIN", perms=("admin.roles",))
+    Role.objects.create(code="ARCHIVIST", name="Архивариус")
+
+    response = admin.delete(f"{ROLES_URL}ARCHIVIST/")
+
+    assert response.status_code == 405
+    assert Role.objects.filter(code="ARCHIVIST").exists()
+
+
+@pytest.mark.django_db
+def test_role_composition_changes_and_is_named_in_the_trace():
+    """Состав меняется одним обращением, а в журнале назван поимённо."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    admin, user = client_for("role-composer", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+    Permission.objects.create(code="document.export", name="Выгрузка документов")
+    RoleAdminService.assign_role("42", "ARCHIVIST", actor="test")
+
+    response = admin.post(
+        f"{ROLES_URL}ARCHIVIST/permissions/",
+        {"add": ["document.export"], "remove": ["document.view"]},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["permissions"] == ["document.export"]
+    # Состав — не запись в справочнике, а живой доступ: у назначенного
+    # человека права меняются тем же движением.
+    assert PermissionService.effective_permissions("42") == {"document.export"}
+    entry = OpsAuditLog.objects.get(action="ACCESS_ROLE_PERMISSIONS_CHANGED")
+    assert entry.entity_key == "ARCHIVIST"
+    assert entry.old_value["permissions"] == ["document.view"]
+    assert entry.new_value["permissions"] == ["document.export"]
+    assert entry.actor_user_id == str(user.pk)
+
+
+@pytest.mark.django_db
+def test_repeated_grant_neither_doubles_nor_lies_in_the_trace():
+    """Повтор ничего не меняет — и строки о перемене не пишет."""
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    admin, _ = client_for("role-repeater", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+
+    response = admin.post(
+        f"{ROLES_URL}ARCHIVIST/permissions/",
+        {"add": ["document.view"]},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["permissions"] == ["document.view"]
+    assert (
+        RolePermission.objects.filter(
+            role_code_id="ARCHIVIST", permission_code_id="document.view"
+        ).count()
+        == 1
+    )
+    assert not OpsAuditLog.objects.filter(
+        action="ACCESS_ROLE_PERMISSIONS_CHANGED"
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_unknown_permission_is_400_and_changes_nothing():
+    """Право, которого нет в справочнике, роли не выдаётся."""
+    admin, _ = client_for("role-typo", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+
+    response = admin.post(
+        f"{ROLES_URL}ARCHIVIST/permissions/",
+        {"add": ["docment.export"], "remove": ["document.view"]},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    # Отбитый запрос не выполнен ЧАСТИЧНО: снятие тоже не произошло.
+    assert RoleAdminService.role_permission_codes("ARCHIVIST") == ["document.view"]
+
+
+@pytest.mark.django_db
+def test_same_permission_in_add_and_remove_is_400():
+    """Противоречивый запрос — ошибка формы, а не выбор за отправителя."""
+    admin, _ = client_for("role-contradiction", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+
+    response = admin.post(
+        f"{ROLES_URL}ARCHIVIST/permissions/",
+        {"add": ["document.view"], "remove": ["document.view"]},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert RoleAdminService.role_permission_codes("ARCHIVIST") == ["document.view"]
+
+
+@pytest.mark.django_db
+def test_empty_composition_request_is_400():
+    """Пустое обращение молча «успешным» не считается."""
+    admin, _ = client_for("role-empty", "ADMIN", perms=("admin.roles",))
+    seed_role("ARCHIVIST", ["document.view"])
+
+    assert (
+        admin.post(
+            f"{ROLES_URL}ARCHIVIST/permissions/", {}, format="json"
+        ).status_code
+        == 400
+    )
+
+
+@pytest.mark.django_db
+def test_writing_roles_is_closed_to_those_who_do_not_manage_access():
+    """Заводить роли и править их состав может только управляющий доступом."""
+    stranger, _ = client_for("role-stranger", "READER", perms=("event.view",))
+    seed_role("ARCHIVIST", ["document.view"])
+
+    created = stranger.post(
+        ROLES_URL, {"code": "SNEAKY", "name": "Тихо"}, format="json"
+    )
+    composed = stranger.post(
+        f"{ROLES_URL}ARCHIVIST/permissions/",
+        {"add": ["event.view"]},
+        format="json",
+    )
+
+    assert created.status_code == 403
+    assert composed.status_code == 403
+    assert not Role.objects.filter(code="SNEAKY").exists()
+    assert RoleAdminService.role_permission_codes("ARCHIVIST") == ["document.view"]

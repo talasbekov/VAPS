@@ -1087,5 +1087,18 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         actor=ACTOR,
     )
 
+    # Справочник ролей (Plane №36, «П-3»): имя роли и её состав — ДВА
+    # действия, и записей здесь тоже две.
+    RoleAdminService.save_role(
+        "COVERAGE_ROLE",
+        name="Роль покрытия журнала",
+        description="",
+        is_active=True,
+        actor=ACTOR,
+    )
+    RoleAdminService.change_role_permissions(
+        "COVERAGE_ROLE", add=["coverage.permission"], actor=ACTOR
+    )
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

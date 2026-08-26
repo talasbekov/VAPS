@@ -156,6 +156,13 @@ PLACEMENT_SECTOR_SENIOR_SET = "PLACEMENT_SECTOR_SENIOR_SET"
 # правку: вопрос «что это за право и что оно открывает» один, и разбирается он
 # по одной ленте, где старое значение стоит рядом с новым.
 ACCESS_PERMISSION_SAVED = "ACCESS_PERMISSION_SAVED"
+# Правка роли (Plane №36, «П-3»). Действий ДВА, а не одно: «как называется
+# роль» и «что она открывает» — разные вопросы, и спрашивают по ним разное.
+# Слив их в одно событие заставил бы читателя ленты разбирать по содержимому
+# new_value, что именно изменилось, — а лента для того и нужна, чтобы этого
+# не делать.
+ACCESS_ROLE_SAVED = "ACCESS_ROLE_SAVED"
+ACCESS_ROLE_PERMISSIONS_CHANGED = "ACCESS_ROLE_PERMISSIONS_CHANGED"
 DUTY_SHIFT_CREATED = "DUTY_SHIFT_CREATED"
 DUTY_SHIFT_CANCELLED = "DUTY_SHIFT_CANCELLED"
 # Настройки: принятая правка правила — решение с причиной и версией политики.
@@ -215,6 +222,8 @@ ACTIONS = frozenset(
         VISIT_OBJECT_CHIEF_REVOKED,
         PLACEMENT_SECTOR_SENIOR_SET,
         ACCESS_PERMISSION_SAVED,
+        ACCESS_ROLE_SAVED,
+        ACCESS_ROLE_PERMISSIONS_CHANGED,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
         SETTINGS_UPDATED,
