@@ -36,9 +36,62 @@ from organization_management.apps.operations.validators import DUTY_ROLE_CHOICES
 
 
 class RoleSerializer(serializers.ModelSerializer):
+    # Состав прав едет ВМЕСТЕ с ролью (Plane №36, «П-3»): реестр ролей без
+    # него отвечает на вопрос «как называется», а спрашивают у него «что
+    # открывает». Второй запрос на строку список превратил бы в N+1 — от него
+    # спасает prefetch_related во вьюхе, а не отдельная ручка.
+    permissions = serializers.SerializerMethodField()
+
     class Meta:
         model = Role
-        fields = ["code", "name", "description", "is_active"]
+        fields = ["code", "name", "description", "is_active", "permissions"]
+
+    def get_permissions(self, role) -> list[str]:
+        return sorted(
+            link.permission_code_id for link in role.role_permissions.all()
+        )
+
+
+class RolePermissionsRequestSerializer(serializers.Serializer):
+    """Правка состава прав роли: добавить и/или снять одним обращением.
+
+    Оба списка в ОДНОМ запросе намеренно: на экране состав правят галочками и
+    сохраняют разом, а два обращения оставили бы роль в промежуточном
+    состоянии, если второе не дойдёт.
+    """
+
+    add = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list
+    )
+    remove = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list
+    )
+
+    def validate(self, attrs):
+        add = attrs.get("add") or []
+        remove = attrs.get("remove") or []
+        if not add and not remove:
+            raise serializers.ValidationError("add or remove must be non-empty")
+        both = set(add) & set(remove)
+        if both:
+            # Молча предпочесть одно другому значило бы решить за
+            # отправителя; такой запрос — ошибка формы, а не выбор.
+            raise serializers.ValidationError(
+                f"permission listed in both add and remove: {sorted(both)}"
+            )
+        unknown = sorted(
+            set(add) - set(Permission.objects.filter(code__in=add).values_list(
+                "code", flat=True
+            ))
+        )
+        if unknown:
+            # Право, которого нет в справочнике, не открывает ничего: гейт
+            # сверяется с кодом, а не с намерением. Молчаливая выдача
+            # оставила бы роль с мёртвым кодом внутри.
+            raise serializers.ValidationError(f"unknown permission: {unknown}")
+        attrs["add"] = add
+        attrs["remove"] = remove
+        return attrs
 
 
 class PermissionSerializer(serializers.ModelSerializer):

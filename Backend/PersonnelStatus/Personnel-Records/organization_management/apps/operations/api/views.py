@@ -52,6 +52,7 @@ from organization_management.apps.operations.api.serializers import (
     OpsEmployeeStatusSerializer,
     OpsNotificationSerializer,
     PermissionSerializer,
+    RolePermissionsRequestSerializer,
     RoleSerializer,
     SecondmentCreateSerializer,
     SecondmentReturnConfirmSerializer,
@@ -378,10 +379,39 @@ class DefaultPagination(LimitOffsetPagination):
     max_limit = 1000
 
 
-class RoleViewSet(viewsets.ReadOnlyModelViewSet):
+class RoleViewSet(
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.ReadOnlyModelViewSet,
+):
+    """Справочник ролей: чтение было, запись добавлена (Plane №36, «П-3»).
+
+    Удаления НЕТ по тому же основанию, что у прав: код роли стоит в
+    назначениях (`UserRole.role_code` — PROTECT), и удаление либо
+    отбивалось бы базой, либо унесло бы историю выдач. Роль снимается с
+    работы деактивацией; `destroy` не объявлен вовсе, чтобы маршрут DELETE
+    не отвечал 405 раньше проверки права.
+    """
+
     serializer_class = RoleSerializer
     pagination_class = DefaultPagination
-    queryset = Role.objects.all().order_by("code")
+    # prefetch — не украшение: без него список ролей делает по запросу на
+    # строку за составом прав (см. RoleSerializer.permissions).
+    queryset = Role.objects.all().prefetch_related("role_permissions").order_by("code")
+
+    def get_queryset(self):
+        # Поиск — требование заказчика («чтобы ручным способом не искать»), и
+        # он идёт НА СЕРВЕР: фильтр по странице отвечал бы «такой роли нет»,
+        # имея в виду «нет на этой странице».
+        queryset = super().get_queryset()
+        search = (self.request.query_params.get("search") or "").strip()
+        if search != "":
+            queryset = queryset.filter(
+                Q(code__icontains=search)
+                | Q(name__icontains=search)
+                | Q(description__icontains=search)
+            )
+        return queryset
 
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
@@ -390,6 +420,65 @@ class RoleViewSet(viewsets.ReadOnlyModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
         return super().retrieve(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        form = RoleSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        # Запись — через сервис: у правила «изменение доступа оставляет
+        # именной след» один владелец, и вьюха своей записи журнала не заводит.
+        role = RoleAdminService.save_role(
+            form.validated_data["code"],
+            name=form.validated_data["name"],
+            description=form.validated_data.get("description") or "",
+            is_active=form.validated_data.get("is_active", True),
+            actor=resolve_actor_id(request),
+        )
+        return Response(RoleSerializer(role).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        require_permission(request, "admin.roles")
+        current = self.get_object()
+        form = RoleSerializer(
+            current, data=request.data, partial=kwargs.get("partial", False)
+        )
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+        role = RoleAdminService.save_role(
+            current.code,
+            name=data.get("name", current.name),
+            description=data.get("description", current.description) or "",
+            is_active=data.get("is_active", current.is_active),
+            actor=resolve_actor_id(request),
+        )
+        return Response(RoleSerializer(role).data)
+
+    @extend_schema(
+        request=RolePermissionsRequestSerializer, responses=RoleSerializer
+    )
+    @action(detail=True, methods=["post"], url_path="permissions")
+    def permissions(self, request, pk=None, *args, **kwargs):
+        """Изменить состав прав роли: `{"add": [...], "remove": [...]}`.
+
+        Отдельным действием, а не полем роли в PATCH: состав правится своим
+        жестом на экране и спрашивается потом своим вопросом («когда роли
+        добавили это право») — у него своё событие журнала.
+        """
+        require_permission(request, "admin.roles")
+        role = self.get_object()
+        form = RolePermissionsRequestSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        RoleAdminService.change_role_permissions(
+            role.code,
+            add=form.validated_data["add"],
+            remove=form.validated_data["remove"],
+            actor=resolve_actor_id(request),
+        )
+        # Перечитать роль ОБЯЗАТЕЛЬНО: объект пришёл из queryset с
+        # prefetch_related, и его кэш состава — тот, что был ДО правки.
+        # Ответ старым составом читался бы как «изменение не применилось».
+        role = Role.objects.prefetch_related("role_permissions").get(code=role.code)
+        return Response(RoleSerializer(role).data)
 
 
 class PermissionViewSet(

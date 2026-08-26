@@ -68,6 +68,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   VISIT_OBJECT_CHIEF_REVOKED: "Старший объекта снят",
   PLACEMENT_SECTOR_SENIOR_SET: "Старший сектора назначен или снят",
   ACCESS_PERMISSION_SAVED: "Право заведено или изменено",
+  ACCESS_ROLE_SAVED: "Роль заведена или изменена",
+  ACCESS_ROLE_PERMISSIONS_CHANGED: "Состав прав роли изменён",
   DUTY_SHIFT_CREATED: "Смена дежурства заведена",
   DUTY_SHIFT_CANCELLED: "Смена дежурства отменена",
   SETTINGS_UPDATED: "Правило настроек изменено",

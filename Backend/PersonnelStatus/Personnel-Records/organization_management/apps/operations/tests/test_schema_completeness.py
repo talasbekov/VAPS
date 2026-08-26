@@ -15,6 +15,8 @@
 тогда, когда его забыли пересобрать, — то есть в том самом случае, ради которого
 проверка нужна.
 """
+import re
+
 import pytest
 from drf_spectacular.generators import SchemaGenerator
 
@@ -58,6 +60,16 @@ def test_the_schema_is_built_at_all(ops_paths):
     assert len(ops_paths) >= 40
 
 
+def _anonymous_params(path):
+    """Путь без ИМЁН параметров: `{id}` и `{code}` — один и тот же маршрут.
+
+    Имя параметра в схеме идёт от ключа модели: у статуса это число (`{id}`),
+    у роли — код (`{code}`). Сравнивать имена значило бы ловить не потерю
+    маршрута, а тип его ключа.
+    """
+    return re.sub(r"\{[^}]+\}", "{}", path)
+
+
 def _registered_action_paths():
     """Пути ИМЕНОВАННЫХ действий по роутеру: {prefix}/{url_path}/.
 
@@ -68,7 +80,7 @@ def _registered_action_paths():
     paths = set()
     for prefix, viewset, _basename in router.registry:
         for action in viewset.get_extra_actions():
-            middle = "{id}/" if action.detail else ""
+            middle = "{}/" if action.detail else ""
             paths.add(f"{OPS_PREFIX}{prefix}/{middle}{action.url_path}/")
     return paths
 
@@ -83,7 +95,8 @@ def test_every_named_action_reaches_the_schema(ops_paths):
     и из роутера, и из схемы одновременно. Это осознанное действие, а не
     просачивание.
     """
-    missing = sorted(_registered_action_paths() - set(ops_paths))
+    in_schema = {_anonymous_params(path) for path in ops_paths}
+    missing = sorted(_registered_action_paths() - in_schema)
 
     assert missing == []
 

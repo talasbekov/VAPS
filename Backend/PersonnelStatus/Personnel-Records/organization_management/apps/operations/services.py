@@ -6,6 +6,7 @@ from django.db import transaction
 
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models import (
+    Role,
     RolePermission,
     TemporaryDutyPermission,
     UserRole,
@@ -181,6 +182,102 @@ class RoleAdminService:
             },
         )
         return permission
+
+    @staticmethod
+    @transaction.atomic
+    def save_role(code, *, name, description="", is_active=True, actor):
+        """Завести или изменить роль (Plane №36, «П-3»).
+
+        Роль БЕЗ прав допустима намеренно: заготовку заводят раньше, чем
+        решают её состав, и запрет «сначала право, потом роль» заставил бы
+        собирать роль в один присест или держать её мусорной строкой в
+        Django-админке.
+
+        Удаления нет по тому же основанию, что и у права: код роли стоит в
+        назначениях (`UserRole.role_code` — PROTECT) и в командах стенда;
+        роль снимается с работы деактивацией.
+        """
+        from organization_management.apps.operations import audit_service
+
+        existing = Role.objects.filter(code=code).first()
+        old_value = (
+            None
+            if existing is None
+            else {
+                "code": existing.code,
+                "name": existing.name,
+                "description": existing.description,
+                "is_active": existing.is_active,
+            }
+        )
+        role, _ = Role.objects.update_or_create(
+            code=code,
+            defaults={
+                "name": name,
+                "description": description,
+                "is_active": is_active,
+            },
+        )
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_ROLE_SAVED,
+            entity_type=audit_service.ENTITY_ROLE,
+            entity_key=role.code,
+            old_value=old_value,
+            new_value={
+                "code": role.code,
+                "name": role.name,
+                "description": role.description,
+                "is_active": role.is_active,
+            },
+        )
+        return role
+
+    @staticmethod
+    def role_permission_codes(role_code) -> list:
+        return sorted(
+            RolePermission.objects.filter(role_code_id=role_code).values_list(
+                "permission_code_id", flat=True
+            )
+        )
+
+    @classmethod
+    @transaction.atomic
+    def change_role_permissions(cls, role_code, *, add=(), remove=(), actor):
+        """Изменить состав прав роли и оставить именной след.
+
+        След пишется ТОЛЬКО когда состав действительно поменялся: повторное
+        добавление уже выданного права ничего не меняет, а строка в ленте
+        утверждала бы обратное — и разбор «когда роли добавили это право»
+        приводил бы к дате, в которую ничего не произошло.
+
+        Старый и новый составы кладутся ЦЕЛИКОМ, а не дельтой: вопрос к ленте
+        звучит «что роль открывала до и после», и восстанавливать состав
+        сложением дельт по всей истории читатель не должен.
+        """
+        from organization_management.apps.operations import audit_service
+
+        before = cls.role_permission_codes(role_code)
+        for permission_code in add:
+            RolePermission.objects.get_or_create(
+                role_code_id=role_code, permission_code_id=permission_code
+            )
+        if remove:
+            RolePermission.objects.filter(
+                role_code_id=role_code, permission_code_id__in=list(remove)
+            ).delete()
+        after = cls.role_permission_codes(role_code)
+        if after == before:
+            return after
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_ROLE_PERMISSIONS_CHANGED,
+            entity_type=audit_service.ENTITY_ROLE,
+            entity_key=role_code,
+            old_value={"permissions": before},
+            new_value={"permissions": after},
+        )
+        return after
 
     @staticmethod
     @transaction.atomic
