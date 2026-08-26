@@ -13,10 +13,12 @@
 посещений. Всё это ЖИВЁТ НА СЕРВЕРЕ — клиент ничего не добавлял от себя, он
 только складывал.
 
-ИЗВЕСТНЫЙ ДОЛГ, НАЗВАННЫЙ ВСЛУХ. Сборка теперь в ДВУХ местах — здесь и на
-клиенте. Две сборки расходятся тем вернее, чем реже смотрят на вторую. Снимать
-клиентскую можно только после переезда её читателей (карточка заведена);
-до тех пор источником считается сервер, а расхождение — дефект.
+ДОЛГ ЗАКРЫВАЕТСЯ (Plane №166). Сборка какое-то время жила в ДВУХ местах — здесь
+и на клиенте — и успела разойтись за один день: дата тут писалась «10.09.2026г.»,
+а на экране «10.09.2026». Именно так это и расходится: не спором о правилах, а
+мелочью, которую в одном месте поправили под документ, а во втором никто не
+увидел. Теперь сводку отдаёт ручка `GET /api/ops/gvo-summaries/<код>/`, экран
+читает её, а `deriveGvoSummary` снимается после переезда читателей.
 """
 import datetime as dt
 
@@ -39,7 +41,17 @@ def _ru_date(value):
             value = dt.date.fromisoformat(value)
         except ValueError:
             return value
-    return f"{value.day:02d}.{value.month:02d}.{value.year}г."
+    return f"{value.day:02d}.{value.month:02d}.{value.year}"
+
+
+#: Дата В ДОКУМЕНТЕ пишется с «г.» — так в образце заказчика («17.06.2026 г.»).
+#: Дата В СВОДКЕ пишется без него — так её показывает экран и так объявлен
+#: клиентский тип. Это РАЗНЫЕ слои, и суффикс живёт в том, который его требует:
+#: пока он сидел в сборке сводки, экран и документ уже расходились в дате, а
+#: ловить это было некому — сборок две (Plane №166).
+def _document_date(value):
+    value = (value or "").strip()
+    return f"{value} г." if value and value != UNSPECIFIED else value
 
 
 def _ru_weekday(value):
@@ -170,10 +182,14 @@ def document_values(event):
     arrival = summary.get("arrival") or {}
     departure = summary.get("departure") or {}
     values["arrival_1"] = " ".join(
-        part for part in (arrival.get("date"), arrival.get("time")) if part
+        part
+        for part in (_document_date(arrival.get("date")), arrival.get("time"))
+        if part
     )
     values["departure_1"] = " ".join(
-        part for part in (departure.get("date"), departure.get("time")) if part
+        part
+        for part in (_document_date(departure.get("date")), departure.get("time"))
+        if part
     )
 
     stay = summary.get("stay") or {}
@@ -221,9 +237,8 @@ def document_values(event):
             values[f"day{day_no}_date_1"] = ""
             continue
         weekday = day.get("weekday")
-        values[f"day{day_no}_date_1"] = (
-            f"{day.get('day')} ({weekday})" if weekday else str(day.get("day"))
-        )
+        shown = _document_date(day.get("day"))
+        values[f"day{day_no}_date_1"] = f"{shown} ({weekday})" if weekday else shown
         for line_no, item in enumerate(day.get("items") or [], start=1):
             values[f"day{day_no}_line{line_no}_1"] = " — ".join(
                 part for part in (item.get("obj"), item.get("note")) if part
