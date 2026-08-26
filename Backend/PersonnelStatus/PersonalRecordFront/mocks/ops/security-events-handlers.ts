@@ -814,6 +814,8 @@ export const securityEventsHandlers = [
         sector: row.sector.trim(),
         post: row.post.trim(),
         task: row.task.trim(),
+        // Смена — свойство поста (Plane №123): порт правила сервера.
+        shift: (row.shift ?? "").trim(),
         requirements: row.requirements.trim(),
         comment: row.comment.trim(),
       })),
@@ -876,6 +878,9 @@ export const securityEventsHandlers = [
           // паспорт описывает пост, а не численность на мероприятие: 1 —
           // минимально допустимое значение, его уточняет старший наряда
           need: 1,
+          // Смены в паспорте объекта нет: он описывает пост вообще, а смена —
+          // про конкретное мероприятие. Заполняет старший наряда.
+          shift: "",
           requirements: post.requirements,
           result: null,
           comment: "",

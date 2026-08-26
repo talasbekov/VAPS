@@ -54,6 +54,22 @@ async function get<T>(token: string, path: string): Promise<T> {
   return (await res.json()) as T
 }
 
+/** Запись через API теми же ручками, что и человек с экрана. Соседка `get`:
+ * пробам этого файла нужны обе, а локальные `call` внутри фикстур свои. */
+async function send<T>(
+  token: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  return (await res.json().catch(() => ({}))) as T
+}
+
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -779,16 +795,44 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(main).toContainText(`не укомплектовано постов: ${unfilled}`)
   })
 
-  // Проба «смена, введённая на потребности, видна на расстановке» СНЯТА
-  // 26.08.2026 (Plane №110). Смену вводил человек в боксе «подготовка
-  // расчёта», а бокс снят по решению заказчика — заводить смену больше негде,
-  // и строки потребности приходят с пустой сменой всегда. Проба сторожила
-  // поле, которое нечем заполнить: оставить её значило бы держать вечно
-  // красный прогон, а заменить на skip — вечно молчаливый.
-  //
-  // САМА ПОТЕРЯ ЗАПИСАНА КАРТОЧКОЙ в «Предложено Claude»: колонка смены на
-  // доске расстановки теперь пуста у всех новых мероприятий. Чтение смены со
-  // строки потребности в коде осталось — у заведённых до задачи ОМ она есть.
+  test('смена, заданная на посту, видна на расстановке', async ({ page }) => {
+    // История пробы: она сторожила смену из строки ПОТРЕБНОСТИ и была снята
+    // вместе с боксом потребности (Plane №110) — заводить смену стало негде.
+    // Возвращена по Plane №123, но целится теперь в ПОСТ: смена — свойство
+    // поста, как в эталоне («Сектор A · смена 07:00–15:00»).
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    const card = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
+    const post = card.reconSectorPosts.find((row: any) => row.id === prepared.postId)
+
+    // Задаём смену там же, где её задаёт человек, — правкой расчёта постов.
+    const shift = '07:00–15:00'
+    await send(token, 'PATCH', `/api/ops/security-events/${prepared.id}/recon/`, {
+      checklist: card.reconChecklist,
+      sectorPosts: card.reconSectorPosts.map((row: any) =>
+        row.id === prepared.postId ? { ...row, shift } : row,
+      ),
+    })
+
+    // Сторож: смена пришла ИМЕННО с поста, а не из строки потребности —
+    // иначе проба не отличала бы новый источник от старого.
+    const saved = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
+    const savedPost = saved.reconSectorPosts.find(
+      (row: any) => row.id === prepared.postId,
+    )
+    expect(savedPost.shift, 'смена не сохранилась на посту').toBe(shift)
+    expect(
+      (saved.demandRows ?? []).every((row: any) => (row.shift ?? '') === ''),
+      'смена нашлась в строке потребности — проба не отличит источники',
+    ).toBe(true)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Задача поста', { timeout: 25_000 })
+    await expect(main).toContainText(`${post.sector} · ${shift}`)
+  })
+
 
   test('действия цепочки выключены без своего права и названы словами', async ({
     page,
