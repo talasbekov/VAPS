@@ -17,6 +17,8 @@
 """
 import datetime as dt
 
+from organization_management.apps.ops import passport as passport_service
+
 import pytest
 from django.db import IntegrityError, transaction
 
@@ -219,6 +221,78 @@ def test_kpi_counts(reader, manager):
         "verificationOverdue": 0,
         "neverPublished": 2,
     }
+
+
+def test_object_turns_green_when_a_version_is_published(manager):
+    """Путь объекта в «зелёное» (Plane №66).
+
+    Раньше его не было ВОВСЕ: `create_object` жёстко писал RED, публикация
+    поля не трогала, и зелёным объект не становился никогда — колонка реестра,
+    KPI и баннер карточки показывали состояние, которого система не
+    производит. Фикстура стенда дописывала GREEN прямо в поле.
+    """
+    make_policy()
+    security_object = make_object("A-1", "Объект под публикацию")
+    assert security_object.passport_state == "RED", "новый объект не «красный»"
+
+    # Через СЕРВИС, а не ORM-помощником: состояние пересчитывают штатные пути
+    # правки паспорта, и проба обязана идти тем же путём, что форма.
+    passport_service.update_passport(
+        security_object,
+        [
+            {
+                "name": "Периметр",
+                "posts": [{"name": "Пост 1", "task": "Охрана", "requirements": "Допуск"}],
+            }
+        ],
+    )
+    security_object.refresh_from_db()
+    # Посты есть, версии ещё нет — «требует доработки», а не «оформлен».
+    assert security_object.passport_state == "YELLOW"
+
+    assert publish(security_object, "2026-08-01", api=manager).status_code == 201
+    security_object.refresh_from_db()
+
+    assert security_object.passport_state == "GREEN"
+
+
+def test_editing_the_draft_after_publication_asks_for_rework(manager):
+    """Правка черновика уводит объект из «зелёного» в «требует доработки».
+
+    Иначе паспорт, у которого посты уже правили, а публиковать забыли,
+    оставался бы «оформленным» — и по нему вели бы мероприятие с расчётом,
+    которого нет ни в одной версии.
+    """
+    make_policy()
+    security_object = make_object("A-2", "Объект с правкой")
+    passport_service.update_passport(
+        security_object,
+        [
+            {
+                "name": "Периметр",
+                "posts": [{"name": "Пост 1", "task": "Охрана", "requirements": "Допуск"}],
+            }
+        ],
+    )
+    publish(security_object, "2026-08-01", api=manager)
+    security_object.refresh_from_db()
+    assert security_object.passport_state == "GREEN"
+
+    passport_service.update_passport(
+        security_object,
+        [
+            {
+                "name": "Периметр",
+                "posts": [
+                    {"name": "Пост 1", "task": "Охрана", "requirements": "Допуск"},
+                    {"name": "Пост 2", "task": "Охрана", "requirements": "Допуск"},
+                ],
+            }
+        ],
+    )
+    security_object.refresh_from_db()
+
+    assert security_object.passport_state == "YELLOW"
 
 
 def test_list_without_policy_is_domain_error(reader):

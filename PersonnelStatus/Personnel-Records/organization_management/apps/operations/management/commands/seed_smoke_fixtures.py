@@ -299,11 +299,11 @@ class Command(BaseCommand):
         состояния, и подкручивать их под пробу значило бы стирать то, что они
         показывают (в том числе просроченный паспорт, который проверяется рядом).
 
-        🔴 `passport_state='GREEN'` пишется ПРЯМО В ПОЛЕ, и это не лень: пути,
-        которым объект становится зелёным, в системе НЕТ вовсе — `create_object`
-        жёстко ставит RED, а `publish_version` состояния не трогает. Пробел
-        заведён отдельной карточкой; пока его нет, собрать фикстуру иначе
-        нельзя.
+        Состояние паспорта фикстура БОЛЬШЕ НЕ ПИШЕТ РУКАМИ: с Plane №66 у него
+        есть свой путь — публикация версии переводит объект в «зелёное», и
+        фикстура получает GREEN тем же способом, что живая работа. Раньше
+        здесь стояла запись прямо в поле, потому что пути не существовало
+        вовсе.
         """
         security_object = OpsSecurityObject.objects.filter(
             name=READY_OBJECT_NAME
@@ -347,9 +347,17 @@ class Command(BaseCommand):
             freshness = passport_service.resolve_freshness(
                 security_object, policy, day
             )
+        security_object.refresh_from_db()
+        # Сторож фикстуры: объект обязан стать «зелёным» САМ, публикацией.
+        # Красный или жёлтый здесь означает, что путь сломался, — и молча
+        # дописывать состояние в поле, как делалось до №66, нельзя: проба
+        # смотрела бы на значение, которого система не производит.
         if security_object.passport_state != "GREEN":
-            security_object.passport_state = "GREEN"
-            security_object.save(update_fields=["passport_state", "updated_at"])
+            raise CommandError(
+                "объект фикстуры не стал «зелёным» после публикации версии "
+                f"({security_object.passport_state}) — сломан путь состояния "
+                "паспорта (Plane №66)"
+            )
         return security_object, freshness["state"]
 
     # ── Мероприятие на стадии «Рекогносцировка» ─────────────────────────────
