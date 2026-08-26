@@ -54,12 +54,26 @@ class OpsRatedParticipant(TimeStampedModel):
     participant_code = models.CharField(max_length=100, unique=True)
     safe_label = models.CharField(max_length=255)
     group_code = models.CharField(max_length=100)
+    #: Кадровая запись участника (Plane №96). Плоская ссылка без FK — идиома
+    #: раздела (`chief_employee_id` у ОМ, `employee_id` у временных дежурств):
+    #: каскад кадровой таблицы не должен доставать до оценок, а оценка
+    #: пережившего увольнение участника — факт истории, а не мусор.
+    #:
+    #: `NULL` значит «связь неизвестна», и это ЧЕСТНЫЙ ответ: у сеяных
+    #: исторических участников кадровой записи нет вовсе. Выдумывать её нельзя
+    #: — рейтинг привязался бы к чужому человеку.
+    employee_id = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_rated_participants"
         verbose_name = "Участник рейтинга"
         verbose_name_plural = "Участники рейтинга"
         ordering = ["safe_label", "id"]
+        indexes = [
+            models.Index(
+                fields=["employee_id"], name="idx_ops_rated_participant_emp"
+            ),
+        ]
 
     def __str__(self):
         return self.participant_code

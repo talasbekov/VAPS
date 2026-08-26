@@ -9,13 +9,53 @@
  * Живой стенд не обязателен: без `SMOKE_LIVE=1` спеки скипаются, и уборке
  * нечего убирать — она молча выходит, а не падает на недоступном API.
  *
- * ЧАСТЬ СТРОК ОСТАНЕТСЯ, и это правило сервера, а не недоделка: ОМ с
- * расстановкой, записями журнала штаба или закрытое не удаляется — там работа
- * людей. Такие строки снимает `manage.py purge_probe_events --yes --force` с
- * консоли; сколько их осталось, уборка печатает числом.
+ * ЧАСТЬ СТРОК API НЕ ОТДАЁТ, и это правило сервера, а не недоделка: ОМ с
+ * расстановкой, записями журнала штаба или закрытое через API не удаляется —
+ * там работа людей.
+ *
+ * ДО 26.08.2026 на этом уборка и заканчивалась: она печатала «оставлено 69 —
+ * снимает purge_probe_events --force», и эту строку читали прогон за прогоном,
+ * ничего не делая. Реестр стенда дорос до 69 пробных строк из 82 (Plane №95,
+ * до него №34 и №62 — там сносили руками 188 и 44 строки). Печатать совет
+ * вместо уборки — это не уборка.
+ *
+ * Теперь остаток снимается той самой командой, которую совет называл:
+ * `manage.py purge_probe_events --yes --force` запускается ИЗ уборки, когда
+ * бэкенд лежит рядом в дереве (обычный случай: обе половины в одном
+ * репозитории). Нет бэкенда рядом — печатается прежний совет: команду негде
+ * взять, а падать уборке нельзя, она не предмет проверки.
  */
+import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { promisify } from 'node:util'
 import { dropProbeEvents, probeToken } from './probe-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+
+const execFileAsync = promisify(execFile)
+
+/** Корень бэкенда рядом с фронтом: обе половины лежат в одном репозитории. */
+const BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
+const BACKEND_PYTHON = path.join(BACKEND_ROOT, '.venv/bin/python')
+const DJANGO_SETTINGS = 'organization_management.config.settings.local_postgres'
+
+/** Снимает то, что API отдать отказался; null — бэкенда рядом нет. */
+async function purgeStubborn(): Promise<string | null> {
+  if (!existsSync(BACKEND_PYTHON)) return null
+  const { stdout } = await execFileAsync(
+    BACKEND_PYTHON,
+    [
+      'manage.py',
+      'purge_probe_events',
+      '--yes',
+      '--force',
+      `--settings=${DJANGO_SETTINGS}`,
+    ],
+    { cwd: BACKEND_ROOT, timeout: 120_000 },
+  )
+  const lines = stdout.trim().split('\n').filter((line) => line.trim() !== '')
+  return lines[lines.length - 1] ?? ''
+}
 
 export default async function globalTeardown(): Promise<void> {
   if (process.env.SMOKE_LIVE !== '1') return
@@ -27,11 +67,30 @@ export default async function globalTeardown(): Promise<void> {
     return
   }
   const { dropped, refused } = await dropProbeEvents(token)
-  console.log(
-    `уборка пробных ОМ: снято ${dropped}` +
-      (refused > 0
-        ? `, оставлено ${refused} (расстановка/журнал/закрытые — снимает ` +
-          'purge_probe_events --yes --force)'
-        : ''),
-  )
+  if (refused === 0) {
+    console.log(`уборка пробных ОМ: снято ${dropped}`)
+    return
+  }
+  try {
+    const purged = await purgeStubborn()
+    if (purged === null) {
+      console.log(
+        `уборка пробных ОМ: снято ${dropped}, оставлено ${refused} ` +
+          '(расстановка/журнал/закрытые; бэкенда рядом нет — снимите ' +
+          'purge_probe_events --yes --force с консоли)',
+      )
+      return
+    }
+    console.log(
+      `уборка пробных ОМ: снято через API ${dropped}, упрямых ${refused} — ` +
+        `добиты командой: ${purged}`,
+    )
+  } catch (error) {
+    // Падать уборке нельзя: она не предмет проверки, и красный прогон по её
+    // причине скрыл бы настоящий результат.
+    console.log(
+      `уборка пробных ОМ: снято ${dropped}, оставлено ${refused}; ` +
+        `команда добивания не отработала (${String(error).slice(0, 120)})`,
+    )
+  }
 }
