@@ -932,6 +932,50 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
 
+class AccessCatalogViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/access-catalog/ — где применяется каждое право.
+
+    Заказчик отказался от третьего уровня «функция» отдельной сущностью
+    (решение 26.08.2026): право остаётся тем, что проверяют ручки, а функции —
+    read-only список мест, которые оно открывает. Поэтому каталог не хранится,
+    а собирается из карт `permission_map` (см. `ops.access_catalog`): копия в
+    базе устаревала бы при первой правке гейта, и экран настроек обещал бы
+    доступ, которого нет.
+
+    Право на чтение — `admin.roles`: карта гейтов показывает, какая ручка чем
+    закрыта, и её незачем показывать тому, кто доступом не управляет.
+    """
+
+    permission_map = {"list": "admin.roles"}
+
+    def list(self, request):
+        from organization_management.apps.operations.models import Permission
+        from organization_management.apps.ops.access_catalog import catalog
+
+        search = (request.query_params.get("search") or "").strip()
+        grouped = catalog(search)
+        known = {
+            row.code: row
+            for row in Permission.objects.filter(code__in=list(grouped))
+        }
+        results = []
+        for code in sorted(grouped):
+            permission = known.get(code)
+            results.append(
+                {
+                    "code": code,
+                    # Право, которого нет в справочнике, всё равно попадает в
+                    # каталог: гейт на нём стоит, и молчать об этом значило бы
+                    # спрятать закрытую ручку от того, кто раздаёт доступ.
+                    "name": permission.name if permission is not None else "",
+                    "isKnown": permission is not None,
+                    "isActive": permission.is_active if permission is not None else False,
+                    "functions": grouped[code],
+                }
+            )
+        return Response({"results": results, "count": len(results)})
+
+
 class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """GET /api/ops/personnel/ — read-only кадровый снимок для подбора
     кандидатов на расстановку: {id, name, rankLabel, unit}. Источник — живые
