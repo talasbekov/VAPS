@@ -45,6 +45,34 @@ def test_catalog_names_real_routes_of_a_permission():
     )
 
 
+def test_catalog_does_not_repeat_a_route_under_head():
+    """HEAD — тот же вход, что и GET, и второй строкой в каталоге не стоит.
+
+    Поймано на живом стенде экраном «Права»: у права администрирования
+    доступа стояли ДВЕ функции с одним адресом, GET и HEAD.
+
+    Отчего проба выглядит странно. DRF дописывает `actions['head']` не при
+    регистрации маршрута, а при ПЕРВОМ обращении к нему (`ViewSetMixin.as_view`
+    мутирует словарь внутри `view()`), и в свежем процессе двойника ещё нет —
+    проба без обращения зеленела бы и без фильтра, стерегя пустоту. Поэтому
+    ручка сперва дёргается (ответ не важен, мутация происходит до проверки
+    прав), и только потом собирается каталог.
+    """
+    from rest_framework.test import APIClient
+
+    APIClient().get(URL)
+
+    rows = catalog()["admin.roles"]
+    methods = {row["method"] for row in rows}
+
+    assert "HEAD" not in methods
+    assert "OPTIONS" not in methods
+    # Сторож: сама ручка из каталога не пропала вместе с двойником.
+    assert ("GET", "/api/ops/access-catalog/") in {
+        (row["method"], row["path"]) for row in rows
+    }
+
+
 def test_catalog_does_not_double_the_format_suffix_routes():
     """`.json`-двойники DRF в каталог не попадают."""
     rows = catalog()["event.manage"]
