@@ -1,7 +1,16 @@
-// Конфиг смоук-обхода (e2e/smoke-buttons.spec.ts). Отдельный файл, потому что
-// штатного playwright.config.ts у этого фронта нет вовсе: обход — единственная
-// спека, и заводить общий конфиг «на будущее» значит навязать всем следующим
-// тестам живой стенд.
+// Конфиг ЦЕЛЕВЫХ проб по живому стенду. Штатного playwright.config.ts у этого
+// фронта нет вовсе: живой стенд нужен не всякой будущей спеке, и общий конфиг
+// «на будущее» навязал бы его всем.
+//
+// ОБХОДА КНОПОК ЗДЕСЬ БОЛЬШЕ НЕТ (Plane №94). `smoke-buttons.spec.ts` уехал в
+// свой `playwright.walk.config.ts`, и вот почему: обход идёт больше часа и
+// ходит по всему порталу пятью персонами, а сторож памяти перезапускает стенд
+// посреди такого прогона — 26.08.2026 обход упал на 15-й пробе из 132 и унёс с
+// собой ВСЕ целевые пробы, которые стояли в очереди за ним. Замер того же дня:
+// за 2400 секунд обход успевает 67 проб, отдельные маршруты стоят по 2,8-2,9
+// минуты. Смешивать часовую диагностику с пробами, которые проверяют правку
+// прямо сейчас, — значит платить час за каждый ответ «сломал я что-то или
+// нет».
 //
 // webServer НЕТ намеренно: стенд поднимается снаружи (Django :8100 и
 // `npm run dev -- -p 3106`). Смоук — диагностика по РАБОТАЮЩЕМУ стенду, а не
@@ -39,7 +48,7 @@ export default defineConfig({
   // Обход и точечные пробы по живому стенду перечислены явно: `**/*.spec.ts`
   // затянул бы сюда любую будущую спеку, которой живой стенд не нужен, и она
   // падала бы у всех, кто его не поднял.
-  testMatch: ['smoke-buttons.spec.ts', 'objects-tabs.spec.ts', 'gvo-sections.spec.ts', 'protected-persons.spec.ts', 'legal-documents.spec.ts', 'placement-stage.spec.ts', 'closure-stage.spec.ts', 'acknowledgement-stage.spec.ts', 'approval-stage.spec.ts', 'recon-stage.spec.ts', 'bulletin-stage.spec.ts', 'command-center.spec.ts', 'stage-chain.spec.ts', 'stage-override.spec.ts', 'events-registry.spec.ts', 'operations-analytics.spec.ts', 'service-analytics.spec.ts', 'my-profile.spec.ts', 'object-passport.spec.ts', 'forms-validation.spec.ts', 'tables-data.spec.ts', 'org-structure-status.spec.ts', 'org-structure-view.spec.ts', 'prototype-skin.spec.ts', 'dashboard-metrics.spec.ts', 'lagging-reminders.spec.ts', 'forces-gathering.spec.ts', 'daily-expense.spec.ts', 'day-submission.spec.ts', 'hydration.spec.ts', 'auth-logout.spec.ts', 'mock-contract.spec.ts', 'access-permissions.spec.ts', 'access-roles.spec.ts', 'access-users.spec.ts', 'access-accounts.spec.ts'],
+  testMatch: ['objects-tabs.spec.ts', 'gvo-sections.spec.ts', 'protected-persons.spec.ts', 'legal-documents.spec.ts', 'placement-stage.spec.ts', 'closure-stage.spec.ts', 'acknowledgement-stage.spec.ts', 'approval-stage.spec.ts', 'recon-stage.spec.ts', 'bulletin-stage.spec.ts', 'command-center.spec.ts', 'stage-chain.spec.ts', 'stage-override.spec.ts', 'events-registry.spec.ts', 'operations-analytics.spec.ts', 'service-analytics.spec.ts', 'my-profile.spec.ts', 'object-passport.spec.ts', 'forms-validation.spec.ts', 'tables-data.spec.ts', 'org-structure-status.spec.ts', 'org-structure-view.spec.ts', 'prototype-skin.spec.ts', 'dashboard-metrics.spec.ts', 'lagging-reminders.spec.ts', 'forces-gathering.spec.ts', 'daily-expense.spec.ts', 'day-submission.spec.ts', 'hydration.spec.ts', 'auth-logout.spec.ts', 'mock-contract.spec.ts', 'access-permissions.spec.ts', 'access-roles.spec.ts', 'access-users.spec.ts', 'access-accounts.spec.ts'],
   // Один воркер: обход кликает по живому стенду и меняет его состояние —
   // параллельные персоны видели бы правки друг друга.
   workers: 1,
