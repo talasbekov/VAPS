@@ -1,22 +1,36 @@
-version: '3.8'
-
 services:
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        - BACKEND_URL=http://10.115.70.56:8100
+        - NEXT_PUBLIC_MEDIA_URL=http://10.115.70.56:8100
+        - PORT=3100
     ports:
       - "3100:3100"
     environment:
       - NODE_ENV=production
       - PORT=3100
       - HOSTNAME=0.0.0.0
+      # Куча V8 под mem_limit=1g. Меняется вместе с лимитом ниже.
+      - NODE_OPTIONS=--max-old-space-size=512
       - BACKEND_URL=http://10.115.70.56:8100
       - NEXTAUTH_URL=http://localhost:3100
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
+    # Лимит памяти: и для `docker compose up` (mem_limit), и для swarm/
+    # `deploy` — оба указаны намеренно, разные ветки compose читают разные.
+    mem_limit: 1g
+    mem_reservation: 512m
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 512m
+    # Кеш ISR/оптимизированных картинок — в tmpfs с жёстким потолком:
+    # именованный volume под .next/cache растёт бесконтрольно, а после
+    # перезапуска контейнера кеш всё равно холодный.
+    tmpfs:
+      - /app/.next/cache:size=256m,mode=1777
     # Убедитесь, что контейнер может достичь бэкенд по IP 10.115.70.56:8100
-    # Если бэкенд в той же сети, можно использовать network_mode: "host" (только для Linux)
-    # network_mode: "host"  # Раскомментируйте, если нужно использовать сеть хоста
     restart: unless-stopped
