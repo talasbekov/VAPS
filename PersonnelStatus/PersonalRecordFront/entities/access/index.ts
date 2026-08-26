@@ -7,6 +7,8 @@
 
 /** Справочник прав раздела. */
 export const ACCESS_PERMISSIONS_PATH = "/api/operations/permissions/";
+/** Справочник ролей раздела. */
+export const ACCESS_ROLES_PATH = "/api/operations/roles/";
 /** Каталог применения: где каждое право работает. */
 export const ACCESS_CATALOG_PATH = "/api/ops/access-catalog/";
 
@@ -14,6 +16,47 @@ export function accessPermissionPath(code: string): string {
   // Код содержит точку (`event.manage`) — в путь он идёт закодированным,
   // иначе символ вроде `/` в коде увёл бы запрос на чужой адрес.
   return `${ACCESS_PERMISSIONS_PATH}${encodeURIComponent(code)}/`;
+}
+
+export function accessRolePath(code: string): string {
+  return `${ACCESS_ROLES_PATH}${encodeURIComponent(code)}/`;
+}
+
+export function accessRolePermissionsPath(code: string): string {
+  return `${accessRolePath(code)}permissions/`;
+}
+
+export interface AccessRole {
+  code: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  /** Состав прав приезжает ВМЕСТЕ с ролью: реестр ролей спрашивают о том,
+   * что роль открывает, а не только о том, как она называется. */
+  permissions: string[];
+}
+
+export interface ListAccessRolesResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: AccessRole[];
+}
+
+export interface SaveAccessRoleRequest {
+  [key: string]: unknown;
+  code: string;
+  name: string;
+  description?: string;
+  is_active?: boolean;
+}
+
+/** Правка состава: добавить и снять ОДНИМ обращением — так же, как на
+ * сервере, где два запроса оставили бы роль в промежуточном состоянии. */
+export interface ChangeRolePermissionsRequest {
+  [key: string]: unknown;
+  add?: string[];
+  remove?: string[];
 }
 
 export interface AccessPermission {
