@@ -233,7 +233,84 @@ def update_passport(security_object, sectors):
                 position=j,
             )
     security_object.save(update_fields=["updated_at"])
+    # Правка черновика меняет состояние: разошёлся с версией — «требует
+    # доработки» (Plane №66).
+    refresh_passport_state(security_object)
     return security_object
+
+
+def resolve_passport_state(security_object):
+    """Состояние паспорта объекта: RED / YELLOW / GREEN (Plane №66).
+
+    До 26.08.2026 состояния НЕ БЫЛО КОМУ ставить: `create_object` жёстко писал
+    RED, публикация версии поля не трогала, и зелёным объект не становился
+    никогда — колонка реестра, сводка KPI и баннер карточки показывали
+    состояние, которого система не производит. Фикстура стенда дописывала
+    GREEN прямо в поле, чтобы пробе было на что смотреть.
+
+    Правило собрано из подписей самих состояний и того, что уже есть в
+    домене:
+
+    * **RED** «Не оформлен» — в паспорте нет ни одного поста: вести по такому
+      объекту нечего;
+    * **YELLOW** «Требует доработки» — посты есть, но опубликованной версии
+      нет ЛИБО черновик разошёлся с последней версией (посты правят, а
+      публиковать забыли);
+    * **GREEN** «Оформлен» — есть опубликованная версия, и черновик ей
+      соответствует.
+
+    СВЕЖЕСТЬ СЮДА НЕ ВХОДИТ, и это осознанно. Свежесть зависит от текущей
+    даты: вчерашний GREEN сам собой становится «просроченным», а хранимое
+    поле об этом не узнает, пока объект кто-нибудь не сохранит, — состояние
+    протухало бы молча. У свежести своя колонка (`resolve_freshness`) и свои
+    показатели KPI (`verificationOverdue`, `neverPublished`), и они считаются
+    на каждый показ. Здесь — свойство ДОКУМЕНТА, которое меняется только
+    вместе с ним.
+    """
+    has_posts = OpsSecurityPost.objects.filter(
+        sector__security_object=security_object
+    ).exists()
+    if not has_posts:
+        return OpsSecurityObject.PassportState.RED
+    latest = (
+        security_object.passport_versions.order_by("-version_number")
+        .values_list("sectors_snapshot", flat=True)
+        .first()
+    )
+    if latest is None:
+        return OpsSecurityObject.PassportState.YELLOW
+
+    # Черновик против последней версии: сравниваются ИМЕНА секторов и постов,
+    # а не идентификаторы — правка паспорта пересоздаёт строки, и сравнение по
+    # id объявляло бы расхождением каждое сохранение.
+    def shape(sectors):
+        return [
+            (
+                str(sector.get("name", "")).strip(),
+                [str(post.get("name", "")).strip() for post in sector.get("posts", [])],
+            )
+            for sector in sectors or []
+        ]
+
+    if shape(snapshot_sectors(security_object)) != shape(latest):
+        return OpsSecurityObject.PassportState.YELLOW
+    return OpsSecurityObject.PassportState.GREEN
+
+
+def refresh_passport_state(security_object):
+    """Пересчитать и СОХРАНИТЬ состояние, если оно изменилось.
+
+    Состояние хранится полем, а не считается на лету, потому что по нему
+    отбирают и считают KPI реестра: вычисление на каждую строку превратило бы
+    список объектов в перебор версий и постов. Цена хранения — обязанность
+    пересчитывать его там, где паспорт меняется; таких мест два, и оба ниже
+    по файлу: правка черновика и публикация версии.
+    """
+    state = resolve_passport_state(security_object)
+    if security_object.passport_state != state:
+        security_object.passport_state = state
+        security_object.save(update_fields=["passport_state", "updated_at"])
+    return state
 
 
 def snapshot_sectors(security_object):
@@ -304,6 +381,8 @@ def publish_version(security_object, *, effective_from, note, actor):
         sectors_snapshot=snapshot_sectors(security_object),
     )
     security_object.save(update_fields=["updated_at"])
+    # Публикация — единственный путь объекта в «зелёное» (Plane №66).
+    refresh_passport_state(security_object)
     audit_service.record(
         actor=actor,
         action=audit_service.PASSPORT_VERSION_PUBLISHED,
