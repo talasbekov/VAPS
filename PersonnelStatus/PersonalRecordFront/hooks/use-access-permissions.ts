@@ -16,10 +16,15 @@ import {
   accessPermissionPath,
   accessRolePath,
   accessRolePermissionsPath,
+  accessAccountPath,
+  accessAccountResetPasswordPath,
   accessUserRolePath,
 } from "@/entities/access";
 import type {
   AccessAccount,
+  CreateAccessAccountRequest,
+  CreatedAccessAccount,
+  ResetAccessAccountPasswordResponse,
   AccessCatalogResponse,
   AccessPermission,
   AccessRole,
@@ -198,5 +203,58 @@ export function useRevokeAccessRole() {
   return useOpsMutation<void, { id: number }>({
     mutationFn: ({ id }) => opsApiClient.del<void>(accessUserRolePath(id)),
     onSuccess: () => invalidateAccess(queryClient),
+  });
+}
+
+// ── Учётка: заведение, блокировка, сброс пароля (Plane №36, шаг «П-9») ─────
+
+function invalidateAccounts(
+  queryClient: ReturnType<typeof useQueryClient>
+): void {
+  void queryClient.invalidateQueries({ queryKey: ["ops-access-accounts"] });
+}
+
+/** Заведение учётки. Ответ несёт временный пароль, и вызывающий обязан
+ * показать его сразу: второго раза не будет — сервер хранит только хеш. */
+export function useCreateAccessAccount(options?: {
+  onFormError?: (details: Record<string, unknown>) => void;
+}) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<CreatedAccessAccount, CreateAccessAccountRequest>({
+    mutationFn: (body) =>
+      opsApiClient.post<CreatedAccessAccount>(ACCESS_ACCOUNTS_PATH, body),
+    onSuccess: () => invalidateAccounts(queryClient),
+    onFormError: options?.onFormError,
+  });
+}
+
+/** Блокировка и разблокировка. Удаления учётки нет вовсе: на ней висят
+ * назначения ролей и авторство записей журнала. */
+export function useSetAccessAccountActive() {
+  const queryClient = useQueryClient();
+  return useOpsMutation<AccessAccount, { id: number; is_active: boolean }>({
+    mutationFn: ({ id, is_active }) =>
+      opsApiClient.patch<AccessAccount>(accessAccountPath(id), { is_active }),
+    onSuccess: () => {
+      invalidateAccounts(queryClient);
+      // Заблокировать могли и себя: права актора перечитываются.
+      void queryClient.invalidateQueries({ queryKey: ["ops-me"] });
+    },
+  });
+}
+
+/** Сброс пароля. Результат — временный пароль, и он не кладётся ни в кэш, ни
+ * в состояние хука: вызывающий получает его колбэком и обязан показать сразу
+ * (`useOpsMutation.mutate` вторым аргументом колбэки не принимает — успех
+ * объявляется здесь, при создании хука). */
+export function useResetAccessAccountPassword(options?: {
+  onDone?: (temporaryPassword: string) => void;
+}) {
+  return useOpsMutation<ResetAccessAccountPasswordResponse, { id: number }>({
+    mutationFn: ({ id }) =>
+      opsApiClient.post<ResetAccessAccountPasswordResponse>(
+        accessAccountResetPasswordPath(id)
+      ),
+    onSuccess: (data) => options?.onDone?.(data.temporary_password),
   });
 }
