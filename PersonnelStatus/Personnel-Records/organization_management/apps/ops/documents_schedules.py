@@ -23,7 +23,7 @@ from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_gvo import OpsGvoSummaryPatch
 from organization_management.apps.ops.document_tables import fill_table_rows
-from organization_management.apps.ops.documents import docx_to_pdf, fill_template
+from organization_management.apps.ops.documents import emit, fill_template
 
 TEMPLATES = os.path.join(os.path.dirname(__file__), "document_templates")
 ARRIVAL_TEMPLATE = os.path.join(TEMPLATES, "schedule_arrival.docx")
@@ -138,7 +138,7 @@ def schedule_rows(kind, as_of_date):
     return rows
 
 
-def render_schedule(kind, as_of=None):
+def render_schedule(kind, as_of=None, fmt="pdf"):
     """Байты PDF графика прибытия (`arrival`) или убытия (`departure`)."""
     from docx import Document
 
@@ -174,7 +174,7 @@ def render_schedule(kind, as_of=None):
         document = Document(filled_path)
         fill_table_rows(document.tables[0], rows)
         document.save(filled_path)
-        return docx_to_pdf(filled_path)
+        return emit(filled_path, fmt)
     finally:
         try:
             os.unlink(filled_path)

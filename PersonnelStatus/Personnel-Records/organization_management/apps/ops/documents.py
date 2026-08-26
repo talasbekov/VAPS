@@ -183,6 +183,91 @@ def docx_to_pdf(docx_path):
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+#: Форматы выгрузки. DOCX — то, что просил заказчик: образцы это РАБОЧИЕ
+#: бланки Word, их дозаполняют руками после выгрузки. PDF рядом нужен, когда
+#: документ идут печатать или отправлять и правок в нём не ждут.
+FORMATS = ("docx", "pdf")
+
+CONTENT_TYPES = {
+    "docx": (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ),
+    "pdf": "application/pdf",
+}
+
+
+def emit(filled_path, fmt):
+    """Заполненный `.docx` → байты в запрошенном формате.
+
+    Одна точка на все пять сборщиков: до неё каждый звал `docx_to_pdf`
+    напрямую, и формат был вшит в сборщик. Спрашивать формат у каждого
+    сборщика по отдельности значило бы получить пять разных ответов на один
+    вопрос — так уже вышло с их подписями (см. `documents_registry`).
+    """
+    if fmt not in FORMATS:
+        raise DomainError(
+            "VALIDATION_ERROR", 400,
+            detail={"format": ["Формат бывает: " + ", ".join(FORMATS)]},
+            message="Проверьте заполнение формы.",
+        )
+    if fmt == "docx":
+        with open(filled_path, "rb") as handle:
+            return handle.read()
+    return docx_to_pdf(filled_path)
+
+
+def render_docx_from_template(template_path, values, *, allow_unresolved=False):
+    """Шаблон + значения → байты `.docx`.
+
+    ЗАЧЕМ ОТДЕЛЬНО ОТ PDF. Заказчик просил документы «в таком же формате», а
+    образцы — рабочие бланки WORD: их дозаполняют руками после выгрузки. PDF
+    этого не даёт. Конвейер и так заполняет `.docx` и лишь потом зовёт
+    LibreOffice — значит нужный формат уже собран, и не отдавать его было бы
+    решением за заказчика.
+
+    PDF рядом НЕ снимается: он нужен, когда документ идут печатать или
+    отправлять, и правки в нём не ждут.
+    """
+    filled_path, _left = _fill_or_fail(template_path, values, allow_unresolved)
+    try:
+        return emit(filled_path, "docx")
+    finally:
+        _drop_temp(filled_path, template_path)
+
+
+def _drop_temp(filled_path, template_path):
+    """Убрать ВРЕМЕННУЮ копию шаблона.
+
+    Сравнение с исходным путём — не паранойя. `fill_template` всегда отдаёт
+    копию, но функции сборки удаляют то, что она вернула, в `finally`; стоит
+    кому-то передать сюда сам шаблон, и удалится ОРИГИНАЛ — тихо, без ошибки,
+    и заметится это только когда следующая сборка не найдёт бланк. Так и
+    случилось при проверке мутацией (Plane №156): шаблон «Сводных данных»
+    исчез с диска, и шесть проб покраснели вдалеке от причины.
+    """
+    if os.path.abspath(filled_path) == os.path.abspath(template_path):
+        return
+    try:
+        os.unlink(filled_path)
+    except OSError:
+        pass
+
+
+def _fill_or_fail(template_path, values, allow_unresolved):
+    """Заполнить шаблон, отказав на недозаполненном. Общее у обоих форматов:
+    правило «не выпускать документ с `{{...}}`» не должно зависеть от того,
+    в чём его попросили."""
+    filled_path, left = fill_template(template_path, values)
+    if left and not allow_unresolved:
+        _drop_temp(filled_path, template_path)
+        raise DomainError(
+            "DOCUMENT_INCOMPLETE", 500,
+            detail={"placeholders": left},
+            message="Документ заполнен не полностью.",
+        )
+    return filled_path, left
+
+
 def render_pdf_from_template(template_path, values, *, allow_unresolved=False):
     """Шаблон + значения → байты PDF.
 
@@ -191,17 +276,8 @@ def render_pdf_from_template(template_path, values, *, allow_unresolved=False):
     заказчик прочтёт как «сведений нет», а `{{employee}}` — как поломку, и он
     будет прав.
     """
-    filled_path, left = fill_template(template_path, values)
+    filled_path, _ = _fill_or_fail(template_path, values, allow_unresolved)
     try:
-        if left and not allow_unresolved:
-            raise DomainError(
-                "DOCUMENT_INCOMPLETE", 500,
-                detail={"placeholders": left},
-                message="Документ заполнен не полностью.",
-            )
         return docx_to_pdf(filled_path)
     finally:
-        try:
-            os.unlink(filled_path)
-        except OSError:
-            pass
+        _drop_temp(filled_path, template_path)

@@ -2528,10 +2528,14 @@ class ServiceReportJobsViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
 
 class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """Документы ОМ в PDF (Plane №159, шаг ПД-3).
+    """Документы ОМ (Plane №159, шаг ПД-3; форматы — №156).
 
-    `GET /api/ops/event-documents/` — какие документы бывают.
-    `GET /api/ops/event-documents/render/?kind=…&event=…` — сам файл.
+    `GET /api/ops/event-documents/` — какие документы бывают и в чём.
+    `GET /api/ops/event-documents/render/?kind=…&event=…&format=…` — сам файл.
+
+    ФОРМАТА ДВА, И ЭТО НЕ УДОБСТВО. Заказчик просил документы «в таком же
+    формате», а образцы — рабочие бланки Word: их дозаполняют руками после
+    выгрузки, чего PDF не даёт. PDF остаётся рядом для печати и отправки.
 
     ПРАВО НЕ ЗАВЕДЕНО НОВОЕ. Выгрузка открывает ровно то, что показывают
     экраны мероприятия, — та же мерка, что у `period-export` расхода: заводить
@@ -2548,7 +2552,10 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                       "render_document": _READ_EVENT_PERMISSION}
 
     def list(self, request):
-        return Response({"results": documents_registry.list_kinds()})
+        return Response({
+            "results": documents_registry.list_kinds(),
+            "formats": documents_registry.list_formats(),
+        })
 
     @extend_schema(
         parameters=[
@@ -2569,13 +2576,27 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "строятся по всем ОМ на момент среза и кода не требуют."
                 ),
             ),
+            OpenApiParameter(
+                "ext", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "docx либо pdf. По умолчанию pdf — так вела себя ручка до "
+                    "появления выбора, и менять умолчание молча значило бы "
+                    "отдать прежним читателям другой файл. Параметр НЕ назван "
+                    "`format`: это имя занято самим DRF (URL_FORMAT_OVERRIDE) "
+                    "под выбор рендерера, и `?format=docx` отвечает 404 «Not "
+                    "found» ещё до вьюхи."
+                ),
+            ),
         ],
     )
     @action(detail=False, methods=["get"], url_path="render")
     def render_document(self, request):
+        fmt = (request.query_params.get("ext") or "pdf").strip().lower()
         payload, name = documents_registry.render(
             (request.query_params.get("kind") or "").strip(),
             event_code=request.query_params.get("event"),
+            fmt=fmt,
         )
         # Отдаём JSON с содержимым, а НЕ файл потоком, — по контракту раздела
         # (`download_artifact` устроен так же). Причина не в красоте: клиент
@@ -2587,7 +2608,7 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
             {
                 "fileName": name,
                 "contentBase64": base64.b64encode(payload).decode("ascii"),
-                "contentType": "application/pdf",
+                "contentType": documents_registry.content_type(fmt),
             }
         )
 

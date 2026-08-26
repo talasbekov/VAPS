@@ -255,3 +255,92 @@ def test_the_summary_prints_the_values_and_not_only_the_form(event):
 
     assert flat("Черногория") in printed
     assert flat("Яков Милатович") in printed
+
+
+# ── Формат выгрузки (Plane №156) ─────────────────────────────────────────
+#
+# Заказчик просил документы «в таком же формате», а образцы — рабочие бланки
+# WORD: их дозаполняют руками после выгрузки. Цепочка ПД-2…ПД-7 сделала PDF, и
+# это было ответом не на тот вопрос. Здесь стережётся, что оба формата живы и
+# что DOCX — настоящий Word, а не PDF с другим именем.
+
+
+@pytest.mark.parametrize("kind,label,needs_event", KINDS_PINNED)
+def test_every_kind_comes_back_as_a_real_docx(event, kind, label, needs_event):
+    """Каждый вид выгружается ЕЩЁ И в DOCX, и это настоящий Word.
+
+    `.docx` — zip-архив, и подпись `PK` отличает его от чего угодно с тем же
+    расширением. Внутри обязан лежать `word/document.xml`: пустой архив тоже
+    начинается с `PK`.
+    """
+    import zipfile
+
+    payload, name = registry.render(
+        kind,
+        event_code=event.code if needs_event else None,
+        as_of=dt.date(2026, 4, 20),
+        fmt="docx",
+    )
+
+    assert payload[:2] == b"PK", f"«{label}» вернулся не DOCX"
+    assert name.endswith(".docx")
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        assert "word/document.xml" in archive.namelist()
+
+
+def test_the_docx_carries_the_values_and_not_the_placeholders(event):
+    """В выгруженном DOCX стоят ЗНАЧЕНИЯ, а мест подстановки не осталось.
+
+    Самая тихая поломка этого формата: `.docx` отдаётся как есть, и документ
+    с `{{country_1}}` внутри открывается в Word без единой жалобы — человек
+    прочтёт скобки как часть бланка.
+    """
+    import re
+    import zipfile
+
+    payload, _ = registry.render("summary", event_code=event.code, fmt="docx")
+
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        body = archive.read("word/document.xml").decode("utf-8", "ignore")
+    printed = flat(re.sub(r"<[^>]+>", " ", body))
+
+    assert "{{" not in body
+    assert flat("Черногория") in printed
+
+
+def test_pdf_stays_the_default_format(event):
+    """Умолчание — PDF, как до появления выбора.
+
+    Читатели ручки звали `render` без формата и получали PDF. Сменить
+    умолчание молча значило бы отдать им другой файл под тем же вызовом — и
+    узнали бы они об этом не из кода, а из открытого не тем приложением файла.
+    """
+    payload, name = registry.render("bulletin", as_of=dt.date(2026, 4, 20))
+
+    assert payload[:4] == b"%PDF"
+    assert name.endswith(".pdf")
+
+
+def test_an_unknown_format_is_refused_by_name():
+    """Незнакомый формат — внятный отказ, а не молчаливый PDF.
+
+    Подмена формата это не помощь, а сюрприз: человек просил `xlsx`, получил
+    бы PDF и решил, что система умеет xlsx.
+    """
+    from organization_management.apps.operations.exceptions import DomainError
+
+    with pytest.raises(DomainError) as failure:
+        registry.render("bulletin", as_of=dt.date(2026, 4, 20), fmt="xlsx")
+
+    assert failure.value.code == "VALIDATION_ERROR"
+
+
+def test_the_screen_is_offered_both_formats():
+    """Перечень форматов — пин: DOCX первым.
+
+    Порядок не украшение: образцы заказчика это рабочие бланки Word, и
+    выгружают их чаще, чтобы дозаполнить руками.
+    """
+    listed = [(item["format"], item["label"]) for item in registry.list_formats()]
+
+    assert listed == [("docx", "DOCX (Word)"), ("pdf", "PDF")]

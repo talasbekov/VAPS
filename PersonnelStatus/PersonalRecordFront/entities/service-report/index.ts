@@ -534,7 +534,17 @@ export const UNAVAILABLE_FORMATS: readonly MaskedField[] = [
     reason:
       "PDF в проекте формируется печатью браузера по печатному канону, а не серверным артефактом — это другой механизм.",
   },
-  { code: "DOCX", label: "DOCX", reason: "Генератора DOCX в проекте нет." },
+  {
+    code: "DOCX",
+    label: "DOCX",
+    // Причина переписана (Plane №156): генератор DOCX в проекте ЕСТЬ, им
+    // собираются документы по мероприятию в секции ниже. Прежний текст
+    // «генератора нет» стоял бы на одном экране с работающей выгрузкой DOCX и
+    // читался бы как поломка. Недоступен именно ОТЧЁТ ЗА ПЕРИОД: у него нет
+    // бланка-образца, с которого снята бы вёрстка.
+    reason:
+      "Генератор DOCX в проекте ЕСТЬ и работает — им собираются документы по мероприятию в секции ниже (Plane №156). Но служебный отчёт за период это другой артефакт: у него нет бланка-образца, с которого снята бы вёрстка, а собирать его «как-нибудь» значило бы выдать за документ заказчика то, чего он не присылал.",
+  },
 ];
 
 export const UNAVAILABLE_ARTIFACT_FIELDS: readonly MaskedField[] = [
@@ -576,8 +586,23 @@ export interface EventDocumentKind {
   needsEvent: boolean;
 }
 
+/**
+ * Формат выгрузки. DOCX — то, что просил заказчик (Plane №156): образцы это
+ * рабочие бланки Word, их дозаполняют руками после выгрузки. PDF рядом нужен,
+ * когда документ идут печатать или отправлять и правок в нём не ждут.
+ */
+export type EventDocumentFormat = "docx" | "pdf";
+
+export interface EventDocumentFormatOption {
+  format: EventDocumentFormat;
+  label: string;
+}
+
 export interface EventDocumentKindsResponse {
   results: EventDocumentKind[];
+  /** Список приходит С СЕРВЕРА, а не зашит здесь: свой разошёлся бы с ручкой
+   * и предложил бы формат, которого она не соберёт. */
+  formats: EventDocumentFormatOption[];
 }
 
 /** Файл приходит содержимым в JSON, а не потоком: клиент шлёт токен
@@ -592,9 +617,17 @@ export interface EventDocumentResponse {
 export function eventDocumentRenderPath(params: {
   kind: string;
   eventCode?: string;
+  format?: EventDocumentFormat;
 }): string {
   const query = new URLSearchParams({ kind: params.kind });
   if ((params.eventCode ?? "").trim() !== "")
     query.set("event", (params.eventCode as string).trim());
+  // Формат ставится в адрес ТОЛЬКО когда он задан: без него ручка отдаёт PDF,
+  // и подставлять его здесь значило бы держать умолчание в двух местах.
+  //
+  // Параметр называется `ext`, а НЕ `format`: имя `format` занято самим DRF
+  // (URL_FORMAT_OVERRIDE) под выбор рендерера, и `?format=docx` отвечает 404
+  // «Not found» ещё до вьюхи. Нашлось пробой, не рассуждением.
+  if (params.format !== undefined) query.set("ext", params.format);
   return `${OPS_EVENT_DOCUMENT_RENDER_PATH}?${query.toString()}`;
 }

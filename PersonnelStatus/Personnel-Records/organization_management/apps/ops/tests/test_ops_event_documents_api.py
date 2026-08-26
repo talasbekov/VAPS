@@ -122,3 +122,45 @@ def test_document_comes_back_as_a_real_pdf(reader):
     assert body["fileName"].endswith(".pdf")
     assert body["contentType"] == "application/pdf"
     assert base64.b64decode(body["contentBase64"])[:4] == b"%PDF"
+
+
+def test_the_handle_offers_both_formats_and_renders_docx(reader):
+    """Ручка называет форматы и собирает DOCX с верным content-type.
+
+    Тип содержимого — не украшение: по нему браузер решает, чем открыть файл.
+    Отдать Word под `application/pdf` значит отдать файл, который не
+    открывается ничем.
+    """
+    api = reader
+
+    listed = api.get(LIST_URL).json()
+    assert [row["format"] for row in listed["formats"]] == ["docx", "pdf"]
+    # Параметр называется `ext`, а НЕ `format`: имя `format` занято самим DRF
+    # (URL_FORMAT_OVERRIDE) под выбор рендерера, и `?format=docx` отвечает 404
+    # ещё до вьюхи. Найдено этой пробой — она и стережёт имя.
+
+    body = api.get(RENDER_URL, {"kind": "bulletin", "ext": "docx"}).json()
+
+    assert body["fileName"].endswith(".docx")
+    assert body["contentType"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
+def test_the_handle_still_renders_pdf_without_a_format(reader):
+    """Без параметра — PDF, как до появления выбора.
+
+    У ручки есть читатели, звавшие её без формата. Сменить умолчание молча
+    значило бы отдать им другой файл под тем же адресом.
+    """
+    body = reader.get(RENDER_URL, {"kind": "bulletin"}).json()
+
+    assert body["fileName"].endswith(".pdf")
+    assert body["contentType"] == "application/pdf"
+
+
+def test_an_unknown_format_is_refused_with_400(reader):
+    """Незнакомый формат — отказ с причиной, а не молчаливый PDF."""
+    response = reader.get(RENDER_URL, {"kind": "bulletin", "ext": "xlsx"})
+
+    assert response.status_code == 400
