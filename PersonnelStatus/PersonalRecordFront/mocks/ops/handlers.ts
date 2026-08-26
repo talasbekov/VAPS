@@ -4,6 +4,7 @@
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
 import {
   isOpsAnalyticsLive,
+  isOpsAccessLive,
   isOpsAuditLive,
   isOpsDictionariesLive,
   isOpsDutiesLive,
@@ -17,6 +18,7 @@ import {
   isOpsServiceReportsLive,
   isOpsSettingsLive,
 } from "@/lib/ops-env";
+import { accessHandlers } from "./access-handlers";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
 import { dutiesHandlers } from "./duties-handlers";
@@ -69,5 +71,9 @@ export function composeOpsHandlers() {
     ...(isOpsProtectedPersonsLive() ? [] : protectedPersonsHandlers),
     // Нормативная база живьём с 21.08.2026 (/api/ops/legal-documents/).
     ...(isOpsLegalDocumentsLive() ? [] : legalDocumentsHandlers),
+    // Раздел доступа (права, роли, назначения, учётки) живьём с 26.08.2026 —
+    // шаги «П-1»…«П-5». Мок включается возвратом домена: демо без бэка и
+    // отладка экранов (NEXT_PUBLIC_OPS_MOCK_DOMAINS=access).
+    ...(isOpsAccessLive() ? [] : accessHandlers),
   ];
 }

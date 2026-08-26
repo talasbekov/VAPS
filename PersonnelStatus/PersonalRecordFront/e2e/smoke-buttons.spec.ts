@@ -156,6 +156,13 @@ const ROUTES: readonly RouteSpec[] = [
   { template: '/statuses' },
   { template: '/reports' },
   { template: '/settings' },
+  // Экраны раздела доступа (Plane №36, шаги «П-6»…«П-8»). В обходе их не было
+  // с самого заведения: сторож карты маршрутов краснел, пока полный смоук не
+  // гоняли. Раздел закрыт правом `admin.roles` — персона без него видит
+  // «Доступ закрыт», и это тоже осмысленный ответ страницы, а не 404.
+  { template: '/settings/permissions' },
+  { template: '/settings/roles' },
+  { template: '/settings/users' },
   { template: '/feedback' },
   { template: '/feedback/{feedbackId}', needs: ['feedbackId'] },
   // «Мой профиль» открывается любому вошедшему: кадровой записи у персоны

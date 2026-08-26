@@ -148,6 +148,17 @@ test.describe(LIVE ? 'учётные записи в настройках' : 'у
     await page.getByRole('button', { name: 'Разблокировать' }).click()
     await expect(probeRow.getByText('Входит')).toBeVisible()
 
+    // СВЯЗНОСТЬ (шаг «П-10»): действия раздела доступа видны на экране аудита
+    // ПОДПИСЯМИ, а не машинными кодами. Проба ищет подпись и требует, чтобы
+    // кода `ACCESS_ACCOUNT_PASSWORD_RESET` в строке не было — иначе «подпись
+    // есть» проходило бы и на экране, печатающем оба.
+    await page.goto(`${APP}/security-ops/audit/`)
+    await expect(page.getByRole('heading', { name: 'Аудит' }).first()).toBeVisible()
+    await page.getByPlaceholder('Поиск по действию, сущности, пользователю…').fill('Пароль учётной записи сброшен')
+    const auditRow = page.getByRole('row').filter({ hasText: 'Пароль учётной записи сброшен' }).first()
+    await expect(auditRow).toBeVisible()
+    await expect(auditRow).not.toContainText('ACCESS_ACCOUNT_PASSWORD_RESET')
+
     expect(errors).toEqual([])
   })
 })

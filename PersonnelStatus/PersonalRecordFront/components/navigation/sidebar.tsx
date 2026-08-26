@@ -16,6 +16,7 @@ import {
   BarChart3,
   ClipboardList,
   FileText,
+  KeyRound,
   Landmark,
   LineChart,
   MessageSquarePlus,
@@ -23,6 +24,7 @@ import {
   ScrollText,
   Settings,
   Shield,
+  ShieldCheck,
   UserRound,
   Users,
   type LucideIcon,
@@ -127,6 +129,15 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { name: "Справочники", href: "/security-ops/dictionaries", icon: ClipboardList },
       { name: "Администрирование", href: "/security-ops/settings", icon: Settings },
+      // Экраны раздела доступа (Plane №36, шаги «П-6»…«П-8») существовали с
+      // 26.08.2026, но в меню не стояли: на них попадали только по прямому
+      // адресу. Права здесь НЕ проверяются — как и у остальных экранов ОМ:
+      // видимость считают сами страницы (`useOpsPermissions`), и вторая
+      // правда о ней в меню разошлась бы с первой. Без права раздел отвечает
+      // «Доступ закрыт», а не пустой страницей.
+      { name: "Права", href: "/settings/permissions", icon: KeyRound },
+      { name: "Роли", href: "/settings/roles", icon: ShieldCheck },
+      { name: "Пользователи", href: "/settings/users", icon: Users },
       { name: "Аудит", href: "/security-ops/audit", icon: ScrollText },
       { name: "Журнал изменений", href: "/security-ops/changelog", icon: ClipboardList },
     ],
