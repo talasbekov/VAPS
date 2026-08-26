@@ -112,6 +112,17 @@ test.describe(LIVE ? 'учётные записи в настройках' : 'у
       await expect(probeRow.getByText('Входит')).toBeVisible()
     }
 
+    // Меню выезжает stagger-анимацией: снимок сразу после загрузки застаёт
+    // категории БЕЗ пунктов (так и вышло на первом снимке), и по нему нельзя
+    // судить о меню вообще. Ждём последний пункт, а не время.
+    // Ждём ПРОЯВЛЕНИЯ, а не появления: у пунктов stagger-анимация, и
+    // `toBeVisible` истинно уже при opacity 0 — первый снимок так и вышел с
+    // пустым меню при 21 отрисованной ссылке.
+    await expect
+      .poll(async () =>
+        page.locator('aside nav a').last().evaluate((el) => getComputedStyle(el).opacity),
+      )
+      .toBe('1')
     await page.screenshot({ path: 'smoke-results/access-accounts.png', fullPage: true })
 
     // БЛОКИРОВКА: с подтверждением, состояние строки меняется словами.
