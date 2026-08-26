@@ -327,14 +327,17 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
         const body = (await response.json()) as {
           results?: {
             title?: string
+            reconForceRequestedAt?: string | null
             forceRequests?: { requestedCount: number; allocatedCount: number }[]
           }[]
         }
-        // Берём ПЕРВОЕ мероприятие С ЗАЯВКАМИ, а не просто первое: у ОМ с
-        // нулевым расчётом постов заявок нет вовсе, и подменять было бы
-        // нечего — проба падала бы «реестр вернул пустой список», имея в виду
-        // «первым оказался ОМ без потребности».
-        const first = body.results?.find((row) => row.forceRequests?.length)
+        // Берём первое мероприятие, которое ЛЕНТА ПОКАЖЕТ: с заявками и с
+        // проставленным моментом отправки штабу. Просто «первое с заявками»
+        // мало — черновик старшего наряда лента не показывает, и подмена
+        // уходила бы в карточку, которой на экране нет.
+        const first = body.results?.find(
+          (row) => row.forceRequests?.length && row.reconForceRequestedAt !== null,
+        )
         if (first?.forceRequests?.length) {
           first.forceRequests[0].requestedCount = 9
           first.forceRequests[0].allocatedCount = 4
@@ -786,6 +789,52 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
   // САМА ПОТЕРЯ ЗАПИСАНА КАРТОЧКОЙ в «Предложено Claude»: колонка смены на
   // доске расстановки теперь пуста у всех новых мероприятий. Чтение смены со
   // строки потребности в коде осталось — у заведённых до задачи ОМ она есть.
+
+  test('действия цепочки выключены без своего права и названы словами', async ({
+    page,
+  }) => {
+    // Права подменяются ОТВЕТОМ ручки: заводить на стенде роль без прав ради
+    // пробы значило бы менять данные стенда ради проверки интерфейса. Набор —
+    // «человек ведёт мероприятия, но звеньев сбора у него нет» (Plane №74).
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-permissions/'),
+      async (route) =>
+        route.fulfill({
+          json: {
+            permissions: ['event.view', 'event.manage', 'status.view', 'personnel.view'],
+          },
+        }),
+    )
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const block = page.getByRole('main').getByText('Запрос сил по мероприятиям')
+    await expect(block).toBeVisible({ timeout: 25_000 })
+
+    // Кнопка ВЫКЛЮЧЕНА, а не спрятана: спрятанная не отвечает на вопрос
+    // «почему я этого не вижу», и человек идёт спрашивать.
+    const save = page.getByRole('button', { name: 'Сохранить раскладку' }).first()
+    await expect(save).toBeVisible()
+    await expect(save).toBeDisabled()
+
+    // Причина названа ролью, а не «нет прав»: общее «недостаточно прав» не
+    // говорит человеку, чьё это действие и к кому идти.
+    await expect(
+      page.getByText('Делит потребность и решает по спискам штаб').first(),
+    ).toBeVisible()
+  })
+
+  test('со своим правом действие цепочки доступно', async ({ page }) => {
+    // Контрольная проба: без неё «выключено» выше не отличалось бы от
+    // «выключено всегда», и гейт мог бы просто не работать.
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const save = page.getByRole('button', { name: 'Сохранить раскладку' }).first()
+    await expect(save).toBeVisible({ timeout: 25_000 })
+    await expect(save).toBeEnabled()
+    await expect(
+      page.getByText('Делит потребность и решает по спискам штаб'),
+    ).toHaveCount(0)
+  })
 
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
