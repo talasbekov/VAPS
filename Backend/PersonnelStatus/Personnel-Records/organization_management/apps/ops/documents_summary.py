@@ -1,0 +1,286 @@
+"""Сводка ГВО НА СЕРВЕРЕ и её раскладка в шаблон (Plane №158, шаг ПД-2).
+
+ЗАЧЕМ ЭТО ЗДЕСЬ. Документ «Сводные данные» обязан быть СРЕЗОМ СИСТЕМЫ. А
+сводка ГВО до этой правки собиралась только на КЛИЕНТЕ: сервер хранил лишь
+ручные правки (`OpsGvoSummaryPatch`), а база — страна, лица, прибытие, убытие,
+объекты посещения — считалась в браузере (`deriveGvoSummary`). Наполнять
+документ тем, что пришлёт браузер, нельзя: тогда содержимое диктует клиент, и
+прислать можно что угодно.
+
+ОТКУДА ПРАВИЛА. Порт `entities/gvo-summary/model/derive.ts` строка в строку:
+деловая дата → прибытие и убытие, охраняемое лицо бюллетеня → «Охраняемые
+лица», ответственный ОМ → «Ответственный», объекты мероприятия → расписание
+посещений. Всё это ЖИВЁТ НА СЕРВЕРЕ — клиент ничего не добавлял от себя, он
+только складывал.
+
+ИЗВЕСТНЫЙ ДОЛГ, НАЗВАННЫЙ ВСЛУХ. Сборка теперь в ДВУХ местах — здесь и на
+клиенте. Две сборки расходятся тем вернее, чем реже смотрят на вторую. Снимать
+клиентскую можно только после переезда её читателей (карточка заведена);
+до тех пор источником считается сервер, а расхождение — дефект.
+"""
+import datetime as dt
+
+#: То же слово, что у клиента (`UNSPECIFIED`): пустое поле и «уточняется» —
+#: разные вещи. Пустое читается как «сведений нет вовсе», а «уточняется» —
+#: как «знаем, что нужно, но ещё не выяснили».
+UNSPECIFIED = "уточняется"
+
+WEEKDAYS = (
+    "понедельник", "вторник", "среда", "четверг",
+    "пятница", "суббота", "воскресенье",
+)
+
+
+def _ru_date(value):
+    if value is None:
+        return UNSPECIFIED
+    if isinstance(value, str):
+        try:
+            value = dt.date.fromisoformat(value)
+        except ValueError:
+            return value
+    return f"{value.day:02d}.{value.month:02d}.{value.year}г."
+
+
+def _ru_weekday(value):
+    if isinstance(value, str):
+        try:
+            value = dt.date.fromisoformat(value)
+        except ValueError:
+            return ""
+    return WEEKDAYS[value.weekday()] if value else ""
+
+
+def visit_days(event):
+    """«Объекты посещения» — из ТАБЛИЦЫ объектов мероприятия, а не из патча.
+
+    Так же, как на клиенте, и по той же причине: до «Реестра ОМ-35.1» список
+    жил в двух местах и расходился молча — объект, дописанный в сводке, не
+    получал ни постов, ни готовности.
+    """
+    # `visit_objects` — СВЯЗАННЫЕ ЗАПИСИ, а не поле JSON: порядок задаёт
+    # `position` (он же порядок раскрытия строки реестра), а не порядок в базе.
+    rows = event.visit_objects.all().order_by("position", "id")
+    by_day = {}
+    for visit in rows:
+        iso = str(visit.visit_day or event.business_date)
+        note = (visit.note or "").strip()
+        item = {
+            "obj": visit.object_name or "",
+            "note": note if note else UNSPECIFIED,
+        }
+        by_day.setdefault(iso, []).append(item)
+    return [
+        {"day": _ru_date(iso), "weekday": _ru_weekday(iso), "items": items}
+        for iso, items in sorted(by_day.items())
+    ]
+
+
+def derive_summary(event):
+    """База сводки из мероприятия. Порт клиентского `deriveGvoSummary`."""
+    day = _ru_date(event.business_date)
+    person = (event.protected_person_name or "").strip()
+    owner = (event.owner_name or "").strip()
+    return {
+        "country": UNSPECIFIED,
+        # Пусто, если в бюллетене лицо не назвали: подставлять сюда
+        # «уточняется» вместо человека нечем.
+        "persons": (
+            [{"name": person, "role": "охраняемое лицо", "facts": []}]
+            if person
+            else []
+        ),
+        "arrival": {"date": day, "time": UNSPECIFIED, "route": UNSPECIFIED,
+                    "flight": UNSPECIFIED, "dur": UNSPECIFIED},
+        "departure": {"date": day, "time": UNSPECIFIED, "route": UNSPECIFIED,
+                      "flight": UNSPECIFIED, "dur": UNSPECIFIED},
+        "meet": [],
+        "farewell": [],
+        "stay": {"place": UNSPECIFIED, "room": UNSPECIFIED},
+        "delegation": [],
+        "sbChief": UNSPECIFIED,
+        "weapons": UNSPECIFIED,
+        "wishes": UNSPECIFIED,
+        "obVariant": UNSPECIFIED,
+        "radio": UNSPECIFIED,
+        "responsible": (
+            {"name": owner, "callsign": UNSPECIFIED, "role": "ответственный"}
+            if owner
+            else None
+        ),
+        "groups": [{"name": "ГВО (состав уточняется)", "members": []}],
+        "transport": [],
+        "visits": visit_days(event),
+    }
+
+
+def _deep_merge(base, patch):
+    """База + патч. Вложенные словари сливаются ГЛУБОКО: правка раздела
+    «Прибытие» может нести только время, не затирая маршрут."""
+    result = dict(base)
+    for key, value in (patch or {}).items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def summary_for_event(event):
+    """Сводка мероприятия: база плюс сохранённые ручные правки."""
+    from organization_management.apps.operations.models_gvo import (
+        OpsGvoSummaryPatch,
+    )
+
+    patch = (
+        OpsGvoSummaryPatch.objects.filter(event_id=event.pk)
+        .values_list("patch", flat=True)
+        .first()
+    )
+    return _deep_merge(derive_summary(event), patch or {})
+
+
+def _person_lines(person):
+    """Строки антропометрии одного лица — в порядке образца."""
+    facts = person.get("facts") or []
+    return [str(fact) for fact in facts]
+
+
+def document_values(event):
+    """Сводка → значения мест подстановки шаблона «Сводные данные».
+
+    Ключи заданы ШАБЛОНОМ, а не выдуманы здесь: шаблон снят с образца
+    заказчика, и его места подстановки — это перечень того, что документ
+    обещает показать. Всё, чего в сводке нет, отдаётся ПУСТЫМ, а не
+    «уточняется»: пустая строка под подписью читается как «сведений нет», и
+    это честно; выдуманное слово читалось бы как факт.
+    """
+    summary = summary_for_event(event)
+    persons = summary.get("persons") or []
+    values = {}
+
+    values["country_1"] = summary.get("country") or ""
+    for index in (1, 2):
+        person = persons[index - 1] if len(persons) >= index else {}
+        values[f"person{index}_title"] = person.get("role", "") if person else ""
+        values[f"person{index}_name"] = person.get("name", "") if person else ""
+        for line_no, line in enumerate(_person_lines(person), start=1):
+            values[f"person{index}_data_{line_no}"] = line
+
+    arrival = summary.get("arrival") or {}
+    departure = summary.get("departure") or {}
+    values["arrival_1"] = " ".join(
+        part for part in (arrival.get("date"), arrival.get("time")) if part
+    )
+    values["departure_1"] = " ".join(
+        part for part in (departure.get("date"), departure.get("time")) if part
+    )
+
+    stay = summary.get("stay") or {}
+    values["accommodation_1"] = " ".join(
+        part for part in (stay.get("place"), stay.get("room")) if part
+    )
+    values["security_chief_1"] = summary.get("sbChief") or ""
+    values["armament_1"] = summary.get("weapons") or ""
+    values["wishes_1"] = summary.get("wishes") or ""
+    values["route_variant_1"] = summary.get("obVariant") or ""
+    values["radio_channel_1"] = summary.get("radio") or ""
+
+    for line_no, item in enumerate(summary.get("meet") or [], start=1):
+        values[f"meeting_{line_no}"] = str(item)
+    for line_no, item in enumerate(summary.get("farewell") or [], start=1):
+        values[f"seeing_off_{line_no}"] = str(item)
+    for line_no, item in enumerate(summary.get("delegation") or [], start=1):
+        values[f"delegation_{line_no}"] = str(item)
+    for line_no, car in enumerate(summary.get("transport") or [], start=1):
+        values[f"transport_{line_no}"] = " — ".join(
+            part for part in (car.get("code"), car.get("car")) if part
+        )
+
+    line_no = 0
+    for group in summary.get("groups") or []:
+        for member in group.get("members") or []:
+            line_no += 1
+            values[f"gvo_staff_{line_no}"] = " ".join(
+                part
+                for part in (
+                    member.get("name"),
+                    member.get("role"),
+                    member.get("callsign"),
+                )
+                if part
+            )
+
+    # Расписание: четыре дня, как в образце. Дней больше — они не теряются
+    # молча, а называются в последнем дне списком: потерянный день посещения
+    # опаснее переполненной ячейки.
+    days = summary.get("visits") or []
+    for day_no in range(1, 5):
+        day = days[day_no - 1] if len(days) >= day_no else None
+        if day is None:
+            values[f"day{day_no}_date_1"] = ""
+            continue
+        weekday = day.get("weekday")
+        values[f"day{day_no}_date_1"] = (
+            f"{day.get('day')} ({weekday})" if weekday else str(day.get("day"))
+        )
+        for line_no, item in enumerate(day.get("items") or [], start=1):
+            values[f"day{day_no}_line{line_no}_1"] = " — ".join(
+                part for part in (item.get("obj"), item.get("note")) if part
+            )
+    return values
+
+
+def fill_all_keys(template_keys, values):
+    """Дополнить значения ПУСТЫМИ для всех мест шаблона, которых нет в данных.
+
+    Без этого конвейер честно откажется собирать документ: он не выпускает
+    наружу файл с `{{...}}` вместо значений. Но отсутствие сведений — не
+    поломка, а обычное состояние сводки, которую ещё заполняют. Разница
+    именно здесь: ПУСТО значит «не заполнено», а `{{...}}` значило бы «сломано».
+    """
+    return {key: values.get(key, "") for key in template_keys}
+
+
+#: Шаблон снят С ОБРАЗЦА ЗАКАЗЧИКА: вёрстка, рамки, заливка и подчёркнутые
+#: подписи взяты как есть, а настоящие данные заменены местами подстановки, и
+#: фотографии — нейтральными заглушками. Персональных сведений в репозитории
+#: не лежит.
+SUMMARY_TEMPLATE = "summary_data.docx"
+
+
+def summary_template_path():
+    import os
+
+    return os.path.join(
+        os.path.dirname(__file__), "document_templates", SUMMARY_TEMPLATE
+    )
+
+
+def template_keys(template_path):
+    """Места подстановки, объявленные ШАБЛОНОМ. Источник — сам файл, а не
+    список в коде: список разошёлся бы с шаблоном при первой же его правке."""
+    from docx import Document
+
+    from organization_management.apps.ops.documents import PLACEHOLDER
+
+    document = Document(template_path)
+    keys = set()
+    for paragraph in document.paragraphs:
+        keys.update(PLACEHOLDER.findall(paragraph.text))
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                keys.update(PLACEHOLDER.findall(cell.text))
+    return keys
+
+
+def render_summary_pdf(event):
+    """«Сводные данные» мероприятия в PDF."""
+    from organization_management.apps.ops.documents import (
+        render_pdf_from_template,
+    )
+
+    path = summary_template_path()
+    values = fill_all_keys(template_keys(path), document_values(event))
+    return render_pdf_from_template(path, values)
