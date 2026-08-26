@@ -29,6 +29,10 @@ from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.ops import analytics as analytics_service
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from organization_management.apps.ops import ratings as ratings_service
+from django.http import HttpResponse
+from django.utils.http import content_disposition_header
+
+from organization_management.apps.ops import documents_registry
 from organization_management.apps.ops import reports as reports_service
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
@@ -2521,6 +2525,64 @@ class ServiceReportJobsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "NEW_REVISION",
             )
         )
+
+
+class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Документы ОМ в PDF (Plane №159, шаг ПД-3).
+
+    `GET /api/ops/event-documents/` — какие документы бывают.
+    `GET /api/ops/event-documents/render/?kind=…&event=…` — сам файл.
+
+    ПРАВО НЕ ЗАВЕДЕНО НОВОЕ. Выгрузка открывает ровно то, что показывают
+    экраны мероприятия, — та же мерка, что у `period-export` расхода: заводить
+    отдельное право значило бы защищать одни и те же сведения по-разному в
+    зависимости от того, читают их с экрана или из файла.
+
+    Файл отдаётся ОДНИМ ответом, без задания в очереди. Так сделано осознанно:
+    сборка занимает доли секунды (замер образца — 0,48 с), а очередь завела бы
+    состояние, статусы и разбор «почему не собралось» ради задачи, которая
+    заканчивается быстрее, чем человек уберёт палец с кнопки.
+    """
+
+    permission_map = {"list": _READ_EVENT_PERMISSION,
+                      "render_document": _READ_EVENT_PERMISSION}
+
+    def list(self, request):
+        return Response({"results": documents_registry.list_kinds()})
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "kind", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=True,
+                description=(
+                    "Вид документа: summary, bulletin, arrival, departure, "
+                    "placement. ОБЯЗАТЕЛЕН — без него собирать нечего."
+                ),
+            ),
+            OpenApiParameter(
+                "event", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Код ОМ. Обязателен для видов, которые строятся ПО "
+                    "мероприятию (summary, placement); бюллетень и графики "
+                    "строятся по всем ОМ на момент среза и кода не требуют."
+                ),
+            ),
+        ],
+        responses={(200, "application/pdf"): OpenApiTypes.BINARY},
+    )
+    @action(detail=False, methods=["get"], url_path="render")
+    def render_document(self, request):
+        payload, name = documents_registry.render(
+            (request.query_params.get("kind") or "").strip(),
+            event_code=request.query_params.get("event"),
+        )
+        response = HttpResponse(payload, content_type="application/pdf")
+        response["Content-Disposition"] = content_disposition_header(
+            as_attachment=True, filename=name
+        )
+        return response
 
 
 class ServiceReportArtifactsViewSet(RequirePermissionMixin, viewsets.ViewSet):
