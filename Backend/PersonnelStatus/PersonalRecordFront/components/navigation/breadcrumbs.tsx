@@ -54,6 +54,25 @@ const SEGMENT_LABELS: Record<string, string> = {
   reports: "Отчеты",
 };
 
+/**
+ * Сегменты, у которых СВОЕЙ СТРАНИЦЫ НЕТ (Plane №175).
+ *
+ * `/security-ops/` — раздел, а не экран: в `app/security-ops/` лежит
+ * `layout.tsx` и дочерние каталоги, но `page.tsx` нет. Крошка вела на него
+ * ссылкой, и нажатие давало 404. В dev это не замечалось; в прод-режиме Next
+ * ПРЕДЗАГРУЖАЕТ ссылки крошек, и `/security-ops/?_rsc=…` отвечал 404 при
+ * каждом заходе на любой экран раздела — нашлось прогоном смоука по
+ * прод-сборке.
+ *
+ * Подпись при этом остаётся: она называет, ГДЕ человек находится, и терять её
+ * нельзя. Не остаётся только обещание перехода, которого система не держит.
+ *
+ * Список ведётся руками и намеренно НЕ выводится из файловой системы: крошки
+ * — клиентский компонент, дерева `app/` он не видит, а угадывать по адресу
+ * значило бы гадать. Строк здесь ровно столько, сколько разделов без экрана.
+ */
+const SEGMENTS_WITHOUT_PAGE = new Set(["security-ops"]);
+
 /** Бренд первым звеном крошек — как в прототипе: «Smart Жоспарлау / Экран».
  * Ведёт на командный центр, а не на «/»: корень редиректит, и звено-петля в
  * крошках читалась бы как сломанная ссылка. */
@@ -66,19 +85,24 @@ export function Breadcrumbs() {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
 
-  const crumbs: { href: string; label: string }[] = [];
+  const crumbs: { href: string; label: string; linked: boolean }[] = [];
   let href = "";
   for (const segment of segments) {
     href += `/${segment}`;
     const label = SEGMENT_LABELS[segment];
-    if (label) crumbs.push({ href: `${href}/`, label });
+    if (label)
+      crumbs.push({
+        href: `${href}/`,
+        label,
+        linked: !SEGMENTS_WITHOUT_PAGE.has(segment),
+      });
   }
 
   if (crumbs.length === 0) return null;
 
   // Бренд не подменяет первый сегмент, а встаёт перед ним: «Охранные
   // мероприятия» — настоящий раздел со своим адресом, и терять его нельзя.
-  const trail = [BRAND_CRUMB, ...crumbs];
+  const trail = [{ ...BRAND_CRUMB, linked: true }, ...crumbs];
 
   return (
     <nav aria-label="Хлебные крошки" className="min-w-0">
@@ -94,10 +118,15 @@ export function Breadcrumbs() {
                 <span className="text-foreground truncate font-semibold" aria-current="page">
                   {crumb.label}
                 </span>
-              ) : (
+              ) : crumb.linked ? (
                 <Link href={crumb.href} className="hover:text-foreground truncate">
                   {crumb.label}
                 </Link>
+              ) : (
+                // Без ссылки и без вида ссылки: подпись называет место, но
+                // перехода не обещает. Ссылка, ведущая в 404, хуже её
+                // отсутствия — человек считает сломанным весь раздел.
+                <span className="truncate">{crumb.label}</span>
               )}
             </li>
           );
