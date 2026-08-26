@@ -114,21 +114,35 @@ export const RATING_GROUPS: readonly {
   { groupCode: "division-3", safeLabel: "Третье управление" },
 ];
 
+/** Участники рейтинга мока.
+ *
+ * `personnelId` — кадровая ссылка, порт правила сервера (Plane №96): сводка
+ * отдаёт её рядом с кодом участника, и расстановка сверяет рейтинг ПО НЕЙ.
+ * Здесь она указывает на кадры мока (`emp-N` из `fixtures/personnel`), иначе
+ * бейдж рейтинга погас бы на моке ровно так же, как гас на живом стенде, —
+ * только теперь ещё и незаметно, потому что мок считался зелёным.
+ *
+ * Участники третьего управления связи НЕ имеют СОЗНАТЕЛЬНО: на них держится
+ * демонстрация подавленной агрегации, и в подборе им делать нечего — заодно
+ * мок показывает случай «участник без кадровой записи», который на живом
+ * стенде есть у исторических записей сида.
+ */
 export const RATED_EMPLOYEES: readonly {
   employeeId: string;
+  personnelId: string | null;
   safeLabel: string;
   groupCode: string;
 }[] = [
-  { employeeId: "employee-1", safeLabel: "Ерланов Д.", groupCode: "division-1" },
-  { employeeId: "employee-2", safeLabel: "Абишев Н.", groupCode: "division-1" },
-  { employeeId: "employee-3", safeLabel: "Сейтказы М.", groupCode: "division-2" },
-  { employeeId: "employee-4", safeLabel: "Нурланов Е.", groupCode: "division-2" },
-  { employeeId: "employee-5", safeLabel: "Тлеуов А.", groupCode: "division-1" },
-  { employeeId: "employee-6", safeLabel: "Жумабек С.", groupCode: "division-1" },
+  { employeeId: "employee-1", personnelId: "emp-1", safeLabel: "Ерланов Д.", groupCode: "division-1" },
+  { employeeId: "employee-2", personnelId: "emp-2", safeLabel: "Абишев Н.", groupCode: "division-1" },
+  { employeeId: "employee-3", personnelId: "emp-3", safeLabel: "Сейтказы М.", groupCode: "division-2" },
+  { employeeId: "employee-4", personnelId: "emp-4", safeLabel: "Нурланов Е.", groupCode: "division-2" },
+  { employeeId: "employee-5", personnelId: "emp-5", safeLabel: "Тлеуов А.", groupCode: "division-1" },
+  { employeeId: "employee-6", personnelId: "emp-6", safeLabel: "Жумабек С.", groupCode: "division-1" },
   // Третье управление — два участника с агрегатом: меньше порога безопасной
   // агрегации, на нём держится демонстрация SUPPRESSED (§22.17).
-  { employeeId: "employee-7", safeLabel: "Оспанов Р.", groupCode: "division-3" },
-  { employeeId: "employee-8", safeLabel: "Кайрат Б.", groupCode: "division-3" },
+  { employeeId: "employee-7", personnelId: null, safeLabel: "Оспанов Р.", groupCode: "division-3" },
+  { employeeId: "employee-8", personnelId: null, safeLabel: "Кайрат Б.", groupCode: "division-3" },
 ];
 
 /** Мероприятия оценивания — свой перечень (исторические, вне реестра ОМ:
@@ -789,6 +803,8 @@ function buildAllSummaries(
   const results = RATED_EMPLOYEES.map((employee) =>
     buildSummary({
       employeeId: employee.employeeId,
+      // Кадровая ссылка едет в сводку — порт правила сервера (Plane №96).
+      personnelId: employee.personnelId,
       safeLabel: employee.safeLabel,
       evaluations: s.evaluations,
       policy,
@@ -1671,6 +1687,7 @@ export const ratingsHandlers = [
         employee.employeeId,
         buildSummary({
           employeeId: employee.employeeId,
+          personnelId: employee.personnelId,
           safeLabel: employee.safeLabel,
           evaluations: s.evaluations,
           policy,
@@ -1777,6 +1794,7 @@ export const ratingsHandlers = [
       unitSafeLabel: group?.safeLabel ?? "—",
       summary: buildSummary({
         employeeId: employee.employeeId,
+        personnelId: employee.personnelId,
         safeLabel: employee.safeLabel,
         evaluations: s.evaluations,
         policy,

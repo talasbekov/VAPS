@@ -124,10 +124,39 @@ def _event(code="event-1", security_event_id=None):
     )
 
 
-def _participant(code, label, group="division-1"):
+def _participant(code, label, group="division-1", employee_id=None):
     return OpsRatedParticipant.objects.create(
         participant_code=code, safe_label=label, group_code=group,
+        employee_id=employee_id,
     )
+
+
+def test_summary_carries_the_personnel_link(viewer_api, policy):
+    """Сводка отдаёт КАДРОВУЮ ссылку рядом с кодом участника (Plane №96).
+
+    До этого расстановка искала рейтинг по кадровому id, а сводка отдавала
+    только `employeeId` — код участника. Совпадений не бывало никогда, и весь
+    рейтинговый функционал подбора был фикцией, видимой только на моке.
+
+    Оба поля проверяются ВМЕСТЕ: подмена `employeeId` кадровым id сломала бы
+    три экрана раздела, которые ходят по коду, — правка расстановки не имеет
+    права стать их правкой.
+    """
+    linked = _participant("employee-42", "Абенов С.", employee_id=42)
+    orphan = _participant("legacy-7", "Исторический участник")
+
+    rows = {
+        row["employeeId"]: row
+        for row in viewer_api.get(RATINGS).json()["results"]
+    }
+
+    assert rows[linked.participant_code]["personnelId"] == "42"
+    assert rows[linked.participant_code]["employeeId"] == "employee-42"
+    # Несвязанный участник не притворяется кадровым: `null` значит «не знаем,
+    # чей это рейтинг», и подстановка кода участника отдала бы расстановке
+    # строку, которая совпадёт с чужим человеком.
+    assert rows[orphan.participant_code]["personnelId"] is None
+    assert rows[orphan.participant_code]["employeeId"] == "legacy-7"
 
 
 def _evaluation(code, participant, score, days_ago, *, evaluator_id="someone",
