@@ -622,6 +622,54 @@ def build_summary(participant, evaluations, policy, feature_enabled,
     }
 
 
+#: Полосы рейтинга для отбора кандидатов (Plane №67, шаг РЙ-4).
+#: КОДЫ, а не подписи: подпись живёт на экране и переводится, код — контракт.
+#: Границы повторяют доску расстановки один в один, иначе отбор на сервере
+#: показал бы не тех, кого показывал бы клиент.
+RATING_BANDS = {
+    "9_10": lambda value: value is not None and value >= 9,
+    "8_9": lambda value: value is not None and 8 <= value < 9,
+    "7_8": lambda value: value is not None and 7 <= value < 8,
+    "below_7": lambda value: value is not None and value < 7,
+    #: Рейтинга нет вовсе: участник не связан с кадрами, оценок меньше порога
+    #: методики, функция выключена. Для отбора все три случая — одно и то же:
+    #: «судить не по чему».
+    "no_data": lambda value: value is None,
+}
+
+
+def aggregate_rating_by_personnel():
+    """Агрегат по КАДРОВОМУ id: {"<employee_id>": 8.4 | None}.
+
+    Нужен кадровой ручке (Plane №67): до этого отбор по рейтингу шёл по
+    показанной странице, и «нет кандидатов» означало «нет на этой странице».
+
+    Считается ТЕМ ЖЕ `build_summary`, что и экран рейтинга, а не своей
+    формулой: вторая формула разошлась бы с первой при первой же правке
+    методики, и доска подбора начала бы спорить с карточкой сотрудника.
+
+    В словаре только СВЯЗАННЫЕ участники: у несвязанного кадрового id нет, и
+    класть его некуда. Кадровая ручка сама решает, что незнакомый ей человек —
+    это `None`, то есть «судить не по чему».
+    """
+    flags = read_feature_flags()
+    policy = read_rating_policy()
+    business_date = Clock.today_local()
+    calculated_at = Clock.now().isoformat()
+    evaluations = list(OpsEventEvaluation.objects.all())
+    participants = list(
+        OpsRatedParticipant.objects.exclude(employee_id=None)
+    )
+    result = {}
+    for participant in participants:
+        summary = build_summary(
+            participant, evaluations, policy, flags.operational_ratings,
+            business_date, calculated_at,
+        )
+        result[str(participant.employee_id)] = summary["aggregateRating"]
+    return result
+
+
 def _all_summaries(flags, policy):
     """Сводки всех участников тем же расчётом, что и экран. Порядок — по
     подписи: сортировка по значению — таблица лидеров, запрещённая §22.16."""
