@@ -29,6 +29,38 @@ def test_catalog_names_real_routes_of_a_permission():
     assert ("POST", "/api/ops/security-events/<pk>/placement/complete/") in paths
 
 
+def test_catalog_sees_routes_closed_by_an_inline_check():
+    """Гейт бывает не только картой (Plane №108).
+
+    Весь админ-API раздела доступа закрыт вызовом прямо в теле метода —
+    `require_permission(request, "admin.roles")`, — и карты `permission_map` у
+    этих вьюсетов нет. До 26.08.2026 каталог их не видел вовсе: экран «Права»
+    отвечал «право не стоит ни на одной ручке» ровно про то право, которым
+    закрыт сам этот экран.
+    """
+    paths = {(row["method"], row["path"]) for row in catalog()["admin.roles"]}
+
+    assert ("POST", "/api/operations/accounts/") in paths
+    assert ("GET", "/api/operations/roles/") in paths
+    assert ("DELETE", "/api/operations/user-roles/<pk>/") in paths
+    # Действие вьюсета, а не только CRUD: сброс пароля закрыт тем же вызовом.
+    assert ("POST", "/api/operations/accounts/<pk>/reset-password/") in paths
+
+
+def test_catalog_resolves_a_permission_code_given_by_a_constant():
+    """Код права в построчной проверке бывает КОНСТАНТОЙ, а не строкой.
+
+    Звенья цепочки сбора сил закрыты `require_scoped_permission(request,
+    _FORCES_SELECT_PERMISSION, …)`. Разбор обязан развернуть имя в значение —
+    иначе половина построчных гейтов осталась бы невидимой, а каталог
+    выглядел бы полным.
+    """
+    rows = catalog()["forces.select"]
+
+    assert rows, "право цепочки сбора сил не попало в каталог"
+    assert all(row["permission"] == "forces.select" for row in rows)
+
+
 def test_catalog_follows_the_gate_when_a_route_changes_its_permission():
     """Каталог идёт ЗА картой гейта, а не за памятью о ней.
 

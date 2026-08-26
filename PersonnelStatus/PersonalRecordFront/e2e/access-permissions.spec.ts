@@ -63,11 +63,15 @@ test.describe(LIVE ? 'права в настройках' : 'права в на�
     // карта есть ровно у одной ручки — самого каталога. Пустой список тут
     // означал бы, что каталог не доехал.
     //
-    // ⚠️ Ручки администрирования (`/api/operations/roles/` и соседние) сюда НЕ
-    // попадают: они гейтятся построчными вызовами `require_permission`, у
-    // которых карты нет. Это ограничение каталога, а не пробы — заведена
-    // карточка в «Предложено Claude».
+    // Ручки администрирования (`/api/operations/roles/` и соседние) сюда ТЕПЕРЬ
+    // ПОПАДАЮТ: каталог читает не только карты `permission_map`, но и
+    // построчные вызовы `require_permission` в теле метода (Plane №108). До
+    // этого экран «Права» отвечал «право не стоит ни на одной ручке» ровно
+    // про то право, которым закрыт он сам.
     await expect(page.getByText('/api/ops/access-catalog/', { exact: false }).first()).toBeVisible()
+    await expect(
+      page.getByText('/api/operations/user-roles/', { exact: false }).first(),
+    ).toBeVisible()
 
     await page.screenshot({
       path: 'smoke-results/access-permissions.png',
