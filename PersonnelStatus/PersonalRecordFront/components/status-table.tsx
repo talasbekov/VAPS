@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { Pager } from "@/components/pager";
+import { DivisionPicker } from "@/components/division-picker";
 import { EVENT_ASSIGNMENT_CODE } from "@/hooks/use-forces-gathering";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
@@ -531,19 +532,12 @@ export function StatusTable({
             />
           </div>
 
-          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-            <SelectTrigger className="w-full sm:w-64" aria-label="Фильтр по отделу">
-              <SelectValue placeholder="Все отделы" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все отделы</SelectItem>
-              {departments.map((dept) => (
-                <SelectItem key={dept.id} value={String(dept.id)}>
-                  {dept.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Тот же выбор с поиском, что в реестре (Plane №232). */}
+          <DivisionPicker
+            value={departmentFilter}
+            options={departments}
+            onChange={setDepartmentFilter}
+          />
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-full sm:w-48" aria-label="Фильтр по статусу">
