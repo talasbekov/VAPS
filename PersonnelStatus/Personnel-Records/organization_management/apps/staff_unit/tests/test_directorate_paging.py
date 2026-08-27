@@ -228,3 +228,41 @@ def test_broken_employee_ids_are_refused(actor, scene):
 
     assert response.status_code == 400
     assert "employee_ids" in response.data
+
+
+def test_summary_counts_the_whole_selection_not_the_page(actor, scene):
+    """Сводка считается по ОТБОРУ и ДО страницы (Plane №231).
+
+    🔴 Экран статусов печатает «нужно обновить / просрочено / запланировано»
+    по всему подразделению. Посчитай их по странице в пятьдесят строк — числа
+    станут про другое, а выглядеть будут так же.
+    """
+    today = date.today()
+    people = scene["people"]
+    EmployeeStatus.objects.bulk_create([
+        EmployeeStatus(
+            employee=people[0], status_type="vacation",
+            start_date=today - timedelta(days=30), end_date=today - timedelta(days=2),
+            state=EmployeeStatus.StatusState.ACTIVE,
+        ),
+        EmployeeStatus(
+            employee=people[1], status_type="business_trip",
+            start_date=today + timedelta(days=5), end_date=today + timedelta(days=9),
+            state=EmployeeStatus.StatusState.ACTIVE,
+        ),
+    ])
+
+    payload = ask(actor, "?with_summary=1&page=1&page_size=2")
+
+    assert payload["total_count"] == 2, "в ответе — страница"
+    assert payload["summary"] == {
+        "employees": 12,
+        "without_status": 10,
+        "overdue": 1,
+        "scheduled": 1,
+    }
+
+
+def test_summary_is_not_sent_unless_asked(actor, scene):
+    """Три подзапроса платит только тот, кому сводка нужна."""
+    assert "summary" not in ask(actor)

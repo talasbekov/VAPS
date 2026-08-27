@@ -13,10 +13,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Download, Upload, RefreshCw } from "lucide-react"
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice"
-import {
-  isDirectorateForbidden,
-  useStaffUnitsByDirectorate,
-} from "@/hooks/use-staff-units-by-directorate"
+import { isDirectorateForbidden } from "@/hooks/use-staff-units-by-directorate"
+import { useStaffUnitsPage } from "@/hooks/use-staff-units-page"
 import { useQueryClient } from "@tanstack/react-query"
 import { SecondmentRequestsDialog } from "@/features/secondment-requests/ui/SecondmentRequestsDialog";
 
@@ -24,6 +22,12 @@ export default function StatusesPage() {
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
   const queryClient = useQueryClient()
 
+  // Шапка экрана считает четыре числа по ВСЕМУ подразделению, а таблица ниже
+  // листается страницами (Plane №231). Поэтому здесь запрашивается СВОДКА и
+  // пустая страница: сами строки берёт таблица, а шапке нужны только итоги.
+  //
+  // Раньше на этом месте стоял полный состав подразделения — 2,7 МБ и 5124
+  // строки в DOM на пяти тысячах сотрудников, экран открывался 14 секунд.
   const {
     data,
     isLoading: loading,
@@ -31,78 +35,17 @@ export default function StatusesPage() {
     refetch,
     isRefetching: refreshing,
     dataUpdatedAt,
-  } = useStaffUnitsByDirectorate()
+  } = useStaffUnitsPage({ page: 1, pageSize: 1, withSummary: true })
 
-  // Вычисляем статистику из данных
   const stats = useMemo(() => {
-    if (!data) {
-      return {
-        totalEmployees: 0,
-        needUpdate: 0,
-        overdue: 0,
-        scheduled: 0,
-      }
-    }
-
-    const totalEmployees = data.total_count
-    
-    // Подсчитываем статистику, обрабатывая оба формата: unit.employee и unit.employees
-    let needUpdate = 0
-    let overdue = 0
-    let scheduled = 0
-
-    data.staff_units.forEach((unit) => {
-      // Проверяем оба варианта для обратной совместимости
-      const employee = (unit as any).employee
-      const employeesArray = (unit as any).employees
-
-      // Если есть массив employees (новый формат)
-      if (Array.isArray(employeesArray) && employeesArray.length > 0) {
-        employeesArray.forEach((empData: any) => {
-          const emp = empData.employee
-          if (!emp) {
-            needUpdate++
-            return
-          }
-
-          const status = emp.current_status
-          if (!status) {
-            needUpdate++
-          } else {
-            if (status.state === "planned") {
-              scheduled++
-            }
-            if (status.end_date && new Date(status.end_date) < new Date()) {
-              overdue++
-            }
-          }
-        })
-      }
-      // Если есть одиночный employee (старый формат)
-      else if (employee) {
-        const status = employee.current_status
-        if (!status) {
-          needUpdate++
-        } else {
-          if (status.state === "planned") {
-            scheduled++
-          }
-          if (status.end_date && new Date(status.end_date) < new Date()) {
-            overdue++
-          }
-        }
-      } else {
-        needUpdate++
-      }
-    })
-
+    const summary = data?.summary
     return {
-      totalEmployees,
-      needUpdate,
-      overdue,
-      scheduled,
+      totalEmployees: summary?.employees ?? 0,
+      needUpdate: summary?.without_status ?? 0,
+      overdue: summary?.overdue ?? 0,
+      scheduled: summary?.scheduled ?? 0,
     }
-  }, [data])
+  }, [data?.summary])
 
   const error = queryError
     ? queryError instanceof Error
@@ -113,7 +56,10 @@ export default function StatusesPage() {
   const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt) : null
 
   const handleRefresh = () => {
+    // Обе семьи ключей: сводка шапки и страницы таблицы — разные запросы с
+    // 28.08.2026, и «Обновить» обязано освежить оба (Plane №231).
     queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] })
+    queryClient.invalidateQueries({ queryKey: ["staff-units-page"] })
     refetch()
   }
 

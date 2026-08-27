@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect} from "react";
 import Link from "next/link";
-import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
+import { Pager } from "@/components/pager";
 import { EVENT_ASSIGNMENT_CODE } from "@/hooks/use-forces-gathering";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
@@ -124,6 +126,9 @@ interface StatusTableProps {
   onRefresh?: () => void;
 }
 
+/** Размер страницы таблицы статусов — как у реестра (Plane №231). */
+const STATUS_PAGE_SIZE = 50;
+
 export function StatusTable({
   selectedEmployees,
   onSelectionChange,
@@ -135,12 +140,11 @@ export function StatusTable({
   const [statusFilter, setStatusFilter] = useState("all");
   // `statusCode` не сортируемое поле (нет управления, задающего его как
   // ключ сортировки, и код — не то же самое, что видимый текст статуса):
-  // исключено явно, а не через `keyof Employee`, чтобы `a[sortBy] < b[sortBy]`
-  // ниже не пришлось разбирать `null`.
-  const [sortBy, setSortBy] = useState<Exclude<keyof Employee, "statusCode">>(
-    "number"
-  );
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  // Сортировка отсюда УБРАНА (Plane №231): менять её было нечем — ни одна
+  // кнопка не звала `setSortBy`, — а с постраничной загрузкой клиентская
+  // сортировка переставляла бы только показанные пятьдесят строк, выдавая это
+  // за порядок всего подразделения. Порядок задаёт сервер (дерево, номер
+  // слота), таблица его сохраняет.
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEmployeeForEdit, setSelectedEmployeeForEdit] =
     useState<Employee | null>(null);
@@ -154,14 +158,37 @@ export function StatusTable({
   const [selectedEmployeeForSecond, setSelectedEmployeeForSecond] =
     useState<Employee | null>(null);
 
-  // Используем React Query для загрузки данных
+  // ── Страница вместо всего состава (Plane №231) ──────────────────────
+  //
+  // Таблица звала весь состав подразделения и фильтровала его в браузере: на
+  // пяти тысячах сотрудников экран открывался 14,2 секунды и держал 5124
+  // строки в DOM, а три пробы форм падали по таймауту клика. Отбор ушёл на
+  // сервер целиком — клиентский поиск по загруженной странице искал бы среди
+  // пятидесяти строк и молчал бы о том, что остальные не смотрел.
+  const [page, setPage] = useState(1);
+  const statistics = useStaffUnitStatistics();
+  const departmentId =
+    departmentFilter === "all" ? undefined : Number(departmentFilter) || undefined;
+
   const {
     data,
     isLoading: queryLoading,
     isError: queryFailed,
     isFetching: queryFetching,
     refetch,
-  } = useStaffUnitsByDirectorate();
+  } = useStaffUnitsPage({
+    page,
+    pageSize: STATUS_PAGE_SIZE,
+    search: searchQuery || undefined,
+    divisionId: departmentId,
+    status: statusFilter === "all" ? undefined : statusFilter,
+  });
+
+  // Смена отбора возвращает на первую страницу: остаться на седьмой при новом
+  // поиске значит показать пустоту там, где результаты есть.
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, departmentFilter, statusFilter]);
 
   const internalLoading = queryLoading || externalLoading;
 
@@ -267,18 +294,29 @@ export function StatusTable({
     return result;
   }, [data]);
 
-  // Собираем уникальные отделы для фильтра
-  const departments = useMemo<string[]>(() => {
-    if (!data || !data.staff_units || !Array.isArray(data.staff_units))
-      return [];
-    return Array.from(
-      new Set(
-        data.staff_units
-          .map((unit) => unit.division?.name || "")
-          .filter(Boolean)
-      )
-    );
-  }, [data]);
+  // Отделы для фильтра — из статистики подразделения, а не из показанной
+  // страницы: на странице пятьдесят строк, и список сузился бы до тех отделов,
+  // что в них попали. Значение — идентификатор: имена уникальны только внутри
+  // родителя, подпись несёт путь (тот же приём, что в реестре, Plane №231).
+  const departments = useMemo<{ id: number; label: string }[]>(() => {
+    const stats = statistics.data;
+    if (!stats) return [];
+    const rows = [
+      ...stats.departments.map((row) => ({
+        id: row.department_id, name: row.department_name, ancestors: row.ancestors ?? [],
+      })),
+      ...stats.directorates.map((row) => ({
+        id: row.directorate_id, name: row.directorate_name, ancestors: row.ancestors ?? [],
+      })),
+      ...stats.divisions.map((row) => ({
+        id: row.division_id, name: row.division_name, ancestors: row.ancestors ?? [],
+      })),
+    ];
+    return rows.map((row) => ({
+      id: row.id,
+      label: row.ancestors.length > 0 ? `${row.ancestors.join(" › ")} › ${row.name}` : row.name,
+    }));
+  }, [statistics.data]);
 
   // Функция для обновления данных
   const handleRefresh = () => {
@@ -432,44 +470,13 @@ export function StatusTable({
     }
   };
 
-  const filteredEmployees = useMemo(() => {
-    return employees
-      .filter((employee) => {
-        const matchesSearch =
-          searchQuery === "" ||
-          employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          employee.department
-            .toLowerCase()
-            .includes(searchQuery.toLowerCase()) ||
-          employee.position.toLowerCase().includes(searchQuery.toLowerCase());
-
-        const matchesDepartment =
-          departmentFilter === "all" ||
-          employee.department === departmentFilter;
-
-        const matchesStatus =
-          statusFilter === "all" || employee.status === statusFilter;
-
-        return matchesSearch && matchesDepartment && matchesStatus;
-      })
-      .sort((a, b) => {
-        const aValue = a[sortBy];
-        const bValue = b[sortBy];
-
-        if (sortOrder === "asc") {
-          return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-        } else {
-          return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-        }
-      });
-  }, [
-    employees,
-    searchQuery,
-    departmentFilter,
-    statusFilter,
-    sortBy,
-    sortOrder,
-  ]);
+  // ОТБОР СЧИТАЕТ СЕРВЕР (Plane №231). Здесь остаётся только порядок строк —
+  // он же порядок ответа, и сортировка по номеру ничего не переставляет, а
+  // делает это явным.
+  const filteredEmployees = useMemo(
+    () => [...employees].sort((a, b) => a.number - b.number),
+    [employees]
+  );
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -503,7 +510,11 @@ export function StatusTable({
         <div className="flex items-center justify-between">
           <CardTitle>Сотрудники организации</CardTitle>
           <div className="text-sm text-muted-foreground">
-            Выбрано: {selectedEmployees.length} из {filteredEmployees.length}
+            {/* «из» — по ОТБОРУ, а не по странице: выбор живёт поверх
+                страниц, и «из 50» на пяти тысячах сотрудников означало бы не
+                то, что человек видит (Plane №231). */}
+            Выбрано: {selectedEmployees.length} из{" "}
+            {data?.matched_count ?? filteredEmployees.length}
           </div>
         </div>
       </CardHeader>
@@ -527,8 +538,8 @@ export function StatusTable({
             <SelectContent>
               <SelectItem value="all">Все отделы</SelectItem>
               {departments.map((dept) => (
-                <SelectItem key={dept} value={dept}>
-                  {dept}
+                <SelectItem key={dept.id} value={String(dept.id)}>
+                  {dept.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -725,6 +736,15 @@ export function StatusTable({
             </TableBody>
           </Table>
         </div>
+
+        <Pager
+          page={page}
+          pageSize={STATUS_PAGE_SIZE}
+          matched={data?.matched_count ?? filteredEmployees.length}
+          hasNext={data?.has_next ?? false}
+          busy={queryFetching}
+          onChange={setPage}
+        />
 
         {loading && (
           <div className="text-center py-8 text-muted-foreground">

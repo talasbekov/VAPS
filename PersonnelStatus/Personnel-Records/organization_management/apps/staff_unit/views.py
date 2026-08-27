@@ -2,6 +2,7 @@ from datetime import date
 
 from django.db.models import OuterRef, Q, Subquery
 from django.db.models.query import Prefetch
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import viewsets, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -415,6 +416,12 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 )
             ),
             OpenApiParameter("page_size", int, description="Размер страницы; потолок 200."),
+            OpenApiParameter(
+                "with_summary", bool, description=(
+                    "Добавить сводку по отбору: сколько людей, без статуса, "
+                    "просрочено, запланировано."
+                )
+            ),
         ],
     )
     @action(detail=False, methods=['get', 'put', 'patch', 'post'], url_path='directorate')
@@ -504,6 +511,11 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # страницы и заводились.
         staff_units = self._directorate_filtered(staff_units, request)
         matched_count = staff_units.count()
+        summary = (
+            self._directorate_summary(staff_units)
+            if request.query_params.get('with_summary') in ('1', 'true', 'True')
+            else None
+        )
         page, page_size = self._directorate_page(request)
         if page is not None:
             start = (page - 1) * page_size
@@ -623,6 +635,12 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             # страниц равен `total_count`; со страницей по нему считается
             # «Показано N из M», и без него счётчик врал бы размером страницы.
             'matched_count': matched_count,
+            # Сводка считается по ОТБОРУ и ДО страницы: экран статусов печатает
+            # «нужно обновить / просрочено / запланировано» по всему
+            # подразделению, и на странице в пятьдесят строк эти числа
+            # означали бы совсем другое (Plane №231). Спрашивается явно —
+            # тремя подзапросами платит только тот, кому сводка нужна.
+            **({'summary': summary} if summary is not None else {}),
             **({
                 'page': page,
                 'page_size': page_size,
@@ -715,6 +733,33 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(current_status_type=status_code)
 
         return queryset
+
+    def _directorate_summary(self, queryset):
+        """Сводка по ОТБОРУ: сколько без статуса, просрочено, запланировано.
+
+        Считается в базе одним проходом, а не обходом строк на клиенте: экран
+        статусов раньше получал весь состав подразделения именно ради этих
+        четырёх чисел (Plane №231).
+        """
+        active = EmployeeStatus.objects.filter(
+            employee_id=OuterRef('employee_id'),
+            state=EmployeeStatus.StatusState.ACTIVE,
+        ).order_by(*CURRENT_STATUS_ORDER)
+        # `localdate`, а не часы раздела ОМ: это портал, и деловая дата
+        # раздела к сводке статусов отношения не имеет — тащить ради неё
+        # зависимость от `operations` значило бы связать слои без нужды.
+        today = timezone.localdate()
+        rows = queryset.filter(employee__isnull=False).annotate(
+            current_end=Subquery(active.values('end_date')[:1]),
+            current_start=Subquery(active.values('start_date')[:1]),
+            current_type=Subquery(active.values('status_type')[:1]),
+        )
+        return {
+            'employees': rows.count(),
+            'without_status': rows.filter(current_type__isnull=True).count(),
+            'overdue': rows.filter(current_end__lt=today).count(),
+            'scheduled': rows.filter(current_start__gt=today).count(),
+        }
 
     def _directorate_page(self, request):
         """(номер страницы, размер) либо (None, размер) — если страниц не просили."""

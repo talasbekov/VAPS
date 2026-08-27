@@ -152,7 +152,13 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     const iso = (value: Date) => value.toISOString().slice(0, 10)
 
     await page.route(
-      (url) => url.pathname.includes('/api/staff_unit/staff-units/directorate'),
+      // 🔴 ТОЛЬКО ЗАПРОС СТРАНИЦЫ, не сводки. С 28.08.2026 экран статусов
+      // просит у той же ручки ещё и сводку (`with_summary=1&page_size=1`,
+      // Plane №231): в её теле одна строка, и перехват, правивший «первых
+      // двух со статусом», падал на собственном стороже против вакуума.
+      (url) =>
+        url.pathname.includes('/api/staff_unit/staff-units/directorate') &&
+        url.searchParams.get('with_summary') === null,
       async (route) => {
         const response = await route.fetch()
         const body = (await response.json()) as {
@@ -226,7 +232,13 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       'Статус не хранит связь с конкретным ОМ — ссылка ведёт на общий разрез «Сбор сил»'
 
     await page.route(
-      (url) => url.pathname.includes('/api/staff_unit/staff-units/directorate'),
+      // 🔴 ТОЛЬКО ЗАПРОС СТРАНИЦЫ, не сводки. С 28.08.2026 экран статусов
+      // просит у той же ручки ещё и сводку (`with_summary=1&page_size=1`,
+      // Plane №231): в её теле одна строка, и перехват, правивший «первых
+      // двух со статусом», падал на собственном стороже против вакуума.
+      (url) =>
+        url.pathname.includes('/api/staff_unit/staff-units/directorate') &&
+        url.searchParams.get('with_summary') === null,
       async (route) => {
         const response = await route.fetch()
         const body = (await response.json()) as {

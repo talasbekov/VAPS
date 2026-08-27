@@ -33,6 +33,12 @@ export interface StaffUnitsPage {
   page?: number;
   page_size?: number;
   has_next?: boolean;
+  summary?: {
+    employees: number;
+    without_status: number;
+    overdue: number;
+    scheduled: number;
+  };
 }
 
 export function useStaffUnitsPage(params: DirectorateQuery, enabled = true) {
@@ -48,6 +54,7 @@ export function useStaffUnitsPage(params: DirectorateQuery, enabled = true) {
       params.status ?? "",
       params.positionLevelMax ?? "",
       (params.employeeIds ?? []).join(","),
+      params.withSummary ? "summary" : "",
     ],
     queryFn: async () => await apiClient.getStaffUnitsByDirectorate(params),
     placeholderData: keepPreviousData,
