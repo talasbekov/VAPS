@@ -153,6 +153,10 @@ ROLE_PERMISSIONS = {
         "assignment.create", "assignment.delete", "assignment.submit",
         "daily_report.generate", "daily_report.override_block", "brokerage.manage",
         "personnel.view", "orgstructure.view",
+        # Ответственный департамента СВОДИТ расход за департамент (сценарий
+        # заказчика, Plane №243) — для этого нужно читать статусы и сдачи.
+        # Проставлять их он не должен: это делает начальник управления.
+        "status.view",
     ],
     "SENIOR_COORDINATOR": [
         "assignment.create", "assignment.delete", "assignment.submit",
@@ -163,12 +167,19 @@ ROLE_PERMISSIONS = {
         "personnel.view", "orgstructure.view",
     ],
     "DIVISION_OPERATOR": [
-        "daily_report.mark_update", "daily_report.correct", "status.view",
+        # `status.manage` — начальник управления СОСТАВЛЯЕТ расход, а не
+        # только сдаёт его (сценарий заказчика, Plane №243). Без этого права
+        # роль могла сдать день, но не могла его заполнить.
+        "daily_report.mark_update", "daily_report.correct",
+        "status.view", "status.manage",
         "personnel.view", "orgstructure.view",
         "document.upload", "document.view",
     ],
     "ORGD": [
         "audit.view", "daily_report.generate", "daily_report.override_block",
+        # Оперативный дежурный сводит расход ЗА ВСЮ ОРГАНИЗАЦИЮ — читает
+        # статусы всех подразделений (сценарий заказчика, Plane №243).
+        "status.view",
         "personnel.view", "personnel.edit",
         "orgstructure.view", "orgstructure.manage",
         "document.upload", "document.view",
