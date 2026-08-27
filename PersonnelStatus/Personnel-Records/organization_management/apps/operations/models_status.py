@@ -158,6 +158,8 @@ class OpsEmployeeStatus(TimeStampedModel):
 
     class Meta:
         db_table = "ops_employee_statuses"
+        verbose_name = "Статус сотрудника (ОМ)"
+        verbose_name_plural = "Статусы сотрудников (ОМ)"
         constraints = [
             models.CheckConstraint(
                 condition=Q(date_start__lt=F("date_end")),
@@ -286,6 +288,8 @@ class Secondment(TimeStampedModel):
 
     class Meta:
         db_table = "ops_status_secondments"
+        verbose_name = "Прикомандирование (ОМ)"
+        verbose_name_plural = "Прикомандирования (ОМ)"
         constraints = [
             # Инвариант на уровне БД, а не только сервиса: откомандирование
             # «в самого себя» бессмысленно, и второй писатель (импорт,
@@ -362,6 +366,8 @@ class StatusOverride(TimeStampedModel):
 
     class Meta:
         db_table = "ops_status_overrides"
+        verbose_name = "Обход статуса"
+        verbose_name_plural = "Обходы статусов"
 
     def __str__(self):
         return f"override:{self.status_id}"

@@ -29,6 +29,8 @@ class OpsProtectedPerson(TimeStampedModel):
 
     class Meta:
         ordering = ["name", "id"]
+        verbose_name = "Охраняемое лицо"
+        verbose_name_plural = "Охраняемые лица"
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(category__in=("OURS", "FOREIGN")),
@@ -57,6 +59,8 @@ class OpsGvoSummaryPatch(TimeStampedModel):
 
     class Meta:
         ordering = ["event_id"]
+        verbose_name = "Правка сводки ГВО"
+        verbose_name_plural = "Правки сводок ГВО"
 
     def __str__(self):
         return f"ГВО-патч {self.event.code}"

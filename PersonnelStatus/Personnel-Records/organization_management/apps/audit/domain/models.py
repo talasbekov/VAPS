@@ -62,8 +62,8 @@ class AuditLog(models.Model):
             models.Index(fields=["action_type"]),
             models.Index(fields=["content_type", "object_id"]),
         ]
-        verbose_name = "Audit Log"
-        verbose_name_plural = "Audit Logs"
+        verbose_name = "Запись аудита"
+        verbose_name_plural = "Записи аудита"
 
     def __str__(self):
         return f"Action: {self.get_action_type_display()} by {self.user} at {self.timestamp}"

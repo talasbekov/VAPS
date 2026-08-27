@@ -75,4 +75,6 @@ class EmployeeTransferHistory(models.Model):
 
     class Meta:
         db_table = 'employee_transfers'
+        verbose_name = 'История перевода сотрудника'
+        verbose_name_plural = 'История переводов сотрудников'
         ordering = ['-transfer_date', '-id']

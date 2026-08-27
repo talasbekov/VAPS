@@ -47,6 +47,8 @@ class Role(models.Model):
 
     class Meta:
         db_table = "ops_roles"
+        verbose_name = "Роль раздела ОМ"
+        verbose_name_plural = "Роли раздела ОМ"
 
     def __str__(self):
         return self.code
@@ -60,6 +62,8 @@ class Permission(models.Model):
 
     class Meta:
         db_table = "ops_permissions"
+        verbose_name = "Право раздела ОМ"
+        verbose_name_plural = "Права раздела ОМ"
 
     def __str__(self):
         return self.code
@@ -76,6 +80,8 @@ class UserRole(TimeStampedModel):
 
     class Meta:
         db_table = "ops_user_roles"
+        verbose_name = "Роль пользователя (ОМ)"
+        verbose_name_plural = "Роли пользователей (ОМ)"
         constraints = [
             models.UniqueConstraint(
                 fields=["user_id", "role_code", "scope_division_id"],
@@ -104,6 +110,8 @@ class RolePermission(TimeStampedModel):
 
     class Meta:
         db_table = "ops_role_permissions"
+        verbose_name = "Право роли (ОМ)"
+        verbose_name_plural = "Права ролей (ОМ)"
         constraints = [
             models.UniqueConstraint(
                 fields=["role_code", "permission_code"], name="unique_role_permission"
@@ -127,6 +135,8 @@ class TemporaryDutyPermission(TimeStampedModel):
 
     class Meta:
         db_table = "ops_temporary_duty_permissions"
+        verbose_name = "Временное право наряда"
+        verbose_name_plural = "Временные права наряда"
         indexes = [
             models.Index(
                 fields=["user_id", "is_active", "starts_at", "ends_at"],

@@ -22,4 +22,6 @@ class Notification(models.Model):
 
     class Meta:
         db_table = 'notifications'
+        verbose_name = 'Уведомление'
+        verbose_name_plural = 'Уведомления'
         ordering = ['-created_at']
