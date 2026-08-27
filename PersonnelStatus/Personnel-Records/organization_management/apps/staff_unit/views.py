@@ -393,6 +393,12 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             ),
             OpenApiParameter("division_id", int, description="Только это подразделение."),
             OpenApiParameter(
+                "status_not", str, description=(
+                    "Исключить эти коды ДЕЙСТВУЮЩЕГО статуса (через запятую); строки без "
+                    "статуса тоже исключаются. Так календарь берёт одни отсутствия."
+                )
+            ),
+            OpenApiParameter(
                 "employee_ids", str, description=(
                     "Только штатные единицы этих сотрудников: идентификаторы через "
                     "запятую, не больше 200."
@@ -710,6 +716,28 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 raise ValidationError(
                     {'position_level_max': 'Ожидается целое число.'}
                 )
+
+        # «Кроме этих статусов» — нужен календарю: он рисует ОТСУТСТВИЯ, то
+        # есть всех, у кого текущий статус не «в строю» (Plane №236). Своего
+        # агрегата ему не понадобилось: период календарь не спрашивает вовсе,
+        # он раскладывает по дням ТЕКУЩИЕ статусы.
+        status_not = (request.query_params.get('status_not') or '').strip()
+        if status_not:
+            excluded = [code.strip() for code in status_not.split(',') if code.strip()]
+            queryset = queryset.annotate(
+                excluded_status_type=Subquery(
+                    EmployeeStatus.objects.filter(
+                        employee_id=OuterRef('employee_id'),
+                        state=EmployeeStatus.StatusState.ACTIVE,
+                    )
+                    .order_by(*CURRENT_STATUS_ORDER)
+                    .values('status_type')[:1]
+                )
+            ).exclude(excluded_status_type__in=excluded).exclude(
+                # «Нет статуса» — это тоже не отсутствие: у календаря такой
+                # человек не даёт события, и тащить его строкой незачем.
+                excluded_status_type__isnull=True
+            )
 
         status_code = (request.query_params.get('status') or '').strip()
         if status_code:

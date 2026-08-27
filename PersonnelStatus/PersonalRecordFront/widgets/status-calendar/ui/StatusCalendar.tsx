@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, User, MapPin, Clock } from "lucide-react";
-import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import {
   EMPLOYEE_STATUS_LABELS,
   EMPLOYEE_STATUS_PAINT,
@@ -74,9 +74,23 @@ interface TooltipData {
   y: number;
 }
 
+/** Сколько отсутствий календарь берёт за раз (Plane №236). */
+const CALENDAR_LIMIT = 200;
+
 export function StatusCalendar() {
-  const { data, isLoading, isError, isFetching, refetch } =
-    useStaffUnitsByDirectorate();
+  // Календарь рисует ОТСУТСТВИЯ: строки, у которых текущий статус не «в строю»
+  // (события с `in_service` он и так пропускает ниже). Поэтому у сервера
+  // спрашиваются они, а не весь состав подразделения — на пяти тысячах
+  // сотрудников это было 2,7 МБ ради нескольких сотен событий (Plane №236).
+  //
+  // Периода в запросе нет намеренно: календарь раскладывает по дням ТЕКУЩИЕ
+  // статусы, а не историю за месяц. Как только он начнёт спрашивать историю,
+  // ему понадобится свой контракт — и это будет видно по этому месту.
+  const { data, isLoading, isError, isFetching, refetch } = useStaffUnitsPage({
+    page: 1,
+    pageSize: CALENDAR_LIMIT,
+    statusNot: ["in_service"],
+  });
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(
     null
@@ -92,9 +106,20 @@ export function StatusCalendar() {
     const processUnit = (unit: any, parentDivision: string = "") => {
       const divisionName = unit.division?.name || parentDivision;
 
-      // Обрабатываем сотрудников
-      if (unit.employees && Array.isArray(unit.employees)) {
-        unit.employees.forEach((empData: any) => {
+      // 🔴 РУЧКА ОТДАЁТ `employee` (один объект), а не `employees` (массив).
+      // Здесь разбирался только массив — и календарь показывал НОЛЬ событий
+      // при любом составе стенда. Нашлось при переводе календаря на отбор
+      // отсутствий (Plane №236): пока событий не видно, «календарь берёт
+      // отсутствия» проверить нечем. Обе формы разбираются одной веткой,
+      // одиночная приводится к списку.
+      const rows: any[] = Array.isArray(unit.employees)
+        ? unit.employees
+        : unit.employee
+        ? [{ employee: unit.employee, position: unit.position }]
+        : [];
+
+      if (rows.length > 0) {
+        rows.forEach((empData: any) => {
           const emp = empData.employee;
           if (!emp || !emp.current_status) return;
 
@@ -250,6 +275,15 @@ export function StatusCalendar() {
             {events.length} событий
           </Badge>
         </CardTitle>
+        {/* Обрезка названа вслух: молча показанные первые двести отсутствий
+            читаются как «столько их и есть» (Plane №236). */}
+        {data?.has_next && (
+          <p className="text-sm text-muted-foreground">
+            Показаны первые {CALENDAR_LIMIT} отсутствий из{" "}
+            {data.matched_count ?? CALENDAR_LIMIT} — сузьте отбор на вкладке
+            «Таблица сотрудников».
+          </p>
+        )}
       </CardHeader>
       <CardContent>
         {/* Легенда */}

@@ -55,6 +55,7 @@ export function useStaffUnitsPage(params: DirectorateQuery, enabled = true) {
       params.positionLevelMax ?? "",
       (params.employeeIds ?? []).join(","),
       params.withSummary ? "summary" : "",
+      (params.statusNot ?? []).join(","),
     ],
     queryFn: async () => await apiClient.getStaffUnitsByDirectorate(params),
     placeholderData: keepPreviousData,
