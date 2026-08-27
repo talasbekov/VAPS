@@ -1700,6 +1700,8 @@ operations-analytics` — 4 passed, **2 упали не по моей вине**
 
 ## 27.08.2026 — Admin разложен по категориям (Plane №210, шаг 12 плана №198)
 
+Коммит `9f130a2b`.
+
 Заведены `admin_site.py` (сайт с `get_app_list` по категориям), `admin_config.py`
 (штатное подключение через `AdminConfig.default_site`) и `admin_categories.py`
 (единый реестр раскладки); семь проб.
