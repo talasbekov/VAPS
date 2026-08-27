@@ -9,6 +9,7 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -16,13 +17,25 @@ const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 /**
  * Лицо каталога, которым проверяется связь со сводкой ГВО в мутирующем
- * сценарии. НЕ 'Оспанов Бахыт Дюсенбаевич' — на живом стенде это имя уже
- * привязано к ОМ-2026-80 остатком прошлого прогона (см. Task 10, отчёт:
- * пересечение, найденное по API, используется как read-only фикстура ниже
- * и специально не трогается) — тест с этим именем начинал бы НЕ с чистого
- * состояния и «до правки связи нет» падало бы всегда.
+ * сценарии. ИМЯ БОЛЬШЕ НЕ ЗАШИТО (Plane №197): сценарий начинается с «лицо не
+ * названо ни в одной сводке», и любое конкретное имя рано или поздно
+ * оказывается названо — фикстура стенда (`seed_smoke_fixtures`) заводит
+ * закрытое мероприятие, в сводке которого стоит первое лицо справочника, и
+ * зашитая «Салимова Гульнара Ержановна» стала таким лицом. Проба выбирает
+ * НАШЕ лицо, которого нет ни в одной собранной сводке, и говорит вслух, если
+ * такого не нашлось, — а не падает ассертом про пустое состояние.
  */
-const PERSON = 'Салимова Гульнара Ержановна'
+async function cleanDomesticPerson(): Promise<string> {
+  const { matches, catalog } = await findNameIntersections()
+  const busy = new Set(matches.map((m) => m.person.name.trim().toLowerCase()))
+  return requireFixture(
+    catalog.find(
+      (row) => row.category === 'OURS' && !busy.has(row.name.trim().toLowerCase()),
+    ),
+    'наше охраняемое лицо, не названное ни в одной сводке ГВО (сценарий ' +
+      'начинается с пустой связи; все лица каталога уже названы)',
+  ).name
+}
 
 async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PASSWORD): Promise<void> {
   const api = page.context().request
@@ -38,6 +51,7 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
   test('вкладки делят каталог, связь с ОМ идёт из сводки ГВО', async ({ page }) => {
+    const PERSON = await cleanDomesticPerson()
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(String(e)))
     page.on('console', (m) => {
@@ -68,11 +82,30 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
       timeout: 10_000,
     })
 
-    // Вносим лицо в сводку ГВО первого ОМ реестра
+    // Вносим лицо в сводку ГВО НЕЗАКРЫТОГО ОМ, а не первого в реестре
+    // (Plane №197): первой строкой стоит закрытое мероприятие фикстуры, а его
+    // карточка — архив дела, read-only. Окно «Добавить лицо» там открывается,
+    // но правка не сохраняется, и проба падала на «имени не видно», имея в
+    // виду «править было нечего».
+    const token = await apiToken()
+    const [summaries, registry] = await Promise.all([
+      apiGet<{ results: GvoSummaryRow[] }>('/api/ops/gvo-summaries/assembled/', token),
+      apiGet<{ results: EventRow[] }>('/api/ops/security-events/?page_size=200', token),
+    ])
+    // Реестр ГВО показывает ТО ЖЕ, что и кнопка сводки: `kind !== 'INTERNAL'`.
+    // Закрытые исключены отдельно — их карточка это архив дела, read-only.
+    const openCodes = new Set(
+      registry.results
+        .filter((e) => e.stage !== 'CLOSED' && e.kind !== 'INTERNAL')
+        .map((e) => e.code),
+    )
+    const omCode = requireFixture(
+      summaries.results.map((r) => r.omCode).find((code) => openCodes.has(code)),
+      'незакрытый визит иностранного ОЛ со сводкой ГВО — только такие строки ' +
+        'показывает реестр ГВО, а в архив дела лицо не внести',
+    )
     await page.goto(`${APP}/security-ops/events/?view=gvo`)
-    const row = page.locator('tbody tr').first()
-    const omCode = (await row.locator('td').first().innerText()).split('\n')[0]
-    await row.locator('a').first().click()
+    await page.locator('tbody tr', { hasText: omCode }).locator('a').first().click()
     await page.getByRole('button', { name: '＋ Добавить лицо' }).click()
     await page.getByRole('textbox', { name: 'ФИО' }).fill(PERSON)
     await page.getByRole('textbox', { name: 'Должность' }).fill('Куратор визитов')
@@ -154,6 +187,8 @@ interface GvoSummaryRow {
 interface EventRow {
   id: string
   code: string
+  stage?: string
+  kind?: string
 }
 
 async function apiToken(): Promise<string> {
