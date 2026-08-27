@@ -20,5 +20,11 @@ class RankAdmin(admin.ModelAdmin):
 # авторегистратор не трогает; см. organization_management/admin_auto.py — там же
 # записано, чем это оплачено (правка мимо сервисов и мимо аудита).
 from organization_management.admin_auto import register_remaining  # noqa: E402
+from organization_management.apps.dictionaries.archived import (  # noqa: E402
+    ARCHIVED_DICTIONARIES,
+)
 
-register_remaining("dictionaries")
+# Архивные справочники в Admin не показываются: список — в `archived.py`, там
+# же причина по каждому. Это единственное место, где показ включается, поэтому
+# «спрятали в Admin, забыли в API» здесь невозможно — API их не отдаёт вовсе.
+register_remaining("dictionaries", skip=set(ARCHIVED_DICTIONARIES))
