@@ -1,10 +1,12 @@
 from datetime import date
 
+from django.db.models import OuterRef, Q, Subquery
 from django.db.models.query import Prefetch
 from django.utils.dateparse import parse_date
 from rest_framework import viewsets, permissions, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.decorators import action
 from django.db import transaction
 
@@ -31,6 +33,7 @@ from organization_management.apps.employees.masking import mask_iin
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
 from organization_management.apps.statuses.selectors import (
+    CURRENT_STATUS_ORDER,
     active_status,
     active_status_prefetch,
 )
@@ -379,6 +382,29 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         serializer = StaffUnitDetailedSerializer(instance)
         return Response(serializer.data)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "search", str, description=(
+                    "Отбор по ФИО, табельному номеру, должности и подразделению "
+                    "(подстрока, без учёта регистра)."
+                )
+            ),
+            OpenApiParameter("division_id", int, description="Только это подразделение."),
+            OpenApiParameter(
+                "status", str, description=(
+                    "Код ДЕЙСТВУЮЩЕГО статуса; `none` — те, у кого статуса нет."
+                )
+            ),
+            OpenApiParameter(
+                "page", int, description=(
+                    "Номер страницы. БЕЗ него и без `page_size` ответ прежний — "
+                    "весь состав подразделения (Plane №227)."
+                )
+            ),
+            OpenApiParameter("page_size", int, description="Размер страницы; потолок 200."),
+        ],
+    )
     @action(detail=False, methods=['get', 'put', 'patch', 'post'], url_path='directorate')
     def directorate_management(self, request):
         """
@@ -439,7 +465,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # Получаем все подразделения: само + все дочерние
         all_divisions = division.get_descendants(include_self=True)
 
-        # Получаем ВСЕ штатные единицы из этих подразделений
+        # Получаем штатные единицы из этих подразделений
         staff_units = StaffUnit.objects.filter(
             division__in=all_divisions
         ).select_related(
@@ -452,6 +478,24 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             # разъезжалась с копией в `staff_unit/serializers.py`.
             active_status_prefetch()
         ).order_by('tree_id', 'lft')
+
+        # ── Отбор и страницы (Plane №227) ────────────────────────────────
+        #
+        # ОБА НЕОБЯЗАТЕЛЬНЫ, и это несущее решение, а не осторожность. Эту
+        # ручку читают девять мест клиента, и календарю статусов и массовой
+        # правке нужен ВЕСЬ состав подразделения: включи пагинацию по
+        # умолчанию — восемь экранов молча получат первую страницу вместо
+        # состава. Без параметров ответ прежний, строка в строку.
+        #
+        # ОТБОР СЧИТАЕТСЯ В БАЗЕ, а не в питоне: на пяти тысячах сотрудников
+        # «загрузить всё и отфильтровать» стоит тех же мегабайт, ради которых
+        # страницы и заводились.
+        staff_units = self._directorate_filtered(staff_units, request)
+        matched_count = staff_units.count()
+        page, page_size = self._directorate_page(request)
+        if page is not None:
+            start = (page - 1) * page_size
+            staff_units = staff_units[start:start + page_size]
 
         # Создаем плоский список с полной информацией (БЕЗ children)
         result = []
@@ -559,8 +603,88 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 'code': division.code if hasattr(division, 'code') else None,
             },
             'staff_units': result,
+            # `total_count` — сколько строк В ОТВЕТЕ. Значение не менялось с
+            # самого начала, и менять его нельзя: экран статусов печатает по
+            # нему «сотрудников в подразделении».
             'total_count': len(result),
+            # `matched_count` — сколько строк отвечает отбору. Без отбора и без
+            # страниц равен `total_count`; со страницей по нему считается
+            # «Показано N из M», и без него счётчик врал бы размером страницы.
+            'matched_count': matched_count,
+            **({
+                'page': page,
+                'page_size': page_size,
+                'has_next': page * page_size < matched_count,
+            } if page is not None else {}),
         })
+
+    # ── отбор и страницы штатки (Plane №227) ─────────────────────────────
+
+    #: Потолок страницы. Просьбу «дай десять тысяч» исполнять нельзя: она
+    #: возвращает ровно ту нагрузку, ради которой страницы и заводились.
+    DIRECTORATE_MAX_PAGE_SIZE = 200
+    DIRECTORATE_DEFAULT_PAGE_SIZE = 50
+
+    def _directorate_filtered(self, queryset, request):
+        """Отбор списка штатки по параметрам запроса — целиком в базе."""
+        search = (request.query_params.get('search') or '').strip()
+        if search:
+            queryset = queryset.filter(
+                Q(employee__last_name__icontains=search)
+                | Q(employee__first_name__icontains=search)
+                | Q(employee__middle_name__icontains=search)
+                | Q(employee__personnel_number__icontains=search)
+                | Q(position__name__icontains=search)
+                | Q(division__name__icontains=search)
+            )
+
+        division_id = request.query_params.get('division_id')
+        if division_id:
+            queryset = queryset.filter(division_id=division_id)
+
+        status_code = (request.query_params.get('status') or '').strip()
+        if status_code:
+            # Тип ДЕЙСТВУЮЩЕГО статуса берётся подзапросом в том же порядке,
+            # что и `active_status` (`statuses.selectors`): у сотрудника может
+            # быть несколько активных строк, и «есть статус такого типа» — это
+            # ДРУГОЙ вопрос, чем «текущий статус такой». Экран показывает
+            # второе, значит и отбирать надо по нему.
+            current_type = Subquery(
+                EmployeeStatus.objects.filter(
+                    employee_id=OuterRef('employee_id'),
+                    state=EmployeeStatus.StatusState.ACTIVE,
+                )
+                .order_by(*CURRENT_STATUS_ORDER)
+                .values('status_type')[:1]
+            )
+            queryset = queryset.annotate(current_status_type=current_type)
+            if status_code == 'none':
+                queryset = queryset.filter(current_status_type__isnull=True)
+            else:
+                queryset = queryset.filter(current_status_type=status_code)
+
+        return queryset
+
+    def _directorate_page(self, request):
+        """(номер страницы, размер) либо (None, размер) — если страниц не просили."""
+        raw_page = request.query_params.get('page')
+        raw_size = request.query_params.get('page_size')
+        if raw_page is None and raw_size is None:
+            return None, self.DIRECTORATE_DEFAULT_PAGE_SIZE
+
+        def positive(raw, default):
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                return default
+            return value if value > 0 else default
+
+        page = positive(raw_page, 1)
+        page_size = min(
+            positive(raw_size, self.DIRECTORATE_DEFAULT_PAGE_SIZE),
+            self.DIRECTORATE_MAX_PAGE_SIZE,
+        )
+        return page, page_size
 
     def _generate_personnel_number(self):
         """Генерация уникального табельного номера"""
