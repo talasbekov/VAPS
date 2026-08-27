@@ -84,7 +84,9 @@ def scoped_viewer(division):
 
 def test_divisions_are_scoped_and_stringly_typed(operator, scoped_viewer, division):
     rows = operator.get(DIVISIONS).json()["results"]
-    assert {"id": str(division.pk), "name": division.name} in rows
+    # Путь до подразделения приехал вместе с именем (Plane №235) — пин формы
+    # правится осознанно: у корневого подразделения предков нет.
+    assert {"id": str(division.pk), "name": division.name, "ancestors": []} in rows
     # Скоупованный видит только своё поддерево.
     scoped_rows = scoped_viewer.get(DIVISIONS).json()["results"]
     assert all(row["name"] != division.name for row in scoped_rows)
@@ -282,3 +284,37 @@ def test_amend_missing_reason_is_400(operator, division, in_service):
             format="json",
         )
     assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_divisions_carry_the_way_to_them(operator, division):
+    """Имена подразделений уникальны только внутри родителя (Plane №235).
+
+    🔴 На реальной структуре «Второе сквозное управление» есть в каждом
+    департаменте, и экран расхода показывал три одинаковые строки подряд — а
+    по ним человек решает, чей день сдавать. Проба заводит ДВА одноимённых
+    подразделения в разных родителях: без этого «путь доехал» не отличить от
+    «путь совпал».
+    """
+    first_parent = Division.objects.create(
+        name="Первый департамент", code="dw-dep-1",
+        division_type=Division.DivisionType.DEPARTMENT, parent=division,
+    )
+    second_parent = Division.objects.create(
+        name="Второй департамент", code="dw-dep-2",
+        division_type=Division.DivisionType.DEPARTMENT, parent=division,
+    )
+    for index, parent in enumerate((first_parent, second_parent), start=1):
+        Division.objects.create(
+            name="Второе сквозное управление", code=f"dw-dir-{index}",
+            division_type=Division.DivisionType.DIRECTORATE, parent=parent,
+        )
+
+    rows = operator.get(DIVISIONS).json()["results"]
+    twins = [row for row in rows if row["name"] == "Второе сквозное управление"]
+
+    assert len(twins) == 2, "фикстура не развела одноимённые подразделения"
+    assert sorted(tuple(row["ancestors"]) for row in twins) == [
+        ("Второй департамент",),
+        ("Первый департамент",),
+    ]

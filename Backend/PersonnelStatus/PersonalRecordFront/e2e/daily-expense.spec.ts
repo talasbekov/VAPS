@@ -93,6 +93,26 @@ function nameRegExp(name: string): RegExp {
   return new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 }
 
+/**
+ * Подпись группы подразделения на борде: «имя · путь» (Plane №235).
+ *
+ * 🔴 ИМЕНИ НЕ ХВАТАЕТ. Имена подразделений уникальны только внутри родителя,
+ * и на структуре из трёх департаментов «Второе сквозное управление» есть в
+ * каждом — отбор по имени находил ТРИ элемента и падал строгим режимом. Экран
+ * с тех пор печатает путь, и проба адресует строку так же, как её читает
+ * человек.
+ */
+async function divisionLabels(token: string): Promise<Map<string, string>> {
+  const rows = await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
+    token, '/api/ops/daily/divisions/')
+  const labels = new Map<string, string>()
+  for (const row of rows.results) {
+    const path = row.ancestors ?? []
+    labels.set(String(row.id), path.length > 0 ? `${row.name} · ${path.join(' › ')}` : row.name)
+  }
+  return labels
+}
+
 interface DailySubmissionRow {
   id: number
   division_id: string
@@ -172,19 +192,27 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     await page.goto(`${APP}/employees?view=daily`)
     const board = page.getByRole('region', { name: 'Ежедневный расход' })
     await expect(board).toBeVisible({ timeout: 25_000 })
-    // Каждое управление расхода названо строкой со своим списочным числом
+    // Каждое управление расхода названо строкой со своим списочным числом.
+    // Строка адресуется группой «имя · путь»: одноимённых управлений на
+    // стенде трое (Plane №235).
+    const labels = await divisionLabels(token)
     for (const row of report.rows) {
-      const line = board.getByRole('button', { name: nameRegExp(row.name) })
-      await expect(line).toContainText(String(row.list_total))
+      const label = labels.get(String(row.division_id)) ?? row.name
+      const group = board.getByRole('group', { name: label, exact: true })
+      await expect(group, `группы «${label}» нет на борде`).toHaveCount(1)
+      await expect(group.getByRole('button').first()).toContainText(String(row.list_total))
     }
     // Раскрытие первой группы грузит ПОИМЁННЫЙ список этого управления
     const first = report.rows[0]
+    const firstLabel = labels.get(String(first.division_id)) ?? first.name
     const employees = await get<{ results: { id: number }[] }>(
       token, `/api/ops/daily/employees/?division_id=${first.division_id}`)
     expect(employees.results.length, 'в управлении нет людей — проба вакуумна').toBeGreaterThan(0)
-    await board.getByRole('button', { name: nameRegExp(first.name) }).click()
-    await expect(board.getByRole('region', { name: nameRegExp(first.name) })
-      .locator('tbody tr')).toHaveCount(employees.results.length)
+    const firstGroup = board.getByRole('group', { name: firstLabel, exact: true })
+    await firstGroup.getByRole('button').first().click()
+    await expect(
+      firstGroup.getByRole('region', { name: firstLabel, exact: true }).locator('tbody tr')
+    ).toHaveCount(employees.results.length)
 
     // Честная подпись под списком — verbatim, не подстрокой. Соседний вид
     // того же экрана («Сбор сил») пилюли статусов КРАСИТ, этот — нет, и
@@ -222,7 +250,12 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     await expect(leadership).toBeVisible()
 
     // Стоит ПЕРВЫМ — выше первой строки-кнопки рядового управления.
-    const firstDivisionButton = board.getByRole('button', { name: nameRegExp(report.rows[0].name) })
+    const labels = await divisionLabels(token)
+    const firstLabel = labels.get(String(report.rows[0].division_id)) ?? report.rows[0].name
+    const firstDivisionButton = board
+      .getByRole('group', { name: firstLabel, exact: true })
+      .getByRole('button')
+      .first()
     await expect(firstDivisionButton).toBeVisible()
     const leadershipBox = await leadership.boundingBox()
     const divisionBox = await firstDivisionButton.boundingBox()

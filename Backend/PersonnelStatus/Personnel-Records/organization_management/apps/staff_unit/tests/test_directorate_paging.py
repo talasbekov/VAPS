@@ -166,3 +166,34 @@ def test_filter_by_current_status_not_by_any_active_one(actor, scene):
     assert current["matched_count"] == 1
     assert older["matched_count"] == 0, "отобрался не текущий статус, а любой действующий"
     assert without["matched_count"] == 11
+
+
+def test_filter_by_position_level(actor, scene):
+    """Руководство отбирается по уровню должности, а не по списку кодов.
+
+    Полоске руководства нужен десяток строк; до №235 она получала весь состав
+    подразделения — 2,7 МБ на пяти тысячах человек.
+    """
+    payload = ask(actor, "?position_level_max=5")
+
+    assert payload["matched_count"] == 1, "уровень 5 — только начальник отдела"
+    assert payload["staff_units"][0]["position"]["name"] == "Начальник отдела"
+
+    wider = ask(actor, "?position_level_max=8")
+    assert wider["matched_count"] == 12, "уровень 8 включает инспекторов"
+
+
+def test_a_broken_level_is_a_loud_refusal(actor, scene):
+    """Мусор в параметре — не «покажи всё».
+
+    🔴 Молча отдать полный состав значило бы вернуть ровно ту нагрузку, от
+    которой отбор и защищает, — и заметить это было бы нечем: ответ выглядит
+    исправным.
+    """
+    client = APIClient()
+    client.force_authenticate(user=actor)
+
+    response = client.get(reverse(URL_NAME) + "?position_level_max=руководство")
+
+    assert response.status_code == 400, response.data
+    assert "position_level_max" in response.data
