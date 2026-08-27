@@ -51,12 +51,30 @@ import { FieldErrors, StageError } from "./StageErrors";
 export function BulletinPanel({
   event,
   onDirtyChange,
+  gvoOpen,
+  onToggleGvo,
 }: {
   event: SecurityEvent;
   /** Несохранённый черновик виден СНАРУЖИ: кнопка «Открыть рекогносцировку»
    * живёт в области этапа, а завершённый бюллетень правку уже не примет —
    * без этого сигнала набранный текст молча пропадал бы вместе с формой. */
   onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * Состояние панели «Информация по ГВО» и её переключатель (Plane №193).
+   * Заказчик: «Кнопка Информация по ГВО должна стоять на бюллетени визита
+   * иностранного ОЛ, а не на первом этапе рекогносцировке». Кнопка стояла в
+   * шапке карточки — над степпером, и читалась как принадлежащая ТЕКУЩЕМУ
+   * этапу, каким бы он ни был.
+   *
+   * Состояние остаётся СНАРУЖИ, а не заводится здесь: сама панель ГВО
+   * рисуется страницей отдельным блоком под бюллетенем, и второй хозяин у
+   * одного «открыто/закрыто» означал бы рассинхрон при первой же правке.
+   *
+   * `onToggleGvo` не передан — кнопки нет вовсе: у внутреннего мероприятия
+   * выездной охраны не бывает, и кнопка обещала бы пустоту.
+   */
+  gvoOpen?: boolean;
+  onToggleGvo?: () => void;
 }) {
   const editable = event.stage !== "CLOSED";
   // Рекогносцировка ещё не открыта — бюллетень сейчас ЗАПОЛНЯЮТ.
@@ -96,27 +114,65 @@ export function BulletinPanel({
   return (
     <Card className="mb-4" data-testid="bulletin-panel">
       <CardContent className="p-0">
-        <button
-          type="button"
-          onClick={() => setOpen((value) => !value)}
-          aria-expanded={open}
-          aria-controls="bulletin-panel-body"
-          className="flex w-full items-center gap-2 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {open ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        {/* Строка заголовка — flex-РЯД из двух самостоятельных кнопок:
+            раскрыватель слева и «Информация по ГВО» справа. Ряд, а не кнопка
+            с кнопкой внутри: вложенная кнопка недопустима в разметке, и
+            попытка обойтись отрицательным отступом держалась бы на высоте
+            строки — она меняется от первого же изменения подписи. */}
+        <div className="flex items-center gap-2 pr-4">
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            aria-controls="bulletin-panel-body"
+            className="flex flex-1 items-center gap-2 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {open ? (
+              <ChevronDown
+                className="h-4 w-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+            ) : (
+              <ChevronRight
+                className="h-4 w-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+            )}
+            <span className="text-sm font-semibold">Бюллетень мероприятия</span>
+            <span className="text-xs text-muted-foreground">
+              {!editable
+                ? "сведения об ОМ"
+                : ready
+                  ? "заполнен"
+                  : "заполнен не полностью"}
+            </span>
+          </button>
+
+          {/* Кнопка ГВО стоит НА БЮЛЛЕТЕНЕ (Plane №193). Заказчик: «Кнопка
+              Информация по ГВО должна стоять на бюллетени визита иностранного
+              ОЛ, а не на первом этапе рекогносцировке». Прежде она жила в
+              шапке карточки — над степпером — и читалась как принадлежащая
+              ТЕКУЩЕМУ этапу, каким бы он ни был.
+
+              `onToggleGvo` не передан — кнопки нет вовсе: у внутреннего
+              мероприятия выездной охраны не бывает, и кнопка обещала бы
+              пустоту. */}
+          {onToggleGvo !== undefined && (
+            <Button
+              type="button"
+              variant={gvoOpen === true ? "default" : "outline"}
+              size="sm"
+              className="shrink-0"
+              aria-expanded={gvoOpen === true}
+              aria-controls="gvo-summary-panel"
+              onClick={onToggleGvo}
+            >
+              {gvoOpen === true
+                ? "Скрыть информацию по ГВО"
+                : "Информация по ГВО"}
+            </Button>
           )}
-          <span className="text-sm font-semibold">Бюллетень мероприятия</span>
-          <span className="text-xs text-muted-foreground">
-            {!editable
-              ? "сведения об ОМ"
-              : ready
-                ? "заполнен"
-                : "заполнен не полностью"}
-          </span>
-        </button>
+        </div>
 
         {/* Тело не снимается со страницы, а прячется: `aria-controls`
             обязан указывать на существующий узел именно в свёрнутом
@@ -392,7 +448,11 @@ function EventFacts({ event }: { event: SecurityEvent }) {
         >
           сводки ГВО
         </Link>
-        {" "}— кнопка «Информация по ГВО» в шапке карточки.
+        {/* Адрес кнопки в подписи ОБЯЗАН совпадать с местом, где она стоит:
+            с №193 она в заголовке этой самой панели, а не в шапке карточки.
+            Подпись, отсылающая не туда, хуже отсутствия подписи — человек
+            ищет кнопку там, где её нет. */}
+        {" "}— кнопка «Информация по ГВО» в заголовке этой панели.
       </p>
     </section>
   );
