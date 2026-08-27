@@ -1191,6 +1191,8 @@ GET /api/ops/event-documents/render/?kind=placement_full&event=ОМ-2026-4&ext=d
 
 ## 27.08.2026 — у бюллетеня может быть несколько охраняемых лиц (Plane №188)
 
+Коммит `270e64cc`.
+
 Модель: связь `OpsSecurityEvent.protected_persons` + миграция `0051` с
 бэкфиллом из старого одиночного поля (и обратным шагом). Сервер: `create_event`
 и `update_bulletin_details` принимают `protectedPersonIds`, старое
