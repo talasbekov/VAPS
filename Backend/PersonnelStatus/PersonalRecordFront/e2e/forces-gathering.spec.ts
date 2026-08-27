@@ -285,6 +285,14 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
         buttons.map((button) => (button.getAttribute('aria-label') ?? '').replace('Действия: ', '')),
       )
     expect(assignedNames.length, 'ФИО из вкладки не прочитаны — сравнивать нечего').toBe(assigned)
+    // 🔴 СВЕРКА ПО ИДЕНТИФИКАТОРУ, а не по ФИО (Plane №251). На стенде в 440
+    // человек полные тёзки неизбежны, и сравнение по тексту объявляло «один
+    // человек в обеих вкладках» там, где это два разных человека. ФИО
+    // остаётся только в сообщении об ошибке — чтобы читать его глазами.
+    const assignedIds = await page
+      .locator('table tbody tr[data-employee-id]')
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-employee-id') ?? ''))
+    expect(assignedIds.length, 'идентификаторы строк не прочитаны').toBe(assigned)
     const inServiceTab = page.getByRole('tab', { name: /В строю/ })
     await inServiceTab.click()
     // 🔴 Ждать ОБЯЗАТЕЛЬНО: без этого innerText читается с ещё не сменившейся
@@ -293,11 +301,16 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // Адрес вкладку больше не хранит (в URL живёт только отбор) — достаточно
     // aria-selected: Radix меняет его и содержимое панели одним коммитом.
     await expect(inServiceTab).toHaveAttribute('aria-selected', 'true')
-    const inServiceText = await page.getByRole('tabpanel').innerText()
-    for (const name of assignedNames) {
+    const inServiceIds = new Set(
+      await page
+        .locator('table tbody tr[data-employee-id]')
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-employee-id') ?? '')),
+    )
+    for (const [index, id] of assignedIds.entries()) {
       expect(
-        inServiceText.includes(name),
-        `${name} стоит и в «Участии в ОМ», и в «В строю» — один человек посчитан дважды`,
+        inServiceIds.has(id),
+        `${assignedNames[index] ?? id} стоит и в «Участии в ОМ», и в «В строю» — ` +
+          'один человек посчитан дважды',
       ).toBe(false)
     }
   })
@@ -351,8 +364,17 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
         // проставленным моментом отправки штабу. Просто «первое с заявками»
         // мало — черновик старшего наряда лента не показывает, и подмена
         // уходила бы в карточку, которой на экране нет.
+        // 🔴 И СТАДИЯ ТОЖЕ. Лента показывает окно сбора — DEMAND, FORCES,
+        // PLACEMENT (`COLLECTION_STAGES` на экране): закрытое мероприятие с
+        // заявками в неё не попадает, и подмена уходила в карточку, которой
+        // на экране нет. Так проба и упала на полном прогоне 28.08.2026,
+        // когда первым в ответе оказался закрытый ОМ (Plane №251).
+        const visibleStages = ['DEMAND', 'FORCES', 'PLACEMENT']
         const first = body.results?.find(
-          (row) => row.forceRequests?.length && row.reconForceRequestedAt !== null,
+          (row) =>
+            row.forceRequests?.length &&
+            row.reconForceRequestedAt !== null &&
+            visibleStages.includes(String((row as { stage?: string }).stage)),
         )
         if (first?.forceRequests?.length) {
           first.forceRequests[0].requestedCount = 9
