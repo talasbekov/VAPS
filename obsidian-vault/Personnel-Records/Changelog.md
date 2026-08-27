@@ -1160,6 +1160,8 @@ GET /api/ops/event-documents/render/?kind=placement_full&event=ОМ-2026-4&ext=d
 
 ## 27.08.2026 — бюллетень правится карандашом в строке реестра (Plane №192)
 
+Коммит `d5e688c6`.
+
 Сервер: `update_bulletin_details` + `PATCH /api/ops/security-events/<id>/details/`,
 действие журнала `SECURITY_EVENT_DETAILS_UPDATED` («Изменены сведения
 бюллетеня»). Клиент: окно `EditBulletinDialog` и иконка карандаша в первой
