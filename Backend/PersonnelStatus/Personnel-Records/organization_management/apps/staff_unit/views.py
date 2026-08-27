@@ -1180,6 +1180,25 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             return None
 
 
+def _ancestor_names(division):
+    """Названия предков подразделения СВЕРХУ ВНИЗ, без корня организации.
+
+    Зачем в ответе (Plane №214). Имена подразделений уникальны только внутри
+    родителя: «Первое управление» законно есть в каждом департаменте, «Первый
+    отдел» — в каждом управлении. Плоская таблица разреза печатала одно имя, и
+    девять одинаковых строк «Первый отдел» различить было нечем. На шести
+    подразделениях стенда это было невидимо — вылезло на 54.
+
+    Корень отбрасывается сознательно: организация одна, и её имя в каждой
+    строке — шум, а не сведения.
+    """
+    return [
+        ancestor.name
+        for ancestor in division.get_ancestors()
+        if ancestor.division_type != Division.DivisionType.ORGANIZATION
+    ]
+
+
 class DivisionStatisticsViewSet(viewsets.ViewSet):
     """
     ViewSet для получения статистики по подразделениям в зависимости от роли пользователя.
@@ -1247,6 +1266,7 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
             departments_stats.append({
                 'department_id': dept.id,
                 'department_name': dept.name,
+                'ancestors': _ancestor_names(dept),
                 'directorates_count': directorates_in_dept,
                 'divisions_count': divisions_in_dept,
                 'staff_units_count': staff_units_in_dept,
@@ -1274,6 +1294,7 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
             directorates_stats.append({
                 'directorate_id': directorate.id,
                 'directorate_name': directorate.name,
+                'ancestors': _ancestor_names(directorate),
                 'divisions_count': divisions_in_dir,
                 'staff_units_count': staff_units_in_dir,
                 'employees_count': employees_in_dir,
@@ -1299,6 +1320,7 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
             divisions_stats.append({
                 'division_id': division.id,
                 'division_name': division.name,
+                'ancestors': _ancestor_names(division),
                 'staff_units_count': staff_units_in_division,
                 'employees_count': employees_in_division,
                 'vacancies_count': vacancies_in_division,

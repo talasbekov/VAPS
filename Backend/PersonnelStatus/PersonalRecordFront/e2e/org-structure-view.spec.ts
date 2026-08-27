@@ -70,7 +70,11 @@ async function breakdownRow(page: Page, name: string): Promise<string[]> {
     const table = document.querySelector('table')
     if (table === null) return []
     const row = [...table.querySelectorAll('tbody tr')].find(
-      (tr) => (tr.children[0]?.textContent ?? '').trim() === unit,
+      // Только ПЕРВАЯ строка ячейки: с 27.08.2026 под именем стоит путь до
+      // подразделения (Plane №214), и сравнение всего текста ячейки перестало
+      // находить строку.
+      (tr) =>
+        ((tr.children[0] as HTMLElement)?.innerText ?? '').split('\n')[0].trim() === unit,
     )
     if (row === undefined) return []
     return [...row.children].slice(1).map((cell) => (cell.textContent ?? '').trim())
@@ -247,6 +251,51 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
       expect(cardText).toContain(`вакансий (${crowded!.vacancies_count})`)
     } else {
       expect(cardText).not.toContain('вакансий (')
+    }
+  })
+
+  test('одноимённые подразделения различимы путём до них', async ({ page }) => {
+    /**
+     * 🔴 Проба стоит на ФАКТЕ СТЕНДА, а не на удобной фикстуре: имена
+     * подразделений уникальны только внутри родителя, и на реальной структуре
+     * «Первое управление» есть в каждом департаменте. Пока таблица печатала
+     * одно имя, девять одинаковых строк «Первый отдел» различить было нечем —
+     * а таблица нужна ровно затем, чтобы ответить «в каком отделе недобор»
+     * (Plane №214).
+     *
+     * Сторож против вакуумности здесь обязателен: на стенде без повторов имён
+     * проба зазеленела бы, ничего не проверив.
+     */
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto('/organization')
+    await hydrated(page)
+    // Таблица появляется после ответа ручки статистики: без ожидания сторож
+    // вакуумности срабатывает на пустой странице, а не на пустом разрезе.
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
+
+    const cells = await page.evaluate(() =>
+      [...document.querySelectorAll('table tbody tr')].map((row) => {
+        const cell = row.children[0] as HTMLElement
+        const lines = (cell.innerText ?? '').split('\n').map((line) => line.trim()).filter(Boolean)
+        return { name: lines[0] ?? '', path: lines[1] ?? '' }
+      }),
+    )
+    expect(cells.length, 'разрез пуст — проба вакуумна').toBeGreaterThan(2)
+
+    const byName = new Map<string, string[]>()
+    for (const cell of cells) {
+      byName.set(cell.name, [...(byName.get(cell.name) ?? []), cell.path])
+    }
+    const repeated = [...byName.entries()].filter(([, paths]) => paths.length > 1)
+    expect(
+      repeated.length,
+      'на стенде нет ни одного повторяющегося имени — различать нечего, проба вакуумна',
+    ).toBeGreaterThan(0)
+
+    for (const [name, paths] of repeated) {
+      expect(new Set(paths).size, `строки «${name}» неразличимы: пути ${paths.join(' / ')}`).toBe(
+        paths.length,
+      )
     }
   })
 })

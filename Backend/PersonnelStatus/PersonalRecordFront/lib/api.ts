@@ -184,6 +184,8 @@ export interface StaffUnitStatistics {
   departments: Array<{
     department_id: number;
     department_name: string;
+    /** Путь до подразделения СВЕРХУ ВНИЗ, без корня организации (Plane №214). */
+    ancestors: string[];
     directorates_count: number;
     divisions_count: number;
     staff_units_count: number;
@@ -193,6 +195,8 @@ export interface StaffUnitStatistics {
   directorates: Array<{
     directorate_id: number;
     directorate_name: string;
+    /** Путь до подразделения СВЕРХУ ВНИЗ, без корня организации (Plane №214). */
+    ancestors: string[];
     divisions_count: number;
     staff_units_count: number;
     employees_count: number;
@@ -201,6 +205,8 @@ export interface StaffUnitStatistics {
   divisions: Array<{
     division_id: number;
     division_name: string;
+    /** Путь до подразделения СВЕРХУ ВНИЗ, без корня организации (Plane №214). */
+    ancestors: string[];
     staff_units_count: number;
     employees_count: number;
     vacancies_count: number;

@@ -37,6 +37,7 @@ export default function OrganizationPage() {
       ...statistics.departments.map((item) => ({
         key: `dep-${item.department_id}`,
         name: item.department_name,
+        path: item.ancestors ?? [],
         level: "Департамент",
         staffUnits: item.staff_units_count,
         employees: item.employees_count,
@@ -45,6 +46,7 @@ export default function OrganizationPage() {
       ...statistics.directorates.map((item) => ({
         key: `dir-${item.directorate_id}`,
         name: item.directorate_name,
+        path: item.ancestors ?? [],
         level: "Управление",
         staffUnits: item.staff_units_count,
         employees: item.employees_count,
@@ -53,6 +55,7 @@ export default function OrganizationPage() {
       ...statistics.divisions.map((item) => ({
         key: `div-${item.division_id}`,
         name: item.division_name,
+        path: item.ancestors ?? [],
         level: "Отдел",
         staffUnits: item.staff_units_count,
         employees: item.employees_count,
@@ -65,10 +68,15 @@ export default function OrganizationPage() {
   // структуры на бэке нет.
   const exportCsv = useCallback(() => {
     const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
-    const head = ["Подразделение", "Уровень", "Штат", "Занято", "Вакансий"];
+    // «Входит в» — та же колонка, что и подпись под именем на экране: выгрузка
+    // без пути повторила бы дефект №214 уже в файле.
+    const head = [
+      "Подразделение", "Входит в", "Уровень", "Штат", "Занято", "Вакансий",
+    ];
     const body = rows.map((row) =>
       [
         row.name,
+        row.path.join(" › "),
         row.level,
         String(row.staffUnits),
         String(row.employees),
@@ -215,7 +223,21 @@ export default function OrganizationPage() {
                   <TableBody>
                     {rows.map((row) => (
                       <TableRow key={row.key}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell className="font-medium">
+                          {row.name}
+                          {/* Путь до подразделения (Plane №214). Имена
+                              уникальны только внутри родителя: «Первое
+                              управление» есть в каждом департаменте, «Первый
+                              отдел» — в каждом управлении, и на реальной
+                              структуре в таблице стояло девять одинаковых
+                              строк подряд. У корневых строк пути нет, и место
+                              под него не занимается. */}
+                          {row.path.length > 0 && (
+                            <div className="text-xs font-normal text-muted-foreground">
+                              {row.path.join(" › ")}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {row.level}
                         </TableCell>
