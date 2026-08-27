@@ -418,6 +418,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * `/**` его не ловит.
      */
     const TAIL = '•••••• 4216'
+    const served = new Set<string>()
     await page.route(
       (url) => url.pathname.endsWith('/staff-units/directorate/'),
       async (route) => {
@@ -428,6 +429,11 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
         const first = body.staff_units.find((unit) => unit.employee != null)
         expect(first, 'в ответе нет ни одного сотрудника — перехват нечего править').toBeTruthy()
         first!.employee!.iin_masked = TAIL
+        served.clear()
+        for (const unit of body.staff_units) {
+          const masked = unit.employee?.iin_masked
+          if (masked != null && masked !== '') served.add(masked)
+        }
         await route.fulfill({ response, json: body })
       },
     )
@@ -440,8 +446,22 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     const names = await column(page, 'ФИО')
     const withTail = names.filter((cell) => cell.includes(`ИИН ${TAIL}`))
     expect(withTail.length, 'хвост ИИН не напечатан ни в одной строке').toBe(1)
-    // Остальным ИИН не выдуман: строк с хвостом ровно одна — та, что подменена.
-    expect(names.some((cell) => cell.includes('ИИН') && !cell.includes(TAIL))).toBe(false)
+
+    /**
+     * Остальным ИИН не выдуман. Раньше здесь стояло «ни в одной другой строке
+     * слова ИИН нет» — и это держалось на том, что на стенде ИИН не заполнен
+     * ни у кого (27.08.2026 сид №204 заполнил его у 426 человек, и проба стала
+     * красной, ничего не сломав по существу). Проверяется то же самое, но по
+     * существу: КАЖДЫЙ напечатанный хвост пришёл из ответа ручки.
+     */
+    const printed = names
+      .filter((cell) => cell.includes('ИИН'))
+      .map((cell) => cell.slice(cell.indexOf('ИИН') + 'ИИН'.length).trim())
+    expect(printed.length, 'хвостов на экране меньше, чем строк с ИИН в ответе').toBeGreaterThan(0)
+    const invented = printed.filter((tail) => !served.has(tail))
+    expect(invented, `фронт напечатал хвост, которого не было в ответе: ${invented.join(', ')}`).toEqual(
+      [],
+    )
   })
 
   test('«Экспорт CSV» выгружает ОТОБРАННОЕ, а не весь список', async ({ page }) => {
