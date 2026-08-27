@@ -1,21 +1,31 @@
-"""Admin раздела: что в нём есть и, главное, чего в нём НЕТ.
+"""Admin раздела: что в нём есть — и почему теперь есть ВСЁ.
 
-Правка справочника через Admin — обещание среза 37 («перенести дедлайн
-должен уметь администратор, а не выкатка»), и до этого среза оно не
-исполнялось: строку правили только из shell.
+РАЗВОРОТ РЕШЕНИЯ 27.08.2026 (Plane №182). До этой даты файл стерёг обратное:
+бизнес-записи раздела в Admin не регистрируются, потому что форма Admin
+мутирует их без сервисов — сдачу без новой версии, статус без проверки
+пересечений, обход без причины и без журнала. Заказчик снял запрет прямо:
+«полностью разрешаю, всё должно в админке отражаться, я должен руками это
+всё тестировать». Цена решения (находка аудита ARCH1, HIGH — второй путь
+мутации мимо сервисов и аудита) принята сознательно и записана в
+`Personnel-Records/Decisions.md` и `Known-Issues.md`.
 
-Вторая половина — архитектурный гвард: бизнес-модели раздела в Admin не
-регистрируются. Admin мутирует записи БЕЗ сервисов, то есть в обход версий
-сдачи, проверки пересечений статусов, причины обхода и записи в журнал.
-Регистрация такой модели — не «удобство для админа», а второй вход в домен.
+Из этого следует, что стеречь надо ровно противоположное. Прежний гвард
+защищал от РЕГИСТРАЦИИ; новый — от ПРОПУСКА: модель, не попавшая в Admin,
+невидима для ручной проверки, и заметить это нечем, кроме такого теста.
+Именно так и терялись модели раньше — три модели выпуска документа приехали
+после гварда, и в его список их никто не внёс.
+
+Поэтому список моделей здесь по-прежнему берётся у ПРИЛОЖЕНИЯ, а не пишется
+руками: новая модель попадает под проверку сама.
 """
 import pytest
 from django.contrib import admin
 from django.contrib.auth.models import User
 
-# Поимённо импортируются только те модели, о которых у файла есть СВОЁ
-# утверждение (справочники в Admin и синглтон настроек). Запрещённые
-# перечисляет само приложение — см. FORBIDDEN_MODELS ниже.
+from organization_management.admin_auto import (
+    build_list_filter,
+    build_search_fields,
+)
 from organization_management.apps.operations.models import Role, StatusType
 from organization_management.apps.operations.models_submission import (
     OpsDivisionNotifyRecipient,
@@ -27,6 +37,103 @@ pytestmark = pytest.mark.django_db
 
 def site_admin(model):
     return admin.site._registry.get(model)
+
+
+def _section_models():
+    from django.apps import apps
+
+    return sorted(
+        apps.get_app_config("operations").get_models(), key=lambda m: m.__name__
+    )
+
+
+SECTION_MODELS = _section_models()
+
+
+def test_the_section_has_models_to_check():
+    """Опора: пустой список моделей сделал бы проверки ниже вечнозелёными."""
+    assert len(SECTION_MODELS) >= 10
+
+
+@pytest.mark.parametrize(
+    "model", SECTION_MODELS, ids=[m.__name__ for m in SECTION_MODELS]
+)
+def test_every_model_of_the_section_is_visible_in_admin(model):
+    """Ни одной невидимой сущности: заказчик проверяет раздел руками.
+
+    Модель, которой нет в Admin, нельзя ни посмотреть, ни завести под
+    проверку — и её отсутствие ничем не проявляется, пока кто-нибудь не
+    пойдёт её искать. Список берётся у приложения, поэтому новая модель
+    обязана показаться сама, а не после того, как о ней вспомнят.
+    """
+    assert site_admin(model) is not None, (
+        f"{model.__name__} не показывается в Admin — ручная проверка её не видит"
+    )
+
+
+@pytest.mark.parametrize(
+    "model", SECTION_MODELS, ids=[m.__name__ for m in SECTION_MODELS]
+)
+def test_the_search_of_the_list_stays_textual(model):
+    """Поиск OR-ит LIKE по КАЖДОЙ колонке из `search_fields`.
+
+    Нетекстовая колонка добавляет к этому свой cast и свои совпадения: строка
+    «2» нашла бы всё, где двойка встречается в id, в проценте готовности и в
+    счётчике конфликтов, — то есть поиск перестал бы отвечать на вопрос,
+    который человек задал, и стоил бы лишний полный проход.
+
+    Ошибки при этом НЕ будет: проверено на этом стеке (Django 5.1.15,
+    Postgres) — `icontains` по числу и по uuid Django кастует сам,
+    `UPPER("id"::text) LIKE …`. Написано прямо, потому что рядом в
+    `operations/admin.py` живёт комментарий про ProgrammingError на
+    `division_id`, и следующий человек унаследует из него неверную причину.
+    """
+    model_admin = site_admin(model)
+    fields = {field.name: field for field in model._meta.get_fields()}
+
+    for name in getattr(model_admin, "search_fields", ()):
+        field = fields.get(name.lstrip("^=@"))
+        if field is None:
+            continue
+        assert field.get_internal_type() in {
+            "CharField",
+            "TextField",
+            "SlugField",
+            "EmailField",
+            "URLField",
+        }, f"{model.__name__}.{name}: поиск по нетекстовой колонке уронит список"
+
+
+def test_the_builder_keeps_uuid_and_numbers_out_of_the_search():
+    """Красная проба сборщика: правило живёт в нём, а не только в результате.
+
+    Проверка выше смотрит на то, что получилось; эта — на само правило, и
+    падает, если из `TEXT_FIELDS` кто-нибудь добавит туда UUID или число.
+    """
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEvent,
+    )
+
+    searchable = build_search_fields(OpsSecurityEvent)
+
+    assert "code" in searchable
+    assert "business_date" not in searchable
+
+
+def test_the_filters_do_not_enumerate_free_text_columns():
+    """Фильтр по свободному CharField перечисляет ВСЕ значения колонки.
+
+    На таблице мероприятий это отдельный тяжёлый запрос ради списка, которым
+    невозможно пользоваться. В фильтры идут только `choices`, булевы и даты.
+    """
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEvent,
+    )
+
+    filters = build_list_filter(OpsSecurityEvent)
+
+    assert "stage" in filters, "поле с choices обязано быть фильтром"
+    assert "title" not in filters, "свободный текст фильтром быть не может"
 
 
 def test_the_control_settings_are_editable_in_admin():
@@ -48,80 +155,13 @@ def test_the_notify_recipients_are_editable_in_admin():
     assert model_admin.search_fields == ("recipient",)
 
 
-# Что раздел ОСОЗНАННО отдаёт в Admin. Всё остальное — под запретом, и список
-# устроен именно так, а не наоборот: перечисляли бы мы запрещённое, новая модель
-# оказывалась бы разрешённой по умолчанию — то есть забыть было бы достаточно.
-#
-# Проверено на себе: до этого среза список был перечнем ЗАПРЕЩЁННЫХ, и три
-# модели, приехавшие с выпуском документа (вложение, счётчик номеров, выпуск),
-# в него никто не добавил. Зарегистрируй их кто-нибудь — гвард промолчал бы.
-ADMIN_ALLOWED = {
-    # Настройки контроля сдачи: перенести дедлайн должен уметь администратор,
-    # а не выкатка.
-    "OpsSubmissionControlSettings",
-    # Закрепление ответственного за уведомления: настройка, а не решение с
-    # последствиями — ни версии, ни записи в журнал она не порождает.
-    "OpsDivisionNotifyRecipient",
-}
-
-
-def _section_models():
-    from django.apps import apps
-
-    return sorted(
-        apps.get_app_config("operations").get_models(), key=lambda m: m.__name__
-    )
-
-
-FORBIDDEN_MODELS = [
-    model for model in _section_models() if model.__name__ not in ADMIN_ALLOWED
-]
-
-
-def test_the_section_has_models_to_check():
-    """Опора: пустой список моделей сделал бы проверку ниже вечнозелёной."""
-    assert len(FORBIDDEN_MODELS) >= 10
-
-
-def test_the_allowlist_names_only_models_that_exist():
-    """Опечатка в списке разрешённых молча РАСШИРИЛА бы запрет на настоящую
-    модель — она осталась бы под проверкой, а разрешение не сработало бы. Ещё
-    хуже обратное: переименовали модель, а имя в списке осталось, и новая
-    оказалась запрещена без объяснений."""
-    known = {model.__name__ for model in _section_models()}
-
-    assert ADMIN_ALLOWED <= known
-
-
-@pytest.mark.parametrize(
-    "model", FORBIDDEN_MODELS, ids=[m.__name__ for m in FORBIDDEN_MODELS]
-)
-def test_business_records_are_not_registered(model):
-    """Каждая из них пишется СЕРВИСОМ по своим правилам.
-
-    Сдача — новой версией, статус — с проверкой пересечений, обход — с
-    причиной и записью в журнал, журнал — вообще только добавлением. Форма
-    Admin не знает ни одного из этих правил и применила бы UPDATE.
-
-    Водяной знак не бизнес-запись, а учёт фоновой работы — и в Admin ему тем
-    более нечего делать: правка даты руками означает «пройти эти дни заново»
-    или «считать их пройденными», то есть повторную материализацию эффектов
-    либо молча потерянные дни. Такое делают командой с её проверками, а не
-    формой.
-
-    Список моделей берётся у ПРИЛОЖЕНИЯ, а не пишется руками: новая модель
-    попадает под запрет сама, и забыть её нельзя. Разрешения перечислены
-    отдельно и явно — их мало, и каждое объяснено.
-    """
-    assert site_admin(model) is None, f"{model.__name__} мутируем мимо сервиса"
-
-
 def test_the_singleton_cannot_be_added_or_deleted(rf):
     """Синглтон держит БД; гейты Admin говорят «нельзя» заранее.
 
-    Без них администратор получил бы 500 вместо отказа — а на удалении и
-    вовсе тихий сброс настроек к дефолту (селектор самолечится), выглядящий
-    как удаление.
+    Разворот решения их НЕ отменяет: это не запрет на видимость, а защита от
+    500-й и от тихого сброса настроек, выглядящего как удаление. Строку
+    видно и правится она из Admin — нельзя только завести вторую и удалить
+    единственную.
     """
     model_admin = site_admin(OpsSubmissionControlSettings)
     request = rf.get("/admin/")
@@ -143,8 +183,11 @@ def test_the_first_row_could_be_added_if_it_were_missing(rf):
     assert model_admin.has_add_permission(request) is True
 
 
-def test_reference_data_of_the_section_stays_available():
-    # Справочники раздела вне сдачи (роли, типы статусов) регистрирует не
-    # этот модуль; тест лишь фиксирует, что их отсутствие здесь осознанно.
-    assert site_admin(Role) is None
-    assert site_admin(StatusType) is None
+def test_reference_data_of_the_section_became_visible_too():
+    """Роли и типы статусов раздела — та же ручная проверка.
+
+    Раньше их отсутствие в Admin фиксировалось как осознанное; теперь
+    осознанно обратное.
+    """
+    assert site_admin(Role) is not None
+    assert site_admin(StatusType) is not None
