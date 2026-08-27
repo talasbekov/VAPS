@@ -202,10 +202,20 @@ export default function ReportsPage() {
                             ключи объекта row.columns — их порядок в JS не
                             гарантирован и разъехался бы с шапкой. */}
                         {report.columns.map((code) => (
+                          // Подпись колонки берётся у СЕРВЕРА: словарь общий
+                          // с выгрузками, и свой на клиенте разошёлся бы с
+                          // файлами. Код остаётся запасным вариантом —
+                          // незнакомая колонка обязана быть видна, а не
+                          // исчезнуть под пустой подписью.
                           <TableHead key={code}>
-                            {code}
+                            {report.column_labels[code] ?? code}
                           </TableHead>
                         ))}
+                        {/* Занятость мероприятиями — СПРАВОЧНО и ОТДЕЛЬНО от
+                            колонок: эти люди уже посчитаны в «В строю», и
+                            поставить их в общий ряд значило бы предложить
+                            сложить их со всеми остальными (Plane №243). */}
+                        <TableHead className="border-l">На ОМ</TableHead>
                         <TableHead>Выгрузка</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -221,6 +231,23 @@ export default function ReportsPage() {
                               {row.columns[code] ?? 0}
                             </TableCell>
                           ))}
+                          <TableCell className="border-l tabular-nums">
+                            {row.event.total === 0 ? (
+                              // Ноль печатается прочерком: «никого не
+                              // привлекли» и «колонка пустая» иначе выглядят
+                              // одинаково, а читают их по-разному.
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <span
+                                title={`боевые группы: ${row.event.group}, физический наряд: ${row.event.squad}`}
+                              >
+                                {row.event.total}
+                                <span className="ml-1 text-[11px] text-muted-foreground">
+                                  ({row.event.group} гр. / {row.event.squad} нар.)
+                                </span>
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Button
                               size="sm"

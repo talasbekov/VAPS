@@ -261,6 +261,21 @@ export interface Division {
 // `columns` — коды статусов, порядок задаёт СЕРВЕР, поэтому шапку таблицы
 // строим по этому массиву, а не по ключам объекта `row.columns`: порядок
 // ключей объекта в JS не гарантирован и разъехался бы с сервером.
+/**
+ * Занятость мероприятиями — СПРАВОЧНО, рядом с колонками и ВНЕ их суммы
+ * (Plane №243). Человек на ОМ остаётся в строю, поэтому своей колонки у него
+ * нет: она вынула бы его из «В строю» и сломала «Σ колонок == Список».
+ * `total` считает сервер отдельно, а не как сумму двух — появившийся третий
+ * вид участия попадёт в него сам.
+ */
+export interface EventInvolvement {
+  total: number;
+  /** В составе боевой группы. */
+  group: number;
+  /** Физическим нарядом на объекте. */
+  squad: number;
+}
+
 export interface StrengthReportRow {
   division_id: number;
   name: string;
@@ -270,6 +285,7 @@ export interface StrengthReportRow {
   attached: number;
   off_list: number;
   columns: Record<string, number>;
+  event: EventInvolvement;
 }
 
 /**
@@ -406,6 +422,7 @@ export interface StrengthReportTotals {
   attached: number;
   off_list: number;
   columns: Record<string, number>;
+  event: EventInvolvement;
 }
 
 export interface StrengthReport {
