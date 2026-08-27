@@ -946,6 +946,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     event_service.set_event_chief(om.pk, employee_id="", actor=ACTOR)
 
+    # Правка СВЕДЕНИЙ бюллетеня (Plane №192): по этим полям сверяют уже
+    # выгруженный документ, и «когда поменяли и кто» обязано иметь ответ.
+    event_service.update_bulletin_details(
+        om.pk, title="Название после правки", actor=ACTOR
+    )
+
     event_service.complete_placement(om.pk)
     # Согласование по эталону («ОМ-37.3») требует маршрута, отправки и решения:
     # завершить этап «просто так» больше нельзя.

@@ -1157,3 +1157,32 @@ GET /api/ops/event-documents/render/?kind=placement_full&event=ОМ-2026-4&ext=d
 Гейт: `pytest ops operations -q` → **3777 passed in 318,15 s**;
 `npm run gate:front` → `✓ Compiled successfully`, 35 страниц; живые пробы
 реестра → **17 passed (1,1 мин)**.
+
+## 27.08.2026 — бюллетень правится карандашом в строке реестра (Plane №192)
+
+Сервер: `update_bulletin_details` + `PATCH /api/ops/security-events/<id>/details/`,
+действие журнала `SECURITY_EVENT_DETAILS_UPDATED` («Изменены сведения
+бюллетеня»). Клиент: окно `EditBulletinDialog` и иконка карандаша в первой
+колонке сразу после «+». Границы правки и причины —
+[[Decisions#27.08.2026 — правка бюллетеня: своя ручка и своё окно (Plane №192)]].
+
+Одиннадцать проб бэкенда (`test_ops_bulletin_details.py`) + две живые пробы
+экрана. Мутации:
+
+| Мутация | Кто падает |
+|---|---|
+| «ключа нет» трактовать как «очисти» | `…fields_that_were_not_sent_are_left_alone`, `…changes_nothing_writes_no_journal_row` |
+| не сверять окончание с новым началом | `…end_is_checked_against_the_new_start` |
+| снимок подписи переживает снятие лица | `…an_empty_value_clears_the_field` |
+
+🔴 **Живая проба этой задачи нашла дефект соседней** — колонка «Локация»
+показывала объект (см. [[../Frontend/Changelog]] и доработку №189). Проба
+меняла локацию через окно и не находила её в строке.
+
+Попутно исправлена сама проба: она переименовывала пробное ОМ, стирая метку
+`(e2e)`, и уборка после прогона такую строку уже не находила — на стенде нашлись
+две осиротевшие («ОМ-2026-9», «ОМ-2026-12»), снятые вручную.
+
+Гейт: `pytest ops operations -q` → **3788 passed in 232,56 s**; живые пробы
+реестра → **19 passed (40,2 с)**, `уборка пробных ОМ: снято 6`;
+`npm run gate:front` → `✓ Compiled successfully`, 35 страниц.

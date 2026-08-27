@@ -340,6 +340,208 @@ def create_event(
     return event
 
 
+# ── Правка бюллетеня ────────────────────────────────────────────────────────
+
+
+@transaction.atomic
+def update_bulletin_details(
+    event_id,
+    *,
+    title=None,
+    business_date=None,
+    business_date_end=None,
+    event_time=None,
+    protected_person_id=None,
+    location=None,
+    actor,
+):
+    """Править СВЕДЕНИЯ бюллетеня после создания (Plane №192).
+
+    Заказчик: «Нету кнопки Редактировать». Её и не было чем сделать: у
+    мероприятия не существовало ни одной ручки правки — `PATCH .../bulletin/`
+    меняет только описание и первичные задачи, а название, дата, время,
+    охраняемое лицо и локация задавались один раз в окне создания и застывали
+    навсегда. Опечатка в названии жила до удаления мероприятия.
+
+    ЧТО ЗДЕСЬ ПРАВИТСЯ И ЧТО НЕТ — граница проведена по последствиям, а не по
+    удобству:
+
+    * **правятся** название, период, время, охраняемое лицо, локация — это
+      сведения бюллетеня, они ни на что в системе не завязаны и меняются
+      ровно так же, как их однажды ввели;
+    * **тип мероприятия НЕ правится**: от него зависят маршрут согласования и
+      кто считается старшим (наряда против ГВО). Смена типа на полпути
+      означала бы другую цепочку у мероприятия, которое уже идёт по этой —
+      это не правка сведений, а другое мероприятие;
+    * **объекты НЕ правятся** — у них свои ручки (`visit-objects`), и они
+      несут паспорта и расстановку;
+    * **старший НЕ правится** — у него своя ручка с №190 и своя запись
+      журнала.
+
+    ОТСУТСТВУЮЩИЙ КЛЮЧ — НЕ ПУСТОЕ ЗНАЧЕНИЕ. `None` означает «поле не
+    прислали, не трогай»; пустая строка — «очисти». Разница существенна для
+    охраняемого лица и локации: их законно снимают, и трактовать «не прислали»
+    как «сними» значило бы стирать данные при частичной правке.
+
+    Закрытое мероприятие — история: сведения отработавшего наряда не
+    переписываются.
+    """
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — сведения бюллетеня не меняются.",
+        )
+
+    # Снимок ДО правки берётся сразу: ниже поля меняются прямо на объекте, и
+    # читать «как было» после этого пришлось бы отдельным запросом в базу —
+    # приём рабочий, но при первом же перемещении строки он молча начинает
+    # показывать уже НОВОЕ значение.
+    before = {
+        "code": event.code,
+        "title": event.title,
+        "businessDate": event.business_date.isoformat(),
+        "protectedPersonName": event.protected_person_name,
+        "location": event.location,
+    }
+    field_errors = {}
+    updates = []
+
+    if title is not None:
+        new_title = str(title).strip()
+        if new_title == "":
+            field_errors["title"] = ["Обязательное поле."]
+        else:
+            event.title = new_title
+            updates.append("title")
+
+    # Даты разбираются ВМЕСТЕ, даже если прислали одну: правило «окончание не
+    # раньше начала» связывает их, и проверять новую дату против старой пары
+    # надо на той паре, которая получится, а не на той, что была.
+    new_start = event.business_date
+    if business_date is not None:
+        try:
+            new_start = dt.date.fromisoformat(str(business_date))
+        except ValueError:
+            field_errors["businessDate"] = ["Укажите дату в формате ГГГГ-ММ-ДД."]
+            new_start = None
+
+    new_end = event.business_date_end
+    if business_date_end is not None:
+        raw_end = str(business_date_end).strip()
+        if raw_end == "":
+            new_end = None
+        else:
+            try:
+                new_end = dt.date.fromisoformat(raw_end)
+            except ValueError:
+                field_errors["businessDateEnd"] = [
+                    "Укажите дату в формате ГГГГ-ММ-ДД."
+                ]
+                new_end = None
+
+    if (
+        "businessDate" not in field_errors
+        and "businessDateEnd" not in field_errors
+        and new_start is not None
+        and new_end is not None
+        and new_end < new_start
+    ):
+        field_errors["businessDateEnd"] = ["Дата окончания раньше даты начала."]
+
+    if event_time is not None:
+        raw_time = str(event_time).strip()
+        if raw_time == "":
+            event.event_time = None
+            updates.append("event_time")
+        else:
+            try:
+                # Браузерный <input type="time"> шлёт «ЧЧ:ММ», но с
+                # включёнными секундами — «ЧЧ:ММ:СС»; принимаем оба.
+                event.event_time = dt.time.fromisoformat(raw_time)
+                updates.append("event_time")
+            except ValueError:
+                field_errors["eventTime"] = ["Укажите время в формате ЧЧ:ММ."]
+
+    if location is not None:
+        new_location = str(location).strip()
+        if len(new_location) > 255:
+            field_errors["location"] = ["Не длиннее 255 символов."]
+        else:
+            event.location = new_location
+            updates.append("location")
+
+    if protected_person_id is not None:
+        raw_person = str(protected_person_id).strip()
+        if raw_person == "":
+            event.protected_person = None
+            # Снимок подписи стирается ВМЕСТЕ со ссылкой: он существует, чтобы
+            # пережить скрытие лица из справочника, а не чтобы пережить его
+            # снятие с мероприятия.
+            event.protected_person_name = ""
+            updates += ["protected_person", "protected_person_name"]
+        else:
+            person = (
+                OpsProtectedPerson.objects.filter(
+                    pk=raw_person, is_active=True
+                ).first()
+                if raw_person.isdigit()
+                else None
+            )
+            if person is None:
+                field_errors["protectedPersonId"] = [
+                    "Охраняемое лицо не найдено в справочнике."
+                ]
+            else:
+                event.protected_person = person
+                event.protected_person_name = person.name
+                updates += ["protected_person", "protected_person_name"]
+
+    if field_errors:
+        raise _validation(field_errors)
+
+    if business_date is not None:
+        event.business_date = new_start
+        updates.append("business_date")
+    if business_date_end is not None:
+        event.business_date_end = new_end
+        updates.append("business_date_end")
+
+    if not updates:
+        # Нечего менять — отвечаем мероприятием как есть, без записи журнала:
+        # «правка без изменений» это не событие, и лента, засоренная такими,
+        # перестаёт отвечать на вопрос «что менялось».
+        return event
+
+    event.save(update_fields=sorted(set(updates)) + ["updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECURITY_EVENT_DETAILS_UPDATED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value=before,
+        new_value={
+            "code": event.code,
+            "title": event.title,
+            "businessDate": event.business_date.isoformat(),
+            "businessDateEnd": (
+                event.business_date_end.isoformat()
+                if event.business_date_end is not None
+                else None
+            ),
+            "eventTime": (
+                event.event_time.strftime("%H:%M")
+                if event.event_time is not None
+                else None
+            ),
+            "protectedPersonName": event.protected_person_name,
+            "location": event.location,
+        },
+    )
+    return event
+
+
 # ── Старший мероприятия ─────────────────────────────────────────────────────
 
 
