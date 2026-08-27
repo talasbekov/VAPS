@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
+import { apiClient } from "@/lib/api";
 import { EmployeeTable } from "@/entities/employee/ui/EmployeeTable";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
 import { AddEmployeeDialog } from "@/features/add-employee";
@@ -38,6 +39,8 @@ import {
   isDirectorateForbidden,
   useStaffUnitsByDirectorate,
 } from "@/hooks/use-staff-units-by-directorate";
+import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_ITEMS,
@@ -131,6 +134,124 @@ function ScopeNotice({ shown, total }: { shown: number; total: number }) {
   );
 }
 
+/**
+ * Размер страницы реестра. Пятьдесят строк — экран с запасом на прокрутку и
+ * 27 КБ ответа против 2,7 МБ на пяти тысячах сотрудников (замер 27.08.2026).
+ * Потолок на сервере — 200 (`DIRECTORATE_MAX_PAGE_SIZE`).
+ */
+const PAGE_SIZE = 50;
+
+/**
+ * Строки ответа штатки → строки реестра. Вынесено из компонента (Plane №228):
+ * теперь их две — страница для списка и весь состав для вкладок сбора сил, —
+ * и разбор обязан быть один на обе.
+ */
+function toEmployees(units: any[] | undefined): Employee[] {
+  if (!units) return [];
+  const result: Employee[] = [];
+  let globalIndex = 1;
+
+  units.forEach((unit) => {
+    // Реальный API может возвращать unit.employee (один объект) или
+    // unit.employees (массив) — оба формата разбираются здесь.
+    const employee = (unit as any).employee;
+    const employeesArray = (unit as any).employees;
+
+    if (Array.isArray(employeesArray) && employeesArray.length > 0) {
+      employeesArray.forEach((empData: any) => {
+        const emp = empData.employee;
+        if (!emp) return;
+        result.push({
+          ...personnelFields(emp),
+          staffUnitId: unit.id.toString(),
+          number: globalIndex++,
+          position: empData.position?.name || "Должность не указана",
+          department: unit.division.name,
+          departmentId: unit.division.id.toString(),
+        });
+      });
+    } else if (employee) {
+      result.push({
+        ...personnelFields(employee),
+        staffUnitId: unit.id.toString(),
+        number: globalIndex++,
+        position: (unit as any).position?.name || "Должность не указана",
+        department: unit.division.name,
+        departmentId: unit.division.id.toString(),
+      });
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Листатель реестра (Plane №228).
+ *
+ * НОМЕРОВ СТРАНИЦ НЕТ СОЗНАТЕЛЬНО. На пяти тысячах сотрудников их сто три, и
+ * «перейти на 73-ю» не отвечает ни на один вопрос человека: он ищет
+ * КОНКРЕТНОГО сотрудника, а для этого есть поиск — он теперь серверный и
+ * смотрит весь состав, а не показанную страницу.
+ *
+ * Диапазон назван словами («51-100 из 5124»), потому что без него «Далее»
+ * не говорит, где человек находится и сколько ещё осталось.
+ *
+ * Кнопки не исчезают на крайних страницах, а гаснут: пропадающая кнопка
+ * сдвигает соседнюю под курсор — и следующий щелчок попадает не туда.
+ */
+function Pager({
+  page,
+  pageSize,
+  matched,
+  hasNext,
+  busy,
+  onChange,
+}: {
+  page: number;
+  pageSize: number;
+  matched: number;
+  hasNext: boolean;
+  busy: boolean;
+  onChange: (page: number) => void;
+}) {
+  if (matched === 0) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, matched);
+  if (!hasNext && page === 1) {
+    // Одна страница — листать нечего; счётчик и без того стоит в шапке.
+    return null;
+  }
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-3 pt-2"
+      aria-busy={busy}
+    >
+      <p className="text-sm text-muted-foreground tabular-nums">
+        {from}–{to} из {matched}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={page <= 1 || busy}
+          onClick={() => onChange(page - 1)}
+        >
+          Назад
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!hasNext || busy}
+          onClick={() => onChange(page + 1)}
+        >
+          Далее
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function EmployeesPage() {
   // useSearchParams требует границы Suspense — иначе пререндер падает на сборке.
   return (
@@ -157,6 +278,9 @@ function EmployeesScreen() {
   // «Ежедневный расход» (Task 2). Тот же приём URL-состояния, что у
   // search/department/status — умолчание в адрес не пишется.
   const view = searchParams.get("view") === "daily" ? "daily" : "forces";
+  // Номер страницы — тоже в адресе: ссылка на «страницу 7 отбора» должна
+  // открываться такой же (Plane №228).
+  const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
 
   const setFilter = useCallback(
     (key: string, value: string, fallback: string) => {
@@ -164,6 +288,9 @@ function EmployeesScreen() {
       // Умолчание в адрес не пишем — ссылка на нетронутый список чистая.
       if (value === fallback) next.delete(key);
       else next.set(key, value);
+      // Смена отбора возвращает на первую страницу: остаться на седьмой при
+      // новом поиске значит показать пустоту там, где результаты есть.
+      if (key !== "page") next.delete("page");
       const query = next.toString();
       router.replace(query === "" ? pathname : `${pathname}?${query}`, {
         scroll: false,
@@ -178,8 +305,25 @@ function EmployeesScreen() {
     (value) => setFilter("search", value, "")
   );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  // Вкладка стала управляемой: по ней решается, грузить ли ВЕСЬ состав
+  // подразделения (вкладки сбора сил) или хватит страницы (Plane №228).
+  const [activeTab, setActiveTab] = useState("table");
   const queryClient = useQueryClient();
   const { user, hasPermission } = useAuth();
+
+  // ── Страница вместо всего состава (Plane №228) ──────────────────────
+  //
+  // Экран просит у сервера СТРАНИЦУ и передаёт ему отбор. Прежде он тянул весь
+  // состав подразделения и фильтровал его в браузере: на 440 сотрудниках это
+  // 248 КБ, на пяти тысячах — 2,7 МБ и 5000 строк DOM на каждое открытие.
+  //
+  // Отбор ушёл на сервер целиком, а не наполовину: клиентский поиск по
+  // загруженной странице искал бы ТОЛЬКО среди пятидесяти строк и молчал бы о
+  // том, что остальные пять тысяч он не смотрел.
+  const statistics = useStaffUnitStatistics();
+  // Значение фильтра — идентификатор подразделения (см. `departments`).
+  const departmentId =
+    departmentFilter === "all" ? undefined : Number(departmentFilter) || undefined;
 
   const {
     data,
@@ -187,60 +331,76 @@ function EmployeesScreen() {
     error: queryError,
     refetch,
     isRefetching: refreshing,
-  } = useStaffUnitsByDirectorate();
+  } = useStaffUnitsPage({
+    page,
+    pageSize: PAGE_SIZE,
+    search: searchQuery || undefined,
+    divisionId: departmentId,
+    // Статус отбирается сервером по коду ДЕЙСТВУЮЩЕГО статуса.
+    status: statusFilter === "all" ? undefined : statusFilter,
+  });
 
-  // Преобразуем данные из API в формат Employee
+  // Вкладки «Участие в ОМ» и «В строю» пересекают состав с данными сбора сил,
+  // и им нужен ВЕСЬ состав подразделения, а не страница. Поэтому полный ответ
+  // грузится ЛЕНИВО — только когда такую вкладку открыли: на пяти тысячах
+  // человек это 2,7 МБ, и платить их при каждом открытии реестра незачем.
+  const opsTabOpen = activeTab === "assigned" || activeTab === "in-service";
+  const fullDirectorate = useStaffUnitsByDirectorate(opsTabOpen);
+
+  // Строки ТЕКУЩЕЙ СТРАНИЦЫ. Нумерация строк продолжает страницу, а не
+  // начинается с единицы заново: «№ 51» на второй странице — это тот же
+  // порядок, что и в выгрузке.
   const employees = useMemo<Employee[]>(() => {
-    if (!data || !data.staff_units) return [];
+    const offset = (page - 1) * PAGE_SIZE;
+    return toEmployees(data?.staff_units).map((employee) => ({
+      ...employee,
+      number: employee.number + offset,
+    }));
+  }, [data, page]);
 
-    const result: Employee[] = [];
-    let globalIndex = 1;
+  // Весь состав — только для вкладок сбора сил и только когда их открыли.
+  const allEmployees = useMemo<Employee[]>(
+    () => toEmployees(fullDirectorate.data?.staff_units),
+    [fullDirectorate.data]
+  );
 
-    data.staff_units.forEach((unit) => {
-      // Реальный API может возвращать unit.employee (один объект) или unit.employees (массив)
-      // Проверяем оба варианта для обратной совместимости
-      const employee = (unit as any).employee;
-      const employeesArray = (unit as any).employees;
-
-      // Если есть массив employees (новый формат)
-      if (Array.isArray(employeesArray) && employeesArray.length > 0) {
-        employeesArray.forEach((empData: any) => {
-          const emp = empData.employee;
-          if (!emp) return;
-
-          result.push({
-            ...personnelFields(emp),
-            staffUnitId: unit.id.toString(),
-            number: globalIndex++,
-            position: empData.position?.name || "Должность не указана",
-            department: unit.division.name,
-            departmentId: unit.division.id.toString(),
-          });
-        });
-      }
-      // Если есть одиночный employee (старый формат)
-      else if (employee) {
-        result.push({
-          ...personnelFields(employee),
-          staffUnitId: unit.id.toString(),
-          number: globalIndex++,
-          position: (unit as any).position?.name || "Должность не указана",
-          department: unit.division.name,
-          departmentId: unit.division.id.toString(),
-        });
-      }
-    });
-
-    return result;
-  }, [data]);
-
-  // Собираем уникальные отделы для фильтра
-  const departments = useMemo<string[]>(() => {
-    if (!data) return [];
-    return Array.from(
-      new Set(data.staff_units.map((unit) => unit.division.name))
-    );
-  }, [data]);
+  // Отделы для фильтра — из статистики подразделения, а НЕ из показанной
+  // страницы: на странице пятьдесят строк, и список фильтра сузился бы до тех
+  // отделов, что в них попали (Plane №228).
+  //
+  // 🔴 ЗНАЧЕНИЕ — ИДЕНТИФИКАТОР, а не название. Имена подразделений уникальны
+  // только внутри родителя: на реальной структуре «Первый отдел» есть в каждом
+  // управлении, и отбор по имени означал бы «покажи любой из тридцати шести».
+  // Заодно это снимало дубли ключей в списке (React ругался на них вслух).
+  // Подпись несёт путь — тот же приём, что в разрезе штата (Plane №214).
+  const departments = useMemo<{ id: number; label: string }[]>(() => {
+    const stats = statistics.data;
+    if (!stats) return [];
+    const rows = [
+      ...stats.departments.map((row) => ({
+        id: row.department_id,
+        name: row.department_name,
+        ancestors: row.ancestors ?? [],
+      })),
+      ...stats.directorates.map((row) => ({
+        id: row.directorate_id,
+        name: row.directorate_name,
+        ancestors: row.ancestors ?? [],
+      })),
+      ...stats.divisions.map((row) => ({
+        id: row.division_id,
+        name: row.division_name,
+        ancestors: row.ancestors ?? [],
+      })),
+    ];
+    return rows.map((row) => ({
+      id: row.id,
+      label:
+        row.ancestors.length > 0
+          ? `${row.ancestors.join(" › ")} › ${row.name}`
+          : row.name,
+    }));
+  }, [statistics.data]);
 
   const error = queryError
     ? queryError instanceof Error
@@ -271,8 +431,18 @@ function EmployeesScreen() {
       else if (employee.status === EMPLOYEE_STATUS_LABELS.business_trip)
         onTrip += 1;
     }
-    return { total: employees.length, active, onLeave, onTrip };
-  }, [employees]);
+    // `total` — сколько строк ОТВЕЧАЕТ ОТБОРУ на сервере, а не сколько их
+    // на странице: под подписью «Показано N из M» размер страницы вместо
+    // общего числа означал бы «показано 50 из 50» на пяти тысячах человек
+    // (Plane №228). Остальные три числа считаются по странице и названы
+    // соответственно — они про то, что видно.
+    return {
+      total: data?.matched_count ?? employees.length,
+      active,
+      onLeave,
+      onTrip,
+    };
+  }, [employees, data?.matched_count]);
 
   // Пустой список от ОТБОРА и пустой список от отсутствия данных — разные
   // вещи, и выход из них разный. Прототип на первом даёт «Сбросить фильтры»,
@@ -349,40 +519,28 @@ function EmployeesScreen() {
 
   const canSeeOwnDepartment = hasPermission("employees", "read-department");
 
-  // Отбор — в useMemo, как в соседнем status-table.tsx: раньше полный обход
-  // списка (плюс `toLowerCase` на каждое поле каждой строки) выполнялся заново
-  // при любом рендере страницы.
-  const filteredEmployees = useMemo(() => {
-    const needle = searchQuery.trim().toLowerCase();
-    return employees.filter((employee) => {
-      const visible =
-        canSeeAll ||
-        (canSeeOwnDepartment && user?.departmentId === employee.departmentId);
-      if (!visible) return false;
+  // ПРАВА — единственный отбор, оставшийся на клиенте (Plane №228). Поиск,
+  // отдел и статус теперь считает сервер: клиентский поиск по загруженной
+  // странице искал бы среди пятидесяти строк и молчал бы о том, что остальные
+  // пять тысяч не смотрел.
+  const visible = useCallback(
+    (employee: Employee) =>
+      canSeeAll ||
+      (canSeeOwnDepartment && user?.departmentId === employee.departmentId),
+    [canSeeAll, canSeeOwnDepartment, user?.departmentId]
+  );
 
-      const matchesSearch =
-        needle === "" ||
-        employee.name.toLowerCase().includes(needle) ||
-        employee.position.toLowerCase().includes(needle) ||
-        employee.department.toLowerCase().includes(needle);
+  const filteredEmployees = useMemo(
+    () => employees.filter(visible),
+    [employees, visible]
+  );
 
-      const matchesDepartment =
-        departmentFilter === "all" || employee.department === departmentFilter;
-
-      const matchesStatus =
-        statusFilter === "all" || employee.status === statusFilter;
-
-      return matchesSearch && matchesDepartment && matchesStatus;
-    });
-  }, [
-    employees,
-    searchQuery,
-    departmentFilter,
-    statusFilter,
-    canSeeAll,
-    canSeeOwnDepartment,
-    user?.departmentId,
-  ]);
+  // Вкладки сбора сил живут на ВСЁМ составе: пересечение страницы с составом
+  // на мероприятии показало бы «участвуют трое» там, где их триста.
+  const allVisibleEmployees = useMemo(
+    () => allEmployees.filter(visible),
+    [allEmployees, visible]
+  );
 
   // Те же строки, что и в списке ниже, только суженные разрезом сбора: поиск,
   // фильтр по отделу и права продолжают действовать и на этих вкладках —
@@ -414,27 +572,51 @@ function EmployeesScreen() {
 
   const assignedEmployees = useMemo(
     () =>
-      filteredEmployees
+      allVisibleEmployees
         .filter((employee) => assignedIds.has(employee.id))
         .map(withOpsStatus),
-    [filteredEmployees, assignedIds, withOpsStatus]
+    [allVisibleEmployees, assignedIds, withOpsStatus]
   );
   const inServiceEmployees = useMemo(
     () =>
-      filteredEmployees
+      allVisibleEmployees
         .filter((employee) => inServiceIds.has(employee.id))
         .map(withOpsStatus),
-    [filteredEmployees, inServiceIds, withOpsStatus]
+    [allVisibleEmployees, inServiceIds, withOpsStatus]
   );
 
 
-  // Выгружается ТО, ЧТО ПОКАЗАНО: те же строки и в том же порядке, что на
-  // экране, с учётом отбора и прав. Файл собирается из уже загруженных
-  // данных — отдельной ручки выгрузки на бэке нет, и «Экспорт» до этого был
-  // кнопкой вовсе без обработчика.
+  // Выгружается ВЕСЬ ОТБОР, а не показанная страница (Plane №228). Экран
+  // теперь листает по пятьдесят строк, и файл «сотрудники.csv» с полусотней
+  // человек из пяти тысяч был бы обманом: кнопка обещает выгрузку отбора.
+  //
+  // Поэтому здесь ОТДЕЛЬНЫЙ запрос — тот же отбор, но без страниц: ручка без
+  // `page` отдаёт всё, что отвечает условиям. Он делается по нажатию, а не при
+  // открытии экрана, и в этом вся разница: 2,7 МБ за файл, который человек
+  // попросил, против 2,7 МБ за каждое открытие реестра.
   //
   // ИИН уходит в файл ХВОСТОМ: полных двенадцати цифр во фронте нет.
-  const exportCsv = useCallback(() => {
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = useCallback(async () => {
+    setExporting(true);
+    let selection: Employee[] = [];
+    try {
+      const whole = await apiClient.getStaffUnitsByDirectorate({
+        search: searchQuery || undefined,
+        divisionId: departmentId,
+        status: statusFilter === "all" ? undefined : statusFilter,
+      });
+      selection = toEmployees(whole.staff_units).filter(visible);
+    } catch {
+      // Сеть отказала — выгружаем хотя бы показанное, но молчать об этом
+      // нельзя: файл, тихо ставший короче, читается как «столько и есть».
+      selection = filteredEmployees;
+      window.alert(
+        "Не удалось получить весь отбор — в файл ушла только показанная страница."
+      );
+    } finally {
+      setExporting(false);
+    }
     const head = [
       "№",
       "ФИО",
@@ -448,7 +630,7 @@ function EmployeesScreen() {
       "Табельный номер",
     ];
     const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
-    const rows = filteredEmployees.map((employee) =>
+    const rows = selection.map((employee) =>
       [
         String(employee.number),
         employee.name,
@@ -474,7 +656,7 @@ function EmployeesScreen() {
     link.download = "сотрудники.csv";
     link.click();
     URL.revokeObjectURL(url);
-  }, [filteredEmployees]);
+  }, [filteredEmployees, searchQuery, departmentId, statusFilter, visible]);
 
   // Список, карточки, фильтр отделов и счётчики растут из ОДНОГО запроса
   // directorate. Закрыта ручка — закрывается вся страница: иначе на экране
@@ -758,18 +940,22 @@ function EmployeesScreen() {
         </Card>
 
         {/* Main Content */}
-        <Tabs defaultValue="table" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="table">Список сотрудников</TabsTrigger>
               {/* Две вкладки сбора — ТОТ ЖЕ список, суженный по статусу. Свою
                   разметку они не заводят: разойдясь с реестром колонками, они
                   показывали бы тех же людей по-другому. */}
+              {/* Числа на вкладках берутся из РАЗРЕЗА СБОРА, а не из списка
+                  людей: состав подразделения теперь грузится лениво (только
+                  когда вкладку открыли), и счётчик из него показывал бы ноль
+                  до первого нажатия — то есть врал бы (Plane №228). */}
               <TabsTrigger value="assigned">
-                Участие в ОМ ({assignedEmployees.length})
+                Участие в ОМ ({gathering.assigned.length})
               </TabsTrigger>
               <TabsTrigger value="in-service">
-                В строю ({inServiceEmployees.length})
+                В строю ({gathering.inService.length})
               </TabsTrigger>
               <TabsTrigger value="cards">Карточки</TabsTrigger>
               {selectedEmployee && (
@@ -788,10 +974,10 @@ function EmployeesScreen() {
                   variant="outline"
                   size="sm"
                   onClick={exportCsv}
-                  disabled={filteredEmployees.length === 0}
+                  disabled={filteredEmployees.length === 0 || exporting}
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Экспорт CSV
+                  {exporting ? "Собираем файл…" : "Экспорт CSV"}
                 </Button>
               </PermissionGate>
             </div>
@@ -820,8 +1006,8 @@ function EmployeesScreen() {
               <SelectContent>
                 <SelectItem value="all">Все отделы</SelectItem>
                 {departments.map((dept) => (
-                  <SelectItem key={dept} value={dept}>
-                    {dept}
+                  <SelectItem key={dept.id} value={String(dept.id)}>
+                    {dept.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -879,15 +1065,32 @@ function EmployeesScreen() {
               </div>
             )}
             {!loading && !error && (
-              <EmployeeTable
-                employees={filteredEmployees}
-                onSelectEmployee={setSelectedEmployee}
-                onResetFilters={filtersApplied ? resetFilters : undefined}
-              />
+              <>
+                <EmployeeTable
+                  employees={filteredEmployees}
+                  onSelectEmployee={setSelectedEmployee}
+                  onResetFilters={filtersApplied ? resetFilters : undefined}
+                />
+                <Pager
+                  page={page}
+                  pageSize={PAGE_SIZE}
+                  matched={data?.matched_count ?? filteredEmployees.length}
+                  hasNext={data?.has_next ?? false}
+                  busy={refreshing}
+                  onChange={(next) =>
+                    setFilter("page", next === 1 ? "1" : String(next), "1")
+                  }
+                />
+              </>
             )}
           </TabsContent>
 
           <TabsContent value="assigned" className="space-y-6">
+            {fullDirectorate.isLoading && (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Загрузка состава подразделения…
+              </p>
+            )}
             {gathering.isPending && (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Загрузка разреза сбора…
@@ -920,6 +1123,11 @@ function EmployeesScreen() {
           </TabsContent>
 
           <TabsContent value="in-service" className="space-y-6">
+            {fullDirectorate.isLoading && (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Загрузка состава подразделения…
+              </p>
+            )}
             {gathering.isPending && (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Загрузка разреза сбора…
@@ -1076,6 +1284,16 @@ function EmployeesScreen() {
                     ))}
                   </div>
                 )}
+                <Pager
+                  page={page}
+                  pageSize={PAGE_SIZE}
+                  matched={data?.matched_count ?? filteredEmployees.length}
+                  hasNext={data?.has_next ?? false}
+                  busy={refreshing}
+                  onChange={(next) =>
+                    setFilter("page", next === 1 ? "1" : String(next), "1")
+                  }
+                />
               </>
             )}
           </TabsContent>

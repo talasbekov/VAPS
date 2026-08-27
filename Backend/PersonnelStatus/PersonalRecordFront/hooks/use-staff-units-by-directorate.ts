@@ -19,7 +19,15 @@ export function isDirectorateForbidden(error: unknown): error is ApiHttpError {
   return error instanceof ApiHttpError && error.status === 403;
 }
 
-export function useStaffUnitsByDirectorate() {
+/**
+ * ВЕСЬ состав подразделения. Отдельный хук страницы — `useStaffUnitsPage`.
+ *
+ * `enabled` появился в №228: на пяти тысячах сотрудников этот ответ весит
+ * 2,7 МБ, и грузить его при открытии экрана, которому нужна одна страница,
+ * незачем. Экраны, которым состав нужен целиком (календарь, массовая правка),
+ * зовут хук без аргументов — поведение прежнее.
+ */
+export function useStaffUnitsByDirectorate(enabled = true) {
   return useQuery<{
     division: {
       id: number;
@@ -33,6 +41,7 @@ export function useStaffUnitsByDirectorate() {
     queryFn: async () => {
       return await apiClient.getStaffUnitsByDirectorate();
     },
+    enabled,
     retry: retryUnlessClientError,
   });
 }

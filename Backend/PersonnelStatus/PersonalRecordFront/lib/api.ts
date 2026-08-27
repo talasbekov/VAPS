@@ -213,6 +213,16 @@ export interface StaffUnitStatistics {
   }>;
 }
 
+/** Отбор и страницы у ручки штатки (все поля необязательны, Plane №227). */
+export interface DirectorateQuery {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  divisionId?: number | string;
+  /** Код действующего статуса либо `none` — «статуса нет». */
+  status?: string;
+}
+
 // Интерфейсы для справочников
 export interface Position {
   id: number;
@@ -904,18 +914,35 @@ class ApiClient {
     }
   }
 
+  // Отбор и страницы штатки — см. `_directorate_get` в staff_unit/views.py.
   // Метод для получения staff units по директории
   // API возвращает данные напрямую, не в формате ApiResponse
-  async getStaffUnitsByDirectorate(): Promise<{
+  async getStaffUnitsByDirectorate(params: DirectorateQuery = {}): Promise<{
     division: {
       id: number;
       name: string;
       code: string;
     };
     staff_units: StaffUnit[];
+    /** Сколько строк В ЭТОМ ответе. */
     total_count: number;
+    /** Сколько строк отвечает отбору (без страниц равен `total_count`). */
+    matched_count?: number;
+    page?: number;
+    page_size?: number;
+    has_next?: boolean;
   }> {
-    const endpoint = `/api/staff_unit/staff-units/directorate/`;
+    // Параметры НЕОБЯЗАТЕЛЬНЫ, и это несущее решение бэка (Plane №227): без
+    // них ручка отдаёт весь состав подразделения, как отдавала всегда — этим
+    // живут календарь статусов и массовая правка.
+    const query = new URLSearchParams();
+    if (params.page !== undefined) query.set("page", String(params.page));
+    if (params.pageSize !== undefined) query.set("page_size", String(params.pageSize));
+    if (params.search) query.set("search", params.search);
+    if (params.divisionId) query.set("division_id", String(params.divisionId));
+    if (params.status) query.set("status", params.status);
+    const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+    const endpoint = `/api/staff_unit/staff-units/directorate/${suffix}`;
 
     // Используем относительный путь (Next.js rewrites проксируют)
     const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
