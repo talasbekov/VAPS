@@ -146,3 +146,30 @@ def test_full_iin_never_leaves_the_list(actor, scene):
     # Обратная сторона: хвост в теле ЕСТЬ, иначе ассерт выше зеленеет и на
     # выдаче, где ИИН не упоминается вовсе.
     assert "•••••• 0123" in body, "маскированный ИИН пропал — проба вакуумна"
+
+
+@pytest.mark.django_db
+def test_photo_url_reaches_the_list_and_absence_is_told_as_null(actor, scene):
+    """Адрес аватарки доезжает до списка, а её отсутствие — как `null`.
+
+    🔴 Обе половины важны. Клиент, получивший путь вместо адреса, склеил бы
+    его с префиксом «по соглашению» — и получил бы 404 в каждой строке при
+    первой же смене хранилища. Клиент, не отличивший «фото нет» от «фото
+    есть», нарисовал бы битую картинку вместо заглушки.
+    """
+    import io
+
+    from django.core.files.base import ContentFile
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (10, 10), (1, 2, 3)).save(buffer, format="JPEG")
+    scene["major"].photo.save("pf-1.jpg", ContentFile(buffer.getvalue()), save=True)
+
+    payload = _get(actor).data
+    with_photo = _row(payload, scene["major"])
+    without_photo = _row(payload, scene["bare"])
+
+    assert with_photo["photo_url"] == scene["major"].photo.url
+    assert with_photo["photo_url"].startswith("/media/"), with_photo["photo_url"]
+    assert without_photo["photo_url"] is None

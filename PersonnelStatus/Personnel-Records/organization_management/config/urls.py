@@ -71,3 +71,11 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    # Медиа на стенде отдаёт сам Django. До 27.08.2026 (Plane №205) не отдавал
+    # никто: `MEDIA_URL`/`MEDIA_ROOT` в настройках были, а маршрута не было — и
+    # фотография сотрудника, записанная в базу, открывалась 404. В проде этот
+    # адрес обслуживает nginx, поэтому маршрут стоит ПОД `DEBUG`, а не рядом с
+    # API. Приватные документы раздела ОМ сюда не попадают сознательно: они
+    # лежат вне MEDIA_ROOT и отдаются через проверку права (см.
+    # `OPS_PRIVATE_STORAGE_ROOT` в настройках).
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
