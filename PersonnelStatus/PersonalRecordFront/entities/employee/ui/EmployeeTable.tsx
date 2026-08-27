@@ -36,6 +36,7 @@ import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatu
 import { useQueryClient } from "@tanstack/react-query";
 import { formatIsoDate } from "@/shared/lib/date";
 import type { Employee } from "../model/types";
+import { EmployeeAvatar } from "./EmployeeAvatar";
 
 interface EmployeeTableProps {
   employees: Employee[];
@@ -150,7 +151,9 @@ export function EmployeeTable({
                     {employee.number}
                   </TableCell>
                   <TableCell onClick={() => onSelectEmployee(employee)}>
-                    <div>
+                    <div className="flex items-center gap-3">
+                      <EmployeeAvatar name={employee.name} photo={employee.photo} />
+                      <div className="min-w-0">
                       <div className="font-medium">{employee.name}</div>
                       {/* Подстрока прототипа: «звание · ИИН». Здесь стояло
                           поле `manager`, которому ручка штатки не даёт
@@ -166,6 +169,7 @@ export function EmployeeTable({
                         ]
                           .filter((part) => part !== "")
                           .join(" · ")}
+                      </div>
                       </div>
                     </div>
                   </TableCell>

@@ -121,6 +121,16 @@ const nextConfig = {
         source: "/api/ops/:path*",
         destination: `${backendUrl}/api/ops/:path*/`,
       },
+      // Медиа (аватарки сотрудников). Слэша в конце тут быть НЕ должно: это
+      // файл, а не ручка Django-стиля, и `…/SD00001.jpg/` отвечает 404.
+      // В dev браузер ходит в бэкенд по абсолютному адресу и перезаписей не
+      // касается — но `photo_url` приходит ОТНОСИТЕЛЬНЫМ («/media/…»), то есть
+      // разрешается против фронта, и без этого правила аватарка не открывается
+      // ни в dev, ни в проде (та же ловушка, что у `/api/core/`, Plane №174).
+      {
+        source: "/media/:path*",
+        destination: `${backendUrl}/media/:path*`,
+      },
       {
         source: "/api/token",
         destination: `${backendUrl}/api/token/`,

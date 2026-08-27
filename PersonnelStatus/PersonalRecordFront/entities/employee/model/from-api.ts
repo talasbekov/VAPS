@@ -42,6 +42,10 @@ export function personnelFields(emp: any): EmployeePersonalFields {
     hireDate: emp.hire_date ?? "",
     birthDate: emp.birth_date ?? "",
     personnelNumber: emp.personnel_number ?? "",
-    photo: emp.photo,
+    // Адрес аватарки приходит готовым (`photo_url`, Plane №205). Старое поле
+    // `photo` — путь файла у донорского контракта; оно оставлено как запасной
+    // источник, но склеивать его с префиксом здесь никто не будет: адрес
+    // выдаёт сервер.
+    photo: emp.photo_url ?? emp.photo,
   };
 }

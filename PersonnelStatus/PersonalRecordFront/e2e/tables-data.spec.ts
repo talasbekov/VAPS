@@ -62,7 +62,14 @@ async function tableFilled(page: Page): Promise<void> {
   await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
 }
 
-/** Значения колонки по её подписи в шапке. */
+/**
+ * Значения колонки по её подписи в шапке.
+ *
+ * Оформительские узлы (`aria-hidden`) выбрасываются: с 27.08.2026 в колонке
+ * ФИО стоит аватарка, и её ЗАГЛУШКА-ИНИЦИАЛЫ — тоже текст. Без вычистки
+ * «Абенов Санжар» читался бы как «АСАбенов Санжар», и отбор по первому слову
+ * искал бы несуществующую фамилию. Берётся ровно то, что читает скринридер.
+ */
 async function column(page: Page, head: string): Promise<string[]> {
   return page.evaluate((name) => {
     const table = document.querySelector('table')
@@ -70,9 +77,13 @@ async function column(page: Page, head: string): Promise<string[]> {
     const heads = [...table.querySelectorAll('thead th')]
     const index = heads.findIndex((th) => th.textContent?.trim() === name)
     if (index === -1) return []
-    return [...table.querySelectorAll('tbody tr')].map((row) =>
-      (row.children[index]?.textContent ?? '').trim(),
-    )
+    return [...table.querySelectorAll('tbody tr')].map((row) => {
+      const cell = row.children[index]
+      if (cell === undefined) return ''
+      const copy = cell.cloneNode(true) as HTMLElement
+      copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove())
+      return (copy.textContent ?? '').trim()
+    })
   }, head)
 }
 
@@ -518,5 +529,49 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     for (const name of dropped) {
       expect(csv, `в файл попало отсечённое отбором имя «${name}»`).not.toContain(name)
     }
+  })
+
+  test('в строке реестра стоит аватарка, а без фотографии — инициалы', async ({ page }) => {
+    /**
+     * Две половины, и обе обязательны (Plane №206).
+     *
+     * 🔴 ФОТОГРАФИЯ ДОЛЖНА ЗАГРУЗИТЬСЯ, а не просто «тег на месте»: адрес
+     * приходит относительным («/media/…»), и без перезаписи `/media/*` в
+     * `next.config.js` браузер получил бы 404 — картинка была бы битой, а
+     * ассерт «есть <img>» этого не заметил бы. Поэтому проверяется
+     * `naturalWidth`, то есть факт декодирования.
+     *
+     * 🔴 БЕЗ ФОТОГРАФИИ ОБЯЗАНЫ БЫТЬ ИНИЦИАЛЫ. У части сотрудников стенда
+     * фотографии нет вовсе; заглушка-картинка вместо инициалов не различает
+     * строки, а битая иконка браузера читается как поломка.
+     */
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto('/employees')
+    await hydrated(page)
+    await tableFilled(page)
+
+    const rows = page.locator('table tbody tr')
+    const total = await rows.count()
+    expect(total, 'в реестре нет строк — проба вакуумна').toBeGreaterThan(1)
+
+    const avatars = page.locator('table tbody tr img[src*="/media/"]')
+    const withPhoto = await avatars.count()
+    expect(withPhoto, 'ни одной аватарки в реестре').toBeGreaterThan(0)
+
+    const decoded = await avatars.first().evaluate((img) => (img as HTMLImageElement).naturalWidth)
+    expect(decoded, 'аватарка не загрузилась: адрес отдаёт не картинку').toBeGreaterThan(0)
+
+    const initials = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('table tbody tr')]
+      return rows
+        .filter((row) => row.querySelector('img[src*="/media/"]') === null)
+        .map((row) => (row.querySelector('[data-slot="avatar-fallback"]')?.textContent ?? '').trim())
+    })
+    const withoutPhoto = initials.length
+    expect(withoutPhoto, 'на стенде все с фотографиями — заглушку никто не проверит').toBeGreaterThan(0)
+    expect(
+      initials.every((text) => /^[А-ЯЁA-Z]{1,2}$/.test(text)),
+      `вместо инициалов: ${initials.filter((t) => !/^[А-ЯЁA-Z]{1,2}$/.test(t)).join(', ')}`,
+    ).toBe(true)
   })
 })
