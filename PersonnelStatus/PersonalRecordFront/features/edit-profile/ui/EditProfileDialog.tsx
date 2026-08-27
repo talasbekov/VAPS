@@ -14,12 +14,42 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
-import { updateProfile, changePassword } from "../api/edit-profile-api";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  updateProfile,
+  changePassword,
+  ProfileApiError,
+} from "../api/edit-profile-api";
 
 interface EditProfileDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+/** Ошибки, привязанные к полям запроса: `{ new_password: "…" }`. */
+type FieldErrors = Record<string, string>;
+
+/**
+ * Первое сообщение по каждому полю.
+ *
+ * Показывается ОДНО, а не все: под полем пароля их приходит до четырёх сразу
+ * (короткий, распространённый, только цифры, похож на логин), и столбик из
+ * четырёх строк раздвигает форму так, что кнопка уезжает за край диалога.
+ * Остальные человек увидит следующей попыткой — исправлять их всё равно по
+ * одной.
+ */
+function firstPerField(error: unknown): FieldErrors {
+  if (!(error instanceof ProfileApiError)) return {};
+  return Object.fromEntries(
+    Object.entries(error.fieldErrors)
+      .filter(([, messages]) => messages.length > 0)
+      .map(([field, messages]) => [field, messages[0]])
+  );
+}
+
+function messageOf(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 export function EditProfileDialog({
@@ -27,8 +57,9 @@ export function EditProfileDialog({
   onOpenChange,
 }: EditProfileDialogProps) {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<null | "profile" | "password">(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [success, setSuccess] = useState<string | null>(null);
 
   // Данные профиля
@@ -60,10 +91,39 @@ export function EditProfileDialog({
     setEmail(user.email || "");
   }, [open, user]);
 
-  const handleSaveProfile = async () => {
+  const startAttempt = () => {
     setError(null);
+    setFieldErrors({});
     setSuccess(null);
-    setLoading(true);
+  };
+
+  /**
+   * Показать отказ: ошибки — под своими полями, шапка — про остальное.
+   *
+   * Шапка НЕ повторяет дословно то, что уже стоит под полем: на снимке стенда
+   * «Текущий пароль неверен.» читалось дважды подряд в двух сантиметрах друг
+   * от друга и выглядело сбоем, а не подсказкой. Но и молчать она не может —
+   * тот, кто читает экран не глазами, узнаёт об отказе именно из неё (у неё
+   * role="alert"), поэтому вместо дубля она отправляет к полям.
+   */
+  const showFailure = (err: unknown, fallback: string) => {
+    const perField = firstPerField(err);
+    setFieldErrors(perField);
+    const count = Object.keys(perField).length;
+    if (count === 0) {
+      setError(messageOf(err, fallback));
+    } else {
+      setError(
+        count === 1
+          ? "Проверьте выделенное поле."
+          : "Проверьте выделенные поля."
+      );
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    startAttempt();
+    setLoading("profile");
 
     try {
       await updateProfile({
@@ -71,7 +131,7 @@ export function EditProfileDialog({
         last_name: lastName,
         email: email,
       });
-      
+
       setSuccess("Профиль успешно обновлен");
       setTimeout(() => {
         onOpenChange(false);
@@ -79,33 +139,39 @@ export function EditProfileDialog({
         // Обновляем страницу для отображения новых данных
         window.location.reload();
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Ошибка при обновлении профиля");
+    } catch (err) {
+      showFailure(err, "Ошибка при обновлении профиля");
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
   const handleChangePassword = async () => {
-    setError(null);
-    setSuccess(null);
+    startAttempt();
 
+    // Проверки, которые сервер сделать не может: он получает ОДИН пароль, а
+    // подтверждение существует ровно затем, чтобы человек не закрепил
+    // опечатку. Пустые поля тоже отбиваются здесь — за ними нет вопроса к
+    // серверу.
     if (!currentPassword || !newPassword || !confirmPassword) {
       setError("Заполните все поля для смены пароля");
+      setFieldErrors({
+        ...(currentPassword ? {} : { current_password: "Введите текущий пароль" }),
+        ...(newPassword ? {} : { new_password: "Введите новый пароль" }),
+        ...(confirmPassword
+          ? {}
+          : { confirm_password: "Повторите новый пароль" }),
+      });
       return;
     }
 
     if (newPassword !== confirmPassword) {
       setError("Новые пароли не совпадают");
+      setFieldErrors({ confirm_password: "Пароли не совпадают" });
       return;
     }
 
-    if (newPassword.length < 8) {
-      setError("Пароль должен содержать минимум 8 символов");
-      return;
-    }
-
-    setLoading(true);
+    setLoading("password");
 
     try {
       await changePassword({
@@ -113,20 +179,35 @@ export function EditProfileDialog({
         new_password: newPassword,
       });
 
-      setSuccess("Пароль успешно изменен");
+      // Поля очищаются сразу: набранный пароль больше не нужен, а оставленный
+      // в форме он переживёт закрытие диалога вместе с остальным состоянием.
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      
-      setTimeout(() => {
-        setSuccess(null);
-      }, 2000);
-    } catch (err: any) {
-      setError(err.message || "Ошибка при смене пароля");
+      setSuccess("Пароль изменён. Он понадобится при следующем входе.");
+    } catch (err) {
+      showFailure(err, "Ошибка при смене пароля");
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
+
+  const busy = loading !== null;
+
+  /** Подпись ошибки под полем — она же цель `aria-describedby` этого поля. */
+  const FieldError = ({ field }: { field: string }) =>
+    fieldErrors[field] ? (
+      <p id={`${field}-error`} className="text-sm text-destructive">
+        {fieldErrors[field]}
+      </p>
+    ) : null;
+
+  /** Разметка поля с ошибкой: подсветка рамки и связь с подписью. */
+  const fieldProps = (field: string) => ({
+    "aria-invalid": Boolean(fieldErrors[field]),
+    "aria-describedby": fieldErrors[field] ? `${field}-error` : undefined,
+    className: cn(fieldErrors[field] && "border-destructive"),
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -139,16 +220,18 @@ export function EditProfileDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Сообщения об ошибках/успехе */}
+          {/* Сообщения об ошибках/успехе. role=alert — чтобы отказ дошёл и до
+              того, кто читает экран не глазами: без него смена пароля молча
+              не происходила бы. */}
           {error && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" role="alert">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
           {success && (
-            <Alert className="border-green-200 bg-green-50">
+            <Alert className="border-green-200 bg-green-50" role="status">
               <CheckCircle2 className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-800">
                 {success}
@@ -159,7 +242,7 @@ export function EditProfileDialog({
           {/* Данные профиля */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Личные данные</h3>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="firstName">Имя</Label>
@@ -168,7 +251,9 @@ export function EditProfileDialog({
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="Имя"
+                  {...fieldProps("first_name")}
                 />
+                <FieldError field="first_name" />
               </div>
 
               <div className="space-y-2">
@@ -178,7 +263,9 @@ export function EditProfileDialog({
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="Фамилия"
+                  {...fieldProps("last_name")}
                 />
+                <FieldError field="last_name" />
               </div>
             </div>
 
@@ -190,14 +277,19 @@ export function EditProfileDialog({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="email@example.com"
+                {...fieldProps("email")}
               />
+              <FieldError field="email" />
             </div>
 
             <Button
               onClick={handleSaveProfile}
-              disabled={loading}
+              disabled={busy}
               className="w-full"
             >
+              {loading === "profile" && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               Сохранить изменения
             </Button>
           </div>
@@ -211,10 +303,13 @@ export function EditProfileDialog({
                 <Input
                   id="currentPassword"
                   type="password"
+                  autoComplete="current-password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   placeholder="Введите текущий пароль"
+                  {...fieldProps("current_password")}
                 />
+                <FieldError field="current_password" />
               </div>
 
               <div className="space-y-2">
@@ -222,10 +317,13 @@ export function EditProfileDialog({
                 <Input
                   id="newPassword"
                   type="password"
+                  autoComplete="new-password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Введите новый пароль (минимум 8 символов)"
+                  {...fieldProps("new_password")}
                 />
+                <FieldError field="new_password" />
               </div>
 
               <div className="space-y-2">
@@ -233,18 +331,24 @@ export function EditProfileDialog({
                 <Input
                   id="confirmPassword"
                   type="password"
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Повторите новый пароль"
+                  {...fieldProps("confirm_password")}
                 />
+                <FieldError field="confirm_password" />
               </div>
 
               <Button
                 onClick={handleChangePassword}
-                disabled={loading}
+                disabled={busy}
                 variant="outline"
                 className="w-full"
               >
+                {loading === "password" && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 Изменить пароль
               </Button>
             </div>
@@ -260,11 +364,3 @@ export function EditProfileDialog({
     </Dialog>
   );
 }
-
-
-
-
-
-
-
-

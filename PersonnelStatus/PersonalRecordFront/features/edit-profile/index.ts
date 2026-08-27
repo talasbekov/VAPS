@@ -11,7 +11,11 @@ export type {
 } from "./model/types";
 
 // Экспортируем API функции
-export { updateProfile, changePassword } from "./api/edit-profile-api";
+export {
+  updateProfile,
+  changePassword,
+  ProfileApiError,
+} from "./api/edit-profile-api";
 
 
 

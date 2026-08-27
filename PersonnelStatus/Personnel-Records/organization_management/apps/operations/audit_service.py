@@ -170,6 +170,13 @@ ACCESS_ROLE_PERMISSIONS_CHANGED = "ACCESS_ROLE_PERMISSIONS_CHANGED"
 # не появляется НИ В КАКОМ виде.
 ACCESS_ACCOUNT_SAVED = "ACCESS_ACCOUNT_SAVED"
 ACCESS_ACCOUNT_PASSWORD_RESET = "ACCESS_ACCOUNT_PASSWORD_RESET"
+# Человек сменил СВОЙ пароль (Plane №180). Отдельное действие от сброса, а не
+# то же самое с другим актором: сброс делает администратор чужой учётке и
+# отдаёт временный пароль в переписку, а смена подтверждается текущим паролем
+# и никакого пароля наружу не отдаёт. Разбирательство «как у него оказался
+# этот пароль» упирается ровно в это различие, и по одному лишь полю актора
+# его не прочесть: администратор может менять и свой собственный.
+ACCESS_ACCOUNT_PASSWORD_CHANGED = "ACCESS_ACCOUNT_PASSWORD_CHANGED"
 # Выдача роли ЧЕЛОВЕКУ и её снятие (Plane №107). Именно эти два действия
 # меняют, кто и что может делать в системе, — и до 26.08.2026 они НЕ оставляли
 # следа вовсе: справочники прав и ролей писались в журнал, а раздача — нет.
@@ -244,6 +251,7 @@ ACTIONS = frozenset(
         ACCESS_ROLE_PERMISSIONS_CHANGED,
         ACCESS_ACCOUNT_SAVED,
         ACCESS_ACCOUNT_PASSWORD_RESET,
+        ACCESS_ACCOUNT_PASSWORD_CHANGED,
         ACCESS_ROLE_GRANTED,
         ACCESS_ROLE_REVOKED,
         DUTY_SHIFT_CREATED,
