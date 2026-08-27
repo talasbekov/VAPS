@@ -230,3 +230,149 @@ def test_seeding_does_not_overwrite_what_the_admin_fixed_by_hand():
 
     car.refresh_from_db()
     assert car.deployment == "Караганда"
+
+
+# ── Выделение транспорта на мероприятие (Plane №215 / шаг №222) ─────────────
+
+from organization_management.apps.ops.documents_summary import (  # noqa: E402
+    document_values,
+    summary_for_event,
+)
+from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: E402
+    make_object,
+    manager,  # noqa: F401 — фикстура
+)
+
+EVENTS = "/api/ops/security-events/"
+
+
+def _event(api):
+    obj = make_object()
+    return api.post(
+        EVENTS,
+        {
+            "title": "Визит делегации",
+            "objectId": str(obj.pk),
+            "businessDate": "2026-08-10",
+            "kind": "FOREIGN",
+        },
+        format="json",
+    ).json()
+
+
+def test_an_allocated_car_comes_back_with_its_plate_and_armour(manager):  # noqa: F811
+    """Выделенная машина видна в карточке ОМ с ГРНЗ и классом брони.
+
+    Ровно тех сведений и не было у свободного текста «Выделяемый транспорт»,
+    ради которых реестр и заводился.
+    """
+    car = _car()
+    event = _event(manager)
+
+    body = manager.post(
+        f"{EVENTS}{event['id']}/vehicles/",
+        {"vehicleId": str(car.pk), "callsign": "S1", "purpose": "кортеж"},
+        format="json",
+    )
+
+    assert body.status_code == 201
+    row = body.json()["vehicles"][0]
+    assert row["label"] == "Mercedes-Benz S680 Maybach 4 М (брон.) (111 aa 01)"
+    assert row["callsign"] == "S1"
+    assert row["purpose"] == "кортеж"
+    assert row["plate"] == "111 aa 01"
+    assert row["armorClass"] == "VR7"
+
+
+def test_the_same_car_cannot_be_allocated_twice(manager):  # noqa: F811
+    """Дважды выделенная машина ехала бы двумя позывными сразу.
+
+    Красная на мутации: сними `uniq_ops_event_vehicle` — второй вызов пройдёт
+    и счёт машин в документе разойдётся с парком.
+    """
+    car = _car()
+    event = _event(manager)
+    url = f"{EVENTS}{event['id']}/vehicles/"
+    manager.post(url, {"vehicleId": str(car.pk)}, format="json")
+
+    second = manager.post(url, {"vehicleId": str(car.pk)}, format="json")
+
+    assert second.status_code == 422
+    assert second.json()["error_code"] == "VEHICLE_ALREADY_ALLOCATED"
+
+
+def test_a_retired_car_is_refused_with_a_reason(manager):  # noqa: F811
+    """Снятая машина в кортеж не ставится, и отказ назван словами."""
+    car = _car(is_active=False)
+    event = _event(manager)
+
+    refused = manager.post(
+        f"{EVENTS}{event['id']}/vehicles/",
+        {"vehicleId": str(car.pk)},
+        format="json",
+    )
+
+    assert refused.status_code == 422
+    assert refused.json()["error_code"] == "VEHICLE_RETIRED"
+
+
+def test_releasing_a_car_takes_it_off_the_event(manager):  # noqa: F811
+    """Снятие с мероприятия убирает машину из карточки."""
+    car = _car()
+    event = _event(manager)
+    allocated = manager.post(
+        f"{EVENTS}{event['id']}/vehicles/",
+        {"vehicleId": str(car.pk)},
+        format="json",
+    ).json()["vehicles"][0]
+
+    after = manager.delete(
+        f"{EVENTS}{event['id']}/vehicles/{allocated['id']}/"
+    )
+
+    assert after.status_code == 200
+    assert after.json()["vehicles"] == []
+
+
+def test_the_summary_shows_allocations_next_to_the_free_text(manager):  # noqa: F811
+    """Сводка ГВО показывает ОБА источника, не подменяя один другим.
+
+    Красная на мутации: положи выделения в ключ `transport` вместо своего —
+    свободный текст патча затрёт их, и сводка потеряет ГРНЗ.
+    """
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEvent,
+    )
+    from organization_management.apps.operations.models_gvo import (
+        OpsGvoSummaryPatch,
+    )
+
+    car = _car()
+    event = _event(manager)
+    manager.post(
+        f"{EVENTS}{event['id']}/vehicles/",
+        {"vehicleId": str(car.pk), "callsign": "S1", "purpose": "кортеж"},
+        format="json",
+    )
+    row = OpsSecurityEvent.objects.get(pk=event["id"])
+    OpsGvoSummaryPatch.objects.create(
+        event=row, patch={"transport": [{"code": "S9", "car": "машина руками"}]}
+    )
+
+    summary = summary_for_event(row)
+
+    assert summary["transport"] == [{"code": "S9", "car": "машина руками"}]
+    assert summary["allocatedTransport"] == [
+        {
+            "callsign": "S1",
+            "label": "Mercedes-Benz S680 Maybach 4 М (брон.) (111 aa 01)",
+            "purpose": "кортеж",
+            "plate": "111 aa 01",
+            "armorClass": "VR7",
+        }
+    ]
+    # Документ печатает СНАЧАЛА выделенную машину, потом набранную руками:
+    # точное впереди приблизительного, и ни одна строка не теряется.
+    values = document_values(row)
+    assert values["transport_1"].startswith("S1 — Mercedes-Benz")
+    assert values["transport_2"] == "S9 — машина руками"

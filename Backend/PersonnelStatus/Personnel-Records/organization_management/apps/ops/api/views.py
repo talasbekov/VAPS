@@ -228,6 +228,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_detail": _MANAGE_EVENT_PERMISSION,
         "visit_object_chief": _MANAGE_EVENT_PERMISSION,
+        # Выделение транспорта — правка мероприятия, а не отдельная область
+        # (Plane №215): машину ставит в кортеж тот же, кто ведёт ОМ, и своё
+        # право под неё защищало бы одно и то же по-разному.
+        "vehicle_allocate": _MANAGE_EVENT_PERMISSION,
+        "vehicle_release": _MANAGE_EVENT_PERMISSION,
         # Тем же правом, что и старший объекта: это назначение ответственного
         # внутри мероприятия, и заводить под него отдельное право значило бы
         # защищать одно и то же по-разному.
@@ -454,6 +459,35 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         return self._event_response(
             event_service.remove_visit_object(pk, visit_object_id)
+        )
+
+    # ── Выделенный транспорт (Plane №215) ───────────────────────────────
+
+    @action(detail=True, methods=["post"], url_path="vehicles")
+    def vehicle_allocate(self, request, pk=None):
+        """Выделить машину реестра ГОН на мероприятие."""
+        data = request.data or {}
+        event = event_service.lock_event(pk)
+        return self._event_response(
+            vehicles_service.allocate_vehicle(
+                event,
+                vehicle_id=data.get("vehicleId"),
+                callsign=data.get("callsign"),
+                purpose=data.get("purpose"),
+            ),
+            status=201,
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"vehicles/(?P<allocation_id>[^/.]+)",
+    )
+    def vehicle_release(self, request, pk=None, allocation_id=None):
+        """Снять машину с мероприятия."""
+        event = event_service.lock_event(pk)
+        return self._event_response(
+            vehicles_service.release_vehicle(event, allocation_id)
         )
 
     # ── Замещающие на объекте посещения ─────────────────────────────────

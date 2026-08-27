@@ -13,6 +13,7 @@ from organization_management.apps.operations.models_object import (
 )
 from organization_management.apps.ops.passport import snapshot_sectors
 from organization_management.apps.ops import security_events
+from organization_management.apps.ops import vehicles as vehicles_service
 
 
 class SecurityObjectSerializer(serializers.ModelSerializer):
@@ -293,6 +294,11 @@ def serialize_security_event(event):
         # прошедших бэкфилл 0035 (их быть не должно); объект мероприятия сюда
         # перенесён как первый.
         "visitObjects": _serialize_visit_objects(event),
+        # Выделенный транспорт из реестра ГОН (Plane №215). Свободный текст
+        # «Выделяемый транспорт» в патче сводки ГВО ОСТАЁТСЯ и живёт своей
+        # жизнью: у него есть читатели (сводка и документ сводных данных), и
+        # снимать источник, пока его читают, правило раздела запрещает.
+        "vehicles": vehicles_service.list_event_vehicles(event),
         "createdAt": event.created_at.isoformat(),
         "updatedAt": event.updated_at.isoformat(),
     }

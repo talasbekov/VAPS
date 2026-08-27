@@ -131,7 +131,28 @@ def derive_summary(event):
             else None
         ),
         "groups": [{"name": "ГВО (состав уточняется)", "members": []}],
+        # Свободный текст «Выделяемый транспорт»: его набирает человек в
+        # разделе сводки. ОСТАЁТСЯ пустым в базе и наполняется патчем — так
+        # было и до реестра транспорта.
         "transport": [],
+        # Машины, ВЫДЕЛЕННЫЕ из реестра ГОН (Plane №215). Отдельным ключом,
+        # а не подменой `transport`: у свободного текста есть свои читатели
+        # (эта же сводка и документ сводных данных ниже), и снимать источник,
+        # пока его читают, правило раздела запрещает. Патчем этот ключ не
+        # правится вовсе — он ВЫВОД из выделений, а не запись человека, и его
+        # нет в `ALLOWED_PATCH_KEYS`.
+        "allocatedTransport": [
+            {
+                "callsign": row.callsign,
+                "label": row.vehicle_label,
+                "purpose": row.purpose,
+                "plate": row.vehicle.plate if row.vehicle is not None else None,
+                "armorClass": (
+                    row.vehicle.armor_class if row.vehicle is not None else None
+                ),
+            }
+            for row in event.vehicles.all()
+        ],
         "visits": visit_days(event),
     }
 
@@ -209,9 +230,12 @@ def assembled_summaries():
         record.event_id: record
         for record in OpsGvoSummaryPatch.objects.all()
     }
-    events = OpsSecurityEvent.objects.prefetch_related("visit_objects").order_by(
-        "code"
-    )
+    # `vehicles__vehicle` в предзагрузке, а не запрос на строку: реестр из
+    # сорока ОМ иначе стоил бы сорок запросов за машинами (та же причина, по
+    # которой патчи собраны одним проходом выше).
+    events = OpsSecurityEvent.objects.prefetch_related(
+        "visit_objects", "vehicles__vehicle"
+    ).order_by("code")
     return [
         summary_row(event, patches.get(event.pk), fetch=False)
         for event in events
@@ -274,7 +298,21 @@ def document_values(event):
         values[f"seeing_off_{line_no}"] = str(item)
     for line_no, item in enumerate(summary.get("delegation") or [], start=1):
         values[f"delegation_{line_no}"] = str(item)
-    for line_no, car in enumerate(summary.get("transport") or [], start=1):
+    # Транспорт документа: СНАЧАЛА выделенные машины реестра, затем строки
+    # свободного текста (Plane №215). Порядок не косметика — выделение несёт
+    # ГРНЗ и класс брони, то есть сведения, которых у текста нет вовсе, и
+    # ставить его после значило бы прятать точное за приблизительным. Текст
+    # остаётся: пока его кто-то набирает, выбрасывать набранное нельзя.
+    line_no = 0
+    for car in summary.get("allocatedTransport") or []:
+        line_no += 1
+        values[f"transport_{line_no}"] = " — ".join(
+            part
+            for part in (car.get("callsign"), car.get("label"), car.get("purpose"))
+            if part
+        )
+    for car in summary.get("transport") or []:
+        line_no += 1
         values[f"transport_{line_no}"] = " — ".join(
             part for part in (car.get("code"), car.get("car")) if part
         )

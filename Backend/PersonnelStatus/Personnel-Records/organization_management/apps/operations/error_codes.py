@@ -51,6 +51,11 @@ CODES = {
     "RECON_CHECKLIST_INCOMPLETE": frozenset({422}),
     "RECON_SECTOR_POSTS_EMPTY": frozenset({422}),
     "EVENT_DELETE_FORBIDDEN": frozenset({422}),
+    # Реестр транспорта ГОН (Plane №215).
+    "VEHICLE_NOT_FOUND": frozenset({404}),
+    "VEHICLE_RETIRED": frozenset({422}),
+    "VEHICLE_ALREADY_ALLOCATED": frozenset({422}),
+    "ALLOCATION_NOT_FOUND": frozenset({404}),
     # `DEMAND_ROWS_EMPTY` СНЯТ 26.08.2026 (Plane №149) вместе с ручкой
     # `demand/approve`: код поднимала только она, а объявленный код, которого
     # никто не поднимает, — обещание отказа, которого не бывает. Сторож
