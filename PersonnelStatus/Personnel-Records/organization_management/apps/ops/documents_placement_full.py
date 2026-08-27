@@ -14,7 +14,16 @@
 вписаны предложениями — «ответственный за кортеж: X», «водитель VIP: X»,
 «начальник выездной охраны: poz31-X».
 
-🔴 ПОЭТОМУ ЛЮДИ СЮДА НЕ ПОДСТАВЛЯЮТСЯ, И ЭТО РЕШЕНИЕ, А НЕ НЕДОДЕЛКА.
+🔴 С 28.08.2026 ЛЮДИ ПОДСТАВЛЯЮТСЯ — НО ТОЛЬКО ПО РОЛИ (Plane №240).
+Заказчик выбрал вариант «б» вопроса №195: в расстановке заведён справочник
+ролей наряда (№237), у назначения появилась роль (№238), и место бланка,
+подписанное этой ролью, заполняется человеком, которому её назначили.
+Заполняются ТОЛЬКО места с собственной подписью-ролью; места из перечислений
+(«: X, Y, Z») остаются пустыми — какой из них чей, система не знает, и
+догадка здесь была бы тем же «наугад», от которого уходили. Ниже — исходное
+рассуждение, которое к этим местам применимо по-прежнему.
+
+ПОЧЕМУ РАНЬШЕ ЛЮДИ СЮДА НЕ ПОДСТАВЛЯЛИСЬ.
 В бланке 873 места под людей. В модели расстановки есть сектор, пост, задача,
 смена и назначенные — и НИ ОДНОЙ из ролей бланка: ни «водителя VIP», ни
 «ответственного за кортеж», ни радиоканала. Разложить назначения по местам
@@ -32,6 +41,7 @@
 — не роль, ошибиться в ней порядком нельзя: у всего документа она одна.
 """
 import os
+import re
 
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import OpsSecurityEvent
@@ -60,6 +70,64 @@ def _period(event):
     return f"{start.day:02d}.{start.month:02d}.{start.year}"
 
 
+# Метки бланка, за которыми стоит место под человека, — в терминах справочника
+# ролей наряда (`PLACEMENT_ROLES`). Ключ — казахская подпись из бланка, она же
+# лежит в скобках у подписи роли: по ней документ и сверяют.
+def _roles_by_kazakh_label():
+    """{казахская подпись: код роли} по справочнику раздела.
+
+    Читается из справочника, а не из списка здесь: роли ведут на экране
+    справочников, и второй список разошёлся бы с первым молча.
+    """
+    from organization_management.apps.operations.models import OpsDictionaryEntry
+
+    mapping = {}
+    for entry in OpsDictionaryEntry.objects.filter(
+        dictionary_code="PLACEMENT_ROLES", is_active=True
+    ):
+        match = re.search(r"\(([^)]+)\)", entry.label)
+        if match:
+            mapping[match.group(1).strip().lower()] = entry.code
+    return mapping
+
+
+def placeholder_roles(path=TEMPLATE):
+    """{имя места: код роли} — по подписи, стоящей в бланке ПЕРЕД местом.
+
+    🔴 ТОЛЬКО СОБСТВЕННАЯ ПОДПИСЬ. В бланке есть перечисления вида
+    «Көшпелі күзетінің жауаптысы: X, Y, Z»: у второго и третьего места своей
+    подписи нет, и приписать им роль первого — та же догадка, от которой
+    уходили (см. шапку файла). Такие места остаются без роли и в документе
+    пустыми.
+    """
+    import zipfile
+
+    with zipfile.ZipFile(path) as archive:
+        xml = archive.read("word/document.xml").decode("utf-8", "ignore")
+    text = re.sub(r"<[^>]+>", "", xml)
+    roles = _roles_by_kazakh_label()
+    found = {}
+    for match in re.finditer(r"\{\{(person_\d+)\}\}", text):
+        before = text[max(0, match.start() - 70) : match.start()]
+        label = re.split(r"[;.»\n]|\{\{person_\d+\}\}", before)[-1]
+        label = label.strip().rstrip(":").strip().lower()
+        code = roles.get(label)
+        if code is not None:
+            found[match.group(1)] = code
+    return found
+
+
+def _people_by_role(event):
+    """{код роли: [«Фамилия И.», …]} по назначениям расстановки."""
+    from collections import defaultdict
+
+    people = defaultdict(list)
+    for row in event.placement_assignments or []:
+        code = row.get("roleCode")
+        if code:
+            people[code].append(row.get("employeeName") or "")
+    return people
+
 def template_placeholders(path=TEMPLATE):
     """Все места подстановки бланка — по именам.
 
@@ -73,15 +141,41 @@ def template_placeholders(path=TEMPLATE):
 
 
 def placement_full_values(event):
-    """Значения подстановки: даты — периодом мероприятия, люди — пусто.
+    """Значения подстановки: даты — периодом, люди — ПО РОЛИ (Plane №240).
 
     Пусто именно ПУСТОЙ СТРОКОЙ, а не пропуском: пропущенное место остаётся в
     документе как `{{person_17}}` и уезжает заказчику видимым мусором.
+
+    Люди раскладываются по местам, подписанным их ролью, в порядке назначения.
+    Мест под роль в бланке больше, чем людей, — остаток пуст: «система этого
+    не знает» честнее выдуманного имени. Людей больше, чем мест, — лишние в
+    документ не попадают, и это видно по расстановке на экране: там они есть.
     """
     period = _period(event)
+    by_role = _people_by_role(event)
+    roles = placeholder_roles()
+    used = {code: 0 for code in by_role}
     values = {}
-    for name in template_placeholders():
-        values[name] = period if name.startswith("day_") else ""
+    # 🔴 ПОРЯДОК БЛАНКА, а не порядок множества. `template_placeholders`
+    # отдаёт МНОЖЕСТВО (оно нужно проверке «ничего не осталось»), и обход по
+    # нему разложил бы людей в произвольном порядке: один и тот же состав
+    # печатался бы по-разному от запуска к запуску. Сперва места в том
+    # порядке, в каком они стоят в документе, затем остальные — на случай,
+    # если разбор XML и python-docx разойдутся.
+    ordered = list(roles)
+    ordered += [name for name in template_placeholders() if name not in roles]
+    for name in ordered:
+        if name.startswith("day_"):
+            values[name] = period
+            continue
+        code = roles.get(name)
+        queue = by_role.get(code or "", [])
+        taken = used.get(code, 0)
+        if code and taken < len(queue):
+            values[name] = queue[taken]
+            used[code] = taken + 1
+        else:
+            values[name] = ""
     return values
 
 
