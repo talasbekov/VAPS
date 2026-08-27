@@ -83,3 +83,24 @@ def test_the_status_types_carry_the_codes_the_section_asks_for(seeded):
     """
     codes = set(StatusType.objects.values_list("code", flat=True))
     assert {"IN_SERVICE", "VACATION", "EVENT_ASSIGNMENT"} <= codes, sorted(codes)
+
+
+def test_placement_roles_carry_the_labels_of_the_blank(seeded):
+    """Роли наряда — ИЗ БЛАНКА, а не придуманы (Plane №237).
+
+    🔴 Проверяется не «справочник непуст», а СОСТАВ: документ «Общая
+    расстановка» заполняется по этим ролям, и роль, которой в бланке нет,
+    некуда поставить — а недостающая оставит место пустым.
+
+    Оригинал на казахском держится в подписи сознательно: по бумаге сверяют
+    заполнение, и без него «водитель VIP» и «VIP жүргізушісі» не свести.
+    """
+    roles = {
+        entry.code: entry.label
+        for entry in OpsDictionaryEntry.objects.filter(dictionary_code="PLACEMENT_ROLES")
+    }
+
+    assert {"DRIVER_VIP", "MOTORCADE_LEAD", "MOBILE_GUARD_CHIEF", "CHECK_GROUP_LEAD"} <= set(roles)
+    assert "VIP жүргізушісі" in roles["DRIVER_VIP"]
+    assert "Кортежге жауапты" in roles["MOTORCADE_LEAD"]
+    assert len(roles) >= 13, sorted(roles)

@@ -424,6 +424,24 @@ class Command(BaseCommand):
             ("POST_REQUIREMENTS", "ACCESS_A", "Допуск «Объект A»", "ACCESS"),
             ("POST_REQUIREMENTS", "HEIGHT_175", "Рост от 175 см", "PHYSICAL"),
             ("SEASONAL_CORRECTIONS", "WINTER", "Зимняя поправка", None),
+            # Роли наряда (Plane №237). Состав и подписи — ИЗ БЛАНКА «Общая
+            # расстановка РЭС.DOCX» (разбор `word/document.xml`), в скобках
+            # оригинал на казахском: по нему заполняют бумагу, и без него
+            # сверить документ с системой нечем. Общее «Жауапты» в справочник
+            # НЕ идёт — в бланке это заголовок колонки, а не роль.
+            ("PLACEMENT_ROLES", "GUARD_OFFICER", "Офицер охраны (Күзет офицері)", None),
+            ("PLACEMENT_ROLES", "MOBILE_GUARD_CHIEF", "Начальник выездной охраны (Көшпелі күзетінің басшысы)", None),
+            ("PLACEMENT_ROLES", "MOBILE_GUARD_LEAD", "Ответственный за выездную охрану (Көшпелі күзетінің жауаптысы)", None),
+            ("PLACEMENT_ROLES", "MOTORCADE_LEAD", "Ответственный за кортеж (Кортежге жауапты)", None),
+            ("PLACEMENT_ROLES", "DRIVER_VIP", "Водитель VIP (VIP жүргізушісі)", None),
+            ("PLACEMENT_ROLES", "DRIVER_S1", "Водитель S1 (S1 жүргізушісі)", None),
+            ("PLACEMENT_ROLES", "DRIVER_S2", "Водитель S2 (S2 жүргізушісі)", None),
+            ("PLACEMENT_ROLES", "DRIVER_S3", "Водитель S3 (S3 жүргізушісі)", None),
+            ("PLACEMENT_ROLES", "DRIVER_S4", "Водитель S4 (S4 жүргізушісі)", None),
+            ("PLACEMENT_ROLES", "DRIVER_R", "Водитель R (R жүргізушісі)", None),
+            ("PLACEMENT_ROLES", "CHECK_GROUP_LEAD", "Ответственный за группу проверки (Тексеру тобына жауапты)", None),
+            ("PLACEMENT_ROLES", "SQUAD_LEAD", "Ответственный наряда (Жасақтын жауаптысы)", None),
+            ("PLACEMENT_ROLES", "ONBOARD_GUARD", "Группа бортовой охраны (Борт күзету тобы)", None),
         ]
         for dictionary, code, label, group in DICTIONARY_ENTRIES:
             OpsDictionaryEntry.objects.update_or_create(
