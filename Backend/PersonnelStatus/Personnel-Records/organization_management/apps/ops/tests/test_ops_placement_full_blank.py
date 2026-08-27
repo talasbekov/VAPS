@@ -9,10 +9,10 @@
    ни забытого человека;
 3. даты в бланке — период ЭТОГО мероприятия, а не числа образца.
 
-Чего здесь НЕТ: проверки, что люди расставлены по ролям. Их не расставляют
-вовсе — см. заглавную докстроку `documents_placement_full.py`: ролей бланка в
-модели расстановки не существует, и заполнение «по порядку» назвало бы
-водителем VIP человека с поста оцепления.
+С 28.08.2026 добавилось четвёртое: люди в бланке стоят ПО РОЛИ (Plane №240).
+Заказчик ответил на вопрос №195 вариантом «б» — справочник ролей наряда (№237)
+и роль у назначения (№238), — и прежняя проба «людей не подставляют вовсе»
+переписана осознанно, как её докстрока и требовала.
 """
 import datetime as dt
 import io
@@ -105,22 +105,61 @@ def test_a_single_day_event_is_not_written_as_a_range(event):
     assert "20-20.04.2026" not in text
 
 
-def test_the_blank_carries_no_people_and_says_so_loudly(event):
-    """КРАСНАЯ ПРОБА РЕШЕНИЯ «людей не подставляем».
+def test_people_stand_at_the_places_of_their_role(event):
+    """Человек стоит там, где написана ЕГО роль (Plane №240).
 
-    Если однажды люди начнут подставляться, это должно быть ОСОЗНАННЫМ
-    изменением с ответом заказчика в руках, а не побочным следствием правки
-    подстановки. Проба падает ровно в этот момент и приводит читателя к
-    докстроке с вопросом.
+    🔴 Это и есть ответ на находку №195: до неё бланк заполнялся бы порядком
+    следования, то есть водителем VIP становился человек с поста оцепления.
+    Проба заводит ДВЕ роли и двух людей крест-накрест и требует, чтобы каждый
+    оказался у своей подписи, — совпадение по порядку тут ничего не докажет.
     """
-    values = blank.placement_full_values(event)
+    from organization_management.apps.operations.models import OpsDictionaryEntry
+    from organization_management.apps.ops import documents_placement_full as blank
 
-    people = {name: value for name, value in values.items() if name.startswith("person_")}
-    assert people, "в бланке не осталось мест под людей — образец подменили"
-    assert set(people.values()) == {""}, (
-        "людей начали подставлять в бланк: ролей бланка в модели расстановки "
-        "нет, и порядок подстановки назначит человека наугад — см. Plane №164"
+    OpsDictionaryEntry.objects.create(
+        dictionary_code="PLACEMENT_ROLES", code="DRIVER_VIP",
+        label="Водитель VIP (VIP жүргізушісі)", is_active=True,
     )
+    OpsDictionaryEntry.objects.create(
+        dictionary_code="PLACEMENT_ROLES", code="MOTORCADE_LEAD",
+        label="Ответственный за кортеж (Кортежге жауапты)", is_active=True,
+    )
+    event.placement_assignments = [
+        {"id": "a-1", "postId": "p1", "employeeId": "1",
+         "employeeName": "Кортежев К.", "roleCode": "MOTORCADE_LEAD"},
+        {"id": "a-2", "postId": "p2", "employeeId": "2",
+         "employeeName": "Випов В.", "roleCode": "DRIVER_VIP"},
+    ]
+    event.save(update_fields=["placement_assignments"])
+
+    values = blank.placement_full_values(event)
+    roles = blank.placeholder_roles()
+
+    vip_places = [name for name, code in roles.items() if code == "DRIVER_VIP"]
+    motorcade_places = [name for name, code in roles.items() if code == "MOTORCADE_LEAD"]
+    assert vip_places and motorcade_places, "в бланке не нашлось мест этих ролей — проба вакуумна"
+
+    assert values[vip_places[0]] == "Випов В."
+    assert values[motorcade_places[0]] == "Кортежев К."
+    # Крест-накрест: каждый стоит ТОЛЬКО у своей подписи.
+    assert values[motorcade_places[0]] != "Випов В."
+
+
+def test_places_without_a_role_of_their_own_stay_empty(event):
+    """Перечисления («роль: X, Y, Z») не заполняются — какой из них чей,
+    система не знает, и догадка здесь была бы тем же «наугад».
+    """
+    from organization_management.apps.ops import documents_placement_full as blank
+
+    values = blank.placement_full_values(event)
+    roles = blank.placeholder_roles()
+
+    unlabelled = [
+        name for name in values
+        if name.startswith("person_") and name not in roles
+    ]
+    assert unlabelled, "в бланке не осталось мест без подписи — образец подменили"
+    assert {values[name] for name in unlabelled} == {""}
 
 
 def test_an_unknown_event_is_refused_by_code(event):
