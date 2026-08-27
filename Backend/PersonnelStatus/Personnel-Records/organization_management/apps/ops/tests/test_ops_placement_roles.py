@@ -107,3 +107,44 @@ def test_assignment_without_a_role_stays_legal(manager, roles):  # noqa: F811
 
     assert response.status_code == 200, response.json()
     assert response.json()["placementAssignments"][0]["roleCode"] is None
+
+
+def test_replacement_inherits_the_role(manager, roles):  # noqa: F811
+    """Замена меняет ЧЕЛОВЕКА, а не место в бланке (Plane №239).
+
+    🔴 Замену делают в день мероприятия — ровно тогда, когда документ уже
+    печатают. Потеряй роль здесь, и место «водитель VIP» окажется пустым
+    именно в тот момент, когда оно нужнее всего.
+
+    Стадия выставляется В БАЗЕ, а не проходом всей цепочки (расстановка →
+    согласование → ознакомление → проведение): цепочку стерегут свои пробы, и
+    повторять её здесь значило бы проверять её же ещё раз, а не наследование
+    роли.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    base, post_id = prepared(manager)
+    outgoing = make_employee(last_name="Байжанов")
+    incoming = make_employee(last_name="Кусаинов")
+    assigned = manager.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(outgoing.pk), "roleCode": "DRIVER_VIP"},
+        format="json",
+    ).json()
+    assignment_id = assigned["placementAssignments"][0]["id"]
+    OpsSecurityEvent.objects.filter(pk=assigned["id"]).update(stage="CONDUCT")
+
+    response = manager.post(
+        f"{base}conduct/replace/",
+        {
+            "assignmentId": assignment_id,
+            "incomingEmployeeId": str(incoming.pk),
+            "reasonCode": "ILLNESS",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200, response.json()
+    rows = response.json()["placementAssignments"]
+    assert [row["employeeName"].split()[0] for row in rows] == ["Кусаинов"]
+    assert rows[0]["roleCode"] == "DRIVER_VIP", "замена потеряла роль наряда"

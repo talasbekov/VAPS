@@ -2559,7 +2559,6 @@ def actor_display_name(actor):
     return user.username
 
 
-@transaction.atomic
 def _validated_placement_role(role_code):
     """Код роли наряда: пусто либо ЖИВОЕ значение справочника (Plane №238).
 
@@ -2585,6 +2584,7 @@ def _validated_placement_role(role_code):
     return code
 
 
+@transaction.atomic
 def assign_placement(
     event_id,
     *,
@@ -3219,6 +3219,11 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
         "postId": outgoing.get("postId"),
         "employeeId": incoming_key,
         "employeeName": personnel_display_name(incoming),
+        # Роль наряда НАСЛЕДУЕТСЯ (Plane №239): замена меняет человека, а не
+        # место в бланке — «водитель VIP» остаётся водителем VIP. Потерять её
+        # здесь значило бы оставить место в документе пустым ровно тогда, когда
+        # замену и делают: в день мероприятия.
+        "roleCode": outgoing.get("roleCode"),
         "acknowledgedAt": None,
         # замена в ходе проведения — не расстановка: обхода не было
         "ratingOverrideReason": None,

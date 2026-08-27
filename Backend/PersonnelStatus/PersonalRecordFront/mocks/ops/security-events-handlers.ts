@@ -1618,6 +1618,10 @@ export const securityEventsHandlers = [
         postId: body.postId,
         employeeId: body.employeeId,
         employeeName: employee.name,
+        // Роль наряда (Plane №239): мок принимает её так же, как сервер, —
+        // иначе экран в мок-режиме зеленел бы, а на живом стенде роль
+        // терялась бы молча.
+        roleCode: (body as { roleCode?: string }).roleCode ?? null,
         // Подразделение и статус дня — сервер считает их на чтении (Plane
         // №65, «Р-1»); мок повторяет форму ответа, иначе экран зелен на моке
         // и пуст на живом стенде.
@@ -2209,6 +2213,9 @@ export const securityEventsHandlers = [
         postId: outgoing.postId,
         employeeId: body.incomingEmployeeId,
         employeeName: incoming.name,
+        // Замена на посту наследует роль наряда: место в бланке остаётся тем
+        // же, меняется только человек (Plane №239).
+        roleCode: outgoing.roleCode ?? null,
         divisionName: incoming.unit,
         ...personnelDayStatus(incoming.id),
         isSectorSenior: false,

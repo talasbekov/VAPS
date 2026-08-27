@@ -190,6 +190,10 @@ export interface PlacementAssignment {
   acknowledgedAt: string | null;
   /** Обоснование обхода предупреждения по рейтингу; заполнено только если предупреждение было. */
   ratingOverrideReason: string | null;
+  /** Роль наряда из справочника `PLACEMENT_ROLES` (Plane №238). `null` —
+   * роль не назначена: место в бланке «Общая расстановка» останется пустым,
+   * и это честнее, чем поставить туда человека наугад. */
+  roleCode: string | null;
   /** Подразделение сотрудника; пусто — штатной единицы у него нет. */
   divisionName: string;
   /** Статус на ДЕЛОВУЮ дату мероприятия. null — действующего статуса нет,
@@ -646,6 +650,9 @@ export interface SplitForceDemandRequest extends Record<string, unknown> {
 export interface AssignPlacementRequest extends Record<string, unknown> {
   postId: string;
   employeeId: string;
+  /** Роль наряда из справочника `PLACEMENT_ROLES` (Plane №239). Необязательна:
+   * назначить человека на пост можно и без роли. */
+  roleCode?: string;
   /** Протокол обхода мягкого конфликта: оба поля добавляет confirmOverride
    * в корень тела — своего протокола у рейтинга нет намеренно. */
   override?: boolean;

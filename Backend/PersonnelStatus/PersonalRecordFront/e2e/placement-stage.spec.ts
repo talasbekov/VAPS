@@ -151,6 +151,91 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })
 
+  test('роль наряда назначается в строке и доезжает до сервера', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * 🔴 Проверяется НЕ «в списке есть роли», а что выбранная роль легла в
+     * назначение НА СЕРВЕРЕ: бланк «Общая расстановка» заполняется по ней, и
+     * роль, оставшаяся только на экране, оставит место в документе пустым
+     * (Plane №239, находка №195).
+     *
+     * 🔴 УБОРКА В `finally`. Проба назначает человека на живом стенде, и
+     * падение ассерта посреди пути оставляло бы назначение на посту — пост
+     * добирался бы до предела, а СОСЕДНЯЯ проба («дерево постов…») падала бы
+     * следом, обвиняя код. Так и случилось при первом прогоне: пять
+     * назначений на посту, где нужно четыре.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+
+    const roles = (await (
+      await request.get(`${API}/api/ops/dictionaries/PLACEMENT_ROLES/entries/`, {
+        headers: auth,
+      })
+    ).json()) as { results: { code: string; label: string }[] }
+    const role = roles.results[0]
+    requireFixture(role, 'справочник ролей наряда пуст — назначать нечего')
+
+    const list = (await (
+      await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
+        headers: auth,
+      })
+    ).json()) as { results: { id: string }[] }
+    const target = list.results[0]
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
+    const eventId = target!.id
+
+    const assignmentsOf = async (): Promise<{ id: string; roleCode: string | null }[]> => {
+      const fresh = (await (
+        await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+      ).json()) as { placementAssignments: { id: string; roleCode: string | null }[] }
+      return fresh.placementAssignments
+    }
+
+    const before = new Set((await assignmentsOf()).map((row) => row.id))
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${eventId}/`)
+      await page.locator('button', { hasText: 'Пост' }).first().click()
+      await page.locator('aside button', { hasText: 'Совпадение' }).first().click()
+
+      await expect
+        .poll(async () => (await assignmentsOf()).length, { timeout: 15_000 })
+        .toBe(before.size + 1)
+
+      // Роль ставится ИЗ СТРОКИ, как это делает человек.
+      await page
+        .getByRole('combobox', { name: /^Роль наряда: / })
+        .first()
+        .selectOption(role!.code)
+
+      await expect
+        .poll(
+          async () => {
+            const rows = await assignmentsOf()
+            const mine = rows.filter((row) => !before.has(row.id))
+            return mine.at(-1)?.roleCode ?? null
+          },
+          { timeout: 20_000 },
+        )
+        .toBe(role!.code)
+
+      // Подпись роли видна в самой строке, а не только в выпадающем списке.
+      await expect(page.getByText(role!.label, { exact: true }).first()).toBeVisible()
+    } finally {
+      for (const row of await assignmentsOf()) {
+        if (before.has(row.id)) continue
+        await request.delete(
+          `${API}/api/ops/security-events/${eventId}/placement/${encodeURIComponent(row.id)}/`,
+          { headers: auth },
+        )
+      }
+    }
+  })
+
   test('отбор по рейтингу уходит НА СЕРВЕР, а не фильтрует страницу', async ({
     page,
     request,
