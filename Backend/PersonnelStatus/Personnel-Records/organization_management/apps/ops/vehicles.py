@@ -8,7 +8,7 @@
 ОТБОР СЧИТАЕТ СЕРВЕР, а не браузер: реестр ГОН — это сотни строк, и отбор по
 классу брони на клиенте означал бы гонять их все ради десяти.
 """
-from django.db import models
+from django.db import models, transaction
 
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_vehicle import (
@@ -109,13 +109,23 @@ def list_event_vehicles(event):
     ]
 
 
-def allocate_vehicle(event, *, vehicle_id, callsign="", purpose=""):
+@transaction.atomic
+def allocate_vehicle(event_id, *, vehicle_id, callsign="", purpose=""):
     """Выделить машину реестра на мероприятие.
 
     Снятая с эксплуатации машина не выделяется: `is_active=False` означает
     «этой машины в парке больше нет», и разрешить её значило бы поставить в
     кортеж то, чего не существует.
+
+    Мероприятие блокируется ЗДЕСЬ, а не во вьюхе: `lock_event` берёт
+    `SELECT … FOR UPDATE`, а он требует транзакции. Вьюха, звавшая блокировку
+    сама, отвечала 500 `TransactionManagementError` — и не видно этого было
+    ни одним юнит-тестом, потому что `pytest.mark.django_db` заворачивает
+    каждый тест в транзакцию сам. Нашла живая проба экрана (Plane №215).
     """
+    from organization_management.apps.ops.security_events import lock_event
+
+    event = lock_event(event_id)
     car = OpsVehicle.objects.filter(pk=vehicle_id).first()
     if car is None:
         raise DomainError(
@@ -147,8 +157,12 @@ def allocate_vehicle(event, *, vehicle_id, callsign="", purpose=""):
     return event
 
 
-def release_vehicle(event, allocation_id):
-    """Снять машину с мероприятия."""
+@transaction.atomic
+def release_vehicle(event_id, allocation_id):
+    """Снять машину с мероприятия. Блокировка — здесь же, см. выше."""
+    from organization_management.apps.ops.security_events import lock_event
+
+    event = lock_event(event_id)
     row = event.vehicles.filter(pk=allocation_id).first()
     if row is None:
         raise DomainError(
