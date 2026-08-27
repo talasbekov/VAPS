@@ -1405,6 +1405,8 @@ forms-validation + org-structure-view` — **12 passed (28,1 с)**.
 
 ## 27.08.2026 — штатное расписание: слоты под структуру (Plane №203, шаг 5 плана №198)
 
+Коммит `a25c0abb`.
+
 Заведена команда `seed_staffing` (`apps/staff_unit/management/commands/`) и семь
 проб. Слоты пустые — людей сажает №204.
 
