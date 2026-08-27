@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { apiClient } from "@/lib/api";
 import { Pager } from "@/components/pager";
+import { DivisionPicker } from "@/components/division-picker";
 import { EmployeeTable } from "@/entities/employee/ui/EmployeeTable";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
 import { AddEmployeeDialog } from "@/features/add-employee";
@@ -930,22 +931,13 @@ function EmployeesScreen() {
               />
             </div>
 
-            <Select
+            {/* Выпадающий список на 581 значение листался только колесом
+                (Plane №232) — теперь выбор с поиском по названию И пути. */}
+            <DivisionPicker
               value={departmentFilter}
-              onValueChange={(value) => setFilter("department", value, "all")}
-            >
-              <SelectTrigger className="w-full sm:w-64" aria-label="Фильтр по отделу">
-                <SelectValue placeholder="Все отделы" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Все отделы</SelectItem>
-                {departments.map((dept) => (
-                  <SelectItem key={dept.id} value={String(dept.id)}>
-                    {dept.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              options={departments}
+              onChange={(value) => setFilter("department", value, "all")}
+            />
 
             <Select
               value={statusFilter}
