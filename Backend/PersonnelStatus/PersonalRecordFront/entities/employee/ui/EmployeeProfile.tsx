@@ -21,6 +21,7 @@ import {
   getEmployeeStatusColor,
 } from "@/lib/status";
 import type { Employee } from "../model/types";
+import { EmployeeAvatar } from "./EmployeeAvatar";
 
 interface EmployeeProfileProps {
   employee: Employee;
@@ -55,18 +56,12 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Avatar className="h-16 w-16">
-                <AvatarImage
-                  src={employee.photo || "/placeholder.svg"}
-                  alt={employee.name}
-                />
-                <AvatarFallback className="text-lg">
-                  {employee.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
-                </AvatarFallback>
-              </Avatar>
+              {/* Заглушка тут была КАРТИНКОЙ (`/placeholder.svg`), и это
+                  подменяло инициалы: для Radix любой непустой `src` — попытка
+                  показать изображение, а `AvatarFallback` включается только
+                  когда показывать нечего. Правило одно на все экраны — см.
+                  `EmployeeAvatar`. */}
+              <EmployeeAvatar name={employee.name} photo={employee.photo} size="lg" />
               <div>
                 <h2 className="text-2xl font-bold">{employee.name}</h2>
                 {/* Шапка прототипа: «звание · должность». */}
