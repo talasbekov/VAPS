@@ -14,6 +14,7 @@ import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
+  Car,
   ClipboardList,
   FileText,
   KeyRound,
@@ -114,6 +115,10 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
       // вход в одни и те же данные.
       { name: "Охраняемые лица", href: "/security-ops/persons", icon: UserRound },
       { name: "Законы об ОМ", href: "/security-ops/laws", icon: Scale },
+      // Реестр транспорта ГОН (Plane №215): свой пункт, а не вкладка внутри
+      // объектов — это парк службы, он живёт независимо от мероприятий и
+      // читается сам по себе.
+      { name: "Транспорт ГОН", href: "/security-ops/vehicles", icon: Car },
       // Экран существовал с 17.08.2026, но в меню не стоял никогда — на него
       // попадали только по ссылкам с других экранов.
       { name: "Аналитика ОМ", href: "/security-ops/analytics/operations", icon: LineChart },
