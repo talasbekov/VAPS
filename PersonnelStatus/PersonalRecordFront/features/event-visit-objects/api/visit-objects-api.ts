@@ -5,6 +5,7 @@
 // место, а не собирать список объектов из ответа по кускам.
 import { opsApiClient } from "@/lib/ops-api";
 import {
+  eventChiefPath,
   securityEventDeletePath,
   visitObjectDeputiesPath,
   visitObjectChiefPath,
@@ -60,6 +61,18 @@ export function assignVisitObjectChief(variables: {
     visitObjectChiefPath(variables.eventId, variables.visitObjectId),
     { employeeId: variables.employeeId }
   );
+}
+
+/** Старший НАРЯДА мероприятия (Plane №190). Пустой `employeeId` снимает его —
+ * отдельного вызова снятия нет намеренно: клиенту проще слать одно и то же
+ * поле, чем выбирать метод по состоянию. */
+export function setEventChief(variables: {
+  eventId: string;
+  employeeId: string;
+}): Promise<SecurityEvent> {
+  return opsApiClient.post<SecurityEvent>(eventChiefPath(variables.eventId), {
+    employeeId: variables.employeeId,
+  });
 }
 
 export function removeVisitObjectChief(variables: {

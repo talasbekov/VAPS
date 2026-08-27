@@ -309,6 +309,20 @@ def create_event(
             passport_binding=binding,
             protected_person=person,
             protected_person_name=person.name if person is not None else "",
+            # СТАРШИЙ НАСЛЕДУЕТСЯ ОТ МЕРОПРИЯТИЯ (Plane №190). Заказчик:
+            # «При создании бюллетени выбираешь старшего наряда, но после
+            # создания бюллетени объект не имеет старшего». Так и было:
+            # окно спрашивало старшего, клало его мероприятию, а первый
+            # объект заводился пустым — человек видел «старший не назначен»
+            # сразу после того, как его назначил.
+            #
+            # Наследование действует ТОЛЬКО на объект, заведённый вместе с
+            # бюллетенем. Объекты, дописанные позже кнопкой «+», старшего не
+            # получают: у визита иностранного ОЛ на каждом объекте свой
+            # ответственный, и подставлять туда старшего наряда значило бы
+            # назначить его молча — ровно та ошибка, от которой уходим.
+            chief_employee_id=chief.pk if chief is not None else None,
+            chief_name=personnel_display_name(chief) if chief is not None else "",
             position=0,
         )
     record_transition(event, None, initial_stage)
@@ -322,6 +336,81 @@ def create_event(
             "title": event.title,
             "businessDate": event.business_date.isoformat(),
         },
+    )
+    return event
+
+
+# ── Старший мероприятия ─────────────────────────────────────────────────────
+
+
+@transaction.atomic
+def set_event_chief(event_id, *, employee_id, actor):
+    """Назначить, заменить или снять СТАРШЕГО НАРЯДА мероприятия (Plane №190).
+
+    Заказчик, дословно: «даже если объект не выбран то должна быть возможность
+    добавлять старшего наряда». До этого старшего можно было назвать ровно
+    один раз — в окне создания; забыл или ошибся — исправить было нечем, а у
+    ОМ без объекта не помогал и обходной путь через старшего объекта, потому
+    что объекта нет.
+
+    ОДНА ручка на три действия. Пустой `employee_id` снимает старшего: у
+    мероприятия он ОДИН, и требование «сначала снимите, потом назначьте»
+    превратило бы обычную замену в две операции с промежуточным состоянием
+    «старшего нет», которого никто не хотел.
+
+    Закрытое мероприятие — история: наряд отработал, и менять его старшего
+    задним числом значило бы переписывать, кто отвечал.
+    """
+    event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — старший наряда не меняется.",
+        )
+
+    raw = str(employee_id or "").strip()
+    employee = None
+    if raw != "":
+        employee = _find_personnel(raw)
+        if employee is None:
+            raise _validation({"employeeId": ["Сотрудник не найден."]})
+
+    previous = (
+        {
+            "employeeId": str(event.chief_employee_id),
+            "employeeName": event.chief_name,
+        }
+        if event.chief_employee_id is not None
+        else None
+    )
+    if employee is None and previous is None:
+        # Снимать нечего. Отказ, а не тихое «ок»: молчаливый успех на пустом
+        # месте читается как «сняли», и человек уходит с экрана уверенным.
+        raise _not_found("У мероприятия не назначен старший.", event_id)
+
+    event.chief_employee_id = employee.pk if employee is not None else None
+    event.chief_name = (
+        personnel_display_name(employee) if employee is not None else ""
+    )
+    event.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECURITY_EVENT_CHIEF_SET,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value=previous,
+        new_value=(
+            {
+                "code": event.code,
+                "employeeId": str(event.chief_employee_id),
+                "employeeName": event.chief_name,
+            }
+            if employee is not None
+            # Снятие — запись БЕЗ человека, а не отсутствие записи: «кто снял
+            # и когда» спрашивают так же, как «кто поставил».
+            else {"code": event.code, "employeeId": None, "employeeName": ""}
+        ),
     )
     return event
 

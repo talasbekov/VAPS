@@ -142,6 +142,16 @@ FORCE_ALLOCATION_SUBMITTED = "FORCE_ALLOCATION_SUBMITTED"
 FORCE_ALLOCATION_ACCEPTED = "FORCE_ALLOCATION_ACCEPTED"
 FORCE_ALLOCATION_RETURNED = "FORCE_ALLOCATION_RETURNED"
 VISIT_OBJECT_CHIEF_REVOKED = "VISIT_OBJECT_CHIEF_REVOKED"
+# Старший МЕРОПРИЯТИЯ — старший наряда (или ГВО), названный в бюллетене
+# (Plane №190). Действие ОДНО на назначение, замену и снятие: вопрос «кто
+# отвечает за наряд» один, и разбирается он по одной ленте, где прежняя
+# подпись стоит рядом с новой. Снятие — это `new_value` без человека, а не
+# отдельная история.
+#
+# Отдельно от `VISIT_OBJECT_CHIEF_*` намеренно: старший наряда и старший
+# объекта — разные люди с разной ответственностью, и слить их в одно действие
+# значило бы отвечать на два разных вопроса одной лентой.
+SECURITY_EVENT_CHIEF_SET = "SECURITY_EVENT_CHIEF_SET"
 # Старший сектора на расстановке (Plane №65, «Расстановка по прототипу»).
 # Пишется по тому же основанию, что и старший объекта: это именное назначение
 # ответственного, по нему спрашивают доклад с сектора. Действие ОДНО на оба
@@ -245,6 +255,7 @@ ACTIONS = frozenset(
         FORCE_ALLOCATION_ACCEPTED,
         FORCE_ALLOCATION_RETURNED,
         VISIT_OBJECT_CHIEF_REVOKED,
+        SECURITY_EVENT_CHIEF_SET,
         PLACEMENT_SECTOR_SENIOR_SET,
         ACCESS_PERMISSION_SAVED,
         ACCESS_ROLE_SAVED,

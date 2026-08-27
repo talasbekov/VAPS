@@ -65,6 +65,8 @@ interface EventRow {
   objectName: string
   /** `null` — ОМ заведено до появления типа: тип не назван. */
   kind?: 'INTERNAL' | 'FOREIGN' | null
+  /** Старший НАРЯДА мероприятия; `null` — не назначен (Plane №190). */
+  chiefEmployeeId?: string | null
   visitObjects?: {
     id: string
     objectName: string
@@ -618,6 +620,53 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(page).toHaveURL(/\/security-ops\/events\/[^/?]+/, {
       timeout: 15_000,
     })
+  })
+
+  test('старший наряда назначается из строки реестра и снимается там же', async ({
+    page,
+  }) => {
+    // Plane №190, постановка заказчика: «даже если обьект не выбран то должна
+    // быть возможность добавлять старшего наряда». До этого старшего можно
+    // было назвать ровно один раз — в окне создания, и исправить было нечем.
+    //
+    // Проба идёт ЧЕРЕЗ ЭКРАН: предмет требования — именно кнопка в строке, и
+    // ассерт на ручку её не стережёт.
+    const token = await apiToken()
+    const rows = await events(token)
+    const target = rows.find((r) => r.chiefEmployeeId === null && r.stage !== 'CLOSED')
+    test.skip(target === undefined, 'на стенде нет живого ОМ без старшего наряда')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const assign = page.getByRole('button', {
+      name: `Назначить старшего наряда ${target!.code}`,
+    })
+    await expect(assign).toBeVisible({ timeout: 15_000 })
+    await assign.click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText(target!.code)
+    // Кнопка заперта, пока человек не выбран: назначать некого.
+    const confirm = dialog.getByRole('button', { name: 'Назначить' })
+    await expect(confirm).toBeDisabled()
+
+    await dialog.locator('li button').first().click()
+    await expect(confirm).toBeEnabled()
+    await confirm.click()
+
+    // Строка показывает НАЗНАЧЕННОГО, и кнопка сменила смысл — «Заменить».
+    await expect(
+      page.getByRole('button', { name: `Заменить старшего наряда ${target!.code}` }),
+    ).toBeVisible({ timeout: 15_000 })
+
+    // Снятие — той же ручкой, кнопкой «Снять» внутри окна.
+    await page
+      .getByRole('button', { name: `Заменить старшего наряда ${target!.code}` })
+      .click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Снять' }).click()
+    await expect(
+      page.getByRole('button', { name: `Назначить старшего наряда ${target!.code}` }),
+    ).toBeVisible({ timeout: 15_000 })
   })
 
   test('объекты посещения добавляются кнопкой у строки и снимаются', async ({ page }) => {

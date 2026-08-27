@@ -450,6 +450,15 @@ export function visitObjectDetailPath(
   return `${visitObjectsPath(eventId)}${visitObjectId}/`;
 }
 
+/** Старший НАРЯДА мероприятия (Plane №190). ОДИН адрес на три действия:
+ * назначение, замену и снятие — у мероприятия старший один, и «сначала
+ * снимите» разбило бы обычную замену на две операции. Снятие — тот же POST
+ * с пустым `employeeId`. Не путать с `visitObjectChiefPath`: старший наряда и
+ * старший объекта — разные люди с разной ответственностью. */
+export function eventChiefPath(eventId: string): string {
+  return `${securityEventDetailPath(eventId)}chief/`;
+}
+
 /** Старший объекта посещения: POST назначает (и заменяет), DELETE снимает. */
 export function visitObjectChiefPath(
   eventId: string,
