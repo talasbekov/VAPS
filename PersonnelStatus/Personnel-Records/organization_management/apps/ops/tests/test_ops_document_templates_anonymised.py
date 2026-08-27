@@ -18,6 +18,13 @@
 
 Отдельно стерегутся КАРТИНКИ: портрет охраняемого лица лежит в `word/media/`
 двоичным файлом, и проверка по тексту его не видит.
+
+И отдельно — СВОЙСТВА ФАЙЛА (`docProps/`). Их не видно ни в тексте, ни в
+картинках, а Word держит там автора, последнего правившего и организацию.
+Первая редакция сторожа их не читала, и это была не гипотеза: в ПЯТИ бланках
+лежали настоящие ФИО сотрудников заказчика (Plane №177). Word показывает их в
+свойствах и подставляет в поля шаблона — то есть при выгрузке они уехали бы
+заказчику обратно как автор документа системы.
 """
 import hashlib
 import pathlib
@@ -58,6 +65,40 @@ def document_text(path):
                 raw = archive.read(name).decode("utf-8", errors="ignore")
                 chunks.append(re.sub(r"<[^>]+>", " ", raw))
     return " ".join(chunks)
+
+
+#: Поля свойств файла, в которых оказываются ЛЮДИ И ОРГАНИЗАЦИИ. Список
+#: закрытый и короткий: остальные поля (даты правки, число слов, версия Word)
+#: личных данных не несут, и требовать их вычистки значило бы придираться.
+_PROPERTY_FIELDS = (
+    "dc:creator",
+    "cp:lastModifiedBy",
+    "dc:title",
+    "dc:subject",
+    "dc:description",
+    "cp:keywords",
+    "Company",
+    "Manager",
+)
+
+
+def document_properties(path):
+    """Заполненные свойства файла: поле → значение.
+
+    Читается СЫРОЙ XML, а не через `python-docx`: тот отдаёт лишь часть
+    `core.xml` и не показывает `app.xml` с организацией вовсе.
+    """
+    found = {}
+    with zipfile.ZipFile(path) as archive:
+        for name in archive.namelist():
+            if not name.startswith("docProps/") or not name.endswith(".xml"):
+                continue
+            raw = archive.read(name).decode("utf-8", errors="ignore")
+            for field in _PROPERTY_FIELDS:
+                match = re.search(rf"<{field}[^>]*>(.*?)</{field}>", raw, re.S)
+                if match and match.group(1).strip():
+                    found[field] = match.group(1).strip()
+    return found
 
 
 def media_hashes(path):
@@ -168,3 +209,73 @@ def test_no_template_carries_a_picture_from_the_samples(readable_samples):
         "в бланках лежат картинки из образцов заказчика (портреты и флаги) — "
         f"их нельзя держать в репозитории: {leaks}"
     )
+
+
+def test_no_template_carries_filled_in_properties():
+    """У БЛАНКА СВОЙСТВ НЕТ — они пусты все до одного.
+
+    Правило нарочно грубее, чем «нет личных данных»: пусто или не пусто —
+    вопрос без толкований, а «похоже ли это на человека» — вопрос с
+    толкованием, и отвечать на него разбором значит промахиваться. Первая
+    редакция этой пробы искала людей по виду строки и немедленно обвинила
+    бланки за автора «Smart Josparlau» — имя самой системы под тем же
+    признаком «Имя Фамилия».
+
+    Бланк — форма, а не документ: автора, организации и темы у него нет.
+    Заполненное поле здесь всегда означает след того, у кого форму сняли.
+    """
+    leaks = {}
+    for template in sorted(TEMPLATES_DIR.glob("*.docx")):
+        filled = document_properties(template)
+        if filled:
+            leaks[template.name] = filled
+
+    assert leaks == {}, (
+        "в свойствах бланков остались значения — Word показывает их в "
+        f"свойствах файла и подставляет в поля шаблона: {leaks}"
+    )
+
+
+def test_the_guard_would_notice_a_name_in_the_properties(tmp_path):
+    """КРАСНАЯ ПРОБА проверки свойств.
+
+    Без неё «в свойствах чисто» означало бы лишь, что разбор ничего не нашёл
+    — а разбор свойств легко промахивается: полей несколько, лежат они в
+    разных файлах `docProps/`, и `python-docx` показывает не все.
+    """
+    fake = tmp_path / "leaky.docx"
+    with zipfile.ZipFile(fake, "w") as archive:
+        archive.writestr(
+            "docProps/core.xml",
+            "<cp:coreProperties><dc:creator>Жаксыбаев Кайрат</dc:creator>"
+            "</cp:coreProperties>",
+        )
+        archive.writestr(
+            "docProps/app.xml",
+            "<Properties><Company>СГО РК</Company></Properties>",
+        )
+
+    properties = document_properties(fake)
+
+    assert properties["dc:creator"] == "Жаксыбаев Кайрат"
+    assert properties["Company"] == "СГО РК"
+
+
+def test_an_empty_property_is_not_a_leak(tmp_path):
+    """Пустое поле и САМОЗАКРЫВАЮЩИЙСЯ тег — не находка.
+
+    `python-docx` пересохраняет очищенное поле как `<dc:creator/>`, и разбор,
+    ищущий пару тегов, такого поля не видит вовсе. Это верно по сути (значения
+    нет) и опасно по формулировке: соседняя сессия чуть не приняла «тега нет»
+    за «файл чист» на ещё НЕ очищенном файле. Проба закрепляет, что пустое
+    поле в находки не попадает — ни в одном из двух видов записи.
+    """
+    fake = tmp_path / "clean.docx"
+    with zipfile.ZipFile(fake, "w") as archive:
+        archive.writestr(
+            "docProps/core.xml",
+            "<cp:coreProperties><dc:creator/><cp:lastModifiedBy>  </cp:lastModifiedBy>"
+            "</cp:coreProperties>",
+        )
+
+    assert document_properties(fake) == {}
