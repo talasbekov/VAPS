@@ -88,9 +88,21 @@ function total(rows: Row[], code: string): number {
  * на стенде это объект с одним ОМ, и пробы порядка на нём вырождаются в
  * молчаливый skip (тот же приём, что и поиск фикстуры запросом).
  */
+/**
+ * Объект с наибольшим числом мероприятий — но ТОЛЬКО НАСТОЯЩИЙ.
+ *
+ * 🔴 В снимке есть синтетическая строка «без объекта» (`rowId` вида
+ * `object:unbound`), и на стенде она бывает самой богатой: мероприятий без
+ * объекта там больше, чем у любого реального (Plane №224). Обе пробы ниже
+ * проверяют ПУТЬ ПО ОБЪЕКТУ — детализацию до его мероприятий и порядок в этой
+ * таблице; синтетическая строка для этого не годится, и цеплялись за неё пробы
+ * случайно, а не по замыслу.
+ */
 function richestObject(rows: Row[]): Row {
-  const objects = rows.filter((row) => row.childLevel === 'OBJECT')
-  expect(objects.length, 'в снимке нет ни одного объекта').toBeGreaterThan(0)
+  const objects = rows.filter(
+    (row) => row.childLevel === 'OBJECT' && !row.rowId.includes(':'),
+  )
+  expect(objects.length, 'в снимке нет ни одного НАСТОЯЩЕГО объекта').toBeGreaterThan(0)
   return objects.reduce((best, row) =>
     (row.cells.find((c) => c.code === 'EVENTS')?.value ?? 0) >
     (best.cells.find((c) => c.code === 'EVENTS')?.value ?? 0)
@@ -234,7 +246,15 @@ test.describe(LIVE ? 'аналитика ОМ' : 'аналитика ОМ (ск�
       .getByRole('button', { name: 'Детализировать' })
       .click()
 
-    await expect(page).toHaveURL(new RegExp(`object=${target.rowId}(&|$)`))
+    // Адрес сравнивается с ЗАКОДИРОВАННЫМ идентификатором. Синтетическая
+    // строка «без объекта» имеет rowId вида `object:unbound`, и браузер
+    // кодирует двоеточие (`object%3Aunbound`) — ожидание сырого значения
+    // краснело на стенде, где мероприятий без объекта больше, чем у любого
+    // настоящего объекта (Plane №224). Кодирование в query правильно; врало
+    // ожидание пробы.
+    await expect(page).toHaveURL(
+      new RegExp(`object=${encodeURIComponent(target.rowId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(&|$)`),
+    )
     await expect(
       page.getByRole('navigation', { name: 'Путь детализации' }).getByRole('button', {
         name: target.safeLabel,
@@ -283,7 +303,7 @@ test.describe(LIVE ? 'аналитика ОМ' : 'аналитика ОМ (ск�
     ).not.toBe(serverFirst)
 
     await signIn(page)
-    await page.goto(`${APP}${SCREEN}?object=${target.rowId}`)
+    await page.goto(`${APP}${SCREEN}?object=${encodeURIComponent(target.rowId)}`)
     const table = page.locator('[data-slot="card"]', { hasText: 'Мероприятия на объекте' }).first()
     await expect(table).toBeVisible({ timeout: 15_000 })
     const firstRow = table.locator('tbody tr').first()
