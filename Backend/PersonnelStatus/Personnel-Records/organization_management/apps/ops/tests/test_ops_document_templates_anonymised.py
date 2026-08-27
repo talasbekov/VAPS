@@ -27,6 +27,7 @@
 заказчику обратно как автор документа системы.
 """
 import hashlib
+import html
 import pathlib
 import re
 import zipfile
@@ -41,30 +42,64 @@ _ROOT = pathlib.Path(__file__).resolve().parents[7]
 SAMPLES_DIR = _ROOT / "docs" / "PersonnelStatus"
 UPLOADS_DIR = _ROOT / "Smart Josparlau (Прототип HTML)" / "uploads"
 
+#: Пробел ВНУТРИ строки — но не перевод строки. Абзацы и ячейки таблицы
+#: разделены в `document_text` переводом строки, и признак не имеет права
+#: через него перешагивать: «Резерв» в одной ячейке и «А.ж.» (казахское
+#: «ағымдағы жылдың», «текущего года») в начале следующего абзаца — не
+#: «Резерв А.», а два разных куска бланка (Plane №183).
+_INLINE = r"[^\S\n]"
+
 _PERSONAL = (
     # «Иванов И.» и «И.Иванов» — фамилия с инициалом.
-    ("ФИО с инициалом", re.compile(r"\b[А-ЯЁ][а-яё]{2,}\s+[А-ЯЁ]\.|\b[А-ЯЁ]\.\s?[А-ЯЁ][а-яё]{2,}")),
+    ("ФИО с инициалом", re.compile(
+        rf"\b[А-ЯЁ][а-яё]{{2,}}{_INLINE}{{1,3}}[А-ЯЁ]\.|\b[А-ЯЁ]\.{_INLINE}?[А-ЯЁ][а-яё]{{2,}}"
+    )),
     # Позывной: «poz1-30», «Poz-2-18», «poz 1-30».
-    ("позывной", re.compile(r"\bpoz[\s-]?\d+[-–]\d+", re.IGNORECASE)),
+    ("позывной", re.compile(rf"\bpoz(?:{_INLINE}|-)?\d+[-–]\d+", re.IGNORECASE)),
     # Конкретная дата в бланке — это уже данные, а не форма.
     ("дата", re.compile(r"\b\d{2}\.\d{2}\.\d{4}\b")),
     # Группа крови: «А (II) Rh +».
-    ("группа крови", re.compile(r"\b[АABО0]\s?\((?:I{1,3}|IV)\)")),
+    ("группа крови", re.compile(rf"\b[АABО0]{_INLINE}?\((?:I{{1,3}}|IV)\)")),
     # Номер брони или комнаты: «№ 1620».
-    ("номер", re.compile(r"№\s?\d{3,}")),
+    ("номер", re.compile(rf"№{_INLINE}?\d{{3,}}")),
 )
+
+
+#: Абзац `<w:p>` и ячейка таблицы `<w:tc>` — НАСТОЯЩИЕ границы текста: то,
+#: что стоит по разные стороны от них, читатель бланка видит как разные
+#: куски, а не как одну фразу. Мягкий перенос `<w:br/>` внутри абзаца —
+#: тоже граница: читатель видит две строки, а не одну фразу.
+_BLOCK_END = re.compile(r"</w:(?:p|tc|tr)>|<w:(?:br|cr)\s*/?>")
+#: Содержимое одного текстового прогона. Word рвёт прогоны где угодно —
+#: посреди слова, на смене начертания, после проверки орфографии, — поэтому
+#: внутри абзаца прогоны склеиваются ВПЛОТНУЮ, без разделителя: так же, как
+#: их показывает Word. Разделитель здесь прятал бы «Ива|нов И.» от сторожа.
+_RUN_TEXT = re.compile(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", re.S)
 
 
 def document_text(path):
     """Весь текст `.docx`: тело, таблицы, колонтитулы — ВСЁ, куда личные
-    данные могли попасть. `python-docx` показал бы только тело."""
+    данные могли попасть. `python-docx` показал бы только тело.
+
+    Текст собирается ПО АБЗАЦАМ И ЯЧЕЙКАМ, а не заменой всех тегов на пробел.
+    Прежняя редакция склеивала документ в одну строку, и признак «ФИО с
+    инициалом» перешагивал через границу ячейки: слово «Резерв» в конце одной
+    и «А.ж.» в начале следующей читались как «Резерв А.» — бланк расстановки
+    краснел на пустом месте (Plane №183). Внутри абзаца прогоны, наоборот,
+    склеиваются вплотную: Word рвёт их посреди слова, и разделитель между
+    ними спрятал бы настоящую фамилию.
+    """
+    lines = []
     with zipfile.ZipFile(path) as archive:
-        chunks = []
         for name in archive.namelist():
-            if name.startswith("word/") and name.endswith(".xml"):
-                raw = archive.read(name).decode("utf-8", errors="ignore")
-                chunks.append(re.sub(r"<[^>]+>", " ", raw))
-    return " ".join(chunks)
+            if not (name.startswith("word/") and name.endswith(".xml")):
+                continue
+            raw = archive.read(name).decode("utf-8", errors="ignore")
+            for block in _BLOCK_END.split(raw):
+                text = html.unescape("".join(_RUN_TEXT.findall(block)))
+                if text.strip():
+                    lines.append(text)
+    return "\n".join(lines)
 
 
 #: Поля свойств файла, в которых оказываются ЛЮДИ И ОРГАНИЗАЦИИ. Список
@@ -279,3 +314,90 @@ def test_an_empty_property_is_not_a_leak(tmp_path):
         )
 
     assert document_properties(fake) == {}
+
+
+def _docx_with_body(path, body_xml):
+    """Минимальный `.docx` с заданным телом — для проб самого сторожа."""
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("word/document.xml", body_xml)
+    return path
+
+
+def test_the_guard_does_not_read_across_a_line_boundary(tmp_path):
+    """КРАСНАЯ ПРОБА ГРАНИЦЫ (Plane №183).
+
+    Мягкий перенос `<w:br/>` — один-единственный тег, и прежняя редакция
+    `document_text` меняла его на ОДИН пробел: «Резерв» в конце строки и
+    «А.ж.» («ағымдағы жылдың» — текущего года) в начале следующей склеивались
+    в «Резерв А.» и обвиняли бланк расстановки. Границу держит только перевод
+    строки: верните замену тегов пробелом — проба покраснеет.
+
+    Перенос выбран нарочно вместо границы ячейки: ячеек разделяет с десяток
+    тегов, и склейка дала бы столько же пробелов — признак не сработал бы и
+    без границы, то есть проба стерегла бы не то, ради чего написана.
+    """
+    fake = _docx_with_body(
+        tmp_path / "soft-break.docx",
+        "<w:p><w:r><w:t>Резерв</w:t><w:br/>"
+        '<w:t xml:space="preserve">А.ж. 20 сәуір</w:t></w:r></w:p>',
+    )
+
+    text = document_text(fake)
+
+    assert "Резерв" in text and "А.ж." in text, "текст строк потерян"
+    caught = [name for name, pattern in _PERSONAL if pattern.search(text)]
+    assert caught == [], f"сторож склеил соседние строки в личные данные: {caught}"
+
+
+def test_the_guard_does_not_read_across_a_cell_boundary(tmp_path):
+    """Соседние ячейки таблицы — тоже не одна фраза.
+
+    Это ровно случай бланка расстановки: «Резерв» стоит отдельной ячейкой,
+    следующий абзац начинается с «А.ж.».
+    """
+    fake = _docx_with_body(
+        tmp_path / "two-cells.docx",
+        "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Резерв</w:t></w:r></w:p></w:tc>"
+        "<w:tc><w:p><w:r><w:t>А.ж. 20 сәуір</w:t></w:r></w:p></w:tc></w:tr></w:tbl>",
+    )
+
+    caught = [name for name, pattern in _PERSONAL if pattern.search(document_text(fake))]
+
+    assert caught == [], f"сторож склеил соседние ячейки в личные данные: {caught}"
+
+
+def test_a_wide_gap_inside_one_line_is_not_a_name(tmp_path):
+    """Разрядка внутри строки — вёрстка, а не фамилия с инициалом.
+
+    Признак ограничен тремя пробелами нарочно: `\s+` без границы принимал за
+    «Иванов И.» слово и инициал, разнесённые по разным концам строки табами.
+    """
+    fake = _docx_with_body(
+        tmp_path / "wide-gap.docx",
+        '<w:p><w:r><w:t xml:space="preserve">Резерв' + " " * 23 + 'А.ж.</w:t></w:r></w:p>',
+    )
+
+    caught = [name for name, pattern in _PERSONAL if pattern.search(document_text(fake))]
+
+    assert caught == [], f"разрядка принята за личные данные: {caught}"
+
+
+def test_the_guard_still_sees_a_name_split_across_runs(tmp_path):
+    """ОБРАТНАЯ СТОРОНА ТОЙ ЖЕ ГРАНИЦЫ.
+
+    Word рвёт прогоны где угодно — посреди слова, на смене начертания. Внутри
+    ОДНОГО абзаца такие куски обязаны склеиваться вплотную, иначе граница,
+    введённая ради «Резерв А.», спрячет настоящую фамилию. Проба падает, если
+    в `document_text` между прогонами появится разделитель.
+    """
+    fake = _docx_with_body(
+        tmp_path / "split-run.docx",
+        "<w:p><w:r><w:t>Шауби</w:t></w:r><w:r><w:t>денов</w:t></w:r>"
+        '<w:r><w:t xml:space="preserve"> А.</w:t></w:r></w:p>',
+    )
+
+    text = document_text(fake)
+
+    assert "Шаубиденов А." in text, f"прогоны не склеились: {text!r}"
+    caught = [name for name, pattern in _PERSONAL if pattern.search(text)]
+    assert "ФИО с инициалом" in caught, "фамилия, разорванная прогонами, не поймана"
