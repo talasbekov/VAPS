@@ -262,13 +262,18 @@ export default function SecurityEventsPage() {
               onChange={(e) => updateParam("to", e.target.value)}
             />
           </label>
+          {/* Фильтр отбирает по ВЕДУЩЕМУ карточки (`ownerName`), и с №189 он
+              так и называется. Прежняя подпись «Ответственный» повторяла
+              подпись колонки, которая теперь отдана СТАРШЕМУ наряда, — одно
+              слово на две разные роли обещало бы отбор по старшему и
+              отбирало бы по ведущему. */}
           <select
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            aria-label="Ответственный"
+            aria-label="Ведущий"
             value={params.owner}
             onChange={(e) => updateParam("owner", e.target.value)}
           >
-            <option value="">Все ответственные</option>
+            <option value="">Все ведущие</option>
             {(query.data?.owners ?? []).map((owner) => (
               <option key={owner} value={owner}>
                 {owner}
@@ -355,12 +360,21 @@ function ResultsTable({
               <Th>
                 <span className="sr-only">Объекты посещения</span>
               </Th>
-              <Th>ОМ</Th>
-              <Th>Даты</Th>
+              {/* Колонки — ПОЛЯ БЮЛЛЕТЕНЯ, в порядке его бланка: дата,
+                  время, ОЛ, мероприятие, локация, старший (Plane №189,
+                  образец заказчика «02 Бюллетень Орда-4»). Мероприятие стоит
+                  первым, а не четвёртым: в бланке строку читают слева
+                  направо целиком, в реестре — ищут глазами по названию.
+                  Дата и время слиты в одну колонку: время — уточнение даты,
+                  и отдельный столбец «09:00» на всю таблицу был бы шире
+                  своего содержимого. */}
+              <Th>Мероприятие</Th>
+              <Th>Дата и время</Th>
+              <Th>Охраняемое лицо</Th>
               <Th>Локация</Th>
               <Th>Этап и готовность</Th>
               <Th>Потребность</Th>
-              <Th>Ответственный</Th>
+              <Th>Старший</Th>
               <Th>
                 <span className="sr-only">Действия</span>
               </Th>
@@ -378,10 +392,10 @@ function ResultsTable({
           пустая колонка на всю таблицу — это не «честная пустота», а шум в
           каждой строке. */}
       <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-        Колонки «Старший» из прототипа здесь нет: старшего мероприятия модель
-        показывает в карточке, а в реестре его место занял список объектов
-        посещения — он раскрывается кнопкой в первой колонке и несёт
-        охраняемое лицо каждого объекта.
+        Колонки повторяют поля бюллетеня: дата, время, охраняемое лицо,
+        мероприятие, локация, старший. Локация и охраняемое лицо здесь — общие
+        для мероприятия; у каждого объекта посещения они свои и видны в
+        раскрытии строки.
       </p>
     </>
   );
@@ -516,6 +530,15 @@ function EventRow({
             )}
           </span>
         </TableCell>
+        {/* Ширина названия ОГРАНИЧЕНА, и это не украшение. Колонок с №189
+            девять, и длинное название в одну строку растягивало таблицу за
+            край экрана — «Старший», крайняя правая колонка, уезжала в
+            горизонтальную прокрутку.
+
+            Потолок стоит на ВНУТРЕННЕМ блоке, а не на самой ячейке: в
+            табличной раскладке `max-width` у `<td>` браузером не соблюдается
+            — колонка остаётся широкой, а текст просто вылезает поверх соседней.
+            Замерено на стенде: название наезжало на «Дата и время». */}
         <TableCell>
                   <Link
                     href={`/security-ops/events/${event.id}${backSuffix}`}
@@ -524,7 +547,13 @@ function EventRow({
                     <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
                       {event.code}
                     </span>
-                    <span className="mt-1 block font-semibold">{event.title}</span>
+                    {/* `whitespace-normal` обязателен: у `TableCell` умолчание
+                        примитива — `whitespace-nowrap`, и один только
+                        `max-w` название не переносит, а роняет его поверх
+                        соседней колонки. */}
+                    <span className="mt-1 block max-w-[300px] font-semibold whitespace-normal">
+                      {event.title}
+                    </span>
                   </Link>
                 </TableCell>
 
@@ -532,8 +561,18 @@ function EventRow({
                     прототипе вторая строка ячейки несёт время смены, которого
                     у мероприятия нет; период же есть и говорит о том же
                     («сколько это длится»). */}
+                {/* Дата и время бюллетеня. Время стоит РЯДОМ с датой, а не
+                    подписью снизу: вторую строку ячейки занимает период, и
+                    время, уехавшее туда же, читалось бы как время окончания.
+                    Часа может не быть — тогда его нет и в ячейке: «—» здесь
+                    означал бы «назначено на никогда». */}
                 <TableCell className="whitespace-nowrap text-muted-foreground">
                   {formatIsoDate(event.businessDate)}
+                  {event.eventTime !== null && (
+                    <span className="ml-1.5 text-foreground">
+                      {event.eventTime}
+                    </span>
+                  )}
                   <span className="mt-[3px] block text-[11px] text-muted-foreground/80">
                     {event.businessDateEnd === null ||
                     event.businessDateEnd === event.businessDate
@@ -542,12 +581,31 @@ function EventRow({
                   </span>
                 </TableCell>
 
+                {/* Охраняемое лицо — своя колонка, а не строка под названием
+                    мероприятия: в бюллетене это отдельное поле, по нему ищут
+                    («кто едет»), и спрятанное в подпись оно перестаёт быть
+                    находимым глазами. Пусто — ОТВЕТ: бюллетень заводят и без
+                    лица, когда визит ещё не подтверждён. */}
                 <TableCell className="text-muted-foreground">
+                  {event.protectedPersonName === "" ? (
+                    <span className="text-[11px]">лицо не назначено</span>
+                  ) : (
+                    <span className="text-foreground">
+                      {event.protectedPersonName}
+                    </span>
+                  )}
+                </TableCell>
+
+                <TableCell className="text-muted-foreground">
+                  {/* Потолок ширины — на блоке, а не на ячейке: см. колонку
+                      мероприятия выше. */}
                   {/* Пустое имя — «объект не выбран», а не пустая ячейка: ОМ
                       заводят до согласования маршрута, и объекты дописывают
                       позже кнопкой в первой колонке. */}
-                  {event.objectName === "" ? "объект не выбран" : event.objectName}
-                  <span className="mt-[3px] block text-[11px] text-muted-foreground/80">
+                  <span className="block max-w-[210px] whitespace-normal">
+                    {event.objectName === "" ? "объект не выбран" : event.objectName}
+                  </span>
+                  <span className="mt-[3px] block max-w-[210px] whitespace-normal text-[11px] text-muted-foreground/80">
                     {event.objectName === ""
                       ? "объекты добавляются кнопкой «+»"
                       : event.passportBinding === null
@@ -560,7 +618,7 @@ function EventRow({
                     ответ на вопрос «где мероприятие сейчас». Конфликты
                     показываются ТОЛЬКО когда они есть: колонка нулей была
                     шумом на всю таблицу, а сигнал в ней терялся. */}
-                <TableCell className="min-w-[190px]">
+                <TableCell className="min-w-[150px]">
                   <span className="flex flex-wrap items-center gap-1.5">
                     <StageBadge stage={event.stage} />
                     {event.conflictsCount > 0 && (
@@ -590,7 +648,26 @@ function EventRow({
                 </TableCell>
 
                 <TableCell className="tabular-nums">{event.forceNeed}</TableCell>
-                <TableCell>{event.ownerName}</TableCell>
+
+                {/* СТАРШИЙ, а не ведущий: колонка бланка называется
+                    «Старший», и это разные люди — старший отвечает за наряд
+                    на месте, ведущий ведёт карточку в системе. Прежде здесь
+                    стоял ведущий под подписью «Ответственный», и совпадение
+                    этих двух на стенде скрывало подмену. Ведущий не выброшен
+                    — он ушёл подписью: реестр остаётся местом, где видно, с
+                    кого спрашивать за карточку. */}
+                <TableCell>
+                  {event.chiefName === "" ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      старший не назначен
+                    </span>
+                  ) : (
+                    event.chiefName
+                  )}
+                  <span className="mt-[3px] block text-[11px] text-muted-foreground/80">
+                    ведёт: {event.ownerName}
+                  </span>
+                </TableCell>
         <TableCell className="text-center text-muted-foreground">
           <Link href={`/security-ops/events/${event.id}${backSuffix}`}>›</Link>
         </TableCell>
@@ -598,7 +675,7 @@ function EventRow({
 
       {expanded && (
         <TableRow id={detailsId} className="bg-muted/40 hover:bg-muted/40">
-          <TableCell colSpan={8} className="p-0">
+          <TableCell colSpan={9} className="p-0">
             <VisitObjectList
               event={event}
               visits={visits}
