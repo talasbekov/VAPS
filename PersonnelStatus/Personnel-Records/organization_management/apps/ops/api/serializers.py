@@ -261,6 +261,21 @@ def serialize_security_event(event):
             else None
         ),
         "protectedPersonName": event.protected_person_name,
+        # ВЕСЬ список лиц бюллетеня (Plane №188). Поля выше остаются и означают
+        # ГЛАВНОЕ лицо — колонка «ОЛ» бланка одна, и кто-то обязан в неё
+        # попасть. Клиенты, написанные до №188, продолжают читать главное и
+        # ничего не теряют; список — добавка рядом, а не подмена.
+        #
+        # Сортировка ПО ИМЕНИ, а не по порядку вставки: у M2M своего порядка
+        # нет, и вывод «как легло» менялся бы от перезаписи списка, читаясь при
+        # этом как значимый. Главное лицо названо отдельным полем, поэтому
+        # старшинства в списке не требуется.
+        "protectedPersons": [
+            {"id": str(person.pk), "name": person.name}
+            for person in sorted(
+                event.protected_persons.all(), key=lambda p: p.name
+            )
+        ],
         "location": event.location,
         "chiefEmployeeId": (
             str(event.chief_employee_id)

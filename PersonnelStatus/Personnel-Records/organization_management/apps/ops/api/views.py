@@ -391,6 +391,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             kind=data.get("kind"),
             event_time=data.get("eventTime"),
             protected_person_id=data.get("protectedPersonId"),
+            # Список лиц (Plane №188). Ключа нет — работает старое одиночное
+            # поле: им пользуются мок-слой, сиды и вызовы до №188.
+            protected_person_ids=data.get("protectedPersonIds"),
             location=data.get("location"),
             chief_employee_id=data.get("chiefEmployeeId"),
             actor=resolve_actor_id(request),
@@ -538,6 +541,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 business_date_end=data.get("businessDateEnd"),
                 event_time=data.get("eventTime"),
                 protected_person_id=data.get("protectedPersonId"),
+                protected_person_ids=data.get("protectedPersonIds"),
                 location=data.get("location"),
                 actor=request.user,
             )

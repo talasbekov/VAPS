@@ -132,6 +132,7 @@ def create_event(
     kind=None,
     event_time=None,
     protected_person_id=None,
+    protected_person_ids=None,
     location=None,
     chief_employee_id=None,
     actor,
@@ -188,20 +189,21 @@ def create_event(
     if len(location) > 255:
         field_errors["location"] = ["Не длиннее 255 символов."]
 
-    person = None
-    raw_person = str(protected_person_id or "").strip()
-    if raw_person != "":
-        person = (
-            OpsProtectedPerson.objects.filter(
-                pk=raw_person, is_active=True
-            ).first()
-            if raw_person.isdigit()
-            else None
+    # ЛИЦ МОЖЕТ БЫТЬ НЕСКОЛЬКО (Plane №188), и старое одиночное поле принимается
+    # ПО-ПРЕЖНЕМУ: его шлют мок-слой, сиды и все вызовы, написанные до №188.
+    # Снять его вместе с вводом списка значило бы починить окно и сломать всё
+    # остальное в тот же заход.
+    #
+    # Прислали оба — список главнее: он подробнее, а одиночное поле в такой
+    # паре означает лишь «главное лицо», и оно всё равно вычисляется как первое
+    # в списке.
+    if protected_person_ids is not None:
+        persons = resolve_protected_persons(protected_person_ids, field_errors)
+    else:
+        persons = resolve_protected_persons(
+            [protected_person_id], field_errors, field="protectedPersonId"
         )
-        if person is None:
-            field_errors["protectedPersonId"] = [
-                "Охраняемое лицо не найдено в справочнике."
-            ]
+    person = persons[0] if persons else None
 
     chief = None
     raw_chief = str(chief_employee_id or "").strip()
@@ -301,6 +303,10 @@ def create_event(
     # Объект посещения заводится вместе с бюллетенем — но только если объект
     # ВЫБРАН: у ОМ без объекта раскрытие строки честно пусто («объекты
     # посещения не заведены»), и там же стоит кнопка их добавить.
+    # Связь заполняется ПОСЛЕ создания: у M2M нет иного способа: строки
+    # `OpsSecurityEvent` до сохранения ещё не существует.
+    if persons:
+        event.protected_persons.set(persons)
     if security_object is not None:
         OpsSecurityEventVisitObject.objects.create(
             event=event,
@@ -352,6 +358,7 @@ def update_bulletin_details(
     business_date_end=None,
     event_time=None,
     protected_person_id=None,
+    protected_person_ids=None,
     location=None,
     actor,
 ):
@@ -472,31 +479,34 @@ def update_bulletin_details(
             event.location = new_location
             updates.append("location")
 
-    if protected_person_id is not None:
-        raw_person = str(protected_person_id).strip()
-        if raw_person == "":
-            event.protected_person = None
-            # Снимок подписи стирается ВМЕСТЕ со ссылкой: он существует, чтобы
-            # пережить скрытие лица из справочника, а не чтобы пережить его
-            # снятие с мероприятия.
-            event.protected_person_name = ""
-            updates += ["protected_person", "protected_person_name"]
-        else:
-            person = (
-                OpsProtectedPerson.objects.filter(
-                    pk=raw_person, is_active=True
-                ).first()
-                if raw_person.isdigit()
-                else None
+    # Лиц может быть несколько (Plane №188). Ключа нет — список не трогаем;
+    # пустой список — снимаем всех, ровно как пустая строка снимала одного.
+    new_persons = None
+    if protected_person_ids is not None:
+        new_persons = resolve_protected_persons(protected_person_ids, field_errors)
+    elif protected_person_id is not None:
+        # Старое одиночное поле принимается по-прежнему — им пользуются
+        # мок-слой, сиды и вызовы, написанные до №188. Пустая строка здесь
+        # означает «снять лицо», и список становится пустым вместе с ним:
+        # оставить в списке того, кого сняли с главного поля, значило бы
+        # показать человеку снятое лицо на экране.
+        raw = str(protected_person_id).strip()
+        new_persons = (
+            []
+            if raw == ""
+            else resolve_protected_persons(
+                [raw], field_errors, field="protectedPersonId"
             )
-            if person is None:
-                field_errors["protectedPersonId"] = [
-                    "Охраняемое лицо не найдено в справочнике."
-                ]
-            else:
-                event.protected_person = person
-                event.protected_person_name = person.name
-                updates += ["protected_person", "protected_person_name"]
+        )
+
+    if new_persons is not None and not field_errors:
+        main = new_persons[0] if new_persons else None
+        event.protected_person = main
+        # Снимок подписи стирается ВМЕСТЕ со ссылкой: он существует, чтобы
+        # пережить скрытие лица из справочника, а не чтобы пережить его
+        # снятие с мероприятия.
+        event.protected_person_name = main.name if main is not None else ""
+        updates += ["protected_person", "protected_person_name"]
 
     if field_errors:
         raise _validation(field_errors)
@@ -508,13 +518,18 @@ def update_bulletin_details(
         event.business_date_end = new_end
         updates.append("business_date_end")
 
-    if not updates:
+    if not updates and new_persons is None:
         # Нечего менять — отвечаем мероприятием как есть, без записи журнала:
         # «правка без изменений» это не событие, и лента, засоренная такими,
         # перестаёт отвечать на вопрос «что менялось».
         return event
 
     event.save(update_fields=sorted(set(updates)) + ["updated_at"])
+    if new_persons is not None:
+        # `set` и на пустом списке: снятие всех лиц — такое же изменение, как
+        # назначение, и «пусто значит не трогать» здесь было бы вторым
+        # смыслом пустоты в одной функции.
+        event.protected_persons.set(new_persons)
     audit_service.record(
         actor=actor,
         action=audit_service.SECURITY_EVENT_DETAILS_UPDATED,
@@ -536,6 +551,11 @@ def update_bulletin_details(
                 else None
             ),
             "protectedPersonName": event.protected_person_name,
+            "protectedPersonNames": sorted(
+                p.name for p in (new_persons if new_persons is not None else [])
+            )
+            if new_persons is not None
+            else None,
             "location": event.location,
         },
     )
@@ -2455,6 +2475,45 @@ def update_force_allocation(event_id, request_id, *, allocated_count, comment):
 
 
 # ── Расстановка ─────────────────────────────────────────────────────────────
+
+
+def resolve_protected_persons(raw_ids, field_errors, field="protectedPersonIds"):
+    """Разобрать список лиц бюллетеня (Plane №188). Возвращает список записей.
+
+    ГЛАВНОЕ — ПЕРВОЕ. Колонка «ОЛ» бланка бюллетеня одна, и кто-то обязан в неё
+    попасть; выбирать его по алфавиту значило бы менять шапку документа от
+    переименования человека. Поэтому главным становится первое лицо списка —
+    то, которое назвали первым.
+
+    ДУБЛИ СНИМАЮТСЯ МОЛЧА, а не отбиваются ошибкой: одно и то же лицо, выбранное
+    дважды, — это оговорка ввода, а не заявление о двух разных людях. Порядок
+    первого появления при этом сохраняется.
+
+    Неизвестный идентификатор — ОШИБКА ПОЛЯ, а не пропуск: тихо выброшенное
+    лицо человек заметит только по документу, в котором его нет.
+    """
+    seen = set()
+    persons = []
+    unknown = []
+    for raw in raw_ids or []:
+        value = str(raw or "").strip()
+        if value == "" or value in seen:
+            continue
+        seen.add(value)
+        person = (
+            OpsProtectedPerson.objects.filter(pk=value, is_active=True).first()
+            if value.isdigit()
+            else None
+        )
+        if person is None:
+            unknown.append(value)
+        else:
+            persons.append(person)
+    if unknown:
+        field_errors[field] = [
+            "Охраняемое лицо не найдено в справочнике: " + ", ".join(unknown)
+        ]
+    return persons
 
 
 def _find_personnel(employee_id):

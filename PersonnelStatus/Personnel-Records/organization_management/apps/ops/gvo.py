@@ -5,6 +5,7 @@
 повторяют мок фронта: {"results": [...]}, ключи camelCase.
 """
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.models_event import (
@@ -96,10 +97,12 @@ def _history_event(event):
 def person_event_history(person_id):
     """Закрытые ОМ, в которых участвовало охраняемое лицо.
 
-    Лицо привязано ДВУМЯ способами: полем бюллетеня (`protected_person` у ОМ) и
-    объектом посещения. Оба означают участие, и брать только одно значило бы
-    терять половину истории — у ОМ, заведённых до появления объектов посещения,
-    связь есть только в бюллетене.
+    Лицо привязано ТРЕМЯ способами: главным полем бюллетеня
+    (`protected_person`), СПИСКОМ лиц бюллетеня (`protected_persons`, Plane
+    №188) и объектом посещения. Все три означают участие, и брать не все
+    значило бы терять часть истории: у ОМ, заведённых до появления объектов
+    посещения, связь есть только в бюллетене, а у бюллетеня с несколькими
+    лицами все, кроме первого, живут ТОЛЬКО в списке.
     """
     visits = (
         OpsSecurityEventVisitObject.objects.filter(
@@ -138,9 +141,16 @@ def person_event_history(person_id):
     # и это факт, а не пропуск, поэтому строка всё равно показывается.
     bulletin_only = (
         OpsSecurityEvent.objects.filter(
-            protected_person_id=person_id, stage=CLOSED_STAGE
+            # `Q(...) | Q(...)` — главное лицо ИЛИ любое из списка. Через
+            # `filter(...).filter(...)` было бы «и то, и другое», а через два
+            # запроса пришлось бы сводить их руками и следить за дублями:
+            # `distinct` нужен именно из-за соединения по M2M.
+            Q(protected_person_id=person_id)
+            | Q(protected_persons__id=person_id),
+            stage=CLOSED_STAGE,
         )
         .exclude(pk__in=by_event.keys())
+        .distinct()
         .order_by("business_date", "id")
     )
     for event in bulletin_only:

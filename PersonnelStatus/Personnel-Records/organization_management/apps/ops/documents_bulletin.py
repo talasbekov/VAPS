@@ -94,7 +94,7 @@ def bulletin_rows(as_of_date):
         OpsSecurityEvent.objects.filter(business_date__gte=as_of_date)
         .exclude(stage__in=_PAST_STAGES)
         .order_by("business_date", "id")
-        .prefetch_related("visit_objects__security_object")
+        .prefetch_related("visit_objects__security_object", "protected_persons")
     )
     rows = []
     for event in events:
@@ -103,13 +103,33 @@ def bulletin_rows(as_of_date):
                 "date": format_period(event.business_date, event.business_date_end),
                 # Времени у ОМ в модели нет: в образце колонка тоже пуста.
                 "time": "",
-                "person": event.protected_person_name or "",
+                # ВСЕ лица бюллетеня, а не только главное (Plane №188).
+                # Колонка бланка одна, лиц бывает несколько — они
+                # перечисляются через запятую, как это и делают руками.
+                # Главное идёт ПЕРВЫМ: в бланке его читают как «за кого
+                # мероприятие», остальные — сопровождение.
+                "person": _persons(event),
                 "event": event.title,
                 "location": _location(event),
                 "chief": _chief_name(event),
             }
         )
     return rows
+
+
+def _persons(event):
+    """Лица бюллетеня строкой: главное первым, остальные по имени.
+
+    Снимок подписи (`protected_person_name`) остаётся источником для главного
+    лица: он переживает скрытие лица из справочника, а связь — нет.
+    """
+    main = (event.protected_person_name or "").strip()
+    rest = sorted(
+        person.name
+        for person in event.protected_persons.all()
+        if person.name.strip() != main
+    )
+    return ", ".join(name for name in [main, *rest] if name != "")
 
 
 def render_bulletin(as_of=None, fmt="pdf"):
