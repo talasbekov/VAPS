@@ -28,6 +28,15 @@ urlpatterns = [
     path("api/common/", include("organization_management.apps.common.api.urls")),
     # Раздел «Охранные мероприятия» — нативный переезд из Backend/VAPS
     path("api/operations/", include("organization_management.apps.operations.api.urls")),
+    # Своя учётная запись: профиль и смена собственного пароля. Код лежит в
+    # apps/operations (там же учётки, их сервис и журнал), а адрес — снаружи
+    # /api/operations/ намеренно: тот префикс означает поверхность с гейтом
+    # admin.roles, а сюда ходит любой вошедший и только к себе (Plane №180,
+    # №181; подробности — в apps/operations/api/self_account.py).
+    path(
+        "api/user/",
+        include("organization_management.apps.operations.api.user_urls"),
+    ),
     # Ядро оргструктуры в контракте нового бэка. Модели НЕ переносятся: те же
     # сущности уже живут в divisions/employees/dictionaries, core отдаёт над
     # ними донорскую форму (см. apps/core/api/serializers.py).

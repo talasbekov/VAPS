@@ -562,6 +562,87 @@ class AccountAdminService:
         return temporary
 
 
+class AccountSelfService:
+    """Своя учётка: правка профиля и смена собственного пароля (Plane №180, №181).
+
+    ПОЧЕМУ РЯДОМ С `AccountAdminService`, А НЕ ВНУТРИ НЕГО. Действия те же по
+    виду, но правила у них противоположные в трёх местах: кого можно тронуть
+    (только себя против любого), чем это подтверждается (текущим паролем
+    против права `admin.roles`) и что уходит наружу (ничего против временного
+    пароля в ответе). Общий метод с флагом «я это сам» пришлось бы читать
+    вместе с флагом на каждой строке, а ошибиться в нём — значит либо открыть
+    чужие учётки всем вошедшим, либо потребовать администратора на смену
+    собственного пароля.
+
+    Общее у них — след в журнале и снимок учётки: он берётся у соседа, потому
+    что лента одна и строки в ней должны читаться одинаково.
+    """
+
+    # Поля, которые человек меняет себе сам. Список ЗАКРЫТ и живёт здесь, а не
+    # в сериализаторе: сериализатор описывает форму запроса, а это — правило
+    # («логин, права и активность себе не меняют»), и нарушение его стоит
+    # раздачи прав по запросу.
+    SELF_EDITABLE_FIELDS = ("first_name", "last_name", "email")
+
+    @classmethod
+    @transaction.atomic
+    def save_profile(cls, user, *, actor, **fields):
+        """Правка своих имени, фамилии и почты.
+
+        Записывается тем же действием, что и админская правка учётки: вопрос
+        «что это за учётка и как она называется» один, а кто именно правил —
+        видно по актору.
+        """
+        from organization_management.apps.operations import audit_service
+
+        old_value = AccountAdminService._snapshot(user)
+        changed = False
+        for name in cls.SELF_EDITABLE_FIELDS:
+            if name in fields and fields[name] is not None:
+                setattr(user, name, fields[name])
+                changed = True
+        if not changed:
+            # Пустая правка следа не оставляет: строка «изменено» без единого
+            # изменения — ложь в ленте, которую потом никто не объяснит.
+            return user
+        user.save(update_fields=list(cls.SELF_EDITABLE_FIELDS))
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_ACCOUNT_SAVED,
+            entity_type=audit_service.ENTITY_ACCOUNT,
+            entity_id=user.pk,
+            old_value=old_value,
+            new_value=AccountAdminService._snapshot(user),
+        )
+        return user
+
+    @classmethod
+    @transaction.atomic
+    def change_password(cls, user, *, new_password, actor):
+        """Сменить свой пароль; наружу не возвращается ничего.
+
+        Текущий пароль проверяет вызывающий (сериализатор) — сюда приходит
+        уже подтверждённая смена. Разделение намеренное: проверка «тот ли
+        человек» читает запрос и его форму, а это — запись, и она обязана
+        выглядеть одинаково, откуда бы её ни позвали.
+        """
+        from organization_management.apps.operations import audit_service
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        audit_service.record(
+            actor=actor,
+            action=audit_service.ACCESS_ACCOUNT_PASSWORD_CHANGED,
+            entity_type=audit_service.ENTITY_ACCOUNT,
+            entity_id=user.pk,
+            # В журнал уходит ФАКТ и учётка, к которой он относится. Ни
+            # старого, ни нового пароля здесь нет и быть не может — ленту
+            # читают все, кто держит право на журнал.
+            new_value={"username": user.username},
+        )
+        return user
+
+
 class LegacyRoleSync:
     """Мост на переходный период: назначение ops-ролей по старым учёткам.
 

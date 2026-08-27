@@ -1091,6 +1091,17 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     AccountAdminService.reset_password(coverage_account, actor=ACTOR)
 
+    # Своя смена пароля (Plane №180) — СВОЁ действие, не сброс: администратор
+    # сбрасывает чужой пароль и отдаёт временный, человек меняет собственный,
+    # подтвердив текущий. По ленте эти два случая и различают.
+    from organization_management.apps.operations.services import AccountSelfService
+
+    AccountSelfService.change_password(
+        coverage_account,
+        new_password="Тжр7-каспий-берег",
+        actor=str(coverage_account.pk),
+    )
+
     # Раздача ролей ЧЕЛОВЕКУ (Plane №107): выдача и снятие — два действия, и
     # записей здесь тоже две. Именно они отвечают на вопрос «кто дал ему это
     # право», и до 26.08.2026 их не было в журнале вовсе.
