@@ -47,6 +47,16 @@ KINDS = {
         "needs_event": True,
         "file": "rasstanovka",
     },
+    # Бланк заказчика целиком — вёрстка «Общей расстановки РЭС» без грифа и
+    # личных данных (Plane №164). Стоит РЯДОМ с «Расстановкой», а не вместо
+    # неё: та — срез системы по постам расчёта, этот — форма заказчика, в
+    # которой у системы есть только даты. Подменить одно другим значило бы
+    # отобрать у человека тот вид, который ему нужен сейчас.
+    "placement_full": {
+        "label": "Общая расстановка (бланк)",
+        "needs_event": True,
+        "file": "obshchaya-rasstanovka",
+    },
 }
 
 
@@ -137,6 +147,12 @@ def render(kind, *, event_code=None, as_of=None, fmt="pdf"):
         )
 
         payload = render_placement(code, as_of=as_of, fmt=fmt)
+    elif kind == "placement_full":
+        from organization_management.apps.ops.documents_placement_full import (
+            render_placement_full,
+        )
+
+        payload = render_placement_full(code, as_of=as_of, fmt=fmt)
     elif kind == "bulletin":
         from organization_management.apps.ops.documents_bulletin import (
             render_bulletin,
