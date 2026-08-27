@@ -1024,3 +1024,5 @@ changelist уже в базе. Проверено мутацией: `a.check()` 
 `ALTER TABLE "ops_rating_audit_entries" ADD CONSTRAINT ... CHECK ("event_code"
 IN (...))`. Миграция накачена на базу стенда, наличие ограничения подтверждено
 запросом к `pg_constraint`.
+
+**Коммит:** `727a0a02` — `fix(ratings): закрыть event_code журнала оценивания перечнем (Plane №187)`.
