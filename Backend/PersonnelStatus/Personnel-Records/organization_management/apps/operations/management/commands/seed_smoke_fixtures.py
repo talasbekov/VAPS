@@ -72,6 +72,13 @@ EVENT_TITLE = "Стенд: мероприятие на запросе сил (ф
 #: 30 дней с запасом накрывают деловые даты, которыми пробы заводят
 #: свои мероприятия (самая ранняя — 22-е число текущего месяца).
 HISTORY_VERSION_DAYS = 30
+#: Охраняемое лицо, которого НЕТ НИ В ОДНОЙ сводке ГВО (Plane №197).
+#: Проба каталога начинает мутирующий сценарий с пустой связи «лицо → ОМ»,
+#: и любое лицо из общего справочника рано или поздно оказывается названо:
+#: закрытая фикстура истории берёт двух первых, а данные заказчика — третьего.
+#: Имя намеренно говорит, что это фикстура: человека с таким именем не бывает,
+#: и подставить его в отчёт наружу нельзя по недосмотру.
+CLEAN_PERSON_NAME = "Стенд: лицо без сводок (фикстура смоука)"
 #: Паспорт готового объекта. Состав выбран НЕ на глаз: сектор из ДВУХ постов
 #: нужен `forces-gathering` (счётчик сектора обязан быть больше счётчика
 #: одного поста), а три поста всего — `acknowledgement-stage`, которому нужны
@@ -161,6 +168,7 @@ class Command(BaseCommand):
         closed = self._closed_event(day, security_object)
         conduct = self._conduct_event(day, security_object)
         absent = self._absence(day, assigned)
+        clean_person = self._clean_person()
 
         self.stdout.write(f"STAND_ABSENT={absent.id} {absent.last_name}")
         for employee in assigned:
@@ -169,6 +177,7 @@ class Command(BaseCommand):
         self.stdout.write(f"STAND_FORCES_EVENT={event.code}")
         self.stdout.write(f"STAND_RECON_EVENT={recon.code}")
         self.stdout.write(f"STAND_CLOSED_EVENT={closed.code}")
+        self.stdout.write(f"STAND_CLEAN_PERSON={clean_person.id} {clean_person.name}")
         self.stdout.write(f"STAND_CONDUCT_EVENT={conduct.code}")
         self.stdout.write(
             f"STAND_READY_OBJECT={security_object.code} "
@@ -725,6 +734,38 @@ class Command(BaseCommand):
             )
         return people
 
+    # ── Охраняемое лицо без сводок ──────────────────────────────────────────
+
+    def _clean_person(self):
+        """Лицо каталога, которого нет ни в одной сводке ГВО (Plane №197).
+
+        Проба каталога охраняемых лиц начинает со слов «до правки связи нет» и
+        сама вносит лицо в сводку. Любое лицо ОБЩЕГО справочника для этого не
+        годится: закрытая фикстура истории называет двух первых, данные
+        заказчика — третьего, и проба падала на собственном первом ассерте,
+        не добравшись до предмета проверки.
+
+        Своё лицо, а не правка чужих строк: у названных лиц свои сводки, и
+        вычищать их значило бы стирать то, что они показывают.
+
+        Ни в одно мероприятие фикстура его НЕ ставит — выборки лиц в этой
+        команде его исключают по имени.
+        """
+        person, _created = OpsProtectedPerson.objects.get_or_create(
+            name=CLEAN_PERSON_NAME,
+            defaults={
+                "category": OpsProtectedPerson.Category.OURS,
+                "callsign": "",
+                "bio": (
+                    "Фикстура смоука: лицо намеренно не названо ни в одной "
+                    "сводке ГВО — на нём проверяется пустое состояние связи "
+                    "«лицо → мероприятие»."
+                ),
+                "is_active": True,
+            },
+        )
+        return person
+
     # ── Закрытое мероприятие для истории ────────────────────────────────────
 
     def _closed_event(self, day, security_object):
@@ -749,7 +790,12 @@ class Command(BaseCommand):
             if existing.closure_direction_summaries and existing.placement_assignments:
                 return existing
             existing.delete()
-        persons = list(OpsProtectedPerson.objects.filter(is_active=True)[:2])
+        # «Чистое» лицо ИСКЛЮЧЕНО из выбора: оно заведено ровно для того,
+        # чтобы не быть названным ни в одной сводке (Plane №197).
+        persons = list(
+            OpsProtectedPerson.objects.filter(is_active=True)
+            .exclude(name=CLEAN_PERSON_NAME)[:2]
+        )
         if len(persons) < 2:
             raise CommandError(
                 "в справочнике меньше двух охраняемых лиц — засейте их "
