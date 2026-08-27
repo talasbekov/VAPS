@@ -57,6 +57,14 @@ KINDS = {
         "needs_event": True,
         "file": "obshchaya-rasstanovka",
     },
+    # «Список броней в ГОН» — про ПАРК, а не про мероприятие (Plane №216):
+    # в образце это перечень машин автохозяйства, и требовать для него код ОМ
+    # значило бы спрашивать то, чего документу не нужно.
+    "vehicles": {
+        "label": "Список броней в ГОН",
+        "needs_event": False,
+        "file": "spisok-broney",
+    },
 }
 
 
@@ -153,6 +161,12 @@ def render(kind, *, event_code=None, as_of=None, fmt="pdf"):
         )
 
         payload = render_placement_full(code, as_of=as_of, fmt=fmt)
+    elif kind == "vehicles":
+        from organization_management.apps.ops.documents_vehicles import (
+            render_vehicles,
+        )
+
+        payload = render_vehicles(as_of=as_of, fmt=fmt)
     elif kind == "bulletin":
         from organization_management.apps.ops.documents_bulletin import (
             render_bulletin,

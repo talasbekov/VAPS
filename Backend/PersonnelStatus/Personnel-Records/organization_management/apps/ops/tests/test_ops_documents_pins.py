@@ -64,6 +64,11 @@ KINDS_PINNED = [
     # Бланк заказчика приехал с №164 РЯДОМ с «Расстановкой», а не вместо неё:
     # у них разная природа — срез системы против формы заказчика.
     ("placement_full", "Общая расстановка (бланк)", True),
+    # «Список броней в ГОН» приехал с №216 — восьмой образец задачи №156. До
+    # реестра транспорта (№215) собрать его было НЕ ИЗ ЧЕГО: автопарка в
+    # системе не было вовсе. `needsEvent` = False осознанно: документ про
+    # ПАРК, а не про мероприятие, и спрашивать у него код ОМ незачем.
+    ("vehicles", "Список броней в ГОН", False),
 ]
 
 
@@ -145,7 +150,7 @@ def test_template_keeps_the_columns_of_the_customer_sample(name, columns):
     assert template_columns(name) == columns
 
 
-def test_the_screen_is_offered_exactly_these_five_documents():
+def test_the_screen_is_offered_exactly_these_documents():
     """Перечень видов — пин целиком, вместе с подписями и нуждой в ОМ.
 
     `needsEvent` в пине не для полноты: по нему экран решает, спрашивать ли
