@@ -475,15 +475,17 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     )
   })
 
-  test('«Экспорт CSV» выгружает ОТОБРАННОЕ, а не весь список', async ({ page }) => {
+  test('«Экспорт CSV» выгружает ВЕСЬ ОТБОР, а не показанную страницу', async ({ page }) => {
     /**
-     * Кнопка была без обработчика вовсе — нажатие не делало ничего и ничего не
-     * сообщало. Теперь она собирает файл из уже загруженного отбора.
+     * Кнопка была без обработчика вовсе; потом собирала файл из загруженного
+     * списка. С 27.08.2026 реестр листается по пятьдесят строк (Plane №228), и
+     * проба переписана под это:
      *
-     * 🔴 Ассерт «в файле есть строки» вакуумен: он зеленеет и на выгрузке
-     * ВСЕГО списка. Отличает одно от другого только то, что отобранного
-     * СТРОГО МЕНЬШЕ, чем всего, и лишних имён в файле нет. Поэтому проба
-     * сначала убеждается, что отбор что-то отсёк.
+     * 🔴 «В файле есть строки» вакуумно — зеленеет и на выгрузке страницы.
+     * Отличает одно от другого ровно одно: строк в файле СТОЛЬКО ЖЕ, сколько
+     * сервер насчитал по отбору («Показано N из M» — берётся M), и это число
+     * БОЛЬШЕ страницы. Иначе человек, нажавший «Экспорт» на пяти тысячах
+     * сотрудников, получил бы полсотни и не узнал бы об этом.
      */
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/employees')
@@ -493,22 +495,20 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     const allNames = await column(page, 'ФИО')
     expect(allNames.length, 'таблица пуста — проба вакуумна').toBeGreaterThan(2)
 
-    // Отбор по первой букве фамилии первого человека: он обязан отсечь хоть
-    // кого-то, иначе «отобранное» неотличимо от «всего».
+    // Отбор по фамилии первого человека: он обязан отсечь хоть кого-то, иначе
+    // «отобранное» неотличимо от «всего».
     const firstSurname = allNames[0].split('\n')[0].trim().split(' ')[0]
     await page.goto(`/employees?search=${encodeURIComponent(firstSurname)}`)
     await hydrated(page)
     await tableFilled(page)
-    const pickedNames = await column(page, 'ФИО')
-    expect(
-      pickedNames.length,
-      `отбор по «${firstSurname}» ничего не отсёк — выгрузку отбора не отличить от полной`,
-    ).toBeLessThan(allNames.length)
-    expect(pickedNames.length).toBeGreaterThan(0)
+
+    const counter = await page.locator('text=/Показано \\d+ из \\d+/').first().innerText()
+    const [shown, matched] = counter.match(/\d+/g)!.map(Number)
+    expect(matched, 'отбор ничего не нашёл').toBeGreaterThan(0)
 
     const download = await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('button', { name: 'Экспорт CSV' }).click(),
+      page.getByRole('button', { name: /Экспорт CSV/ }).click(),
     ]).then(([event]) => event)
 
     const stream = await download.createReadStream()
@@ -518,17 +518,23 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
 
     const lines = csv.trim().split('\r\n')
     expect(lines[0], 'в файле нет шапки').toContain('Дата найма')
-    expect(lines.length - 1, 'число строк в файле не совпало с отбором').toBe(pickedNames.length)
+    expect(
+      lines.length - 1,
+      `в файле ${lines.length - 1} строк, а отбору отвечает ${matched}: выгружена страница, а не отбор`,
+    ).toBe(matched)
     expect(csv).toContain(firstSurname)
 
-    // Ни одного имени, которого в отборе нет.
-    const dropped = allNames
-      .map((cell) => cell.split('\n')[0].trim())
-      .filter((name) => !pickedNames.some((picked) => picked.includes(name)))
-    expect(dropped.length, 'отбор не отсёк ни одного имени — проба вырождена').toBeGreaterThan(0)
-    for (const name of dropped) {
-      expect(csv, `в файл попало отсечённое отбором имя «${name}»`).not.toContain(name)
-    }
+    // Имя, которого в отборе нет, в файл не попадает. Берём его из полного
+    // списка: там есть люди с другими фамилиями.
+    const alien = allNames
+      .map((cell) => cell.split('\n')[0].trim().split(' ')[0])
+      .find((surname) => surname !== firstSurname && !surname.startsWith(firstSurname))
+    expect(alien, 'на стенде все однофамильцы — проба вырождена').toBeTruthy()
+    expect(csv, `в файл попало отсечённое отбором имя «${alien}»`).not.toContain(alien!)
+
+    // И «показано» на экране — это страница, а не весь отбор: если они равны,
+    // страниц нет, и проба ничего не сторожит.
+    expect(shown).toBeLessThanOrEqual(matched)
   })
 
   test('в строке реестра стоит аватарка, а без фотографии — инициалы', async ({ page }) => {
