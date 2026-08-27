@@ -843,6 +843,30 @@ function VisitObjectList({
                 </span>
               </span>
 
+              {/* ДАТА ПОСЕЩЕНИЯ — заказчик просил у объекта те же данные, что
+                  у строки бюллетеня (Plane №194). Своя дата есть не у всякого
+                  объекта: у однодневного ОМ она названа в бюллетене, и
+                  дублировать её в каждой строке значило бы завести второй
+                  ответ, который однажды разойдётся с первым. Поэтому здесь
+                  ЛИБО собственный день объекта, ЛИБО прямая отсылка к дате
+                  мероприятия — но не пусто: пустая ячейка читается как
+                  «неизвестно», а известно. */}
+              <span className="min-w-40 whitespace-nowrap text-[11px] text-muted-foreground">
+                {visit.visitDay === null ? (
+                  <>в дату мероприятия{" "}
+                    <span className="text-xs text-foreground">
+                      {formatIsoDate(event.businessDate)}
+                    </span>
+                  </>
+                ) : (
+                  <>Посещение:{" "}
+                    <span className="text-xs text-foreground">
+                      {formatIsoDate(visit.visitDay)}
+                    </span>
+                  </>
+                )}
+              </span>
+
               <span className="min-w-56 text-[11px] text-muted-foreground">
                 {visit.protectedPersonName === "" ? (
                   "охраняемое лицо не назначено"
@@ -874,8 +898,12 @@ function VisitObjectList({
                       style={{ width: `${percent}%` }}
                     />
                   </span>
+                  {/* ПОТРЕБНОСТЬ названа словом, а не только долей: в строке
+                      бюллетеня у неё своя колонка, и заказчик просил ту же
+                      сводку у объекта (Plane №194). «3 из 3» без подписи
+                      читается как что угодно — от постов до людей. */}
                   <span className="tabular-nums text-[11px] text-muted-foreground">
-                    расстановка {assigned} из {need}
+                    потребность {need}, назначено {assigned}
                   </span>
                 </span>
               )}
