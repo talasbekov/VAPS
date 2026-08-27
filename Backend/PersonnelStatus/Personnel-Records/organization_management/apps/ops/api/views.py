@@ -227,6 +227,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_detail": _MANAGE_EVENT_PERMISSION,
         "visit_object_chief": _MANAGE_EVENT_PERMISSION,
+        # Тем же правом, что и старший объекта: это назначение ответственного
+        # внутри мероприятия, и заводить под него отдельное право значило бы
+        # защищать одно и то же по-разному.
+        "event_chief": _MANAGE_EVENT_PERMISSION,
         # Раздача права — работа ведущего мероприятие, а не замещающего:
         # иначе назначенный смог бы назначить себе смену и разрастить круг.
         "visit_object_deputy_add": _MANAGE_EVENT_PERMISSION,
@@ -508,6 +512,19 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 visit_object_id,
                 employee_id=data.get("employeeId"),
                 actor=request.user,
+            )
+        )
+
+    # Старший НАРЯДА мероприятия — одна ручка на назначение, замену и снятие
+    # (Plane №190). POST с `employeeId` ставит, POST без него — снимает;
+    # отдельного DELETE нет нарочно: у мероприятия старший один, и клиенту
+    # проще слать одно и то же поле, чем выбирать метод по состоянию.
+    @action(detail=True, methods=["post"], url_path="chief")
+    def event_chief(self, request, pk=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.set_event_chief(
+                pk, employee_id=data.get("employeeId"), actor=request.user
             )
         )
 

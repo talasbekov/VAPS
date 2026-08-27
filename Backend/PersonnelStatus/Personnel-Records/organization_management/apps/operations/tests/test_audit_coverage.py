@@ -934,6 +934,18 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     event_service.remove_visit_object_chief(om.pk, visit.pk, actor=ACTOR)
 
+    # Старший НАРЯДА мероприятия (Plane №190) — отдельное действие от старшего
+    # объекта: разные люди с разной ответственностью. Одна ручка на три
+    # случая, и все три должны оставлять след, поэтому здесь и назначение, и
+    # замена, и снятие.
+    event_service.set_event_chief(
+        om.pk, employee_id=str(deputy_employee.pk), actor=ACTOR
+    )
+    event_service.set_event_chief(
+        om.pk, employee_id=str(roster_employee.pk), actor=ACTOR
+    )
+    event_service.set_event_chief(om.pk, employee_id="", actor=ACTOR)
+
     event_service.complete_placement(om.pk)
     # Согласование по эталону («ОМ-37.3») требует маршрута, отправки и решения:
     # завершить этап «просто так» больше нельзя.

@@ -40,6 +40,7 @@ import { GvoVisitsRegistry } from "@/widgets/gvo-visits-registry";
 import {
   AddDeputyDialog,
   AssignChiefDialog,
+  EventChiefDialog,
   AddVisitObjectsDialog,
   deleteSecurityEvent,
   removeVisitObject,
@@ -432,6 +433,7 @@ function EventRow({
   const [expanded, setExpanded] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [chiefOpen, setChiefOpen] = useState(false);
   const detailsId = useId();
   const visits = event.visitObjects ?? [];
   const { hasPermission } = useOpsPermissions();
@@ -664,6 +666,27 @@ function EventRow({
                   ) : (
                     event.chiefName
                   )}
+                  {/* Кнопка назначения — В САМОЙ КОЛОНКЕ, а не в первой
+                      вместе с «+» и корзиной (Plane №190). Первая колонка
+                      отвечает на вопрос «что сделать со строкой», а старший —
+                      значение этой ячейки, и править его удобнее там, где он
+                      написан. Кнопки нет у того, кто не может вести
+                      мероприятие, и у закрытого ОМ: кнопка, обречённая на
+                      отказ, — обещание. */}
+                  {canEditObjects && (
+                    <button
+                      type="button"
+                      onClick={() => setChiefOpen(true)}
+                      aria-label={
+                        event.chiefName === ""
+                          ? `Назначить старшего наряда ${event.code}`
+                          : `Заменить старшего наряда ${event.code}`
+                      }
+                      className="ml-1 rounded px-1 py-0.5 text-[11px] font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {event.chiefName === "" ? "+ Старший" : "Заменить"}
+                    </button>
+                  )}
                   <span className="mt-[3px] block text-[11px] text-muted-foreground/80">
                     ведёт: {event.ownerName}
                   </span>
@@ -685,6 +708,14 @@ function EventRow({
             />
           </TableCell>
         </TableRow>
+      )}
+
+      {chiefOpen && (
+        <EventChiefDialog
+          event={event}
+          open={chiefOpen}
+          onClose={() => setChiefOpen(false)}
+        />
       )}
 
       {addOpen && (
