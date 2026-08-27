@@ -290,3 +290,72 @@ def test_the_role_carries_the_permission_its_job_needs(
     ).exists()
 
     assert granted, f"у роли {role_code} нет права {permission_code}: {why}"
+
+
+# ── Занятость мероприятиями в расходе (Plane №243) ──────────────────────────
+
+
+def test_the_expense_counts_who_is_busy_with_events_and_how(seeded_catalog, structure):
+    """Расход показывает занятость ОМ справочно и с делением на виды.
+
+    Сценарий заказчика: ответственный департамента сводит расход «для участия
+    в ОМ» и отправляет цифру штабу. До этой правки цифры не было вовсе:
+    привлечённый отчитывался в «В строю» и был неотличим от того, кто просто
+    в строю.
+
+    СПРАВОЧНО — значит вне суммы колонок: человек на ОМ из строя не выбывает
+    (Plane №169). Проба стережёт обе половины сразу: и что участие посчитано,
+    и что «В строю» от этого не уменьшилось.
+
+    Красная на мутации: убери код из `EVENT_INVOLVEMENT_KINDS` — счётчик
+    обнулится; переведи их в свою колонку расхода — упадёт инвариант
+    «Σ колонок == Список» внутри самого отчёта.
+    """
+    from organization_management.apps.operations.models import StatusType
+    from organization_management.apps.operations.strength_report import (
+        StrengthReportService,
+    )
+    from organization_management.apps.operations.models_status import (
+        OpsEmployeeStatus,
+    )
+
+    _department, mine, _other = structure
+    # Оба вида участия справочник соседних проб не знает (он урезан до
+    # четырёх колонок) — заводим их тем же способом, что и сид: проба про
+    # РАСХОД, а не про наполнение справочника.
+    for code, name, priority in (
+        ("EVENT_ASSIGNMENT", "Привлечён на мероприятие (наряд)", 80),
+        ("EVENT_ASSIGNMENT_GROUP", "Привлечён на мероприятие (боевая группа)", 81),
+    ):
+        StatusType.objects.get_or_create(
+            code=code,
+            defaults={
+                "name": name,
+                "priority": priority,
+                # Та же колонка, что у выводимого «в строю»: человек на
+                # мероприятии из строя не выбывает.
+                "report_column_code": "IN_SERVICE",
+                "counts_in_staff": True,
+            },
+        )
+    in_squad = _employee(mine, "Нарядов")
+    in_group = _employee(mine, "Группов")
+    _employee(mine, "Свободнов")  # без статуса — просто в строю
+    for person, code in ((in_squad, "EVENT_ASSIGNMENT"), (in_group, "EVENT_ASSIGNMENT_GROUP")):
+        OpsEmployeeStatus.objects.create(
+            employee_id=person.pk,
+            status_type_code=code,
+            date_start=TOMORROW,
+            date_end=DAY_AFTER,
+            source="TEST",
+        )
+
+    report = StrengthReportService.compute(TOMORROW, division_ids=[mine.pk])
+    row = next(r for r in report.rows if r.division_id == mine.pk)
+
+    assert row.event.total == 2
+    assert row.event.group == 1
+    assert row.event.squad == 1
+    # Все трое остались в строю: занятость ОМ ничего из колонок не вычитает.
+    assert row.columns["IN_SERVICE"] == 3
+    assert sum(row.columns.values()) == row.list_total

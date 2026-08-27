@@ -43,6 +43,23 @@ from datetime import date
 # присутствовать в справочнике — иначе колонку некуда положить.
 DERIVED_IN_SERVICE = "IN_SERVICE"
 
+#: Участие в ОМ: код статуса → вид участия (Plane №243).
+#:
+#: СПРАВОЧНАЯ величина, а НЕ колонка расхода. Оба кода отчитываются в
+#: «В строю» — человек на мероприятии из строя не выбывает (Plane №169), — и
+#: завести им свою колонку значило бы вынуть их из «В строю», сломав
+#: инвариант «Σ колонок == Список» и заодно смысл: расход перестал бы
+#: показывать, сколько людей у службы есть.
+#:
+#: Поэтому счётчик живёт рядом с колонками, а не среди них: он отвечает на
+#: другой вопрос — «сколько из тех, кто в строю, занято мероприятиями и чем
+#: именно». Сценарий заказчика требует свести именно эту цифру за
+#: департамент и отправить её штабу.
+EVENT_INVOLVEMENT_KINDS = {
+    "EVENT_ASSIGNMENT": "squad",
+    "EVENT_ASSIGNMENT_GROUP": "group",
+}
+
 
 @dataclass(frozen=True)
 class StatusCatalog:
@@ -122,6 +139,23 @@ def resolve_status(rows, on_date, catalog):
 
 
 @dataclass(frozen=True)
+class EventInvolvement:
+    """Занятость мероприятиями: всего, в боевых группах, физическим нарядом.
+
+    `total` считается отдельно, а не как сумма двух: справочник статусов
+    правят руками, и появившийся третий вид участия должен попасть в «всего»
+    сам, а не потеряться до правки этого класса.
+    """
+
+    total: int
+    group: int
+    squad: int
+
+    def as_dict(self):
+        return {"total": self.total, "group": self.group, "squad": self.squad}
+
+
+@dataclass(frozen=True)
 class DivisionReportRow:
     division_id: int
     name: str
@@ -136,6 +170,8 @@ class DivisionReportRow:
     # НАШ человек, просто сегодня он не по нашему списку, поэтому число
     # участвует в знаменателе (см. инвариант в derive_report).
     off_list: int
+    # Занятость мероприятиями — СПРАВОЧНО, вне суммы колонок (Plane №243).
+    event: EventInvolvement
 
 
 @dataclass(frozen=True)
@@ -146,6 +182,7 @@ class ReportTotals:
     columns: dict
     attached: int
     off_list: int
+    event: EventInvolvement
 
 
 @dataclass(frozen=True)
@@ -213,6 +250,7 @@ def derive_report(
     totals_columns = {column: 0 for column in columns_order}
     totals_staff = totals_list = totals_vacancies = 0
     totals_attached = totals_off_list = 0
+    totals_event = {"total": 0, "group": 0, "squad": 0}
 
     for division_id in sorted(
         slots_by_division, key=lambda d: (names.get(d, ""), str(d))
@@ -221,6 +259,7 @@ def derive_report(
         columns = {column: 0 for column in columns_order}
         attached = attached_counts.get(division_id, 0)
         off_list = vacancies = 0
+        event = {"total": 0, "group": 0, "squad": 0}
         for employee_id in occupants:
             if employee_id is None:
                 vacancies += 1
@@ -231,6 +270,10 @@ def derive_report(
             if not catalog.counts_in_staff.get(winner, True):
                 off_list += 1
                 continue
+            kind = EVENT_INVOLVEMENT_KINDS.get(winner)
+            if kind is not None:
+                event["total"] += 1
+                event[kind] += 1
             column = catalog.column[winner]
             if column not in columns:
                 # Колонка типа, которого нет в порядке колонок: такое возможно
@@ -264,8 +307,11 @@ def derive_report(
                 columns=columns,
                 attached=attached,
                 off_list=off_list,
+                event=EventInvolvement(**event),
             )
         )
+        for key, count in event.items():
+            totals_event[key] += count
         for column, count in columns.items():
             totals_columns[column] += count
         totals_staff += staff_total
@@ -291,6 +337,7 @@ def derive_report(
             columns=totals_columns,
             attached=totals_attached,
             off_list=totals_off_list,
+            event=EventInvolvement(**totals_event),
         ),
         warnings=warnings,
     )
