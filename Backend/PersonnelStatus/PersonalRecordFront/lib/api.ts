@@ -225,6 +225,8 @@ export interface DirectorateQuery {
   positionLevelMax?: number;
   /** Только штатные единицы этих сотрудников (не больше 200). */
   employeeIds?: (number | string)[];
+  /** Попросить сводку по отбору (сколько без статуса, просрочено, запланировано). */
+  withSummary?: boolean;
 }
 
 // Интерфейсы для справочников
@@ -935,6 +937,12 @@ class ApiClient {
     page?: number;
     page_size?: number;
     has_next?: boolean;
+    summary?: {
+      employees: number;
+      without_status: number;
+      overdue: number;
+      scheduled: number;
+    };
   }> {
     // Параметры НЕОБЯЗАТЕЛЬНЫ, и это несущее решение бэка (Plane №227): без
     // них ручка отдаёт весь состав подразделения, как отдавала всегда — этим
@@ -949,6 +957,7 @@ class ApiClient {
       query.set("position_level_max", String(params.positionLevelMax));
     if (params.employeeIds !== undefined && params.employeeIds.length > 0)
       query.set("employee_ids", params.employeeIds.join(","));
+    if (params.withSummary) query.set("with_summary", "1");
     const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
     const endpoint = `/api/staff_unit/staff-units/directorate/${suffix}`;
 
