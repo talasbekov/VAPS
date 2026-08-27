@@ -84,6 +84,26 @@ async function signIn(page: Page): Promise<void> {
 // 🔴 Название управления — не литерал теста: голые скобки («Управление
 // (стенд)») читались бы `new RegExp` как группа захвата. Имя экранируем —
 // тот же приём, что уже в `daily-expense.spec.ts`.
+/**
+ * Подпись группы подразделения на борде: «имя · путь» (Plane №250).
+ *
+ * 🔴 ИМЕНИ НЕ ХВАТАЕТ. Имена уникальны только внутри родителя, и с 27.08.2026
+ * на стенде три департамента — «Второе сквозное управление» есть в каждом.
+ * Отбор группы по имени находил ТРИ элемента и падал строгим режимом. Борд
+ * (Plane №235) печатает путь и кладёт «имя · путь» в `aria-label`; проба
+ * адресует строку так же, как её читает человек.
+ */
+async function divisionLabels(token: string): Promise<Map<string, string>> {
+  const rows = await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
+    token, '/api/ops/daily/divisions/')
+  const labels = new Map<string, string>()
+  for (const row of rows.results) {
+    const path = row.ancestors ?? []
+    labels.set(String(row.id), path.length > 0 ? `${row.name} · ${path.join(' › ')}` : row.name)
+  }
+  return labels
+}
+
 function nameRegExp(name: string): RegExp {
   return new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 }
@@ -250,9 +270,13 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     const target = report.rows.find((row) => !submittedIdsBefore.has(String(row.division_id)))
     expect(target, 'все управления уже сданы на сегодня — пробе нечем проверить кнопку').toBeDefined()
     const targetDivisionId = String(target!.division_id)
-    const notSubmittedNamesBefore = report.rows
+    // Пары «id → имя», а не просто имена: одноимённых управлений на стенде
+    // трое, и вычитать сданное ПО ИМЕНИ (как было) значило вычесть все три
+    // строки разом (Plane №250).
+    const notSubmittedBefore = report.rows
       .filter((row) => !submittedIdsBefore.has(String(row.division_id)))
-      .map((row) => row.name)
+      .map((row) => ({ id: String(row.division_id), name: row.name }))
+    const notSubmittedNamesBefore = notSubmittedBefore.map((row) => row.name)
 
     const captured: { body: DaySubmissionBody | null } = { body: null }
     await interceptSubmit(page, captured, targetDivisionId, report.business_date)
@@ -280,12 +304,14 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     // Группа ИМЕННО этого управления — бейдж СВЁРНУТОЙ шапки: «День не
     // сдан», без запроса и без интерактивности (панель ещё не смонтирована —
     // требование A.3 держится ленивостью, не наоборот).
-    const group = board.getByRole('group', { name: nameRegExp(target!.name) })
+    const label =
+      (await divisionLabels(token)).get(String(target!.division_id)) ?? target!.name
+    const group = board.getByRole('group', { name: label, exact: true })
     await expect(group.getByText('День не сдан', { exact: true })).toBeVisible()
     await expect(group.getByRole('button', { name: 'Сдать день' })).toHaveCount(0)
 
     // Раскрытие строки — ТОЛЬКО теперь монтируется интерактивная панель.
-    await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
+    await group.getByRole('button').first().click()
     const submitButton = group.getByRole('button', { name: 'Сдать день' })
     await expect(submitButton).toBeVisible()
     await submitButton.click()
@@ -307,7 +333,9 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     await expect(summaryHeadline).toHaveText(
       `Сдано ${submittedIdsBefore.size + 1} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
     )
-    const notSubmittedNamesAfter = notSubmittedNamesBefore.filter((name) => name !== target!.name)
+    const notSubmittedNamesAfter = notSubmittedBefore
+      .filter((row) => row.id !== targetDivisionId)
+      .map((row) => row.name)
     if (notSubmittedNamesAfter.length > 0) {
       await expect(summary.locator('p').nth(1)).toHaveText(
         `Не сдали: ${notSubmittedNamesAfter.join(', ')}`,
@@ -318,7 +346,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
 
     // Схлопнули строку обратно — свёрнутый бейдж ТОЖЕ синхронен (питается тем
     // же обновлённым списочным ответом борда, без своего запроса).
-    await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
+    await group.getByRole('button').first().click()
     await expect(group.getByText('Сдан · v1', { exact: true })).toBeVisible()
   })
 
@@ -356,8 +384,10 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
       `Сдано ${submittedIdsBefore.size} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
     )
 
-    const group = board.getByRole('group', { name: nameRegExp(target!.name) })
-    await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
+    const label =
+      (await divisionLabels(token)).get(String(target!.division_id)) ?? target!.name
+    const group = board.getByRole('group', { name: label, exact: true })
+    await group.getByRole('button').first().click()
     await group.getByRole('button', { name: 'Сдать день' }).click()
     await group.getByRole('button', { name: 'Подтвердить сдачу' }).click()
 
@@ -381,7 +411,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     await expect(group.getByText('День не сдан', { exact: true })).toHaveCount(0)
 
     // Свёрнутая шапка тоже говорит правду — тем же перечитанным ответом.
-    await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
+    await group.getByRole('button').first().click()
     await expect(group.getByText('Сдан · v1', { exact: true })).toBeVisible()
   })
 })
