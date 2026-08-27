@@ -167,3 +167,66 @@ def test_armor_classes_come_from_the_fleet_and_not_from_a_hardcoded_list():
     classes = _viewer().get(f"{URL}armor-classes/").json()["results"]
 
     assert classes == ["VR7", "VR9"]
+
+
+# ── Наполнение реестра (Plane №215 / шаг №220) ──────────────────────────────
+
+from io import StringIO  # noqa: E402
+
+from django.core.management import call_command  # noqa: E402
+
+
+def _seed():
+    out = StringIO()
+    call_command("seed_vehicles", stdout=out)
+    return out.getvalue()
+
+
+def test_the_seeded_fleet_shows_more_than_one_armor_class():
+    """Парк должен ПОКАЗЫВАТЬ отбор, а не просто существовать.
+
+    На парке из одного класса брони отбор экрана не проверяется вовсе — тот
+    же класс сторожа, что у фикстур стенда (Plane №196).
+    """
+    _seed()
+
+    classes = set(
+        OpsVehicle.objects.filter(is_active=True)
+        .exclude(armor_class="")
+        .values_list("armor_class", flat=True)
+    )
+
+    assert len(classes) >= 2, classes
+    assert OpsVehicle.objects.filter(is_active=True).count() >= 10
+
+
+def test_seeding_twice_does_not_double_the_fleet():
+    """Второй запуск ничего не задваивает: машина ищется по ГРНЗ.
+
+    Красная на мутации: замени `get_or_create` на `create` — второй запуск
+    упрётся в уникальность номера либо удвоит парк.
+    """
+    _seed()
+    first = OpsVehicle.objects.count()
+
+    _seed()
+
+    assert OpsVehicle.objects.count() == first
+
+
+def test_seeding_does_not_overwrite_what_the_admin_fixed_by_hand():
+    """Правка руками в Admin переживает пересев.
+
+    Сид наполняет пустой реестр, а не диктует его: затирать дислокацию,
+    проставленную администратором, значит терять единственные настоящие
+    сведения в таблице.
+    """
+    _seed()
+    car = OpsVehicle.objects.filter(is_active=True).first()
+    car.deployment = "Караганда"
+    car.save(update_fields=["deployment"])
+
+    _seed()
+
+    car.refresh_from_db()
+    assert car.deployment == "Караганда"
