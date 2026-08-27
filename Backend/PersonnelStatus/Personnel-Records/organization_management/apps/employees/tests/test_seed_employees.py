@@ -16,6 +16,7 @@
 """
 from datetime import date
 
+from django.contrib.auth import get_user_model
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -120,15 +121,58 @@ def test_without_staffing_it_says_so():
     assert "seed_staffing" in str(error.value)
 
 
-def test_wipe_keeps_people_with_someone_elses_work(staffing):
+def test_wipe_removes_people_whose_only_status_the_system_gave(staffing):
+    """Статус от СИГНАЛА — не чужая работа (Plane №233).
+
+    🔴 Здесь стояла проба «человек со статусом не удаляется», и она зеленела,
+    не проверяя ничего: статус «в строю» сигнал ставит КАЖДОМУ заведённому
+    сотруднику, автор при этом пуст. Сторож берёг всех подряд — снос не
+    удалял никого, а повторный сид оставлял тысячи сирот без штатной единицы.
+    """
     call_command("seed_employees")
-    kept = Employee.objects.filter(personnel_number__startswith=PREFIX).order_by("id").first()
-    kept.statuses.create(
-        status_type="vacation", start_date=date(2026, 1, 1), end_date=date(2026, 1, 14)
+    everyone = Employee.objects.filter(personnel_number__startswith=PREFIX)
+    assert everyone.count() == 426
+
+    # Статус, какой ставит сигнал: БЕЗ автора («завела система»). Сам сигнал
+    # висит на `transaction.on_commit` и внутри тестовой транзакции не
+    # срабатывает — поэтому его результат воспроизводится здесь явно, иначе
+    # проба проверяла бы отсутствие статусов, а не правило сторожа.
+    system_given = everyone.order_by("id").first()
+    system_given.statuses.create(
+        status_type="in_service", start_date=date(2026, 8, 1), created_by=None
     )
 
     call_command("seed_employees", "--wipe")
 
+    assert Employee.objects.filter(personnel_number__startswith=PREFIX).count() == 0
     assert seeded_slots().filter(employee__isnull=False).count() == 0
-    assert Employee.objects.filter(pk=kept.pk).exists(), "человек со статусом не удаляется"
+
+
+def test_wipe_keeps_a_person_whose_status_a_human_created(staffing):
+    """Статус С АВТОРОМ — это чужая работа, её сид не трогает."""
+    call_command("seed_employees")
+    author = get_user_model().objects.create_user(username="кадровик")
+    kept = Employee.objects.filter(personnel_number__startswith=PREFIX).order_by("id").first()
+    kept.statuses.create(
+        status_type="vacation",
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 20),
+        created_by=author,
+    )
+
+    call_command("seed_employees", "--wipe")
+
+    assert Employee.objects.filter(pk=kept.pk).exists()
     assert Employee.objects.filter(personnel_number__startswith=PREFIX).count() == 1
+    assert seeded_slots().filter(employee__isnull=False).count() == 0, "слот всё равно освобождён"
+
+
+def test_wipe_keeps_a_person_with_an_account(staffing):
+    call_command("seed_employees")
+    kept = Employee.objects.filter(personnel_number__startswith=PREFIX).order_by("id").first()
+    kept.user = get_user_model().objects.create_user(username="учётка-сотрудника")
+    kept.save(update_fields=["user"])
+
+    call_command("seed_employees", "--wipe")
+
+    assert Employee.objects.filter(pk=kept.pk).exists()
