@@ -1332,6 +1332,8 @@ GET /api/ops/event-documents/render/?kind=placement_full&event=ОМ-2026-4&ext=d
 и ЖИВОЙ схемой API — `curl localhost:8100/api/schema/` → **200**, в ней ровно
 три пути `/api/dictionaries/`: `positions`, `ranks`, `status_types`.
 
+Коммит `9ffff4e3`.
+
 Итог по девяти справочникам портала: два читаются (`Position`, `Rank`), три
 архивировать (`StatusType` — двойник справочника раздела ОМ, `EducationType`,
 `DocumentType` — ни FK, ни канона), четыре без читателей, но требуются каноном
