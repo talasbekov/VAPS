@@ -124,6 +124,69 @@ test.describe(LIVE ? 'транспорт ГОН' : 'транспорт ГОН (�
     }
   })
 
+  test('машина выделяется на ОМ и видна в сводке ГВО, снятие её убирает', async ({
+    page,
+  }) => {
+    // Путь целиком, а не ассерт на своё же поле: выделили ЭКРАНОМ → машина
+    // названа в разделе «Выделяемый транспорт» карточки ОМ вместе с ГРНЗ →
+    // сняли → строка ушла. Ровно того, чего не умел свободный текст.
+    const token = await apiToken()
+    const car = requireFixture(
+      (await fleet(token))[0],
+      'машина в реестре транспорта (manage.py seed_vehicles)',
+    )
+    const event = requireFixture(
+      (
+        await (
+          await fetch(`${API}/api/ops/security-events/?page_size=100`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        ).json()
+      ).results.find(
+        (row: { stage: string; kind: string }) =>
+          row.stage !== 'CLOSED' && row.kind !== 'INTERNAL',
+      ),
+      'незакрытый визит иностранного ОЛ — панель ГВО есть только у них',
+    ) as { id: string; vehicles: { id: string }[] }
+
+    // Уборка ДО пробы, а не после: прошлый прогон мог оборваться на середине,
+    // и «уже выделена» превратило бы падение фикстуры в падение проверки.
+    for (const row of event.vehicles) {
+      await fetch(`${API}/api/ops/security-events/${event.id}/vehicles/${row.id}/`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    }
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${event.id}/`)
+    await page.getByRole('button', { name: 'Информация по ГВО' }).click()
+    // Раздел ищется по СВОЕЙ карточке: `Section` рисует `[data-slot="card"]`
+    // с заголовком внутри, отдельного `<section>` у него нет.
+    const section = page
+      .locator('[data-slot="card"]')
+      .filter({ has: page.getByRole('heading', { name: 'Выделяемый транспорт' }) })
+      .first()
+    await expect(section).toBeVisible({ timeout: 15_000 })
+
+    await section.getByRole('button', { name: '+ Машина из реестра' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('textbox', { name: 'Поиск по реестру транспорта' }).fill(car.plate)
+    await dialog.getByRole('button', { name: new RegExp(car.plate) }).click()
+    await dialog.getByLabel('Позывной в кортеже').fill('S1')
+    await dialog.getByLabel('Назначение').fill('кортеж')
+    await dialog.getByRole('button', { name: 'Выделить' }).click()
+    await expect(dialog).toBeHidden({ timeout: 15_000 })
+
+    // ГРНЗ и класс брони — то, ради чего заводился реестр: у свободного
+    // текста их не было вовсе.
+    await expect(section).toContainText(car.plate, { timeout: 15_000 })
+    await expect(section).toContainText('из реестра ГОН')
+
+    await section.getByRole('button', { name: 'Снять' }).first().click()
+    await expect(section).not.toContainText(car.plate, { timeout: 15_000 })
+  })
+
   test('снятая машина показывается только по прямой просьбе', async ({ page }) => {
     const token = await apiToken()
     const whole = await fleet(token, '?includeRetired=1')

@@ -467,10 +467,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def vehicle_allocate(self, request, pk=None):
         """Выделить машину реестра ГОН на мероприятие."""
         data = request.data or {}
-        event = event_service.lock_event(pk)
         return self._event_response(
             vehicles_service.allocate_vehicle(
-                event,
+                pk,
                 vehicle_id=data.get("vehicleId"),
                 callsign=data.get("callsign"),
                 purpose=data.get("purpose"),
@@ -485,9 +484,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     )
     def vehicle_release(self, request, pk=None, allocation_id=None):
         """Снять машину с мероприятия."""
-        event = event_service.lock_event(pk)
         return self._event_response(
-            vehicles_service.release_vehicle(event, allocation_id)
+            vehicles_service.release_vehicle(pk, allocation_id)
         )
 
     # ── Замещающие на объекте посещения ─────────────────────────────────

@@ -7,7 +7,10 @@
 import pytest
 from django.db import IntegrityError, transaction
 
-from organization_management.apps.operations.models_vehicle import OpsVehicle
+from organization_management.apps.operations.models_vehicle import (
+    OpsEventVehicle,
+    OpsVehicle,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -381,3 +384,32 @@ def test_the_summary_shows_allocations_next_to_the_free_text(manager):  # noqa: 
     values = document_values(row)
     assert values["transport_1"].startswith("S1 — Mercedes-Benz")
     assert values["transport_2"] == "S9 — машина руками"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_allocation_works_without_an_ambient_transaction():
+    """Выделение работает БЕЗ внешней транзакции — как в живом запросе.
+
+    Остальные пробы файла идут внутри транзакции, которую открывает
+    `django_db`, и `SELECT … FOR UPDATE` в них проходит всегда. На стенде
+    транзакции нет, и ручка отвечала 500 `TransactionManagementError`:
+    блокировку брала вьюха, а не сервис. Нашла живая проба экрана (№215).
+
+    Красная на мутации: сними `@transaction.atomic` с `allocate_vehicle` —
+    падает именно эта проба, остальные остаются зелёными.
+    """
+    from organization_management.apps.ops import vehicles as service
+
+    api, _ = client_for(
+        "veh-tx",
+        "VEH_TX",
+        perms=("event.view", "event.manage"),
+    )
+    car = _car()
+    event = _event(api)
+
+    service.allocate_vehicle(event["id"], vehicle_id=str(car.pk), callsign="S1")
+
+    assert (
+        OpsEventVehicle.objects.filter(event_id=event["id"], vehicle=car).count() == 1
+    )
