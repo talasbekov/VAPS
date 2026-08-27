@@ -231,6 +231,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Выделение транспорта — правка мероприятия, а не отдельная область
         # (Plane №215): машину ставит в кортеж тот же, кто ведёт ОМ, и своё
         # право под неё защищало бы одно и то же по-разному.
+        # Рассылка уведомлений о заступлении — действие ЭТАПА ознакомления,
+        # и право у неё то же, что у самого этапа: кто ведёт мероприятие, тот
+        # и сообщает людям (Plane №243).
+        "acknowledgement_notify": _MANAGE_EVENT_PERMISSION,
         "vehicle_allocate": _MANAGE_EVENT_PERMISSION,
         "vehicle_release": _MANAGE_EVENT_PERMISSION,
         # Тем же правом, что и старший объекта: это назначение ответственного
@@ -460,6 +464,24 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.remove_visit_object(pk, visit_object_id)
         )
+
+    # ── Уведомления о заступлении (Plane №243) ──────────────────────────
+
+    @action(detail=True, methods=["post"], url_path="acknowledgement/notify")
+    def acknowledgement_notify(self, request, pk=None):
+        """Разослать уведомления заступающим и их руководителям.
+
+        Отвечает ОТЧЁТОМ о рассылке, а не мероприятием: вопрос кнопки —
+        «кому ушло», и мероприятие на него не отвечает. Несвязанные с
+        учётками сотрудники названы поимённо: рассылка, которая молчит о
+        недоставленном, выглядит успешной, а человек узнаёт о пропаже в день
+        мероприятия.
+        """
+        from organization_management.apps.ops.acknowledgement_notify import (
+            notify_acknowledgement,
+        )
+
+        return Response(notify_acknowledgement(pk))
 
     # ── Выделенный транспорт (Plane №215) ───────────────────────────────
 

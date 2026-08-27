@@ -42,6 +42,10 @@ class OpsNotification(TimeStampedModel):
 
     class Kind(models.TextChoices):
         SUBMISSION_LAGGING = "SUBMISSION_LAGGING", "Отставание по сдаче"
+        # Заступление на охранное мероприятие (Plane №243). Получатели —
+        # назначенные на посты И отвечающие за их подразделения: сценарий
+        # заказчика требует уведомить и людей, и их руководителей.
+        EVENT_ACKNOWLEDGEMENT = "EVENT_ACKNOWLEDGEMENT", "Заступление на ОМ"
 
     # Получатель строкой: str(User.pk) для человека, метка — для роли/службы.
     recipient = models.CharField(max_length=100)
@@ -77,7 +81,9 @@ class OpsNotification(TimeStampedModel):
             # формах и full_clean, а раздел пишет через .create()/get_or_create()
             # — то есть мимо. Расхождение с Kind ловит отдельный тест.
             models.CheckConstraint(
-                condition=models.Q(kind__in=["SUBMISSION_LAGGING"]),
+                condition=models.Q(
+                    kind__in=["SUBMISSION_LAGGING", "EVENT_ACKNOWLEDGEMENT"]
+                ),
                 name="chk_ops_notif_kind",
             ),
             # Пустой получатель означал бы «сообщено никому», и «одно на день»

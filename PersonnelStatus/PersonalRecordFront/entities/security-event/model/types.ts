@@ -935,6 +935,23 @@ export function securityEventAcknowledgePath(
 export function securityEventAcknowledgementCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/acknowledgement/complete/`;
 }
+
+/** Рассылка уведомлений о заступлении: назначенным и их руководителям
+ * (Plane №243). Отвечает ОТЧЁТОМ о рассылке, а не мероприятием: вопрос
+ * кнопки — «кому ушло». */
+export function securityEventAcknowledgementNotifyPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/acknowledgement/notify/`;
+}
+
+export interface AcknowledgementNotifyReport {
+  /** Всего адресатов: сотрудники плюс их руководители. */
+  notified: number;
+  employees: number;
+  supervisors: number;
+  /** Кому НЕ ушло: у кадровой записи нет связанной учётки. Поимённо, а не
+   *  числом — иначе чинить это некому. */
+  unlinkedEmployeeIds: string[];
+}
 export function securityEventJournalPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/journal/`;
 }
