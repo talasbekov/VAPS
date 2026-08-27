@@ -52,6 +52,9 @@ CODES = {
     "RECON_SECTOR_POSTS_EMPTY": frozenset({422}),
     "EVENT_DELETE_FORBIDDEN": frozenset({422}),
     # Реестр транспорта ГОН (Plane №215).
+    # Уведомления о заступлении на ОМ (Plane №243).
+    "ACKNOWLEDGEMENT_STAGE_REQUIRED": frozenset({422}),
+    "PLACEMENT_EMPTY": frozenset({422}),
     "VEHICLE_NOT_FOUND": frozenset({404}),
     "VEHICLE_RETIRED": frozenset({422}),
     "VEHICLE_ALREADY_ALLOCATED": frozenset({422}),

@@ -20,14 +20,21 @@ import { Check } from "lucide-react";
 // колонка честно говорит, что учётка не привязана, а не молчит.
 //
 // Статуса «Недоступен» из прототипа нет: доступности сотрудника на дату в
-// назначении не хранится. Кнопки «Уведомить повторно» нет: ручки повторного
-// уведомления не существует.
+// назначении не хранится.
+//
+// РАССЫЛКА УВЕДОМЛЕНИЙ появилась 28.08.2026 (Plane №243) — до этого её не
+// было вовсе, и здесь стояла запись «ручки повторного уведомления не
+// существует». Теперь кнопка есть, и уходит уведомление И назначенным, И
+// тем, кто отвечает за их подразделения: сценарий заказчика требует обоих.
+// Кнопка не одноразовая — повтор законен (человек мог не увидеть), а модель
+// уведомлений сама держит «одно на день» и дубликата не создаст.
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   useAcknowledgePlacement,
   useCompleteAcknowledgement,
+  useNotifyAcknowledgement,
   usePersonnelMe,
 } from "@/hooks/use-security-event-stages";
 import { objectLabel } from "@/entities/security-event";
@@ -40,6 +47,7 @@ type Scope = "all" | "pending";
 export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
   const acknowledge = useAcknowledgePlacement(event.id);
   const complete = useCompleteAcknowledgement(event.id);
+  const notify = useNotifyAcknowledgement(event.id);
   const [scope, setScope] = useState<Scope>("all");
 
   const me = usePersonnelMe();
@@ -174,8 +182,47 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
 
         <StageError error={acknowledge.error} />
         <StageError error={complete.error} />
+        <StageError error={notify.error} />
 
-        <div className="flex justify-end">
+        {/* ОТЧЁТ О РАССЫЛКЕ, а не «готово»: рассылка, которая молчит о
+            недоставленном, выглядит успешной, и пропажу замечают в день
+            мероприятия. Поэтому названо и сколько ушло, и скольким нет. */}
+        {notify.data !== undefined && (
+          <p
+            className={
+              notify.data.unlinkedEmployeeIds.length > 0
+                ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                : "rounded-md border px-3 py-2 text-xs text-muted-foreground"
+            }
+          >
+            Уведомления отправлены: {notify.data.employees} заступающим и{" "}
+            {notify.data.supervisors} руководителям.
+            {notify.data.unlinkedEmployeeIds.length > 0 && (
+              <>
+                {" "}Не дошло до {notify.data.unlinkedEmployeeIds.length}:
+                у их кадровых записей нет связанной учётной записи — связь
+                заполняется в карточке сотрудника.
+              </>
+            )}
+          </p>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={notify.isPending || assignments.length === 0}
+            // Причина словами, а не одна погашенная кнопка: выключенная без
+            // объяснения оставляет человека гадать.
+            title={
+              assignments.length === 0
+                ? "Никто не назначен — уведомлять некого"
+                : "Уведомить заступающих и их руководителей"
+            }
+            onClick={() => notify.mutate({})}
+          >
+            {notify.isPending ? "Отправка…" : "Отправить уведомления"}
+          </Button>
           <Button
             type="button"
             disabled={complete.isPending}

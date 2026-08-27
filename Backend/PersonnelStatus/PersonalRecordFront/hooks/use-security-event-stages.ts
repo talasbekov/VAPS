@@ -14,6 +14,7 @@ import {
   OPS_PERSONNEL_ME_PATH,
   securityEventAcknowledgePath,
   securityEventAcknowledgementCompletePath,
+  securityEventAcknowledgementNotifyPath,
   securityEventApprovalApprovePath,
   securityEventApprovalRoutePath,
   securityEventApproverPath,
@@ -47,6 +48,7 @@ import {
   securityEventStagePath,
 } from "@/entities/security-event";
 import type {
+  AcknowledgementNotifyReport,
   AddJournalEntryRequest,
   AssignPlacementRequest,
   CloseSecurityEventRequest,
@@ -353,6 +355,21 @@ export function useAcknowledgePlacement(id: string) {
   return useEventMutation<{ assignmentId: string }>(id, ({ assignmentId }) =>
     opsApiClient.post<SecurityEvent>(securityEventAcknowledgePath(id, assignmentId))
   );
+}
+
+/** Рассылка уведомлений о заступлении (Plane №243).
+ *
+ * Обычная мутация, а не `useEventMutation`: ручка отвечает ОТЧЁТОМ, а не
+ * мероприятием, и класть его в кэш карточки было бы ложью — карточка от
+ * рассылки не меняется.
+ */
+export function useNotifyAcknowledgement(id: string) {
+  return useOpsMutation<AcknowledgementNotifyReport, Record<string, never>>({
+    mutationFn: () =>
+      opsApiClient.post<AcknowledgementNotifyReport>(
+        securityEventAcknowledgementNotifyPath(id)
+      ),
+  });
 }
 
 export function useCompleteAcknowledgement(id: string) {
