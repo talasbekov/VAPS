@@ -392,6 +392,12 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             ),
             OpenApiParameter("division_id", int, description="Только это подразделение."),
             OpenApiParameter(
+                "employee_ids", str, description=(
+                    "Только штатные единицы этих сотрудников: идентификаторы через "
+                    "запятую, не больше 200."
+                )
+            ),
+            OpenApiParameter(
                 "position_level_max", int, description=(
                     "Должности не ниже уровня (`level <= N`; чем меньше число, тем выше "
                     "должность). Так отбирается руководство."
@@ -654,6 +660,27 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # Отбор именно ПО УРОВНЮ, а не по списку кодов должностей: уровень —
         # серверная иерархия, а список кодов пришлось бы держать на клиенте и
         # чинить при каждой новой должности.
+        # Точечный отбор по людям. Нужен диалогам статусов: им хватает одной
+        # строки (или строк выбранных сотрудников), а тянули они весь состав
+        # подразделения — 2,7 МБ ради одной строки на пяти тысячах человек
+        # (Plane №234).
+        employee_ids = (request.query_params.get('employee_ids') or '').strip()
+        if employee_ids:
+            try:
+                wanted = [int(part) for part in employee_ids.split(',') if part.strip()]
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    {'employee_ids': 'Ожидается список целых чисел через запятую.'}
+                )
+            if len(wanted) > self.DIRECTORATE_MAX_PAGE_SIZE:
+                raise ValidationError(
+                    {'employee_ids': (
+                        f'Не больше {self.DIRECTORATE_MAX_PAGE_SIZE} за раз — '
+                        f'иначе это снова выгрузка всего состава.'
+                    )}
+                )
+            queryset = queryset.filter(employee_id__in=wanted)
+
         level_max = request.query_params.get('position_level_max')
         if level_max not in (None, ''):
             try:
