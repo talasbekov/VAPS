@@ -40,6 +40,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useUpdateBulletinDetails } from "@/hooks/use-create-security-event";
 import { useProtectedPersons } from "@/hooks/use-protected-persons";
 import type { SecurityEvent } from "@/entities/security-event";
+import { ProtectedPersonsPicker } from "./ProtectedPersonsPicker";
 
 const LABEL_CLASS = "text-[11.5px] font-bold text-muted-foreground";
 const CONTROL_CLASS = "h-10 rounded-lg";
@@ -62,7 +63,8 @@ const formSchema = z
     eventTime: z
       .string()
       .regex(/^(\d{2}:\d{2})?$/, "Укажите время в формате ЧЧ:ММ."),
-    protectedPersonId: z.string(),
+    // Список, а не одно лицо (Plane №188). Первое — главное.
+    protectedPersonIds: z.array(z.string()),
     location: z.string().max(255, "Не длиннее 255 символов."),
   })
   // Ту же пару сверяет сервер, но ждать от него отказа незачем: человек видит
@@ -79,6 +81,22 @@ const formSchema = z
 
 type FormValues = z.infer<typeof formSchema>;
 
+/** Лица мероприятия в порядке «главное первым».
+ *
+ * Сервер отдаёт список отсортированным ПО ИМЕНИ — у связи своего порядка нет.
+ * Форме же порядок значим: первое лицо становится главным при сохранении.
+ * Без этой перестановки открытое и тут же сохранённое окно меняло бы главное
+ * лицо молча — на то, чьё имя раньше по алфавиту.
+ */
+function orderedPersonIds(event: SecurityEvent): string[] {
+  const rest = event.protectedPersons
+    .map((person) => person.id)
+    .filter((id) => id !== event.protectedPersonId);
+  return event.protectedPersonId === null
+    ? rest
+    : [event.protectedPersonId, ...rest];
+}
+
 /** Значения формы ИЗ МЕРОПРИЯТИЯ, а не из пустого бланка: правка начинается с
  * того, что стоит сейчас, иначе «сохранить» стёрло бы всё, чего не тронули. */
 function valuesOf(event: SecurityEvent): FormValues {
@@ -87,7 +105,10 @@ function valuesOf(event: SecurityEvent): FormValues {
     businessDate: event.businessDate,
     businessDateEnd: event.businessDateEnd ?? "",
     eventTime: event.eventTime ?? "",
-    protectedPersonId: event.protectedPersonId ?? "",
+    // Список берётся из `protectedPersons`, а главное лицо ставится ПЕРВЫМ:
+    // сервер отдаёт список отсортированным по имени, и без этой перестановки
+    // открытое и сразу сохранённое окно молча меняло бы главное лицо.
+    protectedPersonIds: orderedPersonIds(event),
     location: event.location,
   };
 }
@@ -109,6 +130,8 @@ export function EditBulletinDialog({
     handleSubmit,
     reset,
     setError,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = form;
 
@@ -238,32 +261,30 @@ export function EditBulletinDialog({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <Field
-              name="protectedPersonId"
-              label="Охраняемое лицо"
+              name="protectedPersonIds"
+              label="Охраняемые лица"
               labelClassName={LABEL_CLASS}
-              hint="Пусто — лицо не назначено"
+              hint="Первое в списке — главное: оно печатается в бланке бюллетеня"
               hintClassName={HINT_CLASS}
-              error={errors.protectedPersonId}
+              error={errors.protectedPersonIds}
               className="space-y-1.5"
             >
-              {(field) => (
-                <select
-                  {...field}
-                  className={SELECT_CLASS}
-                  disabled={personsQuery.isPending}
-                  {...register("protectedPersonId")}
-                >
-                  <option value="">— лицо не назначено —</option>
-                  {(personsQuery.data?.results ?? []).map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.name}
-                      {person.callsign === "" ? "" : ` · ${person.callsign}`}
-                      {person.category === "FOREIGN" ? " · иностранное ОЛ" : ""}
-                    </option>
-                  ))}
-                </select>
+              {/* `id` берётся у самого `Field`: он же стоит в `htmlFor`
+                  подписи и в связке с текстом ошибки. Свой литерал здесь
+                  разошёлся бы с ними при первом переименовании поля. */}
+              {(control) => (
+                <ProtectedPersonsPicker
+                  selectId={control.id}
+                  value={watch("protectedPersonIds") ?? []}
+                  onChange={(next) =>
+                    setValue("protectedPersonIds", next, { shouldDirty: true })
+                  }
+                  options={personsQuery.data?.results ?? []}
+                  loading={personsQuery.isPending}
+                />
               )}
             </Field>
+
             <Field
               name="location"
               label="Локация"

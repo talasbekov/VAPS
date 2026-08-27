@@ -35,6 +35,7 @@ import {
 } from "@/hooks/use-create-security-event";
 import { useProtectedPersons } from "@/hooks/use-protected-persons";
 import { PersonnelPicker } from "@/features/personnel-picker";
+import { ProtectedPersonsPicker } from "./ProtectedPersonsPicker";
 import type { SecurityEventKind } from "@/entities/security-event";
 
 const KINDS = ["INTERNAL", "FOREIGN"] as const;
@@ -81,7 +82,8 @@ const formSchema = z
     eventTime: z
       .string()
       .regex(/^(\d{2}:\d{2})?$/, "Укажите время в формате ЧЧ:ММ."),
-    protectedPersonId: z.string(),
+    // Лиц может быть НЕСКОЛЬКО (Plane №188); первое — главное.
+    protectedPersonIds: z.array(z.string()),
     location: z.string().max(255, "Не длиннее 255 символов."),
     // Объект НЕОБЯЗАТЕЛЕН (решение заказчика 24.08, ClickUp 86eyqf7a7):
     // бюллетень заводят до согласования маршрута, объекты дописывают позже
@@ -109,7 +111,7 @@ const EMPTY_FORM: FormValues = {
   businessDate: "",
   businessDateEnd: "",
   eventTime: "",
-  protectedPersonId: "",
+  protectedPersonIds: [],
   location: DEFAULT_LOCATION,
   objectId: "",
   chiefEmployeeId: "",
@@ -241,7 +243,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
                   businessDateEnd: values.businessDateEnd,
                   kind: values.kind as SecurityEventKind,
                   eventTime: values.eventTime,
-                  protectedPersonId: values.protectedPersonId,
+                  protectedPersonIds: values.protectedPersonIds,
                   location: values.location,
                   chiefEmployeeId: values.chiefEmployeeId,
                 }),
@@ -393,42 +395,29 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <Field
-              name="protectedPersonId"
-              label="Охраняемое лицо"
+              name="protectedPersonIds"
+              label="Охраняемые лица"
               labelClassName={LABEL_CLASS}
-              hint="Список из справочника «Охраняемые лица»"
+              hint="Первое в списке — главное: оно печатается в бланке бюллетеня"
               hintClassName={HINT_CLASS}
-              error={errors.protectedPersonId}
+              error={errors.protectedPersonIds}
               className="space-y-1.5"
             >
-              {(field) => (
+              {(control) => (
                 <>
-                  <select
-                    {...field}
-                    className={SELECT_CLASS}
-                    defaultValue=""
-                    disabled={personsQuery.isPending}
-                    {...register("protectedPersonId")}
-                  >
-                    <option value="">
-                      {personsQuery.isPending
-                        ? "Загрузка справочника…"
-                        : "— выберите из справочника ОЛ —"}
-                    </option>
-                    {(personsQuery.data?.results ?? []).map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.name}
-                        {person.callsign === "" ? "" : ` · ${person.callsign}`}
-                        {person.category === "FOREIGN"
-                          ? " · иностранное ОЛ"
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <ProtectedPersonsPicker
+                    selectId={control.id}
+                    value={watch("protectedPersonIds") ?? []}
+                    onChange={(next) =>
+                      setValue("protectedPersonIds", next, { shouldDirty: true })
+                    }
+                    options={personsQuery.data?.results ?? []}
+                    loading={personsQuery.isPending}
+                  />
                   {personsQuery.isError && (
                     <p className="text-xs text-destructive-ink" role="alert">
-                      Справочник охраняемых лиц недоступен — лицо можно указать
-                      позже в карточке.
+                      Справочник охраняемых лиц недоступен — лица можно указать
+                      позже правкой бюллетеня.
                     </p>
                   )}
                 </>

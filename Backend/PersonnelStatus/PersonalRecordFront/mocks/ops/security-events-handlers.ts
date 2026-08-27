@@ -251,6 +251,10 @@ function emptyEvent(
     eventTime: null,
     protectedPersonId: null,
     protectedPersonName: "",
+    // Список лиц бюллетеня (Plane №188): у свежего ОМ он пуст ровно так же,
+    // как пусто главное лицо. Мок обязан нести поле контракта — иначе экран,
+    // читающий его, падал бы только на моке.
+    protectedPersons: [],
     location: "",
     chiefEmployeeId: null,
     chiefName: "",
@@ -604,16 +608,34 @@ export const securityEventsHandlers = [
     if ((body.location ?? "").trim().length > 255) {
       fieldErrors.location = ["Не длиннее 255 символов."];
     }
-    const rawPerson = body.protectedPersonId ?? "";
-    const person =
-      rawPerson === ""
-        ? null
-        : (PROTECTED_PERSONS_CATALOG.find((p) => p.id === rawPerson) ?? null);
-    if (rawPerson !== "" && person === null) {
-      fieldErrors.protectedPersonId = [
-        "Охраняемое лицо не найдено в справочнике.",
+    // Лиц может быть НЕСКОЛЬКО (Plane №188), и старое одиночное поле
+    // принимается по-прежнему — ровно как на сервере: прислали список — он
+    // главнее, нет — работает одиночное. Мок повторяет ЭТО правило, а не своё:
+    // разойдясь, он зеленел бы там, где бэк отвечает отказом.
+    const rawPersons: string[] =
+      body.protectedPersonIds ??
+      ((body.protectedPersonId ?? "") === "" ? [] : [body.protectedPersonId!]);
+    const persons: { id: string; name: string }[] = [];
+    const unknownPersons: string[] = [];
+    for (const raw of rawPersons) {
+      const id = (raw ?? "").trim();
+      if (id === "" || persons.some((p) => p.id === id)) continue;
+      const found = PROTECTED_PERSONS_CATALOG.find((p) => p.id === id) ?? null;
+      if (found === null) unknownPersons.push(id);
+      else persons.push({ id: found.id, name: found.name });
+    }
+    if (unknownPersons.length > 0) {
+      fieldErrors[
+        body.protectedPersonIds === undefined
+          ? "protectedPersonId"
+          : "protectedPersonIds"
+      ] = [
+        "Охраняемое лицо не найдено в справочнике: " +
+          unknownPersons.join(", "),
       ];
     }
+    // Главное — ПЕРВОЕ НАЗВАННОЕ, как на сервере.
+    const person = persons.length > 0 ? persons[0]! : null;
     const rawChief = body.chiefEmployeeId ?? "";
     const chief = rawChief === "" ? null : (findPersonnel(rawChief) ?? null);
     if (rawChief !== "" && chief === null) {
@@ -664,6 +686,12 @@ export const securityEventsHandlers = [
     created.eventTime = rawTime === "" ? null : rawTime;
     created.protectedPersonId = person === null ? null : person.id;
     created.protectedPersonName = person === null ? "" : person.name;
+    // Вывод сортируется ПО ИМЕНИ — как это делает сервер: у связи своего
+    // порядка нет, и мок, отдающий «как легло», расходился бы с бэком в
+    // порядке строк, то есть в том, что видно глазами.
+    created.protectedPersons = [...persons].sort((a, b) =>
+      a.name.localeCompare(b.name, "ru")
+    );
     created.location = (body.location ?? "").trim();
     created.chiefEmployeeId = chief === null ? null : chief.id;
     created.chiefName = chief === null ? "" : chief.name;

@@ -68,6 +68,10 @@ interface EventRow {
   kind?: 'INTERNAL' | 'FOREIGN' | null
   /** Старший НАРЯДА мероприятия; `null` — не назначен (Plane №190). */
   chiefEmployeeId?: string | null
+  title?: string
+  /** Главное лицо бюллетеня и ВЕСЬ его список (Plane №188). */
+  protectedPersonName?: string
+  protectedPersons?: { id: string; name: string }[]
   visitObjects?: {
     id: string
     objectName: string
@@ -75,6 +79,18 @@ interface EventRow {
     chiefName: string
     deputies: { id: string; employeeName: string; canEditPlacement: boolean }[]
   }[]
+}
+
+/** Справочник охраняемых лиц: пробе нужны ДВА разных лица, и брать их надо у
+ * сервера — свой литерал разошёлся бы с содержимым стенда. */
+async function protectedPersons(
+  token: string,
+): Promise<{ id: string; name: string }[]> {
+  const res = await fetch(`${API}/api/ops/protected-persons/?page_size=50`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const body = (await res.json()) as { results: { id: string; name: string }[] }
+  return body.results ?? []
 }
 
 async function events(token: string, stage = ''): Promise<EventRow[]> {
@@ -459,7 +475,11 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await dialog.getByLabel('Время').fill('09:30')
     await dialog.getByLabel('Локация').fill('г. Алматы')
 
-    const personSelect = dialog.getByLabel('Охраняемое лицо')
+    // Подпись поля сменилась с «Охраняемое лицо» на «Охраняемые лица»
+    // осознанно (Plane №188): лиц теперь несколько, и единственное число
+    // обещало бы одно. Контрол при этом остался обычным одиночным `<select>`
+    // — он не поле, а действие «добавить»; выбранные стоят чипами над ним.
+    const personSelect = dialog.getByLabel('Охраняемые лица')
     await expect(personSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
     const personName = (await personSelect.locator('option').nth(1).textContent()) ?? ''
     await personSelect.selectOption({ index: 1 })
@@ -764,6 +784,73 @@ async function createEvent(
     await expect(dialog).toContainText('Обязательное поле.')
     // Окно НЕ закрылось: отказ надо увидеть там, где его вызвали.
     await expect(dialog).toBeVisible()
+  })
+
+  test('в бюллетень выбирается несколько охраняемых лиц', async ({ page }) => {
+    // Plane №188, дословно: «Там есть выбрать справочник ОЛ, туда нужно
+    // добавить возможность выбирать несколько или возможность добавления ОЛ в
+    // список».
+    //
+    // Проба ведёт список ЧЕРЕЗ ВЕСЬ путь: выбор в окне → сервер → строка
+    // реестра. Ассерт только на окне проверял бы состояние формы, а не то,
+    // что список доехал.
+    const token = await apiToken()
+    const persons = await protectedPersons(token)
+    test.skip(persons.length < 2, 'в справочнике ОЛ меньше двух лиц')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+
+    const dialog = page.getByRole('dialog')
+    const title = probeTitle('Проба нескольких ОЛ')
+    await dialog.getByLabel('Название ОМ').fill(title)
+    await dialog.getByLabel('Дата начала').fill('2026-08-25')
+    await dialog.getByRole('button', { name: 'Внутреннее' }).click()
+
+    // Добавление — обычным одиночным списком, дважды: в этом и состоит
+    // «возможность добавления ОЛ в список».
+    const picker = dialog.getByLabel('Охраняемые лица')
+    await picker.selectOption(persons[0]!.id)
+    await picker.selectOption(persons[1]!.id)
+
+    // Первое выбранное помечено ГЛАВНЫМ — правило есть, и его видно.
+    await expect(dialog).toContainText('главное')
+    await expect(dialog).toContainText(persons[0]!.name)
+    await expect(dialog).toContainText(persons[1]!.name)
+
+    // Снятие крестиком возвращает лицо в список выбора — действие обратимо
+    // на месте.
+    const removeSecond = dialog.getByRole('button', {
+      name: `Убрать ${persons[1]!.name} из списка охраняемых лиц`,
+    })
+    await removeSecond.click()
+    // Пропасть обязан ЧИП, а не имя со всего окна: снятое лицо законно
+    // возвращается в выпадающий список выбора, и ассерт по тексту окна
+    // краснел бы на верном поведении.
+    await expect(removeSecond).toBeHidden()
+    await picker.selectOption(persons[1]!.id)
+    await expect(removeSecond).toBeVisible()
+
+    await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
+
+    // Сервер принял ОБА лица: главным стало ПЕРВОЕ названное, а не первое по
+    // алфавиту.
+    await expect
+      .poll(
+        async () => {
+          const rows = await events(token)
+          const created = rows.find((r) => r.title === title)
+          return created === undefined
+            ? null
+            : {
+                main: created.protectedPersonName,
+                count: (created.protectedPersons ?? []).length,
+              }
+        },
+        { timeout: 20_000 },
+      )
+      .toEqual({ main: persons[0]!.name, count: 2 })
   })
 
   test('объекты посещения добавляются кнопкой у строки и снимаются', async ({ page }) => {

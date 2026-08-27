@@ -66,6 +66,9 @@ export interface UpdateBulletinDetailsRequest extends Record<string, unknown> {
   businessDate: string;
   businessDateEnd: string;
   eventTime: string;
-  protectedPersonId: string;
+  /** Список лиц бюллетеня; первое — главное (Plane №188). Шлётся ВСЕГДА,
+   * включая пустой массив: пустой означает «снять всех», а отсутствие ключа —
+   * «не трогать», и окно правки обязано уметь снимать. */
+  protectedPersonIds: string[];
   location: string;
 }

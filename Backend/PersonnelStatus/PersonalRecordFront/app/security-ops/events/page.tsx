@@ -611,9 +611,22 @@ function EventRow({
                   {event.protectedPersonName === "" ? (
                     <span className="text-[11px]">лицо не назначено</span>
                   ) : (
-                    <span className="text-foreground">
-                      {event.protectedPersonName}
-                    </span>
+                    <>
+                      <span className="text-foreground">
+                        {event.protectedPersonName}
+                      </span>
+                      {/* Лиц может быть НЕСКОЛЬКО (Plane №188). В строке
+                          названо ГЛАВНОЕ, остальные — числом: перечислять
+                          троих в узкой колонке значило бы растянуть строку
+                          втрое ради сведения, которое читают в карточке.
+                          Число — не украшение: без него строка с одним лицом
+                          и строка с четырьмя выглядят одинаково. */}
+                      {event.protectedPersons.length > 1 && (
+                        <span className="mt-[3px] block text-[11px] text-muted-foreground/80">
+                          и ещё {event.protectedPersons.length - 1}
+                        </span>
+                      )}
+                    </>
                   )}
                 </TableCell>
 
