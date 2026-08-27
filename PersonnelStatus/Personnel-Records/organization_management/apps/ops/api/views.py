@@ -919,6 +919,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 employee_id=data.get("employeeId"),
                 override=data.get("override"),
                 override_reason=data.get("override_reason"),
+                # Роль наряда необязательна — см. `_validated_placement_role`.
+                role_code=data.get("roleCode"),
                 # Кто действует ролью в данных, а не правом. Журнал мутаций
                 # пишет СЕРВИС: у него транзакция операции, и запись «действие
                 # замещающего» не может разъехаться с самим действием.

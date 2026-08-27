@@ -2082,6 +2082,10 @@ def placement_assignments_view(event):
                 # ключа не несут вовсе, и клиенту незачем знать разницу между
                 # «не старший» и «поля не было».
                 "isSectorSenior": bool(row.get("isSectorSenior")),
+                # Роль наряда: у строк, заведённых до №238, ключа нет вовсе —
+                # клиенту незачем различать «роль не назначена» и «поля не
+                # было», обе означают пустое место в бланке.
+                "roleCode": row.get("roleCode") or None,
             }
         )
     return view
@@ -2556,8 +2560,40 @@ def actor_display_name(actor):
 
 
 @transaction.atomic
+def _validated_placement_role(role_code):
+    """Код роли наряда: пусто либо ЖИВОЕ значение справочника (Plane №238).
+
+    🔴 Строкой «как пришло» роль хранить нельзя: «водитель VIP» и «водитель
+    ВИП» стали бы разными ролями, и бланк снова заполнялся бы наугад — ровно
+    та беда, из-за которой справочник и заводился (№195, №237).
+
+    Неактивная роль тоже отказ: её убрали из справочника сознательно, и тихо
+    поставить её в новое назначение значило бы обойти это решение.
+    """
+    code = str(role_code or "").strip()
+    if code == "":
+        return None
+    from organization_management.apps.operations.models import OpsDictionaryEntry
+
+    exists = OpsDictionaryEntry.objects.filter(
+        dictionary_code="PLACEMENT_ROLES", code=code, is_active=True
+    ).exists()
+    if not exists:
+        raise _validation(
+            {"roleCode": [f"Роли наряда «{code}» нет в справочнике или она снята."]}
+        )
+    return code
+
+
 def assign_placement(
-    event_id, *, post_id, employee_id, override, override_reason, deputy=None
+    event_id,
+    *,
+    post_id,
+    employee_id,
+    override,
+    override_reason,
+    role_code=None,
+    deputy=None,
 ):
     event = lock_event(event_id)
     employee = _find_personnel(employee_id)
@@ -2624,6 +2660,10 @@ def assign_placement(
         "postId": post_id,
         "employeeId": employee_key,
         "employeeName": personnel_display_name(employee),
+        # Роль наряда (Plane №238). Необязательна: расстановка без ролей — не
+        # ошибка, а «ещё не назначено»; документ по такой строке места не
+        # заполнит, и это честнее, чем поставить человека наугад.
+        "roleCode": _validated_placement_role(role_code),
         "acknowledgedAt": None,
         # обоснование сохраняется только при реально возникшем предупреждении
         "ratingOverrideReason": None if rating_conflict is None else reason,
