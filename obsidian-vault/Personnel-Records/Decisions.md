@@ -1404,3 +1404,94 @@ ARCH1 (HIGH) — «второй путь мутации мимо сервисн�
 Принято: фикстура публикует две версии — старую и свежую, в этом порядке.
 Одно место вместо пяти, и стенд выглядит как жизнь: паспорт существовал до
 мероприятия.
+
+## 27.08.2026 — инвентарь справочников: кто какой читает (Plane №199, шаг 1 плана №198)
+
+Вход для №200 («архивировать справочники без читателей»). Читатели искались
+грепом по бэку (импорты моделей, сериализаторы, сервисы, `urls.py`), по фронту
+(`lib/api.ts`, хуки, экраны, мок-слой, e2e) и по ЖИВОЙ схеме API
+(`GET localhost:8100/api/schema/`, 200) — не по памяти.
+
+### Справочники портала (`apps/dictionaries`, 9 моделей)
+
+| Справочник | Эндпоинт | Читатели (проверено) | Вывод |
+|---|---|---|---|
+| `Position` | `/api/dictionaries/positions/`, `/api/core/positions/` | FK `StaffUnit.position` (`staff_unit/models.py:56`), `staff_unit/views.py`, `employees/application/services.py`, фронт `features/add-employee/ui/AddEmployeeDialog.tsx:73` через `hooks/use-positions.ts` | **нужен** |
+| `Rank` | `/api/dictionaries/ranks/`, `/api/core/ranks/` | FK `Employee.rank` (`employees/models.py:27`), `core/api/serializers.py`, фронт `AddEmployeeDialog.tsx:79`, `EditStatusDialog.tsx:100`, `hooks/use-my-employee.ts:38` | **нужен** |
+| `StatusType` | `/api/dictionaries/status_types/` — но **модель не читает** | нет ни одного | **архивировать** |
+| `DismissalReason` | нет | только `init_dictionaries` | нужен по канону, **не подключён** |
+| `TransferReason` | нет | только `init_dictionaries` | нужен по канону, **не подключён** |
+| `VacancyReason` | нет | только `init_dictionaries` | нужен по канону, **не подключён** |
+| `SystemSetting` | нет | только `init_dictionaries` | нужен по канону, **не подключён** |
+| `EducationType` | нет | только `init_dictionaries` | **архивировать** |
+| `DocumentType` | нет | только `init_dictionaries` | **архивировать** |
+
+Три вывода, требующие пояснения, потому что «нет читателей» и «не нужен» —
+разные утверждения:
+
+1. **`dictionaries.StatusType` — двойник, а не справочник.** Эндпоинт
+   `/api/dictionaries/status_types/` существует, но `StatusTypeListSerializer`
+   (`dictionaries/api/serializers.py:20-33`) отдаёт `EmployeeStatus.StatusType.choices`
+   — перечисление в коде, а не строки таблицы. Настоящий справочник типов
+   статусов живёт в разделе ОМ: `operations/status_types.py`, наполняется
+   `seed_status_types`, отдаётся `/api/operations/status-types/`, читается
+   фронтом (`lib/api.ts:1739`, `hooks/use-forces-gathering.ts:58`). То есть роль
+   канона UC-DICT-004 закрыта ДРУГОЙ моделью, а эта — пустая тень с 0 строк
+   влияния.
+2. **Причины и системные настройки читателей не имеют, но архивировать их
+   нельзя.** Канон требует их прямо: UC-DICT-005 «Управление причинами»,
+   UC-DICT-006 «Управление системными настройками» (`docs/PersonnelStatus/USE_CASES_SPECIFICATION_VAPS.md:193-194,4650`),
+   а таблица сущностей (там же, строка 4730) описывает `SystemSetting`. Их
+   пустота — незаконченный экран справочников, а не лишняя модель. Архивировать
+   их значило бы спрятать невыполненное требование.
+3. **`EducationType` и `DocumentType` в каноне не упоминаются вовсе.**
+   Образования у `Employee` нет ни поля, ни требования; `StatusDocument`
+   (`statuses/models.py:415-435`) хранит название документа строкой и на
+   `DocumentType` не ссылается. FK на обе модели по всей кодовой базе — ноль.
+
+### Справочники раздела ОМ (`apps/operations` + `apps/ops`)
+
+Читатели есть у ВСЕХ, архивировать нечего:
+
+| Справочник | Читатель | Наполнение |
+|---|---|---|
+| `OpsDictionaryEntry` | `ops/dictionaries.py` → `/api/ops/dictionaries/`, экран `/security-ops/dictionaries` | `seed_operations:429` |
+| `StatusType` (ОМ) | `operations/status_service.py`, `selectors.py`, `/api/operations/status-types/` | `seed_status_types:112` |
+| `OpsDutyType`, `OpsDutyConflictPolicy` | `ops/duties.py`, `ops/analytics.py` | `seed_operations:255,266` |
+| `OpsCombatDutyType`, `OpsCombatRoute` | `ops/combat.py`, `ops/api/views.py` | `seed_operations:284,293` |
+| `OpsPolicySetting`, `OpsPolicySectionVersion` | `ops/settings_service.py` и четыре потребителя | `seed_operations:389,412` |
+| `OpsAnalyticsMetricDefinition`, `OpsAnalyticsPeriodPreset`, `OpsAttentionDetector` | `ops/analytics.py` | `seed_operations:810,826,864` |
+| `OpsServiceReportType` | `ops/reports.py` | `seed_operations:885` |
+| `OpsFeedbackRegistry` | `ops/feedback.py` | `seed_operations:917` |
+| `OpsRatingFeatureFlags`, `OpsRatingGroup` | `ops/ratings.py` | `seed_operations:775,494` |
+| `OpsLegalDocument` | `ops/gvo.py` | `seed_legal_documents` |
+| `OpsPassportFreshnessPolicy`, `OpsSubmissionControlSettings`, `OpsDocumentSequence` | `ops/passport.py:54`, `operations/selectors.py:616`, `operations/document_service.py` | **сида не нужно**: синглтоны, создаются лениво со значениями по умолчанию |
+
+### Следствие для шага №200: архивировать нечем — механизма нет
+
+`is_active` есть у шести моделей справочников, но это флаг СТРОКИ («значение
+неактивно»), а не таблицы. Заказчик просил убрать справочник целиком — значит
+нужен реестр архивных справочников в одном месте, и он снимает справочник
+из категорий Admin и из выдачи API. Миграция данных при этом не нужна вовсе:
+у всех трёх кандидатов ноль FK и ноль читателей, архивировать нечего, кроме
+самого факта показа. Это делает №200 дешевле, чем предполагал план.
+
+### Следствие для шагов №207 и №208
+
+- №207 (справочники портала) сужается: наполнять надо `Position` и `Rank`
+  (это шаг №202) плюс причины и `SystemSetting` — но у причин нет ни экрана,
+  ни эндпоинта, поэтому наполнение без подключения будет данными, которых
+  никто не увидит. Вопрос заказчику вынесен отдельно.
+- №208 (справочники ОМ) сужается почти до нуля: `seed_operations`,
+  `seed_status_types` и `seed_legal_documents` уже наполняют всё, у чего есть
+  читатель. Остаётся проверить прогоном, что на чистой базе они дают непустые
+  списки на экранах.
+
+### Пограничный случай, не входящий в вывод
+
+Роли и права существуют ДВУМЯ комплектами: `common.Role/Permission/RolePermission/UserRole`
+(читает `common/api/views.py`, `setup_demo_roles`) и одноимённый комплект в
+`operations` (читает `seed_operations:230-235`, RBAC раздела ОМ). Оба живые,
+оба используются — это не справочник и не находка инвентаря, но при раскладке
+Admin по категориям (№210-211) две «Роли» в списке будут выглядеть дублем, и
+подписи обязаны различать портал и раздел ОМ.
