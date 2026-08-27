@@ -262,9 +262,31 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
 
     const table = page.getByRole('group', { name: 'Сравнение подразделений' })
     await expect(table.locator('tbody tr')).toHaveCount(report.rows.length)
+    // 🔴 СТРОКА АДРЕСУЕТСЯ ПО ПОРЯДКУ, а не по имени (Plane №249). Имена
+    // уникальны только внутри родителя, и на реальной структуре «Второе
+    // сквозное управление» встречается трижды — отбор по имени находил три
+    // строки и падал строгим режимом. Порядок строк в таблице — порядок
+    // ответа расхода, поэтому первая строка ответа и есть первая строка
+    // таблицы; заодно это проверяет, что экран не пересортировал их молча.
     const first = report.rows[0]
-    const firstRow = table.getByRole('row').filter({ hasText: first.name })
+    const firstRow = table.locator('tbody tr').first()
+    await expect(firstRow).toContainText(first.name)
     await expect(firstRow).toContainText(share(first.list_total, first.staff_total))
+
+    // КРАСНАЯ ПРОБА к №249: одноимённые подразделения должны различаться
+    // путём. Стережёт ровно ту мутацию, ради которой заводилась карточка —
+    // убрать подпись пути из ячейки, и строки снова станут неразличимы.
+    const duplicates = report.rows
+      .map((row) => row.name)
+      .filter((name, _i, all) => all.filter((other) => other === name).length > 1)
+    if (duplicates.length > 0) {
+      const twinRows = table.getByRole('row').filter({ hasText: duplicates[0] })
+      const texts = await twinRows.allInnerTexts()
+      expect(
+        new Set(texts).size,
+        `строки «${duplicates[0]}» неразличимы: путь не выведен`
+      ).toBe(texts.length)
+    }
   })
 
   test('счётчики считаются по листьям светофора, а не по всем узлам', async ({ page }) => {
