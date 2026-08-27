@@ -231,6 +231,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # внутри мероприятия, и заводить под него отдельное право значило бы
         # защищать одно и то же по-разному.
         "event_chief": _MANAGE_EVENT_PERMISSION,
+        "details": _MANAGE_EVENT_PERMISSION,
         # Раздача права — работа ведущего мероприятие, а не замещающего:
         # иначе назначенный смог бы назначить себе смену и разрастить круг.
         "visit_object_deputy_add": _MANAGE_EVENT_PERMISSION,
@@ -519,6 +520,29 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # (Plane №190). POST с `employeeId` ставит, POST без него — снимает;
     # отдельного DELETE нет нарочно: у мероприятия старший один, и клиенту
     # проще слать одно и то же поле, чем выбирать метод по состоянию.
+    # Правка СВЕДЕНИЙ бюллетеня (Plane №192). `details`, а не голый
+    # `partial_update` на самом мероприятии: у ОМ есть поля, которые правкой
+    # формы менять нельзя (стадия, готовность, состав, расстановка), и ручка,
+    # принимающая «что угодно из модели», однажды примет и их.
+    @action(detail=True, methods=["patch"], url_path="details")
+    def details(self, request, pk=None):
+        data = request.data or {}
+        # `data.get` ВЕЗДЕ, а не `data.get(..., "")`: отсутствующий ключ здесь
+        # означает «не трогай поле», и подстановка пустой строки превратила бы
+        # частичную правку в очистку всего, что не прислали.
+        return self._event_response(
+            event_service.update_bulletin_details(
+                pk,
+                title=data.get("title"),
+                business_date=data.get("businessDate"),
+                business_date_end=data.get("businessDateEnd"),
+                event_time=data.get("eventTime"),
+                protected_person_id=data.get("protectedPersonId"),
+                location=data.get("location"),
+                actor=request.user,
+            )
+        )
+
     @action(detail=True, methods=["post"], url_path="chief")
     def event_chief(self, request, pk=None):
         data = request.data or {}

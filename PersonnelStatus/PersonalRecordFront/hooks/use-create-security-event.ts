@@ -8,6 +8,7 @@ import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
   BINDABLE_OBJECTS_PATH,
   SECURITY_EVENTS_PATH,
+  eventDetailsPath,
   type CreateSecurityEventRequest,
   type ListBindableObjectsResponse,
   type SecurityEvent,
@@ -35,4 +36,36 @@ export function useCreateSecurityEvent(options?: {
     },
     onFormError: options?.onFormError,
   });
+}
+
+/** Правка сведений бюллетеня (Plane №192).
+ *
+ * Ручка ЧАСТИЧНАЯ: сервер понимает «ключа нет» как «не трогай поле», а пустую
+ * строку — как «очисти». Поэтому окно правки шлёт ВСЕ поля формы, включая
+ * пустые: человек, стерший локацию, ждёт, что она сотрётся, а не что правку
+ * молча пропустят.
+ */
+export function useUpdateBulletinDetails(
+  eventId: string,
+  options?: { onFormError?: (details: Record<string, unknown>) => void }
+) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<SecurityEvent, UpdateBulletinDetailsRequest>({
+    mutationFn: (body) =>
+      opsApiClient.patch<SecurityEvent>(eventDetailsPath(eventId), body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["ops-security-events", "detail", data.id], data);
+      invalidateSecurityEvents(queryClient);
+    },
+    onFormError: options?.onFormError,
+  });
+}
+
+export interface UpdateBulletinDetailsRequest extends Record<string, unknown> {
+  title: string;
+  businessDate: string;
+  businessDateEnd: string;
+  eventTime: string;
+  protectedPersonId: string;
+  location: string;
 }

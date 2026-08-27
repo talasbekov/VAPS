@@ -152,6 +152,11 @@ VISIT_OBJECT_CHIEF_REVOKED = "VISIT_OBJECT_CHIEF_REVOKED"
 # объекта — разные люди с разной ответственностью, и слить их в одно действие
 # значило бы отвечать на два разных вопроса одной лентой.
 SECURITY_EVENT_CHIEF_SET = "SECURITY_EVENT_CHIEF_SET"
+# Правка СВЕДЕНИЙ бюллетеня — название, период, время, охраняемое лицо,
+# локация (Plane №192). Пишется потому, что по этим полям потом сверяют
+# документы: бюллетень уже выгружен и разослан, а дата в системе изменилась —
+# и вопрос «когда её поменяли и кто» обязан иметь ответ, а не догадку.
+SECURITY_EVENT_DETAILS_UPDATED = "SECURITY_EVENT_DETAILS_UPDATED"
 # Старший сектора на расстановке (Plane №65, «Расстановка по прототипу»).
 # Пишется по тому же основанию, что и старший объекта: это именное назначение
 # ответственного, по нему спрашивают доклад с сектора. Действие ОДНО на оба
@@ -256,6 +261,7 @@ ACTIONS = frozenset(
         FORCE_ALLOCATION_RETURNED,
         VISIT_OBJECT_CHIEF_REVOKED,
         SECURITY_EVENT_CHIEF_SET,
+        SECURITY_EVENT_DETAILS_UPDATED,
         PLACEMENT_SECTOR_SENIOR_SET,
         ACCESS_PERMISSION_SAVED,
         ACCESS_ROLE_SAVED,

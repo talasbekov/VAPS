@@ -66,6 +66,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   SECURITY_EVENT_PLACEMENT_BY_DEPUTY: "Расстановка изменена замещающим",
   VISIT_OBJECT_CHIEF_ASSIGNED: "Назначен старший объекта",
   SECURITY_EVENT_CHIEF_SET: "Назначен старший наряда",
+  SECURITY_EVENT_DETAILS_UPDATED: "Изменены сведения бюллетеня",
   VISIT_OBJECT_CHIEF_REVOKED: "Старший объекта снят",
   PLACEMENT_SECTOR_SENIOR_SET: "Старший сектора назначен или снят",
   ACCESS_PERMISSION_SAVED: "Право заведено или изменено",

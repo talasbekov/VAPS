@@ -14,6 +14,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { requireFixture } from './fixtures'
+import { probeTitle } from './probe-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -667,6 +668,102 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(
       page.getByRole('button', { name: `Назначить старшего наряда ${target!.code}` }),
     ).toBeVisible({ timeout: 15_000 })
+  })
+
+/** Заводит СВОЁ мероприятие для проб правки (Plane №192): они меняют название
+ * и локацию, и делать это на строке стенда значило бы ломать данные соседних
+ * проб. Метка `(e2e)` в названии обязательна — без неё строку не найдёт ни
+ * уборка спека, ни серверная чистилка. */
+async function createEvent(
+  token: string,
+  name: string,
+): Promise<{ id: string; code: string; title: string }> {
+  const title = probeTitle(name)
+  const res = await fetch(`${API}/api/ops/security-events/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      title,
+      businessDate: '2026-08-25',
+      kind: 'INTERNAL',
+      location: 'Локация до правки',
+    }),
+  })
+  const created = (await res.json()) as { id: string; code: string }
+  expect(created.code, 'фикстура правки не завелась').toBeTruthy()
+  return { ...created, title }
+}
+
+  test('бюллетень правится карандашом в строке реестра', async ({ page }) => {
+    // Plane №192, дословно: «Нету кнопки Редактировать. После плюсика,
+    // поставить иконку для редактирования». Кнопки не было потому, что
+    // править было нечем: у мероприятия не существовало ни одной ручки
+    // правки, и опечатка в названии жила до удаления мероприятия.
+    //
+    // Проба заводит СВОЁ мероприятие, а не правит чужое: она меняет название
+    // и локацию, и делать это на строке стенда значило бы ломать данные,
+    // которыми пользуются соседние пробы.
+    const token = await apiToken()
+    const created = await createEvent(token, 'Проба правки')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const pencil = page.getByRole('button', {
+      name: `Редактировать бюллетень ${created.code}`,
+    })
+    await expect(pencil).toBeVisible({ timeout: 15_000 })
+    await pencil.click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Правка бюллетеня')
+    // Форма открывается С ТЕКУЩИМИ значениями, а не пустая: иначе «сохранить»
+    // стёрло бы всё, чего человек не тронул.
+    await expect(dialog.getByLabel('Название мероприятия')).toHaveValue(
+      created.title,
+    )
+
+    // Новое название ТОЖЕ С МЕТКОЙ `(e2e)`: правка стирает старое название
+    // целиком, и метка ушла бы вместе с ним — уборка после прогона такую
+    // строку уже не нашла бы, и стенд копил бы переименованные пробные ОМ.
+    const renamed = probeTitle('Правленое название')
+    await dialog.getByLabel('Название мероприятия').fill(renamed)
+    await dialog.getByLabel('Локация').fill('Правленая локация')
+    await dialog.getByRole('button', { name: 'Сохранить' }).click()
+
+    // Правка видна В СТРОКЕ, а не только в ответе сервера.
+    const row = page.getByRole('row').filter({ hasText: created.code }).first()
+    await expect(row).toContainText(renamed, { timeout: 15_000 })
+    await expect(row).toContainText('Правленая локация')
+
+    // Окно закрылось — правка принята. Ассерт нужен: окно, оставшееся
+    // открытым поверх изменившейся строки, читается как «не сохранилось».
+    await expect(page.getByRole('dialog')).toBeHidden()
+  })
+
+  test('пустое название в правке бюллетеня отбивается полем', async ({ page }) => {
+    // Обратная сторона №192: ручка частичная, и «пустая строка» для названия
+    // означала бы «сотри обязательное поле». Проба стережёт, что отказ
+    // приходит ИМЕННО В ПОЛЕ, а не баннером «проверьте форму»: иначе человек
+    // ищет виноватое поле сам.
+    const token = await apiToken()
+    const created = await createEvent(token, 'Проба отказа')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page
+      .getByRole('button', { name: `Редактировать бюллетень ${created.code}` })
+      .click()
+
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Название мероприятия').fill('   ')
+    await dialog.getByRole('button', { name: 'Сохранить' }).click()
+
+    await expect(dialog).toContainText('Обязательное поле.')
+    // Окно НЕ закрылось: отказ надо увидеть там, где его вызвали.
+    await expect(dialog).toBeVisible()
   })
 
   test('объекты посещения добавляются кнопкой у строки и снимаются', async ({ page }) => {
