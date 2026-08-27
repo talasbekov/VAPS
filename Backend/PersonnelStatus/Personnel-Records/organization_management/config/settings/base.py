@@ -24,7 +24,10 @@ APPEND_SLASH = False  # Allow URLs without trailing slash for API compatibility
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.auth',
-    'django.contrib.admin',
+    # Admin подключается своей конфигурацией: верхний уровень в нём —
+    # категории по смыслу, а не приложения (Plane №210, задача заказчика
+    # №198). Механизм штатный — `AdminConfig.default_site`.
+    'organization_management.admin_config.CategorizedAdminConfig',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
