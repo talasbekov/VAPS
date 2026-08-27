@@ -65,7 +65,9 @@ def test_the_search_of_the_changelist_answers(admin_client_local, model):
 
     Пустой список моделей поиска делает запрос безобидным, поэтому проверка
     идёт по КАЖДОЙ модели — она стережёт не наличие поиска, а то, что
-    имеющийся не отвечает ProgrammingError.
+    имеющийся отвечает страницей, а не пятисоткой: `search_fields` с опечаткой
+    в имени поля роняет changelist на `FieldError` уже в базе, при импорте это
+    незаметно.
     """
     meta = model._meta
     url = reverse(f"admin:{meta.app_label}_{meta.model_name}_changelist")

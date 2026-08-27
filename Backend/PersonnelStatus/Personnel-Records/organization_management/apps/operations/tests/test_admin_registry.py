@@ -84,9 +84,9 @@ def test_the_search_of_the_list_stays_textual(model):
 
     Ошибки при этом НЕ будет: проверено на этом стеке (Django 5.1.15,
     Postgres) — `icontains` по числу и по uuid Django кастует сам,
-    `UPPER("id"::text) LIKE …`. Написано прямо, потому что рядом в
-    `operations/admin.py` живёт комментарий про ProgrammingError на
-    `division_id`, и следующий человек унаследует из него неверную причину.
+    `UPPER("id"::text) LIKE …`. Написано прямо, потому что соседний
+    комментарий в `operations/admin.py` утверждал обратное до №185 — и
+    неверная причина, оставленная в коде, переживает того, кто её написал.
     """
     model_admin = site_admin(model)
     fields = {field.name: field for field in model._meta.get_fields()}
@@ -150,8 +150,8 @@ def test_the_notify_recipients_are_editable_in_admin():
     model_admin = site_admin(OpsDivisionNotifyRecipient)
 
     assert model_admin is not None
-    # Поиск по целочисленной колонке отвечал бы ProgrammingError (LIKE по
-    # числу), поэтому ищем только по получателю.
+    # Поиск сужен до получателя осознанно: «1» по division_id совпало бы с
+    # 1, 10, 21 и 101 разом. Ошибки при этом не было бы — см. №185.
     assert model_admin.search_fields == ("recipient",)
 
 

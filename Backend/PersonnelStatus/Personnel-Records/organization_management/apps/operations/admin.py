@@ -58,10 +58,17 @@ class OpsSubmissionControlSettingsAdmin(admin.ModelAdmin):
 @admin.register(OpsDivisionNotifyRecipient)
 class OpsDivisionNotifyRecipientAdmin(admin.ModelAdmin):
     list_display = ("division_id", "recipient")
-    # Поиск ТОЛЬКО по получателю: division_id — целочисленная колонка, а поиск
-    # Admin строит icontains, то есть LIKE, которого у Postgres для чисел нет —
-    # строка поиска по подразделению отвечала бы ProgrammingError. Нужно
-    # выбрать подразделение — это фильтр в адресе списка.
+    # Поиск ТОЛЬКО по получателю — по смыслу, а НЕ потому, что иначе будет
+    # ошибка. Прежняя редакция этого комментария утверждала, что icontains по
+    # целочисленной колонке отвечает ProgrammingError («LIKE по числу Postgres
+    # не умеет»); проверено запросом 27.08.2026 (Plane №185) — на текущем
+    # стеке это неправда, Django 5.1.15 кастует сам:
+    #     UPPER("ops_division_notify_recipients"."division_id"::text)
+    #         LIKE UPPER(%1%)
+    # запрос выполняется и ошибки не даёт. Настоящая причина в другом: поиск
+    # OR-ит LIKE по каждой колонке списка, и «1» по division_id совпало бы с
+    # 1, 10, 21, 101 разом — то есть отвечал бы не на тот вопрос, который
+    # задали. Нужно выбрать подразделение — это фильтр в адресе списка.
     search_fields = ("recipient",)
 
 # Показать в Admin всё остальное — решение заказчика 27.08.2026 (Plane №182):
