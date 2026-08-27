@@ -979,3 +979,5 @@ changelist уже в базе. Проверено мутацией: `a.check()` 
 
 **Правки:** `organization_management/apps/operations/admin.py`,
 `.../tests/test_admin_registry.py` (два места), `.../tests/test_admin_pages.py`.
+
+**Коммит:** `ec436d95` — `fix(admin): убрать неверную причину из комментариев про поиск (Plane №185)`.
