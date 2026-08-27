@@ -227,7 +227,11 @@ def test_definitions_with_counts(viewer_api):
     seed_dictionary()
     data = viewer_api.get(DICTS).json()["results"]
     by_code = {d["code"]: d for d in data}
-    assert len(data) == 5  # закрытый мир справочников
+    # Закрытый мир справочников: число правится ОСОЗНАННО вместе со списком в
+    # `ops/dictionaries.py`. С 28.08.2026 их шесть — добавлены роли наряда
+    # расстановки (Plane №237).
+    assert len(data) == 6
+    assert "PLACEMENT_ROLES" in by_code
     assert by_code["POST_REQUIREMENTS"]["totalCount"] == 1
     assert by_code["POST_REQUIREMENT_GROUPS"]["activeCount"] == 1
 
