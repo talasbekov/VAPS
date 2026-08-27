@@ -1678,6 +1678,8 @@ operations-analytics` — 4 passed, **2 упали не по моей вине**
 
 ## 27.08.2026 — единая точка входа `seed_demo_all` (Plane №209, шаг 11 плана №198)
 
+Коммит `0bfedd1b`.
+
 Заведена команда `apps/common/management/commands/seed_demo_all.py` и шесть проб;
 раскладка шагов описана в [[Personnel-Records/Архитектура|Архитектуре]].
 
