@@ -1994,6 +1994,11 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                         "attached": row.attached,
                         "off_list": row.off_list,
                         "columns": row.columns,
+                        # Занятость мероприятиями — СПРАВОЧНО, рядом с
+                        # колонками и вне их суммы (Plane №243): человек на
+                        # ОМ остаётся в строю, и вынуть его в свою колонку
+                        # значило бы сломать «Σ колонок == Список».
+                        "event": row.event.as_dict(),
                     }
                     for row in report.rows
                 ],
@@ -2004,6 +2009,7 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "attached": report.totals.attached,
                     "off_list": report.totals.off_list,
                     "columns": report.totals.columns,
+                    "event": report.totals.event.as_dict(),
                 },
                 "warnings": report.warnings,
             }
