@@ -5,7 +5,7 @@
 import { useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +35,10 @@ import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
-import { CreateSecurityEventDialog } from "@/features/create-security-event";
+import {
+  CreateSecurityEventDialog,
+  EditBulletinDialog,
+} from "@/features/create-security-event";
 import { GvoVisitsRegistry } from "@/widgets/gvo-visits-registry";
 import {
   AddDeputyDialog,
@@ -434,6 +437,7 @@ function EventRow({
   const [addOpen, setAddOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [chiefOpen, setChiefOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const detailsId = useId();
   const visits = event.visitObjects ?? [];
   const { hasPermission } = useOpsPermissions();
@@ -513,6 +517,21 @@ function EventRow({
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+            {/* ПРАВКА БЮЛЛЕТЕНЯ — сразу после «+», как просил заказчик
+                (Plane №192). Порядок кнопок в колонке — по частоте и по
+                тяжести последствий: раскрыть, добавить объект, поправить
+                сведения, удалить. Разрушительное — последним и одно. */}
+            {canEditObjects && (
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                aria-label={`Редактировать бюллетень ${event.code}`}
+                title="Редактировать бюллетень"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             )}
             {/* Удаление ошибочно заведённого бюллетеня. Отдельное право
@@ -598,21 +617,39 @@ function EventRow({
                   )}
                 </TableCell>
 
+                {/* ЛОКАЦИЯ — это поле `location` бюллетеня, а не имя объекта.
+                    Разошлось это молча: колонка называлась «Локация» и
+                    показывала объект ещё до №189, а бланк бюллетеня под этим
+                    словом понимает МЕСТО проведения («г. Астана»). Поймано
+                    живой пробой правки бюллетеня (Plane №192): проба меняла
+                    локацию через окно и не находила её в строке — потому что
+                    строка показывала совсем другое поле.
+
+                    Объект не выброшен, он ушёл подписью: у мероприятия он
+                    один и он же ведёт паспорт, а объекты посещения со своими
+                    паспортами живут в раскрытии строки.
+
+                    Потолок ширины — на блоке, а не на ячейке: см. колонку
+                    мероприятия выше. */}
                 <TableCell className="text-muted-foreground">
-                  {/* Потолок ширины — на блоке, а не на ячейке: см. колонку
-                      мероприятия выше. */}
-                  {/* Пустое имя — «объект не выбран», а не пустая ячейка: ОМ
-                      заводят до согласования маршрута, и объекты дописывают
-                      позже кнопкой в первой колонке. */}
                   <span className="block max-w-[210px] whitespace-normal">
-                    {event.objectName === "" ? "объект не выбран" : event.objectName}
+                    {event.location === "" ? (
+                      <span className="text-[11px]">локация не указана</span>
+                    ) : (
+                      event.location
+                    )}
                   </span>
                   <span className="mt-[3px] block max-w-[210px] whitespace-normal text-[11px] text-muted-foreground/80">
+                    {/* Пустое имя — «объект не выбран», а не пустая подпись:
+                        ОМ заводят до согласования маршрута, и объекты
+                        дописывают позже кнопкой в первой колонке. */}
                     {event.objectName === ""
-                      ? "объекты добавляются кнопкой «+»"
-                      : event.passportBinding === null
-                        ? "паспорт не привязан"
-                        : `паспорт вер. ${event.passportBinding.versionNumber}`}
+                      ? "объект не выбран · добавляется кнопкой «+»"
+                      : `${event.objectName} · ${
+                          event.passportBinding === null
+                            ? "паспорт не привязан"
+                            : `паспорт вер. ${event.passportBinding.versionNumber}`
+                        }`}
                   </span>
                 </TableCell>
 
@@ -708,6 +745,14 @@ function EventRow({
             />
           </TableCell>
         </TableRow>
+      )}
+
+      {editOpen && (
+        <EditBulletinDialog
+          event={event}
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+        />
       )}
 
       {chiefOpen && (
