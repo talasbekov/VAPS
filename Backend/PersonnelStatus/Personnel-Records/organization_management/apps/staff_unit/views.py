@@ -520,6 +520,12 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                         unit.employee.rank.name if unit.employee.rank else None
                     ),
                     'iin_masked': mask_iin(unit.employee.iin),
+                    # Адрес аватарки, а не путь файла: у списка нет и не должно
+                    # быть знания о том, где лежит MEDIA_ROOT и какой у него
+                    # префикс. Пусто — фотографии нет, и клиент рисует
+                    # заглушку; выдумывать за него адрес «по соглашению» — это
+                    # 404 в каждой строке при первой же смене хранилища.
+                    'photo_url': unit.employee.photo.url if unit.employee.photo else None,
                     'hire_date': unit.employee.hire_date,
                     'birth_date': unit.employee.birth_date,
                     'personnel_number': unit.employee.personnel_number,
