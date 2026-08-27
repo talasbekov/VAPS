@@ -34,6 +34,9 @@ def serialize_combat_shift(shift):
         "id": str(shift.pk),
         "businessDate": shift.business_date.isoformat(),
         "dutyTypeCode": shift.duty_type_code,
+        # Имя группы («БГ-1») — пустая строка, а не null: экран печатает его
+        # рядом с трассой, и «нет имени» для него то же самое, что пустое.
+        "groupName": shift.group_name,
         "routeSet": shift.route_set,
         "submission": shift.submission,
         "updatedAt": shift.updated_at.isoformat(),
@@ -70,7 +73,7 @@ def _accepted_names_elsewhere(shift):
 
 @transaction.atomic
 def create_shift(*, business_date, duty_type_code, route_ids, coverage_mode,
-                 required_employees):
+                 required_employees, group_name=""):
     try:
         parsed_date = dt.date.fromisoformat(str(business_date or ""))
     except ValueError:
@@ -116,6 +119,7 @@ def create_shift(*, business_date, duty_type_code, route_ids, coverage_mode,
         },
         submission=None,
         required_employees=int(required_employees),
+        group_name=str(group_name or "").strip()[:64],
     )
     return shift
 

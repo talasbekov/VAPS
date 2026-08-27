@@ -1829,6 +1829,9 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
             route_ids=data.get("routeIds"),
             coverage_mode=data.get("coverageMode"),
             required_employees=data.get("requiredEmployees"),
+            # Имя группы («БГ-1») необязательно: смены заводились и без него,
+            # и требовать его задним числом значило бы сломать их (Plane №243).
+            group_name=data.get("groupName"),
         )
         return self._response(shift, status=201)
 
