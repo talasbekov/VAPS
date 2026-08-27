@@ -137,6 +137,12 @@ export function EmployeeTable({
               {employees.map((employee) => (
                 <TableRow
                   key={employee.id}
+                  // Идентификатор человека в разметке (Plane №251). На стенде
+                  // в 440 человек полные тёзки неизбежны — имена берутся из
+                  // пула, да и в любой службе однофамильцы-тёзки бывают, — а
+                  // строка до этого различалась ТОЛЬКО текстом ФИО: и пробы,
+                  // и человек с автоматизацией путали двух разных людей.
+                  data-employee-id={employee.id}
                   className="cursor-pointer"
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
