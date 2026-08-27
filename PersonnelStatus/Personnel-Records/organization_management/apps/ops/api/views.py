@@ -26,6 +26,7 @@ from organization_management.apps.ops.api.serializers import (
 )
 from organization_management.apps.ops import documents_summary
 from organization_management.apps.ops import gvo as gvo_service
+from organization_management.apps.ops import vehicles as vehicles_service
 from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.ops import analytics as analytics_service
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
@@ -3020,6 +3021,43 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         видны в реестре, собранные по лицу.
         """
         return Response({"results": gvo_service.person_event_history(pk)})
+
+
+class OpsVehiclesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/vehicles/ — реестр транспорта ГОН (только чтение).
+
+    Правка — Django Admin, как у остальных справочников раздела: второй,
+    безусловный вход в те же строки дал бы две правды о том, кто их менял.
+
+    Право то же, что у справочника охраняемых лиц (`event.view`): выделенная
+    на мероприятие машина видна там же, где само мероприятие, и закрывать
+    реестр отдельным правом значило бы прятать сведения от их читателей.
+    """
+
+    permission_map = {"list": "event.view", "armor_classes": "event.view"}
+
+    def list(self, request):
+        return Response(
+            {
+                "results": vehicles_service.list_vehicles(
+                    armor_class=request.query_params.get("armorClass"),
+                    deployment=request.query_params.get("deployment"),
+                    search=request.query_params.get("search"),
+                    # Признак читается СЛОВОМ «1»/«true», а не «ключ есть»:
+                    # `?includeRetired=0` обязан означать «нет», иначе отбор
+                    # включался бы попыткой его выключить.
+                    include_retired=str(
+                        request.query_params.get("includeRetired", "")
+                    ).lower()
+                    in ("1", "true", "yes"),
+                )
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="armor-classes")
+    def armor_classes(self, request):
+        """Классы брони, которые есть в парке, — значения отбора экрана."""
+        return Response({"results": vehicles_service.armor_classes()})
 
 
 class OpsLegalDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):

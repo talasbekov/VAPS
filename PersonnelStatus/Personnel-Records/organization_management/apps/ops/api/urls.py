@@ -5,6 +5,7 @@ from organization_management.apps.ops.api.views import (
     AccessCatalogViewSet,
     OpsGvoSummariesViewSet,
     OpsLegalDocumentsViewSet,
+    OpsVehiclesViewSet,
     OpsProtectedPersonsViewSet,
     CombatDutyShiftViewSet,
     OpsAuditLogViewSet,
@@ -217,6 +218,12 @@ router.register(
 router.register(
     "legal-documents", OpsLegalDocumentsViewSet,
     basename="ops-legal-documents",
+)
+
+# Реестр транспорта ГОН (Plane №215) — только чтение, правка в Admin.
+router.register(
+    "vehicles", OpsVehiclesViewSet,
+    basename="ops-vehicles",
 )
 
 # Каталог функций права (Plane №36, «П-1»): read-only карта гейтов.
