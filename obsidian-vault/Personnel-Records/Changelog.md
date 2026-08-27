@@ -1356,6 +1356,8 @@ UC-DICT-005/006 (`DismissalReason`, `TransferReason`, `VacancyReason`,
 
 ## 27.08.2026 — сид дерева подразделений (Plane №201, шаг 3 плана №198)
 
+Коммит `788bae0d`.
+
 Заведена команда `seed_org_structure` (`apps/divisions/management/commands/`) и
 десять проб к ней (`apps/divisions/tests/test_seed_org_structure.py`).
 
