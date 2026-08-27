@@ -53,3 +53,5 @@ class SecondmentRequest(models.Model):
 
     class Meta:
         db_table = 'secondment_requests'
+        verbose_name = 'Запрос на прикомандирование'
+        verbose_name_plural = 'Запросы на прикомандирование'

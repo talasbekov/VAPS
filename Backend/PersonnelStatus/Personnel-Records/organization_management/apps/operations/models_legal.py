@@ -32,6 +32,8 @@ class OpsLegalDocument(TimeStampedModel):
 
     class Meta:
         ordering = ["kind", "code", "id"]
+        verbose_name = "Закон об ОМ"
+        verbose_name_plural = "Законы об ОМ"
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(

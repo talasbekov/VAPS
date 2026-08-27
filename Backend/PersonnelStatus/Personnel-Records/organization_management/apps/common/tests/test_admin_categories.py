@@ -100,3 +100,62 @@ def test_the_index_page_opens_and_shows_the_categories(client):
     body = response.content.decode()
     for name in ("Справочники", "Охранные мероприятия", "Структура и штат"):
         assert name in body, f"категории «{name}» нет на экране Admin"
+
+
+def test_nothing_is_left_in_other(request_of_superuser):
+    """«Прочее» — канарейка, а не свалка (Plane №211).
+
+    Каждая модель разложена сознательно, поэтому непустое «Прочее» означает
+    ровно одно: появилась модель, которой никто не назначил место. Пока список
+    пуст, категория на экран не выводится вовсе.
+    """
+    other = [
+        model["object_name"]
+        for group in admin.site.get_app_list(request_of_superuser)
+        if group["name"] == OTHER_CATEGORY
+        for model in group["models"]
+    ]
+    assert other == [], f"модели без категории: {other}"
+
+
+def test_no_category_holds_more_than_a_third_of_everything(request_of_superuser):
+    """Категория, вобравшая всё, — тот же общий список под другим заголовком.
+
+    До дробления раздел ОМ давал 67 моделей из 93 в одной категории; после —
+    ни одна не держит больше трети.
+    """
+    groups = admin.site.get_app_list(request_of_superuser)
+    total = sum(len(group["models"]) for group in groups)
+    biggest = max(groups, key=lambda group: len(group["models"]))
+
+    assert len(biggest["models"]) <= total / 3, (
+        f"«{biggest['name']}» держит {len(biggest['models'])} из {total} — "
+        f"это общий список, а не категория"
+    )
+
+
+@pytest.mark.parametrize(
+    "app_label",
+    sorted(
+        {
+            model._meta.app_label
+            for model in admin.site._registry
+            if model.__module__.startswith("organization_management")
+        }
+    ),
+)
+def test_our_models_are_named_in_russian(app_label):
+    """Подпись модели — это то, что заказчик видит в списке разделов.
+
+    `ops employee statuss` и `secondment requests` он читать не обязан;
+    сторонние модели (auth, celery) сюда не входят — они переводятся не нами.
+    """
+    from django.apps import apps as django_apps
+
+    english = []
+    for model in django_apps.get_app_config(app_label).get_models():
+        label = str(model._meta.verbose_name)
+        if not any("а" <= letter.lower() <= "я" or letter == "ё" for letter in label):
+            english.append(f"{model.__name__} → {label}")
+
+    assert english == [], f"подписи не по-русски: {english}"

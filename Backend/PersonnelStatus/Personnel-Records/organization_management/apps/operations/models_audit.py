@@ -56,6 +56,8 @@ class OpsAuditLog(models.Model):
 
     class Meta:
         db_table = "ops_audit_logs"
+        verbose_name = "Журнал раздела ОМ"
+        verbose_name_plural = "Журналы раздела ОМ"
         # Журнал читают «по сущности во времени» и «по актору во времени» —
         # оба разреза индексированы, иначе лента за месяц уедет в полный скан.
         indexes = [

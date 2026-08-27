@@ -26,6 +26,7 @@ CATEGORIES = (
     "Документы и отчёты",
     "Доступ и журналы",
     "Настройки раздела",
+    "Фоновые задачи",
 )
 
 OTHER_CATEGORY = "Прочее"
@@ -47,8 +48,59 @@ APP_CATEGORY = {
     "auth": "Доступ и журналы",
 }
 
-# Исключения по модели: «приложение.Модель» → категория. Заполняется в №211.
-MODEL_CATEGORY: dict[str, str] = {}
+# Правило по приложению для стороннего кода: расписание и результаты задач —
+# это инфраструктура, а не предметная область.
+APP_CATEGORY.update(
+    {
+        "django_celery_beat": "Фоновые задачи",
+        "django_celery_results": "Фоновые задачи",
+    }
+)
+
+
+def _spread(category: str, app_label: str, *models: str) -> dict[str, str]:
+    return {f"{app_label}.{name}": category for name in models}
+
+
+# Исключения по модели. Нужны в основном разделу ОМ: у него 67 моделей в одном
+# приложении, и одной кучей это тот же список, только под другим заголовком.
+MODEL_CATEGORY: dict[str, str] = {
+    # Справочники раздела: их наполняют сидом и по ним строят выпадающие списки.
+    **_spread(
+        "Справочники", "operations",
+        "OpsDictionaryEntry", "StatusType", "OpsDutyType", "OpsCombatDutyType",
+        "OpsCombatRoute", "OpsServiceReportType", "OpsFeedbackRegistry",
+        "OpsAnalyticsMetricDefinition", "OpsAnalyticsPeriodPreset",
+        "OpsAttentionDetector", "OpsLegalDocument", "OpsVehicle",
+    ),
+    # Настройки и политики: меняются редко, действуют на весь раздел.
+    **_spread(
+        "Настройки раздела", "operations",
+        "OpsPolicySetting", "OpsPolicySectionVersion", "OpsSettingChangeEvent",
+        "OpsSubmissionControlSettings", "OpsPassportFreshnessPolicy",
+        "OpsDutyConflictPolicy", "OpsRatingFeatureFlags", "OpsDocumentSequence",
+        "OpsDivisionNotifyRecipient",
+    ),
+    # Всё, что порождает файл или его хранит.
+    **_spread(
+        "Документы и отчёты", "operations",
+        "OpsIssuedDocument", "OpsAttachment", "OpsServiceReportJob",
+        "OpsServiceReportArtifact", "OpsRatingExportJob", "OpsRatingExportArtifact",
+        "OpsWatermark",
+    ),
+    # Права, роли и журналы раздела — рядом с такими же портала.
+    **_spread(
+        "Доступ и журналы", "operations",
+        "Permission", "Role", "RolePermission", "UserRole",
+        "TemporaryDutyPermission", "OpsAuditLog", "OpsRatingAuditEntry",
+        "OpsNotification", "OpsRatingNotification",
+    ),
+    # Состояния людей: они про сотрудника, а не про мероприятие.
+    **_spread(
+        "Сотрудники и статусы", "operations",
+        "OpsEmployeeStatus", "Secondment", "StatusOverride", "OpsProtectedPerson",
+    ),
+}
 
 
 def category_of(app_label: str, object_name: str) -> str:
