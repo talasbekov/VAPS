@@ -67,9 +67,15 @@ def armor_classes():
     свободная строка (в модели сказано почему), и жёсткий список в отборе
     разошёлся бы с парком в первый же завоз.
     """
+    # `order_by()` ПУСТОЙ — обязателен, а не украшение. У модели есть
+    # сортировка по умолчанию (`brand, plate, id`), и Django дописывает её
+    # колонки в SELECT ради ORDER BY: DISTINCT считается тогда по кортежу с
+    # номером машины, то есть не схлопывает НИЧЕГО. Экран из-за этого рисовал
+    # «VR7» шесть раз — по разу на машину (нашла живая проба, Plane №215).
     return sorted(
         value
         for value in OpsVehicle.objects.filter(is_active=True)
+        .order_by()
         .values_list("armor_class", flat=True)
         .distinct()
         if value

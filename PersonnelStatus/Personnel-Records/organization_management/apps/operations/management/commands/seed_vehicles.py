@@ -17,20 +17,24 @@ from django.db import transaction
 
 from organization_management.apps.operations.models_vehicle import OpsVehicle
 
-#: (марка, кузов, год, ГРНЗ, класс брони, дислокация, примечание)
+#: (марка, кузов, год, ГРНЗ, класс брони, дислокация, примечание, в парке)
+#: Последний признак — «действующая». Одна СНЯТАЯ машина в парке нужна не
+#: пробе, а самому экрану: переключатель «Показывать снятые» на парке без
+#: единой снятой машины ничего не переключает, и проверить его нечем.
 FLEET = [
-    ("Mercedes-Benz S680 Maybach 4 М (брон.)", "седан (223)", 2023, "701 AAA 01", "VR7", "Астана", "Автохозяйство"),
-    ("Mercedes-Benz S680 Maybach 4 М (брон.)", "седан (223)", 2023, "702 AAA 01", "VR7", "Астана", "Автохозяйство"),
-    ("Mercedes-Benz S680 Maybach 4 М (брон.)", "седан (222)", 2022, "703 AAA 01", "VR7", "Астана", "Автохозяйство"),
-    ("Mercedes-Benz S600 Guard", "седан (221)", 2019, "704 AAA 01", "VR9", "Астана", "Автохозяйство"),
-    ("Mercedes-Benz S600 Guard", "седан (221)", 2018, "705 AAA 01", "VR9", "Алматы", "Автохозяйство"),
-    ("Mercedes-Benz G500 (брон.)", "внедорожник (463)", 2021, "706 AAA 01", "VR7", "Астана", "Сопровождение"),
-    ("Mercedes-Benz G500 (брон.)", "внедорожник (463)", 2021, "707 AAA 01", "VR7", "Алматы", "Сопровождение"),
-    ("Toyota Land Cruiser 300 (брон.)", "внедорожник", 2023, "708 AAA 02", "VR6", "Астана", "Сопровождение"),
-    ("Toyota Land Cruiser 300 (брон.)", "внедорожник", 2022, "709 AAA 02", "VR6", "Алматы", "Сопровождение"),
-    ("Mercedes-Benz V250 (брон.)", "минивэн", 2020, "710 AAA 01", "VR7", "Астана", "Делегация"),
-    ("Mercedes-Benz Sprinter", "микроавтобус", 2021, "711 AAA 01", "", "Астана", "Личный состав"),
-    ("Mercedes-Benz Sprinter", "микроавтобус", 2019, "712 AAA 01", "", "Алматы", "Личный состав"),
+    ("Mercedes-Benz S680 Maybach 4 М (брон.)", "седан (223)", 2023, "701 AAA 01", "VR7", "Астана", "Автохозяйство", True),
+    ("Mercedes-Benz S680 Maybach 4 М (брон.)", "седан (223)", 2023, "702 AAA 01", "VR7", "Астана", "Автохозяйство", True),
+    ("Mercedes-Benz S680 Maybach 4 М (брон.)", "седан (222)", 2022, "703 AAA 01", "VR7", "Астана", "Автохозяйство", True),
+    ("Mercedes-Benz S600 Guard", "седан (221)", 2019, "704 AAA 01", "VR9", "Астана", "Автохозяйство", True),
+    ("Mercedes-Benz S600 Guard", "седан (221)", 2018, "705 AAA 01", "VR9", "Алматы", "Автохозяйство", True),
+    ("Mercedes-Benz G500 (брон.)", "внедорожник (463)", 2021, "706 AAA 01", "VR7", "Астана", "Сопровождение", True),
+    ("Mercedes-Benz G500 (брон.)", "внедорожник (463)", 2021, "707 AAA 01", "VR7", "Алматы", "Сопровождение", True),
+    ("Toyota Land Cruiser 300 (брон.)", "внедорожник", 2023, "708 AAA 02", "VR6", "Астана", "Сопровождение", True),
+    ("Toyota Land Cruiser 300 (брон.)", "внедорожник", 2022, "709 AAA 02", "VR6", "Алматы", "Сопровождение", True),
+    ("Mercedes-Benz V250 (брон.)", "минивэн", 2020, "710 AAA 01", "VR7", "Астана", "Делегация", True),
+    ("Mercedes-Benz Sprinter", "микроавтобус", 2021, "711 AAA 01", "", "Астана", "Личный состав", True),
+    ("Mercedes-Benz Sprinter", "микроавтобус", 2019, "712 AAA 01", "", "Алматы", "Личный состав", True),
+    ("Mercedes-Benz S500 Guard", "седан (221)", 2012, "713 AAA 01", "VR7", "", "Списана по сроку службы", False),
 ]
 
 
@@ -40,7 +44,7 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         created = 0
-        for brand, body, year, plate, armor, place, note in FLEET:
+        for brand, body, year, plate, armor, place, note, in_fleet in FLEET:
             _car, was_created = OpsVehicle.objects.get_or_create(
                 plate=plate,
                 defaults={
@@ -50,6 +54,7 @@ class Command(BaseCommand):
                     "armor_class": armor,
                     "deployment": place,
                     "note": note,
+                    "is_active": in_fleet,
                 },
             )
             created += 1 if was_created else 0

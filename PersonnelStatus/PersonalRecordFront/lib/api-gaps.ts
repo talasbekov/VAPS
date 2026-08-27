@@ -242,6 +242,17 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       return isOpsSecurityEventsLive() ? null : SECURITY_EVENTS_MOCK_BY_CONFIG;
     }
     if (
+      normalized === "/security-ops/vehicles" ||
+      normalized.startsWith("/security-ops/vehicles/")
+    ) {
+      // Реестр транспорта ГОН врезки не несёт НИКОГДА (Plane №215): у него
+      // нет мок-обработчика вовсе — экран ходит только в живой
+      // `/api/ops/vehicles/`, и переключать его в мок нечем. Общее правило
+      // раздела («на бэке нет /api/ops/*») здесь было бы прямой неправдой:
+      // строки, которые видит человек, пришли с сервера.
+      return null;
+    }
+    if (
       normalized === "/security-ops/ratings" ||
       normalized.startsWith("/security-ops/ratings/")
     ) {

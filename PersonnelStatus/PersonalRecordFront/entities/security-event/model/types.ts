@@ -1,6 +1,7 @@
 // Домен «Охранное мероприятие» (ОМ). Полный жизненный цикл:
 // bulletin → recon → demand → forces → placement → approval →
 // acknowledgement → conduct → closed.
+import type { EventVehicle } from "@/entities/vehicle";
 /**
  * Снимок привязки ОМ к опубликованной версии паспорта объекта. Именно снимок,
  * а не ссылка: публикация новой версии паспорта не переписывает согласованную
@@ -393,6 +394,14 @@ export interface SecurityEvent {
   ownerName: string;
   /** Объекты посещения бюллетеня — минимум один (объект окна создания). */
   visitObjects: VisitObject[];
+  /**
+   * Машины реестра ГОН, ВЫДЕЛЕННЫЕ на мероприятие (Plane №215).
+   *
+   * Это не то же самое, что строки «Выделяемый транспорт» в сводке ГВО: те —
+   * свободный текст, набранный человеком, и ни ГРНЗ, ни класса брони в них
+   * нет. Оба источника живут рядом намеренно, пока у текста есть читатели.
+   */
+  vehicles: EventVehicle[];
   /** Бюллетень: краткое описание, обязательное поле этапа BULLETIN. */
   briefDescription: string;
   /** Бюллетень: первичные задачи направлениям. */
@@ -449,6 +458,18 @@ export function securityEventDeletePath(id: string): string {
 export const BINDABLE_OBJECTS_PATH = `${SECURITY_EVENTS_PATH}bindable-objects/`;
 
 /** Объекты посещения мероприятия: добавление и снятие. */
+/** Выделение машины реестра на мероприятие и снятие её с него. */
+export function eventVehiclesPath(eventId: string): string {
+  return `${securityEventDetailPath(eventId)}vehicles/`;
+}
+
+export function eventVehicleDetailPath(
+  eventId: string,
+  allocationId: string
+): string {
+  return `${eventVehiclesPath(eventId)}${allocationId}/`;
+}
+
 export function visitObjectsPath(eventId: string): string {
   return `${securityEventDetailPath(eventId)}visit-objects/`;
 }
