@@ -160,3 +160,36 @@ def test_wipe_refuses_to_orphan_staff_units():
 
     assert seeded().count() == 0
     assert StaffUnit.objects.get(pk=StaffUnit.objects.first().pk).division_id is None
+
+
+def test_the_structure_scales_by_the_number_of_departments():
+    """Масштаб задаётся числом департаментов, состав каждого не меняется."""
+    call_command("seed_org_structure", "--departments", "5")
+
+    assert seeded(division_type=Division.DivisionType.DEPARTMENT).count() == 5
+    assert seeded(division_type=Division.DivisionType.DIRECTORATE).count() == 30
+    assert seeded(division_type=Division.DivisionType.DIVISION).count() == 45
+
+
+def test_the_structure_can_be_asked_for_a_headcount():
+    """«Структуру под пять тысяч» — не считая департаменты в уме.
+
+    🔴 Округление ВВЕРХ: 5000 / 142 = 35,2, и тридцать пять департаментов дают
+    4970 — меньше просимого. Проба стережёт именно это: «почти пять тысяч» на
+    нагрузочной проверке означает, что мерили не то, что просили.
+    """
+    call_command("seed_org_structure", "--people", "5000")
+
+    departments = seeded(division_type=Division.DivisionType.DEPARTMENT).count()
+    assert departments == 36
+    assert departments * 142 >= 5000
+
+
+def test_names_beyond_the_third_are_numbered():
+    call_command("seed_org_structure", "--departments", "4")
+
+    names = set(
+        seeded(division_type=Division.DivisionType.DEPARTMENT).values_list("name", flat=True)
+    )
+    assert "Первый департамент" in names
+    assert "Департамент №4" in names

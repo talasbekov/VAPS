@@ -45,6 +45,11 @@ CODE_PREFIX = "SEED-"
 # Состав департамента. Числа — решение заказчика в №198 и уточнение 27.08.2026
 # («шестое — ещё одно сквозное без отделов»).
 DEPARTMENTS = ("Первый департамент", "Второй департамент", "Третий департамент")
+
+#: Сколько людей даёт один департамент: 2 своих слота + 6 управлений × 2 +
+#: (9 отделов + 2 сквозных) × 12 = 142. Число нужно, чтобы попросить «структуру
+#: под пять тысяч» и получить её, а не считать департаменты в уме.
+PEOPLE_PER_DEPARTMENT = 142
 DIRECTORATES_WITH_DIVISIONS = (2, 2, 2, 3)  # четыре управления с отделами
 CROSS_CUTTING = ("Первое сквозное управление", "Второе сквозное управление")
 
@@ -72,6 +77,24 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
+            "--departments",
+            type=int,
+            default=len(DEPARTMENTS),
+            help=(
+                "Сколько департаментов завести (по умолчанию три — как просил заказчик). "
+                "Состав каждого не меняется."
+            ),
+        )
+        parser.add_argument(
+            "--people",
+            type=int,
+            help=(
+                "Завести столько департаментов, чтобы штат вышел не меньше указанного "
+                f"числа людей (в одном департаменте {PEOPLE_PER_DEPARTMENT}). "
+                "Перекрывает --departments."
+            ),
+        )
+        parser.add_argument(
             "--wipe",
             action="store_true",
             help="Снести ранее заведённые сидом подразделения (код с префиксом SEED-).",
@@ -87,10 +110,11 @@ class Command(BaseCommand):
             self._wipe(force=options["force"])
             return
 
+        count = self._departments_count(options)
         counters = Counters()
         with transaction.atomic():
             root = self._root(counters)
-            for department_index, department_name in enumerate(DEPARTMENTS, start=1):
+            for department_index, department_name in self._department_names(count):
                 department = self._node(
                     code=f"{CODE_PREFIX}D{department_index}",
                     name=department_name,
@@ -108,6 +132,26 @@ class Command(BaseCommand):
                 f"узлов сида всего {total}."
             )
         )
+
+    @staticmethod
+    def _departments_count(options) -> int:
+        """Сколько департаментов заводить: по числу или по требуемому штату."""
+        if options.get("people"):
+            return max(1, -(-int(options["people"]) // PEOPLE_PER_DEPARTMENT))
+        return max(1, int(options["departments"]))
+
+    @staticmethod
+    def _department_names(count: int):
+        """(номер, название). Первые три — словами заказчика, дальше — числом.
+
+        Порядковые словами дальше десятого читаются хуже числа («Тридцать пятый
+        департамент»), а стенду под пять тысяч человек нужно тридцать пять.
+        """
+        for index in range(1, count + 1):
+            if index <= len(DEPARTMENTS):
+                yield index, DEPARTMENTS[index - 1]
+            else:
+                yield index, f"Департамент №{index}"
 
     # ── построение ────────────────────────────────────────────────────────
 
