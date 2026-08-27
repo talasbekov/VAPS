@@ -25,6 +25,23 @@ _DIRECTIONS = ("SENIOR_TO_EMPLOYEE", "SENIOR_TO_GROUP", "EMPLOYEE_TO_SENIOR")
 _METHODS = ("MANUAL", "SYSTEM_DEFAULT")
 _WORK_ITEM_STATUSES = ("PENDING", "SUBMITTED")
 _AUDIT_OUTCOMES = ("SUCCESS", "REJECTED")
+# Виды записей журнала оценивания — ЗАКРЫТЫЙ перечень, зеркало клиентского
+# `RatingAuditEventCode` (`entities/operational-rating/index.ts`). До №187
+# колонка была свободной строкой, хотя экран журнала рисует подпись из
+# фиксированного словаря по коду: любое значение мимо этих девяти доезжало до
+# клиента и выводилось как `undefined`. Перечень держится с двух концов —
+# сервер отказывает CHECK-ом, клиент не знает других значений.
+_AUDIT_EVENT_CODES = (
+    "EVALUATION_SUBMITTED",
+    "EVALUATION_SCORE_CHANGED_FROM_INITIAL",
+    "EVALUATION_LOW_SCORE_WITHOUT_COMMENT",
+    "EVALUATION_CORRECTED",
+    "EVALUATION_CORRECTION_REJECTED",
+    "EVALUATION_ACCESS_DENIED",
+    "RATING_EXPORT_REQUESTED",
+    "RATING_EXPORT_DOWNLOADED",
+    "RATING_EXPORT_REJECTED",
+)
 _EXPORT_STATES = ("QUEUED", "GENERATING", "READY", "FAILED", "CANCELLED")
 _EXPORT_SCOPES = ("AGGREGATE", "INDIVIDUAL")
 _DATA_STATES = (
@@ -267,11 +284,28 @@ class OpsRatingAuditEntry(TimeStampedModel):
 
     Запись по построению не несёт значения оценки и комментария: таких полей
     в модели нет.
+
+    ⚠️ `event_code` ЗДЕСЬ — НЕ КОД МЕРОПРИЯТИЯ. Это вид записи журнала
+    (`EVALUATION_SUBMITTED`, `RATING_EXPORT_REQUESTED`, …); код охранного
+    мероприятия лежит рядом, в `security_event_code`. Имя унаследовано от
+    клиентского контракта, где `eventCode` означает «событие журнала», и
+    менять его нельзя — оно уезжает наружу как `eventCode` и типизировано на
+    клиенте.
+
+    Ловушка настоящая, а не гипотетическая: у соседних моделей раздела
+    (`OpsEventEvaluation`, `OpsEvaluationWorkItem`, `OpsEvaluationEvent`) поле
+    с ТЕМ ЖЕ именем означает третье — код кампании оценивания (`event-1`).
+    27.08.2026 на этом чуть не потеряли журнал: при очистке мероприятий
+    (Plane №186) 33 строки отсюда были посчитаны привязанными к ОМ по имени
+    колонки, и удаление по ней снесло бы журнал целиком. Спас сухой прогон.
+    Отсюда CHECK ниже: код мероприятия вида `ОМ-2026-1` в эту колонку теперь
+    физически не ложится.
     """
 
     entry_code = models.CharField(max_length=100, unique=True)
     occurred_at = models.DateTimeField()
     actor_user_id = models.CharField(max_length=255, null=True)
+    # Вид записи журнала, не мероприятие — см. докстринг выше.
     event_code = models.CharField(max_length=100)
     outcome = models.CharField(max_length=20)
     reason_code = models.CharField(max_length=100, null=True)
@@ -292,6 +326,10 @@ class OpsRatingAuditEntry(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(outcome__in=_AUDIT_OUTCOMES),
                 name="chk_ops_rating_audit_outcome",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(event_code__in=_AUDIT_EVENT_CODES),
+                name="chk_ops_rating_audit_event_code",
             ),
         ]
 
