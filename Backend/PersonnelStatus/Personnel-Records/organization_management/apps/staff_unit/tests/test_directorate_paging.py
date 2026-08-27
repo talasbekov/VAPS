@@ -266,3 +266,25 @@ def test_summary_counts_the_whole_selection_not_the_page(actor, scene):
 def test_summary_is_not_sent_unless_asked(actor, scene):
     """Три подзапроса платит только тот, кому сводка нужна."""
     assert "summary" not in ask(actor)
+
+
+def test_status_not_leaves_only_the_absent(actor, scene):
+    """Календарю нужны отсутствия, а не весь состав (Plane №236)."""
+    today = date.today()
+    EmployeeStatus.objects.bulk_create([
+        EmployeeStatus(
+            employee=scene["people"][0], status_type="in_service",
+            start_date=today - timedelta(days=5),
+            state=EmployeeStatus.StatusState.ACTIVE,
+        ),
+        EmployeeStatus(
+            employee=scene["people"][1], status_type="vacation",
+            start_date=today - timedelta(days=2), end_date=today + timedelta(days=5),
+            state=EmployeeStatus.StatusState.ACTIVE,
+        ),
+    ])
+
+    payload = ask(actor, "?status_not=in_service")
+
+    assert payload["matched_count"] == 1, "остались не только отсутствия"
+    assert payload["staff_units"][0]["employee"]["id"] == scene["people"][1].id

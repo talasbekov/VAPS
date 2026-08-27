@@ -227,6 +227,8 @@ export interface DirectorateQuery {
   employeeIds?: (number | string)[];
   /** Попросить сводку по отбору (сколько без статуса, просрочено, запланировано). */
   withSummary?: boolean;
+  /** Исключить эти коды действующего статуса; строки без статуса тоже уходят. */
+  statusNot?: string[];
 }
 
 // Интерфейсы для справочников
@@ -958,6 +960,8 @@ class ApiClient {
     if (params.employeeIds !== undefined && params.employeeIds.length > 0)
       query.set("employee_ids", params.employeeIds.join(","));
     if (params.withSummary) query.set("with_summary", "1");
+    if (params.statusNot !== undefined && params.statusNot.length > 0)
+      query.set("status_not", params.statusNot.join(","));
     const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
     const endpoint = `/api/staff_unit/staff-units/directorate/${suffix}`;
 
