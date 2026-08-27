@@ -10,7 +10,11 @@
 """
 from django.db import models
 
-from organization_management.apps.operations.models_vehicle import OpsVehicle
+from organization_management.apps.operations.exceptions import DomainError
+from organization_management.apps.operations.models_vehicle import (
+    OpsEventVehicle,
+    OpsVehicle,
+)
 
 
 def _row(car):
@@ -70,3 +74,81 @@ def armor_classes():
         .distinct()
         if value
     )
+
+
+# ── Выделение транспорта на мероприятие (Plane №215) ────────────────────────
+
+
+def _allocation_row(row):
+    return {
+        "id": str(row.id),
+        "vehicleId": str(row.vehicle_id) if row.vehicle_id is not None else None,
+        # Подпись — СНИМОК: удалённая из реестра машина продолжает называть
+        # себя в истории мероприятия, у которого она была.
+        "label": row.vehicle_label,
+        "callsign": row.callsign,
+        "purpose": row.purpose,
+        # Живые сведения машины — только пока ссылка цела. Их отсутствие
+        # экран обязан отличать от пустого класса брони, поэтому null.
+        "plate": row.vehicle.plate if row.vehicle is not None else None,
+        "armorClass": row.vehicle.armor_class if row.vehicle is not None else None,
+        "position": row.position,
+    }
+
+
+def list_event_vehicles(event):
+    return [
+        _allocation_row(row)
+        for row in event.vehicles.select_related("vehicle").all()
+    ]
+
+
+def allocate_vehicle(event, *, vehicle_id, callsign="", purpose=""):
+    """Выделить машину реестра на мероприятие.
+
+    Снятая с эксплуатации машина не выделяется: `is_active=False` означает
+    «этой машины в парке больше нет», и разрешить её значило бы поставить в
+    кортеж то, чего не существует.
+    """
+    car = OpsVehicle.objects.filter(pk=vehicle_id).first()
+    if car is None:
+        raise DomainError(
+            "VEHICLE_NOT_FOUND", 404, message="Машина не найдена в реестре."
+        )
+    if not car.is_active:
+        raise DomainError(
+            "VEHICLE_RETIRED",
+            422,
+            message="Машина снята с эксплуатации — выделить её нельзя.",
+        )
+    if event.vehicles.filter(vehicle=car).exists():
+        raise DomainError(
+            "VEHICLE_ALREADY_ALLOCATED",
+            422,
+            message="Эта машина уже выделена на мероприятие.",
+        )
+    last = event.vehicles.order_by("-position").values_list(
+        "position", flat=True
+    ).first()
+    OpsEventVehicle.objects.create(
+        event=event,
+        vehicle=car,
+        vehicle_label=f"{car.brand} ({car.plate})",
+        callsign=str(callsign or "").strip(),
+        purpose=str(purpose or "").strip(),
+        position=(last or 0) + 1,
+    )
+    return event
+
+
+def release_vehicle(event, allocation_id):
+    """Снять машину с мероприятия."""
+    row = event.vehicles.filter(pk=allocation_id).first()
+    if row is None:
+        raise DomainError(
+            "ALLOCATION_NOT_FOUND",
+            404,
+            message="Такого выделения на этом мероприятии нет.",
+        )
+    row.delete()
+    return event
