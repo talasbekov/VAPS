@@ -531,6 +531,77 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(details).toBeHidden()
   })
 
+  test('клик по строке бюллетеня раскрывает список, а не уводит в этапы', async ({
+    page,
+  }) => {
+    // Решение заказчика 27.08.2026 (Plane №191), дословно: «При нажатии на
+    // бюллетень только список должен раскрываться».
+    //
+    // Проба стережёт ОБА утверждения, и второе важнее первого: раскрытие
+    // видно глазами, а вот НЕ-переход — нет. Строка прежде вела в карточку, и
+    // проба, проверяющая только раскрытие, зеленела бы и на странице этапов,
+    // где текст объектов тоже есть.
+    const token = await apiToken()
+    const rows = await events(token)
+    const first = rows.find((r) => (r.visitObjects ?? []).length > 0)
+    test.skip(first === undefined, 'на стенде нет ОМ с объектами посещения')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const toggle = page.getByRole('button', {
+      name: `Развернуть объекты посещения ${first!.code}`,
+    })
+    await expect(toggle).toBeVisible({ timeout: 15_000 })
+    const details = page.locator(`#${await toggle.getAttribute('aria-controls')}`)
+    await expect(details).toBeHidden()
+
+    // Бьём в ЯЧЕЙКУ ДАТ, а не в ячейку с кодом: там ссылка, и клик по ней
+    // обязан вести в карточку — это другое требование той же строки.
+    await page
+      .getByRole('row')
+      .filter({ hasText: first!.code })
+      .first()
+      .getByRole('cell')
+      .nth(2)
+      .click()
+
+    await expect(details).toBeVisible()
+    await expect(page).toHaveURL(/\/security-ops\/events\/?(\?.*)?$/)
+
+    // Второй клик по строке — сворачивает: одно действие, обратимое на месте.
+    await page
+      .getByRole('row')
+      .filter({ hasText: first!.code })
+      .first()
+      .getByRole('cell')
+      .nth(2)
+      .click()
+    await expect(details).toBeHidden()
+  })
+
+  test('ссылка в строке бюллетеня по-прежнему ведёт в карточку', async ({ page }) => {
+    // Обратная сторона №191. Убрав переход со строки, легко убрать его вовсе
+    // — и тогда в карточку станет не попасть ничем, кроме стрелки «›» в конце
+    // широкой таблицы. Проба стережёт, что код мероприятия остался ссылкой.
+    const token = await apiToken()
+    const rows = await events(token)
+    test.skip(rows.length === 0, 'реестр стенда пуст')
+    const first = rows[0]!
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page
+      .getByRole('link', { name: new RegExp(first.code) })
+      .first()
+      .click()
+
+    // Идентификатор ОМ на стенде — ЧИСЛО, а не UUID: ассерт по `[0-9a-f-]{36}`
+    // краснел бы на верном переходе.
+    await expect(page).toHaveURL(/\/security-ops\/events\/[^/?]+/, {
+      timeout: 15_000,
+    })
+  })
+
   test('объекты посещения добавляются кнопкой у строки и снимаются', async ({ page }) => {
     // Проба ведёт СВОЁ мероприятие, а не первое попавшееся: добавление меняет
     // данные, и чужая строка реестра после прогона осталась бы с лишним
