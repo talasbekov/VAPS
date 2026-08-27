@@ -47,6 +47,7 @@ import {
   useUpdateRecon,
 } from "@/hooks/use-security-event-stages";
 import { useOperationalRatings } from "@/hooks/use-ops-ratings";
+import { usePlacementRoles } from "@/hooks/use-placement-roles";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import type {
   PersonnelSummarySnapshot,
@@ -115,6 +116,10 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const complete = useCompletePlacement(event.id);
   const updateRecon = useUpdateRecon(event.id);
   const { hasPermission } = useOpsPermissions();
+  // Роли наряда — из справочника раздела (Plane №239). Пустой справочник не
+  // ломает экран: выбор просто не показывается, и это честно — назначать
+  // нечего, пока роли не завели.
+  const placementRoles = usePlacementRoles();
   const canSeeRatings = hasPermission("rating.view_aggregate");
   const ratings = useOperationalRatings({ enabled: canSeeRatings });
 
@@ -749,6 +754,17 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                             code={assignment.statusCode}
                             label={assignment.statusLabel}
                           />
+                          {/* Роль ВИДНА В СТРОКЕ, а не только в выпадающем
+                              списке справа: по ней заполняется бланк, и
+                              «кем человек идёт» должно читаться там же, где
+                              «откуда он и свободен ли» (Plane №239). */}
+                          {assignment.roleCode !== null && (
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground">
+                              {placementRoles.data?.find(
+                                (role) => role.code === assignment.roleCode
+                              )?.label ?? assignment.roleCode}
+                            </span>
+                          )}
                         </span>
                         {(
                           autoReasons[
@@ -799,6 +815,48 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           ? "Снять старшего"
                           : "Старший сектора"}
                       </Button>
+                      {/* Роль наряда: чем человек идёт в наряде, а не что
+                          делает на посту (Plane №239). Смена роли = снятие и
+                          назначение заново — своей операции «сменить роль» у
+                          бэка нет, как и у «переместить» рядом; ознакомление
+                          при этом сбрасывается, и это видно по строке. */}
+                      {placementRoles.data && placementRoles.data.length > 0 && (
+                        <select
+                          aria-label={`Роль наряда: ${assignment.employeeName}`}
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                          value={assignment.roleCode ?? ""}
+                          disabled={
+                            assign.isPending ||
+                            unassign.isPending ||
+                            !access.can(PLACEMENT_MANAGE)
+                          }
+                          aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                          title={access.reason(PLACEMENT_MANAGE)}
+                          onChange={async (e) => {
+                            const nextRole = e.target.value;
+                            if (nextRole === (assignment.roleCode ?? "")) return;
+                            // 🔴 ПО ОЧЕРЕДИ, а не двумя `mutate` подряд:
+                            // назначение и снятие идут в одну и ту же строку
+                            // расстановки, и запущенные разом они гонятся —
+                            // снятие успевает удалить только что созданное
+                            // назначение, а роль на сервер не доезжает вовсе
+                            // (поймано живой пробой, а не типами).
+                            await unassign.mutateAsync({ assignmentId: assignment.id });
+                            await assign.mutateAsync({
+                              postId: assignment.postId,
+                              employeeId: assignment.employeeId,
+                              ...(nextRole === "" ? {} : { roleCode: nextRole }),
+                            });
+                          }}
+                        >
+                          <option value="">Роль не назначена</option>
+                          {placementRoles.data.map((role) => (
+                            <option key={role.code} value={role.code}>
+                              {role.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <select
                         aria-label={`Переместить: ${assignment.employeeName}`}
                         className="h-8 rounded-md border border-input bg-background px-2 text-xs"

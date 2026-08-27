@@ -37,6 +37,14 @@ export interface UseOpsMutationResult<
   TVariables extends Record<string, unknown>,
 > {
   mutate: (variables: TVariables) => void;
+  /**
+   * То же, но с ожиданием (Plane №239). Нужен там, где две мутации идут В ОДНУ
+   * И ТУ ЖЕ строку и порядок между ними несущий: смена роли наряда — это
+   * снятие с поста и назначение заново, и запущенные разом они гонятся —
+   * снятие удаляет только что созданное назначение. Обычный `mutate` такой
+   * последовательности выразить не может.
+   */
+  mutateAsync: (variables: TVariables) => Promise<TData>;
   isPending: boolean;
   error: OpsApiFailure | null;
   /** Открытый overridable-конфликт (канал ConflictDialog); null = диалога нет. */
@@ -131,8 +139,21 @@ export function useOpsMutation<
     rawReset();
   }, [rawReset]);
 
+  const { mutateAsync: rawMutateAsync } = mutation;
+
+  const mutateAsync = useCallback(
+    (variables: TVariables) => {
+      // Тело запоминается так же, как в `mutate`: повтор с обходом
+      // (`confirmOverride`) должен работать и после ожидающего вызова.
+      lastVariablesRef.current = variables;
+      return rawMutateAsync(variables);
+    },
+    [rawMutateAsync]
+  );
+
   return {
     mutate,
+    mutateAsync,
     isPending: mutation.isPending,
     error: mutation.error,
     conflict,
