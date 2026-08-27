@@ -253,3 +253,54 @@ class TestDailyExpenseIntegration:
         # Колонка 12 — «Прикомандирован», колонка 13 — «Откомандирован».
         assert directorate_row[11] == 1
         assert directorate_row[12] == 0
+
+
+@pytest.mark.django_db
+def test_the_missing_template_answers_with_a_reason_and_not_a_500(
+    django_user_model, tmp_path, monkeypatch
+):
+    """Отчёт без шаблона отказывает ВНЯТНО и называет рабочий путь.
+
+    Найдено сквозной проверкой сценария заказчика (Plane №243): ручка отдавала
+    500 с текстом системной ошибки наружу — «[Errno 2] No such file or
+    directory», — а шаблона «расход.xlsx» нет не по пути, а вообще нигде в
+    дереве. Молчаливая 500 хуже отсутствия ручки: её считают сломанной
+    временно и возвращаются, вместо того чтобы пойти в сводку дня раздела ОМ,
+    где документ действительно собирается.
+
+    Красная на мутации: убери проверку существования шаблона — вернётся 500.
+    """
+    from django.conf import settings
+
+    from organization_management.apps.divisions.models import Division
+
+    # ОТКАЗЫВАЕМСЯ ОТ АВТОФИКСТУРЫ `mock_template_path`, и в этом весь смысл
+    # пробы. Фикстура СОЗДАЁТ отсутствующий шаблон во временной папке —
+    # поэтому весь файл проб зелен, а на живом стенде та же ручка отвечает
+    # 500: тесты чинят за код то, чего в поставке нет. Здесь BASE_DIR
+    # переставляется на заведомо пустой каталог, то есть проверяется РЕАЛЬНОЕ
+    # положение дел.
+    empty = tmp_path / "без-шаблона"
+    empty.mkdir()
+    monkeypatch.setattr(settings, "BASE_DIR", str(empty))
+
+    user = django_user_model.objects.create_superuser(
+        username="reports-probe", password="x", email="probe@example.org"
+    )
+    # APIClient с принудительной аутентификацией — как у соседних проб файла:
+    # обычный `client.force_login` DRF-гейт этой ручки не проходит.
+    api = APIClient()
+    api.force_authenticate(user)
+    department = Division.objects.create(
+        name="Департамент пробы",
+        code="DEP-REPORT-PROBE",
+        division_type=Division.DivisionType.DEPARTMENT,
+    )
+
+    response = api.get(f"/api/reports/reports/expense/{department.pk}/")
+
+    assert response.status_code == 400, response.content[:200]
+    detail = response.json()["detail"]
+    assert "расход.xlsx" in detail
+    # Отказ обязан назвать, КУДА идти: иначе он честен, но бесполезен.
+    assert "daily-summaries/export" in detail

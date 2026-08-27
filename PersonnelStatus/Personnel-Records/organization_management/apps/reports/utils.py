@@ -65,6 +65,24 @@ def generate_personnel_expense_report(department_id):
         'apps/reports/расход.xlsx'
     )
 
+    # ШАБЛОНА В РЕПОЗИТОРИИ НЕТ (Plane №243). Найдено сквозной проверкой
+    # сценария заказчика: ручка отвечала 500 с текстом системной ошибки
+    # наружу — «[Errno 2] No such file or directory». Файла нет не по этому
+    # пути, а НИГДЕ: поиск по всему дереву не находит его вовсе.
+    #
+    # Отказ здесь ВНЯТНЫЙ и называет рабочий путь. Молчаливая 500 хуже
+    # отсутствия ручки: человек считает её сломанной временно и возвращается,
+    # вместо того чтобы пойти туда, где документ действительно собирается —
+    # в сводку дня раздела ОМ (`/api/operations/daily-summaries/export/`),
+    # которая умеет CSV, XLSX, DOCX и PDF и строится из подписанных сдач.
+    if not os.path.exists(template_path):
+        raise ValueError(
+            'Шаблон «расход.xlsx» отсутствует в поставке, и этот отчёт не '
+            'собирается. Сводный расход департамента выгружается разделом ОМ: '
+            'GET /api/operations/daily-summaries/export/'
+            '?division_id=<департамент>&business_date=<дата>&file_format=xlsx'
+        )
+
     # Загружаем шаблон
     wb = load_workbook(template_path)
     ws = wb.active
