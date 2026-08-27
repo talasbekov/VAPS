@@ -68,6 +68,46 @@ ASSIGNMENT_CODE = "EVENT_ASSIGNMENT"
 #: когда любой отпуск даёт ровно тот же эффект в отчёте.
 ABSENCE_CODE = "VACATION"
 EVENT_TITLE = "Стенд: мероприятие на запросе сил (фикстура смоука)"
+#: Насколько «из прошлого» первая версия паспорта готового объекта.
+#: 30 дней с запасом накрывают деловые даты, которыми пробы заводят
+#: свои мероприятия (самая ранняя — 22-е число текущего месяца).
+HISTORY_VERSION_DAYS = 30
+#: Паспорт готового объекта. Состав выбран НЕ на глаз: сектор из ДВУХ постов
+#: нужен `forces-gathering` (счётчик сектора обязан быть больше счётчика
+#: одного поста), а три поста всего — `acknowledgement-stage`, которому нужны
+#: минимум два неподтверждённых назначения.
+READY_OBJECT_PASSPORT = [
+    {
+        "name": "Периметр",
+        "posts": [
+            {"name": "Пост 1", "task": "Охрана периметра", "requirements": "Допуск"},
+            {"name": "Пост 2", "task": "Наблюдение", "requirements": "Допуск"},
+        ],
+    },
+    {
+        "name": "КПП",
+        "posts": [
+            {"name": "Пост 3", "task": "Пропускной режим", "requirements": "Допуск"},
+        ],
+    },
+]
+
+
+def _wanted_shape():
+    """Состав паспорта фикстуры как список «постов в секторе»."""
+    return [len(sector["posts"]) for sector in READY_OBJECT_PASSPORT]
+
+
+def _passport_shape(security_object):
+    """Тот же состав, но у ЧЕРНОВИКА объекта."""
+    return [
+        sector.posts.count() for sector in security_object.sectors.order_by("position")
+    ]
+
+
+def _snapshot_shape(version):
+    """И у СНИМКА опубликованной версии — импорт постов читает именно его."""
+    return [len(sector.get("posts") or []) for sector in (version.sectors_snapshot or [])]
 RECON_TITLE = "Стенд: мероприятие на рекогносцировке (фикстура смоука)"
 # Сколько человек выставляем на мероприятие. Три, а не один: проба разносит
 # людей по управлениям и сверяет счётчик вкладки со строками таблицы — на
@@ -381,22 +421,52 @@ class Command(BaseCommand):
                 region="г. Астана",
                 address="пр. Мәңгілік Ел, 1",
             )
-        if not security_object.sectors.exists():
-            passport_service.update_passport(
+        # Состав паспорта СВЕРЯЕТСЯ, а не заводится «если пусто» (Plane №196):
+        # соседние пробы этапов читают его через импорт постов, и одного поста
+        # им мало — `acknowledgement-stage` ищет ОМ, где НЕ ПОДТВЕРЖДЕНО хотя
+        # бы два назначения, а `forces-gathering` проверяет, что счётчик
+        # СЕКТОРА больше счётчика ОДНОГО поста (на секторе из одного поста они
+        # совпадут, и сторож пробы честно объявляет фикстуру негодной).
+        if _passport_shape(security_object) != _wanted_shape():
+            passport_service.update_passport(security_object, READY_OBJECT_PASSPORT)
+            security_object.refresh_from_db()
+        # ── История версий, а не одна сегодняшняя (Plane №196) ──────────
+        # Пробы заводят свои ОМ ПРОШЛОЙ деловой датой, а версия паспорта
+        # привязывается к мероприятию по правилу «последняя, чей
+        # effective_from не позже деловой даты». Пока у объекта была ровно
+        # одна версия, вступившая в силу СЕГОДНЯ, у такого ОМ не находилось
+        # ни одной применимой — `passportBinding` оставался пустым,
+        # `recon/import-from-passport/` отвечал 422 NO_PASSPORT_VERSION, и
+        # проба падала уже на завершении этапа сообщением про пустой расчёт
+        # постов. Виноваты были не посты (они в снимке есть), а даты.
+        #
+        # Порядок публикаций ЗНАЧИМ: свежесть считается по ПОСЛЕДНЕЙ ПО
+        # НОМЕРУ версии, поэтому старая публикуется первой, свежая — второй.
+        # Дописать старую к уже опубликованной сегодняшней нельзя: она стала
+        # бы последней по номеру и объявила бы паспорт просроченным.
+        history_date = day - timedelta(days=HISTORY_VERSION_DAYS)
+        applicable = event_service.resolve_applicable_version(
+            security_object, history_date
+        )
+        if applicable is None or _snapshot_shape(applicable) != _wanted_shape():
+            # Версии этого объекта — целиком фикстурные: объект заводит эта же
+            # команда, живой работы на нём нет. Пересобрать их в правильном
+            # порядке честнее, чем дописывать номер задним числом мимо
+            # сервиса публикации.
+            security_object.passport_versions.all().delete()
+            passport_service.publish_version(
                 security_object,
-                [
-                    {
-                        "name": "Периметр",
-                        "posts": [
-                            {
-                                "name": "Пост 1",
-                                "task": "Охрана периметра",
-                                "requirements": "Допуск",
-                            }
-                        ],
-                    }
-                ],
+                effective_from=history_date.isoformat(),
+                note="Фикстура стенда: версия из прошлого под ОМ прошлой даты.",
+                actor=ACTOR,
             )
+            passport_service.publish_version(
+                security_object,
+                effective_from=day.isoformat(),
+                note="Фикстура стенда: свежая версия паспорта под пробу.",
+                actor=ACTOR,
+            )
+            security_object.refresh_from_db()
         policy = passport_service.read_policy()
         freshness = passport_service.resolve_freshness(security_object, policy, day)
         if freshness["state"] != "FRESH":
@@ -423,6 +493,26 @@ class Command(BaseCommand):
                 "объект фикстуры не стал «зелёным» после публикации версии "
                 f"({security_object.passport_state}) — сломан путь состояния "
                 "паспорта (Plane №66)"
+            )
+        # Сторож фикстуры: ОМ ПРОШЛОЙ датой обязан найти применимую версию.
+        # Без этого пробы этапов падают не своим ассертом, а сообщением про
+        # пустой расчёт постов — то есть врут о причине (Plane №196).
+        applicable = event_service.resolve_applicable_version(
+            security_object, history_date
+        )
+        if applicable is None:
+            raise CommandError(
+                "у объекта фикстуры нет версии паспорта, действующей на "
+                f"{history_date.isoformat()} — ОМ прошлой датой останется без "
+                "привязки, и импорт постов ответит NO_PASSPORT_VERSION "
+                "(Plane №196)"
+            )
+        if _snapshot_shape(applicable) != _wanted_shape():
+            raise CommandError(
+                "версия паспорта, действующая на "
+                f"{history_date.isoformat()}, отдаёт посты "
+                f"{_snapshot_shape(applicable)} вместо {_wanted_shape()} — "
+                "пробам этапов не хватит назначений (Plane №196)"
             )
         return security_object, freshness["state"]
 
@@ -608,15 +698,26 @@ class Command(BaseCommand):
 
         return Employee.objects.count()
 
-    def _some_employees(self, count):
+    def _some_employees(self, count, linked_first=False):
         """Кто угодно из кадров: пробам важен факт назначения, а не человек.
 
         Людей должно хватить на ВСЕ посты фикстуры — иначе расстановка выйдет
         неполной, и проба недобора покраснеет на фикстуре, а не на дефекте.
+
+        `linked_first` ставит вперёд тех, у кого кадровая запись СВЯЗАНА С
+        УЧЁТКОЙ: их и только их видит «мой профиль», и без них история
+        заступлений пуста у любого, кто зашёл на стенд (Plane №196). Имени
+        учётки фикстура при этом не знает и знать не должна — связь одна на
+        всех, и годится любая.
         """
         from organization_management.apps.employees.models import Employee
 
-        people = list(Employee.objects.order_by("id")[:count])
+        if linked_first:
+            linked = list(Employee.objects.filter(user__isnull=False).order_by("id"))
+            rest = list(Employee.objects.filter(user__isnull=True).order_by("id"))
+            people = (linked + rest)[:count]
+        else:
+            people = list(Employee.objects.order_by("id")[:count])
         if len(people) < count:
             raise CommandError(
                 f"в кадрах {len(people)} сотрудников, фикстуре нужно {count} — "
@@ -640,7 +741,14 @@ class Command(BaseCommand):
         """
         existing = OpsSecurityEvent.objects.filter(title=CLOSED_TITLE).first()
         if existing is not None and existing.stage == "CLOSED":
-            return existing
+            # Закрытое БЕЗ ИТОГОВ НАПРАВЛЕНИЙ не годится: архив дела проверяет
+            # именно их, и проба `closure-stage` падает сторожем «на стенде
+            # нет фикстуры». Такое ОМ оставалось на стенде от прежних заходов,
+            # когда расчёт постов у него выходил пустым (Plane №196) —
+            # направления берутся из секторов расчёта, и без постов их ноль.
+            if existing.closure_direction_summaries and existing.placement_assignments:
+                return existing
+            existing.delete()
         persons = list(OpsProtectedPerson.objects.filter(is_active=True)[:2])
         if len(persons) < 2:
             raise CommandError(
@@ -667,12 +775,46 @@ class Command(BaseCommand):
             protected_person_id=str(persons[0].pk),
             actor=ACTOR,
         )
+        # Расчёт постов — ИМПОРТОМ ИЗ ПАСПОРТА, а не пустой: итоги закрытия
+        # собираются ПО НАПРАВЛЕНИЯМ, а направления — это секторы расчёта.
+        # Пока расчёт был пуст, `close_event` получал пустой список итогов, и
+        # закрытое ОМ на стенде было закрыто «ни по чему» (Plane №196).
+        event = event_service.import_recon_from_passport(event.id)
         # Второй объект — с ДРУГИМ лицом: ровно та пара, на которой видно, что
         # история лица показывает его объекты, а не все объекты мероприятия.
         event_service.add_visit_object(
             event.id,
             object_id=str(second_object.pk),
             protected_person_id=str(persons[1].pk),
+        )
+        # ЛЮДИ НА ПОСТАХ, а не пустая расстановка (Plane №196): вкладка
+        # «История» своего профиля показывает закрытые ОМ, в расстановке
+        # которых человек НАЗВАН, и оттуда же берёт форму одежды, вооружение и
+        # балл. Пока закрытое ОМ стенда стояло без единого назначения, история
+        # была пуста у всех, и колонки таблицы на экране не появлялись вовсе —
+        # проба «мой профиль» падала на них.
+        event = event_service.update_recon(
+            event.id,
+            checklist=[
+                {**item, "done": True} for item in (event.recon_checklist or [])
+            ],
+            sector_posts=event.recon_sector_posts,
+        )
+        if event.stage == "RECON":
+            event = event_service.complete_recon(event.id)
+        # ОДИН человек, а не полная расстановка. Истории заступлений хватает
+        # одного НАЗВАННОГО, а полная расстановка сравнялась бы по числу
+        # назначенных с ОМ на «Проведении» — и проба порядка в аналитике
+        # («поиск и порядок правят снимок обратимо») упиралась бы в
+        # собственного сторожа «порядок сервера уже совпал с сортировкой по
+        # назначенным — проба вакуумна»: сортировать было бы нечего.
+        people = self._some_employees(1, linked_first=True)
+        event = event_service.assign_placement(
+            event.id,
+            post_id=event.recon_sector_posts[0]["id"],
+            employee_id=str(people[0].pk),
+            override=None,
+            override_reason=None,
         )
         # На «Закрыто» перевода нет и быть не должно: закрывают ИТОГАМИ
         # направлений, а не переводом этапа. Поэтому фикстура доводится до
@@ -684,6 +826,11 @@ class Command(BaseCommand):
         directions = sorted(
             {row.get("sector") for row in (event.recon_sector_posts or [])}
         )
+        if not directions:
+            raise CommandError(
+                "у закрытого ОМ фикстуры нет ни одного направления — расчёт "
+                "постов пуст, и архив дела проверять нечем (Plane №196)"
+            )
         return event_service.close_event(
             event.id,
             direction_summaries=[

@@ -23,6 +23,7 @@
  * воркер, и сверка с живым ответом проверяла бы мок. Разделу ОМ мок не нужен.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -71,6 +72,7 @@ interface ObjectRow {
   passportState: 'GREEN' | 'YELLOW' | 'RED'
   ownership: 'OWN' | 'GUARDED'
   hasSecurityEvents: boolean
+  sectors: { name: string; posts: unknown[] }[]
 }
 
 interface Registry {
@@ -170,8 +172,16 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
   })
 
   test('набранный черновик переживает уход на другую вкладку', async ({ page }) => {
+    // Объект с НЕПУСТЫМ паспортом, а не первый попавшийся (Plane №196):
+    // предмет пробы — набранный черновик в поле сектора, а у объекта без
+    // секторов полей нет вовсе, и проба падала на «поле не найдено», не
+    // добравшись до своего вопроса. Первым в реестре стоит «Отан» —
+    // объект заказчика, паспорт которого никто не заполнял.
     const snapshot = await registry(await apiToken())
-    const object = snapshot.results[0]
+    const object = requireFixture(
+      snapshot.results.find((row) => row.sectors.length > 0),
+      'объект с непустым паспортом (секторы и посты)',
+    )
 
     await signIn(page)
     await page.goto(`${APP}${SCREEN}/${object.id}?tab=posts`)
@@ -202,8 +212,16 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
    * при проходе через неё. Красная проба на этот ассерт — в отчёте задачи.
    */
   test('набранный черновик переживает уход через новую макетную вкладку', async ({ page }) => {
+    // Объект с НЕПУСТЫМ паспортом, а не первый попавшийся (Plane №196):
+    // предмет пробы — набранный черновик в поле сектора, а у объекта без
+    // секторов полей нет вовсе, и проба падала на «поле не найдено», не
+    // добравшись до своего вопроса. Первым в реестре стоит «Отан» —
+    // объект заказчика, паспорт которого никто не заполнял.
     const snapshot = await registry(await apiToken())
-    const object = snapshot.results[0]
+    const object = requireFixture(
+      snapshot.results.find((row) => row.sectors.length > 0),
+      'объект с непустым паспортом (секторы и посты)',
+    )
 
     await signIn(page)
     await page.goto(`${APP}${SCREEN}/${object.id}?tab=posts`)
