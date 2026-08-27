@@ -1135,6 +1135,8 @@ GET /api/ops/event-documents/render/?kind=placement_full&event=ОМ-2026-4&ext=d
 
 ## 27.08.2026 — старший наряда назначается после создания бюллетеня (Plane №190)
 
+Коммит `b541c6c7`.
+
 Сервер: `set_event_chief` + `POST /api/ops/security-events/<id>/chief/`; объект
 посещения, заведённый вместе с бюллетенем, наследует старшего мероприятия.
 Журнал: новое действие `SECURITY_EVENT_CHIEF_SET` с подписью «Назначен старший
