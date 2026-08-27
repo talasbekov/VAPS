@@ -5,7 +5,12 @@
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { TrafficLightNode } from "@/lib/api";
 
-// ── Каталог статус-типов (зеркало seed-каталога бэка, 17 типов) ──────────
+// ── Каталог статус-типов (зеркало seed-каталога бэка, 18 типов) ──────────
+//
+// 18, а не 17, с 28.08.2026: участие в ОМ делится на боевую группу и
+// физический наряд (сценарий заказчика, Plane №243). Обе строки отчитываются
+// в колонку «В строю» — человек на мероприятии из строя не выбывает, — а
+// различает их справочный счётчик расхода.
 
 export interface StatusOption {
   code: string;
@@ -27,7 +32,11 @@ export const STATUS_TYPE_OPTIONS: StatusOption[] = [
   { code: "BEFORE_DUTY", label: "Перед дежурством" },
   { code: "DUTY", label: "На дежурстве" },
   { code: "GEV", label: "Группа экстренного выезда" },
-  { code: "EVENT_ASSIGNMENT", label: "Привлечён на мероприятие" },
+  { code: "EVENT_ASSIGNMENT", label: "Привлечён на мероприятие (наряд)" },
+  {
+    code: "EVENT_ASSIGNMENT_GROUP",
+    label: "Привлечён на мероприятие (боевая группа)",
+  },
   { code: "PENDING_CLARIFICATION", label: "Уточняется" },
   { code: "IN_SERVICE", label: "В строю" },
 ];

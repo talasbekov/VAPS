@@ -40,10 +40,28 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
+interface EventInvolvement {
+  total: number
+  group: number
+  squad: number
+}
+
 interface StrengthReport {
   business_date: string
-  rows: { division_id: number; name: string; list_total: number; columns: Record<string, number> }[]
-  totals: { staff_total: number; list_total: number; columns: Record<string, number> }
+  rows: {
+    division_id: number
+    name: string
+    list_total: number
+    columns: Record<string, number>
+    /** Занятость мероприятиями — справочно, вне суммы колонок (Plane №243). */
+    event: EventInvolvement
+  }[]
+  totals: {
+    staff_total: number
+    list_total: number
+    columns: Record<string, number>
+    event: EventInvolvement
+  }
 }
 
 // Форма `staff-units/directorate/` на живом стенде — ПЛОСКАЯ (одна
@@ -606,5 +624,54 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     // Даём сети шанс уйти, если бы запросы всё-таки отправились.
     await page.waitForTimeout(1000)
     expect(closedEndpointCalls, 'запрос ушёл в закрытую правом ручку').toEqual([])
+  })
+})
+
+test.describe(LIVE ? 'расход: занятость ОМ' : 'расход: занятость ОМ (скип: нет SMOKE_LIVE=1)', () => {
+  test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+
+  test('колонка «На ОМ» показывает занятость мероприятиями и её деление', async ({
+    page,
+  }) => {
+    // Сценарий заказчика (Plane №243): ответственный сводит расход «для
+    // участия в ОМ» и отправляет цифру штабу. До этой правки цифры не было
+    // вовсе — привлечённые растворялись в «В строю».
+    const token = await apiToken()
+    const report = await get<StrengthReport>(
+      token,
+      '/api/operations/strength-report/',
+    )
+    // Сторож вакуумности: на расходе без единого привлечённого колонка
+    // показывает прочерки, и проверять в ней нечего.
+    const busy = report.rows.find((row) => row.event.total > 0)
+    test.skip(
+      busy === undefined,
+      'на стенде никто не привлечён на ОМ — колонку проверять не на чем ' +
+        '(проставьте статус EVENT_ASSIGNMENT или EVENT_ASSIGNMENT_GROUP)',
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/reports/`)
+    // Расход на этом экране показывается ПО КНОПКЕ, а не сразу: страница
+    // спрашивает дату, и таблицы до нажатия нет вовсе.
+    await page.getByRole('button', { name: 'Показать расход' }).click()
+    // Ищем по `th`, а не по роли `columnheader`: примитив таблицы задаёт
+    // ячейкам блочную раскладку, и неявная роль таблицы при этом теряется —
+    // `getByRole('columnheader')` не находит на этом экране НИ ОДНОГО
+    // заголовка, включая «Подразделение» (проверено).
+    await expect(page.locator('th', { hasText: 'На ОМ' })).toBeVisible({
+      timeout: 20_000,
+    })
+
+    const row = page.locator('tbody tr').filter({ hasText: busy!.name }).first()
+    // Число И его расшифровка: сумма без деления не отвечает на вопрос
+    // «группами или нарядом», ради которого счётчик и заводился.
+    await expect(row).toContainText(String(busy!.event.total))
+    await expect(row).toContainText(`${busy!.event.group} гр.`)
+    await expect(row).toContainText(`${busy!.event.squad} нар.`)
+
+    // Занятость НЕ вычтена из «В строю»: человек на мероприятии остаётся в
+    // строю, и колонка справочная (Plane №169 и №243).
+    expect(busy!.columns.IN_SERVICE).toBeGreaterThanOrEqual(busy!.event.total)
   })
 })
