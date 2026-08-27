@@ -6,7 +6,15 @@ __pycache__/
 # C extensions
 *.so
 
-./organization_management/media/
+# 🔴 Путь БЕЗ «./» (Plane №241). Строка «./organization_management/media/» не
+# ловила ничего: git сверяет шаблон с путём относительно .gitignore, и точка со
+# слэшем в начале делает его недостижимым. Из-за этого каталог с аватарками —
+# 111 МБ, которые кладёт сид №205, — висел в `git status` у каждого, кто
+# поднимал стенд, и ждал случайного `git add .`.
+organization_management/media/
+# Две строки ниже оставлены КАК БЫЛИ, хотя «./» в них тот же: файлы по этим
+# путям УЖЕ отслеживаются (163 файла статики), и менять им правило — отдельное
+# решение, а не побочный эффект правки медиа.
 ./organization_management/staticfiles/
 ./organization_management/apps/employees/management/commands/Employees.csv
 
