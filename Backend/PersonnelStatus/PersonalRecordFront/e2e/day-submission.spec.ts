@@ -93,6 +93,20 @@ async function signIn(page: Page): Promise<void> {
  * (Plane №235) печатает путь и кладёт «имя · путь» в `aria-label`; проба
  * адресует строку так же, как её читает человек.
  */
+// Путь в СКОБКАХ — формат строки «Не сдали» (перечисление через запятую, где
+// разделитель «·» читался бы как ещё один элемент списка); шапки групп при
+// этом остаются в формате `имя · путь` — см. `divisionLabels` (Plane №249).
+async function divisionParenLabels(token: string): Promise<Map<string, string>> {
+  const rows = await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
+    token, '/api/ops/daily/divisions/')
+  const labels = new Map<string, string>()
+  for (const row of rows.results) {
+    const path = row.ancestors ?? []
+    labels.set(String(row.id), path.length > 0 ? `${row.name} (${path.join(' › ')})` : row.name)
+  }
+  return labels
+}
+
 async function divisionLabels(token: string): Promise<Map<string, string>> {
   const rows = await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
     token, '/api/ops/daily/divisions/')
@@ -276,7 +290,10 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     const notSubmittedBefore = report.rows
       .filter((row) => !submittedIdsBefore.has(String(row.division_id)))
       .map((row) => ({ id: String(row.division_id), name: row.name }))
-    const notSubmittedNamesBefore = notSubmittedBefore.map((row) => row.name)
+    const parenLabels = await divisionParenLabels(token)
+    const notSubmittedNamesBefore = notSubmittedBefore.map(
+      (row) => parenLabels.get(row.id) ?? row.name,
+    )
 
     const captured: { body: DaySubmissionBody | null } = { body: null }
     await interceptSubmit(page, captured, targetDivisionId, report.business_date)
@@ -335,7 +352,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     )
     const notSubmittedNamesAfter = notSubmittedBefore
       .filter((row) => row.id !== targetDivisionId)
-      .map((row) => row.name)
+      .map((row) => parenLabels.get(row.id) ?? row.name)
     if (notSubmittedNamesAfter.length > 0) {
       await expect(summary.locator('p').nth(1)).toHaveText(
         `Не сдали: ${notSubmittedNamesAfter.join(', ')}`,

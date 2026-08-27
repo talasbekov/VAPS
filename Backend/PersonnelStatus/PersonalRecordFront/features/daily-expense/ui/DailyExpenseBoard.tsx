@@ -582,7 +582,18 @@ export function DailyExpenseBoard() {
               </p>
               {notSubmittedRows.length > 0 && (
                 <p className="mt-1 text-muted-foreground">
-                  Не сдали: {notSubmittedRows.map((row) => row.name).join(", ")}
+                  {/* Имя + путь: одноимённых управлений на реальной структуре
+                      трое, и перечисление одних имён читалось как «не сдало
+                      одно и то же управление трижды» (Plane №249). */}
+                  Не сдали:{" "}
+                  {notSubmittedRows
+                    .map((row) => {
+                      const path = pathByDivision.get(String(row.division_id)) ?? [];
+                      return path.length > 0
+                        ? `${row.name} (${path.join(" › ")})`
+                        : row.name;
+                    })
+                    .join(", ")}
                 </p>
               )}
             </>

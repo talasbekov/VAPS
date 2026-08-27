@@ -1244,7 +1244,39 @@ function StatusDonut({ report }: { report: StrengthReport }) {
 }
 
 /** «Сравнение подразделений»: строки расхода с поиском и режимом диаграммы. */
+/**
+ * Путь до подразделения по его идентификатору (Plane №249).
+ *
+ * 🔴 Имена уникальны только внутри родителя: на структуре из трёх
+ * департаментов «Второе сквозное управление» есть в каждом, и таблица
+ * сравнения печатала три одинаковые строки — по ней нельзя было сказать, чьё
+ * управление отстаёт.
+ *
+ * Путь берётся у лёгкой ручки подразделений, а не у службы расхода: её
+ * контракт читают выгрузки DOCX/CSV/XLSX, и менять его ради подписи на экране
+ * нельзя (то же решение, что на борде расхода, №235).
+ */
+function useDivisionPaths() {
+  const query = useQuery<{ results: { id: string; name: string; ancestors?: string[] }[] }>({
+    queryKey: ["ops-daily", "divisions", "paths"],
+    queryFn: () =>
+      opsApiClient.get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
+        "/api/ops/daily/divisions/"
+      ),
+    staleTime: 5 * 60_000,
+  });
+  return useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of query.data?.results ?? []) {
+      const path = row.ancestors ?? [];
+      if (path.length > 0) map.set(String(row.id), path.join(" › "));
+    }
+    return map;
+  }, [query.data]);
+}
+
 function DivisionComparison({ report }: { report: StrengthReport }) {
+  const paths = useDivisionPaths();
   const [search, setSearch] = useState("");
   const [asChart, setAsChart] = useState(false);
 
@@ -1252,8 +1284,12 @@ function DivisionComparison({ report }: { report: StrengthReport }) {
     const needle = search.trim().toLowerCase();
     return needle === ""
       ? report.rows
-      : report.rows.filter((row) => row.name.toLowerCase().includes(needle));
-  }, [report.rows, search]);
+      : report.rows.filter((row) =>
+          `${row.name} ${paths.get(String(row.division_id)) ?? ""}`
+            .toLowerCase()
+            .includes(needle)
+        );
+  }, [report.rows, search, paths]);
 
   return (
     <section
@@ -1307,7 +1343,14 @@ function DivisionComparison({ report }: { report: StrengthReport }) {
           {rows.map((row) => (
             <li key={row.division_id}>
               <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="truncate">{row.name}</span>
+                <span className="truncate">
+                  {row.name}
+                  {paths.get(String(row.division_id)) && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {paths.get(String(row.division_id))}
+                    </span>
+                  )}
+                </span>
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                   укомплектованность{" "}
                   {row.staff_total === 0
@@ -1354,7 +1397,16 @@ function DivisionComparison({ report }: { report: StrengthReport }) {
           <TableBody>
             {rows.map((row: StrengthReportRow) => (
               <TableRow key={row.division_id}>
-                <TableCell>{row.name}</TableCell>
+                <TableCell>
+                  {row.name}
+                  {/* Путь — подписью под именем: одноимённых управлений на
+                      реальной структуре трое (Plane №249). */}
+                  {paths.get(String(row.division_id)) && (
+                    <span className="block text-xs text-muted-foreground">
+                      {paths.get(String(row.division_id))}
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="tabular-nums">{row.staff_total}</TableCell>
                 <TableCell className="tabular-nums">{row.list_total}</TableCell>
                 <TableCell className="tabular-nums">{row.vacancies}</TableCell>
