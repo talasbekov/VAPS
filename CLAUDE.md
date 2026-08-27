@@ -13,7 +13,7 @@ Smart Josparlau: Personnel Records (в разработке). Эталон фо�
 | Бэкенд — Django/DRF, PostgreSQL | `organization_management/apps/*` | `pytest` по всем приложениям; схема API — `schema.yaml` / `/api/schema/` |
 | Фронтенд — Next.js + TypeScript | `Backend/PersonnelStatus/PersonalRecordFront` (стенд `next dev` :3106, прод-стенд `npm run stand:prod` :3108), `frontend/` | `npm run gate:front` (`tsc` + прод-сборка) + `npm run smoke:prod` (весь смоук по прод-стенду); обход портала — отдельным `playwright.walk.config.ts`, блоками по персонам |
 | Задачи | Plane http://localhost:8090, workspace `vaps`, проект **Smart Josparlau** | `plane_task.py` (ниже) |
-| Знания, журнал, дефекты | `obsidian-vault/` — вход `00-Index.md` | — |
+| Знания, журнал, дефекты | `obsidian-vault/` — вход `00-Index.md`; тот же каталог виден Obsidian по адресу `/home/erda/Музыка/Obsidian_brain/smart_josparlau_vault/` (симлинк, см. ниже) | — |
 | Секреты | `~/.config/vaps/` (ключ Plane, пароль стенда) | в репозиторий и в текст команд не попадают |
 
 Заморожено: `.claude/memory` и `docs/api-gaps.md` (с 19.08.2026, снапшот — `obsidian-vault/Archive/`), ClickUp (с 24.08.2026; старые id вида `86eyqf5dc` остались в описаниях задач). BMAD — в `Archive/bmad-process/`, стори-цикл спит с 10.08.2026.
@@ -135,6 +135,8 @@ NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,objects,access NEXT_DIST_DIR=.next-
 Прямой API Plane: `GET/PATCH http://localhost:8090/api/v1/workspaces/vaps/projects/<project-id>/issues/`, заголовок `X-API-Key`. Стек и доступы — `/home/erda/plane/README-vaps.md`, `/home/erda/plane/CREDENTIALS.txt`.
 
 ## Obsidian vault — источник правды
+
+Каталог ОДИН: `obsidian-vault/` в репозитории. Адрес `/home/erda/Музыка/Obsidian_brain/smart_josparlau_vault/` — симлинк на него (решение №184 от 27.08.2026): Obsidian открывает vault по своему привычному адресу, а содержимое при этом лежит под git и уезжает в коммит вместе с кодом. Второй копии больше нет — писать можно по любому из двух путей, это один и тот же файл. Если симлинк когда-нибудь окажется настоящим каталогом — это разошедшаяся копия, и её надо свести обратно, а не писать в неё.
 
 Два слоя:
 
