@@ -221,6 +221,8 @@ export interface DirectorateQuery {
   divisionId?: number | string;
   /** Код действующего статуса либо `none` — «статуса нет». */
   status?: string;
+  /** Должности не ниже уровня (`level <= N`): так отбирается руководство. */
+  positionLevelMax?: number;
 }
 
 // Интерфейсы для справочников
@@ -941,6 +943,8 @@ class ApiClient {
     if (params.search) query.set("search", params.search);
     if (params.divisionId) query.set("division_id", String(params.divisionId));
     if (params.status) query.set("status", params.status);
+    if (params.positionLevelMax !== undefined)
+      query.set("position_level_max", String(params.positionLevelMax));
     const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
     const endpoint = `/api/staff_unit/staff-units/directorate/${suffix}`;
 

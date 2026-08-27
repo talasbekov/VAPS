@@ -23,7 +23,7 @@ import { useQueries } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
-import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 
 /** Порог уровня должности: `level <= LEADERSHIP_MAX_LEVEL` — «руководство».
  * 0 не подошёл бы (уровней с 0 в каталоге нет — блок был бы пуст всегда),
@@ -89,7 +89,20 @@ function SkeletonRows() {
 }
 
 export function LeadershipStrip({ businessDate }: { businessDate: string }) {
-  const staffUnits = useStaffUnitsByDirectorate();
+  // Отбор по уровню должности делает СЕРВЕР (Plane №235). До этого полоска
+  // звала `useStaffUnitsByDirectorate()` — весь состав подразделения — и
+  // отбирала руководство в браузере: десяток строк ценой 2,7 МБ на пяти
+  // тысячах сотрудников. Причём полоска живёт на экране реестра, который уже
+  // перешёл на страницы, то есть полный запрос никуда не делся — он просто
+  // принадлежал ей.
+  //
+  // `pageSize` — потолок ручки: руководителей заведомо меньше, а вторая
+  // страница у полоски означала бы, что часть руководства не показана.
+  const staffUnits = useStaffUnitsPage({
+    positionLevelMax: LEADERSHIP_MAX_LEVEL,
+    page: 1,
+    pageSize: 200,
+  });
 
   const leaders = useMemo<LeaderVM[]>(() => {
     const raw = (staffUnits.data?.staff_units ?? []) as unknown as RawStaffUnit[];
@@ -98,6 +111,10 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
       const position = unit.position;
       const employee = unit.employee;
       const divisionId = unit.division?.id;
+      // Порог остался ЗДЕСЬ ТОЖЕ, хотя отбирает уже сервер: клиент не обязан
+      // верить, что параметр доехал (старый кэш, прокси, чужая правка ручки),
+      // а строка «Инспектор» в блоке «Руководство департамента» — это ошибка,
+      // которую увидит заказчик, а не мы.
       if (!position || position.level > LEADERSHIP_MAX_LEVEL) continue;
       // Вакантная должность руководителя — некого показать строкой: у
       // `DivisionGroup` та же логика (список людей, а не штатных единиц).

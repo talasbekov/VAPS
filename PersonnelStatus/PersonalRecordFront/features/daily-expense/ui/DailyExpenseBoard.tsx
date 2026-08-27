@@ -19,7 +19,7 @@
 // (со своим собственным внутренним запросом истории версий) монтируется
 // ТОЛЬКО при раскрытии строки — при схлопывании её место занимает лёгкий
 // бейдж, собранный из ТОГО ЖЕ списочного ответа, без нового запроса.
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,7 @@ import { opsApiClient } from "@/lib/ops-api";
 import { useStrengthReport } from "@/hooks/use-strength-report";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
+  DAILY_DIVISIONS_PATH,
   DAILY_EMPLOYEES_PATH,
   DAILY_SUBMISSIONS_PATH,
   STATUS_LABEL_BY_CODE,
@@ -82,6 +83,8 @@ function statusLabel(code: string | null): string {
 export interface DivisionRowVM {
   id: number;
   name: string;
+  /** Путь до подразделения СВЕРХУ ВНИЗ, без корня организации (Plane №235). */
+  path: string[];
   listTotal: number;
   columns: Record<string, number>;
 }
@@ -202,7 +205,14 @@ function DivisionGroup({
     // таблицу) ОДНИМ именем управления: без своего имени на контейнере пробе
     // было бы нечем отличить кнопку «Сдать день» ЭТОГО управления от кнопки
     // соседнего в плоском дереве ролей.
-    <div className="rounded-lg border" role="group" aria-label={row.name}>
+    <div
+      className="rounded-lg border"
+      role="group"
+      // Имя группы несёт путь: три одноимённых управления в разных
+      // департаментах иначе неразличимы ни для скринридера, ни для проб
+      // (Plane №235).
+      aria-label={row.path.length > 0 ? `${row.name} · ${row.path.join(" › ")}` : row.name}
+    >
       <button
         type="button"
         aria-expanded={open}
@@ -214,7 +224,18 @@ function DivisionGroup({
             className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-90")}
             aria-hidden
           />
-          {row.name}
+          <span className="flex flex-col">
+            {row.name}
+            {/* Имена подразделений уникальны только внутри родителя: на
+                структуре из тридцати шести департаментов «Второе сквозное
+                управление» встречается в каждом, и три одинаковые строки
+                подряд не давали ответить, чей день сдаёшь (Plane №235). */}
+            {row.path.length > 0 && (
+              <span className="text-xs font-normal text-muted-foreground">
+                {row.path.join(" › ")}
+              </span>
+            )}
+          </span>
         </span>
         <span className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" className="tabular-nums">
@@ -262,7 +283,12 @@ function DivisionGroup({
       </div>
 
       {everOpened && (
-        <div hidden={!open} role="region" aria-label={row.name} className="border-t">
+        <div
+          hidden={!open}
+          role="region"
+          aria-label={row.path.length > 0 ? `${row.name} · ${row.path.join(" › ")}` : row.name}
+          className="border-t"
+        >
           <Table>
             <TableHeader>
               <TableRow>
@@ -325,6 +351,26 @@ export function DailyExpenseBoard() {
   const gateAllowed = !permissionsLoading && canRead;
   const strength = useStrengthReport(gateAllowed);
   const queryClient = useQueryClient();
+
+  // Путь до подразделения приходит ОТДЕЛЬНЫМ лёгким списком
+  // (`/api/ops/daily/divisions/`, Plane №235), а не полем строки расхода:
+  // строка расхода собирается службой отчёта, которую читают ещё и выгрузки
+  // DOCX/CSV/XLSX, и ради подписи на экране её контракт не трогаем.
+  const divisionsQuery = useQuery<{ results: { id: string; name: string; ancestors?: string[] }[] }>({
+    queryKey: ["daily-expense-board", "divisions"],
+    queryFn: () =>
+      opsApiClient.get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
+        DAILY_DIVISIONS_PATH
+      ),
+    staleTime: 5 * 60_000,
+  });
+  const pathByDivision = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const row of divisionsQuery.data?.results ?? []) {
+      map.set(String(row.id), row.ancestors ?? []);
+    }
+    return map;
+  }, [divisionsQuery.data]);
   const [openIds, setOpenIds] = useState<Set<number>>(new Set());
 
   const toggle = (id: number) => {
@@ -570,6 +616,7 @@ export function DailyExpenseBoard() {
             const vm: DivisionRowVM = {
               id: row.division_id,
               name: row.name,
+              path: pathByDivision.get(String(row.division_id)) ?? [],
               listTotal: row.list_total,
               columns: row.columns,
             };

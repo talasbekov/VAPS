@@ -4,7 +4,7 @@ from django.db.models import OuterRef, Q, Subquery
 from django.db.models.query import Prefetch
 from django.utils.dateparse import parse_date
 from rest_framework import viewsets, permissions, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.decorators import action
@@ -392,6 +392,12 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             ),
             OpenApiParameter("division_id", int, description="Только это подразделение."),
             OpenApiParameter(
+                "position_level_max", int, description=(
+                    "Должности не ниже уровня (`level <= N`; чем меньше число, тем выше "
+                    "должность). Так отбирается руководство."
+                )
+            ),
+            OpenApiParameter(
                 "status", str, description=(
                     "Код ДЕЙСТВУЮЩЕГО статуса; `none` — те, у кого статуса нет."
                 )
@@ -641,6 +647,24 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         division_id = request.query_params.get('division_id')
         if division_id:
             queryset = queryset.filter(division_id=division_id)
+
+        # Уровень должности («чем меньше число, тем выше»). Нужен полоске
+        # руководства: ей десяток строк, а тянула она весь состав
+        # подразделения — 2,7 МБ на пяти тысячах человек (Plane №235).
+        # Отбор именно ПО УРОВНЮ, а не по списку кодов должностей: уровень —
+        # серверная иерархия, а список кодов пришлось бы держать на клиенте и
+        # чинить при каждой новой должности.
+        level_max = request.query_params.get('position_level_max')
+        if level_max not in (None, ''):
+            try:
+                queryset = queryset.filter(position__level__lte=int(level_max))
+            except (TypeError, ValueError):
+                # Мусор в параметре — это не «покажи всё»: молча отдать полный
+                # состав значит вернуть ровно ту нагрузку, от которой отбор и
+                # защищает.
+                raise ValidationError(
+                    {'position_level_max': 'Ожидается целое число.'}
+                )
 
         status_code = (request.query_params.get('status') or '').strip()
         if status_code:

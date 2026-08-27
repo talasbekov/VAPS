@@ -20,17 +20,48 @@ from organization_management.apps.operations.services import PermissionService
 
 
 def visible_division_rows(actor_id, permission_code):
-    """Подразделения области актора: [{id: str, name}] в порядке имени.
+    """Подразделения области актора: [{id: str, name, ancestors}] по имени.
 
     None от резолвера (wildcard/безскоуповый грант) разворачивается во всё
     дерево — экрану нужен конкретный список, а не «всё».
+
+    `ancestors` — путь до подразделения СВЕРХУ ВНИЗ, без корня организации
+    (Plane №235). Имена уникальны только внутри родителя: на реальной
+    структуре «Второе сквозное управление» есть в каждом департаменте, и
+    экран расхода показывал три одинаковые строки подряд — а по ним человек
+    решает, чей день сдавать. Корень отброшен сознательно: организация одна,
+    её имя в каждой строке — шум.
     """
+    from organization_management.apps.divisions.models import Division
+
     allowed = PermissionService.visible_division_ids(actor_id, permission_code)
     if allowed is None:
         allowed = DivisionTreeSelector.all_ids()
     names = DivisionTreeSelector.names_map(allowed)
+
+    # Дерево целиком ОДНИМ запросом: путь строится по `parent_id` в памяти.
+    # Запрос предков на строку дал бы N+1 ровно там, где строк больше всего.
+    tree = {
+        row["id"]: row
+        for row in Division.objects.values("id", "name", "parent_id", "division_type")
+    }
+
+    def ancestors_of(division_id):
+        path, cursor = [], tree.get(division_id, {}).get("parent_id")
+        while cursor is not None and cursor in tree:
+            node = tree[cursor]
+            if node["division_type"] != Division.DivisionType.ORGANIZATION:
+                path.append(node["name"])
+            cursor = node["parent_id"]
+        path.reverse()
+        return path
+
     return [
-        {"id": str(division_id), "name": name}
+        {
+            "id": str(division_id),
+            "name": name,
+            "ancestors": ancestors_of(division_id),
+        }
         for division_id, name in sorted(names.items(), key=lambda kv: kv[1])
     ]
 
