@@ -4,7 +4,7 @@
 // разметка ошибки и фокус — в `shared/lib/form`; здесь остаётся только то, что
 // относится к массовому обновлению: разбор выбранных строк, сборка запроса и
 // чтение ответа ручки.
-import { useState } from "react";
+import { useState, useMemo} from "react";
 import { Controller } from "react-hook-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,8 @@ import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { apiClient } from "@/lib/api";
 import { removeDutyAssignment } from "@/entities/duty-assignment";
-import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { employeeIdOfKey } from "../model/row-key";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_LABELS,
@@ -80,8 +81,25 @@ export function MassStatusUpdate({
   // нечем. Поэтому отдельное состояние, живущее до следующего сабмита.
   const [failures, setFailures] = useState<string[]>([]);
 
-  // Используем React Query для загрузки данных
-  const { data } = useStaffUnitsByDirectorate();
+  // Штатные единицы ВЫБРАННЫХ сотрудников, а не весь состав подразделения
+  // (Plane №234): диалог ищет в ответе ровно те строки, которые человек
+  // отметил галочками, и на пяти тысячах сотрудников полный ответ означал
+  // 2,7 МБ ради десятка.
+  //
+  // Ключи выбора приходят строкой `${staffUnitId}-${employeeId}` — сюда
+  // уходят только идентификаторы людей; вакантные слоты (`vacant-…`) в
+  // массовую правку не попадают.
+  const selectedEmployeeIds = useMemo(
+    () =>
+      selectedEmployees
+        .map(employeeIdOfKey)
+        .filter((id): id is number => id !== null),
+    [selectedEmployees]
+  );
+  const { data } = useStaffUnitsPage(
+    { employeeIds: selectedEmployeeIds, pageSize: 200 },
+    selectedEmployeeIds.length > 0
+  );
   const staffUnits = data?.staff_units || [];
 
   const statusTypes = SELECTABLE_STATUS_ITEMS.map((item) => ({

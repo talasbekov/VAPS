@@ -197,3 +197,34 @@ def test_a_broken_level_is_a_loud_refusal(actor, scene):
 
     assert response.status_code == 400, response.data
     assert "position_level_max" in response.data
+
+
+def test_filter_by_employee_ids(actor, scene):
+    """Диалогу статусов нужна ОДНА строка, а не весь состав (Plane №234)."""
+    wanted = [scene["people"][0].id, scene["people"][3].id]
+
+    payload = ask(actor, "?employee_ids=" + ",".join(str(i) for i in wanted))
+
+    assert payload["matched_count"] == 2
+    assert {unit["employee"]["id"] for unit in payload["staff_units"]} == set(wanted)
+
+
+def test_too_many_employee_ids_is_a_loud_refusal(actor, scene):
+    """Список на тысячу — это снова выгрузка всего состава, только окольно."""
+    client = APIClient()
+    client.force_authenticate(user=actor)
+
+    response = client.get(reverse(URL_NAME) + "?employee_ids=" + ",".join(str(i) for i in range(1, 500)))
+
+    assert response.status_code == 400
+    assert "employee_ids" in response.data
+
+
+def test_broken_employee_ids_are_refused(actor, scene):
+    client = APIClient()
+    client.force_authenticate(user=actor)
+
+    response = client.get(reverse(URL_NAME) + "?employee_ids=1,два,3")
+
+    assert response.status_code == 400
+    assert "employee_ids" in response.data

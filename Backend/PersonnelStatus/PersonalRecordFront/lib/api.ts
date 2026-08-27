@@ -223,6 +223,8 @@ export interface DirectorateQuery {
   status?: string;
   /** Должности не ниже уровня (`level <= N`): так отбирается руководство. */
   positionLevelMax?: number;
+  /** Только штатные единицы этих сотрудников (не больше 200). */
+  employeeIds?: (number | string)[];
 }
 
 // Интерфейсы для справочников
@@ -945,6 +947,8 @@ class ApiClient {
     if (params.status) query.set("status", params.status);
     if (params.positionLevelMax !== undefined)
       query.set("position_level_max", String(params.positionLevelMax));
+    if (params.employeeIds !== undefined && params.employeeIds.length > 0)
+      query.set("employee_ids", params.employeeIds.join(","));
     const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
     const endpoint = `/api/staff_unit/staff-units/directorate/${suffix}`;
 

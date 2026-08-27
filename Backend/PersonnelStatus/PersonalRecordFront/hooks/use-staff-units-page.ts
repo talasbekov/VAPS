@@ -35,8 +35,9 @@ export interface StaffUnitsPage {
   has_next?: boolean;
 }
 
-export function useStaffUnitsPage(params: DirectorateQuery) {
+export function useStaffUnitsPage(params: DirectorateQuery, enabled = true) {
   return useQuery<StaffUnitsPage>({
+    enabled,
     // Ключ несёт ВЕСЬ отбор: иначе смена поиска отдаёт кэш предыдущего.
     queryKey: [
       "staff-units-page",
@@ -46,6 +47,7 @@ export function useStaffUnitsPage(params: DirectorateQuery) {
       params.divisionId ?? "",
       params.status ?? "",
       params.positionLevelMax ?? "",
+      (params.employeeIds ?? []).join(","),
     ],
     queryFn: async () => await apiClient.getStaffUnitsByDirectorate(params),
     placeholderData: keepPreviousData,

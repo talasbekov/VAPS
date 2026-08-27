@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { employeeIdOfKey } from "../model/row-key";
 import {
   Dialog,
   DialogContent,
@@ -103,7 +104,15 @@ export function PlannedStatusesDialog({
   onSchedule,
 }: PlannedStatusesDialogProps) {
   const queryClient = useQueryClient();
-  const { data } = useStaffUnitsByDirectorate();
+  // Штатная единица ОДНОГО сотрудника, и только когда диалог открыт
+  // (Plane №234). Прежде здесь звался весь состав подразделения — 2,7 МБ ради
+  // одной строки на пяти тысячах человек, и грузился он при открытии ЭКРАНА, а
+  // не диалога.
+  const wantedEmployeeId = employeeIdOfKey(employeeId);
+  const { data } = useStaffUnitsPage(
+    { employeeIds: wantedEmployeeId === null ? [] : [wantedEmployeeId], pageSize: 1 },
+    open && wantedEmployeeId !== null
+  );
   const staffUnits = data?.staff_units || [];
 
   const [loading, setLoading] = useState(false);

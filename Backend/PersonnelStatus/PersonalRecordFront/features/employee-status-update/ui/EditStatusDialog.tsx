@@ -5,7 +5,8 @@
 // только эта модалка: засев с сервера, сборка запроса и наряд.
 import { useEffect, useMemo, useRef } from "react";
 import { Controller } from "react-hook-form";
-import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { employeeIdOfKey } from "../model/row-key";
 import { useRanks } from "@/hooks/use-ranks";
 import {
   Dialog,
@@ -94,7 +95,15 @@ export function EditStatusDialog({
   } = useZodForm(editStatusFormSchema, EMPTY_EDIT_STATUS_FORM);
 
   // Используем React Query для загрузки данных
-  const { data } = useStaffUnitsByDirectorate();
+  // Штатная единица ОДНОГО сотрудника, и только когда диалог открыт
+  // (Plane №234). Прежде здесь звался весь состав подразделения — 2,7 МБ ради
+  // одной строки на пяти тысячах человек, и грузился он при открытии ЭКРАНА, а
+  // не диалога.
+  const wantedEmployeeId = employeeIdOfKey(employeeId);
+  const { data } = useStaffUnitsPage(
+    { employeeIds: wantedEmployeeId === null ? [] : [wantedEmployeeId], pageSize: 1 },
+    open && wantedEmployeeId !== null
+  );
   const staffUnits = data?.staff_units || [];
 
   const { data: ranks } = useRanks();
