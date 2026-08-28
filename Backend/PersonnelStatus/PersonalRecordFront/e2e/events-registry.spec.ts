@@ -620,10 +620,21 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(details).toBeHidden()
   })
 
-  test('ссылка в строке бюллетеня по-прежнему ведёт в карточку', async ({ page }) => {
-    // Обратная сторона №191. Убрав переход со строки, легко убрать его вовсе
-    // — и тогда в карточку станет не попасть ничем, кроме стрелки «›» в конце
-    // широкой таблицы. Проба стережёт, что код мероприятия остался ссылкой.
+  test('сам бюллетень раскрывает список, а не уводит в этапы', async ({ page }) => {
+    /**
+     * 🔴 ПИН ПЕРЕВЁРНУТ ОСОЗНАННО (Plane №256, 28.08.2026).
+     *
+     * Здесь стояла проба «ссылка в строке бюллетеня по-прежнему ведёт в
+     * карточку»: она стерегла, что код мероприятия остался ссылкой в этапы.
+     * Заказчик поставил задачу ВТОРОЙ РАЗ — «при нажатии на бюллетень не
+     * должно переходить на этапы» — и именно этот пин закреплял поведение, на
+     * которое он жаловался: №191 снял переход с фона строки, но оставил его на
+     * самом бюллетене, то есть на самом крупном и очевидном месте.
+     *
+     * Что охраняется теперь: нажатие на бюллетень раскрывает и НЕ меняет
+     * адрес. Требование «в карточку должно быть чем попасть» никуда не делось
+     * — его стережёт соседняя проба про стрелку «Открыть этапы мероприятия».
+     */
     const token = await apiToken()
     const rows = await events(token)
     test.skip(rows.length === 0, 'реестр стенда пуст')
@@ -631,11 +642,57 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/`)
-    await page
-      .getByRole('link', { name: new RegExp(first.code) })
-      .first()
-      .click()
+    const row = page.getByRole('row').filter({ hasText: first.code }).first()
+    const bulletin = row.getByRole('button').filter({ hasText: first.code }).first()
+    await expect(bulletin, 'бюллетень в строке не кнопка-раскрыватель').toBeVisible({
+      timeout: 15_000,
+    })
 
+    const details = page.locator(`#${await bulletin.getAttribute('aria-controls')}`)
+    await expect(details).toBeHidden()
+
+    await bulletin.click()
+    await expect(details, 'нажатие на бюллетень не раскрыло объекты').toBeVisible()
+    await expect(
+      page,
+      'нажатие на бюллетень увело со страницы реестра — ровно то, на что жаловался заказчик',
+    ).toHaveURL(/\/security-ops\/events\/?(\?.*)?$/)
+
+    await bulletin.click()
+    await expect(details, 'повторное нажатие не свернуло список').toBeHidden()
+  })
+
+  test('в этапы из строки ведёт названная стрелка, и она там одна', async ({ page }) => {
+    /**
+     * Обратная сторона №256. Убрав переход с бюллетеня, легко убрать его
+     * вовсе — и тогда у мероприятия БЕЗ объектов посещения этапы (бюллетень,
+     * согласование, закрытие) стали бы недостижимы из реестра.
+     *
+     * Стережём два утверждения: вход в карточку из строки ЕСТЬ и он ОДИН —
+     * второй превратил бы «нажатие на бюллетень» обратно в лотерею.
+     */
+    const token = await apiToken()
+    const rows = await events(token)
+    test.skip(rows.length === 0, 'реестр стенда пуст')
+    const first = rows[0]!
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const row = page.getByRole('row').filter({ hasText: first.code }).first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+
+    const toStages = row.getByRole('link', {
+      name: `Открыть этапы мероприятия ${first.code}`,
+    })
+    await expect(toStages, 'в строке не осталось входа в карточку ОМ').toHaveCount(1)
+    // Ссылок в строке столько же, сколько входов в карточку: лишняя означала
+    // бы, что переход вернулся куда-то ещё.
+    await expect(
+      row.locator('a[href*="/security-ops/events/"]'),
+      'в строке больше одной ссылки в карточку ОМ',
+    ).toHaveCount(1)
+
+    await toStages.click()
     // Идентификатор ОМ на стенде — ЧИСЛО, а не UUID: ассерт по `[0-9a-f-]{36}`
     // краснел бы на верном переходе.
     await expect(page).toHaveURL(/\/security-ops\/events\/[^/?]+/, {
