@@ -1172,3 +1172,102 @@ def test_notifying_keeps_the_quotas_already_split(manager):  # noqa: F811
     }
     assert rows[str(directorate.pk)]["need"] == 2
     assert rows[str(directorate.pk)]["notifiedAt"] is not None
+
+
+# ── №272 Ш-2: «выделено N из M» по управлению — счёт НА ЧТЕНИИ ──────────────
+
+
+def test_a_directorate_counts_its_own_assigned_people(manager):  # noqa: F811
+    """Выделенные раскладываются по управлениям, а не сваливаются в кучу.
+
+    Без второго управления проба не отличила бы «посчитали по адресу» от
+    «посчитали всех в первой строке».
+    """
+    make_assignment_status_type()
+    department = make_department()
+    mine = make_directorate(department, "Управление охраны")
+    other = make_directorate(department, "Управление сопровождения")
+    employee = _seat(make_employee("Сериков"), mine)
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/", {}, format="json")
+
+    rows = {
+        row["divisionId"]: row
+        for row in _find_row(manager, base, allocation_id)["directorates"]
+    }
+    assert rows[str(mine.pk)]["assigned"] == 1
+    assert rows[str(other.pk)]["assigned"] == 0
+
+
+def test_a_person_from_a_department_of_the_directorate_counts_by_subtree(  # noqa: F811
+    manager,
+):
+    """Человек числится в ОТДЕЛЕ, а квота адресована управлению.
+
+    Сравнение «подразделение человека = управление» не нашло бы никого:
+    у сотрудников штатная единица стоит в отделе. Считать надо по поддереву.
+
+    Стережёт мутацию: сравнивать divisionId напрямую вместо `subtree_ids`.
+    """
+    from organization_management.apps.divisions.models import Division
+
+    make_assignment_status_type()
+    department = make_department()
+    directorate = make_directorate(department, "Управление охраны")
+    unit = Division.objects.create(
+        name="Отдел №1", division_type=Division.DivisionType.DIVISION,
+        parent=directorate,
+    )
+    employee = _seat(make_employee("Отделов"), unit)
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/", {}, format="json")
+
+    rows = {
+        row["divisionId"]: row
+        for row in _find_row(manager, base, allocation_id)["directorates"]
+    }
+    assert rows[str(directorate.pk)]["assigned"] == 1
+
+
+def test_the_count_follows_a_transfer_without_touching_the_event(manager):  # noqa: F811
+    """Счёт считается НА ЧТЕНИИ, а не хранится в строке.
+
+    Человека перевели в другое управление мимо мероприятия. Записанная в
+    момент выделения копия описывала бы вчерашнюю структуру; посчитанное на
+    чтении число переезжает вместе с ним.
+
+    Стережёт мутацию: сохранить `assigned` в JSON при выделении.
+    """
+    make_assignment_status_type()
+    department = make_department()
+    first = make_directorate(department, "Управление охраны")
+    second = make_directorate(department, "Управление сопровождения")
+    employee = _seat(make_employee("Переводов"), first)
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/", {}, format="json")
+
+    staff_unit = employee.staff_unit
+    staff_unit.division = second
+    staff_unit.save(update_fields=["division"])
+
+    rows = {
+        row["divisionId"]: row
+        for row in _find_row(manager, base, allocation_id)["directorates"]
+    }
+    assert rows[str(first.pk)]["assigned"] == 0
+    assert rows[str(second.pk)]["assigned"] == 1

@@ -2177,8 +2177,15 @@ def day_status_map(employee_ids, on_date):
     }
 
 
-def allocation_members_view(event):
-    """Раскладка по департаментам, где ЛЮДИ ВЗЯТЫ ИЗ СТАТУСОВ (Plane №274, Ш-5).
+def _merge_status_members(event, rows):
+    """Люди строк раскладки: ручной набор штаба ПЛЮС взятые из статусов.
+
+    Выделено из `allocation_members_view` при Ш-2 (Plane №272): считать
+    «выделено N из M» по управлениям можно только по УЖЕ СВЕДЁННОМУ составу,
+    а сведение имеет три ранних выхода. Держать счёт внутри них значило бы
+    написать его трижды и однажды разойтись.
+
+    Разбор направления — в `allocation_members_view` ниже (Plane №274, Ш-5).
 
     ПЕРЕВОРОТ НАПРАВЛЕНИЯ, которого просил заказчик. До этого шага список
     департамента был ручным набором штаба: человек попадал в него только если
@@ -2205,7 +2212,6 @@ def allocation_members_view(event):
     Департамент человека — КОРЕНЬ его поддерева, а не подразделение штатной
     единицы: человек числится в отделе, а раскладка адресована департаменту.
     """
-    rows = event.force_allocation or []
     if not rows:
         return []
 
@@ -2295,6 +2301,118 @@ def allocation_members_view(event):
         }
         for row in rows
     ]
+
+
+def allocation_members_view(event):
+    """Раскладка по департаментам ДЛЯ ЭКРАНА: люди сведены, прогресс посчитан.
+
+    ПЕРЕВОРОТ НАПРАВЛЕНИЯ, которого просил заказчик (Plane №274, Ш-5). До того
+    шага список департамента был ручным набором штаба: человек попадал в него
+    только если штаб нажал «выделить». Начальник управления мог поставить
+    человеку статус участия в своём расходе — и в списке ОМ он не появлялся,
+    потому что список ничего не знал про статусы. Теперь источник — статус, а
+    ручной набор стал одним из способов его поставить.
+
+    Старый путь ЖИВЁТ, а не снимается: `add_allocation_member` по-прежнему
+    пишет строку в `force_allocation` и ставит статус. Снятие JSON-хранилища —
+    отдельный шаг после переезда читателей, как и с `force_requests`; здесь
+    оно остаётся источником ВСЕГО, что статусом не описано: момент добавления
+    и ссылка на статус для снятия.
+
+    Правила сведения — в `_merge_status_members`; счёт «выделено N из M» по
+    управлениям — в `_with_directorate_progress` (Plane №272, Ш-2).
+    """
+    rows = event.force_allocation or []
+    return _with_directorate_progress(_merge_status_members(event, rows))
+
+
+def _with_directorate_progress(rows):
+    """«Выделено N из M» по каждому управлению (Plane №272, Ш-2).
+
+    СЧИТАЕТСЯ НА ЧТЕНИИ, а не хранится — тем же правилом, что статус дня у
+    состава (`force_roster_view`) и подразделение у назначения
+    (`placement_assignments_view`): записанная копия соврала бы к утру. Человек
+    переводится между управлениями мимо мероприятия, и число, посчитанное в
+    момент выделения, назавтра описывало бы вчерашнюю структуру.
+
+    Человек относится к управлению по ПОДДЕРЕВУ, а не по совпадению
+    подразделения: он числится в отделе, а квота адресована управлению.
+    Сравнение «в лоб» не нашло бы никого.
+
+    Человек, чьё подразделение не лежит ни под одним управлением заявки, ни к
+    кому не приписывается — и это не потеря: в departmentе он посчитан, а
+    выдумывать ему управление значило бы записать его чужой квоте.
+    """
+    if not rows:
+        return rows
+    from organization_management.apps.operations.selectors import (
+        DivisionTreeSelector,
+        StaffUnitSelector,
+    )
+
+    has_directorates = any(row.get("directorates") for row in rows)
+    if not has_directorates:
+        return rows
+
+    # 🔴 ПОДРАЗДЕЛЕНИЕ БЕРЁТСЯ ЖИВЬЁМ, А НЕ ИЗ СТРОКИ. В строке выделения
+    # лежит `divisionId`, записанный В МОМЕНТ выделения, — это копия, и после
+    # перевода человека она указывает на прежнее управление. Тогда «выделено»
+    # осталось бы у того, кто человека уже не имеет, а новое управление
+    # считало бы, что от него никого не выделили. Ровно ту же причину
+    # `placement_assignments_view` называет у назначений: «перевод человека не
+    # должен требовать правки чужих строк». Запись из строки остаётся
+    # ЗАПАСНЫМ путём — у человека может не быть штатной единицы вовсе.
+    member_ids = [
+        int(member["employeeId"])
+        for row in rows
+        for member in (row.get("members") or [])
+        if str(member.get("employeeId") or "").isdigit()
+    ]
+    live_division = StaffUnitSelector.divisions_of(member_ids) if member_ids else {}
+
+    children_map = DivisionTreeSelector.children_map()
+    result = []
+    for row in rows:
+        directorates = row.get("directorates") or []
+        if not directorates:
+            result.append(row)
+            continue
+        subtree_of = {
+            str(item.get("divisionId")): DivisionTreeSelector.subtree_ids(
+                _as_division_id(item.get("divisionId")), children_map=children_map
+            )
+            for item in directorates
+        }
+        assigned = {key: 0 for key in subtree_of}
+        for member in row.get("members", []) or []:
+            raw = member.get("employeeId")
+            division_id = (
+                live_division.get(int(raw))
+                if str(raw or "").isdigit()
+                else None
+            )
+            if division_id is None:
+                division_id = _as_division_id(member.get("divisionId"))
+            if division_id is None:
+                continue
+            for key, subtree in subtree_of.items():
+                if division_id in subtree:
+                    assigned[key] += 1
+                    break
+        result.append(
+            {
+                **row,
+                "directorates": [
+                    {
+                        **item,
+                        "need": int(item.get("need") or 0),
+                        "assigned": assigned.get(str(item.get("divisionId")), 0),
+                    }
+                    for item in directorates
+                ],
+            }
+        )
+    return result
 
 
 def force_roster_view(event):
