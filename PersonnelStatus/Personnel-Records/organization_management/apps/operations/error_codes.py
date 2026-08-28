@@ -120,6 +120,10 @@ CODES = {
     # буквально (STATE у боевых групп, STAGE у ОМ/статусов).
     "INVALID_STATE_TRANSITION": frozenset({422}),
     "NOT_IN_ROSTER": frozenset({422}),
+    # Пост под людьми не снимается (Plane №259, правило заказчика). СВОЙ код,
+    # не VALIDATION_ERROR: клиенту нужно отличить «так нельзя по правилу» от
+    # «поле заполнено неверно» — второе чинится правкой формы, первое нет.
+    "POST_HAS_ASSIGNMENTS": frozenset({422}),
     "ALREADY_ACKNOWLEDGED": frozenset({422}),
     "CONFIRMER_REQUIRED": frozenset({422}),
     "MISSING_HANDOVER": frozenset({422}),

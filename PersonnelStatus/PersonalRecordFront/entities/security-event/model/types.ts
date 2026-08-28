@@ -862,6 +862,21 @@ export function securityEventPlacementUnassignPath(
 ): string {
   return `${SECURITY_EVENTS_PATH}${id}/placement/${assignmentId}/`;
 }
+/**
+ * Снятие ПУСТОГО поста с расчёта на этапе «Расстановка» (Plane №259).
+ *
+ * Путь идёт через `placement/posts/`, а не `placement/<id>`: второй занят
+ * снятием НАЗНАЧЕНИЯ, и одиночный сегмент там съедается идентификатором
+ * назначения.
+ */
+export function securityEventPlacementPostPath(
+  id: string,
+  postId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/posts/${encodeURIComponent(
+    postId
+  )}/`;
+}
 export function securityEventPlacementCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/placement/complete/`;
 }
