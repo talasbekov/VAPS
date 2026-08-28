@@ -17,7 +17,13 @@ from rest_framework.test import APIClient
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations import clock
-from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.models_status import (
+    OpsEmployeeStatus,
+    OpsStatusParticipation,
+)
+from organization_management.apps.operations.tests.test_status_participation import (
+    participation_catalog,  # noqa: F401 — фикстура pytest
+)
 from organization_management.apps.operations.tests.test_bulk_status_api import (
     TODAY,
     client_for,
@@ -237,3 +243,66 @@ def test_a_delete_on_the_collection_is_still_not_served(types, division):  # noq
     api, _ = operator()
 
     assert api.delete(URL).status_code == 405
+
+
+# ── Мероприятия статуса (Plane №274, Ш-4) ────────────────────────────────
+#
+# ПОЧЕМУ ПРОБА ЗДЕСЬ, А НЕ В test_status_participation.py. Тот файл целиком
+# бьёт по СЕРВИСУ — и был зелёным ровно в тот момент, когда ручка теряла
+# мероприятия полностью: поле `participations` стояло в сериализаторе
+# МАССОВОГО создания, а одиночный его не объявлял. DRF молча выбрасывает
+# необъявленное поле, вьюха читала `data.get("participations")` → None, сервис
+# честно понимал None как «не трогать» и не писал ничего. Тело запроса верное,
+# ответ 201, в базе пусто. Сервисные пробы такое не видят по построению.
+#
+# Стережёт мутацию: снять `participations` со StatusCreateSerializer.
+
+
+def test_the_single_route_carries_participations_to_the_database(
+    types, division, participation_catalog  # noqa: F811
+):
+    api, _ = operator()
+    employee = make_employee(division)
+    event_id = 4101
+
+    response = post(api, body(employee, participations=[
+        {"event_id": event_id, "kind_code": "SCREENING_GROUP", "role_code": "SCREENER"},
+    ]))
+
+    assert response.status_code == 201, response.data
+    rows = OpsStatusParticipation.objects.filter(status_id=response.data["id"])
+    assert [(r.event_id, r.kind_code, r.role_code) for r in rows] == [
+        (event_id, "SCREENING_GROUP", "SCREENER"),
+    ]
+    # Ответ ручки несёт их же: клиент рисует карточку по нему, а не по base.
+    assert response.data["participations"] == [
+        {"event_id": event_id, "kind_code": "SCREENING_GROUP", "role_code": "SCREENER"},
+    ]
+
+
+def test_a_status_without_participations_stays_empty(
+    types, division, participation_catalog  # noqa: F811
+):
+    """Ключа нет — строк нет; поле необязательное и не выдумывает мероприятий."""
+    api, _ = operator()
+
+    response = post(api, body(make_employee(division)))
+
+    assert response.status_code == 201, response.data
+    assert not OpsStatusParticipation.objects.filter(status_id=response.data["id"]).exists()
+    assert response.data["participations"] == []
+
+
+def test_a_role_from_another_group_is_refused_by_the_route(
+    types, division, participation_catalog  # noqa: F811
+):
+    """Отказ сервиса доезжает до клиента причиной, а не 500."""
+    api, _ = operator()
+    event_id = 4102
+
+    response = post(api, body(make_employee(division), participations=[
+        {"event_id": event_id, "kind_code": "PHYSICAL_SQUAD", "role_code": "SCREENER"},
+    ]))
+
+    assert response.status_code == 400, response.data
+    assert "participations.0.role_code" in str(response.data)

@@ -305,10 +305,6 @@ class BulkStatusCreateRowSerializer(serializers.Serializer):
     status_type_code = serializers.CharField(max_length=50)
     date_start = serializers.DateField()
     date_end = serializers.DateField()
-    # Мероприятия статуса. НЕОБЯЗАТЕЛЬНО и БЕЗ значения по умолчанию:
-    # «ключа нет» и «прислали пусто» — разные заявления, и default=[] стёр бы
-    # эту разницу ещё до сервиса.
-    participations = StatusParticipationSerializer(many=True, required=False)
     comment = serializers.CharField(required=False, allow_blank=True)
     document_basis = serializers.CharField(required=False, allow_blank=True)
     source_ref = serializers.CharField(required=False, allow_blank=True)
@@ -930,6 +926,10 @@ class StatusCreateSerializer(serializers.Serializer):
     status_type_code = serializers.CharField(max_length=50)
     date_start = serializers.DateField()
     date_end = serializers.DateField()
+    # Мероприятия статуса (Plane №274). НЕОБЯЗАТЕЛЬНО и БЕЗ значения по
+    # умолчанию: «ключа нет» и «прислали пусто» — разные заявления, и
+    # default=[] стёр бы эту разницу ещё до сервиса.
+    participations = StatusParticipationSerializer(many=True, required=False)
     comment = serializers.CharField(required=False, allow_blank=True)
     document_basis = serializers.CharField(
         required=False, allow_blank=True, max_length=255
