@@ -23,6 +23,7 @@ import { useEffect, useState, useMemo} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -48,6 +49,8 @@ import {
 } from "@/entities/daily-grid";
 import type { DaySubmission } from "@/entities/daily-grid";
 import { DaySubmissionPanel } from "@/features/ops-daily";
+import { SetStatusDialog } from "./SetStatusDialog";
+import { useCreateOpsStatus } from "@/hooks/use-ops-status-write";
 import { LeadershipStrip } from "./LeadershipStrip";
 import { SummaryVersions } from "./SummaryVersions";
 
@@ -194,6 +197,14 @@ function DivisionGroup({
     statusByEmployee.set(entry.employee_id, entry.status_type_code);
   }
 
+  // Кому сейчас проставляют статус: null — окно закрыто. Состояние держит
+  // ГРУППА, а не строка таблицы: окно одно на управление, и его состояние не
+  // должно жить в каждой из сотен строк.
+  const [statusFor, setStatusFor] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const createStatus = useCreateOpsStatus();
+
   const isPending = employees.isPending || statuses.isPending;
   const isError = employees.isError || statuses.isError;
   const people = employees.data?.results ?? [];
@@ -324,9 +335,29 @@ function DivisionGroup({
                     <TableCell>{person.full_name}</TableCell>
                     <TableCell>{person.rank_code}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">
-                        {statusLabel(statusByEmployee.get(Number(person.id)) ?? null)}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">
+                          {statusLabel(statusByEmployee.get(Number(person.id)) ?? null)}
+                        </Badge>
+                        {/* ПРОСТАНОВКА СТАТУСА (Plane №274, Ш-4). Экрана для
+                            этого не было вовсе: доска только показывала
+                            статусы, и первый шаг суточного расхода
+                            («начальник управления каждому проставляет
+                            статус») проходился вызовами API. */}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setStatusFor({
+                              id: String(person.id),
+                              name: person.full_name,
+                            })
+                          }
+                        >
+                          Проставить
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -334,8 +365,45 @@ function DivisionGroup({
           </Table>
         </div>
       )}
+
+      {statusFor !== null && (
+        <SetStatusDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) {
+              setStatusFor(null);
+              createStatus.reset();
+            }
+          }}
+          employeeId={statusFor.id}
+          employeeName={statusFor.name}
+          businessDate={businessDate}
+          isSaving={createStatus.isPending}
+          failure={createStatus.error?.message ?? null}
+          onSubmit={async ({ statusCode, participations }) => {
+            await createStatus.mutateAsync({
+              employee_id: Number(statusFor.id),
+              status_type_code: statusCode,
+              date_start: businessDate,
+              // Полуинтервал бэка [начало, конец): статус на ОДИН день
+              // закрывается СЛЕДУЮЩИМ днём, иначе строка пуста и статуса нет
+              // ни одного дня.
+              date_end: addOneDay(businessDate),
+              participations,
+            });
+            setStatusFor(null);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+/** Следующий календарный день в ISO — для полуинтервала бэка. */
+function addOneDay(iso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
 export function DailyExpenseBoard() {
