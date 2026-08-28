@@ -1873,6 +1873,145 @@ def _find_allocation(event, allocation_id):
 
 
 @transaction.atomic
+def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
+    """Департамент делит СВОЮ квоту между управлениями (Plane №272, Ш-1).
+
+    Третий уровень раскладки: штаб делит потребность между департаментами
+    (СС-1), департамент — между своими управлениями. До этого шага строка
+    управления существовала (`directorates[]`, её заводит оповещение), но
+    квоты у неё не было вовсе: управление узнавало «нас позвали» и не
+    узнавало «сколько от нас нужно».
+
+    Правила названы эталоном заказчика и повторяют СС-1, а не выдумывают свои:
+
+    - **Перебор — отказ, недобор — нет.** Разложить больше квоты департамента
+      невозможно; разложить меньше можно, и остаток назван числом: департамент
+      раскладывает в несколько заходов, а запрет на это превратил бы форму в
+      ультиматум.
+    - **Правка только ДО запроса управлений** («Квоты редактируются до запроса
+      управлений» — подпись эталона). После оповещения управление уже работает
+      по названному числу, и молчаливая правка означала бы, что человек
+      выделяет людей под квоту, которой больше нет.
+    - **Адресат обязан быть управлением ЭТОГО департамента.** Иначе департамент
+      раздавал бы квоты чужим.
+    - **Список целиком одним запросом**, как и у СС-1: «кому сколько» — одно
+      решение, и построчное сохранение позволяло бы сумме уехать за квоту
+      между двумя запросами.
+    """
+    from organization_management.apps.divisions.models import Division
+
+    event = lock_event(event_id)
+    if event.stage not in _ALLOCATION_STAGES:
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message=(
+                "Делить квоту между управлениями можно после рекогносцировки "
+                "и до согласования расстановки."
+            ),
+        )
+    target = _find_allocation(event, allocation_id)
+    if target.get("status") != _ALLOCATION_DRAFT:
+        raise DomainError(
+            "DIRECTORATE_QUOTAS_LOCKED",
+            422,
+            message=(
+                "Управления уже запрошены — квоты правятся до запроса. "
+                "Чтобы изменить раскладку, отзовите список."
+            ),
+        )
+
+    known = {
+        str(pk): name
+        for pk, name in Division.objects.filter(
+            parent_id=target["departmentId"],
+            division_type=Division.DivisionType.DIRECTORATE,
+            is_active=True,
+        ).values_list("pk", "name")
+    }
+    incoming = list(rows or [])
+    seen = set()
+    total = 0
+    prepared = []
+    for index, row in enumerate(incoming):
+        key = str(row.get("divisionId") or "").strip()
+        if key not in known:
+            raise _validation(
+                {f"rows.{index}.divisionId": ["Управление не найдено в департаменте."]}
+            )
+        if key in seen:
+            raise _validation(
+                {f"rows.{index}.divisionId": ["Управление указано дважды."]}
+            )
+        seen.add(key)
+        try:
+            need = int(row.get("need", 0))
+        except (TypeError, ValueError):
+            raise _validation({f"rows.{index}.need": ["Укажите число."]})
+        if need < 0:
+            raise _validation({f"rows.{index}.need": ["Число не может быть меньше нуля."]})
+        total += need
+        prepared.append((key, need))
+
+    quota = int(target.get("need") or 0)
+    if total > quota:
+        raise DomainError(
+            "DIRECTORATE_QUOTA_OVERFLOW",
+            422,
+            message=(
+                f"Разложено {total} при квоте департамента {quota} — "
+                f"лишних {total - quota}."
+            ),
+            detail={"quota": str(quota), "split": str(total)},
+        )
+
+    need_of = dict(prepared)
+    kept_rows = {
+        str(row.get("divisionId")): row for row in target.get("directorates", [])
+    }
+    saved = []
+    for key, name in known.items():
+        kept = kept_rows.get(key, {})
+        saved.append(
+            {
+                "id": kept.get("id") or f"force-directorate-{key}",
+                "divisionId": key,
+                "name": name,
+                # Не названному в запросе квота НЕ обнуляется молча: запрос
+                # описывает то, что человек правил, а строка, которой он не
+                # касался, остаётся как была.
+                "need": need_of.get(key, int(kept.get("need") or 0)),
+                "notifiedAt": kept.get("notifiedAt"),
+            }
+        )
+    # Управление, выбывшее из департамента, из заявки не стирается — тем же
+    # правилом, что и у оповещения: его след это факт.
+    for key, kept in kept_rows.items():
+        if key not in known:
+            saved.append({**kept, "need": int(kept.get("need") or 0)})
+
+    event.force_allocation = [
+        {**item, "directorates": saved} if item.get("id") == allocation_id else item
+        for item in event.force_allocation
+    ]
+    event.save(update_fields=["force_allocation", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.FORCE_ALLOCATION_SPLIT,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "departmentName": target.get("departmentName"),
+            "quota": quota,
+            "split": total,
+            "rows": [{"divisionId": key, "need": need} for key, need in prepared],
+        },
+    )
+    return event
+
+
+@transaction.atomic
 def notify_directorates(event_id, allocation_id, *, actor):
     """Оповестить управления департамента о заявке (Plane №73, шаг «СС-2»).
 
@@ -1931,6 +2070,12 @@ def notify_directorates(event_id, allocation_id, *, actor):
                 "id": (kept or {}).get("id") or f"force-directorate-{key}",
                 "divisionId": key,
                 "name": name,
+                # Квота управления (Plane №272, Ш-1) переносится КАК ЕСТЬ:
+                # её ставит департамент отдельным действием, оповещение
+                # только рассылает. Пересборка строки без этого поля стирала
+                # бы раскладку в момент рассылки — то есть ровно тогда, когда
+                # число впервые становится нужным.
+                "need": int((kept or {}).get("need") or 0),
                 # Уже оповещённому момент НЕ переписывается: повторное нажатие
                 # добирает тех, кому не сказали, а не объявляет всех
                 # оповещёнными заново — иначе «когда сказали» стало бы

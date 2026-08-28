@@ -86,6 +86,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   DICTIONARY_ENTRY_DELETED: "Значение справочника удалено",
   GVO_SUMMARY_PATCHED: "Сводка ГВО поправлена вручную",
   FORCE_ALLOCATION_NOTIFIED: "Управления оповещены о заявке на силы",
+  FORCE_ALLOCATION_SPLIT: "Квота департамента разложена по управлениям",
   FORCE_ALLOCATION_SUBMITTED: "Список выделенных отправлен в штаб",
   FORCE_ALLOCATION_ACCEPTED: "Штаб принял список и передал людей мероприятию",
   FORCE_ALLOCATION_RETURNED: "Штаб вернул список департаменту",

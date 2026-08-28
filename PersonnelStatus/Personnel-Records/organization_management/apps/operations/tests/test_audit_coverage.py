@@ -824,7 +824,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     coverage_department = Division.objects.create(
         name="Департамент покрытия", division_type="department"
     )
-    Division.objects.create(
+    coverage_directorate = Division.objects.create(
         name="Управление покрытия",
         division_type="directorate",
         parent=coverage_department,
@@ -833,6 +833,14 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     allocation = event_service.split_force_demand(
         om.pk, rows=[{"departmentId": str(coverage_department.pk), "need": 1}]
     ).force_allocation[0]
+    # Раскладка департамента по управлениям (Plane №272, Ш-1) — ДО оповещения:
+    # после него квоты заперты, и вызов здесь отбился бы «уже запрошены».
+    event_service.split_directorate_quotas(
+        om.pk,
+        allocation["id"],
+        [{"divisionId": str(coverage_directorate.pk), "need": 1}],
+        actor=ACTOR,
+    )
     event_service.notify_directorates(om.pk, allocation["id"], actor=ACTOR)
     # Тип статуса привлечения — свой: выделение ставит именно его, и без
     # строки справочника оно отбивается раньше, чем дойдёт до журнала.

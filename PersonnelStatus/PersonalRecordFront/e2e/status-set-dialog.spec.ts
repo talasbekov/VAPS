@@ -54,14 +54,28 @@ test.describe('расход: постановка статуса с меропр
     await page.goto(`${APP}/employees?view=daily`, { waitUntil: 'domcontentloaded' })
       const toggles = page.locator('[role="group"] button[aria-expanded]')
       await expect(toggles.first()).toBeVisible({ timeout: 30_000 })
-      await toggles.first().click()
 
       // Строка сотрудника БЕЗ статуса на дату: бейдж «В строю» ставится
       // ровно тогда, когда статуса нет (`statusLabel(null)`).
-      const freeRow = page.locator('tr').filter({ hasText: 'В строю' })
-        .filter({ has: page.getByRole('button', { name: 'Проставить' }) }).first()
-      await expect(freeRow, 'на борде есть сотрудник без статуса на дату').toBeVisible({ timeout: 20_000 })
-      await freeRow.getByRole('button', { name: 'Проставить' }).click()
+      //
+      // 🔴 РАСКРЫВАЕМ УПРАВЛЕНИЯ, ПОКА НЕ НАЙДЁМ СВОБОДНОГО. Проба оставляет
+      // после себя статус (убрать его нельзя — это факт расхода), и людей
+      // одного управления хватило на сутки: дальше в первой группе не
+      // осталось ни одного «В строю», и проба падала не из-за кода.
+      const freeRow = page
+        .locator('tr')
+        .filter({ hasText: 'В строю' })
+        .filter({ has: page.getByRole('button', { name: 'Проставить' }) })
+      const groups = await toggles.count()
+      for (let index = 0; index < groups; index += 1) {
+        await toggles.nth(index).click()
+        if ((await freeRow.count()) > 0) break
+      }
+      await expect(
+        freeRow.first(),
+        'ни в одном управлении нет сотрудника без статуса на дату',
+      ).toBeVisible({ timeout: 20_000 })
+      await freeRow.first().getByRole('button', { name: 'Проставить' }).click()
 
       const dialog = page.getByRole('dialog')
       await expect(dialog).toBeVisible()

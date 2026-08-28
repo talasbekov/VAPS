@@ -354,35 +354,48 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
      */
     const token = await apiToken()
     const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
-    const division = report.rows.find((row) => row.list_total > 0)
-    expect(division, 'в расходе нет ни одного непустого управления').toBeDefined()
+    // 🔴 ИЩЕМ ПО ВСЕМ УПРАВЛЕНИЯМ, а не по первому непустому. Убрать за собой
+    // проба не может (статус расхода — факт, ручки удаления у него нет), и за
+    // прогон уходит один свободный человек. В одном управлении их дюжина —
+    // пул кончился за сутки, и проба честно упала «сажать некого». По всей
+    // организации их сотни; когда кончатся и они, сообщение скажет прямо, что
+    // кончился стенд, а не сломался код.
+    const divisions = report.rows.filter((row) => row.list_total > 0)
+    expect(divisions.length, 'в расходе нет ни одного непустого управления').toBeGreaterThan(0)
 
-    // 🔴 `id` У ДВУХ РУЧЕК РАЗНОГО ТИПА: расход отдаёт строку, статусы — число.
-    // Сравнение без приведения не совпадало НИ РАЗУ, «свободным» объявлялся
-    // первый попавшийся, и проба падала 409 по чужому статусу. Похоже на
-    // расхождение областей видимости — но поштучная сверка показала, что
-    // выдачи согласованы, а расходились типы.
-    const people = await get<{ results: { id: number | string; full_name: string }[] }>(
-      token,
-      `/api/ops/daily/employees/?division_id=${division!.division_id}&page_size=200`,
-    )
-    // Занят — это ЛЮБОЙ действующий статус, а не только участие: сервер
-    // отбивает пересечение с дежурством и отпуском ровно так же (409/422), и
-    // отбор «нет участия» приводил пробу к отказу по чужому статусу.
-    // Спрашиваем ПО ТОМУ ЖЕ управлению, что и список людей: без сужения ручка
-    // отдаёт статусы всей организации, страница обрезается по потолку сервера,
-    // и «свободным» объявляется тот, чья строка не поместилась.
-    const busyRows = await get<{ results: StatusRow[]; next: string | null }>(
-      token,
-      `/api/operations/statuses/?business_date=${report.business_date}` +
-        `&division_id=${division!.division_id}&page_size=500`,
-    )
-    expect(busyRows.next, 'статусы управления не поместились на страницу').toBeFalsy()
-    const busy = new Set(busyRows.results.map((row) => row.employee_id))
-    const free = people.results
-      .map((person) => ({ ...person, id: Number(person.id) }))
-      .find((person) => !busy.has(person.id))
-    expect(free, 'все люди управления уже привлечены — сажать некого').toBeDefined()
+    let free: { id: number; full_name: string } | undefined
+    for (const division of divisions) {
+      // 🔴 `id` У ДВУХ РУЧЕК РАЗНОГО ТИПА: расход отдаёт строку, статусы —
+      // число. Сравнение без приведения не совпадало НИ РАЗУ, «свободным»
+      // объявлялся первый попавшийся, и проба падала 409 по чужому статусу.
+      // Похоже на расхождение областей видимости — но поштучная сверка
+      // показала, что выдачи согласованы, а расходились типы.
+      const people = await get<{ results: { id: number | string; full_name: string }[] }>(
+        token,
+        `/api/ops/daily/employees/?division_id=${division.division_id}&page_size=200`,
+      )
+      // Занят — это ЛЮБОЙ действующий статус, а не только участие: сервер
+      // отбивает пересечение с дежурством и отпуском ровно так же (409/422), и
+      // отбор «нет участия» приводил пробу к отказу по чужому статусу.
+      // Спрашиваем ПО ТОМУ ЖЕ управлению, что и список людей: без сужения ручка
+      // отдаёт статусы всей организации, страница обрезается по потолку сервера,
+      // и «свободным» объявляется тот, чья строка не поместилась.
+      const busyRows = await get<{ results: StatusRow[]; next: string | null }>(
+        token,
+        `/api/operations/statuses/?business_date=${report.business_date}` +
+          `&division_id=${division.division_id}&page_size=500`,
+      )
+      expect(busyRows.next, 'статусы управления не поместились на страницу').toBeFalsy()
+      const busy = new Set(busyRows.results.map((row) => row.employee_id))
+      free = people.results
+        .map((person) => ({ ...person, id: Number(person.id) }))
+        .find((person) => !busy.has(person.id))
+      if (free !== undefined) break
+    }
+    expect(
+      free,
+      'во ВСЕЙ организации не осталось человека без статуса на дату — сажать некого',
+    ).toBeDefined()
 
     const nextDay = new Date(`${report.business_date}T00:00:00Z`)
     nextDay.setUTCDate(nextDay.getUTCDate() + 1)

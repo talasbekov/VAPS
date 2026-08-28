@@ -129,6 +129,11 @@ export interface ForceAllocationDirectorate {
   id: string;
   divisionId: string;
   name: string;
+  /** Квота управления — сколько человек с него просит департамент
+   * (Plane №272, Ш-1). Третий уровень раскладки: штаб делит потребность
+   * между департаментами, департамент — между своими управлениями. У строк,
+   * заведённых до Ш-1, стоит 0 — департамент их ещё не раскладывал. */
+  need: number;
   notifiedAt: string | null;
 }
 
@@ -136,6 +141,13 @@ export interface ForceAllocationDirectorate {
 export interface ForceAllocationMember {
   employeeId: string;
   name: string;
+  /** Откуда строка взялась (Plane №274, Ш-5): `"STATUS"` — человек попал в
+   * список через статус участия, записи штаба у него нет, и снять его как
+   * выделенного нельзя. Отсутствие поля означает запись штаба. */
+  source?: "STATUS";
+  /** Вид и роль участия — только у строк из статуса. */
+  kindCode?: string;
+  roleCode?: string;
   divisionId: string;
   divisionName: string;
   addedAt: string;

@@ -837,6 +837,12 @@ def test_recon_completion_still_leads_to_placement(manager):  # noqa: F811
 # ── Ш-5: цепочку ведёт СТАТУС, а не ручной набор штаба (Plane №274) ─────────
 
 
+def _find_row(manager, base, allocation_id):  # noqa: F811
+    """Строка раскладки из свежей выдачи мероприятия."""
+    rows = manager.get(base).json()["forceAllocation"]
+    return next(row for row in rows if row["id"] == allocation_id)
+
+
 def _seed_participation_kinds():
     """Виды участия из справочника (Ш-2).
 
@@ -1006,3 +1012,163 @@ def test_the_manual_row_is_not_dropped_when_participation_is_missing(  # noqa: F
 
     members = manager.get(base).json()["forceAllocation"][0]["members"]
     assert [m["employeeId"] for m in members] == [str(employee.pk)]
+
+
+# ── №272 Ш-1: департамент делит свою квоту между управлениями ───────────────
+
+
+def _split(manager, base, allocation_id, rows):  # noqa: F811
+    return manager.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": rows},
+        format="json",
+    )
+
+
+def test_the_department_splits_its_quota_between_directorates(manager):  # noqa: F811
+    """Третий уровень раскладки: штаб → департамент → управления.
+
+    До Ш-1 строка управления существовала (её заводит оповещение), но квоты у
+    неё не было вовсе: управление узнавало «нас позвали» и не узнавало,
+    сколько человек от него нужно.
+    """
+    department = make_department()
+    first = make_directorate(department, "Управление охраны")
+    second = make_directorate(department, "Управление сопровождения")
+    base, allocation_id = allocated_event(manager, department)
+    quota = _find_row(manager, base, allocation_id)["need"]
+
+    # Числа берутся ОТ КВОТЫ, а не литералами: квота фикстуры считается из
+    # расчёта постов и меняется вместе с ним — литералы делали бы пробу
+    # красной от чужой правки. Раскладываем МЕНЬШЕ квоты: недобор допустим,
+    # департамент раскладывает в несколько заходов.
+    assert quota >= 3, f"квота фикстуры мала для раскладки на двоих: {quota}"
+    mine, theirs = 1, quota - 2
+
+    response = _split(
+        manager,
+        base,
+        allocation_id,
+        [
+            {"divisionId": str(first.pk), "need": mine},
+            {"divisionId": str(second.pk), "need": theirs},
+        ],
+    )
+
+    assert response.status_code == 200, response.data
+    rows = {
+        row["divisionId"]: row
+        for row in _find_row(manager, base, allocation_id)["directorates"]
+    }
+    assert rows[str(first.pk)]["need"] == mine
+    assert rows[str(second.pk)]["need"] == theirs
+    assert mine + theirs < quota
+
+
+def test_a_split_over_the_department_quota_is_refused(manager):  # noqa: F811
+    """Перебор — отказ, и остаток назван числом, а не «слишком много»."""
+    department = make_department()
+    directorate = make_directorate(department)
+    base, allocation_id = allocated_event(manager, department)
+    quota = _find_row(manager, base, allocation_id)["need"]
+
+    response = _split(
+        manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": quota + 4}]
+    )
+
+    assert response.status_code == 422, response.data
+    assert response.data["error_code"] == "DIRECTORATE_QUOTA_OVERFLOW"
+    assert "4" in response.data["message"]
+
+
+def test_a_foreign_directorate_is_refused(manager):  # noqa: F811
+    """Адресат обязан быть управлением ЭТОГО департамента.
+
+    Без контрольного департамента проба не отличила бы «проверяем адрес» от
+    «принимаем любой идентификатор подразделения».
+    """
+    department = make_department()
+    stranger = make_directorate(make_department("Департамент связи"), "Управление С")
+    base, allocation_id = allocated_event(manager, department)
+
+    response = _split(
+        manager, base, allocation_id, [{"divisionId": str(stranger.pk), "need": 1}]
+    )
+
+    assert response.status_code == 400, response.data
+    assert "rows.0.divisionId" in str(response.data)
+
+
+def test_quotas_are_locked_once_the_directorates_are_asked(manager):  # noqa: F811
+    """«Квоты редактируются до запроса управлений» — подпись эталона.
+
+    После оповещения управление уже выделяет людей под названное число, и
+    молчаливая правка означала бы работу под квоту, которой больше нет.
+    """
+    department = make_department()
+    directorate = make_directorate(department)
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/", {}, format="json")
+
+    response = _split(
+        manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": 1}]
+    )
+
+    assert response.status_code == 422, response.data
+    assert response.data["error_code"] == "DIRECTORATE_QUOTAS_LOCKED"
+
+
+def test_a_directorate_left_out_of_the_request_keeps_its_quota(manager):  # noqa: F811
+    """Не названному в запросе квота не обнуляется молча.
+
+    Запрос описывает то, что человек правил; строка, которой он не касался,
+    остаётся как была — иначе правка одного управления стирала бы соседнее.
+    """
+    department = make_department()
+    first = make_directorate(department, "Управление охраны")
+    second = make_directorate(department, "Управление сопровождения")
+    base, allocation_id = allocated_event(manager, department)
+    quota = _find_row(manager, base, allocation_id)["need"]
+    assert quota >= 3, f"квота фикстуры мала: {quota}"
+    _split(
+        manager,
+        base,
+        allocation_id,
+        [{"divisionId": str(first.pk), "need": 1}, {"divisionId": str(second.pk), "need": 1}],
+    )
+
+    _split(manager, base, allocation_id, [{"divisionId": str(first.pk), "need": 2}])
+
+    rows = {
+        row["divisionId"]: row
+        for row in _find_row(manager, base, allocation_id)["directorates"]
+    }
+    assert rows[str(first.pk)]["need"] == 2
+    # Соседнее управление правку не заметило.
+    assert rows[str(second.pk)]["need"] == 1
+
+
+def test_notifying_keeps_the_quotas_already_split(manager):  # noqa: F811
+    """Оповещение НЕ стирает раскладку департамента.
+
+    Оповещение пересобирает строки управлений целиком (оно добирает тех, кто
+    появился в департаменте позже), и первая версия Ш-1 теряла на этой
+    пересборке квоту: департамент раскладывал числа, нажимал «Запросить
+    управления» — и числа обнулялись ровно в тот момент, когда впервые
+    становились нужны управлению.
+
+    Стережёт мутацию: убрать `"need"` из строки в `notify_directorates`.
+    """
+    department = make_department()
+    directorate = make_directorate(department)
+    base, allocation_id = allocated_event(manager, department)
+    _split(manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": 2}])
+
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/", {}, format="json")
+
+    rows = {
+        row["divisionId"]: row
+        for row in _find_row(manager, base, allocation_id)["directorates"]
+    }
+    assert rows[str(directorate.pk)]["need"] == 2
+    assert rows[str(directorate.pk)]["notifiedAt"] is not None
