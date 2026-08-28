@@ -19,6 +19,11 @@ export const FORCES_COMMAND = "forces.command";
 export const FORCES_ALLOCATE = "forces.allocate";
 export const FORCES_SELECT = "forces.select";
 export const PLACEMENT_MANAGE = "placement.manage";
+/** Решение согласующего по расстановке (Plane №267). Отдельно от ведения
+ * мероприятия: утверждающий видит расстановку целиком, но не правит её —
+ * иначе подписывающий переписывает подписываемое. */
+export const APPROVAL_APPROVE = "assignment.approve";
+export const APPROVAL_RETURN = "assignment.return";
 
 /** Причина отказа — ЧТО ЗА РОЛЬ это делает, а не «нет прав».
  *
@@ -31,6 +36,8 @@ const REASON: Record<string, string> = {
     "Оповещает управления и отправляет список ответственный за выделение в своём департаменте",
   [FORCES_SELECT]: "Выделяет людей начальник управления по своему управлению",
   [PLACEMENT_MANAGE]: "Расставляет людей по постам старший объекта",
+  [APPROVAL_APPROVE]: "Согласовывает расстановку утверждающий",
+  [APPROVAL_RETURN]: "Возвращает расстановку на доработку утверждающий",
 };
 
 export interface ChainAccess {

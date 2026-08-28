@@ -28,12 +28,12 @@ from .test_ops_forces_gathering import (  # noqa: F401
     make_directorate,
     make_employee,
 )
-from .test_ops_security_events_api import manager  # noqa: F401
+from .test_ops_security_events_api import approver, manager  # noqa: F401
 
 pytestmark = pytest.mark.django_db
 
 
-def test_an_event_walks_from_bulletin_to_closure(manager):  # noqa: F811
+def test_an_event_walks_from_bulletin_to_closure(manager, approver):  # noqa: F811
     """Полный цикл ОМ одной пробой: девять шагов постановки заказчика."""
     make_assignment_status_type()
     department = make_department()
@@ -107,14 +107,16 @@ def test_an_event_walks_from_bulletin_to_closure(manager):  # noqa: F811
     approver_id = route.json()["approvalRoute"][0]["id"]
     sent_for_approval = manager.post(f"{base}approval/send/")
     assert sent_for_approval.status_code == 200, sent_for_approval.json()
-    decided = manager.post(
+    # Решение согласующего — от СОГЛАСУЮЩЕГО: с 28.08.2026 подпись и возврат
+    # разведены с ведением мероприятия (решение заказчика, Plane №267).
+    decided = approver.post(
         f"{base}approval/route/{approver_id}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
     )
     assert decided.status_code == 200, decided.json()
 
-    approved = manager.post(f"{base}approval/approve/")
+    approved = approver.post(f"{base}approval/approve/")
     assert approved.status_code == 200, approved.json()
     assert approved.json()["stage"] == "ACKNOWLEDGEMENT", approved.json()["stage"]
 

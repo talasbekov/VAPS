@@ -14,6 +14,7 @@ import pytest
 from organization_management.apps.ops import security_events as service
 
 from .test_ops_security_events_api import (  # noqa: F401
+    approver,
     create_event,
     make_employee,
     make_object,
@@ -57,6 +58,8 @@ def event_on_approval(manager):  # noqa: F811
 
 
 def add_approver(manager, base, name="К. Оразов"):  # noqa: F811
+    # Маршрут заводит ВЕДУЩИЙ мероприятие, а не согласующий: это работа
+    # исполнителя (Plane №267).
     return manager.post(
         f"{base}approval/route/",
         {"name": name, "unit": "Департамент охраны", "position": "Заместитель"},
@@ -67,7 +70,7 @@ def add_approver(manager, base, name="К. Оразов"):  # noqa: F811
 # ── Снимок расстановки ───────────────────────────────────────────────────
 
 
-def test_changing_the_placement_after_sending_invalidates_approval(manager):  # noqa: F811
+def test_changing_the_placement_after_sending_invalidates_approval(manager, approver):  # noqa: F811
     """Подпись под одним составом ничего не говорит о другом.
 
     Проба меняет ИМЕННО состав (снимает назначение), а не что-нибудь ещё в
@@ -77,7 +80,7 @@ def test_changing_the_placement_after_sending_invalidates_approval(manager):  # 
     base, employee_id, post_id = event_on_approval(manager)
     route = add_approver(manager, base)
     manager.post(f"{base}approval/send/")
-    data = manager.post(
+    data = approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
@@ -89,7 +92,7 @@ def test_changing_the_placement_after_sending_invalidates_approval(manager):  # 
     data = manager.delete(f"{base}placement/{assignment_id}/").json()
 
     assert data["approvalStale"] is True
-    resp = manager.post(f"{base}approval/approve/")
+    resp = approver.post(f"{base}approval/approve/")
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "APPROVAL_STALE"
 
@@ -166,14 +169,14 @@ def test_sending_requires_a_route_and_a_placement(manager):  # noqa: F811
     assert resp.json()["error_code"] == "APPROVAL_ROUTE_EMPTY"
 
 
-def test_withdrawing_keeps_decisions_already_taken(manager):  # noqa: F811
+def test_withdrawing_keeps_decisions_already_taken(manager, approver):  # noqa: F811
     """Согласовавший согласовал: стирать чужое решение отзывом значило бы
     переписывать историю. Отзыв снимает только НЕРЕШЁННОЕ."""
     base, _, _ = event_on_approval(manager)
     route = add_approver(manager, base)
     route = add_approver(manager, base, name="А. Жанибеков")
     manager.post(f"{base}approval/send/")
-    manager.post(
+    approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
@@ -186,19 +189,19 @@ def test_withdrawing_keeps_decisions_already_taken(manager):  # noqa: F811
     assert by_id[route[1]["id"]]["status"] == "NOT_SENT"
 
 
-def test_resending_keeps_the_return_reason_and_clears_the_rest(manager):  # noqa: F811
+def test_resending_keeps_the_return_reason_and_clears_the_rest(manager, approver):  # noqa: F811
     """Причина возврата объясняет, что чинили, и нужна тому же согласующему
     при повторном решении; «Без замечаний» от прошлого состава — нет."""
     base, _, _ = event_on_approval(manager)
     route = add_approver(manager, base)
     route = add_approver(manager, base, name="А. Жанибеков")
     manager.post(f"{base}approval/send/")
-    manager.post(
+    approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
     )
-    manager.post(
+    approver.post(
         f"{base}approval/route/{route[1]['id']}/decide/",
         {"decision": "RETURNED", "comment": "поменять старшего"},
         format="json",
@@ -215,7 +218,7 @@ def test_resending_keeps_the_return_reason_and_clears_the_rest(manager):  # noqa
 # ── Маршрут ──────────────────────────────────────────────────────────────
 
 
-def test_approvers_can_be_reordered(manager):  # noqa: F811
+def test_approvers_can_be_reordered(manager, approver):  # noqa: F811
     """Порядок в маршруте — позиция в списке, и он значим: по нему читают,
     кто согласует первым."""
     base, _, _ = event_on_approval(manager)
@@ -231,7 +234,7 @@ def test_approvers_can_be_reordered(manager):  # noqa: F811
     assert [item["name"] for item in data["approvalRoute"]] == ["Второй", "Первый"]
 
 
-def test_moving_past_the_edge_changes_nothing(manager):  # noqa: F811
+def test_moving_past_the_edge_changes_nothing(manager, approver):  # noqa: F811
     """Край списка — не ошибка, а «дальше некуда»: отказ заставлял бы клиента
     считать границы, которые сервер и так знает."""
     base, _, _ = event_on_approval(manager)
@@ -250,20 +253,20 @@ def test_moving_past_the_edge_changes_nothing(manager):  # noqa: F811
 # ── Замечания ────────────────────────────────────────────────────────────
 
 
-def test_two_returns_by_the_same_approver_give_two_remarks(manager):  # noqa: F811
+def test_two_returns_by_the_same_approver_give_two_remarks(manager, approver):  # noqa: F811
     """Замечания — отдельный список, а не поле у согласующего: один и тот же
     человек возвращает дважды по разным поводам, и вторая причина затёрла бы
     первую, хотя закрывают их по одной."""
     base, _, _ = event_on_approval(manager)
     route = add_approver(manager, base)
     manager.post(f"{base}approval/send/")
-    manager.post(
+    approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "RETURNED", "comment": "первое замечание"},
         format="json",
     )
     manager.post(f"{base}approval/send/")
-    data = manager.post(
+    data = approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "RETURNED", "comment": "второе замечание"},
         format="json",
@@ -275,13 +278,13 @@ def test_two_returns_by_the_same_approver_give_two_remarks(manager):  # noqa: F8
     ]
 
 
-def test_a_remark_can_be_reopened(manager):  # noqa: F811
+def test_a_remark_can_be_reopened(manager, approver):  # noqa: F811
     """«Устранено» — не финальное состояние: замечание закрывают ошибочно, и
     вернуть его в работу должно быть можно, иначе этап завершат по недосмотру."""
     base, _, _ = event_on_approval(manager)
     route = add_approver(manager, base)
     manager.post(f"{base}approval/send/")
-    data = manager.post(
+    data = approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "RETURNED", "comment": "замечание"},
         format="json",
@@ -301,3 +304,77 @@ def test_a_remark_can_be_reopened(manager):  # noqa: F811
 
     assert data["approvalRemarks"][0]["resolved"] is False
     assert data["approvalRemarks"][0]["resolvedAt"] is None
+
+
+# ── Разграничение: утверждающий решает, но не правит (Plane №267) ───────────
+
+
+def test_the_approver_decides_without_the_right_to_lead_the_event(manager, approver):  # noqa: F811
+    """Утверждающий подписывает БЕЗ права вести мероприятие.
+
+    Решение заказчика 28.08.2026: «утверждающий только видит всю расстановку,
+    но изменять не может, только согласовать или отклонить с комментарием».
+    До этого подпись и правка охранялись одним `event.manage`.
+
+    Красная на мутации: верни `approval_route_decide` и `approval_approve`
+    под `event.manage` — обе строки ниже ответят 403.
+    """
+    base, _employee_id, _post_id = event_on_approval(manager)
+    route = add_approver(manager, base)
+    manager.post(f"{base}approval/send/")
+
+    decided = approver.post(
+        f"{base}approval/route/{route[0]['id']}/decide/",
+        {"decision": "APPROVED", "comment": "Согласовано."},
+        format="json",
+    )
+    approved = approver.post(f"{base}approval/approve/")
+
+    assert decided.status_code == 200, decided.data
+    assert approved.status_code == 200, approved.data
+    assert approved.json()["approvalStatus"] == "APPROVED"
+
+
+def test_the_approver_cannot_touch_the_placement_he_signs(manager, approver):  # noqa: F811
+    """И НЕ МОЖЕТ ПРАВИТЬ то, что подписывает.
+
+    Вторая половина того же решения, и без неё первая ничего не значит: право
+    решать, выданное вместе с правом переписывать, — это по-прежнему одно
+    полномочие.
+    """
+    base, employee_id, post_id = event_on_approval(manager)
+
+    assigning = approver.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": employee_id},
+        format="json",
+    )
+    routing = approver.post(
+        f"{base}approval/route/",
+        {"name": "Свой человек", "unit": "Отдел", "position": "Заместитель"},
+        format="json",
+    )
+    sending = approver.post(f"{base}approval/send/")
+
+    assert assigning.status_code == 403
+    assert routing.status_code == 403
+    assert sending.status_code == 403
+
+
+def test_the_event_lead_no_longer_decides_for_the_approver(manager):  # noqa: F811
+    """А ВЕДУЩИЙ мероприятие больше не решает за согласующего.
+
+    Обратная сторона разграничения: пока подпись открывалась `event.manage`,
+    исполнитель мог подписать собственную расстановку сам.
+    """
+    base, _employee_id, _post_id = event_on_approval(manager)
+    route = add_approver(manager, base)
+    manager.post(f"{base}approval/send/")
+
+    decided = manager.post(
+        f"{base}approval/route/{route[0]['id']}/decide/",
+        {"decision": "APPROVED", "comment": "Сам себе."},
+        format="json",
+    )
+
+    assert decided.status_code == 403

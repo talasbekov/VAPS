@@ -63,7 +63,11 @@ export default function ProtectedPersonsPage() {
   const historyQuery = usePersonEventHistory(historyFor?.id ?? null);
   const [disclosure, setDisclosure] = useState<Disclosure>(null);
 
-  const canView = hasPermission("event.view");
+  // `catalog.view`, а не `event.view` (решение заказчика 28.08.2026,
+  // Plane №267): рядовой сотрудник видит каталог охраняемых лиц, не видя
+  // реестра мероприятий. Пока экран спрашивал право чтения ОМ, выдать
+  // одно без другого было нельзя.
+  const canView = hasPermission("catalog.view");
   const personsQuery = useProtectedPersons({ enabled: canView });
   const eventsQuery = useSecurityEvents(
     { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: PAGE_SIZE },

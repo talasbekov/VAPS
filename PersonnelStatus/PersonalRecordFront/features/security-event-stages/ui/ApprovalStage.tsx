@@ -29,6 +29,11 @@ import { X } from "lucide-react";
 //   предупреждения по рейтингу с причиной, введённой при назначении.
 import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  APPROVAL_APPROVE,
+  APPROVAL_RETURN,
+  useChainAccess,
+} from "@/features/forces-split/ui/chain-access";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
@@ -50,6 +55,11 @@ import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDateTime } from "@/shared/lib/date";
 
 export function ApprovalStage({ event }: { event: SecurityEvent }) {
+  // Кнопки решения выключаются, если права нет, и говорят ЧЬЁ это действие:
+  // с 28.08.2026 подпись и возврат — работа утверждающего, а не ведущего
+  // мероприятие (решение заказчика, Plane №267). Спрятать их было бы хуже —
+  // человек не узнал бы, к кому идти.
+  const access = useChainAccess();
   const approve = useApprovePlacement(event.id);
   const [comment, setComment] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
@@ -193,11 +203,21 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
         <StageError error={approve.error} />
         <StageError error={returnBack.error} />
 
+        {/* Причина словами и ОДИН раз на шаг: у обеих кнопок она одна и та
+            же, и повтор превратил бы низ карточки в частокол. */}
+        {access.reason(APPROVAL_APPROVE) !== "" && (
+          <p className="text-xs text-muted-foreground">
+            {access.reason(APPROVAL_APPROVE)}
+          </p>
+        )}
+
         <div className="flex justify-between">
           <Button
             type="button"
             variant="outline"
-            disabled={returnBack.isPending}
+            disabled={returnBack.isPending || !access.can(APPROVAL_RETURN)}
+            aria-disabled={!access.can(APPROVAL_RETURN)}
+            title={access.reason(APPROVAL_RETURN) || "Вернуть расстановку на доработку"}
             onClick={() => {
               setFieldErrors(null);
               returnBack.mutate({ comment });
@@ -207,7 +227,9 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           </Button>
           <Button
             type="button"
-            disabled={approve.isPending}
+            disabled={approve.isPending || !access.can(APPROVAL_APPROVE)}
+            aria-disabled={!access.can(APPROVAL_APPROVE)}
+            title={access.reason(APPROVAL_APPROVE) || "Согласовать расстановку"}
             onClick={() => approve.mutate({})}
           >
             {approve.isPending

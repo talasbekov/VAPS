@@ -25,6 +25,14 @@ from organization_management.apps.operations.services import (
     RoleAdminService,
 )
 
+#: Учётка-адресат для проб раздачи ролей.
+#:
+#: НЕ «42». Прежний идентификатор был обычным малым числом и в один прекрасный
+#: день совпал с pk НАСТОЯЩЕЙ учётки, заведённой соседней пробой в том же
+#: прогоне: `effective_permissions` начала возвращать вдобавок её права, и
+#: проба падала не на своём предмете. Идентификатор нарочно за пределами
+#: диапазона, который выдаёт последовательность пользователей.
+TARGET_USER = "900042"
 ROLES_URL = "/api/operations/roles/"
 PERMISSIONS_URL = "/api/operations/permissions/"
 USER_ROLES_URL = "/api/operations/user-roles/"
@@ -87,9 +95,9 @@ class TestGate:
         api, _user = plain_client
         admin_api, _admin = admin_client
         seed_role("VIEWER", ["status.view"])
-        assignment = RoleAdminService.assign_role("42", "VIEWER", actor="test")
+        assignment = RoleAdminService.assign_role(TARGET_USER, "VIEWER", actor="test")
         grant = RoleAdminService.grant_temporary_duty(
-            user_id="42",
+            user_id=TARGET_USER,
             duty_role_code="HQ_DUTY",
             starts_at=Clock.now(),
             ends_at=Clock.now() + timedelta(hours=1),
@@ -122,8 +130,13 @@ class TestReferenceReads:
         # причине, что права цепочки сбора сил: справочник прав нужен и
         # заполненным базам. Само право досталось начальнику управления,
         # который по сценарию заказчика составляет суточный расход.
+        # `catalog.view` завела МИГРАЦИЯ 0060 (решение заказчика №267:
+        # рядовой сотрудник видит охраняемых лиц и законы об ОМ, но не реестр
+        # мероприятий) — по той же причине, что и права цепочки сбора сил:
+        # справочник прав нужен и заполненным базам.
         assert perms == [
             "*",
+            "catalog.view",
             "forces.allocate",
             "forces.command",
             "forces.select",
@@ -139,21 +152,21 @@ class TestUserRoleWrites:
         api, _admin = admin_client
         seed_role("VIEWER", ["status.view"])
         response = api.post(
-            USER_ROLES_URL, {"user_id": "42", "role_code": "VIEWER"}, format="json"
+            USER_ROLES_URL, {"user_id": TARGET_USER, "role_code": "VIEWER"}, format="json"
         )
         assert response.status_code == 201
         assert response.json()["role_code"] == "VIEWER"
-        assert PermissionService.effective_permissions("42") == {"status.view"}
+        assert PermissionService.effective_permissions(TARGET_USER) == {"status.view"}
 
     def test_actor_comes_from_auth_not_body(self, admin_client):
         api, admin = admin_client
         seed_role("VIEWER", ["status.view"])
         api.post(
             USER_ROLES_URL,
-            {"user_id": "42", "role_code": "VIEWER", "created_by": "подделка"},
+            {"user_id": TARGET_USER, "role_code": "VIEWER", "created_by": "подделка"},
             format="json",
         )
-        assert UserRole.objects.get(user_id="42").created_by == str(admin.pk)
+        assert UserRole.objects.get(user_id=TARGET_USER).created_by == str(admin.pk)
 
     def test_scope_is_stored(self, admin_client):
         api, _admin = admin_client
@@ -165,40 +178,40 @@ class TestUserRoleWrites:
         response = api.post(
             USER_ROLES_URL,
             {
-                "user_id": "42",
+                "user_id": TARGET_USER,
                 "role_code": "VIEWER",
                 "scope_division_id": division.id,
             },
             format="json",
         )
         assert response.status_code == 201
-        assert UserRole.objects.get(user_id="42").scope_division_id == division.id
+        assert UserRole.objects.get(user_id=TARGET_USER).scope_division_id == division.id
 
     def test_missing_field_is_400_not_500(self, admin_client):
         api, _admin = admin_client
-        assert api.post(USER_ROLES_URL, {"user_id": "42"}, format="json").status_code == 400
+        assert api.post(USER_ROLES_URL, {"user_id": TARGET_USER}, format="json").status_code == 400
 
     def test_unknown_role_is_400(self, admin_client):
         api, _admin = admin_client
         response = api.post(
-            USER_ROLES_URL, {"user_id": "42", "role_code": "НЕТ"}, format="json"
+            USER_ROLES_URL, {"user_id": TARGET_USER, "role_code": "НЕТ"}, format="json"
         )
         assert response.status_code == 400
 
     def test_list_filters_by_user(self, admin_client):
         api, _admin = admin_client
         seed_role("VIEWER", ["status.view"])
-        RoleAdminService.assign_role("42", "VIEWER", actor="test")
+        RoleAdminService.assign_role(TARGET_USER, "VIEWER", actor="test")
         RoleAdminService.assign_role("43", "VIEWER", actor="test")
-        results = api.get(USER_ROLES_URL, {"user_id": "42"}).json()["results"]
-        assert [r["user_id"] for r in results] == ["42"]
+        results = api.get(USER_ROLES_URL, {"user_id": TARGET_USER}).json()["results"]
+        assert [r["user_id"] for r in results] == [TARGET_USER]
 
     def test_revoke_drops_permissions_and_keeps_row(self, admin_client):
         api, _admin = admin_client
         seed_role("VIEWER", ["status.view"])
-        assignment = RoleAdminService.assign_role("42", "VIEWER", actor="test")
+        assignment = RoleAdminService.assign_role(TARGET_USER, "VIEWER", actor="test")
         assert api.delete(f"{USER_ROLES_URL}{assignment.id}/").status_code == 204
-        assert PermissionService.effective_permissions("42") == set()
+        assert PermissionService.effective_permissions(TARGET_USER) == set()
         # Отзыв — деактивация, не удаление: история назначений остаётся.
         assignment.refresh_from_db()
         assert assignment.is_active is False
@@ -213,7 +226,7 @@ class TestTemporaryDutyWrites:
     def _payload(self, **overrides):
         now = Clock.now()
         payload = {
-            "user_id": "42",
+            "user_id": TARGET_USER,
             "duty_role_code": "HQ_DUTY",
             "starts_at": (now - timedelta(hours=1)).isoformat(),
             "ends_at": (now + timedelta(hours=1)).isoformat(),
@@ -226,9 +239,9 @@ class TestTemporaryDutyWrites:
         seed_role("HQ_DUTY", ["duty.manage"])
         response = api.post(TEMP_DUTY_URL, self._payload(), format="json")
         assert response.status_code == 201
-        assert PermissionService.has_permission("42", "duty.manage")
+        assert PermissionService.has_permission(TARGET_USER, "duty.manage")
         # created_by — из аутентификации.
-        assert TemporaryDutyPermission.objects.get(user_id="42").created_by == str(
+        assert TemporaryDutyPermission.objects.get(user_id=TARGET_USER).created_by == str(
             admin.pk
         )
 
@@ -236,7 +249,7 @@ class TestTemporaryDutyWrites:
         api, admin = admin_client
         seed_role("HQ_DUTY", ["duty.manage"])
         api.post(TEMP_DUTY_URL, self._payload(created_by="подделка"), format="json")
-        assert TemporaryDutyPermission.objects.get(user_id="42").created_by == str(
+        assert TemporaryDutyPermission.objects.get(user_id=TARGET_USER).created_by == str(
             admin.pk
         )
 
@@ -265,7 +278,7 @@ class TestTemporaryDutyWrites:
         seed_role("HQ_DUTY", ["duty.manage"])
         grant_id = api.post(TEMP_DUTY_URL, self._payload(), format="json").json()["id"]
         assert api.post(f"{TEMP_DUTY_URL}{grant_id}/expire/").status_code == 200
-        assert not PermissionService.has_permission("42", "duty.manage")
+        assert not PermissionService.has_permission(TARGET_USER, "duty.manage")
 
     def test_expire_unknown_is_404(self, admin_client):
         # Ложный успех на несуществующем гранте скрывал бы опечатку в id.
@@ -277,7 +290,7 @@ class TestTemporaryDutyWrites:
         now = Clock.now()
         for offset in (3, 1, 2):
             RoleAdminService.grant_temporary_duty(
-                user_id="42",
+                user_id=TARGET_USER,
                 duty_role_code="HQ_DUTY",
                 starts_at=now - timedelta(hours=offset),
                 ends_at=now + timedelta(hours=1),
@@ -484,7 +497,7 @@ def test_role_composition_changes_and_is_named_in_the_trace():
     admin, user = client_for("role-composer", "ADMIN", perms=("admin.roles",))
     seed_role("ARCHIVIST", ["document.view"])
     Permission.objects.create(code="document.export", name="Выгрузка документов")
-    RoleAdminService.assign_role("42", "ARCHIVIST", actor="test")
+    RoleAdminService.assign_role(TARGET_USER, "ARCHIVIST", actor="test")
 
     response = admin.post(
         f"{ROLES_URL}ARCHIVIST/permissions/",
@@ -496,7 +509,7 @@ def test_role_composition_changes_and_is_named_in_the_trace():
     assert response.json()["permissions"] == ["document.export"]
     # Состав — не запись в справочнике, а живой доступ: у назначенного
     # человека права меняются тем же движением.
-    assert PermissionService.effective_permissions("42") == {"document.export"}
+    assert PermissionService.effective_permissions(TARGET_USER) == {"document.export"}
     entry = OpsAuditLog.objects.get(action="ACCESS_ROLE_PERMISSIONS_CHANGED")
     assert entry.entity_key == "ARCHIVIST"
     assert entry.old_value["permissions"] == ["document.view"]
@@ -759,11 +772,11 @@ def test_assignment_without_scope_has_no_division_name():
     """«Вся служба» подписывает клиент: такой записи в справочнике нет."""
     admin, _ = client_for("assign-global", "ADMIN", perms=("admin.roles",))
     seed_role("ARCHIVIST", ["document.view"])
-    RoleAdminService.assign_role("42", "ARCHIVIST", actor="test")
+    RoleAdminService.assign_role(TARGET_USER, "ARCHIVIST", actor="test")
 
     row = next(
         r
-        for r in admin.get(f"{USER_ROLES_URL}?user_id=42").json()["results"]
+        for r in admin.get(f"{USER_ROLES_URL}?user_id={TARGET_USER}").json()["results"]
         if r["role_code"] == "ARCHIVIST"
     )
 
@@ -784,7 +797,7 @@ def test_two_scopes_of_one_role_live_side_by_side():
             admin.post(
                 USER_ROLES_URL,
                 {
-                    "user_id": "42",
+                    "user_id": TARGET_USER,
                     "role_code": "ARCHIVIST",
                     "scope_division_id": division.id,
                 },
@@ -794,7 +807,7 @@ def test_two_scopes_of_one_role_live_side_by_side():
         )
 
     scopes = sorted(
-        UserRole.objects.filter(user_id="42").values_list(
+        UserRole.objects.filter(user_id=TARGET_USER).values_list(
             "scope_division_id", flat=True
         )
     )
@@ -806,17 +819,17 @@ def test_repeated_assignment_does_not_double_the_row():
     """Повтор выдачи не заводит второе назначение той же области."""
     admin, _ = client_for("assign-repeater", "ADMIN", perms=("admin.roles",))
     seed_role("ARCHIVIST", ["document.view"])
-    payload = {"user_id": "42", "role_code": "ARCHIVIST"}
+    payload = {"user_id": TARGET_USER, "role_code": "ARCHIVIST"}
 
     first = admin.post(USER_ROLES_URL, payload, format="json")
     second = admin.post(USER_ROLES_URL, payload, format="json")
 
     assert first.status_code == 201
     assert second.status_code == 201
-    assert UserRole.objects.filter(user_id="42").count() == 1
+    assert UserRole.objects.filter(user_id=TARGET_USER).count() == 1
     # Реактивация тоже не заводит второй строки: назначение опознаётся
     # тройкой «человек + роль + область», и повтор попадает в ту же.
-    assert UserRole.objects.get(user_id="42").is_active is True
+    assert UserRole.objects.get(user_id=TARGET_USER).is_active is True
 
 
 @pytest.mark.django_db
@@ -827,12 +840,12 @@ def test_ghost_scope_is_400_and_nothing_is_assigned():
 
     response = admin.post(
         USER_ROLES_URL,
-        {"user_id": "42", "role_code": "ARCHIVIST", "scope_division_id": 999999},
+        {"user_id": TARGET_USER, "role_code": "ARCHIVIST", "scope_division_id": 999999},
         format="json",
     )
 
     assert response.status_code == 400
-    assert not UserRole.objects.filter(user_id="42").exists()
+    assert not UserRole.objects.filter(user_id=TARGET_USER).exists()
 
 
 @pytest.mark.django_db
@@ -866,7 +879,7 @@ def test_revoking_someone_elses_last_admin_role_is_allowed():
     """Отбой — про СЕБЯ: чужой доступ администратор снимать вправе."""
     admin, _ = client_for("assign-other", "ADMIN", perms=("admin.roles",))
     seed_role("ACCESS_ADMIN", ["admin.roles"])
-    victim = RoleAdminService.assign_role("42", "ACCESS_ADMIN", actor="test")
+    victim = RoleAdminService.assign_role(TARGET_USER, "ACCESS_ADMIN", actor="test")
 
     assert admin.delete(f"{USER_ROLES_URL}{victim.id}/").status_code == 204
 

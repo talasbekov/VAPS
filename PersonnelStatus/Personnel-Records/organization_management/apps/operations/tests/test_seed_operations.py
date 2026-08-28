@@ -140,15 +140,31 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # расход по личному составу своего управления… каждому сотруднику
     # проставляют статусы». До этого роль умела сдать день, но не заполнить
     # его: ручка расхода отвечала ей 403 (проверено на живом стенде).
-    assert holders("status.manage") == {"INTEGRATION_USER", "DIVISION_OPERATOR"}
-    assert holders("daily_report.mark_update") == {"DIVISION_OPERATOR"}
-    assert holders("daily_report.correct") == {"DIVISION_OPERATOR"}
-    assert holders("daily_report.override_block") == {"OMD", "ORGD"}
-    assert holders("audit.view") == {"ORGD"}
-    assert holders("admin.roles") == set()  # только через «*»
+    # РАСКЛАДКА ПЕРЕПИСАНА 28.08.2026 под принятую заказчиком модель ролей
+    # (Plane №266/№267): роли названы должностями, а не словами старой
+    # системы. Прежние держатели — DIVISION_OPERATOR, OMD, ORGD — переехали в
+    # DIRECTORATE_HEAD, DEPARTMENT_EXPENSE_OFFICER и DUTY_OFFICER; пин
+    # обновлён вместе с ними, а не подогнан под вывод.
+    assert holders("status.manage") == {"INTEGRATION_USER", "DIRECTORATE_HEAD"}
+    assert holders("daily_report.mark_update") == {"DIRECTORATE_HEAD"}
+    assert holders("daily_report.correct") == {"DIRECTORATE_HEAD"}
+    assert holders("daily_report.override_block") == {"DUTY_OFFICER"}
+    assert holders("audit.view") == {"SECURITY_ADMIN", "AUDITOR"}
+    # Раздача ролей — у своей роли, а не только через «*»: это и есть смысл
+    # SECURITY_ADMIN.
+    assert holders("admin.roles") == {"SECURITY_ADMIN"}
+    # Решение согласующего разведено с ведением мероприятия (решение
+    # заказчика №267): подпись и возврат держит ТОЛЬКО утверждающий.
+    assert holders("assignment.approve") == {"EVENT_APPROVER"}
+    assert holders("assignment.return") == {"EVENT_APPROVER"}
+    assert holders("event.manage") == {"EVENT_OFFICER"}
+    # Персональная детализация и выгрузка со скрытыми полями — «пока только
+    # администратор» (решение №267), то есть ни одной роли, кроме «*».
+    assert holders("analytics.personal_detail") == set()
+    assert holders("report.export_sensitive") == set()
 
 
-def test_the_division_operator_fills_the_day_and_submits_it(seeded):
+def test_the_directorate_head_fills_the_day_and_submits_it(seeded):
     """Роль «Оператор подразделения» ведёт день ЦЕЛИКОМ: заполняет и сдаёт.
 
     ИСТОРИЯ ПИНА, чтобы правку не приняли за подгон. Раскладка была
@@ -166,7 +182,7 @@ def test_the_division_operator_fills_the_day_and_submits_it(seeded):
     «*» роли по-прежнему не полагается: составлять расход своего управления —
     не то же самое, что мочь всё.
     """
-    own = granted("DIVISION_OPERATOR")
+    own = granted("DIRECTORATE_HEAD")
 
     assert "status.manage" in own
     assert "*" not in own
@@ -194,7 +210,7 @@ def test_the_viewer_holds_nothing_that_writes(seeded):
     assert granted("VIEWER") & writes == set()
 
 
-def test_the_ops_reader_holds_two_registers_and_not_the_third(seeded):
+def test_reading_the_section_is_wide_and_leading_it_is_narrow(seeded):
     """Единственная сеяная персона, на которой видно, что гейты раздела ОМ
     работают.
 
@@ -208,8 +224,12 @@ def test_the_ops_reader_holds_two_registers_and_not_the_third(seeded):
     на реестр ОМ не досталось никому напрямую, поэтому «закрыто» на этой
     персоне — не совпадение раскладки.
     """
-    assert granted("OPS_READER") == {"object.view", "duty.view"}
-    assert holders("event.view") == set()
+    # OPS_READER СНЯТ 28.08.2026: он заводился временной персоной, «на которой
+    # видно, что гейты раздела работают», и его место заняли базовые чтения
+    # рабочих ролей. Утверждение про гейты держится теперь на настоящих
+    # ролях: чтение раздела есть у многих, а ведение — ровно у одной.
+    assert holders("event.view") >= {"EVENT_OFFICER", "PATROL_LEAD", "AUDITOR"}
+    assert "EMPLOYEE" not in holders("event.view")
 
 
 def test_every_permission_the_section_requires_is_seeded(seeded):
@@ -235,10 +255,10 @@ def test_every_permission_the_section_requires_is_seeded(seeded):
 def test_assign_gives_the_user_the_role(seeded):
     user = User.objects.create_user(username="operator", password="x")
 
-    call_command("seed_operations", assign=[f"{user.username}:DIVISION_OPERATOR"])
+    call_command("seed_operations", assign=[f"{user.username}:DIRECTORATE_HEAD"])
 
     assignment = UserRole.objects.get(user_id=str(user.pk))
-    assert assignment.role_code_id == "DIVISION_OPERATOR"
+    assert assignment.role_code_id == "DIRECTORATE_HEAD"
     assert assignment.scope_division_id is None
 
 
@@ -249,7 +269,7 @@ def test_assign_carries_the_scope(seeded):
     division = Division.objects.create(name="Управление 1")
 
     call_command(
-        "seed_operations", assign=[f"{user.username}:DIVISION_OPERATOR:{division.id}"]
+        "seed_operations", assign=[f"{user.username}:DIRECTORATE_HEAD:{division.id}"]
     )
 
     assert UserRole.objects.get(user_id=str(user.pk)).scope_division_id == division.id

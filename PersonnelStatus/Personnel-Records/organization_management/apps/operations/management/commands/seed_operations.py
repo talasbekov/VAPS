@@ -25,12 +25,12 @@ PERMISSIONS = [
     ("admin.roles", "Управление ролями"),
     ("status.manage", "Управление статусами"),
     ("status.view", "Просмотр статусов"),
-    ("assignment.create", "Создание назначения"),
-    ("assignment.delete", "Удаление назначения"),
-    ("assignment.submit", "Отправка расстановки"),
+    # Решение согласующего по расстановке. С 28.08.2026 эти два кода —
+    # РАБОЧИЕ: они охраняют возврат и подпись, разведённые с ведением
+    # мероприятия (решение заказчика, Plane №267). Прежде они не охраняли
+    # ничего, и вместе с ними сняты семь таких же — см. миграцию 0060.
     ("assignment.return", "Возврат расстановки"),
     ("assignment.approve", "Утверждение расстановки"),
-    ("brokerage.manage", "Брокеридж"),
     ("daily_report.generate", "Генерация суточного отчёта"),
     ("daily_report.mark_update", "Отметки в суточном отчёте"),
     ("daily_report.correct", "Корректировка суточного отчёта"),
@@ -44,6 +44,10 @@ PERMISSIONS = [
     # Чтение реестра ОМ отделено от управления по тому же доводу, что у
     # object.view: командный центр смотрят и те, кто мероприятия не ведёт.
     ("event.view", "Просмотр охранных мероприятий"),
+    # Каталоги раздела — охраняемые лица и нормативная база — отделены от
+    # чтения реестра ОМ (Plane №267): рядовой сотрудник видит их, а реестр
+    # мероприятий нет.
+    ("catalog.view", "Просмотр каталогов раздела ОМ"),
     # Перевод ОМ на произвольный этап в обход условий — право ОТДЕЛЬНОЕ от
     # event.manage: ведущий мероприятие проходит цепочку по правилам, а
     # обход правил — админ-полномочие. Выдано только ADMIN (через «*»);
@@ -123,78 +127,163 @@ PERMISSIONS = [
     # core API gating — раскладка PROVISIONAL (открытый вопрос Bratan);
     # тесты проверяют механизм, не политику.
     ("personnel.view", "Просмотр кадровых записей"),
-    ("personnel.edit", "Редактирование кадровых записей"),
     ("orgstructure.view", "Просмотр оргструктуры"),
-    ("orgstructure.manage", "Управление оргструктурой"),
     # documents API gating — раскладка PROVISIONAL.
-    ("document.upload", "Загрузка вложений"),
     ("document.view", "Скачивание вложений/документов"),
 ]
 
+#: Роли — ДОЛЖНОСТИ В ПРОЦЕССЕ, а не наборы экранов (модель принята
+#: заказчиком 28.08.2026, Plane №266/№267). Три правила, из которых она
+#: выведена, и по которым её править:
+#:
+#: 1. Роль отвечает «что», ОБЛАСТЬ отвечает «чьё». Начальник любого управления
+#:    в любом департаменте — ОДНА роль с разной областью назначения, а не
+#:    двадцать одинаковых ролей.
+#: 2. Принадлежность к записи — не роль. Старший наряда, помощник-замещающий и
+#:    старший ГВО назначаются в карточке мероприятия, и система спрашивает «его
+#:    ли это ОМ» отдельно (`permission_override`). Роль даёт только вход в
+#:    работу, а не власть над чужим мероприятием.
+#: 3. Ни одного права «на всякий случай»: лишнее право не заметят, пока им не
+#:    воспользуются не тем человеком.
 ROLES = [
-    ("ADMIN", "Администратор"),
-    ("ORGD", "ОРГД"),
-    ("OMD", "ОМД"),
-    ("SENIOR_COORDINATOR", "Старший координатор"),
-    ("APPROVER", "Утверждающий"),
-    ("DIVISION_OPERATOR", "Оператор подразделения"),
-    ("VIEWER", "Наблюдатель"),
-    # Роль ЗА ПРЕДЕЛАМИ дословного порта из источника — заведена здесь
-    # (11.08.2026). Ни одна портированная роль не несёт чтения раздела ОМ:
-    # объекты, план дежурств и реестр ОМ достаются только ADMIN через «*», то
-    # есть на чистом стенде раздел виден одному администратору.
-    ("OPS_READER", "Наблюдатель раздела ОМ"),
+    ("ADMIN", "Администратор системы"),
+    # ── Основа ──────────────────────────────────────────────────────────
+    ("EMPLOYEE", "Сотрудник"),
+    # ── Суточный расход ─────────────────────────────────────────────────
+    ("DIRECTORATE_HEAD", "Начальник управления"),
+    ("DEPARTMENT_EXPENSE_OFFICER", "Ответственный за расход департамента"),
+    ("DUTY_OFFICER", "Оперативный дежурный"),
+    # ── Охранные мероприятия ────────────────────────────────────────────
+    ("EVENT_OFFICER", "Офицер ОМ"),
+    ("OPS_STAFF", "Штаб сбора сил"),
+    ("PATROL_LEAD", "Старший наряда"),
+    ("GVO_LEAD", "Старший ГВО"),
+    ("EVENT_APPROVER", "Утверждающий расстановку"),
+    # ── Дежурства и боевые группы ───────────────────────────────────────
+    ("DUTY_PLANNER", "Планировщик дежурств"),
+    ("DUTY_PLAN_APPROVER", "Утверждающий план дежурств"),
+    # ── Объекты, оценка, аналитика, обратная связь ──────────────────────
+    ("OBJECT_KEEPER", "Хозяин паспортов объектов"),
+    ("RATING_EVALUATOR", "Оценивающий"),
+    ("ANALYST", "Аналитик службы"),
+    ("FEEDBACK_TRIAGE", "Разбор обратной связи"),
+    # ── Администрирование ───────────────────────────────────────────────
+    ("REFERENCE_ADMIN", "Администратор справочников"),
+    ("SECURITY_ADMIN", "Администратор доступа"),
+    ("AUDITOR", "Ревизор"),
+    # ── Техническая ─────────────────────────────────────────────────────
     ("INTEGRATION_USER", "Интеграционная учётная запись"),
 ]
 
+#: Базовое чтение раздела ОМ. Вынесено в переменную, потому что повторяется у
+#: восьми ролей: одинаковый список, набранный восемь раз, расходится с первой
+#: же правкой.
+OPS_READ = ("event.view", "catalog.view", "personnel.view", "orgstructure.view",
+            "document.view")
+
 ROLE_PERMISSIONS = {
     "ADMIN": ["*"],
-    "OMD": [
-        "assignment.create", "assignment.delete", "assignment.submit",
-        "daily_report.generate", "daily_report.override_block", "brokerage.manage",
-        "personnel.view", "orgstructure.view",
-        # Ответственный департамента СВОДИТ расход за департамент (сценарий
-        # заказчика, Plane №243) — для этого нужно читать статусы и сдачи.
-        # Проставлять их он не должен: это делает начальник управления.
-        "status.view",
-    ],
-    "SENIOR_COORDINATOR": [
-        "assignment.create", "assignment.delete", "assignment.submit",
-        "personnel.view", "orgstructure.view",
-    ],
-    "APPROVER": [
-        "assignment.return", "assignment.approve",
-        "personnel.view", "orgstructure.view",
-    ],
-    "DIVISION_OPERATOR": [
-        # `status.manage` — начальник управления СОСТАВЛЯЕТ расход, а не
-        # только сдаёт его (сценарий заказчика, Plane №243). Без этого права
-        # роль могла сдать день, но не могла его заполнить.
-        "daily_report.mark_update", "daily_report.correct",
-        "status.view", "status.manage",
-        "personnel.view", "orgstructure.view",
-        "document.upload", "document.view",
-    ],
-    "ORGD": [
-        "audit.view", "daily_report.generate", "daily_report.override_block",
-        # Оперативный дежурный сводит расход ЗА ВСЮ ОРГАНИЗАЦИЮ — читает
-        # статусы всех подразделений (сценарий заказчика, Plane №243).
-        "status.view",
-        "personnel.view", "personnel.edit",
-        "orgstructure.view", "orgstructure.manage",
-        "document.upload", "document.view",
-    ],
-    "VIEWER": [
-        "status.view", "personnel.view", "orgstructure.view",
+
+    # Рядовой сотрудник видит РОВНО пять экранов, названных заказчиком: мой
+    # профиль, статусы сотрудников (без права менять), охраняемые лица,
+    # законы об ОМ, обратная связь. Ни `event.view` (это открыло бы реестр
+    # мероприятий), ни `status.manage`.
+    "EMPLOYEE": [
+        "catalog.view", "status.view", "feedback.view", "feedback.create",
         "document.view",
     ],
-    # Раскладка НАМЕРЕННО неполная: `event.view` не выдан. Роль держит
-    # чтение объектов и плана дежурств, но не реестр ОМ — это единственная
-    # сеяная персона, на которой видно, что гейты раздела вообще работают
-    # (у ADMIN «*» проходит любую проверку, у остальных не проходит ничего,
-    # и обе крайности одинаково зелены при сломанном RBAC). Расширять —
-    # решение владельца продукта, а не догадка: см. docs/api-gaps.md §9-12.
-    "OPS_READER": ["object.view", "duty.view"],
+
+    # Составляет расход СВОЕГО управления и сдаёт его; выделяет людей на ОМ по
+    # заявке штаба (это же действие проставляет статус участия).
+    "DIRECTORATE_HEAD": [
+        "status.view", "status.manage",
+        "daily_report.mark_update", "daily_report.correct",
+        "forces.select", "feedback.create", *OPS_READ,
+    ],
+    # Сводит расход управлений за департамент и оповещает их по заявкам штаба.
+    # Статусы НЕ проставляет: это работа начальника управления.
+    "DEPARTMENT_EXPENSE_OFFICER": [
+        "status.view", "daily_report.generate", "forces.allocate",
+        "analytics.view", "report.generate", "feedback.create", *OPS_READ,
+    ],
+    # Сводит департаменты в расход организации; снимает блокировку опоздавшим.
+    "DUTY_OFFICER": [
+        "status.view", "daily_report.generate", "daily_report.override_block",
+        "analytics.view", "report.generate", "duty.view", "object.view",
+        "feedback.create", *OPS_READ,
+    ],
+
+    # Ведёт мероприятие по цепочке этапов. Расстановку по постам НЕ делает —
+    # это старший наряда; подпись НЕ ставит — это утверждающий.
+    "EVENT_OFFICER": [
+        "event.manage", "object.view", "analytics.operations",
+        "feedback.create", *OPS_READ,
+    ],
+    # Делит потребность по департаментам и принимает выделенные списки.
+    "OPS_STAFF": [
+        "forces.command", "status.view", "analytics.operations",
+        "analytics.view", "feedback.create", *OPS_READ,
+    ],
+    # Рекогносцировка и расстановка людей по постам. Конкретное мероприятие
+    # решает назначение в карточке, а не роль (правило 2).
+    "PATROL_LEAD": [
+        "placement.manage", "object.view", "feedback.create", *OPS_READ,
+    ],
+    # Сводка визита иностранного ОЛ. Старший СВОЕГО мероприятия правит её и
+    # без этой роли — по роли в данных.
+    "GVO_LEAD": [
+        "gvo.manage", "object.view", "feedback.create", *OPS_READ,
+    ],
+    # ТОЛЬКО ВИДИТ расстановку и решает по ней (решение заказчика, №267):
+    # согласовать или отклонить с комментарием. Ни `event.manage`, ни
+    # `placement.manage` — иначе подписывающий правит подписываемое.
+    "EVENT_APPROVER": [
+        "assignment.approve", "assignment.return", "feedback.create", *OPS_READ,
+    ],
+
+    "DUTY_PLANNER": [
+        "duty.view", "duty.manage", "status.view", "object.view",
+        "feedback.create", *OPS_READ,
+    ],
+    # Утверждает не тот, кто планирует, — та же мерка, что у расстановки.
+    "DUTY_PLAN_APPROVER": [
+        "duty.view", "duty.approve_plan", "feedback.create", *OPS_READ,
+    ],
+
+    "OBJECT_KEEPER": [
+        "object.view", "object.manage", "feedback.create", *OPS_READ,
+    ],
+    "RATING_EVALUATOR": [
+        "rating.view_aggregate", "rating.evaluate", "rating.correct",
+        "feedback.create", *OPS_READ,
+    ],
+    # Персональной детализации и выгрузки со скрытыми полями здесь НЕТ:
+    # решение заказчика — «пока только администратор» (№267).
+    "ANALYST": [
+        "analytics.view", "analytics.drilldown", "analytics.operations",
+        "rating.view_aggregate", "rating.export", "report.generate",
+        "status.view", "feedback.create", *OPS_READ,
+    ],
+    "FEEDBACK_TRIAGE": [
+        "feedback.view", "feedback.view_all", "feedback.view_confidential",
+        "feedback.triage", "feedback.internal_note", "feedback.create",
+    ],
+
+    "REFERENCE_ADMIN": [
+        "dictionary.view", "dictionary.manage",
+        "settings.view", "settings.manage",
+    ],
+    # Раздаёт роли и области. Расход и мероприятия НЕ ведёт: иначе раздающий
+    # права раздаёт их себе.
+    "SECURITY_ADMIN": [
+        "admin.roles", "audit.view", "orgstructure.view", "personnel.view",
+    ],
+    # Смотрит всё, не меняет ничего: ни одного права записи.
+    "AUDITOR": [
+        "audit.view", "rating.view_audit", "rating.view_correction_chain",
+        "status.view", "analytics.view", *OPS_READ,
+    ],
+
     "INTEGRATION_USER": ["status.manage"],
 }
 
