@@ -1121,6 +1121,77 @@ class ApiClient {
     });
   }
 
+  /**
+   * Действие над конкретным статусом.
+   *
+   * Отдельно от `updateEmployeeStatusById`, потому что это РАЗНЫЕ операции
+   * домена, а не разновидность правки: PATCH активного статуса сервер
+   * запрещает всегда («Активный статус можно только продлить или завершить
+   * досрочно»), и продление с досрочным завершением — единственный способ его
+   * тронуть (Plane №255).
+   *
+   * Сервер знает и третье действие — `cancel` (отмена запланированного). Оно
+   * здесь НЕ заведено намеренно: читателя у него пока нет, а метод без
+   * читателя не проверяется ничем.
+   */
+  private async postStatusAction(
+    statusId: number,
+    action: "extend" | "terminate",
+    body: Record<string, unknown>
+  ): Promise<any> {
+    const endpoint = `/api/statuses/statuses/${statusId}/${action}/`;
+    const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
+
+    const token = await getAccessToken();
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      accept: "application/json",
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`API request failed: ${response.status}`, errorText);
+      // Причина отказа — текст для человека («Новая дата окончания должна быть
+      // позже текущей»), а не дамп тела ответа.
+      throw new Error(
+        extractApiErrorMessage(errorText) ||
+          `HTTP error! status: ${response.status} - ${errorText}`
+      );
+    }
+
+    return await response.json();
+  }
+
+  /** Продление действующего статуса: новая дата окончания. */
+  async extendEmployeeStatus(
+    statusId: number,
+    newEndDate: string
+  ): Promise<any> {
+    return this.postStatusAction(statusId, "extend", {
+      new_end_date: newEndDate,
+    });
+  }
+
+  /** Досрочное завершение действующего статуса: дата и причина. */
+  async terminateEmployeeStatus(
+    statusId: number,
+    terminationDate: string,
+    reason: string
+  ): Promise<any> {
+    return this.postStatusAction(statusId, "terminate", {
+      termination_date: terminationDate,
+      reason,
+    });
+  }
+
   // Обновление конкретного статуса по ID
   async updateEmployeeStatusById(
     statusId: number,
@@ -1158,8 +1229,12 @@ class ApiClient {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`API request failed: ${response.status}`, errorText);
+        // Как и при создании: пользователю едет причина отказа, а не тело
+        // ответа. Здесь она особенно нужна — сервер отказывает содержательно
+        // («Нельзя изменить статус, дата начала которого уже наступила»).
         throw new Error(
-          `HTTP error! status: ${response.status} - ${errorText}`
+          extractApiErrorMessage(errorText) ||
+            `HTTP error! status: ${response.status} - ${errorText}`
         );
       }
 

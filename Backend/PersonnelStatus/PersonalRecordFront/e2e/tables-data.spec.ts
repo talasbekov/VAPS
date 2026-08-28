@@ -87,6 +87,49 @@ async function column(page: Page, head: string): Promise<string[]> {
   }, head)
 }
 
+/** Дата в формате API. */
+const iso = (date: Date): string => date.toISOString().slice(0, 10)
+
+/**
+ * Завести СРОЧНЫЙ действующий статус (с датой окончания) первому сотруднику
+ * первой страницы, у которого период свободен. Возвращает дату окончания.
+ *
+ * Перебор, а не «первый попавшийся»: сервер запрещает пересекающиеся статусы,
+ * и на занятом человеке фикстура молча не завелась бы.
+ */
+async function seedTimedStatus(token: string): Promise<string> {
+  const raw = await fetch(`${API}/api/staff_unit/staff-units/directorate/?page=1&page_size=50`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const body = (await raw.json()) as { staff_units: { employee: { id: number } | null }[] }
+  const employees = body.staff_units
+    .map((unit) => unit.employee)
+    .filter((employee): employee is { id: number } => employee !== null && employee !== undefined)
+
+  const end = new Date()
+  end.setDate(end.getDate() + 6)
+  const endDate = iso(end)
+
+  for (const employee of employees) {
+    const res = await fetch(`${API}/api/statuses/statuses/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        employee: employee.id,
+        status_type: 'business_trip',
+        start_date: iso(new Date()),
+        end_date: endDate,
+        comment: 'Фикстура пробы «период статуса»',
+      }),
+    })
+    if (res.status === 201) return endDate
+  }
+  throw new Error(
+    'не удалось завести срочный статус ни одному сотруднику первой страницы: ' +
+      'у всех период пересекается. Это не повод для скипа — проверьте данные стенда.',
+  )
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'таблицы: правда в колонках' : 'таблицы (скип: нет SMOKE_LIVE=1)', () => {
@@ -95,6 +138,26 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
   test('период статуса доезжает с бэка до обеих таблиц', async ({ page }) => {
     // Сверяемся с ответом сервера, а не с числами в коде: «сегодня» плавает.
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+
+    /**
+     * 🔴 СРОЧНЫЙ статус заводится ПРОБОЙ, а не берётся из данных стенда
+     * (Plane №255, 28.08.2026).
+     *
+     * Ассерт ниже требует, чтобы колонка «Следующее обновление» РАЗЛИЧАЛА
+     * строки, то есть чтобы хоть у кого-то на первой странице была дата
+     * окончания. Фикстуры под это не было: `seed_smoke_fixtures` заводит
+     * `OpsEmployeeStatus` (модель ОМ), а колонка читает `EmployeeStatus`
+     * (модель кадрового статуса) — разные таблицы. Проба держалась на ОДНОЙ
+     * случайной строке стенда, и в тот день, когда этому человеку сменили
+     * статус на бессрочный «В строю», все 48 строк стали «Не указано» и проба
+     * покраснела, не найдя при этом ни одного дефекта кода.
+     *
+     * Это тот же урок, что записан ниже у соседней пробы: данные стенда —
+     * не фикстура. Отличие лишь в том, что здесь нужен ЖИВОЙ круг (ручка →
+     * экран), поэтому перехватом обойтись нельзя — статус заводится по-честному.
+     */
+    await seedTimedStatus(token)
+
     const raw = await fetch(`${API}/api/staff_unit/staff-units/directorate/`, {
       headers: { Authorization: `Bearer ${token}` },
     })
