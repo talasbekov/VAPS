@@ -351,11 +351,28 @@ export type YesterdayPlacement = Record<
   { statusCode: string; period?: string }
 >;
 
+/**
+ * Участие статуса в ОДНОМ мероприятии (Plane №274, Ш-3).
+ *
+ * `roleCode` пуст у физического наряда: ролей внутри у него нет вовсе.
+ * Коды видов и ролей приходят из справочников «Виды участия в ОМ» и «Роли
+ * внутри группы» — перечислять их здесь литералами нельзя, они меняются
+ * администратором.
+ */
+export interface StatusParticipation {
+  event_id: number;
+  kind_code: string;
+  role_code?: string;
+}
+
 export interface BulkStatusRow {
   employee_id: string;
   status_type_code: string;
   date_start: string;
   date_end: string;
+  /** Мероприятия статуса. Ключа НЕТ — сервер не трогает уже сохранённое;
+   * пустой массив — осознанное «участий нет». */
+  participations?: StatusParticipation[];
 }
 
 /** `type`, а не `interface`: переменные use-ops-mutation обязаны

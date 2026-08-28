@@ -2,12 +2,20 @@
 // существующих владельцев данных (виды дежурств — свой реестр, кадровые
 // должности/звания — бэкенд хоста). Удаление значения, используемого
 // связанными сущностями, запрещено — связи считает сервер поимённо.
+/**
+ * Коды справочников раздела ОМ — ЗАКРЫТЫЙ мир, растущий вместе с сервером
+ * (`ops/dictionaries.py: DEFINITIONS`). Список отставал от сервера на роли
+ * наряда (Plane №237); догнан вместе с №274.
+ */
 export type DictionaryCode =
   | "RETURN_REASONS"
   | "POST_REQUIREMENTS"
   | "SEASONAL_CORRECTIONS"
   | "JOURNAL_ENTRY_TYPES"
-  | "POST_REQUIREMENT_GROUPS";
+  | "POST_REQUIREMENT_GROUPS"
+  | "PLACEMENT_ROLES"
+  | "EVENT_PARTICIPATION_KINDS"
+  | "EVENT_GROUP_ROLES";
 
 export interface DictionaryDefinition {
   code: DictionaryCode;

@@ -1317,6 +1317,10 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             override=data.get("override", False),
             override_reason=data.get("override_reason", ""),
             amendment_reason=data.get("amendment_reason", ""),
+            # `.get` без значения по умолчанию: `None` означает «ключа не
+            # было», и сервис по нему отличает «не присылали» от «пусто»
+            # (Plane №274).
+            participations=data.get("participations"),
         )
         return Response(
             OpsEmployeeStatusSerializer(created).data,

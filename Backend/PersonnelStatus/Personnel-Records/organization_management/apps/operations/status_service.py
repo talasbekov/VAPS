@@ -294,6 +294,7 @@ def create_status(
     override=False,
     override_reason="",
     amendment_reason="",
+    participations=None,
 ):
     """Создать статус, принадлежащий оператору, со всеми валидациями.
 
@@ -381,6 +382,12 @@ def create_status(
         # В ТОМ ЖЕ savepoint, что и сама строка: поправка обязана лечь одним
         # коммитом с правкой, иначе между ними существует момент, в котором
         # сданный день уже не соответствует данным, а объяснения ещё нет.
+        # УЧАСТИЕ В МЕРОПРИЯТИЯХ — В ТОМ ЖЕ savepoint (Plane №274, Ш-3).
+        # Статус участия без единой строки участия — это статус «привлечён
+        # неизвестно куда»: расход его посчитает, а департамент не увидит, на
+        # какое мероприятие человек отдан. Разделить их двумя коммитами
+        # значило бы допустить такое состояние на время между ними.
+        _save_participations(status, participations, actor=actor)
         enforce_amendment_on_retro_edit(
             employee_id,
             [(date_start, date_end)],
@@ -389,6 +396,103 @@ def create_status(
             triggered_by_status_id=status.pk,
         )
     return status
+
+
+def _save_participations(status, participations, *, actor):
+    """Строки участия статуса в мероприятиях (Plane №274, Ш-3).
+
+    `None` означает «клиент про участие не присылал» и НЕ трогает уже
+    сохранённое — тот же приём, что у `force_request` в рекогносцировке:
+    «нет ключа» это не «пусто». Пустой список — осознанное «участий нет».
+
+    Коды проверяются ПО СПРАВОЧНИКУ, а не принимаются как есть: подпись вида
+    участия и роли выглядит правдоподобно в любом написании, и строка «как
+    пришла» означала бы, что «группа досмотра» и «Группа Досмотра» — разные
+    виды.
+
+    Роль обязана принадлежать СВОЕЙ группе (Ш-2). Физнаряд ролей внутри не
+    имеет — присланная роль у него отбивается, а не молча стирается: молчание
+    скрыло бы, что человека записали не туда.
+    """
+    if participations is None:
+        return
+    from organization_management.apps.operations.models_settings import (
+        OpsDictionaryEntry,
+    )
+    from organization_management.apps.operations.models_status import (
+        OpsStatusParticipation,
+    )
+
+    rows = list(participations)
+    if not rows:
+        OpsStatusParticipation.objects.filter(status=status).delete()
+        return
+
+    kinds = {
+        entry.code: entry
+        for entry in OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_PARTICIPATION_KINDS", is_active=True
+        )
+    }
+    roles = {
+        entry.code: entry.group_code
+        for entry in OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_GROUP_ROLES", is_active=True
+        )
+    }
+
+    field_errors = {}
+    seen_events = set()
+    prepared = []
+    for index, row in enumerate(rows):
+        event_id = row.get("event_id")
+        kind_code = str(row.get("kind_code") or "").strip()
+        role_code = str(row.get("role_code") or "").strip()
+        prefix = f"participations.{index}"
+        if not str(event_id or "").isdigit():
+            field_errors[f"{prefix}.event_id"] = ["Укажите мероприятие."]
+        elif int(event_id) in seen_events:
+            # Два участия в одном ОМ — это два разных вида на одном
+            # мероприятии; расход посчитал бы человека дважды.
+            field_errors[f"{prefix}.event_id"] = [
+                "Мероприятие уже выбрано в этом статусе."
+            ]
+        else:
+            seen_events.add(int(event_id))
+        if kind_code not in kinds:
+            field_errors[f"{prefix}.kind_code"] = [
+                "Вид участия не найден в справочнике или неактивен."
+            ]
+        elif role_code:
+            if role_code not in roles:
+                field_errors[f"{prefix}.role_code"] = [
+                    "Роль не найдена в справочнике или неактивна."
+                ]
+            elif roles[role_code] != kind_code:
+                field_errors[f"{prefix}.role_code"] = [
+                    "Роль принадлежит другой группе."
+                ]
+        if not field_errors.get(f"{prefix}.kind_code"):
+            prepared.append((event_id, kind_code, role_code))
+
+    if field_errors:
+        raise DomainError(
+            "VALIDATION_ERROR", 400, detail=field_errors,
+            message="Проверьте участие в мероприятиях.",
+        )
+
+    OpsStatusParticipation.objects.filter(status=status).delete()
+    OpsStatusParticipation.objects.bulk_create(
+        [
+            OpsStatusParticipation(
+                status=status,
+                event_id=int(event_id),
+                kind_code=kind_code,
+                role_code=role_code,
+            )
+            for event_id, kind_code, role_code in prepared
+        ]
+    )
 
 
 def _lock_for_edit(status):
@@ -445,8 +549,9 @@ def update_status(
     comment=None,
     document_basis=None,
     amendment_reason="",
+    participations=None,
 ):
-    """Правка оператором своей строки: интервал и метаданные.
+    """Правка оператором своей строки: интервал, метаданные и участие в ОМ.
 
     Переходы жизненного цикла (отмена/досрочное закрытие/продление) сюда НЕ
     входят: отмена — cancel_status, досрочное закрытие —
@@ -534,6 +639,18 @@ def update_status(
                     reason=amendment_reason,
                     triggered_by_status_id=locked.pk,
                 )
+    # УЧАСТИЕ ПРАВИТСЯ ОТДЕЛЬНО ОТ ПОЛЕЙ (Plane №274, Ш-3): смена набора
+    # мероприятий не трогает ни одного поля самой строки, и попади она внутрь
+    # `if changed`, правка «только участий» тихо не сохранилась бы.
+    #
+    # `None` здесь означает «клиент про участие не присылал» и НЕ трогает
+    # сохранённое: старые клиенты и мок-слой шлют тело без этого ключа, и
+    # трактовка «нет ключа = пусто» стирала бы выбранные мероприятия при
+    # каждом чужом сохранении.
+    if participations is not None:
+        with transaction.atomic():
+            _save_participations(locked, participations, actor=actor)
+
     # Правка, ничего не изменившая (PATCH без полей), события НЕ пишет:
     # журнал рассказывает о случившемся, а «до» и «после» тут совпадают —
     # такая строка засоряла бы ленту событием без содержания.
