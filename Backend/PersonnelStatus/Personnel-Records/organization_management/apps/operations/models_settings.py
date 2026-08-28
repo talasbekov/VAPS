@@ -34,6 +34,15 @@ _DICTIONARIES = (
     # «Общая расстановка», а не придуман: в нём 1027 мест под людей, и без
     # роли документ заполняется порядком следования, то есть наугад.
     "PLACEMENT_ROLES",
+    # Виды участия в ОМ и роли внутри группы (Plane №274). Заказчик:
+    # «выбор Физнаряд и разные специфические группы, эти группы имеют разные
+    # статусы (например: группа Досмотра, внутри досмотрщик, кинолог)».
+    #
+    # ДВА кода, а не один список: роль принадлежит КОНКРЕТНОЙ группе —
+    # «кинолог» вне кинологической группы бессмыслен. Связь ведёт то же поле
+    # `group_code`, что связывает требования постов с их группами.
+    "EVENT_PARTICIPATION_KINDS",
+    "EVENT_GROUP_ROLES",
 )
 
 
@@ -128,7 +137,8 @@ class OpsDictionaryEntry(TimeStampedModel):
     label = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     is_active = models.BooleanField()
-    # Только для POST_REQUIREMENTS — код записи POST_REQUIREMENT_GROUPS.
+    # Код записи справочника-родителя: у требования поста это его группа, у
+    # роли — вид участия (группа). Пары перечислены в `ops.dictionaries`.
     group_code = models.CharField(max_length=100, null=True)
     updated_by = models.CharField(max_length=255, null=True)
 

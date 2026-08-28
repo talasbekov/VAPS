@@ -542,6 +542,22 @@ class Command(BaseCommand):
             ("PLACEMENT_ROLES", "CHECK_GROUP_LEAD", "Ответственный за группу проверки (Тексеру тобына жауапты)", None),
             ("PLACEMENT_ROLES", "SQUAD_LEAD", "Ответственный наряда (Жасақтын жауаптысы)", None),
             ("PLACEMENT_ROLES", "ONBOARD_GUARD", "Группа бортовой охраны (Борт күзету тобы)", None),
+            # ВИДЫ УЧАСТИЯ В ОМ (Plane №274). Заказчик: «выбор Физнаряд и
+            # разные специфические группы, эти группы имеют разные статусы
+            # (например: группа Досмотра, внутри досмотрщик, кинолог)».
+            #
+            # «Физический наряд» — вид участия БЕЗ ролей внутри: человек стоит
+            # на посту, а кем он там стоит, говорит роль расстановки
+            # (PLACEMENT_ROLES) — это другой вопрос и другой справочник.
+            ("EVENT_PARTICIPATION_KINDS", "PHYSICAL_SQUAD", "Физический наряд", None),
+            ("EVENT_PARTICIPATION_KINDS", "SCREENING_GROUP", "Группа досмотра", None),
+            ("EVENT_PARTICIPATION_KINDS", "CANINE_GROUP", "Кинологическая группа", None),
+            # РОЛИ ВНУТРИ ГРУППЫ. Каждая принадлежит СВОЕЙ группе: «кинолог»
+            # вне кинологической группы бессмыслен, и общий список ролей
+            # позволил бы поставить досмотрщика в кортеж.
+            ("EVENT_GROUP_ROLES", "SCREENER", "Досмотрщик", "SCREENING_GROUP"),
+            ("EVENT_GROUP_ROLES", "SCREENING_LEAD", "Старший группы досмотра", "SCREENING_GROUP"),
+            ("EVENT_GROUP_ROLES", "DOG_HANDLER", "Кинолог", "CANINE_GROUP"),
         ]
         for dictionary, code, label, group in DICTIONARY_ENTRIES:
             OpsDictionaryEntry.objects.update_or_create(

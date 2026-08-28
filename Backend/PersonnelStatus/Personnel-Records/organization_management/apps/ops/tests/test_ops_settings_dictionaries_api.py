@@ -228,10 +228,16 @@ def test_definitions_with_counts(viewer_api):
     data = viewer_api.get(DICTS).json()["results"]
     by_code = {d["code"]: d for d in data}
     # Закрытый мир справочников: число правится ОСОЗНАННО вместе со списком в
-    # `ops/dictionaries.py`. С 28.08.2026 их шесть — добавлены роли наряда
-    # расстановки (Plane №237).
-    assert len(data) == 6
+    # `ops/dictionaries.py`. Восемь с 28.08.2026: к ролям наряда расстановки
+    # (Plane №237) добавлены виды участия в ОМ и роли внутри группы
+    # (Plane №274) — заказчик просил «выбор Физнаряд и разные специфические
+    # группы, эти группы имеют разные статусы».
+    assert len(data) == 8
     assert "PLACEMENT_ROLES" in by_code
+    # Две пары «родитель — дети» в справочниках: требования постов и роли
+    # групп. Пин на обе, чтобы вторая не пропала незамеченной.
+    assert "EVENT_PARTICIPATION_KINDS" in by_code
+    assert "EVENT_GROUP_ROLES" in by_code
     assert by_code["POST_REQUIREMENTS"]["totalCount"] == 1
     assert by_code["POST_REQUIREMENT_GROUPS"]["activeCount"] == 1
 
@@ -443,3 +449,111 @@ def test_editing_is_closed_by_permission(viewer_api):
     assert resp.status_code == 403
     req.refresh_from_db()
     assert req.label == "Допуск «Объект A»"
+
+
+# ── Виды участия в ОМ и роли внутри группы (Plane №274, Ш-2) ─────────────
+#
+# ЗАЧЕМ. Заказчик: «выбор Физнаряд и разные специфические группы, эти группы
+# имеют разные статусы (например: группа Досмотра, внутри досмотрщик, кинолог)».
+#
+# 🔴 Главное свойство пары — РОЛЬ ПРИНАДЛЕЖИТ ГРУППЕ. Общий список ролей
+# позволил бы поставить кинолога в группу досмотра, и проверить это было бы
+# нечем: подписи выглядят одинаково правдоподобно.
+
+
+def seed_participation():
+    group = OpsDictionaryEntry.objects.create(
+        dictionary_code="EVENT_PARTICIPATION_KINDS", code="SCREENING_GROUP",
+        label="Группа досмотра", description="", is_active=True,
+        group_code=None,
+    )
+    squad = OpsDictionaryEntry.objects.create(
+        dictionary_code="EVENT_PARTICIPATION_KINDS", code="PHYSICAL_SQUAD",
+        label="Физический наряд", description="", is_active=True,
+        group_code=None,
+    )
+    return group, squad
+
+
+def test_a_role_belongs_to_its_group(admin_api):
+    group, _squad = seed_participation()
+
+    created = admin_api.post(
+        f"{DICTS}EVENT_GROUP_ROLES/entries/",
+        {"code": "screener", "label": "Досмотрщик", "groupCode": group.code},
+        format="json",
+    )
+
+    assert created.status_code == 201, created.json()
+    assert created.json()["groupCode"] == "SCREENING_GROUP"
+
+
+def test_a_role_of_a_missing_group_is_refused(admin_api):
+    seed_participation()
+
+    resp = admin_api.post(
+        f"{DICTS}EVENT_GROUP_ROLES/entries/",
+        {"code": "dog_handler", "label": "Кинолог", "groupCode": "NO_SUCH"},
+        format="json",
+    )
+
+    assert resp.status_code == 400, resp.json()
+    assert resp.json()["details"]["groupCode"] == [
+        "Группа не найдена или неактивна."
+    ]
+
+
+def test_a_group_with_roles_reports_them_as_usage(admin_api, viewer_api):
+    """Связь видна СО СТОРОНЫ ГРУППЫ: иначе её удалили бы вместе с ролями."""
+    group, _squad = seed_participation()
+    admin_api.post(
+        f"{DICTS}EVENT_GROUP_ROLES/entries/",
+        {"code": "screener", "label": "Досмотрщик", "groupCode": group.code},
+        format="json",
+    )
+
+    rows = viewer_api.get(
+        f"{DICTS}EVENT_PARTICIPATION_KINDS/entries/"
+    ).json()["results"]
+    usage = next(row for row in rows if row["code"] == "SCREENING_GROUP")["usage"]
+
+    assert usage["status"] == "TRACKED"
+    assert usage["totalCount"] == 1
+    assert usage["references"][0]["sourceLabel"] == "Роли внутри группы"
+    assert usage["references"][0]["samples"] == ["Досмотрщик"]
+
+
+def test_a_group_holding_roles_is_not_deleted(admin_api):
+    group, _squad = seed_participation()
+    admin_api.post(
+        f"{DICTS}EVENT_GROUP_ROLES/entries/",
+        {"code": "screener", "label": "Досмотрщик", "groupCode": group.code},
+        format="json",
+    )
+
+    resp = admin_api.delete(f"{DICTS}entries/{group.pk}/")
+
+    assert resp.status_code == 409, resp.content
+    assert OpsDictionaryEntry.objects.filter(pk=group.pk).exists()
+
+
+def test_the_physical_squad_has_no_roles_inside(viewer_api, admin_api):
+    """У физнаряда ролей внутри нет — и связей у него тоже нет.
+
+    Проба стережёт не пустоту, а РАЗЛИЧИЕ: группа досмотра показывает связь,
+    физнаряд — ноль. Один только ноль зеленел бы и на сломанном подсчёте.
+    """
+    group, squad = seed_participation()
+    admin_api.post(
+        f"{DICTS}EVENT_GROUP_ROLES/entries/",
+        {"code": "screener", "label": "Досмотрщик", "groupCode": group.code},
+        format="json",
+    )
+
+    rows = viewer_api.get(
+        f"{DICTS}EVENT_PARTICIPATION_KINDS/entries/"
+    ).json()["results"]
+    by_code = {row["code"]: row for row in rows}
+
+    assert by_code["PHYSICAL_SQUAD"]["usage"]["totalCount"] == 0
+    assert by_code["SCREENING_GROUP"]["usage"]["totalCount"] == 1

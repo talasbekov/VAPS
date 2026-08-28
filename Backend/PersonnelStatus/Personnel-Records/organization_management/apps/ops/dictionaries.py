@@ -52,14 +52,47 @@ DEFINITIONS = [
         "label": "Сезонные поправки",
         "description": "Поправки к нормативам по сезону.",
     },
+    {
+        "code": "EVENT_PARTICIPATION_KINDS",
+        "label": "Виды участия в ОМ",
+        "description": (
+            "Чем человек занят на мероприятии: физический наряд либо "
+            "специфическая группа (досмотра, кинологическая и прочие)."
+        ),
+    },
+    {
+        "code": "EVENT_GROUP_ROLES",
+        "label": "Роли внутри группы",
+        "description": (
+            "Кем человек идёт в группе: досмотрщик, кинолог и прочие. Роль "
+            "принадлежит КОНКРЕТНОЙ группе — она указывается в поле группы."
+        ),
+    },
 ]
 _CODES = {d["code"] for d in DEFINITIONS}
+
+#: Справочник → справочник его групп. Раньше эта связь была вписана литералом
+#: в трёх местах («если POST_REQUIREMENTS, то проверяй по
+#: POST_REQUIREMENT_GROUPS»), и второй такой паре пришлось бы дописывать
+#: четвёртое место (Plane №274).
+GROUP_PARENT = {
+    "POST_REQUIREMENTS": "POST_REQUIREMENT_GROUPS",
+    # Роль живёт внутри вида участия, и видом может быть только ГРУППА:
+    # у физического наряда ролей внутри нет.
+    "EVENT_GROUP_ROLES": "EVENT_PARTICIPATION_KINDS",
+}
 
 _JOURNAL_TYPE_LABEL = {
     "INSTRUCTION": "Инструктаж",
     "ORDER": "Распоряжение",
     "INCIDENT": "Инцидент",
     "REPLACEMENT": "Замена",
+}
+
+#: Как назвать детей справочника-родителя в отчёте о связях.
+_CHILD_LABEL = {
+    "POST_REQUIREMENTS": "Требования к постам",
+    "EVENT_GROUP_ROLES": "Роли внутри группы",
 }
 
 _NOT_TRACKED_REASON = {
@@ -74,6 +107,12 @@ _NOT_TRACKED_REASON = {
     "SEASONAL_CORRECTIONS": (
         "Поправки пока не читает ни один расчёт — потребителя кода в модели "
         "нет."
+    ),
+    # До шага Ш-3 роль ещё никто не проставляет: статус участия её не несёт.
+    # Когда понесёт — связь станет отслеживаемой, и эта строка уйдёт.
+    "EVENT_GROUP_ROLES": (
+        "Роль пока не проставляется ни одному статусу — потребителя кода в "
+        "модели нет."
     ),
 }
 
@@ -110,10 +149,22 @@ def usage_of(entry):
             ),
             "totalCount": len(carriers),
         }
-    if entry.dictionary_code == "POST_REQUIREMENT_GROUPS":
+    # Справочник-РОДИТЕЛЬ групп: его значение держат дети через `group_code`.
+    # Ищем ребёнка в общей карте, а не по литеральной паре: пар стало две
+    # (требования постов и роли внутри группы), и вторая литеральная ветка
+    # разошлась бы с первой на первой же правке (Plane №274).
+    child_code = next(
+        (
+            child
+            for child, parent in GROUP_PARENT.items()
+            if parent == entry.dictionary_code
+        ),
+        None,
+    )
+    if child_code is not None:
         carriers = list(
             OpsDictionaryEntry.objects.filter(
-                dictionary_code="POST_REQUIREMENTS", group_code=entry.code
+                dictionary_code=child_code, group_code=entry.code
             ).values_list("label", flat=True)
         )
         return {
@@ -124,7 +175,7 @@ def usage_of(entry):
                 if not carriers
                 else [
                     {
-                        "sourceLabel": "Требования к постам",
+                        "sourceLabel": _CHILD_LABEL.get(child_code, child_code),
                         "count": len(carriers),
                         "samples": carriers[:3],
                     }
@@ -197,11 +248,12 @@ def create_entry(dictionary_code, *, code, label, description, group_code,
         dictionary_code=dictionary_code, code=code
     ).exists():
         field_errors["code"] = ["Код уже используется в этом справочнике."]
+    group_parent = GROUP_PARENT.get(dictionary_code)
     if (
-        dictionary_code == "POST_REQUIREMENTS"
+        group_parent is not None
         and group_code
         and not OpsDictionaryEntry.objects.filter(
-            dictionary_code="POST_REQUIREMENT_GROUPS",
+            dictionary_code=group_parent,
             code=group_code,
             is_active=True,
         ).exists()
@@ -218,11 +270,7 @@ def create_entry(dictionary_code, *, code, label, description, group_code,
         label=str(label).strip(),
         description=str(description or "").strip(),
         is_active=True,
-        group_code=(
-            (group_code or None)
-            if dictionary_code == "POST_REQUIREMENTS"
-            else None
-        ),
+        group_code=(group_code or None) if group_parent is not None else None,
         updated_by=actor,
     )
     audit_service.record(
@@ -258,12 +306,13 @@ def update_entry(entry_id, *, label, description, group_code, actor):
     field_errors = {}
     if not str(label or "").strip():
         field_errors["label"] = ["Обязательное поле."]
-    wants_group = entry.dictionary_code == "POST_REQUIREMENTS"
+    group_parent = GROUP_PARENT.get(entry.dictionary_code)
+    wants_group = group_parent is not None
     if (
         wants_group
         and group_code
         and not OpsDictionaryEntry.objects.filter(
-            dictionary_code="POST_REQUIREMENT_GROUPS",
+            dictionary_code=group_parent,
             code=group_code,
             is_active=True,
         ).exists()
