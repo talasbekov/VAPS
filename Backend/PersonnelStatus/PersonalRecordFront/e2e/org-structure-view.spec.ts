@@ -208,10 +208,23 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
      * узел» выполнялось бы и до правки.
      */
     const stats = await statistics()
-    const crowded = stats.divisions.find((item) => item.staff_units_count > 1)
+    // Имя подразделения ДОЛЖНО БЫТЬ УНИКАЛЬНЫМ, иначе счёт по имени не значит
+    // ничего: на полной штатке «Первый отдел» — это ДВЕНАДЦАТЬ РАЗНЫХ отделов в
+    // разных управлениях, и двенадцать одноимённых узлов правильны. Пока
+    // клиент брал первую страницу штатки (50 строк из 442), одноимённые
+    // подразделения в выдачу почти не попадали, и проба выбирала имя наугад —
+    // зелень держалась на неполноте данных (Plane №269).
+    const nameCount = new Map<string, number>()
+    for (const item of stats.divisions) {
+      nameCount.set(item.division_name, (nameCount.get(item.division_name) ?? 0) + 1)
+    }
+    const crowded = stats.divisions.find(
+      (item) => item.staff_units_count > 1 && nameCount.get(item.division_name) === 1,
+    )
     expect(
       crowded,
-      'нет подразделения больше чем с одной ставкой — дублирование не на чем проверить',
+      'нет подразделения с уникальным именем и больше чем одной ставкой — ' +
+        'дублирование не на чем проверить так, чтобы счёт по имени что-то значил',
     ).toBeTruthy()
 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
@@ -219,6 +232,16 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
     await hydrated(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
     await page.getByRole('button', { name: 'Развернуть все' }).click()
+    // Раскрытие ОТРИСОВЫВАЕТСЯ не мгновенно: на полной штатке в дереве 51
+    // узел, и чтение сразу после клика видело ноль заголовков — проба падала
+    // «нарисован 0 раз», говоря о дублировании там, где его нет.
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => document.querySelectorAll('h3').length),
+        { timeout: 20_000, message: 'после «Развернуть все» дерево не отрисовалось' },
+      )
+      .toBeGreaterThan(0)
 
     const titles = await page.evaluate(() =>
       [...document.querySelectorAll('h3')].map((node) => (node.textContent ?? '').trim()),

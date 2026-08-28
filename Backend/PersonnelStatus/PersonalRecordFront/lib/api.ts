@@ -778,10 +778,34 @@ class ApiClient {
 
   // Новый метод для получения данных из staff-units API
   // API возвращает массив напрямую, не в формате ApiResponse
+  /**
+   * Штатные единицы. БЕЗ аргументов — ВСЕ, а не первая страница (Plane №269).
+   *
+   * Ручка постраничная (конверт DRF `{count, next, previous, results}`), и
+   * метод брал только первый ответ: на стенде это 50 строк из 442, то есть
+   * «Структура организации» показывала девятую часть департамента и молчала об
+   * этом. Заказчик: «Структура организации должна показывать всю штатку
+   * департамента».
+   *
+   * Страницы обходятся ПО `next`, а не одним запросом с большим `page_size`.
+   * Сервер сегодня отдаёт по `page_size=500` всё разом, но это его нынешняя
+   * щедрость, а не контракт: вырастет штат или появится потолок — и обрезание
+   * вернётся ровно тем же молчаливым способом. Крупный `page_size` остаётся
+   * как способ сократить число ходов, а `next` — как гарантия полноты.
+   *
+   * Явная `page` сохраняет прежнее поведение «одна страница»: у метода могут
+   * быть читатели, которым нужна именно страница.
+   */
   async getStaffUnits(page?: number, pageSize?: number): Promise<StaffUnit[]> {
+    const wantsEveryPage = page === undefined;
     const params = new URLSearchParams();
     if (page !== undefined) params.append("page", page.toString());
-    if (pageSize !== undefined) params.append("page_size", pageSize.toString());
+    // Полный обход начинается с крупной страницы: 442 строки стенда приезжают
+    // одним ходом, а не девятью.
+    params.append(
+      "page_size",
+      (pageSize ?? (wantsEveryPage ? 500 : 50)).toString()
+    );
     const queryString = params.toString();
     const endpoint = `/api/staff_unit/staff-units/${
       queryString ? `?${queryString}` : ""
@@ -815,6 +839,31 @@ class ApiClient {
       }
 
       const data = await response.json();
+
+      // Хвост страниц. Ходим по `next` сервера, а не считаем адреса сами:
+      // адрес знает сервер, и собранный вручную разошёлся бы с ним на первом
+      // же изменении отбора. Потолок ходов — страховка от кольца в `next`, а
+      // не бизнес-ограничение: до него не доходит ни один реальный штат.
+      if (wantsEveryPage && data && typeof data === "object" && "results" in data) {
+        const envelope = data as { next?: string | null; results: unknown[] };
+        let nextUrl = envelope.next ?? null;
+        for (let hop = 0; nextUrl !== null && hop < 200; hop += 1) {
+          const hopResponse = await fetch(nextUrl, { headers });
+          if (!hopResponse.ok) {
+            // Оборванный обход — это НЕ «получили сколько получили»: неполный
+            // список молча соврёт о штатке ровно так же, как первая страница.
+            throw new Error(
+              `HTTP error! status: ${hopResponse.status} — обход страниц штатки прерван`
+            );
+          }
+          const hopData = (await hopResponse.json()) as {
+            next?: string | null;
+            results?: unknown[];
+          };
+          envelope.results.push(...(hopData.results ?? []));
+          nextUrl = hopData.next ?? null;
+        }
+      }
 
       // Функция для преобразования дерева в плоский массив
       const flattenTree = (
