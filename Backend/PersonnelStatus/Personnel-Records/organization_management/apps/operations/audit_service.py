@@ -132,6 +132,11 @@ VISIT_OBJECT_CHIEF_ASSIGNED = "VISIT_OBJECT_CHIEF_ASSIGNED"
 # мероприятия: «нам не говорили» разбирается по строке журнала, а не по
 # памяти дежурного.
 FORCE_ALLOCATION_NOTIFIED = "FORCE_ALLOCATION_NOTIFIED"
+# Департамент разложил СВОЮ квоту между управлениями (Plane №272, Ш-1).
+# Пишется по той же причине, что и оповещение: с этого числа управление
+# начинает выделять людей, и «сколько с нас просили» разбирается по строке
+# журнала, а не по памяти.
+FORCE_ALLOCATION_SPLIT = "FORCE_ALLOCATION_SPLIT"
 # Отправка окончательного списка штабу: с этого момента за людей отвечает уже
 # не департамент. Момент перехода ответственности — то, ради чего журнал и
 # ведут.
@@ -259,6 +264,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
         VISIT_OBJECT_CHIEF_ASSIGNED,
         FORCE_ALLOCATION_NOTIFIED,
+        FORCE_ALLOCATION_SPLIT,
         FORCE_ALLOCATION_SUBMITTED,
         FORCE_ALLOCATION_ACCEPTED,
         FORCE_ALLOCATION_RETURNED,

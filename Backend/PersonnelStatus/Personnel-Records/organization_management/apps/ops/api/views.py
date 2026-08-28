@@ -268,6 +268,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_split": _FORCES_COMMAND_PERMISSION,
         "forces_accept": _FORCES_COMMAND_PERMISSION,
         "forces_return": _FORCES_COMMAND_PERMISSION,
+        "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
         "forces_notify": _FORCES_ALLOCATE_PERMISSION,
         "forces_submit": _FORCES_ALLOCATE_PERMISSION,
         "forces_withdraw": _FORCES_ALLOCATE_PERMISSION,
@@ -690,6 +691,39 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         data = request.data or {}
         return self._event_response(
             event_service.split_force_demand(pk, rows=data.get("rows"))
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/split",
+    )
+    def forces_directorate_split(self, request, pk=None, allocation_id=None):
+        """Департамент делит свою квоту между управлениями (Plane №272, Ш-1).
+
+        Область — департамент СТРОКИ РАСКЛАДКИ, та же, что у оповещения:
+        раскладывать своё вправе ответственный за выделение в этом
+        департаменте. Отдельного права роль не получает — `forces.allocate`
+        уже описывает ровно её, и второе право означало бы две правды об
+        одном человеке.
+
+        Тело: `{"rows": [{"divisionId": "...", "need": 12}, …]}` — список
+        ЦЕЛИКОМ, как и у раскладки штаба: «кому сколько» одно решение, и
+        построчное сохранение позволяло бы сумме уехать за квоту между двумя
+        запросами. 422 — перебор, чужое управление, дубль, уже запрошено.
+        """
+        require_scoped_permission(
+            request,
+            _FORCES_ALLOCATE_PERMISSION,
+            event_service.allocation_scope_division(pk, allocation_id),
+        )
+        return self._event_response(
+            event_service.split_directorate_quotas(
+                pk,
+                allocation_id,
+                (request.data or {}).get("rows") or [],
+                actor=resolve_actor_id(request),
+            )
         )
 
     @action(

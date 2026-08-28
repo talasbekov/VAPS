@@ -1152,6 +1152,71 @@ export const securityEventsHandlers = [
   // отметки времени), и плейсхолдер `:allocationId` превратился бы в
   // `%3AallocationId` — такой обработчик не сматчится НИКОГДА и молча пропустит
   // запрос на живой бэк.
+  // Раскладка квоты департамента по управлениям (Plane №272, Ш-1). Мок-слой
+  // ведётся В ТОТ ЖЕ ЗАХОД, что и сервер: отставший мок зелен и там, где
+  // сервер отвечает 422, — так после №237 в нём почти сутки не было
+  // справочника ролей наряда, и «ролей нет» читалось как состояние системы.
+  http.post(
+    `*${securityEventForcesSplitPath(":id")}:allocationId/split/`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const allocationId = params.allocationId as string;
+      if (!COLLECTION_STAGES.includes(event.stage)) {
+        return businessRuleError(
+          "INVALID_STAGE_TRANSITION",
+          "Делить квоту между управлениями можно после рекогносцировки и до согласования расстановки."
+        );
+      }
+      const target = event.forceAllocation.find((row) => row.id === allocationId);
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Заявка департаменту не найдена.",
+          { id: allocationId },
+          404
+        );
+      }
+      if (target.status !== "DRAFT") {
+        return businessRuleError(
+          "DIRECTORATE_QUOTAS_LOCKED",
+          "Управления уже запрошены — квоты правятся до запроса. Чтобы изменить раскладку, отзовите список."
+        );
+      }
+      const body = (await request.json()) as {
+        rows?: { divisionId?: string; need?: number }[];
+      };
+      const rows = body.rows ?? [];
+      const known = new Set(target.directorates.map((row) => row.divisionId));
+      for (const [index, row] of rows.entries()) {
+        if (row.divisionId === undefined || !known.has(row.divisionId)) {
+          return validationError({
+            [`rows.${index}.divisionId`]: ["Управление не найдено в департаменте."],
+          });
+        }
+      }
+      const total = rows.reduce((sum, row) => sum + Number(row.need ?? 0), 0);
+      if (total > target.need) {
+        return businessRuleError(
+          "DIRECTORATE_QUOTA_OVERFLOW",
+          `Разложено ${total} при квоте департамента ${target.need} — лишних ${total - target.need}.`
+        );
+      }
+      const needOf = new Map(rows.map((row) => [row.divisionId, Number(row.need ?? 0)]));
+      const directorates = target.directorates.map((row) => ({
+        ...row,
+        // Не названному квота не обнуляется — как на сервере.
+        need: needOf.get(row.divisionId) ?? row.need ?? 0,
+      }));
+      const forceAllocation: ForceAllocationRow[] = event.forceAllocation.map((row) =>
+        row.id === allocationId ? { ...row, directorates } : row
+      );
+      return HttpResponse.json(
+        saveEvent({ ...event, forceAllocation, updatedAt: nowIso() })
+      );
+    }
+  ),
+
   http.post(
     `*${securityEventForcesSplitPath(":id")}:allocationId/notify/`,
     ({ params }) => {
@@ -1186,6 +1251,10 @@ export const securityEventsHandlers = [
           id: kept?.id ?? `force-directorate-${item.divisionId}`,
           divisionId: item.divisionId,
           name: item.name,
+          // Квота управления (Plane №272, Ш-1). Оповещение её НЕ трогает:
+          // раскладывает департамент отдельной ручкой, а оповещение только
+          // рассылает. Не заведена — ноль, как и у бэкфилла на сервере.
+          need: kept?.need ?? 0,
           // Момент у уже оповещённого не переписывается — как на сервере.
           notifiedAt: kept?.notifiedAt ?? now,
         };
