@@ -268,6 +268,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_split": _FORCES_COMMAND_PERMISSION,
         "forces_accept": _FORCES_COMMAND_PERMISSION,
         "forces_return": _FORCES_COMMAND_PERMISSION,
+        "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
         "forces_notify": _FORCES_ALLOCATE_PERMISSION,
         "forces_submit": _FORCES_ALLOCATE_PERMISSION,
@@ -692,6 +693,28 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.split_force_demand(pk, rows=data.get("rows"))
         )
+
+    @action(detail=False, methods=["get"], url_path="forces/requests")
+    def forces_department_requests(self, request):
+        """Заявки, адресованные департаментам актора (Plane №272, Ш-3).
+
+        Обратный разрез цепочки: штаб видит «кому раздал», департамент —
+        «что просят у МЕНЯ». Своя ручка, а не фильтр по реестру ОМ: реестр
+        отдаёт мероприятие целиком (сведение людей и счёт по управлениям на
+        каждое), и экран из пяти колонок платил бы за это на каждой строке.
+
+        Область — та же, что у остальных действий департамента
+        (`forces.allocate`): чужие строки не приезжают вовсе, а не прячутся
+        на клиенте.
+        """
+        from organization_management.apps.operations.services import (
+            PermissionService,
+        )
+
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _FORCES_ALLOCATE_PERMISSION
+        )
+        return Response({"results": event_service.department_requests_view(allowed)})
 
     @action(
         detail=True,

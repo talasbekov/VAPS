@@ -810,6 +810,44 @@ export function securityEventForceAllocationPath(
 export function securityEventForcesSplitPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/`;
 }
+/** Заявки, адресованные департаментам актора (Plane №272, Ш-3).
+ *
+ * Своя ручка, а не фильтр по реестру ОМ: реестр отдаёт мероприятие целиком
+ * (сведение людей и счёт по управлениям на каждое), и таблица из пяти
+ * колонок платила бы за это на каждой строке. */
+export function securityEventDepartmentRequestsPath(): string {
+  return `${SECURITY_EVENTS_PATH}forces/requests/`;
+}
+
+/** Раскладка квоты департамента по управлениям (Plane №272, Ш-1). */
+export function securityEventForcesDirectorateSplitPath(
+  id: string,
+  allocationId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
+    allocationId
+  )}/split/`;
+}
+
+/** Строка заявки в разрезе департамента (Plane №272, Ш-3). */
+export interface DepartmentRequestRow {
+  eventId: string;
+  code: string;
+  title: string;
+  businessDate: string;
+  /** Время самого мероприятия. СРОКА СДАЧИ СПИСКА в модели нет вовсе —
+   * отклонение от эталона записано в `Frontend/Decisions`. */
+  eventTime: string | null;
+  location: string;
+  stage: SecurityEventStage;
+  allocationId: string;
+  departmentId: string;
+  departmentName: string;
+  need: number;
+  assigned: number;
+  status: ForceAllocationStatus;
+}
+
 /** Оповещение управлений департамента о заявке (Plane №73, шаг СС-2). */
 export function securityEventForcesNotifyPath(
   id: string,

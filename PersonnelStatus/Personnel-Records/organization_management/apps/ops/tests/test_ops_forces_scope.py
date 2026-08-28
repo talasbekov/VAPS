@@ -334,3 +334,100 @@ def test_placement_assign_is_refused_without_the_permission(manager):  # noqa: F
     )
 
     assert resp.status_code == 403
+
+
+# ── №272 Ш-3: «что просят у МЕНЯ» — область на списке заявок ────────────────
+
+REQUESTS_URL = f"{URL}forces/requests/"
+
+
+def test_the_requests_list_shows_only_my_department(manager):  # noqa: F811
+    """Заявка ЧУЖОГО департамента не приезжает вовсе.
+
+    Не «не показывается на клиенте», а не приезжает: прислать строку браузеру
+    и понадеяться, что он её скроет, — это не область видимости.
+
+    Стережёт мутацию: отдать `department_requests_view(None)` всем.
+    """
+    mine = make_department("Департамент А")
+    theirs = make_department("Департамент Б")
+    base, _ = allocated_event(manager, mine)
+    # Вторая заявка ТОМУ ЖЕ мероприятию, но чужому департаменту: без неё проба
+    # не отличила бы «сузили по адресу» от «в базе одна строка».
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(mine.pk), "need": 1},
+                {"departmentId": str(theirs.pk), "need": 1},
+            ]
+        },
+        format="json",
+    )
+
+    api = scoped_client("dep-a-requests", "DEP_A_REQ", mine.pk)
+    response = api.get(REQUESTS_URL)
+
+    assert response.status_code == 200, response.data
+    names = {row["departmentName"] for row in response.data["results"]}
+    assert names == {"Департамент А"}, response.data["results"]
+    assert all(row["code"] == event.code for row in response.data["results"])
+
+
+def test_an_unscoped_operator_sees_every_request(manager):  # noqa: F811
+    """Роль БЕЗ области видит все заявки.
+
+    `None` («область не сужена») и пустое множество («видеть нечего») — разные
+    заявления, и путать их нельзя: администратор увидел бы пустой экран.
+    """
+    first = make_department("Департамент А")
+    second = make_department("Департамент Б")
+    base, _ = allocated_event(manager, first)
+    manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(second.pk), "need": 1},
+            ]
+        },
+        format="json",
+    )
+
+    api = unscoped_client("no-scope-requests", "NO_SCOPE_REQ")
+    response = api.get(REQUESTS_URL)
+
+    assert response.status_code == 200, response.data
+    assert {row["departmentName"] for row in response.data["results"]} == {
+        "Департамент А",
+        "Департамент Б",
+    }
+
+
+def test_the_requests_list_is_closed_without_the_permission():
+    """Список закрыт правом департамента, а не «видно всем читающим»."""
+    api, _user = client_for("requests-noperm", "REQ_VIEWER", perms=("event.view",))
+
+    assert api.get(REQUESTS_URL).status_code == 403
+
+
+def test_a_request_row_carries_what_the_table_shows(manager):  # noqa: F811
+    """Строка несёт ровно то, из чего собрана таблица.
+
+    Пробa стережёт контракт: экран не должен добирать эти поля вторым
+    запросом на каждую строку — ради этого ручка и заведена отдельно от
+    реестра ОМ.
+    """
+    department = make_department("Департамент А")
+    base, allocation_id = allocated_event(manager, department)
+
+    row = manager.get(REQUESTS_URL).data["results"][0]
+
+    assert row["allocationId"] == allocation_id
+    assert row["departmentName"] == "Департамент А"
+    assert row["need"] >= 1
+    assert row["assigned"] == 0
+    assert row["status"] == "DRAFT"
+    assert row["code"] and row["title"] and row["businessDate"]

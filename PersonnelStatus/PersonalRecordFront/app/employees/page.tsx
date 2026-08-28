@@ -56,6 +56,8 @@ import { Progress } from "@/components/ui/progress";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useForcesGathering } from "@/hooks/use-forces-gathering";
 import { ForcesSplitPanel } from "@/features/forces-split/ui/ForcesSplitPanel";
+import { DepartmentRequestsTable } from "@/features/department-requests";
+import { FORCES_ALLOCATE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import { objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { personnelFields } from "@/entities/employee/model/from-api";
@@ -394,6 +396,10 @@ function EmployeesScreen() {
   // Разрез сбора сил. Живёт РЯДОМ с реестром, а не вместо него: список
   // сотрудников и его отбор — прежние, добавлен только вопрос «кого отдали».
   const gathering = useForcesGathering();
+  // Право департамента (Plane №272, Ш-3). Клиент гейтит по КОДУ права —
+  // область («мой ли это департамент») проверяет сервер, и второй ответ на
+  // тот же вопрос разошёлся бы с ним при первой правке дерева подразделений.
+  const chainAccess = useChainAccess();
   // Входящие штаба 2-го департамента: запрос личного состава, направленный
   // ЗАВЕРШЕНИЕМ рекогносцировки (Plane «Реестр ОМ-23»).
   //
@@ -878,6 +884,17 @@ function EmployeesScreen() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <TabsList className="max-w-full overflow-x-auto">
+              {/* ЗАЯВКИ ДЕПАРТАМЕНТУ (Plane №272, Ш-3) — ВКЛАДКА, а не блок
+                  над экраном. Первая версия висела над всем содержимым: у
+                  эталона заказчика это вкладка, и, что важнее, блок сверху
+                  делал СВОЮ таблицу первой на странице — шесть проб кадрового
+                  реестра, ищущих колонку по ПЕРВОЙ таблице, разом позеленели
+                  бы на чужих заголовках. Полный смоук это и поймал.
+                  Вкладка первая: ответственный за расход департамента
+                  приходит сюда за заявками, а не за реестром. */}
+              {chainAccess.can(FORCES_ALLOCATE) && (
+                <TabsTrigger value="requests">Заявки</TabsTrigger>
+              )}
               <TabsTrigger value="table">Список сотрудников</TabsTrigger>
               {/* Две вкладки сбора — ТОТ ЖЕ список, суженный по статусу. Свою
                   разметку они не заводят: разойдясь с реестром колонками, они
@@ -904,21 +921,32 @@ function EmployeesScreen() {
                 «Экспорт» обработчика тоже не имел; теперь он выгружает то, что
                 показано на экране, — прямо из уже загруженного отбора. */}
             <div className="flex flex-wrap items-center gap-2">
-              <PermissionGate resource="employees" action="read">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportCsv}
-                  disabled={filteredEmployees.length === 0 || exporting}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  {exporting ? "Собираем файл…" : "Экспорт CSV"}
-                </Button>
-              </PermissionGate>
+              {/* Выгрузка — ТОГО ОТБОРА, что показан в реестре. На вкладке
+                  «Заявки» она выгрузила бы список людей, которого человек в
+                  этот момент не видит. */}
+              {activeTab !== "requests" && (
+                <PermissionGate resource="employees" action="read">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportCsv}
+                    disabled={filteredEmployees.length === 0 || exporting}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    {exporting ? "Собираем файл…" : "Экспорт CSV"}
+                  </Button>
+                </PermissionGate>
+              )}
             </div>
           </div>
 
-          {/* Filters */}
+          {/* Отбор и оговорка про рейтинг — ПРО СПИСОК ЛЮДЕЙ. На вкладке
+              «Заявки» их не показываем: поиск по ФИО там ничего не ищет, а
+              оговорка отвечает на вопрос, которого не задавали. Пустой
+              элемент управления, который ничего не делает, — не нейтральная
+              деталь: человек пробует им пользоваться. */}
+          {activeTab !== "requests" && (
+          <>
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -969,6 +997,12 @@ function EmployeesScreen() {
             Рейтинг сотрудника в этом списке не показывается: оперативный
             рейтинг ведётся обезличенно и не связан с кадровой карточкой.
           </p>
+          </>
+          )}
+
+          <TabsContent value="requests" className="space-y-6">
+            <DepartmentRequestsTable enabled={chainAccess.can(FORCES_ALLOCATE)} />
+          </TabsContent>
 
           <TabsContent value="table" className="space-y-6">
             {loading && (
