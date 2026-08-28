@@ -151,6 +151,191 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })
 
+  test('лишний пост снимается с расстановки, занятый — нет', async ({ page, request }) => {
+    /**
+     * Негативная ветка недобора (Plane №259, Ш-5).
+     *
+     * Заказчик: «штаб не всегда добирает полное количество… старшие нарядов на
+     * этапе „Расстановка“ удаляют лишние посты». И правило, подтверждённое им
+     * дословно 28.08.2026: «Если на этапе расстановки к посту привязан человек
+     * то нельзя удалять пост, а если он пустой соответственно можно удалять
+     * этот пост с расстановки».
+     *
+     * 🔴 Проба стережёт ОБЕ половины правила. Одна половина без второй
+     * бесполезна: «снимается» без «занятый не снимается» зеленело бы и на
+     * кнопке, сносящей пост вместе с людьми.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+
+    const list = (await (
+      await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
+        headers: auth,
+      })
+    ).json()) as { results: { id: string }[] }
+    const target = list.results[0]
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
+    const eventId = target!.id
+
+    type Snapshot = {
+      reconSectorPosts: { id: string; post: string; need: number }[]
+      placementAssignments: { id: string; postId: string; employeeId: string }[]
+      forceRoster?: { employeeId: string }[]
+      forceNeed: number
+    }
+    const read = async (): Promise<Snapshot> =>
+      (await (
+        await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+      ).json()) as Snapshot
+
+    let before = await read()
+    // Пост под снятие заводит САМА проба: на стенде расчёт живёт от прошлых
+    // прогонов, и «взять последний» означало бы проверять их остатки. Пост
+    // добавляется правкой рекогносцировки — она стадией не ограничена.
+    //
+    // ПОСТОВ ЗАВОДИТСЯ ДВА, и это не запас. Правка рекогносцировки потребность
+    // НЕ пересчитывает (её считает завершение рекогносцировки), поэтому после
+    // снятия единственного заведённого поста сумма оставшихся совпала бы с
+    // прежним `forceNeed` — и проба зеленела бы даже без пересчёта. С двумя
+    // заведёнными и одним снятым сумма и прежнее число расходятся, и мутация
+    // «не пересчитывать потребность» становится видимой.
+    //
+    // Имена постов УНИКАЛЬНЫ на прогон. С постоянными именами упавший прогон
+    // оставлял свой пост на стенде, следующий заводил второй такой же, и
+    // локатор по имени находил ДВА — проба падала на собственном мусоре, а
+    // сообщение говорило о правиле заказчика. Уникальность здесь не
+    // аккуратность, а условие того, что проба вообще про то, о чём говорит.
+    const run = Date.now()
+    const doomedName = `Проба №259/${run} · пост под снятие`
+    const keptName = `Проба №259/${run} · пост-свидетель`
+    const patched = await request.patch(
+      `${API}/api/ops/security-events/${eventId}/recon/`,
+      {
+        headers: auth,
+        data: {
+          sectorPosts: [
+            ...before.reconSectorPosts,
+            { sector: 'Проба №259', post: doomedName, need: 1, task: '', requirements: '' },
+            { sector: 'Проба №259', post: keptName, need: 1, task: '', requirements: '' },
+          ],
+        },
+      },
+    )
+    expect(patched.status(), 'посты пробы не завелись').toBe(200)
+
+    before = await read()
+    const doomed = before.reconSectorPosts.find((p) => p.post === doomedName)
+    expect(doomed, 'заведённый пост не вернулся с сервера').toBeTruthy()
+
+    await signIn(page)
+    await page.goto(`/security-ops/events/${eventId}`)
+    const removeDoomed = page.getByRole('button', { name: `Снять пост ${doomedName}` })
+    await expect(removeDoomed, 'кнопки снятия поста нет на «Расстановке»').toBeVisible({
+      timeout: 25_000,
+    })
+    await expect(removeDoomed, 'пустой пост нельзя снять — кнопка выключена').toBeEnabled()
+
+    await removeDoomed.click()
+    const dialog = page.getByRole('dialog')
+    // Подтверждение обязано назвать ЧИСЛО: снятие поста меняет основание, по
+    // которому собирают людей.
+    await expect(dialog.getByText(new RegExp(`уменьшится на ${doomed!.need} чел`))).toBeVisible()
+    await dialog.getByRole('button', { name: 'Снять пост' }).click()
+    await expect(dialog, 'окно не закрылось — сервер отказал').toHaveCount(0, {
+      timeout: 15_000,
+    })
+
+    const after = await read()
+    expect(
+      after.reconSectorPosts.some((p) => p.id === doomed!.id),
+      'пост остался в расчёте',
+    ).toBe(false)
+    // Потребность — СУММА оставшихся постов. Сверяемся с ней, а не с
+    // «прежнее минус снятое»: прежнее число моложе не всех правок расчёта, а
+    // сумма оставшихся — то, что потребность обязана означать.
+    const remainingNeed = after.reconSectorPosts.reduce((sum, p) => sum + p.need, 0)
+    expect(
+      after.forceNeed,
+      'потребность не пересчитана — пост, которого нет, людей не требует',
+    ).toBe(remainingNeed)
+    expect(
+      after.forceNeed,
+      'потребность осталась прежней — значит её просто не тронули',
+    ).not.toBe(before.forceNeed)
+
+    // ВТОРАЯ ПОЛОВИНА ПРАВИЛА: занятый пост не снимается.
+    //
+    // Человека на пост сажает САМА проба. Прежде здесь стоял `test.skip`, если
+    // на стенде не нашлось занятого поста, — и половина правила заказчика
+    // молча не проверялась, а прогон показывал «skipped», что читается как
+    // зелень (правило `CLAUDE.md`: скип — ответ на «этой среды нет вовсе», а
+    // не на «данные не подготовили»).
+    const kept = after.reconSectorPosts.find((p) => p.post === keptName)
+    requireFixture(kept, 'пост-свидетель, заведённый этой же пробой')
+    // Кандидат берётся ИЗ СОСТАВА мероприятия, когда состав есть: сервер
+    // ставит на посты только тех, кого штаб принял в «Сборе сил»
+    // (`NOT_IN_ROSTER`). У мероприятий без состава правило не включается, и
+    // тогда годится любой из кадрового списка.
+    //
+    // 🔴 Эта развилка не теория. В одиночку проба зеленела, а в полном
+    // прогоне падала 422: соседние спеки наполняют состав тому же ОМ, и
+    // «первый из кадрового списка» переставал быть допустимым. Тот же урок,
+    // что записан в Known-Issues 26.08.2026 про «первое попавшееся
+    // мероприятие».
+    const withRoster = await read()
+    const busy = new Set(withRoster.placementAssignments.map((a) => String(a.employeeId)))
+    const fromRoster = (withRoster.forceRoster ?? []).map((m) => String(m.employeeId))
+    let pool = fromRoster
+    if (pool.length === 0) {
+      const people = (await (
+        await request.get(`${API}/api/ops/personnel/?page_size=50`, { headers: auth })
+      ).json()) as { results: { id: string }[] }
+      pool = people.results.map((row) => String(row.id))
+    }
+    const person = pool.find((id) => !busy.has(id))
+    requireFixture(
+      person,
+      fromRoster.length > 0
+        ? 'свободный человек В СОСТАВЕ мероприятия (все принятые штабом уже стоят на постах)'
+        : 'свободный сотрудник в кадровом списке',
+    )
+    const seated = await request.post(
+      `${API}/api/ops/security-events/${eventId}/placement/assign/`,
+      { headers: auth, data: { postId: kept!.id, employeeId: person! } },
+    )
+    expect(
+      seated.status(),
+      `человек не сел на пост-свидетель: ${await seated.text()}`,
+    ).toBe(200)
+
+    await page.reload()
+    const removeStaffed = page.getByRole('button', {
+      name: `Снять пост ${keptName}`,
+    })
+    await expect(
+      removeStaffed,
+      'занятый пост предлагается снять — правило заказчика нарушено',
+    ).toBeDisabled()
+    await expect(removeStaffed).toHaveAttribute('title', /стоит \d+ чел/)
+
+    // Уборка: человек снимается с поста, пост — с расчёта. Стенд общий, и
+    // проба, оставляющая за собой мусор, ломает соседние.
+    const seatedBody = (await seated.json()) as {
+      placementAssignments: { id: string; postId: string }[]
+    }
+    const mine = seatedBody.placementAssignments.find((a) => a.postId === kept!.id)
+    if (mine !== undefined) {
+      await request.delete(
+        `${API}/api/ops/security-events/${eventId}/placement/${mine.id}/`,
+        { headers: auth },
+      )
+    }
+    await request.delete(
+      `${API}/api/ops/security-events/${eventId}/placement/posts/${kept!.id}/`,
+      { headers: auth },
+    )
+  })
+
   test('роль наряда назначается в строке и доезжает до сервера', async ({
     page,
     request,

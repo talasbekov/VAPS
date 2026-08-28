@@ -271,6 +271,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "force_allocation": _MANAGE_EVENT_PERMISSION,
         "placement_assign": _PLACEMENT_PERMISSION,
         "placement_unassign": _PLACEMENT_PERMISSION,
+        # Снятие ЛИШНЕГО поста при недоборе — работа расстановки, а не правка
+        # расчёта: её делают те же, кто расставляет людей (Plane №259).
+        "placement_post_remove": _PLACEMENT_PERMISSION,
         "placement_sector_senior": _PLACEMENT_PERMISSION,
         # Завершение этапа — не расстановка людей, а переход мероприятия
         # дальше по цепочке: его делает ведущий ОМ.
@@ -844,7 +847,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     # ── Исключение гейта: замещающий правит расстановку своего объекта ──
 
-    _DEPUTY_ACTIONS = frozenset({"placement_assign", "placement_unassign"})
+    _DEPUTY_ACTIONS = frozenset(
+        {"placement_assign", "placement_unassign", "placement_post_remove"}
+    )
 
     def permission_override(self, request):
         """Замещающий на объекте посещения правит расстановку ЭТОГО объекта.
@@ -918,6 +923,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         posts = {str(p.get("id")): p for p in (event.recon_sector_posts or [])}
         if self.action == "placement_assign":
             return posts.get(str((self.request.data or {}).get("postId")))
+        # У снятия поста адресат назван прямо в пути — искать его по
+        # назначению не нужно и нечем: назначений у пустого поста нет.
+        if self.action == "placement_post_remove":
+            return posts.get(str(self.kwargs.get("post_id")))
         assignment = next(
             (
                 a
@@ -953,7 +962,27 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @action(
         detail=True,
         methods=["delete"],
-        url_path=r"placement/(?P<assignment_id>(?!assign/|complete/)[^/]+)",
+        url_path=r"placement/posts/(?P<post_id>[^/]+)",
+    )
+    def placement_post_remove(self, request, pk=None, post_id=None):
+        """Снять пустой пост с расчёта на этапе «Расстановка» (Plane №259).
+
+        Путь `placement/posts/<id>` объявлен ВЫШЕ снятия назначения: у того
+        шаблон `placement/<assignment_id>` съедает любой одиночный сегмент, и
+        объявленный после он никогда бы не сработал — «posts» ушло бы в
+        `assignment_id`. Исключение прописано и в самом шаблоне снятия.
+        """
+        self._require_placement_lead(pk)
+        return self._event_response(
+            event_service.remove_placement_post(
+                pk, post_id, deputy=self._deputy_actor()
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"placement/(?P<assignment_id>(?!assign/|complete/|posts/)[^/]+)",
     )
     def placement_unassign(self, request, pk=None, assignment_id=None):
         self._require_placement_lead(pk)

@@ -1520,14 +1520,15 @@ def _sync_auto_force_request(event):
     ]
 
 
-def _autopass_demand_and_forces(event):
-    """Провести мероприятие через `DEMAND` и `FORCES` расчётом рекогносцировки.
+def _demand_rows_of(posts):
+    """Строки потребности по расчёту постов.
 
-    Возвращает мероприятие уже на стадии `PLACEMENT`. Идемпотентности не
-    обещает: зовётся ровно из двух мест — завершения рекогносцировки и
-    миграции-бэкфилла, и оба проверяют стадию до вызова.
+    Вынесено из автопрохода после рекогносцировки, потому что читателей стало
+    два: сам автопроход и снятие лишнего поста на «Расстановке» (Plane №259).
+    Второй способ построить строку разошёлся бы с первым — и разошёлся бы
+    именно в числе, по которому собирают людей.
     """
-    rows = [
+    return [
         {
             "id": f"demand-{index}",
             "sector": str(post.get("sector") or "").strip(),
@@ -1538,8 +1539,18 @@ def _autopass_demand_and_forces(event):
             "requirements": str(post.get("requirements") or "").strip(),
             "comment": "",
         }
-        for index, post in enumerate(event.recon_sector_posts, start=1)
+        for index, post in enumerate(posts or [], start=1)
     ]
+
+
+def _autopass_demand_and_forces(event):
+    """Провести мероприятие через `DEMAND` и `FORCES` расчётом рекогносцировки.
+
+    Возвращает мероприятие уже на стадии `PLACEMENT`. Идемпотентности не
+    обещает: зовётся ровно из двух мест — завершения рекогносцировки и
+    миграции-бэкфилла, и оба проверяют стадию до вызова.
+    """
+    rows = _demand_rows_of(event.recon_sector_posts)
     event.demand_rows = rows
     event.demand_approved = True
     event.force_need = sum(int(row["need"]) for row in rows)
@@ -2691,6 +2702,92 @@ def unassign_placement(event_id, assignment_id, *, deputy=None):
     event.save(update_fields=["placement_assignments", "updated_at"])
     _record_deputy_placement(
         event, deputy, {"operation": "UNASSIGN", "assignmentId": str(assignment_id)}
+    )
+    return event
+
+
+@transaction.atomic
+def remove_placement_post(event_id, post_id, *, deputy=None):
+    """Снять ПУСТОЙ пост с расчёта на этапе «Расстановка» (Plane №259, Ш-1).
+
+    Зачем отдельная операция, а не разрешение общей правки рекогносцировки на
+    поздней стадии: правка рекогносцировки меняет весь расчёт — задачи,
+    требования, минимальный рейтинг, численность — и на «Расстановке» это
+    означало бы переписывание задним числом того, подо что уже собраны люди.
+    Здесь нужно ровно одно точечное действие с понятными последствиями.
+
+    Правило заказчика 28.08.2026, дословно: «Если на этапе расстановки к посту
+    привязан человек то нельзя удалять пост, а если он пустой соответственно
+    можно удалять этот пост с расстановки». Отсюда отказ по занятому посту, а
+    не молчаливое снятие людей вместе с ним: при недоборе лишние посты как раз
+    пустые, а снятие людей уничтожило бы работу расстановки без следа.
+
+    Что пересчитывается и что НЕТ:
+    - `force_need` и `demand_rows` считаются заново по оставшимся постам —
+      это ДЕЙСТВУЮЩАЯ потребность, и пост, которого больше нет, её не создаёт;
+    - `recon_force_request`, `force_requests` и `force_allocation` не трогаются
+      вовсе: это запись о том, сколько ЗАПРОСИЛИ у штаба и как он это разделил.
+      Переписать её значило бы задним числом сказать «мы просили меньше»;
+    - `readiness_percent` не трогается: он выводится из СТАДИИ
+      (`STAGE_READINESS`), а не из численности, — пересчёт здесь был бы вторым
+      счётом того же факта.
+    """
+    event = lock_event(event_id)
+    _require_stage(
+        event,
+        "PLACEMENT",
+        "Снять пост можно только на этапе «Расстановка».",
+    )
+    posts = event.recon_sector_posts or []
+    post = next((p for p in posts if str(p.get("id")) == str(post_id)), None)
+    if post is None:
+        raise _not_found("Пост не найден.", post_id)
+
+    placed = [
+        a
+        for a in (event.placement_assignments or [])
+        if str(a.get("postId")) == str(post_id)
+    ]
+    if placed:
+        # Отказ НАЗЫВАЕТ ЧИСЛО и что сделать: «нельзя» без этого читается как
+        # поломка, а человеку нужно понять, что пост сначала освобождают.
+        names = ", ".join(
+            str(a.get("employeeName") or "—") for a in placed[:3]
+        )
+        tail = f" и ещё {len(placed) - 3}" if len(placed) > 3 else ""
+        raise DomainError(
+            "POST_HAS_ASSIGNMENTS",
+            422,
+            detail={"postId": str(post_id), "assigned": str(len(placed))},
+            message=(
+                f"На посту стоит {len(placed)} чел. ({names}{tail}) — "
+                "сначала снимите их с поста, потом снимайте пост."
+            ),
+        )
+
+    remaining = [p for p in posts if str(p.get("id")) != str(post_id)]
+    event.recon_sector_posts = remaining
+    # Строки потребности пересобираются ТЕМИ ЖЕ правилами, что и при
+    # автопроходе после рекогносцировки: второй способ построить строку
+    # разошёлся бы с первым ровно там, где расхождение труднее заметить.
+    event.demand_rows = _demand_rows_of(remaining)
+    event.force_need = sum(int(row["need"]) for row in event.demand_rows)
+    event.save(
+        update_fields=[
+            "recon_sector_posts",
+            "demand_rows",
+            "force_need",
+            "updated_at",
+        ]
+    )
+    _record_deputy_placement(
+        event,
+        deputy,
+        {
+            "operation": "REMOVE_POST",
+            "postId": str(post_id),
+            "postName": str(post.get("post") or ""),
+        },
     )
     return event
 

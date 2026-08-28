@@ -39,6 +39,7 @@ import {
   securityEventJournalPath,
   securityEventPlacementAssignPath,
   securityEventPlacementCompletePath,
+  securityEventPlacementPostPath,
   securityEventPlacementSeniorPath,
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
@@ -312,6 +313,15 @@ export function useUnassignPlacement(id: string) {
   return useEventMutation<{ assignmentId: string }>(id, ({ assignmentId }) =>
     opsApiClient.del<SecurityEvent>(
       securityEventPlacementUnassignPath(id, assignmentId)
+    )
+  );
+}
+
+/** Снять ПУСТОЙ пост с расчёта: недобор людей — работа расстановки (№259). */
+export function useRemovePlacementPost(id: string) {
+  return useEventMutation<{ postId: string }>(id, ({ postId }) =>
+    opsApiClient.del<SecurityEvent>(
+      securityEventPlacementPostPath(id, postId)
     )
   );
 }

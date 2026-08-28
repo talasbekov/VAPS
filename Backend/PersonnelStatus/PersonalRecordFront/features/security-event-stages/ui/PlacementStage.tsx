@@ -31,6 +31,15 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
 import { RatingBriefDialog } from "./RatingBriefDialog";
@@ -42,6 +51,7 @@ import {
   useAssignPlacement,
   useCompletePlacement,
   usePersonnelPage,
+  useRemovePlacementPost,
   useSetSectorSenior,
   useUnassignPlacement,
   useUpdateRecon,
@@ -114,6 +124,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const assign = useAssignPlacement(event.id);
   const unassign = useUnassignPlacement(event.id);
   const complete = useCompletePlacement(event.id);
+  // Снятие ЛИШНЕГО поста при недоборе (Plane №259). Заказчик: «если на этапе
+  // расстановки к посту привязан человек то нельзя удалять пост, а если он
+  // пустой соответственно можно удалять этот пост с расстановки».
+  const removePost = useRemovePlacementPost(event.id);
+  const [postToRemove, setPostToRemove] = useState<ReconSectorPost | null>(null);
   const updateRecon = useUpdateRecon(event.id);
   const { hasPermission } = useOpsPermissions();
   // Роли наряда — из справочника раздела (Plane №239). Пустой справочник не
@@ -593,7 +608,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         const count = placed.length;
                         const full = count >= post.need;
                         return (
-                          <li key={post.id}>
+                          <li key={post.id} className="flex items-start gap-1">
                             <button
                               type="button"
                               aria-current={selected?.id === post.id}
@@ -601,7 +616,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                                 setSelectedPostId(post.id);
                                 setComment(null);
                               }}
-                              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                              className={`flex w-full min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
                                 selected?.id === post.id ? "bg-accent" : "hover:bg-muted"
                               }`}
                             >
@@ -637,6 +652,29 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                                 {count}/{post.need}
                               </span>
                             </button>
+                            {/* СНЯТИЕ ЛИШНЕГО ПОСТА (Plane №259). Кнопка
+                                показывается только тем, кто ведёт расстановку,
+                                и только у ПУСТОГО поста: занятый снимать
+                                нельзя — правило заказчика, и disabled с
+                                причиной честнее, чем отказ сервера после
+                                клика. Сервер это правило всё равно проверяет:
+                                кнопка — подсказка, а не защита. */}
+                            {access.can(PLACEMENT_MANAGE) && (
+                              <button
+                                type="button"
+                                aria-label={`Снять пост ${post.post}`}
+                                title={
+                                  count > 0
+                                    ? `На посту стоит ${count} чел. — сначала снимите их`
+                                    : "Снять пост с расстановки"
+                                }
+                                disabled={count > 0 || removePost.isPending}
+                                onClick={() => setPostToRemove(post)}
+                                className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            )}
                           </li>
                         );
                       })}
@@ -1172,6 +1210,47 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         <StageError error={updateRecon.error} />
         <StageError error={setSenior.error} />
         <StageError error={complete.error} />
+
+        {/* Подтверждение НАЗЫВАЕТ ЧИСЛА: какой пост, из какого сектора и на
+            сколько человек уменьшится потребность. Снятие поста меняет
+            основание, по которому собирали людей, и «Удалить?» без чисел это
+            не сообщает. */}
+        <Dialog
+          open={postToRemove !== null}
+          onOpenChange={(open) => {
+            if (!open) setPostToRemove(null);
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Снять пост «{postToRemove?.post}»?</DialogTitle>
+              <DialogDescription>
+                {postToRemove === null
+                  ? null
+                  : `Сектор «${postToRemove.sector}». Пост уйдёт из расчёта, и потребность мероприятия уменьшится на ${postToRemove.need} чел. Заявка, ушедшая штабу, не меняется — она говорит, сколько людей запрашивали.`}
+              </DialogDescription>
+            </DialogHeader>
+            <StageError error={removePost.error} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPostToRemove(null)}>
+                Отмена
+              </Button>
+              {/* Окно закрывается ОТВЕТОМ сервера, а не кликом: отказ человек
+                  должен увидеть здесь же. */}
+              <Button
+                variant="destructive"
+                disabled={removePost.isPending}
+                onClick={async () => {
+                  if (postToRemove === null) return;
+                  await removePost.mutateAsync({ postId: postToRemove.id });
+                  setPostToRemove(null);
+                }}
+              >
+                {removePost.isPending ? "Снятие…" : "Снять пост"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <RatingBriefDialog
           employeeId={ratingBriefFor?.id ?? null}
