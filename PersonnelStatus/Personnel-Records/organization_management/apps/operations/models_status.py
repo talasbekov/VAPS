@@ -238,6 +238,64 @@ class SecondmentQuerySet(models.QuerySet):
         )
 
 
+class OpsStatusParticipation(TimeStampedModel):
+    """Участие статуса в КОНКРЕТНОМ мероприятии (Plane №274, Ш-3).
+
+    ЗАЧЕМ ОТДЕЛЬНАЯ ТАБЛИЦА, а не поле у статуса. Заказчик просит выбирать
+    «несколько причастных ОМ», а шаг Ш-5 требует обратного вопроса — «кто
+    участвует в мероприятии X»: список департамента собирается по нему. Ответ
+    должен быть соединением таблиц, а не перебором JSON у каждой строки
+    статуса — на 440 сотрудниках это разница между запросом и обходом.
+
+    ВИД УЧАСТИЯ ЛЕЖИТ ЗДЕСЬ, а не у статуса, и это не избыточность: на разных
+    мероприятиях один человек в один день идёт по-разному — в один физическим
+    нарядом, в другой в группе досмотра. Вид у статуса целиком запретил бы это
+    молча.
+
+    Коды берутся из справочников `EVENT_PARTICIPATION_KINDS` и
+    `EVENT_GROUP_ROLES` (Ш-2); валидирует их сервис — модель хранит коды, как
+    и `status_type_code` у самого статуса.
+
+    `role_code` пуст у физического наряда: ролей внутри у него нет вовсе, и
+    подставлять туда роль расстановки нельзя — это другой справочник и другой
+    вопрос («кем стоит на посту», а не «кем идёт в группе»).
+    """
+
+    status = models.ForeignKey(
+        "operations.OpsEmployeeStatus",
+        on_delete=models.CASCADE,
+        related_name="participations",
+    )
+    # Плоская ссылка на мероприятие — как и остальные ссылки этой модели.
+    event_id = models.IntegerField()
+    # Код из EVENT_PARTICIPATION_KINDS: физнаряд либо группа.
+    kind_code = models.CharField(max_length=100)
+    # Код из EVENT_GROUP_ROLES; пусто у физнаряда.
+    role_code = models.CharField(max_length=100, blank=True, default="")
+
+    class Meta:
+        db_table = "ops_status_participations"
+        verbose_name = "Участие в мероприятии"
+        verbose_name_plural = "Участия в мероприятиях"
+        ordering = ["status_id", "event_id", "id"]
+        constraints = [
+            # Один человек участвует в одном мероприятии ОДИН раз: две строки
+            # означали бы два разных вида участия на одном ОМ, и расход
+            # посчитал бы его дважды.
+            models.UniqueConstraint(
+                fields=["status", "event_id"],
+                name="uniq_status_participation_event",
+            ),
+        ]
+        indexes = [
+            # Ш-5 спрашивает «кто на мероприятии X» — это и есть его запрос.
+            models.Index(fields=["event_id"], name="idx_participation_event"),
+        ]
+
+    def __str__(self):
+        return f"{self.status_id} → ОМ {self.event_id} ({self.kind_code})"
+
+
 class Secondment(TimeStampedModel):
     """Связь пары прикомандирования (порт Secondment из источника).
 

@@ -35,6 +35,22 @@ from organization_management.apps.operations.models_submission import (
 from organization_management.apps.operations.validators import DUTY_ROLE_CHOICES
 
 
+class StatusParticipationSerializer(serializers.Serializer):
+    """Участие статуса в ОДНОМ мероприятии (Plane №274, Ш-3).
+
+    Коды видов и ролей НЕ перечисляются здесь списком: они живут в
+    справочниках и меняются администратором, а сериализатор с зашитым списком
+    начал бы отбивать значения, законно заведённые вчера. Проверяет их сервис
+    — там же, где известен состав справочника.
+    """
+
+    event_id = serializers.IntegerField()
+    kind_code = serializers.CharField(max_length=100)
+    role_code = serializers.CharField(
+        required=False, allow_blank=True, max_length=100
+    )
+
+
 class RoleSerializer(serializers.ModelSerializer):
     # Состав прав едет ВМЕСТЕ с ролью (Plane №36, «П-3»): реестр ролей без
     # него отвечает на вопрос «как называется», а спрашивают у него «что
@@ -289,6 +305,10 @@ class BulkStatusCreateRowSerializer(serializers.Serializer):
     status_type_code = serializers.CharField(max_length=50)
     date_start = serializers.DateField()
     date_end = serializers.DateField()
+    # Мероприятия статуса. НЕОБЯЗАТЕЛЬНО и БЕЗ значения по умолчанию:
+    # «ключа нет» и «прислали пусто» — разные заявления, и default=[] стёр бы
+    # эту разницу ещё до сервиса.
+    participations = StatusParticipationSerializer(many=True, required=False)
     comment = serializers.CharField(required=False, allow_blank=True)
     document_basis = serializers.CharField(required=False, allow_blank=True)
     source_ref = serializers.CharField(required=False, allow_blank=True)
@@ -343,12 +363,17 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
     """
 
     state = serializers.SerializerMethodField()
+    # Мероприятия статуса ЕДУТ НАРУЖУ вместе со строкой (Plane №274): экран
+    # правки открывает уже выбранное, и вторым запросом за ними ходить некуда
+    # — их немного и они принадлежат этой же строке.
+    participations = StatusParticipationSerializer(many=True, read_only=True)
 
     class Meta:
         model = OpsEmployeeStatus
         fields = [
             "id", "employee_id", "status_type_code", "date_start", "date_end",
             "state", "source", "source_ref", "comment", "document_basis",
+            "participations",
             "cancelled_at", "cancelled_by", "cancelled_reason",
             "created_by", "created_at", "updated_at",
         ]
@@ -448,6 +473,10 @@ class StatusUpdateSerializer(serializers.Serializer):
     document_basis = serializers.CharField(
         required=False, allow_blank=True, max_length=255
     )
+    # Мероприятия статуса (Plane №274). Смена только их — ПОЛНОЦЕННАЯ правка:
+    # ниже они не исключаются из проверки на пустое тело, иначе «поменял
+    # список ОМ, ничего больше» отбивалось бы как пустое.
+    participations = StatusParticipationSerializer(many=True, required=False)
     amendment_reason = serializers.CharField(
         required=False, allow_blank=True, max_length=255
     )
