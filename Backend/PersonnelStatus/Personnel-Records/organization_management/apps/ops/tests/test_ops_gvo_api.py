@@ -30,7 +30,9 @@ pytestmark = pytest.mark.django_db
 
 
 def viewer(name="ops-gvo-viewer"):
-    api, _ = client_for(name, "VIEWER", ["event.view"])
+    # Каталог охраняемых лиц с 28.08.2026 под `catalog.view` (Plane №267);
+    # `event.view` остаётся — истории мероприятий лица нужен реестр.
+    api, _ = client_for(name, "VIEWER", ["event.view", "catalog.view"])
     return api
 
 

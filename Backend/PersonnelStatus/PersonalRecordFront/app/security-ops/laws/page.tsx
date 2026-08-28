@@ -53,7 +53,11 @@ export default function LegalDocumentsPage() {
   const kind: LegalDocumentKind | "ALL" = isKind(kindParam) ? kindParam : "ALL";
   const search = searchParams.get("search") ?? "";
 
-  const canView = hasPermission("event.view");
+  // `catalog.view`, а не `event.view` (решение заказчика 28.08.2026,
+  // Plane №267): рядовой сотрудник видит нормативная база, не видя
+  // реестра мероприятий. Пока экран спрашивал право чтения ОМ, выдать
+  // одно без другого было нельзя.
+  const canView = hasPermission("catalog.view");
   const query = useLegalDocuments({ enabled: canView });
 
   function updateParam(key: string, value: string): void {

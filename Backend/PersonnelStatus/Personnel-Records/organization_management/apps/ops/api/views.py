@@ -198,6 +198,14 @@ from organization_management.apps.ops.api.serializers import (
 
 _READ_EVENT_PERMISSION = "event.view"
 _MANAGE_EVENT_PERMISSION = "event.manage"
+#: Решение согласующего по расстановке (Plane №267). Отдельно от ведения
+#: мероприятия: утверждающий видит расстановку целиком, но не правит её.
+#: Чтение каталогов раздела: охраняемые лица и нормативная база. Отдельно от
+#: `event.view`, потому что заказчик назвал эти два экрана доступными рядовому
+#: сотруднику, а реестр мероприятий — нет (Plane №267).
+_CATALOG_PERMISSION = "catalog.view"
+_APPROVE_PLACEMENT_PERMISSION = "assignment.approve"
+_RETURN_PLACEMENT_PERMISSION = "assignment.return"
 _STAGE_OVERRIDE_PERMISSION = "event.stage_override"
 _DELETE_EVENT_PERMISSION = "event.delete"
 # Звенья цепочки «Сбор сил на ОМ» (Plane №74). Область у них не в коде права, а
@@ -278,17 +286,33 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Завершение этапа — не расстановка людей, а переход мероприятия
         # дальше по цепочке: его делает ведущий ОМ.
         "placement_complete": _MANAGE_EVENT_PERMISSION,
-        "approval_approve": _MANAGE_EVENT_PERMISSION,
-        # Маршрут согласования правит тот же, кто ведёт мероприятие: action без
-        # записи в карте провалился бы в автоопределение и остался без права.
+        # РЕШЕНИЕ СОГЛАСУЮЩЕГО РАЗВЕДЕНО С ВЕДЕНИЕМ (решение заказчика
+        # 28.08.2026, Plane №267): «утверждающий только видит всю расстановку,
+        # но изменять не может, только согласовать или отклонить с
+        # комментарием».
+        #
+        # До этого подпись, возврат и правка расстановки охранялись ОДНИМ
+        # `event.manage` — то есть заместитель, который лишь подписывает, мог
+        # переписать то, что подписывает. Права под это уже существовали в
+        # справочнике и не охраняли ничего (`assignment.approve`,
+        # `assignment.return`) — теперь они рабочие.
+        #
+        # `approval_route_decide` — ОДНА ручка на оба решения (согласовать и
+        # вернуть), и потому она под правом СОГЛАСОВАНИЯ: разделить её по телу
+        # запроса значило бы решать право по данным, а не по адресу.
+        "approval_approve": _APPROVE_PLACEMENT_PERMISSION,
+        "approval_route_decide": _APPROVE_PLACEMENT_PERMISSION,
+        "approval_return": _RETURN_PLACEMENT_PERMISSION,
+        # Маршрут согласования, отправка, отзыв и закрытие замечаний остаются
+        # у ВЕДУЩЕГО мероприятие: это работа исполнителя, а не согласующего.
+        # Action без записи в карте провалился бы в автоопределение и остался
+        # без права.
         "approval_route_add": _MANAGE_EVENT_PERMISSION,
         "approval_route_remove": _MANAGE_EVENT_PERMISSION,
-        "approval_route_decide": _MANAGE_EVENT_PERMISSION,
         "approval_route_move": _MANAGE_EVENT_PERMISSION,
         "approval_send": _MANAGE_EVENT_PERMISSION,
         "approval_withdraw": _MANAGE_EVENT_PERMISSION,
         "approval_remark_resolve": _MANAGE_EVENT_PERMISSION,
-        "approval_return": _MANAGE_EVENT_PERMISSION,
         "acknowledge": _MANAGE_EVENT_PERMISSION,
         "acknowledgement_complete": _MANAGE_EVENT_PERMISSION,
         "journal": _MANAGE_EVENT_PERMISSION,
@@ -3094,9 +3118,14 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """/api/ops/protected-persons/ — справочник охраняемых лиц.
 
     Только чтение с фронта; правка — Django Admin (Admin = справочники).
+
+    ПРАВО — `catalog.view`, а НЕ `event.view` (решение заказчика 28.08.2026,
+    Plane №267): рядовой сотрудник видит охраняемых лиц и нормативную базу, но
+    реестра мероприятий не видит. Пока каталог открывался правом чтения ОМ,
+    выдать одно без другого было нельзя.
     """
 
-    permission_map = {"list": "event.view", "history": "event.view"}
+    permission_map = {"list": _CATALOG_PERMISSION, "history": _CATALOG_PERMISSION}
 
     def list(self, request):
         return Response({"results": gvo_service.list_persons()})
@@ -3152,9 +3181,12 @@ class OpsLegalDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """/api/ops/legal-documents/ — нормативная база ОМ (только чтение).
 
     Файлы документов система не хранит: fileUrl честно null.
+
+    Право — `catalog.view`, как у охраняемых лиц: оба экрана заказчик назвал
+    доступными рядовому сотруднику (Plane №267).
     """
 
-    permission_map = {"list": "event.view"}
+    permission_map = {"list": _CATALOG_PERMISSION}
 
     def list(self, request):
         return Response({"results": gvo_service.list_legal_documents()})

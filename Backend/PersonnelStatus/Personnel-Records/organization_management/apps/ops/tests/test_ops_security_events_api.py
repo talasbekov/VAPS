@@ -110,6 +110,11 @@ def manager():
         "EV_MANAGER",
         perms=(
             "event.view",
+            # Каталоги раздела (охраняемые лица, нормативная база) с
+            # 28.08.2026 под своим правом (Plane №267). Ведущий мероприятие
+            # их видит — в принятой модели `catalog.view` входит в базовое
+            # чтение раздела у всех рабочих ролей.
+            "catalog.view",
             "event.manage",
             "forces.command",
             "forces.allocate",
@@ -123,6 +128,31 @@ def manager():
 @pytest.fixture
 def viewer():
     api, _ = client_for("ev-viewer", "EV_VIEWER", perms=("event.view",))
+    return api
+
+
+@pytest.fixture
+def approver_client(approver):
+    """Тот же согласующий под другим именем: в сквозном проходе переменная
+    `approver` уже занята СТРОКОЙ МАРШРУТА, и фикстура затенила бы её."""
+    return approver
+
+
+@pytest.fixture
+def approver():
+    """Утверждающий: ВИДИТ расстановку и решает по ней, но не правит.
+
+    Решение заказчика 28.08.2026 (Plane №267): «утверждающий только видит всю
+    расстановку, но изменять не может, только согласовать или отклонить с
+    комментарием». Поэтому у него нет `event.manage` — и это не упущение
+    фикстуры, а сам предмет разграничения: с ним он смог бы переписать то,
+    что подписывает.
+    """
+    api, _ = client_for(
+        "ev-approver",
+        "EV_APPROVER",
+        perms=("event.view", "assignment.approve", "assignment.return"),
+    )
     return api
 
 
@@ -509,7 +539,7 @@ def test_personnel_page_size_has_a_ceiling(manager):
 # ── Сквозной проход всех девяти стадий ───────────────────────────────────────
 
 
-def test_full_lifecycle_walkthrough(manager):
+def test_full_lifecycle_walkthrough(manager, approver_client):
     obj = make_object(with_passport=True)
     employee = make_employee()
     event_id = create_event(manager, obj).json()["id"]
@@ -594,9 +624,9 @@ def test_full_lifecycle_walkthrough(manager):
 
     # APPROVAL: возврат с причиной откатывает в PLACEMENT, повторное
     # прохождение — согласование открывает ознакомление
-    resp = manager.post(f"{base}approval/return/", {"comment": ""}, format="json")
+    resp = approver_client.post(f"{base}approval/return/", {"comment": ""}, format="json")
     assert resp.status_code == 400
-    data = manager.post(
+    data = approver_client.post(
         f"{base}approval/return/", {"comment": "уточнить посты"}, format="json"
     ).json()
     assert (data["stage"], data["approvalStatus"]) == ("PLACEMENT", "RETURNED")
@@ -606,7 +636,7 @@ def test_full_lifecycle_walkthrough(manager):
     # Согласование по эталону («ОМ-37.3»): без маршрута и без отправки этап не
     # завершается — подпись под составом, которого согласующий не видел, это
     # не согласование.
-    resp = manager.post(f"{base}approval/approve/")
+    resp = approver_client.post(f"{base}approval/approve/")
     assert resp.json()["error_code"] == "APPROVAL_ROUTE_EMPTY"
     approver = manager.post(
         f"{base}approval/route/",
@@ -615,31 +645,31 @@ def test_full_lifecycle_walkthrough(manager):
     ).json()["approvalRoute"][0]
     assert approver["status"] == "NOT_SENT"
     # Решать по неотправленному нечего.
-    resp = manager.post(
+    resp = approver_client.post(
         f"{base}approval/route/{approver['id']}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
     )
     assert resp.json()["error_code"] == "APPROVAL_NOT_SENT"
-    resp = manager.post(f"{base}approval/approve/")
+    resp = approver_client.post(f"{base}approval/approve/")
     assert resp.json()["error_code"] == "APPROVAL_INCOMPLETE"
 
     data = manager.post(f"{base}approval/send/").json()
     assert data["approvalRoute"][0]["status"] == "PENDING"
     assert data["approvalStale"] is False
     # Возврат согласующего порождает замечание и блокирует завершение.
-    data = manager.post(
+    data = approver_client.post(
         f"{base}approval/route/{approver['id']}/decide/",
         {"decision": "RETURNED", "comment": "уточнить пост 1"},
         format="json",
     ).json()
     remark = data["approvalRemarks"][0]
     assert (remark["text"], remark["resolved"]) == ("уточнить пост 1", False)
-    resp = manager.post(f"{base}approval/approve/")
+    resp = approver_client.post(f"{base}approval/approve/")
     assert resp.json()["error_code"] == "APPROVAL_RETURNED"
 
     data = manager.post(f"{base}approval/send/").json()
-    data = manager.post(
+    data = approver_client.post(
         f"{base}approval/route/{approver['id']}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
@@ -647,7 +677,7 @@ def test_full_lifecycle_walkthrough(manager):
     # Комментарий согласования проставляет СЕРВЕР — его не спрашивают.
     assert data["approvalRoute"][0]["comment"] == "Без замечаний"
     # Замечание ещё открыто — этап не завершить.
-    resp = manager.post(f"{base}approval/approve/")
+    resp = approver_client.post(f"{base}approval/approve/")
     assert resp.json()["error_code"] == "APPROVAL_REMARKS_OPEN"
     manager.post(
         f"{base}approval/remarks/{remark['id']}/resolve/",
@@ -655,7 +685,7 @@ def test_full_lifecycle_walkthrough(manager):
         format="json",
     )
 
-    data = manager.post(f"{base}approval/approve/").json()
+    data = approver_client.post(f"{base}approval/approve/").json()
     assert (data["stage"], data["approvalStatus"]) == (
         "ACKNOWLEDGEMENT",
         "APPROVED",

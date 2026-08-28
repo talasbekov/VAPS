@@ -142,7 +142,10 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })
 
-  test('без event.view каталог закрыт', async ({ page }) => {
+  test('без catalog.view каталог закрыт', async ({ page }) => {
+    // Имя правлено вместе с гейтом (Plane №267): каталог охраняемых лиц
+    // перестал зависеть от права читать реестр ОМ и открывается своим
+    // `catalog.view` — рядовой сотрудник видит лица, не видя мероприятий.
     await signIn(page, 'observer', 'observer123')
     await page.goto(`${APP}/security-ops/persons/`)
     await expect(page.getByText('каталога охраняемых лиц')).toBeVisible({ timeout: 15_000 })

@@ -243,20 +243,28 @@ def test_the_duty_officer_sees_the_whole_organisation(seeded_catalog, structure)
 @pytest.mark.parametrize(
     "role_code,permission_code,why",
     [
+        # Имена ролей — из принятой заказчиком модели (Plane №266/№267):
+        # должность, а не слово старой системы. Прежние DIVISION_OPERATOR,
+        # OMD и ORGD переехали сюда.
         (
-            "DIVISION_OPERATOR",
+            "DIRECTORATE_HEAD",
             "status.manage",
             "начальник управления СОСТАВЛЯЕТ расход, а не только сдаёт его",
         ),
         (
-            "OMD",
+            "DEPARTMENT_EXPENSE_OFFICER",
             "status.view",
             "ответственный департамента сводит расход за департамент",
         ),
         (
-            "ORGD",
+            "DUTY_OFFICER",
             "status.view",
             "оперативный дежурный сводит расход за всю организацию",
+        ),
+        (
+            "EMPLOYEE",
+            "catalog.view",
+            "рядовой сотрудник видит охраняемых лиц и законы об ОМ",
         ),
     ],
 )

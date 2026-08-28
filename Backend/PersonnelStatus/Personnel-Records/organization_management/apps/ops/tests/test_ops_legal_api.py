@@ -19,7 +19,10 @@ pytestmark = pytest.mark.django_db
 
 
 def viewer(name="ops-legal-viewer"):
-    api, _ = client_for(name, "VIEWER", ["event.view"])
+    # `catalog.view`, а не `event.view`: нормативная база с 28.08.2026 под
+    # своим правом — рядовой сотрудник видит её, не видя реестра мероприятий
+    # (решение заказчика, Plane №267).
+    api, _ = client_for(name, "VIEWER", ["catalog.view"])
     return api
 
 
