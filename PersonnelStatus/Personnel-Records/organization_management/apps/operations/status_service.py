@@ -295,6 +295,7 @@ def create_status(
     override_reason="",
     amendment_reason="",
     participations=None,
+    system_participations=False,
 ):
     """Создать статус, принадлежащий оператору, со всеми валидациями.
 
@@ -387,7 +388,9 @@ def create_status(
         # неизвестно куда»: расход его посчитает, а департамент не увидит, на
         # какое мероприятие человек отдан. Разделить их двумя коммитами
         # значило бы допустить такое состояние на время между ними.
-        _save_participations(status, participations, actor=actor)
+        _save_participations(
+            status, participations, actor=actor, system=system_participations
+        )
         enforce_amendment_on_retro_edit(
             employee_id,
             [(date_start, date_end)],
@@ -398,7 +401,7 @@ def create_status(
     return status
 
 
-def _save_participations(status, participations, *, actor):
+def _save_participations(status, participations, *, actor, system=False):
     """Строки участия статуса в мероприятиях (Plane №274, Ш-3).
 
     `None` означает «клиент про участие не присылал» и НЕ трогает уже
@@ -413,6 +416,15 @@ def _save_participations(status, participations, *, actor):
     Роль обязана принадлежать СВОЕЙ группе (Ш-2). Физнаряд ролей внутри не
     имеет — присланная роль у него отбивается, а не молча стирается: молчание
     скрыло бы, что человека записали не туда.
+
+    `system=True` — участие поставила САМА СИСТЕМА (цепочка сбора сил, Ш-5), а
+    не человек из каталога. Тогда вид НЕ сверяется со справочником, и вот
+    почему: виды участия кладёт команда сида, а не миграция, и администратор
+    волен выключить любой из них. Проверка каталога в системном пути означала
+    бы, что выключенный «физический наряд» ломает ВЫДЕЛЕНИЕ ЛЮДЕЙ НА
+    МЕРОПРИЯТИЕ — работу, которая к справочнику отношения не имеет. Структурные
+    проверки (мероприятие названо, дважды не повторено) остаются: они про
+    целостность, а не про каталог.
     """
     if participations is None:
         return
@@ -459,11 +471,11 @@ def _save_participations(status, participations, *, actor):
             ]
         else:
             seen_events.add(int(event_id))
-        if kind_code not in kinds:
+        if kind_code not in kinds and not system:
             field_errors[f"{prefix}.kind_code"] = [
                 "Вид участия не найден в справочнике или неактивен."
             ]
-        elif role_code:
+        elif role_code and not system:
             if role_code not in roles:
                 field_errors[f"{prefix}.role_code"] = [
                     "Роль не найдена в справочнике или неактивна."

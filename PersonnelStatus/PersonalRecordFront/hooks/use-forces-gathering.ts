@@ -25,9 +25,20 @@ import type {
   StrengthReport,
 } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
-import { DAILY_EMPLOYEES_PATH } from "@/entities/daily-grid";
+import {
+  DAILY_EMPLOYEES_PATH,
+  EVENT_PARTICIPATION_STATUS_CODES,
+} from "@/entities/daily-grid";
 
-/** Код статуса «Участие в ОМ» из справочника раздела. */
+/** Код статуса «Участие в ОМ» из справочника раздела.
+ *
+ * 🔴 ОДНОГО КОДА МАЛО, и это стоило разреза (Plane №274, Ш-5). Участий в ОМ
+ * ДВА: физический наряд (`EVENT_ASSIGNMENT`) и специфическая группа
+ * (`EVENT_ASSIGNMENT_GROUP`). Разрез знал только первый, поэтому человек,
+ * привлечённый группой досмотра, не попадал в выделенные — и, что хуже,
+ * `isInService` относила его к «В строю»: расход показывал его свободным и
+ * предлагал на новое привлечение. Проверять надо ОБА кода, и список у них
+ * теперь общий с диалогом постановки статуса. */
 export const EVENT_ASSIGNMENT_CODE = "EVENT_ASSIGNMENT";
 
 /** Колонка расхода, в которую ложится «в строю» (и, увы, участие в ОМ). */
@@ -130,7 +141,7 @@ export function useForcesGathering() {
    * привлечённого дважды). */
   function isInService(person: GatheringPerson): boolean {
     if (person.statusCode === null) return true;
-    if (person.statusCode === EVENT_ASSIGNMENT_CODE) return false;
+    if (EVENT_PARTICIPATION_STATUS_CODES.has(person.statusCode)) return false;
     return (
       typeByCode.get(person.statusCode)?.report_column_code ===
       IN_SERVICE_COLUMN
@@ -138,7 +149,9 @@ export function useForcesGathering() {
   }
 
   const assigned = persons.filter(
-    (person) => person.statusCode === EVENT_ASSIGNMENT_CODE
+    (person) =>
+      person.statusCode !== null &&
+      EVENT_PARTICIPATION_STATUS_CODES.has(person.statusCode)
   );
   const inService = persons.filter(isInService);
 

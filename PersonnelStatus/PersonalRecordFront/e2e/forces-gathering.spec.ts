@@ -26,6 +26,8 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const SCREEN = '/employees'
 
 const EVENT_ASSIGNMENT = 'EVENT_ASSIGNMENT'
+/** Второй вид участия: специфическая группа (Plane №274, Ш-2/Ш-4). */
+const EVENT_ASSIGNMENT_GROUP = 'EVENT_ASSIGNMENT_GROUP'
 const IN_SERVICE_COLUMN = 'IN_SERVICE'
 
 interface StrengthReport {
@@ -68,6 +70,29 @@ async function send<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   return (await res.json().catch(() => ({}))) as T
+}
+
+/**
+ * Привлечённых на дату — ОБА кода участия (Plane №274, Ш-5).
+ *
+ * 🔴 ПИН ИЗМЕНЁН ОСОЗНАННО. Раньше здесь стоял один `EVENT_ASSIGNMENT`, и это
+ * повторяло ошибку экрана, а не проверяло его: разрез «Сбор сил» тоже знал
+ * один код, поэтому проба и экран были согласованно неправы. Человек,
+ * привлечённый специфической группой, у обоих оказывался «в строю» — то есть
+ * свободным для нового привлечения. Считать надо оба кода; сама проба того,
+ * что групповое участие доезжает до вкладки, живёт ниже отдельно и САМА
+ * сажает такого человека, а не надеется найти его на стенде.
+ */
+async function assignedCount(token: string, businessDate: string): Promise<number> {
+  let total = 0
+  for (const code of [EVENT_ASSIGNMENT, EVENT_ASSIGNMENT_GROUP]) {
+    const page = await get<{ results: StatusRow[] }>(
+      token,
+      `/api/operations/statuses/?business_date=${businessDate}&status_type_code=${code}&page_size=500`,
+    )
+    total += page.results.length
+  }
+  return total
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -209,11 +234,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
   test('знаменатели взяты у расхода, привлечённые посчитаны по статусам', async ({ page }) => {
     const token = await apiToken()
     const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
-    const statuses = await get<{ results: StatusRow[] }>(
-      token,
-      `/api/operations/statuses/?business_date=${report.business_date}&status_type_code=${EVENT_ASSIGNMENT}&page_size=500`,
-    )
-    const assigned = statuses.results.length
+    const assigned = await assignedCount(token, report.business_date)
     const inServiceColumn = report.totals.columns[IN_SERVICE_COLUMN] ?? 0
 
     expect(report.totals.list_total, 'расход пуст — проба вакуумна').toBeGreaterThan(0)
@@ -242,11 +263,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
   test('люди разложены по управлениям, вкладки не пересекаются', async ({ page }) => {
     const token = await apiToken()
     const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
-    const statuses = await get<{ results: StatusRow[] }>(
-      token,
-      `/api/operations/statuses/?business_date=${report.business_date}&status_type_code=${EVENT_ASSIGNMENT}&page_size=500`,
-    )
-    const assigned = statuses.results.length
+    const assigned = await assignedCount(token, report.business_date)
     expect(assigned, 'на стенде нет привлечённых — вкладка пуста, проба вакуумна').toBeGreaterThan(0)
 
     await signIn(page)
@@ -313,6 +330,92 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
           'один человек посчитан дважды',
       ).toBe(false)
     }
+  })
+
+  test('привлечённый ГРУППОЙ считается выделенным, а не оставшимся в строю', async ({
+    page,
+  }) => {
+    /**
+     * Plane №274, Ш-5. Участий в ОМ два — физический наряд и специфическая
+     * группа, — а разрез знал только первый. Человек с
+     * `EVENT_ASSIGNMENT_GROUP` не попадал в «Участие в ОМ» и попадал в «В
+     * строю»: экран показывал его свободным, и его можно было привлечь
+     * второй раз.
+     *
+     * Проба САМА сажает такого человека, а не ищет его на стенде: пока
+     * групповых статусов там нет, любая проверка «найди и посмотри» зелена
+     * по пустоте. Это ровно тот случай, из-за которого Ш-3 переписывал
+     * вакуумную пробу.
+     *
+     * Убрать за собой нельзя — статус расхода это факт, ручки удаления у него
+     * нет (разбор — в шапке `status-set-dialog.spec.ts`). Поэтому берётся
+     * человек БЕЗ статуса на дату, и накопление ограничено одной строкой за
+     * прогон.
+     */
+    const token = await apiToken()
+    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const division = report.rows.find((row) => row.list_total > 0)
+    expect(division, 'в расходе нет ни одного непустого управления').toBeDefined()
+
+    // 🔴 `id` У ДВУХ РУЧЕК РАЗНОГО ТИПА: расход отдаёт строку, статусы — число.
+    // Сравнение без приведения не совпадало НИ РАЗУ, «свободным» объявлялся
+    // первый попавшийся, и проба падала 409 по чужому статусу. Похоже на
+    // расхождение областей видимости — но поштучная сверка показала, что
+    // выдачи согласованы, а расходились типы.
+    const people = await get<{ results: { id: number | string; full_name: string }[] }>(
+      token,
+      `/api/ops/daily/employees/?division_id=${division!.division_id}&page_size=200`,
+    )
+    // Занят — это ЛЮБОЙ действующий статус, а не только участие: сервер
+    // отбивает пересечение с дежурством и отпуском ровно так же (409/422), и
+    // отбор «нет участия» приводил пробу к отказу по чужому статусу.
+    // Спрашиваем ПО ТОМУ ЖЕ управлению, что и список людей: без сужения ручка
+    // отдаёт статусы всей организации, страница обрезается по потолку сервера,
+    // и «свободным» объявляется тот, чья строка не поместилась.
+    const busyRows = await get<{ results: StatusRow[]; next: string | null }>(
+      token,
+      `/api/operations/statuses/?business_date=${report.business_date}` +
+        `&division_id=${division!.division_id}&page_size=500`,
+    )
+    expect(busyRows.next, 'статусы управления не поместились на страницу').toBeFalsy()
+    const busy = new Set(busyRows.results.map((row) => row.employee_id))
+    const free = people.results
+      .map((person) => ({ ...person, id: Number(person.id) }))
+      .find((person) => !busy.has(person.id))
+    expect(free, 'все люди управления уже привлечены — сажать некого').toBeDefined()
+
+    const nextDay = new Date(`${report.business_date}T00:00:00Z`)
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+    const created = await fetch(`${API}/api/operations/statuses/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        employee_id: free!.id,
+        status_type_code: EVENT_ASSIGNMENT_GROUP,
+        date_start: report.business_date,
+        date_end: nextDay.toISOString().slice(0, 10),
+      }),
+    })
+    expect(created.status, await created.text()).toBe(201)
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const assignedTab = page.getByRole('tab', { name: /Участие в ОМ/ })
+    await expect(assignedTab).toBeVisible({ timeout: 25_000 })
+    await assignedTab.click()
+    await expect(assignedTab).toHaveAttribute('aria-selected', 'true')
+    await expect(
+      page.locator(`table tbody tr[data-employee-id="${free!.id}"]`),
+      'привлечённый группой обязан стоять в «Участии в ОМ»',
+    ).toHaveCount(1)
+
+    const inServiceTab = page.getByRole('tab', { name: /В строю/ })
+    await inServiceTab.click()
+    await expect(inServiceTab).toHaveAttribute('aria-selected', 'true')
+    await expect(
+      page.locator(`table tbody tr[data-employee-id="${free!.id}"]`),
+      'он же не может числиться свободным — иначе его привлекут дважды',
+    ).toHaveCount(0)
   })
 
   test('статусы спрашиваются на деловую дату, а не за все дни', async ({ page }) => {

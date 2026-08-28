@@ -46,13 +46,14 @@ import { Badge } from "@/components/ui/badge";
 import { Trash2 } from "lucide-react";
 import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
 import { useSecurityEvents } from "@/hooks/use-security-events";
-import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
+import {
+  EVENT_PARTICIPATION_STATUS_CODES,
+  STATUS_LABEL_BY_CODE,
+} from "@/entities/daily-grid";
 
-/** Коды участия в ОМ: только у них показывается выбор мероприятий. */
-export const PARTICIPATION_CODES = new Set([
-  "EVENT_ASSIGNMENT",
-  "EVENT_ASSIGNMENT_GROUP",
-]);
+/** Коды участия в ОМ: только у них показывается выбор мероприятий.
+ * Список — общий на всю систему, см. `entities/daily-grid`. */
+export const PARTICIPATION_CODES = EVENT_PARTICIPATION_STATUS_CODES;
 
 interface ParticipationDraft {
   eventId: string;
