@@ -269,6 +269,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_accept": _FORCES_COMMAND_PERMISSION,
         "forces_return": _FORCES_COMMAND_PERMISSION,
         "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
+        "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
         "forces_notify": _FORCES_ALLOCATE_PERMISSION,
         "forces_submit": _FORCES_ALLOCATE_PERMISSION,
@@ -715,6 +716,29 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             resolve_actor_id(request), _FORCES_ALLOCATE_PERMISSION
         )
         return Response({"results": event_service.department_requests_view(allowed)})
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"forces/requests/(?P<allocation_id>[^/]+)",
+    )
+    def forces_department_request(self, request, allocation_id=None):
+        """ОДНА заявка департаменту целиком (Plane №272, Ш-4).
+
+        Своя ручка, а не карточка мероприятия: карточка отдаёт раскладку по
+        ВСЕМ департаментам, и ответственному за свой приезжали бы чужие
+        строки — вопрос не в том, покажет ли их экран.
+        """
+        from organization_management.apps.operations.services import (
+            PermissionService,
+        )
+
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _FORCES_ALLOCATE_PERMISSION
+        )
+        return Response(
+            event_service.department_request_detail(allocation_id, allowed)
+        )
 
     @action(
         detail=True,
