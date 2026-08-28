@@ -37,6 +37,7 @@ apps/documents/generators/expense_pdf.py из Backend/VAPS).
 from pathlib import Path
 
 from organization_management.apps.operations.expense_layout import (
+    event_cell,
     TABLE_SIZE_PT,
     TITLE_SIZE_PT,
     TOTALS_LABEL,
@@ -158,6 +159,7 @@ def generate_expense_pdf(data):
             for column in data.columns
         )
         record.append(para(f"+{row.attached.count}"))
+        record.append(para(event_cell(row.event)))
         table_rows.append(record)
 
     totals = data.totals
@@ -172,6 +174,7 @@ def generate_expense_pdf(data):
     ]
     totals_row.extend(para(totals.columns[column]) for column in data.columns)
     totals_row.append(para(f"+{totals.attached}"))
+    totals_row.append(para(event_cell(totals.event)))
     table_rows.append(totals_row)
 
     buffer = io.BytesIO()

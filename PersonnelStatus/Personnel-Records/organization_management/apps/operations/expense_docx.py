@@ -22,6 +22,7 @@ Calibri, и молчаливое согласие с ним дало бы док
 сдачи дня и чтения расхода.
 """
 from organization_management.apps.operations.expense_layout import (
+    event_cell,
     FIXED_HEAD,
     FONT_NAME,
     MEMBER_SIZE_PT,
@@ -96,7 +97,8 @@ def generate_expense_docx(data):
         # (чужие люди). Отличие от источника, где «+N» вешалось на статусную
         # колонку ATTACHED: там прикомандированный внутри списка и приданный
         # сверх него печатались одинаково, хотя складываются по-разному.
-        styled(cells[-1].paragraphs[0], f"+{row.attached.count}", TABLE_SIZE_PT)
+        styled(cells[-2].paragraphs[0], f"+{row.attached.count}", TABLE_SIZE_PT)
+        styled(cells[-1].paragraphs[0], event_cell(row.event), TABLE_SIZE_PT)
 
     totals = data.totals
     cells = table.add_row().cells
@@ -111,7 +113,8 @@ def generate_expense_docx(data):
             cells[offset].paragraphs[0], str(totals.columns[column]), TABLE_SIZE_PT,
             bold=True,
         )
-    styled(cells[-1].paragraphs[0], f"+{totals.attached}", TABLE_SIZE_PT, bold=True)
+    styled(cells[-2].paragraphs[0], f"+{totals.attached}", TABLE_SIZE_PT, bold=True)
+    styled(cells[-1].paragraphs[0], event_cell(totals.event), TABLE_SIZE_PT, bold=True)
 
     buffer = io.BytesIO()
     document.save(buffer)
