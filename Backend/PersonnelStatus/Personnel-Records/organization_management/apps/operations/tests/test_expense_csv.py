@@ -127,6 +127,12 @@ def test_the_header_follows_the_catalog_order_with_labels(data):
         COLUMN_LABELS["VACATION"],
         COLUMN_LABELS["IN_SERVICE"],
         "Придано (+N)",
+        # «На ОМ (гр./нар.)» — справочная колонка занятости мероприятиями
+        # (Plane №243, решение заказчика «просто то что есть печатать»).
+        # Стоит ПОСЛЕ «+N», в самом конце: эти люди уже посчитаны в «В строю»,
+        # и место среди колонок расхода предлагало бы сложить их со всеми
+        # остальными. Пин правится вместе с шапкой и только осознанно.
+        "На ОМ (гр./нар.)",
     ]
 
 
@@ -169,7 +175,10 @@ def test_the_data_row_carries_the_numbers(data):
     assert row[0] == "1"
     assert row[1] == "Управление кадров"
     assert row[2:5] == ["10", "3", "7"]  # штат, список, вакансии
-    assert row[5:] == ["1", "1", "1", "2"]  # дежурство, отпуск, в строю, придано
+    # Последняя клетка — занятость мероприятиями (Plane №243). Прочерк, а не
+    # ноль: «никого не привлекли» и «колонка пустая» в подписанном документе
+    # читаются по-разному.
+    assert row[5:] == ["1", "1", "1", "2", "—"]
 
 
 def test_the_totals_row_has_no_number_and_carries_the_label(data):
@@ -178,7 +187,9 @@ def test_the_totals_row_has_no_number_and_carries_the_label(data):
     assert totals[0] == ""
     assert totals[1] == TOTALS_LABEL
     assert totals[2:5] == ["10", "3", "7"]
-    assert totals[-1] == "2"
+    # Предпоследняя — «+N», последняя — занятость мероприятиями (Plane №243).
+    assert totals[-2] == "2"
+    assert totals[-1] == "—"
 
 
 # ── Чего в машиночитаемой форме нет ──────────────────────────────────────
@@ -205,4 +216,69 @@ def test_the_renderer_does_not_reorder_or_recount(data):
     row = rows_of(generate_expense_csv(data))[2]
     expected = [str(data.rows[0].cells[column].count) for column in data.columns]
 
-    assert row[5:-1] == expected
+    # Хвост из ДВУХ клеток: «+N» и занятость мероприятиями (Plane №243) —
+    # обе не колонки справочника, и в сравнение порядка колонок не входят.
+    assert row[5:-2] == expected
+
+
+# ── Занятость мероприятиями в документе (Plane №243) ────────────────────────
+
+
+def test_the_document_prints_who_is_busy_with_events(catalog):
+    """Документ печатает занятость ОМ с делением на группы и наряд.
+
+    Решение заказчика 28.08.2026 — «просто то что есть печатать». Считать
+    занятость ЕСТЬ ИЗ ЧЕГО и без новой версии снимка: снимок несёт коды
+    статусов, а два вида участия — обычные коды. Старый снимок, сданный до
+    деления, печатается тем, что в нём есть: все привлечённые ложатся в
+    «наряд», потому что другого кода тогда не существовало.
+
+    Красная на мутации: убери занятость из клетки — в последней колонке
+    вместо «2 (1/1)» встанет прочерк.
+    """
+    event_catalog = StatusCatalog.from_rows(
+        [
+            {
+                "code": "IN_SERVICE",
+                "priority": 999,
+                "report_column_code": "IN_SERVICE",
+                "counts_in_staff": True,
+            },
+            {
+                "code": "EVENT_ASSIGNMENT",
+                "priority": 80,
+                # Та же колонка, что у «в строю»: человек на мероприятии из
+                # строя не выбывает.
+                "report_column_code": "IN_SERVICE",
+                "counts_in_staff": True,
+            },
+            {
+                "code": "EVENT_ASSIGNMENT_GROUP",
+                "priority": 81,
+                "report_column_code": "IN_SERVICE",
+                "counts_in_staff": True,
+            },
+        ]
+    )
+    snapshot = {
+        "roster": [member(1), member(2, full_name="Петров Пётр"), member(3)],
+        "rows": [fact(1, "EVENT_ASSIGNMENT"), fact(2, "EVENT_ASSIGNMENT_GROUP")],
+    }
+    document = build_expense_document(
+        snapshot,
+        # Дата ВНУТРИ интервала фактов: `fact()` заводит их от DAY, и день
+        # снаружи интервала не дал бы победителя ни одному человеку.
+        DAY,
+        catalog=event_catalog,
+        division_title="Управление кадров",
+        staff_total=10,
+        vacancies=7,
+        attached=2,
+    )
+
+    rows = rows_of(generate_expense_csv(document))
+
+    assert rows[1][-1] == "На ОМ (гр./нар.)"
+    assert rows[2][-1] == "2 (1/1)"
+    # «В строю» от этого не уменьшилось: занятость справочная, вне колонок.
+    assert document.rows[0].cells["IN_SERVICE"].count == 3

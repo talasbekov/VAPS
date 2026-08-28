@@ -28,6 +28,7 @@ from datetime import date
 
 from organization_management.apps.operations.roster_order import order_roster
 from organization_management.apps.operations.strength_report import (
+    EVENT_INVOLVEMENT_KINDS,
     DERIVED_IN_SERVICE,
     attached_of,
     catalog_of,
@@ -71,6 +72,13 @@ class ExpenseRow:
     vacancies: int
     cells: dict
     attached: ExpenseCell
+    #: Занятость мероприятиями: всего / боевые группы / физический наряд.
+    #: СПРАВОЧНО, вне колонок и вне их суммы (Plane №243) — эти люди уже
+    #: посчитаны в «В строю». Считается ИЗ СНИМКА, по кодам статусов, которые
+    #: он и так несёт: отдельного поля в снимке заводить не потребовалось, и
+    #: старые снимки печатаются тем, что в них есть (до деления участия все
+    #: привлечённые ложатся в «наряд», потому что другого кода тогда не было).
+    event: dict = field(default_factory=lambda: {"total": 0, "group": 0, "squad": 0})
 
 
 @dataclass(frozen=True)
@@ -83,6 +91,7 @@ class ExpenseTotals:
     vacancies: int
     columns: dict
     attached: int
+    event: dict = field(default_factory=lambda: {"total": 0, "group": 0, "squad": 0})
 
 
 @dataclass(frozen=True)
@@ -197,6 +206,20 @@ def build_expense_document(
             )
         )
 
+    # Занятость мероприятиями — вторым проходом по тем же победителям.
+    # Отдельным проходом, а не внутри цикла состава: тот пропускает «в строю»
+    # (у него нет факта и периода), а участие в ОМ как раз ложится в «в
+    # строю» — считать его там значило бы потерять ровно то, что считаем.
+    event = {"total": 0, "group": 0, "squad": 0}
+    for member in snapshot.get("roster", []):
+        winner = resolve_status(
+            facts_by_employee.get(member["employee_id"], ()), business_date, catalog
+        )
+        kind = EVENT_INVOLVEMENT_KINDS.get(winner)
+        if kind is not None and catalog.counts_in_staff.get(winner, True):
+            event["total"] += 1
+            event[kind] += 1
+
     in_service_column = catalog.column[DERIVED_IN_SERVICE]
     for column in columns_order:
         if column == in_service_column:
@@ -221,6 +244,7 @@ def build_expense_document(
         },
         # Приданные — чужие люди: число есть, членов не бывает.
         attached=ExpenseCell(count=attached),
+        event=event,
     )
     return ExpenseDocumentData(
         division_title=division_title,
@@ -232,6 +256,7 @@ def build_expense_document(
             vacancies=vacancies,
             columns=dict(numbers["columns"]),
             attached=attached,
+            event=dict(event),
         ),
         columns=columns_order,
     )
@@ -298,6 +323,13 @@ def combine_documents(documents, *, division_title, business_date, columns):
                 for column in order
             },
             attached=sum(row.attached.count for row in rows),
+            # Итог занятости — СУММА строк, как и всё остальное в итоге:
+            # пересчёт по объединённым данным разошёлся бы со слагаемыми
+            # ровно там, где это труднее всего заметить.
+            event={
+                key: sum(row.event.get(key, 0) for row in rows)
+                for key in ("total", "group", "squad")
+            },
         ),
         columns=tuple(order),
     )

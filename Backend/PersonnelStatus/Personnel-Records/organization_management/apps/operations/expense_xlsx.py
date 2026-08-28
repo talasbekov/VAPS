@@ -19,6 +19,7 @@ openpyxl импортируется ЛЕНИВО: раздел не должен
 для сдачи дня и чтения расхода.
 """
 from organization_management.apps.operations.expense_layout import (
+    event_cell,
     FIXED_HEAD,
     FONT_NAME,
     TABLE_SIZE_PT,
@@ -78,6 +79,7 @@ def generate_expense_xlsx(data):
         # Приданные — «+N»: это прибавка СВЕРХ списка, и голое число в ряду
         # колонок списка читалось бы как ещё одна его часть.
         values.append(f"+{row.attached.count}")
+        values.append(event_cell(row.event))
         for index, value in enumerate(values, start=1):
             cell = sheet.cell(row=row_index, column=index, value=value)
             cell.font = Font(name=FONT_NAME, size=TABLE_SIZE_PT)
@@ -88,6 +90,7 @@ def generate_expense_xlsx(data):
     values = ["", TOTALS_LABEL, totals.staff_total, totals.list_total, totals.vacancies]
     values.extend(totals.columns[column] for column in data.columns)
     values.append(f"+{totals.attached}")
+    values.append(event_cell(totals.event))
     for index, value in enumerate(values, start=1):
         cell = sheet.cell(row=row_index, column=index, value=value)
         cell.font = Font(name=FONT_NAME, size=TABLE_SIZE_PT, bold=True)

@@ -21,6 +21,7 @@ import io
 from organization_management.apps.operations.expense_layout import (
     TOTALS_LABEL,
     document_title,
+    event_cell,
     header_row,
 )
 
@@ -37,6 +38,7 @@ def generate_expense_csv(data):
         record = [number, row.name, row.staff_total, row.list_total, row.vacancies]
         record.extend(row.cells[column].count for column in data.columns)
         record.append(row.attached.count)
+        record.append(event_cell(row.event))
         writer.writerow(record)
 
     totals = data.totals
@@ -52,6 +54,7 @@ def generate_expense_csv(data):
     ]
     record.extend(totals.columns[column] for column in data.columns)
     record.append(totals.attached)
+    record.append(event_cell(totals.event))
     writer.writerow(record)
 
     return buffer.getvalue().encode("utf-8-sig")
