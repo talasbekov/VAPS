@@ -117,7 +117,27 @@ async function readEnvelope(response: Response): Promise<OpsErrorEnvelope | null
   }
   if (typeof raw !== "object" || raw === null) return null;
   const data = raw as Record<string, unknown>;
-  if (typeof data.error_code !== "string") return null; // DRF-native {"detail"} и чужой JSON
+  if (typeof data.error_code !== "string") {
+    // DRF-NATIVE {"detail": "..."} — ПРИЧИНА ЕСТЬ, и терять её нельзя
+    // (Plane №274). Раньше здесь возвращался null, и человек видел
+    // «HTTP 400 Bad Request» вместо «Должность используется в штатном
+    // расписании (3) — сначала снимите эти назначения». Ручки раздела ОМ
+    // отвечают конвертом и этой ветки не касаются; сюда попадают соседние
+    // ручки бэкенда — кадровые справочники и всё, что отвечает по-DRF.
+    //
+    // Пустой `error_code` — признак «конверта не было»: по нему ниже
+    // выбирается общий класс ошибки, а не разбор по коду, которого нет.
+    if (typeof data.detail === "string" && data.detail !== "") {
+      return {
+        error_code: "",
+        message: data.detail,
+        details: {},
+        request_id: null,
+        timestamp: "",
+      };
+    }
+    return null; // чужой JSON без причины
+  }
   return {
     error_code: data.error_code,
     message: typeof data.message === "string" ? data.message : data.error_code,
@@ -155,6 +175,9 @@ export async function parseOpsErrorResponse(
       };
   if (status >= 500) return new OpsServerError(init);
   if (envelope === null) return new OpsApiError(init);
+  // Ответ без конверта, но с причиной: класс общий (разбирать нечего по
+  // коду), сообщение — настоящее.
+  if (envelope.error_code === "") return new OpsApiError(init);
   switch (status) {
     case 400:
       return new OpsValidationError(init);

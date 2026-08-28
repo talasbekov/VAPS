@@ -82,6 +82,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   SETTINGS_UPDATED: "Правило настроек изменено",
   DICTIONARY_ENTRY_CREATED: "Значение справочника заведено",
   DICTIONARY_ENTRY_SET_ACTIVE: "Значение справочника включено или выключено",
+  DICTIONARY_ENTRY_UPDATED: "Значение справочника изменено",
   DICTIONARY_ENTRY_DELETED: "Значение справочника удалено",
   GVO_SUMMARY_PATCHED: "Сводка ГВО поправлена вручную",
   FORCE_ALLOCATION_NOTIFIED: "Управления оповещены о заявке на силы",

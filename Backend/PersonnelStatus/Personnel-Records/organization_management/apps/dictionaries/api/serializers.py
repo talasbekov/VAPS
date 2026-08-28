@@ -9,9 +9,17 @@ from organization_management.apps.statuses.models import EmployeeStatus
 
 
 class PositionSerializer(serializers.ModelSerializer):
+    """Должность. `code` в полях ОБЯЗАТЕЛЕН (Plane №274).
+
+    Его тут не было, и пока ручка работала только на чтение, это не мешало.
+    С открытием записи выяснилось: без `code` завести должность через API
+    нельзя вообще — база отбивает пустой код ограничением
+    `ck_position_code_not_blank`, и клиент получает 500 вместо формы с полем.
+    """
+
     class Meta:
         model = Position
-        fields = ["id", "name", "level"]
+        fields = ["id", "name", "code", "level"]
 
 class RankSerializer(serializers.ModelSerializer):
     class Meta:

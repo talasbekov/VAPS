@@ -357,3 +357,89 @@ def test_audit_endpoint_shape_and_order(admin_api):
 
 def test_audit_requires_permission(viewer_api):
     assert viewer_api.get("/api/ops/audit-logs/").status_code == 403
+
+
+# ── Правка значения справочника (Plane №274) ─────────────────────────────
+#
+# ЗАЧЕМ. Заказчик просил у модуля «Справочники» все три действия — «Добавлять,
+# удалять, редактировать». Правки не было вовсе: значение можно было завести,
+# снять с активных и удалить. Опечатку в подписи лечили удалением и заведением
+# заново, теряя связи и историю.
+
+
+def test_an_entry_label_and_description_are_edited(admin_api):
+    _group, req, _free = seed_dictionary()
+
+    resp = admin_api.patch(
+        f"{DICTS}entries/{req.pk}/",
+        {"label": "Допуск «Объект А»", "description": "Форма допуска первая"},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.json()
+    body = resp.json()
+    assert body["label"] == "Допуск «Объект А»"
+    assert body["description"] == "Форма допуска первая"
+    req.refresh_from_db()
+    assert req.label == "Допуск «Объект А»"
+
+
+def test_the_code_is_not_editable(admin_api):
+    """Код — то, ЧЕМ на значение ссылаются: сменить его значит оборвать ссылки.
+
+    Проба стережёт не отказ, а неизменность: ручка код просто не принимает, и
+    присланный код обязан не долететь до строки. Отказ был бы хуже — форма
+    правки честно не показывает поле кода, и жаловаться пользователю не на что.
+    """
+    _group, req, _free = seed_dictionary()
+    was = req.code
+
+    resp = admin_api.patch(
+        f"{DICTS}entries/{req.pk}/",
+        {"label": "Новая подпись", "code": "ПОДМЕНА"},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.json()
+    req.refresh_from_db()
+    assert req.code == was, "код значения переписан — ссылки на него оборвутся"
+
+
+def test_an_empty_label_is_refused(admin_api):
+    _group, req, _free = seed_dictionary()
+
+    resp = admin_api.patch(
+        f"{DICTS}entries/{req.pk}/", {"label": "   "}, format="json"
+    )
+
+    assert resp.status_code == 400, resp.json()
+    assert resp.json()["details"]["label"] == ["Обязательное поле."]
+    req.refresh_from_db()
+    assert req.label == "Допуск «Объект A»", "отказ всё-таки затёр подпись"
+
+
+def test_a_missing_group_is_refused(admin_api):
+    """Группа требования проверяется по справочнику — как при заведении."""
+    _group, req, _free = seed_dictionary()
+
+    resp = admin_api.patch(
+        f"{DICTS}entries/{req.pk}/",
+        {"label": "Допуск", "groupCode": "НЕТ-ТАКОЙ"},
+        format="json",
+    )
+
+    assert resp.status_code == 400, resp.json()
+    assert "groupCode" in resp.json()["details"]
+
+
+def test_editing_is_closed_by_permission(viewer_api):
+    """Читатель справочников их не правит: право `dictionary.manage`."""
+    _group, req, _free = seed_dictionary()
+
+    resp = viewer_api.patch(
+        f"{DICTS}entries/{req.pk}/", {"label": "Чужая правка"}, format="json"
+    )
+
+    assert resp.status_code == 403
+    req.refresh_from_db()
+    assert req.label == "Допуск «Объект A»"

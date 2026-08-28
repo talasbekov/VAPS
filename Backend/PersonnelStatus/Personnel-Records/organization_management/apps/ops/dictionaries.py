@@ -237,6 +237,74 @@ def create_entry(dictionary_code, *, code, label, description, group_code,
     return entry
 
 
+@transaction.atomic
+def update_entry(entry_id, *, label, description, group_code, actor):
+    """Правка значения справочника (Plane №274).
+
+    Заказчик просил у модуля все три действия — «Добавлять, удалять,
+    редактировать», — а правки не было: значение можно было только завести,
+    снять с активных и удалить. Опечатку в подписи приходилось лечить
+    удалением и заведением заново, то есть терять связи и историю.
+
+    КОД НЕ ПРАВИТСЯ. На него ссылаются записи журналов, требования постов и
+    роли расстановки — по коду, а не по идентификатору строки; сменить его
+    значило бы оборвать эти ссылки молча. Ошибочный код лечится заведением
+    нового значения и снятием старого, и это видно в журнале действий.
+
+    `group_code` принимается только у требований к постам — там же, где его
+    принимает заведение: у остальных справочников группы нет вовсе.
+    """
+    entry = _lock_entry(entry_id)
+    field_errors = {}
+    if not str(label or "").strip():
+        field_errors["label"] = ["Обязательное поле."]
+    wants_group = entry.dictionary_code == "POST_REQUIREMENTS"
+    if (
+        wants_group
+        and group_code
+        and not OpsDictionaryEntry.objects.filter(
+            dictionary_code="POST_REQUIREMENT_GROUPS",
+            code=group_code,
+            is_active=True,
+        ).exists()
+    ):
+        field_errors["groupCode"] = ["Группа не найдена или неактивна."]
+    if field_errors:
+        raise DomainError(
+            "VALIDATION_ERROR", 400, detail=field_errors,
+            message="Проверьте заполнение формы.",
+        )
+
+    old = {
+        "label": entry.label,
+        "description": entry.description,
+        "groupCode": entry.group_code,
+    }
+    entry.label = str(label).strip()
+    entry.description = str(description or "").strip()
+    if wants_group:
+        entry.group_code = group_code or None
+    entry.updated_by = actor
+    entry.save(
+        update_fields=[
+            "label", "description", "group_code", "updated_by", "updated_at",
+        ]
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.DICTIONARY_ENTRY_UPDATED,
+        entity_type=audit_service.ENTITY_DICTIONARY_ENTRY,
+        entity_id=entry.pk,
+        old_value=old,
+        new_value={
+            "label": entry.label,
+            "description": entry.description,
+            "groupCode": entry.group_code,
+        },
+    )
+    return entry
+
+
 def _lock_entry(entry_id):
     if not str(entry_id).isdigit():
         raise DomainError(
