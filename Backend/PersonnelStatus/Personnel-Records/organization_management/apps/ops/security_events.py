@@ -2415,6 +2415,64 @@ def _with_directorate_progress(rows):
     return result
 
 
+def department_requests_view(allowed_division_ids):
+    """Заявки, адресованные департаментам актора (Plane №272, Ш-3).
+
+    Обратный разрез цепочки: штаб смотрит «кому я раздал», департамент —
+    «что просят у МЕНЯ». Поэтому и ручка своя, а не фильтр по списку ОМ:
+    список отдаёт мероприятие ЦЕЛИКОМ (вместе со сведением людей и счётом по
+    управлениям на каждое), и экран из пяти колонок платил бы за это на
+    каждой строке.
+
+    `allowed_division_ids is None` означает «область не сужена» — так ручка
+    отвечает администратору и роли без области. Пустое множество означает
+    обратное: видеть нечего, и ответ пуст. Разница существенная, и `None`
+    здесь не «нет данных».
+
+    Строки чужих департаментов не приезжают ВООБЩЕ: сузить их на клиенте
+    значило бы прислать их браузеру и понадеяться, что он не покажет.
+    """
+    events = (
+        OpsSecurityEvent.objects.exclude(force_allocation=[])
+        .order_by("business_date", "code")
+    )
+    rows = []
+    for event in events:
+        for allocation in allocation_members_view(event):
+            department_id = _as_division_id(allocation.get("departmentId"))
+            if department_id is None:
+                continue
+            if allowed_division_ids is not None and department_id not in allowed_division_ids:
+                continue
+            members = allocation.get("members") or []
+            rows.append(
+                {
+                    "eventId": str(event.pk),
+                    "code": event.code,
+                    "title": event.title,
+                    "businessDate": event.business_date.isoformat(),
+                    # Времени «срока сдачи списка» у мероприятия нет ВООБЩЕ —
+                    # см. отклонение от эталона в Frontend/Decisions. Отдаём
+                    # то, что есть: время самого ОМ, и называет его экран
+                    # своими словами, а не «сроком».
+                    "eventTime": (
+                        event.event_time.strftime("%H:%M")
+                        if event.event_time is not None
+                        else None
+                    ),
+                    "location": event.location or event.object_name,
+                    "stage": event.stage,
+                    "allocationId": allocation.get("id"),
+                    "departmentId": str(department_id),
+                    "departmentName": allocation.get("departmentName") or "",
+                    "need": int(allocation.get("need") or 0),
+                    "assigned": len(members),
+                    "status": allocation.get("status") or _ALLOCATION_DRAFT,
+                }
+            )
+    return rows
+
+
 def force_roster_view(event):
     """Состав мероприятия со статусом дня (Plane №65, шаг «Р-2»).
 
