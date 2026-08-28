@@ -6,17 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Проект
 
-Smart Josparlau: Personnel Records (в разработке). Эталон формы — прототип Smart Жоспарлау; описание продукта и карта модулей — `obsidian-vault/Продукт/` (`Карта-модулей.md`).
+Smart Josparlau: Personnel Records (в разработке). Эталон формы — прототип Smart Жоспарлау; описание продукта и карта модулей — `<vault>/Продукт/` (`Карта-модулей.md`).
 
 | Часть | Где | Гейт |
 |---|---|---|
 | Бэкенд — Django/DRF, PostgreSQL | `organization_management/apps/*` | `pytest` по всем приложениям; схема API — `schema.yaml` / `/api/schema/` |
 | Фронтенд — Next.js + TypeScript | `Backend/PersonnelStatus/PersonalRecordFront` (стенд `next dev` :3106, прод-стенд `npm run stand:prod` :3108), `frontend/` | `npm run gate:front` (`tsc` + прод-сборка) + `npm run smoke:prod` (весь смоук по прод-стенду); обход портала — отдельным `playwright.walk.config.ts`, блоками по персонам |
 | Задачи | Plane http://localhost:8090, workspace `vaps`, проект **Smart Josparlau** | `plane_task.py` (ниже) |
-| Знания, журнал, дефекты | `obsidian-vault/` — вход `00-Index.md`; тот же каталог виден Obsidian по адресу `/home/erda/Музыка/Obsidian_brain/smart_josparlau_vault/` (симлинк, см. ниже) | — |
+| Знания, журнал, дефекты | `/home/erda/Музыка/Obsidian_brain/smart-josparlau-vault/` — вход `00-Index.md`. Вне репозитория (см. ниже) | — |
 | Секреты | `~/.config/vaps/` (ключ Plane, пароль стенда) | в репозиторий и в текст команд не попадают |
 
-Заморожено: `.claude/memory` и `docs/api-gaps.md` (с 19.08.2026, снапшот — `obsidian-vault/Archive/`), ClickUp (с 24.08.2026; старые id вида `86eyqf5dc` остались в описаниях задач). BMAD — в `Archive/bmad-process/`, стори-цикл спит с 10.08.2026.
+Заморожено: `.claude/memory` и `docs/api-gaps.md` (с 19.08.2026, снапшот — `<vault>/Archive/`), ClickUp (с 24.08.2026; старые id вида `86eyqf5dc` остались в описаниях задач). BMAD — в `Archive/bmad-process/`, стори-цикл спит с 10.08.2026.
 
 ## Жёсткие правила
 
@@ -38,7 +38,7 @@ python3 /home/erda/plane/migration/plane_task.py states "Smart Josparlau"
 python3 /home/erda/plane/migration/plane_task.py set "Smart Josparlau" <issue-id> "In Progress"
 python3 /home/erda/plane/migration/plane_task.py add "Smart Josparlau" "Название" --desc "зачем; откуда взялась; что будет, если не делать" --state "Предложено Claude"
 #   --state Backlog — только для задач, пришедших от заказчика. Команда идемпотентна по имени.
-python3 /home/erda/plane/migration/plane_task.py plan "Smart Josparlau" obsidian-vault/WIKI/<план>.md
+python3 /home/erda/plane/migration/plane_task.py plan "Smart Josparlau" "/home/erda/Музыка/Obsidian_brain/smart-josparlau-vault/WIKI/<план>.md"
 cd /home/erda/plane && docker compose -p plane-selfhost --env-file .env up -d   # если Plane не поднят
 
 # Память стенда — RSS в КБ; свежий next dev = сотни МБ, порог 2000000.
@@ -136,7 +136,16 @@ NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,objects,access NEXT_DIST_DIR=.next-
 
 ## Obsidian vault — источник правды
 
-Каталог ОДИН: `obsidian-vault/` в репозитории. Адрес `/home/erda/Музыка/Obsidian_brain/smart_josparlau_vault/` — симлинк на него (решение №184 от 27.08.2026): Obsidian открывает vault по своему привычному адресу, а содержимое при этом лежит под git и уезжает в коммит вместе с кодом. Второй копии больше нет — писать можно по любому из двух путей, это один и тот же файл. Если симлинк когда-нибудь окажется настоящим каталогом — это разошедшаяся копия, и её надо свести обратно, а не писать в неё.
+🔴 **Vault лежит ВНЕ репозитория:** `/home/erda/Музыка/Obsidian_brain/smart-josparlau-vault/`. Дальше в этом файле он обозначается `<vault>`; каталога `obsidian-vault/` в проекте больше нет.
+
+Решение заказчика 28.08.2026, отменяющее решение №184 от 27.08.2026 (тогда vault лежал в репозитории, а этот адрес был симлинком на него). Каталог ОДИН и он настоящий — второй копии нет, сводить нечего.
+
+**Что из этого следует и о чём нельзя забывать:**
+
+- **Записи vault в коммит НЕ уезжают.** Правило «сделанное записано в vault в том же заходе» остаётся в силе, но перечислять файлы vault в `git add` больше нельзя — их там нет. Коммит несёт только код; журнал живёт рядом.
+- **Хэш коммита в записи — единственная ниточка между ними.** Раньше запись и код ехали одним коммитом и связь держалась сама; теперь она держится только тем, что хэш вписан в `Changelog.md`. Забыть его — значит порвать связь совсем.
+- **Версий у vault нет.** Ошибочную правку заметки не откатить `git checkout` — писать в него надо аккуратнее, чем в код.
+- Путь содержит пробел (`Музыка/Obsidian_brain`) — в командах брать в кавычки.
 
 Два слоя:
 
@@ -180,7 +189,7 @@ Plane — вход задач, vault — их разбор и исполнени
 ## Цикл работы
 
 **Старт сессии / модуля**
-1. Прочитать `obsidian-vault/00-Index.md`, затем `<Модуль>/Status.md` и `<Модуль>/Known-Issues.md`.
+1. Прочитать `<vault>/00-Index.md`, затем `<vault>/<Модуль>/Status.md` и `<vault>/<Модуль>/Known-Issues.md`.
 2. `list "Smart Josparlau" --open`; прочитать новые комментарии заказчика в `Предложено Claude` и отработать их.
 3. Ранжировать очередь; порядок с обоснованием — строкой в бэклог-заметку.
 
@@ -253,7 +262,7 @@ Plane — вход задач, vault — их разбор и исполнени
 ## Фронтенд
 
 - Любая правка вида или поведения (`Backend/PersonnelStatus/PersonalRecordFront`, `frontend/`) — сначала скилл `/ui-ux-pro-max`, потом код: новые экраны и компоненты, рефакторинг UI, цвет/типографика/отступы/сетка, состояния загрузки/ошибки/пустоты, навигация, анимация, адаптивность, доступность. Чисто серверная работа (модели, миграции, сервисы, API без изменения экрана) скилла не требует.
-- Канон формы — прототип Smart Жоспарлау и `obsidian-vault/Продукт/`; принятые отклонения — `Frontend/Decisions.md`. Результат скилла — рекомендация; при конфликте с эталоном или решением заказчика побеждает эталон, расхождение записывается в `Decisions.md`.
+- Канон формы — прототип Smart Жоспарлау и `<vault>/Продукт/`; принятые отклонения — `Frontend/Decisions.md`. Результат скилла — рекомендация; при конфликте с эталоном или решением заказчика побеждает эталон, расхождение записывается в `Decisions.md`.
 
 ## Стенд `next dev` (:3106)
 

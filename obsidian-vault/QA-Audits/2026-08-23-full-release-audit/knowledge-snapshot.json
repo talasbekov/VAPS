@@ -1,6 +1,0 @@
-{
-  "generated": "2026-08-23",
-  "workflow": "full-release-audit",
-  "note": "This run did NOT execute the knowledge-refresh workflow (threat-intelligence.md). No vulnerability-intelligence sources were queried. threat-intel-analyst domain marked not_applicable in inventory.json. This file is a placeholder for schema completeness, not a refreshed snapshot.",
-  "last_refresh": null
-}
