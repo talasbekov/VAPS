@@ -539,3 +539,65 @@ def test_a_foreign_request_card_is_not_found(manager):  # noqa: F811
     api = scoped_client("dep-a-card", "DEP_A_CARD", mine.pk)
 
     assert api.get(request_url(foreign)).status_code == 404
+
+
+# ── №272 Ш-5: область на ДЕЙСТВИИ, а не только на чтении ───────────────────
+
+
+def test_splitting_a_foreign_department_quota_is_refused(manager):  # noqa: F811
+    """Разложить квоту ЧУЖОГО департамента нельзя.
+
+    Ш-1 добавил действие, Ш-3 и Ш-4 сузили чтение — но чтение и действие
+    закрываются по отдельности: суженный на чтении экран не мешает послать
+    запрос прямым адресом. Проба стоит на действии.
+
+    Стережёт мутацию: снять `allocation_scope_division` у `forces_split`.
+    """
+    own = make_department("Департамент А")
+    foreign = make_department("Департамент Б")
+    directorate = make_directorate(foreign, "Управление Б-1")
+    base, _ = allocated_event(manager, own)
+    data = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(own.pk), "need": 1},
+                {"departmentId": str(foreign.pk), "need": 1},
+            ]
+        },
+        format="json",
+    ).json()
+    foreign_allocation = next(
+        row["id"]
+        for row in data["forceAllocation"]
+        if row["departmentId"] == str(foreign.pk)
+    )
+
+    api = scoped_client("dep-a-split", "DEP_A_SPLIT", own.pk)
+    response = api.post(
+        f"{base}forces/allocation/{foreign_allocation}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": 1}]},
+        format="json",
+    )
+
+    assert response.status_code == 403, response.data
+
+
+def test_splitting_my_own_department_quota_is_allowed(manager):  # noqa: F811
+    """Контрольная половина: своё разложить можно.
+
+    Без неё проба выше зеленела бы и на «действие запрещено всем», то есть
+    молчала бы о границе вместо того, чтобы её стеречь.
+    """
+    own = make_department("Департамент А")
+    directorate = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+
+    api = scoped_client("dep-a-split-ok", "DEP_A_SPLIT_OK", own.pk)
+    response = api.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": 1}]},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
