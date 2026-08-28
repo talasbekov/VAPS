@@ -431,3 +431,111 @@ def test_a_request_row_carries_what_the_table_shows(manager):  # noqa: F811
     assert row["assigned"] == 0
     assert row["status"] == "DRAFT"
     assert row["code"] and row["title"] and row["businessDate"]
+
+
+# ── №272 Ш-4: карточка ОДНОЙ заявки ────────────────────────────────────────
+
+
+def request_url(allocation_id):
+    from urllib.parse import quote
+
+    return f"{URL}forces/requests/{quote(allocation_id, safe='')}/"
+
+
+def test_the_request_card_carries_directorates_and_members(manager):  # noqa: F811
+    """Карточка несёт управления с квотами и выделенных — состав эталона."""
+    make_assignment_status_type()
+    department = make_department("Департамент А")
+    directorate = make_directorate(department, "Управление А-1")
+    employee = employee_of(directorate, "Карточкин")
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": 1}]},
+        format="json",
+    )
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/", {}, format="json")
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+
+    response = manager.get(request_url(allocation_id))
+
+    assert response.status_code == 200, response.data
+    allocation = response.data["allocation"]
+    row = next(
+        item
+        for item in allocation["directorates"]
+        if item["divisionId"] == str(directorate.pk)
+    )
+    assert row["need"] == 1
+    assert row["assigned"] == 1
+    assert [m["employeeId"] for m in allocation["members"]] == [str(employee.pk)]
+
+
+def test_a_status_member_is_named_by_division(manager):  # noqa: F811
+    """У попавшего в список СТАТУСОМ подразделение названо, а не прочерк.
+
+    Первая версия оставляла имя пустым: сервер знал id и не знал названия, и
+    в карточке у всех таких строк стоял прочерк.
+
+    Стережёт мутацию: вернуть `"divisionName": ""`.
+    """
+    from organization_management.apps.operations import clock, status_service
+    import datetime as dt
+
+    make_assignment_status_type()
+    department = make_department("Департамент А")
+    directorate = make_directorate(department, "Управление А-1")
+    employee = employee_of(directorate, "Статусов")
+    base, allocation_id = allocated_event(manager, department)
+    event_id = int(base.rstrip("/").rsplit("/", 1)[-1])
+
+    with clock.override(dt.date(2026, 8, 10)):
+        status_service.create_status(
+            employee_id=employee.pk,
+            status_type_code="EVENT_ASSIGNMENT",
+            date_start=dt.date(2026, 8, 10),
+            date_end=dt.date(2026, 8, 11),
+            actor="user:chief",
+            participations=[{"event_id": event_id, "kind_code": "PHYSICAL_SQUAD"}],
+            system_participations=True,
+        )
+
+    members = manager.get(request_url(allocation_id)).data["allocation"]["members"]
+    mine = next(m for m in members if m["employeeId"] == str(employee.pk))
+    assert mine["source"] == "STATUS"
+    assert mine["divisionName"] == "Управление А-1"
+
+
+def test_a_foreign_request_card_is_not_found(manager):  # noqa: F811
+    """Чужая заявка — 404, а не 403.
+
+    Существование чужой строки не подтверждается перебором идентификаторов:
+    403 на чужой и 404 на несуществующей различали бы их для того, кто
+    подбирает адреса.
+    """
+    mine = make_department("Департамент А")
+    theirs = make_department("Департамент Б")
+    base, _ = allocated_event(manager, mine)
+    data = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(mine.pk), "need": 1},
+                {"departmentId": str(theirs.pk), "need": 1},
+            ]
+        },
+        format="json",
+    ).json()
+    foreign = next(
+        row["id"]
+        for row in data["forceAllocation"]
+        if row["departmentId"] == str(theirs.pk)
+    )
+
+    api = scoped_client("dep-a-card", "DEP_A_CARD", mine.pk)
+
+    assert api.get(request_url(foreign)).status_code == 404

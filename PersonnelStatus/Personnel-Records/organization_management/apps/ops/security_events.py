@@ -2256,6 +2256,16 @@ def _merge_status_members(event, rows):
         if row.get("departmentId") is not None
     }
     division_of = StaffUnitSelector.divisions_of(extra_ids)
+    # Имя подразделения — ОДНИМ запросом. Первая версия оставляла его пустым,
+    # и в карточке заявки у всех, кто попал в список статусом, в колонке
+    # «Подразделение» стоял прочерк: экран знал id и не знал названия.
+    from organization_management.apps.divisions.models import Division
+
+    division_names = dict(
+        Division.objects.filter(pk__in=set(division_of.values())).values_list(
+            "pk", "name"
+        )
+    )
     # ФИО одним запросом: перебор по `_find_personnel` дал бы число запросов,
     # зависящее от числа людей, — ровно того раздел избегает везде.
     names = {
@@ -2276,7 +2286,7 @@ def _merge_status_members(event, rows):
                         "employeeId": str(employee_id),
                         "name": names.get(employee_id, ""),
                         "divisionId": str(division_id),
-                        "divisionName": "",
+                        "divisionName": division_names.get(division_id, ""),
                         "addedAt": None,
                         "statusId": str(participation.status_id),
                         "kindCode": participation.kind_code,
@@ -2471,6 +2481,45 @@ def department_requests_view(allowed_division_ids):
                 }
             )
     return rows
+
+
+def department_request_detail(allocation_id, allowed_division_ids):
+    """ОДНА заявка департаменту целиком: управления и выделенные (Ш-4).
+
+    Своя ручка, а не карточка мероприятия: карточка отдаёт раскладку ПО ВСЕМ
+    департаментам, и ответственному за свой департамент приезжали бы чужие
+    строки — вопрос не в том, покажет ли их экран, а в том, что они уже у него
+    в браузере.
+
+    404, а не 403, когда заявка есть, но чужая: существование чужой строки —
+    не то, что стоит подтверждать перебором идентификаторов. Своей заявки нет
+    — тот же 404 по той же причине.
+    """
+    for event in OpsSecurityEvent.objects.exclude(force_allocation=[]):
+        for allocation in allocation_members_view(event):
+            if allocation.get("id") != allocation_id:
+                continue
+            department_id = _as_division_id(allocation.get("departmentId"))
+            if (
+                allowed_division_ids is not None
+                and department_id not in allowed_division_ids
+            ):
+                raise _not_found("Заявка департаменту не найдена.", allocation_id)
+            return {
+                "eventId": str(event.pk),
+                "code": event.code,
+                "title": event.title,
+                "businessDate": event.business_date.isoformat(),
+                "eventTime": (
+                    event.event_time.strftime("%H:%M")
+                    if event.event_time is not None
+                    else None
+                ),
+                "location": event.location or event.object_name,
+                "stage": event.stage,
+                "allocation": allocation,
+            }
+    raise _not_found("Заявка департаменту не найдена.", allocation_id)
 
 
 def force_roster_view(event):

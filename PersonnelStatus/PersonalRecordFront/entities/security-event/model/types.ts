@@ -848,6 +848,24 @@ export interface DepartmentRequestRow {
   status: ForceAllocationStatus;
 }
 
+/** Заявка департаменту ЦЕЛИКОМ: мероприятие + строка раскладки (Ш-4). */
+export interface DepartmentRequestDetail {
+  eventId: string;
+  code: string;
+  title: string;
+  businessDate: string;
+  eventTime: string | null;
+  location: string;
+  stage: SecurityEventStage;
+  allocation: ForceAllocationRow;
+}
+
+export function securityEventDepartmentRequestPath(allocationId: string): string {
+  return `${SECURITY_EVENTS_PATH}forces/requests/${encodeURIComponent(
+    allocationId
+  )}/`;
+}
+
 /** Оповещение управлений департамента о заявке (Plane №73, шаг СС-2). */
 export function securityEventForcesNotifyPath(
   id: string,

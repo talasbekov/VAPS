@@ -21,7 +21,7 @@
  * вспомогательными технологиями и не отвечает на вопрос «сколько именно»;
  * число без полосы не даёт увидеть отставание одним взглядом по столбцу.
  */
-import Link from "next/link";
+import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,7 @@ import type {
   ForceAllocationStatus,
 } from "@/entities/security-event";
 import { useDepartmentRequests } from "@/hooks/use-department-requests";
+import { DepartmentRequestCard } from "./DepartmentRequestCard";
 import { formatIsoDate } from "@/shared/lib/date";
 
 /** Подписи те же, что у ленты штаба: одно состояние — одно слово в системе. */
@@ -98,6 +99,16 @@ function Progress({ assigned, need }: { assigned: number; need: number }) {
 export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean }) {
   const requests = useDepartmentRequests({ enabled });
   const rows = requests.data?.results ?? [];
+  // Карточка открывается НА МЕСТЕ таблицы, как на эталоне («← Назад к
+  // заявкам»), а не уводит на карточку мероприятия: та собрана для штаба и
+  // показывает раскладку по ВСЕМ департаментам.
+  const [opened, setOpened] = useState<string | null>(null);
+
+  if (opened !== null) {
+    return (
+      <DepartmentRequestCard allocationId={opened} onBack={() => setOpened(null)} />
+    );
+  }
 
   return (
     <section aria-labelledby="department-requests-heading" className="space-y-3">
@@ -201,13 +212,14 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                     <Badge variant="outline">{STATUS_LABEL[row.status]}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Link
-                      href={`/ops/events/${row.eventId}`}
-                      aria-label={`Открыть мероприятие ${row.code}`}
-                      className="text-muted-foreground hover:text-foreground inline-flex size-11 items-center justify-center"
+                    <button
+                      type="button"
+                      onClick={() => setOpened(row.allocationId)}
+                      aria-label={`Открыть заявку ${row.code} для «${row.departmentName}»`}
+                      className="text-muted-foreground hover:text-foreground inline-flex size-11 items-center justify-center rounded-md"
                     >
                       <ChevronRight className="size-4" aria-hidden="true" />
-                    </Link>
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}

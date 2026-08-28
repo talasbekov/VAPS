@@ -104,6 +104,63 @@ test.describe('заявки департаменту', () => {
     await expect(bar).toHaveAttribute('aria-valuenow', String(first.assigned))
   })
 
+  test('карточка заявки открывается на месте таблицы и несёт состав эталона', async ({
+    page,
+  }) => {
+    /**
+     * Plane №272, Ш-4. Карточка открывается НА МЕСТЕ таблицы («← Назад к
+     * заявкам»), а не уводит на карточку мероприятия: та собрана для штаба и
+     * показывает раскладку по ВСЕМ департаментам.
+     *
+     * Стережёт состав эталона: четыре плитки, распределение по управлениям с
+     * полем квоты и список выделенных с подписью о том, откуда они берутся.
+     */
+    await signIn(page)
+    await page.goto(`${APP}/employees?view=forces`)
+    const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+    await expect(tab).toBeVisible({ timeout: 30_000 })
+    await tab.click()
+
+    const open = page.getByRole('button', { name: /^Открыть заявку/ }).first()
+    await expect(open).toBeVisible({ timeout: 20_000 })
+    await open.click()
+
+    await expect(
+      page.getByRole('button', { name: 'Назад к заявкам' }),
+      'карточка открылась на месте таблицы, а не увела на другой экран',
+    ).toBeVisible({ timeout: 20_000 })
+
+    // Четыре плитки эталона.
+    for (const label of [
+      'Квота департамента',
+      'Разложено по управлениям',
+      'Выделено',
+      'Осталось',
+    ]) {
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
+    }
+
+    // Распределение по управлениям — с полем квоты у строки.
+    await expect(page.getByRole('heading', { name: 'Распределение по управлениям' })).toBeVisible()
+    const quotas = page.locator('input[id^="quota-"]')
+    expect(await quotas.count(), 'нет ни одного поля квоты управления').toBeGreaterThan(0)
+
+    // Ключевая строка эталона: она объясняет, откуда берутся люди.
+    await expect(
+      page.getByText(
+        'выделенные сотрудники появляются здесь автоматически',
+        { exact: false },
+      ),
+      'подпись о том, откуда берутся выделенные, не показана',
+    ).toBeVisible()
+
+    // Возврат работает: человек не заперт в карточке.
+    await page.getByRole('button', { name: 'Назад к заявкам' }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Заявки департаменту' }),
+    ).toBeVisible()
+  })
+
   test('перебор назван числом, а не спрятан за полной полосой', async ({ page }) => {
     const token = await apiToken()
     const server = (await (
