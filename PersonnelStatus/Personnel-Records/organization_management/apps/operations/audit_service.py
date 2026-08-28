@@ -211,6 +211,9 @@ SETTINGS_UPDATED = "SETTINGS_UPDATED"
 DICTIONARY_ENTRY_CREATED = "DICTIONARY_ENTRY_CREATED"
 DICTIONARY_ENTRY_SET_ACTIVE = "DICTIONARY_ENTRY_SET_ACTIVE"
 DICTIONARY_ENTRY_DELETED = "DICTIONARY_ENTRY_DELETED"
+# Правка значения справочника (Plane №274): заказчик просил у модуля все три
+# действия — «Добавлять, удалять, редактировать», — а правки не было вовсе.
+DICTIONARY_ENTRY_UPDATED = "DICTIONARY_ENTRY_UPDATED"
 # Сводка ГВО: ручная правка и сброс патча — решения с внешним следом
 # (сводные данные уходят в бумагу); сама база сводки следа не оставляет —
 # она производная бюллетеня мероприятия.
@@ -277,6 +280,7 @@ ACTIONS = frozenset(
         DICTIONARY_ENTRY_CREATED,
         DICTIONARY_ENTRY_SET_ACTIVE,
         DICTIONARY_ENTRY_DELETED,
+        DICTIONARY_ENTRY_UPDATED,
         GVO_SUMMARY_PATCHED,
         GVO_SUMMARY_RESET,
     }

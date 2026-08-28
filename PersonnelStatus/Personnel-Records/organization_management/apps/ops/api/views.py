@@ -2070,8 +2070,12 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "entries": "dictionary.view",
         "create_entry": "dictionary.manage",
         "set_active": "dictionary.manage",
+        # Правка и удаление значения — одно действие на два метода.
         "delete_entry": "dictionary.manage",
     }
+    # PATCH объявлен явно: у ViewSet умолчание не включает его, и правка
+    # значения отбивалась 405 при заведённом маршруте (Plane №274).
+    http_method_names = ["get", "post", "patch", "delete", "options"]
 
     def list(self, request):
         return Response({"results": dict_service.definitions_with_counts()})
@@ -2123,10 +2127,35 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(
         detail=False,
-        methods=["delete"],
+        methods=["patch", "delete"],
         url_path=r"entries/(?P<entry_id>[^/]+)",
     )
     def delete_entry(self, request, entry_id=None):
+        """Значение справочника: правка (PATCH) и удаление (DELETE).
+
+        ОДНО действие на два метода, а не два действия с одним `url_path`:
+        роутер DRF строит маршрут по `url_path`, и второе действие с тем же
+        путём просто не получает маршрута — правка отбивалась 405 при
+        заведённом коде (Plane №274).
+
+        Имя действия оставлено прежним (`delete_entry`): по нему завязана
+        карта прав и записи в схеме, а оба метода всё равно требуют одного
+        права `dictionary.manage`.
+
+        Код значения правка НЕ принимает — на него ссылаются по коду, и смена
+        оборвала бы ссылки молча (см. сервис).
+        """
+        if request.method.upper() == "PATCH":
+            data = request.data or {}
+            entry = dict_service.update_entry(
+                entry_id,
+                label=data.get("label"),
+                description=data.get("description"),
+                group_code=data.get("groupCode"),
+                actor=resolve_actor_id(request),
+            )
+            return Response(dict_service.serialize_entry(entry))
+
         dict_service.delete_entry(
             entry_id, actor=resolve_actor_id(request)
         )

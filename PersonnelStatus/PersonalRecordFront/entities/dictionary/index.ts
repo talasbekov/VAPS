@@ -90,6 +90,15 @@ export interface CreateDictionaryEntryRequest extends Record<string, unknown> {
   groupCode?: string | null;
 }
 
+/** Правка значения (Plane №274). Кода здесь НЕТ намеренно: на значение
+ * ссылаются по коду, и смена оборвала бы ссылки молча — сервер его не
+ * принимает, форма не показывает. */
+export interface UpdateDictionaryEntryRequest extends Record<string, unknown> {
+  label: string;
+  description: string;
+  groupCode?: string | null;
+}
+
 export interface SetDictionaryEntryActiveRequest
   extends Record<string, unknown> {
   isActive: boolean;

@@ -17,6 +17,7 @@ import type {
   ListDictionaryDefinitionsResponse,
   ListDictionaryEntriesResponse,
   SetDictionaryEntryActiveRequest,
+  UpdateDictionaryEntryRequest,
 } from "@/entities/dictionary";
 
 export function useDictionaries() {
@@ -56,6 +57,21 @@ export function useCreateDictionaryEntry(
   return useOpsMutation<DictionaryEntryView, CreateDictionaryEntryRequest>({
     mutationFn: (body) =>
       opsApiClient.post<DictionaryEntryView>(dictionaryEntriesPath(code), body),
+    onSuccess: invalidate,
+    onFormError: options?.onFormError,
+  });
+}
+
+export function useUpdateDictionaryEntry(options?: {
+  onFormError?: (details: Record<string, unknown>) => void;
+}) {
+  const invalidate = useInvalidateDictionaries();
+  return useOpsMutation<
+    DictionaryEntryView,
+    UpdateDictionaryEntryRequest & { entryId: string }
+  >({
+    mutationFn: ({ entryId, ...body }) =>
+      opsApiClient.patch<DictionaryEntryView>(dictionaryEntryPath(entryId), body),
     onSuccess: invalidate,
     onFormError: options?.onFormError,
   });

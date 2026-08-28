@@ -17,6 +17,7 @@ import { useDictionaries } from "@/hooks/use-dictionaries";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { STAFF_DICTIONARIES } from "@/entities/staff-dictionary";
 
 export default function DictionariesPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
@@ -107,6 +108,57 @@ export default function DictionariesPage() {
             </Table>
           </Card>
         )}
+
+        {/* КАДРОВЫЕ СПРАВОЧНИКИ (Plane №274). Отдельной таблицей, а не строками
+            в общей: у них своя ручка на каждый и своё поле «уровень», которого
+            у значений раздела ОМ нет вовсе. Свести их в один список значило бы
+            показать колонку, пустую у половины строк. */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="border-b px-4 py-3">
+              <h2 className="font-semibold">Кадровые справочники</h2>
+              <p className="text-sm text-muted-foreground">
+                Основание штатного расписания и карточки сотрудника
+              </p>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Справочник</TableHead>
+                  <TableHead>Описание</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Действия</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {STAFF_DICTIONARIES.map((meta) => (
+                  <TableRow key={meta.kind}>
+                    <TableCell>
+                      <Link
+                        href={`/security-ops/dictionaries/personnel/${meta.kind}`}
+                        className="block font-semibold"
+                      >
+                        {meta.label}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {meta.description}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Link
+                        href={`/security-ops/dictionaries/personnel/${meta.kind}`}
+                        className="text-primary-ink"
+                      >
+                        ›
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   );

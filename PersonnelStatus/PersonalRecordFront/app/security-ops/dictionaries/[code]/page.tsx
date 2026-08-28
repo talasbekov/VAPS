@@ -21,6 +21,7 @@ import {
   useDeleteDictionaryEntry,
   useDictionaryEntries,
   useSetDictionaryEntryActive,
+  useUpdateDictionaryEntry,
 } from "@/hooks/use-dictionaries";
 import type { DictionaryEntryView } from "@/entities/dictionary";
 
@@ -40,8 +41,15 @@ export default function DictionaryDetailPage() {
   });
   const setActive = useSetDictionaryEntryActive();
   const remove = useDeleteDictionaryEntry();
+  // Правка значения (Plane №274): заказчик просил у модуля все три действия,
+  // а была только пара «завести — удалить».
+  const update = useUpdateDictionaryEntry({
+    onFormError: (details) => setFieldErrors(details),
+  });
+  const [editing, setEditing] = useState<string | null>(null);
 
-  const mutationError = create.error ?? setActive.error ?? remove.error;
+  const mutationError =
+    create.error ?? setActive.error ?? remove.error ?? update.error;
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   // Тот же код, что у списка справочников: карточка достижима по прямой
@@ -83,6 +91,17 @@ export default function DictionaryDetailPage() {
               <EntryCard
                 key={entry.id}
                 entry={entry}
+                isEditing={editing === entry.id}
+                isSaving={update.isPending}
+                onEdit={() => {
+                  setFieldErrors(null);
+                  setEditing(entry.id);
+                }}
+                onCancelEdit={() => setEditing(null)}
+                onSave={async (values) => {
+                  await update.mutateAsync({ entryId: entry.id, ...values });
+                  setEditing(null);
+                }}
                 onToggle={(isActive) =>
                   setActive.mutate({ entryId: entry.id, isActive })
                 }
@@ -170,13 +189,111 @@ export default function DictionaryDetailPage() {
 
 function EntryCard({
   entry,
+  isEditing,
+  isSaving,
+  onEdit,
+  onCancelEdit,
+  onSave,
   onToggle,
   onDelete,
 }: {
   entry: DictionaryEntryView;
+  isEditing: boolean;
+  isSaving: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSave: (values: {
+    label: string;
+    description: string;
+    groupCode?: string | null;
+  }) => Promise<void>;
   onToggle: (isActive: boolean) => void;
   onDelete: () => void;
 }) {
+  // Черновик правки живёт В КАРТОЧКЕ: он касается одной строки, и хранить его
+  // страницей значило бы чистить его на каждом переключении.
+  const [label, setLabel] = useState(entry.label);
+  const [description, setDescription] = useState(entry.description);
+  const [groupCode, setGroupCode] = useState(entry.groupCode ?? "");
+
+  if (isEditing) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col gap-3 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Код показан, но НЕ правится: на него ссылаются по коду, и
+                смена оборвала бы ссылки молча. Прятать его тоже нельзя —
+                человек должен видеть, что именно правит. */}
+            <span className="font-mono text-xs text-muted-foreground">
+              {entry.code}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              код не меняется — на него ссылаются записи
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor={`label-${entry.id}`}>Название</Label>
+              <Input
+                id={`label-${entry.id}`}
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`descr-${entry.id}`}>Описание</Label>
+              <Input
+                id={`descr-${entry.id}`}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+            {entry.groupCode !== null && (
+              <div className="space-y-1">
+                <Label htmlFor={`group-${entry.id}`}>Группа</Label>
+                <Input
+                  id={`group-${entry.id}`}
+                  value={groupCode}
+                  onChange={(e) => setGroupCode(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isSaving}
+              onClick={() => {
+                setLabel(entry.label);
+                setDescription(entry.description);
+                setGroupCode(entry.groupCode ?? "");
+                onCancelEdit();
+              }}
+            >
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={isSaving}
+              onClick={() =>
+                void onSave({
+                  label,
+                  description,
+                  groupCode: entry.groupCode !== null ? groupCode : undefined,
+                })
+              }
+            >
+              {isSaving ? "Сохранение…" : "Сохранить"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className={entry.isActive ? "" : "opacity-70"}>
       <CardContent className="p-4">
@@ -205,6 +322,9 @@ function EntryCard({
               onClick={() => onToggle(!entry.isActive)}
             >
               {entry.isActive ? "Деактивировать" : "Активировать"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+              Редактировать
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={onDelete}>
               Удалить

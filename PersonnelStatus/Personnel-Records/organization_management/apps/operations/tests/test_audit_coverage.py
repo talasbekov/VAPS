@@ -1044,6 +1044,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     dict_service.set_entry_active(
         dict_entry.pk, is_active=False, actor=ACTOR
     )
+    # Правка значения — своё событие (Plane №274): «завели» и «переименовали»
+    # отвечают на разные вопросы, и фильтр журнала обязан их различать.
+    dict_service.update_entry(
+        dict_entry.pk, label="Покрытие журнала (правка)", description="",
+        group_code=None, actor=ACTOR,
+    )
     tracked = dict_service.create_entry(
         "POST_REQUIREMENT_GROUPS", code="COVERAGE_GROUP",
         label="Группа покрытия", description="", group_code=None, actor=ACTOR,
