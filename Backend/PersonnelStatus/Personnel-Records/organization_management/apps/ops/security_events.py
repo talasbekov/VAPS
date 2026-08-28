@@ -1976,6 +1976,16 @@ def notify_directorates(event_id, allocation_id, *, actor):
 # дня и «Сбор сил» считают привлечённых именно по нему.
 ASSIGNMENT_STATUS_CODE = "EVENT_ASSIGNMENT"
 
+# Вид участия выводится ИЗ КОДА СТАТУСА — тем же соответствием, что и бэкфилл
+# Ш-3 (`operations/migrations/0062_status_participation.py`). Держать его в
+# одном месте нельзя: миграция обязана быть замороженной во времени, а
+# рабочий код — жить. Поэтому соответствие продублировано ОСОЗНАННО, и
+# расхождение стережёт проба `test_allocation_kind_matches_backfill`.
+_PARTICIPATION_KIND_BY_STATUS = {
+    "EVENT_ASSIGNMENT": "PHYSICAL_SQUAD",
+    "EVENT_ASSIGNMENT_GROUP": "SCREENING_GROUP",
+}
+
 
 def _employee_division(employee):
     """Подразделение сотрудника — через штатную единицу.
@@ -2020,6 +2030,126 @@ def day_status_map(employee_ids, on_date):
             on_date, employee_ids=numeric
         )
     }
+
+
+def allocation_members_view(event):
+    """Раскладка по департаментам, где ЛЮДИ ВЗЯТЫ ИЗ СТАТУСОВ (Plane №274, Ш-5).
+
+    ПЕРЕВОРОТ НАПРАВЛЕНИЯ, которого просил заказчик. До этого шага список
+    департамента был ручным набором штаба: человек попадал в него только если
+    штаб нажал «выделить». Начальник управления мог поставить человеку статус
+    участия в своём расходе — и в списке ОМ он не появлялся, потому что список
+    ничего не знал про статусы. Теперь наоборот: источник — статус, а ручной
+    набор стал одним из способов его поставить.
+
+    Старый путь ЖИВЁТ, а не снимается: `add_allocation_member` по-прежнему
+    пишет строку в `force_allocation` и ставит статус (теперь со строкой
+    участия). Снятие JSON-хранилища — отдельный шаг после переезда читателей,
+    как и с `force_requests`; здесь оно остаётся источником ВСЕГО, что
+    статусом не описано: момент добавления и ссылка на статус для снятия.
+
+    Что даёт объединение:
+
+    - строка есть в JSON и есть участие — берётся JSON, он богаче;
+    - участие есть, а строки нет (статус поставили из расхода) — строка
+      достраивается и помечается `source: "STATUS"`, чтобы экран мог сказать,
+      откуда человек взялся;
+    - строка есть, а участия нет — остаётся как была. Молча выкидывать её
+      значило бы стереть чужую работу из-за того, что мы поменяли источник.
+
+    Департамент человека — КОРЕНЬ его поддерева, а не подразделение штатной
+    единицы: человек числится в отделе, а раскладка адресована департаменту.
+    """
+    rows = event.force_allocation or []
+    if not rows:
+        return []
+
+    from organization_management.apps.operations.models_status import (
+        OpsStatusParticipation,
+    )
+    from organization_management.apps.operations.selectors import (
+        DivisionTreeSelector,
+        EmployeeSelector,
+        StaffUnitSelector,
+    )
+
+    # Кто участвует в ЭТОМ мероприятии — один запрос по индексу
+    # `idx_participation_event`; отменённые статусы не в счёт.
+    participations = (
+        OpsStatusParticipation.objects.filter(event_id=event.pk)
+        .select_related("status")
+        .filter(status__cancelled_at__isnull=True)
+    )
+    by_employee = {}
+    for row in participations:
+        by_employee.setdefault(int(row.status.employee_id), row)
+    if not by_employee:
+        return rows
+
+    known = {
+        str(member.get("employeeId"))
+        for row in rows
+        for member in row.get("members", [])
+    }
+    extra_ids = [eid for eid in by_employee if str(eid) not in known]
+    if not extra_ids:
+        return rows
+
+    # Департамент каждого добавленного: поддерево строки раскладки.
+    children_map = DivisionTreeSelector.children_map()
+    subtree_of = {
+        str(row.get("departmentId")): DivisionTreeSelector.subtree_ids(
+            _as_division_id(row.get("departmentId")), children_map=children_map
+        )
+        for row in rows
+        if row.get("departmentId") is not None
+    }
+    division_of = StaffUnitSelector.divisions_of(extra_ids)
+    # ФИО одним запросом: перебор по `_find_personnel` дал бы число запросов,
+    # зависящее от числа людей, — ровно того раздел избегает везде.
+    names = {
+        employee_id: row.get("full_name", "")
+        for employee_id, row in EmployeeSelector.denorm_for(extra_ids).items()
+    }
+
+    extra_by_department = {}
+    for employee_id in extra_ids:
+        division_id = division_of.get(employee_id)
+        if division_id is None:
+            continue
+        for department_key, subtree in subtree_of.items():
+            if division_id in subtree:
+                participation = by_employee[employee_id]
+                extra_by_department.setdefault(department_key, []).append(
+                    {
+                        "employeeId": str(employee_id),
+                        "name": names.get(employee_id, ""),
+                        "divisionId": str(division_id),
+                        "divisionName": "",
+                        "addedAt": None,
+                        "statusId": str(participation.status_id),
+                        "kindCode": participation.kind_code,
+                        "roleCode": participation.role_code,
+                        # Откуда строка взялась: экран обязан отличать
+                        # «штаб выделил» от «поставили статусом», иначе
+                        # снятие обещало бы то, чего не может.
+                        "source": "STATUS",
+                    }
+                )
+                break
+
+    if not extra_by_department:
+        return rows
+    return [
+        {
+            **row,
+            "members": [
+                *row.get("members", []),
+                *extra_by_department.get(str(row.get("departmentId")), []),
+            ],
+        }
+        for row in rows
+    ]
 
 
 def force_roster_view(event):
@@ -2157,6 +2287,22 @@ def add_allocation_member(
         actor=actor,
         comment=f"Привлечение на мероприятие {event.code}",
         source_ref=f"security-event:{event.pk}",
+        # СТАТУС ВЕДЁТ ЦЕПОЧКУ (Plane №274, Ш-5). До этого шага выделение
+        # штабом писало только `source_ref`, и строка участия у него не
+        # заводилась вовсе: бэкфилл Ш-3 перенёс то, что БЫЛО на момент
+        # миграции, а всё выделенное после неё оставалось новой таблице
+        # невидимым — 45 статусов за сутки. Департаментский список, который
+        # теперь собирается из участий, потерял бы ровно этих людей.
+        participations=[
+            {
+                "event_id": event.pk,
+                "kind_code": _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE],
+            }
+        ],
+        # Участие поставила ЦЕПОЧКА, а не человек из каталога: вид выведен из
+        # кода статуса, и сверять его со справочником значило бы позволить
+        # выключенному справочному значению сломать выделение людей на ОМ.
+        system_participations=True,
         override=override,
         override_reason=override_reason,
     )

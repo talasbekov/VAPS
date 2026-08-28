@@ -972,3 +972,17 @@ export function countSubmissions(nodes: TrafficLightNode[]): SubmissionCounts {
 export const STATUS_LABEL_BY_CODE: ReadonlyMap<string, string> = new Map(
   STATUS_TYPE_OPTIONS.map((option) => [option.code, option.label])
 );
+
+/** Коды участия в ОМ — ОДИН список на всю систему (Plane №274, Ш-5).
+ *
+ * Держать его в одном месте пришлось после находки Ш-5: диалог постановки
+ * статуса знал ОБА кода, а департаментский разрез «Сбор сил» — только
+ * `EVENT_ASSIGNMENT`, и человек, привлечённый ГРУППОЙ ДОСМОТРА, у него
+ * не попадал в выделенные, а попадал в «В строю» — то есть считался
+ * свободным и предлагался на новое привлечение. Пока список был копией в
+ * каждом читателе, такое расхождение было вопросом времени.
+ */
+export const EVENT_PARTICIPATION_STATUS_CODES: ReadonlySet<string> = new Set([
+  "EVENT_ASSIGNMENT",
+  "EVENT_ASSIGNMENT_GROUP",
+]);

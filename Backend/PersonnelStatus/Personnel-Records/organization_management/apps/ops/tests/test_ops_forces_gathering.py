@@ -832,3 +832,177 @@ def test_recon_completion_still_leads_to_placement(manager):  # noqa: F811
     base, _total = event_on_demand(manager)
 
     assert manager.get(base).json()["stage"] == "PLACEMENT"
+
+
+# ── Ш-5: цепочку ведёт СТАТУС, а не ручной набор штаба (Plane №274) ─────────
+
+
+def _seed_participation_kinds():
+    """Виды участия из справочника (Ш-2).
+
+    Нужны там, где статус ставит ЧЕЛОВЕК: он выбирает вид из каталога, и
+    сервис сверяет выбранное с ним. Системному пути цепочки они не нужны
+    ОСОЗНАННО — см. `system_participations` в `status_service.create_status`.
+    """
+    from organization_management.apps.operations.models_settings import (
+        OpsDictionaryEntry,
+    )
+
+    for code, label in (
+        ("PHYSICAL_SQUAD", "Физический наряд"),
+        ("SCREENING_GROUP", "Группа досмотра"),
+    ):
+        OpsDictionaryEntry.objects.get_or_create(
+            dictionary_code="EVENT_PARTICIPATION_KINDS",
+            code=code,
+            defaults={"label": label, "description": "", "is_active": True},
+        )
+
+
+def _seat(employee, division):
+    """Посадить человека в подразделение: департамент считается по поддереву
+    штатной единицы, у `Employee` своего подразделения нет вовсе."""
+    from organization_management.apps.staff_unit.models import StaffUnit
+
+    StaffUnit.objects.create(division=division, employee=employee, index=1)
+    return employee
+
+
+def test_allocation_by_staff_writes_a_participation_row(manager):  # noqa: F811
+    """Выделение штабом заводит СТРОКУ УЧАСТИЯ, а не только `source_ref`.
+
+    До Ш-5 этот путь ставил статус и не писал участия вовсе: бэкфилл Ш-3
+    перенёс то, что БЫЛО на момент миграции, и всё выделенное после неё
+    оставалось новой таблице невидимым — на стенде так набралось 45 строк.
+    Департаментский список, который теперь собирается из участий, потерял бы
+    ровно этих людей.
+
+    Стережёт мутацию: убрать `participations=` из `add_allocation_member`.
+    """
+    from organization_management.apps.operations.models_status import (
+        OpsStatusParticipation,
+    )
+
+    make_assignment_status_type()
+    department = make_department()
+    employee = make_employee("Каримов")
+    base, allocation_id = allocated_event(manager, department)
+
+    data = manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    ).json()
+
+    status_id = data["forceAllocation"][0]["members"][0]["statusId"]
+    row = OpsStatusParticipation.objects.get(status_id=status_id)
+    assert row.event_id == int(event_pk(base))
+    # Вид выводится ИЗ КОДА СТАТУСА тем же соответствием, что и бэкфилл Ш-3.
+    assert row.kind_code == "PHYSICAL_SQUAD"
+    assert row.role_code == ""
+
+
+def test_a_status_set_outside_the_chain_reaches_the_department(manager):  # noqa: F811
+    """ПЕРЕВОРОТ НАПРАВЛЕНИЯ, о котором просил заказчик (Ш-5).
+
+    Начальник управления ставит человеку статус участия в СВОЁМ расходе —
+    штаб его не выделял. До Ш-5 список департамента был ручным набором штаба,
+    и такой человек не появлялся в нём вовсе: список ничего не знал про
+    статусы. Теперь источник — статус.
+
+    Строка помечена `source: "STATUS"`: экран обязан отличать «штаб выделил»
+    от «поставили статусом», иначе снятие обещало бы то, чего не может — у
+    такой строки нет записи штаба, которую можно убрать.
+
+    Стережёт мутацию: вернуть `"forceAllocation": event.force_allocation`.
+    """
+    from organization_management.apps.operations import status_service
+    from organization_management.apps.operations import clock
+
+    make_assignment_status_type()
+    _seed_participation_kinds()
+    department = make_department()
+    directorate = make_directorate(department)
+    employee = _seat(make_employee("Ертаев"), directorate)
+    base, _ = allocated_event(manager, department)
+    event_id = int(event_pk(base))
+
+    with clock.override(dt.date(2026, 8, 10)):
+        status_service.create_status(
+            employee_id=employee.pk,
+            status_type_code="EVENT_ASSIGNMENT",
+            date_start=dt.date(2026, 8, 10),
+            date_end=dt.date(2026, 8, 11),
+            actor="user:directorate-chief",
+            participations=[
+                {"event_id": event_id, "kind_code": "PHYSICAL_SQUAD"}
+            ],
+        )
+
+    members = manager.get(base).json()["forceAllocation"][0]["members"]
+    mine = [m for m in members if m["employeeId"] == str(employee.pk)]
+    assert mine, f"человек со статусом не доехал до департамента: {members}"
+    assert mine[0]["source"] == "STATUS"
+    assert mine[0]["kindCode"] == "PHYSICAL_SQUAD"
+
+
+def test_a_status_of_another_department_does_not_leak(manager):  # noqa: F811
+    """Человек ЧУЖОГО департамента в строку не попадает.
+
+    Без контрольного департамента проба не отличила бы «разложили по адресу»
+    от «свалили всех участников в первую строку».
+    """
+    from organization_management.apps.operations import status_service
+    from organization_management.apps.operations import clock
+
+    make_assignment_status_type()
+    _seed_participation_kinds()
+    department = make_department()
+    stranger_department = make_department("Департамент связи")
+    stranger = _seat(
+        make_employee("Чужаков"), make_directorate(stranger_department, "Управление С")
+    )
+    base, _ = allocated_event(manager, department)
+
+    with clock.override(dt.date(2026, 8, 10)):
+        status_service.create_status(
+            employee_id=stranger.pk,
+            status_type_code="EVENT_ASSIGNMENT",
+            date_start=dt.date(2026, 8, 10),
+            date_end=dt.date(2026, 8, 11),
+            actor="user:other-chief",
+            participations=[
+                {"event_id": int(event_pk(base)), "kind_code": "PHYSICAL_SQUAD"}
+            ],
+        )
+
+    members = manager.get(base).json()["forceAllocation"][0]["members"]
+    assert [m for m in members if m["employeeId"] == str(stranger.pk)] == []
+
+
+def test_the_manual_row_is_not_dropped_when_participation_is_missing(  # noqa: F811
+    manager,
+):
+    """Строка штаба без участия ОСТАЁТСЯ.
+
+    Смена источника не даёт права стирать чужую работу: строка, заведённая до
+    Ш-5 и не имеющая участия, обязана жить дальше.
+    """
+    from organization_management.apps.operations.models_status import (
+        OpsStatusParticipation,
+    )
+
+    make_assignment_status_type()
+    department = make_department()
+    employee = make_employee("Досаев")
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    # Изображаем данные ДО Ш-5: статус есть, строки участия нет.
+    OpsStatusParticipation.objects.all().delete()
+
+    members = manager.get(base).json()["forceAllocation"][0]["members"]
+    assert [m["employeeId"] for m in members] == [str(employee.pk)]

@@ -6,7 +6,7 @@ import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { Pager } from "@/components/pager";
 import { DivisionPicker } from "@/components/division-picker";
-import { EVENT_ASSIGNMENT_CODE } from "@/hooks/use-forces-gathering";
+import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_ITEMS,
@@ -114,7 +114,7 @@ function describeStatus(
   emp: any
 ): { text: string; code: string | null } {
   const code = emp?.current_status?.status_type ?? null;
-  if (code === EVENT_ASSIGNMENT_CODE) {
+  if (code !== null && EVENT_PARTICIPATION_STATUS_CODES.has(code)) {
     return { text: "Участие в ОМ", code };
   }
   return { text: getFormattedEmployeeStatus(emp), code };
@@ -636,12 +636,22 @@ export function StatusTable({
                         >
                           {getStatusBadge(employee.status)}
                         </button>
-                        {/* Статус НЕ хранит, на какое именно ОМ отдан
-                            человек (модель их не связывает) — ссылка ведёт
-                            на общий разрез «Сбор сил», а подпись рядом
-                            говорит об этом прямо, чтобы ссылка не выглядела
-                            адресом конкретного мероприятия. */}
-                        {employee.statusCode === EVENT_ASSIGNMENT_CODE && (
+                        {/* 🔴 ПОДПИСЬ БЫЛА ЛОЖНОЙ С Ш-3 (Plane №274). Она
+                            говорила «статус не хранит связь с конкретным ОМ»
+                            — с появлением `ops_status_participations` он её
+                            хранит, и по несколько мероприятий сразу. Сама
+                            карточка их пока не показывает: кадровая ручка
+                            отдаёт `current_status` без участий, и протянуть
+                            их сюда — отдельная работа (карточка заведена).
+                            Поэтому подпись больше НИЧЕГО НЕ УТВЕРЖДАЕТ о
+                            модели, а говорит, где мероприятия видно.
+                            Ссылка стоит у ОБОИХ видов участия: раньше
+                            условие знало один код, и привлечённый группой
+                            оставался вовсе без ссылки. */}
+                        {employee.statusCode !== null &&
+                          EVENT_PARTICIPATION_STATUS_CODES.has(
+                            employee.statusCode
+                          ) && (
                           <div className="flex max-w-[220px] flex-col items-start gap-0.5">
                             <Link
                               href="/employees?view=forces"
@@ -650,8 +660,7 @@ export function StatusTable({
                               → Сбор сил
                             </Link>
                             <p className="text-muted-foreground text-[11px] leading-tight">
-                              Статус не хранит связь с конкретным ОМ — ссылка
-                              ведёт на общий разрез «Сбор сил»
+                              Мероприятия участия видны в разрезе «Сбор сил»
                             </p>
                           </div>
                         )}
