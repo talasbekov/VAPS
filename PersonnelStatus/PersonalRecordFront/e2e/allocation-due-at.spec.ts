@@ -97,15 +97,12 @@ async function seedOverdueRequest(token: string): Promise<Fixture> {
   })
   await call('POST', `${base}/recon/complete/`)
 
-  // 🔴 ОТБОР ПО ТИПУ ДЕЛАЕТСЯ ЗДЕСЬ, а не параметром: `?type_code=department`
-  // ручка справочника ИГНОРИРУЕТ и отдаёт всё дерево (проверено curl: первой
-  // строкой приезжает организация «Служба»). Заявку такому «департаменту»
-  // сервер отбивает 400 «Такого департамента нет в справочнике». Дефект
-  // фильтра заведён отдельной карточкой; проба на нём падать не вправе.
-  const departments = await call('GET', '/api/core/divisions/?page_size=200')
-  const department = (departments.payload.results ?? []).find(
-    (row: { type_code?: string }) => row.type_code === 'department',
-  )
+  // Отбор по типу — ПАРАМЕТРОМ. До Plane №315 ручка его молча игнорировала и
+  // отдавала всё дерево: первой строкой приезжала организация «Служба», и
+  // заявку такому «департаменту» сервер отбивал 400. Проба ходит именно так,
+  // как ходил бы клиент, — иначе обход дефекта пережил бы сам дефект.
+  const departments = await call('GET', '/api/core/divisions/?type_code=department&page_size=200')
+  const department = (departments.payload.results ?? [])[0]
   expect(department, 'в справочнике нет ни одного департамента').toBeDefined()
 
   // СРОК В ПРОШЛОМ — суть пробы: «Просрочено» иначе не увидеть, а ждать сутки
