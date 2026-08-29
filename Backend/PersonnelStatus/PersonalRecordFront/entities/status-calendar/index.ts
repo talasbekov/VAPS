@@ -113,3 +113,32 @@ export function statusCalendarDayPath(params: {
   if (params.divisionId) query.set("division_id", params.divisionId);
   return `${BASE}/day/?${query.toString()}`;
 }
+
+/**
+ * Буквы матрицы «сотрудник × день» — из эталона заказчика (Plane №270):
+ * Д, П, ОМ, О, Б, К и «·» для «в строю».
+ *
+ * Коды, эталоном НЕ названные, получают букву по первой букве подписи из
+ * справочника (`letterForStatus`), а не схлопываются в «·»: молча объявить
+ * человека в строю — худший вид вранья в календаре занятости.
+ */
+export const STATUS_LETTERS: Record<string, string> = {
+  DUTY: "Д",
+  GEV: "Д",
+  REST_AFTER_DUTY: "П",
+  EVENT_ASSIGNMENT: "ОМ",
+  EVENT_ASSIGNMENT_GROUP: "ОМ",
+  VACATION: "О",
+  LEAVE_BY_REPORT: "О",
+  SICK_LEAVE: "Б",
+  COMMAND: "К",
+  IN_SERVICE: "·",
+};
+
+/** Буква кода: из эталона, иначе первая буква подписи справочника. */
+export function letterForStatus(code: string, label: string): string {
+  const known = STATUS_LETTERS[code];
+  if (known) return known;
+  const letter = (label || code).trim().charAt(0).toUpperCase();
+  return letter || "?";
+}

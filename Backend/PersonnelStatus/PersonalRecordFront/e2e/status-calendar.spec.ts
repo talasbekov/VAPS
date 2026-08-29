@@ -113,3 +113,35 @@ test.describe('панель занятости за день', () => {
       .not.toBe(before)
   })
 })
+
+test.describe('вид «Матрица»', () => {
+  test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
+
+  test('матрица показывает буквы по дням, липкую колонку и легенду', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/statuses`)
+    await page.getByRole('tab', { name: 'Календарь статусов' }).click()
+
+    // Переключатель видов: «Месяц» и «Матрица» — два вида взамен прежнего.
+    await page.getByRole('tab', { name: 'Матрица', exact: true }).click()
+
+    const table = page.getByRole('table', { name: /Статусы сотрудников по дням/ })
+    await expect(table).toBeVisible({ timeout: 30_000 })
+
+    // Колонка на каждый день месяца плюс колонка сотрудника.
+    const headers = table.getByRole('columnheader')
+    expect(await headers.count()).toBeGreaterThanOrEqual(29)
+    await expect(headers.first()).toHaveText('Сотрудник')
+
+    // В ячейке БУКВА, а не пустота: смысл не держится на одном цвете.
+    const cells = table.getByRole('cell')
+    const first = cells.first()
+    await expect(first).toBeVisible()
+    expect((await first.textContent())?.trim()).toMatch(/^[А-ЯЁA-Z·?]{1,2}$/u)
+    // И подпись словами, которую читает мышь и чтение с экрана.
+    expect(await first.getAttribute('title')).toMatch(/·/)
+
+    // Сказано, что показана страница, а не весь состав.
+    await expect(page.getByText(/Показаны \d+ из \d+ · страница \d+ из \d+/)).toBeVisible()
+  })
+})
