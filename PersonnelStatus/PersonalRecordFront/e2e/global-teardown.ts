@@ -30,6 +30,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { dropProbeEvents, probeToken } from './probe-events'
+import { dropProbeStatuses } from './probe-statuses'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const execFileAsync = promisify(execFile)
@@ -66,6 +67,26 @@ export default async function globalTeardown(): Promise<void> {
     console.log('уборка пробных ОМ: стенд недоступен, пропущена')
     return
   }
+  // Статусы убираются ВСЕГДА и первыми, независимо от судьбы мероприятий
+  // (Plane №316): статус переживает снесённое ОМ, и пока его не снимали,
+  // участия в удалённых мероприятиях копились — 42 строки к вечеру 29.08.2026,
+  // из-за них покраснела проба сборов сил.
+  try {
+    const statuses = await dropProbeStatuses(token)
+    if (statuses.closed > 0 || statuses.refused > 0) {
+      console.log(
+        `уборка пробных статусов: снято ${statuses.closed}` +
+          (statuses.refused > 0 ? `, отказано ${statuses.refused}` : ''),
+      )
+    } else {
+      console.log('уборка пробных статусов: пробных строк не найдено')
+    }
+  } catch (error) {
+    // Тот же довод, что и ниже у мероприятий: уборка не предмет проверки, и
+    // падать на ней значило бы красить зелёный прогон по чужой причине.
+    console.log(`уборка пробных статусов: не отработала (${String(error).slice(0, 120)})`)
+  }
+
   const { dropped, refused } = await dropProbeEvents(token)
   if (refused === 0) {
     console.log(`уборка пробных ОМ: снято ${dropped}`)

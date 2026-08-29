@@ -23,6 +23,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { probeComment } from './probe-statuses'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -139,7 +140,7 @@ async function seedTimedStatus(
         status_type: 'business_trip',
         start_date: iso(new Date()),
         end_date: endDate,
-        comment: 'Проба №255',
+        comment: probeComment('Проба №255'),
       }),
     })
     // Тело читается ОДИН раз и держится строкой: `await res.text()` прямо в
