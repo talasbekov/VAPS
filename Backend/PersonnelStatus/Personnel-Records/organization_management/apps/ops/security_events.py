@@ -1744,6 +1744,63 @@ def _department_directory(ids):
     return {str(pk): name for pk, name in rows}
 
 
+def allocation_default_due_at(event):
+    """Срок сдачи списка по умолчанию — ЗА СУТКИ до начала мероприятия.
+
+    Эталон заказчика печатает у заявки колонку «Срок» — дату со временем, за
+    сутки до ОМ (Plane №287). Поля такого не было вовсе: у мероприятия есть
+    своя дата и своё время, а момента, к которому департамент обязан отдать
+    список, не существовало ни как поля, ни как правила — «опоздал» и «ещё
+    можно» были неразличимы.
+
+    Время берётся у самого ОМ; его может не быть (`event_time` необязателен —
+    дата известна всегда, час не всегда), и тогда началом считается полночь.
+    Зона — местная зона раздела: срок читает человек, и «за сутки до» он
+    отмеряет по своим часам, а не по UTC.
+    """
+    start_time = event.event_time or dt.time(0, 0)
+    naive = dt.datetime.combine(event.business_date, start_time)
+    local = naive.replace(tzinfo=_ops_local_tz())
+    return (local - dt.timedelta(days=1)).isoformat()
+
+
+def _ops_local_tz():
+    from organization_management.apps.operations.clock import _local_tz
+
+    return _local_tz()
+
+
+def _parse_due_at(raw):
+    """ISO-момент из тела запроса; None — значения нет. Ошибку поднимает вызывающий."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_ops_local_tz())
+    return parsed.isoformat()
+
+
+def allocation_is_overdue(row, now=None):
+    """Срок вышел, а список не отправлен.
+
+    Считается НА ЧТЕНИИ, а не хранится: «просрочено» — это факт о текущем
+    моменте, и записанный флаг устарел бы через минуту после записи (то же
+    правило, что у прогресса управлений и статуса дня).
+
+    Отправленная, принятая и возвращённая штабом заявка просроченной не
+    считается: у первых двух список уже у штаба, а возвращённая ждёт решения
+    департамента по замечаниям — свой срок ей назначает штаб заново.
+    """
+    if row.get("status") in ("SUBMITTED", "ACCEPTED"):
+        return False
+    due_at = row.get("dueAt")
+    if not due_at:
+        return False
+    moment = now or Clock.now()
+    return moment > dt.datetime.fromisoformat(due_at)
+
+
 @transaction.atomic
 def split_force_demand(event_id, *, rows):
     """Сохранить раскладку потребности по департаментам.
@@ -1773,6 +1830,16 @@ def split_force_demand(event_id, *, rows):
             need = 0
         if need < 1:
             field_errors[f"rows.{index}.need"] = ["Должно быть не меньше 1."]
+        # Срок НЕОБЯЗАТЕЛЕН в теле: не задан — берётся умолчание «за сутки до
+        # ОМ». Заданный, но неразбираемый — ошибка формы, а не молчаливое
+        # умолчание: иначе опечатка в дате выглядела бы как принятое решение.
+        if row.get("dueAt") not in (None, ""):
+            try:
+                _parse_due_at(row.get("dueAt"))
+            except ValueError:
+                field_errors[f"rows.{index}.dueAt"] = [
+                    "Укажите момент в формате ГГГГ-ММ-ДДTЧЧ:ММ."
+                ]
     if field_errors:
         raise _validation(field_errors)
 
@@ -1842,6 +1909,16 @@ def split_force_demand(event_id, *, rows):
                 "need": int(row.get("need", 0)),
                 "status": kept.get("status") or _ALLOCATION_DRAFT,
                 "comment": str(row.get("comment") or "").strip(),
+                # Срок сдачи списка (Plane №287). Задан штабом — берём его;
+                # не задан — сохраняем прежний, а у новой строки считаем
+                # умолчание. Пересчитывать умолчание каждой правке нельзя:
+                # штаб, однажды передвинувший срок, потерял бы своё решение
+                # при следующем сохранении раскладки.
+                "dueAt": (
+                    _parse_due_at(row.get("dueAt"))
+                    or kept.get("dueAt")
+                    or allocation_default_due_at(event)
+                ),
                 "notifiedAt": kept.get("notifiedAt"),
                 "submittedAt": kept.get("submittedAt"),
                 "decidedAt": kept.get("decidedAt"),
@@ -2333,7 +2410,12 @@ def allocation_members_view(event):
     управлениям — в `_with_directorate_progress` (Plane №272, Ш-2).
     """
     rows = event.force_allocation or []
-    return _with_directorate_progress(_merge_status_members(event, rows))
+    merged = _with_directorate_progress(_merge_status_members(event, rows))
+    # «Просрочено» считается здесь, а не хранится: это факт о ТЕКУЩЕМ моменте
+    # (Plane №287). Момент один на весь ответ — иначе строки одного экрана
+    # отвечали бы про разные секунды.
+    now = Clock.now()
+    return [{**row, "overdue": allocation_is_overdue(row, now=now)} for row in merged]
 
 
 def _with_directorate_progress(rows):
@@ -2461,10 +2543,10 @@ def department_requests_view(allowed_division_ids):
                     "code": event.code,
                     "title": event.title,
                     "businessDate": event.business_date.isoformat(),
-                    # Времени «срока сдачи списка» у мероприятия нет ВООБЩЕ —
-                    # см. отклонение от эталона в Frontend/Decisions. Отдаём
-                    # то, что есть: время самого ОМ, и называет его экран
-                    # своими словами, а не «сроком».
+                    # Время САМОГО МЕРОПРИЯТИЯ. Отдельно от него едет `dueAt` —
+                    # срок сдачи списка (Plane №287): раньше такого поля не
+                    # было вовсе, и экран честно называл эту колонку «Дата ОМ»,
+                    # чтобы не выдавать дату мероприятия за срок.
                     "eventTime": (
                         event.event_time.strftime("%H:%M")
                         if event.event_time is not None
@@ -2478,6 +2560,13 @@ def department_requests_view(allowed_division_ids):
                     "need": int(allocation.get("need") or 0),
                     "assigned": len(members),
                     "status": allocation.get("status") or _ALLOCATION_DRAFT,
+                    # Срок сдачи списка и признак опоздания (Plane №287).
+                    # `dueAt` — момент, `overdue` — ответ про ТЕКУЩИЙ момент,
+                    # посчитанный сервером: считать его на клиенте значило бы
+                    # доверить часам браузера решение «опоздал или нет».
+                    "dueAt": allocation.get("dueAt"),
+                    "overdue": bool(allocation.get("overdue")),
+                    "submittedLate": bool(allocation.get("submittedLate")),
                 }
             )
     return rows
@@ -2568,6 +2657,12 @@ def force_collections_view():
                 "gathered": gathered,
                 "departments": len(allocations),
                 "collectionStatus": _collection_status(allocations, gathered),
+                # Сколько заявок ПРОСРОЧЕНО (Plane №287). Штабу нужен не
+                # список сроков, а ответ «есть ли отстающие»: сроки у каждой
+                # заявки свои, и общий у мероприятия был бы выдумкой.
+                "overdueCount": sum(
+                    1 for row in allocations if row.get("overdue")
+                ),
             }
         )
     return rows
@@ -2927,8 +3022,17 @@ def submit_allocation(event_id, allocation_id, *, actor):
             message="Никто не выделен — отправлять нечего.",
         )
     now = _now_iso()
+    # ОПОЗДАНИЕ НЕ ЗАПРЕЩАЕТ ОТПРАВКУ (Plane №287). Список нужен штабу и
+    # позже срока: запрет означал бы, что опоздавший департамент вообще ничего
+    # не может сообщить, а штаб остаётся без людей И без сведений. Опоздание
+    # ЗАПИСЫВАЕТСЯ моментом отправки и сроком — по ним видно, кто сдал поздно.
+    late = allocation_is_overdue(
+        {**target, "status": "NOTIFIED"}, now=Clock.now()
+    )
     event = _update_allocation(
-        event, allocation_id, {"status": "SUBMITTED", "submittedAt": now}
+        event,
+        allocation_id,
+        {"status": "SUBMITTED", "submittedAt": now, "submittedLate": late},
     )
     audit_service.record(
         actor=actor,

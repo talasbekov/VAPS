@@ -501,6 +501,23 @@ function aggregateForceRequests(
   }));
 }
 
+/** Срок сдачи списка по умолчанию — за сутки до начала мероприятия (№287).
+ *  Время ОМ мок не держит, поэтому началом считается полночь — как и на
+ *  сервере, когда `eventTime` не заполнен. */
+function defaultDueAt(businessDate: string): string {
+  const start = new Date(`${businessDate}T00:00:00`);
+  start.setDate(start.getDate() - 1);
+  return start.toISOString();
+}
+
+/** Срок вышел, а список не отправлен. Отправленная и принятая заявка
+ *  просроченной не считается: список уже у штаба. */
+function isOverdue(status: string, dueAt: string | null | undefined): boolean {
+  if (status === "SUBMITTED" || status === "ACCEPTED") return false;
+  if (!dueAt) return false;
+  return new Date(dueAt).getTime() < Date.now();
+}
+
 export const securityEventsHandlers = [
   // bindable-objects раньше детали: паттерн :id/ иначе съедает этот путь
   http.get(`*${BINDABLE_OBJECTS_PATH}`, () => {
@@ -1117,6 +1134,17 @@ export const securityEventsHandlers = [
           need: row.need,
           status: kept?.status ?? "DRAFT",
           comment: (row.comment ?? "").trim(),
+          // Срок сдачи списка — порт правила бэка (Plane №287): задан штабом —
+          // берём его, не задан — прежний, а у новой строки «за сутки до
+          // начала ОМ». Мок обязан нести поле: контракт проверяется мок-пробой,
+          // и молчащий здесь мок зелен ровно тогда, когда клиент читает то,
+          // чего сервер не отдаёт.
+          dueAt: row.dueAt ?? kept?.dueAt ?? defaultDueAt(event.businessDate),
+          overdue: isOverdue(
+            kept?.status ?? "DRAFT",
+            row.dueAt ?? kept?.dueAt ?? defaultDueAt(event.businessDate)
+          ),
+          submittedLate: kept?.submittedLate ?? false,
           notifiedAt: kept?.notifiedAt ?? null,
           submittedAt: kept?.submittedAt ?? null,
           decidedAt: kept?.decidedAt ?? null,

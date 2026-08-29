@@ -172,6 +172,15 @@ export interface ForceAllocationRow {
   need: number;
   status: ForceAllocationStatus;
   comment: string;
+  /** Срок сдачи списка (Plane №287). По умолчанию — за сутки до начала ОМ,
+   *  штаб может назначить свой. `null`/отсутствует — срока нет. */
+  dueAt?: string | null;
+  /** Срок вышел, а список не отправлен. Считает СЕРВЕР — «опоздал» не должно
+   *  зависеть от часов браузера. */
+  overdue?: boolean;
+  /** Список отправлен после срока: опоздание отправку не запрещает, но
+   *  записывается. */
+  submittedLate?: boolean;
   notifiedAt: string | null;
   submittedAt: string | null;
   decidedAt: string | null;
@@ -663,7 +672,15 @@ export interface ReturnAllocationRequest extends Record<string, unknown> {
 
 /** Раскладка потребности по департаментам: список целиком (Plane №73, СС-1). */
 export interface SplitForceDemandRequest extends Record<string, unknown> {
-  rows: { departmentId: string; need: number; comment?: string }[];
+  rows: {
+    departmentId: string;
+    need: number;
+    comment?: string;
+    /** Срок сдачи списка «ГГГГ-ММ-ДДTЧЧ:ММ» (Plane №287). Ключа НЕТ — сервер
+     *  сохранит прежний срок либо поставит умолчание «за сутки до ОМ»;
+     *  неразбираемое значение он отбивает 400, а не подменяет умолчанием. */
+    dueAt?: string;
+  }[];
 }
 
 export interface AssignPlacementRequest extends Record<string, unknown> {
@@ -835,8 +852,8 @@ export interface DepartmentRequestRow {
   code: string;
   title: string;
   businessDate: string;
-  /** Время самого мероприятия. СРОКА СДАЧИ СПИСКА в модели нет вовсе —
-   * отклонение от эталона записано в `Frontend/Decisions`. */
+  /** Время самого мероприятия — НЕ срок сдачи списка; срок едет отдельным
+   * полем `dueAt` (Plane №287). */
   eventTime: string | null;
   location: string;
   stage: SecurityEventStage;
@@ -846,6 +863,17 @@ export interface DepartmentRequestRow {
   need: number;
   assigned: number;
   status: ForceAllocationStatus;
+  /** Срок сдачи списка: момент, к которому департамент обязан отдать людей
+   * (Plane №287). По умолчанию — за сутки до начала ОМ, штаб может назначить
+   * свой. `null` — срока нет (строка старше правила и не попала в бэкфилл). */
+  dueAt: string | null;
+  /** Срок вышел, а список не отправлен. Считает СЕРВЕР по своим часам:
+   * доверить это часам браузера значило бы, что «опоздал» зависит от того,
+   * у кого какие часы. */
+  overdue: boolean;
+  /** Список отправлен ПОСЛЕ срока. Отправку опоздание не запрещает — оно её
+   * помечает. */
+  submittedLate: boolean;
 }
 
 /** Состояние сбора по МЕРОПРИЯТИЮ (Plane №271, Ш-1/Ш-3).
@@ -861,7 +889,9 @@ export interface ForceCollectionRow {
   code: string;
   title: string;
   businessDate: string;
-  /** Время самого ОМ. СРОКА СБОРА в модели нет вовсе — см. Plane №287. */
+  /** Время самого ОМ — не срок сбора. Срок живёт у КАЖДОЙ заявки отдельно
+   *  (`dueAt`, Plane №287): общего срока у мероприятия нет, департаментам их
+   *  назначает штаб по отдельности. */
   eventTime: string | null;
   location: string;
   stage: SecurityEventStage;
@@ -870,6 +900,9 @@ export interface ForceCollectionRow {
   gathered: number;
   departments: number;
   collectionStatus: ForceCollectionStatus;
+  /** Сколько заявок этого сбора ПРОСРОЧЕНО (Plane №287). Штабу нужен ответ
+   *  «есть ли отстающие», а не список сроков: сроки у заявок свои. */
+  overdueCount?: number;
 }
 
 /** Сбор ЦЕЛИКОМ — карточка штаба (Plane №271, Ш-2). */
