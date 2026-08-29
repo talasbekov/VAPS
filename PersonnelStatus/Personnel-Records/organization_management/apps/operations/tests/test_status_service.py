@@ -432,7 +432,33 @@ class TestCancelStatus:
                 cancel_status(status, actor=ACTOR, reason=" ")
         assert exc.value.http_status == 400
 
-    def test_active_is_not_cancellable(self):
+    def test_active_from_previous_days_is_not_cancellable(self):
+        """Идущий С ПРОШЛЫХ СУТОК статус — факт: его закрывают, а не отменяют.
+
+        🔴 ПИН ИЗМЕНЁН ОСОЗНАННО (Plane №322). Прежде строка начиналась СЕГОДНЯ,
+        и проба закрепляла отказ, за которым пряталась дыра: такую строку
+        нельзя было ни отменить, ни завершить (досрочное завершение требует
+        дату позже начала и не в будущем) — оператор не мог убрать свою же
+        ошибку до следующих суток. Сегодняшняя теперь отменяется, а правило
+        про факт проверяется на строке, которая ДЕЙСТВИТЕЛЬНО продержалась
+        день.
+        """
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = create_status(
+                employee_id=employee.id,
+                status_type_code="DUTY",
+                date_start=TODAY - timedelta(days=1),
+                date_end=TODAY + timedelta(days=2),
+                actor=ACTOR,
+            )
+            with pytest.raises(DomainError) as exc:
+                cancel_status(status, actor=ACTOR, reason="передумали")
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+
+    def test_active_started_today_is_cancellable(self):
+        """Свою же ошибку оператор убирает в тот же день (Plane №322)."""
         seed_types()
         employee = make_employee()
         with clock.override(TODAY):
@@ -443,9 +469,9 @@ class TestCancelStatus:
                 date_end=TODAY + timedelta(days=2),
                 actor=ACTOR,
             )
-            with pytest.raises(DomainError) as exc:
-                cancel_status(status, actor=ACTOR, reason="передумали")
-        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+            cancelled = cancel_status(status, actor=ACTOR, reason="ошибся строкой")
+        assert cancelled.cancelled_at is not None
+        assert cancelled.cancelled_reason == "ошибся строкой"
 
     def test_double_cancel_is_rejected(self):
         seed_types()

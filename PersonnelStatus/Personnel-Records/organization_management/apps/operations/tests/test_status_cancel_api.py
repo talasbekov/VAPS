@@ -184,17 +184,50 @@ def test_reason_required_400(types, division, body):
 # ── Ошибки сервиса доезжают конвертом ────────────────────────────────────
 
 def test_active_status_422_envelope(types, division):
-    # Идущая строка — факт, который случился: её закрывают раньше срока, а
-    # не отменяют.
+    """Идущая С ПРОШЛЫХ СУТОК строка — факт: её закрывают раньше срока.
+
+    🔴 ПИН ИЗМЕНЁН ОСОЗНАННО (Plane №322). Раньше строка здесь начиналась
+    СЕГОДНЯ (`date_start=TODAY`), и проба закрепляла отказ, который на деле был
+    дырой: у такой строки не было НИ ОДНОГО пути закрытия — отмена её не брала,
+    а досрочное завершение требует дату позже начала и не в будущем. Оператор
+    не мог убрать собственную ошибку до следующих суток. Теперь сегодняшняя
+    отменяется (проба ниже), а эта проверяет то, ради чего правило и написано:
+    вчерашний факт отменить нельзя.
+    """
     api, _ = client_for("cnl-active", "ADMIN", ["*"])
     status_row = make_status(
-        make_employee(division), date_start=TODAY, date_end=TODAY + timedelta(days=2)
+        make_employee(division),
+        date_start=TODAY - timedelta(days=1),
+        date_end=TODAY + timedelta(days=2),
     )
     response = cancel(api, status_row.pk)
     assert response.status_code == 422
     assert response.data["error_code"] == "INVALID_LIFECYCLE_TRANSITION"
     status_row.refresh_from_db()
     assert status_row.cancelled_at is None
+
+
+def test_status_started_today_can_be_cancelled(types, division):
+    """Свою же ошибку оператор убирает в тот же день (Plane №322).
+
+    Статус, заведённый сегодня, ещё не продержался ни одного дня и фактом стать
+    не успел. Кадровый каталог решает этот случай теми же словами — «не
+    продержался ни одного дня, он отменён, а не завершён».
+
+    Красная на мутации: вернуть условие «только PLANNED» — отмена ответит 422,
+    и ошибочная строка снова проживёт до завтра.
+    """
+    api, _ = client_for("cnl-today", "ADMIN", ["*"])
+    status_row = make_status(
+        make_employee(division), date_start=TODAY, date_end=TODAY + timedelta(days=2)
+    )
+
+    response = cancel(api, status_row.pk)
+
+    assert response.status_code == 200, response.data
+    status_row.refresh_from_db()
+    assert status_row.cancelled_at is not None
+    assert status_row.cancelled_reason == REASON
 
 
 def test_double_cancel_422_and_facts_are_append_once(types, division):
