@@ -215,17 +215,25 @@ export function EmployeeProfile({
                       <ul className="mt-0.5 space-y-0.5">
                         {events.map((participation) => (
                           <li key={participation.event_id}>
-                            <Link
-                              href={`/security-ops/events/${participation.event_id}`}
-                              onClick={onClose}
-                              className="text-primary-ink text-sm hover:underline"
-                            >
-                              {participation.event_code ||
-                                `ОМ #${participation.event_id}`}
-                              {participation.event_title
-                                ? ` — ${participation.event_title}`
-                                : ""}
-                            </Link>
+                            {/* Ссылка — только на существующее ОМ: пустой код
+                                означает удалённое мероприятие, и переход вёл бы
+                                в 404 (то же правило, что в таблице статусов). */}
+                            {participation.event_code ? (
+                              <Link
+                                href={`/security-ops/events/${participation.event_id}`}
+                                onClick={onClose}
+                                className="text-primary-ink text-sm hover:underline"
+                              >
+                                {participation.event_code}
+                                {participation.event_title
+                                  ? ` — ${participation.event_title}`
+                                  : ""}
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">
+                                ОМ снят (#{participation.event_id})
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>

@@ -709,17 +709,34 @@ export function StatusTable({
                             Ш-3) либо данные ещё едут. */}
                         {eventsOf(employee).length > 0 ? (
                           <div className="flex max-w-[220px] flex-col items-start gap-0.5">
-                            {eventsOf(employee).map((participation) => (
-                              <Link
-                                key={participation.event_id}
-                                href={`/security-ops/events/${participation.event_id}`}
-                                className="text-primary-ink whitespace-nowrap text-xs font-medium hover:underline"
-                                title={participation.event_title}
-                              >
-                                → {participation.event_code ||
-                                  `ОМ #${participation.event_id}`}
-                              </Link>
-                            ))}
+                            {eventsOf(employee).map((participation) =>
+                              // 🔴 ССЫЛКА ТОЛЬКО НА СУЩЕСТВУЮЩЕЕ ОМ. Пустой
+                              // код означает, что мероприятия в базе больше
+                              // нет (участие переживает его удаление), и
+                              // ссылка на его карточку вела бы в 404 — тот же
+                              // класс дефекта, что и №255/№257: интерфейс
+                              // обещает переход, которого нет. Найдено
+                              // снимком экрана: в таблице стояло «→ ОМ #2701»
+                              // ссылкой на снесённое уборкой проб ОМ.
+                              participation.event_code ? (
+                                <Link
+                                  key={participation.event_id}
+                                  href={`/security-ops/events/${participation.event_id}`}
+                                  className="text-primary-ink whitespace-nowrap text-xs font-medium hover:underline"
+                                  title={participation.event_title}
+                                >
+                                  → {participation.event_code}
+                                </Link>
+                              ) : (
+                                <span
+                                  key={participation.event_id}
+                                  className="text-muted-foreground whitespace-nowrap text-xs"
+                                  title="Мероприятие удалено — открыть его карточку нельзя"
+                                >
+                                  ОМ снят (#{participation.event_id})
+                                </span>
+                              )
+                            )}
                           </div>
                         ) : (
                           employee.statusCode !== null &&
@@ -910,7 +927,7 @@ export function StatusTable({
 
       {/* Диалог просмотра профиля */}
       <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           {/* Заголовок обязателен: без него Radix ругается в консоли, а
               скринридер объявляет диалог без имени. Визуально он не нужен —
               карточка профиля печатает имя сама. */}
