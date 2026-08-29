@@ -153,7 +153,14 @@ test.describe('заявки департаменту: срок сдачи', () =
     await expect(head).toContainText('Дата ОМ')
 
     // (2) СТРОКА ЗАЯВКИ НАЗЫВАЕТ ПРОСРОЧКУ СЛОВОМ.
-    const row = section.locator('tbody tr', { hasText: fixture.code })
+    // 🔴 КОД СВЕРЯЕТСЯ ЦЕЛИКОМ, а не подстрокой. `hasText` ищет вхождение, и
+    // «ОМ-2027-1» находит заодно «ОМ-2027-10» и «ОМ-2027-11»: коды пробных
+    // мероприятий идут по возрастанию, и как только их накапливается больше
+    // десяти, строка находится не одна. Проба падала «в компании» и проходила
+    // в одиночку ровно поэтому — не от соседей, а от их следов.
+    const row = section.locator('tbody tr', {
+      has: page.getByText(fixture.code, { exact: true }),
+    })
     await expect(row, `строки заявки ${fixture.code} нет в таблице`).toHaveCount(1)
     await expect(row.getByText('Просрочено', { exact: true })).toBeVisible()
     // Сам срок напечатан датой со временем, а не сырой ISO-строкой.
