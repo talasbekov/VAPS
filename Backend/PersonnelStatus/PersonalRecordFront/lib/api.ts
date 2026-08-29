@@ -1928,11 +1928,37 @@ class ApiClient {
 
   // Статусы ОДНОГО сотрудника. Фильтр серверный (`employee_id`) и проверен
   // живой пробой: у легаси-адреса тот же по смыслу параметр игнорируется.
+  //
+  // 🔴 `limit`, А НЕ `page_size`. Списки раздела ОМ пагинируются
+  // `LimitOffsetPagination` — она понимает `limit`/`offset`, а `page_size`
+  // ИГНОРИРУЕТ и молча отдаёт умолчание в 50 строк. Проверено живьём:
+  // `?page_size=500` → 50 строк при `count` 1045, `?limit=500` → 500.
+  // Молчание здесь и есть дефект: клиент, попросивший всё, получает часть и
+  // не может отличить «больше нет» от «больше не дали» (Plane №321).
   async getOpsStatusesFor(employeeId: number): Promise<OpsEmployeeStatusRow[]> {
-    const page = await this.getDomainJson<{ results: OpsEmployeeStatusRow[] }>(
-      `/api/operations/statuses/?employee_id=${employeeId}&page_size=200`
-    );
-    return page.results;
+    return this.getAllOpsStatuses(`employee_id=${employeeId}`);
+  }
+
+  /** Все строки списка статусов раздела: идём по `next`, пока он есть.
+   *
+   *  Одной страницы «побольше» недостаточно: потолок `limit` у пагинации
+   *  раздела 1000, а строк на дату бывает и больше — обрезанный ответ
+   *  выглядел бы как «столько и есть». */
+  private async getAllOpsStatuses(query: string): Promise<OpsEmployeeStatusRow[]> {
+    const rows: OpsEmployeeStatusRow[] = [];
+    let path: string | null = `/api/operations/statuses/?${query}&limit=500`;
+    while (path !== null) {
+      const page: { results: OpsEmployeeStatusRow[]; next: string | null } =
+        await this.getDomainJson<{
+          results: OpsEmployeeStatusRow[];
+          next: string | null;
+        }>(path);
+      rows.push(...page.results);
+      // `next` приходит абсолютным адресом сервера; берём только путь с
+      // запросом, иначе запрос ушёл бы мимо прокси клиента.
+      path = page.next === null ? null : new URL(page.next).pathname + new URL(page.next).search;
+    }
+    return rows;
   }
 
   // Статусы РАЗДЕЛА на деловую дату — тот же адрес, но разрез другой: не «чья
@@ -1953,11 +1979,9 @@ class ApiClient {
       query.append("status_type_code", params.statusTypeCode);
     if (params.divisionId !== undefined)
       query.append("division_id", String(params.divisionId));
-    query.append("page_size", "500");
-    const page = await this.getDomainJson<{ results: OpsEmployeeStatusRow[] }>(
-      `/api/operations/statuses/?${query.toString()}`
-    );
-    return page.results;
+    // `limit`, а не `page_size` — см. `getOpsStatusesFor`: `page_size`
+    // пагинация раздела игнорирует, и экран получал 50 строк из тысячи.
+    return this.getAllOpsStatuses(query.toString());
   }
 
   // Справочник типов статусов: он несёт КОЛОНКУ РАСХОДА у каждого кода

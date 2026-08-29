@@ -57,8 +57,6 @@ async function hydrated(page: Page): Promise<void> {
 }
 
 interface Fixture {
-  /** Заведённый пробой статус: снимается в `afterEach`. */
-  statusId: number | null
   eventId: number
   eventCode: string
   employeeId: number
@@ -126,7 +124,6 @@ async function seed(token: string): Promise<Fixture> {
   expect(candidates.length, 'справочник сотрудников пуст').toBeGreaterThan(0)
 
   let free: { id: number; name: string; personnelNumber: string } | undefined
-  let statusId: number | null = null
   for (const candidate of candidates) {
     const status = await call('POST', '/api/operations/statuses/', {
       employee_id: candidate.id,
@@ -138,6 +135,14 @@ async function seed(token: string): Promise<Fixture> {
       ],
     })
     if (status.status === 201) {
+      // 🔴 ID РЕГИСТРИРУЕТСЯ СРАЗУ, а не после возврата из `seed()`. Ниже в
+      // этой же функции есть ассерты, и падение любого из них раньше
+      // оставляло заведённый статус на стенде навсегда: `seededStatusId`
+      // присваивался из результата `seed()`, которого при падении не будет.
+      // Пометки `probeComment` на ops-строке нет, а глобальная уборка ходит
+      // по КАДРОВОМУ каталогу и её не видит — то есть утечка была тихой
+      // (найдено ревью).
+      seededStatusId = Number(status.payload.id)
       // 🔴 201 ЗНАЧИТ ТОЛЬКО «периоды не пересеклись». Каким РОДИЛСЯ статус —
       // действующим или запланированным — из кода ответа не следует: `state`
       // выводится из дат, и у человека с активным статусом, начатым раньше,
@@ -150,7 +155,6 @@ async function seed(token: string): Promise<Fixture> {
         'заведённый статус не действующий — участие повиснет не на том',
       ).toBe('ACTIVE')
       free = candidate
-      statusId = Number(status.payload.id)
       break
     }
   }
@@ -160,7 +164,6 @@ async function seed(token: string): Promise<Fixture> {
   ).toBeDefined()
 
   return {
-    statusId,
     eventId: Number(created.payload.id),
     eventCode: String(created.payload.code),
     employeeId: free!.id,
@@ -202,7 +205,6 @@ test.describe(LIVE ? 'статусы: адрес мероприятия' : 'ст
   test('строка и карточка ведут на КОНКРЕТНОЕ мероприятие', async ({ page }) => {
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const fixture = await seed(token)
-    seededStatusId = fixture.statusId
 
     await signIn(page)
     await page.goto('/statuses')
