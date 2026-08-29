@@ -9,6 +9,8 @@ MPTT): переезд «женит» новый RBAC со старым дере�
 import operator
 from functools import reduce
 
+from psycopg2.extras import DateRange
+
 from django.db import models
 from django.db.models import Count
 
@@ -199,6 +201,26 @@ class EmployeeStatusSelector:
             cls._live_overlapping(on_date, employee_ids).values(
                 "employee_id", "status_type_code", "date_start", "date_end"
             )
+        )
+
+    @classmethod
+    def overlapping_range(cls, start, end, employee_ids=None):
+        """Проекция для КАЛЕНДАРЯ: все живые факты, задевающие `[start, end)`.
+
+        Один запрос на весь месяц вместо запроса на каждый день: раскладку по
+        дням делает читатель (`resolve_status` по тому же правилу победителя,
+        что и расход), а базе задаётся ровно один вопрос — «какие строки
+        вообще пересекают этот отрезок».
+
+        Отрезок ПОЛУОТКРЫТЫЙ, как и сам `period`: факт, кончающийся ровно в
+        `start`, месяца не задевает, и `overlap` его не вернёт.
+        """
+        return list(
+            OpsEmployeeStatus.objects.filter(
+                cancelled_at__isnull=True,
+                period__overlap=DateRange(start, end, bounds="[)"),
+                **({"employee_id__in": employee_ids} if employee_ids is not None else {}),
+            ).values("employee_id", "status_type_code", "date_start", "date_end")
         )
 
     @classmethod
