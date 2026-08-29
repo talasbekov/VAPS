@@ -29,11 +29,19 @@ export function isDirectorateForbidden(error: unknown): error is ApiHttpError {
  */
 export function useStaffUnitsByDirectorate(enabled = true) {
   return useQuery<{
+    /** Подразделение, ОДНИМ КОТОРЫМ описывается ответ, либо `null`.
+     *
+     * `null` приходит, когда такого подразделения не существует: у
+     * суперпользователя, видящего все деревья оргструктуры сразу (корней в базе
+     * бывает несколько). Раньше сервер отдавал в этом случае первый корень —
+     * и диалог статусов писал его в `related_division` всем подряд (Plane
+     * №304). Читателю положен запасной путь: подразделение ШТАТНОЙ ЕДИНИЦЫ
+     * сотрудника. */
     division: {
       id: number;
       name: string;
       code: string;
-    };
+    } | null;
     staff_units: StaffUnit[];
     total_count: number;
   }>({
