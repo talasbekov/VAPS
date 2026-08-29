@@ -1791,8 +1791,14 @@ def allocation_is_overdue(row, now=None):
     Отправленная, принятая и возвращённая штабом заявка просроченной не
     считается: у первых двух список уже у штаба, а возвращённая ждёт решения
     департамента по замечаниям — свой срок ей назначает штаб заново.
+
+    🔴 `RETURNED` В СПИСКЕ ОСВОБОЖДЁННЫХ — не мелочь и не поблажка. Департамент
+    мог сдать ВОВРЕМЯ, а штаб вернуть на доработку уже после срока: без этой
+    ветки строка краснела бы «Просрочено» и добавляла +1 к `overdueCount` за
+    задержку, которой департамент не совершал. Обещание docstring и поведение
+    кода разошлись в первой редакции — код догнал (найдено ревью).
     """
-    if row.get("status") in ("SUBMITTED", "ACCEPTED"):
+    if row.get("status") in ("SUBMITTED", "ACCEPTED", "RETURNED"):
         return False
     due_at = row.get("dueAt")
     if not due_at:
@@ -1921,6 +1927,13 @@ def split_force_demand(event_id, *, rows):
                 ),
                 "notifiedAt": kept.get("notifiedAt"),
                 "submittedAt": kept.get("submittedAt"),
+                # Пометка опоздания переносится ВМЕСТЕ с моментом отправки, а
+                # не теряется при пересохранении раскладки (найдено ревью,
+                # Plane №287): строка пересобирается явным перечнем ключей, и
+                # забытый ключ означает не «поле пустое», а «факт стёрт».
+                # Департамент сдал с опозданием → штаб пересохранил раскладку
+                # ради чужого `need` → пометка исчезала навсегда.
+                "submittedLate": bool(kept.get("submittedLate")),
                 "decidedAt": kept.get("decidedAt"),
                 "decisionComment": kept.get("decisionComment", ""),
                 "directorates": kept.get("directorates", []),

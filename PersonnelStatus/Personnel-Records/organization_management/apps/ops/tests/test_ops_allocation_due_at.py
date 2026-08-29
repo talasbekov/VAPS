@@ -162,6 +162,76 @@ def test_late_submission_is_allowed_and_recorded(manager):  # noqa: F811
     assert row["overdue"] is False
 
 
+def test_the_late_mark_survives_the_next_split(manager):  # noqa: F811
+    """Пересохранение раскладки не стирает опоздание (найдено ревью).
+
+    Строка раскладки пересобирается ЯВНЫМ перечнем ключей, и забытый ключ
+    означает не «поле пустое», а «факт стёрт». Сценарий буквальный: департамент
+    сдал с опозданием, штаб пересохранил раскладку ради чужого `need` — и
+    пометка исчезала навсегда, вместе с единственным следом опоздания.
+    """
+    base, _total = event_on_demand(manager, business_date=EVENT_DATE)
+    department = department_with_directorate()
+    split(manager, base, department, dueAt="2027-05-20T18:30")
+    allocation_id = allocation_of(manager, base)["id"]
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    make_assignment_status_type()
+    employee = make_employee("Сериков")
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    with clock.override(dt.datetime(2027, 5, 21, 10, 0, tzinfo=dt.timezone.utc)):
+        manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
+    assert allocation_of(manager, base)["submittedLate"] is True
+
+    # Штаб пересохраняет раскладку, меняя ЧИСЛО, а не срок.
+    split(manager, base, department, need=2)
+
+    assert allocation_of(manager, base)["submittedLate"] is True, (
+        "пометка опоздания стёрта пересохранением раскладки"
+    )
+
+
+def test_a_returned_allocation_is_not_overdue(manager):  # noqa: F811
+    """Возвращённая штабом заявка не краснеет за срок (найдено ревью).
+
+    Департамент мог сдать ВОВРЕМЯ, а штаб вернуть на доработку уже после
+    срока. Без этой ветки строка обвиняла бы департамент в задержке, которой
+    он не совершал, и добавляла +1 к счёту отстающих у сбора.
+    """
+    base, _total = event_on_demand(manager, business_date=EVENT_DATE)
+    department = department_with_directorate()
+    split(manager, base, department, dueAt="2027-05-20T18:30")
+    allocation_id = allocation_of(manager, base)["id"]
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    make_assignment_status_type()
+    employee = make_employee("Сериков")
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+    with clock.override(dt.datetime(2027, 5, 19, 10, 0, tzinfo=dt.timezone.utc)):
+        manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
+    returned = manager.post(
+        f"{base}forces/allocation/{allocation_id}/return/",
+        {"reason": "Не хватает двоих"},
+        format="json",
+    )
+    assert returned.status_code in (200, 201), returned.content
+
+    with clock.override(dt.datetime(2027, 5, 21, 10, 0, tzinfo=dt.timezone.utc)):
+        row = allocation_of(manager, base)
+
+    assert row["status"] == "RETURNED"
+    assert row["overdue"] is False, (
+        "возвращённая заявка помечена просроченной — департамент обвинён в "
+        "задержке штаба"
+    )
+
+
 def test_a_timely_submission_is_not_marked_late(manager):  # noqa: F811
     """Парная проба: без неё «помечено опоздание» могло бы стоять у всех."""
     base, _total = event_on_demand(manager, business_date=EVENT_DATE)
