@@ -60,7 +60,15 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { opsApiClient } from "@/lib/ops-api";
+import { OpsApiError } from "@/lib/ops-errors";
+import type { OpsApiFailure } from "@/lib/ops-errors";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import {
+  SUMMARY_ASSEMBLE_PERMISSION,
+  useAssembleSummary,
+} from "@/hooks/use-daily-summary-write";
 import { useTrafficLightTree } from "@/hooks/use-strength-report";
 import { DAILY_SUBMISSIONS_PATH, parseSubmissionList } from "@/entities/daily-grid";
 import type { DaySubmission } from "@/entities/daily-grid";
@@ -232,10 +240,51 @@ interface SummaryVersionsProps {
    * знать, какие управления борд вообще показывает, чтобы выбрать узел,
    * РЕАЛЬНО накрывающий их поддеревом, а не любой формальный корневой. */
   boardDivisionIds: readonly number[];
+  /** Подпись подразделения по id — «имя · путь», как её видит человек на
+   * борде. Нужна ОТКАЗУ сборки: сервер называет отставших числами
+   * (`details.laggards`), а список чисел на экране — не ответ на вопрос
+   * «кого торопить». Блок своего списка подразделений не заводит: он уже
+   * загружен бордом, и второй запрос за теми же именами был бы лишним. */
+  labelOfDivision: (divisionId: number) => string;
+}
+
+/** Отказ сборки СЛОВАМИ. Три случая названы отдельно, потому что человек
+ * делает по ним РАЗНОЕ: «не все сдали» — торопить перечисленных, «уже
+ * собран» — идти в пересборку (отдельное действие и отдельное право), всё
+ * прочее — читать сообщение сервера. */
+function assembleFailureText(
+  failure: OpsApiFailure,
+  labelOfDivision: (divisionId: number) => string
+): string {
+  if (!(failure instanceof OpsApiError)) {
+    return "Свод не собран: связи с сервером нет";
+  }
+  if (failure.errorCode === "SUMMARY_CHILDREN_NOT_SUBMITTED") {
+    const raw = failure.details.laggards;
+    const laggards = Array.isArray(raw) ? raw : [];
+    const names = laggards
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value))
+      .map((value) => labelOfDivision(value));
+    return names.length > 0
+      ? `Свод не собран: не сдали ${names.join(", ")}`
+      : "Свод не собран: сдали не все подчинённые подразделения";
+  }
+  if (failure.status === 409) {
+    return "Свод за этот день уже собран — исправление отдельным действием";
+  }
+  if (failure.status === 403) {
+    return "Свод не собран: нет права собирать свод за это подразделение";
+  }
+  return `Свод не собран: ${failure.message}`;
 }
 
 /** «Суточный свод» — версии сводного заявления департамента. */
-export function SummaryVersions({ businessDate, boardDivisionIds }: SummaryVersionsProps) {
+export function SummaryVersions({
+  businessDate,
+  boardDivisionIds,
+  labelOfDivision,
+}: SummaryVersionsProps) {
   const [openId, setOpenId] = useState<number | null>(null);
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
 
@@ -274,12 +323,67 @@ export function SummaryVersions({ businessDate, boardDivisionIds }: SummaryVersi
 
   const versions: DailySummaryRow[] = resolved ? parseSubmissionList(query.data) : [];
 
+  // ВТОРАЯ СТУПЕНЬ ЦЕПОЧКИ (Plane №297). Право своё — `daily_report.generate`;
+  // без него кнопки нет вовсе и причина названа словами, как на остальных
+  // гейтах экрана. Пока права ещё грузятся, кнопка не рисуется: мигнувшая и
+  // исчезнувшая кнопка хуже, чем появившаяся с задержкой.
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const canAssemble = hasPermission(SUMMARY_ASSEMBLE_PERMISSION);
+  const assemble = useAssembleSummary();
+  const failureText =
+    assemble.error === null
+      ? null
+      : assembleFailureText(assemble.error, labelOfDivision);
+
   return (
     <section role="region" aria-label="Суточный свод" className="space-y-2">
       <div className="rounded-lg border bg-card">
-        <div className="border-b px-4 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
           <h2 className="text-sm font-semibold">Суточный свод</h2>
+          {resolved && !permissionsLoading && canAssemble && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={assemble.isPending}
+              onClick={() => {
+                assemble.reset();
+                assemble.mutate({
+                  division_id: summaryDivisionId,
+                  business_date: businessDate,
+                });
+              }}
+            >
+              {assemble.isPending ? "Отправляем…" : "Собрать и отправить свод"}
+            </Button>
+          )}
         </div>
+        {/* Кому уходит — сказано вслух и рядом с кнопкой: «отправить» без
+            адресата не отвечает на вопрос, что случится по нажатию. Свод
+            департамента и ЕСТЬ его заявление наверх — отдельного действия
+            «отправить» на сервере нет (см. `use-daily-summary-write`). */}
+        {resolved && !permissionsLoading && canAssemble && (
+          <p className="border-b px-4 py-2 text-xs text-muted-foreground">
+            Свод уходит оперативному дежурному, который сводит расход за
+            организацию. Собирается он из действующих сдач управлений, поэтому
+            до сдачи всеми — отказ с перечислением отставших.
+          </p>
+        )}
+        {resolved && !permissionsLoading && !canAssemble && (
+          <p className="border-b px-4 py-2 text-xs text-muted-foreground">
+            Сборка свода закрыта правом «Суточный отчёт: генерация» — свод
+            собирает ответственный за расход департамента.
+          </p>
+        )}
+        {failureText !== null && (
+          <p role="alert" className="border-b px-4 py-2 text-sm text-muted-foreground">
+            {failureText}
+          </p>
+        )}
+        {assemble.isSuccess && (
+          <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
+            Свод собран и отправлен — новая версия в списке ниже
+          </p>
+        )}
         {/* `role="list"`/`listitem` — тот же приём, что у «Руководства
             департамента»: скелетные/текстовые заглушки этой роли не несут,
             поэтому счёт строк не путается с «ещё грузится». */}

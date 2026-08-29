@@ -19,7 +19,7 @@
 // (со своим собственным внутренним запросом истории версий) монтируется
 // ТОЛЬКО при раскрытии строки — при схлопывании её место занимает лёгкий
 // бейдж, собранный из ТОГО ЖЕ списочного ответа, без нового запроса.
-import { useEffect, useState, useMemo} from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -556,6 +556,20 @@ export function DailyExpenseBoard() {
     }
     return map;
   }, [divisionsQuery.data]);
+  // Подпись подразделения ДЛЯ ПЕРЕЧИСЛЕНИЯ — путь в СКОБКАХ, а не через «·»,
+  // как в шапке группы: в списке через запятую «·» читался бы как ещё один
+  // элемент. Ровно тот же формат, что у строки «Не сдали» выше (Plane №249).
+  // Голого имени не хватает: одноимённых управлений на реальной структуре
+  // трое (Plane №235).
+  const labelOfDivision = useCallback(
+    (divisionId: number): string => {
+      const meta = metaByDivision.get(String(divisionId));
+      if (meta === undefined) return `подразделение №${divisionId}`;
+      const path = meta.ancestors ?? [];
+      return path.length > 0 ? `${meta.name} (${path.join(" › ")})` : meta.name;
+    },
+    [metaByDivision]
+  );
   const pathByDivision = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const [id, row] of metaByDivision) {
@@ -826,6 +840,10 @@ export function DailyExpenseBoard() {
         <SummaryVersions
           businessDate={data.business_date}
           boardDivisionIds={data.rows.map((row) => row.division_id)}
+          // Подписи подразделений берутся из УЖЕ загруженного списка борда:
+          // отказ сборки свода называет отставших числами, а человеку нужны
+          // имена (Plane №297).
+          labelOfDivision={labelOfDivision}
         />
       )}
 

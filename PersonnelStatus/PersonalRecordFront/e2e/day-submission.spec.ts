@@ -107,6 +107,20 @@ async function divisionParenLabels(token: string): Promise<Map<string, string>> 
   return labels
 }
 
+/**
+ * ОЧЕРЕДЬ управлений — порядок строк того же списка подразделений (обход
+ * дерева, Plane №296). Пин перечисления «Не сдали» правится ОСОЗНАННО:
+ * прежде проба строила его в порядке РАСХОДА (сортировка по имени), а экран
+ * с №296 печатает и список ниже, и перечисление отставших очередью дерева —
+ * департамент за департаментом. Пин закреплял порядок, который заказчик
+ * попросил изменить.
+ */
+async function divisionQueue(token: string): Promise<string[]> {
+  const rows = await get<{ results: { id: string }[] }>(
+    token, '/api/ops/daily/divisions/')
+  return rows.results.map((row) => String(row.id))
+}
+
 async function divisionLabels(token: string): Promise<Map<string, string>> {
   const rows = await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
     token, '/api/ops/daily/divisions/')
@@ -291,9 +305,18 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
       .filter((row) => !submittedIdsBefore.has(String(row.division_id)))
       .map((row) => ({ id: String(row.division_id), name: row.name }))
     const parenLabels = await divisionParenLabels(token)
-    const notSubmittedNamesBefore = notSubmittedBefore.map(
-      (row) => parenLabels.get(row.id) ?? row.name,
-    )
+    // Порядок — очередь дерева (Plane №296), а НЕ порядок расхода: экран
+    // печатает отставших тем же порядком, каким рисует список ниже.
+    // Управление, которого в списке подразделений нет, уезжает в хвост — как
+    // и на экране.
+    const queue = await divisionQueue(token)
+    const placeOf = (id: string): number => {
+      const index = queue.indexOf(id)
+      return index === -1 ? Number.MAX_SAFE_INTEGER : index
+    }
+    const notSubmittedNamesBefore = [...notSubmittedBefore]
+      .sort((left, right) => placeOf(left.id) - placeOf(right.id))
+      .map((row) => parenLabels.get(row.id) ?? row.name)
 
     const captured: { body: DaySubmissionBody | null } = { body: null }
     await interceptSubmit(page, captured, targetDivisionId, report.business_date)
@@ -350,8 +373,11 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     await expect(summaryHeadline).toHaveText(
       `Сдано ${submittedIdsBefore.size + 1} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
     )
-    const notSubmittedNamesAfter = notSubmittedBefore
+    // ТОТ ЖЕ порядок очереди, что и до сдачи (Plane №296): сдача убирает из
+    // перечисления одну строку, а не переставляет остальные.
+    const notSubmittedNamesAfter = [...notSubmittedBefore]
       .filter((row) => row.id !== targetDivisionId)
+      .sort((left, right) => placeOf(left.id) - placeOf(right.id))
       .map((row) => parenLabels.get(row.id) ?? row.name)
     if (notSubmittedNamesAfter.length > 0) {
       await expect(summary.locator('p').nth(1)).toHaveText(

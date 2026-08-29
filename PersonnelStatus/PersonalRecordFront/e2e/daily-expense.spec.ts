@@ -894,3 +894,215 @@ test.describe(
     })
   },
 )
+
+test.describe(
+  LIVE
+    ? 'расход: отправка свода за департамент'
+    : 'расход: отправка свода за департамент (скип: нет SMOKE_LIVE=1)',
+  () => {
+    test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+
+    test('кнопка собирает свод, отказ «не все сдали» называет отставших по именам (Plane №297)', async ({
+      page,
+    }) => {
+      // Требование заказчика: «Далее он нажимает на кнопку и отправляет
+      // Оперативному дежурному, который сводит за Организацию».
+      //
+      // 🔴 ПОЧЕМУ ПЕРЕХВАТ ДЕРЕВА. На живом стенде узел свода по правилу не
+      // определяется вовсе («Узел суточного свода не определён» — состояние
+      // проверено соседней пробой этого файла), а без узла кнопки нет по
+      // построению. Дерево подменяется тем же приёмом и тем же правилом, что
+      // в пробе версий свода выше.
+      //
+      // 🔴 ПОЧЕМУ ПЕРЕХВАТ ОТВЕТА НА СБОРКУ. Сборка ПИШЕТ в живой стенд:
+      // настоящее нажатие оставило бы за собой версию свода за сегодня,
+      // которую следующая проба этого же файла увидела бы как чужое
+      // состояние. Проверяется РАЗБОР ответа — то, что делает экран, — а
+      // правила сборки покрыты пробами бэка.
+      const token = await apiToken()
+      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      const businessDate = report.business_date
+      const realBoardIds = report.rows.map((row) => row.division_id)
+      expect(realBoardIds.length, 'на борде нет управлений — свод собирать не из чего').toBeGreaterThan(0)
+
+      const laggard = report.rows[0]
+      // Путь в СКОБКАХ — формат ПЕРЕЧИСЛЕНИЯ (как строка «Не сдали» выше), а
+      // не шапки группы: «·» внутри списка через запятую читался бы как ещё
+      // один элемент (Plane №249).
+      const laggardMeta = (
+        await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
+          token,
+          '/api/ops/daily/divisions/',
+        )
+      ).results.find((row) => String(row.id) === String(laggard.division_id))
+      const laggardPath = laggardMeta?.ancestors ?? []
+      const laggardLabel =
+        laggardPath.length > 0
+          ? `${laggardMeta?.name} (${laggardPath.join(' › ')})`
+          : laggardMeta?.name ?? laggard.name
+
+      const fakeTree: TreeNode[] = [
+        { division_id: 1, name: 'Служба (проба)', parent_id: null },
+        { division_id: 42, name: 'Синтетический департамент (проба)', parent_id: 1 },
+        ...realBoardIds.map((id, index) => ({
+          division_id: id,
+          name: report.rows[index].name,
+          parent_id: 42,
+        })),
+      ]
+      const expectedDivisionId = resolveSummaryDivisionId(fakeTree, realBoardIds)
+      expect(expectedDivisionId, 'синтетическое дерево вырождено — проверь фикстуру').toBe(42)
+
+      await page.route(
+        (url) => url.pathname === '/api/operations/traffic-light/tree/',
+        async (route) => {
+          await route.fulfill({
+            json: { business_date: businessDate, control_hour: '17:00:00', nodes: fakeTree },
+          })
+        },
+      )
+      // Версий свода нет — блок в состоянии «свод ещё не собирался», то самое,
+      // из которого кнопку и нажимают.
+      await page.route(
+        (url) =>
+          url.pathname === '/api/ops/daily/daily-submissions/' &&
+          url.searchParams.get('division_id') === String(expectedDivisionId),
+        async (route) => {
+          await route.fulfill({ json: { count: 0, next: null, previous: null, results: [] } })
+        },
+      )
+
+      // Первое нажатие — отказ «сдали не все», второе — успех. Один роут с
+      // счётчиком, а не два: порядок ответов и есть предмет проверки.
+      let assembleCalls = 0
+      const assembleBodies: unknown[] = []
+      await page.route(
+        (url) => url.pathname === '/api/operations/daily-summaries/',
+        async (route) => {
+          assembleCalls += 1
+          assembleBodies.push(route.request().postDataJSON())
+          if (assembleCalls === 1) {
+            await route.fulfill({
+              status: 422,
+              json: {
+                error_code: 'SUMMARY_CHILDREN_NOT_SUBMITTED',
+                message: 'Не все подчинённые подразделения сдали день.',
+                details: { laggards: [laggard.division_id] },
+                request_id: null,
+                timestamp: `${businessDate}T10:00:00+05:00`,
+              },
+            })
+            return
+          }
+          await route.fulfill({
+            status: 201,
+            json: {
+              id: 97001,
+              division_id: String(expectedDivisionId),
+              business_date: businessDate,
+              version: 1,
+              is_current: true,
+              event: 'CHANGED',
+              submitted_by: 'проба',
+              submitted_at: `${businessDate}T11:00:00+05:00`,
+              late: false,
+            },
+          })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=daily`)
+      const board = page.getByRole('region', { name: 'Ежедневный расход' })
+      await expect(board).toBeVisible({ timeout: 25_000 })
+      const summary = board.getByRole('region', { name: 'Суточный свод' })
+      // Адресат назван вслух: «отправить» без адресата не отвечает на вопрос,
+      // что случится по нажатию.
+      await expect(summary).toContainText('оперативному дежурному')
+
+      const assembleButton = summary.getByRole('button', { name: 'Собрать и отправить свод' })
+      await expect(assembleButton).toBeVisible()
+
+      // ── Отказ: отставшие названы ИМЕНАМИ, а не числами ───────────────────
+      await assembleButton.click()
+      await expect(summary.getByRole('alert')).toContainText(`не сдали ${laggardLabel}`)
+      expect(
+        assembleBodies[0],
+        'тело сборки не совпало с узлом свода и деловым днём',
+      ).toEqual({ division_id: expectedDivisionId, business_date: businessDate })
+
+      // ── Успех ─────────────────────────────────────────────────────────────
+      await assembleButton.click()
+      await expect(summary.getByRole('status')).toContainText('Свод собран и отправлен')
+      expect(assembleCalls).toBe(2)
+    })
+
+    test('без права «Суточный отчёт: генерация» кнопки нет, а причина названа словами (Plane №297)', async ({
+      page,
+    }) => {
+      // Право сборки свода — СВОЁ (`daily_report.generate`), не то же, что
+      // сдача дня управлением: консолидировать эшелон и отмечать статусы у
+      // себя разные полномочия. Персоны без него на стенде нет (у admin
+      // wildcard `*`), поэтому право снимается перехватом ответа о правах —
+      // тот же приём, что у пробы гейта борда выше.
+      //
+      // Без этой пробы гейт не стережёт никто: основная проба №297 ходит
+      // администратором, и мутация «убрать проверку права» её не роняет
+      // (проверено — зелёная).
+      const token = await apiToken()
+      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      const realBoardIds = report.rows.map((row) => row.division_id)
+      const fakeTree: TreeNode[] = [
+        { division_id: 1, name: 'Служба (проба)', parent_id: null },
+        { division_id: 42, name: 'Синтетический департамент (проба)', parent_id: 1 },
+        ...realBoardIds.map((id, index) => ({
+          division_id: id,
+          name: report.rows[index].name,
+          parent_id: 42,
+        })),
+      ]
+      expect(resolveSummaryDivisionId(fakeTree, realBoardIds)).toBe(42)
+
+      // Права снимаются ТОЛЬКО у сборки свода: `status.view` оставлен, иначе
+      // закрылся бы весь борд и блока свода не было бы вовсе — проба
+      // проверяла бы пустой экран.
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-permissions/'),
+        (route) => route.fulfill({ json: { permissions: ['status.view'] } }),
+      )
+      await page.route(
+        (url) => url.pathname === '/api/operations/traffic-light/tree/',
+        async (route) => {
+          await route.fulfill({
+            json: {
+              business_date: report.business_date,
+              control_hour: '17:00:00',
+              nodes: fakeTree,
+            },
+          })
+        },
+      )
+
+      const assembleCalls: string[] = []
+      page.on('request', (request) => {
+        const path = new URL(request.url()).pathname
+        if (path === '/api/operations/daily-summaries/') assembleCalls.push(path)
+      })
+
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=daily`)
+      const board = page.getByRole('region', { name: 'Ежедневный расход' })
+      await expect(board).toBeVisible({ timeout: 25_000 })
+      const summary = board.getByRole('region', { name: 'Суточный свод' })
+      await expect(summary).toBeVisible()
+
+      await expect(
+        summary.getByRole('button', { name: 'Собрать и отправить свод' }),
+      ).toHaveCount(0)
+      await expect(summary).toContainText(
+        'Сборка свода закрыта правом «Суточный отчёт: генерация»',
+      )
+      expect(assembleCalls, 'запрос сборки ушёл без права').toEqual([])
+    })
+  },
+)
