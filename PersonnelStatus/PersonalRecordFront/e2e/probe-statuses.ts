@@ -135,3 +135,93 @@ export async function dropProbeStatuses(
   }
   return { closed, refused, broke }
 }
+
+// ── Каталог раздела ОМ ────────────────────────────────────────────────────
+//
+// Вторая половина той же дыры (Plane №321, находка само-ревью). Уборка выше
+// ходит по КАДРОВОМУ каталогу `/api/statuses/statuses/` и строк раздела не
+// видит вовсе, а пробы заводят статусы и там — через
+// `/api/operations/statuses/`. Именно такие строки к вечеру 29.08.2026
+// накопились в числе 42 и покрасили чужую пробу сборов сил.
+//
+// Снимается ЖИЗНЕННЫМ ЦИКЛОМ раздела, а не удалением: строки здесь не
+// удаляются вовсе. Но путей ДВА, и это правило сервера, а не тонкость:
+// `/cancel/` берёт только PLANNED («Отменить можно только не начавшийся
+// статус», 422 на ACTIVE — проверено живьём), а начавшийся закрывается
+// `/complete/` с фактической датой. Уборка, знавшая один путь, находила
+// строку и не снимала её: «отказано 1».
+//
+// ⚠️ ТРЕТИЙ СЛУЧАЙ НЕ ЗАКРЫВАЕТСЯ ВООБЩЕ, и это ограничение раздела, а не
+// недоделка уборки: у статуса, заведённого СЕГОДНЯ и уже действующего, нет ни
+// одного пути. `cancel` его не берёт (не PLANNED), `complete` требует дату
+// позже начала («Дата завершения должна быть позже даты начала») и при этом
+// не в будущем («Дата фактического завершения не может быть в будущем») —
+// вместе это невозможное условие в день заведения. Такие строки считаются
+// ОТДЕЛЬНО и называются вслух: молчание превратило бы их в тот самый мусор,
+// против которого написан модуль. Заведена карточка Plane №322.
+
+interface OpsStatusRow {
+  id: number
+  state: string
+  date_start: string
+  comment: string | null
+}
+
+/** Пробные строки каталога раздела. Идём по `next`: `page_size` эта
+ *  пагинация игнорирует (limit/offset), и «страница побольше» молча
+ *  отдала бы 50 строк из тысячи — ровно дефект, найденный ревью 29.08.2026. */
+async function listOpsProbeStatuses(
+  token: string,
+): Promise<{ rows: OpsStatusRow[]; broke: string | null }> {
+  const rows: OpsStatusRow[] = []
+  let url: string | null = `${API}/api/operations/statuses/?limit=200&include_cancelled=false`
+  for (let guard = 0; guard < 40 && url !== null; guard += 1) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } }).catch(
+      () => null,
+    )
+    if (res === null) return { rows, broke: 'раздел: список не ответил' }
+    if (!res.ok) return { rows, broke: `раздел: список ответил ${res.status}` }
+    const body = (await res.json().catch(() => null)) as
+      | { results?: OpsStatusRow[]; next?: string | null }
+      | null
+    if (body?.results === undefined) return { rows, broke: 'раздел: ответ без results' }
+    rows.push(
+      ...body.results.filter((row) => (row.comment ?? '').includes(STATUS_PROBE_MARK)),
+    )
+    url = body.next ?? null
+  }
+  return { rows, broke: null }
+}
+
+/** Отменить пробные строки каталога раздела. */
+export async function dropOpsProbeStatuses(
+  token: string,
+): Promise<{ closed: number; refused: number; sameDay: number; broke: string | null }> {
+  const { rows, broke } = await listOpsProbeStatuses(token)
+  let closed = 0
+  let refused = 0
+  let sameDay = 0
+  for (const row of rows) {
+    // ACTIVE закрывается завершением, PLANNED — отменой; иное состояние
+    // (COMPLETED, CANCELLED) уже закрыто, и трогать его незачем.
+    if (row.state === 'ACTIVE' && row.date_start === today()) {
+      sameDay += 1
+      continue
+    }
+    const action =
+      row.state === 'ACTIVE'
+        ? { path: 'complete', body: { actual_end: today() } }
+        : row.state === 'PLANNED'
+          ? { path: 'cancel', body: { reason: `уборка пробы ${STATUS_PROBE_MARK}` } }
+          : null
+    if (action === null) continue
+    const res = await fetch(`${API}/api/operations/statuses/${row.id}/${action.path}/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(action.body),
+    }).catch(() => null)
+    if (res !== null && res.ok) closed += 1
+    else refused += 1
+  }
+  return { closed, refused, sameDay, broke }
+}
