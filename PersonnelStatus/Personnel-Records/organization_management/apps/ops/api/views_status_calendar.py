@@ -15,6 +15,7 @@ from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
 )
 from organization_management.apps.operations.api.views import (
+    _parse_date_param,
     _parse_int_param,
     _resolve_division_scope,
 )
@@ -27,9 +28,13 @@ _READ_PERMISSION = "status.view"
 
 
 class OpsStatusCalendarViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """GET /api/ops/status-calendar/month/ — коды статусов по дням месяца."""
+    """Календарь статусов: месяц по дням и занятость на выбранную дату.
 
-    permission_map = {"month": _READ_PERMISSION}
+    GET /api/ops/status-calendar/month/ — коды по дням месяца.
+    GET /api/ops/status-calendar/day/ — три группы занятости поимённо.
+    """
+
+    permission_map = {"month": _READ_PERMISSION, "day": _READ_PERMISSION}
 
     @extend_schema(
         parameters=[
@@ -78,4 +83,33 @@ class OpsStatusCalendarViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     or status_calendar.MAX_PAGE_SIZE
                 ),
             )
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "date", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                required=True,
+                description="Дата ГГГГ-ММ-ДД.",
+            ),
+            OpenApiParameter(
+                "division_id", OpenApiTypes.INT, OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Подразделение. Не задано — вся область актора; чужое — "
+                    "403, а не пустой ответ."
+                ),
+            ),
+        ]
+    )
+    @action(detail=False, methods=["get"])
+    def day(self, request):
+        """Занятость области на дату: на дежурстве / на ОМ / отсутствуют."""
+        on_date = _parse_date_param(request, "date")
+        if on_date is None:
+            raise ValidationError({"date": "Укажите дату в формате ГГГГ-ММ-ДД."})
+        division_id = _parse_int_param(request, "division_id")
+        scope = _resolve_division_scope(request, division_id, _READ_PERMISSION)
+        return Response(
+            status_calendar.day_panel(on_date=on_date, scope_division_ids=scope)
         )
