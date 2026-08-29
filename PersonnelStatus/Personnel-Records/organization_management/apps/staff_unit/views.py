@@ -673,14 +673,25 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
     def _directorate_filtered(self, queryset, request):
         """Отбор списка штатки по параметрам запроса — целиком в базе."""
         search = (request.query_params.get('search') or '').strip()
-        if search:
+        # ПОИСК ИДЁТ ПО СЛОВАМ, а не по строке целиком (Plane №312). Поле
+        # подписано «Поиск по ФИО», и человек набирает «Абенов Канат» — а
+        # подстрока целиком не совпадает НИ С ОДНИМ полем: фамилия и имя лежат
+        # в разных колонках. Ответом был пустой список, и читался он как
+        # «такого сотрудника нет».
+        #
+        # Каждое слово обязано найтись хоть где-то (И между словами, ИЛИ между
+        # полями): так «Абенов Канат» сужает выборку до полных тёзок, а
+        # «Абенов инспектор» — до Абеновых на должности инспектора. Обратное
+        # правило (ИЛИ между словами) расширяло бы выдачу с каждым словом —
+        # человек уточняет запрос и получает БОЛЬШЕ строк.
+        for word in search.split():
             queryset = queryset.filter(
-                Q(employee__last_name__icontains=search)
-                | Q(employee__first_name__icontains=search)
-                | Q(employee__middle_name__icontains=search)
-                | Q(employee__personnel_number__icontains=search)
-                | Q(position__name__icontains=search)
-                | Q(division__name__icontains=search)
+                Q(employee__last_name__icontains=word)
+                | Q(employee__first_name__icontains=word)
+                | Q(employee__middle_name__icontains=word)
+                | Q(employee__personnel_number__icontains=word)
+                | Q(position__name__icontains=word)
+                | Q(division__name__icontains=word)
             )
 
         division_id = request.query_params.get('division_id')
