@@ -48,7 +48,31 @@ class DivisionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         # Порядок фиксируем явно: без него пагинация DRF предупреждает о
         # нестабильной выборке, а страницы могут повторять и терять строки.
-        return Division.objects.all().order_by("tree_id", "lft", "id")
+        qs = Division.objects.all().order_by("tree_id", "lft", "id")
+        return self._filter_by_type(qs)
+
+    def _filter_by_type(self, qs):
+        """Отбор по типу узла: `?type_code=department` (Plane №315).
+
+        До этого параметр МОЛЧА ИГНОРИРОВАЛСЯ: справочник отдавал всё дерево, и
+        клиент, отобравший «департаменты», получал первой строкой организацию.
+        Ошибка всплывала через шаг — заявку такому «департаменту» сервер
+        отбивал 400 «Такого департамента нет в справочнике», и выглядело это
+        как ошибка ввода пользователя. Тот же класс, что №289: параметр не
+        поддержан и при этом не отбит.
+
+        Неизвестный тип — 400, а не пустой список: «таких узлов нет» и «такого
+        типа не бывает» для клиента выглядят одинаково, а означают разное.
+        """
+        raw = (self.request.query_params.get("type_code") or "").strip()
+        if not raw:
+            return qs
+        known = {value for value, _label in Division.DivisionType.choices}
+        if raw not in known:
+            raise ValidationError(
+                {"type_code": f"Неизвестный тип узла. Известные: {', '.join(sorted(known))}."}
+            )
+        return qs.filter(division_type=raw)
 
 
 class EmployeeViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):

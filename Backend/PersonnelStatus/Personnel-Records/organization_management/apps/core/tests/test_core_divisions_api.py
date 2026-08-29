@@ -178,3 +178,43 @@ def test_second_tree_does_not_borrow_the_first_root(tree):
     assert row["organization"] == other.id
     assert row["organization"] != tree["org"].id
     assert child.get_root() == other
+
+
+# ── Отбор по типу узла (Plane №315) ─────────────────────────────────────────
+#
+# Параметр `?type_code=` ручка МОЛЧА ИГНОРИРОВАЛА: клиент, отобравший
+# «департаменты», получал всё дерево и первой строкой — организацию. Ошибка
+# всплывала через шаг: заявку такому «департаменту» сервер отбивал 400
+# «Такого департамента нет в справочнике», и выглядело это как ошибка ввода
+# пользователя. Найдено живой пробой №287.
+
+
+def test_type_code_narrows_the_list(tree):
+    api, _user = reader()
+    response = api.get(URL, {"type_code": "department"})
+
+    assert response.status_code == 200
+    codes = {row["type_code"] for row in rows(response)}
+    assert codes == {"department"}, f"в выдаче не только департаменты: {codes}"
+
+
+def test_without_type_code_the_whole_tree_comes_back(tree):
+    """Отбор не сузил выдачу тем, кто его не просил."""
+    api, _user = reader()
+    response = api.get(URL)
+
+    assert response.status_code == 200
+    assert len(rows(response)) == 4
+
+
+def test_an_unknown_type_is_refused(tree):
+    """Неизвестный тип — 400, а не пустой список.
+
+    «Таких узлов нет» и «такого типа не бывает» для клиента выглядят
+    одинаково, а означают разное: во втором случае у него опечатка в коде.
+    """
+    api, _user = reader()
+    response = api.get(URL, {"type_code": "departament"})
+
+    assert response.status_code == 400
+    assert "type_code" in response.json()
