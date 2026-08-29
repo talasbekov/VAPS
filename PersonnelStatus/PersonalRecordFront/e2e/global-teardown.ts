@@ -73,11 +73,17 @@ export default async function globalTeardown(): Promise<void> {
   // из-за них покраснела проба сборов сил.
   try {
     const statuses = await dropProbeStatuses(token)
+    const tail = statuses.broke === null ? '' : ` ⚠️ список оборвался (${statuses.broke}) — ` +
+      'часть мусора могла остаться незамеченной'
     if (statuses.closed > 0 || statuses.refused > 0) {
       console.log(
         `уборка пробных статусов: снято ${statuses.closed}` +
-          (statuses.refused > 0 ? `, отказано ${statuses.refused}` : ''),
+          (statuses.refused > 0 ? `, отказано ${statuses.refused}` : '') +
+          tail,
       )
+    } else if (statuses.broke !== null) {
+      // «Не найдено» здесь было бы ложью: мы не искали, а не нашли ничего.
+      console.log(`уборка пробных статусов: НЕ ВЫПОЛНЕНА —${tail}`)
     } else {
       console.log('уборка пробных статусов: пробных строк не найдено')
     }

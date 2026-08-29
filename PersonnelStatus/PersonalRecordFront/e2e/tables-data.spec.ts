@@ -327,10 +327,14 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     await tableFilled(page)
 
     await page.getByPlaceholder('Поиск по ФИО').fill(`${employee.last_name} ${employee.first_name}`)
-    const row = page
-      .locator('table tbody tr')
-      .filter({ hasText: employee.last_name })
-      .first()
+    // 🔴 СТРОКА АДРЕСУЕТСЯ ПО id, А НЕ ПО ФАМИЛИИ. На стенде полных тёзок по
+    // четверо, и поиск (пословный с Plane №312) вернёт их всех: `.first()` по
+    // фамилии выбрал бы однофамильца БЕЗ привлечения, проба упала бы с
+    // «пропала ссылка на мероприятие» и указала на регрессию, которой нет.
+    // Атрибут `data-employee-id` заведён ради этого же в №281.
+    const row = page.locator(
+      `table tbody tr[data-employee-id="${attached!.employee_id}"]`,
+    )
     await expect(row, `сотрудник ${employee.last_name} не нашёлся в таблице`).toBeVisible({
       timeout: 15_000,
     })
