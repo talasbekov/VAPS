@@ -53,6 +53,7 @@ import {
   Clock,
   Eye,
   ArrowRightLeft,
+  UserX,
 } from "lucide-react";
 import { formatIsoDate, parseIsoDate } from "@/shared/lib/date";
 import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatusDialog";
@@ -129,6 +130,17 @@ interface StatusTableProps {
 
 /** Размер страницы таблицы статусов — как у реестра (Plane №231). */
 const STATUS_PAGE_SIZE = 50;
+
+/** Подпись незанятой штатной единицы. Одно место на весь файл: строка
+ *  сравнивалась с литералом в пяти местах, и одно из них (пункт меню
+ *  «Запланировать статус») сравнение просто потеряло — окно открывалось у
+ *  вакансии и упиралось в «Сотрудник не найден» (Plane №257). */
+const VACANCY_NAME = "ВАКАНТ";
+
+/** Строка без сотрудника: должность в штате есть, занять её некому. */
+function isVacancyRow(employee: Employee): boolean {
+  return employee.name === VACANCY_NAME;
+}
 
 export function StatusTable({
   selectedEmployees,
@@ -231,7 +243,7 @@ export function StatusTable({
               ? `${unit.id}-${emp.id}`
               : `${unit.id}-vacant-${globalIndex}`,
             number: globalIndex++,
-            name: emp ? `${emp.last_name} ${emp.first_name}` : "ВАКАНТ",
+            name: emp ? `${emp.last_name} ${emp.first_name}` : VACANCY_NAME,
             department: unit.division?.name || "Не указан",
             position: empData.position?.name || "Должность не указана",
             status: statusText,
@@ -278,7 +290,7 @@ export function StatusTable({
         result.push({
           id: `${unit.id}-vacant`,
           number: globalIndex++,
-          name: "ВАКАНТ",
+          name: VACANCY_NAME,
           department: unit.division?.name || "Не указан",
           position: (unit as any).position?.name || "Должность не указана",
           status: "Не обновлено",
@@ -330,6 +342,10 @@ export function StatusTable({
 
   // Функция для открытия диалога редактирования
   const handleEditStatus = (employee: Employee) => {
+    // Вторая застава после меню (Plane №257): у вакансии сотрудника нет, и
+    // форма заведения статуса ей не адресована — открывать окно, которое
+    // заведомо упрётся в «Сотрудник не найден», хуже, чем не открыть.
+    if (isVacancyRow(employee)) return;
     setSelectedEmployeeForEdit(employee);
     setEditDialogOpen(true);
   };
@@ -351,7 +367,7 @@ export function StatusTable({
     if (!data || !data.staff_units || !Array.isArray(data.staff_units)) return;
 
     // Проверяем, что это не вакантная должность
-    if (employee.name === "ВАКАНТ") return;
+    if (isVacancyRow(employee)) return;
 
     // Парсим ID - формат: unitId-employeeId или unitId-vacant-index
     const [unitIdStr, employeeIdStr] = employee.id.split("-");
@@ -624,7 +640,7 @@ export function StatusTable({
                       два-три слова короче своей ширины, и nowrap растянул бы
                       её в одну строку через всю таблицу вместо переноса. */}
                   <TableCell className="whitespace-normal">
-                    {employee.name === "ВАКАНТ" ? (
+                    {isVacancyRow(employee) ? (
                       getStatusBadge(employee.status)
                     ) : (
                       <div className="flex flex-col items-start gap-1">
@@ -700,36 +716,54 @@ export function StatusTable({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Действия</DropdownMenuLabel>
-                        <DropdownMenuItem
-                          onClick={() => handleEditStatus(employee)}
-                        >
-                          <Edit className="mr-2 h-4 w-4" />
-                          Запланировать статус
-                        </DropdownMenuItem>
-                        {employee.name !== "ВАКАНТ" && (
-                          <DropdownMenuItem
-                            onClick={() => handleScheduleStatus(employee)}
-                          >
-                            <Calendar className="mr-2 h-4 w-4" />
-                            Запланированные статусы
+                        {/* У ВАКАНСИИ действий нет НИ ОДНОГО: все четыре
+                            адресованы человеку, которого на должности нет
+                            (Plane №257). Раньше три пункта прятались, а
+                            четвёртый — «Запланировать статус» — оставался и
+                            обещал операцию, которой нет: окно открывалось,
+                            форма заполнялась, сохранение падало в «Сотрудник
+                            не найден».
+
+                            Меню при этом НЕ прячется и не гасится целиком:
+                            пустое место в столбце действий читается как
+                            «кнопку забыли нарисовать», а погашенный триггер
+                            не отвечает на вопрос «почему». Вместо этого одна
+                            нерабочая строка объясняет причину — то же
+                            правило, что у пустого состояния списка: не белое
+                            пятно, а фраза. */}
+                        {isVacancyRow(employee) ? (
+                          <DropdownMenuItem disabled>
+                            <UserX className="mr-2 h-4 w-4" aria-hidden="true" />
+                            Должность вакантна — действий нет
                           </DropdownMenuItem>
-                        )}
-                        {employee.name !== "ВАКАНТ" && (
-                          <DropdownMenuItem
-                            onClick={() => handleSecondEmployee(employee)}
-                          >
-                            <ArrowRightLeft className="mr-2 h-4 w-4" />
-                            Откомандировать сотрудника
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        {employee.name !== "ВАКАНТ" && (
-                          <DropdownMenuItem
-                            onClick={() => handleViewProfile(employee)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Просмотр профиля
-                          </DropdownMenuItem>
+                        ) : (
+                          <>
+                            <DropdownMenuItem
+                              onClick={() => handleEditStatus(employee)}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              Запланировать статус
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleScheduleStatus(employee)}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              Запланированные статусы
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleSecondEmployee(employee)}
+                            >
+                              <ArrowRightLeft className="mr-2 h-4 w-4" />
+                              Откомандировать сотрудника
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleViewProfile(employee)}
+                            >
+                              <Eye className="mr-2 h-4 w-4" />
+                              Просмотр профиля
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
