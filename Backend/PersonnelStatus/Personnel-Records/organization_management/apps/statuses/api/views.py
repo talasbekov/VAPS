@@ -2,6 +2,7 @@
 API Views для управления статусами сотрудников
 """
 from datetime import date
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -18,6 +19,7 @@ from organization_management.apps.statuses.models import (
 )
 from organization_management.apps.statuses.application.services import StatusApplicationService
 
+from .filters import EmployeeStatusFilter
 from .serializers import (
     EmployeeStatusSerializer,
     EmployeeStatusDetailSerializer,
@@ -57,6 +59,11 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
     serializer_class = EmployeeStatusSerializer
     permission_classes = [permissions.IsAuthenticated]
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    # Фильтры списка (Plane №289): без них ручка молча отдавала все строки на
+    # любой `?employee=`. Значения валидируются — неизвестный сотрудник или тип
+    # статуса дают 400, а не тихую выдачу всего.
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = EmployeeStatusFilter
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
