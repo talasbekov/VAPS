@@ -219,7 +219,11 @@ function EmployeesScreen() {
   // Верхний вид экрана: «Сбор сил» (прежнее содержимое, умолчание) или
   // «Ежедневный расход» (Task 2). Тот же приём URL-состояния, что у
   // search/department/status — умолчание в адрес не пишется.
-  const view = searchParams.get("view") === "daily" ? "daily" : "forces";
+  // ПЕРВАЯ ВКЛАДКА — РАСХОД (Plane №273, решение заказчика: «первая вкладка
+  // это Ежедневный расход Организации»). Значение по умолчанию меняется
+  // ВМЕСТЕ с порядком: оставить умолчанием «forces» значило бы, что первая
+  // вкладка открывается второй, и человек каждый раз попадает не туда.
+  const view = searchParams.get("view") === "forces" ? "forces" : "daily";
   // Номер страницы — тоже в адресе: ссылка на «страницу 7 отбора» должна
   // открываться такой же (Plane №228).
   const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
@@ -671,18 +675,11 @@ function EmployeesScreen() {
           className="flex w-fit gap-1 rounded-lg bg-muted p-1"
           aria-label="Разделы модуля"
         >
-          <button
-            type="button"
-            aria-current={view === "forces" ? "page" : undefined}
-            className={
-              view === "forces"
-                ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
-                : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
-            }
-            onClick={() => setFilter("view", "forces", "forces")}
-          >
-            Сбор сил
-          </button>
+          {/* ПОРЯДОК И НАЗВАНИЯ — ТРЕБОВАНИЕ ЗАКАЗЧИКА (Plane №273): «первая
+              вкладка это Ежедневный расход Организации. Вторая вкладка Сбор
+              сил на ОМ». Названы полностью, а не сокращённо: «Расход» и
+              «Сбор сил» на одном экране не говорят, ЧЕЙ расход и ЧТО
+              собирают. */}
           <button
             type="button"
             aria-current={view === "daily" ? "page" : undefined}
@@ -691,9 +688,21 @@ function EmployeesScreen() {
                 ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
                 : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
             }
-            onClick={() => setFilter("view", "daily", "forces")}
+            onClick={() => setFilter("view", "daily", "daily")}
           >
-            Ежедневный расход
+            Ежедневный расход организации
+          </button>
+          <button
+            type="button"
+            aria-current={view === "forces" ? "page" : undefined}
+            className={
+              view === "forces"
+                ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
+                : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+            }
+            onClick={() => setFilter("view", "forces", "daily")}
+          >
+            Сбор сил на ОМ
           </button>
         </nav>
 

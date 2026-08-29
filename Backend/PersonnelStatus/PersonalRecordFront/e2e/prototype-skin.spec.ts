@@ -94,7 +94,9 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
   test('строки таблицы не полосатые', async ({ page }) => {
     await signIn(page)
-    await page.goto(`${APP}/employees/`)
+    // `?view=forces` ЯВНО (Plane №273): вид по умолчанию сменился на расход
+    // организации, а проба смотрит на РЕЕСТР — он живёт под «Сбором сил».
+    await page.goto(`${APP}/employees/?view=forces`)
     await expect(page.getByRole('heading', { name: 'Сбор сил на ОМ' })).toBeVisible()
 
     const rows = page.locator('tbody tr')
@@ -111,7 +113,9 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
   test('бейдж — таблетка 11px', async ({ page }) => {
     await signIn(page)
-    await page.goto(`${APP}/employees/`)
+    // `?view=forces` ЯВНО (Plane №273): вид по умолчанию сменился на расход
+    // организации, а проба смотрит на РЕЕСТР — он живёт под «Сбором сил».
+    await page.goto(`${APP}/employees/?view=forces`)
     await expect(page.getByRole('heading', { name: 'Сбор сил на ОМ' })).toBeVisible()
 
     const badge = page.locator('tbody [data-slot="badge"]').first()
@@ -823,7 +827,10 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // правому краю И блока actions, И самой кнопки внутри — обе точки должны
   // остаться в пределах вьюпорта.
   for (const [route, buttonName] of [
-    ['/employees/', 'Добавить сотрудника'],
+    // `?view=forces` (Plane №273): кнопка «Добавить сотрудника» относится к
+    // РЕЕСТРУ и на вкладке расхода не показывается намеренно — там нет ни
+    // фильтруемого списка, ни диалога заведения.
+    ['/employees/?view=forces', 'Добавить сотрудника'],
     ['/statuses/', 'Обновить'],
   ] as const) {
     test(`actions-слот PageHeader не обрезается на 375px: ${route}`, async ({ page }) => {
@@ -874,6 +881,12 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     // Путь ДВУМЯ клиентскими переходами: пункт меню ведёт на «Сбор сил на ОМ»
     await page.getByRole('link', { name: 'Сбор сил на ОМ' }).click()
     await expect(page).toHaveURL(new RegExp('/employees/?$'))
+
+    // С Plane №273 модуль открывается вкладкой «Ежедневный расход
+    // организации», а утечка CSS проверяется на таблице РЕЕСТРА. Переходим на
+    // неё ТЕМ ЖЕ клиентским переходом — суть пробы (переход без полной
+    // перезагрузки) от этого не меняется, а `page.goto` её бы разрушил.
+    await page.getByRole('button', { name: 'Сбор сил на ОМ' }).click()
 
     const cell = page.locator('table tbody td').first()
     await expect(cell).toBeVisible()

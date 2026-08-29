@@ -24,7 +24,10 @@ import { prepareDemandEvent } from './prepare-events'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
-const SCREEN = '/employees'
+// 🔴 `?view=forces` ЯВНО (Plane №273): вид по умолчанию сменился на расход
+// организации — решение заказчика о порядке вкладок. Без параметра разрез
+// сбора сил не отрисовался бы вовсе.
+const SCREEN = '/employees?view=forces'
 
 const EVENT_ASSIGNMENT = 'EVENT_ASSIGNMENT'
 /** Второй вид участия: специфическая группа (Plane №274, Ш-2/Ш-4). */
