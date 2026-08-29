@@ -2967,7 +2967,12 @@ class OpsDailyDivisionsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             {
                 "results": daily_service.visible_division_rows(
-                    resolve_actor_id(request), _DAILY_READ_PERMISSION
+                    resolve_actor_id(request),
+                    _DAILY_READ_PERMISSION,
+                    # Право СДАЧИ передаётся сюда, а не читается внутри
+                    # сервиса: коды прав раздела перечислены здесь, и второе
+                    # их определение в `daily.py` разошлось бы с этим.
+                    submit_permission_code=_DAILY_SUBMIT_PERMISSION,
                 )
             }
         )

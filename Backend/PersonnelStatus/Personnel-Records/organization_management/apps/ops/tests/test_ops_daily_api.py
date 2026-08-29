@@ -16,9 +16,11 @@ from organization_management.apps.operations.models import StatusType
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
 )
+from organization_management.apps.operations.services import RoleAdminService
 from organization_management.apps.operations.tests.test_bulk_status_api import (
     client_for,
     make_employee,
+    seed_role,
 )
 
 pytestmark = pytest.mark.django_db
@@ -86,11 +88,85 @@ def test_divisions_are_scoped_and_stringly_typed(operator, scoped_viewer, divisi
     rows = operator.get(DIVISIONS).json()["results"]
     # Путь до подразделения приехал вместе с именем (Plane №235) — пин формы
     # правится осознанно: у корневого подразделения предков нет.
-    assert {"id": str(division.pk), "name": division.name, "ancestors": []} in rows
+    #
+    # Пин расширен в Plane №295: строка несёт ещё право сдачи и момент
+    # последней сдачи. Правится ОСОЗНАННО и полным сравнением, а не «ключ
+    # присутствует»: форма контракта клиента — предмет этой пробы, и молчаливо
+    # выросшая строка означала бы, что фронт читает поле, которого никто не
+    # обещал. У оператора право сдачи без области — сдаёт за любое видимое.
+    assert {
+        "id": str(division.pk),
+        "name": division.name,
+        "ancestors": [],
+        "can_submit": True,
+        "last_submitted_at": None,
+    } in rows
     # Скоупованный видит только своё поддерево.
     scoped_rows = scoped_viewer.get(DIVISIONS).json()["results"]
     assert all(row["name"] != division.name for row in scoped_rows)
     assert len(scoped_rows) == 1
+
+
+def test_divisions_tell_apart_who_the_actor_submits_for(division):
+    """`can_submit` считается по области права СДАЧИ, а не чтения (Plane №295).
+
+    Зачем поле вообще: экран расхода не раскрывает список НЕсданного
+    управления сводящему за департамент, но обязан раскрыть его САМОМУ
+    начальнику управления — иначе тому негде проставить статусы и цепочка не
+    стартует. Отличить одного от другого можно только областью права сдачи.
+
+    Красная на мутации: считать поле по области ЧТЕНИЯ (или ставить True
+    всем) — у актора читается ВСЁ дерево, и чужое управление тоже станет
+    «своим».
+    """
+    other = Division.objects.create(name="Управление 2")
+    # Чтение — без области (всё дерево), сдача — только за «Управление 1».
+    api, user = client_for("daily-head", "DAILY_READ_ALL", perms=("status.view",))
+    seed_role("DAILY_SUBMIT_MINE", ("daily_report.mark_update",))
+    RoleAdminService.assign_role(
+        str(user.pk), "DAILY_SUBMIT_MINE", division.pk, actor="test"
+    )
+
+    rows = {row["name"]: row for row in api.get(DIVISIONS).json()["results"]}
+
+    assert set(rows) == {division.name, other.name}, "читаться должны оба"
+    assert rows[division.name]["can_submit"] is True
+    assert rows[other.name]["can_submit"] is False
+
+
+def test_divisions_carry_the_moment_of_the_last_submission(
+    operator, division, in_service
+):
+    """`last_submitted_at` — момент ПОСЛЕДНЕЙ сдачи любого дня (Plane №295).
+
+    Свёрнутой строке несданного управления этого не заменить состоянием дня:
+    «не сдан» без даты не отличает «сдавали вчера, сегодня ещё нет» от «не
+    сдавали ни разу», а сводящему нужно ровно это — понять, кого торопить.
+
+    Красная на мутации: отдавать момент сдачи ТЕКУЩЕГО дня (тогда после
+    перехода на следующий день поле снова None, хотя сдача была) или не
+    отдавать поле вовсе.
+    """
+    make_employee(division)
+
+    def moment_of(name):
+        rows = operator.get(DIVISIONS).json()["results"]
+        return next(row for row in rows if row["name"] == name)["last_submitted_at"]
+
+    assert moment_of(division.name) is None, "сдач не было — и момента нет"
+
+    with clock.override(TODAY):
+        submitted = operator.post(
+            SUBMISSIONS,
+            {"division_id": division.pk, "business_date": TODAY.isoformat()},
+            format="json",
+        )
+    assert submitted.status_code == 201, submitted.data
+
+    # Спрашиваем СЛЕДУЮЩИМ днём: поле обязано помнить сдачу и тогда, когда
+    # «сегодня» уже другое — именно в этом состоянии его читает экран.
+    with clock.override(TODAY + timedelta(days=1)):
+        assert moment_of(division.name) == submitted.json()["submitted_at"]
 
 
 def test_employees_of_division_contract_shape(operator, division):

@@ -44,6 +44,10 @@ NO_LIVE_DATA = {
     "personal_export.build_personal_export_xlsx",
     "personal_export_service._assert_snapshot_schema_supported",
     "selectors.list",
+    # Тот же случай, что `selectors.list`: снимок не читается, а СНИМАЕТСЯ с
+    # выборки (`defer("snapshot")`) — функция отдаёт девять полей сдачи и
+    # живого рядом не держит вовсе (Plane №295).
+    "selectors.last_current_by_division",
     "strength_report.expense_from_snapshot",
     "summary_service._summary_diff_key",
     "summary_service._compute_summary_event",

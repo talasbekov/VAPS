@@ -19,8 +19,24 @@ from organization_management.apps.operations.selectors import (
 from organization_management.apps.operations.services import PermissionService
 
 
-def visible_division_rows(actor_id, permission_code):
-    """Подразделения области актора: [{id: str, name, ancestors}] по имени.
+def visible_division_rows(actor_id, permission_code, submit_permission_code=None):
+    """Подразделения области актора: [{id: str, name, ancestors, can_submit,
+    last_submitted_at}] по имени.
+
+    `can_submit` — правда ли АКТОР сдаёт день ЗА ЭТО подразделение (область
+    права сдачи, не чтения). Экран расхода спрашивает его, чтобы не запереть
+    первый шаг цепочки: список несданного управления сводящему за департамент
+    не раскрывается (Plane №295), но САМ начальник управления обязан открыть
+    свой список ДО сдачи — иначе статусы некому и негде проставить, и цепочка
+    не стартует вовсе. Без `submit_permission_code` поле остаётся False у
+    всех: молчаливое «можно всем» открыло бы ровно то, что шаг закрывает.
+
+    `last_submitted_at` — МОМЕНТ последней сдачи любого дня (ISO с зоной) или
+    None. Именно момент, а не деловой день: заказчик просил «дату обновления»
+    списка, а обновляет его сдача версии. Нужен свёрнутой строке несданного
+    управления: «не сдано» без даты не отличает «сдавал вчера, сегодня ещё
+    нет» от «не сдавал никогда», а сводящему это и надо знать, чтобы понять,
+    кого торопить.
 
     None от резолвера (wildcard/безскоуповый грант) разворачивается во всё
     дерево — экрану нужен конкретный список, а не «всё».
@@ -39,6 +55,21 @@ def visible_division_rows(actor_id, permission_code):
         allowed = DivisionTreeSelector.all_ids()
     names = DivisionTreeSelector.names_map(allowed)
 
+    # Область СДАЧИ считается тем же резолвером, что и область чтения: None у
+    # него означает «право без скоупа» (в т.ч. wildcard) — то есть сдавать
+    # можно за любое видимое подразделение, а не «ни за одно».
+    if submit_permission_code is None:
+        submit_allowed = set()
+    else:
+        submit_ids = PermissionService.visible_division_ids(
+            actor_id, submit_permission_code
+        )
+        submit_allowed = set(allowed) if submit_ids is None else set(submit_ids)
+
+    # ОДИН запрос на все подразделения области, а не по запросу на строку:
+    # строк здесь столько же, сколько управлений в департаменте.
+    last_submissions = DailySubmissionSelector.last_current_by_division(allowed)
+
     # Дерево целиком ОДНИМ запросом: путь строится по `parent_id` в памяти.
     # Запрос предков на строку дал бы N+1 ровно там, где строк больше всего.
     tree = {
@@ -56,12 +87,20 @@ def visible_division_rows(actor_id, permission_code):
         path.reverse()
         return path
 
-    return [
-        {
+    def row_of(division_id, name):
+        last = last_submissions.get(division_id)
+        return {
             "id": str(division_id),
             "name": name,
             "ancestors": ancestors_of(division_id),
+            "can_submit": division_id in submit_allowed,
+            "last_submitted_at": (
+                last.submitted_at.isoformat() if last is not None else None
+            ),
         }
+
+    return [
+        row_of(division_id, name)
         for division_id, name in sorted(names.items(), key=lambda kv: kv[1])
     ]
 

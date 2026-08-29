@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/table";
 import { StatCard } from "@/components/stat-card";
 import { cn } from "@/lib/utils";
-import { formatIsoDate } from "@/shared/lib/date";
+import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import { useStrengthReport } from "@/hooks/use-strength-report";
@@ -90,6 +90,25 @@ export interface DivisionRowVM {
   path: string[];
   listTotal: number;
   columns: Record<string, number>;
+  /** Сдаёт ли ДЕНЬ ЗА ЭТО управление тот, кто смотрит (область права сдачи с
+   * бэка, а не догадка фронта). Только он вправе раскрыть список ДО сдачи —
+   * см. `expandable` в `DivisionGroup`. */
+  canSubmit: boolean;
+  /** Момент ПОСЛЕДНЕЙ сдачи любого дня, ISO с зоной, или null — «не сдавали
+   * ни разу». Именно момент, а не деловой день: заказчик просил «дату
+   * обновления» списка, а обновляет его сдача версии. */
+  lastSubmittedAt: string | null;
+}
+
+/** Строка `/api/ops/daily/divisions/`. `can_submit` и `last_submitted_*`
+ * добавлены бэкендом в Plane №295 — старые поля не тронуты, соседние
+ * читатели (`LeadershipStrip`, аналитика) продолжают читать своё. */
+interface DailyDivisionRow {
+  id: string;
+  name: string;
+  ancestors?: string[];
+  can_submit?: boolean;
+  last_submitted_at?: string | null;
 }
 
 interface DailyEmployeesResponse {
@@ -126,8 +145,22 @@ interface DivisionSubmissionSummary {
 /** Свёрнутая шапка группы: лёгкий бейдж БЕЗ интерактивности и БЕЗ своего
  * запроса — питается тем же `DivisionSubmissionSummary`, что и раскрытая
  * панель. Ошибка чтения показана СЛОВАМИ отдельно от «не сдал»: молчаливое
- * чтение отказа как «не сдал» было бы враньём (находка ревью). */
-function CollapsedSubmissionBadge({ summary }: { summary: DivisionSubmissionSummary }) {
+ * чтение отказа как «не сдал» было бы враньём (находка ревью).
+ *
+ * С Plane №295 бейдж несёт ещё и ПРИЧИНУ, по которой строка не раскрывается,
+ * и дату: «не сдан» без даты не отличает «сдавали вчера, сегодня ещё нет» от
+ * «не сдавали ни разу», а сводящему за департамент нужно ровно это — понять,
+ * кого торопить. Причина стоит РЯДОМ с недоступной шапкой, а не всплывает
+ * подсказкой: недоступный элемент без объяснения читается как поломка. */
+function CollapsedSubmissionBadge({
+  summary,
+  row,
+  expandable,
+}: {
+  summary: DivisionSubmissionSummary;
+  row: DivisionRowVM;
+  expandable: boolean;
+}) {
   if (summary.isPending) {
     return <span className="text-muted-foreground">Загрузка состояния сдачи…</span>;
   }
@@ -139,12 +172,37 @@ function CollapsedSubmissionBadge({ summary }: { summary: DivisionSubmissionSumm
     );
   }
   if (summary.submission === null) {
-    return <span className="text-muted-foreground">День не сдан</span>;
+    return (
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+        <span>День не сдан</span>
+        <span aria-hidden>·</span>
+        <span>
+          {row.lastSubmittedAt === null
+            ? "список не сдавали ни разу"
+            : `последняя сдача ${formatIsoDateTime(row.lastSubmittedAt)}`}
+        </span>
+        {/* Причина ОДНОЙ строкой со состоянием, а не абзацем под ним: на
+            борде департамента несданных управлений бывает полсотни, и
+            отдельная строка объяснения повторилась бы полсотни раз, забив
+            экран собой. */}
+        {!expandable && (
+          <>
+            <span aria-hidden>·</span>
+            <span>список раскроется после сдачи</span>
+          </>
+        )}
+      </span>
+    );
   }
   return (
-    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-      Сдан · v{summary.submission.version}
-      {summary.submission.late && " · с опозданием"}
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+        Сдан · v{summary.submission.version}
+        {summary.submission.late && " · с опозданием"}
+      </span>
+      <span className="text-xs text-muted-foreground">
+        Обновлено {formatIsoDateTime(summary.submission.submitted_at)}
+      </span>
     </span>
   );
 }
@@ -162,10 +220,37 @@ function DivisionGroup({
   row,
   columnLabels,
   businessDate,
-  open,
+  open: openRequested,
   onToggle,
   submissionsSummary,
 }: DivisionGroupProps) {
+  // ПРАВИЛО СОСТОЯНИЯ, а не права (Plane №295). Сводящему за департамент
+  // список НЕсданного управления не раскрывается: пока день не сдан, список —
+  // черновик, и считать по нему расход значит считать по незаконченным
+  // данным. Прятать строку целиком нельзя — тогда «сдано 4 из 6» остаётся
+  // единственным следом отставших, и назвать их сводящий уже не может.
+  //
+  // Исключение ровно одно и оно обязательное: НАЧАЛЬНИК самого управления
+  // (`row.canSubmit` — область права сдачи с бэка). Без него цепочка не
+  // стартовала бы вовсе: статусы своим людям он проставляет ИМЕННО в этом
+  // раскрытом списке, а сдать день, ни разу его не открыв, невозможно.
+  //
+  // Неизвестное состояние (`isPending`/`isError`) раскрытием НЕ считается:
+  // «не смогли узнать» — не «сдано», и открывать по нему список значило бы
+  // выдать догадку за факт. Строка при этом уже говорит словами, что
+  // состояние прочитать не удалось.
+  const expandable =
+    row.canSubmit ||
+    (!submissionsSummary.isPending &&
+      !submissionsSummary.isError &&
+      submissionsSummary.submission !== null);
+
+  // Раскрыто ФАКТИЧЕСКИ — только если раскрытие вообще позволено. Строку
+  // могли открыть, пока состояние сдачи ещё грузилось, а ответ пришёл
+  // «не сдано» — оставить её открытой значило бы показать тот самый черновик
+  // в обход правила.
+  const open = openRequested && expandable;
+
   // Раскрытую строку НЕ размонтируем при повторном схлопывании — теряли бы
   // скролл и уже загруженные данные. До первого раскрытия таблицы в разметке
   // нет вовсе (запрос ещё не отправлялся, показывать нечего).
@@ -226,13 +311,26 @@ function DivisionGroup({
     >
       <button
         type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-muted/40"
+        // `aria-expanded` ставится ТОЛЬКО у раскрываемой строки: у кнопки,
+        // которая ничего не раскрывает, оно врало бы про «свёрнуто, нажми».
+        // `aria-disabled` вместо `disabled`: выключенная кнопка выпадает из
+        // обхода клавиатурой, и причина «список появится после сдачи», которая
+        // стоит внутри той же группы, до читающего с клавиатуры не доедет.
+        aria-expanded={expandable ? open : undefined}
+        aria-disabled={expandable ? undefined : true}
+        onClick={expandable ? onToggle : undefined}
+        className={cn(
+          "flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-left",
+          expandable ? "hover:bg-muted/40" : "cursor-not-allowed opacity-70"
+        )}
       >
         <span className="flex items-center gap-2 text-sm font-semibold">
           <ChevronRight
-            className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-90")}
+            className={cn(
+              "h-4 w-4 shrink-0 transition-transform",
+              open && "rotate-90",
+              !expandable && "opacity-40"
+            )}
             aria-hidden
           />
           <span className="flex flex-col">
@@ -289,7 +387,11 @@ function DivisionGroup({
             isError={submissionsSummary.isError}
           />
         ) : (
-          <CollapsedSubmissionBadge summary={submissionsSummary} />
+          <CollapsedSubmissionBadge
+            summary={submissionsSummary}
+            row={row}
+            expandable={expandable}
+          />
         )}
       </div>
 
@@ -424,21 +526,29 @@ export function DailyExpenseBoard() {
   // (`/api/ops/daily/divisions/`, Plane №235), а не полем строки расхода:
   // строка расхода собирается службой отчёта, которую читают ещё и выгрузки
   // DOCX/CSV/XLSX, и ради подписи на экране её контракт не трогаем.
-  const divisionsQuery = useQuery<{ results: { id: string; name: string; ancestors?: string[] }[] }>({
+  const divisionsQuery = useQuery<{ results: DailyDivisionRow[] }>({
     queryKey: ["daily-expense-board", "divisions"],
     queryFn: () =>
-      opsApiClient.get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
-        DAILY_DIVISIONS_PATH
-      ),
+      opsApiClient.get<{ results: DailyDivisionRow[] }>(DAILY_DIVISIONS_PATH),
     staleTime: 5 * 60_000,
   });
-  const pathByDivision = useMemo(() => {
-    const map = new Map<string, string[]>();
+  // Один индекс на все поля строки подразделения, а не карта на поле: с
+  // Plane №295 их стало три (путь, право сдачи, последняя сдача), и три
+  // параллельные карты по одному ключу разошлись бы при первом же четвёртом.
+  const metaByDivision = useMemo(() => {
+    const map = new Map<string, DailyDivisionRow>();
     for (const row of divisionsQuery.data?.results ?? []) {
-      map.set(String(row.id), row.ancestors ?? []);
+      map.set(String(row.id), row);
     }
     return map;
   }, [divisionsQuery.data]);
+  const pathByDivision = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const [id, row] of metaByDivision) {
+      map.set(id, row.ancestors ?? []);
+    }
+    return map;
+  }, [metaByDivision]);
   const [openIds, setOpenIds] = useState<Set<number>>(new Set());
 
   const toggle = (id: number) => {
@@ -692,12 +802,18 @@ export function DailyExpenseBoard() {
       {data && (
         <div className="space-y-2">
           {data.rows.map((row) => {
+            const meta = metaByDivision.get(String(row.division_id));
             const vm: DivisionRowVM = {
               id: row.division_id,
               name: row.name,
-              path: pathByDivision.get(String(row.division_id)) ?? [],
+              path: meta?.ancestors ?? [],
               listTotal: row.list_total,
               columns: row.columns,
+              // Пока список подразделений не ответил, право сдачи считается
+              // ОТСУТСТВУЮЩИМ: «не знаем» здесь обязано читаться как «нельзя»,
+              // иначе строка на мгновение раскрывалась бы всем.
+              canSubmit: meta?.can_submit === true,
+              lastSubmittedAt: meta?.last_submitted_at ?? null,
             };
             return (
               <DivisionGroup
