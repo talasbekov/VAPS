@@ -37,6 +37,7 @@ from organization_management.apps.operations.document_release import (
     EXPENSE_DOC_TYPE,
     issue_expense_document,
 )
+from organization_management.apps.operations import document_storage
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_document import OpsIssuedDocument
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
@@ -213,9 +214,52 @@ class Command(BaseCommand):
                 raise
             # Повторный запуск: документ этого дня уже выпущен, и выпускать
             # второй нельзя — на стенде это то же правило, что в проде.
-            return OpsIssuedDocument.objects.get(
+            issued = OpsIssuedDocument.objects.get(
                 doc_type=EXPENSE_DOC_TYPE,
                 division_id=division.id,
                 business_date=day,
                 status=OpsIssuedDocument.Status.ISSUED,
             )
+            return self._reissue_if_bytes_lost(issued, division, day)
+
+    def _reissue_if_bytes_lost(self, issued, division, day):
+        """Выпуск СВОЕГО сида без байт на диске — переиздать (Plane №320).
+
+        ОТКУДА БЕДА. Строка выпуска живёт в базе, а файл — на диске, и диск
+        стенда переживает базу не всегда: каталог `private_storage` не в
+        репозитории, его сносят при переносе, чистке, пересборке контейнера.
+        База при этом продолжает утверждать, что документ выпущен. Скачивание
+        такого документа отвечает 500 `DOCUMENT_INTEGRITY_FAILED` — и это
+        ПРАВИЛЬНЫЙ ответ (строка есть, значит документ выпускался; отсутствие
+        байт это порча, а не «не найдено»), но на стенде он выглядит поломкой
+        сервера и каждый обход API спотыкается о него заново.
+
+        ЧИНИТ СИД, А НЕ РУЧКА. Переписывать байты выпущенного документа
+        снаружи нельзя ни при каких условиях: выпуск — это факт, и подмена
+        его содержимого задним числом хуже порчи. Здесь другое: строку
+        завёл ЭТОТ ЖЕ сид на стенде, она фикстура, и восстановить фикстуру —
+        его работа.
+
+        ГРАНИЦА УЗКАЯ И ПРОВЕРЯЕТСЯ ЯВНО: трогаем только документ, автор
+        которого — сам сид (`stand-seed`), и только когда байт действительно
+        нет. Чужой документ не трогается никогда, даже битый: о нём сид не
+        знает ничего и чинить его не вправе.
+        """
+        attachment = issued.attachment
+        if attachment is not None and document_storage.storage_path(attachment).exists():
+            return issued
+        if issued.created_by != ACTOR:
+            self.stdout.write(
+                "STAND_DOCUMENT_BROKEN=да (чужой автор — не трогаю): "
+                f"№{issued.number}/{issued.year}"
+            )
+            return issued
+        issued.delete()
+        if attachment is not None:
+            attachment.delete()
+        self.stdout.write(
+            f"STAND_DOCUMENT_REISSUED=да (байт не было на диске): №{issued.number}"
+        )
+        return issue_expense_document(
+            division_id=division.id, business_date=day, actor=ACTOR
+        )
