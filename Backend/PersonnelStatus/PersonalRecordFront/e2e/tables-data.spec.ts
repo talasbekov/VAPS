@@ -281,6 +281,70 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     expect(actual.some((row) => row.marked), 'действующая строка отмечена как просроченная').toBe(false)
   })
 
+  test('строка называет, из какого учёта пришло привлечение на ОМ', async ({ page }) => {
+    /**
+     * Plane №314. В одной ячейке соседствуют два факта из РАЗНЫХ каталогов:
+     * бейдж кадрового статуса (`EmployeeStatus` — например «В строю») и ссылки
+     * на мероприятия из каталога раздела ОМ. Оба верны каждый в своём учёте, но
+     * рядом и без подписи строка утверждала разом «в строю» и «привлечён на
+     * ОМ» — и читалось это как противоречие данных, а не как два учёта.
+     *
+     * Проба стережёт ПОДПИСЬ ИСТОЧНИКА, а не выбор главного каталога: выбор за
+     * заказчиком и он не сделан. Снимут подпись — противоречие вернётся молча:
+     * ассерты соседних проб («ссылка ведёт на карточку ОМ») от неё не зависят
+     * и останутся зелёными.
+     *
+     * 🔴 ПОДОПЫТНОГО НАХОДИМ ЧЕРЕЗ API, А НЕ «КТО ПОПАЛСЯ НА ПЕРВОЙ СТРАНИЦЕ»
+     * (урок Plane №288). Первая редакция этой пробы искала строку с ссылкой на
+     * ОМ среди видимых пятидесяти — и через полчаса покраснела, потому что
+     * фикстуры пересеялись и привлечённый уехал с первой страницы. Кто
+     * привлечён сегодня, знает сервер; таблицу доводим до него поиском.
+     */
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const today = new Date().toISOString().slice(0, 10)
+    const statuses = (await (
+      await fetch(`${API}/api/operations/statuses/?business_date=${today}&page_size=200`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { results?: Array<{ employee_id: number; participations?: unknown[] }> }
+    const attached = (statuses.results ?? []).find(
+      (row) => (row.participations ?? []).length > 0,
+    )
+    expect(
+      attached,
+      'на стенде сегодня нет ни одного привлечения на ОМ — проверять нечего',
+    ).toBeDefined()
+
+    const employee = (await (
+      await fetch(`${API}/api/core/employees/${attached!.employee_id}/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { last_name: string; first_name: string }
+
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto('/statuses')
+    await hydrated(page)
+    await tableFilled(page)
+
+    await page.getByPlaceholder('Поиск по ФИО').fill(`${employee.last_name} ${employee.first_name}`)
+    const row = page
+      .locator('table tbody tr')
+      .filter({ hasText: employee.last_name })
+      .first()
+    await expect(row, `сотрудник ${employee.last_name} не нашёлся в таблице`).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(
+      row.getByRole('link', { name: /^→ ОМ-/ }),
+      'у привлечённого сотрудника пропала ссылка на мероприятие — проба смотрит не на ту строку',
+    ).toBeVisible()
+    await expect(
+      row.getByText('по учёту ОМ', { exact: true }),
+      'строка показывает привлечение на ОМ и не говорит, что это другой учёт — ' +
+        'бейдж кадрового статуса рядом снова читается как противоречие',
+    ).toBeVisible()
+  })
+
   test('без известного мероприятия «Участие в ОМ» ведёт на общий разрез и говорит об этом', async ({
     page,
   }) => {
