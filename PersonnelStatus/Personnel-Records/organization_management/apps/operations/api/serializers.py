@@ -24,6 +24,7 @@ from organization_management.apps.operations.models_notification import (
 from organization_management.apps.operations.models_document import (
     OpsIssuedDocument,
 )
+from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
@@ -49,6 +50,68 @@ class StatusParticipationSerializer(serializers.Serializer):
     role_code = serializers.CharField(
         required=False, allow_blank=True, max_length=100
     )
+
+
+_EVENT_INDEX_KEY = "_ops_event_index"
+
+
+def warm_event_index(context, status_rows):
+    """Разложить мероприятия участий по id — ОДНИМ запросом на весь ответ.
+
+    Участие хранит плоский `event_id` (модель намеренно без FK), а показать
+    надо КОД и НАЗВАНИЕ мероприятия: «участвует в ОМ» без имени ОМ — это тот
+    же вопрос без ответа, ради которого заведена карточка (Plane №281).
+
+    Индекс живёт в контексте сериализатора, общем у списка и у вложенных
+    участий, поэтому запрос один и на страницу в 500 строк, и на одну строку.
+    Повторный вызов ничего не спрашивает: недостающих id нет — нет и запроса.
+    """
+    index = context.setdefault(_EVENT_INDEX_KEY, {})
+    wanted = {
+        participation.event_id
+        for row in status_rows
+        for participation in row.participations.all()
+    }
+    missing = wanted - index.keys()
+    if missing:
+        index.update(
+            (event.id, event)
+            for event in OpsSecurityEvent.objects.filter(id__in=missing).only(
+                "id", "code", "title"
+            )
+        )
+    return index
+
+
+class StatusParticipationReadSerializer(StatusParticipationSerializer):
+    """То же участие НАРУЖУ, плюс имя мероприятия (Plane №281).
+
+    Поля читаемые: писать в участие название нельзя — оно принадлежит
+    мероприятию, а не статусу. Отдельный класс, а не два поля в родителе:
+    родитель работает и на ВХОД (правка статуса присылает участия), и
+    read-only поля в схеме записи обещали бы клиенту то, чего он не шлёт.
+
+    Пусто, когда мероприятия уже нет в базе: строка участия переживает
+    удаление ОМ (ссылка плоская), и врать кодом несуществующего ОМ хуже, чем
+    честно молчать.
+    """
+
+    event_code = serializers.SerializerMethodField()
+    event_title = serializers.SerializerMethodField()
+
+    def _event(self, obj):
+        event_id = getattr(obj, "event_id", None)
+        if event_id is None and isinstance(obj, dict):
+            event_id = obj.get("event_id")
+        return (self.context.get(_EVENT_INDEX_KEY) or {}).get(event_id)
+
+    def get_event_code(self, obj) -> str:
+        event = self._event(obj)
+        return event.code if event else ""
+
+    def get_event_title(self, obj) -> str:
+        event = self._event(obj)
+        return event.title if event else ""
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -350,6 +413,19 @@ class BulkStatusCreateSerializer(serializers.Serializer):
     )
 
 
+class _StatusListSerializer(serializers.ListSerializer):
+    """Список статусов: индекс мероприятий греется ОДИН раз на весь ответ.
+
+    Без него имена спрашивались бы по мере встречи новых ОМ — на странице,
+    где у каждой строки своё мероприятие, это запрос на строку (Plane №281).
+    """
+
+    def to_representation(self, data):
+        rows = list(data)
+        warm_event_index(self.context, rows)
+        return super().to_representation(rows)
+
+
 class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
     """Строка статуса раздела ОМ наружу.
 
@@ -361,8 +437,18 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
     state = serializers.SerializerMethodField()
     # Мероприятия статуса ЕДУТ НАРУЖУ вместе со строкой (Plane №274): экран
     # правки открывает уже выбранное, и вторым запросом за ними ходить некуда
-    # — их немного и они принадлежат этой же строке.
-    participations = StatusParticipationSerializer(many=True, read_only=True)
+    # — их немного и они принадлежат этой же строке. С Plane №281 у каждого
+    # едет ещё код и название ОМ: без них клиент знал, ЧТО человек привлечён, и
+    # не знал, КУДА.
+    participations = StatusParticipationReadSerializer(many=True, read_only=True)
+
+    def to_representation(self, instance):
+        # Одиночная строка греет индекс сама. Список греется ЦЕЛИКОМ в
+        # `_StatusListSerializer` ниже — иначе у каждой строки со своим
+        # мероприятием был бы свой запрос, и «один запрос на ответ» держалось
+        # бы только на том, что у соседних строк ОМ совпадают.
+        warm_event_index(self.context, [instance])
+        return super().to_representation(instance)
 
     class Meta:
         model = OpsEmployeeStatus
@@ -373,6 +459,7 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
             "cancelled_at", "cancelled_by", "cancelled_reason",
             "created_by", "created_at", "updated_at",
         ]
+        list_serializer_class = _StatusListSerializer
 
     def get_state(self, obj) -> str:
         return str(obj.state)

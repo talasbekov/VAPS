@@ -60,6 +60,7 @@ import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatu
 import { PlannedStatusesDialog } from "@/features/employee-status-update/ui/PlannedStatusesDialog";
 import { SecondEmployeeDialog } from "@/features/employee-status-update/ui/SecondEmployeeDialog";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
+import { useEventParticipations } from "@/hooks/use-event-participations";
 import {
   Dialog,
   DialogContent,
@@ -180,6 +181,10 @@ export function StatusTable({
   // пятидесяти строк и молчал бы о том, что остальные не смотрел.
   const [page, setPage] = useState(1);
   const statistics = useStaffUnitStatistics();
+  // Мероприятия участия — ОДИН запрос на всю таблицу (Plane №281). Строка
+  // таблицы адресует сотрудника ключом `${staffUnitId}-${employeeId}`, а
+  // участия приходят по числовому id — отсюда разбор ключа в `eventsOf`.
+  const participations = useEventParticipations();
   const departmentId =
     departmentFilter === "all" ? undefined : Number(departmentFilter) || undefined;
 
@@ -338,6 +343,28 @@ export function StatusTable({
     } else {
       refetch();
     }
+  };
+
+  /** Числовой id сотрудника. Понимает ОБА вида ключа, и это не перестраховка:
+   *  строка таблицы адресует сотрудника составным `${staffUnitId}-${employeeId}`,
+   *  а карточка профиля — просто `${employeeId}` (её собирает `personnelFields`).
+   *  Разбор «взять кусок после дефиса» на втором виде молча давал пусто, и блок
+   *  мероприятий в карточке не показывался ни разу.
+   *  null — вакансия либо не разобралось. */
+  const employeeIdOf = (employee: { id: string }) => {
+    const parts = employee.id.split("-");
+    const raw = parts.length > 1 ? parts[1] : parts[0];
+    if (!raw || raw.startsWith("vacant")) return null;
+    const employeeId = Number(raw);
+    return Number.isNaN(employeeId) ? null : employeeId;
+  };
+
+  /** Мероприятия, на которые привлечён сотрудник строки. Пусто — их нет либо
+   *  данные ещё едут (`participations.loading` различает эти два случая). */
+  const eventsOf = (employee: { id: string }) => {
+    const employeeId = employeeIdOf(employee);
+    if (employeeId === null) return [];
+    return participations.byEmployee.get(employeeId) ?? [];
   };
 
   // Функция для открытия диалога редактирования
@@ -598,6 +625,11 @@ export function StatusTable({
               {filteredEmployees.map((employee) => (
                 <TableRow
                   key={employee.id}
+                  // Адрес строки для проб и для отладки: ФИО на стенде
+                  // повторяются (однофамильцев с одинаковым именем по
+                  // несколько), и проба, ищущая строку текстом, проверяла бы
+                  // ЧУЖОГО человека. Тот же приём, что в таблице сбора сил.
+                  data-employee-id={employeeIdOf(employee) ?? undefined}
                   // Подсветка просрочки ОСТАЁТСЯ: она несёт смысл, а не
                   // декорацию. Уходит только зебра.
                   className={`${getPriorityColor(employee.priority)} hover:bg-muted ${
@@ -652,33 +684,62 @@ export function StatusTable({
                         >
                           {getStatusBadge(employee.status)}
                         </button>
-                        {/* 🔴 ПОДПИСЬ БЫЛА ЛОЖНОЙ С Ш-3 (Plane №274). Она
-                            говорила «статус не хранит связь с конкретным ОМ»
-                            — с появлением `ops_status_participations` он её
-                            хранит, и по несколько мероприятий сразу. Сама
-                            карточка их пока не показывает: кадровая ручка
-                            отдаёт `current_status` без участий, и протянуть
-                            их сюда — отдельная работа (карточка заведена).
-                            Поэтому подпись больше НИЧЕГО НЕ УТВЕРЖДАЕТ о
-                            модели, а говорит, где мероприятия видно.
-                            Ссылка стоит у ОБОИХ видов участия: раньше
-                            условие знало один код, и привлечённый группой
-                            оставался вовсе без ссылки. */}
-                        {employee.statusCode !== null &&
+                        {/* НА КАКОЕ ОМ ПРИВЛЕЧЁН (Plane №281). Здесь стояла
+                            ссылка на ОБЩИЙ разрез «Сбор сил»: статус говорил
+                            «участвует», а на каком мероприятии — не говорил, и
+                            чтобы это выяснить, надо было идти в другой раздел и
+                            искать себя в списках. Связь есть с Ш-3
+                            (`ops_status_participations`), теперь она едет с
+                            сервера вместе с участием (код и название ОМ) и
+                            становится ссылкой на КАРТОЧКУ мероприятия.
+
+                            🔴 УСЛОВИЕ — НАЛИЧИЕ УЧАСТИЙ, а не код статуса
+                            строки. Код здесь кадровый (`EmployeeStatus`), а
+                            `EVENT_ASSIGNMENT` живёт в каталоге раздела ОМ, и
+                            в реальном ответе штатки его НЕ БЫВАЕТ — блок,
+                            висевший на этом условии, не показывался на стенде
+                            ни разу (проверено живой пробой: у 21 строки с
+                            участиями кадровый код другой). Участия же
+                            приходят по сотруднику и от каталога не зависят.
+
+                            Прежний общий адрес остался запасным: он
+                            показывается тем, у кого кадровый код всё-таки
+                            говорит об участии, а мероприятий не нашлось —
+                            статус проставлен без привязки (так заводили до
+                            Ш-3) либо данные ещё едут. */}
+                        {eventsOf(employee).length > 0 ? (
+                          <div className="flex max-w-[220px] flex-col items-start gap-0.5">
+                            {eventsOf(employee).map((participation) => (
+                              <Link
+                                key={participation.event_id}
+                                href={`/security-ops/events/${participation.event_id}`}
+                                className="text-primary-ink whitespace-nowrap text-xs font-medium hover:underline"
+                                title={participation.event_title}
+                              >
+                                → {participation.event_code ||
+                                  `ОМ #${participation.event_id}`}
+                              </Link>
+                            ))}
+                          </div>
+                        ) : (
+                          employee.statusCode !== null &&
                           EVENT_PARTICIPATION_STATUS_CODES.has(
                             employee.statusCode
                           ) && (
-                          <div className="flex max-w-[220px] flex-col items-start gap-0.5">
-                            <Link
-                              href="/employees?view=forces"
-                              className="text-primary-ink text-xs font-medium hover:underline"
-                            >
-                              → Сбор сил
-                            </Link>
-                            <p className="text-muted-foreground text-[11px] leading-tight">
-                              Мероприятия участия видны в разрезе «Сбор сил»
-                            </p>
-                          </div>
+                            <div className="flex max-w-[220px] flex-col items-start gap-0.5">
+                              <Link
+                                href="/employees?view=forces"
+                                className="text-primary-ink text-xs font-medium hover:underline"
+                              >
+                                → Сбор сил
+                              </Link>
+                              <p className="text-muted-foreground text-[11px] leading-tight">
+                                {participations.loading
+                                  ? "Мероприятия загружаются"
+                                  : "Мероприятие у статуса не указано"}
+                              </p>
+                            </div>
+                          )
                         )}
                       </div>
                     )}
@@ -865,6 +926,7 @@ export function StatusTable({
             <EmployeeProfile
               employee={selectedEmployeeForProfile}
               onClose={() => setProfileDialogOpen(false)}
+              events={eventsOf(selectedEmployeeForProfile)}
             />
           )}
         </DialogContent>

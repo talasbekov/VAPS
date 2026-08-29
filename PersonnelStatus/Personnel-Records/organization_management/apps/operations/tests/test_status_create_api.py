@@ -275,8 +275,20 @@ def test_the_single_route_carries_participations_to_the_database(
         (event_id, "SCREENING_GROUP", "SCREENER"),
     ]
     # Ответ ручки несёт их же: клиент рисует карточку по нему, а не по base.
+    #
+    # 🔴 ПИН РАСШИРЕН ОСОЗНАННО (Plane №281): у участия появились `event_code` и
+    # `event_title` — без них клиент знал, ЧТО человек привлечён, и не знал,
+    # КУДА. Здесь они ПУСТЫЕ, и это правильный ответ: `event_id` пробы (4101)
+    # выдуман, мероприятия с таким id нет, а придумывать ему имя нельзя.
+    # Заполненный случай проверяет `test_status_participation_event_names.py`.
     assert response.data["participations"] == [
-        {"event_id": event_id, "kind_code": "SCREENING_GROUP", "role_code": "SCREENER"},
+        {
+            "event_id": event_id,
+            "kind_code": "SCREENING_GROUP",
+            "role_code": "SCREENER",
+            "event_code": "",
+            "event_title": "",
+        },
     ]
 
 

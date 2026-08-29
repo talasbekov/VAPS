@@ -380,6 +380,24 @@ export interface OpsEmployeeStatusRow {
   document_basis: string;
   cancelled_at: string | null;
   cancelled_reason: string;
+  /** Мероприятия, на которые человек привлечён ЭТИМ статусом (Plane №281).
+   *  Пустой массив — статус ни к какому ОМ не привязан. */
+  participations: OpsStatusParticipation[];
+}
+
+/** Участие статуса в ОДНОМ мероприятии.
+ *
+ *  `event_code` и `event_title` едут с сервера ВМЕСТЕ с участием: без них у
+ *  клиента был бы только `event_id`, и ссылку не на что подписать — экран так
+ *  и показывал общий разрез «Сбор сил» вместо адреса ОМ (Plane №281). Обе
+ *  строки пусты, если мероприятие удалено: ссылка в модели плоская, участие
+ *  переживает удаление ОМ. */
+export interface OpsStatusParticipation {
+  event_id: number;
+  kind_code: string;
+  role_code: string;
+  event_code: string;
+  event_title: string;
 }
 
 /**
