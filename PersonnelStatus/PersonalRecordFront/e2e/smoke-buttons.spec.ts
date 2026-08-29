@@ -208,6 +208,16 @@ const ROUTES: readonly RouteSpec[] = [
   { template: '/security-ops/audit' },
   { template: '/security-ops/dictionaries' },
   { template: '/security-ops/dictionaries/{dictionaryCode}', needs: ['dictionaryCode'] },
+  // Справочники ШТАТА (должности и звания) — свой раздел со своим макетом, а
+  // не вид `dictionaries/{code}` выше. Добавлены по Plane №319: проба «карта
+  // маршрутов покрыта обходом» их не находила, но сама в блоки `-g "persona"`
+  // не входит, поэтому за весь прогон её никто не запускал и молчание читалось
+  // как покрытие.
+  {
+    template: '/security-ops/dictionaries/personnel/{staffDictionaryKind}',
+    needs: ['staffDictionaryKind'],
+  },
+  { template: '/security-ops/vehicles' },
   { template: '/security-ops/settings' },
   { template: '/security-ops/changelog' },
   { template: '/security-ops/feedback' },
@@ -817,6 +827,11 @@ async function resolveIds(token: string): Promise<Record<string, string>> {
   put('ratingEmployeeId', (await get('/api/ops/evaluation-registry/'))?.results?.[0]?.employeeId)
   put('reportJobId', (await get('/api/ops/service-report-jobs/'))?.results?.[0]?.reportJobId)
   put('dictionaryCode', (await get('/api/ops/dictionaries/'))?.results?.[0]?.code)
+  // КОНСТАНТА, а не выборка из API, и это не срез угла: набор видов справочника
+  // штата закрыт и живёт в КОДЕ (`STAFF_DICTIONARIES` — positions и ranks), а
+  // не в базе. Спрашивать его у сервера значило бы делать вид, что он может
+  // прийти оттуда, и молча потерять маршрут в день, когда ручка ответит пусто.
+  put('staffDictionaryKind', 'positions')
   put('feedbackId', (await get('/api/ops/feedback-requests/'))?.results?.[0]?.feedbackId)
   return ids
 }
