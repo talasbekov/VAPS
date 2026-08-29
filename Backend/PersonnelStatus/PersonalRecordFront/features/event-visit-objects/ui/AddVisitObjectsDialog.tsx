@@ -132,7 +132,7 @@ export function AddVisitObjectsDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Добавить объекты посещения</DialogTitle>
           <DialogDescription>

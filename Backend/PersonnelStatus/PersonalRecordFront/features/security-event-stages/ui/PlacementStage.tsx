@@ -1221,7 +1221,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             if (!open) setPostToRemove(null);
           }}
         >
-          <DialogContent className="max-w-md">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Снять пост «{postToRemove?.post}»?</DialogTitle>
               <DialogDescription>

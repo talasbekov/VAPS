@@ -92,7 +92,7 @@ export function AllocateVehicleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Выделить машину на мероприятие</DialogTitle>
           <DialogDescription>

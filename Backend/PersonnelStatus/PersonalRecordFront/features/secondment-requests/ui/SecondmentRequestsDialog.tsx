@@ -59,7 +59,7 @@ export function SecondmentRequestsDialog() {
           <Users className="h-4 w-4 mr-2" /> Прикомандировать
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Запросы на прикомандирование</DialogTitle>
         </DialogHeader>
