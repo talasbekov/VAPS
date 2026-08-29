@@ -57,15 +57,15 @@ async function hydrated(page: Page): Promise<void> {
 }
 
 interface Fixture {
+  /** Заведённый пробой статус: снимается в `afterEach`. */
+  statusId: number | null
   eventId: number
   eventCode: string
   employeeId: number
   employeeName: string
-  /** Только фамилия: серверный поиск таблицы ищет ПО ОДНОМУ полю и на
-   *  «Фамилия Имя» не находит ничего (проверено вручную: `?search=Абаев` — 1
-   *  строка, `?search=Абаев Абай` — 0). Это отдельный дефект экрана, заведён
-   *  карточкой; проба не вправе на нём падать, поэтому ищет фамилией. */
-  employeeLastName: string
+  /** Табельный номер: он уникален, и отбор по нему даёт РОВНО ОДНУ строку.
+   *  Поиск фамилией зависел бы от числа тёзок и от размера страницы. */
+  employeePersonnelNumber: string
 }
 
 async function seed(token: string): Promise<Fixture> {
@@ -99,52 +99,89 @@ async function seed(token: string): Promise<Fixture> {
   })
   expect(created.status, JSON.stringify(created.payload)).toBe(201)
 
-  // Сотрудник берётся СВОБОДНЫЙ: на занятом сервер отобьёт пересечение
-  // интервалов, и фикстура молча не завелась бы.
-  const busyRows = await call(
-    'GET',
-    `/api/operations/statuses/?business_date=${businessDate}&page_size=500`,
-  )
-  const busy = new Set(
-    (busyRows.payload.results ?? []).map((row: { employee_id: number }) => row.employee_id),
-  )
+  // СОТРУДНИК ПОДБИРАЕТСЯ ПЕРЕБОРОМ, а не вычисляется списком занятых.
+  // Список статусов на день отвечает про раздел ОМ, но пересечение сервер
+  // считает шире (сюда попадают и «мягкие» конфликты, и соседние интервалы),
+  // и «свободный по списку» получал 409 STATUS_OVERLAP_WARNING. Спрашиваем у
+  // сервера, а не гадаем: первый, кого он принял, и есть свободный.
   const people = await call('GET', '/api/core/employees/?page_size=200')
-  const free = (people.payload.results ?? [])
-    .map(
-      (person: {
-        id: string | number
-        first_name?: string
-        last_name?: string
-      }) => ({
-        id: Number(person.id),
-        // ИМЕННО «Фамилия Имя», а не `full_name`: в справочнике полное имя
-        // идёт с отчеством («Абенов Канат Ерланович»), а таблица печатает две
-        // части — проба по `full_name` не находила строку, которая на экране
-        // есть.
-        name: `${person.last_name ?? ''} ${person.first_name ?? ''}`.trim(),
-        lastName: person.last_name ?? '',
-      }),
-    )
-    .find((person: { id: number }) => !busy.has(person.id))
-  expect(free, 'на стенде нет сотрудника без статуса на день — привлекать некого').toBeDefined()
+  const candidates = (people.payload.results ?? []).map(
+    (person: {
+      id: string | number
+      first_name?: string
+      last_name?: string
+      personnel_number?: string
+    }) => ({
+      id: Number(person.id),
+      // ИМЕННО «Фамилия Имя», а не `full_name`: в справочнике полное имя идёт
+      // с отчеством («Абенов Канат Ерланович»), а таблица печатает две части.
+      name: `${person.last_name ?? ''} ${person.first_name ?? ''}`.trim(),
+      // Поиск идёт по ТАБЕЛЬНОМУ НОМЕРУ, а не по фамилии: фамилия на стенде
+      // не уникальна (полных тёзок по четверо), и отбор по ней даёт больше
+      // строк, чем помещается на страницу — нужный человек оказывался на
+      // второй, и проба падала «через раз».
+      personnelNumber: person.personnel_number ?? '',
+    }),
+  )
+  expect(candidates.length, 'справочник сотрудников пуст').toBeGreaterThan(0)
 
-  const status = await call('POST', '/api/operations/statuses/', {
-    employee_id: free.id,
-    status_type_code: EVENT_ASSIGNMENT,
-    date_start: businessDate,
-    date_end: nextDay.toISOString().slice(0, 10),
-    participations: [{ event_id: created.payload.id, kind_code: 'PHYSICAL_SQUAD' }],
-  })
-  expect(status.status, JSON.stringify(status.payload)).toBe(201)
+  let free: { id: number; name: string; personnelNumber: string } | undefined
+  let statusId: number | null = null
+  for (const candidate of candidates) {
+    const status = await call('POST', '/api/operations/statuses/', {
+      employee_id: candidate.id,
+      status_type_code: EVENT_ASSIGNMENT,
+      date_start: businessDate,
+      date_end: nextDay.toISOString().slice(0, 10),
+      participations: [
+        { event_id: created.payload.id, kind_code: 'PHYSICAL_SQUAD' },
+      ],
+    })
+    if (status.status === 201) {
+      free = candidate
+      statusId = Number(status.payload.id)
+      break
+    }
+  }
+  expect(
+    free,
+    'ни один сотрудник страницы не свободен на этот день — привлекать некого',
+  ).toBeDefined()
 
   return {
+    statusId,
     eventId: Number(created.payload.id),
     eventCode: String(created.payload.code),
-    employeeId: free.id,
-    employeeName: free.name,
-    employeeLastName: free.lastName,
+    employeeId: free!.id,
+    employeeName: free!.name,
+    employeePersonnelNumber: free!.personnelNumber,
   }
 }
+
+/** Ссылки, подписанные «ОМ снят» — их не должно существовать вовсе. */
+function section_removed_links(page: Page) {
+  return page.getByRole('link', { name: /ОМ снят/ })
+}
+
+/** 🔴 ПРОБА УБИРАЕТ ЗА СОБОЙ. Заведённый статус участия живёт на стенде и
+ *  после прогона: уборка `purge_probe_events` сносит пробные МЕРОПРИЯТИЯ, а
+ *  статусы — нет. За полдня таких строк накопилось 42, и соседняя проба
+ *  (`forces-gathering`, «Участие в ОМ») покраснела на расхождении счёта — не
+ *  на дефекте кода, а на мусоре, оставленном пробами. Отмена, а не удаление:
+ *  в разделе строки не удаляются, а отменяются, и отменённая для читателя —
+ *  «записи нет». */
+let seededStatusId: number | null = null
+
+test.afterEach(async () => {
+  if (seededStatusId === null) return
+  const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+  await fetch(`${API}/api/operations/statuses/${seededStatusId}/cancel/`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: 'Уборка пробы №281' }),
+  })
+  seededStatusId = null
+})
 
 test.use({ serviceWorkers: 'block' })
 
@@ -154,16 +191,17 @@ test.describe(LIVE ? 'статусы: адрес мероприятия' : 'ст
   test('строка и карточка ведут на КОНКРЕТНОЕ мероприятие', async ({ page }) => {
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const fixture = await seed(token)
+    seededStatusId = fixture.statusId
 
     await signIn(page)
     await page.goto('/statuses')
     await hydrated(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
 
-    // Строка ищется поиском по фамилии, а адресуется ПО ID: на стенде по
-    // несколько полных тёзок («Абенов Канат» — четверо), и локатор по тексту
-    // брал бы первого попавшегося, у которого статуса вовсе нет.
-    await page.getByPlaceholder(/Поиск по ФИО/).fill(fixture.employeeLastName)
+    // Строка ищется по ТАБЕЛЬНОМУ НОМЕРУ (он уникален), а адресуется по id:
+    // на стенде по несколько полных тёзок, и локатор по тексту брал бы
+    // первого попавшегося, у которого статуса вовсе нет.
+    await page.getByPlaceholder(/Поиск по ФИО/).fill(fixture.employeePersonnelNumber)
     const row = page.locator(`table tbody tr[data-employee-id="${fixture.employeeId}"]`)
     await expect(row).toBeVisible({ timeout: 20_000 })
 
@@ -177,6 +215,16 @@ test.describe(LIVE ? 'статусы: адрес мероприятия' : 'ст
       'href',
       new RegExp(`^/security-ops/events/${fixture.eventId}/?$`),
     )
+
+    // (1б) У СНЯТОГО ОМ ССЫЛКИ НЕТ. Участие переживает удаление мероприятия
+    // (ссылка в модели плоская), и переход на его карточку вёл бы в 404 —
+    // интерфейс обещал бы то, чего нет. Проверяется по всей таблице: такие
+    // строки на стенде есть всегда (уборка проб сносит ОМ, оставляя участия).
+    const removed = section_removed_links(page)
+    await expect(
+      removed,
+      'у снятого мероприятия строка сделана ссылкой — она ведёт в 404',
+    ).toHaveCount(0)
 
     // (2) КАРТОЧКА СОТРУДНИКА называет то же мероприятие.
     await row.getByRole('button', { name: /^Действия:/ }).click()
