@@ -14,7 +14,7 @@ import { DUTY_STATE_LABEL } from "@/entities/duty-shift";
 import type { DutyShift } from "@/entities/duty-shift";
 import { STAGE_LABEL } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
-import "@/widgets/status-calendar/ui/calendar.css";
+import "./calendar.css";
 
 const DUTY_COLOR: Record<DutyShift["stateCode"], { bg: string; text: string }> = {
   PLANNED: { bg: "#dbeafe", text: "#1e40af" },
