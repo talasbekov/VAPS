@@ -57,7 +57,12 @@ import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useForcesGathering } from "@/hooks/use-forces-gathering";
 import { ForcesSplitPanel } from "@/features/forces-split/ui/ForcesSplitPanel";
 import { DepartmentRequestsTable } from "@/features/department-requests";
-import { FORCES_ALLOCATE, useChainAccess } from "@/features/forces-split/ui/chain-access";
+import { ForceCollectionsTable } from "@/features/force-collections";
+import {
+  FORCES_ALLOCATE,
+  FORCES_COMMAND,
+  useChainAccess,
+} from "@/features/forces-split/ui/chain-access";
 import { objectLabel } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { personnelFields } from "@/entities/employee/model/from-api";
@@ -892,6 +897,15 @@ function EmployeesScreen() {
                   бы на чужих заголовках. Полный смоук это и поймал.
                   Вкладка первая: ответственный за расход департамента
                   приходит сюда за заявками, а не за реестром. */}
+              {/* ДВА РАЗРЕЗА ОДНОЙ ЦЕПОЧКИ, и оба могут быть у одного
+                  человека. «Сборы» — вид ШТАБА («сколько я раздал и сколько
+                  мне вернули», Plane №271), «Заявки» — вид ДЕПАРТАМЕНТА («что
+                  просят у меня», Plane №272). Показывать взаимоисключающе
+                  нельзя: у администратора есть оба права, и выбор за него
+                  сделал бы экран. */}
+              {chainAccess.can(FORCES_COMMAND) && (
+                <TabsTrigger value="collections">Сборы</TabsTrigger>
+              )}
               {chainAccess.can(FORCES_ALLOCATE) && (
                 <TabsTrigger value="requests">Заявки</TabsTrigger>
               )}
@@ -924,7 +938,7 @@ function EmployeesScreen() {
               {/* Выгрузка — ТОГО ОТБОРА, что показан в реестре. На вкладке
                   «Заявки» она выгрузила бы список людей, которого человек в
                   этот момент не видит. */}
-              {activeTab !== "requests" && (
+              {activeTab !== "requests" && activeTab !== "collections" && (
                 <PermissionGate resource="employees" action="read">
                   <Button
                     variant="outline"
@@ -945,7 +959,7 @@ function EmployeesScreen() {
               оговорка отвечает на вопрос, которого не задавали. Пустой
               элемент управления, который ничего не делает, — не нейтральная
               деталь: человек пробует им пользоваться. */}
-          {activeTab !== "requests" && (
+          {activeTab !== "requests" && activeTab !== "collections" && (
           <>
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
@@ -999,6 +1013,10 @@ function EmployeesScreen() {
           </p>
           </>
           )}
+
+          <TabsContent value="collections" className="space-y-6">
+            <ForceCollectionsTable enabled={chainAccess.can(FORCES_COMMAND)} />
+          </TabsContent>
 
           <TabsContent value="requests" className="space-y-6">
             <DepartmentRequestsTable enabled={chainAccess.can(FORCES_ALLOCATE)} />

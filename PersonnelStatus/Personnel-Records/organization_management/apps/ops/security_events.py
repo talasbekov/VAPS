@@ -2522,6 +2522,80 @@ def department_request_detail(allocation_id, allowed_division_ids):
     raise _not_found("Заявка департаменту не найдена.", allocation_id)
 
 
+def force_collections_view():
+    """Сборы глазами ШТАБА: сводка по МЕРОПРИЯТИЮ (Plane №271, Ш-1).
+
+    Зеркало департаментского разреза (№272): тот отвечает на вопрос «что
+    просят у меня», этот — «сколько я раздал и сколько мне вернули». Вопросы
+    разные, поэтому и строка своя: у департамента она про ОДНУ заявку, здесь —
+    про мероприятие целиком, со всеми департаментами сразу.
+
+    ВСЁ СЧИТАЕТСЯ НА ЧТЕНИИ. «Собрано» — это люди, а люди приходят статусами
+    (№274 Ш-5) и уходят переводами; записанное число соврало бы к утру тем же
+    способом, что и «выделено» по управлению (№272 Ш-2).
+
+    Сборы — это мероприятия, которым УЖЕ посчитали потребность: пока числа с
+    рекогносцировки нет, раздавать нечего, и строка в списке штаба означала бы
+    работу, которой ещё не существует.
+    """
+    events = OpsSecurityEvent.objects.exclude(stage=OpsSecurityEvent.Stage.CLOSED).order_by(
+        "business_date", "code"
+    )
+    rows = []
+    for event in events:
+        need = force_demand_total(event)
+        if need <= 0:
+            continue
+        allocations = allocation_members_view(event)
+        gathered = sum(len(row.get("members") or []) for row in allocations)
+        rows.append(
+            {
+                "eventId": str(event.pk),
+                "code": event.code,
+                "title": event.title,
+                "businessDate": event.business_date.isoformat(),
+                # Времени «срока сбора» у мероприятия нет ВООБЩЕ (Plane №287) —
+                # отдаём время самого ОМ, а называет его экран своими словами.
+                "eventTime": (
+                    event.event_time.strftime("%H:%M")
+                    if event.event_time is not None
+                    else None
+                ),
+                "location": event.location or event.object_name,
+                "stage": event.stage,
+                "need": need,
+                "allocated": sum(int(row.get("need") or 0) for row in allocations),
+                "gathered": gathered,
+                "departments": len(allocations),
+                "collectionStatus": _collection_status(allocations, gathered),
+            }
+        )
+    return rows
+
+
+def _collection_status(allocations, gathered):
+    """Состояние сбора по МЕРОПРИЯТИЮ — выводится, а не хранится (Ш-3).
+
+    Три состояния эталона заказчика:
+
+    - `NEW` — раскладки нет вовсе: штаб ещё не решил, кому сколько;
+    - `NOTIFIED` — разнарядка разослана ВСЕМ строкам раскладки. Именно всем, а
+      не «хотя бы одной»: пока одному департаменту не сказали, разнарядка не
+      разослана, и обратное читалось бы как «все предупреждены»;
+    - `IN_PROGRESS` — люди пошли: есть хотя бы один выделенный.
+
+    Порядок проверок обратный порядку жизни: «люди пошли» перекрывает
+    «разослана», потому что описывает более позднее состояние.
+    """
+    if not allocations:
+        return "NEW"
+    if gathered > 0:
+        return "IN_PROGRESS"
+    if all(row.get("status") != _ALLOCATION_DRAFT for row in allocations):
+        return "NOTIFIED"
+    return "NEW"
+
+
 def force_roster_view(event):
     """Состав мероприятия со статусом дня (Plane №65, шаг «Р-2»).
 

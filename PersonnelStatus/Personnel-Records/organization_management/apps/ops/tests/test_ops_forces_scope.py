@@ -601,3 +601,119 @@ def test_splitting_my_own_department_quota_is_allowed(manager):  # noqa: F811
     )
 
     assert response.status_code == 200, response.data
+
+
+# ── №271 Ш-1: сборы глазами ШТАБА ──────────────────────────────────────────
+
+COLLECTIONS_URL = f"{URL}forces/collections/"
+
+
+def test_the_collections_list_sums_every_department(manager):  # noqa: F811
+    """«Собрано» по мероприятию — сумма ПО ВСЕМ департаментам.
+
+    Без второго департамента проба не отличила бы «сложили всех» от «взяли
+    первую строку раскладки».
+    """
+    make_assignment_status_type()
+    first = make_department("Департамент А")
+    second = make_department("Департамент Б")
+    mine = employee_of(make_directorate(first, "Управление А-1"), "Первый")
+    theirs = employee_of(make_directorate(second, "Управление Б-1"), "Второй")
+    base, _ = allocated_event(manager, first)
+    rows = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(second.pk), "need": 1},
+            ]
+        },
+        format="json",
+    ).json()["forceAllocation"]
+    for row, employee in zip(rows, (mine, theirs)):
+        manager.post(
+            f"{base}forces/allocation/{row['id']}/members/",
+            {"employeeId": str(employee.pk)},
+            format="json",
+        )
+
+    code = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1]).code
+    row = next(
+        item
+        for item in manager.get(COLLECTIONS_URL).data["results"]
+        if item["code"] == code
+    )
+
+    assert row["gathered"] == 2
+    assert row["departments"] == 2
+    assert row["need"] >= 1
+
+
+def test_the_collections_list_is_closed_without_the_staff_permission():
+    """Список закрыт правом ШТАБА, а не «видно всем читающим»."""
+    api, _user = client_for("collections-noperm", "COLL_VIEWER", perms=("event.view",))
+
+    assert api.get(COLLECTIONS_URL).status_code == 403
+
+
+def test_an_event_without_demand_is_not_a_collection(manager):  # noqa: F811
+    """Мероприятие БЕЗ посчитанной потребности в список не попадает.
+
+    Пока числа с рекогносцировки нет, раздавать нечего, и строка означала бы
+    работу, которой ещё не существует.
+
+    Стережёт мутацию: убрать `if need <= 0: continue`.
+    """
+    fresh = manager.post(
+        URL,
+        {
+            "title": "Проба без потребности",
+            "businessDate": "2026-08-30",
+            "kind": "INTERNAL",
+            "location": "Проба",
+        },
+        format="json",
+    ).json()
+
+    codes = {row["code"] for row in manager.get(COLLECTIONS_URL).data["results"]}
+
+    assert fresh["code"] not in codes
+
+
+def test_the_collection_status_follows_the_whole_split(manager):  # noqa: F811
+    """Разнарядка «разослана», только когда сказали ВСЕМ.
+
+    Пока одному департаменту не сказали, разнарядка не разослана: обратное
+    читалось бы как «все предупреждены».
+
+    Стережёт мутацию: считать статус по первой строке раскладки.
+    """
+    first = make_department("Департамент А")
+    make_directorate(first, "Управление А-1")
+    second = make_department("Департамент Б")
+    make_directorate(second, "Управление Б-1")
+    base, _ = allocated_event(manager, first)
+    rows = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(second.pk), "need": 1},
+            ]
+        },
+        format="json",
+    ).json()["forceAllocation"]
+    code = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1]).code
+
+    def status_now():
+        return next(
+            item
+            for item in manager.get(COLLECTIONS_URL).data["results"]
+            if item["code"] == code
+        )["collectionStatus"]
+
+    assert status_now() == "NEW"
+    manager.post(f"{base}forces/allocation/{rows[0]['id']}/notify/", {}, format="json")
+    assert status_now() == "NEW", "разнарядка одному департаменту — ещё не «разослана»"
+    manager.post(f"{base}forces/allocation/{rows[1]['id']}/notify/", {}, format="json")
+    assert status_now() == "NOTIFIED"
