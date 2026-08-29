@@ -169,6 +169,51 @@ def test_divisions_carry_the_moment_of_the_last_submission(
         assert moment_of(division.name) == submitted.json()["submitted_at"]
 
 
+def test_divisions_come_in_tree_order_not_alphabetically(operator, division):
+    """Строки идут ОБХОДОМ ДЕРЕВА, а не по алфавиту имён (Plane №296).
+
+    Заказчик просит «поочерёдно управления со списками». Алфавит рвёт эту
+    очередь дважды: «Второе управление» встаёт впереди «Первого», а
+    управления разных департаментов перемешиваются между собой.
+
+    Фикстура нарочно сделана так, что алфавит и дерево дают РАЗНЫЙ ответ:
+    в первом департаменте заведены «Первое» и «Второе», во втором — тоже.
+    По алфавиту вышло бы «Второе (Д1), Второе (Д2), Первое (Д1), Первое
+    (Д2)»; по дереву — «Первое (Д1), Второе (Д1), Первое (Д2), Второе (Д2)».
+
+    Красная на мутации: вернуть `sorted(names.items(), key=lambda kv: kv[1])`.
+    """
+    first_dep = Division.objects.create(
+        name="Первый департамент", code="to-dep-1",
+        division_type=Division.DivisionType.DEPARTMENT, parent=division, order=1,
+    )
+    second_dep = Division.objects.create(
+        name="Второй департамент", code="to-dep-2",
+        division_type=Division.DivisionType.DEPARTMENT, parent=division, order=2,
+    )
+    for index, parent in enumerate((first_dep, second_dep), start=1):
+        for order, name in ((1, "Первое управление"), (2, "Второе управление")):
+            Division.objects.create(
+                name=name, code=f"to-dir-{index}-{order}",
+                division_type=Division.DivisionType.DIRECTORATE,
+                parent=parent, order=order,
+            )
+
+    rows = operator.get(DIVISIONS).json()["results"]
+    directorates = [
+        (row["name"], tuple(row["ancestors"]))
+        for row in rows
+        if row["name"].endswith("управление")
+    ]
+
+    assert directorates == [
+        ("Первое управление", ("Первый департамент",)),
+        ("Второе управление", ("Первый департамент",)),
+        ("Первое управление", ("Второй департамент",)),
+        ("Второе управление", ("Второй департамент",)),
+    ]
+
+
 def test_employees_of_division_contract_shape(operator, division):
     employee = make_employee(division)
     payload = operator.get(f"{EMPLOYEES}?division_id={division.pk}").json()
