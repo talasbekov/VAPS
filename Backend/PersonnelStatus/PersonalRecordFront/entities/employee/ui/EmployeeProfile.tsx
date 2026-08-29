@@ -13,22 +13,34 @@ import {
   Edit,
   X,
   Clock,
+  Shield,
 } from "lucide-react";
+import Link from "next/link";
 import { PermissionGate } from "@/lib/auth";
 import { formatIsoDateLong } from "@/shared/lib/date";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   getEmployeeStatusColor,
 } from "@/lib/status";
+import type { OpsStatusParticipation } from "@/lib/api";
 import type { Employee } from "../model/types";
 import { EmployeeAvatar } from "./EmployeeAvatar";
 
 interface EmployeeProfileProps {
   employee: Employee;
   onClose: () => void;
+  /** Мероприятия, на которые сотрудник привлечён СЕГОДНЯ (Plane №281).
+   *  Приходит от вызывающего, а не запрашивается здесь: таблица статусов уже
+   *  держит эти данные одним запросом на весь экран, и карточка, спрашивающая
+   *  их заново на каждое открытие, платила бы за то же самое дважды. */
+  events?: OpsStatusParticipation[];
 }
 
-export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
+export function EmployeeProfile({
+  employee,
+  onClose,
+  events = [],
+}: EmployeeProfileProps) {
   const getStatusBadge = (status: string) => {
     if (status === "Не обновлено") {
       return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
@@ -187,6 +199,39 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                     </p>
                   </div>
                 </div>
+                {/* НА КАКОЕ ОМ ПРИВЛЕЧЁН (Plane №281). Блока не было вовсе:
+                    карточка говорила «Участие в ОМ» статусом и молчала о том,
+                    в каком именно мероприятии человек занят. Строка появляется
+                    ТОЛЬКО когда мероприятия есть — пустой блок «Мероприятия: —»
+                    занимал бы место у всех, а отвечал бы никому. */}
+                {events.length > 0 && (
+                  <div className="flex items-start">
+                    <Shield
+                      className="h-4 w-4 mr-3 mt-0.5 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <p className="text-sm font-medium">Привлечён на ОМ</p>
+                      <ul className="mt-0.5 space-y-0.5">
+                        {events.map((participation) => (
+                          <li key={participation.event_id}>
+                            <Link
+                              href={`/security-ops/events/${participation.event_id}`}
+                              onClick={onClose}
+                              className="text-primary-ink text-sm hover:underline"
+                            >
+                              {participation.event_code ||
+                                `ОМ #${participation.event_id}`}
+                              {participation.event_title
+                                ? ` — ${participation.event_title}`
+                                : ""}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
         </div>

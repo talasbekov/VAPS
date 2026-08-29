@@ -1151,7 +1151,10 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         include_cancelled = _parse_bool_param(request, "include_cancelled") is True
         status_type_code = request.query_params.get("status_type_code")
 
-        queryset = OpsEmployeeStatus.objects.all()
+        # `participations` префетчатся здесь, а не «когда-нибудь»: сериализатор
+        # печатает у каждого участия код и название ОМ (Plane №281), и без
+        # префетча страница в 500 строк спросила бы участия по строке за раз.
+        queryset = OpsEmployeeStatus.objects.prefetch_related("participations")
         if not include_cancelled:
             # Отменённая строка для читателя — «записи нет»: тот же предикат,
             # которым её не видит расход.
