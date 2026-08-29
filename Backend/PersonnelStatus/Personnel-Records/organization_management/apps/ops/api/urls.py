@@ -1,6 +1,9 @@
 """Маршруты раздела ОМ. Имена ресурсов — те, под которые написана SPA."""
 from rest_framework.routers import DefaultRouter
 
+from organization_management.apps.ops.api.views_status_calendar import (
+    OpsStatusCalendarViewSet,
+)
 from organization_management.apps.ops.api.views import (
     AccessCatalogViewSet,
     OpsGvoSummariesViewSet,
@@ -224,6 +227,13 @@ router.register(
 router.register(
     "vehicles", OpsVehiclesViewSet,
     basename="ops-vehicles",
+)
+
+# Календарь статусов (Plane №270): месяц по дням. Вид живёт отдельным
+# модулем — views.py уже 3475 строк.
+router.register(
+    "status-calendar", OpsStatusCalendarViewSet,
+    basename="ops-status-calendar",
 )
 
 # Каталог функций права (Plane №36, «П-1»): read-only карта гейтов.
