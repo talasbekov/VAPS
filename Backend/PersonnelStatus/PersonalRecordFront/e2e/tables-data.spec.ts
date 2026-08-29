@@ -18,6 +18,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { probeComment } from './probe-statuses'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -119,7 +120,7 @@ async function seedTimedStatus(token: string): Promise<string> {
         status_type: 'business_trip',
         start_date: iso(new Date()),
         end_date: endDate,
-        comment: 'Фикстура пробы «период статуса»',
+        comment: probeComment('Фикстура пробы «период статуса»'),
       }),
     })
     if (res.status === 201) return endDate
