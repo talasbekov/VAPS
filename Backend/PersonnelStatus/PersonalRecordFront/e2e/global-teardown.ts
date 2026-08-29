@@ -30,7 +30,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { dropProbeEvents, probeToken } from './probe-events'
-import { dropProbeStatuses } from './probe-statuses'
+import { dropOpsProbeStatuses, dropProbeStatuses } from './probe-statuses'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const execFileAsync = promisify(execFile)
@@ -86,6 +86,31 @@ export default async function globalTeardown(): Promise<void> {
       console.log(`уборка пробных статусов: НЕ ВЫПОЛНЕНА —${tail}`)
     } else {
       console.log('уборка пробных статусов: пробных строк не найдено')
+    }
+
+    // Каталог РАЗДЕЛА — отдельным вызовом (Plane №321): статусы раздела живут
+    // в своей таблице и своей ручке, и уборка кадрового каталога их не видит.
+    const ops = await dropOpsProbeStatuses(token)
+    const opsTail =
+      ops.broke === null
+        ? ''
+        : ` ⚠️ список оборвался (${ops.broke}) — часть мусора могла остаться`
+    const sameDay =
+      ops.sameDay > 0
+        ? `, отложено ${ops.sameDay} (заведены сегодня — раздел не даёт закрыть ` +
+          'их в тот же день, Plane №322)'
+        : ''
+    if (ops.closed > 0 || ops.refused > 0 || ops.sameDay > 0) {
+      console.log(
+        `уборка пробных статусов раздела: снято ${ops.closed}` +
+          (ops.refused > 0 ? `, отказано ${ops.refused}` : '') +
+          sameDay +
+          opsTail,
+      )
+    } else if (ops.broke !== null) {
+      console.log(`уборка пробных статусов раздела: НЕ ВЫПОЛНЕНА —${opsTail}`)
+    } else {
+      console.log('уборка пробных статусов раздела: пробных строк не найдено')
     }
   } catch (error) {
     // Тот же довод, что и ниже у мероприятий: уборка не предмет проверки, и
