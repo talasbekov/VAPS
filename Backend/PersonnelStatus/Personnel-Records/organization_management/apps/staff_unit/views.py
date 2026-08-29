@@ -478,17 +478,15 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         Возвращает ПЛОСКИЙ список (БЕЗ вложенного children), связи через parent_id.
         """
-        # Определяем СОБСТВЕННОЕ подразделение пользователя (НЕ область видимости)
-        division = self._get_user_own_division(user)
+        # Подразделения, за которые отвечает пользователь: своё и дочерние, а у
+        # суперпользователя — ВСЁ дерево, все корни (Plane №304).
+        all_divisions = self._own_scope_divisions(user)
 
-        if not division:
+        if all_divisions is None:
             return Response(
                 {'error': 'Не удалось определить подразделение пользователя'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        # Получаем все подразделения: само + все дочерние
-        all_divisions = division.get_descendants(include_self=True)
 
         # Получаем штатные единицы из этих подразделений
         staff_units = StaffUnit.objects.filter(
@@ -626,12 +624,23 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
             result.append(unit_data)
 
+        # `division` — подразделение, КОТОРЫМ описывается ответ. Пока область
+        # это одно поддерево, оно и есть его корень; у суперпользователя,
+        # видящего ВСЕ деревья, такого подразделения не существует, и раньше
+        # сюда попадал первый корень из двух — ответ утверждал, что весь состав
+        # службы лежит в «Службе», хотя четверо живут во втором корне (Plane
+        # №304). Честный ответ на «каким одним подразделением это описать» в
+        # таком случае — никаким: `null`. Читатель у поля один — диалог
+        # заведения статуса, и у него есть запасной путь: подразделение
+        # ШТАТНОЙ ЕДИНИЦЫ сотрудника, которое и без того точнее корня.
+        scope_root = self._scope_single_root(user, all_divisions)
+
         return Response({
             'division': {
-                'id': division.id,
-                'name': division.name,
-                'code': division.code if hasattr(division, 'code') else None,
-            },
+                'id': scope_root.id,
+                'name': scope_root.name,
+                'code': scope_root.code if hasattr(scope_root, 'code') else None,
+            } if scope_root else None,
             'staff_units': result,
             # `total_count` — сколько строк В ОТВЕТЕ. Значение не менялось с
             # самого начала, и менять его нельзя: экран статусов печатает по
@@ -839,16 +848,16 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         from django.core.exceptions import ValidationError
 
         # Определяем СОБСТВЕННОЕ подразделение пользователя
-        division = self._get_user_own_division(user)
+        all_divisions = self._own_scope_divisions(user)
 
-        if not division:
+        if all_divisions is None:
             return Response(
                 {'error': 'Не удалось определить подразделение пользователя'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Работа с управлением пользователя И всеми дочерними подразделениями
-        all_divisions = division.get_descendants(include_self=True)
+        # Работа с управлением пользователя И всеми дочерними подразделениями;
+        # у суперпользователя — со всем деревом (Plane №304).
         division_ids = list(all_divisions.values_list('id', flat=True))
 
         data = request.data
@@ -1132,16 +1141,16 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         from organization_management.apps.statuses.api.serializers import EmployeeStatusSerializer
 
         # Определяем СОБСТВЕННОЕ подразделение пользователя (НЕ область видимости)
-        division = self._get_user_own_division(user)
+        all_divisions = self._own_scope_divisions(user)
 
-        if not division:
+        if all_divisions is None:
             return Response(
                 {'error': 'Не удалось определить подразделение пользователя'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Работа с управлением пользователя И всеми дочерними подразделениями
-        all_divisions = division.get_descendants(include_self=True)
+        # Работа с управлением пользователя И всеми дочерними подразделениями;
+        # у суперпользователя — со всем деревом (Plane №304).
         division_ids = list(all_divisions.values_list('id', flat=True))
 
         data = request.data
@@ -1304,13 +1313,19 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     errors.append({'status': f'Employee {employee_id}: {str(e)}'})
 
         # Формируем ответ
+        #
+        # `division` — то же поле и то же правило, что у GET (Plane №304): у
+        # суперпользователя, распоряжающегося всеми деревьями, одного
+        # описывающего подразделения нет, и вместо первого корня из двух здесь
+        # честный `null`.
+        scope_root = self._scope_single_root(user, all_divisions)
         response_data = {
             'success': True,
             'updated': updated_items,
             'division': {
-                'id': division.id,
-                'name': division.name,
-            }
+                'id': scope_root.id,
+                'name': scope_root.name,
+            } if scope_root else None,
         }
 
         if errors:
@@ -1337,6 +1352,44 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         except Exception:
             return None
+
+    def _scope_single_root(self, user, all_divisions):
+        """Одно подразделение, описывающее область, либо `None`.
+
+        Для обычного пользователя это его собственное подразделение. Для
+        суперпользователя — единственный корень, если он один; при нескольких
+        корнях одного такого подразделения НЕТ (Plane №304).
+        """
+        if not user.is_superuser:
+            return self._get_user_own_division(user)
+
+        roots = list(Division.objects.filter(level=0)[:2])
+        return roots[0] if len(roots) == 1 else None
+
+    def _own_scope_divisions(self, user):
+        """Подразделения, которыми ручка `directorate` распоряжается за этого
+        пользователя. `None` — подразделение не определено (ответ 400).
+
+        🔴 У СУПЕРПОЛЬЗОВАТЕЛЯ ЭТО ВСЁ ДЕРЕВО, А НЕ ПЕРВЫЙ КОРЕНЬ (Plane №304).
+        Раньше `_get_user_own_division` отдавала ему
+        `Division.objects.filter(level=0).first()`, и слово «first» решало
+        судьбу целой ветки: корней в базе бывает НЕСКОЛЬКО (на стенде их два —
+        «Служба» и «Управление (стенд)»), а видел он один. Отсюда и брались два
+        разных «состава» на экране статусов: шапка считала 436 занятых штатных
+        единиц ПЕРВОГО корня, календарь — 440 активных сотрудников без деления
+        на деревья. Четверо из второго корня не показывались в таблице вовсе,
+        и никакая подпись этого не объясняла.
+
+        У обычного пользователя область прежняя: своё подразделение и его
+        потомки.
+        """
+        if user.is_superuser:
+            return Division.objects.all()
+
+        division = self._get_user_own_division(user)
+        if not division:
+            return None
+        return division.get_descendants(include_self=True)
 
     def _get_user_own_division(self, user):
         """

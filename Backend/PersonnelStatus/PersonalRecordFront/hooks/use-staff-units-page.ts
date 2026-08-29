@@ -26,7 +26,9 @@ function retryUnlessClientError(failureCount: number, error: unknown): boolean {
 }
 
 export interface StaffUnitsPage {
-  division: { id: number; name: string; code: string };
+  /** Подразделение, ОДНИМ КОТОРЫМ описывается ответ, либо `null` — см.
+   *  `getStaffUnitsByDirectorate` в lib/api.ts (Plane №304). */
+  division: { id: number; name: string; code: string } | null;
   staff_units: StaffUnit[];
   total_count: number;
   matched_count?: number;
