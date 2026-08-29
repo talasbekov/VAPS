@@ -59,26 +59,35 @@ function isProbeRow(row: StatusRow): boolean {
   return LEGACY_MARKS.some((mark) => comment.includes(mark))
 }
 
-/** Пробные статусы в одном состоянии. Страницами: на стенде их тысячи. */
+/**
+ * Пробные статусы в одном состоянии. Страницами: на стенде их тысячи.
+ *
+ * Обрыв списка ВОЗВРАЩАЕТСЯ НАРУЖУ, а не глотается. Прежняя редакция на любом
+ * отказе (401 после протухшего токена, 500, оборванное соединение) выходила из
+ * цикла и отдавала пустой список — уборка печатала «пробных строк не найдено»
+ * и выглядела сделанной, пока мусор копился. Это ровно та тихая зелень, против
+ * которой написан весь этот модуль (Plane №316, находка ревью).
+ */
 async function listProbeStatuses(
   token: string,
   state: 'active' | 'planned',
-): Promise<StatusRow[]> {
+): Promise<{ rows: StatusRow[]; broke: string | null }> {
   const rows: StatusRow[] = []
   for (let page = 1; page <= 20; page += 1) {
     const res = await fetch(
       `${API}/api/statuses/statuses/?state=${state}&page=${page}&page_size=200`,
       { headers: { Authorization: `Bearer ${token}` } },
     ).catch(() => null)
-    if (res === null || !res.ok) break
+    if (res === null) return { rows, broke: `${state}: список не ответил` }
+    if (!res.ok) return { rows, broke: `${state}: список ответил ${res.status}` }
     const body = (await res.json().catch(() => null)) as
       | { results?: StatusRow[]; next?: string | null }
       | null
-    if (body?.results === undefined) break
+    if (body?.results === undefined) return { rows, broke: `${state}: ответ без results` }
     rows.push(...body.results.filter(isProbeRow))
     if (!body.next) break
   }
-  return rows
+  return { rows, broke: null }
 }
 
 const today = (): string => new Date().toISOString().slice(0, 10)
@@ -89,12 +98,16 @@ const today = (): string => new Date().toISOString().slice(0, 10)
  */
 export async function dropProbeStatuses(
   token: string,
-): Promise<{ closed: number; refused: number }> {
+): Promise<{ closed: number; refused: number; broke: string | null }> {
   let closed = 0
   let refused = 0
 
+  const active = await listProbeStatuses(token, 'active')
+  const planned = await listProbeStatuses(token, 'planned')
+  const broke = active.broke ?? planned.broke
+
   const plan: Array<{ id: number; path: string; body: Record<string, string> }> = []
-  for (const row of await listProbeStatuses(token, 'active')) {
+  for (const row of active.rows) {
     plan.push({
       id: row.id,
       path: 'terminate',
@@ -103,7 +116,7 @@ export async function dropProbeStatuses(
       body: { termination_date: today(), reason: `уборка пробы ${STATUS_PROBE_MARK}` },
     })
   }
-  for (const row of await listProbeStatuses(token, 'planned')) {
+  for (const row of planned.rows) {
     plan.push({
       id: row.id,
       path: 'cancel',
@@ -120,5 +133,5 @@ export async function dropProbeStatuses(
     if (res !== null && res.ok) closed += 1
     else refused += 1
   }
-  return { closed, refused }
+  return { closed, refused, broke }
 }

@@ -33,7 +33,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { expect, request as apiRequest, test, type Page, type Request } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
-import { ROUTES, declaredPortalRoutes, type RouteSpec } from './portal-routes'
+import { ROUTES } from './portal-routes'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const API_ORIGIN = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
