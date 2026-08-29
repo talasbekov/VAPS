@@ -100,6 +100,10 @@ def test_divisions_are_scoped_and_stringly_typed(operator, scoped_viewer, divisi
         "ancestors": [],
         "can_submit": True,
         "last_submitted_at": None,
+        # Тип узла добавлен в Plane №307 — тем же расширением, что и поля
+        # выше: читателю нужен УРОВЕНЬ, а «нет предков» опознаёт департамент
+        # неверно (у организации предков тоже нет).
+        "division_type": Division.DivisionType.ORGANIZATION,
     } in rows
     # Скоупованный видит только своё поддерево.
     scoped_rows = scoped_viewer.get(DIVISIONS).json()["results"]
@@ -167,6 +171,31 @@ def test_divisions_carry_the_moment_of_the_last_submission(
     # «сегодня» уже другое — именно в этом состоянии его читает экран.
     with clock.override(TODAY + timedelta(days=1)):
         assert moment_of(division.name) == submitted.json()["submitted_at"]
+
+
+def test_divisions_tell_the_type_of_the_node(operator, division):
+    """Тип узла приезжает строкой (Plane №307).
+
+    Зачем: «департамент» нельзя опознать по «нет предков» — у корневой
+    ОРГАНИЗАЦИИ предков тоже нет, `ancestors_of` выбрасывает её из пути
+    осознанно. Ровно на этом сломалась проба сборов сил, когда порядок строк
+    стал обходом дерева (№296) и первой без предков встала организация.
+
+    Красная на мутации: убрать поле или отдавать его только листам.
+    """
+    department = Division.objects.create(
+        name="Департамент проб", code="dt-dep",
+        division_type=Division.DivisionType.DEPARTMENT, parent=division,
+    )
+
+    rows = {row["name"]: row for row in operator.get(DIVISIONS).json()["results"]}
+
+    # Оба узла БЕЗ предков в терминах `ancestors` — и именно поэтому тип
+    # обязан их различать.
+    assert rows[division.name]["ancestors"] == []
+    assert rows[department.name]["ancestors"] == []
+    assert rows[division.name]["division_type"] == Division.DivisionType.ORGANIZATION
+    assert rows[department.name]["division_type"] == Division.DivisionType.DEPARTMENT
 
 
 def test_divisions_come_in_tree_order_not_alphabetically(operator, division):

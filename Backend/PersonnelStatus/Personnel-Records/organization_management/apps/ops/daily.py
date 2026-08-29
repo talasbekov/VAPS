@@ -46,6 +46,11 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
     ставил бы «Второе управление» впереди «Первого», а управления разных
     департаментов перемешивал бы между собой.
 
+    `division_type` — тип узла (`ORGANIZATION`, `DEPARTMENT`, …) как он назван
+    моделью. Нужен читателям, которым важен УРОВЕНЬ, а не имя: до Plane №307
+    департамент опознавали по «нет предков», а этот признак верен и для
+    корневой организации — её `ancestors_of` из пути выбрасывает.
+
     `ancestors` — путь до подразделения СВЕРХУ ВНИЗ, без корня организации
     (Plane №235). Имена уникальны только внутри родителя: на реальной
     структуре «Второе сквозное управление» есть в каждом департаменте, и
@@ -96,10 +101,22 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
 
     def row_of(division_id, name):
         last = last_submissions.get(division_id)
+        node = tree.get(division_id)
         return {
             "id": str(division_id),
             "name": name,
             "ancestors": ancestors_of(division_id),
+            # ТИП подразделения (Plane №307). Без него «департамент» читатель
+            # опознавал по КОСВЕННОМУ признаку — «предков нет», — а он не про
+            # департамент: у корневой ОРГАНИЗАЦИИ предков тоже нет, потому что
+            # `ancestors_of` выбрасывает её из пути осознанно. Пока список шёл
+            # по алфавиту, первой без предков случайно оказывался настоящий
+            # департамент; с переходом на обход дерева (№296) первой встала
+            # организация — и проба сборов сил стала слать в API её id.
+            # Догадка убрана из читателя, а не подпёрта фикстурой.
+            "division_type": (
+                node["division_type"] if node is not None else None
+            ),
             "can_submit": division_id in submit_allowed,
             "last_submitted_at": (
                 last.submitted_at.isoformat() if last is not None else None

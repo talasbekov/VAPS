@@ -126,11 +126,32 @@ test.describe('сборы сил (вид штаба)', () => {
 
     const divisions = (await (
       await fetch(`${API}/api/ops/daily/divisions/?page_size=100`, { headers })
-    ).json()) as { results: { id: string; name: string; ancestors?: string[] }[] }
+    ).json()) as {
+      results: {
+        id: string
+        name: string
+        ancestors?: string[]
+        division_type?: string
+      }[]
+    }
+    // Департамент опознаётся ПО ТИПУ, а не по «нет предков» (Plane №307).
+    // Прежний признак был неверен и просто везло: у корневой ОРГАНИЗАЦИИ
+    // предков тоже нет (`ancestors_of` выбрасывает её из пути осознанно), и
+    // пока список шёл по алфавиту, первой без предков случайно оказывался
+    // настоящий департамент. С переходом на обход дерева (Plane №296) первой
+    // встала организация, и POST раскладки стал получать её id — 400 «Такого
+    // департамента нет в справочнике».
+    // Значение — как его хранит модель (`TextChoices`: 'organization',
+    // 'department', 'directorate', 'division'), строчными. Верхний регистр
+    // молча не нашёл бы ничего и упал бы на `toBeDefined` — то есть врал бы
+    // про «в справочнике нет департаментов».
     const department = divisions.results.find(
-      (row) => (row.ancestors ?? []).length === 0,
+      (row) => row.division_type === 'department',
     )
-    expect(department, 'в справочнике нет ни одного департамента').toBeDefined()
+    expect(
+      department,
+      'в справочнике нет ни одного узла типа department — раскладку слать некому',
+    ).toBeDefined()
 
     const created = await fetch(
       `${API}/api/ops/security-events/${target!.eventId}/forces/allocation/`,
