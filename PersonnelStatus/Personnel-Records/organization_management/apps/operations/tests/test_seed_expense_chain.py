@@ -227,3 +227,54 @@ def test_it_refuses_loudly_without_the_status_dictionary(storage):
         seed()
 
     assert "seed_status_types" in str(exc.value)
+
+
+# ── Переиздание выпуска, у которого пропали байты (Plane №320) ───────────────
+#
+# Строка выпуска живёт в базе, а файл — на диске, и диск стенда переживает базу
+# не всегда: `private_storage` не в репозитории, его сносят при переносе и
+# пересборке. База продолжает утверждать, что документ выпущен, а скачивание
+# отвечает 500 — правильным ответом на порчу, но на стенде это выглядит
+# поломкой сервера, и каждый обход API спотыкается заново.
+
+
+def test_the_seed_reissues_a_document_whose_bytes_are_gone(storage, types):  # noqa: F811
+    from organization_management.apps.operations import document_storage
+
+    seed()
+    issued = OpsIssuedDocument.objects.get(status=OpsIssuedDocument.Status.ISSUED)
+    path = document_storage.storage_path(issued.attachment)
+    assert path.exists(), "сид не написал байт вовсе — проверять нечего"
+    old_attachment_id = issued.attachment_id
+    path.unlink()
+
+    seed()
+
+    fresh = OpsIssuedDocument.objects.get(status=OpsIssuedDocument.Status.ISSUED)
+    assert fresh.attachment_id != old_attachment_id, "документ не переиздан"
+    assert document_storage.storage_path(fresh.attachment).exists(), (
+        "переизданный документ снова без байт"
+    )
+
+
+def test_a_foreign_broken_document_is_left_alone(storage, types):  # noqa: F811
+    """Чужой битый выпуск сид НЕ трогает — он о нём ничего не знает.
+
+    Граница узкая намеренно: сид чинит СВОЮ фикстуру. Документ, выпущенный
+    человеком или другой системой, — факт чужой работы, и удалять его ради
+    красоты стенда нельзя даже когда он битый.
+    """
+    from organization_management.apps.operations import document_storage
+
+    seed()
+    issued = OpsIssuedDocument.objects.get(status=OpsIssuedDocument.Status.ISSUED)
+    document_storage.storage_path(issued.attachment).unlink()
+    issued.created_by = "человек:erda"
+    issued.save(update_fields=["created_by"])
+    kept_id = issued.id
+
+    seed()
+
+    assert OpsIssuedDocument.objects.filter(id=kept_id).exists(), (
+        "сид снёс чужой выпуск"
+    )
