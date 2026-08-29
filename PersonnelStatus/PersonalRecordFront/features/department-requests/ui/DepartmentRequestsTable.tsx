@@ -9,13 +9,13 @@
  * вопрос — «что просят у меня и сколько я уже дал», — и это не то же самое
  * представление под другим фильтром: колонки, порядок и действия другие.
  *
- * ОТКЛОНЕНИЕ ОТ ЭТАЛОНА, названное вслух. На эталоне заказчика третья колонка
- * — «Срок» (дата со временем, за сутки до мероприятия). Такого поля в модели
- * НЕТ ВООБЩЕ: у мероприятия есть своя дата и своё время, а срока сдачи списка
- * не существует. Колонка показывает то, что есть, и называется своими словами
- * — «Дата ОМ». Выдать дату мероприятия за срок сдачи значило бы нарисовать
- * правило, которого в системе нет. Заведена карточка; разбор — в
- * `Frontend/Decisions`.
+ * СРОК СДАЧИ СПИСКА ПОЯВИЛСЯ (Plane №287). До него здесь стояла одна колонка
+ * «Дата ОМ» и оговорка: у эталона заказчика третья колонка — «Срок», а такого
+ * поля в модели не было вовсе, и выдать дату мероприятия за срок значило бы
+ * нарисовать правило, которого нет. Теперь правило есть: срок хранится у
+ * заявки, по умолчанию — за сутки до начала ОМ, и колонки ДВЕ. Дата ОМ
+ * осталась: «когда мероприятие» и «когда сдавать список» — разные вопросы, и
+ * департамент задаёт оба.
  *
  * Прогресс — И ЧИСЛОМ, И ПОЛОСОЙ. Полоса сама по себе не читается
  * вспомогательными технологиями и не отвечает на вопрос «сколько именно»;
@@ -39,7 +39,7 @@ import type {
 } from "@/entities/security-event";
 import { useDepartmentRequests } from "@/hooks/use-department-requests";
 import { DepartmentRequestCard } from "./DepartmentRequestCard";
-import { formatIsoDate } from "@/shared/lib/date";
+import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 /** Подписи те же, что у ленты штаба: одно состояние — одно слово в системе. */
 const STATUS_LABEL: Record<ForceAllocationStatus, string> = {
@@ -130,6 +130,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
               <TableHead>Мероприятие</TableHead>
               <TableHead className="text-right">Требуется</TableHead>
               <TableHead>Дата ОМ</TableHead>
+              <TableHead>Срок сдачи</TableHead>
               <TableHead>Выделено</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead className="w-10" />
@@ -139,7 +140,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
             {requests.isPending &&
               [0, 1, 2].map((index) => (
                 <TableRow key={index}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     {/* Заглушка тем же приёмом, что у соседнего борда расхода:
                         второй способ рисовать загрузку в одном разделе — это
                         два разных «подождите» на соседних экранах. */}
@@ -153,7 +154,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
 
             {!requests.isPending && requests.isError && (
               <TableRow>
-                <TableCell colSpan={6}>
+                <TableCell colSpan={7}>
                   {/* Отказ ОБЪЯВЛЯЕТСЯ, а не только краснеет: без role=alert
                       его не услышит тот, кто читает экран не глазами. */}
                   <p role="alert" className="text-destructive-ink text-sm">
@@ -166,7 +167,7 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
 
             {!requests.isPending && !requests.isError && rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="whitespace-normal">
+                <TableCell colSpan={7} className="whitespace-normal">
                   <p className="text-muted-foreground text-sm">
                     Заявок нет — штаб пока не запрашивал силы с вашего
                     департамента
@@ -204,6 +205,27 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                   </TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
                     {formatIsoDate(row.businessDate)}
+                  </TableCell>
+                  {/* СРОК И ОПОЗДАНИЕ — В ОДНОЙ ЯЧЕЙКЕ, словом и цветом.
+                      Цвет в одиночку не отвечает на вопрос «что не так» и не
+                      читается вспомогательными технологиями; слово без цвета
+                      не видно взглядом по столбцу. Отправленный с опозданием
+                      список тоже назван: штабу важно, что он пришёл поздно,
+                      даже когда уже пришёл. */}
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    <span className={row.overdue ? "text-destructive-ink font-medium" : ""}>
+                      {row.dueAt === null ? "не задан" : formatIsoDateTime(row.dueAt)}
+                    </span>
+                    {row.overdue && (
+                      <p className="text-destructive-ink text-xs font-medium">
+                        Просрочено
+                      </p>
+                    )}
+                    {!row.overdue && row.submittedLate && (
+                      <p className="text-muted-foreground text-xs">
+                        Отправлено с опозданием
+                      </p>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Progress assigned={row.assigned} need={row.need} />

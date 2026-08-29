@@ -57,6 +57,26 @@ interface DraftRow {
   departmentId: string;
   need: string;
   departmentName: string;
+  /** Срок сдачи списка в виде `datetime-local` (Plane №287): «ГГГГ-ММ-ДДTЧЧ:ММ»
+   *  без зоны — так его вводит человек и так его понимает поле ввода. Пусто —
+   *  срок не задан; сервер поставит умолчание «за сутки до ОМ». */
+  dueAt: string;
+}
+
+/** ISO-момент сервера → значение для `datetime-local`.
+ *
+ *  Секунды и зона отбрасываются НАМЕРЕННО: поле ввода их не принимает вовсе, а
+ *  показывать надо местное время того, кто смотрит, — иначе штаб в Астане
+ *  правил бы срок, набранный в UTC, не зная об этом. */
+function toLocalInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return (
+    `${moment.getFullYear()}-${pad(moment.getMonth() + 1)}-${pad(moment.getDate())}` +
+    `T${pad(moment.getHours())}:${pad(moment.getMinutes())}`
+  );
 }
 
 function seedRows(event: SecurityEvent): DraftRow[] {
@@ -65,6 +85,7 @@ function seedRows(event: SecurityEvent): DraftRow[] {
     departmentId: row.departmentId,
     need: String(row.need),
     departmentName: row.departmentName,
+    dueAt: toLocalInput(row.dueAt),
   }));
 }
 
@@ -198,6 +219,18 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
               value={row.need}
               onChange={(e) => patch(row.key, { need: e.target.value })}
             />
+            {/* СРОК СДАЧИ СПИСКА — поле штаба (Plane №287). Пустое поле не
+                означает «без срока»: сервер поставит умолчание «за сутки до
+                начала ОМ», и подпись рядом об этом говорит — иначе пустая
+                клетка читалась бы как «сдавать когда угодно». */}
+            <Input
+              type="datetime-local"
+              aria-label={`Срок сдачи списка, строка ${index + 1}`}
+              title="Срок сдачи списка. Пусто — за сутки до начала мероприятия"
+              className="h-9 w-52"
+              value={row.dueAt}
+              onChange={(e) => patch(row.key, { dueAt: e.target.value })}
+            />
             <Button
               type="button"
               variant="ghost"
@@ -239,6 +272,7 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
                 departmentId: "",
                 need: remainder > 0 ? String(remainder) : "1",
                 departmentName: "",
+                dueAt: "",
               },
             ]);
           }}
@@ -264,6 +298,10 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
                 rows: rows.map((row) => ({
                   departmentId: row.departmentId,
                   need: toCount(row.need),
+                  // Пустое поле НЕ отправляется: сервер отличает «срок не
+                  // задан» (поставит умолчание либо сохранит прежний) от
+                  // «задан пустым», которого не бывает.
+                  ...(row.dueAt === "" ? {} : { dueAt: row.dueAt }),
                 })),
               });
             }}
