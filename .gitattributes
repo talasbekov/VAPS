@@ -1,0 +1,42 @@
+# Окончания строк (Plane №310).
+#
+# Файла тут не было вовсе, и во фронте окончания разъехались: из 400
+# проверенных .ts/.tsx 348 с LF, 55 файлов с CRLF. Любая правка такого файла
+# современным редактором переписывает его целиком: правка одной строки в
+# components/ui/calendar.tsx (№258, 29.08.2026) пришла диффом 235/213 строк.
+# Ревью такого коммита нечитаемо построчно, а конфликты слияния возникают на
+# пустом месте — обе сессии правят один фронт.
+#
+# `text=auto` отдаёт решение git: он сам отличает текст от двоичного файла и
+# хранит текст в репозитории с LF. Явные строки ниже снимают «сам отличает»
+# там, где ошибка дорога: исходники обязаны быть LF, а выгрузки и картинки
+# не должны трогаться НИКОГДА — нормализация двоичного файла его портит.
+* text=auto
+
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.css   text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.sh    text eol=lf
+*.html  text eol=lf
+
+# Двоичное — не текст, что бы ни решила эвристика.
+*.xlsx  binary
+*.xls   binary
+*.docx  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
