@@ -7,6 +7,7 @@ import {
   ChevronRightIcon,
 } from "lucide-react";
 import { DayButton, DayPicker, getDefaultClassNames } from "react-day-picker";
+import { ru } from "date-fns/locale";
 
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -17,6 +18,14 @@ function Calendar({
   showOutsideDays = true,
   captionLayout = "label",
   buttonVariant = "ghost",
+  // Русский — УМОЛЧАНИЕ, а не забота вызывающего (Plane №258). Локаль
+  // компоненту не передавал НИКТО из пяти читателей, и шапка печатала «August
+  // 2026», а дни недели — «Su Mo Tu», хотя кнопка даты рядом в том же окне
+  // писала «28 августа 2026» (там `format` с `locale: ru`). Одно окно на двух
+  // языках. Порядок дней недели тоже отсюда: у `ru` неделя начинается с
+  // понедельника, у умолчания — с воскресенья.
+  locale = ru,
+  labels,
   formatters,
   components,
   ...props
@@ -35,11 +44,24 @@ function Calendar({
         className
       )}
       captionLayout={captionLayout}
-      formatters={{
-        formatMonthDropdown: (date) =>
-          date.toLocaleString("default", { month: "short" }),
-        ...formatters,
+      locale={locale}
+      // Подписи кнопок листания — ТОЖЕ часть языка окна (Plane №258). Локаль
+      // до них не доходит: react-day-picker берёт их из `labels`, а не из
+      // `locale`, и по умолчанию отдаёт «Go to the Previous Month» — текст,
+      // который видит не глаз, а скринридер. Правка, вылечившая шапку и
+      // молчащая про них, оставила бы окно двуязычным для той половины
+      // читателей, которой его читают вслух.
+      labels={{
+        labelPrevious: () => "Предыдущий месяц",
+        labelNext: () => "Следующий месяц",
+        ...labels,
       }}
+      // Своего `formatMonthDropdown` здесь БОЛЬШЕ НЕТ: заготовка shadcn
+      // сокращала месяц через `toLocaleString("default")`, а «default» — это
+      // локаль браузера, а не календаря, и список месяцев расходился бы с
+      // шапкой у любого читателя с нерусским браузером. Умолчание
+      // react-day-picker берёт название из переданной локали.
+      formatters={formatters}
       classNames={{
         root: cn("w-fit", defaultClassNames.root),
         months: cn(
