@@ -268,6 +268,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_split": _FORCES_COMMAND_PERMISSION,
         "forces_accept": _FORCES_COMMAND_PERMISSION,
         "forces_return": _FORCES_COMMAND_PERMISSION,
+        "forces_collections": _FORCES_COMMAND_PERMISSION,
         "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
         "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
@@ -694,6 +695,21 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.split_force_demand(pk, rows=data.get("rows"))
         )
+
+    @action(detail=False, methods=["get"], url_path="forces/collections")
+    def forces_collections(self, request):
+        """Сборы глазами ШТАБА (Plane №271, Ш-1).
+
+        Зеркало департаментского списка: тот отвечает «что просят у меня»,
+        этот — «сколько я раздал и сколько мне вернули». Вопросы разные,
+        поэтому и ручка своя, а не тот же список под другим правом.
+
+        Область НЕ сужается: штаб делит потребность между департаментами и
+        обязан видеть их все — сузить его разрез значило бы спрятать от него
+        половину собственной раскладки. Гейт — `forces.command`, право самого
+        штаба.
+        """
+        return Response({"results": event_service.force_collections_view()})
 
     @action(detail=False, methods=["get"], url_path="forces/requests")
     def forces_department_requests(self, request):

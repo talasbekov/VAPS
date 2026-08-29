@@ -848,6 +848,34 @@ export interface DepartmentRequestRow {
   status: ForceAllocationStatus;
 }
 
+/** Состояние сбора по МЕРОПРИЯТИЮ (Plane №271, Ш-1/Ш-3).
+ *
+ * Выводится сервером из строк раскладки, а не хранится: у мероприятия своего
+ * поля «как идёт сбор» нет, и заводить его значило бы держать вторую правду
+ * рядом с той, из которой она и так считается. */
+export type ForceCollectionStatus = "NEW" | "NOTIFIED" | "IN_PROGRESS";
+
+/** Строка списка сборов — вид ШТАБА (Plane №271, Ш-1). */
+export interface ForceCollectionRow {
+  eventId: string;
+  code: string;
+  title: string;
+  businessDate: string;
+  /** Время самого ОМ. СРОКА СБОРА в модели нет вовсе — см. Plane №287. */
+  eventTime: string | null;
+  location: string;
+  stage: SecurityEventStage;
+  need: number;
+  allocated: number;
+  gathered: number;
+  departments: number;
+  collectionStatus: ForceCollectionStatus;
+}
+
+export function securityEventForceCollectionsPath(): string {
+  return `${SECURITY_EVENTS_PATH}forces/collections/`;
+}
+
 /** Заявка департаменту ЦЕЛИКОМ: мероприятие + строка раскладки (Ш-4). */
 export interface DepartmentRequestDetail {
   eventId: string;
