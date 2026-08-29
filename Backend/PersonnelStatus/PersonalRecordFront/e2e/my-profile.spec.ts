@@ -210,9 +210,9 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       'обе учётки указывают на одну запись — связь не проверяется',
     ).not.toBe(mineAsAdmin.employee!.id)
 
-    const statuses = await get<{ results: StatusRow[] }>(
+    const statuses = await get<{ results: StatusRow[]; next: string | null }>(
       otherToken,
-      `/api/operations/statuses/?employee_id=${mineAsOther.employee!.id}&page_size=200`,
+      `/api/operations/statuses/?employee_id=${mineAsOther.employee!.id}&limit=200`,
     )
     expect(statuses.results.length, 'у erda нет статусов — вкладка не проверяется').toBeGreaterThan(0)
     for (const row of statuses.results) {
@@ -229,6 +229,17 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
 
     await page.getByRole('button', { name: 'Мой календарь' }).click()
     const periods = page.locator('[data-slot="card"]', { hasText: 'Мои периоды' }).first()
+    // 🔴 `limit`, А НЕ `page_size` (в запросе выше). Списки раздела ОМ
+    // пагинируются LimitOffsetPagination: `page_size` она игнорирует и молча
+    // отдаёт 50 строк. Проба сравнивала «50 из ручки» с полным списком на
+    // экране и краснела на ИСПРАВЛЕННОМ клиенте — тот стал ходить по всем
+    // страницам (Plane №281/№287, находка ревью). Сторож ниже держит это
+    // явно: если строк окажется больше страницы, сравнение снова станет
+    // ложным, и проба скажет об этом сама.
+    expect(
+      statuses.next,
+      'статусы не поместились на страницу — сравнение с экраном стало неполным',
+    ).toBeFalsy()
     await expect(periods.getByRole('listitem')).toHaveCount(statuses.results.length)
   })
 
