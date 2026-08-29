@@ -64,14 +64,46 @@ interface StaffRow {
   employee: { id: number; last_name: string; first_name: string } | null
 }
 
+/** Строки статусов сотрудника, суженные фильтром `?employee=` (Plane №289). */
+async function statusesOf(
+  token: string,
+  employeeId: number,
+  state: 'active' | 'planned',
+): Promise<{ count: number; results: Array<{ status_type: string }> }> {
+  const res = await fetch(
+    `${API}/api/statuses/statuses/?employee=${employeeId}&state=${state}&page_size=50`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  expect(
+    res.status,
+    'список статусов не отвечает — без него подопытного не выбрать',
+  ).toBe(200)
+  return (await res.json()) as { count: number; results: Array<{ status_type: string }> }
+}
+
 /**
  * Сотрудник стенда, которому проба заводит СРОЧНЫЙ действующий статус.
  *
- * Берётся не «первый попавшийся», а первый со свободным от пересечений
- * периодом: сервер запрещает пересекающиеся статусы, и на занятом человеке
- * фикстура молча не завелась бы (Known-Issues, 26.08.2026 — проба, выбиравшая
- * объект словами «первый попавшийся», проверяла порядок в реестре, а не
- * систему).
+ * ПОДОПЫТНЫЙ ПРИВОДИТСЯ В НУЖНОЕ СОСТОЯНИЕ, А НЕ ИЩЕТСЯ СРЕДИ ПОДХОДЯЩИХ
+ * (Plane №288). Прежняя версия брала первого, кому удавалось завести статус
+ * (201), и молча рассчитывала, что дальше всё сложится. Не складывалось: у
+ * человека с запланированными статусами досрочное завершение не могло завести
+ * взамен бессрочное «В строю» (оно открыто вправо и пересекается с
+ * обещанным), и последний ассерт краснел — но только на тех прогонах, где
+ * такой человек оказывался первым. Проба зависела от данных стенда и меняла
+ * ответ от суток к суткам: 28.08 зелёная, 29.08 красная, код тот же.
+ *
+ * Условие отбора ровно из того, что проба потом утверждает:
+ *   • ЗАПЛАНИРОВАННЫХ статусов нет вовсе — иначе автоматическое «В строю»
+ *     после завершения упрётся в пересечение;
+ *   • среди ДЕЙСТВУЮЩИХ — только «В строю» (или их нет): этот тип уступает
+ *     место сам (`_close_active_statuses`), поэтому новый срочный статус
+ *     встанет ДЕЙСТВУЮЩИМ, а не запланированным, и его можно будет завершить
+ *     досрочно.
+ *
+ * Отбор идёт фильтром `?employee=`, который до Plane №289 молча игнорировался
+ * и отдавал все строки стенда. Пока он врал, этой проверки нельзя было
+ * написать вовсе — отсюда и прежний перебор «вдруг повезёт».
  */
 async function seedTimedStatus(
   token: string,
@@ -84,8 +116,21 @@ async function seedTimedStatus(
   expect(rows.length, 'на стенде нет ни одного занятого места — фикстуру некому завести').toBeGreaterThan(0)
 
   const endDate = iso(shifted(5))
+  const rejected: string[] = []
   for (const row of rows) {
     const employee = row.employee!
+    const planned = await statusesOf(token, employee.id, 'planned')
+    if (planned.count > 0) {
+      rejected.push(`${employee.id}: запланированных ${planned.count}`)
+      continue
+    }
+    const active = await statusesOf(token, employee.id, 'active')
+    const foreign = active.results.filter((s) => s.status_type !== 'in_service')
+    if (foreign.length > 0) {
+      rejected.push(`${employee.id}: действует ${foreign.map((s) => s.status_type).join(', ')}`)
+      continue
+    }
+
     const res = await fetch(`${API}/api/statuses/statuses/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -97,17 +142,35 @@ async function seedTimedStatus(
         comment: 'Проба №255',
       }),
     })
-    if (res.status === 201) {
-      return {
-        rowKey: `${row.id}-${employee.id}`,
-        fullName: `${employee.last_name} ${employee.first_name}`,
-        endDate,
-      }
+    // Тело читается ОДИН раз и держится строкой: `await res.text()` прямо в
+    // сообщении ассерта вычисляется до сравнения и съедает поток — следующий
+    // `res.json()` падает «Body is unusable», и проба врёт про причину.
+    const payload = await res.text()
+    // Отказ на ОТОБРАННОМ сотруднике — это уже не «занят», а расхождение
+    // правила отбора с правилом сервера, и молчать о нём нельзя: проба снова
+    // начала бы перебирать людей и снова зависела бы от того, кто попался.
+    expect(
+      res.status,
+      `сотруднику ${employee.id} без запланированных статусов и с одним лишь ` +
+        `«В строю» сервер отказал завести срочный статус: ${payload}`,
+    ).toBe(201)
+    const created = JSON.parse(payload) as { state?: string }
+    expect(
+      created.state,
+      'заведённый сегодняшним днём статус обязан быть ДЕЙСТВУЮЩИМ: ' +
+        'запланированный нельзя ни продлить, ни завершить досрочно',
+    ).toBe('active')
+
+    return {
+      rowKey: `${row.id}-${employee.id}`,
+      fullName: `${employee.last_name} ${employee.first_name}`,
+      endDate,
     }
   }
   throw new Error(
-    'не удалось завести действующий срочный статус ни одному сотруднику страницы: ' +
-      'у всех период пересекается. Это не повод для скипа — проверьте данные стенда.',
+    'ни один сотрудник страницы не подошёл под условия пробы (нет запланированных ' +
+      `статусов, из действующих только «В строю»). Отсеяны: ${rejected.join('; ')}. ` +
+      'Это не повод для скипа — проверьте данные стенда.',
   )
 }
 
