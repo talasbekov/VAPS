@@ -9,7 +9,9 @@
 import { useQuery } from "@tanstack/react-query";
 
 import {
+  securityEventForceCollectionPath,
   securityEventForceCollectionsPath,
+  type ForceCollectionDetail,
   type ForceCollectionRow,
 } from "@/entities/security-event";
 import { opsApiClient } from "@/lib/ops-api";
@@ -25,5 +27,20 @@ export function useForceCollections(options: { enabled?: boolean } = {}) {
         securityEventForceCollectionsPath()
       ),
     enabled: options.enabled ?? true,
+  });
+}
+
+/** Один сбор целиком: плитки и раскладка с людьми (Plane №271, Ш-2). */
+export function useForceCollection(
+  eventId: string | null,
+  options: { enabled?: boolean } = {}
+) {
+  return useQuery<ForceCollectionDetail, OpsApiFailure>({
+    queryKey: ["ops-force-collection", eventId],
+    queryFn: () =>
+      opsApiClient.get<ForceCollectionDetail>(
+        securityEventForceCollectionPath(eventId as string)
+      ),
+    enabled: (options.enabled ?? true) && eventId !== null,
   });
 }

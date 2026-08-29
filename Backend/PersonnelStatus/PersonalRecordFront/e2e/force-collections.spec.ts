@@ -12,6 +12,10 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+// Подготовка ОМ до посчитанной потребности — общий модуль, а не копия:
+// две реализации одной подготовки разошлись бы при первой правке цепочки
+// стадий (см. шапку `prepare-events.ts`).
+import { prepareDemandEvent } from './prepare-events'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -95,6 +99,93 @@ test.describe('сборы сил (вид штаба)', () => {
     const bar = section.locator('[role="progressbar"]').first()
     await expect(bar).toHaveAttribute('aria-valuemax', String(first.need))
     await expect(bar).toHaveAttribute('aria-valuenow', String(first.gathered))
+  })
+
+  test('карточка сбора открывается на месте списка и раскрывает департамент', async ({
+    page,
+  }) => {
+    /**
+     * Plane №271, Ш-2. Карточка открывается НА МЕСТЕ списка («← Назад к
+     * списку сборов»), как на эталоне и как у департамента в №272.
+     *
+     * 🔴 ПРОБА ЗАВОДИТ СВОЁ МЕРОПРИЯТИЕ, а не берёт стендовое. Первая версия
+     * выбирала первый сбор без раскладки — а это фикстура смоука, с которой
+     * работают соседние спеки. В одиночку проба была зелёной, в ПОЛНОМ
+     * прогоне падала: сосед успевал разослать по той же заявке разнарядку, и
+     * замена раскладки отбивалась `ALLOCATION_LOCKED`. Драться за общую
+     * фикстуру нельзя — своё мероприятие ничего ни у кого не отнимает.
+     */
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const own = await prepareDemandEvent(token, '2026-09-15')
+    const list = (await (
+      await fetch(`${API}/api/ops/security-events/forces/collections/`, { headers })
+    ).json()) as { results: (CollectionRow & { eventId: string; departments: number })[] }
+    const target = list.results.find((row) => row.code === own.code)
+    expect(target, 'своё мероприятие не попало в список сборов').toBeDefined()
+
+    const divisions = (await (
+      await fetch(`${API}/api/ops/daily/divisions/?page_size=100`, { headers })
+    ).json()) as { results: { id: string; name: string; ancestors?: string[] }[] }
+    const department = divisions.results.find(
+      (row) => (row.ancestors ?? []).length === 0,
+    )
+    expect(department, 'в справочнике нет ни одного департамента').toBeDefined()
+
+    const created = await fetch(
+      `${API}/api/ops/security-events/${target!.eventId}/forces/allocation/`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ rows: [{ departmentId: String(department!.id), need: 3 }] }),
+      },
+    )
+    expect(created.status, await created.text()).toBe(200)
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Сборы', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+
+      await page.getByRole('button', { name: `Открыть сбор ${target!.code}` }).click()
+      await expect(
+        page.getByRole('button', { name: 'Назад к списку сборов' }),
+        'карточка открылась на месте списка',
+      ).toBeVisible({ timeout: 20_000 })
+
+      // Четыре плитки эталона.
+      for (const label of [
+        'Требуется по рекогносцировке',
+        'Распределено квотами',
+        'Собрано',
+        'Осталось собрать',
+      ]) {
+        await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
+      }
+
+      // Раскрытие строки департамента — то, ради чего карточка и нужна.
+      const split = page.locator('section[aria-labelledby="collection-split-heading"]')
+      const row = split.locator('button[aria-expanded]').first()
+      await expect(row).toHaveAttribute('aria-expanded', 'false')
+      await row.click()
+      await expect(row).toHaveAttribute('aria-expanded', 'true')
+      await expect(
+        split.getByText('Выделенные сотрудники', { exact: false }),
+        'раскрытая строка не показала список выделенных',
+      ).toBeVisible()
+
+      // Возврат работает: человек не заперт в карточке.
+      await page.getByRole('button', { name: 'Назад к списку сборов' }).click()
+      await expect(page.getByRole('heading', { name: 'Сборы сил' })).toBeVisible()
+    } finally {
+      await fetch(`${API}/api/ops/security-events/${target!.eventId}/forces/allocation/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ rows: [] }),
+      }).catch(() => undefined)
+    }
   })
 
   test('на вкладке сборов нет чужих управлений — поиска по людям и выгрузки', async ({
