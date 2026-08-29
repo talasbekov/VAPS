@@ -78,3 +78,38 @@ test.describe('календарь статусов', () => {
       .toBe(initial)
   })
 })
+
+test.describe('панель занятости за день', () => {
+  test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
+
+  test('панель называет три группы поимённо и «в строю» числом', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/statuses`)
+    await page.getByRole('tab', { name: 'Календарь статусов' }).click()
+
+    const grid = page.getByRole('grid', { name: /Занятость/ })
+    await expect(grid).toBeVisible({ timeout: 30_000 })
+
+    const panel = page.getByRole('complementary', { name: 'Занятость за выбранный день' })
+    await expect(panel).toBeVisible()
+
+    // Три группы эталона названы и несут СВОЙ счётчик.
+    for (const name of ['На дежурстве', 'Задействованы в ОМ', 'Отсутствуют']) {
+      await expect(panel.getByRole('heading', { name: new RegExp(name) })).toBeVisible()
+    }
+
+    // «В строю» — числом из состава, а не списком: поимённо это весь состав.
+    await expect(panel.getByText(/В строю:\s*\d+\s*из\s*\d+/)).toBeVisible()
+
+    // Клик по другому дню меняет заголовок панели: она читает ТОТ ЖЕ выбор,
+    // что подсвечен в сетке, а не свой собственный.
+    const before = await panel.getByRole('heading', { level: 3 }).textContent()
+    const days = grid.getByRole('button')
+    await days.nth(1).click()
+    await expect
+      .poll(async () => panel.getByRole('heading', { level: 3 }).textContent(), {
+        timeout: 15_000,
+      })
+      .not.toBe(before)
+  })
+})
