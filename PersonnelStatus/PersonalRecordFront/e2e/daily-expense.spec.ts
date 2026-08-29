@@ -812,3 +812,85 @@ test.describe(
     })
   },
 )
+
+test.describe(
+  LIVE ? 'расход: порядок категорий' : 'расход: порядок категорий (скип: нет SMOKE_LIVE=1)',
+  () => {
+    test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+
+    test('«Руководство департамента» — первой категорией, управления следом и в порядке дерева (Plane №296)', async ({
+      page,
+    }) => {
+      // Требование заказчика: «Список разделен по категориям, сперва
+      // Руководство, потом по очерёдно управления со списками.»
+      const token = await apiToken()
+      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      const divisions = await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
+        token,
+        '/api/ops/daily/divisions/',
+      )
+      const boardIds = new Set(report.rows.map((row) => String(row.division_id)))
+      // Ожидаемая очередь — порядок СЕРВЕРНОГО списка подразделений (обход
+      // дерева), суженный до управлений борда. Ждать конкретных имён нельзя:
+      // структура стенда меняется, а правило — нет.
+      const expected = divisions.results
+        .filter((row) => boardIds.has(String(row.id)))
+        .map((row) => {
+          const path = row.ancestors ?? []
+          return path.length > 0 ? `${row.name} · ${path.join(' › ')}` : row.name
+        })
+      expect(
+        expected.length,
+        'список подразделений не пересёкся с бордом — очередь проверять не на чем',
+      ).toBeGreaterThan(1)
+
+      // Сторож вакуумности сравнивает очередь дерева НЕ с алфавитом, а с
+      // порядком РАСХОДА — именно его борд показал бы, не наводя очередь
+      // сам. Сравнение с алфавитом было бы обманом: расход сортирует по
+      // ИМЕНИ, а метка строки — «имя · путь», и алфавит меток от него
+      // отличается, из-за чего сторож зеленел при сломанной сортировке
+      // (поймано мутацией: снятие сортировки пробу не роняло).
+      const labelOf = (divisionId: number): string => {
+        const meta = divisions.results.find((row) => String(row.id) === String(divisionId))
+        const path = meta?.ancestors ?? []
+        const name = meta?.name ?? String(divisionId)
+        return path.length > 0 ? `${name} · ${path.join(' › ')}` : name
+      }
+      const reportOrder = report.rows.map((row) => labelOf(row.division_id))
+      expect(
+        expected.join('|'),
+        'очередь дерева совпала с порядком расхода — проба не отличает одно от другого',
+      ).not.toBe(reportOrder.join('|'))
+
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=daily`)
+      const board = page.getByRole('region', { name: 'Ежедневный расход' })
+      await expect(board).toBeVisible({ timeout: 25_000 })
+      // «Руководство» — область (`role="region"`), управления — группы:
+      // роли разные, и обход разметки берёт обе разом.
+      await expect(
+        board.getByRole('region', { name: 'Руководство департамента' }),
+      ).toBeVisible()
+
+      // Порядок читается ОДНИМ обходом разметки: сравнивать координаты
+      // отдельных элементов хрупко, а порядок блоков в DOM — это ровно то,
+      // что видит человек сверху вниз.
+      const order = await board.evaluate((root) => {
+        const blocks = Array.from(
+          root.querySelectorAll('[role="group"], [role="region"]'),
+        )
+        return blocks.map((node) => node.getAttribute('aria-label') ?? '')
+      })
+      const leadershipAt = order.indexOf('Руководство департамента')
+      const firstDivisionAt = order.findIndex((label) => expected.includes(label))
+      expect(leadershipAt, 'блока «Руководство департамента» нет в разметке').toBeGreaterThan(-1)
+      expect(
+        leadershipAt,
+        '«Руководство» стоит ПОСЛЕ управлений — порядок категорий нарушен',
+      ).toBeLessThan(firstDivisionAt)
+
+      const actual = order.filter((label) => expected.includes(label))
+      expect(actual).toEqual(expected)
+    })
+  },
+)

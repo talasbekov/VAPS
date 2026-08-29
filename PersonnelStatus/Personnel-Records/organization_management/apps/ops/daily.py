@@ -41,6 +41,11 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
     None от резолвера (wildcard/безскоуповый грант) разворачивается во всё
     дерево — экрану нужен конкретный список, а не «всё».
 
+    Порядок строк — ОБХОД ДЕРЕВА (`tree_id`, `lft`), а не алфавит имён
+    (Plane №296): экран расхода печатает управления «по очереди», и алфавит
+    ставил бы «Второе управление» впереди «Первого», а управления разных
+    департаментов перемешивал бы между собой.
+
     `ancestors` — путь до подразделения СВЕРХУ ВНИЗ, без корня организации
     (Plane №235). Имена уникальны только внутри родителя: на реальной
     структуре «Второе сквозное управление» есть в каждом департаменте, и
@@ -74,7 +79,9 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
     # Запрос предков на строку дал бы N+1 ровно там, где строк больше всего.
     tree = {
         row["id"]: row
-        for row in Division.objects.values("id", "name", "parent_id", "division_type")
+        for row in Division.objects.values(
+            "id", "name", "parent_id", "division_type", "tree_id", "lft"
+        )
     }
 
     def ancestors_of(division_id):
@@ -99,9 +106,26 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
             ),
         }
 
+    # ПОРЯДОК ДЕРЕВА, а не алфавит имён (Plane №296). Заказчик просит
+    # «потом поочерёдно управления со списками», а сортировка по имени рвёт
+    # эту очередь дважды: «Второе управление» встаёт впереди «Первого», и
+    # управления РАЗНЫХ департаментов перемешиваются между собой — на стенде
+    # борд начинался тремя одноимёнными «Вторыми сквозными» из трёх разных
+    # департаментов подряд. Дерево (`tree_id`, `lft` у MPTT) — это ровно тот
+    # порядок, в котором подразделения заведены и который человек считает
+    # «по очереди»: `order_insertion_by = ['order', 'name']` у модели.
+    #
+    # Подразделение, которого нет в дереве (гонка удаления), уезжает в хвост
+    # по имени, а не роняет сортировку разнотипным ключом.
+    def tree_key(division_id):
+        node = tree.get(division_id)
+        if node is None:
+            return (1, 0, 0, names.get(division_id, ""))
+        return (0, node["tree_id"], node["lft"], "")
+
     return [
-        row_of(division_id, name)
-        for division_id, name in sorted(names.items(), key=lambda kv: kv[1])
+        row_of(division_id, names[division_id])
+        for division_id in sorted(names, key=tree_key)
     ]
 
 

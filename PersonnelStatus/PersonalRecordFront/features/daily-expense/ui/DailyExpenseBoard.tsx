@@ -542,6 +542,20 @@ export function DailyExpenseBoard() {
     }
     return map;
   }, [divisionsQuery.data]);
+  // Место управления в ОЧЕРЕДИ — позиция в списке подразделений, который
+  // сервер отдаёт обходом дерева (Plane №296). Расход (`strength-report`)
+  // сортирует свои строки ПО ИМЕНИ, и его контракт трогать нельзя — его
+  // читают выгрузки DOCX/CSV/XLSX; поэтому очередь наводится здесь, на
+  // экране, ключом из уже загруженного списка.
+  const orderByDivision = useMemo(() => {
+    const map = new Map<string, number>();
+    let index = 0;
+    for (const row of divisionsQuery.data?.results ?? []) {
+      map.set(String(row.id), index);
+      index += 1;
+    }
+    return map;
+  }, [divisionsQuery.data]);
   const pathByDivision = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const [id, row] of metaByDivision) {
@@ -617,6 +631,25 @@ export function DailyExpenseBoard() {
     });
   }, [queryClient, businessDate]);
 
+  // Управления «по очереди» (Plane №296): порядок дерева, пришедший списком
+  // подразделений. Пока список не ответил, порядок остаётся тем, что дал
+  // расход, — переставлять строки на глазах у человека хуже, чем показать их
+  // сразу в порядке источника.
+  const orderedRows = useMemo(() => {
+    const rows = data?.rows ?? [];
+    if (orderByDivision.size === 0) return rows;
+    return [...rows].sort((left, right) => {
+      const leftIndex = orderByDivision.get(String(left.division_id));
+      const rightIndex = orderByDivision.get(String(right.division_id));
+      // Управление, которого нет в списке подразделений, уезжает в хвост, а
+      // не наверх: «неизвестно где» — не «первым».
+      if (leftIndex === undefined && rightIndex === undefined) return 0;
+      if (leftIndex === undefined) return 1;
+      if (rightIndex === undefined) return -1;
+      return leftIndex - rightIndex;
+    });
+  }, [data, orderByDivision]);
+
   const listIsPending = dateValid && submissionsListQuery.isPending;
   const listIsError = submissionsListQuery.isError;
 
@@ -641,14 +674,17 @@ export function DailyExpenseBoard() {
   // упавшая или ещё не ответившая ручка не должна молча читаться как «никто
   // не сдал» — пустые списки здесь означают именно «нечем посчитать», а не
   // «ноль сдач».
+  // Считается по УПОРЯДОЧЕННЫМ строкам (Plane №296): перечисление «не сдали»
+  // читается вместе со списком ниже, и две разные очереди в одном экране
+  // заставляли бы искать управление дважды.
   const submittedRows =
     listIsPending || listIsError
       ? []
-      : data?.rows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) !== null) ?? [];
+      : orderedRows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) !== null);
   const notSubmittedRows =
     listIsPending || listIsError
       ? []
-      : data?.rows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) === null) ?? [];
+      : orderedRows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) === null);
 
   // Права ещё грузятся / права нет — честная строка вместо кожи борда, как у
   // соседних экранов той же ручки («Светофор сдачи закрыт правом „Статусы:
@@ -801,7 +837,7 @@ export function DailyExpenseBoard() {
 
       {data && (
         <div className="space-y-2">
-          {data.rows.map((row) => {
+          {orderedRows.map((row) => {
             const meta = metaByDivision.get(String(row.division_id));
             const vm: DivisionRowVM = {
               id: row.division_id,
