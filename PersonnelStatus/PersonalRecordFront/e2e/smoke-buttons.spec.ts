@@ -151,7 +151,11 @@ interface RouteSpec {
 const ROUTES: readonly RouteSpec[] = [
   { template: '/', chromeless: true },
   { template: '/dashboard' },
+  // Оба вида модуля, а не один: с Plane №273 по умолчанию открывается
+  // «Ежедневный расход организации», и обход, ходивший только по адресу без
+  // параметра, перестал бы заглядывать в «Сбор сил на ОМ» вовсе.
   { template: '/employees' },
+  { template: '/employees?view=forces' },
   { template: '/organization' },
   { template: '/statuses' },
   { template: '/reports' },

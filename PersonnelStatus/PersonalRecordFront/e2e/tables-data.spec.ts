@@ -368,7 +368,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
 
   test('кадровая таблица не выдаёт сегодняшнее число за дату у всех', async ({ page }) => {
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/employees')
+    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
+    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
+    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
+    await page.goto('/employees?view=forces')
     await hydrated(page)
     await tableFilled(page)
 
@@ -439,7 +442,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     ).toBeGreaterThan(0)
 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/employees')
+    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
+    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
+    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
+    await page.goto('/employees?view=forces')
     await hydrated(page)
     await tableFilled(page)
 
@@ -485,7 +491,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       .toBeGreaterThan(1)
 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/employees')
+    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
+    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
+    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
+    await page.goto('/employees?view=forces')
     await hydrated(page)
     await tableFilled(page)
 
@@ -537,7 +546,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     )
 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/employees')
+    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
+    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
+    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
+    await page.goto('/employees?view=forces')
     await hydrated(page)
     await tableFilled(page)
 
@@ -575,7 +587,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * сотрудников, получил бы полсотни и не узнал бы об этом.
      */
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/employees')
+    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
+    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
+    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
+    await page.goto('/employees?view=forces')
     await hydrated(page)
     await tableFilled(page)
 
@@ -585,7 +600,11 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     // Отбор по фамилии первого человека: он обязан отсечь хоть кого-то, иначе
     // «отобранное» неотличимо от «всего».
     const firstSurname = allNames[0].split('\n')[0].trim().split(' ')[0]
-    await page.goto(`/employees?search=${encodeURIComponent(firstSurname)}`)
+    // `view=forces` НЕ ТЕРЯЕТСЯ при переходе с отбором: без него адрес
+    // открывает расход организации, и «отобранный реестр» проверять негде.
+    await page.goto(
+      `/employees?view=forces&search=${encodeURIComponent(firstSurname)}`,
+    )
     await hydrated(page)
     await tableFilled(page)
 
@@ -639,7 +658,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * строки, а битая иконка браузера читается как поломка.
      */
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/employees')
+    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
+    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
+    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
+    await page.goto('/employees?view=forces')
     await hydrated(page)
     await tableFilled(page)
 

@@ -63,7 +63,10 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
     page,
   }) => {
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    await page.goto('/employees')
+    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
+    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
+    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
+    await page.goto('/employees?view=forces')
     await hydrated(page)
 
     await page.getByRole('button', { name: 'Добавить сотрудника' }).first().click()
