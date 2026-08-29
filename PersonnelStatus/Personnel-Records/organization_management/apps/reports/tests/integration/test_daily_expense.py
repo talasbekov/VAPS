@@ -15,28 +15,31 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 @pytest.fixture(autouse=True)
-def mock_template_path(tmp_path, monkeypatch):
-    """
-    Создает временный валидный xlsx шаблон и подменяет settings.BASE_DIR,
-    чтобы код utils.py искал файл в правильном месте.
+def template_is_the_delivered_one():
+    """Шаблон берётся ИЗ ПОСТАВКИ, а не создаётся пробой (Plane №254).
+
+    Здесь стояла автофикстура `mock_template_path`: она клала во временную
+    папку пустой xlsx и переставляла на неё `settings.BASE_DIR`. Из-за этого
+    весь файл был зелёным, пока на живом стенде та же ручка отвечала 500 —
+    файла `расход.xlsx` не было в репозитории ВООБЩЕ. Проба, которая чинит за
+    код недостающий ресурс, перестаёт отвечать на вопрос «работает ли это в
+    поставке», и именно этот класс слепоты снят.
+
+    Теперь фикстура ничего не подменяет, а ПРОВЕРЯЕТ: шаблон обязан лежать по
+    тому пути, куда смотрит `utils.generate_personnel_expense_report`. Нет
+    файла — падает весь файл проб с внятной причиной, а не молчит.
     """
     import os
-    from openpyxl import Workbook
     from django.conf import settings
 
-    # Создаем фиктивную структуру для apps/reports/
-    reports_dir = tmp_path / "apps" / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    template_file = reports_dir / "расход.xlsx"
+    path = os.path.join(settings.BASE_DIR, "apps/reports/расход.xlsx")
+    assert os.path.exists(path), (
+        f"Шаблона «расход.xlsx» нет в поставке ({path}). Пробы этого файла "
+        f"проверяют сборку отчёта по НАСТОЯЩЕМУ шаблону и подменять его "
+        f"пустым workbook'ом не должны — см. Plane №254."
+    )
+    return path
 
-    # Сохраняем минимально валидный workbook
-    wb = Workbook()
-    wb.save(template_file)
-
-    # Подменяем BASE_DIR
-    monkeypatch.setattr(settings, 'BASE_DIR', str(tmp_path))
-
-    return str(template_file)
 
 @pytest.fixture
 def api_client():
@@ -274,12 +277,12 @@ def test_the_missing_template_answers_with_a_reason_and_not_a_500(
 
     from organization_management.apps.divisions.models import Division
 
-    # ОТКАЗЫВАЕМСЯ ОТ АВТОФИКСТУРЫ `mock_template_path`, и в этом весь смысл
-    # пробы. Фикстура СОЗДАЁТ отсутствующий шаблон во временной папке —
-    # поэтому весь файл проб зелен, а на живом стенде та же ручка отвечает
-    # 500: тесты чинят за код то, чего в поставке нет. Здесь BASE_DIR
-    # переставляется на заведомо пустой каталог, то есть проверяется РЕАЛЬНОЕ
-    # положение дел.
+    # BASE_DIR переставляется на заведомо пустой каталог: проверяется ПОВЕДЕНИЕ
+    # кода без шаблона, а не сегодняшнее состояние поставки. Само отсутствие
+    # шаблона в поставке было дефектом и закрыто (№254, шаблон возвращён в
+    # `apps/reports/`), но отказ обязан остаться внятным: файл можно потерять
+    # снова при переезде каталогов или сборке образа, и тогда наружу опять
+    # полезет «[Errno 2] No such file or directory».
     empty = tmp_path / "без-шаблона"
     empty.mkdir()
     monkeypatch.setattr(settings, "BASE_DIR", str(empty))
