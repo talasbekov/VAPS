@@ -5,7 +5,7 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { PageHeader } from "@/components/page-header"
 import { StatusTable } from "@/components/status-table"
 import { MassStatusUpdate } from "@/components/mass-status-update"
-import { StatusCalendar } from "@/widgets/status-calendar"
+import { StatusCalendarBoard } from "@/widgets/status-calendar"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatCard } from "@/components/stat-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -168,7 +168,7 @@ export default function StatusesPage() {
           </TabsContent>
 
           <TabsContent value="calendar" className="space-y-6">
-            <StatusCalendar />
+            <StatusCalendarBoard />
           </TabsContent>
 
           <TabsContent value="mass-update" className="space-y-6">

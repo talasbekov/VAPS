@@ -292,3 +292,41 @@ def test_day_closes_a_foreign_division_and_rejects_a_broken_date(division, catal
     )
     assert viewer_api.get(DAY, {"date": "2026-08"}).status_code == 400
     assert viewer_api.get(DAY).status_code == 400
+
+
+def test_month_summary_counts_the_whole_scope_not_the_page(viewer, division):
+    """Сводка по дням считается по ВСЕЙ области, а не по странице состава.
+
+    Точки в ячейке дня — счётчики занятости, и посчитать их по загруженной
+    странице значило бы показать «трое в отпуске» там, где их тридцать:
+    страница ограничена потолком 100, а подразделение бывает больше.
+
+    Красная на мутации «считать сводку по `results`»: при `page_size=1`
+    сводка второго дня схлопнется до одного человека.
+    """
+    first = make_employee(division)
+    second = make_employee(division)
+    status(first, "VACATION", date(2026, 8, 1), date(2026, 8, 4))
+    status(second, "DUTY", date(2026, 8, 1), date(2026, 8, 2))
+
+    body = viewer.get(MONTH, {"month": "2026-08", "page_size": "1"}).json()
+
+    assert len(body["results"]) == 1, "страница осталась размером в одного"
+    summary = {row["date"]: row for row in body["summary"]}
+    assert summary["2026-08-01"]["on_duty"] == 1
+    assert summary["2026-08-01"]["absent"] == 1
+    assert summary["2026-08-01"]["in_service"] == 0
+    # 2 августа наряд кончился (полуинтервал) — человек вернулся в строй.
+    assert summary["2026-08-02"] == {
+        "date": "2026-08-02",
+        "on_duty": 0,
+        "on_event": 0,
+        "absent": 1,
+        "in_service": 1,
+    }
+    # Сумма групп дня всегда равна составу области — иначе точки врут.
+    for row in body["summary"]:
+        assert (
+            row["on_duty"] + row["on_event"] + row["absent"] + row["in_service"]
+            == body["count"]
+        )

@@ -71,6 +71,9 @@ def _full_name(employee):
 def _employees_page(scope_division_ids, page, page_size):
     """Страница состава области: сотрудники + их подразделение.
 
+    Счёт состава здесь не берётся: он уже посчитан `_scope_employee_ids` для
+    сводки, и второй `count()` спрашивал бы базу о том же самом.
+
     `scope_division_ids is None` — безскоуповый актор, всё дерево; сужение
     делает вызывающий через общий резолвер области, а не эта функция.
     """
@@ -85,9 +88,54 @@ def _employees_page(scope_division_ids, page, page_size):
         queryset = queryset.filter(
             staff_unit__division_id__in=list(scope_division_ids)
         )
-    count = queryset.count()
     start = (page - 1) * page_size
-    return count, list(queryset[start : start + page_size])
+    return list(queryset[start : start + page_size])
+
+
+def _scope_employee_ids(scope_division_ids):
+    """Все сотрудники области, ОДИН запрос: сводка считается по ним."""
+    from organization_management.apps.employees.models import Employee
+
+    queryset = Employee.objects.filter(is_active=True)
+    if scope_division_ids is not None:
+        queryset = queryset.filter(
+            staff_unit__division_id__in=list(scope_division_ids)
+        )
+    return list(queryset.values_list("id", flat=True))
+
+
+def month_summary(days, employee_ids, catalog):
+    """Занятость по каждому дню месяца — по ВСЕЙ области, не по странице.
+
+    Точки в ячейке дня обязаны считать весь состав: страница ограничена
+    потолком, а подразделение бывает больше — сводка по странице показала бы
+    «трое в отпуске» там, где их тридцать.
+
+    Цикл идёт по тем, у кого факты ЕСТЬ: остальные в строю по определению, и
+    перебирать ради них состав целиком (5000 × 31) незачем.
+    """
+    facts_by_employee = {}
+    if employee_ids:
+        for row in EmployeeStatusSelector.overlapping_range(
+            days[0], days[-1] + timedelta(days=1), employee_ids
+        ):
+            facts_by_employee.setdefault(row["employee_id"], []).append(row)
+
+    total = len(employee_ids)
+    rows = []
+    for day in days:
+        counts = {"on_duty": 0, "on_event": 0, "absent": 0}
+        busy = 0
+        for facts in facts_by_employee.values():
+            group = _group_of(resolve_status(facts, day, catalog), catalog)
+            if group == "in_service":
+                continue
+            counts[group] += 1
+            busy += 1
+        rows.append(
+            {"date": day.isoformat(), **counts, "in_service": total - busy}
+        )
+    return rows
 
 
 def month_page(*, first_day, scope_division_ids, page=1, page_size=MAX_PAGE_SIZE):
@@ -102,9 +150,11 @@ def month_page(*, first_day, scope_division_ids, page=1, page_size=MAX_PAGE_SIZE
     days = month_days(first_day)
     next_month = days[-1] + timedelta(days=1)
 
-    count, employees = _employees_page(scope_division_ids, page, page_size)
     catalog_rows = StatusTypeSelector.catalog_rows()
     catalog = StatusCatalog.from_rows(catalog_rows)
+    scope_employee_ids = _scope_employee_ids(scope_division_ids)
+    employees = _employees_page(scope_division_ids, page, page_size)
+    count = len(scope_employee_ids)
 
     facts_by_employee = {}
     if employees:
@@ -145,6 +195,7 @@ def month_page(*, first_day, scope_division_ids, page=1, page_size=MAX_PAGE_SIZE
         "catalog": [
             {"code": row["code"], "name": row["name"]} for row in catalog_rows
         ],
+        "summary": month_summary(days, scope_employee_ids, catalog),
         "count": count,
         "page": page,
         "page_size": page_size,
