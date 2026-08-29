@@ -45,20 +45,24 @@ def catalog(db):
     `IN_SERVICE` обязателен так же, как в расходе: календарю некуда положить
     дни без фактов, если выводимого типа в справочнике нет.
     """
+    # Колонки расхода — как в проде (seed_status_types), а не заглушкой "X":
+    # панель занятости берёт группу «на дежурстве» ПО КОЛОНКЕ, и фикстура с
+    # выдуманной колонкой описывала бы мир, которого не бывает. Участие в ОМ
+    # отчитывается в «В строю» — на этом и стоит проба про три группы.
     rows = [
-        ("SICK_LEAVE", "На больничном", 10),
-        ("VACATION", "В отпуске", 20),
-        ("EVENT_ASSIGNMENT", "Привлечён на мероприятие (наряд)", 80),
-        ("DUTY", "На дежурстве", 70),
-        ("IN_SERVICE", "В строю", 999),
+        ("SICK_LEAVE", "На больничном", 10, "SICK"),
+        ("VACATION", "В отпуске", 20, "VACATION"),
+        ("EVENT_ASSIGNMENT", "Привлечён на мероприятие (наряд)", 80, "IN_SERVICE"),
+        ("DUTY", "На дежурстве", 70, "ON_DUTY"),
+        ("IN_SERVICE", "В строю", 999, "IN_SERVICE"),
     ]
-    for code, name, priority in rows:
+    for code, name, priority, column in rows:
         StatusType.objects.get_or_create(
             code=code,
             defaults={
                 "name": name,
                 "priority": priority,
-                "report_column_code": "X",
+                "report_column_code": column,
                 "is_hard_block": False,
             },
         )
@@ -202,3 +206,89 @@ def test_month_page_is_capped(viewer, division):
     assert body["page_size"] == 100
     assert body["count"] == 3
     assert len(body["results"]) == 3
+
+
+DAY = "/api/ops/status-calendar/day/"
+
+
+def group_names(body, key):
+    return [row["name"] for row in body["groups"][key]["employees"]]
+
+
+def test_day_splits_the_three_groups_of_the_reference(viewer, division):
+    """Панель занятости: на дежурстве / задействованы в ОМ / отсутствуют.
+
+    Разрез ОМ берётся из УЧАСТИЙ (`EVENT_INVOLVEMENT_KINDS`), а не из имени
+    типа: оба кода участия отчитываются в колонку «В строю» (Plane №169), и по
+    колонке их от в строю не отличить вовсе.
+    """
+    duty = make_employee(division)
+    duty.last_name, duty.first_name = "Дежурный", "Пётр"
+    duty.save(update_fields=["last_name", "first_name"])
+    event = make_employee(division)
+    event.last_name, event.first_name = "Мероприятный", "Семён"
+    event.save(update_fields=["last_name", "first_name"])
+    absent = make_employee(division)
+    absent.last_name, absent.first_name = "Отпускной", "Игорь"
+    absent.save(update_fields=["last_name", "first_name"])
+    in_service = make_employee(division)
+    in_service.last_name, in_service.first_name = "Строевой", "Олег"
+    in_service.save(update_fields=["last_name", "first_name"])
+
+    status(duty, "DUTY", date(2026, 8, 4), date(2026, 8, 5))
+    status(event, "EVENT_ASSIGNMENT", date(2026, 8, 4), date(2026, 8, 6))
+    status(absent, "VACATION", date(2026, 8, 1), date(2026, 8, 10))
+
+    body = viewer.get(DAY, {"date": "2026-08-04"}).json()
+
+    assert group_names(body, "on_duty") == ["Дежурный Пётр"]
+    assert group_names(body, "on_event") == ["Мероприятный Семён"]
+    assert group_names(body, "absent") == ["Отпускной Игорь"]
+    # «В строю» — числом: поимённый список тех, с кем ничего не происходит,
+    # панели не нужен, а на пяти тысячах он и есть весь состав.
+    assert body["in_service"] == 1
+    assert body["total"] == 4
+    # У каждого названа ПОДПИСЬ его статуса, а не код: панель читает человек.
+    assert body["groups"]["absent"]["employees"][0]["status"] == {
+        "code": "VACATION",
+        "name": "В отпуске",
+    }
+
+
+def test_day_puts_a_person_with_two_facts_in_one_group(viewer, division):
+    """Два факта на один день — одна группа, по победителю правила расхода.
+
+    Красная на мутации «класть человека в группу каждого его факта»: он
+    оказался бы и на дежурстве, и в отсутствующих, а сумма групп перестала бы
+    сходиться с составом.
+    """
+    employee = make_employee(division)
+    status(employee, "DUTY", date(2026, 8, 4), date(2026, 8, 6))
+    status(employee, "SICK_LEAVE", date(2026, 8, 4), date(2026, 8, 5))
+
+    body = viewer.get(DAY, {"date": "2026-08-04"}).json()
+
+    counts = {key: body["groups"][key]["count"] for key in body["groups"]}
+    assert counts == {"on_duty": 0, "on_event": 0, "absent": 1}
+    assert body["in_service"] == 0
+    assert body["total"] == 1
+
+
+def test_day_closes_a_foreign_division_and_rejects_a_broken_date(division, catalog):
+    other = Division.objects.create(name="Управление 2")
+    api, _ = client_for(
+        "calendar-day-scoped",
+        "CALENDAR_DAY_SCOPED",
+        perms=("status.view",),
+        scope_division_id=other.pk,
+    )
+
+    assert api.get(
+        DAY, {"date": "2026-08-04", "division_id": division.pk}
+    ).status_code == 403
+
+    viewer_api, _ = client_for(
+        "calendar-day-viewer", "CALENDAR_DAY_VIEWER", perms=("status.view",)
+    )
+    assert viewer_api.get(DAY, {"date": "2026-08"}).status_code == 400
+    assert viewer_api.get(DAY).status_code == 400

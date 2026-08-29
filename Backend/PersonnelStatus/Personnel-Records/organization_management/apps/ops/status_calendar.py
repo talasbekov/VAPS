@@ -1,4 +1,6 @@
-"""Календарь статусов: месяц целиком, по дням (Plane №270, Ш-1).
+"""Календарь статусов: месяц по дням (Ш-1) и занятость на дату (Ш-2).
+
+Plane №270.
 
 Отдельный модуль, а не ещё одна ручка в `ops/api/views.py`: вид календаря
 спрашивает у базы ровно один вопрос («какие факты задевают месяц») и
@@ -19,6 +21,8 @@ from organization_management.apps.operations.selectors import (
     StatusTypeSelector,
 )
 from organization_management.apps.operations.strength_report import (
+    DERIVED_IN_SERVICE,
+    EVENT_INVOLVEMENT_KINDS,
     StatusCatalog,
     resolve_status,
 )
@@ -145,4 +149,105 @@ def month_page(*, first_day, scope_division_ids, page=1, page_size=MAX_PAGE_SIZE
         "page": page,
         "page_size": page_size,
         "results": results,
+    }
+
+
+#: Сколько людей группа называет поимённо. Счётчик группы при этом ТОЧНЫЙ:
+#: панель занятости обязана не соврать числом, даже когда список подрезан.
+MAX_GROUP_EMPLOYEES = 200
+
+#: Колонка расхода, означающую службу в наряде. Группа «на дежурстве» берётся
+#: по КОЛОНКЕ, а не по перечню кодов: `DUTY` и `GEV` — разные типы одной
+#: службы, и второй список кодов здесь разошёлся бы со справочником, который
+#: заказчик правит сам.
+_ON_DUTY_COLUMN = "ON_DUTY"
+
+
+def _group_of(code, catalog):
+    """Группа панели занятости по коду победителя дня.
+
+    Порядок проверок не случаен: коды участия отчитываются в колонку «В
+    строю» (Plane №169), поэтому участие проверяется ПЕРВЫМ — иначе человек на
+    мероприятии попал бы в «в строю» и вторая группа эталона всегда была бы
+    пустой.
+    """
+    if code in EVENT_INVOLVEMENT_KINDS:
+        return "on_event"
+    if catalog.column.get(code) == _ON_DUTY_COLUMN:
+        return "on_duty"
+    if code == DERIVED_IN_SERVICE:
+        return "in_service"
+    return "absent"
+
+
+def day_panel(*, on_date, scope_division_ids):
+    """Занятость области на дату: три группы поимённо + «в строю» числом.
+
+    Поимённого списка «в строю» нет намеренно: на пяти тысячах сотрудников это
+    и есть весь состав, а панель отвечает на вопрос «кто чем занят», а не
+    «кто есть».
+    """
+    from organization_management.apps.employees.models import Employee
+
+    queryset = (
+        Employee.objects.filter(is_active=True)
+        .select_related("rank", "staff_unit__division")
+        .order_by("last_name", "first_name", "id")
+    )
+    if scope_division_ids is not None:
+        queryset = queryset.filter(
+            staff_unit__division_id__in=list(scope_division_ids)
+        )
+    employees = list(queryset)
+
+    catalog_rows = StatusTypeSelector.catalog_rows()
+    catalog = StatusCatalog.from_rows(catalog_rows)
+    names = {row["code"]: row["name"] for row in catalog_rows}
+
+    facts_by_employee = {}
+    if employees:
+        for row in EmployeeStatusSelector.overlapping_on(
+            on_date, [employee.pk for employee in employees]
+        ):
+            facts_by_employee.setdefault(row["employee_id"], []).append(row)
+
+    groups = {
+        key: {"count": 0, "has_more": False, "employees": []}
+        for key in ("on_duty", "on_event", "absent")
+    }
+    in_service = 0
+    for employee in employees:
+        code = resolve_status(
+            facts_by_employee.get(employee.pk, []), on_date, catalog
+        )
+        group = _group_of(code, catalog)
+        if group == "in_service":
+            in_service += 1
+            continue
+        bucket = groups[group]
+        bucket["count"] += 1
+        if len(bucket["employees"]) < MAX_GROUP_EMPLOYEES:
+            staff_unit = getattr(employee, "staff_unit", None)
+            division = staff_unit.division if staff_unit is not None else None
+            bucket["employees"].append(
+                {
+                    "id": str(employee.pk),
+                    "name": _full_name(employee),
+                    "rank": employee.rank.name if employee.rank else "",
+                    "division": (
+                        {"id": str(division.pk), "name": division.name}
+                        if division is not None
+                        else None
+                    ),
+                    "status": {"code": code, "name": names.get(code, code)},
+                }
+            )
+        else:
+            bucket["has_more"] = True
+
+    return {
+        "date": on_date.isoformat(),
+        "groups": groups,
+        "in_service": in_service,
+        "total": len(employees),
     }
