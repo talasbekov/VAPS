@@ -160,3 +160,48 @@ def test_seeded_positions_are_listed_too(positions):
     stored = set(Position.objects.values_list("code", flat=True))
     assert listed
     assert listed == stored
+
+
+# ── Переход list → карточка (Plane №306) ─────────────────────────────────
+
+
+def test_detail_opens_by_the_code_from_the_list(positions):
+    """Ключ, которым клиент располагает из списка, обязан открывать карточку.
+
+    Единственное, что строка списка даёт наружу, — `code` (числового pk в
+    контракте донора нет вовсе). Пока detail искал по pk, объявленный схемой
+    переход был недостижим: обращение по коду давало 404.
+    """
+    api, _ = reader()
+    code = by_code(api.get(URL), "P-SENIOR")["code"]
+
+    response = api.get(f"{URL}{code}/")
+
+    assert response.status_code == 200
+    assert response.json()["code"] == "P-SENIOR"
+
+
+def test_detail_repeats_the_row_of_the_list(positions):
+    """Карточка и строка списка — одна и та же запись в одном контракте.
+
+    Сверяем целым словарём: разойдись эти два места набором полей или
+    значением — клиент, открывший карточку, увидел бы не то, что в списке.
+    """
+    api, _ = reader()
+    listed = by_code(api.get(URL), "P-CHIEF")
+
+    assert api.get(f"{URL}P-CHIEF/").json() == listed
+
+
+def test_detail_refuses_an_unknown_code(positions):
+    """Несуществующий код — честный 404, а не пятисотка и не чужая строка."""
+    api, _ = reader()
+
+    assert api.get(f"{URL}P-NO-SUCH-CODE/").status_code == 404
+
+
+def test_detail_is_closed_without_the_permission(positions):
+    """Карточка закрыта тем же правом, что и список (fail-closed)."""
+    api, _ = client_for("core-pos-detail-nobody")
+
+    assert api.get(f"{URL}P-CHIEF/").status_code == 403

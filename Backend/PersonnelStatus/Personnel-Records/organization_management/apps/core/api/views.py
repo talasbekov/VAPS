@@ -118,6 +118,28 @@ class EmployeeViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
         return qs
 
 
+# Ключ справочников формы штата — КОД, а не числовой pk. У донора Position и
+# Rank лежат в своих таблицах с кодом-первичным ключом (см. срезы 155/156), и
+# клиент SPA сгенерирован из ТОЙ схемы: на руках у него из списка только
+# `code`. Пока detail-маршруты искали по pk, объявленный схемой переход
+# list → карточка был недостижим по контракту: обращение по code давало 404, а
+# pk клиенту не отдавали вовсе (Plane №306).
+#
+# Из трёх вариантов карточки взят второй — lookup по коду. Первый (добавить
+# `id` в списочную строку) закрыл бы 404, но завёл бы В КОНТРАКТЕ поле,
+# которого у донора нет, и оставил бы у ресурса два разных ключа. Третий
+# (снять detail) выкинул бы объявленный схемой маршрут. Ломать существующие
+# ссылки по pk нечего: читателей detail нет ни во фронте (lib/api.ts берёт
+# только списки), ни в пробах — проверено грепом до правки.
+#
+# Регулярное выражение шире умолчания DRF (`[^/.]+`): точку код содержать
+# может — усыновлённые строки стенда держат СВОИ коды, заведённые до лестницы
+# (seed_positions_ranks), и их набор символов нам не подвластен. Несуществующий
+# код по-прежнему даёт честный 404.
+_REFERENCE_LOOKUP_FIELD = "code"
+_REFERENCE_LOOKUP_REGEX = "[^/]+"
+
+
 class PositionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
     """GET /api/core/positions/ — справочник должностей в донорском контракте.
 
@@ -129,6 +151,8 @@ class PositionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
     """
 
     serializer_class = PositionSerializer
+    lookup_field = _REFERENCE_LOOKUP_FIELD
+    lookup_value_regex = _REFERENCE_LOOKUP_REGEX
     permission_map = {
         "list": _READ_ORGSTRUCTURE_PERMISSION,
         "retrieve": _READ_ORGSTRUCTURE_PERMISSION,
@@ -148,6 +172,8 @@ class RankViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
     """
 
     serializer_class = RankSerializer
+    lookup_field = _REFERENCE_LOOKUP_FIELD
+    lookup_value_regex = _REFERENCE_LOOKUP_REGEX
     permission_map = {
         "list": _READ_ORGSTRUCTURE_PERMISSION,
         "retrieve": _READ_ORGSTRUCTURE_PERMISSION,

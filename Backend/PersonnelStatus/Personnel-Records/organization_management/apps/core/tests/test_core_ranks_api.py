@@ -179,3 +179,48 @@ def test_every_stored_rank_is_listed(ranks):
     listed = {r["code"] for r in rows(api.get(URL))}
     assert listed == set(Rank.objects.values_list("code", flat=True))
     assert {"R-COL", "R-MAJ", "R-SGT"} <= listed
+
+
+# ── Переход list → карточка (Plane №306) ─────────────────────────────────
+
+
+def test_detail_opens_by_the_code_from_the_list(ranks):
+    """Ключ, которым клиент располагает из списка, обязан открывать карточку.
+
+    Строка списка отдаёт `code` и не отдаёт числового pk — значит и карточка
+    обязана открываться кодом. Пока detail искал по pk, объявленный схемой
+    переход был недостижим (Plane №306).
+    """
+    api, _ = reader()
+    code = by_code(api.get(URL), "R-MAJ")["code"]
+
+    response = api.get(f"{URL}{code}/")
+
+    assert response.status_code == 200
+    assert response.json()["code"] == "R-MAJ"
+
+
+def test_detail_repeats_the_row_of_the_list(ranks):
+    """Карточка и строка списка — одна запись в одном контракте.
+
+    Сверяем целым словарём: тут это ловит ещё и утечку `level` наружу —
+    карточка обязана звать его rank_index ровно так же, как список.
+    """
+    api, _ = reader()
+    listed = by_code(api.get(URL), "R-SGT")
+
+    assert api.get(f"{URL}R-SGT/").json() == listed
+
+
+def test_detail_refuses_an_unknown_code(ranks):
+    """Несуществующий код — честный 404, а не пятисотка и не чужая строка."""
+    api, _ = reader()
+
+    assert api.get(f"{URL}R-NO-SUCH-CODE/").status_code == 404
+
+
+def test_detail_is_closed_without_the_permission(ranks):
+    """Карточка закрыта тем же правом, что и список (fail-closed)."""
+    api, _ = client_for("core-rank-detail-nobody")
+
+    assert api.get(f"{URL}R-COL/").status_code == 403
