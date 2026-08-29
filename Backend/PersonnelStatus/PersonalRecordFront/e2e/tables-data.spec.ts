@@ -349,6 +349,87 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     ).toBeVisible()
   })
 
+  test('привлечения доезжают до таблицы ВСЕ, а не первой страницей', async ({ page }) => {
+    /**
+     * Класс дефекта, который проба «одной строки» поймать не может.
+     *
+     * Соседняя проба выше проверяет, что у КОНКРЕТНОГО привлечённого видна
+     * ссылка на ОМ, — и она была зелёной, когда экран получал 50 строк участий
+     * из тысячи: её подопытный попадал в эти 50. Дефект (ручка раздела
+     * пагинируется limit/offset и параметр `page_size` ИГНОРИРУЕТ, умолчание
+     * 50) нашло ревью, а не прогон, потому что ни один ассерт не говорил
+     * о ЧИСЛЕ. Утверждение «участие видно у Иванова» не отвечает на вопрос
+     * «а у остальных?».
+     *
+     * Здесь ассерт именно о числе: у КАЖДОЙ видимой строки, чей сотрудник по
+     * данным сервера сегодня привлечён, обязана стоять ссылка на мероприятие.
+     * Разъедется клиент с сервером на одну строку — проба назовёт её поимённо.
+     */
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const today = new Date().toISOString().slice(0, 10)
+
+    // Все страницы, а не первая: ровно та ошибка, которую проба и стережёт.
+    const attachedIds = new Set<number>()
+    let next: string | null =
+      `${API}/api/operations/statuses/?business_date=${today}&limit=200`
+    for (let guard = 0; guard < 20 && next !== null; guard += 1) {
+      const body = (await (
+        await fetch(next, { headers: { Authorization: `Bearer ${token}` } })
+      ).json()) as {
+        results?: Array<{ employee_id: number; participations?: unknown[] }>
+        next?: string | null
+      }
+      for (const row of body.results ?? []) {
+        if ((row.participations ?? []).length > 0) attachedIds.add(row.employee_id)
+      }
+      next = body.next ?? null
+    }
+    expect(
+      attachedIds.size,
+      'на стенде сегодня нет ни одного привлечения — проверять нечего',
+    ).toBeGreaterThan(0)
+
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto('/statuses')
+    await hydrated(page)
+    await tableFilled(page)
+
+    // 🔴 ЖДЁМ УЧАСТИЯ, а не читаем таблицу сразу. `tableFilled` говорит, что
+    // пришли СТРОКИ; участия едут отдельным запросом и позже — ровно как
+    // фотографии в пробе аватарок (Plane №293). Первая редакция этой пробы
+    // читала DOM немедленно и объявляла «сервер знает привлечение, а таблица
+    // не показывает» у девяти сотрудников подряд — то есть обвиняла код в
+    // дефекте, которого нет, ещё и убедительным списком имён.
+    await expect(
+      page.locator('table tbody a[href^="/security-ops/events/"]').first(),
+      'ни одной ссылки на мероприятие не появилось — участия не доехали вовсе',
+    ).toBeVisible({ timeout: 20_000 })
+
+    const visible = await page.evaluate(() =>
+      [...document.querySelectorAll('table tbody tr[data-employee-id]')].map((row) => ({
+        id: Number(row.getAttribute('data-employee-id')),
+        // Ссылка ИЛИ подпись «ОМ снят»: у участия в удалённом мероприятии
+        // интерфейс намеренно рисует текст, а не ссылку в 404 (Plane №281).
+        // Требовать здесь именно <a> значило бы краснеть на правильном коде.
+        shown:
+          row.querySelector('a[href^="/security-ops/events/"]') !== null ||
+          (row.textContent ?? '').includes('ОМ снят'),
+      })),
+    )
+    const shouldHaveLink = visible.filter((row) => attachedIds.has(row.id))
+    expect(
+      shouldHaveLink.length,
+      'ни один привлечённый не попал на видимую страницу — ассерт о числе стал бы вакуумным',
+    ).toBeGreaterThan(0)
+
+    const missing = shouldHaveLink.filter((row) => !row.shown).map((row) => row.id)
+    expect(
+      missing,
+      `у сотрудников ${missing.join(', ')} сервер знает привлечение, а таблица его не показывает — ` +
+        'клиент забрал не все участия (так было при page_size вместо limit: 50 строк из тысячи)',
+    ).toEqual([])
+  })
+
   test('без известного мероприятия «Участие в ОМ» ведёт на общий разрез и говорит об этом', async ({
     page,
   }) => {
