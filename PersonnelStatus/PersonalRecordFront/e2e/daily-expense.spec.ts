@@ -675,3 +675,140 @@ test.describe(LIVE ? 'расход: занятость ОМ' : 'расход: з
     expect(busy!.columns.IN_SERVICE).toBeGreaterThanOrEqual(busy!.event.total)
   })
 })
+
+test.describe(
+  LIVE
+    ? 'расход: раскрытие только после сдачи'
+    : 'расход: раскрытие только после сдачи (скип: нет SMOKE_LIVE=1)',
+  () => {
+    test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+
+    test('несданное управление не раскрывается и говорит дату последней сдачи, сданное раскрывается (Plane №295)', async ({
+      page,
+    }) => {
+      // Требование заказчика: «Список какого-то управления появляется тогда,
+      // когда начальник управления обновил свой список и отправил. Рядом
+      // управления должна быть дата обновления.»
+      //
+      // 🔴 ПОЧЕМУ ПЕРЕХВАТ, А НЕ ЖИВЫЕ ДАННЫЕ. Учётка стенда — администратор
+      // с «*», а область права сдачи у неё поэтому «всё дерево»: `can_submit`
+      // на живом ответе приходит true у КАЖДОГО управления, и запрет
+      // раскрытия администратору не показывается никогда (и правильно: своё
+      // управление начальник обязан открыть до сдачи). Состояние, которое
+      // стережёт эта проба, живёт у ДРУГОЙ роли — сводящего за департамент, —
+      // и достижимо только подменой двух ответов: списка подразделений
+      // (`can_submit`) и списка сдач дня.
+      const token = await apiToken()
+      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      expect(
+        report.rows.length,
+        'на борде меньше двух управлений — сданное от несданного не отличить',
+      ).toBeGreaterThan(1)
+      const submitted = report.rows[0]
+      const pending = report.rows[1]
+      const businessDate = report.business_date
+      const lastMoment = '2026-08-27T18:12:00+05:00'
+
+      // Подразделения: настоящий ответ, у которого сняты права сдачи. Живой
+      // ответ берём целиком (`route.fetch`), а не сочиняем: имена и пути в
+      // нём — те же, по которым проба адресует группы ниже.
+      await page.route(
+        (url) => url.pathname === '/api/ops/daily/divisions/',
+        async (route) => {
+          const real = await route.fetch()
+          const body = (await real.json()) as {
+            results: { id: string; name: string; ancestors?: string[] }[]
+          }
+          await route.fulfill({
+            json: {
+              ...body,
+              results: body.results.map((row) => ({
+                ...row,
+                can_submit: false,
+                // Дата последней сдачи — только у одного управления: вторая
+                // половина требования («не сдавали ни разу» — это другое
+                // состояние, и оно проверяется ниже отдельной строкой).
+                last_submitted_at:
+                  row.id === String(pending.division_id) ? lastMoment : null,
+              })),
+            },
+          })
+        },
+      )
+
+      // Сдачи дня: сдано РОВНО одно управление. Предикат — списочный запрос
+      // борда (без `division_id`): внутренний запрос панели истории ходит с
+      // ним и подменяться не должен.
+      const submittedRow: DailySubmissionRow = {
+        id: 95001,
+        division_id: String(submitted.division_id),
+        business_date: businessDate,
+        version: 1,
+        is_current: true,
+        // Событие — из каталога контракта (`DaySubmissionEvent`): выдуманный
+        // код парсер списка молча отбрасывает, и сданное управление читалось
+        // бы как несданное (поймано на первом прогоне пробы).
+        event: 'CHANGED',
+        submitted_by: 'проба',
+        submitted_at: `${businessDate}T09:30:00+05:00`,
+        late: false,
+      }
+      await page.route(
+        (url) =>
+          url.pathname === '/api/ops/daily/daily-submissions/' &&
+          url.searchParams.get('division_id') === null,
+        async (route) => {
+          await route.fulfill({
+            json: { count: 1, next: null, previous: null, results: [submittedRow] },
+          })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=daily`)
+      const board = page.getByRole('region', { name: 'Ежедневный расход' })
+      await expect(board).toBeVisible({ timeout: 25_000 })
+
+      const labels = await divisionLabels(token)
+      const pendingLabel = labels.get(String(pending.division_id)) ?? pending.name
+      const submittedLabel = labels.get(String(submitted.division_id)) ?? submitted.name
+
+      // ── Несданное ────────────────────────────────────────────────────────
+      const pendingGroup = board.getByRole('group', { name: pendingLabel, exact: true })
+      const pendingHeader = pendingGroup.getByRole('button').first()
+      await expect(pendingHeader).toHaveAttribute('aria-disabled', 'true')
+      // `aria-expanded` у нераскрываемой шапки быть НЕ должно: оно обещало бы
+      // «свёрнуто, нажми» — и обещало бы ложно.
+      await expect(pendingHeader).not.toHaveAttribute('aria-expanded', /.*/)
+      await expect(pendingGroup).toContainText('День не сдан')
+      await expect(pendingGroup).toContainText('последняя сдача 27.08.2026, 18:12')
+      await expect(pendingGroup).toContainText('список раскроется после сдачи')
+
+      // Клик по нераскрываемой шапке НИЧЕГО не открывает: ни области списка,
+      // ни строк таблицы. Счётчик запросов `/daily/employees/` тут негоден —
+      // соседний вид того же экрана («Сбор сил», `use-forces-gathering`)
+      // грузит людей ВСЕХ управлений безусловно, и его запросы неотличимы от
+      // запроса борда по одному адресу (замерено: 51 вызов на загрузку).
+      await pendingHeader.click({ force: true })
+      await expect(
+        pendingGroup.getByRole('region', { name: pendingLabel, exact: true }),
+      ).toHaveCount(0)
+      await expect(pendingGroup.locator('tbody tr')).toHaveCount(0)
+
+      // ── Сданное ──────────────────────────────────────────────────────────
+      const submittedGroup = board.getByRole('group', { name: submittedLabel, exact: true })
+      const submittedHeader = submittedGroup.getByRole('button').first()
+      await expect(submittedHeader).toHaveAttribute('aria-expanded', 'false')
+      // Дата обновления — рядом с управлением, как просил заказчик.
+      await expect(submittedGroup).toContainText('Обновлено')
+      await submittedHeader.click()
+      await expect(
+        submittedGroup.getByRole('region', { name: submittedLabel, exact: true }),
+      ).toBeVisible()
+      await expect(
+        submittedGroup.locator('tbody tr').first(),
+        'сданное управление раскрылось пустым — списка нет',
+      ).toBeVisible()
+    })
+  },
+)

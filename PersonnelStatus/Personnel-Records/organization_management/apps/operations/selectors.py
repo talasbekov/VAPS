@@ -489,6 +489,33 @@ class DailySubmissionSelector:
         return {row.division_id: row for row in rows}
 
     @staticmethod
+    def last_current_by_division(division_ids):
+        """{подразделение: САМАЯ СВЕЖАЯ действующая сдача ЛЮБОГО дня} одним
+        запросом.
+
+        Отвечает на вопрос «когда это управление сдавало список в последний
+        раз» — его задаёт строка «Ежедневного расхода» у НЕсданного сегодня
+        управления (Plane №295). `current_for_many` на него не отвечает: она
+        спрашивает про ОДИН день, а тут дня и нет — сдачи сегодня не было.
+
+        Порядок тот же, что у `list` (свежий день первым, внутри дня свежая
+        версия), поэтому первая встреченная строка подразделения и есть
+        последняя сдача; `defer("snapshot")` обязателен по той же причине,
+        что и там — снимок весит десятки килобайт на строку.
+        """
+        latest = {}
+        rows = (
+            OpsDailySubmission.objects.filter(
+                division_id__in=list(division_ids), is_current=True
+            )
+            .defer("snapshot")
+            .order_by("-business_date", "division_id", "-version", "id")
+        )
+        for row in rows:
+            latest.setdefault(row.division_id, row)
+        return latest
+
+    @staticmethod
     def previous_for(division_id, business_date):
         """Ближайшая ПРЕДЫДУЩАЯ текущая сдача (строго раньше даты) или None.
 
