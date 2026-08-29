@@ -172,7 +172,7 @@ export function EditBulletinDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Правка бюллетеня</DialogTitle>
           <DialogDescription>

@@ -83,7 +83,7 @@ export function AssignChiefDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Старший объекта</DialogTitle>
           <DialogDescription>

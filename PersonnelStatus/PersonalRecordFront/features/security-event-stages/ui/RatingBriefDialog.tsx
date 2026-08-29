@@ -70,7 +70,7 @@ export function RatingBriefDialog({
 
   return (
     <Dialog open={employeeId !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[460px]">
+      <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle>Краткая информация о рейтинге</DialogTitle>
           <DialogDescription>

@@ -63,6 +63,15 @@ function DialogContent({
           // max-h + собственный скролл — в БАЗЕ: без них семь диалогов на
           // низком экране прятали кнопки формы под нижний край, и форма
           // выглядела «без кнопки Сохранить».
+          // 🔴 ШИРИНА ЗАДАЁТСЯ ТОЛЬКО С ПРЕФИКСОМ `sm:` (Plane №313). Здесь
+          // стоит `sm:max-w-lg`, и это НЕ умолчание, которое перебивается
+          // классом вызывающего: `max-w-4xl` без префикса и `sm:max-w-lg` —
+          // разные ключи для twMerge, оба доезжают до разметки, и выше 640px
+          // побеждает второй. Диалог «Просмотр профиля» так и жил: просил
+          // 4xl (896px), получал 512px и обрезал правую карточку по краю.
+          // Тринадцать вызывающих переведены на `sm:max-w-…`; четырнадцатый
+          // (`AddEmployeeDialog`) обходил ту же яму `!max-w-5xl` ещё до того,
+          // как её назвали.
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
           className
         )}

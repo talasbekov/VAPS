@@ -823,7 +823,7 @@ function EventRow({
           спросить надо ИМЕНЕМ того, что исчезнет, иначе человек соглашается
           вслепую. */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Удалить {event.code}?</DialogTitle>
             <DialogDescription>

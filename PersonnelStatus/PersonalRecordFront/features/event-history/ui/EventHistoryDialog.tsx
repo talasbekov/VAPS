@@ -62,7 +62,7 @@ export function EventHistoryDialog({
 }: EventHistoryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[85vh] sm:max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>История мероприятий</DialogTitle>
           <DialogDescription>

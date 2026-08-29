@@ -88,7 +88,7 @@ export function AddDeputyDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Замещающий на объекте</DialogTitle>
           <DialogDescription>
