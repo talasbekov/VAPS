@@ -300,7 +300,7 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     const first = leaders[0]
     const divisionStatuses = await get<{ results: { employee_id: number; status_type_code: string }[] }>(
       token,
-      `/api/operations/statuses/?business_date=${report.business_date}&division_id=${first.division.id}&page_size=500`
+      `/api/operations/statuses/?business_date=${report.business_date}&division_id=${first.division.id}&limit=500`
     )
     const activeStatus = divisionStatuses.results.find((row) => row.employee_id === first.employee.id)
     const expectedLabel = activeStatus

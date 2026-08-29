@@ -92,7 +92,7 @@ async function assignedCount(token: string, businessDate: string): Promise<numbe
   for (const code of [EVENT_ASSIGNMENT, EVENT_ASSIGNMENT_GROUP]) {
     const page = await get<{ results: StatusRow[] }>(
       token,
-      `/api/operations/statuses/?business_date=${businessDate}&status_type_code=${code}&page_size=500`,
+      `/api/operations/statuses/?business_date=${businessDate}&status_type_code=${code}&limit=500`,
     )
     total += page.results.length
   }
@@ -608,7 +608,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // статусу, и запись без него для остальной системы ничего не значит.
     const statuses = await get<{ results: { employee_id: number }[] }>(
       token,
-      `/api/operations/statuses/?business_date=2027-06-01&status_type_code=${EVENT_ASSIGNMENT}&page_size=200`,
+      `/api/operations/statuses/?business_date=2027-06-01&status_type_code=${EVENT_ASSIGNMENT}&limit=200`,
     )
     expect(statuses.results.length, 'статуса привлечения на дату ОМ нет').toBeGreaterThan(0)
 

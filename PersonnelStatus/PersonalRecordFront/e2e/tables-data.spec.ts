@@ -303,7 +303,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const today = new Date().toISOString().slice(0, 10)
     const statuses = (await (
-      await fetch(`${API}/api/operations/statuses/?business_date=${today}&page_size=200`, {
+      await fetch(`${API}/api/operations/statuses/?business_date=${today}&limit=200`, {
         headers: { Authorization: `Bearer ${token}` },
       })
     ).json()) as { results?: Array<{ employee_id: number; participations?: unknown[] }> }
