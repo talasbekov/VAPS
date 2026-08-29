@@ -872,6 +872,29 @@ export interface ForceCollectionRow {
   collectionStatus: ForceCollectionStatus;
 }
 
+/** Сбор ЦЕЛИКОМ — карточка штаба (Plane №271, Ш-2). */
+export interface ForceCollectionDetail {
+  eventId: string;
+  code: string;
+  title: string;
+  businessDate: string;
+  eventTime: string | null;
+  location: string;
+  stage: SecurityEventStage;
+  need: number;
+  allocated: number;
+  gathered: number;
+  remaining: number;
+  collectionStatus: ForceCollectionStatus;
+  allocations: ForceAllocationRow[];
+}
+
+/** 🔴 `force-collection`, а не `forces/collection`: второй попадал бы в уже
+ * заведённый `<id>/forces/<requestId>/` (только PATCH) и отвечал бы 405. */
+export function securityEventForceCollectionPath(eventId: string): string {
+  return `${SECURITY_EVENTS_PATH}${eventId}/force-collection/`;
+}
+
 export function securityEventForceCollectionsPath(): string {
   return `${SECURITY_EVENTS_PATH}forces/collections/`;
 }

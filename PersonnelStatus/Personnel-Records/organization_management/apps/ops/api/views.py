@@ -269,6 +269,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_accept": _FORCES_COMMAND_PERMISSION,
         "forces_return": _FORCES_COMMAND_PERMISSION,
         "forces_collections": _FORCES_COMMAND_PERMISSION,
+        "forces_collection": _FORCES_COMMAND_PERMISSION,
         "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
         "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
@@ -710,6 +711,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         штаба.
         """
         return Response({"results": event_service.force_collections_view()})
+
+    # 🔴 ПУТЬ НЕ `forces/collection`: он попадал бы в уже заведённый
+    # `<id>/forces/<requestId>/` (правка строки запроса, только PATCH), и
+    # ручка отвечала бы 405 «Method GET not allowed» вместо своих данных.
+    # Один сегмент — один смысл.
+    @action(detail=True, methods=["get"], url_path="force-collection")
+    def forces_collection(self, request, pk=None):
+        """Сбор ЦЕЛИКОМ для карточки штаба (Plane №271, Ш-2).
+
+        Своя ручка, а не карточка мероприятия: та отдаёт ОМ со всеми стадиями,
+        маршрутом согласования, журналом и расстановкой — экрану сбора из
+        этого нужна одна десятая.
+
+        Область не сужается по той же причине, что и у списка: штаб обязан
+        видеть всю свою раскладку.
+        """
+        return Response(event_service.force_collection_detail(pk))
 
     @action(detail=False, methods=["get"], url_path="forces/requests")
     def forces_department_requests(self, request):

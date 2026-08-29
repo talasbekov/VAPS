@@ -2573,6 +2573,46 @@ def force_collections_view():
     return rows
 
 
+def force_collection_detail(event_id):
+    """Сбор ЦЕЛИКОМ: мероприятие, плитки и раскладка с людьми (Ш-2, №271).
+
+    Своя ручка, а не карточка мероприятия: та отдаёт ОМ со всеми стадиями,
+    маршрутом согласования, журналом и расстановкой — экрану сбора из этого
+    нужна одна десятая, и платить за остальное на каждом открытии незачем.
+
+    Плитки эталона считаются ЗДЕСЬ, а не на клиенте: «осталось собрать» — это
+    правило («требуется минус собрано»), и второй счёт на клиенте разошёлся бы
+    с сервером при первой же правке правила.
+    """
+    event = OpsSecurityEvent.objects.filter(pk=event_id).first()
+    if event is None:
+        raise _not_found("Мероприятие не найдено.", event_id)
+    need = force_demand_total(event)
+    allocations = allocation_members_view(event)
+    gathered = sum(len(row.get("members") or []) for row in allocations)
+    return {
+        "eventId": str(event.pk),
+        "code": event.code,
+        "title": event.title,
+        "businessDate": event.business_date.isoformat(),
+        "eventTime": (
+            event.event_time.strftime("%H:%M")
+            if event.event_time is not None
+            else None
+        ),
+        "location": event.location or event.object_name,
+        "stage": event.stage,
+        "need": need,
+        "allocated": sum(int(row.get("need") or 0) for row in allocations),
+        "gathered": gathered,
+        # «Осталось собрать» не уходит в минус: перебор — это не отрицательный
+        # остаток, а свой факт, и он виден по паре «собрано / требуется».
+        "remaining": max(0, need - gathered),
+        "collectionStatus": _collection_status(allocations, gathered),
+        "allocations": allocations,
+    }
+
+
 def _collection_status(allocations, gathered):
     """Состояние сбора по МЕРОПРИЯТИЮ — выводится, а не хранится (Ш-3).
 

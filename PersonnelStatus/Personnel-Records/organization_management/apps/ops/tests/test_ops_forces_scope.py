@@ -717,3 +717,84 @@ def test_the_collection_status_follows_the_whole_split(manager):  # noqa: F811
     assert status_now() == "NEW", "разнарядка одному департаменту — ещё не «разослана»"
     manager.post(f"{base}forces/allocation/{rows[1]['id']}/notify/", {}, format="json")
     assert status_now() == "NOTIFIED"
+
+
+# ── №271 Ш-2: карточка сбора ───────────────────────────────────────────────
+
+
+def collection_url(event_base):
+    return f"{event_base}force-collection/"
+
+
+def test_the_collection_card_counts_the_tiles(manager):  # noqa: F811
+    """Плитки считает СЕРВЕР, а не клиент.
+
+    «Осталось собрать» — это правило («требуется минус собрано»), и второй
+    счёт на клиенте разошёлся бы с сервером при первой же правке правила.
+
+    Стережёт мутацию: считать `remaining` как `need - allocated`.
+    """
+    make_assignment_status_type()
+    department = make_department("Департамент А")
+    employee = employee_of(make_directorate(department, "Управление А-1"), "Сборов")
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(employee.pk)},
+        format="json",
+    )
+
+    data = manager.get(collection_url(base)).data
+
+    assert data["gathered"] == 1
+    assert data["remaining"] == data["need"] - 1
+    assert data["allocated"] >= 1
+
+
+def test_the_collection_card_carries_every_department_with_people(manager):  # noqa: F811
+    """Карточка несёт ВСЕ департаменты и людей внутри каждого.
+
+    Раскрытие строки — не украшение: без поимённого списка «5 из 46»
+    остаётся числом, за которым нельзя проверить, тех ли людей прислали.
+    """
+    make_assignment_status_type()
+    first = make_department("Департамент А")
+    second = make_department("Департамент Б")
+    mine = employee_of(make_directorate(first, "Управление А-1"), "Первый")
+    base, _ = allocated_event(manager, first)
+    rows = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(second.pk), "need": 1},
+            ]
+        },
+        format="json",
+    ).json()["forceAllocation"]
+    own = next(r for r in rows if r["departmentId"] == str(first.pk))
+    manager.post(
+        f"{base}forces/allocation/{own['id']}/members/",
+        {"employeeId": str(mine.pk)},
+        format="json",
+    )
+
+    allocations = manager.get(collection_url(base)).data["allocations"]
+
+    assert {row["departmentName"] for row in allocations} == {
+        "Департамент А",
+        "Департамент Б",
+    }
+    with_people = next(r for r in allocations if r["departmentId"] == str(first.pk))
+    assert [m["employeeId"] for m in with_people["members"]] == [str(mine.pk)]
+    empty = next(r for r in allocations if r["departmentId"] == str(second.pk))
+    assert empty["members"] == []
+
+
+def test_the_collection_card_is_closed_without_the_staff_permission(manager):  # noqa: F811
+    """Карточка закрыта правом ШТАБА."""
+    department = make_department("Департамент А")
+    base, _ = allocated_event(manager, department)
+    api, _user = client_for("card-noperm", "CARD_VIEWER", perms=("event.view",))
+
+    assert api.get(collection_url(base)).status_code == 403

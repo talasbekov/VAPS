@@ -15,6 +15,9 @@
  * Прогресс — И ЧИСЛОМ, И ПОЛОСОЙ, и с объявлением для тех, кто читает экран
  * не глазами: полоса сама по себе не отвечает на вопрос «сколько именно».
  */
+import { useState } from "react";
+import { ChevronRight } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -29,6 +32,7 @@ import type {
   ForceCollectionStatus,
 } from "@/entities/security-event";
 import { useForceCollections } from "@/hooks/use-force-collections";
+import { ForceCollectionCard } from "./ForceCollectionCard";
 import { formatIsoDate } from "@/shared/lib/date";
 
 /** Подписи ровно те, что на эталоне заказчика. */
@@ -71,9 +75,13 @@ function Progress({ done, need }: { done: number; need: number }) {
 export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean }) {
   const collections = useForceCollections({ enabled });
   const rows = collections.data?.results ?? [];
-  // ПЕРЕХОДА В КАРТОЧКУ ЗДЕСЬ ПОКА НЕТ, и это осознанно: карточка сбора —
-  // следующий шаг (Ш-2). Стрелка, которая никуда не ведёт, обещает экран,
-  // которого нет, и человек тратит нажатие, чтобы это выяснить.
+  // Карточка открывается НА МЕСТЕ списка, как у департамента (№272) и как на
+  // эталоне («← Назад к списку сборов»).
+  const [opened, setOpened] = useState<string | null>(null);
+
+  if (opened !== null) {
+    return <ForceCollectionCard eventId={opened} onBack={() => setOpened(null)} />;
+  }
 
   return (
     <section aria-labelledby="force-collections-heading" className="space-y-3">
@@ -95,13 +103,14 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
               <TableHead className="text-right">Требуется</TableHead>
               <TableHead>Прогресс сбора</TableHead>
               <TableHead>Статус</TableHead>
+              <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody aria-busy={collections.isPending}>
             {collections.isPending &&
               [0, 1, 2].map((index) => (
                 <TableRow key={index}>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <div
                       className="bg-muted h-9 w-full animate-pulse rounded"
                       aria-hidden
@@ -112,7 +121,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
 
             {!collections.isPending && collections.isError && (
               <TableRow>
-                <TableCell colSpan={5}>
+                <TableCell colSpan={6}>
                   <p role="alert" className="text-destructive-ink text-sm">
                     {collections.error?.message ??
                       "Сборы не загрузились — список показать нечем"}
@@ -123,7 +132,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
 
             {!collections.isPending && !collections.isError && rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="whitespace-normal">
+                <TableCell colSpan={6} className="whitespace-normal">
                   <p className="text-muted-foreground text-sm">
                     Сборов нет — ни у одного мероприятия ещё не посчитана
                     потребность в силах
@@ -169,6 +178,16 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
                     <Badge variant="outline">
                       {STATUS_LABEL[row.collectionStatus]}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <button
+                      type="button"
+                      onClick={() => setOpened(row.eventId)}
+                      aria-label={`Открыть сбор ${row.code}`}
+                      className="text-muted-foreground hover:text-foreground inline-flex size-11 items-center justify-center rounded-md"
+                    >
+                      <ChevronRight className="size-4" aria-hidden="true" />
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}
