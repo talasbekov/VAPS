@@ -36,7 +36,7 @@
  * 🔴 Service worker MSW блокируется: без этого `page.route` не перехватывает
  * запросы приложения.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -93,16 +93,51 @@ async function signIn(page: Page): Promise<void> {
  * (Plane №235) печатает путь и кладёт «имя · путь» в `aria-label`; проба
  * адресует строку так же, как её читает человек.
  */
-// Путь в СКОБКАХ — формат строки «Не сдали» (перечисление через запятую, где
-// разделитель «·» читался бы как ещё один элемент списка); шапки групп при
-// этом остаются в формате `имя · путь` — см. `divisionLabels` (Plane №249).
-async function divisionParenLabels(token: string): Promise<Map<string, string>> {
+
+/**
+ * Проверка блока «Не сдали»: счётчик и ПОИМЁННЫЙ состав (Plane №328).
+ *
+ * Блок сворачивается в департаменты со счётчиками, когда отстающих больше
+ * восьми, — поимённый вид тогда за кнопкой. Проба разворачивает его, если
+ * кнопка есть: она стережёт СОСТАВ, а не то, какой вид показан по умолчанию.
+ */
+async function expectLaggards(
+  summary: Locator,
+  expected: string[],
+): Promise<void> {
+  const laggards = summary.getByRole('group', { name: 'Не сдали' })
+  if (expected.length === 0) {
+    await expect(laggards).toHaveCount(0)
+    return
+  }
+  await expect(laggards.locator('p').first()).toHaveText(`Не сдали: ${expected.length}`)
+  const expand = laggards.getByRole('button', { name: /Показать все/ })
+  if ((await expand.count()) > 0) await expand.click()
+  // Строки — вложенные `li` групп; заголовки департаментов ими не являются.
+  const items = await laggards.locator('ul ul li').allInnerTexts()
+  expect(new Set(items.map((text) => text.replace(/\s+/g, ' ').trim()))).toEqual(
+    new Set(expected),
+  )
+}
+
+/**
+ * Подпись СТРОКИ списка «Не сдали» — `имя · остаток пути` (Plane №328).
+ *
+ * 🔴 ПИН ПРАВЛЕН ОСОЗНАННО. До №328 блок был абзацем-перечислением через
+ * запятую, и подпись здесь строилась как `имя (весь путь)`: скобки отделяли
+ * путь, потому что «·» читался бы как ещё один элемент перечисления. Абзаца
+ * больше нет — есть список, сгруппированный по департаментам, и департамент
+ * стоит ЗАГОЛОВКОМ группы, а не повторяется в каждой строке. Поэтому в строке
+ * остаётся путь НИЖЕ департамента (`ancestors.slice(1)`), а разделителем
+ * снова служит «·»: внутри отдельной строки он ни с чем не спорит.
+ */
+async function divisionRowLabels(token: string): Promise<Map<string, string>> {
   const rows = await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
     token, '/api/ops/daily/divisions/')
   const labels = new Map<string, string>()
   for (const row of rows.results) {
-    const path = row.ancestors ?? []
-    labels.set(String(row.id), path.length > 0 ? `${row.name} (${path.join(' › ')})` : row.name)
+    const rest = (row.ancestors ?? []).slice(1)
+    labels.set(String(row.id), rest.length > 0 ? `${row.name} · ${rest.join(' › ')}` : row.name)
   }
   return labels
 }
@@ -304,7 +339,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     const notSubmittedBefore = report.rows
       .filter((row) => !submittedIdsBefore.has(String(row.division_id)))
       .map((row) => ({ id: String(row.division_id), name: row.name }))
-    const parenLabels = await divisionParenLabels(token)
+    const rowLabels = await divisionRowLabels(token)
     // Порядок — очередь дерева (Plane №296), а НЕ порядок расхода: экран
     // печатает отставших тем же порядком, каким рисует список ниже.
     // Управление, которого в списке подразделений нет, уезжает в хвост — как
@@ -316,7 +351,7 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     }
     const notSubmittedNamesBefore = [...notSubmittedBefore]
       .sort((left, right) => placeOf(left.id) - placeOf(right.id))
-      .map((row) => parenLabels.get(row.id) ?? row.name)
+      .map((row) => rowLabels.get(row.id) ?? row.name)
 
     const captured: { body: DaySubmissionBody | null } = { body: null }
     await interceptSubmit(page, captured, targetDivisionId, report.business_date)
@@ -333,13 +368,11 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     await expect(summaryHeadline).toHaveText(
       `Сдано ${submittedIdsBefore.size} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
     )
-    if (notSubmittedNamesBefore.length > 0) {
-      await expect(summary.locator('p').nth(1)).toHaveText(
-        `Не сдали: ${notSubmittedNamesBefore.join(', ')}`,
-      )
-    } else {
-      await expect(summary.locator('p')).toHaveCount(1)
-    }
+    // Блок «Не сдали» — СПИСОК, а не абзац (Plane №328): проверяется счётчик
+    // и поимённый состав, а не одна склеенная строка. Порядок здесь не
+    // закрепляется намеренно: строки разложены по департаментам, и очередь
+    // дерева стережёт список управлений НИЖЕ, а не этот блок.
+    await expectLaggards(summary, notSubmittedNamesBefore)
 
     // Группа ИМЕННО этого управления — бейдж СВЁРНУТОЙ шапки: «День не
     // сдан», без запроса и без интерактивности (панель ещё не смонтирована —
@@ -378,14 +411,8 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     const notSubmittedNamesAfter = [...notSubmittedBefore]
       .filter((row) => row.id !== targetDivisionId)
       .sort((left, right) => placeOf(left.id) - placeOf(right.id))
-      .map((row) => parenLabels.get(row.id) ?? row.name)
-    if (notSubmittedNamesAfter.length > 0) {
-      await expect(summary.locator('p').nth(1)).toHaveText(
-        `Не сдали: ${notSubmittedNamesAfter.join(', ')}`,
-      )
-    } else {
-      await expect(summary.locator('p')).toHaveCount(1)
-    }
+      .map((row) => rowLabels.get(row.id) ?? row.name)
+    await expectLaggards(summary, notSubmittedNamesAfter)
 
     // Схлопнули строку обратно — свёрнутый бейдж ТОЖЕ синхронен (питается тем
     // же обновлённым списочным ответом борда, без своего запроса).
