@@ -60,7 +60,7 @@ import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatu
 import { PlannedStatusesDialog } from "@/features/employee-status-update/ui/PlannedStatusesDialog";
 import { SecondEmployeeDialog } from "@/features/employee-status-update/ui/SecondEmployeeDialog";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
-import { useEventParticipations } from "@/hooks/use-event-participations";
+import { useOpsSectionStatuses } from "@/hooks/use-ops-section-statuses";
 import {
   Dialog,
   DialogContent,
@@ -143,6 +143,106 @@ function isVacancyRow(employee: Employee): boolean {
   return employee.name === VACANCY_NAME;
 }
 
+/**
+ * Ячейка «По разделу ОМ» — весь учёт раздела в одном месте (Plane №314).
+ *
+ * Что здесь показывается и почему именно так:
+ *   • действующий статус по справочнику РАЗДЕЛА (имя, а не код: код читает
+ *     машина, человек читает имя);
+ *   • мероприятия, на которые человек привлечён, ссылками на их карточки;
+ *   • «—», когда в разделе строки нет, и «…», пока данные едут: пустая
+ *     ячейка одинаково описывала бы «не привлечён» и «ещё не знаем».
+ *
+ * Ссылка ведёт ТОЛЬКО на существующее ОМ. Пустой `event_code` означает, что
+ * мероприятия в базе больше нет (участие переживает его удаление), и ссылка
+ * на карточку вела бы в 404 — тот же класс, что №255/№257. Найдено снимком
+ * экрана: в таблице стояло «→ ОМ #2701» ссылкой на снесённое уборкой ОМ.
+ *
+ * `legacyHint` — запасной путь для строк, у которых КАДРОВЫЙ код говорит об
+ * участии, а мероприятий не нашлось: статус проставлен без привязки (так
+ * заводили до Ш-3) либо данные ещё едут.
+ */
+function SectionAccountCell({
+  status,
+  participations,
+  loading,
+  legacyHint,
+}: {
+  status: { code: string; name: string } | null;
+  participations: { event_id: number; event_code: string; event_title: string }[];
+  loading: boolean;
+  legacyHint: boolean;
+}) {
+  if (loading && status === null && participations.length === 0) {
+    return <span className="text-muted-foreground text-xs">Загрузка…</span>;
+  }
+  if (status === null && participations.length === 0) {
+    // Запасной путь: КАДРОВЫЙ код говорит об участии, а мероприятий в разделе
+    // не нашлось. Ссылка на общий разрез и подпись, называющая причину, —
+    // ровно то, что стояло здесь до №314; переехало в свою колонку целиком,
+    // вместе с формулировкой (её стережёт проба `tables-data`).
+    if (legacyHint) {
+      return (
+        <div className="flex max-w-[170px] flex-col items-start gap-0.5">
+          <Link
+            href="/employees?view=forces"
+            className="text-primary-ink text-xs font-medium hover:underline"
+          >
+            → Сбор сил
+          </Link>
+          <span className="text-muted-foreground text-[11px] leading-tight">
+            Мероприятие у статуса не указано
+          </span>
+        </div>
+      );
+    }
+    return (
+      <span
+        className="text-muted-foreground text-xs"
+        title="В разделе ОМ у сотрудника нет действующей строки на этот день"
+      >
+        —
+      </span>
+    );
+  }
+  return (
+    <div className="flex max-w-[170px] flex-col items-start gap-0.5">
+      {status !== null && (
+        /* Две строки максимум, полное имя — в подсказке. Имена справочника
+           раздела длинные («Привлечён на мероприятие (наряд)»), и без предела
+           они растили высоту строки таблицы втрое — ровно та ошибка, которую
+           снимок поймал у подписи в №314 на прошлом заходе. */
+        <span
+          className="text-foreground line-clamp-2 text-xs font-medium leading-tight"
+          title={status.name}
+        >
+          {status.name}
+        </span>
+      )}
+      {participations.map((participation) =>
+        participation.event_code ? (
+          <Link
+            key={participation.event_id}
+            href={`/security-ops/events/${participation.event_id}`}
+            className="text-primary-ink whitespace-nowrap text-xs hover:underline"
+            title={participation.event_title}
+          >
+            → {participation.event_code}
+          </Link>
+        ) : (
+          <span
+            key={participation.event_id}
+            className="text-muted-foreground whitespace-nowrap text-xs"
+            title="Мероприятие удалено — открыть его карточку нельзя"
+          >
+            ОМ снят (#{participation.event_id})
+          </span>
+        )
+      )}
+    </div>
+  );
+}
+
 export function StatusTable({
   selectedEmployees,
   onSelectionChange,
@@ -184,7 +284,7 @@ export function StatusTable({
   // Мероприятия участия — ОДИН запрос на всю таблицу (Plane №281). Строка
   // таблицы адресует сотрудника ключом `${staffUnitId}-${employeeId}`, а
   // участия приходят по числовому id — отсюда разбор ключа в `eventsOf`.
-  const participations = useEventParticipations();
+  const sectionStatuses = useOpsSectionStatuses();
   const departmentId =
     departmentFilter === "all" ? undefined : Number(departmentFilter) || undefined;
 
@@ -360,11 +460,19 @@ export function StatusTable({
   };
 
   /** Мероприятия, на которые привлечён сотрудник строки. Пусто — их нет либо
-   *  данные ещё едут (`participations.loading` различает эти два случая). */
+   *  данные ещё едут (`sectionStatuses.loading` различает эти два случая). */
   const eventsOf = (employee: { id: string }) => {
     const employeeId = employeeIdOf(employee);
     if (employeeId === null) return [];
-    return participations.byEmployee.get(employeeId) ?? [];
+    return sectionStatuses.byEmployee.get(employeeId) ?? [];
+  };
+
+  /** Действующий статус сотрудника ПО КАТАЛОГУ РАЗДЕЛА (Plane №314).
+   *  `null` — строки в разделе нет либо данные ещё едут. */
+  const sectionStatusOf = (employee: { id: string }) => {
+    const employeeId = employeeIdOf(employee);
+    if (employeeId === null) return null;
+    return sectionStatuses.statusByEmployee.get(employeeId) ?? null;
   };
 
   // Функция для открытия диалога редактирования
@@ -615,7 +723,17 @@ export function StatusTable({
                 <TableHead>ФИО</TableHead>
                 <TableHead>Отдел</TableHead>
                 <TableHead>Должность</TableHead>
-                <TableHead>Статус</TableHead>
+                {/* ДВЕ КОЛОНКИ, А НЕ ОДНА (Plane №314, решение заказчика
+                    30.08.2026). У экрана два источника: кадровая ручка
+                    штатки (`EmployeeStatus`) и каталог раздела ОМ
+                    (`/api/operations/statuses/`). Оба факта верны каждый в
+                    своём учёте, но в ОДНОЙ ячейке строка утверждала разом «в
+                    строю» и «привлечён на ОМ» — и это читалось как
+                    противоречие данных. Мост кодов (раздел перекрывает
+                    кадровый) заказчиком отвергнут: кадровым статусом живут
+                    кадровые отчёты, и прятать его нельзя. */}
+                <TableHead>Статус (кадровый)</TableHead>
+                <TableHead>По разделу ОМ</TableHead>
                 <TableHead>Последнее обновление</TableHead>
                 <TableHead>Следующее обновление</TableHead>
                 <TableHead className="w-12"></TableHead>
@@ -684,113 +802,31 @@ export function StatusTable({
                         >
                           {getStatusBadge(employee.status)}
                         </button>
-                        {/* НА КАКОЕ ОМ ПРИВЛЕЧЁН (Plane №281). Здесь стояла
-                            ссылка на ОБЩИЙ разрез «Сбор сил»: статус говорил
-                            «участвует», а на каком мероприятии — не говорил, и
-                            чтобы это выяснить, надо было идти в другой раздел и
-                            искать себя в списках. Связь есть с Ш-3
-                            (`ops_status_participations`), теперь она едет с
-                            сервера вместе с участием (код и название ОМ) и
-                            становится ссылкой на КАРТОЧКУ мероприятия.
-
-                            🔴 УСЛОВИЕ — НАЛИЧИЕ УЧАСТИЙ, а не код статуса
-                            строки. Код здесь кадровый (`EmployeeStatus`), а
-                            `EVENT_ASSIGNMENT` живёт в каталоге раздела ОМ, и
-                            в реальном ответе штатки его НЕ БЫВАЕТ — блок,
-                            висевший на этом условии, не показывался на стенде
-                            ни разу (проверено живой пробой: у 21 строки с
-                            участиями кадровый код другой). Участия же
-                            приходят по сотруднику и от каталога не зависят.
-
-                            Прежний общий адрес остался запасным: он
-                            показывается тем, у кого кадровый код всё-таки
-                            говорит об участии, а мероприятий не нашлось —
-                            статус проставлен без привязки (так заводили до
-                            Ш-3) либо данные ещё едут. */}
-                        {eventsOf(employee).length > 0 ? (
-                          <div className="border-border flex max-w-[220px] flex-col items-start gap-0.5 border-l pl-1.5">
-                            {/* ОТКУДА ЭТОТ ФАКТ (Plane №314). Бейдж слева —
-                                КАДРОВЫЙ статус (`EmployeeStatus`), ссылки ниже
-                                — привлечение из каталога РАЗДЕЛА ОМ. Оба верны
-                                каждый в своём учёте, но рядом и без подписи
-                                строка утверждала разом «в строю» и «привлечён
-                                на ОМ», и это читалось как противоречие данных.
-
-                                Подпись НЕ выбирает главный каталог — выбор за
-                                заказчиком и он не сделан. Она лишь называет
-                                источник, как это уже сделано на календаре
-                                статусов («Сводка по N сотрудникам области»
-                                вместо «Всего»): подпись, которая не обещает
-                                того, чего нет.
-
-                                Видимой строкой, а не подсказкой по наведению:
-                                hover-only не доходит ни до клавиатуры, ни до
-                                касания. Высоты стоит только там, где второй
-                                факт есть, — у остальных строк ячейка прежняя.
-
-                                Группировка РАМКОЙ, а не длинной формулировкой,
-                                и это тоже из снимка. Сначала подпись стояла
-                                просто строкой между бейджем и ссылкой — и
-                                читалась подписью к обоим. Развёрнутое
-                                «привлечён по учёту раздела ОМ» двусмысленность
-                                снимало, но переезжало на вторую строку и
-                                растило высоту строки таблицы. Полоска слева
-                                привязывает подпись к ссылкам без единого
-                                лишнего слова, а короткая подпись остаётся в
-                                одну строку. */}
-                            <p className="text-muted-foreground text-[11px] leading-tight">
-                              по учёту ОМ
-                            </p>
-                            {eventsOf(employee).map((participation) =>
-                              // 🔴 ССЫЛКА ТОЛЬКО НА СУЩЕСТВУЮЩЕЕ ОМ. Пустой
-                              // код означает, что мероприятия в базе больше
-                              // нет (участие переживает его удаление), и
-                              // ссылка на его карточку вела бы в 404 — тот же
-                              // класс дефекта, что и №255/№257: интерфейс
-                              // обещает переход, которого нет. Найдено
-                              // снимком экрана: в таблице стояло «→ ОМ #2701»
-                              // ссылкой на снесённое уборкой проб ОМ.
-                              participation.event_code ? (
-                                <Link
-                                  key={participation.event_id}
-                                  href={`/security-ops/events/${participation.event_id}`}
-                                  className="text-primary-ink whitespace-nowrap text-xs font-medium hover:underline"
-                                  title={participation.event_title}
-                                >
-                                  → {participation.event_code}
-                                </Link>
-                              ) : (
-                                <span
-                                  key={participation.event_id}
-                                  className="text-muted-foreground whitespace-nowrap text-xs"
-                                  title="Мероприятие удалено — открыть его карточку нельзя"
-                                >
-                                  ОМ снят (#{participation.event_id})
-                                </span>
-                              )
-                            )}
-                          </div>
-                        ) : (
-                          employee.statusCode !== null &&
-                          EVENT_PARTICIPATION_STATUS_CODES.has(
-                            employee.statusCode
-                          ) && (
-                            <div className="flex max-w-[220px] flex-col items-start gap-0.5">
-                              <Link
-                                href="/employees?view=forces"
-                                className="text-primary-ink text-xs font-medium hover:underline"
-                              >
-                                → Сбор сил
-                              </Link>
-                              <p className="text-muted-foreground text-[11px] leading-tight">
-                                {participations.loading
-                                  ? "Мероприятия загружаются"
-                                  : "Мероприятие у статуса не указано"}
-                              </p>
-                            </div>
-                          )
-                        )}
                       </div>
+                    )}
+                  </TableCell>
+                  {/* УЧЁТ РАЗДЕЛА ОМ — СВОЯ КОЛОНКА (Plane №314). Здесь всё,
+                      что приходит из каталога раздела: действующий статус по
+                      его справочнику и мероприятия, на которые человек
+                      привлечён. Кадровый бейдж остался слева и не подменяется.
+
+                      Прочерк означает «в разделе строки нет», и это НЕ то же
+                      самое, что «данные ещё едут»: пока идёт запрос, колонка
+                      не вправе утверждать, что человек ни на что не привлечён
+                      (`sectionStatuses.loading` различает эти два случая). */}
+                  <TableCell className="whitespace-normal">
+                    {isVacancyRow(employee) ? (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    ) : (
+                      <SectionAccountCell
+                        status={sectionStatusOf(employee)}
+                        participations={eventsOf(employee)}
+                        loading={sectionStatuses.loading}
+                        legacyHint={
+                          employee.statusCode !== null &&
+                          EVENT_PARTICIPATION_STATUS_CODES.has(employee.statusCode)
+                        }
+                      />
                     )}
                   </TableCell>
                   <TableCell className="text-sm tabular-nums">
