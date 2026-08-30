@@ -1,0 +1,29 @@
+<div style="background:var(--surface-1);border-radius:12px;padding:1.25rem">
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1.25rem 1.5rem">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+<p style="font-weight:500;font-size:16px;margin:0">Расстановка · версия 3 · DRAFT</p>
+<div style="display:flex;gap:8px"><button style="font-size:13px">История версий</button><button style="font-size:13px;background:var(--fill-accent);color:var(--on-accent);border:none">На согласование</button></div>
+</div>
+<div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px">
+<div>
+<p style="font-size:13px;color:var(--text-secondary);margin:0 0 6px">Наружный сектор · старший: м-р Ахметов</p>
+<table style="width:100%;font-size:13px;table-layout:fixed">
+<tr style="color:var(--text-muted);text-align:left"><th style="font-weight:400;width:60px">Пост</th><th style="font-weight:400">Сотрудник</th><th style="font-weight:400;width:90px">Время</th></tr>
+<tr><td>№1</td><td><a style="cursor:pointer" onclick="sendPrompt('Покажи карточку сотрудника VX 9.2: что в ней видит старший наряда')">к-н Серик Б. ↗</a></td><td>07:00–19:00</td></tr>
+<tr><td>№2</td><td>ст.л-т Даурен К.</td><td>07:00–19:00</td></tr>
+<tr style="background:var(--bg-warning)"><td>№3</td><td>л-т Арман Т. <i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:14px;color:#854F0B"></i></td><td>07:00–19:00</td></tr>
+<tr><td>№4</td><td style="color:var(--text-muted)">— перетащите из резерва</td><td></td></tr>
+</table>
+</div>
+<div style="background:var(--surface-1);border-radius:8px;padding:10px 12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:15px;vertical-align:-2px"></i> Конфликты (2)</p>
+<div style="font-size:12px;color:var(--text-secondary)">
+<p style="margin:0 0 6px"><span style="color:#854F0B;font-weight:500">Арман Т.</span> — отдых после дежурства (severity: WARNING)</p>
+<p style="margin:0 0 8px"><span style="color:#854F0B;font-weight:500">Ерлан С.</span> — двойное назначение: ОМ-2026-039</p>
+</div>
+<input style="width:100%;font-size:12px" placeholder="override_reason — обоснование">
+<button style="font-size:12px;width:100%;margin-top:6px" onclick="sendPrompt('Как фиксируется игнорирование конфликта: кто, когда, какой конфликт (протокол 8.6)?')">Назначить вопреки ↗</button>
+</div>
+</div>
+<p style="font-size:12px;color:var(--text-muted);margin:12px 0 0">Черновик собран автоматически из подтверждённых выделений. Предупреждение не блокирует — решение за планирующим, факт override пишется в историю.</p>
+</div></div>

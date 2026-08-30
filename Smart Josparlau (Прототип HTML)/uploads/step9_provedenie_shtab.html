@@ -1,0 +1,35 @@
+<div style="background:var(--surface-1);border-radius:12px;padding:1.25rem">
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1.25rem 1.5rem">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+<p style="font-weight:500;font-size:16px;margin:0">Штаб · ОМ в работе</p>
+<div style="display:flex;gap:8px">
+<button style="font-size:13px"><i class="ti ti-map" aria-hidden="true" style="font-size:15px;vertical-align:-2px"></i> Схема</button>
+<button style="font-size:13px;color:var(--text-danger)"><i class="ti ti-alert-circle" aria-hidden="true" style="font-size:15px;vertical-align:-2px"></i> Инцидент</button>
+<button style="font-size:13px" onclick="sendPrompt('Процесс санкционированной замены после подписания: поля записи по VX 13.3')"><i class="ti ti-refresh" aria-hidden="true" style="font-size:15px;vertical-align:-2px"></i> Замена ↗</button>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px">
+<div>
+<p style="font-size:13px;color:var(--text-secondary);margin:0 0 6px">Электронный журнал</p>
+<div style="font-size:13px;border-left:2px solid var(--border-strong);padding-left:12px">
+<p style="margin:0 0 8px"><span style="color:var(--text-muted)">07:02</span> Заступление наружного сектора — полный состав</p>
+<p style="margin:0 0 8px"><span style="color:var(--text-muted)">08:42</span> <span style="color:#854F0B">Замена:</span> Иванов И.И. → Петров П.П., пост №4, болезнь. Санкция: зам. рук. деп.</p>
+<p style="margin:0 0 8px"><span style="color:var(--text-muted)">09:15</span> Указание руководства: усилить главный вход</p>
+<p style="margin:0"><span style="color:var(--text-muted)">10:30</span> <span style="color:var(--text-danger)">Инцидент:</span> посетитель без аккредитации, сектор В</p>
+</div>
+<div style="display:flex;gap:8px;margin-top:10px">
+<input style="flex:1;font-size:13px" placeholder="Новая запись журнала...">
+<button style="font-size:13px">Внести</button>
+</div>
+</div>
+<div style="background:var(--surface-1);border-radius:8px;padding:10px 12px">
+<p style="font-size:13px;font-weight:500;margin:0 0 8px">Статусы заступления</p>
+<table style="width:100%;font-size:12px">
+<tr><td>Наружный сектор</td><td style="text-align:right;color:var(--text-success)">48/48</td></tr>
+<tr><td>Внутренний сектор</td><td style="text-align:right;color:var(--text-success)">32/32</td></tr>
+<tr><td>ПДТА</td><td style="text-align:right;color:#854F0B">11/12</td></tr>
+<tr><td>ГО1 (крыши)</td><td style="text-align:right;color:var(--text-success)">130/130</td></tr>
+</table>
+</div>
+</div>
+</div></div>

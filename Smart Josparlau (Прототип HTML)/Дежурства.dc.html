@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/styles.css">
+<style>
+body{margin:0;background:hsl(210 40% 97.5%);color:hsl(222.2 84% 4.9%);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:hsl(221.2 83.2% 53.3%);text-decoration:none}a:hover{color:hsl(221.2 75% 44%)}
+button{font:inherit;cursor:pointer}input,select,textarea{font:inherit}
+@keyframes vapsToast{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes cascIn{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div style="min-width:0">
+
+<header style="display:flex;justify-content:space-between;align-items:flex-end;margin:4px 0 14px;gap:16px;flex-wrap:wrap">
+<div>
+<p style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.12em;color:hsl(var(--primary));font-size:10.5px;font-weight:700">Дежурства</p>
+<h1 style="font-size:25px;line-height:1.15;margin:0 0 6px;letter-spacing:-.02em;font-weight:700">План дежурств</h1>
+<span style="color:hsl(215.4 16.3% 46.9%);font-size:12.5px">Суточные дежурства на постоянных объектах · назначения действуют только на конкретную дату и объект</span>
+</div>
+<div style="display:flex;gap:8px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);color:hsl(222.2 47.4% 11.2%);font-size:13px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ buildPlan }}">Сформировать план</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ openAdd }}">+ Добавить суточное дежурство</button>
+</div>
+</header>
+
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+<select style="height:34px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:8px;padding:0 10px;font-size:12px;outline:none" value="{{ mSel }}" onChange="{{ onMSel }}" aria-label="Месяц"><sc-for list="{{ monthOptions }}" as="o" hint-placeholder-count="12"><option value="{{ o }}">{{ o }}</option></sc-for></select>
+<select style="height:34px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:8px;padding:0 10px;font-size:12px;outline:none" value="{{ ySel }}" onChange="{{ onYSel }}" aria-label="Год"><sc-for list="{{ yearOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o }}">{{ o }}</option></sc-for></select>
+<button style="width:34px;height:34px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 36.9%)" style-hover="background:hsl(210 40% 96.1%)" aria-label="Предыдущий месяц" onClick="{{ goPrev }}">‹</button>
+<button style="width:34px;height:34px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 36.9%)" style-hover="background:hsl(210 40% 96.1%)" aria-label="Следующий месяц" onClick="{{ goNext }}">›</button>
+<button style="height:34px;padding:0 12px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(222.2 47.4% 11.2%);font-size:12px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ goToday }}">Текущий месяц</button>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-bottom:14px">
+<sc-for list="{{ statCards }}" as="c" hint-placeholder-count="7">
+<article style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:11px 13px">
+<div style="font-size:11px;font-weight:500;color:hsl(215.4 16.3% 46.9%);line-height:1.3">{{ c.label }}</div>
+<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-top:5px;font-variant-numeric:tabular-nums;{{ c.vst }}">{{ c.value }}</div>
+</article>
+</sc-for>
+</div>
+
+<div style="display:inline-flex;gap:3px;background:hsl(210 40% 93%);border-radius:9px;padding:3px;margin-bottom:14px">
+<sc-for list="{{ viewTabs }}" as="t" hint-placeholder-count="3"><button style="{{ t.st }}" onClick="{{ t.onClick }}">{{ t.label }}</button></sc-for>
+</div>
+
+<sc-if value="{{ isObj }}" hint-placeholder-val="{{ true }}">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:14px">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:hsl(215.4 16.3% 46.9%)">
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:#dcfce7;border:1px solid #86efac"></span>Сформировано</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:#fef3c7;border:1px solid #fcd34d"></span>Частично</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:hsl(210 40% 96%);border:1px solid hsl(214.3 31.8% 89%)"></span>Не сформировано</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:99px;background:#dc2626"></span>Конфликт</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><b>✓</b>Завершено</span>
+<span style="display:inline-flex;align-items:center;gap:6px"><b>⇄</b>Были замены</span>
+</div>
+<div style="display:inline-flex;gap:2px;background:hsl(210 40% 93%);border-radius:8px;padding:2px">
+<sc-for list="{{ catTabs }}" as="t" hint-placeholder-count="3"><button style="{{ t.st }}" onClick="{{ t.onClick }}">{{ t.label }}</button></sc-for>
+</div>
+</div>
+<div style="overflow-x:auto;border:1px solid hsl(210 40% 93%);border-radius:10px">
+<table style="border-collapse:separate;border-spacing:0;font-size:11px;min-width:100%">
+<thead><tr>
+<th style="position:sticky;left:0;z-index:3;background:hsl(210 40% 98%);text-align:left;padding:8px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;min-width:185px;border-bottom:1px solid hsl(210 40% 93%);box-shadow:1px 0 0 hsl(210 40% 93%)">Объект</th>
+<sc-for list="{{ dayCols }}" as="d" hint-placeholder-count="31"><th style="{{ d.st }}">{{ d.n }}<span style="display:block;font-size:8.5px;font-weight:500;opacity:.75">{{ d.w }}</span></th></sc-for>
+</tr></thead>
+<tbody>
+<sc-for list="{{ objRows }}" as="o" hint-placeholder-count="5">
+<tr>
+<td style="position:sticky;left:0;z-index:2;background:#fff;padding:7px 12px;border-bottom:1px solid hsl(210 40% 95%);box-shadow:1px 0 0 hsl(210 40% 93%)"><div style="font-weight:600;font-size:12px;white-space:nowrap">{{ o.name }}</div><div style="font-size:10px;color:hsl(215.4 16.3% 46.9%);margin-top:1px">{{ o.sub }}</div></td>
+<sc-for list="{{ o.cells }}" as="c" hint-placeholder-count="31">
+<td style="padding:2px;border-bottom:1px solid hsl(210 40% 95%)">
+<button style="{{ c.st }}" title="{{ c.tip }}" onClick="{{ c.onClick }}">
+<span style="font-weight:700;font-variant-numeric:tabular-nums">{{ c.txt }}</span>
+<span style="display:flex;justify-content:center;align-items:center;gap:2px;height:9px;font-size:8px;line-height:1">
+<sc-if value="{{ c.hasConf }}" hint-placeholder-val="{{ false }}"><span style="width:6px;height:6px;border-radius:99px;background:#dc2626;display:inline-block"></span></sc-if>
+<span>{{ c.marks }}</span>
+</span>
+</button>
+</td>
+</sc-for>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{ isEmp }}" hint-placeholder-val="{{ false }}">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:14px">
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+<sc-for list="{{ empLegend }}" as="l" hint-placeholder-count="7"><span class="{{ l.cls }}" style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:600">{{ l.code }} — {{ l.label }}</span></sc-for>
+</div>
+<div style="overflow-x:auto;border:1px solid hsl(210 40% 93%);border-radius:10px">
+<table style="border-collapse:separate;border-spacing:0;font-size:11px;min-width:100%">
+<thead><tr>
+<th style="position:sticky;left:0;z-index:3;background:hsl(210 40% 98%);text-align:left;padding:8px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;min-width:185px;border-bottom:1px solid hsl(210 40% 93%);box-shadow:1px 0 0 hsl(210 40% 93%)">Сотрудник</th>
+<sc-for list="{{ dayCols }}" as="d" hint-placeholder-count="31"><th style="{{ d.st }}">{{ d.n }}<span style="display:block;font-size:8.5px;font-weight:500;opacity:.75">{{ d.w }}</span></th></sc-for>
+</tr></thead>
+<tbody>
+<sc-for list="{{ empMatrix }}" as="e" hint-placeholder-count="8">
+<tr>
+<td style="position:sticky;left:0;z-index:2;background:#fff;padding:7px 12px;border-bottom:1px solid hsl(210 40% 95%);box-shadow:1px 0 0 hsl(210 40% 93%)"><div style="font-weight:600;font-size:12px;white-space:nowrap">{{ e.name }}</div><div style="font-size:10px;color:hsl(215.4 16.3% 46.9%);margin-top:1px">{{ e.sub }}</div></td>
+<sc-for list="{{ e.cells }}" as="c" hint-placeholder-count="31">
+<td style="padding:2px;border-bottom:1px solid hsl(210 40% 95%)"><span style="{{ c.st }}" title="{{ c.tip }}">{{ c.code }}</span></td>
+</sc-for>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04)">
+<div style="padding:13px 16px;border-bottom:1px solid hsl(210 40% 95%);font-size:13.5px;font-weight:600">Список суточных дежурств <span style="color:hsl(215.4 16.3% 46.9%);font-weight:500">· {{ monthLabel }}</span></div>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid hsl(210 40% 95%)">
+<span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:hsl(215.4 16.3% 46.9%);font-weight:700">Оценивание</span>
+<select style="height:30px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:7px;padding:0 8px;font-size:11.5px;outline:none" value="{{ lfStatus }}" onChange="{{ onLfStatus }}" aria-label="Статус оценивания"><sc-for list="{{ lfStatusOptions }}" as="o" hint-placeholder-count="5"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+<label style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;cursor:pointer"><input type="checkbox" checked="{{ lfGrat }}" onChange="{{ onLfGrat }}" style="accent-color:hsl(var(--primary))">Есть благодарности</label>
+<label style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;cursor:pointer"><input type="checkbox" checked="{{ lfRemark }}" onChange="{{ onLfRemark }}" style="accent-color:hsl(var(--primary))">Есть замечания</label>
+<label style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;cursor:pointer"><input type="checkbox" checked="{{ lfLow }}" onChange="{{ onLfLow }}" style="accent-color:hsl(var(--primary))">Есть оценки ниже 6</label>
+<span style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%)">Средняя ≥</span>
+<select style="height:30px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:7px;padding:0 8px;font-size:11.5px;outline:none" value="{{ lfAvg }}" onChange="{{ onLfAvg }}" aria-label="Средняя оценка состава"><sc-for list="{{ lfAvgOptions }}" as="o" hint-placeholder-count="5"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+<sc-if value="{{ lfActive }}" hint-placeholder-val="{{ false }}"><button style="height:30px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11.5px;color:hsl(215.4 16.3% 40%)" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ lfReset }}">Сбросить</button></sc-if>
+<span style="margin-left:auto;font-size:11px;color:hsl(215.4 16.3% 46.9%)">{{ lfCount }}</span>
+</div>
+<div style="overflow-x:auto">
+<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1100px">
+<thead><tr>
+<th style="text-align:left;padding:9px 12px 9px 16px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Дата</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Объект</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Время</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Дежурный по объекту</th>
+<th style="text-align:center;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Треб.</th>
+<th style="text-align:center;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Назн.</th>
+<th style="text-align:center;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Незакр. посты</th>
+<th style="text-align:center;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Конфликты</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Ознакомление</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Статус</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Оценивание</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ listRows }}" as="r" hint-placeholder-count="8">
+<tr style="border-top:1px solid hsl(210 40% 95%);cursor:pointer" style-hover="background:hsl(210 40% 98%)" onClick="{{ r.open }}">
+<td style="padding:10px 12px 10px 16px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ r.dateRu }}</td>
+<td style="padding:10px 12px;font-weight:600">{{ r.obj }}</td>
+<td style="padding:10px 12px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ r.time }}</td>
+<td style="padding:10px 12px;white-space:nowrap">{{ r.officer }}</td>
+<td style="padding:10px 12px;text-align:center;font-variant-numeric:tabular-nums">{{ r.need }}</td>
+<td style="padding:10px 12px;text-align:center;font-variant-numeric:tabular-nums">{{ r.cnt }}</td>
+<td style="padding:10px 12px;text-align:center;font-variant-numeric:tabular-nums;{{ r.openSt }}">{{ r.openPosts }}</td>
+<td style="padding:10px 12px;text-align:center;font-variant-numeric:tabular-nums;{{ r.confSt }}">{{ r.confs }}</td>
+<td style="padding:10px 12px;font-size:11.5px;color:hsl(215.4 16.3% 36.9%);white-space:nowrap">{{ r.ack }}</td>
+<td style="padding:10px 12px;white-space:nowrap"><span class="{{ r.cls }}" style="display:inline-flex;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600">{{ r.status }}</span></td>
+<td style="padding:8px 12px;white-space:nowrap">
+<sc-if value="{{ r.evalApplies }}" hint-placeholder-val="{{ false }}">
+<button style="background:none;border:0;padding:2px 0;margin:0;text-align:left;cursor:pointer;font:inherit;display:block" style-hover="opacity:.75" onClick="{{ r.openEval }}">
+<span class="{{ r.evalCls }}" style="display:inline-flex;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600">{{ r.evalStatus }}</span>
+<div style="font-size:11px;color:hsl(215.4 16.3% 40%);margin-top:3px;font-variant-numeric:tabular-nums;text-decoration:underline;text-decoration-color:hsl(214.3 31.8% 82%);text-underline-offset:2px">{{ r.evalText }}</div>
+</button>
+</sc-if>
+<sc-if value="{{ r.evalNA }}" hint-placeholder-val="{{ true }}">
+<span style="font-size:11.5px;color:hsl(215.4 16.3% 65%)">Не применяется</span>
+</sc-if>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<sc-if value="{{ listEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:32px;text-align:center;color:hsl(215.4 16.3% 46.9%);font-size:12.5px">В выбранном месяце дежурства не запланированы</div></sc-if>
+<sc-if value="{{ listPagerShow }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid hsl(210 40% 95%)">
+<span style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%)">{{ listPagerInfo }}</span>
+<div style="display:flex;gap:6px">
+<button style="{{ listPrevSt }}" onClick="{{ listPrev }}">‹ Назад</button>
+<button style="{{ listNextSt }}" onClick="{{ listNext }}">Вперёд ›</button>
+</div>
+</div>
+</sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{ isHist }}" hint-placeholder-val="{{ false }}">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04)">
+<div style="padding:13px 16px;border-bottom:1px solid hsl(210 40% 95%)"><div style="font-size:13.5px;font-weight:600">История завершённых дежурств <span style="color:hsl(215.4 16.3% 46.9%);font-weight:500">· {{ monthLabel }}</span></div><div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">Кто заступал дежурным по объекту, время заступления и сдачи, состав и итоги. Строка открывает карточку дежурства.</div></div>
+<div style="overflow-x:auto">
+<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1100px">
+<thead><tr>
+<th style="text-align:left;padding:9px 12px 9px 16px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Дата</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Объект</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Дежурный по объекту</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Заступил</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Сдал</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Состав</th>
+<th style="text-align:center;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Замены</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Замечания / происшествия</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600">Фиксация</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ histRows }}" as="r" hint-placeholder-count="8">
+<tr style="border-top:1px solid hsl(210 40% 95%);cursor:pointer" style-hover="background:hsl(210 40% 98%)" onClick="{{ r.open }}">
+<td style="padding:10px 12px 10px 16px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ r.dateRu }}</td>
+<td style="padding:10px 12px;font-weight:600">{{ r.obj }}</td>
+<td style="padding:10px 12px;white-space:nowrap">{{ r.officer }}</td>
+<td style="padding:10px 12px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ r.from }}</td>
+<td style="padding:10px 12px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ r.to }}</td>
+<td style="padding:10px 12px;white-space:nowrap;font-variant-numeric:tabular-nums">{{ r.cnt }}</td>
+<td style="padding:10px 12px;text-align:center;font-variant-numeric:tabular-nums">{{ r.repl }}</td>
+<td style="padding:10px 12px;font-size:11.5px;color:hsl(215.4 16.3% 36.9%)">{{ r.notes }}</td>
+<td style="padding:10px 12px;white-space:nowrap"><span class="{{ r.fixCls }}" style="display:inline-flex;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600">{{ r.fixLabel }}</span></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<sc-if value="{{ histEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:32px;text-align:center;color:hsl(215.4 16.3% 46.9%);font-size:12.5px">В выбранном месяце нет завершённых дежурств</div></sc-if>
+<sc-if value="{{ histPagerShow }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid hsl(210 40% 95%)">
+<span style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%)">{{ histPagerInfo }}</span>
+<div style="display:flex;gap:6px">
+<button style="{{ histPrevSt }}" onClick="{{ histPrev }}">‹ Назад</button>
+<button style="{{ histNextSt }}" onClick="{{ histNext }}">Вперёд ›</button>
+</div>
+</div>
+</sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{ detOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:60;display:grid;place-items:center;padding:20px" onClick="{{ closeDet }}">
+<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(16,24,40,.25);width:780px;max-width:100%;max-height:90vh;overflow:auto;padding:20px" onClick="{{ stop }}">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+<div>
+<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+<span style="font-size:16px;font-weight:700">{{ dObj }}</span>
+<span class="{{ dCls }}" style="display:inline-flex;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600">{{ dStatus }}</span>
+<sc-if value="{{ dHasConf }}" hint-placeholder-val="{{ false }}"><span class="bg-red-100 text-red-800" style="display:inline-flex;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600">Конфликты: {{ dConfN }}</span></sc-if>
+<sc-if value="{{ dDone }}" hint-placeholder-val="{{ false }}"><span class="bg-blue-100 text-blue-800" style="display:inline-flex;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600">Завершено</span></sc-if>
+</div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 46.9%);margin-top:4px">Суточное дежурство · {{ dDateRu }} · {{ dTime }} · Ознакомление: {{ dAckSum }}</div>
+</div>
+<button style="width:30px;height:30px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);flex:0 0 auto" aria-label="Закрыть" onClick="{{ closeDet }}">✕</button>
+</div>
+
+<sc-if value="{{ dHasConf }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top:12px;border:1px solid hsl(0 84% 85%);background:hsl(0 86% 97%);border-radius:10px;padding:10px 13px">
+<div style="font-size:12px;font-weight:700;color:#b91c1c;margin-bottom:4px">Конфликты назначений</div>
+<sc-for list="{{ dConfs }}" as="c" hint-placeholder-count="1"><div style="font-size:12px;color:#b91c1c;padding:1px 0">• {{ c }}</div></sc-for>
+</div>
+</sc-if>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 6px">
+<div style="font-size:13px;font-weight:600">Дежурный по объекту</div>
+<sc-if value="{{ dEditable }}" hint-placeholder-val="{{ true }}"><button style="height:30px;padding:0 11px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11.5px;font-weight:600" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ dSendAck }}">Отправить на ознакомление</button></sc-if>
+</div>
+<sc-if value="{{ dHasOfficer }}" hint-placeholder-val="{{ false }}">
+<div style="{{ dOfficer.rowSt }}">
+<span class="bg-indigo-100 text-indigo-800" style="width:30px;height:30px;border-radius:99px;display:grid;place-items:center;font-size:10.5px;font-weight:700;flex:0 0 auto">{{ dOfficer.ini }}</span>
+<div style="flex:1;min-width:0">
+<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:600">{{ dOfficer.name }}</span><button style="{{ dOfficer.rating.st }}" title="{{ dOfficer.rating.title }}" onClick="{{ dOfficer.rating.open }}">{{ dOfficer.rating.label }}</button><span class="{{ dOfficer.ackCls }}" style="display:inline-flex;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700">{{ dOfficer.ackLabel }}</span></div>
+<div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:1px">{{ dOfficer.unit }} · {{ dOfficer.role }} · заступление {{ dOfficer.from }} · окончание {{ dOfficer.to }} · {{ dOfficer.empStatus }}</div>
+<sc-if value="{{ dOfficer.hasConf }}" hint-placeholder-val="{{ false }}"><div style="font-size:11px;color:#b91c1c;font-weight:600;margin-top:2px">⚠ {{ dOfficer.conf }}</div></sc-if>
+</div>
+<sc-if value="{{ dEditable }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;gap:5px;flex:0 0 auto">
+<button style="height:26px;padding:0 8px;border-radius:6px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10.5px" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ dOfficer.replace }}">Заменить</button>
+<button style="height:26px;padding:0 8px;border-radius:6px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10.5px;color:#b91c1c" style-hover="background:hsl(0 86% 97%)" onClick="{{ dOfficer.remove }}">Удалить</button>
+</div>
+</sc-if>
+</div>
+</sc-if>
+<sc-if value="{{ dNoOfficer }}" hint-placeholder-val="{{ true }}">
+<button style="width:100%;padding:12px;border:1px dashed hsl(214.3 31.8% 85%);border-radius:10px;background:none;color:hsl(var(--primary));font-size:12px;font-weight:600" style-hover="background:hsl(210 40% 98%)" onClick="{{ dAssignOfficer }}">+ Назначить дежурного по объекту</button>
+</sc-if>
+
+<div style="font-size:13px;font-weight:600;margin:16px 0 8px">Посты объекта <span style="font-size:11px;font-weight:500;color:hsl(215.4 16.3% 46.9%)">· из действующего паспорта объекта</span></div>
+<sc-for list="{{ dPosts }}" as="p" hint-placeholder-count="3">
+<div style="border:1px solid hsl(210 40% 93%);border-radius:10px;padding:11px 13px;margin-bottom:8px">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px">
+<div><span style="font-size:12.5px;font-weight:700">{{ p.title }}</span><span style="font-size:11px;color:hsl(215.4 16.3% 46.9%)"> · {{ p.task }} · {{ p.time }}<sc-if value="{{ p.hasReq }}" hint-placeholder-val="{{ false }}"> · требование: {{ p.req }}</sc-if></span></div>
+<div style="display:flex;align-items:center;gap:6px">
+<span style="font-size:11px;color:hsl(215.4 16.3% 46.9%);font-variant-numeric:tabular-nums">{{ p.cnt }}</span>
+<span class="{{ p.cls }}" style="display:inline-flex;padding:1px 8px;border-radius:999px;font-size:10px;font-weight:700">{{ p.state }}</span>
+</div>
+</div>
+<sc-for list="{{ p.rows }}" as="e" hint-placeholder-count="1">
+<div style="{{ e.rowSt }}">
+<span class="bg-blue-100 text-blue-800" style="width:26px;height:26px;border-radius:99px;display:grid;place-items:center;font-size:9.5px;font-weight:700;flex:0 0 auto">{{ e.ini }}</span>
+<div style="flex:1;min-width:0">
+<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:600">{{ e.name }}</span><button style="{{ e.rating.st }}" title="{{ e.rating.title }}" onClick="{{ e.rating.open }}">{{ e.rating.label }}</button>
+<sc-if value="{{ e.isSenior }}" hint-placeholder-val="{{ false }}"><span class="bg-indigo-100 text-indigo-800" style="display:inline-flex;padding:1px 6px;border-radius:999px;font-size:9.5px;font-weight:700">Старший</span></sc-if>
+<sc-if value="{{ e.isReserve }}" hint-placeholder-val="{{ false }}"><span class="bg-cyan-100 text-cyan-800" style="display:inline-flex;padding:1px 6px;border-radius:999px;font-size:9.5px;font-weight:700">Резерв</span></sc-if>
+<span class="{{ e.ackCls }}" style="display:inline-flex;padding:1px 6px;border-radius:999px;font-size:9.5px;font-weight:700">{{ e.ackLabel }}</span>
+</div>
+<div style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%)">{{ e.sub }}</div>
+<sc-if value="{{ e.hasConf }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;color:#b91c1c;font-weight:600;margin-top:1px">⚠ {{ e.conf }}</div></sc-if>
+</div>
+<sc-if value="{{ dEditable }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;gap:4px;flex:0 0 auto">
+<sc-if value="{{ e.canSenior }}" hint-placeholder-val="{{ false }}"><button style="height:24px;padding:0 7px;border-radius:6px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10px" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ e.makeSenior }}">Старшим</button></sc-if>
+<button style="height:24px;padding:0 7px;border-radius:6px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10px" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ e.replace }}">Заменить</button>
+<button style="height:24px;padding:0 7px;border-radius:6px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10px;color:#b91c1c" style-hover="background:hsl(0 86% 97%)" onClick="{{ e.remove }}">Удалить</button>
+</div>
+</sc-if>
+</div>
+</sc-for>
+<sc-if value="{{ dEditable }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;gap:6px;margin-top:4px">
+<button style="height:26px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10.5px;font-weight:600;color:hsl(var(--primary))" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ p.assign }}">+ Назначить сотрудника</button>
+<button style="height:26px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10.5px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ p.reserve }}">+ Резервный сотрудник</button>
+</div>
+</sc-if>
+</div>
+</sc-for>
+
+<sc-if value="{{ panelOpen }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top:12px;border:1px solid hsl(221.2 83.2% 53.3% / .35);border-radius:10px;padding:12px;background:hsl(221.2 83.2% 53.3% / .03)">
+<div style="font-size:12.5px;font-weight:700;margin-bottom:8px">{{ panelTitle }}</div>
+<sc-if value="{{ panelIsReplace }}" hint-placeholder-val="{{ false }}">
+<input style="width:100%;box-sizing:border-box;height:34px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 11px;font-size:12px;outline:none;margin-bottom:8px" style-focus="border-color:hsl(var(--primary))" placeholder="Причина замены (обязательно)" value="{{ panelReason }}" onChange="{{ onPanelReason }}">
+</sc-if>
+<input style="width:100%;box-sizing:border-box;height:34px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 11px;font-size:12px;outline:none;margin-bottom:8px" style-focus="border-color:hsl(var(--primary))" placeholder="Поиск по ФИО" value="{{ panelQ }}" onChange="{{ onPanelQ }}">
+<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+<span style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%);font-weight:600">Сортировка</span>
+<select style="height:30px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:7px;padding:0 8px;font-size:11.5px;outline:none" value="{{ panelSort }}" onChange="{{ onPanelSort }}" aria-label="Сортировка кандидатов"><sc-for list="{{ panelSortOptions }}" as="o" hint-placeholder-count="4"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+<span style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%);font-weight:600;margin-left:4px">Рейтинг</span>
+<select style="height:30px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:7px;padding:0 8px;font-size:11.5px;outline:none" value="{{ panelRf }}" onChange="{{ onPanelRf }}" aria-label="Фильтр по рейтингу"><sc-for list="{{ panelRfOptions }}" as="o" hint-placeholder-count="6"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+</div>
+<div style="max-height:260px;overflow:auto">
+<sc-for list="{{ candidates }}" as="c" hint-placeholder-count="5">
+<div style="{{ c.st }}">
+<div style="flex:1;min-width:0">
+<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+<span style="font-size:12.5px;font-weight:600">{{ c.name }}</span>
+<span style="font-weight:400;color:hsl(215.4 16.3% 46.9%);font-size:11px">{{ c.unit }} · {{ c.role }}</span>
+<button style="{{ c.rating.st }}" title="{{ c.rating.title }}" onClick="{{ c.rating.open }}">{{ c.rating.label }}</button>
+</div>
+<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">
+<sc-for list="{{ c.chips }}" as="ch" hint-placeholder-count="4"><span style="{{ ch.st }}">{{ ch.label }}</span></sc-for>
+</div>
+<div style="font-size:10px;color:hsl(215.4 16.3% 55%);margin-top:4px">{{ c.prevNext }}</div>
+<sc-if value="{{ c.hasConf }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;color:#b91c1c;font-weight:600;margin-top:3px">⚠ Конфликт: {{ c.conf }}</div></sc-if>
+</div>
+<button style="{{ c.btnSt }}" onClick="{{ c.pick }}">Назначить</button>
+</div>
+</sc-for>
+</div>
+<button style="border:0;background:none;color:hsl(215.4 16.3% 46.9%);font-size:11.5px;padding:6px 0 0" onClick="{{ closePanel }}">Закрыть</button>
+</div>
+</sc-if>
+
+<sc-if value="{{ dPast }}" hint-placeholder-val="{{ false }}">
+<div style="font-size:13px;font-weight:600;margin:16px 0 8px">Завершение дежурства</div>
+<sc-if value="{{ dDone }}" hint-placeholder-val="{{ false }}">
+<div style="border:1px solid hsl(210 40% 93%);border-radius:10px;padding:12px 14px;background:hsl(210 40% 98.5%)">
+<sc-for list="{{ dCompletion }}" as="c" hint-placeholder-count="5"><div style="display:flex;gap:10px;padding:3px 0;font-size:12px"><span style="flex:0 0 190px;color:hsl(215.4 16.3% 46.9%)">{{ c.k }}</span><span style="flex:1;font-weight:500">{{ c.v }}</span></div></sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ dShowAssess }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:16px 0 8px">
+<div>
+<div style="font-size:13px;font-weight:600">Оценка состава дежурства</div>
+<div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">Шкала 0–10 · начислено автоматически: {{ dScoreAutoN }} · вручную: {{ dScoreManualN }} · без оценки: {{ dScoreNoneN }}</div>
+</div>
+<button style="height:32px;padding:0 12px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11.5px;font-weight:600;color:hsl(var(--primary))" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ applyAuto7 }}">Применить 7 баллов сотрудникам без замечаний</button>
+</div>
+<div style="overflow-x:auto;border:1px solid hsl(210 40% 93%);border-radius:10px">
+<table style="border-collapse:separate;border-spacing:0;font-size:11px;min-width:900px;width:100%">
+<thead><tr>
+<sc-for list="{{ assessHeads }}" as="h" hint-placeholder-count="9"><th style="{{ h.st }}">{{ h.t }}</th></sc-for>
+</tr></thead>
+<tbody>
+<sc-for list="{{ dAssessRows }}" as="r" hint-placeholder-count="4">
+<tr style="border-top:1px solid hsl(210 40% 95%)">
+<td style="padding:8px 10px;font-weight:600;white-space:nowrap">{{ r.name }}</td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%);white-space:nowrap">{{ r.role }}</td>
+<td style="padding:8px 10px;white-space:nowrap">{{ r.part }}</td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%)">{{ r.lateRepl }}</td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%)">{{ r.remark }}</td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%);white-space:nowrap">{{ r.result }}</td>
+<td style="padding:8px 10px;white-space:nowrap"><span class="{{ r.scoreCls }}" style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums">{{ r.scoreLabel }}</span><span style="font-size:9.5px;color:hsl(215.4 16.3% 55%);margin-left:5px">{{ r.kindLabel }}</span></td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%);max-width:220px">{{ r.basis }}</td>
+<td style="padding:8px 10px;white-space:nowrap">
+<sc-if value="{{ r.canScore }}" hint-placeholder-val="{{ true }}"><button style="height:26px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10.5px;font-weight:600" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ r.action }}">{{ r.actionLabel }}</button></sc-if>
+<sc-if value="{{ r.isOfficer }}" hint-placeholder-val="{{ false }}"><span class="bg-indigo-100 text-indigo-800" style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600">Оценивает непосредственный руководитель</span></sc-if>
+<sc-if value="{{ r.showAbsentNote }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;color:hsl(215.4 16.3% 55%)">Отсутствовал — не оценивается</span></sc-if>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<div style="font-size:10.5px;color:hsl(215.4 16.3% 55%);margin-top:6px">Рейтинг сотрудника напрямую не редактируется — изменить можно только конкретную оценку за это дежурство с обязательной фиксацией причины в журнале.</div>
+</sc-if>
+<sc-if value="{{ dNeedFix }}" hint-placeholder-val="{{ false }}">
+<div style="border:1px solid hsl(210 40% 93%);border-radius:10px;padding:12px 14px">
+<div style="font-size:11.5px;font-weight:600;margin-bottom:5px">Фактически заступившие <span style="font-weight:400;color:hsl(215.4 16.3% 46.9%)">· снимите отметку с отсутствовавших</span></div>
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+<sc-for list="{{ cdFacts }}" as="f" hint-placeholder-count="4">
+<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" checked="{{ f.checked }}" onChange="{{ f.onToggle }}" style="accent-color:hsl(var(--primary))">{{ f.name }}</label>
+</sc-for>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+<div><label style="display:block;font-size:11px;font-weight:600;margin-bottom:3px">Опоздания</label><input style="width:100%;box-sizing:border-box;height:32px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;font-size:12px;outline:none" value="{{ cdLate }}" onChange="{{ onCdLate }}" placeholder="Нет"></div>
+<div><label style="display:block;font-size:11px;font-weight:600;margin-bottom:3px">Замечания</label><input style="width:100%;box-sizing:border-box;height:32px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;font-size:12px;outline:none" value="{{ cdRemarks }}" onChange="{{ onCdRemarks }}" placeholder="Без замечаний"></div>
+</div>
+<div style="margin-bottom:10px"><label style="display:block;font-size:11px;font-weight:600;margin-bottom:3px">Происшествия</label><input style="width:100%;box-sizing:border-box;height:32px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;font-size:12px;outline:none" value="{{ cdIncidents }}" onChange="{{ onCdIncidents }}" placeholder="Не зафиксированы"></div>
+<div style="margin-bottom:10px"><label style="display:block;font-size:11px;font-weight:600;margin-bottom:3px">Принятое решение по происшествию / замечанию<sc-if value="{{ cdNeedDecision }}" hint-placeholder-val="{{ false }}"><span style="color:#b91c1c"> · обязательно для завершения</span></sc-if></label><input style="width:100%;box-sizing:border-box;height:32px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;font-size:12px;outline:none" style-focus="border-color:hsl(var(--primary))" value="{{ cdDecision }}" onChange="{{ onCdDecision }}" placeholder="Заполняется при наличии замечания или происшествия"></div>
+<div style="margin-bottom:12px"><label style="display:block;font-size:11px;font-weight:600;margin-bottom:3px">Итоговый комментарий</label><textarea style="width:100%;box-sizing:border-box;min-height:48px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:7px 10px;font-size:12px;outline:none;resize:vertical" value="{{ cdComment }}" onChange="{{ onCdComment }}"></textarea></div>
+<div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-bottom:10px">Произведённые замены: {{ dReplSum }}</div>
+<button style="height:34px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:12.5px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ fixCompletion }}">Зафиксировать завершение</button>
+</div>
+</sc-if>
+</sc-if>
+
+<div style="margin-top:16px">
+<div style="font-size:13px;font-weight:600;margin-bottom:2px">Журнал действий</div>
+<div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Создания, назначения, замены и завершения фиксируются в журнале</div>
+<sc-for list="{{ dJournal }}" as="j" hint-placeholder-count="3">
+<div style="display:flex;gap:10px;padding:7px 2px;border-bottom:1px solid hsl(210 40% 95%)">
+<span style="font-size:11px;color:hsl(215.4 16.3% 46.9%);font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 110px">{{ j.d }}</span>
+<span style="font-size:12px;flex:1">{{ j.t }}</span>
+<span style="font-size:11px;color:hsl(215.4 16.3% 46.9%);white-space:nowrap">{{ j.u }}</span>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ scoreOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:65;display:grid;place-items:center;padding:20px" onClick="{{ closeScore }}">
+<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(16,24,40,.28);width:480px;max-width:100%;max-height:90vh;overflow:auto;padding:20px" onClick="{{ stop }}">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">
+<div>
+<div style="font-size:15px;font-weight:700">Оценка по итогам дежурства</div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">{{ scoreName }}</div>
+</div>
+<button style="width:30px;height:30px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);flex:0 0 auto" aria-label="Закрыть" onClick="{{ closeScore }}">✕</button>
+</div>
+<div style="border:1px solid hsl(210 40% 93%);border-radius:10px;padding:10px 12px;background:hsl(210 40% 98.5%);margin-bottom:14px">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 14px">
+<sc-for list="{{ scoreCtx }}" as="c" hint-placeholder-count="10"><div style="display:flex;gap:6px;font-size:11px;padding:1px 0"><span style="color:hsl(215.4 16.3% 46.9%);flex:0 0 auto">{{ c.k }}:</span><span style="font-weight:500">{{ c.v }}</span></div></sc-for>
+</div>
+</div>
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:5px">Оценка (0–10)</label>
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+<sc-for list="{{ scoreQuick }}" as="q" hint-placeholder-count="6"><button style="{{ q.st }}" onClick="{{ q.pick }}">{{ q.label }}</button></sc-for>
+</div>
+<select style="width:100%;box-sizing:border-box;height:34px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;font-size:12px;outline:none;background:#fff;margin-bottom:6px" value="{{ scoreValue }}" onChange="{{ onScoreValue }}"><sc-for list="{{ scoreOptions }}" as="o" hint-placeholder-count="11"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+<div style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%);margin-bottom:12px">{{ scoreReqNote }}</div>
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Основание оценки</label>
+<input style="width:100%;box-sizing:border-box;height:34px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 11px;font-size:12px;outline:none;margin-bottom:10px" style-focus="border-color:hsl(var(--primary))" value="{{ scoreBasis }}" onChange="{{ onScoreBasis }}" placeholder="Например: отличное выполнение / несущественное замечание / благодарность">
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Комментарий старшего</label>
+<textarea style="width:100%;box-sizing:border-box;min-height:52px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:7px 11px;font-size:12px;outline:none;resize:vertical;margin-bottom:10px" style-focus="border-color:hsl(var(--primary))" value="{{ scoreComment }}" onChange="{{ onScoreComment }}" placeholder="Обязателен для оценки выше 8 или ниже 6; при изменении оценки — причина исправления"></textarea>
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Документ-основание</label>
+<input style="width:100%;box-sizing:border-box;height:34px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 11px;font-size:12px;outline:none;margin-bottom:10px" style-focus="border-color:hsl(var(--primary))" value="{{ scoreDoc }}" onChange="{{ onScoreDoc }}" placeholder="Рапорт, приказ, представление к благодарности (при наличии)">
+<div style="font-size:10.5px;color:hsl(215.4 16.3% 55%);margin-bottom:14px">{{ scorePrevNote }}</div>
+<div style="display:flex;justify-content:flex-end;gap:8px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);font-size:13px;font-weight:500" onClick="{{ closeScore }}">Отмена</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ saveScore }}">Сохранить оценку</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ addOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:60;display:grid;place-items:center;padding:20px" onClick="{{ closeAdd }}">
+<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(16,24,40,.25);width:420px;max-width:100%;padding:20px" onClick="{{ stop }}">
+<div style="font-size:15px;font-weight:700;margin-bottom:2px">Добавить суточное дежурство</div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 46.9%);margin-bottom:14px">Посты и секторы будут загружены из паспорта объекта. Дежурство длится сутки с момента заступления.</div>
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Дата</label>
+<input type="date" style="width:100%;box-sizing:border-box;height:34px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;font-size:12px;outline:none;margin-bottom:10px" value="{{ addDate }}" onChange="{{ onAddDate }}">
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Объект</label>
+<select style="width:100%;box-sizing:border-box;height:34px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 8px;font-size:12px;outline:none;background:#fff;margin-bottom:16px" value="{{ addObj }}" onChange="{{ onAddObj }}"><sc-for list="{{ addObjOptions }}" as="o" hint-placeholder-count="5"><option value="{{ o }}">{{ o }}</option></sc-for></select>
+<div style="display:flex;justify-content:flex-end;gap:8px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);font-size:13px;font-weight:500" onClick="{{ closeAdd }}">Отмена</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ saveAdd }}">Создать и открыть</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ ratingOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:70;display:grid;place-items:center;padding:20px" onClick="{{ rmClose }}">
+<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(16,24,40,.28);width:440px;max-width:100%;max-height:90vh;overflow:auto;padding:20px" onClick="{{ stop }}">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">
+<div>
+<div style="font-size:15px;font-weight:700">Краткая информация о рейтинге</div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">{{ rmName }} · {{ rmSub }}</div>
+</div>
+<button style="width:30px;height:30px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);flex:0 0 auto" aria-label="Закрыть" onClick="{{ rmClose }}">✕</button>
+</div>
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+<span style="{{ rmBadgeSt }}">★ {{ rmScore }}</span>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%)">{{ rmBand }} · только просмотр</div>
+</div>
+<div style="border:1px solid hsl(210 40% 93%);border-radius:10px;padding:10px 13px;background:hsl(210 40% 98.5%);margin-bottom:14px">
+<sc-for list="{{ rmRows }}" as="r" hint-placeholder-count="7"><div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px"><span style="color:hsl(215.4 16.3% 46.9%)">{{ r.k }}</span><span style="font-weight:600;font-variant-numeric:tabular-nums">{{ r.v }}</span></div></sc-for>
+</div>
+<sc-if value="{{ rmEnough }}" hint-placeholder-val="{{ true }}">
+<div style="font-size:11.5px;font-weight:600;margin-bottom:6px">Последние три оценки</div>
+<div style="display:flex;gap:6px;margin-bottom:14px">
+<sc-for list="{{ rmLast3 }}" as="l" hint-placeholder-count="3"><span class="{{ l.cls }}" style="display:inline-flex;padding:3px 11px;border-radius:8px;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">{{ l.v }}</span></sc-for>
+</div>
+<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 13px;background:hsl(210 40% 98%);border:1px solid hsl(210 40% 93%);border-radius:9px;margin-bottom:12px"><span style="font-size:12px;color:hsl(215.4 16.3% 46.9%)">Динамика рейтинга</span><span style="{{ rmTrendSt }}">{{ rmTrend }}</span></div>
+</sc-if>
+<div style="font-size:10.5px;color:hsl(215.4 16.3% 55%);line-height:1.5">Оценки изменять из окна назначения нельзя. Рейтинг — вспомогательный показатель качества ранее выполненной службы за последние 90 дней.</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ evalOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:62;display:flex;justify-content:flex-end" onClick="{{ closeEval }}">
+<div style="background:#fff;width:780px;max-width:100%;height:100%;overflow:auto;box-shadow:-8px 0 30px rgba(16,24,40,.18);padding:20px;box-sizing:border-box" onClick="{{ stop }}">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px">
+<div>
+<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span style="font-size:16px;font-weight:700">Оценки состава дежурства</span><span class="{{ evStatusCls }}" style="display:inline-flex;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600">{{ evStatus }}</span></div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 46.9%);margin-top:3px">Просмотр без права изменения · оценки редактируются только в карточке завершённого дежурства</div>
+</div>
+<button style="width:30px;height:30px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);flex:0 0 auto" aria-label="Закрыть" onClick="{{ closeEval }}">✕</button>
+</div>
+<div style="border:1px solid hsl(210 40% 93%);border-radius:10px;padding:12px 14px;background:hsl(210 40% 98.5%);margin-bottom:14px">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 16px">
+<sc-for list="{{ evSummary }}" as="c" hint-placeholder-count="8"><div style="display:flex;gap:8px;font-size:12px;padding:1px 0"><span style="color:hsl(215.4 16.3% 46.9%);flex:0 0 176px">{{ c.k }}</span><span style="font-weight:600">{{ c.v }}</span></div></sc-for>
+</div>
+</div>
+<div style="overflow-x:auto;border:1px solid hsl(210 40% 93%);border-radius:10px">
+<table style="border-collapse:separate;border-spacing:0;font-size:11px;min-width:840px;width:100%">
+<thead><tr>
+<sc-for list="{{ evalHeads }}" as="h" hint-placeholder-count="9"><th style="{{ h.st }}">{{ h.t }}</th></sc-for>
+</tr></thead>
+<tbody>
+<sc-for list="{{ evRows }}" as="r" hint-placeholder-count="4">
+<tr style="border-top:1px solid hsl(210 40% 95%)">
+<td style="padding:8px 10px;font-weight:600;white-space:nowrap">{{ r.name }}</td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%);white-space:nowrap">{{ r.role }}</td>
+<td style="padding:8px 10px;white-space:nowrap">{{ r.part }}</td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%);white-space:nowrap">{{ r.result }}</td>
+<td style="padding:8px 10px;white-space:nowrap"><span class="{{ r.scoreCls }}" style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums">{{ r.scoreLabel }}</span></td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%);max-width:230px">{{ r.basis }}</td>
+<td style="padding:8px 10px;white-space:nowrap">{{ r.kind }}</td>
+<td style="padding:8px 10px;color:hsl(215.4 16.3% 40%);white-space:nowrap">{{ r.by }}</td>
+<td style="padding:8px 10px;white-space:nowrap">
+<sc-if value="{{ r.canDetail }}" hint-placeholder-val="{{ false }}"><button style="height:26px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:10.5px;font-weight:600" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ r.openDetail }}">Подробнее</button></sc-if>
+<sc-if value="{{ r.noDetail }}" hint-placeholder-val="{{ true }}"><span style="font-size:10.5px;color:hsl(215.4 16.3% 60%)">{{ r.naNote }}</span></sc-if>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<div style="font-size:10.5px;color:hsl(215.4 16.3% 55%);margin-top:8px">Оценки не изменяются из списка дежурств. Для незавершённых дежурств средняя оценка и рейтинг не формируются.</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ sdOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:66;display:grid;place-items:center;padding:20px" onClick="{{ closeSd }}">
+<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(16,24,40,.28);width:520px;max-width:100%;max-height:90vh;overflow:auto;padding:20px" onClick="{{ stop }}">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">
+<div>
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:15px;font-weight:700">{{ sdName }}</span><span class="{{ sdScoreCls }}" style="display:inline-flex;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums">{{ sdScore }}</span></div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">{{ sdRole }} · {{ sdResult }}</div>
+</div>
+<button style="width:30px;height:30px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);flex:0 0 auto" aria-label="Закрыть" onClick="{{ closeSd }}">✕</button>
+</div>
+<div style="border:1px solid hsl(210 40% 93%);border-radius:10px;padding:10px 12px;background:hsl(210 40% 98.5%);margin-bottom:14px">
+<sc-for list="{{ sdRows }}" as="c" hint-placeholder-count="10"><div style="display:flex;gap:10px;padding:3px 0;font-size:12px"><span style="flex:0 0 168px;color:hsl(215.4 16.3% 46.9%)">{{ c.k }}</span><span style="flex:1;font-weight:500">{{ c.v }}</span></div></sc-for>
+</div>
+<div style="font-size:13px;font-weight:600;margin-bottom:6px">История исправлений</div>
+<sc-for list="{{ sdHistory }}" as="j" hint-placeholder-count="2">
+<div style="display:flex;gap:10px;padding:7px 2px;border-bottom:1px solid hsl(210 40% 95%)">
+<span style="font-size:11px;color:hsl(215.4 16.3% 46.9%);font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 118px">{{ j.d }}</span>
+<span style="font-size:12px;flex:1">{{ j.t }}</span>
+<span style="font-size:11px;color:hsl(215.4 16.3% 46.9%);white-space:nowrap">{{ j.u }}</span>
+</div>
+</sc-for>
+<div style="font-size:10.5px;color:hsl(215.4 16.3% 55%);margin-top:10px">Только просмотр. Изменение оценки выполняется в карточке завершённого дежурства с обязательной фиксацией причины.</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ hasFlash }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;right:20px;bottom:20px;z-index:70;background:hsl(222.2 47.4% 11.2%);color:#fff;border-radius:10px;padding:11px 16px;font-size:12.5px;box-shadow:0 8px 24px rgba(16,24,40,.3);animation:vapsToast .18s ease-out;max-width:380px">{{ flash }}</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000},&quot;embedded&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;boolean&quot;},&quot;monthNorm&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:10,&quot;min&quot;:4,&quot;max&quot;:15,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Правила&quot;}}">
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    this.today="2026-07-21";
+    this.months=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+    this.roster=[
+      {name:"Жумабеков Н. К.",unit:"Рота охраны №1",role:"Старший инспектор",om:[{date:"2026-07-17",label:"МЭФ"}]},
+      {name:"Касымова А. Р.",unit:"Рота охраны №1",role:"Инспектор",om:[{date:"2026-07-17",label:"МЭФ"}]},
+      {name:"Ахметов Т. Б.",unit:"Рота охраны №2",role:"Старший инспектор",om:[{date:"2026-07-18",label:"Визит делегации"}]},
+      {name:"Оспанов Б. Д.",unit:"Рота охраны №2",role:"Инспектор"},
+      {name:"Салимова Г. Е.",unit:"Комендатура",role:"Инспектор",absence:{type:"Отпуск",from:"2026-07-13",to:"2026-07-27"}},
+      {name:"Бекенов С. М.",unit:"Рота охраны №1",role:"Инспектор"},
+      {name:"Нурланов Е. А.",unit:"Рота охраны №3",role:"Инспектор"},
+      {name:"Токтарова Д. С.",unit:"Рота охраны №3",role:"Инспектор",absence:{type:"Больничный",from:"2026-07-18",to:"2026-07-25"}},
+      {name:"Ералиев А. Ж.",unit:"Комендатура",role:"Старший инспектор"},
+      {name:"Сапаров М. Т.",unit:"Рота охраны №2",role:"Инспектор"},
+      {name:"Абишев Р. Н.",unit:"Рота охраны №3",role:"Старший инспектор",absence:{type:"Командировка",from:"2026-07-20",to:"2026-07-24"}},
+      {name:"Досжанов К. А.",unit:"Рота охраны №1",role:"Инспектор"},
+      {name:"Мукашева Ж. Б.",unit:"Рота охраны №2",role:"Инспектор"},
+      {name:"Тлеубаев А. С.",unit:"Рота охраны №3",role:"Инспектор"},
+      {name:"Каиров Д. Е.",unit:"Рота охраны №1",role:"Инспектор"},
+      {name:"Смагулов А. Б.",unit:"Рота охраны №1",role:"Инспектор"},
+      {name:"Жанибеков Т. С.",unit:"Рота охраны №1",role:"Старший инспектор"},
+      {name:"Айтбаев Н. М.",unit:"Рота охраны №1",role:"Инспектор"},
+      {name:"Кулова С. Ж.",unit:"Рота охраны №2",role:"Инспектор"},
+      {name:"Байжанов Е. К.",unit:"Рота охраны №2",role:"Инспектор"},
+      {name:"Оразбаев С. Т.",unit:"Рота охраны №2",role:"Старший инспектор"},
+      {name:"Нуркенова А. Д.",unit:"Рота охраны №2",role:"Инспектор"},
+      {name:"Темиров Б. А.",unit:"Рота охраны №3",role:"Инспектор"},
+      {name:"Есимова Д. Н.",unit:"Рота охраны №3",role:"Инспектор"},
+      {name:"Куандыков Ж. Р.",unit:"Рота охраны №3",role:"Старший инспектор"},
+      {name:"Молдагулов А. Е.",unit:"Рота охраны №3",role:"Инспектор"},
+      {name:"Сеитов К. Н.",unit:"Комендатура",role:"Инспектор"},
+      {name:"Абдрахманова Л. Б.",unit:"Комендатура",role:"Инспектор"},
+      {name:"Тажибаев М. С.",unit:"Комендатура",role:"Инспектор"},
+      {name:"Ибраев Р. Ж.",unit:"Комендатура",role:"Старший инспектор"}
+    ];
+    this.objects=[
+      {name:"Дворец Независимости",cat:"own",start:"08:00",posts:[
+        {id:"p1",sector:"Сектор А",post:"Пост 1",task:"КПП и контроль доступа",need:1,time:"круглосуточно",req:null},
+        {id:"p2",sector:"Сектор А",post:"Пост 2",task:"Патрулирование периметра",need:1,time:"круглосуточно",req:null},
+        {id:"p3",sector:"Сектор Б",post:"Пост 3",task:"Досмотр посетителей",need:1,time:"08:00–20:00",req:"Старший инспектор"}]},
+      {name:"Астана Арена",cat:"own",start:"08:00",posts:[
+        {id:"p1",sector:"Сектор А",post:"Пост 1",task:"Входная группа",need:1,time:"08:00–20:00",req:null},
+        {id:"p2",sector:"Сектор Б",post:"Пост 2",task:"Периметр и трибуны",need:1,time:"круглосуточно",req:null}]},
+      {name:"Конгресс-центр",cat:"own",start:"08:00",posts:[
+        {id:"p1",sector:"Сектор А",post:"Пост 1",task:"КПП",need:1,time:"круглосуточно",req:null},
+        {id:"p2",sector:"Сектор В",post:"Пост 2",task:"Внутренние помещения",need:1,time:"08:00–20:00",req:null}]},
+      {name:"Резиденция «Северная»",cat:"protected",start:"09:00",posts:[
+        {id:"p1",sector:"Сектор А",post:"Пост 1",task:"Охрана периметра",need:2,time:"круглосуточно",req:null},
+        {id:"p2",sector:"Сектор Б",post:"Пост 2",task:"КПП",need:1,time:"круглосуточно",req:null}]},
+      {name:"Служебная дача №3",cat:"protected",start:"09:00",posts:[
+        {id:"p1",sector:"Сектор А",post:"Пост 1",task:"Охрана территории",need:1,time:"круглосуточно",req:null}]},
+      {name:"Офис куратора",cat:"protected",start:"09:00",posts:[
+        {id:"p1",sector:"Сектор А",post:"Пост 1",task:"Пост охраны",need:1,time:"09:00–21:00",req:null}]},
+      {name:"Аэропорт · VIP-зал",cat:"om",start:"08:00",posts:[
+        {id:"p1",sector:"Сектор А",post:"Пост 1",task:"Контроль VIP-зала",need:1,time:"08:00–20:00",req:null},
+        {id:"p2",sector:"Сектор Б",post:"Пост 2",task:"Сопровождение на перроне",need:1,time:"по регламенту",req:null}]},
+      {name:"Резиденция гостя",cat:"om",start:"09:00",posts:[
+        {id:"p1",sector:"Сектор А",post:"Пост 1",task:"Охрана резиденции",need:1,time:"круглосуточно",req:"Старший инспектор"}]}
+    ];
+    const duties={},journal={};
+    const iso=(d)=>"2026-07-"+String(d).padStart(2,"0");
+    const ru=(d)=>String(d).padStart(2,"0")+".07.2026";
+    const mkAck=(d)=>d<=21?{st:"ack",at:ru(Math.max(1,d-1))+" 18:00"}:null;
+    let prevDay=new Set();
+    for(let d=1;d<=24;d++){
+      const date=iso(d);
+      const avail=this.roster.filter(r=>{
+        if(r.absence&&r.absence.from<=date&&r.absence.to>=date)return false;
+        if((r.om||[]).some(o=>o.date===date))return false;
+        if(prevDay.has(r.name))return false;
+        return true;
+      }).map(r=>r.name);
+      let idx=(d*5)%Math.max(1,avail.length);
+      const take=()=>{ if(!avail.length) return null; const n=avail[idx%avail.length]; avail.splice(idx%avail.length,1); return n; };
+      const todayAssigned=new Set();
+      this.objects.forEach((obj,oi)=>{
+        const pat=(d+oi)%4;
+        if(obj.cat==="own"){ if(pat===3) return; } else { if(pat!==0) return; }
+        const key=obj.name+"|"+date;
+        const duty={obj:obj.name,date,start:obj.start,officer:null,posts:{},replacements:[],completion:null};
+        obj.posts.forEach(p=>duty.posts[p.id]=[]);
+        const off=take(); if(off){duty.officer={name:off,ack:mkAck(d)};todayAssigned.add(off);}
+        const fillPosts=pat===2?[obj.posts[0]]:obj.posts;
+        fillPosts.forEach(p=>{
+          for(let k=0;k<p.need;k++){
+            let n=null;
+            if(p.req){const i2=avail.findIndex(nm=>{const r=this.roster.find(x=>x.name===nm);return r.role===p.req;}); if(i2>=0){n=avail[i2];avail.splice(i2,1);} }
+            else n=take();
+            if(n){duty.posts[p.id].push({name:n,senior:k===0,reserve:false,ack:mkAck(d)});todayAssigned.add(n);}
+          }
+        });
+        duties[key]=duty;
+        journal[key]=[{d:ru(Math.max(1,d-3))+" 10:00",u:"Ердаулет Н.",t:"Суточное дежурство создано"}];
+      });
+      prevDay=todayAssigned;
+    }
+    const put=(obj,d,pid,name)=>{const k=obj+"|"+iso(d);
+      if(!duties[k]){const o=this.objects.find(x=>x.name===obj);const nd={obj,date:iso(d),start:o.start,officer:null,posts:{},replacements:[],completion:null};o.posts.forEach(p=>nd.posts[p.id]=[]);duties[k]=nd;journal[k]=[{d:ru(Math.max(1,d-3))+" 10:00",u:"Ердаулет Н.",t:"Суточное дежурство создано"}];}
+      const arr=duties[k].posts[pid];if(!arr.some(a=>a.name===name))arr.push({name,senior:arr.length===0,reserve:false,ack:null});};
+    put("Дворец Независимости",22,"p1","Касымова А. Р.");
+    put("Астана Арена",22,"p1","Касымова А. Р.");
+    put("Конгресс-центр",22,"p1","Токтарова Д. С.");
+    const kR="Дворец Независимости|"+iso(15);
+    if(duties[kR]){
+      duties[kR].replacements=[{slot:"Сектор А · Пост 2",from:"Досжанов К. А.",to:"Тлеубаев А. С.",reason:"Болезнь сотрудника",at:"14.07.2026 18:20"}];
+      duties[kR].posts.p2=[{name:"Тлеубаев А. С.",senior:true,reserve:false,ack:{st:"ack",at:"14.07.2026 19:02"}}];
+      journal[kR].unshift({d:"14.07.2026 18:20",u:"Ердаулет Н.",t:"Замена на посту Сектор А · Пост 2: Досжанов К. А. → Тлеубаев А. С. Причина: Болезнь сотрудника"});
+    }
+    const kC="Дворец Независимости|"+iso(20);
+    if(duties[kC]){
+      duties[kC].completion={facts:"все заступили",absent:[],late:"Нет",remarks:"Без замечаний",incidents:"Не зафиксированы",comment:"Дежурство прошло штатно",decision:"—",at:"21.07.2026 08:30",by:(duties[kC].officer||{}).name||"—"};
+      const kcOff=(duties[kC].officer||{}).name;
+      const kcMembers=Object.values(duties[kC].posts).flat().map(a=>a.name);
+      duties[kC].scores={};
+      kcMembers.forEach(n=>{duties[kC].scores[n]={value:7,basis:"Стандартное выполнение без замечаний",comment:"",doc:"",kind:"auto",by:"Система (при завершении)",at:"21.07.2026 08:30"};});
+      journal[kC].unshift({d:"21.07.2026 08:30",u:(duties[kC].officer||{}).name||"—",t:"Зафиксировано завершение дежурства: без происшествий"});
+      journal[kC].unshift({d:"21.07.2026 08:30",u:"Система (при завершении)",t:"Автоматически начислено 7,0 (стандартное выполнение без замечаний): "+kcMembers.length+" сотр."});
+      if(kcOff){duties[kC].scores[kcOff]={value:8,basis:"Организация дежурства выше стандартного уровня",comment:"Чёткая постановка задач наряду, контроль постов в течение суток, замечаний нет.",doc:"Рапорт начальника отдела от 21.07.2026",kind:"manual",by:"Абдразаков М. — нач. отдела",at:"21.07.2026 09:10"};
+        journal[kC].unshift({d:"21.07.2026 09:10",u:"Абдразаков М. — нач. отдела",t:"Оценка по итогам дежурства: "+kcOff+" — было —, стало 8,0. Пост/роль: Дежурный по объекту. Основание: организация дежурства выше стандартного уровня. Документ: рапорт начальника отдела. Автор: непосредственный руководитель"});}
+    }
+    this.state={ym:"2026-07",tab:"obj",objCat:"own",listPage:0,histPage:0,sel:null,panel:null,addOpen:false,addDate:this.today,addObj:this.objects[0].name,duties,journal,cd:null,scoreModal:null,evalKey:null,evalName:null,lf:{status:"all",grat:false,remark:false,low:false,avg:"all"},flash:""};
+  }
+  ru(iso){const p=iso.split("-");return p[2]+"."+p[1]+"."+p[0];}
+  wd(iso){const p=iso.split("-");return ["Вс","Пн","Вт","Ср","Чт","Пт","Сб"][new Date(+p[0],+p[1]-1,+p[2]).getDay()];}
+  addD(iso,n){const p=iso.split("-");const d=new Date(+p[0],+p[1]-1,+p[2]+n);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+  dim(ym){const p=ym.split("-");return new Date(+p[0],+p[1],0).getDate();}
+  ini(n){return n.split(" ").map(w=>w[0]).slice(0,2).join("");}
+  rosterOf(n){return this.roster.find(r=>r.name===n)||{unit:"—",role:"—"};}
+  objOf(n){return this.objects.find(o=>o.name===n);}
+  slotLabel(duty,pid){ if(pid==="officer")return "Дежурный по объекту"; const p=this.objOf(duty.obj).posts.find(x=>x.id===pid); return p?p.sector+" · "+p.post:pid; }
+  assignmentsOn(date){
+    const res=[];
+    Object.values(this.state.duties).forEach(d=>{ if(d.date!==date)return;
+      if(d.officer)res.push({name:d.officer.name,obj:d.obj,pid:"officer"});
+      Object.keys(d.posts).forEach(pid=>d.posts[pid].forEach(a=>res.push({name:a.name,obj:d.obj,pid})));
+    });
+    return res;
+  }
+  absenceOf(name,date){const r=this.rosterOf(name);return (r.absence&&r.absence.from<=date&&r.absence.to>=date)?r.absence:null;}
+  omOf(name,date){return (this.rosterOf(name).om||[]).find(o=>o.date===date)||null;}
+  monthLoad(name,ym){
+    const s=new Set();
+    Object.values(this.state.duties).forEach(d=>{ if(!d.date.startsWith(ym))return;
+      if((d.officer&&d.officer.name===name)||Object.values(d.posts).some(arr=>arr.some(a=>a.name===name)))s.add(d.date);
+    });
+    return s.size;
+  }
+  empStatusLabel(name,date){
+    const ab=this.absenceOf(name,date); if(ab)return ab.type;
+    if(this.omOf(name,date))return "На ОМ";
+    return "В строю";
+  }
+  ratingOf(name){
+    this._rat=this._rat||{};
+    if(this._rat[name])return this._rat[name];
+    const OV={"Жумабеков Н. К.":{score:8.7,count:18,high:5,std7:11,low:2,grat:2,remark:1,last3:[9,8,9],trend:0.3}};
+    let o;
+    if(OV[name]){o={enough:true,...OV[name]};}
+    else{
+      let h=2166136261;for(let i=0;i<name.length;i++){h^=name.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
+      const R=(n)=>{h=(Math.imul(h,1103515245)+12345)>>>0;return h%n;};
+      const p=R(100);
+      if(p<9){const count=R(4);o={enough:false,score:null,count,high:0,std7:count,low:0,grat:0,remark:0,last3:[],trend:0};}
+      else{
+        let score,high,std7,low,grat,remark;
+        if(p<24){score=9.0+R(11)/10;high=6+R(7);std7=3+R(4);low=0;grat=1+R(3);remark=0;}
+        else if(p<52){score=8.0+R(10)/10;high=4+R(5);std7=8+R(6);low=R(2);grat=1+R(2);remark=R(2);}
+        else if(p<78){score=7.0+R(10)/10;high=1+R(4);std7=9+R(8);low=R(3);grat=R(2);remark=R(2);}
+        else if(p<92){score=5.0+R(20)/10;high=R(2);std7=4+R(4);low=3+R(4);grat=0;remark=2+R(3);}
+        else{score=3.5+R(15)/10;high=0;std7=2+R(3);low=5+R(5);grat=0;remark=4+R(4);}
+        score=Math.min(10,Math.round(score*10)/10);
+        const count=high+std7+low;
+        const base=Math.round(score),cl=(v)=>Math.min(10,Math.max(3,v));
+        const last3=[cl(base+(R(3)-1)),cl(base+(R(3)-1)),cl(base-R(2))];
+        const trend=Math.round(R(9)-4)/10;
+        o={enough:true,score,high,std7,low,grat,remark,count,last3,trend};
+      }
+    }
+    return this._rat[name]=o;
+  }
+  ratingBand(o){
+    if(!o.enough)return {key:"nd",bg:"#f1f5f9",fg:"#64748b",label:"Недостаточно данных"};
+    const s=o.score;
+    if(s>=9)return{key:"green",bg:"#dcfce7",fg:"#166534",label:"Высокий"};
+    if(s>=8)return{key:"blue",bg:"#dbeafe",fg:"#1e40af",label:"Хороший"};
+    if(s>=7)return{key:"neutral",bg:"#e2e8f0",fg:"#334155",label:"Стандартный"};
+    if(s>=5)return{key:"yellow",bg:"#fef9c3",fg:"#854d0e",label:"Пониженный"};
+    return{key:"red",bg:"#fee2e2",fg:"#991b1b",label:"Низкий"};
+  }
+  ratingTitle(o){
+    if(!o.enough)return "Недостаточно данных для расчёта рейтинга\nпериод расчёта — последние 90 дней\nучтено оценок — "+o.count;
+    return "рейтинг — "+this.fmtScore(o.score)+" из 10\nпериод расчёта — последние 90 дней\nучтено оценок — "+o.count+"\nстандартных оценок 7 — "+o.std7+"\nвысоких оценок 8–10 — "+o.high+"\nблагодарностей — "+o.grat+"\nзамечаний — "+o.remark;
+  }
+  dims(name,date,obj,pid){
+    const r=this.rosterOf(name);
+    const ab=this.absenceOf(name,date),om=this.omOf(name,date);
+    let status,statusTone;
+    if(ab){status=ab.type+" по "+this.ru(ab.to);statusTone="red";}
+    else if(om){status="На ОМ · "+om.label;statusTone="purple";}
+    else{status="Доступен на "+this.ru(date);statusTone="green";}
+    let conf="";
+    if(ab)conf=ab.type+" по "+this.ru(ab.to);
+    else if(om)conf="Участие в ОМ: "+om.label;
+    else{for(const a of this.assignmentsOn(date)){if(a.name!==name)continue;if(a.obj===obj&&a.pid===pid)continue;conf=a.obj!==obj?"Назначение на другой объект: "+a.obj:"Одновременное назначение: "+this.slotLabel({obj},a.pid);break;}}
+    const prev=this.addD(date,-1),next=this.addD(date,1);
+    let restOk=true,rest="Отдых соблюдён";
+    if(this.assignmentsOn(prev).some(a=>a.name===name)){restOk=false;rest="Отдых нарушен: дежурство "+this.ru(prev);}
+    else if(this.assignmentsOn(next).some(a=>a.name===name)){restOk=false;rest="Отдых нарушен: дежурство "+this.ru(next);}
+    const load=this.monthLoad(name,date.slice(0,7)),norm=this.props.monthNorm??10,loadOver=load>norm;
+    let clearOk=true,clear="Допуски в норме";
+    if(pid&&pid!=="officer"){const p=this.objOf(obj).posts.find(x=>x.id===pid);if(p&&p.req&&r.role!==p.req){clearOk=false;clear="Нет допуска: нужен "+p.req;}}
+    return {status,statusTone,conf,hasConf:!!conf,restOk,rest,load,loadOver,norm,clearOk,clear};
+  }
+  dimChips(dm){
+    const base="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:600;white-space:nowrap;";
+    const tone={green:"background:#dcfce7;color:#166534",neutral:"background:#e2e8f0;color:#334155",amber:"background:#fef9c3;color:#854d0e",red:"background:#fee2e2;color:#991b1b",purple:"background:#f3e8ff;color:#6b21a8"};
+    return [
+      {label:dm.status,st:base+tone[dm.statusTone]},
+      {label:dm.restOk?"Отдых соблюдён":dm.rest,st:base+(dm.restOk?tone.neutral:tone.red)},
+      {label:dm.clearOk?"Допуски в норме":dm.clear,st:base+(dm.clearOk?tone.neutral:tone.amber)},
+      {label:"Нагрузка: "+dm.load+" деж · "+(dm.load*24)+" ч",st:base+(dm.loadOver?tone.amber:tone.neutral)}
+    ];
+  }
+  conflict(name,date,obj,pid){
+    const ab=this.absenceOf(name,date); if(ab)return ab.type+" по "+this.ru(ab.to);
+    const om=this.omOf(name,date); if(om)return "Пересечение с участием в ОМ: "+om.label;
+    for(const a of this.assignmentsOn(date)){
+      if(a.name!==name)continue;
+      if(a.obj===obj&&a.pid===pid)continue;
+      if(a.obj!==obj)return "Назначение на другой объект в это время: "+a.obj;
+      return "Одновременное назначение на "+this.slotLabel({obj},a.pid);
+    }
+    const prev=this.addD(date,-1);
+    if(this.assignmentsOn(prev).some(a=>a.name===name))return "Нет отдыха после суточного дежурства "+this.ru(prev);
+    const next=this.addD(date,1);
+    if(this.assignmentsOn(next).some(a=>a.name===name))return "Суточное дежурство "+this.ru(next)+" — не обеспечен отдых";
+    const norm=this.props.monthNorm??10;
+    const load=this.monthLoad(name,date.slice(0,7));
+    if(load>norm)return "Превышение нагрузки: "+load+" суточных за месяц (норма "+norm+")";
+    if(pid&&pid!=="officer"){
+      const p=this.objOf(obj).posts.find(x=>x.id===pid);
+      if(p&&p.req&&this.rosterOf(name).role!==p.req)return "Несоответствие требованиям поста: нужен "+p.req;
+    }
+    return null;
+  }
+  dutyConfs(d){
+    if(d.date<this.today)return [];
+    const res=[];
+    if(d.officer){const c=this.conflict(d.officer.name,d.date,d.obj,"officer");if(c)res.push(d.officer.name+" (дежурный) — "+c);}
+    Object.keys(d.posts).forEach(pid=>d.posts[pid].forEach(a=>{const c=this.conflict(a.name,d.date,d.obj,pid);if(c)res.push(a.name+" ("+this.slotLabel(d,pid)+") — "+c);}));
+    return res;
+  }
+  dutyStat(d){
+    const obj=this.objOf(d.obj);
+    const needT=1+obj.posts.reduce((n,p)=>n+p.need,0);
+    let asg=d.officer?1:0;
+    let full=!!d.officer;
+    obj.posts.forEach(p=>{const c=d.posts[p.id].filter(a=>!a.reserve).length;asg+=Math.min(c,p.need)+d.posts[p.id].filter(a=>a.reserve).length*0;if(c<p.need)full=false;});
+    return {needT,asg,full,partial:asg>0};
+  }
+  ackInfo(a){ if(!a||!a.ack)return {label:"Не отправлено",cls:"bg-gray-100 text-gray-800"};
+    if(a.ack.st==="sent")return {label:"Отправлено",cls:"bg-blue-100 text-blue-800"};
+    return {label:"Ознакомлен · "+a.ack.at,cls:"bg-green-100 text-green-800"}; }
+  fmtScore(v){return Number.isInteger(v)?v+",0":String(v).replace(".",",");}
+  scoreResult(v){return v>=10?"Благодарность":v===9?"Отличное выполнение":v===8?"Выше стандарта":v===7?"Без замечаний":v===6?"Незначит. замечание":"Существенные недостатки";}
+  scoreCls(v){return v>=8?"bg-green-100 text-green-800":v===7?"bg-blue-100 text-blue-800":v===6?"bg-amber-100 text-amber-800":"bg-red-100 text-red-800";}
+  evalOf(d){
+    const past=d.date<this.today;
+    const allNames=[...(d.officer?[d.officer.name]:[]),...Object.values(d.posts).flat().map(a=>a.name)];
+    const absent=(d.completion?d.completion.absent:[])||[];
+    const participants=allNames.filter(n=>!absent.includes(n));
+    const scores=d.scores||{};
+    const scored=participants.filter(n=>scores[n]);
+    const vals=scored.map(n=>scores[n].value);
+    const avg=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10:null;
+    const autoN=scored.filter(n=>scores[n].kind==="auto").length;
+    const manualN=scored.filter(n=>scores[n].kind==="manual").length;
+    const gratN=participants.filter(n=>scores[n]&&(scores[n].value>=10||/благодар/i.test((scores[n].basis||"")+" "+(scores[n].doc||"")))).length;
+    const lowN=participants.filter(n=>scores[n]&&scores[n].value<6).length;
+    const rem=!!(d.completion&&d.completion.remarks&&d.completion.remarks!=="Без замечаний");
+    const inc=!!(d.completion&&d.completion.incidents&&d.completion.incidents!=="Не зафиксированы");
+    const dec=!!(d.completion&&d.completion.decision&&d.completion.decision!=="—"&&d.completion.decision.trim()!=="");
+    let status,text;
+    if(!past){status="—";text="Не применяется";}
+    else if((rem||inc)&&!dec){status="Требует оценки";text=scored.length+" из "+participants.length+" · требует оценки";}
+    else if(scored.length===0){status="Не начато";text="Оценки не начислены";}
+    else if(scored.length<participants.length){status="Частично оценено";text=scored.length+" из "+participants.length+" · требуется завершить";}
+    else {status="Оценивание завершено";text=participants.length+" из "+participants.length+" · средняя "+this.fmtScore(avg);}
+    const cls={"Оценивание завершено":"bg-green-100 text-green-800","Частично оценено":"bg-amber-100 text-amber-800","Требует оценки":"bg-purple-100 text-purple-800","Не начато":"bg-gray-100 text-gray-800","—":"bg-gray-100 text-gray-800"}[status];
+    return {past,applies:past,allNames,participants,absent,scores,scored,avg,autoN,manualN,gratN,lowN,rem,inc,dec,status,text,cls};
+  }
+  slotOf(d,name){ if(d.officer&&d.officer.name===name)return "Дежурный по объекту"; for(const p of this.objOf(d.obj).posts){ if((d.posts[p.id]||[]).some(a=>a.name===name))return p.sector+" · "+p.post; } return "—"; }
+  openScore(key,name){ const d=this.state.duties[key]; const sc=(d.scores||{})[name]; this.setState({scoreModal:{key,name,value:sc?sc.value:7,basis:sc?sc.basis:"",comment:sc?sc.comment:"",doc:sc?sc.doc:"",prev:sc?sc.value:null}}); }
+  applyAuto7(key){ const d=this.state.duties[key]; if(!d)return;
+    const absent=(d.completion?d.completion.absent:[])||[];
+    const officerName=d.officer?d.officer.name:null;
+    const allNames=[...(d.officer?[d.officer.name]:[]),...Object.values(d.posts).flat().map(a=>a.name)];
+    const existing=d.scores||{};
+    const targets=allNames.filter(n=>!absent.includes(n)&&n!==officerName&&!(existing[n]&&existing[n].kind==="manual"));
+    if(!targets.length){this.flash("Нет сотрудников для авто-начисления — у всех уже есть ручная оценка");return;}
+    this.mut(key,x=>{const sc={...(x.scores||{})};targets.forEach(n=>{sc[n]={value:7,basis:"Стандартное выполнение без замечаний",comment:"",doc:"",kind:"auto",by:"Система",at:"21.07.2026"};});x.scores=sc;},
+      "Автоматически начислено 7,0 (стандартное выполнение без замечаний): "+targets.length+" сотр. — "+targets.join(", "));
+    this.flash("Начислено 7,0 автоматически: "+targets.length+" сотр."); }
+  saveScore(){ const m=this.state.scoreModal; if(!m)return;
+    const v=Number(m.value); if(!(v>=0&&v<=10)){this.flash("Выберите оценку от 0 до 10");return;}
+    const comment=(m.comment||"").trim(),basis=(m.basis||"").trim(),doc=(m.doc||"").trim();
+    if((v>8||v<6)&&!comment){this.flash("Для оценки выше 8 или ниже 6 комментарий старшего обязателен");return;}
+    if(v>=10&&!(basis||doc)){this.flash("Для оценки 10 укажите благодарность, документ-основание или конкретное достижение");return;}
+    const key=m.key,name=m.name; const d=this.state.duties[key]; const prev=(d.scores||{})[name];
+    const officerName=d.officer?d.officer.name:"Ердаулет Н.";
+    const author=name===officerName?"Непосредственный руководитель":officerName+" (старший наряда)";
+    const slot=this.slotOf(d,name);
+    this.mut(key,x=>{const sc={...(x.scores||{})};sc[name]={value:v,basis:basis||"—",comment:comment,doc:doc,kind:"manual",by:author,at:"21.07.2026"};x.scores=sc;},
+      "Оценка по итогам дежурства: "+name+" — было "+(prev?this.fmtScore(prev.value):"—")+", стало "+this.fmtScore(v)+". Объект: "+d.obj+", "+this.ru(d.date)+". Пост/роль: "+slot+". Основание: "+(basis||"—")+(doc?". Документ: "+doc:"")+". Автор: "+author);
+    this.setState({scoreModal:null});
+    this.flash(prev?"Оценка изменена и зафиксирована в журнале":"Оценка сохранена и зафиксирована в журнале"); }
+  log(key,text){
+    const now=new Date();const hh=String(now.getHours()).padStart(2,"0"),mi=String(now.getMinutes()).padStart(2,"0");
+    this.setState(s=>({journal:{...s.journal,[key]:[{d:"21.07.2026 "+hh+":"+mi,u:"Ердаулет Н.",t:text},...(s.journal[key]||[])]}}));
+  }
+  flash(t){this.setState({flash:t});clearTimeout(this._ft);this._ft=setTimeout(()=>this.setState({flash:""}),2800);}
+  mut(key,fn,logText){
+    this.setState(s=>{const d=s.duties[key];if(!d)return {};
+      const nd={...d,officer:d.officer?{...d.officer}:null,posts:Object.fromEntries(Object.entries(d.posts).map(([k,v])=>[k,v.map(a=>({...a}))])),replacements:[...d.replacements]};
+      fn(nd);return {duties:{...s.duties,[key]:nd}};});
+    if(logText)this.log(key,logText);
+  }
+  ensureDuty(obj,date){
+    const key=obj+"|"+date;
+    if(!this.state.duties[key]){
+      const o=this.objOf(obj);
+      const duty={obj,date,start:o.start,officer:null,posts:{},replacements:[],completion:null};
+      o.posts.forEach(p=>duty.posts[p.id]=[]);
+      this.setState(s=>({duties:{...s.duties,[key]:duty}}));
+      this.log(key,"Суточное дежурство создано");
+    }
+    return key;
+  }
+  renderVals(){
+    const s=this.state,ym=s.ym;
+    const [Y,M]=ym.split("-").map(Number);
+    const nDays=this.dim(ym);
+    const dayIso=(d)=>ym+"-"+String(d).padStart(2,"0");
+    const segSt=(on)=>"height:32px;padding:0 13px;border-radius:7px;border:0;font-size:12.5px;font-weight:600;white-space:nowrap;"+(on?"background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.08);color:hsl(222.2 47.4% 11.2%)":"background:transparent;color:hsl(215.4 16.3% 46.9%)");
+    const monthDuties=Object.entries(s.duties).filter(([k,d])=>d.date.startsWith(ym));
+    let full=0,part=0,confN=0;const noAck=new Set();
+    monthDuties.forEach(([k,d])=>{
+      const st=this.dutyStat(d);
+      if(st.full)full++;else if(st.partial)part++;
+      if(this.dutyConfs(d).length)confN++;
+      if(d.date>=this.today){
+        if(d.officer&&(!d.officer.ack||d.officer.ack.st!=="ack"))noAck.add(d.officer.name);
+        Object.values(d.posts).forEach(arr=>arr.forEach(a=>{if(!a.ack||a.ack.st!=="ack")noAck.add(a.name);}));
+      }
+    });
+    const notFormed=this.objects.length*nDays-full-part;
+    const statCards=[
+      {label:"Объектов",value:String(this.objects.length),vst:""},
+      {label:"Суточных дежурств",value:String(monthDuties.length),vst:""},
+      {label:"Сформировано",value:String(full),vst:"color:#15803d"},
+      {label:"Частично",value:String(part),vst:"color:#b45309"},
+      {label:"Не сформировано",value:String(notFormed),vst:"color:hsl(215.4 16.3% 46.9%)"},
+      {label:"Конфликтов",value:String(confN),vst:"color:#b91c1c"},
+      {label:"Без ознакомления",value:String(noAck.size),vst:"color:#b45309"}
+    ];
+    const dayCols=Array.from({length:nDays},(_,i)=>{
+      const isoD=dayIso(i+1);const w=this.wd(isoD);const isT=isoD===this.today;const we=w==="Сб"||w==="Вс";
+      return {n:String(i+1),w,st:"padding:5px 3px;min-width:38px;text-align:center;font-size:10.5px;font-weight:700;border-bottom:1px solid hsl(210 40% 93%);font-variant-numeric:tabular-nums;"+(isT?"background:hsl(221.2 83.2% 53.3% / .12);color:hsl(var(--primary))":we?"background:hsl(210 40% 97%);color:hsl(215.4 16.3% 55%)":"background:hsl(210 40% 98%);color:hsl(215.4 16.3% 40%)")};
+    });
+    const openDet=(obj,date)=>{const key=this.ensureDuty(obj,date);this.setState({sel:key,panel:null,cd:null});};
+    const objRows=this.objects.filter(o=>o.cat===s.objCat).map(o=>{
+      const needT=1+o.posts.reduce((n,p)=>n+p.need,0);
+      return {name:o.name,sub:"постов: "+o.posts.length+" · наряд: "+needT+" чел. · с "+o.start,
+        cells:Array.from({length:nDays},(_,i)=>{
+          const date=dayIso(i+1);const d=s.duties[o.name+"|"+date];
+          const isT=date===this.today;
+          let bg="background:hsl(210 40% 96%);color:hsl(215.4 16.3% 60%);border:1px solid hsl(214.3 31.8% 92%)",txt="—",tip=o.name+" · "+this.ru(date)+" · не сформировано",marks="",hasConf=false;
+          if(d){
+            const st=this.dutyStat(d);const confs=this.dutyConfs(d);hasConf=confs.length>0;
+            txt=st.asg+"/"+st.needT;
+            bg=st.full?"background:#dcfce7;color:#166534;border:1px solid #bbf7d0":st.partial?"background:#fef3c7;color:#92400e;border:1px solid #fde68a":"background:hsl(210 40% 96%);color:hsl(215.4 16.3% 60%);border:1px solid hsl(214.3 31.8% 92%)";
+            marks=(d.date<this.today?"✓":"")+(d.replacements.length?"⇄":"");
+            tip=o.name+" · "+this.ru(date)+" · "+txt+(st.full?" · сформировано":st.partial?" · частично":" · не сформировано")+(hasConf?" · конфликт":"")+(d.date<this.today?" · завершено":"")+(d.replacements.length?" · были замены":"");
+          }
+          return {txt,tip,marks,hasConf,onClick:()=>openDet(o.name,date),
+            st:"width:36px;height:36px;border-radius:7px;font-size:9.5px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:0;"+bg+(isT?";outline:2px solid hsl(221.2 83.2% 53.3% / .5)":"")};
+        })};
+    });
+    const stateTone={"На дежурстве":["Д","background:#dcfce7;color:#166534"],"После дежурства":["П","background:#dbeafe;color:#1e40af"],"На ОМ":["ОМ","background:#f3e8ff;color:#6b21a8"],"Отпуск":["О","background:#fef3c7;color:#92400e"],"Больничный":["Б","background:#fee2e2;color:#991b1b"],"Командировка":["К","background:#cffafe;color:#155e75"],"В строю":["·","background:hsl(210 40% 97%);color:hsl(215.4 16.3% 65%)"]};
+    const empMatrix=this.roster.map(r=>({name:r.name,sub:r.unit+" · "+r.role,
+      cells:Array.from({length:nDays},(_,i)=>{
+        const date=dayIso(i+1);
+        let lab,tip="";
+        const ab=this.absenceOf(r.name,date);const om=this.omOf(r.name,date);
+        const asg=this.assignmentsOn(date).find(a=>a.name===r.name);
+        if(asg){lab="На дежурстве";const d=s.duties[asg.obj+"|"+date];tip=asg.obj+" · "+this.slotLabel(d,asg.pid);}
+        else if(this.assignmentsOn(this.addD(date,-1)).some(a=>a.name===r.name)){lab="После дежурства";tip="Отдых после суточного дежурства";}
+        else if(om){lab="На ОМ";tip="ОМ: "+om.label;}
+        else if(ab){lab=ab.type;tip=ab.type+" "+this.ru(ab.from)+"–"+this.ru(ab.to);}
+        else {lab="В строю";tip="В строю";}
+        const [code,tone]=stateTone[lab];
+        return {code,tip:r.name+" · "+this.ru(date)+" · "+tip,st:"display:grid;place-items:center;width:36px;height:26px;border-radius:6px;font-size:9.5px;font-weight:700;"+tone};
+      })}));
+    const empLegend=[["Д","На дежурстве","bg-green-100 text-green-800"],["П","После дежурства","bg-blue-100 text-blue-800"],["ОМ","На ОМ","bg-purple-100 text-purple-800"],["О","Отпуск","bg-amber-100 text-amber-800"],["Б","Больничный","bg-red-100 text-red-800"],["К","Командировка","bg-cyan-100 text-cyan-800"],["·","В строю","bg-gray-100 text-gray-800"]].map(([code,label,cls])=>({code,label,cls}));
+    const listAll=monthDuties.slice().sort((a,b)=>a[1].date===b[1].date?(a[1].obj<b[1].obj?-1:1):(a[1].date<b[1].date?-1:1)).map(([key,d])=>{
+      const st=this.dutyStat(d);const confs=this.dutyConfs(d);const o=this.objOf(d.obj);
+      const openP=o.posts.filter(p=>d.posts[p.id].filter(a=>!a.reserve).length<p.need).length+(d.officer?0:1);
+      const allA=[...(d.officer?[d.officer]:[]),...Object.values(d.posts).flat()];
+      const ackN=allA.filter(a=>a.ack&&a.ack.st==="ack").length;
+      const status=d.date<this.today?"Завершено":confs.length?"Есть конфликт":st.full?"Сформировано":st.partial?"Частично":"Не сформировано";
+      const cls={"Завершено":"bg-blue-100 text-blue-800","Есть конфликт":"bg-purple-100 text-purple-800","Сформировано":"bg-green-100 text-green-800","Частично":"bg-amber-100 text-amber-800","Не сформировано":"bg-gray-100 text-gray-800"}[status];
+      const ev=this.evalOf(d);
+      return {dateRu:this.ru(d.date),obj:d.obj,time:d.start+" — "+d.start+" (+1 сут.)",officer:d.officer?d.officer.name:"—",need:String(st.needT),cnt:String(st.asg),
+        openPosts:String(openP),openSt:openP?"color:#b91c1c;font-weight:700":"color:hsl(215.4 16.3% 65%)",
+        confs:confs.length?String(confs.length):"—",confSt:confs.length?"color:#b91c1c;font-weight:700":"color:hsl(215.4 16.3% 65%)",
+        ack:allA.length?ackN+" из "+allA.length:"—",status,cls,
+        evalApplies:ev.applies,evalNA:!ev.applies,evalStatus:ev.status,evalCls:ev.cls,evalText:ev.text,_ev:ev,
+        openEval:(e)=>{if(e&&e.stopPropagation)e.stopPropagation();this.setState({evalKey:key,evalName:null});},
+        open:()=>this.setState({sel:key,panel:null,cd:null})};
+    });
+    const pageSize=12;
+    const pageOf=(arr,p)=>{const maxP=Math.max(0,Math.ceil(arr.length/pageSize)-1);const pp=Math.min(p,maxP);return {rows:arr.slice(pp*pageSize,(pp+1)*pageSize),pp,maxP,total:arr.length};};
+    const lf=s.lf;
+    const listF=listAll.filter(r=>{const e=r._ev;
+      if(lf.status!=="all"&&e.status!==lf.status)return false;
+      if(lf.grat&&!(e.gratN>0))return false;
+      if(lf.remark&&!(e.rem||e.inc))return false;
+      if(lf.low&&!(e.lowN>0))return false;
+      if(lf.avg!=="all"&&!(e.avg!=null&&e.avg>=Number(lf.avg)))return false;
+      return true;});
+    const lfActive=lf.status!=="all"||lf.grat||lf.remark||lf.low||lf.avg!=="all";
+    const lfCount=lfActive?("Найдено: "+listF.length+" из "+listAll.length):("Всего: "+listAll.length);
+    const lp=pageOf(listF,s.listPage);
+    const histAll=monthDuties.filter(([k2,d2])=>d2.date<this.today).sort((a,b)=>a[1].date===b[1].date?(a[1].obj<b[1].obj?-1:1):(a[1].date>b[1].date?-1:1)).map(([key2,d2])=>{
+      const st2=this.dutyStat(d2);const comp=d2.completion;
+      return {dateRu:this.ru(d2.date),obj:d2.obj,officer:d2.officer?d2.officer.name:"—",
+        from:this.ru(d2.date)+" "+d2.start,to:this.ru(this.addD(d2.date,1))+" "+d2.start,
+        cnt:st2.asg+" из "+st2.needT+(comp&&comp.absent.length?" · отсутств.: "+comp.absent.length:""),
+        repl:d2.replacements.length?String(d2.replacements.length):"—",
+        notes:comp?((comp.incidents&&comp.incidents!=="Не зафиксированы")?comp.incidents:(comp.remarks||"Без замечаний")):"—",
+        fixLabel:comp?"Зафиксировано":"Ожидает фиксации",fixCls:comp?"bg-green-100 text-green-800":"bg-amber-100 text-amber-800",
+        open:()=>this.setState({sel:key2,panel:null,cd:null})};
+    });
+    const hp=pageOf(histAll,s.histPage);
+    const pgBtn=(en)=>"height:30px;padding:0 12px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11.5px;font-weight:500;"+(en?"color:hsl(222.2 47.4% 11.2%)":"color:hsl(215.4 16.3% 72%);cursor:default");
+    const pagerInfo=(p)=>"Показано "+(p.total?p.pp*pageSize+1:0)+"–"+Math.min(p.total,(p.pp+1)*pageSize)+" из "+p.total+" · страница "+(p.pp+1)+" из "+(p.maxP+1);
+    const catSt=(on)=>"height:26px;padding:0 10px;border-radius:6px;border:0;font-size:11px;font-weight:600;white-space:nowrap;"+(on?"background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.08);color:hsl(222.2 47.4% 11.2%)":"background:transparent;color:hsl(215.4 16.3% 46.9%)");
+    const key=s.sel,d=key?s.duties[key]:null;
+    let det={};
+    if(d){
+      const o=this.objOf(d.obj);const st=this.dutyStat(d);const confs=this.dutyConfs(d);
+      const dPast=d.date<this.today;
+      const dEditable=!dPast;
+      const status=dPast?"Завершено":confs.length?"Есть конфликт":st.full?"Сформировано":st.partial?"Частично":"Не сформировано";
+      const allA=[...(d.officer?[d.officer]:[]),...Object.values(d.posts).flat()];
+      const ackN=allA.filter(a=>a.ack&&a.ack.st==="ack").length;
+      const openPanel=(mode,pid,target)=>this.setState({panel:{mode,pid,target:target||null,reason:"",q:""}});
+      const offConf=d.officer?this.conflict(d.officer.name,d.date,d.obj,"officer"):null;
+      const offR=d.officer?this.rosterOf(d.officer.name):null;
+      const endT=d.start;
+      det={
+        dObj:d.obj,dStatus:status,dCls:{"Завершено":"bg-blue-100 text-blue-800","Есть конфликт":"bg-purple-100 text-purple-800","Сформировано":"bg-green-100 text-green-800","Частично":"bg-amber-100 text-amber-800","Не сформировано":"bg-gray-100 text-gray-800"}[status],
+        dDateRu:this.wd(d.date)+", "+this.ru(d.date),dTime:"с "+d.start+" до "+endT+" "+this.ru(this.addD(d.date,1)),
+        dAckSum:allA.length?ackN+" из "+allA.length:"—",
+        dHasConf:confs.length>0,dConfs:confs,dConfN:String(confs.length),dDone:!!d.completion||dPast&&!!d.completion,dPast,dEditable,
+        dNeedFix:dPast&&!d.completion,
+        dHasOfficer:!!d.officer,dNoOfficer:!d.officer&&dEditable,
+        dOfficer:d.officer?{name:d.officer.name,ini:this.ini(d.officer.name),rating:(()=>{const rt=this.ratingOf(d.officer.name),bd=this.ratingBand(rt);return{label:rt.enough?"★ "+this.fmtScore(rt.score):"★ н/д",title:this.ratingTitle(rt),st:"display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer;border:0;background:"+bd.bg+";color:"+bd.fg,open:()=>this.setState({ratingModal:{name:d.officer.name}})};})(),unit:offR.unit,role:offR.role,from:d.start+" "+this.ru(d.date),to:endT+" "+this.ru(this.addD(d.date,1)),
+          empStatus:this.empStatusLabel(d.officer.name,d.date),conf:offConf||"",hasConf:!!offConf,
+          ackLabel:this.ackInfo(d.officer).label,ackCls:this.ackInfo(d.officer).cls,
+          rowSt:"display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid "+(offConf?"hsl(0 84% 85%);background:hsl(0 86% 98%)":"hsl(210 40% 93%);background:#fff")+";border-radius:10px",
+          replace:()=>openPanel("replace","officer",d.officer.name),
+          remove:()=>{this.mut(key,x=>{x.officer=null;},"Дежурный по объекту удалён: "+d.officer.name);this.flash("Дежурный по объекту удалён");}}:{},
+        dAssignOfficer:()=>openPanel("officer","officer"),
+        dPosts:o.posts.map(p=>{
+          const arr=d.posts[p.id];const cMain=arr.filter(a=>!a.reserve).length;
+          const filled=cMain>=p.need;
+          const pConfs=arr.map(a=>this.conflict(a.name,d.date,d.obj,p.id)).filter(Boolean);
+          return {title:p.sector+" · "+p.post,task:p.task,time:p.time,req:p.req||"",hasReq:!!p.req,
+            cnt:cMain+"/"+p.need+(arr.some(a=>a.reserve)?" +резерв":""),
+            state:pConfs.length?"Конфликт":filled?"Закрыт":cMain>0?"Частично":"Не закрыт",
+            cls:pConfs.length?"bg-red-100 text-red-800":filled?"bg-green-100 text-green-800":cMain>0?"bg-amber-100 text-amber-800":"bg-gray-100 text-gray-800",
+            assign:()=>openPanel("assign",p.id),reserve:()=>openPanel("reserve",p.id),
+            rows:arr.map(a=>{
+              const r=this.rosterOf(a.name);const conf=this.conflict(a.name,d.date,d.obj,p.id);const ai=this.ackInfo(a);
+              const rt=this.ratingOf(a.name),bd=this.ratingBand(rt);
+              return {name:a.name,ini:this.ini(a.name),sub:r.unit+" · "+r.role+" · "+p.time+" · "+this.empStatusLabel(a.name,d.date),
+                rating:{label:rt.enough?"★ "+this.fmtScore(rt.score):"★ н/д",title:this.ratingTitle(rt),st:"display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer;border:0;background:"+bd.bg+";color:"+bd.fg,open:()=>this.setState({ratingModal:{name:a.name}})},
+                isSenior:a.senior,isReserve:a.reserve,canSenior:!a.senior&&!a.reserve,
+                ackLabel:ai.label,ackCls:ai.cls,conf:conf||"",hasConf:!!conf,
+                rowSt:"display:flex;align-items:center;gap:9px;padding:7px 9px;border:1px solid "+(conf?"hsl(0 84% 85%);background:hsl(0 86% 98%)":"hsl(210 40% 95%);background:#fff")+";border-radius:9px;margin-bottom:5px",
+                makeSenior:()=>this.mut(key,x=>{x.posts[p.id].forEach(y=>y.senior=y.name===a.name);},"Назначен старшим на посту "+p.sector+" · "+p.post+": "+a.name),
+                replace:()=>openPanel("replace",p.id,a.name),
+                remove:()=>{this.mut(key,x=>{x.posts[p.id]=x.posts[p.id].filter(y=>y.name!==a.name);},"Удалён с поста "+p.sector+" · "+p.post+": "+a.name);this.flash("Сотрудник удалён с поста");}};
+            })};
+        }),
+        dSendAck:()=>{let n=0;this.mut(key,x=>{const upd=(a)=>{if(a&&(!a.ack)){a.ack={st:"sent",at:"21.07.2026"};n++;}};upd(x.officer);Object.values(x.posts).forEach(arr=>arr.forEach(upd));},"Наряд отправлен на ознакомление");this.flash("Отправлено на ознакомление");},
+        dReplSum:d.replacements.length?d.replacements.map(r=>r.from+" → "+r.to+" ("+r.reason+")").join("; "):"не производились",
+        dCompletion:d.completion?[
+          {k:"Фактически заступили",v:d.completion.absent.length?allA.length-d.completion.absent.length+" из "+allA.length:"все ("+allA.length+")"},
+          {k:"Отсутствовали",v:d.completion.absent.length?d.completion.absent.join(", "):"нет"},
+          {k:"Опоздания",v:d.completion.late||"Нет"},
+          {k:"Произведённые замены",v:d.replacements.length?d.replacements.map(r=>r.from+" → "+r.to).join("; "):"нет"},
+          {k:"Замечания",v:d.completion.remarks||"Без замечаний"},
+          {k:"Происшествия",v:d.completion.incidents||"Не зафиксированы"},
+          {k:"Итоговый комментарий",v:d.completion.comment||"—"},
+          {k:"Принятое решение",v:d.completion.decision||"—"},
+          {k:"Зафиксировал",v:d.completion.by+" · "+d.completion.at}]:[],
+        dJournal:s.journal[key]||[]
+      };
+      const cd=s.cd||{absent:{},late:"",remarks:"",incidents:"",comment:"",decision:""};
+      const setCd=(k2)=>(e)=>this.setState({cd:{...cd,[k2]:e.target.value}});
+      det.cdFacts=allA.map(a=>({name:a.name,checked:!cd.absent[a.name],onToggle:()=>this.setState({cd:{...cd,absent:{...cd.absent,[a.name]:!cd.absent[a.name]}}})}));
+      det.cdLate=cd.late;det.onCdLate=setCd("late");det.cdRemarks=cd.remarks;det.onCdRemarks=setCd("remarks");
+      det.cdIncidents=cd.incidents;det.onCdIncidents=setCd("incidents");det.cdComment=cd.comment;det.onCdComment=setCd("comment");
+      det.cdDecision=cd.decision;det.onCdDecision=setCd("decision");
+      const cdInc=(cd.incidents||"").trim(),cdRem=(cd.remarks||"").trim();
+      det.cdNeedDecision=(cdInc&&cdInc!=="Не зафиксированы")||(cdRem&&cdRem!=="Без замечаний");
+      det.fixCompletion=()=>{
+        const absent=Object.keys(cd.absent).filter(n=>cd.absent[n]);
+        const inc=(cd.incidents||"").trim(),rem=(cd.remarks||"").trim();
+        const hasInc=inc&&inc!=="Не зафиксированы",hasRem=rem&&rem!=="Без замечаний";
+        if((hasInc||hasRem)&&!(cd.decision||"").trim()){this.flash("Нельзя завершить: по происшествию или замечанию требуется принятое решение");return;}
+        const officerName=d.officer?d.officer.name:null;
+        const existing=d.scores||{};
+        const members=allA.map(a=>a.name).filter(n=>!absent.includes(n)&&n!==officerName);
+        const autoTargets=members.filter(n=>!(existing[n]&&existing[n].kind==="manual"));
+        const manualKept=members.length-autoTargets.length;
+        this.mut(key,x=>{
+          x.completion={absent,late:cd.late||"Нет",remarks:cd.remarks||"Без замечаний",incidents:cd.incidents||"Не зафиксированы",comment:cd.comment||"—",decision:(cd.decision||"").trim()||"—",at:"21.07.2026",by:officerName||"Ердаулет Н."};
+          const sc={...(x.scores||{})};
+          autoTargets.forEach(n=>{sc[n]={value:7,basis:"Стандартное выполнение без замечаний",comment:"",doc:"",kind:"auto",by:"Система (при завершении)",at:"21.07.2026"};});
+          x.scores=sc;
+        },"Зафиксировано завершение дежурства"+(absent.length?". Отсутствовали: "+absent.join(", "):": без происшествий")+". Автоматически начислено 7,0 — "+autoTargets.length+" сотр., ручных ранее — "+manualKept);
+        this.setState({cd:null});
+        this.flash("Завершение зафиксировано · авто-оценок 7,0: "+autoTargets.length+" · ручных: "+manualKept);
+      };
+      // ---- Оценка состава дежурства ----
+      const scoresNow=d.scores||{};
+      const absentNow=(d.completion?d.completion.absent:[])||[];
+      const officerName2=d.officer?d.officer.name:null;
+      const slotByName={};
+      if(d.officer)slotByName[d.officer.name]="Дежурный по объекту (старший наряда)";
+      o.posts.forEach(p=>(d.posts[p.id]||[]).forEach(a=>{slotByName[a.name]=p.sector+" · "+p.post+(a.senior?" · старший":"")+(a.reserve?" · резерв":"");}));
+      const scoreResult=(v)=>v>=10?"Благодарность":v===9?"Отличное выполнение":v===8?"Выше стандарта":v===7?"Без замечаний":v===6?"Незначит. замечание":"Существенные недостатки";
+      const scoreCls=(v)=>v>=8?"bg-green-100 text-green-800":v===7?"bg-blue-100 text-blue-800":v===6?"bg-amber-100 text-amber-800":"bg-red-100 text-red-800";
+      const replOf=(name)=>d.replacements.filter(r=>r.from===name||r.to===name).map(r=>r.from===name?"заменён":"заступил по замене").join(", ");
+      const dutyLate=d.completion?d.completion.late:"Нет";
+      const dutyRemarks=d.completion?d.completion.remarks:"Без замечаний";
+      const hasRemark=dutyRemarks&&dutyRemarks!=="Без замечаний";
+      let scAuto=0,scManual=0,scNone=0;
+      det.dAssessRows=allA.map(a=>{
+        const name=a.name;const isOfficer=name===officerName2;const isAbsent=absentNow.includes(name);
+        const sc=scoresNow[name];
+        if(sc){sc.kind==="manual"?scManual++:scAuto++;}else if(!isAbsent&&!isOfficer)scNone++;
+        const lateTxt=(dutyLate&&dutyLate!=="Нет")?dutyLate:"";const rep=replOf(name);
+        const lateRepl=[lateTxt,rep].filter(Boolean).join(" · ")||"—";
+        return {name,role:slotByName[name]||"—",part:isAbsent?"Отсутствовал":"Заступил · сдал",lateRepl,
+          remark:hasRemark?"Есть (см. итоги)":"—",
+          result:sc?scoreResult(sc.value):"—",
+          scoreLabel:sc?this.fmtScore(sc.value):"—",
+          scoreCls:sc?scoreCls(sc.value):"bg-gray-100 text-gray-800",
+          kindLabel:sc?(sc.kind==="manual"?"вручную":"авто"):"",
+          basis:sc?(sc.basis||"—"):"—",
+          isOfficer,showAbsentNote:isAbsent&&!isOfficer,canScore:!isOfficer&&!isAbsent,
+          actionLabel:sc?"Изменить":"Оценить",action:()=>this.openScore(key,name)};
+      });
+      det.dScoreAutoN=String(scAuto);det.dScoreManualN=String(scManual);det.dScoreNoneN=String(scNone);
+      det.dShowAssess=!!d.completion;
+      det.applyAuto7=()=>this.applyAuto7(key);
+      const sm=s.scoreModal;
+      det.scoreOpen=!!sm;
+      if(sm){
+        const nm=sm.name;const isAbsentM=absentNow.includes(nm);
+        const repM=d.replacements.filter(r=>r.from===nm||r.to===nm).map(r=>r.from+" → "+r.to+(r.reason?" ("+r.reason+")":"")).join("; ")||"не производились";
+        det.scoreName=nm;
+        det.scoreCtx=[
+          {k:"ФИО",v:nm},{k:"Объект",v:d.obj},
+          {k:"Дата дежурства",v:this.wd(d.date)+", "+this.ru(d.date)},
+          {k:"Пост / роль",v:slotByName[nm]||"—"},
+          {k:"Плановые часы",v:"24 ч (сутки)"},
+          {k:"Фактические часы",v:isAbsentM?"0 ч (отсутствовал)":"24 ч"},
+          {k:"Опоздания",v:(d.completion&&d.completion.late&&d.completion.late!=="Нет")?d.completion.late:"Нет"},
+          {k:"Произведённые замены",v:repM},
+          {k:"Замечания",v:(d.completion?d.completion.remarks:"Без замечаний")||"Без замечаний"},
+          {k:"Происшествия",v:(d.completion?d.completion.incidents:"Не зафиксированы")||"Не зафиксированы"}
+        ];
+        det.scoreValue=String(sm.value);
+        det.scoreOptions=[0,1,2,3,4,5,6,7,8,9,10].map(n=>({v:String(n),label:this.fmtScore(n)}));
+        det.onScoreValue=(e)=>this.setState({scoreModal:{...sm,value:Number(e.target.value)}});
+        det.scoreQuick=[[10,"10 — благодарность / исключительно"],[9,"9 — отлично"],[8,"8 — выше стандарта"],[7,"7 — без замечаний"],[6,"6 — несущественное"],[5,"5 и ниже — недостатки"]].map(([val,label])=>({label,st:"height:30px;padding:0 10px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;"+(Number(sm.value)===val?"border:1px solid hsl(var(--primary));background:hsl(221.2 83.2% 53.3% / .08);color:hsl(var(--primary))":"border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(222.2 47.4% 30%)"),pick:()=>this.setState({scoreModal:{...sm,value:val}})}));
+        det.scoreBasis=sm.basis;det.onScoreBasis=(e)=>this.setState({scoreModal:{...sm,basis:e.target.value}});
+        det.scoreComment=sm.comment;det.onScoreComment=(e)=>this.setState({scoreModal:{...sm,comment:e.target.value}});
+        det.scoreDoc=sm.doc;det.onScoreDoc=(e)=>this.setState({scoreModal:{...sm,doc:e.target.value}});
+        const vv=Number(sm.value);
+        det.scoreReqNote=(vv>8||vv<6)?"Для этой оценки комментарий старшего обязателен":vv>=10?"Для 10 укажите благодарность, документ или конкретное достижение":"Комментарий — по желанию";
+        det.scorePrevNote=sm.prev!=null?"Текущая оценка за это дежурство: "+this.fmtScore(sm.prev)+" — изменение требует указания причины в комментарии":"Оценка ещё не выставлена";
+        det.saveScore=()=>this.saveScore();
+        det.closeScore=()=>this.setState({scoreModal:null});
+      }
+      const panel=s.panel;
+      if(panel){
+        const pid=panel.pid;
+        const taken=new Set([...(d.officer?[d.officer.name]:[]),...Object.values(d.posts).flat().map(a=>a.name)]);
+        det.panelOpen=true;
+        det.panelTitle=panel.mode==="officer"?"Назначение дежурного по объекту":panel.mode==="replace"?"Замена: "+panel.target+" ("+this.slotLabel(d,pid)+")":panel.mode==="reserve"?"Резервный сотрудник · "+this.slotLabel(d,pid):"Назначение на "+this.slotLabel(d,pid);
+        det.panelIsReplace=panel.mode==="replace";
+        det.panelReason=panel.reason;det.onPanelReason=(e)=>this.setState({panel:{...panel,reason:e.target.value}});
+        det.panelQ=panel.q;det.onPanelQ=(e)=>this.setState({panel:{...panel,q:e.target.value}});
+        det.panelSort=panel.sort||"recommended";
+        det.onPanelSort=(e)=>this.setState({panel:{...panel,sort:e.target.value}});
+        det.panelSortOptions=[["recommended","Рекомендуемые"],["rating","По рейтингу"],["load","По наименьшей нагрузке"],["last","По последнему дежурству"]].map(([v,label])=>({v,label}));
+        det.panelRf=panel.rf||"all";
+        det.onPanelRf=(e)=>this.setState({panel:{...panel,rf:e.target.value}});
+        det.panelRfOptions=[["all","Все"],["9","9,0–10,0"],["8","8,0–8,9"],["7","7,0–7,9"],["lt7","Ниже 7,0"],["nd","Недостаточно данных"]].map(([v,label])=>({v,label}));
+        det.closePanel=()=>this.setState({panel:null});
+        const q=panel.q.trim().toLowerCase();
+        det.candidates=this.roster.filter(r=>(!taken.has(r.name)||r.name===panel.target)&&(!q||r.name.toLowerCase().includes(q))).map(r=>{
+          const conf=this.conflict(r.name,d.date,d.obj,pid==="officer"?"officer":pid);
+          const dates=[];Object.values(s.duties).forEach(x=>{if((x.officer&&x.officer.name===r.name)||Object.values(x.posts).some(arr=>arr.some(a=>a.name===r.name)))dates.push(x.date);});
+          dates.sort();
+          const before=[...dates].reverse().find(x=>x<d.date),after=dates.find(x=>x>d.date);
+          const omL=(r.om||[]).filter(x=>x.date.startsWith(ym)).map(x=>this.ru(x.date).slice(0,5)+" "+x.label).join(", ")||"—";
+          const dm=this.dims(r.name,d.date,d.obj,pid==="officer"?"officer":pid);
+          const rat=this.ratingOf(r.name),band=this.ratingBand(rat);
+          return {name:r.name,unit:r.unit,role:r.role,
+            _dm:dm,_rat:rat,_before:before||"",
+            chips:this.dimChips(dm),
+            prevNext:"Пред. дежурство: "+(before?this.ru(before):"нет")+" · след.: "+(after?this.ru(after):"нет")+" · ОМ: "+omL,
+            rating:{label:rat.enough?"★ "+this.fmtScore(rat.score):"★ н/д",title:this.ratingTitle(rat),st:"display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer;border:0;background:"+band.bg+";color:"+band.fg,open:(e)=>{e.stopPropagation();this.setState({ratingModal:{name:r.name}});}},
+            conf:conf||"",hasConf:!!conf,
+            st:"display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:8px;border:1px solid "+(conf?"hsl(0 84% 88%);background:hsl(0 86% 98%)":"transparent"),
+            btnSt:"height:28px;padding:0 10px;border-radius:7px;border:1px solid "+(conf?"hsl(0 84% 80%);color:#b91c1c":"hsl(214.3 31.8% 91.4%);color:hsl(var(--primary))")+";background:#fff;font-size:11px;font-weight:600;flex:0 0 auto",
+            pick:()=>{
+              if(panel.mode==="replace"){
+                const reason=panel.reason.trim();
+                if(!reason){this.flash("Укажите причину замены — без неё замена не выполняется");return;}
+                this.mut(key,x=>{
+                  if(pid==="officer"){x.officer={name:r.name,ack:null};}
+                  else x.posts[pid]=x.posts[pid].map(y=>y.name===panel.target?{name:r.name,senior:y.senior,reserve:y.reserve,ack:null}:y);
+                  x.replacements.push({slot:this.slotLabel(d,pid),from:panel.target,to:r.name,reason,at:"21.07.2026"});
+                },"Замена на "+this.slotLabel(d,pid)+": "+panel.target+" → "+r.name+". Причина: "+reason+(conf?". Конфликт: "+conf:""));
+                this.flash("Замена выполнена и зафиксирована в журнале");
+              } else if(panel.mode==="officer"){
+                this.mut(key,x=>{x.officer={name:r.name,ack:null};},"Назначен дежурный по объекту: "+r.name+(conf?" (конфликт: "+conf+")":""));
+                this.flash("Дежурный по объекту назначен");
+              } else {
+                const reserve=panel.mode==="reserve";
+                this.mut(key,x=>{x.posts[pid]=[...x.posts[pid],{name:r.name,senior:!reserve&&x.posts[pid].filter(a=>!a.reserve).length===0,reserve,ack:null}];},
+                  (reserve?"Добавлен резервный сотрудник":"Назначен сотрудник")+" на "+this.slotLabel(d,pid)+": "+r.name+(conf?" (конфликт: "+conf+")":""));
+                this.flash(conf?"Назначено с конфликтом — проверьте план":"Сотрудник назначен");
+              }
+              this.setState({panel:null});
+            }};
+        });
+        const rf=panel.rf||"all";
+        det.candidates=det.candidates.filter(c=>{
+          if(rf==="all")return true;
+          if(rf==="nd")return !c._rat.enough;
+          if(!c._rat.enough)return false;const sc=c._rat.score;
+          if(rf==="9")return sc>=9;if(rf==="8")return sc>=8&&sc<9;if(rf==="7")return sc>=7&&sc<8;if(rf==="lt7")return sc<7;return true;
+        });
+        const avl=c=>c._dm.statusTone==="green"?0:1;
+        const cmps={
+          recommended:(a,b)=>avl(a)-avl(b)||(a._dm.hasConf?1:0)-(b._dm.hasConf?1:0)||(a._dm.restOk?0:1)-(b._dm.restOk?0:1)||(a._dm.clearOk?0:1)-(b._dm.clearOk?0:1)||a._dm.load-b._dm.load||(b._rat.score||0)-(a._rat.score||0),
+          rating:(a,b)=>(b._rat.enough?1:0)-(a._rat.enough?1:0)||(b._rat.score||0)-(a._rat.score||0),
+          load:(a,b)=>a._dm.load-b._dm.load||(b._rat.score||0)-(a._rat.score||0),
+          last:(a,b)=>(a._before||"").localeCompare(b._before||"")
+        };
+        det.candidates.sort(cmps[panel.sort||"recommended"]||cmps.recommended);
+      }
+    }
+    // ---- Панель «Оценки состава дежурства» (только просмотр) ----
+    const ek=s.evalKey,ed=ek?s.duties[ek]:null;
+    let ev={};
+    if(ed){
+      const info=this.evalOf(ed);
+      const eo=this.objOf(ed.obj);
+      const slotByName={};
+      if(ed.officer)slotByName[ed.officer.name]="Дежурный по объекту · старший наряда";
+      eo.posts.forEach(p=>(ed.posts[p.id]||[]).forEach(a=>{slotByName[a.name]=p.sector+" · "+p.post+(a.senior?" · старший":"")+(a.reserve?" · резерв":"");}));
+      const evDateTime=this.wd(ed.date)+", "+this.ru(ed.date)+" · "+ed.start+" — "+ed.start+" "+this.ru(this.addD(ed.date,1));
+      const remTxt=[(ed.completion&&ed.completion.remarks&&ed.completion.remarks!=="Без замечаний")?ed.completion.remarks:"",(ed.completion&&ed.completion.incidents&&ed.completion.incidents!=="Не зафиксированы")?ed.completion.incidents:""].filter(Boolean).join(" · ");
+      ev.evalOpen=true;
+      ev.evStatus=info.status;ev.evStatusCls=info.cls;
+      ev.evSummary=[
+        {k:"Объект",v:ed.obj},
+        {k:"Дата и время",v:evDateTime},
+        {k:"Старший наряда",v:ed.officer?ed.officer.name:"—"},
+        {k:"Фактически участвовали",v:String(info.participants.length)+(info.absent.length?" (отсутствовали: "+info.absent.length+")":"")},
+        {k:"Средняя оценка состава",v:info.avg!=null?this.fmtScore(info.avg):"—"},
+        {k:"Оценок авто / вручную",v:info.autoN+" авто · "+info.manualN+" вручную"},
+        {k:"Благодарности",v:info.gratN?String(info.gratN):"нет"},
+        {k:"Замечания",v:remTxt||(info.lowN?"оценки ниже 6: "+info.lowN:"нет")}
+      ];
+      ev.evRows=info.allNames.map(name=>{
+        const isAbsent=info.absent.includes(name);const sc=info.scores[name];
+        return {name,role:slotByName[name]||"—",
+          part:isAbsent?"Отсутствовал":"Заступил · сдал",
+          result:sc?this.scoreResult(sc.value):(isAbsent?"—":"Не оценён"),
+          scoreLabel:sc?this.fmtScore(sc.value):"—",scoreCls:sc?this.scoreCls(sc.value):"bg-gray-100 text-gray-800",
+          basis:sc?((sc.kind==="auto"&&sc.value===7)?"Стандартное выполнение без замечаний":(sc.basis||"—")):"—",
+          kind:sc?(sc.kind==="auto"?"Автоматически":"Вручную"):"—",
+          by:sc?sc.by:"—",canDetail:!!sc,noDetail:!sc,
+          naNote:sc?"":(isAbsent?"Отсутствовал":"Не начислена"),
+          openDetail:sc?(()=>this.setState({evalName:name})):null};
+      });
+      ev.closeEval=()=>this.setState({evalKey:null,evalName:null});
+      const sd=s.evalName?info.scores[s.evalName]:null;
+      if(sd){
+        const nm=s.evalName;const isAbsent2=info.absent.includes(nm);
+        const repM=ed.replacements.filter(r=>r.from===nm||r.to===nm).map(r=>r.from+" → "+r.to+(r.reason?" ("+r.reason+")":"")).join("; ")||"не производились";
+        const isGrat=sd.value>=10||/благодар/i.test((sd.basis||"")+" "+(sd.doc||""));
+        ev.sdOpen=true;ev.sdName=nm;ev.sdRole=slotByName[nm]||"—";
+        ev.sdScore=this.fmtScore(sd.value);ev.sdScoreCls=this.scoreCls(sd.value);ev.sdResult=this.scoreResult(sd.value);
+        ev.sdRows=[
+          {k:"Плановые часы",v:"24 ч (сутки)"},
+          {k:"Фактические часы",v:isAbsent2?"0 ч (отсутствовал)":"24 ч"},
+          {k:"Опоздания",v:(ed.completion&&ed.completion.late&&ed.completion.late!=="Нет")?ed.completion.late:"Нет"},
+          {k:"Замены",v:repM},
+          {k:"Замечания",v:(ed.completion&&ed.completion.remarks)||"Без замечаний"},
+          {k:"Происшествия",v:(ed.completion&&ed.completion.incidents)||"Не зафиксированы"},
+          {k:"Благодарность",v:isGrat?(sd.doc?"Да · "+sd.doc:"Да"):"нет"},
+          {k:"Комментарий старшего",v:sd.comment||"—"},
+          {k:"Документ-основание",v:sd.doc||"—"},
+          {k:"Основание оценки",v:(sd.kind==="auto"&&sd.value===7)?"Стандартное выполнение без замечаний":(sd.basis||"—")},
+          {k:"Способ начисления",v:(sd.kind==="auto"?"Автоматически":"Вручную")+" · "+sd.by}
+        ];
+        const jrn=(s.journal[ek]||[]).filter(j=>j.t.includes(nm)&&(/оценк/i.test(j.t)||/начислено/i.test(j.t)));
+        ev.sdHistory=jrn.length?jrn:[{d:sd.at||this.ru(ed.date),u:sd.by,t:"Оценка начислена: "+this.fmtScore(sd.value)+((sd.kind==="auto")?" (автоматически, стандартное выполнение)":"")}];
+        ev.closeSd=()=>this.setState({evalName:null});
+      }
+    }
+    let rm={ratingOpen:false,rmRows:[],rmLast3:[]};
+    if(s.ratingModal&&s.ratingModal.name){
+      const rn=s.ratingModal.name,rat=this.ratingOf(rn),band=this.ratingBand(rat),r0=this.rosterOf(rn);
+      rm.ratingOpen=true;rm.rmName=rn;rm.rmSub=r0.unit+" · "+r0.role;
+      rm.rmClose=()=>this.setState({ratingModal:null});
+      rm.rmScore=rat.enough?this.fmtScore(rat.score):"н/д";rm.rmBand=band.label;rm.rmEnough=rat.enough;
+      rm.rmBadgeSt="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;background:"+band.bg+";color:"+band.fg;
+      rm.rmRows=[
+        {k:"Текущий рейтинг",v:rat.enough?this.fmtScore(rat.score)+" из 10":"недостаточно данных"},
+        {k:"Период расчёта",v:"последние 90 дней"},
+        {k:"Учтено оценок",v:String(rat.count)},
+        {k:"Стандартных оценок (7)",v:String(rat.std7)},
+        {k:"Высоких оценок (8–10)",v:String(rat.high)},
+        {k:"Благодарностей",v:String(rat.grat)},
+        {k:"Замечаний",v:String(rat.remark)}
+      ];
+      rm.rmLast3=(rat.last3||[]).map(v=>({v:this.fmtScore(v),cls:this.scoreCls(v)}));
+      const tr=rat.trend||0;
+      rm.rmTrend=!rat.enough?"—":(tr>0?"↑ рост на "+this.fmtScore(Math.abs(tr))+" за период":tr<0?"↓ снижение на "+this.fmtScore(Math.abs(tr))+" за период":"→ без изменений за период");
+      rm.rmTrendSt="font-weight:700;font-size:12px;color:"+(tr>0?"#166534":tr<0?"#991b1b":"#334155");
+    }
+    return {
+      mSel:this.months[M-1],onMSel:(e)=>this.setState({ym:Y+"-"+String(this.months.indexOf(e.target.value)+1).padStart(2,"0"),sel:null}),monthOptions:this.months,
+      ySel:String(Y),onYSel:(e)=>this.setState({ym:e.target.value+"-"+String(M).padStart(2,"0"),sel:null}),yearOptions:["2025","2026","2027"],
+      goPrev:()=>{const nm=M===1?12:M-1,nyY=M===1?Y-1:Y;this.setState({ym:nyY+"-"+String(nm).padStart(2,"0")});},
+      goNext:()=>{const nm=M===12?1:M+1,nyY=M===12?Y+1:Y;this.setState({ym:nyY+"-"+String(nm).padStart(2,"0")});},
+      goToday:()=>this.setState({ym:"2026-07"}),
+      monthLabel:this.months[M-1]+" "+Y,
+      buildPlan:()=>this.buildPlan(),
+      statCards,dayCols,objRows,empMatrix,empLegend,
+      listRows:lp.rows,listEmpty:lp.total===0,
+      listPagerShow:lp.total>pageSize,listPagerInfo:pagerInfo(lp),
+      listPrev:()=>this.setState({listPage:Math.max(0,lp.pp-1)}),listNext:()=>this.setState({listPage:Math.min(lp.maxP,lp.pp+1)}),
+      listPrevSt:pgBtn(lp.pp>0),listNextSt:pgBtn(lp.pp<lp.maxP),
+      histRows:hp.rows,histEmpty:hp.total===0,
+      histPagerShow:hp.total>pageSize,histPagerInfo:pagerInfo(hp),
+      histPrev:()=>this.setState({histPage:Math.max(0,hp.pp-1)}),histNext:()=>this.setState({histPage:Math.min(hp.maxP,hp.pp+1)}),
+      histPrevSt:pgBtn(hp.pp>0),histNextSt:pgBtn(hp.pp<hp.maxP),
+      viewTabs:[["obj","По объектам"],["emp","По сотрудникам"],["list","Список дежурств"],["hist","История дежурств"]].map(([id,label])=>({label,st:segSt(s.tab===id),onClick:()=>this.setState({tab:id})})),
+      assessHeads:["Сотрудник","Пост / роль","Факт. участие","Опоздания и замены","Замечания","Результат","Оценка","Основание","Действие"].map((t,i)=>({t,st:"text-align:left;padding:7px 10px;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:hsl(215.4 16.3% 46.9%);font-weight:600;background:hsl(210 40% 98%);white-space:nowrap;border-bottom:1px solid hsl(210 40% 93%)"})),
+      isObj:s.tab==="obj",isEmp:s.tab==="emp",isList:s.tab==="list",isHist:s.tab==="hist",
+      catTabs:[["own","Собственные объекты"],["protected","Охраняемые объекты"],["om","Объекты ОМ"]].map(([id,label])=>({label,st:catSt(s.objCat===id),onClick:()=>this.setState({objCat:id})})),
+      detOpen:!!d,closeDet:()=>this.setState({sel:null,panel:null,cd:null}),stop:(e)=>e.stopPropagation(),
+      panelOpen:false,candidates:[],dPosts:[],dConfs:[],dJournal:[],dCompletion:[],cdFacts:[],dOfficer:{},
+      dShowAssess:false,dAssessRows:[],dScoreAutoN:"0",dScoreManualN:"0",dScoreNoneN:"0",cdNeedDecision:false,cdDecision:"",
+      scoreOpen:false,scoreCtx:[],scoreOptions:[],scoreQuick:[],
+      lfStatus:lf.status,onLfStatus:(e)=>this.setState({lf:{...lf,status:e.target.value},listPage:0}),
+      lfStatusOptions:[{v:"all",label:"Все статусы"},{v:"Оценивание завершено",label:"Оценивание завершено"},{v:"Требует оценки",label:"Требует оценки"},{v:"Частично оценено",label:"Частично оценено"},{v:"Не начато",label:"Не начато"}],
+      lfGrat:lf.grat,onLfGrat:()=>this.setState({lf:{...lf,grat:!lf.grat},listPage:0}),
+      lfRemark:lf.remark,onLfRemark:()=>this.setState({lf:{...lf,remark:!lf.remark},listPage:0}),
+      lfLow:lf.low,onLfLow:()=>this.setState({lf:{...lf,low:!lf.low},listPage:0}),
+      lfAvg:lf.avg,onLfAvg:(e)=>this.setState({lf:{...lf,avg:e.target.value},listPage:0}),
+      lfAvgOptions:[{v:"all",label:"любая"},{v:"6",label:"6,0"},{v:"7",label:"7,0"},{v:"8",label:"8,0"},{v:"9",label:"9,0"}],
+      lfActive,lfCount,lfReset:()=>this.setState({lf:{status:"all",grat:false,remark:false,low:false,avg:"all"},listPage:0}),
+      evalHeads:["Сотрудник","Пост / роль","Факт. участие","Результат","Оценка","Основание","Способ начисления","Кто оценил","Действие"].map((t)=>({t,st:"text-align:left;padding:7px 10px;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:hsl(215.4 16.3% 46.9%);font-weight:600;background:hsl(210 40% 98%);white-space:nowrap;border-bottom:1px solid hsl(210 40% 93%)"})),
+      evalOpen:false,evSummary:[],evRows:[],sdOpen:false,sdRows:[],sdHistory:[],
+      ...det,...ev,...rm,
+      addOpen:s.addOpen,openAdd:()=>this.setState({addOpen:true,addDate:this.today,addObj:this.objects[0].name}),closeAdd:()=>this.setState({addOpen:false}),
+      addDate:s.addDate,onAddDate:(e)=>this.setState({addDate:e.target.value}),
+      addObj:s.addObj,onAddObj:(e)=>this.setState({addObj:e.target.value}),addObjOptions:this.objects.map(o=>o.name),
+      saveAdd:()=>{ if(!s.addDate){this.flash("Укажите дату");return;}
+        const k2=this.ensureDuty(s.addObj,s.addDate);
+        this.setState({addOpen:false,sel:k2,ym:s.addDate.slice(0,7)});},
+      hasFlash:!!s.flash,flash:s.flash
+    };
+  }
+  buildPlan(){
+    const s=this.state,ym=s.ym,nDays=this.dim(ym);
+    const duties={...s.duties};let added=0;const keysLog=[];
+    const startD=ym==="2026-07"?21:1;
+    const assignedBy={};
+    Object.values(duties).forEach(d=>{const set=assignedBy[d.date]=assignedBy[d.date]||new Set();if(d.officer)set.add(d.officer.name);Object.values(d.posts).forEach(arr=>arr.forEach(a=>set.add(a.name)));});
+    for(let day=startD;day<=nDays;day++){
+      const date=ym+"-"+String(day).padStart(2,"0");
+      if(date<this.today)continue;
+      const used=assignedBy[date]=assignedBy[date]||new Set();
+      const prevSet=assignedBy[this.addD(date,-1)]||new Set();
+      const avail=()=>this.roster.filter(r=>!used.has(r.name)&&!prevSet.has(r.name)&&!this.absenceOf(r.name,date)&&!this.omOf(r.name,date));
+      for(const o of this.objects){
+        const key=o.name+"|"+date;
+        let d=duties[key];
+        if(!d){d={obj:o.name,date,start:o.start,officer:null,posts:{},replacements:[],completion:null};o.posts.forEach(p=>d.posts[p.id]=[]);}
+        else d={...d,officer:d.officer?{...d.officer}:null,posts:Object.fromEntries(Object.entries(d.posts).map(([k,v])=>[k,v.map(a=>({...a}))])),replacements:[...d.replacements]};
+        let changed=false;
+        if(!d.officer){const c=avail()[0];if(c){d.officer={name:c.name,ack:null};used.add(c.name);added++;changed=true;}}
+        for(const p of o.posts){
+          while(d.posts[p.id].filter(a=>!a.reserve).length<p.need){
+            const pool=avail();
+            const c=p.req?pool.find(r=>r.role===p.req):pool[0];
+            if(!c)break;
+            d.posts[p.id].push({name:c.name,senior:d.posts[p.id].filter(a=>!a.reserve).length===0,reserve:false,ack:null});
+            used.add(c.name);added++;changed=true;
+          }
+        }
+        if(changed){duties[key]=d;keysLog.push(key);}
+      }
+    }
+    this.setState({duties});
+    keysLog.forEach(k=>this.log(k,"Наряд дополнен автоматическим формированием плана"));
+    this.flash(added?"План сформирован: выполнено назначений — "+added:"Свободных сотрудников без конфликтов не осталось — план не изменён");
+  }
+}
+</script>
+</body>
+</html>

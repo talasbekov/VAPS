@@ -1,0 +1,29 @@
+<div style="background:var(--surface-1);border-radius:12px;padding:1.25rem">
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1.25rem 1.5rem">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+<p style="font-weight:500;font-size:16px;margin:0">Расчёт потребности по направлениям</p>
+<span style="background:#FAEEDA;color:#854F0B;font-size:12px;padding:3px 10px;border-radius:6px">Собрано 4 из 6</span>
+</div>
+<table style="width:100%;font-size:13px;table-layout:fixed">
+<tr style="color:var(--text-muted);text-align:left"><th style="font-weight:400">Направление</th><th style="font-weight:400;width:70px">Кол-во</th><th style="font-weight:400;width:60px">м / ж</th><th style="font-weight:400;width:100px">Статус</th><th style="font-weight:400;width:80px"></th></tr>
+<tr><td>Наружный сектор</td><td>48</td><td>44/4</td><td><span style="color:var(--text-success)">APPROVED</span></td><td></td></tr>
+<tr><td>Внутренний сектор</td><td>32</td><td>24/8</td><td><span style="color:var(--text-success)">APPROVED</span></td><td></td></tr>
+<tr><td>ПДТА</td><td>12</td><td>12/0</td><td><span style="color:#854F0B">SUBMITTED</span></td><td><button style="font-size:12px">Утвердить</button></td></tr>
+<tr><td>Мерген</td><td>8</td><td>8/0</td><td><span style="color:#854F0B">SUBMITTED</span></td><td><button style="font-size:12px">Вернуть</button></td></tr>
+<tr><td>БВС</td><td>—</td><td>—</td><td><span style="color:var(--text-muted)">DRAFT</span></td><td></td></tr>
+<tr><td>Физнаряд</td><td>—</td><td>—</td><td><span style="color:var(--text-danger)">просрочен</span></td><td></td></tr>
+</table>
+<div style="border-top:0.5px solid var(--border);margin-top:12px;padding-top:12px">
+<p style="font-size:13px;color:var(--text-secondary);margin:0 0 8px">Форма расчёта направления (старший направления)</p>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px">
+<div><label style="color:var(--text-secondary)">Тип</label><select style="width:100%"><option>PHYSICAL_DETAIL</option><option>DIVISION</option><option>GROUP</option><option>TECHNICAL</option><option>TRANSPORT</option></select></div>
+<div><label style="color:var(--text-secondary)">Кол-во (м/ж)</label><input style="width:100%" value="20 / 6"></div>
+<div><label style="color:var(--text-secondary)">Техника / оружие</label><input style="width:100%" placeholder="JSONB"></div>
+</div>
+<div style="display:flex;gap:10px;margin-top:10px;align-items:center">
+<input style="flex:1;font-size:13px" placeholder="Обоснование и риски">
+<button style="font-size:13px"><i class="ti ti-file" aria-hidden="true" style="font-size:15px;vertical-align:-2px"></i> документ</button>
+<button style="background:var(--fill-accent);color:var(--on-accent);border:none;font-size:13px" onclick="sendPrompt('Статусная модель расчёта DRAFT/SUBMITTED/APPROVED/RETURNED — кто что может?')">Отправить ↗</button>
+</div>
+</div>
+</div></div>

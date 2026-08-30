@@ -1,0 +1,23 @@
+<div style="background:var(--surface-1);border-radius:12px;padding:1.25rem">
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1.25rem 1.5rem">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+<p style="font-weight:500;font-size:16px;margin:0">Запрос приданных сил</p>
+<button style="font-size:13px">+ Новый запрос</button>
+</div>
+<table style="width:100%;font-size:13px;table-layout:fixed">
+<tr style="color:var(--text-muted);text-align:left"><th style="font-weight:400">Кому</th><th style="font-weight:400;width:60px">Кол-во</th><th style="font-weight:400">Роль</th><th style="font-weight:400;width:110px">Статус</th><th style="font-weight:400;width:100px">Выделено</th></tr>
+<tr><td>ГО1 (крыши)</td><td>130</td><td>SECTOR_GUARD</td><td><span style="color:var(--text-success)">CONFIRMED</span></td><td>130 · PDF ✓</td></tr>
+<tr><td>ГО2</td><td>40</td><td>PATROL</td><td><span style="color:#854F0B">SENT</span></td><td>—</td></tr>
+<tr><td>Упр. 5 (внутр.)</td><td>16</td><td>POST_GUARD</td><td><span style="color:#854F0B">PROPOSED</span></td><td>14 из 16</td></tr>
+</table>
+<div style="border-top:0.5px solid var(--border);margin-top:12px;padding-top:12px">
+<p style="font-size:13px;color:var(--text-secondary);margin:0 0 8px">Ответ руководителя подразделения (allocation)</p>
+<div style="display:flex;gap:10px;align-items:center;font-size:13px;flex-wrap:wrap">
+<select><option>EMPLOYEE</option><option>GROUP</option></select>
+<input style="flex:1;min-width:180px" placeholder="Выбрать сотрудников / группу">
+<button>Предложить</button>
+<button style="background:var(--fill-accent);color:var(--on-accent);border:none" onclick="sendPrompt('Как блокируются allocations через SELECT FOR UPDATE при смене статуса?')">Подтвердить выделение ↗</button>
+</div>
+<p style="font-size:12px;color:var(--text-muted);margin:10px 0 0">Основание запроса — утверждённая потребность (BR-NEED-001). Документы смежных ГО прикрепляются к делу ОМ.</p>
+</div>
+</div></div>

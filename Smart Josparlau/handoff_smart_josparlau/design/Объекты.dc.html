@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/styles.css">
+<script src="./image-slot.js"></script>
+<style>
+body{margin:0;background:hsl(210 40% 97.5%);color:hsl(222.2 84% 4.9%);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:hsl(221.2 83.2% 53.3%);text-decoration:none}a:hover{color:hsl(221.2 75% 44%)}
+button{font:inherit;cursor:pointer}input,select{font:inherit}
+@keyframes vapsToast{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes cascIn{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div style="min-width:0">
+
+<sc-if value="{{ showList }}" hint-placeholder-val="{{ true }}">
+<div>
+<header style="display:flex;justify-content:space-between;align-items:flex-end;margin:4px 0 18px;gap:16px;flex-wrap:wrap">
+<div>
+<p style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.12em;color:hsl(var(--primary));font-size:10.5px;font-weight:700">Объекты и паспорта</p>
+<h1 style="font-size:25px;line-height:1.15;margin:0 0 6px;letter-spacing:-.02em;font-weight:700">Объекты и паспорта</h1>
+<span style="color:hsl(215.4 16.3% 46.9%);font-size:12.5px">Реестр охраняемых объектов, их паспортов, постов, секторов, схем и истории мероприятий</span>
+</div>
+<div style="display:flex;gap:8px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);color:hsl(222.2 47.4% 11.2%);font-size:13px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ exportRegistry }}">⬇ Экспорт реестра</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ openAdd }}">+ Добавить объект</button>
+</div>
+</header>
+<sc-if value="{{ hasChildren }}" hint-placeholder-val="{{ false }}">
+<div style="margin:0 0 16px">{{ children }}</div>
+</sc-if>
+
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px">
+<sc-for list="{{ statCards }}" as="c" hint-placeholder-count="5">
+<article style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:12px 14px;cursor:pointer;text-align:left" style-hover="border-color:hsl(221.2 83.2% 53.3% / .4)" onClick="{{ c.onClick }}">
+<div style="display:flex;align-items:center;gap:6px">
+<span style="width:7px;height:7px;border-radius:999px;background:{{ c.dot }};flex:0 0 auto"></span>
+<div style="font-size:11.5px;font-weight:500;color:hsl(215.4 16.3% 46.9%);line-height:1.3">{{ c.label }}</div>
+</div>
+<div style="font-size:24px;font-weight:800;letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums;{{ c.vst }}">{{ c.value }}</div>
+<div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:3px">{{ c.sub }}</div>
+</article>
+</sc-for>
+</div>
+
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:13px 14px;margin-bottom:14px">
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+<input style="flex:1;min-width:280px;height:36px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 12px;font-size:12.5px;outline:none;background:#fff" style-focus="border-color:hsl(var(--primary))" placeholder="Поиск по названию, адресу, рег. номеру или ответственному" value="{{ q }}" onChange="{{ onQ }}" aria-label="Поиск объектов">
+<sc-for list="{{ filters }}" as="f" hint-placeholder-count="5">
+<select style="height:36px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:8px;padding:0 10px;color:hsl(222.2 47.4% 11.2%);outline:none;font-size:12px" value="{{ f.value }}" onChange="{{ f.onChange }}" aria-label="{{ f.label }}">
+<sc-for list="{{ f.options }}" as="o" hint-placeholder-count="3"><option value="{{ o }}">{{ o }}</option></sc-for>
+</select>
+</sc-for>
+<sc-if value="{{ hasActiveFilters }}" hint-placeholder-val="{{ false }}">
+<button style="height:36px;padding:0 12px;border-radius:8px;border:0;background:none;color:hsl(var(--primary));font-size:12.5px;font-weight:600" onClick="{{ resetFilters }}">Сбросить</button>
+</sc-if>
+<div style="display:inline-flex;gap:3px;background:hsl(210 40% 93%);border-radius:9px;padding:3px;margin-left:auto">
+<button style="{{ viewTableSt }}" onClick="{{ setTable }}">▦ Таблица</button>
+<button style="{{ viewCardsSt }}" onClick="{{ setCards }}">▤ Карточки</button>
+</div>
+</div>
+</section>
+
+<sc-if value="{{ isTable }}" hint-placeholder-val="{{ true }}">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);overflow:visible">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:13px 16px;border-bottom:1px solid hsl(210 40% 95%)">
+<div style="font-size:13.5px;font-weight:600">Реестр объектов <span style="color:hsl(215.4 16.3% 46.9%);font-weight:500">· {{ countLabel }}</span></div>
+<span style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%)">Показано текущее сохранённое состояние объектов и паспортов</span>
+</div>
+<div style="overflow-x:auto">
+<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1360px">
+<thead><tr>
+<th style="text-align:left;padding:9px 12px 9px 16px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap;cursor:pointer" onClick="{{ sortByName }}">Объект</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Регион / адрес</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Рег. №</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Ответственный</th>
+<th style="text-align:center;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Секторы</th>
+<th style="text-align:center;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Посты</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Паспорт</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Версия</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap;cursor:pointer" onClick="{{ sortByUpdated }}">Актуализация</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap;cursor:pointer" onClick="{{ sortByIssues }}">Замечания</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap">Ближайшее ОМ</th>
+<th style="text-align:left;padding:9px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;white-space:nowrap;cursor:pointer" onClick="{{ sortByStatus }}">Статус</th>
+<th style="width:44px"></th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ pageRows }}" as="r" hint-placeholder-count="6">
+<tr style="border-top:1px solid hsl(210 40% 95%);cursor:pointer" style-hover="background:hsl(210 40% 98%)" onClick="{{ r.open }}">
+<td style="padding:11px 12px 11px 16px;min-width:200px"><div style="font-weight:600">{{ r.name }}</div><div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">{{ r.type }}</div></td>
+<td style="padding:11px 12px;color:hsl(215.4 16.3% 36.9%);max-width:190px"><div>{{ r.city }}</div><div style="font-size:11px;margin-top:1px">{{ r.addr }}</div></td>
+<td style="padding:11px 12px;font-variant-numeric:tabular-nums;white-space:nowrap;color:hsl(215.4 16.3% 36.9%)">{{ r.regNo }}</td>
+<td style="padding:11px 12px;white-space:nowrap"><div style="font-weight:500">{{ r.resp }}</div><div style="font-size:11px;color:hsl(215.4 16.3% 46.9%)">Старший объекта</div></td>
+<td style="padding:11px 12px;text-align:center"><button style="border:0;background:none;color:hsl(var(--primary));font-weight:600;font-size:12.5px;padding:0" onClick="{{ r.aSectors }}">{{ r.sectors }} сект.</button></td>
+<td style="padding:11px 12px;text-align:center"><button style="border:0;background:none;color:hsl(var(--primary));font-weight:600;font-size:12.5px;padding:0" onClick="{{ r.aPosts }}">{{ r.posts }} пост.</button></td>
+<td style="padding:11px 12px;white-space:nowrap"><span class="{{ r.passCls }}" style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600">{{ r.passport }}</span><div style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%);margin-top:3px">Заполнено {{ r.fillPct }}%</div></td>
+<td style="padding:11px 12px;white-space:nowrap"><div style="font-weight:600">{{ r.version }}</div><div style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%)">от {{ r.updated }}</div></td>
+<td style="padding:11px 12px;white-space:nowrap;font-variant-numeric:tabular-nums"><div style="color:hsl(215.4 16.3% 36.9%)">{{ r.updated }}</div><div style="font-size:10.5px;{{ r.dueSt }}">{{ r.dueNote }}</div></td>
+<td style="padding:11px 12px;white-space:nowrap">
+<sc-if value="{{ r.hasIssues }}" hint-placeholder-val="{{ false }}">
+<div><span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:600;background:hsl(0 84% 95%);color:#b91c1c">{{ r.critIssues }} крит.</span><div style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%);margin-top:3px">{{ r.openIssues }} открыто</div></div>
+</sc-if>
+<sc-if value="{{ r.hasIssues }}" hint-placeholder-val="{{ false }}"><span></span></sc-if>
+<sc-if value="{{ r.noIssues }}" hint-placeholder-val="{{ true }}"><span style="color:#15803d;font-size:11.5px;font-weight:500">✓ Нет замечаний</span></sc-if>
+</td>
+<td style="padding:11px 12px;white-space:nowrap">
+<sc-if value="{{ r.hasOm }}" hint-placeholder-val="{{ false }}"><div><div style="font-weight:500">{{ r.omName }}</div><div style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%)">{{ r.omDate }}</div></div></sc-if>
+<sc-if value="{{ r.noOm }}" hint-placeholder-val="{{ true }}"><span style="color:hsl(215.4 16.3% 46.9%);font-size:11.5px">Не запланировано</span></sc-if>
+</td>
+<td style="padding:11px 12px;white-space:nowrap"><span class="{{ r.statusCls }}" style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600">{{ r.status }}</span></td>
+<td style="padding:11px 12px;position:relative">
+<button style="width:28px;height:28px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);line-height:1" aria-label="Действия с объектом" onClick="{{ r.toggleMenu }}">⋯</button>
+<sc-if value="{{ r.menuOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;right:12px;top:40px;z-index:40;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:10px;box-shadow:0 8px 24px rgba(16,24,40,.12);padding:5px;min-width:210px;animation:cascIn .12s ease-out">
+<button style="display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:7px;font-size:12.5px" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ r.aOpen }}">Открыть карточку</button>
+<button style="display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:7px;font-size:12.5px" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ r.aEdit }}">Редактировать сведения</button>
+<button style="display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:7px;font-size:12.5px" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ r.aPass }}">Создать новую версию паспорта</button>
+<button style="display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:7px;font-size:12.5px" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ r.aIssue }}">Добавить замечание</button>
+<div style="height:1px;background:hsl(210 40% 95%);margin:4px 2px"></div>
+<button style="display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:7px;font-size:12.5px;color:#b91c1c" style-hover="background:hsl(0 86% 97%)" onClick="{{ r.aArchive }}">Архивировать объект</button>
+</div>
+</sc-if>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+<div style="padding:36px;text-align:center;color:hsl(215.4 16.3% 46.9%);font-size:12.5px">Объекты не найдены. Измените поисковый запрос или <button style="border:0;background:none;color:hsl(var(--primary));font-weight:600;padding:0;font-size:12.5px" onClick="{{ resetFilters }}">сбросьте фильтры</button>.</div>
+</sc-if>
+<sc-if value="{{ hasRows }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 16px;border-top:1px solid hsl(210 40% 95%);font-size:12px;color:hsl(215.4 16.3% 46.9%)">
+<span>{{ pageInfo }}</span>
+<div style="display:flex;gap:6px;align-items:center">
+<select style="height:30px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:7px;background:#fff;font-size:12px;padding:0 8px" value="{{ pageSize }}" onChange="{{ onPageSize }}"><option value="10">10</option><option value="20">20</option><option value="50">50</option></select>
+<button style="width:28px;height:28px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff" onClick="{{ prevPage }}">‹</button>
+<button style="width:28px;height:28px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff" onClick="{{ nextPage }}">›</button>
+</div>
+</div>
+</sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{ isCards }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px">
+<sc-for list="{{ pageRows }}" as="r" hint-placeholder-count="6">
+<article style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-top:{{ r.topBorder }};border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:15px 16px;cursor:pointer;display:flex;flex-direction:column;gap:10px" style-hover="border-color:hsl(221.2 83.2% 53.3% / .45)" onClick="{{ r.open }}">
+<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+<div style="min-width:0"><div style="font-weight:600;font-size:13.5px">{{ r.name }}</div><div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">{{ r.type }} · {{ r.city }}</div></div>
+<span class="{{ r.statusCls }}" style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;flex:0 0 auto">{{ r.status }}</span>
+</div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 36.9%)">{{ r.addr }}<br>Ответственный: {{ r.resp }}</div>
+<div style="display:flex;gap:14px;font-size:12px;color:hsl(215.4 16.3% 36.9%);flex-wrap:wrap">
+<span>Секторы: <b style="color:hsl(222.2 47.4% 11.2%)">{{ r.sectors }}</b></span>
+<span>Посты: <b style="color:hsl(222.2 47.4% 11.2%)">{{ r.posts }}</b></span>
+<span>Версия: <b style="color:hsl(222.2 47.4% 11.2%)">{{ r.version }}</b></span>
+</div>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%)">Ближайшее ОМ: <b style="color:hsl(222.2 47.4% 11.2%)">{{ r.omShort }}</b></div>
+<sc-if value="{{ r.needsUpdate }}" hint-placeholder-val="{{ false }}">
+<div style="background:hsl(48 96% 96%);border:1px solid hsl(38 92% 80%);border-radius:8px;padding:7px 10px;font-size:11px;color:#92400e">Паспорт необходимо актуализировать до {{ r.dueDate }}</div>
+</sc-if>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid hsl(210 40% 95%);padding-top:10px">
+<span class="{{ r.passCls }}" style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600">{{ r.passport }}</span>
+<div style="display:flex;gap:6px">
+<button style="height:28px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11.5px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ r.aOpen }}">Открыть</button>
+<button style="width:28px;height:28px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);line-height:1;position:relative" aria-label="Действия с объектом" onClick="{{ r.toggleMenu }}">⋯</button>
+</div>
+</div>
+<sc-if value="{{ r.menuOpen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<button style="height:28px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11.5px" onClick="{{ r.aEdit }}">Редактировать</button>
+<button style="height:28px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11.5px" onClick="{{ r.aIssue }}">Добавить замечание</button>
+<button style="height:28px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11.5px;color:#b91c1c" onClick="{{ r.aArchive }}">Архивировать</button>
+</div>
+</sc-if>
+</article>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ showDetail }}" hint-placeholder-val="{{ false }}">
+<div>
+<button style="border:0;background:none;color:hsl(var(--primary));font-size:12px;font-weight:600;padding:0;margin-bottom:12px" onClick="{{ back }}">← Назад к реестру объектов</button>
+<header style="display:flex;justify-content:space-between;align-items:flex-start;margin:0 0 16px;gap:16px;flex-wrap:wrap">
+<div>
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+<h1 style="font-size:23px;line-height:1.15;margin:0;letter-spacing:-.02em;font-weight:700">{{ dName }}</h1>
+<span class="{{ dStatusCls }}" style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600">{{ dStatus }}</span>
+</div>
+<span style="display:block;color:hsl(215.4 16.3% 46.9%);font-size:12.5px;margin-top:6px">{{ dRegNo }} · {{ dType }} · {{ dCity }}, {{ dAddr }}</span>
+</div>
+<div style="display:flex;gap:8px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);color:hsl(222.2 47.4% 11.2%);font-size:13px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ dExport }}">Экспорт паспорта</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);color:hsl(222.2 47.4% 11.2%);font-size:13px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ dEdit }}">Редактировать</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ dNewVersion }}">Создать новую версию</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);color:#b91c1c;font-size:13px;font-weight:500" style-hover="background:hsl(0 86% 97%)" onClick="{{ dArchive }}">Архивировать</button>
+</div>
+</header>
+
+<sc-if value="{{ dBannerOk }}" hint-placeholder-val="{{ false }}">
+<div style="background:hsl(143 64% 96%);border:1px solid hsl(143 55% 78%);border-radius:10px;padding:12px 14px;margin-bottom:16px">
+<div style="font-size:12.5px;font-weight:700;color:#15803d">Паспорт объекта актуален</div>
+<div style="font-size:12px;color:#166534;margin-top:2px">Действующая версия {{ dVersion }} утверждена {{ dUpdated }}. Следующая плановая проверка — {{ dNextCheck }}.</div>
+</div>
+</sc-if>
+<sc-if value="{{ dBannerWarn }}" hint-placeholder-val="{{ false }}">
+<div style="background:hsl(48 96% 96%);border:1px solid hsl(38 92% 80%);border-radius:10px;padding:12px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<div><div style="font-size:12.5px;font-weight:700;color:#92400e">Паспорт требует актуализации</div><div style="font-size:12px;color:#92400e;margin-top:2px">{{ dWarnNote }}</div></div>
+<button style="height:32px;padding:0 12px;border-radius:8px;border:0;background:#b45309;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap" onClick="{{ dNewVersion }}">Продолжить актуализацию</button>
+</div>
+</sc-if>
+<sc-if value="{{ dBannerEmpty }}" hint-placeholder-val="{{ false }}">
+<div style="background:hsl(0 84% 96%);border:1px solid hsl(0 70% 82%);border-radius:10px;padding:12px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<div><div style="font-size:12.5px;font-weight:700;color:#b91c1c">Паспорт объекта не заполнен</div><div style="font-size:12px;color:#b91c1c;margin-top:2px">Отсутствуют обязательные сведения о постах, схема объекта и чек-лист.</div></div>
+<button style="height:32px;padding:0 12px;border-radius:8px;border:0;background:#b91c1c;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap" onClick="{{ dNewVersion }}">Заполнить паспорт</button>
+</div>
+</sc-if>
+
+<div style="display:inline-flex;gap:3px;background:hsl(210 40% 93%);border-radius:9px;padding:3px;margin-bottom:16px">
+<sc-for list="{{ detTabs }}" as="t" hint-placeholder-count="3">
+<button style="{{ t.st }}" onClick="{{ t.onClick }}">{{ t.label }}</button>
+</sc-for>
+</div>
+
+<sc-if value="{{ detInfo }}" hint-placeholder-val="{{ true }}">
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start">
+<div style="display:flex;flex-direction:column;gap:14px">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:13.5px;font-weight:600">Основные сведения</div><button style="border:0;background:none;color:hsl(var(--primary));font-size:12px;font-weight:600;padding:0" onClick="{{ dEdit }}">✎ Редактировать</button></div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px 18px">
+<sc-for list="{{ dFields }}" as="f" hint-placeholder-count="6">
+<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:hsl(215.4 16.3% 46.9%);font-weight:600;margin-bottom:3px">{{ f.k }}</div><div style="font-size:13px;font-weight:500">{{ f.v }}</div></div>
+</sc-for>
+</div>
+<sc-if value="{{ dHasMissing }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top:16px;border:1px solid hsl(38 92% 80%);background:hsl(48 96% 96%);border-radius:10px;padding:11px 13px">
+<div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:5px">Замечания по объекту</div>
+<sc-for list="{{ dMissing }}" as="m" hint-placeholder-count="2"><div style="font-size:12px;color:#92400e;padding:2px 0">• {{ m }}</div></sc-for>
+</div>
+</sc-if>
+</section>
+
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+<div>
+<div style="font-size:13.5px;font-weight:600">Дежурные силы</div>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">{{ dutyCountLabel }}</div>
+</div>
+<label style="font-size:11px;color:hsl(215.4 16.3% 46.9%);display:flex;align-items:center;gap:7px">На дату
+<input type="date" style="height:32px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;background:#fff;padding:0 8px;font-size:12.5px;outline:none;color:hsl(222.2 47.4% 11.2%)" value="{{ dutyDateVal }}" onChange="{{ onDutyDate }}">
+</label>
+</div>
+<sc-if value="{{ dutyEmpty }}" hint-placeholder-val="{{ true }}">
+<div style="border:1px dashed hsl(214.3 31.8% 88%);border-radius:10px;padding:18px;text-align:center;font-size:12.5px;color:hsl(215.4 16.3% 46.9%)">На объекте нет заступивших сотрудников</div>
+</sc-if>
+<sc-for list="{{ dutyDepts }}" as="dep" hint-placeholder-count="2">
+<div style="border-top:1px solid hsl(210 40% 95%);padding-top:11px;margin-top:11px">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+<div style="font-size:12.5px;font-weight:700">{{ dep.name }}</div>
+<span style="font-size:11px;color:hsl(215.4 16.3% 46.9%);white-space:nowrap">{{ dep.count }}</span>
+</div>
+<sc-for list="{{ dep.nodes }}" as="nd" hint-placeholder-count="2">
+<div style="margin:9px 0 0 12px;padding-left:11px;border-left:2px solid hsl(210 40% 91%)">
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+<span style="font-size:12px;font-weight:600">{{ nd.label }}</span>
+<span class="{{ nd.kindCls }}" style="display:inline-flex;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:600">{{ nd.kind }}</span>
+</div>
+<sc-for list="{{ nd.people }}" as="pp" hint-placeholder-count="2">
+<div style="display:flex;align-items:center;gap:10px;padding:7px 0 0">
+<div style="width:28px;height:28px;border-radius:999px;background:hsl(210 40% 93%);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:0 0 auto">{{ pp.ini }}</div>
+<div style="min-width:0;flex:1">
+<div style="font-size:12.5px;font-weight:600">{{ pp.name }}</div>
+<div style="font-size:11px;color:hsl(215.4 16.3% 46.9%)">{{ pp.meta }}</div>
+</div>
+<span style="font-size:11px;color:hsl(215.4 16.3% 40%);white-space:nowrap;font-variant-numeric:tabular-nums">{{ pp.period }}</span>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</section>
+
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:12px">Структура объекта</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+<sc-for list="{{ dCounters }}" as="c" hint-placeholder-count="4">
+<button style="text-align:left;border:1px solid hsl(210 40% 93%);border-radius:10px;padding:11px 13px;background:#fff" style-hover="border-color:hsl(221.2 83.2% 53.3% / .45)" onClick="{{ c.onClick }}"><div style="font-size:20px;font-weight:800;font-variant-numeric:tabular-nums">{{ c.v }}</div><div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">{{ c.k }}</div></button>
+</sc-for>
+</div>
+<sc-for list="{{ dSectors }}" as="sec" hint-placeholder-count="4">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 4px;border-top:1px solid hsl(210 40% 95%);cursor:pointer" style-hover="background:hsl(210 40% 98%)" onClick="{{ sec.onClick }}">
+<div><span style="font-weight:600;font-size:12.5px">{{ sec.name }}</span><span style="color:hsl(215.4 16.3% 46.9%);font-size:12px"> — {{ sec.zone }} — {{ sec.count }} пост.</span></div>
+<span style="color:hsl(var(--primary));font-size:13px">→</span>
+</div>
+</sc-for>
+</section>
+
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:13.5px;font-weight:600">Текущая готовность</div><span style="font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">{{ dFillPct }}%</span></div>
+<div style="height:8px;border-radius:999px;background:hsl(210 40% 93%);overflow:hidden;margin-bottom:12px"><div style="height:100%;width:{{ dFillPct }}%;background:hsl(var(--primary));border-radius:999px"></div></div>
+<sc-for list="{{ dReadiness }}" as="rd" hint-placeholder-count="7">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid hsl(210 40% 96%)"><span style="font-size:12.5px">{{ rd.k }}</span><span style="font-size:12px;font-weight:600;{{ rd.st }}">{{ rd.v }}</span></div>
+</sc-for>
+</section>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:12px">Ответственные</div>
+<sc-for list="{{ dPeople }}" as="p" hint-placeholder-count="2">
+<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid hsl(210 40% 96%)">
+<div style="width:34px;height:34px;border-radius:999px;background:hsl(210 40% 93%);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:hsl(222.2 47.4% 11.2%);flex:0 0 auto">{{ p.initials }}</div>
+<div style="min-width:0;flex:1"><div style="font-size:12.5px;font-weight:600">{{ p.name }}</div><div style="font-size:11px;color:hsl(215.4 16.3% 46.9%)">{{ p.role }}</div></div>
+</div>
+</sc-for>
+</section>
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:12px">Открытые замечания</div>
+<div style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px">
+<sc-for list="{{ dIssuesBreak }}" as="ib" hint-placeholder-count="3">
+<div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:hsl(215.4 16.3% 46.9%)">{{ ib.k }}</span><span style="font-weight:700;{{ ib.st }}">{{ ib.v }}</span></div>
+</sc-for>
+</div>
+<button style="width:100%;height:32px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:12px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ dGoIssues }}">Посмотреть все замечания</button>
+</section>
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:10px">Ближайшие события</div>
+<sc-for list="{{ dTimeline }}" as="ev" hint-placeholder-count="3">
+<div style="display:flex;gap:10px;padding:7px 0;border-top:1px solid hsl(210 40% 96%)">
+<span style="font-size:11px;color:hsl(215.4 16.3% 46.9%);white-space:nowrap;flex:0 0 62px">{{ ev.d }}</span>
+<span style="font-size:12px">{{ ev.t }}</span>
+</div>
+</sc-for>
+</section>
+</div>
+
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px;margin-top:14px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:13.5px;font-weight:600">Схема, карта и фотографии объекта</div><span style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%)">Перетащите файлы, чтобы заменить изображения</span></div>
+<div style="display:grid;grid-template-columns:1.1fr 1fr;gap:14px;margin-bottom:14px">
+<div>
+<div style="font-size:11px;font-weight:600;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Схема объекта (план территории)</div>
+<image-slot id="{{ dSchemeId }}" shape="rounded" radius="10" style="width:100%;height:260px" placeholder="Загрузите план / схему объекта"></image-slot>
+</div>
+<div>
+<div style="font-size:11px;font-weight:600;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Карта расположения</div>
+<image-slot id="{{ dMapId }}" shape="rounded" radius="10" style="width:100%;height:260px" placeholder="Загрузите карту с местоположением объекта"></image-slot>
+</div>
+</div>
+<div style="font-size:11px;font-weight:600;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Фотографии объекта</div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
+<sc-for list="{{ dPhotoIds }}" as="ph" hint-placeholder-count="5">
+<image-slot id="{{ ph }}" shape="rounded" radius="8" style="width:100%;height:110px" placeholder="Фото"></image-slot>
+</sc-for>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ detPass }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:14px;max-width:900px">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
+<div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 46.9%);margin-bottom:2px">Действующая версия паспорта</div>
+<div style="font-size:20px;font-weight:800;margin-bottom:8px">{{ dVersion }}</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;font-size:12.5px">
+<div><span style="color:hsl(215.4 16.3% 46.9%)">Статус: </span><b>{{ dPassport }}</b></div>
+<div><span style="color:hsl(215.4 16.3% 46.9%)">Заполнение: </span><b>{{ dFillPct }}%</b></div>
+<div><span style="color:hsl(215.4 16.3% 46.9%)">Утверждена: </span><b>{{ dUpdated }}</b></div>
+<div><span style="color:hsl(215.4 16.3% 46.9%)">Автор: </span><b>{{ dResp }}</b></div>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<button style="height:34px;padding:0 12px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:12.5px;font-weight:500;white-space:nowrap" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ dViewPassport }}">Просмотреть паспорт</button>
+<button style="height:34px;padding:0 12px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:12.5px;font-weight:500;white-space:nowrap" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ dExport }}">Скачать PDF</button>
+<button style="height:34px;padding:0 12px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap" onClick="{{ dNewVersion }}">Создать новую версию</button>
+</div>
+</div>
+</section>
+
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:2px">Разделы паспорта</div>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-bottom:8px">Текущее сохранённое состояние · актуализация: {{ dUpdated }}</div>
+<sc-for list="{{ dPassSections }}" as="ps" hint-placeholder-count="5">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 4px;border-top:1px solid hsl(210 40% 95%)">
+<div><div style="font-size:12.5px;font-weight:600">{{ ps.name }}</div><div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:1px">{{ ps.note }}</div></div>
+<span class="{{ ps.cls }}" style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap">{{ ps.state }}</span>
+</div>
+</sc-for>
+</section>
+
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:13.5px;font-weight:600">История версий</div><button style="height:30px;padding:0 12px;border-radius:8px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:12px;font-weight:500" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ dCompare }}">Сравнить версии</button></div>
+<sc-for list="{{ dVersions }}" as="v" hint-placeholder-count="4">
+<div style="display:flex;gap:12px;padding:11px 0;border-top:1px solid hsl(210 40% 95%)">
+<div style="width:8px;height:8px;border-radius:999px;background:{{ v.dot }};margin-top:6px;flex:0 0 auto"></div>
+<div style="flex:1;min-width:0">
+<div style="font-size:12.5px;font-weight:700">{{ v.name }} <span style="font-weight:500;color:hsl(215.4 16.3% 46.9%)">— {{ v.state }}</span></div>
+<div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin:2px 0 4px">{{ v.date }} · {{ v.note }}</div>
+</div>
+<button style="height:26px;padding:0 10px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;font-size:11px;font-weight:500;white-space:nowrap;align-self:flex-start" onClick="{{ dViewPassport }}">Просмотреть</button>
+</div>
+</sc-for>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ detLog }}" hint-placeholder-val="{{ false }}">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px;max-width:900px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:4px">Журнал действий объекта</div>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-bottom:8px">Записи журнала нельзя редактировать или удалять</div>
+<sc-for list="{{ dJournal }}" as="j" hint-placeholder-count="4">
+<div style="display:flex;gap:12px;padding:10px 4px;border-bottom:1px solid hsl(210 40% 95%)">
+<span style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 118px">{{ j.d }}</span>
+<span style="font-size:12.5px;flex:1">{{ j.t }}</span>
+<span style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);white-space:nowrap">{{ j.u }}</span>
+</div>
+</sc-for>
+</section>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ addOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:60;display:grid;place-items:center;padding:20px" onClick="{{ closeAdd }}">
+<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(16,24,40,.25);width:440px;max-width:100%;padding:20px" onClick="{{ stop }}">
+<div style="font-size:15px;font-weight:700;margin-bottom:2px">Добавить объект</div>
+<div style="font-size:12px;color:hsl(215.4 16.3% 46.9%);margin-bottom:14px">Объект будет создан со статусом «Действующий», паспорт — «Не заполнен»</div>
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Наименование</label>
+<input style="width:100%;box-sizing:border-box;height:36px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 12px;font-size:12.5px;outline:none;margin-bottom:10px" style-focus="border-color:hsl(var(--primary))" value="{{ addName }}" onChange="{{ onAddName }}" placeholder="Например: Конференц-зал «Сарыарка»">
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Тип объекта</label>
+<select style="width:100%;box-sizing:border-box;height:36px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;font-size:12.5px;outline:none;background:#fff;margin-bottom:10px" value="{{ addType }}" onChange="{{ onAddType }}">
+<sc-for list="{{ addTypeOptions }}" as="o" hint-placeholder-count="4"><option value="{{ o }}">{{ o }}</option></sc-for>
+</select>
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Адрес</label>
+<input style="width:100%;box-sizing:border-box;height:36px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 12px;font-size:12.5px;outline:none;margin-bottom:10px" style-focus="border-color:hsl(var(--primary))" value="{{ addAddr }}" onChange="{{ onAddAddr }}" placeholder="г. Астана, ул. …">
+<label style="display:block;font-size:11.5px;font-weight:600;margin-bottom:4px">Ответственный за объект</label>
+<input style="width:100%;box-sizing:border-box;height:36px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 12px;font-size:12.5px;outline:none;margin-bottom:16px" style-focus="border-color:hsl(var(--primary))" value="{{ addResp }}" onChange="{{ onAddResp }}" placeholder="Фамилия И. О.">
+<div style="display:flex;justify-content:flex-end;gap:8px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);font-size:13px;font-weight:500" onClick="{{ closeAdd }}">Отмена</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ saveAdd }}">Добавить объект</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ hasFlash }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;right:20px;bottom:20px;z-index:70;background:hsl(222.2 47.4% 11.2%);color:#fff;border-radius:10px;padding:11px 16px;font-size:12.5px;box-shadow:0 8px 24px rgba(16,24,40,.3);animation:vapsToast .18s ease-out;max-width:360px">{{ flash }}</div>
+</sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    this.ownCatalog=[
+      {id:"ob1",name:"Дворец Независимости",type:"Конгресс-центр",addr:"пр. Тәуелсіздік, 52",city:"г. Астана",regNo:"ОБ-2019-0041",resp:"Оспанов Б. Д.",sectors:4,posts:14,passport:"Заполнен",fillPct:96,version:"v4",updated:"02.07.2026",status:"Действующий",hasScheme:true,docs:12,missing:[],critIssues:0,openIssues:0,om:{name:"Официальный визит",date:"24.07.2026, 09:00"}},
+      {id:"ob2",name:"Резиденция «Северная»",type:"Резиденция",addr:"закрытая территория",city:"г. Астана",regNo:"ОБ-2018-0007",resp:"Салимова Г. Е.",sectors:3,posts:9,passport:"Заполнен",fillPct:100,version:"v6",updated:"28.06.2026",status:"Действующий",hasScheme:true,docs:9,missing:[],critIssues:0,openIssues:1,om:null},
+      {id:"ob3",name:"Астана Арена",type:"Спортивный объект",addr:"пр. Кабанбай батыра, 45",city:"г. Астана",regNo:"ОБ-2020-0113",resp:"Ахметов Т. Б.",sectors:2,posts:6,passport:"Требует актуализации",fillPct:62,version:"v2",updated:"14.03.2026",status:"Действующий",hasScheme:true,docs:7,missing:["Паспорт не актуализировался более 90 дней"],critIssues:1,openIssues:3,om:{name:"Спортивный турнир",date:"02.08.2026, 14:00"}},
+      {id:"ob4",name:"Конгресс-центр",type:"Конгресс-центр",addr:"ул. Достык, 3",city:"г. Астана",regNo:"ОБ-2021-0158",resp:"Жумабеков Н. К.",sectors:3,posts:8,passport:"Заполнен частично",fillPct:74,version:"v3",updated:"05.06.2026",status:"Действующий",hasScheme:true,docs:6,missing:["Не заполнен раздел «Инженерные системы»"],critIssues:0,openIssues:2,om:null},
+      {id:"ob5",name:"Аэропорт · VIP-зал",type:"Транспортный узел",addr:"аэропорт Нурсултан Назарбаев",city:"г. Астана",regNo:"ОБ-2017-0002",resp:"Касымова А. Р.",sectors:2,posts:5,passport:"Заполнен",fillPct:100,version:"v8",updated:"19.06.2026",status:"Действующий",hasScheme:true,docs:11,missing:[],critIssues:0,openIssues:0,om:{name:"Встреча делегации",date:"25.07.2026, 11:30"}},
+      {id:"ob6",name:"Служебная дача №3",type:"Загородная резиденция",addr:"Щучинский район",city:"Акмолинская обл.",regNo:"ОБ-2019-0076",resp:"Салимова Г. Е.",sectors:1,posts:3,passport:"Заполнен частично",fillPct:58,version:"v2",updated:"30.04.2026",status:"Действующий",hasScheme:false,docs:4,missing:["Схема территории не загружена"],critIssues:1,openIssues:1,om:null},
+      {id:"ob7",name:"Офис куратора",type:"Служебное здание",addr:"ул. Мәңгілік Ел, 8",city:"г. Астана",regNo:"ОБ-2022-0201",resp:"Ахметов Т. Б.",sectors:1,posts:2,passport:"Не заполнен",fillPct:8,version:"v0",updated:"—",status:"Действующий",hasScheme:false,docs:1,missing:["Паспорт не заполнен","Схема объекта отсутствует"],critIssues:0,openIssues:0,om:null},
+      {id:"ob8",name:"Резиденция «Южная»",type:"Резиденция",addr:"закрытая территория",city:"г. Алматы",regNo:"ОБ-2016-0004",resp:"Бекенов С. М.",sectors:3,posts:7,passport:"Требует актуализации",fillPct:70,version:"v5",updated:"22.12.2025",status:"На реконструкции",hasScheme:true,docs:8,missing:["Данные постов устарели после реконструкции"],critIssues:0,openIssues:2,om:null}
+    ];
+    this.typeOptions=["Конгресс-центр","Резиденция","Загородная резиденция","Временная резиденция","Спортивный объект","Транспортный узел","Служебное здание","Объект"];
+    this.passStates=["Заполнен","Заполнен частично","Требует актуализации","Не заполнен"];
+    this.state={dutyDate:"",q:"",fType:"Тип: все",fCity:"Регион: все",fStatus:"Статус: все",fPass:"Паспорт: все",fDate:"Актуализация: любая",view:"Таблица",sortKey:"",sortDir:1,page:1,pageSize:10,menuFor:null,selId:null,detTab:"info",archived:{},journal:{},added:[],addOpen:false,addName:"",addType:"Служебное здание",addAddr:"",addResp:"",flash:""};
+  }
+  parse(json){ try{ const a=JSON.parse(json||"[]"); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+  mapExternal(o){
+    const missing=o.missing||[];
+    let passport="Заполнен",fillPct=100;
+    if(missing.length){ passport=missing.some(m=>/не заполнен|не завершён/i.test(m))?"Заполнен частично":"Требует актуализации"; fillPct=passport==="Заполнен частично"?70:80; }
+    if(missing.some(m=>/паспорт не заполнен/i.test(m))){ passport="Не заполнен"; fillPct=8; }
+    return {id:o.id,name:o.name,type:o.type||"Объект",addr:o.addr||"—",city:/астана/i.test(o.addr||"")?"г. Астана":"—",
+      regNo:/^ОМ-/.test(o.checked||"")?o.checked:"—",resp:o.resp||"—",sectors:o.sectors||0,posts:o.posts||0,passport,fillPct,version:"v1",
+      updated:/\d{2}\.\d{2}\.\d{4}/.test(o.checked||"")?o.checked:"—",status:"Действующий",hasScheme:(o.sectors||0)>0,docs:Math.max(1,(o.posts||0)),missing,critIssues:0,openIssues:missing.length,om:null};
+  }
+  allObjects(){
+    const ov=this.parse(this.props.objectsOverride);
+    if(ov.length) return ov.map(o=>this.mapExternal(o));
+    const extras=this.parse(this.props.extraObjects).map(o=>this.mapExternal(o));
+    return [...this.ownCatalog,...this.state.added,...extras];
+  }
+  effStatus(o){ return this.state.archived[o.id]?"В архиве":o.status; }
+  statusCls(st){ return st==="Действующий"?"bg-green-100 text-green-800":st==="На реконструкции"?"bg-amber-100 text-amber-800":"bg-gray-100 text-gray-800"; }
+  passCls(p){ return p==="Заполнен"?"bg-green-100 text-green-800":p==="Заполнен частично"?"bg-blue-100 text-blue-800":p==="Требует актуализации"?"bg-amber-100 text-amber-800":"bg-red-100 text-red-800"; }
+  daysAgo(d){ if(!/\d{2}\.\d{2}\.\d{4}/.test(d)) return 99999; const [dd,mm,yy]=d.split("."); return Math.round((new Date(2026,6,21)-new Date(+yy,+mm-1,+dd))/86400000); }
+  seedJournal(o){
+    const j=[];
+    if(o.updated!=="—") j.push({d:o.updated+" 10:40",u:o.resp!=="—"?o.resp:"Система",t:"Паспорт объекта актуализирован, изменения сохранены в журнале"});
+    if(o.missing&&o.missing.length) j.push({d:o.updated!=="—"?o.updated+" 10:41":"15.07.2026 09:12",u:"Система",t:"Зафиксировано замечание: "+o.missing[0]});
+    j.push({d:"11.01.2026 09:00",u:"Администратор",t:"Объект зарегистрирован в реестре, присвоен номер "+o.regNo});
+    return j;
+  }
+  seedSectors(o){
+    const names=[["Сектор A","Внешний периметр"],["Сектор B","Внутренняя зона"],["Сектор C","Официальная зона"],["Сектор D","Штаб и резерв"]];
+    const n=Math.min(o.sectors,4)||1;
+    let left=o.posts;
+    return names.slice(0,n).map(([name,zone],i)=>{ const c=i===n-1?left:Math.max(1,Math.round(o.posts/n)); left-=c; return {name,zone,count:c}; });
+  }
+  log(id,text){
+    const now=new Date(); const hh=String(now.getHours()).padStart(2,"0"), mi=String(now.getMinutes()).padStart(2,"0");
+    const e={d:"21.07.2026 "+hh+":"+mi,u:"Ердаулет Н.",t:text};
+    this.setState(s=>({journal:{...s.journal,[id]:[e,...(s.journal[id]||[])]}}));
+  }
+  flash(t){ this.setState({flash:t}); clearTimeout(this._ft); this._ft=setTimeout(()=>this.setState({flash:""}),2600); }
+  renderVals(){
+    const s=this.state, all=this.allObjects();
+    const withStatus=all.map(o=>({...o,status:this.effStatus(o)}));
+    const activeCount=withStatus.filter(o=>o.status==="Действующий").length;
+    const passOk=withStatus.filter(o=>o.passport==="Заполнен").length;
+    const needsUpdate=withStatus.filter(o=>o.passport==="Требует актуализации").length;
+    const critCount=withStatus.filter(o=>o.critIssues>0).length;
+    const noScheme=withStatus.filter(o=>!o.hasScheme).length;
+    const setFilterAndScroll=(patch)=>()=>{ this.setState({...patch,page:1}); };
+    const stats=[
+      {label:"Всего объектов",value:String(withStatus.length),sub:activeCount+" действующих",vst:"",dot:"hsl(var(--primary))",onClick:setFilterAndScroll({fStatus:"Статус: все",fPass:"Паспорт: все"})},
+      {label:"Паспорта актуальны",value:String(passOk),sub:withStatus.length?Math.round(passOk/withStatus.length*100)+"% от общего числа":"—",vst:"color:#15803d",dot:"#22c55e",onClick:setFilterAndScroll({fPass:"Заполнен"})},
+      {label:"Требуют актуализации",value:String(needsUpdate),sub:"Проверить до конца месяца",vst:"color:#b45309",dot:"#f59e0b",onClick:setFilterAndScroll({fPass:"Требует актуализации"})},
+      {label:"Критические замечания",value:String(critCount),sub:"Требуют устранения",vst:"color:#b91c1c",dot:"#ef4444",onClick:setFilterAndScroll({fPass:"Паспорт: все"})},
+      {label:"Без схемы объекта",value:String(noScheme),sub:"Не загружен план",vst:"color:#6b7280",dot:"#9ca3af",onClick:setFilterAndScroll({fPass:"Паспорт: все"})}
+    ];
+    const q=s.q.trim().toLowerCase();
+    const inDate=(o)=>{ const d=this.daysAgo(o.updated);
+      if(s.fDate==="За 30 дней") return d<=30; if(s.fDate==="За 90 дней") return d<=90;
+      if(s.fDate==="Более 90 дней назад") return d>90; return true; };
+    let filtered=withStatus.filter(o=>
+      (!q||[o.name,o.addr,o.regNo,o.resp].some(v=>(v||"").toLowerCase().includes(q)))&&
+      (s.fType==="Тип: все"||o.type===s.fType)&&
+      (s.fCity==="Регион: все"||o.city===s.fCity)&&
+      (s.fStatus==="Статус: все"||o.status===s.fStatus)&&
+      (s.fPass==="Паспорт: все"||o.passport===s.fPass)&&inDate(o));
+    if(s.sortKey){
+      filtered=[...filtered].sort((a,b)=>{
+        let av,bv;
+        if(s.sortKey==="name"){av=a.name;bv=b.name;}
+        else if(s.sortKey==="updated"){av=this.daysAgo(a.updated);bv=this.daysAgo(b.updated);}
+        else if(s.sortKey==="issues"){av=a.critIssues*100+a.openIssues;bv=b.critIssues*100+b.openIssues;}
+        else if(s.sortKey==="status"){av=a.status;bv=b.status;}
+        return (av>bv?1:av<bv?-1:0)*s.sortDir;
+      });
+    }
+    const cities=[...new Set(withStatus.map(o=>o.city).filter(c=>c&&c!=="—"))];
+    const types=[...new Set(withStatus.map(o=>o.type))];
+    const setF=(k)=>(e)=>this.setState({[k]:e.target.value,page:1});
+    const hasActiveFilters=!!q||s.fType!=="Тип: все"||s.fCity!=="Регион: все"||s.fStatus!=="Статус: все"||s.fPass!=="Паспорт: все"||s.fDate!=="Актуализация: любая";
+    const sel=(o,tab)=>this.setState({selId:o.id,detTab:tab,menuFor:null});
+    const dueInfo=(o)=>{
+      const d=this.daysAgo(o.updated);
+      if(o.passport==="Требует актуализации") return {note:d>0?"Просрочено на "+Math.max(1,d-90)+" дней":"Требует проверки",st:"color:#b91c1c;font-weight:600"};
+      if(d>60&&d<90) return {note:"Проверить до "+"30.07.2026",st:"color:#b45309;font-weight:600"};
+      return {note:d===99999?"":d+" дней назад",st:"color:hsl(215.4 16.3% 46.9%)"};
+    };
+    const pageSize=s.pageSize, page=s.page, totalPages=Math.max(1,Math.ceil(filtered.length/pageSize));
+    const curPage=Math.min(page,totalPages);
+    const paged=filtered.slice((curPage-1)*pageSize,(curPage-1)*pageSize+pageSize);
+    const rows=paged.map(o=>{
+      const due=dueInfo(o);
+      return {
+      ...o,sectors:String(o.sectors),posts:String(o.posts),
+      passCls:this.passCls(o.passport),statusCls:this.statusCls(o.status),
+      dueNote:due.note,dueSt:due.st,
+      hasIssues:o.critIssues>0||o.openIssues>0,noIssues:!(o.critIssues>0||o.openIssues>0),
+      hasOm:!!o.om,noOm:!o.om,omName:o.om?o.om.name:"",omDate:o.om?o.om.date:"",omShort:o.om?o.om.name+" · "+o.om.date:"Не запланировано",
+      topBorder:o.critIssues>0?"3px solid #ef4444":"1px solid hsl(214.3 31.8% 91.4%)",
+      needsUpdate:o.passport==="Требует актуализации",dueDate:"30.07.2026",
+      menuOpen:s.menuFor===o.id,
+      open:()=>sel(o,"info"),
+      toggleMenu:(e)=>{e.stopPropagation();this.setState({menuFor:s.menuFor===o.id?null:o.id});},
+      aOpen:(e)=>{e.stopPropagation();sel(o,"info");},
+      aEdit:(e)=>{e.stopPropagation();sel(o,"info");this.log(o.id,"Открыто редактирование сведений об объекте");this.flash("Редактирование сведений: изменения будут сохранены в журнале объекта");},
+      aPass:(e)=>{e.stopPropagation();sel(o,"passport");},
+      aIssue:(e)=>{e.stopPropagation();sel(o,"info");this.log(o.id,"Добавлено новое замечание по объекту");this.flash("Замечание добавлено и зафиксировано в журнале");},
+      aSectors:(e)=>{e.stopPropagation();sel(o,"info");},
+      aPosts:(e)=>{e.stopPropagation();sel(o,"info");},
+      aArchive:(e)=>{e.stopPropagation();this.setState(st=>({archived:{...st.archived,[o.id]:true},menuFor:null}));this.log(o.id,"Объект переведён в архив");this.flash("Объект «"+o.name+"» переведён в архив");}
+    };});
+    const d=withStatus.find(o=>o.id===s.selId);
+    const detTab=s.detTab;
+    const tabSt=(on)=>"height:32px;padding:0 14px;border-radius:7px;border:0;font-size:12.5px;font-weight:600;"+(on?"background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.08);color:hsl(222.2 47.4% 11.2%)":"background:transparent;color:hsl(215.4 16.3% 46.9%)");
+    const viewBtnSt=(on)=>"height:30px;padding:0 12px;border-radius:7px;border:0;font-size:12px;font-weight:600;"+(on?"background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.08);color:hsl(222.2 47.4% 11.2%)":"background:transparent;color:hsl(215.4 16.3% 46.9%)");
+    const passSections=(o)=>{ if(!o) return [];
+      const p=o.passport;
+      const mk=(name,note,state)=>({name,note,state,cls:state==="Заполнено"?"bg-green-100 text-green-800":state==="Устарело"?"bg-amber-100 text-amber-800":state==="Частично"?"bg-blue-100 text-blue-800":"bg-red-100 text-red-800"});
+      const base=[["Общие сведения","Характеристики, адрес, ответственные лица"],["Схема объекта","Планы территории и помещений"],["Секторы","Разбивка территории: "+o.sectors+" сект."],["Посты","Постовая структура: "+o.posts+" пост."],["Чек-лист объекта","Обязательные пункты проверки"],["Документы","Приложенные документы: "+o.docs]];
+      return base.map(([name,note],i)=>{
+        if(name==="Схема объекта"&&!o.hasScheme) return mk(name,note,"Не заполнено");
+        if(p==="Заполнен") return mk(name,note,"Заполнено");
+        if(p==="Не заполнен") return mk(name,note,i===0?"Частично":"Не заполнено");
+        if(p==="Требует актуализации") return mk(name,note,i<2?"Заполнено":"Устарело");
+        return mk(name,note,i<3?"Заполнено":"Частично");
+      }); };
+    const versionsFor=(o)=>{ if(!o) return [];
+      const cur=o.version;
+      const stateOf=(v)=>v===cur?"Действующая":"Заменена";
+      const dotOf=(v)=>v===cur?"#22c55e":"#94a3b8";
+      const all=[[cur,o.updated,"Изменены посты сектора A и обновлена схема въезда."],["v"+(parseInt(cur.slice(1))-1||1),"15.03.2026","Плановая актуализация."],["v"+(parseInt(cur.slice(1))-2>0?parseInt(cur.slice(1))-2:1),"10.11.2025","Добавлен сектор C."],["v1","01.05.2025","Первичная версия паспорта."]];
+      const seen=new Set(); const out=[];
+      for(const [name,date,note] of all){ if(seen.has(name)) continue; seen.add(name); out.push({name,date,note,state:stateOf(name),dot:dotOf(name)}); }
+      return out; };
+    const pad=(n)=>String(n).padStart(2,"0");
+    const nowISO=(()=>{const n=new Date();return n.getFullYear()+"-"+pad(n.getMonth()+1)+"-"+pad(n.getDate());})();
+    const dutyDate=s.dutyDate||nowISO;
+    const d2i=(x)=>{const m=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(x||"");return m?m[3]+"-"+m[2]+"-"+m[1]:"";};
+    const dutyAll=this.parse(this.props.dutyForces).filter(r=>d&&r.object===d.name);
+    const dutyActive=dutyAll.filter(r=>{const a=d2i(r.from),b=d2i(r.to);
+      if(a&&dutyDate<a) return false; if(b&&dutyDate>b) return false; return true;});
+    const dutyDepts=(()=>{ const byDep=new Map();
+      dutyActive.forEach(r=>{ if(!byDep.has(r.unit)) byDep.set(r.unit,new Map());
+        const nodes=byDep.get(r.unit); const key=r.kind+"|"+r.node;
+        if(!nodes.has(key)) nodes.set(key,{label:r.node,kind:r.kind,people:[]});
+        nodes.get(key).people.push(r); });
+      return Array.from(byDep.entries()).map(([name,nodes])=>{
+        const nodeList=Array.from(nodes.values()).map(n=>({label:n.label,kind:n.kind,
+          kindCls:n.kind==="Групповое"?"bg-indigo-100 text-indigo-800":"bg-blue-100 text-blue-800",
+          people:n.people.map(p=>({name:p.name,ini:(p.name||"").split(" ").map(w=>w[0]).join("").slice(0,2),
+            meta:[p.rank,p.position].filter(Boolean).join(" · ")||"—",
+            period:p.from?("с "+p.from+(p.to?" по "+p.to:"")):"бессрочно"}))}));
+        const cnt=nodeList.reduce((a,n)=>a+n.people.length,0);
+        return {name,nodes:nodeList,count:cnt+(cnt===1?" сотрудник":" сотр.")}; }); })();
+    return {
+      dutyDepts, dutyEmpty:dutyActive.length===0, dutyDateVal:dutyDate,
+      onDutyDate:(e)=>this.setState({dutyDate:e.target.value}),
+      dutyCountLabel:dutyActive.length?("Заступивших на "+dutyDate.split("-").reverse().join(".")+": "+dutyActive.length):("По статусам «На дежурстве» на "+dutyDate.split("-").reverse().join(".")),
+      showList:!s.selId, showDetail:!!d,
+      hasChildren:!!this.props.children, children:this.props.children,
+      statCards:stats, countLabel:filtered.length+" из "+withStatus.length,
+      q:s.q, onQ:(e)=>this.setState({q:e.target.value,page:1}),
+      filters:[
+        {label:"Статус объекта",value:s.fStatus,onChange:setF("fStatus"),options:["Статус: все","Действующий","На реконструкции","В архиве"]},
+        {label:"Состояние паспорта",value:s.fPass,onChange:setF("fPass"),options:["Паспорт: все",...this.passStates]},
+        {label:"Регион или город",value:s.fCity,onChange:setF("fCity"),options:["Регион: все",...cities]},
+        {label:"Тип объекта",value:s.fType,onChange:setF("fType"),options:["Тип: все",...types]},
+        {label:"Дата последней актуализации",value:s.fDate,onChange:setF("fDate"),options:["Актуализация: любая","За 30 дней","За 90 дней","Более 90 дней назад"]}
+      ],
+      hasActiveFilters, resetFilters:()=>this.setState({q:"",fType:"Тип: все",fCity:"Регион: все",fStatus:"Статус: все",fPass:"Паспорт: все",fDate:"Актуализация: любая",page:1}),
+      isTable:s.view==="Таблица", isCards:s.view==="Карточки",
+      viewTableSt:viewBtnSt(s.view==="Таблица"), viewCardsSt:viewBtnSt(s.view==="Карточки"),
+      setTable:()=>this.setState({view:"Таблица"}), setCards:()=>this.setState({view:"Карточки"}),
+      sortByName:()=>this.setState(st=>({sortKey:"name",sortDir:st.sortKey==="name"?-st.sortDir:1})),
+      sortByUpdated:()=>this.setState(st=>({sortKey:"updated",sortDir:st.sortKey==="updated"?-st.sortDir:1})),
+      sortByIssues:()=>this.setState(st=>({sortKey:"issues",sortDir:st.sortKey==="issues"?-st.sortDir:1})),
+      sortByStatus:()=>this.setState(st=>({sortKey:"status",sortDir:st.sortKey==="status"?-st.sortDir:1})),
+      rows, pageRows:rows, isEmpty:filtered.length===0, hasRows:filtered.length>0,
+      pageInfo:filtered.length?((curPage-1)*pageSize+1)+"–"+Math.min(curPage*pageSize,filtered.length)+" из "+filtered.length:"0 из 0",
+      pageSize:String(pageSize), onPageSize:(e)=>this.setState({pageSize:Number(e.target.value),page:1}),
+      prevPage:()=>this.setState(st=>({page:Math.max(1,st.page-1)})), nextPage:()=>this.setState(st=>({page:Math.min(totalPages,st.page+1)})),
+      exportRegistry:()=>this.flash("Экспорт реестра объектов подготовлен"),
+      dName:d?d.name:"", dType:d?d.type:"", dAddr:d?d.addr:"", dCity:d?d.city:"", dRegNo:d?d.regNo:"", dUpdated:d?d.updated:"", dResp:d?d.resp:"",
+      dStatus:d?d.status:"", dStatusCls:d?this.statusCls(d.status):"", dPassport:d?d.passport:"", dPassCls:d?this.passCls(d.passport):"",
+      dVersion:d?d.version:"", dFillPct:d?d.fillPct:0, dNextCheck:"12.01.2027",
+      dBannerOk:!!d&&d.passport==="Заполнен", dBannerWarn:!!d&&(d.passport==="Требует актуализации"||d.passport==="Заполнен частично"),
+      dBannerEmpty:!!d&&d.passport==="Не заполнен",
+      dWarnNote:d?(d.missing&&d.missing[0]?"Выявлено: "+d.missing[0]+". Требуется создать черновик новой версии.":"Обнаружены изменения, требующие актуализации паспорта."):"",
+      dFields:d?[{k:"Тип объекта",v:d.type},{k:"Регион",v:d.city},{k:"Адрес",v:d.addr},{k:"Рег. номер",v:d.regNo},{k:"Ответственный",v:d.resp},{k:"Последняя актуализация",v:d.updated}]:[],
+      dCounters:d?[{k:"Секторы",v:String(d.sectors),onClick:()=>{}},{k:"Посты",v:String(d.posts),onClick:()=>{}},{k:"Документы",v:String(d.docs),onClick:()=>this.setState({detTab:"passport"})},{k:"Схема объекта",v:d.hasScheme?"Есть":"Нет",onClick:()=>{}}]:[],
+      dSectors:d?this.seedSectors(d).map(sec=>({...sec,onClick:()=>{}})):[],
+      dReadiness:d?[{k:"Основные сведения",v:"Заполнено",st:"color:#15803d"},{k:"Секторы",v:"Заполнено",st:"color:#15803d"},{k:"Посты",v:d.posts>0?"Заполнено":"Не заполнено",st:d.posts>0?"color:#15803d":"color:#b91c1c"},{k:"Схемы",v:d.hasScheme?"Заполнено":"Частично",st:d.hasScheme?"color:#15803d":"color:#b45309"},{k:"Чек-лист",v:d.fillPct>80?"Заполнено":"Частично",st:d.fillPct>80?"color:#15803d":"color:#b45309"},{k:"Инструкции постов",v:d.fillPct>85?"Заполнено":"Частично",st:d.fillPct>85?"color:#15803d":"color:#b45309"},{k:"Документы",v:d.docs>3?"Заполнено":"Частично",st:d.docs>3?"color:#15803d":"color:#b45309"}]:[],
+      dPeople:d?[{initials:(d.resp||"—").split(" ").map(p=>p[0]).join("").slice(0,2),name:d.resp,role:"Старший объекта"},{initials:"РД",name:"Резервный старший (не назначен)",role:"Резерв"}]:[],
+      dIssuesBreak:d?[{k:"Критических",v:String(d.critIssues),st:d.critIssues?"color:#b91c1c":""},{k:"Открытых всего",v:String(d.openIssues),st:""},{k:"Устранено за месяц",v:"4",st:"color:#15803d"}]:[],
+      dGoIssues:()=>this.flash("Переход к полному списку замечаний по объекту"),
+      dTimeline:d?[{d:d.om?d.om.date.split(",")[0]:"—",t:d.om?d.om.name:"Мероприятий не запланировано"},{d:"28.07",t:"Плановая проверка объекта"},{d:"12.01",t:"Плановая актуализация паспорта"}]:[],
+      dHasMissing:!!(d&&d.missing&&d.missing.length), dMissing:d?(d.missing||[]):[],
+      dSchemeId:d?"scheme-"+d.id:"scheme-none", dMapId:d?"map-"+d.id:"map-none",
+      dPhotoIds:d?[1,2,3,4,5].map(n=>"photo-"+d.id+"-"+n):[],
+      dPassSections:passSections(d), dVersions:versionsFor(d),
+      dViewPassport:()=>this.flash("Открыт просмотр паспорта объекта"),
+      dCompare:()=>this.flash("Открыт экран сравнения версий паспорта"),
+      dJournal:d?[...(s.journal[d.id]||[]),...this.seedJournal(d)]:[],
+      detTabs:[["info","Сведения"],["passport","Паспорт"],["log","Журнал действий"]].map(([id,label])=>({label,st:tabSt(detTab===id),onClick:()=>this.setState({detTab:id})})),
+      detInfo:detTab==="info", detPass:detTab==="passport", detLog:detTab==="log",
+      back:()=>this.setState({selId:null,menuFor:null}),
+      dEdit:()=>{if(d){this.log(d.id,"Открыто редактирование сведений об объекте");this.flash("Редактирование сведений: изменения будут сохранены в журнале объекта");}},
+      dExport:()=>{if(d){this.flash("Экспорт паспорта объекта «"+d.name+"» подготовлен");}},
+      dNewVersion:()=>{if(d){this.log(d.id,"Создан черновик новой версии паспорта");this.flash("Черновик новой версии паспорта создан");this.setState({detTab:"passport"});}},
+      dArchive:()=>{if(d){this.setState(st=>({archived:{...st.archived,[d.id]:true}}));this.log(d.id,"Объект переведён в архив");this.flash("Объект «"+d.name+"» переведён в архив");}},
+      addOpen:s.addOpen, openAdd:()=>this.setState({addOpen:true}), closeAdd:()=>this.setState({addOpen:false}),
+      stop:(e)=>e.stopPropagation(),
+      addName:s.addName,onAddName:(e)=>this.setState({addName:e.target.value}),
+      addType:s.addType,onAddType:(e)=>this.setState({addType:e.target.value}),addTypeOptions:this.typeOptions,
+      addAddr:s.addAddr,onAddAddr:(e)=>this.setState({addAddr:e.target.value}),
+      addResp:s.addResp,onAddResp:(e)=>this.setState({addResp:e.target.value}),
+      saveAdd:()=>{
+        const name=s.addName.trim(); if(!name){this.flash("Укажите наименование объекта");return;}
+        const id="obn"+Date.now()%100000;
+        const o={id,name,type:s.addType,addr:s.addAddr.trim()||"—",city:/астана/i.test(s.addAddr)?"г. Астана":/алматы/i.test(s.addAddr)?"г. Алматы":"—",
+          regNo:"ОБ-2026-0"+(300+s.added.length),resp:s.addResp.trim()||"—",sectors:0,posts:0,passport:"Не заполнен",fillPct:5,version:"v0",updated:"—",status:"Действующий",hasScheme:false,docs:0,missing:["Паспорт не заполнен","Схема объекта отсутствует"],critIssues:0,openIssues:0,om:null};
+        this.setState(st=>({added:[...st.added,o],addOpen:false,addName:"",addAddr:"",addResp:""}));
+        this.log(id,"Объект создан и зарегистрирован в реестре");
+        this.flash("Объект «"+name+"» добавлен в реестр");
+      },
+      hasFlash:!!s.flash, flash:s.flash
+    };
+  }
+}
+
+</script>
+</body>
+</html>

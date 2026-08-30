@@ -1,0 +1,24 @@
+<div style="background:var(--surface-1);border-radius:12px;padding:1.25rem">
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1.25rem 1.5rem">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+<p style="font-weight:500;font-size:16px;margin:0">Согласование расстановки · версия 3</p>
+<span style="background:#E6F1FB;color:#0C447C;font-size:12px;padding:3px 10px;border-radius:6px">На согласовании</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px">
+<div style="background:var(--surface-1);border-radius:8px;padding:10px"><p style="font-size:12px;color:var(--text-muted);margin:0">Всего назначено</p><p style="font-size:22px;font-weight:500;margin:0">186</p></div>
+<div style="background:var(--surface-1);border-radius:8px;padding:10px"><p style="font-size:12px;color:var(--text-muted);margin:0">Конфликтов / override</p><p style="font-size:22px;font-weight:500;margin:0;color:#854F0B">2 / 1</p></div>
+<div style="background:var(--surface-1);border-radius:8px;padding:10px"><p style="font-size:12px;color:var(--text-muted);margin:0">Возвратов ранее</p><p style="font-size:22px;font-weight:500;margin:0">1</p></div>
+</div>
+<p style="font-size:13px;color:var(--text-secondary);margin:0 0 6px">Конфликты версии (ops_conflicts) — read-only</p>
+<table style="width:100%;font-size:13px;table-layout:fixed">
+<tr style="color:var(--text-muted);text-align:left"><th style="font-weight:400">Сотрудник</th><th style="font-weight:400">Тип</th><th style="font-weight:400;width:90px">Severity</th><th style="font-weight:400">Override</th></tr>
+<tr><td>Арман Т.</td><td>REST_AFTER_DUTY</td><td>WARNING</td><td>да — «усиление, нет замены»</td></tr>
+<tr><td>Ерлан С.</td><td>DOUBLE_ASSIGNMENT</td><td>WARNING</td><td>нет</td></tr>
+</table>
+<label style="font-size:13px;color:var(--text-secondary);display:block;margin-top:12px">Замечание при возврате</label>
+<textarea style="width:100%;min-height:40px;font-size:13px" placeholder="Поменять сотрудника на маршруте, усилить внешний сектор..."></textarea>
+<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px">
+<button onclick="sendPrompt('Что происходит при возврате на доработку (VX 12.3): куда пишется замечание?')">Вернуть на доработку ↗</button>
+<button style="background:var(--fill-accent);color:var(--on-accent);border:none" onclick="sendPrompt('Что фиксируется при подписании ЭЦП: номер, approval_payload_hash, блокировка (VX 12.4)?')"><i class="ti ti-lock" aria-hidden="true" style="font-size:15px;vertical-align:-2px"></i> Подписать ЭЦП ↗</button>
+</div>
+</div></div>

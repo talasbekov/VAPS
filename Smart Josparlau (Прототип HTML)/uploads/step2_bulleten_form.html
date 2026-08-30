@@ -1,0 +1,31 @@
+<div style="background:var(--surface-1);border-radius:12px;padding:1.25rem">
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1.25rem 1.5rem">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+<p style="font-weight:500;font-size:16px;margin:0">Информационный бюллетень · ОМ-2026-041</p>
+<span style="background:#F1EFE8;color:#444441;font-size:12px;padding:3px 10px;border-radius:6px">DRAFT → BULLETIN_CREATED</span>
+</div>
+<div style="font-size:13px">
+<label style="color:var(--text-secondary)">Краткое описание</label>
+<textarea style="width:100%;min-height:52px">Международный экономический форум, ~2000 участников, 4 охраняемых лица...</textarea>
+<label style="color:var(--text-secondary);display:block;margin-top:10px">Первичные задачи</label>
+<textarea style="width:100%;min-height:40px">Рекогносцировка до 05.07, расчёты направлений до 10.07</textarea>
+</div>
+<p style="font-size:13px;color:var(--text-secondary);margin:12px 0 6px">Задействованные направления (responsible_units)</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<span style="background:#EEEDFE;color:#3C3489;font-size:12px;padding:4px 10px;border-radius:6px">ПДТА</span>
+<span style="background:#EEEDFE;color:#3C3489;font-size:12px;padding:4px 10px;border-radius:6px">Мерген</span>
+<span style="background:#EEEDFE;color:#3C3489;font-size:12px;padding:4px 10px;border-radius:6px">БВС</span>
+<span style="background:#EEEDFE;color:#3C3489;font-size:12px;padding:4px 10px;border-radius:6px">Наружный сектор</span>
+<span style="background:#EEEDFE;color:#3C3489;font-size:12px;padding:4px 10px;border-radius:6px">Внутренний сектор</span>
+<button style="font-size:12px;padding:4px 10px">+ добавить</button>
+</div>
+<p style="font-size:13px;color:var(--text-secondary);margin:12px 0 6px">Документы к подготовке (document_list) · Сроки (deadlines)</p>
+<table style="width:100%;font-size:13px;table-layout:fixed">
+<tr style="color:var(--text-muted)"><td>Документ</td><td>Ответственный</td><td style="width:90px">Срок</td></tr>
+<tr><td>Расчёт сил и средств</td><td>все направления</td><td>10.07</td></tr>
+<tr><td>Схема постов</td><td>старший объекта</td><td>12.07</td></tr>
+</table>
+<div style="display:flex;justify-content:flex-end;margin-top:14px">
+<button style="background:var(--fill-accent);color:var(--on-accent);border:none" onclick="sendPrompt('Какие уведомления уходят направлениям после создания бюллетеня?')">Создать бюллетень ↗</button>
+</div>
+</div></div>
