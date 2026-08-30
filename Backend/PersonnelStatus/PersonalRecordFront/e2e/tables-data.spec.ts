@@ -5,7 +5,8 @@
  * выглядят. До правки:
  *
  * 1. ручка штатки не клала в `current_status` даты, хотя они есть в модели, —
- *    «Последнее обновление» и «Следующее обновление» печатали «Не обновлено» и
+ *    «Обновлён» и «Следующий» (до №331 — «Последнее обновление» и
+ *    «Следующее обновление») печатали «Не обновлено» и
  *    «Не указано» во ВСЕХ строках, 362 px на две колонки без единого бита;
  * 2. карточка сотрудника подставляла вместо отсутствующей даты СЕГОДНЯШНЕЕ
  *    число — колонка «Дата найма» показывала одну дату у всех, а «стаж
@@ -258,7 +259,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       const table = document.querySelector('table')
       if (table === null) return []
       const heads = [...table.querySelectorAll('thead th')]
-      const index = heads.findIndex((th) => th.textContent?.trim() === 'Следующее обновление')
+      const index = heads.findIndex((th) => th.textContent?.trim() === 'Следующий')
       return [...table.querySelectorAll('tbody tr')].map((row) => ({
         text: (row.children[index]?.textContent ?? '').trim(),
         marked: getComputedStyle(row).backgroundColor === 'rgb(254, 242, 242)',

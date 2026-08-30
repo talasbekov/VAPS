@@ -1811,8 +1811,13 @@ class ApiClient {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`API request failed: ${response.status}`, errorText);
-        throw new Error(
-          `HTTP error! status: ${response.status} - ${errorText}`
+        // ApiHttpError, а не безымянная Error (Plane №339): по коду
+        // отличают «области нет» (400) от поломки, и на этом стоит запрет
+        // повтора 4xx — без него react-query переспрашивал трижды, и один
+        // отказ печатался в консоли четырьмя строками.
+        throw new ApiHttpError(
+          response.status,
+          staffErrorMessage(errorText, response.status)
         );
       }
 
