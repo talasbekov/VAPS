@@ -1436,7 +1436,14 @@ class ApiClient {
       const response = await fetch(url, { headers });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // ApiHttpError, а не безымянная Error (Plane №329): по коду отличают
+        // «нет права» от поломки — на этом стоит и запрет повтора 4xx в
+        // `retryUnlessClientError`, и текст причины вместо общего «HTTP error».
+        const errorText = await response.text();
+        throw new ApiHttpError(
+          response.status,
+          staffErrorMessage(errorText, response.status)
+        );
       }
 
       const data = await response.json();
@@ -1481,7 +1488,14 @@ class ApiClient {
       const response = await fetch(url, { headers });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // ApiHttpError, а не безымянная Error (Plane №329): по коду отличают
+        // «нет права» от поломки — на этом стоит и запрет повтора 4xx в
+        // `retryUnlessClientError`, и текст причины вместо общего «HTTP error».
+        const errorText = await response.text();
+        throw new ApiHttpError(
+          response.status,
+          staffErrorMessage(errorText, response.status)
+        );
       }
 
       const data = await response.json();

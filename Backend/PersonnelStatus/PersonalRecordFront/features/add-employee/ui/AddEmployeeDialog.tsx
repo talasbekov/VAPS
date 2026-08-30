@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Save, X, AlertTriangle } from "lucide-react";
+import { ApiHttpError } from "@/lib/api";
 import { usePositions } from "@/hooks/use-positions";
 import { useRanks } from "@/hooks/use-ranks";
 import { useDivisionsTree } from "@/hooks/use-divisions-tree";
@@ -49,6 +50,25 @@ interface AddEmployeeDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+/** Почему справочники не загрузились — словами, а не кодом (Plane №329).
+ *
+ * 403 у `/api/dictionaries/*` означает отсутствие права `dictionary.view` — у
+ * ролевых учёток раздела его нет вовсе. Прежде и это, и упавший сервер
+ * печатались одной строкой «Ошибка загрузки справочников», и человек не мог
+ * понять, ждать ему или идти к администратору.
+ */
+function dictionaryFailureText(errors: unknown[]): string | null {
+  const failures = errors.filter((error) => error !== null && error !== undefined);
+  if (failures.length === 0) return null;
+  const forbidden = failures.some(
+    (error) => error instanceof ApiHttpError && error.status === 403
+  );
+  if (forbidden) {
+    return "Нет права на чтение справочников должностей и званий — заведение сотрудника недоступно. Право выдаёт администратор системы.";
+  }
+  return "Справочники не загрузились: попробуйте открыть диалог ещё раз.";
+}
+
 export function AddEmployeeDialog({
   open,
   onOpenChange,
@@ -65,18 +85,22 @@ export function AddEmployeeDialog({
     formState: { errors, isSubmitting },
   } = useZodForm(employeeFormSchema, EMPTY_EMPLOYEE_FORM);
 
-  // Используем React Query для загрузки справочников
+  // Используем React Query для загрузки справочников. ТОЛЬКО при открытом
+  // диалоге (Plane №329): диалог смонтирован вместе со страницей /employees, и
+  // без `open` должности и звания запрашивались при каждом заходе на экран —
+  // у ролевых учёток раздела это давало 403 в консоль за данные, которые никто
+  // не открывал. Тот же приём, что у состава в EditStatusDialog (№234).
   const {
     data: positions = [],
     isLoading: loadingPositions,
     error: positionsError,
-  } = usePositions();
+  } = usePositions(open);
 
   const {
     data: ranks = [],
     isLoading: loadingRanks,
     error: ranksError,
-  } = useRanks();
+  } = useRanks(open);
 
   const {
     data: divisionsTree,
@@ -87,9 +111,15 @@ export function AddEmployeeDialog({
   const loadingDictionaries =
     loadingPositions || loadingRanks || loadingDivisions;
   // Отказ справочника — не ошибка формы: чинить его человеку нечем, но и
-  // выбрать подразделение он не сможет, поэтому сказать надо.
-  const dictionariesFailed =
-    positionsError !== null || ranksError !== null || divisionsError !== null;
+  // выбрать подразделение он не сможет, поэтому сказать надо. НАЗВАВ ПРИЧИНУ
+  // (Plane №329): «ошибка загрузки» одинаково описывает упавший сервер и
+  // отсутствующее право `dictionary.view`, а это разные разговоры с разными
+  // людьми.
+  const dictionariesError = dictionaryFailureText([
+    positionsError,
+    ranksError,
+    divisionsError,
+  ]);
 
   // Преобразуем дерево подразделений в плоский список
   const divisions = useMemo(() => {
@@ -372,12 +402,12 @@ export function AddEmployeeDialog({
 
           {/* То, что не относится к конкретному полю: отказ справочников и
               отказ сервера при сохранении. */}
-          {(dictionariesFailed || errors.root !== undefined) && (
+          {(dictionariesError !== null || errors.root !== undefined) && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 <ul className="list-disc list-inside space-y-1">
-                  {dictionariesFailed && <li>Ошибка загрузки справочников</li>}
+                  {dictionariesError !== null && <li>{dictionariesError}</li>}
                   {errors.root?.message !== undefined && (
                     <li>{errors.root.message}</li>
                   )}

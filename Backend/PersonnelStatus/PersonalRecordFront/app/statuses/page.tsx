@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Download, Upload, RefreshCw } from "lucide-react"
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice"
-import { isDirectorateForbidden } from "@/hooks/use-staff-units-by-directorate"
+import { directorateDenial } from "@/hooks/use-staff-units-by-directorate"
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page"
 import { useQueryClient } from "@tanstack/react-query"
 import { SecondmentRequestsDialog } from "@/features/secondment-requests/ui/SecondmentRequestsDialog";
@@ -65,10 +65,13 @@ export default function StatusesPage() {
 
   // Все три вкладки и счётчики читают ОДИН запрос directorate: закрыта ручка —
   // закрыт экран. Показывать шапку с нулями было бы враньём о подразделении.
-  if (isDirectorateForbidden(queryError)) {
+  // Причина отказа передаётся заглушке: 403 и 400 чинятся разными людьми
+  // (Plane №329).
+  const denial = directorateDenial(queryError)
+  if (denial) {
     return (
       <DashboardLayout>
-        <DirectorateAccessNotice reason={queryError.message} />
+        <DirectorateAccessNotice denial={denial} reason={error} />
       </DashboardLayout>
     )
   }

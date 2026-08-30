@@ -38,7 +38,7 @@ import {
 import { useAuth, PermissionGate } from "@/lib/auth";
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice";
 import {
-  isDirectorateForbidden,
+  directorateDenial,
   useStaffUnitsByDirectorate,
 } from "@/hooks/use-staff-units-by-directorate";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
@@ -611,10 +611,13 @@ function EmployeesScreen() {
   // Список, карточки, фильтр отделов и счётчики растут из ОДНОГО запроса
   // directorate. Закрыта ручка — закрывается вся страница: иначе на экране
   // остались бы нули и пустые фильтры без объяснения причины.
-  if (isDirectorateForbidden(queryError)) {
+  // Причина отказа передаётся заглушке: 403 «нет права» и 400 «учётка не
+  // привязана к подразделению» чинятся разными людьми (Plane №329).
+  const denial = directorateDenial(queryError);
+  if (denial) {
     return (
       <DashboardLayout>
-        <DirectorateAccessNotice reason={queryError.message} />
+        <DirectorateAccessNotice denial={denial} reason={error} />
       </DashboardLayout>
     );
   }
