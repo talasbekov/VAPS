@@ -237,7 +237,12 @@ const buildOrgStructure = (
       ...stats.departments.map((row) => row.department_id),
       ...stats.directorates.map((row) => row.directorate_id),
       ...stats.divisions.map((row) => row.division_id),
-      stats.scope_division.id,
+      // Узла области может не быть вовсе (Plane №339): у роли раздела с
+      // несколькими грантами одного подразделения, описывающего область, не
+      // существует. Раньше это поле было обязательным, и чтение `.id` у null
+      // роняло весь дашборд — поймано обходом ролевых учёток, а не типами:
+      // тип обещал объект.
+      ...(stats.scope_division === null ? [] : [stats.scope_division.id]),
     ]);
     const strays = new Map<number, { name: string; people: StaffUnitEmployee[] }>();
     normalizedUnits.forEach((unit) => {
@@ -261,9 +266,14 @@ const buildOrgStructure = (
   // Голова доски — подразделение, в области которого работает пользователь.
   // Прежде её угадывали по «level <= 3» и подписи должности; теперь её
   // называет сам сервер (`scope_division`).
+  //
+  // Область БЕЗ единого узла (Plane №339) головы не имеет: показывать вместо
+  // неё первое попавшееся подразделение значило бы вернуть ту самую догадку,
+  // от которой уходили. Доска при этом остаётся полной — управления и отделы
+  // собираются ниже независимо от головы.
   let departmentHead: StaffUnit | null = null;
-  if (stats) {
-    const scope = stats.scope_division;
+  const scope = stats?.scope_division ?? null;
+  if (scope !== null) {
     departmentHead = asUnit(
       scope.id,
       scope.name,

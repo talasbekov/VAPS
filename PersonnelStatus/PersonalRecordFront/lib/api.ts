@@ -175,11 +175,20 @@ export interface StaffUnitStatisticsSummary {
 }
 
 export interface StaffUnitStatistics {
+  /**
+   * Подразделение, ОДНИМ КОТОРЫМ описывается область актора, либо `null`.
+   *
+   * `null` приходит, когда область накрывает несколько поддеревьев: так бывает
+   * у роли раздела с двумя грантами и у права без области (Plane №339).
+   * Назвать такую область первым попавшимся узлом значило бы соврать — тот же
+   * довод, что у `division` в ручке `directorate` после №304. Читатель обязан
+   * пережить `null`: голова доски тогда не показывается, а строки не теряются.
+   */
   scope_division: {
     id: number;
     name: string;
     division_type: string;
-  };
+  } | null;
   summary: StaffUnitStatisticsSummary;
   departments: Array<{
     department_id: number;
@@ -1637,8 +1646,12 @@ class ApiClient {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`API request failed: ${response.status}`, errorText);
-        throw new Error(
-          `HTTP error! status: ${response.status} - ${errorText}`
+        // ApiHttpError, а не безымянная Error (Plane №340): «учётка не
+        // привязана к сотруднику» — ШТАТНОЕ состояние служебной учётки, и
+        // отличить его от поломки можно только по коду ответа.
+        throw new ApiHttpError(
+          response.status,
+          staffErrorMessage(errorText, response.status)
         );
       }
 
