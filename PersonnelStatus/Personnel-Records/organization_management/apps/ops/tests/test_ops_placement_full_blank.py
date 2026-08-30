@@ -170,3 +170,101 @@ def test_an_unknown_event_is_refused_by_code(event):
         registry.render("placement_full", event_code="НЕТ-ТАКОГО", fmt="docx")
 
     assert raised.value.http_status == 404
+
+
+# ── Ш-1 плана №242: секция места читается из бланка ──────────────────────────
+
+
+def test_sections_are_read_from_the_template_not_guessed():
+    """Каждое место знает СВОЮ секцию, а не первую в документе.
+
+    Красная проба к Plane №242. Одной роли месту не хватает: «Көшпелі
+    күзетінің жауаптысы» есть у восьми выездных охран подряд, и раскладка по
+    роли ставила первого назначенного в первую охрану наугад.
+
+    Проверяются РАЗНЫЕ секции у мест из разных разделов — мутация «брать
+    первый заголовок документа» проходит проверку «секция есть» и краснит
+    именно здесь.
+    """
+    sections = blank.placeholder_sections()
+
+    assert sections["person_2"] == "ULAN_BATOR_KOSHPELI_KUZET"
+    assert sections["person_19"] == "TASHKENT_KOSHPELI_KUZET"
+    assert sections["person_34"] == "EREVAN_KOSHPELI_KUZET"
+    assert (
+        sections["person_2"] != sections["person_19"] != sections["person_34"]
+    ), "секции разных выездных охран слились в одну"
+
+
+def test_a_place_above_the_first_heading_has_no_section():
+    """Место ВЫШЕ первого заголовка секции не получает её выдуманной.
+
+    `person_1` — ответственный за ВСЮ выездную охрану, он стоит до первого
+    раздела. Приписать ему «Ұлан-батор» значило бы вернуть ту самую догадку,
+    от которой уходили в №195: документ назвал бы человека ответственным за
+    один кортеж вместо всех.
+    """
+    assert "person_1" not in blank.placeholder_sections()
+
+
+def test_every_other_place_belongs_to_a_section():
+    """Правило заголовка накрывает ВЕСЬ бланк, а не удобную его часть.
+
+    Числа замерены на образце и стоят здесь нарочно: если следующий образец
+    заказчика придёт с разделом другой формы, проба скажет об этом сразу, а не
+    оставит десяток мест молча пустыми.
+    """
+    places = set(blank.template_placeholders())
+    people = {name for name in places if name.startswith("person_")}
+    with_section = set(blank.placeholder_sections())
+
+    assert len(people) == 1027
+    assert people - with_section == {"person_1"}
+
+
+def test_sections_are_deduplicated_by_code():
+    """Одна подпись — одна секция, сколько бы раз она ни встретилась.
+
+    «Сапар» объектісі стоит в файле трижды: мероприятие заходит на объект по
+    разу на каждый день. Это ОДНА секция, и в справочник (Ш-2) она обязана
+    попасть один раз — иначе человек выбирал бы из трёх одинаковых строк.
+    """
+    sections = blank.template_sections()
+    codes = [entry["code"] for entry in sections]
+
+    assert len(codes) == len(set(codes)), "в списке секций есть дубли по коду"
+    assert "SAPAR_OBEKTISI" in codes or any("SAPAR" in code for code in codes)
+
+
+def test_section_code_does_not_depend_on_the_order_in_the_file():
+    """Код секции выводится из ПОДПИСИ, а не из её номера в документе.
+
+    Бланк переснимается при каждом новом образце заказчика. Код, зависящий от
+    порядка, при вставке раздела в середину молча переехал бы на чужую секцию —
+    и назначения людей, сделанные до пересъёмки, указали бы не туда.
+    """
+    first = blank._section_code("«Ұлан-батор» көшпелі күзет")
+    same = blank._section_code("«Ұлан-батор» көшпелі күзет")
+    other = blank._section_code("«Ташкент» көшпелі күзет")
+
+    assert first == same
+    assert first != other
+
+
+def test_long_prose_with_quotes_is_not_a_heading():
+    """Кавычки в прозе не делают абзац заголовком.
+
+    В бланке есть абзацы вроде «ҚК ӘП (жауынгерлік топ) – 5 қызм. … „Алмаз-1“,
+    ІІМ …» — длинные перечисления сил, где кавычки стоят как обычная
+    пунктуация. Прими их за заголовки — и половина мест уехала бы в секции,
+    которых не существует.
+    """
+    prose = (
+        "ҚК ӘП (жауынгерлік топ) – 5 қызм. Арлан тәулікте, ҚМ ҰҰА қарсы "
+        "іс-қимылдың құрылғысы 1 бірлік «Алмаз-1», ІІМ АМБ мерген – 1 жұп"
+    )
+    lead_in = "Жедел жасақтың іс-қимылдарын үйлестіруді жедел штаб «Балхаш» жүзеге асырады:"
+
+    assert not blank._is_section_heading(prose)
+    assert not blank._is_section_heading(lead_in)
+    assert blank._is_section_heading("«Ұлан-батор» көшпелі күзет")
