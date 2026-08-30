@@ -45,6 +45,10 @@ from organization_management.apps.statuses.selectors import (
 #: что показывают они, и второе имя для одного и того же разошлось бы с ними
 #: при первой же раздаче прав.
 _OPS_READ_STATUS_PERMISSION = 'status.view'
+#: Право раздела на чтение ОРГСТРУКТУРЫ. Ручку статистики зовёт и экран
+#: организации, и требовать от его читателя право на статусы значило бы
+#: закрыть ему счётчики его же дерева (Plane №339).
+_OPS_READ_ORGSTRUCTURE_PERMISSION = 'orgstructure.view'
 
 
 def _as_date(value):
@@ -1585,8 +1589,13 @@ def _has_ops_status_view(request):
     return '*' in perms or _OPS_READ_STATUS_PERMISSION in perms
 
 
-def _ops_scope_divisions(request):
-    """Область подразделений, которую даёт роль раздела (Plane №325).
+def _ops_scope_divisions(request, permission_codes=(_OPS_READ_STATUS_PERMISSION,)):
+    """Область подразделений, которую дают роли раздела (Plane №325, №339).
+
+    Прав может быть НЕСКОЛЬКО: ручку статистики зовут и экраны расхода, и
+    экран оргструктуры, и область актора — объединение областей всех прав,
+    которыми ему эта ручка открыта. Одно право по умолчанию — чтобы читатели
+    №325 остались прежними.
 
     `None` от резолвера означает «право без скоупа» (в т.ч. wildcard ADMIN) —
     разворачивается во ВСЁ дерево, как это делает `ops.daily`. Пустое
@@ -1600,11 +1609,14 @@ def _ops_scope_divisions(request):
     actor_id = resolve_actor_id(request)
     if actor_id is None:
         return Division.objects.none()
-    visible = PermissionService.visible_division_ids(
-        actor_id, _OPS_READ_STATUS_PERMISSION
-    )
-    if visible is None:
-        return Division.objects.all()
+    visible = set()
+    for code in permission_codes:
+        granted = PermissionService.visible_division_ids(actor_id, code)
+        # None — грант без области (в т.ч. wildcard): накрывает всё дерево, и
+        # объединять его с чем-либо дальше незачем.
+        if granted is None:
+            return Division.objects.all()
+        visible |= set(granted)
     if not visible:
         return Division.objects.none()
     # Своё И потомки: область, выданная на департамент, обязана накрыть его
@@ -1650,16 +1662,25 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
         """
         user = request.user
 
-        # Определяем область видимости пользователя
-        scope_division = self._get_user_scope_division(user)
+        # ── Чья область (Plane №339) ──────────────────────────────────────
+        #
+        # ДВА КАТАЛОГА РОЛЕЙ, И ОБА ДАЮТ ОБЛАСТЬ — то же решение заказчика, что
+        # в №325, применённое последовательно. Обход всех 28 ролевых учёток
+        # 30.08.2026 показал: эта ручка отвечала 400 «Не удалось определить
+        # область видимости пользователя» КАЖДОЙ из них, на ПЯТИ экранах
+        # (`/dashboard`, `/employees` обоих видов, `/statuses`, `/organization`)
+        # — 140 неудачных запросов за один обход. Причина та же: кадровый
+        # резолвер читает `role_info`, а у ролевой учётки раздела кадровая роль
+        # ROLE_1 и области у неё нет.
+        #
+        # Кадровый путь НЕ ТРОНУТ: у кого он даёт область, поведение прежнее,
+        # строка в строку. Область раздела — запасной ключ, а не подмена.
+        divisions_in_scope, scope_division = self._statistics_scope(request, user)
 
-        if not scope_division:
+        if divisions_in_scope is None:
             return Response({
                 'detail': 'Не удалось определить область видимости пользователя'
             }, status=status.HTTP_400_BAD_REQUEST)
-
-        # Получаем все подразделения в области видимости (включая само подразделение)
-        divisions_in_scope = scope_division.get_descendants(include_self=True)
         division_ids = list(divisions_in_scope.values_list('id', flat=True))
 
         # Подсчет по типам подразделений
@@ -1764,7 +1785,13 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
             })
 
         return Response({
-            'scope_division': {
+            # `null`, когда область описывается НЕ ОДНИМ узлом (роль раздела
+            # может видеть несколько поддеревьев). Тот же приём и тот же довод,
+            # что у `division` в ручке `directorate` после №304: назвать такую
+            # область первым попавшимся подразделением значило бы соврать, а
+            # читатель обязан пережить `null` — он и переживает, поле
+            # необязательное.
+            'scope_division': None if scope_division is None else {
                 'id': scope_division.id,
                 'name': scope_division.name,
                 'division_type': scope_division.division_type,
@@ -1781,6 +1808,54 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
             'directorates': directorates_stats,
             'divisions': divisions_stats,
         })
+
+    def _statistics_scope(self, request, user):
+        """Подразделения статистики и узел, ОДНИМ которым область описывается.
+
+        Возвращает пару `(выборка, узел|None)`. Первое `None` — области нет
+        вовсе (ответ 400). Второе `None` — область есть, но одного узла,
+        который её называет, не существует.
+
+        Порядок ровно тот же, что у ручки `directorate` после №325: сперва
+        кадровая область, затем область РАЗДЕЛА. Права раздела принимаются два
+        — `status.view` и `orgstructure.view`: ручку зовут и экраны расхода, и
+        экран оргструктуры, и требовать от читателя оргструктуры право на
+        статусы значило бы закрыть ему счётчики его же дерева.
+        """
+        scope_division = self._get_user_scope_division(user)
+        if scope_division:
+            return scope_division.get_descendants(include_self=True), scope_division
+
+        from organization_management.apps.operations.api.permissions import (
+            effective_permissions,
+        )
+
+        try:
+            perms = effective_permissions(request)
+        except Exception:
+            perms = set()
+        allowed = (
+            '*' in perms
+            or _OPS_READ_STATUS_PERMISSION in perms
+            or _OPS_READ_ORGSTRUCTURE_PERMISSION in perms
+        )
+        if not allowed:
+            return None, None
+        divisions = _ops_scope_divisions(
+            request,
+            permission_codes=(
+                _OPS_READ_STATUS_PERMISSION,
+                _OPS_READ_ORGSTRUCTURE_PERMISSION,
+            ),
+        )
+        # Пустая область — это НЕ «области нет»: право есть, подразделений под
+        # ним нет. Ответ 400 соврал бы про причину, которую №329 как раз
+        # научился отличать, поэтому отдаём пустую выборку и честные нули.
+        #
+        # Второе значение — `None`: область роли раздела может накрывать
+        # несколько поддеревьев, и ОДНОГО подразделения, её описывающего, не
+        # существует.
+        return divisions, None
 
     def _get_user_scope_division(self, user):
         """Определяет область видимости пользователя"""
