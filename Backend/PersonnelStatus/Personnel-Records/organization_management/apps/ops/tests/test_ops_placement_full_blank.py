@@ -124,20 +124,29 @@ def test_people_stand_at_the_places_of_their_role(event):
         dictionary_code="PLACEMENT_ROLES", code="MOTORCADE_LEAD",
         label="Ответственный за кортеж (Кортежге жауапты)", is_active=True,
     )
+    # 🔴 ПРОБА ДОПОЛНЕНА СЕКЦИЕЙ ОСОЗНАННО (Plane №242, Ш-6). До неё людям
+    # хватало роли: раскладка шла по ней одной. Теперь ключ места — ПАРА
+    # (роль, секция), и назначение без секции в место с секцией не встаёт
+    # намеренно. Секция берётся у САМОГО МЕСТА, а не выдумывается: проба
+    # проверяет крест-накрест по ролям, и подставлять чужую секцию значило бы
+    # менять её предмет.
+    roles = blank.placeholder_roles()
+    sections = blank.placeholder_sections()
+    vip_places = [name for name, code in roles.items() if code == "DRIVER_VIP"]
+    motorcade_places = [name for name, code in roles.items() if code == "MOTORCADE_LEAD"]
+    assert vip_places and motorcade_places, "в бланке не нашлось мест этих ролей — проба вакуумна"
+
     event.placement_assignments = [
         {"id": "a-1", "postId": "p1", "employeeId": "1",
-         "employeeName": "Кортежев К.", "roleCode": "MOTORCADE_LEAD"},
+         "employeeName": "Кортежев К.", "roleCode": "MOTORCADE_LEAD",
+         "sectionCode": sections.get(motorcade_places[0])},
         {"id": "a-2", "postId": "p2", "employeeId": "2",
-         "employeeName": "Випов В.", "roleCode": "DRIVER_VIP"},
+         "employeeName": "Випов В.", "roleCode": "DRIVER_VIP",
+         "sectionCode": sections.get(vip_places[0])},
     ]
     event.save(update_fields=["placement_assignments"])
 
     values = blank.placement_full_values(event)
-    roles = blank.placeholder_roles()
-
-    vip_places = [name for name, code in roles.items() if code == "DRIVER_VIP"]
-    motorcade_places = [name for name, code in roles.items() if code == "MOTORCADE_LEAD"]
-    assert vip_places and motorcade_places, "в бланке не нашлось мест этих ролей — проба вакуумна"
 
     assert values[vip_places[0]] == "Випов В."
     assert values[motorcade_places[0]] == "Кортежев К."
@@ -268,3 +277,106 @@ def test_long_prose_with_quotes_is_not_a_heading():
     assert not blank._is_section_heading(prose)
     assert not blank._is_section_heading(lead_in)
     assert blank._is_section_heading("«Ұлан-батор» көшпелі күзет")
+
+
+# ── Ш-6 плана №242: раскладка по ПАРЕ (роль, секция) ─────────────────────────
+
+
+def test_one_role_in_two_sections_goes_to_its_own_places(event):
+    """Два человека с ОДНОЙ ролью и РАЗНЫМИ секциями встают каждый в своё место.
+
+    🔴 Это и есть ответ на №242. «Көшпелі күзетінің жауаптысы» есть у восьми
+    выездных охран подряд, и раскладка по одной роли ставила первого
+    назначенного в первую охрану — то есть наугад, ровно как до №240, только
+    незаметнее: документ выглядел заполненным.
+
+    Проба берёт места ОДНОЙ роли в РАЗНЫХ секциях и требует, чтобы каждый
+    человек оказался в своей. Совпадение по порядку здесь ничего не докажет:
+    людей ставят крест-накрест — первым идёт тот, чья секция вторая.
+    """
+    from organization_management.apps.operations.models import OpsDictionaryEntry
+    from organization_management.apps.ops import documents_placement_full as blank
+
+    # Роль взята та, у которой места есть в НЕСКОЛЬКИХ секциях бланка
+    # («Кортежге жауапты» — в каждой из восьми выездных охран). Роль из одной
+    # секции сделала бы пробу вакуумной: сравнивать было бы не с чем.
+    role_code = "MOTORCADE_LEAD"
+    OpsDictionaryEntry.objects.create(
+        dictionary_code="PLACEMENT_ROLES", code=role_code,
+        label="Ответственный за кортеж (Кортежге жауапты)",
+        is_active=True,
+    )
+    # Роли читаются ПОСЛЕ заведения записи: `placeholder_roles` сверяет
+    # подписи бланка со СПРАВОЧНИКОМ, и на пустом справочнике мест не находит
+    # вовсе (первая редакция пробы упала именно так и была вакуумна).
+    roles = blank.placeholder_roles()
+    sections = blank.placeholder_sections()
+    places = [name for name, code in roles.items() if code == role_code]
+    by_section = {}
+    for name in places:
+        section = sections.get(name)
+        if section is not None and section not in by_section:
+            by_section[section] = name
+    assert len(by_section) >= 2, (
+        "в бланке нет одной роли в двух секциях — проверять №242 не на чем"
+    )
+    (first_section, first_place), (second_section, second_place) = list(
+        by_section.items()
+    )[:2]
+
+    # КРЕСТ-НАКРЕСТ: первым в списке идёт человек ВТОРОЙ секции.
+    event.placement_assignments = [
+        {"id": "s-1", "postId": "p1", "employeeId": "1",
+         "employeeName": "Второв В.", "roleCode": role_code,
+         "sectionCode": second_section},
+        {"id": "s-2", "postId": "p2", "employeeId": "2",
+         "employeeName": "Первов П.", "roleCode": role_code,
+         "sectionCode": first_section},
+    ]
+    event.save(update_fields=["placement_assignments"])
+
+    values = blank.placement_full_values(event)
+
+    assert values[first_place] == "Первов П."
+    assert values[second_place] == "Второв В."
+
+
+def test_an_assignment_without_a_section_does_not_wander_into_sections(event):
+    """Назначение БЕЗ секции не расползается по разделам бланка.
+
+    Расстановки, сделанные до №242, секции не несут. Поставь их в первое
+    попавшееся место роли — и документ снова назовёт человека ответственным за
+    чужой кортеж, только теперь молча и задним числом. Пустое место честнее:
+    оно означает «система этого не знает», как и всегда.
+    """
+    from organization_management.apps.operations.models import OpsDictionaryEntry
+    from organization_management.apps.ops import documents_placement_full as blank
+
+    # Роль взята та, у которой места есть в НЕСКОЛЬКИХ секциях бланка
+    # («Кортежге жауапты» — в каждой из восьми выездных охран). Роль из одной
+    # секции сделала бы пробу вакуумной: сравнивать было бы не с чем.
+    role_code = "MOTORCADE_LEAD"
+    OpsDictionaryEntry.objects.create(
+        dictionary_code="PLACEMENT_ROLES", code=role_code,
+        label="Ответственный за кортеж (Кортежге жауапты)",
+        is_active=True,
+    )
+    roles = blank.placeholder_roles()
+    sections = blank.placeholder_sections()
+    with_section = [
+        name for name, code in roles.items()
+        if code == role_code and sections.get(name) is not None
+    ]
+    assert with_section, "мест этой роли с секцией в бланке нет — проба вакуумна"
+
+    event.placement_assignments = [
+        {"id": "s-3", "postId": "p1", "employeeId": "1",
+         "employeeName": "Безсекциев Б.", "roleCode": role_code},
+    ]
+    event.save(update_fields=["placement_assignments"])
+
+    values = blank.placement_full_values(event)
+
+    assert {values[name] for name in with_section} == {""}, (
+        "человек без секции встал в место с секцией — раскладка снова гадает"
+    )
