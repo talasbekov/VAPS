@@ -123,6 +123,19 @@ class DivisionTreeSelector:
         return {division_id: path_of(division_id) for division_id in division_ids}
 
     @staticmethod
+    def summary_node_ids(division_ids=None) -> set:
+        """Подразделения, собирающие СУТОЧНЫЙ СВОД (Plane №326), ОДИН запрос.
+
+        Отдельный селектор, а не поле в `naming_map`: имя и путь нужны каждой
+        строке отчёта, а признак свода — только дереву светофора, и таскать
+        его через раскладку расхода значило бы платить за него везде.
+        """
+        queryset = Division.objects.filter(is_summary_node=True)
+        if division_ids is not None:
+            queryset = queryset.filter(id__in=list(division_ids))
+        return set(queryset.values_list("id", flat=True))
+
+    @staticmethod
     def all_ids() -> set:
         """Все подразделения дерева, ОДИН запрос.
 

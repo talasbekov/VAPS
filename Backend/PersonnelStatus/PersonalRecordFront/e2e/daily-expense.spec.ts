@@ -147,6 +147,8 @@ interface TreeNode {
   division_id: number
   name: string
   parent_id: number | null
+  /** Признак «собирает суточный свод» с сервера (Plane №326). */
+  is_summary_node?: boolean
 }
 
 // Дублируем правило, а не импортируем `features/daily-expense`: та же
@@ -158,6 +160,14 @@ interface TreeNode {
 // `boardDivisionIds` в своём поддереве. `null` — «не определён», нарочно
 // без угадывания.
 function resolveSummaryDivisionId(nodes: TreeNode[], boardDivisionIds: number[]): number | null {
+  // 🔴 ПРИЗНАК СЕРВЕРА ПЕРЕВЕШИВАЕТ ПРАВИЛО (Plane №326). Экран сперва
+  // смотрит на `is_summary_node`, и правило по форме дерева остаётся лишь
+  // запасным путём — для стенда, где признак ещё не проставлен. Проба обязана
+  // зеркалить это, иначе она проверяла бы поведение, которого больше нет.
+  const flagged = nodes.filter((n) => n.is_summary_node === true)
+  if (flagged.length === 1) return flagged[0].division_id
+  if (flagged.length > 1) return null
+
   const rootIds = new Set(nodes.filter((n) => n.parent_id === null).map((n) => n.division_id))
   const candidates = nodes.filter((n) => n.parent_id !== null && rootIds.has(n.parent_id as number))
   if (candidates.length === 0) return null
@@ -361,6 +371,18 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
       await expect(summary.getByText(/за какой собирать свод, система не решает за вас/)).toBeVisible()
       await expect(summary.getByRole('listitem')).toHaveCount(0)
       expect(capturedUrl, 'запрос версий ушёл, хотя узел не выбран').toBeNull()
+
+      // ПРИЗНАК СЕРВЕРА ОТМЕНЯЕТ УГАДЫВАНИЕ (Plane №326, вторая половина).
+      // Дерево приходит с полем `is_summary_node`; пока оно не проставлено ни
+      // у кого, экран падает обратно на правило по форме дерева — ровно то
+      // состояние, которое проверяется здесь. Проверяем, что поле ЕСТЬ в
+      // контракте: молча пропав, оно вернуло бы угадывание навсегда.
+      const tree = await get<{ nodes: { is_summary_node?: boolean }[] }>(
+        token, '/api/operations/traffic-light/tree/')
+      expect(
+        tree.nodes.every((node) => typeof node.is_summary_node === 'boolean'),
+        'дерево светофора перестало отдавать is_summary_node — экран снова гадает',
+      ).toBe(true)
 
       // ВЫБОР ДОВОДИТ ШАГ ЦИКЛА ДО КОНЦА — то, чего до №326 не было ни у
       // одной учётки: кнопки сборки не существовало вовсе.
