@@ -172,6 +172,14 @@ class DivisionReportRow:
     off_list: int
     # Занятость мероприятиями — СПРАВОЧНО, вне суммы колонок (Plane №243).
     event: EventInvolvement
+    #: Путь до подразделения СВЕРХУ ВНИЗ, без корня организации (Plane №327).
+    #: Одного имени не хватает: «Второй отдел» на структуре стенда встречается
+    #: пять раз, и строки записки с одинаковым именем и одинаковыми числами
+    #: читаются как дубль выгрузки. Пусто — узел лежит прямо под организацией
+    #: либо путь не запрошен (чистые тесты зовут `derive_report` без дерева).
+    #: Поле стоит ПОСЛЕДНИМ и со значением по умолчанию: у остальных полей
+    #: умолчаний нет, и вставка в середину сломала бы dataclass.
+    ancestors: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -200,6 +208,7 @@ def derive_report(
     catalog,
     division_names=None,
     attached_by_division=None,
+    division_paths=None,
 ):
     """Свести расход по подразделениям.
 
@@ -232,6 +241,7 @@ def derive_report(
     исчезли бы из расхода вообще.
     """
     names = division_names or {}
+    paths = division_paths or {}
     attached_counts = dict(attached_by_division or {})
     columns_order = catalog.columns_in_order()
     rows_by_employee = {}
@@ -301,6 +311,7 @@ def derive_report(
             DivisionReportRow(
                 division_id=division_id,
                 name=names.get(division_id, ""),
+                ancestors=tuple(paths.get(division_id, ())),
                 staff_total=staff_total,
                 list_total=list_total,
                 vacancies=vacancies,
@@ -380,9 +391,14 @@ class StrengthReportService:
         attached = SecondmentSelector.attached_counts_on(
             business_date, division_ids=division_ids
         )
-        names = DivisionTreeSelector.names_map(
-            {slot["division_id"] for slot in slot_rows} | set(attached)
-        )
+        report_divisions = {slot["division_id"] for slot in slot_rows} | set(attached)
+        # Имя И путь ОДНИМ запросом (Plane №327). Путь нужен потому, что имена
+        # уникальны лишь внутри родителя: без него записка печатает пять
+        # неразличимых «Вторых отделов» подряд. Один вызов вместо двух — чтобы
+        # не добавить отчёту седьмой запрос: их число закреплено пробой.
+        naming = DivisionTreeSelector.naming_map(report_divisions)
+        names = {did: meta["name"] for did, meta in naming.items()}
+        paths = {did: meta["ancestors"] for did, meta in naming.items()}
         result = derive_report(
             slot_rows,
             status_rows,
@@ -390,6 +406,7 @@ class StrengthReportService:
             catalog,
             division_names=names,
             attached_by_division=attached,
+            division_paths=paths,
         )
         if dismissed:
             # Слот, занятый уволенным, посчитан вакансией — арифметика сходится,
