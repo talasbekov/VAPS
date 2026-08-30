@@ -2819,6 +2819,10 @@ def placement_assignments_view(event):
                 # клиенту незачем различать «роль не назначена» и «поля не
                 # было», обе означают пустое место в бланке.
                 "roleCode": row.get("roleCode") or None,
+                # Секция бланка: у строк, заведённых до №242, ключа нет вовсе —
+                # клиенту незачем различать «секция не назначена» и «поля не
+                # было», обе означают пустое место в бланке.
+                "sectionCode": row.get("sectionCode") or None,
             }
         )
     return view
@@ -3342,6 +3346,40 @@ def _validated_placement_role(role_code):
     return code
 
 
+def _validated_placement_section(section_code):
+    """Код секции бланка: пусто либо ЖИВОЕ значение справочника (Plane №242).
+
+    ВТОРАЯ КООРДИНАТА МЕСТА. Роль отвечает «кем человек идёт», секция — «где»:
+    «Көшпелі күзетінің жауаптысы» есть у восьми выездных охран подряд, и одной
+    роли документу мало — он ставил первого назначенного в первую охрану наугад.
+
+    Правила те же, что у роли, и по тем же доводам: строкой «как пришло»
+    хранить нельзя (две записи одного раздела стали бы разными секциями), а
+    снятая секция — отказ (её убрали из справочника сознательно).
+
+    Пусто — законное состояние, а не ошибка: у расстановки, сделанной до №242,
+    секции нет вовсе, и требовать её задним числом значило бы запретить правку
+    старых мероприятий.
+    """
+    code = str(section_code or "").strip()
+    if code == "":
+        return None
+    from organization_management.apps.operations.models import OpsDictionaryEntry
+
+    exists = OpsDictionaryEntry.objects.filter(
+        dictionary_code="PLACEMENT_SECTIONS", code=code, is_active=True
+    ).exists()
+    if not exists:
+        raise _validation(
+            {
+                "sectionCode": [
+                    f"Секции бланка «{code}» нет в справочнике или она снята."
+                ]
+            }
+        )
+    return code
+
+
 @transaction.atomic
 def assign_placement(
     event_id,
@@ -3351,6 +3389,7 @@ def assign_placement(
     override,
     override_reason,
     role_code=None,
+    section_code=None,
     deputy=None,
 ):
     event = lock_event(event_id)
@@ -3422,6 +3461,10 @@ def assign_placement(
         # ошибка, а «ещё не назначено»; документ по такой строке места не
         # заполнит, и это честнее, чем поставить человека наугад.
         "roleCode": _validated_placement_role(role_code),
+        # Секция бланка (Plane №242) — рядом с ролью и по тем же правилам.
+        # Роль отвечает «кем», секция «где»: без неё восемь выездных охран
+        # неотличимы, и документ заполнялся порядком назначения.
+        "sectionCode": _validated_placement_section(section_code),
         "acknowledgedAt": None,
         # обоснование сохраняется только при реально возникшем предупреждении
         "ratingOverrideReason": None if rating_conflict is None else reason,
@@ -4068,6 +4111,11 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
         # здесь значило бы оставить место в документе пустым ровно тогда, когда
         # замену и делают: в день мероприятия.
         "roleCode": outgoing.get("roleCode"),
+        # Секция НАСЛЕДУЕТСЯ по тому же доводу, что и роль (Plane №242):
+        # замена меняет человека, а не место в бланке — «Ұлан-батор» остаётся
+        # «Ұлан-батором». Потерять её здесь значило бы оставить место пустым
+        # ровно тогда, когда замену и делают: в день мероприятия.
+        "sectionCode": outgoing.get("sectionCode"),
         "acknowledgedAt": None,
         # замена в ходе проведения — не расстановка: обхода не было
         "ratingOverrideReason": None,
