@@ -1,7 +1,8 @@
 "use client";
 
-import { ShieldAlert } from "lucide-react";
+import { KeyRound, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import type { DirectorateDenial } from "@/hooks/use-staff-units-by-directorate";
 
 /**
  * Экран для страниц, которые целиком питает `staff-units/directorate/`
@@ -11,26 +12,43 @@ import { Card, CardContent } from "@/components/ui/card";
  * целиком, а не блок: полупустая страница с нулями врала бы, что в
  * подразделении нет людей.
  *
+ * ДВЕ ПРИЧИНЫ, А НЕ ОДНА (Plane №329). Ручка отбивает по двум разным поводам,
+ * и до №329 экран печатал на оба один текст «Недостаточно прав»:
+ *   403 — у роли нет права вести штатку (чинит администратор, выдав роль);
+ *   400 — учётка не привязана к подразделению, роль тут ни при чём (чинит
+ *         кадровик, связав учётку с сотрудником).
+ * Это РАЗНЫЕ починки, и человек, которому показали чужую, идёт не туда.
+ *
  * Формулировка «Недостаточно прав» — общая с гвардами раздела ОМ
  * (app/security-ops/*), по ней же смоук-обход отличает закрытый экран от
- * молчаливой 4xx (e2e/smoke-buttons.spec.ts).
+ * молчаливой 4xx (e2e/smoke-buttons.spec.ts). Поэтому она осталась ровно у
+ * ветки прав: подмени её — и обход перестанет отличать гвард от поломки.
  */
 export function DirectorateAccessNotice({
+  denial = "permission",
   reason,
 }: {
+  denial?: DirectorateDenial;
   reason?: string | null;
 }) {
+  const isScope = denial === "scope";
+  const Icon = isScope ? KeyRound : ShieldAlert;
+
   return (
     <Card>
-      <CardContent className="p-9 text-center">
-        <ShieldAlert className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+      {/* role="alert": отказ приходит ПОСЛЕ загрузки и подменяет собой весь
+          экран — без объявления читающий с экрана остаётся на «Загрузка…». */}
+      <CardContent className="p-9 text-center" role="alert">
+        <Icon className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
         <p className="text-sm font-medium">
-          Недостаточно прав для просмотра этого раздела.
+          {isScope
+            ? "Учётная запись не привязана к подразделению."
+            : "Недостаточно прав для просмотра этого раздела."}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Штатное расписание подразделения ведут начальник департамента,
-          начальник управления или начальник отдела. Если раздел нужен вам по
-          работе — обратитесь к администратору системы.
+          {isScope
+            ? "Раздел показывает состав вашего подразделения, а система не знает, какое оно: учётная запись не связана со штатной единицей. Права здесь ни при чём — связать учётную запись с сотрудником может кадровая служба."
+            : "Штатное расписание подразделения ведут начальник департамента, начальник управления или начальник отдела. Если раздел нужен вам по работе — обратитесь к администратору системы."}
         </p>
         {reason ? (
           <p className="mt-3 text-xs text-muted-foreground">Ответ сервера: {reason}</p>

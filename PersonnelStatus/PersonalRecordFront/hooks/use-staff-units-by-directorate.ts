@@ -1,23 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
 import { ApiHttpError, apiClient, type StaffUnit } from "@/lib/api";
+import { retryUnlessClientError } from "@/lib/query-retry";
 
-/**
- * Ручка `staff-units/directorate/` закрыта ролевой проверкой (ROLE_3/6/7) —
- * см. staff_unit/views.py::directorate_management. Отказ по правам не станет
- * успехом от повтора, а react-query по умолчанию переспросит трижды: лишние
- * 403 в сети и задержка перед тем, как страница покажет гвард.
+
+/** Почему ручка отказала. Разные причины — разные починки (Plane №329).
+ *
+ * `permission` (403) — у роли нет права вести штатку: чинит администратор.
+ * `scope` (400) — учётка не привязана к подразделению («Не удалось определить
+ * подразделение пользователя»): роль может быть какой угодно, чинит кадровик.
+ * До №329 экран печатал на оба один текст, и человека с непривязанной учёткой
+ * отправляли выпрашивать право, которое у него уже есть.
  */
-function retryUnlessClientError(failureCount: number, error: unknown): boolean {
-  if (error instanceof ApiHttpError && error.status >= 400 && error.status < 500) {
-    return false;
-  }
-  return failureCount < 3;
+export type DirectorateDenial = "permission" | "scope";
+
+export function directorateDenial(error: unknown): DirectorateDenial | null {
+  if (!(error instanceof ApiHttpError)) return null;
+  if (error.status === 403) return "permission";
+  if (error.status === 400) return "scope";
+  return null;
 }
 
-/** 403 от этой ручки означает «роль не ведёт штатку», а не поломку. */
-export function isDirectorateForbidden(error: unknown): error is ApiHttpError {
-  return error instanceof ApiHttpError && error.status === 403;
-}
 
 /**
  * ВЕСЬ состав подразделения. Отдельный хук страницы — `useStaffUnitsPage`.

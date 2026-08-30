@@ -30,6 +30,18 @@ import { defineConfig, devices } from '@playwright/test'
 // Пароль стенда — из файла вне репозитория (`~/.config/vaps/stand-admin-password`,
 // права 600). В спеках литерала пароля больше нет: до 24.08.2026 `admin123` был
 // вписан в 30 файлов, и смена пароля означала правку каждого.
+// Пароль ролевых учёток (`manage.py seed_role_accounts`) — оттуда же и по той
+// же причине: проба отказа по правам заходит НЕ администратором.
+if (process.env.ROLE_ACCOUNTS_PASSWORD === undefined) {
+  try {
+    process.env.ROLE_ACCOUNTS_PASSWORD = fs
+      .readFileSync(path.join(os.homedir(), '.config', 'vaps', 'role-accounts-password'), 'utf8')
+      .trim()
+  } catch {
+    // Файла нет — проба скипнется с внятной причиной, а не упадёт на входе.
+  }
+}
+
 if (process.env.SMOKE_PASSWORD === undefined) {
   try {
     process.env.SMOKE_PASSWORD = fs
@@ -48,7 +60,7 @@ export default defineConfig({
   // Обход и точечные пробы по живому стенду перечислены явно: `**/*.spec.ts`
   // затянул бы сюда любую будущую спеку, которой живой стенд не нужен, и она
   // падала бы у всех, кто его не поднял.
-  testMatch: ['objects-tabs.spec.ts', 'gvo-sections.spec.ts', 'protected-persons.spec.ts', 'legal-documents.spec.ts', 'vehicles-registry.spec.ts', 'placement-stage.spec.ts', 'closure-stage.spec.ts', 'acknowledgement-stage.spec.ts', 'approval-stage.spec.ts', 'recon-stage.spec.ts', 'bulletin-stage.spec.ts', 'command-center.spec.ts', 'stage-chain.spec.ts', 'stage-override.spec.ts', 'events-registry.spec.ts', 'operations-analytics.spec.ts', 'service-analytics.spec.ts', 'my-profile.spec.ts', 'object-passport.spec.ts', 'forms-validation.spec.ts', 'tables-data.spec.ts', 'org-structure-status.spec.ts', 'org-structure-view.spec.ts', 'prototype-skin.spec.ts', 'dashboard-metrics.spec.ts', 'lagging-reminders.spec.ts', 'forces-gathering.spec.ts', 'daily-expense.spec.ts', 'day-submission.spec.ts', 'hydration.spec.ts', 'auth-logout.spec.ts', 'mock-contract.spec.ts', 'access-permissions.spec.ts', 'access-roles.spec.ts', 'access-users.spec.ts', 'access-accounts.spec.ts', 'change-password.spec.ts', 'employee-status-actions.spec.ts', 'status-set-dialog.spec.ts', 'department-requests.spec.ts', 'force-collections.spec.ts', 'module-tabs.spec.ts', 'status-calendar.spec.ts', 'status-vacancy-actions.spec.ts', 'status-dialog-calendar-locale.spec.ts', 'status-event-link.spec.ts', 'allocation-due-at.spec.ts', 'route-map-coverage.spec.ts'],
+  testMatch: ['objects-tabs.spec.ts', 'gvo-sections.spec.ts', 'protected-persons.spec.ts', 'legal-documents.spec.ts', 'vehicles-registry.spec.ts', 'placement-stage.spec.ts', 'closure-stage.spec.ts', 'acknowledgement-stage.spec.ts', 'approval-stage.spec.ts', 'recon-stage.spec.ts', 'bulletin-stage.spec.ts', 'command-center.spec.ts', 'stage-chain.spec.ts', 'stage-override.spec.ts', 'events-registry.spec.ts', 'operations-analytics.spec.ts', 'service-analytics.spec.ts', 'my-profile.spec.ts', 'object-passport.spec.ts', 'forms-validation.spec.ts', 'tables-data.spec.ts', 'org-structure-status.spec.ts', 'org-structure-view.spec.ts', 'prototype-skin.spec.ts', 'dashboard-metrics.spec.ts', 'lagging-reminders.spec.ts', 'forces-gathering.spec.ts', 'daily-expense.spec.ts', 'day-submission.spec.ts', 'hydration.spec.ts', 'auth-logout.spec.ts', 'mock-contract.spec.ts', 'access-permissions.spec.ts', 'access-roles.spec.ts', 'access-users.spec.ts', 'access-accounts.spec.ts', 'change-password.spec.ts', 'employee-status-actions.spec.ts', 'status-set-dialog.spec.ts', 'department-requests.spec.ts', 'force-collections.spec.ts', 'module-tabs.spec.ts', 'status-calendar.spec.ts', 'status-vacancy-actions.spec.ts', 'status-dialog-calendar-locale.spec.ts', 'status-event-link.spec.ts', 'allocation-due-at.spec.ts', 'route-map-coverage.spec.ts', 'directorate-denial.spec.ts'],
   // Один воркер: обход кликает по живому стенду и меняет его состояние —
   // параллельные персоны видели бы правки друг друга.
   workers: 1,

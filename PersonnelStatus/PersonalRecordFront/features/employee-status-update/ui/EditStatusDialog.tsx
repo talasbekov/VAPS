@@ -106,7 +106,12 @@ export function EditStatusDialog({
   );
   const staffUnits = data?.staff_units || [];
 
-  const { data: ranks } = useRanks();
+  // Звания — только при открытом диалоге (Plane №329): таблица статусов
+  // монтирует диалог рядом с собой, а не по клику, и справочник запрашивался
+  // при открытии ЭКРАНА. У ролевых учёток раздела права `dictionary.view` нет,
+  // и экран отдавал 403 в консоль ещё до первого клика. Тот же приём, что у
+  // состава строкой выше (№234).
+  const { data: ranks } = useRanks(open);
   const existingDuty = useDutyAssignment(employeeId);
 
   // Ветки формы зависят только от статуса: у «В строю» дат нет, у «На
