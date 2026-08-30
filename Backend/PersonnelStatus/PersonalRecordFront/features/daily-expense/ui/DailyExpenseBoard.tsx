@@ -508,6 +508,133 @@ function addOneDay(iso: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Порог, после которого поимённое перечисление перестаёт читаться и список
+ * сворачивается в департаменты со счётчиками (Plane №328).
+ *
+ * Восемь — не круглое число, а размер, при котором список ещё охватывается
+ * взглядом целиком. На стенде отстающих полсотни; в службе их будут десятки
+ * каждый день, и блок, отвечающий на вопрос «кто задерживает», обязан
+ * отвечать на него с первого взгляда, а не после чтения абзаца.
+ */
+const NOT_SUBMITTED_NAMED_LIMIT = 8;
+
+/** Департамент подразделения — первый узел пути (корень организации сервер
+ *  в `ancestors` не отдаёт). Пусто — подразделение вне департамента. */
+function departmentOf(path: string[]): string {
+  return path[0] ?? "";
+}
+
+/**
+ * Кто не сдал день — СПИСКОМ, а не абзацем (Plane №328).
+ *
+ * Что здесь было до №328: `Не сдали: A, B, C, …` — одна строка на пол-экрана,
+ * пятьдесят названий подряд через запятую, каждое со своим путём в скобках.
+ * Глаз не находил в ней ни своего подразделения, ни границы между соседними,
+ * а при копировании в отчёт она превращалась в кашу.
+ *
+ * Два вида, порог между ними — `NOT_SUBMITTED_NAMED_LIMIT`:
+ *   • мало отстающих — поимённо, по строке на подразделение, колонками;
+ *   • много — департаменты со счётчиками, и поимённый вид по кнопке.
+ * Свёрнутый вид отвечает на «чей департамент задерживает» немедленно, а
+ * развёрнутый — на «какое именно управление», и переход между ними стоит
+ * одного нажатия.
+ *
+ * ПУТЬ ОСТАЁТСЯ, но короче: департамент вынесен в заголовок группы, в строке
+ * — только то, что ниже него. Одно имя без пути не годится: одноимённых
+ * управлений на реальной структуре трое, и перечисление одних имён читалось
+ * как «не сдало одно и то же управление трижды» (Plane №249).
+ *
+ * ПОРЯДОК не трогается — очередь дерева, та же, что у списка ниже (Plane
+ * №296): группы идут в порядке первого появления департамента, строки внутри
+ * — в порядке очереди.
+ */
+function NotSubmittedList({
+  rows,
+  pathByDivision,
+}: {
+  rows: { division_id: number; name: string }[];
+  pathByDivision: Map<string, string[]>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const groups = useMemo(() => {
+    const byDepartment = new Map<
+      string,
+      { department: string; items: { id: number; name: string; rest: string[] }[] }
+    >();
+    for (const row of rows) {
+      const path = pathByDivision.get(String(row.division_id)) ?? [];
+      const department = departmentOf(path);
+      let group = byDepartment.get(department);
+      if (group === undefined) {
+        group = { department, items: [] };
+        byDepartment.set(department, group);
+      }
+      group.items.push({ id: row.division_id, name: row.name, rest: path.slice(1) });
+    }
+    return [...byDepartment.values()];
+  }, [rows, pathByDivision]);
+
+  const named = expanded || rows.length <= NOT_SUBMITTED_NAMED_LIMIT;
+
+  return (
+    // `role="group"` с именем: блок адресуется пробой и читалкой как одно
+    // целое — иначе его абзацы неотличимы от абзацев сводки выше.
+    <div role="group" aria-label="Не сдали" className="mt-2 text-muted-foreground">
+      <p>Не сдали: {rows.length}</p>
+      {named ? (
+        <ul className="mt-1 space-y-2">
+          {groups.map((group) => (
+            <li key={group.department}>
+              <p className="text-xs font-medium text-foreground">
+                {group.department === "" ? "Вне департамента" : group.department}
+                <span className="ml-1 font-normal text-muted-foreground">
+                  · {group.items.length}
+                </span>
+              </p>
+              {/* Строки ПЕРЕНОСЯТСЯ, а не обрезаются: `truncate` съедал как
+                  раз путь («Отдел пропускного режима · Управление о…»), ради
+                  которого путь и печатается. */}
+              <ul className="mt-0.5 grid gap-x-6 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+                {group.items.map((item) => (
+                  <li key={item.id} className="leading-snug">
+                    {item.name}
+                    {item.rest.length > 0 ? (
+                      <span className="text-xs"> · {item.rest.join(" › ")}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul className="mt-1 space-y-0.5">
+          {groups.map((group) => (
+            <li key={group.department}>
+              <span className="font-medium text-foreground">
+                {group.department === "" ? "Вне департамента" : group.department}
+              </span>
+              <span> · {group.items.length}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {rows.length > NOT_SUBMITTED_NAMED_LIMIT && (
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-xs"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "Свернуть до департаментов" : `Показать все ${rows.length} поимённо`}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function DailyExpenseBoard() {
   // Гейт права — ТОТ ЖЕ, что у соседних экранов той же ручки: командный центр
   // (`command-center/page.tsx`) и аналитика (`analytics/page.tsx`) включают
@@ -809,20 +936,10 @@ export function DailyExpenseBoard() {
                 {formatIsoDate(data.business_date)}
               </p>
               {notSubmittedRows.length > 0 && (
-                <p className="mt-1 text-muted-foreground">
-                  {/* Имя + путь: одноимённых управлений на реальной структуре
-                      трое, и перечисление одних имён читалось как «не сдало
-                      одно и то же управление трижды» (Plane №249). */}
-                  Не сдали:{" "}
-                  {notSubmittedRows
-                    .map((row) => {
-                      const path = pathByDivision.get(String(row.division_id)) ?? [];
-                      return path.length > 0
-                        ? `${row.name} (${path.join(" › ")})`
-                        : row.name;
-                    })
-                    .join(", ")}
-                </p>
+                <NotSubmittedList
+                  rows={notSubmittedRows}
+                  pathByDivision={pathByDivision}
+                />
               )}
             </>
           )}
