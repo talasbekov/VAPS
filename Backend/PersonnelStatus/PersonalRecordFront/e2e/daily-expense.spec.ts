@@ -352,13 +352,23 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     await expect(summary).toBeVisible()
 
     if (expectedDivisionId === null) {
-      // На этом дереве правило не даёт однозначного узла — честная ветка, а
-      // не отдельная угадайка теста: запрос версий не должен был уйти вовсе.
-      await expect(summary.getByText(
-        'Узел суточного свода не определён по структуре подразделений', { exact: true }
-      )).toBeVisible()
+      // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №326). Здесь стояла строка «Узел
+      // суточного свода не определён по структуре подразделений» — одна на
+      // все причины сразу. На живом дереве стенда правило молчит потому, что
+      // департаментов НЕСКОЛЬКО и расход разложен между ними поровну; это не
+      // нехватка сведений, а нехватка ВЫБОРА, и экран теперь его спрашивает.
+      // Запрос версий по-прежнему не должен уйти: пока не выбрано, узла нет.
+      await expect(summary.getByText(/за какой собирать свод, система не решает за вас/)).toBeVisible()
       await expect(summary.getByRole('listitem')).toHaveCount(0)
-      expect(capturedUrl, 'запрос версий ушёл, хотя правило не дало узла').toBeNull()
+      expect(capturedUrl, 'запрос версий ушёл, хотя узел не выбран').toBeNull()
+
+      // ВЫБОР ДОВОДИТ ШАГ ЦИКЛА ДО КОНЦА — то, чего до №326 не было ни у
+      // одной учётки: кнопки сборки не существовало вовсе.
+      const choice = summary.getByRole('button').first()
+      const chosenName = (await choice.innerText()).trim()
+      await choice.click()
+      await expect(summary.getByText(new RegExp(`Свод за департамент «${chosenName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}»`))).toBeVisible()
+      await expect.poll(() => capturedUrl, { timeout: 15_000 }).not.toBeNull()
       return
     }
 
@@ -517,7 +527,7 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     )).toBeVisible()
   })
 
-  test('«Суточный свод» — узел не определён по дереву (нет кандидатов) — честная строка, запрос версий не уходит', async ({ page }) => {
+  test('«Суточный свод» — департаментов в области нет: причина названа, запрос версий не уходит', async ({ page }) => {
     const token = await apiToken()
     const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
     const businessDate = report.business_date
@@ -554,9 +564,10 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     const board = page.getByRole('region', { name: 'Ежедневный расход' })
     await expect(board).toBeVisible({ timeout: 25_000 })
     const summary = board.getByRole('region', { name: 'Суточный свод' })
-    await expect(summary.getByText(
-      'Узел суточного свода не определён по структуре подразделений', { exact: true }
-    )).toBeVisible()
+    // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №326): у этого дерева кандидатов нет
+    // ВОВСЕ (один корень без детей), и экран теперь называет именно эту
+    // причину, а не общее «узел не определён».
+    await expect(summary.getByText(/в вашей области видимости\s+департаментов нет/)).toBeVisible()
     await expect(summary.getByRole('listitem')).toHaveCount(0)
 
     // Даём сети шанс уйти, если бы компонент ошибочно её отправил, прежде
