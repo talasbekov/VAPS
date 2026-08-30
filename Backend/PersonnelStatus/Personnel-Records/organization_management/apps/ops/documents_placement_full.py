@@ -117,6 +117,141 @@ def placeholder_roles(path=TEMPLATE):
     return found
 
 
+#: Кириллица бланка → латиница кода секции. Таблица нужна затем, что коды
+#: справочника раздела читают глазами при разборе («какая секция не заполнилась»),
+#: и непрозрачный хэш вместо `ULAN_BATOR` сделал бы разбор невозможным.
+#: Казахские буквы переведены по общепринятой латинице; порядок замен важен
+#: только для многобуквенных («Ш» → `SH` до «С» → `S` дела не меняет, но
+#: явный словарь надёжнее правил).
+_TRANSLIT = {
+    "а": "a", "ә": "a", "б": "b", "в": "v", "г": "g", "ғ": "g", "д": "d",
+    "е": "e", "ё": "e", "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k",
+    "қ": "q", "л": "l", "м": "m", "н": "n", "ң": "n", "о": "o", "ө": "o",
+    "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ұ": "u", "ү": "u",
+    "ф": "f", "х": "h", "һ": "h", "ц": "c", "ч": "ch", "ш": "sh", "щ": "sh",
+    "ъ": "", "ы": "y", "і": "i", "ь": "", "э": "e", "ю": "iu", "я": "ia",
+}
+
+#: Предел длины кода — у `OpsDictionaryEntry.code` он 100 символов. Обрезка
+#: молчаливой быть не должна: подписи секций бланка длинные, и две разные,
+#: совпавшие после обрезки, слились бы в одну. Поэтому у обрезанных кодов
+#: хвост — короткий отпечаток полной подписи.
+_SECTION_CODE_LIMIT = 100
+
+
+def _section_code(label):
+    """Код секции по её подписи: читаемый, устойчивый, не длиннее 100.
+
+    Читаемый — потому что коды справочника раздела разбирают глазами. Устойчивый
+    — потому что бланк переснимается при каждом новом образце заказчика, и код,
+    зависящий от ПОРЯДКА секций в файле, молча переехал бы на чужую секцию при
+    первой же вставке раздела в середину.
+    """
+    import hashlib
+
+    normalized = "".join(
+        _TRANSLIT.get(char, char) for char in label.lower()
+    )
+    slug = re.sub(r"[^a-z0-9]+", "_", normalized).strip("_").upper()
+    if not slug:
+        slug = "SECTION"
+    if len(slug) <= _SECTION_CODE_LIMIT:
+        return slug
+    fingerprint = hashlib.sha1(label.encode("utf-8")).hexdigest()[:8].upper()
+    return f"{slug[: _SECTION_CODE_LIMIT - len(fingerprint) - 1]}_{fingerprint}"
+
+
+def _is_section_heading(text):
+    """Заголовок ли это секции бланка (Plane №242, Ш-1).
+
+    Правило выведено ПЕРЕЧИСЛЕНИЕМ всех абзацев файла, а не догадкой: заголовки
+    секций — короткие абзацы с названием в кавычках-ёлочках («Ұлан-батор»
+    көшпелі күзет, «Сапар» объектісі, «St.Regis Astana» - Ұлан-батор).
+
+    Три отсекающих условия, и каждое поймало настоящий абзац:
+      • есть место подстановки — это строка с людьми, а не заголовок;
+      • длиннее 80 знаков — это проза («ҚК ӘП (жауынгерлік топ) – 5 қызм. …
+        „Алмаз-1“…»), в ней кавычки встречаются как обычная пунктуация;
+      • кончается двоеточием — это зачин предложения («…жедел штаб „Балхаш“
+        жүзеге асырады:»), а не заголовок раздела.
+
+    Замерено на образце: правило даёт 29 заголовков и накрывает 1026 мест из
+    1027. Единственное место вне секций — `person_1`, ответственный за ВСЮ
+    выездную охрану; он и стоит выше первого заголовка. Это не промах правила,
+    а факт документа.
+    """
+    if "{{" in text:
+        return False
+    if len(text) > 80:
+        return False
+    if text.rstrip().endswith(":"):
+        return False
+    return re.search(r"«([^»]+)»", text) is not None
+
+
+def _template_paragraphs(path=TEMPLATE):
+    """Абзацы шаблона по порядку, текстом.
+
+    Читается тем же способом, что `placeholder_roles` — прямо из XML, а не
+    через python-docx: разметка Word рвёт текст места на несколько `<w:t>`, и
+    оба чтения обязаны видеть одну и ту же склеенную строку.
+    """
+    import zipfile
+
+    with zipfile.ZipFile(path) as archive:
+        xml = archive.read("word/document.xml").decode("utf-8", "ignore")
+    paragraphs = []
+    for chunk in re.findall(r"<w:p[ >].*?</w:p>", xml, re.S):
+        text = re.sub(r"<[^>]+>", "", chunk).strip()
+        if text:
+            paragraphs.append(text)
+    return paragraphs
+
+
+def template_sections(path=TEMPLATE):
+    """Секции бланка по порядку: [{"code", "label"}].
+
+    Нужны справочнику раздела (Ш-2): человек выбирает секцию при назначении, и
+    выбирать он должен из того, что в бланке действительно есть.
+
+    Дубли по коду сняты: подпись «Сапар» объектісі стоит в файле трижды (по
+    разу на каждый заход мероприятия на объект), и это ОДНА секция, а не три.
+    """
+    seen = {}
+    for text in _template_paragraphs(path):
+        if not _is_section_heading(text):
+            continue
+        code = _section_code(text)
+        if code not in seen:
+            seen[code] = {"code": code, "label": text}
+    return list(seen.values())
+
+
+def placeholder_sections(path=TEMPLATE):
+    """{имя места: код секции} — по ближайшему заголовку НАД местом.
+
+    Вторая координата места (Plane №242, решение заказчика 30.08.2026). Одной
+    роли не хватает: «Көшпелі күзетінің жауаптысы» есть у восьми выездных охран
+    подряд — «Ұлан-батор», «Ташкент», «Ереван», «Душанбе», … — и система знала
+    роль, но не знала, чьего кортежа. Раскладка по одной роли ставила первого
+    назначенного в первую охрану наугад.
+
+    Места ДО первого заголовка в ответ не попадают вовсе: у них секции нет, и
+    выдумывать её («первая», «общая») значило бы вернуть ту самую догадку.
+    """
+    current = None
+    found = {}
+    for text in _template_paragraphs(path):
+        if _is_section_heading(text):
+            current = _section_code(text)
+            continue
+        if current is None:
+            continue
+        for match in re.finditer(r"\{\{(person_\d+)\}\}", text):
+            found[match.group(1)] = current
+    return found
+
+
 def _people_by_role(event):
     """{код роли: [«Фамилия И.», …]} по назначениям расстановки."""
     from collections import defaultdict
@@ -214,4 +349,11 @@ def render_placement_full(event_code, as_of=None, fmt="pdf"):
             pass
 
 
-__all__ = ["render_placement_full", "placement_full_values", "template_placeholders", "PLACEHOLDER"]
+__all__ = [
+    "render_placement_full",
+    "placement_full_values",
+    "template_placeholders",
+    "template_sections",
+    "placeholder_sections",
+    "PLACEHOLDER",
+]
