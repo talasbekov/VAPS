@@ -88,6 +88,11 @@ interface DivisionTreeNode {
   divisionId: number;
   parentId: number | null;
   name: string;
+  /** Собирает ли узел суточный свод — ФАКТ С СЕРВЕРА (Plane №326, решение
+   *  заказчика 30.08.2026). Признак заводит администратор; пока он не
+   *  проставлен ни у кого, экран ведёт себя как прежде и выводит узел
+   *  правилом по форме дерева. */
+  isSummaryNode: boolean;
 }
 
 /** Кандидат в узел свода — департамент, за который свод можно собрать. */
@@ -145,6 +150,9 @@ function parseTreeNodes(payload: unknown): DivisionTreeNode[] {
       // Имя нужно ВЫБОРУ департамента (Plane №326): список без имён —
       // список номеров, выбрать по нему нельзя.
       name: typeof row.name === "string" ? row.name : "",
+      // Ответ без поля читается как «признак не проставлен»: старый сервер
+      // остаётся валидным, и экран падает обратно на правило.
+      isSummaryNode: row.is_summary_node === true,
     });
   }
   return result;
@@ -156,10 +164,43 @@ function parseTreeNodes(payload: unknown): DivisionTreeNode[] {
  * (ненулевым) покрытием `boardDivisionIds` в своём поддереве, при условии
  * что он ЕДИНСТВЕННЫЙ такой. `null` — «не определён», честно, не гадаем.
  */
+/**
+ * Узел свода ПО СЕРВЕРНОМУ ПРИЗНАКУ (Plane №326, решение заказчика 30.08.2026).
+ *
+ * Признак отменяет угадывание: пока он не проставлен ни у кого, экран падает
+ * обратно на правило по форме дерева — расширяем, не подменяем, и стенд без
+ * настройки ведёт себя как вёл. Проставлен у одного — ответ однозначен;
+ * проставлен у нескольких (у каждого департамента свой свод — это норма) —
+ * спрашиваем человека, как и раньше.
+ *
+ * Кандидаты сужаются ОБЛАСТЬЮ АКТОРА сами собой: дерево приходит уже
+ * суженным сервером, и узла вне своей области в нём просто нет.
+ */
+function resolveByServerFlag(
+  nodes: DivisionTreeNode[],
+  nameOf: (id: number) => string
+): SummaryResolution | null {
+  const flagged = nodes.filter((node) => node.isSummaryNode);
+  if (flagged.length === 0) return null;
+  const candidates = flagged.map((node) => ({
+    id: node.divisionId,
+    name: nameOf(node.divisionId),
+  }));
+  if (candidates.length === 1) {
+    return { chosen: candidates[0].id, reason: "ok", candidates };
+  }
+  return { chosen: null, reason: "ambiguous", candidates };
+}
+
 function resolveSummary(
   nodes: DivisionTreeNode[],
   boardDivisionIds: readonly number[]
 ): SummaryResolution {
+  const nameOf = (id: number): string =>
+    nodes.find((node) => node.divisionId === id)?.name ?? `подразделение №${id}`;
+  const byFlag = resolveByServerFlag(nodes, nameOf);
+  if (byFlag !== null) return byFlag;
+
   const rootIds = new Set(
     nodes.filter((node) => node.parentId === null).map((node) => node.divisionId)
   );
@@ -200,8 +241,6 @@ function resolveSummary(
     return { id: candidate.divisionId, count };
   });
   const maxCoverage = Math.max(...coverage.map((entry) => entry.count));
-  const nameOf = (id: number): string =>
-    nodes.find((node) => node.divisionId === id)?.name ?? `подразделение №${id}`;
   if (maxCoverage === 0) {
     return {
       chosen: null,

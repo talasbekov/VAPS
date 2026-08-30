@@ -2984,6 +2984,14 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
             merged.update(traffic_light_tree(root, business_date))
 
         names = DivisionTreeSelector.names_map(merged.keys())
+        # Кто собирает суточный свод — ФАКТОМ, а не догадкой (Plane №326,
+        # решение заказчика 30.08.2026). До признака экран расхода угадывал
+        # узел свода по форме дерева («родитель — корень» + максимальное
+        # покрытие управлениями), и на трёх департаментах угадывать перестал:
+        # шаг цикла не проходился ни под кем. Признак едет в узле дерева, а не
+        # отдельной ручкой: дерево экран УЖЕ читает, и второй запрос за той же
+        # структурой разошёлся бы с первым во времени.
+        summary_nodes = DivisionTreeSelector.summary_node_ids(merged.keys())
         nodes = [
             {
                 "division_id": division_id,
@@ -3000,6 +3008,7 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 ),
                 "status": cascade.status,
                 "late": cascade.late,
+                "is_summary_node": division_id in summary_nodes,
             }
             for division_id, cascade in merged.items()
         ]
