@@ -1995,6 +1995,11 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     {
                         "division_id": row.division_id,
                         "name": row.name,
+                        # Путь СВЕРХУ ВНИЗ, без корня организации (Plane
+                        # №327). Добавлен РЯДОМ с именем, а не вместо: имя
+                        # читают выгрузки и пробы, и подменять его склеенной
+                        # строкой значило бы менять контракт под всеми.
+                        "ancestors": list(row.ancestors),
                         "staff_total": row.staff_total,
                         "list_total": row.list_total,
                         "vacancies": row.vacancies,

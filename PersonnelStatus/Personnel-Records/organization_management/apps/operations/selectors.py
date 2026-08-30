@@ -75,6 +75,54 @@ class DivisionTreeSelector:
         return dict(queryset.values_list("id", "name"))
 
     @staticmethod
+    def naming_map(division_ids=None) -> dict:
+        """{id: {"name": …, "ancestors": [...]}} — имя И путь ОДНИМ запросом.
+
+        Путь — СВЕРХУ ВНИЗ, без корня организации: имена уникальны только
+        внутри родителя («Второй отдел» на структуре стенда встречается пять
+        раз), а имя организации в каждой строке — шум. Тот же довод, что в
+        `ops.daily.visible_division_rows` (Plane №235, №327).
+
+        Зачем имя и путь ВМЕСТЕ, а не отдельным `names_map` рядом: путь
+        строится по всему дереву, и это чтение УЖЕ содержит имена. Второй
+        вызов стоил бы второго скана `Division` — а расход
+        стережёт проба «число запросов постоянно и не больше шести»
+        (`test_query_count_is_constant`), и лишний запрос там не мелочь, а
+        нарушение сговора о стоимости отчёта.
+        """
+        tree = {
+            row["id"]: row
+            for row in Division.objects.values("id", "name", "parent_id", "division_type")
+        }
+        wanted = tree.keys() if division_ids is None else list(division_ids)
+        paths = DivisionTreeSelector._paths_in(tree, wanted)
+        return {
+            division_id: {
+                "name": tree.get(division_id, {}).get("name", ""),
+                "ancestors": paths[division_id],
+            }
+            for division_id in wanted
+        }
+
+    @staticmethod
+    def _paths_in(tree, division_ids) -> dict:
+        """Пути по УЖЕ прочитанному дереву — вынесено из `naming_map` ради
+        читаемости: чтение дерева и построение пути — два разных дела.
+        """
+
+        def path_of(division_id):
+            path, cursor = [], tree.get(division_id, {}).get("parent_id")
+            while cursor is not None and cursor in tree:
+                node = tree[cursor]
+                if node["division_type"] != Division.DivisionType.ORGANIZATION:
+                    path.append(node["name"])
+                cursor = node["parent_id"]
+            path.reverse()
+            return path
+
+        return {division_id: path_of(division_id) for division_id in division_ids}
+
+    @staticmethod
     def all_ids() -> set:
         """Все подразделения дерева, ОДИН запрос.
 

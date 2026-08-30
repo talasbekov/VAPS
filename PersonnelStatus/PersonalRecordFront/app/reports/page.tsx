@@ -222,7 +222,24 @@ export default function ReportsPage() {
                     <TableBody>
                       {report.rows.map((row) => (
                         <TableRow key={row.division_id}>
-                          <TableCell>{row.name}</TableCell>
+                          <TableCell>
+                            {row.name}
+                            {/* Путь — подписью под именем (Plane №327). Имена
+                                уникальны лишь внутри родителя: «Второй отдел»
+                                на структуре стенда встречается пять раз, и
+                                записка печатала пять одинаковых строк с
+                                одинаковыми числами — читалось как дубль
+                                выгрузки. Форма та же, что у борда расхода и
+                                аналитики службы, чтобы одно и то же
+                                подразделение выглядело одинаково на всех
+                                трёх экранах. */}
+                            {row.ancestors !== undefined &&
+                            row.ancestors.length > 0 ? (
+                              <span className="block text-xs text-muted-foreground">
+                                {row.ancestors.join(" › ")}
+                              </span>
+                            ) : null}
+                          </TableCell>
                           <TableCell>{row.staff_total}</TableCell>
                           <TableCell>{row.list_total}</TableCell>
                           <TableCell>{row.vacancies}</TableCell>

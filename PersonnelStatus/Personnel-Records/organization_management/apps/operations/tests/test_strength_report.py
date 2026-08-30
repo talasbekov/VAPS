@@ -352,6 +352,49 @@ class TestStrengthReportService:
         # ИСЧЕЗАЕТ: набор колонок выводится из каталога, а не задан списком.
         assert "ON_DUTY" not in result.rows[0].columns
 
+    def test_same_named_divisions_are_told_apart_by_path(self, seeded_catalog):
+        """Одноимённые подразделения различимы ПУТЁМ, а не порядком строк.
+
+        Красная проба к Plane №327: в записке подряд шли «Второй отдел» ×5 с
+        одинаковыми числами и без указания, чьи они, — читалось как дубль
+        выгрузки. Имена уникальны только внутри родителя, и на реальной
+        структуре это не редкость, а норма.
+
+        Корень организации в пути НЕ участвует: она одна, и её имя в каждой
+        строке — шум (тот же довод, что в `ops.daily`).
+        """
+        organization = Division.objects.create(
+            name="Организация", division_type=Division.DivisionType.ORGANIZATION
+        )
+        # `division_type` задаётся ЯВНО: у модели он по умолчанию
+        # ORGANIZATION, а путь выбрасывает организации — департаменты по
+        # умолчанию исчезли бы из пути, и проба обвинила бы исправный код.
+        first = Division.objects.create(
+            name="Первый департамент",
+            parent=organization,
+            division_type=Division.DivisionType.DEPARTMENT,
+        )
+        second = Division.objects.create(
+            name="Второй департамент",
+            parent=organization,
+            division_type=Division.DivisionType.DEPARTMENT,
+        )
+        left = Division.objects.create(
+            name="Второй отдел", parent=first, division_type=Division.DivisionType.DIVISION
+        )
+        right = Division.objects.create(
+            name="Второй отдел", parent=second, division_type=Division.DivisionType.DIVISION
+        )
+        make_employee(left)
+        make_employee(right)
+
+        rows = {row.division_id: row for row in StrengthReportService.compute(TODAY).rows}
+        assert rows[left.id].name == rows[right.id].name == "Второй отдел"
+        assert rows[left.id].ancestors == ("Первый департамент",)
+        assert rows[right.id].ancestors == ("Второй департамент",)
+        # Организация из пути выброшена — иначе она стояла бы первой у обеих.
+        assert "Организация" not in rows[left.id].ancestors
+
     def test_query_count_is_constant(self, seeded_catalog, division):
         for _ in range(3):
             make_employee(division)
