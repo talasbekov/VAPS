@@ -734,8 +734,16 @@ export function StatusTable({
                     кадровые отчёты, и прятать его нельзя. */}
                 <TableHead>Статус (кадровый)</TableHead>
                 <TableHead>По разделу ОМ</TableHead>
-                <TableHead>Последнее обновление</TableHead>
-                <TableHead>Следующее обновление</TableHead>
+                {/* ПОДПИСИ КОЛОНОК СОКРАЩЕНЫ (Plane №331, решение заказчика
+                    30.08.2026). Замерено на 1280 px: таблица 1367 px в
+                    контейнере 908 px, и две колонки дат были самыми широкими
+                    — 163 и 168 px, причём ширину задавали ЗАГОЛОВКИ, а не
+                    даты под ними (дата занимает ~85 px). «Обновлён» и
+                    «Следующий» отвечают на тот же вопрос: слово «обновление»
+                    в колонке таблицы статусов не добавляет ничего, чего не
+                    сказал бы заголовок экрана. */}
+                <TableHead className="whitespace-nowrap">Обновлён</TableHead>
+                <TableHead className="whitespace-nowrap">Следующий</TableHead>
                 <TableHead className="w-12"></TableHead>
               </TableRow>
             </TableHeader>
@@ -772,10 +780,27 @@ export function StatusTable({
                   <TableCell>
                     <div className="font-medium">{employee.name}</div>
                   </TableCell>
+                  {/* Отдел и должность — с ПРЕДЕЛОМ ширины и полным текстом
+                      в подсказке (Plane №331). Они были вторыми и первыми по
+                      ширине (210 и 295 px из 1367): длинные названия вроде
+                      «Заместитель начальника управления» растягивали колонку
+                      на всех, а читают её по началу строки. */}
                   <TableCell className="text-sm">
-                    {employee.department}
+                    <span
+                      className="block max-w-[130px] truncate"
+                      title={employee.department}
+                    >
+                      {employee.department}
+                    </span>
                   </TableCell>
-                  <TableCell className="text-sm">{employee.position}</TableCell>
+                  <TableCell className="text-sm">
+                    <span
+                      className="block max-w-[150px] truncate"
+                      title={employee.position}
+                    >
+                      {employee.position}
+                    </span>
+                  </TableCell>
                   {/* Статус — точка входа в СПИСОК статусов сотрудника
                       (текущий + запланированные), а не в форму заведения
                       нового: щелчок по уже проставленному статусу — это
