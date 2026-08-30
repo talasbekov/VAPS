@@ -87,6 +87,39 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 interface DivisionTreeNode {
   divisionId: number;
   parentId: number | null;
+  name: string;
+}
+
+/** Кандидат в узел свода — департамент, за который свод можно собрать. */
+interface SummaryCandidate {
+  id: number;
+  name: string;
+}
+
+/**
+ * Чем кончился вывод узла свода — и ПОЧЕМУ (Plane №326).
+ *
+ * До №326 правило отвечало `number | null`, и все три «нет» выглядели на
+ * экране одной строкой «Узел суточного свода не определён по структуре
+ * подразделений». Между тем это три разных положения дел:
+ *
+ *   `no-department` — в области актора нет ни одного департамента: свод
+ *      собирается ЗА департамент, и собирать не за что. Чинится структурой.
+ *   `no-coverage` — департаменты есть, но ни один не содержит управлений
+ *      этого расхода: расход и структура разошлись. Чинится данными.
+ *   `ambiguous` — департаментов НЕСКОЛЬКО и они делят расход поровну. Это
+ *      не поломка вовсе: так выглядит область, накрывающая всю службу.
+ *      Здесь системе не хватает не сведений, а ВЫБОРА — и спросить его можно
+ *      у человека, а не гадать за него.
+ *
+ * Именно `ambiguous` и делал шаг цикла непроходимым НИ ДЛЯ КОГО на стенде с
+ * тремя департаментами: правило требовало единственного победителя, а их
+ * трое с одинаковым покрытием.
+ */
+interface SummaryResolution {
+  chosen: number | null;
+  reason: "ok" | "no-department" | "no-coverage" | "ambiguous";
+  candidates: SummaryCandidate[];
 }
 
 /** Узлы дерева читаем ЗАЩИТНО, тем же приёмом, что `parseSubmission` в
@@ -106,7 +139,13 @@ function parseTreeNodes(payload: unknown): DivisionTreeNode[] {
     if (typeof row.division_id !== "number") continue;
     const parentId = row.parent_id;
     if (parentId !== null && typeof parentId !== "number") continue;
-    result.push({ divisionId: row.division_id, parentId: parentId as number | null });
+    result.push({
+      divisionId: row.division_id,
+      parentId: parentId as number | null,
+      // Имя нужно ВЫБОРУ департамента (Plane №326): список без имён —
+      // список номеров, выбрать по нему нельзя.
+      name: typeof row.name === "string" ? row.name : "",
+    });
   }
   return result;
 }
@@ -117,17 +156,19 @@ function parseTreeNodes(payload: unknown): DivisionTreeNode[] {
  * (ненулевым) покрытием `boardDivisionIds` в своём поддереве, при условии
  * что он ЕДИНСТВЕННЫЙ такой. `null` — «не определён», честно, не гадаем.
  */
-function resolveSummaryDivisionId(
+function resolveSummary(
   nodes: DivisionTreeNode[],
   boardDivisionIds: readonly number[]
-): number | null {
+): SummaryResolution {
   const rootIds = new Set(
     nodes.filter((node) => node.parentId === null).map((node) => node.divisionId)
   );
   const candidates = nodes.filter(
     (node) => node.parentId !== null && rootIds.has(node.parentId)
   );
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) {
+    return { chosen: null, reason: "no-department", candidates: [] };
+  }
 
   const childrenOf = new Map<number, number[]>();
   for (const node of nodes) {
@@ -159,10 +200,31 @@ function resolveSummaryDivisionId(
     return { id: candidate.divisionId, count };
   });
   const maxCoverage = Math.max(...coverage.map((entry) => entry.count));
-  if (maxCoverage === 0) return null;
+  const nameOf = (id: number): string =>
+    nodes.find((node) => node.divisionId === id)?.name ?? `подразделение №${id}`;
+  if (maxCoverage === 0) {
+    return {
+      chosen: null,
+      reason: "no-coverage",
+      candidates: candidates.map((node) => ({ id: node.divisionId, name: nameOf(node.divisionId) })),
+    };
+  }
   const winners = coverage.filter((entry) => entry.count === maxCoverage);
-  if (winners.length !== 1) return null;
-  return winners[0].id;
+  if (winners.length !== 1) {
+    return {
+      chosen: null,
+      reason: "ambiguous",
+      // В выбор идут ТОЛЬКО делящие максимум: департамент, покрывающий два
+      // управления из пятидесяти, — не кандидат на свод этого расхода, и
+      // предложить его значило бы предложить заведомо неверное.
+      candidates: winners.map((entry) => ({ id: entry.id, name: nameOf(entry.id) })),
+    };
+  }
+  return {
+    chosen: winners[0].id,
+    reason: "ok",
+    candidates: [{ id: winners[0].id, name: nameOf(winners[0].id) }],
+  };
 }
 
 function formatSubmittedAt(value: string): string {
@@ -299,10 +361,24 @@ export function SummaryVersions({
 
   const treeNodes = useMemo(() => parseTreeNodes(treeQuery.data), [treeQuery.data]);
   const treeReady = dateValid && !treeQuery.isPending && !treeQuery.isError;
-  const summaryDivisionId = useMemo(
-    () => (treeReady ? resolveSummaryDivisionId(treeNodes, boardDivisionIds) : null),
+  const resolution = useMemo(
+    () =>
+      treeReady
+        ? resolveSummary(treeNodes, boardDivisionIds)
+        : ({ chosen: null, reason: "ok", candidates: [] } as SummaryResolution),
     [treeReady, treeNodes, boardDivisionIds]
   );
+
+  // ВЫБОР ЧЕЛОВЕКА ПЕРЕВЕШИВАЕТ ПРАВИЛО (Plane №326), но только когда правило
+  // само призналось в неоднозначности: подменять однозначный вывод чужим
+  // выбором значило бы дать собрать свод не за тот департамент.
+  const [pickedId, setPickedId] = useState<number | null>(null);
+  const pickable = treeReady && resolution.reason === "ambiguous";
+  const picked =
+    pickable && resolution.candidates.some((item) => item.id === pickedId)
+      ? pickedId
+      : null;
+  const summaryDivisionId = resolution.chosen ?? picked;
   const unresolved = treeReady && summaryDivisionId === null;
   const resolved = treeReady && summaryDivisionId !== null;
 
@@ -403,9 +479,62 @@ export function SummaryVersions({
               Не удалось прочитать структуру подразделений — узел свода не определён
             </p>
           )}
-          {unresolved && (
+          {/* ТРИ РАЗНЫХ «НЕТ», А НЕ ОДНО (Plane №326). Прежде здесь стояла
+              одна строка «Узел суточного свода не определён по структуре
+              подразделений» — она одинаково описывала «департамента нет»,
+              «расход и структура разошлись» и «департаментов несколько».
+              Последнее и делало шаг цикла непроходимым НИ ДЛЯ КОГО: на стенде
+              с тремя департаментами правило не находило единственного
+              победителя и молча сдавалось, хотя человеку хватило бы вопроса
+              «за какой департамент собираем». */}
+          {unresolved && resolution.reason === "no-department" && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
-              Узел суточного свода не определён по структуре подразделений
+              Свод собирается за департамент, а в вашей области видимости
+              департаментов нет. Если свод нужен вам по работе — область
+              видимости расширяет администратор системы.
+            </p>
+          )}
+          {unresolved && resolution.reason === "no-coverage" && (
+            <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
+              Ни один департамент вашей области не содержит управлений этого
+              расхода — собирать свод не из чего. Проверьте, к тем ли
+              подразделениям привязаны управления расхода.
+            </p>
+          )}
+          {unresolved && pickable && (
+            <div className="space-y-2 px-4 py-3 text-sm text-muted-foreground">
+              <p className="whitespace-normal">
+                В вашей области {resolution.candidates.length} департамента, и
+                расход разложен между ними поровну — за какой собирать свод,
+                система не решает за вас.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {resolution.candidates.map((candidate) => (
+                  <Button
+                    key={candidate.id}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPickedId(candidate.id)}
+                  >
+                    {candidate.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          {resolved && picked !== null && (
+            <p className="whitespace-normal border-b px-4 py-2 text-xs text-muted-foreground">
+              Свод за департамент «{
+                resolution.candidates.find((item) => item.id === picked)?.name ?? ""
+              }» — выбран вами.{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                onClick={() => setPickedId(null)}
+              >
+                Выбрать другой
+              </button>
             </p>
           )}
           {resolved && query.isPending && (
