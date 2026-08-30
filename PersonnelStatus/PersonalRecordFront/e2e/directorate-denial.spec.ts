@@ -22,9 +22,22 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const ROLE_PASSWORD = process.env.ROLE_ACCOUNTS_PASSWORD ?? ''
+const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
-/** Учётка БЕЗ кадровой роли ROLE_3/6/7: ручка `directorate` отдаёт ей 403. */
-const ROLE_ACCOUNT = 'role_viewer'
+/**
+ * Учётка, которой ручка `directorate` отказывает.
+ *
+ * 🔴 УЧЁТКА СМЕНЕНА ОСОЗНАННО (Plane №325). Здесь стоял `role_viewer`: до
+ * №325 отказ получала ЛЮБАЯ учётка без кадровой роли ROLE_3/6/7, и годился
+ * кто угодно. Теперь ручку открывает и право раздела `status.view`, а у
+ * `role_viewer` оно есть — он законно проходит, и проба на нём проверяла бы
+ * не отказ, а собственную устарелость. `role_ops_reader` несёт `object.view`
+ * и `duty.view`, но не `status.view`.
+ *
+ * Предпосылка сверяется С СЕРВЕРОМ перед проверкой: раздача прав меняется, и
+ * молча ослабнуть эта проба не должна.
+ */
+const ROLE_ACCOUNT = 'role_ops_reader'
 
 const DICTIONARY_PATHS = /\/api\/dictionaries\/(positions|ranks)\//
 
@@ -46,6 +59,23 @@ test.describe(LIVE ? 'отказ экранов расхода' : 'отказ э
     page.on('request', (req) => {
       if (DICTIONARY_PATHS.test(req.url())) dictionaryCalls.push(req.url())
     })
+
+    const tokenRes = await fetch(`${API}/api/token/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: ROLE_ACCOUNT, password: ROLE_PASSWORD }),
+    })
+    expect(tokenRes.status, `учётка ${ROLE_ACCOUNT} не получила токен`).toBe(200)
+    const { access } = (await tokenRes.json()) as { access: string }
+    const permsRes = await fetch(`${API}/api/operations/my-permissions/`, {
+      headers: { Authorization: `Bearer ${access}` },
+    })
+    expect(permsRes.status).toBe(200)
+    const { permissions = [] } = (await permsRes.json()) as { permissions?: string[] }
+    test.skip(
+      permissions.includes('status.view') || permissions.includes('*'),
+      `у ${ROLE_ACCOUNT} появилось status.view — отказ проверять больше нечем`,
+    )
 
     await signIn(page, ROLE_ACCOUNT, ROLE_PASSWORD)
     await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })

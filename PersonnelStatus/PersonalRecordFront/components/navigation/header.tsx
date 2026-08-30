@@ -26,6 +26,7 @@ import { NotificationsDropdown } from "@/features/notifications/ui/Notifications
 import { EditProfileDialog } from "@/features/edit-profile";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -40,6 +41,13 @@ export function Header({
 }: HeaderProps) {
   const { user, logout, hasPermission } = useAuth();
   const userRole = user ? ROLES[user.role] : null;
+  // Роль РАЗДЕЛА — рядом с кадровой (Plane №325). У ролевых учёток раздела
+  // кадровая роль ROLE_1 «Просмотр организации», и шапка печатала именно её:
+  // человек видел не ту роль, под которой работает. Кадровую не убираем —
+  // она настоящая и ею открыт кадровый контур; просто перестаём молчать о
+  // второй.
+  const { roles: sectionRoles } = useOpsPermissions();
+  const sectionRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
 
   return (
@@ -88,6 +96,33 @@ export function Header({
               {/* Слова «Роль:» здесь нет намеренно: имена ролей в системе уже
                   начинаются с «Роль-N», и префикс давал «Роль: Роль-4». */}
               {userRole.name}
+            </span>
+          )}
+          {sectionRole && (
+            /* Подпись «Раздел ОМ» нужна: два имени подряд без неё читаются
+               как одна роль с длинным названием. Область печатается там же —
+               «Ответственный за расход департамента» без указания, какого
+               именно, отвечает на вопрос наполовину. Если ролей несколько,
+               показывается первая: шапка не место для списка, а полный
+               состав виден в разделе доступа. */
+            <span
+              className="text-muted-foreground hidden items-center gap-1 rounded-lg border px-3 py-1.5 text-xs lg:inline-flex"
+              title={
+                sectionRoles.length > 1
+                  ? `Ролей раздела ${sectionRoles.length}: ${sectionRoles
+                      .map((role) => role.name)
+                      .join(", ")}`
+                  : undefined
+              }
+            >
+              <span className="font-semibold">Раздел ОМ:</span>
+              <span>{sectionRole.name}</span>
+              {sectionRole.scope_division_name ? (
+                <span>· {sectionRole.scope_division_name}</span>
+              ) : null}
+              {sectionRoles.length > 1 ? (
+                <span>· ещё {sectionRoles.length - 1}</span>
+              ) : null}
             </span>
           )}
           <ThemeToggle />
@@ -162,8 +197,15 @@ export function Header({
         onOpenChange={setIsProfileDialogOpen}
       />
 
-      {/* Alert встроен в header */}
+      {/* Alert встроен в header.
+          РОЛЬ РАЗДЕЛА СНИМАЕТ ЭТУ ПЛАШКУ (Plane №325). Плашка говорит о
+          КАДРОВОЙ роли, и у ролевой учётки раздела она всегда ROLE_1
+          «Просмотр организации» — то есть плашка висела бы у всех 28 таких
+          учёток постоянно и утверждала бы неправду: права у них есть, просто
+          в другом каталоге. Плашка о «ограниченных правах» рядом с рабочим
+          экраном учит не верить предупреждениям вообще. */}
       {user &&
+        sectionRole === null &&
         user.role !== "role-2" &&
         user.role !== "role-4" &&
         user.role !== "role-6" && (

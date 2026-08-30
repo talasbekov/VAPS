@@ -12,13 +12,25 @@ import type { OpsApiFailure } from "@/lib/ops-errors";
 // Рукописный тип: OpenAPI-схемы бэкенда ОМ в хосте нет. Ручка живая
 // (operations/api/urls.py, MyPermissionsViewSet), мок-обработчика больше нет:
 // коды приходят с бэка как есть — `object.view`, `duty.view`, `event.view`.
+/** Роль РАЗДЕЛА с её областью (Plane №325). Необязательная: ответ без поля
+ *  остаётся валидным, и читатель обязан пережить его пустым. */
+export interface OpsSectionRole {
+  code: string;
+  name: string;
+  scope_division_id: number | null;
+  scope_division_name: string | null;
+}
+
 export interface OpsMyPermissionsResponse {
   permissions: string[];
+  roles?: OpsSectionRole[];
 }
 
 export interface UseOpsPermissionsResult {
   /** undefined, пока запрос прав не завершён (или выключен без пользователя). */
   permissions: ReadonlySet<string> | undefined;
+  /** Роли раздела актора; пусто — их нет либо ответ ещё не пришёл. */
+  roles: OpsSectionRole[];
   hasPermission(code: string): boolean;
   isLoading: boolean;
   error: OpsApiFailure | null;
@@ -55,6 +67,10 @@ export function useOpsPermissions(): UseOpsPermissionsResult {
 
   return {
     permissions,
+    // Роли раздела — ОТДЕЛЬНО от прав: права отвечают «что мне можно», роль —
+    // «кто я здесь». Шапка портала печатала кадровую роль учётке, работающей
+    // под ролью раздела (Plane №325).
+    roles: query.data?.roles ?? [],
     hasPermission,
     isLoading: query.isLoading,
     error: query.error,
