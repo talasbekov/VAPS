@@ -40,6 +40,13 @@ from organization_management.apps.statuses.selectors import (
 )
 
 
+#: Право раздела ОМ, открывающее кадровые экраны расхода (Plane №325).
+#: ТО ЖЕ, что у борда расхода и аналитики службы: экран показывает ровно то,
+#: что показывают они, и второе имя для одного и того же разошлось бы с ними
+#: при первой же раздаче прав.
+_OPS_READ_STATUS_PERMISSION = 'status.view'
+
+
 def _as_date(value):
     """Дата из JSON-строки. None — значения нет или оно не разбирается."""
     if value is None or value == '':
@@ -167,8 +174,21 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """Динамическое определение permissions на основе action"""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [permissions.IsAuthenticated(), CanManageStaffingTable()]
-        else:
-            return [permissions.IsAuthenticated(), CanViewStaffingTable()]
+        # ЧТЕНИЕ ручки `directorate` открыто И правом раздела (Plane №325).
+        # Класс `CanViewStaffingTable` спрашивает кадровое `view_staffing_table`,
+        # и у ролевой учётки раздела его может не быть вовсе — тогда 403
+        # приходил бы ДО того, как действие успело спросить право раздела.
+        #
+        # ЗАПИСЬ через эту же ручку НЕ расширена: `status.view` — право
+        # чтения, и пускать по нему правку штатки, сотрудников и статусов
+        # значило бы выдать больше, чем спрашивали. Кто пишет — пишет как
+        # писал, кадровым правом.
+        if (
+            self.action == 'directorate_management'
+            and self.request.method in permissions.SAFE_METHODS
+        ):
+            return [permissions.IsAuthenticated(), CanReadDirectorate()]
+        return [permissions.IsAuthenticated(), CanViewStaffingTable()]
 
     def get_queryset(self):
         """Фильтрация queryset по области видимости пользователя"""
@@ -446,21 +466,49 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """
         user = request.user
 
-        # Проверка что пользователь имеет ROLE_3, ROLE_6 или ROLE_7
+        # ── Кто сюда допущен (Plane №325, решение заказчика 30.08.2026) ────
+        #
+        # ДВА КАТАЛОГА РОЛЕЙ, И ОБА ОТКРЫВАЮТ ЭКРАН. Кадровый (`common.UserRole`,
+        # ROLE_3/6/7) и каталог раздела ОМ (`operations`, права вида
+        # `status.view`) не связаны между собой, а цикл расхода жил целиком в
+        # первом. Из 38 учёток стенда экран проходили ЧЕТЫРЕ; не проходила ни
+        # одна роль раздела — включая `role_department_expense_officer`, чьё
+        # название буквально «ответственный за расход департамента», и
+        # `role_division_operator`, который по замыслу и проставляет статусы.
+        #
+        # РАСШИРЯЕМ, НЕ ПОДМЕНЯЕМ: у кого кадровая роль ROLE_3/6/7 — доступ и
+        # область прежние, строка в строку. Право раздела добавляется РЯДОМ
+        # как второй ключ. Отвергнутые заказчиком варианты — выдавать кадровую
+        # роль при заведении учётки (лечит симптом: следующая заведённая
+        # руками снова окажется без доступа) и снять роли раздела с этого пути
+        # вовсе.
+        opened_by_ops_permission = False
         if not user.is_superuser:
             try:
                 user_role = user.role_info  # OneToOneField
                 role_code = user_role.get_role_code() if user_role else None
-                if not role_code or role_code not in ['ROLE_3', 'ROLE_6', 'ROLE_7']:
+            except Exception:
+                role_code = None
+            if role_code not in ('ROLE_3', 'ROLE_6', 'ROLE_7'):
+                # Право ЧТЕНИЯ СТАТУСОВ — то же, которым открыты борд расхода и
+                # аналитика службы. Свой код права здесь не заводится: экран
+                # показывает ровно то, что показывают они, и второе имя для
+                # одного и того же разошлось бы с ними при первой же раздаче.
+                opened_by_ops_permission = _has_ops_status_view(request)
+                if not opened_by_ops_permission:
                     return Response(
-                        {'error': 'Доступ разрешен только для ROLE_3 (Начальник управления), ROLE_6 (Начальник отдела) или ROLE_7 (Начальник департамента)'},
+                        {'error': (
+                            'Доступ разрешен только для ROLE_3 (Начальник управления), '
+                            'ROLE_6 (Начальник отдела), ROLE_7 (Начальник департамента) '
+                            'или роли раздела с правом «Статусы: просмотр»'
+                        )},
                         status=status.HTTP_403_FORBIDDEN
                     )
-            except Exception as e:
-                return Response(
-                    {'error': f'У пользователя нет активной роли: {str(e)}'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+
+        # Признак «вошёл правом раздела» едет ВМЕСТЕ с запросом, а не считается
+        # заново в каждом методе: резолюция прав стоит запросов, и второй счёт
+        # мог бы разойтись с первым.
+        request._directorate_by_ops_permission = opened_by_ops_permission
 
         if request.method == 'GET':
             return self._directorate_get(request, user)
@@ -480,7 +528,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """
         # Подразделения, за которые отвечает пользователь: своё и дочерние, а у
         # суперпользователя — ВСЁ дерево, все корни (Plane №304).
-        all_divisions = self._own_scope_divisions(user)
+        all_divisions = self._own_scope_divisions(user, request)
 
         if all_divisions is None:
             return Response(
@@ -859,7 +907,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         from django.core.exceptions import ValidationError
 
         # Определяем СОБСТВЕННОЕ подразделение пользователя
-        all_divisions = self._own_scope_divisions(user)
+        all_divisions = self._own_scope_divisions(user, request)
 
         if all_divisions is None:
             return Response(
@@ -1152,7 +1200,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         from organization_management.apps.statuses.api.serializers import EmployeeStatusSerializer
 
         # Определяем СОБСТВЕННОЕ подразделение пользователя (НЕ область видимости)
-        all_divisions = self._own_scope_divisions(user)
+        all_divisions = self._own_scope_divisions(user, request)
 
         if all_divisions is None:
             return Response(
@@ -1377,7 +1425,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         roots = list(Division.objects.filter(level=0)[:2])
         return roots[0] if len(roots) == 1 else None
 
-    def _own_scope_divisions(self, user):
+    def _own_scope_divisions(self, user, request=None):
         """Подразделения, которыми ручка `directorate` распоряжается за этого
         пользователя. `None` — подразделение не определено (ответ 400).
 
@@ -1396,6 +1444,16 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """
         if user.is_superuser:
             return Division.objects.all()
+
+        # ВОШЁЛ ПРАВОМ РАЗДЕЛА — И ОБЛАСТЬ БЕРЁТСЯ ОТТУДА ЖЕ (Plane №325).
+        # Кадровый резолвер ниже читает `role_info` и штатную единицу; у
+        # ролевой учётки раздела кадровая роль ROLE_1, и он либо вернул бы её
+        # личное подразделение, либо ничего. Ни то, ни другое не описывает
+        # область, которую даёт роль раздела: ответственному за расход
+        # департамента положен департамент, а не комната, где он сидит.
+        # Открыли дверь одним ключом — за ним и область.
+        if request is not None and getattr(request, '_directorate_by_ops_permission', False):
+            return _ops_scope_divisions(request)
 
         division = self._get_user_own_division(user)
         if not division:
@@ -1490,6 +1548,73 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         except Exception:
             return None
+
+
+class CanReadDirectorate(permissions.BasePermission):
+    """Кадровое право ИЛИ право раздела — для ЧТЕНИЯ ручки `directorate`.
+
+    Добавляется РЯДОМ с `CanViewStaffingTable`, а не вместо: у кого кадровое
+    право есть, поведение прежнее, строка в строку. Второй ключ — право
+    раздела `status.view` (Plane №325, решение заказчика 30.08.2026).
+    """
+
+    message = CanViewStaffingTable.message
+
+    def has_permission(self, request, view):
+        if CanViewStaffingTable().has_permission(request, view):
+            return True
+        return _has_ops_status_view(request)
+
+
+def _has_ops_status_view(request):
+    """Есть ли у актора право раздела «Статусы: просмотр» (Plane №325).
+
+    Импорт локальный: `staff_unit` — старое приложение, и модульная связь с
+    разделом ОМ протянула бы его зависимости во все его импорты. Отказ
+    резолвера (нет актора, нет грантов) — это «нет права», а не пятисотка:
+    гейт обязан оставаться fail-closed.
+    """
+    from organization_management.apps.operations.api.permissions import (
+        effective_permissions,
+    )
+
+    try:
+        perms = effective_permissions(request)
+    except Exception:
+        return False
+    return '*' in perms or _OPS_READ_STATUS_PERMISSION in perms
+
+
+def _ops_scope_divisions(request):
+    """Область подразделений, которую даёт роль раздела (Plane №325).
+
+    `None` от резолвера означает «право без скоупа» (в т.ч. wildcard ADMIN) —
+    разворачивается во ВСЁ дерево, как это делает `ops.daily`. Пустое
+    множество означает «право есть, а области нет»: возвращаем пустую выборку,
+    а не `None`, — иначе ответ 400 «не удалось определить подразделение» соврал
+    бы про причину, которую №329 как раз научился отличать.
+    """
+    from organization_management.apps.operations.api.permissions import resolve_actor_id
+    from organization_management.apps.operations.services import PermissionService
+
+    actor_id = resolve_actor_id(request)
+    if actor_id is None:
+        return Division.objects.none()
+    visible = PermissionService.visible_division_ids(
+        actor_id, _OPS_READ_STATUS_PERMISSION
+    )
+    if visible is None:
+        return Division.objects.all()
+    if not visible:
+        return Division.objects.none()
+    # Своё И потомки: область, выданная на департамент, обязана накрыть его
+    # управления — иначе «ответственный за расход департамента» увидел бы одну
+    # строку самого департамента и ни одного управления под ним.
+    roots = Division.objects.filter(id__in=list(visible))
+    ids = set(visible)
+    for root in roots:
+        ids.update(root.get_descendants(include_self=True).values_list('id', flat=True))
+    return Division.objects.filter(id__in=ids)
 
 
 def _ancestor_names(division):

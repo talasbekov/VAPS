@@ -890,6 +890,33 @@ class StatusTypeViewSet(viewsets.ReadOnlyModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
 
+def _actor_section_roles(actor_id):
+    """Активные роли РАЗДЕЛА актора с их областью (Plane №325).
+
+    Область печатается ИМЕНЕМ подразделения, а не id: «Ответственный за расход
+    департамента» без указания, какого именно, отвечает на вопрос наполовину.
+    `null` — роль выдана без области (действует на всё дерево).
+    """
+    from organization_management.apps.divisions.models import Division
+    from organization_management.apps.operations.selectors import OpsUserRoleSelector
+
+    grants = OpsUserRoleSelector.active_for_user(actor_id)
+    names = dict(
+        Division.objects.filter(
+            id__in=[g.scope_division_id for g in grants if g.scope_division_id]
+        ).values_list("id", "name")
+    )
+    return [
+        {
+            "code": grant.role_code_id,
+            "name": grant.role_code.name,
+            "scope_division_id": grant.scope_division_id,
+            "scope_division_name": names.get(grant.scope_division_id),
+        }
+        for grant in grants
+    ]
+
+
 class MyPermissionsViewSet(viewsets.ViewSet):
     # Schema-only аннотация: у plain ViewSet нет сериализатора, spectacular
     # отдавал бы "No response body". many=False приводит list-эвристику
@@ -902,6 +929,7 @@ class MyPermissionsViewSet(viewsets.ViewSet):
                     "permissions": serializers.ListField(
                         child=serializers.CharField()
                     ),
+                    "roles": serializers.ListField(child=serializers.DictField()),
                 },
             )
         )
@@ -914,7 +942,18 @@ class MyPermissionsViewSet(viewsets.ViewSet):
         perms = PermissionService.effective_permissions(
             actor_id, division_id=division_id
         )
-        return Response({"permissions": sorted(perms)})
+        # РОЛИ РАЗДЕЛА — РЯДОМ С ПРАВАМИ (Plane №325). Права отвечают на «что
+        # мне можно», а человеку в шапке нужно «кто я здесь»: до №325 портал
+        # печатал КАДРОВУЮ роль («Роль-1: Просмотр организации») учётке, чья
+        # роль раздела — «Ответственный за расход департамента», и человек
+        # видел не ту роль, под которой работает. Поле добавлено рядом:
+        # `permissions` не тронуто, старые читатели не замечают разницы.
+        return Response(
+            {
+                "permissions": sorted(perms),
+                "roles": _actor_section_roles(actor_id),
+            }
+        )
 
 
 class MyEmployeeViewSet(viewsets.ViewSet):

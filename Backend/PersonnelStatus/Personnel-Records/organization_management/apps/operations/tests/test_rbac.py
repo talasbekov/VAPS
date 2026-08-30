@@ -143,8 +143,22 @@ class TestMyPermissionsApi:
         RoleAdminService.assign_role(str(user.pk), "VIEWER", actor="test")
         response = api_client.get(self.URL)
         assert response.status_code == 200
+        # 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №325). Пин был на ВЕСЬ ответ, и
+        # добавление поля `roles` его сломало — правильно сломало: пин на
+        # целое тело и стережёт «состав ответа не меняется молча». Поле
+        # добавлено рядом с правами и НАЗВАНО здесь же: права отвечают «что
+        # мне можно», роль — «кто я здесь», и шапка портала печатала кадровую
+        # роль учётке, работающей под ролью раздела.
         assert response.json() == {
-            "permissions": ["personnel.view", "status.view"]
+            "permissions": ["personnel.view", "status.view"],
+            "roles": [
+                {
+                    "code": "VIEWER",
+                    "name": "VIEWER",
+                    "scope_division_id": None,
+                    "scope_division_name": None,
+                }
+            ],
         }
 
     def test_superuser_without_role_has_nothing(self):
@@ -157,7 +171,10 @@ class TestMyPermissionsApi:
         api_client.force_authenticate(admin)
         response = api_client.get(self.URL)
         assert response.status_code == 200
-        assert response.json() == {"permissions": []}
+        # Пин правлен вместе с соседним (Plane №325): ролей раздела у
+        # суперпользователя без назначения тоже нет — пусто, а не отсутствие
+        # поля. Читателю нужен предсказуемый список, а не «иногда ключа нет».
+        assert response.json() == {"permissions": [], "roles": []}
 
     def test_division_id_must_be_int(self):
         api_client, _user = self._client()
