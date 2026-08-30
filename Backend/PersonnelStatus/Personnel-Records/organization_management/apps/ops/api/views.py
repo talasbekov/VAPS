@@ -1091,6 +1091,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 override_reason=data.get("override_reason"),
                 # Роль наряда необязательна — см. `_validated_placement_role`.
                 role_code=data.get("roleCode"),
+                # Секция бланка — вторая координата места (Plane №242), тоже
+                # необязательна: расстановка без неё не ошибка, а «ещё не
+                # назначено».
+                section_code=data.get("sectionCode"),
                 # Кто действует ролью в данных, а не правом. Журнал мутаций
                 # пишет СЕРВИС: у него транзакция операции, и запись «действие
                 # замещающего» не может разъехаться с самим действием.

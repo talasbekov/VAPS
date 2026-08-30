@@ -1724,6 +1724,10 @@ export const securityEventsHandlers = [
         // иначе экран в мок-режиме зеленел бы, а на живом стенде роль
         // терялась бы молча.
         roleCode: (body as { roleCode?: string }).roleCode ?? null,
+        // Секция бланка (Plane №242) — по тому же доводу, что и роль: мок,
+        // молчащий о поле, зеленил бы экран, у которого на живом стенде
+        // вторая координата теряется.
+        sectionCode: (body as { sectionCode?: string }).sectionCode ?? null,
         // Подразделение и статус дня — сервер считает их на чтении (Plane
         // №65, «Р-1»); мок повторяет форму ответа, иначе экран зелен на моке
         // и пуст на живом стенде.
@@ -2318,6 +2322,8 @@ export const securityEventsHandlers = [
         // Замена на посту наследует роль наряда: место в бланке остаётся тем
         // же, меняется только человек (Plane №239).
         roleCode: outgoing.roleCode ?? null,
+        // Секция наследуется вместе с ролью: место в бланке остаётся тем же.
+        sectionCode: outgoing.sectionCode ?? null,
         divisionName: incoming.unit,
         ...personnelDayStatus(incoming.id),
         isSectorSenior: false,
