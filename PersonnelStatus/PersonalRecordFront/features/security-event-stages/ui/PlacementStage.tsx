@@ -58,6 +58,7 @@ import {
 } from "@/hooks/use-security-event-stages";
 import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { usePlacementRoles } from "@/hooks/use-placement-roles";
+import { usePlacementSections } from "@/hooks/use-placement-sections";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import type {
   PersonnelSummarySnapshot,
@@ -135,6 +136,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // ломает экран: выбор просто не показывается, и это честно — назначать
   // нечего, пока роли не завели.
   const placementRoles = usePlacementRoles();
+  const placementSections = usePlacementSections();
   const canSeeRatings = hasPermission("rating.view_aggregate");
   const ratings = useOperationalRatings({ enabled: canSeeRatings });
 
@@ -803,6 +805,26 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               )?.label ?? assignment.roleCode}
                             </span>
                           )}
+                          {/* Секция — рядом с ролью и в том же виде (Plane
+                              №242): «кем» и «где» отвечают на один вопрос
+                              вместе, и разносить их по разным местам строки
+                              значило бы заставить читать дважды. Подпись
+                              справочника длинная — в бейдже она обрезается,
+                              полная остаётся в подсказке. */}
+                          {assignment.sectionCode !== null && (
+                            <span
+                              className="max-w-[180px] truncate rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground"
+                              title={
+                                placementSections.data?.find(
+                                  (section) => section.code === assignment.sectionCode
+                                )?.label ?? assignment.sectionCode
+                              }
+                            >
+                              {placementSections.data?.find(
+                                (section) => section.code === assignment.sectionCode
+                              )?.label ?? assignment.sectionCode}
+                            </span>
+                          )}
                         </span>
                         {(
                           autoReasons[
@@ -884,6 +906,14 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               postId: assignment.postId,
                               employeeId: assignment.employeeId,
                               ...(nextRole === "" ? {} : { roleCode: nextRole }),
+                              // 🔴 СЕКЦИЯ ПЕРЕЕЗЖАЕТ ВМЕСТЕ (Plane №242).
+                              // Смена роли — это снятие и назначение заново, и
+                              // всё, что не передано, теряется. Человек менял
+                              // бы роль и молча лишался секции: место в бланке
+                              // опустело бы, а причина не была бы видна нигде.
+                              ...(assignment.sectionCode === null
+                                ? {}
+                                : { sectionCode: assignment.sectionCode }),
                             });
                           }}
                         >
@@ -891,6 +921,51 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           {placementRoles.data.map((role) => (
                             <option key={role.code} value={role.code}>
                               {role.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {/* Секция бланка: ГДЕ человек стоит — у какого кортежа,
+                          на каком объекте (Plane №242). Смена секции устроена
+                          так же, как смена роли: своей операции у бэка нет,
+                          поэтому снятие и назначение заново, ПО ОЧЕРЕДИ (два
+                          `mutate` разом гонятся — снятие успевает удалить
+                          только что созданное назначение). */}
+                      {placementSections.data && placementSections.data.length > 0 && (
+                        <select
+                          aria-label={`Секция бланка: ${assignment.employeeName}`}
+                          /* Ширина — как у соседних селектов колонки: свой
+                             предел делал столбик действий рваным, а нативный
+                             селект длинную подпись обрезает сам. */
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                          value={assignment.sectionCode ?? ""}
+                          disabled={
+                            assign.isPending ||
+                            unassign.isPending ||
+                            !access.can(PLACEMENT_MANAGE)
+                          }
+                          aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                          title={access.reason(PLACEMENT_MANAGE)}
+                          onChange={async (e) => {
+                            const nextSection = e.target.value;
+                            if (nextSection === (assignment.sectionCode ?? "")) return;
+                            await unassign.mutateAsync({ assignmentId: assignment.id });
+                            await assign.mutateAsync({
+                              postId: assignment.postId,
+                              employeeId: assignment.employeeId,
+                              // Роль переезжает вместе — тот же довод, что и у
+                              // секции при смене роли.
+                              ...(assignment.roleCode === null
+                                ? {}
+                                : { roleCode: assignment.roleCode }),
+                              ...(nextSection === "" ? {} : { sectionCode: nextSection }),
+                            });
+                          }}
+                        >
+                          <option value="">Секция не назначена</option>
+                          {placementSections.data.map((section) => (
+                            <option key={section.code} value={section.code}>
+                              {section.label}
                             </option>
                           ))}
                         </select>
@@ -904,10 +979,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           if (target === "") return;
                           // Перемещение = снятие с поста и назначение на другой:
                           // своей операции «переместить» у бэка нет.
+                          // 🔴 РОЛЬ И СЕКЦИЯ ПЕРЕЕЗЖАЮТ С ЧЕЛОВЕКОМ. До №242
+                          // перемещение на другой пост молча теряло роль
+                          // наряда: назначение пересоздавалось без неё, и
+                          // место в бланке пустело. Секция добавлена рядом,
+                          // и обе передаются явно.
                           unassign.mutate({ assignmentId: assignment.id });
                           assign.mutate({
                             postId: target,
                             employeeId: assignment.employeeId,
+                            ...(assignment.roleCode === null
+                              ? {}
+                              : { roleCode: assignment.roleCode }),
+                            ...(assignment.sectionCode === null
+                              ? {}
+                              : { sectionCode: assignment.sectionCode }),
                           });
                         }}
                       >

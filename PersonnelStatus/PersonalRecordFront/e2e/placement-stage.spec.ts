@@ -336,6 +336,102 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     )
   })
 
+  test('секция бланка назначается в строке, доезжает до сервера и переживает смену роли', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * ВТОРАЯ КООРДИНАТА МЕСТА (Plane №242). Роль отвечает «кем человек идёт»,
+     * секция — «где»: «Көшпелі күзетінің жауаптысы» есть у восьми выездных
+     * охран подряд, и по одной роли документ ставил первого назначенного в
+     * первую охрану наугад.
+     *
+     * 🔴 ГЛАВНОЕ ЗДЕСЬ — ВТОРАЯ ПОЛОВИНА: секция обязана ПЕРЕЖИТЬ смену роли.
+     * Смена роли устроена как снятие и назначение заново, и всё, что не
+     * передано явно, теряется молча. Человек менял бы роль и лишался секции;
+     * место в бланке опустело бы, а причина не была бы видна нигде. Тем же
+     * дефектом до №242 страдало перемещение на другой пост — оно теряло роль.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+
+    const dictionary = async (code: string) =>
+      ((await (
+        await request.get(`${API}/api/ops/dictionaries/${code}/entries/`, { headers: auth })
+      ).json()) as { results: { code: string; label: string }[] }).results
+
+    const sections = await dictionary('PLACEMENT_SECTIONS')
+    const roles = await dictionary('PLACEMENT_ROLES')
+    const section = sections[0]
+    const role = roles[0]
+    requireFixture(section, 'справочник секций бланка пуст — назначать нечего')
+    requireFixture(role, 'справочник ролей наряда пуст — менять роль нечем')
+
+    const list = (await (
+      await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
+        headers: auth,
+      })
+    ).json()) as { results: { id: string }[] }
+    const target = list.results[0]
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
+    const eventId = target!.id
+
+    type Row = { id: string; roleCode: string | null; sectionCode: string | null }
+    const assignmentsOf = async (): Promise<Row[]> => {
+      const fresh = (await (
+        await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+      ).json()) as { placementAssignments: Row[] }
+      return fresh.placementAssignments
+    }
+
+    const before = new Set((await assignmentsOf()).map((row) => row.id))
+    const mineOf = (rows: Row[]) => rows.filter((row) => !before.has(row.id)).at(-1) ?? null
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${eventId}/`)
+      await page.locator('button', { hasText: 'Пост' }).first().click()
+      await page.locator('aside button', { hasText: 'Совпадение' }).first().click()
+
+      await expect
+        .poll(async () => (await assignmentsOf()).length, { timeout: 15_000 })
+        .toBe(before.size + 1)
+
+      await page
+        .getByRole('combobox', { name: /^Секция бланка: / })
+        .first()
+        .selectOption(section!.code)
+
+      await expect
+        .poll(async () => mineOf(await assignmentsOf())?.sectionCode ?? null, {
+          timeout: 20_000,
+        })
+        .toBe(section!.code)
+
+      // Смена РОЛИ не должна снести секцию.
+      await page
+        .getByRole('combobox', { name: /^Роль наряда: / })
+        .first()
+        .selectOption(role!.code)
+
+      await expect
+        .poll(async () => mineOf(await assignmentsOf())?.roleCode ?? null, { timeout: 20_000 })
+        .toBe(role!.code)
+      expect(
+        mineOf(await assignmentsOf())?.sectionCode ?? null,
+        'смена роли снесла секцию бланка — место в документе опустеет молча',
+      ).toBe(section!.code)
+    } finally {
+      for (const row of await assignmentsOf()) {
+        if (before.has(row.id)) continue
+        await request.delete(
+          `${API}/api/ops/security-events/${eventId}/placement/${encodeURIComponent(row.id)}/`,
+          { headers: auth },
+        )
+      }
+    }
+  })
+
   test('роль наряда назначается в строке и доезжает до сервера', async ({
     page,
     request,
