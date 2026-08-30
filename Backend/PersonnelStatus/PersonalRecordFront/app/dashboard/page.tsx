@@ -9,7 +9,10 @@ import OrgBoard from "@/features/organization-structure/ui/OrgBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Building2 } from "lucide-react";
-import { useAbsenceStatistics } from "@/hooks/use-absence-statistics";
+import {
+  absenceStatsFailure,
+  useAbsenceStatistics,
+} from "@/hooks/use-absence-statistics";
 
 export default function DashboardPage() {
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(
@@ -60,6 +63,10 @@ export default function DashboardPage() {
           }
           isLoading={isLoadingStats}
           isError={statsError !== null && statsError !== undefined}
+          // ПРИЧИНА, а не только факт отказа (Plane №340): «учётка не
+          // привязана к сотруднику» — штатное состояние служебной учётки, и
+          // показывать его как сбой значит приучать не верить сообщениям.
+          failure={absenceStatsFailure(statsError)}
           onRetry={() => void refetchStats()}
         />
 
