@@ -9,6 +9,8 @@
 Второе свойство — повтор. Стенд поднимают не один раз, и второй запуск не должен
 ни падать, ни плодить второе «Управление» рядом с первым.
 """
+from datetime import timedelta
+
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -160,6 +162,52 @@ def test_it_can_stop_before_the_submission(storage, types):  # noqa: F811
     assert OpsEmployeeStatus.objects.count() > 0, "статусы не заведены — сид пуст"
     assert OpsDailySubmission.objects.count() == 0
     assert OpsIssuedDocument.objects.count() == 0
+
+
+def test_no_submit_releases_a_foreign_submission_of_that_day(storage, types):  # noqa: F811
+    """`--no-submit` снимает сдачу ЧУЖОГО подразделения за тот же день (№330).
+
+    Красная проба к дефекту, стоившему двух разборов «моя ли это правка». Флаг
+    обещает «день не сдан», и пробы `day-submission` зовут его ради этого. До
+    №330 он распускал только СВОЁ подразделение: сдача, оставленная на стенде
+    обходом портала, оставалась лежать, и пробы краснели «Сдано 1 вместо 2» —
+    падение, неотличимое от дефекта кода.
+
+    Сдача ВЧЕРАШНЕГО дня при этом обязана уцелеть: уборка стенда не должна
+    вычищать историю, за которой никто не приходил.
+    """
+    # День берётся ТОТ ЖЕ, что увидит сид: он бежит под замороженными часами
+    # (`seed()` → `clock.override(MORNING)`), и «сегодня» машины здесь ни при
+    # чём — проба на нём была бы зелена в любой день и не проверяла бы ничего.
+    day = TODAY
+    other = Division.objects.create(name="Чужое управление (проба)")
+    OpsDailySubmission.objects.create(
+        division_id=other.id,
+        business_date=day,
+        version=1,
+        is_current=True,
+        event="CONFIRMED_NO_CHANGES",
+        submitted_by="1",
+        submitted_at=MORNING,
+        snapshot={},
+    )
+    yesterday = OpsDailySubmission.objects.create(
+        division_id=other.id,
+        business_date=day - timedelta(days=1),
+        version=1,
+        is_current=True,
+        event="CONFIRMED_NO_CHANGES",
+        submitted_by="1",
+        submitted_at=MORNING,
+        snapshot={},
+    )
+
+    seed(no_submit=True)
+
+    assert OpsDailySubmission.objects.filter(business_date=day).count() == 0
+    assert OpsDailySubmission.objects.filter(pk=yesterday.pk).exists(), (
+        "уборка стенда снесла вчерашнюю сдачу — это история, а не мусор"
+    )
 
 
 def test_no_submit_wins_over_the_release(storage, types):  # noqa: F811

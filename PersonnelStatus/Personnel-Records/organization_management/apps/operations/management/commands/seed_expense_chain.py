@@ -23,6 +23,12 @@
 Раньше это лечилось запретом «не звать сид перед смоуком» — то есть человек
 должен был помнить. Теперь у команды есть `--no-submit`: люди и статусы
 заводятся, день остаётся НЕ СДАННЫМ, и обе пробы проходят свой путь целиком.
+
+⚠️ `--no-submit` СНИМАЕТ И ЧУЖИЕ СДАЧИ ЭТОГО ДНЯ (Plane №330). Обещание флага
+— «день не сдан», а не «день не сдан у моего подразделения»: сдача, оставленная
+на стенде обходом портала, краснит ровно те же пробы и ровно так же незаметно.
+За 30.08.2026 одна такая строка (`division_id=4`, обход №324) стоила двух
+разборов «моя ли это правка» через `git stash`.
 """
 from datetime import timedelta
 
@@ -41,6 +47,7 @@ from organization_management.apps.operations import document_storage
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_document import OpsIssuedDocument
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.models_submission import OpsDailySubmission
 from organization_management.apps.operations.selectors import DailySubmissionSelector
 from organization_management.apps.operations.status_types import StatusType
 from organization_management.apps.staff_unit.models import StaffUnit
@@ -90,6 +97,7 @@ class Command(BaseCommand):
         # `--no-submit` сильнее `--no-release`: выпускать документ по
         # НЕ СДАННОМУ дню нечем, и молча сдать день ради выпуска значило бы
         # обойти флаг, ради которого его и завели.
+        released = self._release_day(day) if options["no_submit"] else 0
         submission = None if options["no_submit"] else self._submission(division, day)
         issued = (
             None
@@ -103,6 +111,7 @@ class Command(BaseCommand):
             self.stdout.write(f"STAND_SUBMISSION={submission.pk}")
         else:
             self.stdout.write("STAND_SUBMISSION=нет (--no-submit): день не сдан")
+            self.stdout.write(f"STAND_RELEASED_SUBMISSIONS={released}")
         if issued is not None:
             self.stdout.write(f"STAND_DOCUMENT=№{issued.number}/{issued.year}")
         self.stdout.write(
@@ -111,6 +120,28 @@ class Command(BaseCommand):
                 + (" до статусов: день НЕ сдан" if options["no_submit"] else "")
             )
         )
+
+    def _release_day(self, day):
+        """Снять сдачи ДНЯ У ВСЕХ подразделений стенда (Plane №330).
+
+        ЗАЧЕМ ШИРЕ СВОЕГО ПОДРАЗДЕЛЕНИЯ. `--no-submit` обещает «день НЕ сдан»,
+        и ровно за этим его зовут перед смоуком. До №330 он обещал это только
+        про СВОЁ подразделение: чужая сдача, оставленная обходом портала,
+        оставалась лежать — и краснила пробы, которым нужен несданный день.
+        Один такой ряд (`division_id=4`, оставленный обходом 29.08.2026) стоил
+        двух разборов «моя ли это правка» через `git stash`.
+
+        ПОЧЕМУ ПРЯМОЕ УДАЛЕНИЕ, хотя файл требует штатных сервисов. Сдача
+        версионируется и НЕ отменяется по построению: отмены дня в домене нет
+        вовсе, есть только поправка следующей версией. То есть штатного пути
+        сюда не существует, и притвориться, что он есть, было бы хуже прямого
+        удаления с этой подписью. Команда стендовая, прод-путей не трогает.
+
+        Возвращает, сколько строк снято, — молчаливая уборка не отличается от
+        уборки, которой не было.
+        """
+        removed, _ = OpsDailySubmission.objects.filter(business_date=day).delete()
+        return removed
 
     def _division(self):
         division, _ = Division.objects.get_or_create(name=DIVISION_NAME)
