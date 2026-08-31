@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect} from "react";
 import Link from "next/link";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { useAuth } from "@/lib/auth";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { Pager } from "@/components/pager";
 import { DivisionPicker } from "@/components/division-picker";
@@ -249,6 +250,20 @@ export function StatusTable({
   loading: externalLoading = false,
   onRefresh,
 }: StatusTableProps) {
+  // Роль-наблюдатель (Plane №348). Заказчик завёл «Сотрудника», который «видит
+  // своё управление, но БЕЗ возможности редактирования»; бэкенд правку и так
+  // отклоняет, но экран показывал ему все управляющие элементы — то есть
+  // обещал действие, которое закончится отказом.
+  //
+  // ВЫБОР: прячем то, чего роль не может, а не гасим. Погашенная кнопка —
+  // разговор про «сейчас нельзя, позже можно»; у роли права не появится
+  // никогда, и вечно серая панель просто занимает место. Так же ведёт себя
+  // меню слева: пункт без права не рисуется вовсе.
+  // ИСКЛЮЧЕНИЕ — меню строки: там пустое место читается как «кнопку забыли»,
+  // и вместо него ставится строка с причиной (то же правило, что у вакансии
+  // ниже).
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission("statuses", "update");
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -664,9 +679,17 @@ export function StatusTable({
           <div className="text-sm text-muted-foreground">
             {/* «из» — по ОТБОРУ, а не по странице: выбор живёт поверх
                 страниц, и «из 50» на пяти тысячах сотрудников означало бы не
-                то, что человек видит (Plane №231). */}
-            Выбрано: {selectedEmployees.length} из{" "}
-            {data?.matched_count ?? filteredEmployees.length}
+                то, что человек видит (Plane №231).
+                Наблюдателю подпись не показывается вовсе: выбирать строки ему
+                нечем и незачем — счётчик выбора без выбора врёт. */}
+            {canEdit ? (
+              <>
+                Выбрано: {selectedEmployees.length} из{" "}
+                {data?.matched_count ?? filteredEmployees.length}
+              </>
+            ) : (
+              <>Всего: {data?.matched_count ?? filteredEmployees.length}</>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -710,15 +733,17 @@ export function StatusTable({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={
-                      selectedEmployees.length === filteredEmployees.length &&
-                      filteredEmployees.length > 0
-                    }
-                    onCheckedChange={handleSelectAll}
-                  />
-                </TableHead>
+                {canEdit && (
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={
+                        selectedEmployees.length === filteredEmployees.length &&
+                        filteredEmployees.length > 0
+                      }
+                      onCheckedChange={handleSelectAll}
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="w-16">№</TableHead>
                 <TableHead>ФИО</TableHead>
                 <TableHead>Отдел</TableHead>
@@ -762,14 +787,16 @@ export function StatusTable({
                     isOverdue(employee.endDate) ? "bg-red-50" : ""
                   }`}
                 >
-                  <TableCell>
-                    <Checkbox
-                      checked={selectedEmployees.includes(employee.id)}
-                      onCheckedChange={(checked) =>
-                        handleSelectEmployee(employee.id, checked as boolean)
-                      }
-                    />
-                  </TableCell>
+                  {canEdit && (
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedEmployees.includes(employee.id)}
+                        onCheckedChange={(checked) =>
+                          handleSelectEmployee(employee.id, checked as boolean)
+                        }
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">
                     {employee.number}
                   </TableCell>
@@ -902,7 +929,12 @@ export function StatusTable({
                             нерабочая строка объясняет причину — то же
                             правило, что у пустого состояния списка: не белое
                             пятно, а фраза. */}
-                        {isVacancyRow(employee) ? (
+                        {!canEdit ? (
+                          <DropdownMenuItem disabled>
+                            <UserX className="mr-2 h-4 w-4" aria-hidden="true" />
+                            Только просмотр — правка статусов закрыта
+                          </DropdownMenuItem>
+                        ) : isVacancyRow(employee) ? (
                           <DropdownMenuItem disabled>
                             <UserX className="mr-2 h-4 w-4" aria-hidden="true" />
                             Должность вакантна — действий нет

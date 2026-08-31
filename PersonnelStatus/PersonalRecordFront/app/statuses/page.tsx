@@ -17,8 +17,15 @@ import { directorateDenial } from "@/hooks/use-staff-units-by-directorate"
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page"
 import { useQueryClient } from "@tanstack/react-query"
 import { SecondmentRequestsDialog } from "@/features/secondment-requests/ui/SecondmentRequestsDialog";
+import { useAuth } from "@/lib/auth";
 
 export default function StatusesPage() {
+  // Роль-наблюдатель (Plane №348): «видит своё управление, но без возможности
+  // редактирования». Управляющие элементы ей не показываются — обещание
+  // действия, которое сервер отклонит, хуже их отсутствия. «Экспорт» остаётся:
+  // это чтение.
+  const { hasPermission } = useAuth()
+  const canEdit = hasPermission("statuses", "update")
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
   const queryClient = useQueryClient()
 
@@ -134,15 +141,21 @@ export default function StatusesPage() {
             <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="table">Таблица сотрудников</TabsTrigger>
               <TabsTrigger value="calendar">Календарь статусов</TabsTrigger>
-              <TabsTrigger value="mass-update">Массовое обновление</TabsTrigger>
+              {canEdit && (
+                <TabsTrigger value="mass-update">Массовое обновление</TabsTrigger>
+              )}
             </TabsList>
 
             <div className="flex flex-wrap items-center gap-2">
-              <SecondmentRequestsDialog />
-              <Button variant="outline" size="sm">
-                <Upload className="h-4 w-4 mr-2" />
-                Импорт
-              </Button>
+              {canEdit && (
+                <>
+                  <SecondmentRequestsDialog />
+                  <Button variant="outline" size="sm">
+                    <Upload className="h-4 w-4 mr-2" />
+                    Импорт
+                  </Button>
+                </>
+              )}
               <Button variant="outline" size="sm">
                 <Download className="h-4 w-4 mr-2" />
                 Экспорт
@@ -174,12 +187,17 @@ export default function StatusesPage() {
             <StatusCalendarBoard />
           </TabsContent>
 
-          <TabsContent value="mass-update" className="space-y-6">
-            <MassStatusUpdate 
-              selectedEmployees={selectedEmployees} 
-              onSuccess={handleRefresh}
-            />
-          </TabsContent>
+          {/* Содержимое вкладки снимается вместе с самой вкладкой: оставленное
+              под скрытым переключателем, оно открывалось бы по адресу и по
+              восстановленному состоянию вкладок. */}
+          {canEdit && (
+            <TabsContent value="mass-update" className="space-y-6">
+              <MassStatusUpdate
+                selectedEmployees={selectedEmployees}
+                onSuccess={handleRefresh}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </DashboardLayout>

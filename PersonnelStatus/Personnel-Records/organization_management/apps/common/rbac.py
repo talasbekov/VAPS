@@ -12,6 +12,14 @@ from typing import Optional, Any
 from django.contrib.auth.models import User
 
 
+# Коды ролей матрицы доступа (Plane №348). Область у них считается одинаково —
+# «своё подразделение и всё, что под ним»; списком, а не проверкой «не из
+# ROLE_*», чтобы новая роль не получала область молча, самим фактом появления.
+ACCESS_MATRIX_ROLES = frozenset({
+    'EMPLOYEE_RO', 'HEAD_BASIC', 'HEAD_REPORTS', 'FORCES_OFFICER',
+})
+
+
 def check_permission(user: User, permission: str, obj: Any = None) -> bool:
     """
     Главная функция проверки прав доступа
@@ -203,6 +211,18 @@ def is_in_scope(user: User, obj: Any, permission: str) -> bool:
         if not department:
             return False
         return is_in_department(obj_division, department)
+
+    # Роли матрицы доступа (Plane №348). Область у всех четырёх читается
+    # ОДИНАКОВО — «своё подразделение и всё, что под ним», — и различаются они
+    # не областью, а набором модулей (он живёт на клиенте, lib/auth.tsx).
+    # Отдельная ветка нужна затем, чтобы функция не свалилась в `return False`
+    # ниже: без неё роль, которой права выданы, всё равно не увидела бы ни
+    # одного объекта, и дефект выглядел бы как «права не работают».
+    if role in ACCESS_MATRIX_ROLES:
+        scope = role_info.effective_scope_division
+        if not scope:
+            return False
+        return is_in_subtree(obj_division, scope)
 
     return False
 
@@ -487,6 +507,14 @@ def _get_scope_division_ids(role: str, scope) -> list:
 
     # Роль-5: подразделение и все дочерние
     if role == 'ROLE_5':
+        if hasattr(scope, 'get_descendants'):
+            return list(scope.get_descendants(include_self=True).values_list('id', flat=True))
+        return [scope.id]
+
+    # Роли матрицы доступа (Plane №348): своё подразделение и всё под ним —
+    # то же правило, что и в `is_in_scope`, чтобы выборка и точечная проверка
+    # не разошлись.
+    if role in ACCESS_MATRIX_ROLES:
         if hasattr(scope, 'get_descendants'):
             return list(scope.get_descendants(include_self=True).values_list('id', flat=True))
         return [scope.id]
