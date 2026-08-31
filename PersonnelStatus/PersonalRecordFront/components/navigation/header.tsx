@@ -21,7 +21,7 @@ import {
   AlertTriangle,
   User,
 } from "lucide-react";
-import { useAuth, ROLES, ResourceGate } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { NotificationsDropdown } from "@/features/notifications/ui/NotificationsDropdown";
 import { EditProfileDialog } from "@/features/edit-profile";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
@@ -39,14 +39,13 @@ export function Header({
   onDesktopMenuClick,
   desktopSidebarOpen = true,
 }: HeaderProps) {
-  const { user, logout, hasPermission } = useAuth();
-  const userRole = user ? ROLES[user.role] : null;
-  // Роль РАЗДЕЛА — рядом с кадровой (Plane №325). У ролевых учёток раздела
-  // кадровая роль ROLE_1 «Просмотр организации», и шапка печатала именно её:
-  // человек видел не ту роль, под которой работает. Кадровую не убираем —
-  // она настоящая и ею открыт кадровый контур; просто перестаём молчать о
-  // второй.
-  const { roles: sectionRoles } = useOpsPermissions();
+  const { user, logout } = useAuth();
+  // 🔴 КАДРОВОГО БЕЙДЖА БОЛЬШЕ НЕТ (Plane №352, Ш-4). Их было два: кадровая
+  // роль («Роль-4») и роль раздела. Кадровой не существует — её каталог снят,
+  // — и второе имя рядом с настоящим только сбивало: у ролевых учёток там
+  // всегда стояло «Роль-1: Просмотр организации», то есть не та роль, под
+  // которой человек работает.
+  const { roles: sectionRoles, hasPermission } = useOpsPermissions();
   const sectionRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
 
@@ -87,15 +86,13 @@ export function Header({
         </div>
 
         <div className="flex shrink-0 items-center gap-2 ml-auto sm:gap-3">
-          {/* Роль из прототипа. В эталоне это СЕЛЕКТ — там демонстрационный
-              стенд, где ролью переключают показ. Здесь роль назначает сервер,
-              и выпадающий список, который ничего не меняет, был бы мёртвым
-              контролом: показываем ту роль, что действительно выдана. */}
-          {userRole && (
-            <span className="text-foreground hidden items-center rounded-lg border px-3 py-1.5 text-xs font-semibold lg:inline-flex">
-              {/* Слова «Роль:» здесь нет намеренно: имена ролей в системе уже
-                  начинаются с «Роль-N», и префикс давал «Роль: Роль-4». */}
-              {userRole.name}
+          {/* Роль в шапке ОДНА — та, что выдана в разделе. Пустое место
+              вместо неё молчало бы о причине отказов, поэтому у учётки без
+              ролей раздела стоит подпись «Роль не назначена»: человек видит,
+              почему экраны закрыты, и знает, что просить. */}
+          {sectionRole === null && (
+            <span className="text-muted-foreground hidden items-center rounded-lg border border-dashed px-3 py-1.5 text-xs lg:inline-flex">
+              Роль не назначена
             </span>
           )}
           {sectionRole && (
@@ -158,11 +155,19 @@ export function Header({
                   <p className="text-sm leading-none text-muted-foreground">
                     {user?.email}
                   </p>
-                  {userRole && (
-                    <Badge className={`mt-2 text-sm ${userRole.color} w-fit`}>
-                      {userRole.name}
-                    </Badge>
-                  )}
+                  {/* Роль в карточке профиля — та же, что в шапке: раздела.
+                      Область печатается рядом, иначе «Начальник управления»
+                      не отвечает, какого именно. */}
+                  <Badge
+                    variant={sectionRole ? "default" : "outline"}
+                    className="mt-2 w-fit text-sm"
+                  >
+                    {sectionRole
+                      ? sectionRole.scope_division_name
+                        ? `${sectionRole.name} · ${sectionRole.scope_division_name}`
+                        : sectionRole.name
+                      : "Роль не назначена"}
+                  </Badge>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -173,12 +178,16 @@ export function Header({
                 <User className="mr-3 h-4 w-4" />
                 <span>Редактировать профиль</span>
               </DropdownMenuItem>
-              <ResourceGate resource="settings">
+              {/* «Система» открыта правом раздела `admin.roles` — тем же,
+                  которым открыты сами экраны настроек (см.
+                  `entities/portal-access`). Раньше пункт спрашивал ресурс
+                  зашитой портальной роли и расходился с ними. */}
+              {hasPermission("admin.roles") && (
                 <DropdownMenuItem className="text-base py-2">
                   <Settings className="mr-3 h-4 w-4" />
                   <span>Настройки</span>
                 </DropdownMenuItem>
-              </ResourceGate>
+              )}
               <DropdownMenuItem
                 onClick={() => logout()}
                 className="text-base py-2"
@@ -197,26 +206,13 @@ export function Header({
         onOpenChange={setIsProfileDialogOpen}
       />
 
-      {/* Alert встроен в header.
-          РОЛЬ РАЗДЕЛА СНИМАЕТ ЭТУ ПЛАШКУ (Plane №325). Плашка говорит о
-          КАДРОВОЙ роли, и у ролевой учётки раздела она всегда ROLE_1
-          «Просмотр организации» — то есть плашка висела бы у всех 28 таких
-          учёток постоянно и утверждала бы неправду: права у них есть, просто
-          в другом каталоге. Плашка о «ограниченных правах» рядом с рабочим
-          экраном учит не верить предупреждениям вообще. */}
-      {user &&
-        sectionRole === null &&
-        user.role !== "role-2" &&
-        user.role !== "role-4" &&
-        user.role !== "role-6" && (
-          <Alert className="border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 rounded-none">
-            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-            <AlertDescription className="text-yellow-800 dark:text-yellow-200">
-              Ваша роль "{userRole?.name}" имеет ограниченные права доступа.
-              Некоторые функции могут быть недоступны.
-            </AlertDescription>
-          </Alert>
-        )}
+      {/* 🔴 ЖЁЛТАЯ ПЛАШКА «ваша роль имеет ограниченные права» СНЯТА
+          (Plane №352, Ш-4). Она говорила о КАДРОВОЙ роли, которой больше нет,
+          и висела бы теперь у всех подряд. Правду о правах говорят два места:
+          подпись роли раздела в шапке (или «Роль не назначена») и отказ
+          конкретного экрана, который называет НУЖНОЕ право. Предупреждение
+          «некоторые функции могут быть недоступны» не называет ни одной и
+          учит не верить предупреждениям вообще. */}
     </header>
   );
 }

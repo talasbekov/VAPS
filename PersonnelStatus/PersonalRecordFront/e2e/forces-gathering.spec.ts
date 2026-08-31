@@ -951,7 +951,16 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
       async (route) =>
         route.fulfill({
           json: {
-            permissions: ['event.view', 'event.manage', 'status.view', 'personnel.view'],
+            // `forces.select` держит ЭКРАН открытым, а не действие: с Ш-1
+            // (Plane №352) пункт «Сбор сил» закрыт гейтом страницы на трёх
+            // правах сбора, и без одного из них проба смотрела бы на отказ
+            // модуля вместо цепочки. Проверяемые права цепочки
+            // (`forces.command`, `forces.allocate`) остаются снятыми — именно
+            // их отсутствие и выключает кнопку.
+            permissions: [
+              'event.view', 'event.manage', 'status.view', 'personnel.view',
+              'forces.select',
+            ],
           },
         }),
     )

@@ -9,7 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth, ROLES } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { modulePermissionsOf } from "@/entities/portal-access";
 import { useSecurityEvents } from "@/hooks/use-security-events";
@@ -302,8 +302,10 @@ function LinkStatus() {
 }
 
 export function Sidebar() {
-  const { user, hasPermission } = useAuth();
-  const userRole = user ? ROLES[user.role] : null;
+  // Из `useAuth` берётся только КТО вошёл: роль и права переехали в раздел
+  // (Plane №352, Ш-4), и подпись человека внизу меню читает их оттуда же,
+  // что и шапка.
+  const { user } = useAuth();
   const pathname = normalizePath(usePathname() ?? "");
 
   // Счётчик у «Реестра ОМ». Берётся `count` СЕРВЕРА при `page_size=1`: строки
@@ -349,8 +351,14 @@ export function Sidebar() {
   // мигание меню на каждом открытии приложения — и, что хуже, показать
   // человеку неполное меню как окончательное, если запрос прав не ответит
   // вовсе. Отказ страницы остаётся вторым рубежом: он никуда не делся.
-  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
-    useOpsPermissions();
+  const {
+    hasPermission: hasOpsPermission,
+    isLoading: opsPermissionsLoading,
+    roles: sectionRoles,
+  } = useOpsPermissions();
+  // Подпись внизу меню: первая роль раздела. Их может быть несколько — полный
+  // состав виден в профиле, а строка в 256px не место для списка.
+  const sidebarRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
 
   const visibleCategories = CATEGORIES.map((category) => ({
     ...category,
@@ -572,13 +580,27 @@ export function Sidebar() {
       {/* Подвал прототипа: состояние связи и карточка человека. */}
       <div className="border-sidebar-border shrink-0 border-t p-3 sidebar-role-card">
         <LinkStatus />
-        {userRole && (
+        {/* 🔴 КАРТОЧКА ЧЕЛОВЕКА БОЛЬШЕ НЕ ЗАВИСИТ ОТ РОЛИ (Plane №352, Ш-4).
+            Она стояла под `userRole &&` — то есть у учётки без портальной
+            роли пропадала целиком вместе с именем и входом в профиль. Роли
+            портальной больше нет вовсе, и условие исчезло бы вместе с
+            карточкой: теперь она показывается всегда, пока есть вошедший, а
+            второй строкой печатает роль РАЗДЕЛА либо «Роль не назначена». */}
+        {user && (
           <Link
             href="/security-ops/profile"
             className="bg-sidebar-accent/60 hover:bg-sidebar-accent mt-2.5 flex w-full items-center gap-2.5 rounded-[9px] p-2.5 text-left transition-colors"
-            // Описание роли и отдел не помещаются в строку при 256px — уходят в
-            // title, а не пропадают совсем.
-            title={`${userRole.description}. Отдел: ${user?.department}`}
+            // Область роли и подразделение не помещаются в строку при 256px —
+            // уходят в title, а не пропадают совсем.
+            title={
+              sidebarRole
+                ? `${sidebarRole.name}${
+                    sidebarRole.scope_division_name
+                      ? ` · ${sidebarRole.scope_division_name}`
+                      : ""
+                  }. Подразделение: ${user.department}`
+                : `Роль раздела не назначена. Подразделение: ${user.department}`
+            }
           >
             <span className="bg-primary/10 text-primary-ink grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold">
               {initialsOf(user?.name)}
@@ -590,7 +612,7 @@ export function Sidebar() {
                 {user?.name ?? "—"}
               </span>
               <span className="text-sidebar-foreground/60 block truncate text-xs leading-4">
-                {userRole.name}
+                {sidebarRole ? sidebarRole.name : "Роль не назначена"}
               </span>
             </span>
           </Link>
