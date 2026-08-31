@@ -2,6 +2,12 @@
 // В dev используем полный URL бэкенда (NEXT_PUBLIC_API_URL)
 // В prod используем относительные пути (Next.js rewrites проксируют на backend)
 import { BACKEND_URL } from "@/shared/config/env";
+// Токен берётся из ОБЩЕГО кэша (`lib/access-token.ts`), а не спрашивается у
+// сессии заново на каждый запрос (Plane №343). Здесь стоял собственный
+// `getSession()` без памяти, и каждое обращение к бэку стоило лишний
+// round-trip: замерено 158 запросов `/api/auth/session` на 84 запроса данных.
+// Разбор и обоснование срока годности — в шапке `lib/access-token.ts`.
+import { getAccessToken } from "@/lib/access-token";
 const API_BASE_URL = BACKEND_URL;
 
 // Интерфейсы для API
@@ -635,21 +641,6 @@ async function toDomainError(response: Response): Promise<OpsApiError> {
     code,
     message || `HTTP ${response.status}`
   );
-}
-
-// Хелпер для получения токена из NextAuth сессии
-// Используется в API клиенте для автоматической авторизации запросов
-async function getAccessToken(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const { getSession } = await import("next-auth/react");
-    const session = await getSession();
-    return (session?.user as any)?.accessToken || null;
-  } catch (error) {
-    console.error("Error getting access token:", error);
-    return null;
-  }
 }
 
 /**
@@ -1984,26 +1975,43 @@ class ApiClient {
     return this.getAllOpsStatuses(`employee_id=${employeeId}`);
   }
 
-  /** Все строки списка статусов раздела: идём по `next`, пока он есть.
+  /** Все строки списка статусов раздела.
    *
    *  Одной страницы «побольше» недостаточно: потолок `limit` у пагинации
    *  раздела 1000, а строк на дату бывает и больше — обрезанный ответ
-   *  выглядел бы как «столько и есть». */
+   *  выглядел бы как «столько и есть».
+   *
+   *  🔴 СТРАНИЦЫ БЕРУТСЯ ПАРАЛЛЕЛЬНО, а не цепочкой по `next` (Plane №343).
+   *  Здесь стоял `while (path !== null)` с `await` внутри: каждая страница
+   *  ждала предыдущую, и экран статусов платил столько задержек сети, сколько
+   *  у него страниц. Замерено на стенде: 1162 строки — это три страницы по
+   *  500, то есть три задержки подряд там, где хватает одной.
+   *
+   *  Так можно, потому что пагинация раздела — `LimitOffsetPagination`: она
+   *  отдаёт `count` в ПЕРВОМ же ответе, и адреса остальных страниц считаются
+   *  из него арифметикой, а не вычитываются из `next`. Первая страница
+   *  по-прежнему берётся отдельно — до неё число строк неизвестно.
+   *
+   *  ЧЕГО ЭТО НЕ УХУДШАЕТ. Если между запросами строку добавили или сняли,
+   *  сдвиг `offset` даст дубль или пропуск — но ровно то же самое делал и
+   *  обход по `next`, и он делал это ДОЛЬШЕ, то есть с большим окном для
+   *  сдвига. Порядок страниц сохраняется: части склеиваются по возрастанию
+   *  `offset`, а не по тому, кто первым ответил. */
   private async getAllOpsStatuses(query: string): Promise<OpsEmployeeStatusRow[]> {
-    const rows: OpsEmployeeStatusRow[] = [];
-    let path: string | null = `/api/operations/statuses/?${query}&limit=500`;
-    while (path !== null) {
-      const page: { results: OpsEmployeeStatusRow[]; next: string | null } =
-        await this.getDomainJson<{
-          results: OpsEmployeeStatusRow[];
-          next: string | null;
-        }>(path);
-      rows.push(...page.results);
-      // `next` приходит абсолютным адресом сервера; берём только путь с
-      // запросом, иначе запрос ушёл бы мимо прокси клиента.
-      path = page.next === null ? null : new URL(page.next).pathname + new URL(page.next).search;
-    }
-    return rows;
+    const LIMIT = 500;
+    const pageAt = (offset: number) =>
+      this.getDomainJson<{ results: OpsEmployeeStatusRow[]; count: number }>(
+        `/api/operations/statuses/?${query}&limit=${LIMIT}&offset=${offset}`
+      );
+
+    const first = await pageAt(0);
+    if (first.results.length >= first.count) return first.results;
+
+    const offsets: number[] = [];
+    for (let o = LIMIT; o < first.count; o += LIMIT) offsets.push(o);
+    const rest = await Promise.all(offsets.map((o) => pageAt(o)));
+
+    return [first, ...rest].flatMap((page) => page.results);
   }
 
   // Статусы РАЗДЕЛА на деловую дату — тот же адрес, но разрез другой: не «чья

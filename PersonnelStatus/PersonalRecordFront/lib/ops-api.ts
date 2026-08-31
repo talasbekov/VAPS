@@ -5,20 +5,14 @@
 // Существующий ApiClient не трогаем (правки логики OLD запрещены).
 import { BACKEND_URL } from "@/shared/config/env";
 import { OpsNetworkError, parseOpsErrorResponse } from "@/lib/ops-errors";
+import { getAccessToken } from "@/lib/access-token";
 
-// Токен из NextAuth-сессии — аналог непубличного хелпера в lib/api.ts
-// (он не экспортирован, поэтому свой; lib/api.ts не правим).
-async function getAccessToken(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  try {
-    const { getSession } = await import("next-auth/react");
-    const session = await getSession();
-    const user = session?.user as { accessToken?: string } | undefined;
-    return user?.accessToken || null;
-  } catch {
-    return null;
-  }
-}
+// Токен — из ОБЩЕГО кэша, того же, что у `lib/api.ts` (Plane №343). Здесь
+// была ВТОРАЯ копия хелпера («он не экспортирован, поэтому свой»), и каждая
+// копия ходила за сессией отдельно: два клиента на одном экране спрашивали
+// один и тот же токен дважды. Теперь источник один — и кэш, и дедупликация
+// у них общие, иначе схлопывание вспышки работало бы только на половине
+// запросов экрана.
 
 // Класс для работы с API охранных мероприятий
 class OpsApiClient {
