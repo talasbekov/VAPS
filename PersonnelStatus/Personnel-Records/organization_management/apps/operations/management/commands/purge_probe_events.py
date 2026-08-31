@@ -78,7 +78,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         if options["orphans_only"]:
-            self._orphans(options["yes"], event_ids=None)
+            self._orphans(options["yes"], event_ids=None, actor=options["actor"])
             return
         marker = options["marker"]
         rows = list(
@@ -129,9 +129,11 @@ class Command(BaseCommand):
         # Участия удалённых мероприятий — вторая половина той же уборки, а не
         # «заодно»: без неё команда каждым запуском ПРОИЗВОДИТ сирот.
         if touched:
-            self._orphans(True, event_ids=touched)
+            self._orphans(True, event_ids=touched, actor=options["actor"])
 
-    def _orphans(self, apply_it: bool, event_ids: list[int] | None) -> None:
+    def _orphans(
+        self, apply_it: bool, event_ids: list[int] | None, actor: str
+    ) -> None:
         """Сироты: показать либо снести. Область — либо только что удалённые
         мероприятия, либо весь накопленный мусор (`event_ids=None`)."""
         if not apply_it:
@@ -143,7 +145,7 @@ class Command(BaseCommand):
                 )
             )
             return
-        result = purge_orphan_participations(event_ids)
+        result = purge_orphan_participations(event_ids, actor=actor)
         self.stdout.write(
             self.style.SUCCESS(
                 f"Снято участий-сирот: {result.participations}; "

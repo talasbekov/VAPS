@@ -1144,5 +1144,26 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         str(coverage_account.pk), "COVERAGE_ROLE", actor=ACTOR
     )
 
+    # Уборка участий, переживших своё мероприятие (Plane №356). Событие
+    # пишется по тому же основанию, что и удаление ОМ: строки исчезают
+    # ЦЕЛИКОМ, и журнал остаётся единственным следом того, что они были. До
+    # №356 уборка не писала ничего, и пропажу 1135 строк на стенде не удалось
+    # приписать ни одному прогону.
+    from organization_management.apps.operations.models_status import (
+        OpsStatusParticipation,
+    )
+    from organization_management.apps.operations.status_cleanup import (
+        purge_orphan_participations,
+    )
+
+    OpsStatusParticipation.objects.create(
+        status=covering,
+        # Мероприятия с таким идентификатором не существует — это и есть
+        # сирота, ради которой уборка и заведена.
+        event_id=987_654_321,
+        kind_code="PHYSICAL_SQUAD",
+    )
+    purge_orphan_participations(actor=ACTOR)
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

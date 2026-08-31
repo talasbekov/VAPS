@@ -60,6 +60,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   SECURITY_EVENT_CREATED: "Мероприятие заведено",
   SECURITY_EVENT_CLOSED: "Мероприятие закрыто",
   SECURITY_EVENT_DELETED: "Мероприятие удалено из реестра",
+  STATUS_PARTICIPATIONS_PURGED: "Сняты участия удалённых мероприятий",
   SECURITY_EVENT_STAGE_OVERRIDDEN: "Этап переведён вручную",
   SECURITY_EVENT_DEPUTY_ASSIGNED: "Назначен замещающий на объекте",
   SECURITY_EVENT_DEPUTY_REVOKED: "Замещающий на объекте снят",

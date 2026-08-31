@@ -27,6 +27,7 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
@@ -64,10 +65,19 @@ def find_orphan_participations(event_ids: list[int] | None = None):
 
 
 @transaction.atomic
-def purge_orphan_participations(event_ids: list[int] | None = None) -> CleanupResult:
-    """Снести сиротские участия и статусы, которые ими и держались."""
+def purge_orphan_participations(
+    event_ids: list[int] | None = None, actor: str = "system:purge_orphans"
+) -> CleanupResult:
+    """Снести сиротские участия и статусы, которые ими и держались.
+
+    `actor` попадает в журнал: уборку зовут из teardown смоука, из чистки
+    пробных строк и руками, и «кто это сделал» — первый вопрос, который
+    задают, увидев минус тысячу строк (Plane №356).
+    """
     orphans = find_orphan_participations(event_ids)
     status_ids = sorted(set(orphans.values_list("status_id", flat=True)))
+    # Идентификаторы снимаются ДО удаления — после него спрашивать не у кого.
+    orphan_event_ids = list(orphans.values_list("event_id", flat=True))
     # Счёт берётся ДО удаления и по своей модели: `delete()` возвращает итог
     # вместе с каскадом, и число в отчёте перестало бы значить «участий».
     removed_participations = orphans.count()
@@ -83,6 +93,37 @@ def purge_orphan_participations(event_ids: list[int] | None = None) -> CleanupRe
     removed_statuses = len(emptied)
     if emptied:
         OpsEmployeeStatus.objects.filter(id__in=emptied).delete()
-    return CleanupResult(
+    result = CleanupResult(
         participations=removed_participations, statuses=removed_statuses
     )
+    # 🔴 ЗАПИСЬ ТОЛЬКО КОГДА ЧТО-ТО СНЯТО. Уборка зовётся после КАЖДОГО прогона
+    # проб и почти всегда находит пусто; строка «снято 0» на каждый запуск
+    # утопила бы журнал раздела и сделала бы настоящую уборку неразличимой
+    # среди сотен пустых.
+    if result:
+        audit_service.record(
+            actor=actor,
+            action=audit_service.STATUS_PARTICIPATIONS_PURGED,
+            entity_type=audit_service.ENTITY_STATUS,
+            # Ключ СИНТЕТИЧЕСКИЙ, и иначе быть не может: уборка снимает пачку
+            # строк, а не правит одну сущность, — указать «тот самый статус»
+            # здесь не на что. Журнал требует ровно один ключ, поэтому это
+            # `entity_key` с областью уборки, а не выдуманный `entity_id`.
+            entity_key=(
+                "orphan-participations:scoped"
+                if event_ids is not None
+                else "orphan-participations:all"
+            ),
+            # Снимок кладётся в old_value целиком: строки исчезли, и журнал —
+            # единственное, что о них помнит. Идентификаторы мероприятий
+            # обрезаны сотней: разбирательству хватает образца, а строка
+            # журнала на тысячу чисел нечитаема.
+            old_value={
+                "participations": result.participations,
+                "statuses": result.statuses,
+                "eventIds": sorted(set(orphan_event_ids))[:100],
+                "eventIdsTotal": len(set(orphan_event_ids)),
+                "scoped": event_ids is not None,
+            },
+        )
+    return result
