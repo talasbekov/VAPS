@@ -52,6 +52,7 @@ import {
   EMPLOYEE_STATUS_LABELS,
   getEmployeeStatusColor,
 } from "@/lib/status";
+import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { formatIsoDate } from "@/shared/lib/date";
@@ -261,6 +262,8 @@ function EmployeesScreen() {
   // `user` остаётся ради подразделения человека (подпись и отбор «своё»);
   // ПРАВА теперь спрашиваются у раздела (Plane №352, Ш-1).
   const { user } = useAuth();
+  // Каталог типов статусов для фильтра — с сервера (Plane №354).
+  const { types: catalogStatusTypes } = useEmployeeStatusTypes(false);
   const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
     useOpsPermissions();
   const allowedCodes = modulePermissionsOf("/employees");
@@ -628,14 +631,21 @@ function EmployeesScreen() {
   // остались бы нули и пустые фильтры без объяснения причины.
   // Причина отказа передаётся заглушке: 403 «нет права» и 400 «учётка не
   // привязана к подразделению» чинятся разными людьми (Plane №329).
-  const denial = directorateDenial(queryError);
-  if (denial) {
-    // Отказ — ПОСЛЕ всех хуков (правило хуков React).
+  // 🔴 ГЕЙТ СТОИТ ПЕРВЫМ СРЕДИ ВОЗВРАТОВ, и это не стиль. Первая версия
+  // правки №352 (Ш-1) уехала ВНУТРЬ ветки `if (denial)` — синтаксис верный,
+  // `tsc` молчит, а на деле проверка прав выполнялась только тогда, когда
+  // сервер и так отказал. В обычном случае экран открывался кому угодно:
+  // fail-open, найден фоновым ревью коммита, а не гейтом, потому что целевые
+  // пробы ходили по экранам раздела и портальные не трогали.
   if (!opsPermissionsLoading && !allowed) {
     return <OpsAccessDenied what="сбора сил на ОМ" />;
   }
 
-  return (
+  // Список, карточки, фильтр отделов и счётчики растут из ОДНОГО запроса
+  // directorate. Закрыта ручка — закрывается вся страница.
+  const denial = directorateDenial(queryError);
+  if (denial) {
+    return (
       <DashboardLayout>
         <DirectorateAccessNotice denial={denial} reason={error} />
       </DashboardLayout>

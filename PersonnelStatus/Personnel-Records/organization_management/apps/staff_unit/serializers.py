@@ -122,13 +122,17 @@ class StaffUnitSerializer(serializers.ModelSerializer):
 class EmployeeStatusBulkSerializer(serializers.Serializer):
     """Сериализатор для bulk update статуса сотрудника"""
     employee_id = serializers.IntegerField(required=True)
-    # Наборы берутся из модели, а не переписываются здесь: переписанный список
-    # уже разошёлся с ней — в нём не было 'leave_by_report', и массовое
-    # обновление молча не умело ставить отпуск по рапорту.
-    status_type = serializers.ChoiceField(
-        choices=EmployeeStatus.StatusType.choices,
-        required=False
-    )
+    # Наборы берутся из СПРАВОЧНИКА, а не из списка в коде: переписанный
+    # список уже расходился с моделью — в нём не было 'leave_by_report', и
+    # массовое обновление молча не умело ставить отпуск по рапорту.
+    #
+    # 🔴 И НЕ `ChoiceField` (Plane №354 → №352). `choices` вычисляются ОДИН РАЗ
+    # при импорте модуля, а каталог типов правится в админке на живой системе:
+    # тип, заведённый заказчиком, модель уже принимает (choices с поля сняты),
+    # а ручка отбивала бы его четырёхсоткой до перезапуска процесса. Проверка
+    # перенесена в `validate_status_type` — она спрашивает справочник в момент
+    # запроса.
+    status_type = serializers.CharField(required=False, max_length=100)
     state = serializers.ChoiceField(
         choices=EmployeeStatus.StatusState.choices,
         required=False
@@ -136,6 +140,22 @@ class EmployeeStatusBulkSerializer(serializers.Serializer):
     start_date = serializers.DateField(required=False)
     end_date = serializers.DateField(required=False, allow_null=True)
     comment = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_status_type(self, value):
+        """Код принимается, если его знает справочник — свой или legacy.
+
+        Отказ называет ПРИЧИНУ и не перечисляет весь каталог: девятнадцать
+        кодов в тексте ошибки не помогают тому, кто прислал опечатку, а
+        помогают тому, кто перебирает.
+        """
+        from organization_management.apps.statuses import catalog
+
+        if value not in catalog.known_codes():
+            raise serializers.ValidationError(
+                f"Тип статуса «{value}» не найден в справочнике типов статусов "
+                "или деактивирован."
+            )
+        return value
 
 
 class ChildStaffUnitBulkSerializer(serializers.Serializer):

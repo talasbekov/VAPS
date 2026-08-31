@@ -29,7 +29,6 @@ from organization_management.apps.common.drf_permissions import (
     CanManageStaffingTable
 )
 from organization_management.apps.common.rbac import (
-    ACCESS_MATRIX_ROLES,
     check_permission,
     get_user_scope_queryset,
 )
@@ -120,8 +119,11 @@ class VacancyViewSet(viewsets.ModelViewSet):
         """
         user = self.request.user
 
-        # Базовая проверка прав на создание вакансий
-        if not user.is_superuser and hasattr(user, 'role_info'):
+        # 🔴 УСЛОВИЕ `hasattr(user, 'role_info')` СНЯТО (Plane №352, Ш-2).
+        # Оно означало «у кого нет портальной роли — тому МОЖНО ВСЁ»: проверка
+        # прав просто не выполнялась. Пока портальную роль выдавали каждому,
+        # это не стреляло; учётки семи ролей заказчика её не имеют вовсе.
+        if not user.is_superuser:
             if not check_permission(user, 'create_vacancy'):
                 raise PermissionDenied(
                     "У вас нет прав для создания вакансий"
@@ -230,7 +232,9 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         division = serializer.validated_data.get('division')
 
         # Проверка что подразделение в области видимости пользователя
-        if not user.is_superuser and hasattr(user, 'role_info'):
+        # Условие `hasattr(user, 'role_info')` снято по той же причине, что и
+        # выше: без портальной роли проверка не выполнялась вовсе.
+        if not user.is_superuser:
             # Создаем временный объект для проверки scope
             temp_obj = StaffUnit(division=division)
             if not check_permission(user, 'create_staffing_position', temp_obj):
@@ -463,9 +467,9 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """
         Эндпоинт для управления штатным расписанием своего подразделения.
 
-        ROLE_3: Управляет своим управлением (level=2)
-        ROLE_6: Управляет своим отделом (level=3)
-        ROLE_7: Управляет своим департаментом (level=1)
+        Кто допущен и на какую область — решают ПРАВА РАЗДЕЛА (`status.view`)
+        и области их грантов. Список кодов кадровых ролей отсюда снят вместе
+        со старой системой (Plane №352).
 
         GET: Получить все штатные единицы своего подразделения
         PUT/PATCH/POST: Обновить штатные единицы, сотрудников и их статусы
@@ -474,54 +478,38 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """
         user = request.user
 
-        # ── Кто сюда допущен (Plane №325, решение заказчика 30.08.2026) ────
+        # ── Кто сюда допущен ───────────────────────────────────────────────
         #
-        # ДВА КАТАЛОГА РОЛЕЙ, И ОБА ОТКРЫВАЮТ ЭКРАН. Кадровый (`common.UserRole`,
-        # ROLE_3/6/7) и каталог раздела ОМ (`operations`, права вида
-        # `status.view`) не связаны между собой, а цикл расхода жил целиком в
-        # первом. Из 38 учёток стенда экран проходили ЧЕТЫРЕ; не проходила ни
-        # одна роль раздела — включая `role_department_expense_officer`, чьё
-        # название буквально «ответственный за расход департамента», и
-        # `role_division_operator`, который по замыслу и проставляет статусы.
+        # ИСТОРИЯ, КОТОРУЮ НЕ НАДО ПОВТОРЯТЬ. Экран пускал только кадровые роли
+        # ROLE_3/6/7, и из 38 учёток стенда цикл расхода проходили ЧЕТЫРЕ: не
+        # проходила ни одна роль раздела, включая «ответственного за расход
+        # департамента». №325 добавил право раздела ВТОРЫМ ключом рядом с
+        # кадровым. №352 снял первый ключ совсем — заказчик потребовал работать
+        # по своим семи ролям, а они живут в разделе, и кадровый список кодов
+        # пришлось бы дописывать при каждой новой роли.
+        # 🔴 СПИСКА КОДОВ РОЛЕЙ ЗДЕСЬ БОЛЬШЕ НЕТ (Plane №352, Ш-2). Стояло:
+        # «доступ разрешён для ROLE_3, ROLE_6, ROLE_7 ИЛИ роли раздела с правом
+        # status.view» — то есть дверь открывали два разных ключа, и один из
+        # них знал наизусть три кода. Заказчик потребовал работать по семи
+        # своим ролям; ни одного из трёх кодов среди них нет, и список пришлось
+        # бы дописывать при каждой новой роли — молча, до первого «почему у
+        # него не работает».
         #
-        # РАСШИРЯЕМ, НЕ ПОДМЕНЯЕМ: у кого кадровая роль ROLE_3/6/7 — доступ и
-        # область прежние, строка в строку. Право раздела добавляется РЯДОМ
-        # как второй ключ. Отвергнутые заказчиком варианты — выдавать кадровую
-        # роль при заведении учётки (лечит симптом: следующая заведённая
-        # руками снова окажется без доступа) и снять роли раздела с этого пути
-        # вовсе.
+        # Ключ остался ОДИН — право `status.view`. Оно же открывает борд
+        # расхода и аналитику службы: экран показывает ровно то, что показывают
+        # они, и второе имя для одного и того же разошлось бы с ними при первой
+        # же раздаче прав.
         opened_by_ops_permission = False
         if not user.is_superuser:
-            try:
-                user_role = user.role_info  # OneToOneField
-                role_code = user_role.get_role_code() if user_role else None
-            except Exception:
-                role_code = None
-            # Роли матрицы доступа (Plane №348) стоят РЯДОМ с ROLE_3/6/7, а не
-            # вместо них: «Статусы сотрудников» — модуль, который заказчик
-            # оставил открытым шести персонам из семи, и держаться он должен
-            # на портальной роли, а не на том, что у учётки заодно нашлось
-            # право раздела `status.view`. Учётка без роли раздела (а такую
-            # заводят экраном «Пользователи») получала бы 403 на модуле,
-            # который ей выдали.
-            allowed_portal_roles = ('ROLE_3', 'ROLE_6', 'ROLE_7') + tuple(
-                ACCESS_MATRIX_ROLES
-            )
-            if role_code not in allowed_portal_roles:
-                # Право ЧТЕНИЯ СТАТУСОВ — то же, которым открыты борд расхода и
-                # аналитика службы. Свой код права здесь не заводится: экран
-                # показывает ровно то, что показывают они, и второе имя для
-                # одного и того же разошлось бы с ними при первой же раздаче.
-                opened_by_ops_permission = _has_ops_status_view(request)
-                if not opened_by_ops_permission:
-                    return Response(
-                        {'error': (
-                            'Доступ разрешен только для ROLE_3 (Начальник управления), '
-                            'ROLE_6 (Начальник отдела), ROLE_7 (Начальник департамента) '
-                            'или роли раздела с правом «Статусы: просмотр»'
-                        )},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
+            opened_by_ops_permission = _has_ops_status_view(request)
+            if not opened_by_ops_permission:
+                return Response(
+                    {'error': (
+                        'Нужно право «Статусы: просмотр» — оно выдаётся ролью '
+                        'раздела в «Система → Роли».'
+                    )},
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
         # Признак «вошёл правом раздела» едет ВМЕСТЕ с запросом, а не считается
         # заново в каждом методе: резолюция прав стоит запросов, и второй счёт
@@ -539,8 +527,8 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """
         Получение всех штатных единиц своего подразделения с дочерними отделами.
 
-        ROLE_3: управление + все дочерние отделы
-        ROLE_6: отдел + все дочерние подразделения
+        Область — та, что дают гранты прав раздела: выданная на департамент
+        накрывает его управления и отделы.
 
         Возвращает ПЛОСКИЙ список (БЕЗ вложенного children), связи через parent_id.
         """
@@ -699,7 +687,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # таком случае — никаким: `null`. Читатель у поля один — диалог
         # заведения статуса, и у него есть запасной путь: подразделение
         # ШТАТНОЙ ЕДИНИЦЫ сотрудника, которое и без того точнее корня.
-        scope_root = self._scope_single_root(user, all_divisions)
+        scope_root = self._scope_single_root(user, all_divisions, request)
 
         return Response({
             'division': {
@@ -1395,7 +1383,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # суперпользователя, распоряжающегося всеми деревьями, одного
         # описывающего подразделения нет, и вместо первого корня из двух здесь
         # честный `null`.
-        scope_root = self._scope_single_root(user, all_divisions)
+        scope_root = self._scope_single_root(user, all_divisions, request)
         response_data = {
             'success': True,
             'updated': updated_items,
@@ -1430,18 +1418,15 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         except Exception:
             return None
 
-    def _scope_single_root(self, user, all_divisions):
+    def _scope_single_root(self, user, all_divisions, request=None):
         """Одно подразделение, описывающее область, либо `None`.
 
-        Для обычного пользователя это его собственное подразделение. Для
-        суперпользователя — единственный корень, если он один; при нескольких
-        корнях одного такого подразделения НЕТ (Plane №304).
+        Всю работу делает `_get_user_own_division`: у суперпользователя это
+        единственный корень (при нескольких — `None`, Plane №304), у
+        остальных — один узел области раздела либо подразделение штатной
+        единицы.
         """
-        if not user.is_superuser:
-            return self._get_user_own_division(user)
-
-        roots = list(Division.objects.filter(level=0)[:2])
-        return roots[0] if len(roots) == 1 else None
+        return self._get_user_own_division(user, request)
 
     def _own_scope_divisions(self, user, request=None):
         """Подразделения, которыми ручка `directorate` распоряжается за этого
@@ -1463,119 +1448,59 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return Division.objects.all()
 
-        # ВОШЁЛ ПРАВОМ РАЗДЕЛА — И ОБЛАСТЬ БЕРЁТСЯ ОТТУДА ЖЕ (Plane №325).
-        # Кадровый резолвер ниже читает `role_info` и штатную единицу; у
-        # ролевой учётки раздела кадровая роль ROLE_1, и он либо вернул бы её
-        # личное подразделение, либо ничего. Ни то, ни другое не описывает
-        # область, которую даёт роль раздела: ответственному за расход
-        # департамента положен департамент, а не комната, где он сидит.
-        # Открыли дверь одним ключом — за ним и область.
-        if request is not None and getattr(request, '_directorate_by_ops_permission', False):
-            return _ops_scope_divisions(request)
+        # 🔴 ОБЛАСТЬ ДАЁТ ТОЛЬКО РАЗДЕЛ (Plane №352, Ш-2). До этого сюда вели
+        # две дороги: право раздела (№325) и кадровая роль. Вторая знала
+        # наизусть три кода — ROLE_3/6/7 — и не знала ни одной из семи ролей
+        # заказчика; учётка с его ролью получала либо свою комнату, либо
+        # ничего. Дорога осталась одна.
+        divisions = _ops_scope_divisions(request) if request is not None else None
+        if divisions is not None and divisions.exists():
+            return divisions
 
-        division = self._get_user_own_division(user)
+        # Права раздела не дали области — остаётся факт о человеке: где он
+        # числится. Это не роль и не право, поэтому переживает снос старой
+        # системы; на нём же держится экран у того, кому роль не выдана вовсе.
+        division = self._get_user_own_division(user, request)
         if not division:
             return None
         return division.get_descendants(include_self=True)
 
-    def _get_user_own_division(self, user):
-        """
-        Определяет СОБСТВЕННОЕ подразделение пользователя (для directorate endpoint).
+    def _get_user_own_division(self, user, request=None):
+        """Одно подразделение, которым ПОДПИСЫВАЕТСЯ экран.
 
-        НЕ использует область видимости - возвращает именно подразделение где работает сотрудник:
-        - ROLE_3: управление (level=2) - поднимается до управления если сотрудник в отделе
-        - ROLE_6: отдел (level=3) - возвращает отдел как есть
-        - ROLE_7: департамент (level=1) - поднимается до департамента
+        🔴 ПЕРЕПИСАНО В Plane №352 (Ш-2). Раньше здесь было полторы сотни строк
+        разбора кадровых ролей: «для ROLE_3 подняться до управления, для ROLE_6
+        вернуть отдел как есть, для ROLE_7 подняться до департамента, а если
+        `scope_division` указан вручную и не департамент — взять его». Это и
+        есть та самая зашитая иерархия, которую заказчик велел искоренить: она
+        знала три кода ролей наизусть и не знала ни одной из семи его.
 
-        Для ROLE_7 scope_division имеет приоритет (может быть указан вручную).
-        Для ROLE_3 и ROLE_6: если scope_division указан вручную и НЕ на уровне департамента - использует его.
+        Теперь порядок такой:
+
+        1. Область РАЗДЕЛА, если она описывается ОДНИМ узлом. Грантов может
+           быть несколько (в этом и смысл раздела), и тогда одного
+           описывающего подразделения не существует — честный ответ `None`,
+           тот же, что у суперпользователя с двумя корнями (Plane №304).
+        2. Иначе — подразделение ШТАТНОЙ ЕДИНИЦЫ человека. Это факт о нём, а
+           не о его правах: он не зависит ни от какой системы ролей и
+           переживёт снос старой.
         """
         if user.is_superuser:
-            return Division.objects.filter(level=0).first()
+            roots = list(Division.objects.filter(level=0)[:2])
+            return roots[0] if len(roots) == 1 else None
 
-        try:
-            user_role = user.role_info
-            if not user_role:
+        if request is not None:
+            roots = _ops_scope_roots(request)
+            if len(roots) == 1:
+                return roots[0]
+            if len(roots) > 1:
+                # Область есть, но одним узлом не называется. Придумывать
+                # «первый из» — ровно та ошибка, которую разбирал №304.
                 return None
 
-            role_code = user_role.get_role_code()
-
-            # Роли матрицы доступа (Plane №348): своё подразделение — это и есть
-            # область роли, поднимать или опускать её не нужно. Уровень уже
-            # задан самой ролью: «Сотрудник» и «Руководитель: обзор и статусы»
-            # живут на управлении, «…ежедневный отчёт» и «Ответственный за сбор
-            # сил» — на департаменте. Без этой ветки подпись экрана статусов
-            # берётся из штатной единицы человека и показывает ОТДЕЛ, в котором
-            # он сидит, тогда как таблица под подписью считает всю область.
-            if role_code in ACCESS_MATRIX_ROLES:
-                return user_role.effective_scope_division
-
-            # Для ROLE_7: приоритет у scope_division если указан на уровне департамента
-            if role_code == 'ROLE_7':
-                # Приоритет 1: Если scope_division указан вручную на уровне департамента (level=1)
-                if user_role.scope_division and user_role.scope_division.level == 1:
-                    return user_role.scope_division
-
-                # Приоритет 2: Автоматическое определение - поднимаемся до департамента
-                if hasattr(user, 'employee'):
-                    employee = user.employee
-                    if hasattr(employee, 'staff_unit') and employee.staff_unit:
-                        division = employee.staff_unit.division
-                        # Поднимаемся до департамента (level=1)
-                        current = division
-                        while current and current.level > 1:
-                            current = current.parent
-                        if current and current.level == 1:
-                            return current
-                        return division
-
-                # Приоритет 3: Если scope_division на любом уровне
-                if user_role.scope_division:
-                    # Если не департамент - поднимаемся до департамента
-                    current = user_role.scope_division
-                    while current and current.level > 1:
-                        current = current.parent
-                    if current and current.level == 1:
-                        return current
-                    return user_role.scope_division
-
-                return None
-
-            # Для ROLE_3 и ROLE_6: старая логика
-            # Приоритет 1: Если scope_division указан вручную И он НЕ департамент (level != 1)
-            # то используем его (это управление или отдел)
-            if user_role.scope_division and user_role.scope_division.level != 1:
-                return user_role.scope_division
-
-            # Приоритет 2: Автоматическое определение через Employee → StaffUnit → Division
-            if hasattr(user, 'employee'):
-                employee = user.employee
-                if hasattr(employee, 'staff_unit') and employee.staff_unit:
-                    division = employee.staff_unit.division
-
-                    # Для ROLE_3 (Начальник управления): поднимаемся до управления (level=2)
-                    if role_code == 'ROLE_3':
-                        current = division
-                        # Поднимаемся вверх пока не достигнем level=2 (управление)
-                        while current and current.level > 2:
-                            current = current.parent
-                        if current and current.level == 2:
-                            return current
-                        # Если не нашли level=2, возвращаем как есть
-                        return division
-
-                    # Для ROLE_6 (Начальник отдела): возвращаем отдел как есть
-                    return division
-
-            # Приоритет 3: Если scope_division на уровне департамента, но больше нечего вернуть
-            # возвращаем его (хотя это неправильно для directorate endpoint для ROLE_3 и ROLE_6)
-            if user_role.scope_division:
-                return user_role.scope_division
-
-            return None
-
-        except Exception:
-            return None
+        employee = getattr(user, 'employee', None)
+        unit = getattr(employee, 'staff_unit', None) if employee is not None else None
+        return getattr(unit, 'division', None) if unit is not None else None
 
 
 class CanReadDirectorate(permissions.BasePermission):
@@ -1611,6 +1536,26 @@ def _has_ops_status_view(request):
     except Exception:
         return False
     return '*' in perms or _OPS_READ_STATUS_PERMISSION in perms
+
+
+def _ops_scope_roots(request, permission_codes=(_OPS_READ_STATUS_PERMISSION,)):
+    """Верхние узлы области раздела — те, чьего родителя в области нет.
+
+    Нужны там, где экран подписывается ОДНИМ подразделением: область из
+    департамента и его двадцати потомков называется департаментом, а область
+    из двух несвязанных управлений — ничем. Считать «первый по id» здесь
+    нельзя: ровно этой ошибкой №304 показывал весь состав службы как состав
+    одного корня из двух.
+    """
+    divisions = _ops_scope_divisions(request, permission_codes)
+    ids = set(divisions.values_list('id', flat=True))
+    if not ids:
+        return []
+    return [
+        division
+        for division in divisions
+        if division.parent_id is None or division.parent_id not in ids
+    ]
 
 
 def _ops_scope_divisions(request, permission_codes=(_OPS_READ_STATUS_PERMISSION,)):
@@ -1840,17 +1785,40 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
         вовсе (ответ 400). Второе `None` — область есть, но одного узла,
         который её называет, не существует.
 
-        Порядок ровно тот же, что у ручки `directorate` после №325: сперва
-        кадровая область, затем область РАЗДЕЛА. Права раздела принимаются два
-        — `status.view` и `orgstructure.view`: ручку зовут и экраны расхода, и
-        экран оргструктуры, и требовать от читателя оргструктуры право на
-        статусы значило бы закрыть ему счётчики его же дерева.
+        Область даёт ТОЛЬКО раздел (Plane №352, Ш-2): кадрового пути здесь
+        больше нет. Права раздела принимаются два — `status.view` и
+        `orgstructure.view`: ручку зовут и экраны расхода, и экран
+        оргструктуры, и требовать от читателя оргструктуры право на статусы
+        значило бы закрыть ему счётчики его же дерева.
         """
-        scope_division = self._get_user_scope_division(user)
-        if scope_division:
-            scope_division = self._overview_root(user, scope_division)
-            return scope_division.get_descendants(include_self=True), scope_division
+        # СУПЕРПОЛЬЗОВАТЕЛЬ — ОТДЕЛЬНАЯ ВЕТКА, И ОНА ОБЯЗАТЕЛЬНА. Раньше его
+        # обслуживал кадровый резолвер (`_get_user_scope_division` начинался с
+        # `if user.is_superuser`), и, сняв кадровый путь целиком, я отобрал у
+        # него статистику: прав РАЗДЕЛА у суперпользователя Django нет, и
+        # ручка отвечала ему 400 «не удалось определить область». Поймано
+        # тремя пробами разреза по подразделениям, которые про роли не про
+        # что вообще — они ходят под суперпользователем как под самым простым
+        # способом увидеть всё дерево.
+        if user.is_superuser:
+            roots = list(Division.objects.filter(level=0)[:2])
+            return (
+                Division.objects.all(),
+                roots[0] if len(roots) == 1 else None,
+            )
 
+        # 🔴 ОБЛАСТЬ БЕРЁТСЯ ТОЛЬКО У РАЗДЕЛА (Plane №352, Ш-2). Кадровый путь
+        # (`common.UserRole.effective_scope_division`) снят вместе со старой
+        # системой ролей: заказчик потребовал работать по семи ролям, а они
+        # живут в каталоге раздела, и портальная роль у таких учёток либо
+        # случайная, либо отсутствует вовсе.
+        #
+        # ТРЕБОВАНИЕ «ОБЗОР НА УРОВНЕ ДЕПАРТАМЕНТА» ВЫРАЖАЕТСЯ ТЕПЕРЬ ГРАНТОМ,
+        # А НЕ ПРИЗНАКОМ РОЛИ. Раньше здесь стоял `_overview_root`, читавший
+        # `common.Role.overview_at_department` — костыль вокруг того, что у
+        # портальной роли область ОДНА. У раздела грантов сколько угодно, и
+        # «Обзор по департаменту, статусы по управлению» — это просто два
+        # гранта: `orgstructure.view` на департамент и `status.view` на
+        # управление. Признак стал не нужен и снимается вместе с моделью.
         from organization_management.apps.operations.api.permissions import (
             effective_permissions,
         )
@@ -1877,42 +1845,21 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
         # ним нет. Ответ 400 соврал бы про причину, которую №329 как раз
         # научился отличать, поэтому отдаём пустую выборку и честные нули.
         #
-        # Второе значение — `None`: область роли раздела может накрывать
-        # несколько поддеревьев, и ОДНОГО подразделения, её описывающего, не
-        # существует.
-        return divisions, None
-
-    @staticmethod
-    def _overview_root(user, scope_division):
-        """Узел, от которого считается ОБЗОР, — не всегда область роли.
-
-        Заказчик потребовал у начальника управления «остальные модули на
-        уровне своего управления ЗА ИСКЛЮЧЕНИЕМ Обзор: Обзор на уровне
-        департамента» (Plane №348). Область у портальной роли ОДНА, поэтому
-        исключение названо признаком роли `overview_at_department`, и читает
-        его только эта ручка: расширять область самого `UserRole` значило бы
-        отдать департамент и статусам тоже, то есть нарушить первую половину
-        того же требования.
-
-        Признака нет или он снят — возвращается ровно то, что пришло: у
-        остальных ролей поведение строка в строку прежнее.
-        """
-        try:
-            role_info = user.role_info
-        except Exception:
-            return scope_division
-        if role_info is None or not getattr(role_info.role, 'overview_at_department', False):
-            return scope_division
-        # Подъём до департамента ВРУЧНУЮ: метода `get_department()` у Division
-        # нет (в `common.UserRole.department` он зовётся и падает — своя
-        # карточка), а тот же подъём уже написан в `secondments` и
-        # `employees` — здесь он третий, и делает ровно то же.
-        node = scope_division
-        while node.parent and node.division_type != Division.DivisionType.DEPARTMENT:
-            node = node.parent
-        # Департамента над областью может не быть (область — сама организация):
-        # подниматься некуда, цикл упирается в корень и отдаёт его.
-        return node
+        # Второе значение — узел, ОДНИМ которым область называется, если такой
+        # есть. Раньше здесь стоял безусловный `None` с оговоркой «область
+        # роли раздела может накрывать несколько поддеревьев»: верно для
+        # нескольких, неверно для одного. Пока области считал кадровый путь,
+        # это ничего не стоило — теперь путь остался один, и безусловный
+        # `None` означал бы, что экран «Обзор» больше никогда не подписан
+        # своим подразделением.
+        roots = _ops_scope_roots(
+            request,
+            permission_codes=(
+                _OPS_READ_STATUS_PERMISSION,
+                _OPS_READ_ORGSTRUCTURE_PERMISSION,
+            ),
+        )
+        return divisions, roots[0] if len(roots) == 1 else None
 
     def _get_user_scope_division(self, user):
         """Определяет область видимости пользователя"""

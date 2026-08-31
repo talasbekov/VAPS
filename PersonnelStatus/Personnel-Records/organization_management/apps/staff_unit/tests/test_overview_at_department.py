@@ -1,17 +1,26 @@
-"""«Обзор» показывает департамент, когда роль об этом просит (Plane №348).
+"""«Обзор» шире, чем статусы, — и это выражается ВТОРЫМ ГРАНТОМ (№348 → №352).
 
-Заказчик описал начальника управления так: «остальные модули на уровне своего
+Заказчик про начальника управления: «остальные модули на уровне своего
 управления ЗА ИСКЛЮЧЕНИЕМ Обзор. Обзор на уровне департамента должно
-показываться». Область у портальной роли ОДНА, поэтому исключение названо
-признаком роли `overview_at_department`, и читает его РОВНО эта ручка.
+показываться.»
 
-Пробы держат три конца:
-  1) роль с признаком получает департамент, а не своё управление — это и есть
-     требование заказчика;
-  2) роль БЕЗ признака получает ровно свою область: признак должен быть
-     исключением, а не новым правилом для всех;
-  3) статусы у той же учётки остаются на управлении — иначе исполнена вторая
-     половина требования была бы ценой первой.
+🔴 КАК ЭТО БЫЛО СДЕЛАНО СНАЧАЛА И ПОЧЕМУ ПЕРЕДЕЛАНО. В №348 у портальной роли
+завели признак `overview_at_department`, и ручка статистики поднималась от
+области роли к её департаменту. Признак был костылём вокруг того, что у
+ПОРТАЛЬНОЙ роли область ОДНА. В №352 портальный путь снят целиком, а у роли
+РАЗДЕЛА грантов сколько угодно, и требование заказчика выражается прямо:
+
+    `orgstructure.view` с областью «департамент» + `status.view` с областью
+    «управление».
+
+Костыль снят вместе с моделью, которая его носила. Пробы держат тот же смысл,
+что и раньше, — только теперь на настоящем механизме:
+
+  1) Обзор показывает департамент — первая половина требования;
+  2) статусы остаются на управлении — вторая половина, которую легко потерять,
+     расширив область целиком;
+  3) без второго гранта Обзор равен области первого — то есть широту даёт
+     именно грант, а не какое-нибудь «подняться повыше на всякий случай».
 """
 from datetime import date
 
@@ -20,15 +29,15 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from organization_management.apps.common.models import (
-    Permission,
-    Role,
-    RolePermission,
-    UserRole,
-)
 from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.operations.models import (
+    Permission as OpsPermission,
+    Role as OpsRole,
+    RolePermission as OpsRolePermission,
+)
+from organization_management.apps.operations.services import RoleAdminService
 from organization_management.apps.staff_unit.models import StaffUnit
 
 pytestmark = pytest.mark.django_db
@@ -69,15 +78,32 @@ def tree():
     return {"department": department, "left": left, "right": right}
 
 
-def head_of(directorate, *, overview_at_department):
-    role = Role.objects.create(
-        code="HEAD_BASIC" if overview_at_department else "HEAD_PLAIN",
-        name="Руководитель",
-        requires_scope=True,
-        overview_at_department=overview_at_department,
+def grant(user, role_code, permissions, scope_division):
+    role, _ = OpsRole.objects.get_or_create(
+        code=role_code, defaults={"name": role_code}
     )
-    user = get_user_model().objects.create_user(username=role.code.lower())
-    UserRole.objects.create(user=user, role=role, scope_division=directorate)
+    for code in permissions:
+        permission, _ = OpsPermission.objects.get_or_create(
+            code=code, defaults={"name": code}
+        )
+        OpsRolePermission.objects.get_or_create(
+            role_code=role, permission_code=permission
+        )
+    RoleAdminService.assign_role(
+        str(user.pk), role.code, scope_division.id, actor="test"
+    )
+
+
+def head_of(tree, *, overview_at_department):
+    """Начальник управления: статусы своего управления, обзор — по решению."""
+    user = get_user_model().objects.create_user(
+        username=f"head-{'dep' if overview_at_department else 'dir'}"
+    )
+    grant(user, "OV_DIR_HEAD", ["status.view", "orgstructure.view"], tree["left"])
+    if overview_at_department:
+        # ВТОРОЙ грант — ровно та строка задания заказчика. Право одно
+        # (`orgstructure.view`), область шире; статусы им не расширяются.
+        grant(user, "OV_OVERVIEW_DEP", ["orgstructure.view"], tree["department"])
     return user
 
 
@@ -87,40 +113,30 @@ def overview(user):
     return client.get(reverse("division-statistics-list"))
 
 
-def test_the_flagged_role_sees_the_whole_department(tree):
-    response = overview(head_of(tree["left"], overview_at_department=True))
+def test_the_second_grant_widens_the_overview_to_the_department(tree):
+    response = overview(head_of(tree, overview_at_department=True))
 
     assert response.status_code == 200, response.data
-    assert response.data["scope_division"]["name"] == "Первый департамент"
-    # Три штатные единицы — обе управления, а не только своё.
+    # Три штатные единицы — оба управления, а не только своё.
     assert response.data["summary"]["staff_units_count"] == 3
 
 
-def test_without_the_flag_the_scope_is_untouched(tree):
-    response = overview(head_of(tree["left"], overview_at_department=False))
+def test_without_the_second_grant_the_overview_stays_on_the_directorate(tree):
+    response = overview(head_of(tree, overview_at_department=False))
 
     assert response.status_code == 200, response.data
-    assert response.data["scope_division"]["name"] == "Первое управление"
     assert response.data["summary"]["staff_units_count"] == 2
+    assert response.data["scope_division"]["name"] == "Первое управление"
 
 
 def test_the_statuses_screen_stays_on_the_own_directorate(tree):
-    """Вторая половина требования заказчика — та, которую легко потерять.
+    """Вторая половина требования — та, которую легко потерять.
 
-    Обзор поднялся до департамента, а «Статусы сотрудников» обязаны остаться на
-    управлении: расширь область самой роли вместо признака — и эта проба
-    покраснеет числом 3 вместо 2.
+    Обзор поднялся до департамента, а «Статусы сотрудников» обязаны остаться
+    на управлении: расширь область ПЕРВОГО гранта вместо добавления второго —
+    и эта проба покраснеет числом 3 вместо 2.
     """
-    user = head_of(tree["left"], overview_at_department=True)
-    # Ручка статусов закрыта кадровым правом (или правом раздела): без него
-    # проба ответила бы 403 и ничего не сказала бы про ОБЛАСТЬ, ради которой
-    # написана.
-    permission = Permission.objects.create(
-        code="view_staffing_table", name="Просмотр штатного расписания",
-        category=Permission.Category.STAFFING,
-    )
-    RolePermission.objects.create(role=user.role_info.role, permission=permission)
-
+    user = head_of(tree, overview_at_department=True)
     client = APIClient()
     client.force_authenticate(user=user)
 
