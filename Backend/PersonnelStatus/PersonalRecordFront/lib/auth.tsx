@@ -17,7 +17,17 @@ export type UserRole =
   | "role-3"
   | "role-4"
   | "role-5"
-  | "role-6";
+  | "role-6"
+  // Роли матрицы доступа (Plane №348). Заказчик описал семь персон СПИСКАМИ
+  // НЕДОСТУПНЫХ МОДУЛЕЙ, и четырём из них ни один из шести наборов выше не
+  // подходит: сочетания «Статусы есть, а Сбор сил и Ежедневный отчёт — нет»
+  // среди них нет вовсе. Названы по НАБОРУ МОДУЛЕЙ, а не по должности: один и
+  // тот же набор просят и начальник управления, и начальник второго
+  // департамента — у них разная область, но одинаковое меню.
+  | "employee-ro"
+  | "head-basic"
+  | "head-reports"
+  | "forces-officer";
 
 export interface User {
   id: string;
@@ -129,6 +139,56 @@ export const ROLES: Record<UserRole, RoleDefinition> = {
       { resource: "reports", actions: ["read-department", "create", "export"] },
     ],
   },
+  // ── Матрица доступа заказчика (Plane №348) ──────────────────────────────
+  //
+  // Ресурс здесь решает ВИДИМОСТЬ ПУНКТА МЕНЮ (`components/navigation/sidebar`
+  // проверяет пару resource/action у портальных пунктов): `organization` —
+  // «Обзор», `statuses` — «Статусы сотрудников», `employees` — «Сбор сил на
+  // ОМ», `reports` — «Ежедневный отчёт». Пункт, которого в наборе нет, не
+  // рисуется — именно это заказчик и называет «модуль недоступен».
+  "employee-ro": {
+    id: "employee-ro",
+    name: "Сотрудник: просмотр статусов",
+    description: "Статусы своего управления, без правки",
+    color: "bg-slate-100 text-slate-800",
+    // ТОЛЬКО чтение: заказчик написал «видно своё управление, но без
+    // возможности редактирования». `update` и `mass-update` здесь появиться не
+    // должны — кнопки массовой правки берут право отсюда.
+    permissions: [{ resource: "statuses", actions: ["read"] }],
+  },
+  "head-basic": {
+    id: "head-basic",
+    name: "Руководитель: обзор и статусы",
+    description: "Обзор и статусы своего подразделения",
+    color: "bg-sky-100 text-sky-800",
+    permissions: [
+      { resource: "organization", actions: ["read"] },
+      { resource: "statuses", actions: ["read", "update", "mass-update"] },
+    ],
+  },
+  "head-reports": {
+    id: "head-reports",
+    name: "Руководитель: обзор, статусы, ежедневный отчёт",
+    description: "То же плюс ежедневный отчёт департамента",
+    color: "bg-emerald-100 text-emerald-800",
+    permissions: [
+      { resource: "organization", actions: ["read"] },
+      { resource: "statuses", actions: ["read", "update", "mass-update"] },
+      { resource: "reports", actions: ["read", "create", "export"] },
+    ],
+  },
+  "forces-officer": {
+    id: "forces-officer",
+    name: "Ответственный за сбор сил",
+    description: "Сбор сил, обзор, статусы и отчёт департамента",
+    color: "bg-amber-100 text-amber-800",
+    permissions: [
+      { resource: "organization", actions: ["read"] },
+      { resource: "employees", actions: ["read"] },
+      { resource: "statuses", actions: ["read", "update", "mass-update"] },
+      { resource: "reports", actions: ["read", "create", "export"] },
+    ],
+  },
   "role-6": {
     id: "role-6",
     name: "Роль-6: Редактирование отдела",
@@ -207,21 +267,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               ROLE_4: "role-4",
               ROLE_5: "role-5",
               ROLE_6: "role-6",
+              // Матрица доступа (Plane №348)
+              EMPLOYEE_RO: "employee-ro",
+              HEAD_BASIC: "head-basic",
+              HEAD_REPORTS: "head-reports",
+              FORCES_OFFICER: "forces-officer",
             };
 
             if (backendRoleCode && roleMap[backendRoleCode]) {
               return roleMap[backendRoleCode];
             }
 
-            // Если роль не найдена, используем дефолтную роль-4 (полный доступ)
-            return "role-4";
+            // 🔴 НЕИЗВЕСТНАЯ РОЛЬ ЗАКРЫВАЕТСЯ, А НЕ ОТКРЫВАЕТСЯ (Plane №349).
+            // Здесь стояло `return "role-4"` — полный доступ ко всему. Роль,
+            // заведённая в справочнике и забытая в этой таблице, получала не
+            // «ничего не видно», а «видно и можно всё»; и заметить это можно
+            // было только по тому, что лишние модули НЕ мешают работать.
+            // Самый узкий набор — отказ громкий: человек видит пустое меню и
+            // приходит с вопросом, вместо того чтобы молча править чужое.
+            return "employee-ro";
           };
 
           // Извлекаем код роли из нового формата: role.code
           const roleCode = backendRole?.code;
           const frontendRole = roleCode
             ? mapBackendRoleToFrontend(roleCode)
-            : "role-4";
+            : "employee-ro";
 
           // Извлекаем данные из нового формата
           const userId =

@@ -28,7 +28,11 @@ from organization_management.apps.common.drf_permissions import (
     CanViewStaffingTable,
     CanManageStaffingTable
 )
-from organization_management.apps.common.rbac import get_user_scope_queryset, check_permission
+from organization_management.apps.common.rbac import (
+    ACCESS_MATRIX_ROLES,
+    check_permission,
+    get_user_scope_queryset,
+)
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.masking import mask_iin
 from organization_management.apps.employees.models import Employee
@@ -493,7 +497,17 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 role_code = user_role.get_role_code() if user_role else None
             except Exception:
                 role_code = None
-            if role_code not in ('ROLE_3', 'ROLE_6', 'ROLE_7'):
+            # Роли матрицы доступа (Plane №348) стоят РЯДОМ с ROLE_3/6/7, а не
+            # вместо них: «Статусы сотрудников» — модуль, который заказчик
+            # оставил открытым шести персонам из семи, и держаться он должен
+            # на портальной роли, а не на том, что у учётки заодно нашлось
+            # право раздела `status.view`. Учётка без роли раздела (а такую
+            # заводят экраном «Пользователи») получала бы 403 на модуле,
+            # который ей выдали.
+            allowed_portal_roles = ('ROLE_3', 'ROLE_6', 'ROLE_7') + tuple(
+                ACCESS_MATRIX_ROLES
+            )
+            if role_code not in allowed_portal_roles:
                 # Право ЧТЕНИЯ СТАТУСОВ — то же, которым открыты борд расхода и
                 # аналитика службы. Свой код права здесь не заводится: экран
                 # показывает ровно то, что показывают они, и второе имя для
@@ -1486,6 +1500,16 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
             role_code = user_role.get_role_code()
 
+            # Роли матрицы доступа (Plane №348): своё подразделение — это и есть
+            # область роли, поднимать или опускать её не нужно. Уровень уже
+            # задан самой ролью: «Сотрудник» и «Руководитель: обзор и статусы»
+            # живут на управлении, «…ежедневный отчёт» и «Ответственный за сбор
+            # сил» — на департаменте. Без этой ветки подпись экрана статусов
+            # берётся из штатной единицы человека и показывает ОТДЕЛ, в котором
+            # он сидит, тогда как таблица под подписью считает всю область.
+            if role_code in ACCESS_MATRIX_ROLES:
+                return user_role.effective_scope_division
+
             # Для ROLE_7: приоритет у scope_division если указан на уровне департамента
             if role_code == 'ROLE_7':
                 # Приоритет 1: Если scope_division указан вручную на уровне департамента (level=1)
@@ -1824,6 +1848,7 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
         """
         scope_division = self._get_user_scope_division(user)
         if scope_division:
+            scope_division = self._overview_root(user, scope_division)
             return scope_division.get_descendants(include_self=True), scope_division
 
         from organization_management.apps.operations.api.permissions import (
@@ -1856,6 +1881,38 @@ class DivisionStatisticsViewSet(viewsets.ViewSet):
         # несколько поддеревьев, и ОДНОГО подразделения, её описывающего, не
         # существует.
         return divisions, None
+
+    @staticmethod
+    def _overview_root(user, scope_division):
+        """Узел, от которого считается ОБЗОР, — не всегда область роли.
+
+        Заказчик потребовал у начальника управления «остальные модули на
+        уровне своего управления ЗА ИСКЛЮЧЕНИЕМ Обзор: Обзор на уровне
+        департамента» (Plane №348). Область у портальной роли ОДНА, поэтому
+        исключение названо признаком роли `overview_at_department`, и читает
+        его только эта ручка: расширять область самого `UserRole` значило бы
+        отдать департамент и статусам тоже, то есть нарушить первую половину
+        того же требования.
+
+        Признака нет или он снят — возвращается ровно то, что пришло: у
+        остальных ролей поведение строка в строку прежнее.
+        """
+        try:
+            role_info = user.role_info
+        except Exception:
+            return scope_division
+        if role_info is None or not getattr(role_info.role, 'overview_at_department', False):
+            return scope_division
+        # Подъём до департамента ВРУЧНУЮ: метода `get_department()` у Division
+        # нет (в `common.UserRole.department` он зовётся и падает — своя
+        # карточка), а тот же подъём уже написан в `secondments` и
+        # `employees` — здесь он третий, и делает ровно то же.
+        node = scope_division
+        while node.parent and node.division_type != Division.DivisionType.DEPARTMENT:
+            node = node.parent
+        # Департамента над областью может не быть (область — сама организация):
+        # подниматься некуда, цикл упирается в корень и отдаёт его.
+        return node
 
     def _get_user_scope_division(self, user):
         """Определяет область видимости пользователя"""

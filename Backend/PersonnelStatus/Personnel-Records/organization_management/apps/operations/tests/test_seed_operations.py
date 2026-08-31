@@ -145,7 +145,18 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # системы. Прежние держатели — DIVISION_OPERATOR, OMD, ORGD — переехали в
     # DIRECTORATE_HEAD, DEPARTMENT_EXPENSE_OFFICER и DUTY_OFFICER; пин
     # обновлён вместе с ними, а не подогнан под вывод.
-    assert holders("status.manage") == {"INTEGRATION_USER", "DIRECTORATE_HEAD"}
+    # ДЕРЖАТЕЛЕЙ СТАЛО ПЯТЬ 31.08.2026 (Plane №348). Заказчик описал профили
+    # руководителей, и у каждого статусы своего подразделения правятся: это и
+    # есть его слова «остальные модули на уровне своего управления». Пин
+    # расширен ПОИМЕННО, а не ослаблен до `>=`: список держателей записи —
+    # ровно то место, где лишняя роль обязана быть замечена.
+    assert holders("status.manage") == {
+        "INTEGRATION_USER",
+        "DIRECTORATE_HEAD",
+        "HEAD_DIRECTORATE_LINE",
+        "HEAD_DEPARTMENT_LINE",
+        "HEAD_OPS_UNIT",
+    }
     assert holders("daily_report.mark_update") == {"DIRECTORATE_HEAD"}
     assert holders("daily_report.correct") == {"DIRECTORATE_HEAD"}
     assert holders("daily_report.override_block") == {"DUTY_OFFICER"}
@@ -187,6 +198,52 @@ def test_the_directorate_head_fills_the_day_and_submits_it(seeded):
     assert "status.manage" in own
     assert "*" not in own
     assert {"daily_report.mark_update", "daily_report.correct", "status.view"} <= own
+
+
+def test_the_customer_profiles_see_exactly_the_modules_he_named(seeded):
+    """Семь профилей Plane №348 — по СПИСКУ МОДУЛЕЙ, а не по списку прав.
+
+    Заказчик описывал роли тем, что видно в меню, и проверять будет тем же.
+    Поэтому проба говорит его словами: три модуля — Реестр ОМ, Командный центр
+    и Транспорт ГОН — закрыты ОДНИМ правом `event.view`, и в описании они
+    перечислены всегда вместе. Если кто-то вернёт `event.view` в общий набор
+    чтения, начальник управления линейного департамента увидит Реестр ОМ —
+    ровно то, что заказчик назвал недоступным.
+    """
+    # Реестр ОМ / Командный центр / Транспорт ГОН — только у второго департамента.
+    assert "event.view" not in granted("HEAD_DIRECTORATE_LINE")
+    assert "event.view" not in granted("HEAD_DEPARTMENT_LINE")
+    assert "event.view" not in granted("FORCES_GATHERING_OFFICER")
+    assert "event.view" in granted("HEAD_OPS_UNIT")
+
+    # Аналитика службы: нет у начальника управления и у второго департамента,
+    # есть у начальника линейного департамента и у ответственного за сбор сил.
+    assert "analytics.view" not in granted("HEAD_DIRECTORATE_LINE")
+    assert "analytics.view" not in granted("HEAD_OPS_UNIT")
+    assert {"analytics.view"} <= granted("HEAD_DEPARTMENT_LINE")
+    assert {"analytics.view"} <= granted("FORCES_GATHERING_OFFICER")
+
+    # Отчёты по ОМ (`report.generate`) — только у второго департамента.
+    assert holders("report.generate") >= {"HEAD_OPS_UNIT"}
+    assert "report.generate" not in granted("HEAD_DIRECTORATE_LINE")
+    assert "report.generate" not in granted("HEAD_DEPARTMENT_LINE")
+    assert "report.generate" not in granted("FORCES_GATHERING_OFFICER")
+
+    # Сбор сил ведёт ровно один из семи профилей.
+    assert "forces.command" in granted("FORCES_GATHERING_OFFICER")
+    for code in ("HEAD_DIRECTORATE_LINE", "HEAD_DEPARTMENT_LINE", "HEAD_OPS_UNIT"):
+        assert not {"forces.command", "forces.allocate", "forces.select"} & granted(code)
+
+    # «Система» закрыта у всех шести неадминистраторских профилей.
+    system = {"dictionary.view", "settings.view", "admin.roles", "audit.view"}
+    for code in (
+        "EMPLOYEE",
+        "HEAD_DIRECTORATE_LINE",
+        "HEAD_DEPARTMENT_LINE",
+        "HEAD_OPS_UNIT",
+        "FORCES_GATHERING_OFFICER",
+    ):
+        assert system & granted(code) == set()
 
 
 def test_only_the_admin_holds_the_wildcard(seeded):
