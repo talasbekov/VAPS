@@ -39,9 +39,10 @@
     ".next-measure-turbo/types/**/*.ts",
     ".next-measure-webpack/types/**/*.ts",
     ".next-mock/types/**/*.ts",
+    ".next-mut/types/**/*.ts",
+    ".next-prod/types/**/*.ts",
     ".next/types/**/*.ts",
-    "next-env.d.ts",
-    ".next-prod/types/**/*.ts"
+    "next-env.d.ts"
   ],
   "exclude": [
     "node_modules"
