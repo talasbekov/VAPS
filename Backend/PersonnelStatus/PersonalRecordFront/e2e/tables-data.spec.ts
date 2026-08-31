@@ -18,6 +18,7 @@
  * ассерт «просроченные отмечены» вырождается в «отмечены все» или «никто».
  */
 import { expect, test, type Page } from '@playwright/test'
+import { businessDateOf } from './business-date'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { probeComment } from './probe-statuses'
 
@@ -309,7 +310,10 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * привлечён сегодня, знает сервер; таблицу доводим до него поиском.
      */
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
-    const today = new Date().toISOString().slice(0, 10)
+    // Деловая дата — С СЕРВЕРА (Plane №373). `toISOString()` отдаёт UTC, и в
+    // плюсовой зоне после семи вечера проба спрашивала бы ВЧЕРАШНИЕ статусы,
+    // сравнивая их с сегодняшним экраном.
+    const today = await businessDateOf(API, token)
     const statuses = (await (
       await fetch(`${API}/api/operations/statuses/?business_date=${today}&limit=200`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -395,7 +399,13 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * Разъедется клиент с сервером на одну строку — проба назовёт её поимённо.
      */
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
-    const today = new Date().toISOString().slice(0, 10)
+    // 🔴 ДЕЛОВАЯ ДАТА — С СЕРВЕРА, а не из браузерных часов (Plane №373).
+    // Здесь эта проба и попалась: 01.09.2026 в 00:26 по местному времени
+    // (UTC+5) `toISOString()` дал 31.08, проба взяла ВЧЕРАШНИЕ привлечения и
+    // объявила «у сотрудников 7, 9, 10 сервер знает, а таблица не
+    // показывает». Экран при этом был прав — он спрашивает дату у расхода
+    // (`use-ops-section-statuses`), как и положено.
+    const today = await businessDateOf(API, token)
 
     // Все страницы, а не первая: ровно та ошибка, которую проба и стережёт.
     const attachedIds = new Set<number>()
