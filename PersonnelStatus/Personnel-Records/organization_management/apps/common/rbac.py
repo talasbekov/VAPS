@@ -1,230 +1,177 @@
 """
-RBAC Engine - движок для проверки прав доступа на основе ролей
+RBAC портальных экранов: штатное расписание и вакансии.
 
-Система полностью основана на БД:
-- Роли хранятся в таблице Role
-- Права хранятся в таблице Permission
-- Связи роль-право в таблице RolePermission
+🔴 ПРАВА И ОБЛАСТЬ БЕРУТСЯ ТОЛЬКО ИЗ РАЗДЕЛА ОМ (Plane №352, Ш-3).
 
-Все настройки управляются через Django админку без изменения кода.
+Раньше этот файл был вторым каталогом ролей: он читал `common.Role` из БД и
+знал наизусть семь кодов — `if role == 'ROLE_3': подняться до управления`,
+`if role == 'ROLE_6': вернуть отдел как есть`. Заказчик потребовал искоренить
+старую систему и работать по своим ролям; ни одного из этих кодов среди них
+нет, и каждая новая роль молча получала бы `return False` — «права выданы, а
+ничего не видно».
+
+Теперь правило одно, то же, что у Ш-2 в `staff_unit/views.py`:
+
+* ЧТО МОЖНО — решает право раздела. Кадровые имена прав (`view_vacancies`,
+  `create_staffing_position`, …) остались точками вызова в `staff_unit/views.py`
+  и в классах DRF, но за ними стоит код раздела из карты ниже.
+* ЧЬЁ — решает ОБЛАСТЬ ГРАНТА этого права: `visible_division_ids` отдаёт
+  подразделения гранта вместе с потомками, поэтому право, выданное на
+  департамент, накрывает его управления и отделы. Отдельного разбора уровней
+  («поднимись до департамента») больше нет и быть не должно: он и был той
+  зашитой иерархией, которую велено снести.
+
+ЧЕГО ЗДЕСЬ БОЛЬШЕ НЕТ И ПОЧЕМУ.
+
+* `has_role_permission` — чтение прав из `common.Role`. Второй каталог прав;
+  сами модели снимает Ш-6, читателя снимает этот шаг.
+* Ограничение откомандированных (`is_seconded` у ROLE_3/6/7 запрещал правку
+  статусов и данных). Признак живёт в старой модели `UserRole` и уходит
+  вместе с ней; в разделе аналога нет. Потеря ОСОЗНАННАЯ и записана в
+  `Frontend/Decisions.md` + карточкой в «Предложено Claude»: вернуть правило
+  можно только признаком, не привязанным к снесённому каталогу, а это
+  решение заказчика, а не побочный эффект шага.
+* Ветка «суперпользователь видит всё» осталась: это факт об учётной записи
+  Django, а не роль.
 """
-from typing import Optional, Any
+from typing import Any, Optional
+
 from django.contrib.auth.models import User
 
 
-# Коды ролей матрицы доступа (Plane №348). Область у них считается одинаково —
-# «своё подразделение и всё, что под ним»; списком, а не проверкой «не из
-# ROLE_*», чтобы новая роль не получала область молча, самим фактом появления.
-ACCESS_MATRIX_ROLES = frozenset({
-    'EMPLOYEE_RO', 'HEAD_BASIC', 'HEAD_REPORTS', 'FORCES_OFFICER',
-})
+#: Кадровое имя права → код права раздела ОМ.
+#:
+#: Карта, а не переименование точек вызова: имена прав сидят в `permission_map`
+#: вьюсетов, в классах `drf_permissions` и в двух десятках вызовов
+#: `check_permission`, и переименовывать их значило бы делать в Ш-3 работу Ш-6
+#: вслепую. Один слой перевода здесь оставляет обе стороны читаемыми: вызов
+#: говорит на языке экрана, каталог — на языке раздела.
+#:
+#: 🔴 ИМЯ ВНЕ КАРТЫ = ОТКАЗ. Так же вела себя и старая функция (право, которого
+#: нет у роли в БД, давало `False`), и иначе нельзя: молчаливое «разрешаем
+#: незнакомое» — это дыра, которая открывается опечаткой в `permission_map`.
+OPS_PERMISSION_BY_PORTAL = {
+    # Чтение штатки и вакансий — то же право, которым открыт экран
+    # оргструктуры: показывают они одно и то же дерево, и второе имя для
+    # одного и того же разошлось бы с ним при первой же раздаче прав.
+    'view_staffing_table': 'orgstructure.view',
+    'view_vacancies': 'orgstructure.view',
+    # Правка штатки и вакансий. Один код на обе: вакансия — штатная единица
+    # без человека, отдельного владельца у неё нет.
+    'manage_staffing_table': 'orgstructure.manage',
+    'create_staffing_position': 'orgstructure.manage',
+    'edit_staffing_position': 'orgstructure.manage',
+    'delete_staffing_position': 'orgstructure.manage',
+    'create_vacancy': 'orgstructure.manage',
+    'edit_vacancy': 'orgstructure.manage',
+    'close_vacancy': 'orgstructure.manage',
+    # Простановка статуса из ручки `directorate`: право раздела, которым
+    # статусы правит весь остальной портал.
+    'change_employee_status': 'status.manage',
+}
+
+#: Право, которым фильтруются СПИСКИ штатных единиц и вакансий. Оба читателя
+#: `get_user_scope_queryset` — чтение, и область у них общая с экраном
+#: оргструктуры.
+_SCOPE_READ_PERMISSION = 'orgstructure.view'
+
+
+def ops_permission_code(permission: str) -> Optional[str]:
+    """Код права раздела за кадровым именем; `None` — имени в карте нет.
+
+    Префикс приложения (`staff_unit.view_vacancies`) отбрасывается: он
+    приходит из автоопределения DRF, а карта ведётся по именам прав.
+    """
+    if not permission:
+        return None
+    name = permission.split('.')[-1] if '.' in permission else permission
+    return OPS_PERMISSION_BY_PORTAL.get(name)
+
+
+def _actor_id(user: User) -> str:
+    """Идентификатор актора в RBAC раздела.
+
+    Импорт локальный: `common` — старое приложение, и модульная связь с
+    разделом протянула бы его зависимости во все его импорты (тот же приём,
+    что в `staff_unit/views.py`).
+    """
+    from organization_management.apps.operations.services import LegacyRoleSync
+
+    return LegacyRoleSync.actor_id_for_user(user)
+
+
+def _scope_division_ids(user: User, code: Optional[str]):
+    """Подразделения, на которые у актора выдан грант этого КОДА РАЗДЕЛА.
+
+    Принимает код раздела, а не кадровое имя: перевод делает вызывающий. Так
+    сюда можно спросить и код, у которого кадрового имени нет вовсе
+    (`_SCOPE_READ_PERMISSION`), не заводя ему фиктивную строку в карте.
+
+    `None` на входе (имени нет в карте) — пустая область, то есть отказ.
+    `None` на выходе — грант без области (в том числе wildcard
+    администратора): область не ограничена ничем.
+    """
+    from organization_management.apps.operations.services import PermissionService
+
+    if code is None:
+        return set()
+    return PermissionService.visible_division_ids(_actor_id(user), code)
 
 
 def check_permission(user: User, permission: str, obj: Any = None) -> bool:
-    """
-    Главная функция проверки прав доступа
-    
+    """Есть ли у пользователя право, а если передан объект — и область на него.
+
     Args:
-        user: Django User объект
-        permission: строка вида 'app.permission_name' или просто 'permission_name'
-        obj: объект для проверки (Employee, Division, StaffUnit и т.д.)
-    
-    Returns:
-        bool: True если доступ разрешен, False если запрещен
-    
+        user: Django User
+        permission: кадровое имя права (см. `OPS_PERMISSION_BY_PORTAL`)
+        obj: проверяемый объект (StaffUnit, Vacancy, Employee, …)
+
     Examples:
         >>> check_permission(user, 'view_staffing_table')
         >>> check_permission(user, 'edit_vacancy', vacancy_obj)
     """
-    # Проверка что пользователь аутентифицирован
+    from organization_management.apps.operations.services import PermissionService
+
     if not user or not user.is_authenticated:
         return False
-    
-    # Суперпользователь имеет все права
+
     if user.is_superuser:
         return True
-    
-    # Проверка наличия роли
-    if not hasattr(user, 'role_info'):
+
+    code = ops_permission_code(permission)
+    if code is None:
         return False
-    
-    role_info = user.role_info
 
-    # Получаем код роли (работает для обеих систем)
-    role = role_info.get_role_code()
-
-    # Роль-4 (Системный администратор) имеет все права
-    if role == 'ROLE_4':
-        return True
-
-    # Проверка откомандирования для ролей 3, 6, 7
-    if role in ['ROLE_3', 'ROLE_6', 'ROLE_7'] and role_info.is_seconded:
-        # Откомандированные начальники не могут редактировать статусы и данные
-        restricted_permissions = [
-            'change_status', 'edit_status', 'change_employee_status',
-            'edit_employee', 'edit_division', 'edit_directorate'
-        ]
-        if any(perm in permission for perm in restricted_permissions):
-            return False
-    
-    # Проверка конкретного права для роли
-    if not has_role_permission(role, permission):
+    if not PermissionService.has_permission(_actor_id(user), code):
         return False
-    
-    # Проверка области видимости если передан объект
-    if obj:
+
+    if obj is not None:
         return is_in_scope(user, obj, permission)
-    
+
     return True
 
 
-def has_role_permission(role: str, permission: str) -> bool:
-    """
-    Проверка что роль имеет данное право (базовая проверка без учёта области видимости)
-
-    Читает права из БД с кешированием для производительности.
-
-    Args:
-        role: код роли (ROLE_1, ROLE_2, и т.д.)
-        permission: название права
-
-    Returns:
-        bool: True если роль имеет право
-
-    Raises:
-        Exception: Если роль не найдена в БД
-    """
-    # Нормализация названия права (убрать префикс приложения если есть)
-    perm_name = permission.split('.')[-1] if '.' in permission else permission
-
-    try:
-        from .models import Role
-
-        # Получаем роль из БД
-        role_obj = Role.objects.filter(code=role, is_active=True).first()
-
-        if not role_obj:
-            # Роль не найдена - по умолчанию запрещаем доступ
-            return False
-
-        # Получаем права роли (с кешированием)
-        role_permissions = role_obj.get_permissions()
-
-        # Прямое совпадение
-        if perm_name in role_permissions:
-            return True
-
-        # Частичное совпадение для гибкости
-        for role_perm in role_permissions:
-            if perm_name in role_perm or role_perm in perm_name:
-                return True
-
-        return False
-
-    except Exception as e:
-        # Логируем ошибку и запрещаем доступ
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error checking permission {permission} for role {role}: {e}")
-        return False
-
-
 def is_in_scope(user: User, obj: Any, permission: str) -> bool:
+    """Попадает ли объект в область гранта этого права.
+
+    Область считается ПО ТОМУ ЖЕ праву, которое проверяют: у роли раздела
+    грантов сколько угодно и у каждого своя область, поэтому «область
+    пользователя» вообще не определена — определена область права.
     """
-    Проверка что объект находится в области видимости пользователя
+    if user.is_superuser:
+        return True
 
-    Работает с обеими системами RBAC (старой и новой).
-
-    Args:
-        user: Django User
-        obj: проверяемый объект
-        permission: название права
-
-    Returns:
-        bool: True если объект в области видимости
-    """
-    role_info = user.role_info
-
-    # Получаем код роли (работает для обеих систем)
-    role = role_info.get_role_code()
-    
-    # Получить подразделение объекта
     obj_division = get_object_division(obj)
-    
     if not obj_division:
-        # Если не удалось определить подразделение - запрещаем
+        # Подразделение объекта не определено — отказываем: гейт обязан
+        # оставаться fail-closed.
         return False
-    
-    # Роль-1: вся организация
-    if role == 'ROLE_1':
+
+    visible = _scope_division_ids(user, ops_permission_code(permission))
+    if visible is None:
+        # Грант без области накрывает всё дерево.
         return True
-    
-    # Роль-4: вся организация
-    if role == 'ROLE_4':
-        return True
-    
-    # Роль-2: только департамент
-    if role == 'ROLE_2':
-        department = role_info.effective_scope_division
-        if not department:
-            return False
-        return is_in_department(obj_division, department)
-    
-    # Роль-3: просмотр и редактирование - только СВОЕ управление и дочерние отделы
-    # НЕ весь департамент!
-    if role == 'ROLE_3':
-        directorate = role_info.effective_scope_division
-        if not directorate:
-            return False
-
-        # Для просмотра - только управление и его дочерние
-        if permission.startswith('view_'):
-            return is_in_directorate(obj_division, directorate)
-
-        # Для редактирования - также только управление
-        return is_in_directorate(obj_division, directorate)
-    
-    # Роль-5: подразделение (может быть департамент, управление или отдел)
-    if role == 'ROLE_5':
-        scope = role_info.effective_scope_division
-        if not scope:
-            return False
-        return is_in_subtree(obj_division, scope)
-    
-    # Роль-6: просмотр и редактирование - только СВОЙ отдел и дочерние подразделения
-    # НЕ весь департамент!
-    if role == 'ROLE_6':
-        division = role_info.effective_scope_division
-        if not division:
-            return False
-
-        # Для просмотра - только отдел и его дочерние
-        if permission.startswith('view_'):
-            return obj_division == division or (hasattr(obj_division, 'is_descendant_of') and obj_division.is_descendant_of(division))
-
-        # Для редактирования - также только отдел
-        return obj_division == division or (hasattr(obj_division, 'is_descendant_of') and obj_division.is_descendant_of(division))
-
-    # Роль-7: весь департамент (просмотр и редактирование)
-    if role == 'ROLE_7':
-        department = role_info.effective_scope_division
-        if not department:
-            return False
-        return is_in_department(obj_division, department)
-
-    # Роли матрицы доступа (Plane №348). Область у всех четырёх читается
-    # ОДИНАКОВО — «своё подразделение и всё, что под ним», — и различаются они
-    # не областью, а набором модулей (он живёт на клиенте, lib/auth.tsx).
-    # Отдельная ветка нужна затем, чтобы функция не свалилась в `return False`
-    # ниже: без неё роль, которой права выданы, всё равно не увидела бы ни
-    # одного объекта, и дефект выглядел бы как «права не работают».
-    if role in ACCESS_MATRIX_ROLES:
-        scope = role_info.effective_scope_division
-        if not scope:
-            return False
-        return is_in_subtree(obj_division, scope)
-
-    return False
+    return obj_division.id in visible
 
 
 def get_object_division(obj: Any):
@@ -321,111 +268,30 @@ def get_object_division(obj: Any):
     return None
 
 
-def is_in_department(division, department) -> bool:
-    """Проверка что подразделение входит в департамент"""
-    if not division or not department:
-        return False
-    
-    # Если само подразделение - департамент
-    if division == department:
-        return True
-    
-    # Проверка через MPTT
-    if hasattr(division, 'is_descendant_of'):
-        return division.is_descendant_of(department) or division == department
-    
-    # Проверка через get_ancestors
-    if hasattr(division, 'get_ancestors'):
-        return department in division.get_ancestors(include_self=True)
-    
-    return False
-
-
-def is_in_directorate(division, directorate) -> bool:
-    """Проверка что подразделение входит в управление"""
-    if not division or not directorate:
-        return False
-    
-    if division == directorate:
-        return True
-    
-    if hasattr(division, 'is_descendant_of'):
-        return division.is_descendant_of(directorate)
-    
-    if hasattr(division, 'get_ancestors'):
-        return directorate in division.get_ancestors(include_self=True)
-    
-    return False
-
-
-def is_in_subtree(division, scope) -> bool:
-    """Проверка что подразделение входит в поддерево scope"""
-    if not division or not scope:
-        return False
-    
-    if division == scope:
-        return True
-    
-    if hasattr(division, 'is_descendant_of'):
-        return division.is_descendant_of(scope)
-    
-    if hasattr(division, 'get_ancestors'):
-        return scope in division.get_ancestors(include_self=True)
-    
-    return False
-
-
 def get_user_scope_queryset(user: User, model_class):
+    """Выборка модели, суженная областью права `orgstructure.view`.
+
+    Поддерживаемые модели перечислены в `_get_division_field_for_model`.
+    Точечная проверка (`is_in_scope`) и эта выборка обязаны отвечать
+    одинаково, поэтому обе спрашивают область у одного резолвера раздела.
     """
-    Получить queryset с учётом области видимости пользователя для ЛЮБОЙ модели
-
-    Работает с обеими системами RBAC (старой и новой).
-
-    Поддерживаемые модели:
-    - Division, StaffUnit, Vacancy (прямое поле division)
-    - Employee (через staff_unit__division)
-    - EmployeeStatus (через employee__staff_unit__division)
-    - Secondment (через from_division или to_division)
-    - Report (через division)
-
-    Args:
-        user: Django User
-        model_class: класс модели
-
-    Returns:
-        QuerySet с фильтрацией по области видимости
-    """
-    if not hasattr(user, 'role_info'):
-        return model_class.objects.none()
-
-    role_info = user.role_info
-
-    # Получаем код роли (работает для обеих систем)
-    role = role_info.get_role_code()
-
-    # Роли с полным доступом ко всей организации
-    if role in ['ROLE_1', 'ROLE_4'] or user.is_superuser:
+    if user.is_superuser:
         return model_class.objects.all()
 
-    # Определить поле для фильтрации в зависимости от модели
     model_name = model_class.__name__
     division_field = _get_division_field_for_model(model_name)
-
     if not division_field:
         return model_class.objects.none()
 
-    scope = role_info.effective_scope_division
-    if not scope:
+    visible = _scope_division_ids(user, _SCOPE_READ_PERMISSION)
+    if visible is None:
+        return model_class.objects.all()
+    if not visible:
         return model_class.objects.none()
 
-    # Получить список ID подразделений в области видимости
-    division_ids = _get_scope_division_ids(role, scope)
-
-    if not division_ids:
-        return model_class.objects.none()
-
-    # Применить фильтр
-    return model_class.objects.filter(**{f'{division_field}__id__in': division_ids})
+    return model_class.objects.filter(
+        **{f'{division_field}__id__in': sorted(visible)}
+    )
 
 
 def _get_division_field_for_model(model_name: str) -> str:
@@ -463,80 +329,3 @@ def _get_division_field_for_model(model_name: str) -> str:
     }
 
     return DIVISION_FIELD_MAP.get(model_name, 'division')
-
-
-def _get_scope_division_ids(role: str, scope) -> list:
-    """
-    Получить список ID подразделений в области видимости роли
-
-    Args:
-        role: код роли (ROLE_1, ROLE_2, и т.д.)
-        scope: Division объект (scope_division из UserRole)
-
-    Returns:
-        список ID подразделений
-    """
-    if not scope:
-        return []
-
-    # Роль-2: департамент и все дочерние
-    if role == 'ROLE_2':
-        if hasattr(scope, 'get_descendants'):
-            return list(scope.get_descendants(include_self=True).values_list('id', flat=True))
-        return [scope.id]
-
-    # Роль-3: весь департамент (родитель управления и все его потомки)
-    if role == 'ROLE_3':
-        # Если scope уже на уровне департамента (level=1), возвращаем его и потомков
-        if scope.level == 1:
-            if hasattr(scope, 'get_descendants'):
-                return list(scope.get_descendants(include_self=True).values_list('id', flat=True))
-            return [scope.id]
-
-        # Если scope на уровне управления (level=2), поднимаемся к департаменту
-        if scope.level == 2 and scope.parent:
-            department = scope.parent
-            if hasattr(department, 'get_descendants'):
-                return list(department.get_descendants(include_self=True).values_list('id', flat=True))
-            return [department.id]
-
-        # Для других уровней возвращаем scope и его потомков
-        if hasattr(scope, 'get_descendants'):
-            return list(scope.get_descendants(include_self=True).values_list('id', flat=True))
-        return [scope.id]
-
-    # Роль-5: подразделение и все дочерние
-    if role == 'ROLE_5':
-        if hasattr(scope, 'get_descendants'):
-            return list(scope.get_descendants(include_self=True).values_list('id', flat=True))
-        return [scope.id]
-
-    # Роли матрицы доступа (Plane №348): своё подразделение и всё под ним —
-    # то же правило, что и в `is_in_scope`, чтобы выборка и точечная проверка
-    # не разошлись.
-    if role in ACCESS_MATRIX_ROLES:
-        if hasattr(scope, 'get_descendants'):
-            return list(scope.get_descendants(include_self=True).values_list('id', flat=True))
-        return [scope.id]
-
-    # Роль-6: весь департамент (поднимаемся к департаменту через родителей)
-    if role == 'ROLE_6':
-        # Отдел обычно на уровне 3, управление на уровне 2, департамент на уровне 1
-        # Поднимаемся к департаменту
-        current = scope
-        # Ищем департамент (обычно level=1)
-        while current.parent and current.level > 1:
-            current = current.parent
-
-        # Теперь current должен быть департаментом
-        if hasattr(current, 'get_descendants'):
-            return list(current.get_descendants(include_self=True).values_list('id', flat=True))
-        return [current.id]
-
-    # Роль-7: весь департамент (аналогично ROLE_2)
-    if role == 'ROLE_7':
-        if hasattr(scope, 'get_descendants'):
-            return list(scope.get_descendants(include_self=True).values_list('id', flat=True))
-        return [scope.id]
-
-    return []

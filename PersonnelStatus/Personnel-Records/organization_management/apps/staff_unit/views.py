@@ -1504,17 +1504,32 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
 
 class CanReadDirectorate(permissions.BasePermission):
-    """Кадровое право ИЛИ право раздела — для ЧТЕНИЯ ручки `directorate`.
+    """Право раздела «Статусы: просмотр» — единственный ключ ЧТЕНИЯ ручки
+    `directorate`.
 
-    Добавляется РЯДОМ с `CanViewStaffingTable`, а не вместо: у кого кадровое
-    право есть, поведение прежнее, строка в строку. Второй ключ — право
-    раздела `status.view` (Plane №325, решение заказчика 30.08.2026).
+    Ключей было два (Plane №325): кадровое `view_staffing_table` ИЛИ право
+    раздела. Первый снят в Ш-3 (Plane №352) вместе со вторым каталогом прав:
+    кадровые имена теперь ведут в коды раздела, и `view_staffing_table` стало
+    означать `orgstructure.view` — право ОРГСТРУКТУРЫ, которое этот экран не
+    показывает. Пускать по нему на экран статусов значило бы выдать доступ,
+    которого никто не давал.
+
+    🔴 СООБЩЕНИЕ НАЗЫВАЕТ НУЖНОЕ ПРАВО, а не «нет прав»: отказ класса приходит
+    РАНЬШЕ тела действия, и без своего текста человек получил бы общую фразу,
+    из которой не следует, куда идти (проба
+    `test_a_personnel_role_alone_no_longer_opens_the_screen`).
     """
 
-    message = CanViewStaffingTable.message
+    message = (
+        'Нужно право «Статусы: просмотр» — оно выдаётся ролью раздела '
+        'в «Система → Роли».'
+    )
 
     def has_permission(self, request, view):
-        if CanViewStaffingTable().has_permission(request, view):
+        # Суперпользователь — отдельная ветка, как и в теле действия: это факт
+        # об учётной записи Django, грантов раздела у него может не быть вовсе.
+        user = getattr(request, 'user', None)
+        if user is not None and user.is_authenticated and user.is_superuser:
             return True
         return _has_ops_status_view(request)
 
