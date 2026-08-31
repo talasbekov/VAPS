@@ -97,6 +97,10 @@ export const ROUTES: readonly RouteSpec[] = [
     template: '/security-ops/dictionaries/personnel/{staffDictionaryKind}',
     needs: ['staffDictionaryKind'],
   },
+  // Типы статусов — тоже свой экран, а не вид `dictionaries/{code}`: у них
+  // своя таблица и generic-ручка их не обслуживает (Plane №344). Статический
+  // сегмент, поэтому параметров не требует.
+  { template: '/security-ops/dictionaries/status-types' },
   { template: '/security-ops/vehicles' },
   { template: '/security-ops/settings' },
   { template: '/security-ops/changelog' },

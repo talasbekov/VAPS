@@ -234,9 +234,26 @@ def test_definitions_with_counts(viewer_api):
     # группы, эти группы имеют разные статусы». ДЕВЯТЬ с 30.08.2026: секции
     # бланка расстановки (Plane №242) — вторая координата места, роль отвечает
     # «кем», секция «где».
-    assert len(data) == 9
+    #
+    # ДЕСЯТЬ с 31.08.2026 (Plane №344), и десятая строка — не generic-справочник.
+    # Заказчик завёл тип статуса и не нашёл его на экране «Система →
+    # Справочники»: реестр перечислял только `OpsDictionaryEntry`, а типы
+    # статусов живут своей таблицей. Реестр обязан отвечать на вопрос «какие у
+    # нас справочники» целиком, поэтому внешние справочники дописываются к
+    # generic-строкам (`EXTERNAL_DEFINITIONS`). Число подняли ОСОЗНАННО, а не
+    # подогнали под вывод: ниже проверено, чем именно десятая отличается от
+    # девяти первых.
+    assert len(data) == 10
     assert "PLACEMENT_ROLES" in by_code
     assert "PLACEMENT_SECTIONS" in by_code
+
+    # Внешний справочник несёт свой экран и запрет правки; generic-строки —
+    # `null` и `False`. Без этой пары ассертов «десять» означало бы только
+    # «строк стало больше».
+    assert by_code["STATUS_TYPES"]["screen"] == "status-types"
+    assert by_code["STATUS_TYPES"]["readOnly"] is True
+    assert by_code["PLACEMENT_ROLES"]["screen"] is None
+    assert by_code["PLACEMENT_ROLES"]["readOnly"] is False
     # Две пары «родитель — дети» в справочниках: требования постов и роли
     # групп. Пин на обе, чтобы вторая не пропала незамеченной.
     assert "EVENT_PARTICIPATION_KINDS" in by_code

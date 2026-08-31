@@ -445,6 +445,17 @@ export interface OpsStatusType {
   counts_in_list: boolean;
   counts_in_staff: boolean;
   is_active: boolean;
+  // Поля ниже сервер отдавал и раньше (`StatusTypeSerializer`), а тип о них
+  // молчал — до Plane №344 их никто не показывал. Экран справочника типов
+  // показывает СВОЙСТВА типа, а не только имя: администратор, заводящий тип,
+  // выбирает ровно их.
+  is_hard_block: boolean;
+  restricts_editing: boolean;
+  is_ku_owned: boolean;
+  max_duration_days: number | null;
+  color: string;
+  /** Код того же статуса в кадровом словаре; `null` — типа там не было. */
+  legacy_code: string | null;
 }
 
 /**
