@@ -3,7 +3,7 @@
 // Форма на react-hook-form + zod. Правила — в `model/edit-status-schema.ts`,
 // разметка ошибки и фокус — в `shared/lib/form`; здесь остаётся то, что знает
 // только эта модалка: засев с сервера, сборка запроса и наряд.
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller } from "react-hook-form";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { employeeIdOfKey } from "../model/row-key";
@@ -50,6 +50,15 @@ import {
 import { useDutyAssignment } from "@/hooks/use-duty-assignments";
 import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { DutyAssignmentFields } from "./DutyAssignmentFields";
+import {
+  EventParticipationFields,
+  participationsToPayload,
+  validateParticipations,
+  type ParticipationDraft,
+} from "@/features/event-participation/ui/EventParticipationFields";
+import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
+import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
+import { useCreateOpsStatus } from "@/hooks/use-ops-status-write";
 import {
   EMPTY_DUTY_DRAFT,
   EMPTY_EDIT_STATUS_FORM,
@@ -123,6 +132,7 @@ export function EditStatusDialog({
 
   const isInService = status === IN_SERVICE_LABEL;
   const isOnDuty = status === ON_DUTY_LABEL;
+
 
   // Находим текущий статус сотрудника при открытии диалога.
   // Подстановка с сервера — ОДИН раз на открытие: дальше форму ведёт
@@ -252,6 +262,31 @@ export function EditStatusDialog({
   // знает лишь тринадцать старых подписей и на заведённом в админке типе
   // вернул бы undefined, а форма отказала бы «Неверный тип статуса».
   const codeByLabel = new Map(catalogTypes.map((item) => [item.label, item.code]));
+  // 🔴 ПРИВЛЕЧЕНИЕ НА ОМ — ВТОРАЯ ВЕТКА ОКНА (Plane №367, Ш-2 задачи №365).
+  //
+  // Заказчик: «Участие на ОМ должно быть как статус На дежурстве, должен
+  // выбираться группы (какие-то группы с возможностью) и Физнаряд». Ветка
+  // включается ПО КОДУ, а не по подписи: подписи правит заказчик в админке, а
+  // код — то единственное, чем «привлечён на мероприятие» отличим от отпуска.
+  //
+  // Список кодов ОБЩИЙ на всю систему (`entities/daily-grid`): департаментский
+  // разрез считает привлечённых по нему же, и своя копия здесь означала бы,
+  // что человек, привлечённый группой, у одного экрана занят, а у другого
+  // свободен — так уже было (№274, Ш-5).
+  const selectedCode =
+    codeByLabel.get(status) ?? EMPLOYEE_STATUS_CODE_BY_LABEL[status] ?? "";
+  const isEventParticipation = EVENT_PARTICIPATION_STATUS_CODES.has(selectedCode);
+  const [participations, setParticipations] = useState<ParticipationDraft[]>([]);
+  // Каталог видов участия нужен окну и после отрисовки блока — по нему
+  // проверяется черновик перед отправкой (запрос общий, из кэша).
+  const participationCatalog = useParticipationCatalog(open && isEventParticipation);
+  const createOpsStatus = useCreateOpsStatus();
+
+  // Уход с ОМ-типа снимает выбранные мероприятия: держать их у отпуска значит
+  // отправить на сервер заведомо бессмысленное тело.
+  useEffect(() => {
+    if (!isEventParticipation) setParticipations([]);
+  }, [isEventParticipation]);
 
   /** Кадровый снимок для наряда: звание из справочника, должность и
    * подразделение — от вызывающей таблицы, с запасным поиском по штатке. */
@@ -296,6 +331,67 @@ export function EditStatusDialog({
     // Формат YYYY-MM-DD по МЕСТНОЙ дате: toISOString() отдаёт UTC и в минусовых
     // зонах уводит дату на сутки назад.
     const formatDate = (date: Date) => format(date, "yyyy-MM-dd");
+
+    // 🔴 ПРИВЛЕЧЕНИЕ НА ОМ ПИШЕТСЯ В МОДЕЛЬ РАСХОДА, А НЕ В КАДРОВУЮ
+    // (Plane №367, решение заказчика 31.08.2026).
+    //
+    // Причина не в удобстве, а в том, что участию в кадровой модели негде
+    // лежать: полей мероприятия, вида участия и роли у `statuses.EmployeeStatus`
+    // нет вовсе, а `operations.OpsStatusParticipation` существует и по нему
+    // считаются расход и сводки департамента. Записать «привлечён» рядом с
+    // «На дежурстве» значило бы, что привлечения не видит НИКТО, кроме того,
+    // кто его поставил.
+    //
+    // Повторять приём блока наряда (тот держит объект и пост в localStorage)
+    // здесь нельзя по тому же правилу: заглушка на клиенте вместо серверного
+    // факта — долг, а не выполнение.
+    if (isEventParticipation) {
+      if (participations.length === 0) {
+        // Статус участия без единого мероприятия — «привлечён неизвестно
+        // куда»: расход его посчитает, а департамент не увидит, на какое ОМ
+        // человек отдан.
+        setError("root", { message: "Укажите хотя бы одно мероприятие." });
+        return;
+      }
+      const invalid = validateParticipations(
+        participations,
+        participationCatalog.data ?? []
+      );
+      if (invalid !== null) {
+        setError("root", { message: invalid });
+        return;
+      }
+      // Ручка расхода требует ОБЕ даты: у привлечения есть начало и конец —
+      // мероприятие кончается, и бессрочного участия не бывает.
+      if (!values.startDate || !values.endDate) {
+        setError("root", {
+          message: "У привлечения на мероприятие укажите начало и окончание.",
+        });
+        return;
+      }
+      try {
+        await createOpsStatus.mutateAsync({
+          employee_id: employeeIdNum,
+          status_type_code: apiStatusType,
+          date_start: formatDate(values.startDate),
+          date_end: formatDate(values.endDate),
+          participations: participationsToPayload(participations),
+        });
+        // Наряд снимается, как и при любом другом статусе: человек ушёл на
+        // мероприятие и в «Дежурных силах» объекта его быть не должно.
+        removeDutyAssignment(employeeId);
+        onOpenChange(false);
+        if (onSuccess) onSuccess();
+      } catch (error) {
+        setError("root", {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Не удалось записать привлечение на мероприятие",
+        });
+      }
+      return;
+    }
 
     const valueIsInService = values.status === IN_SERVICE_LABEL;
     const valueIsOnDuty = values.status === ON_DUTY_LABEL;
@@ -474,6 +570,19 @@ export function EditStatusDialog({
               />
             )}
           </Field>
+
+          {/* Привлечение на ОМ: мероприятие, физнаряд либо группа, роль в
+              группе. Блок ОБЩИЙ с окном расхода (Plane №367) — правила
+              («роль принадлежит своей группе», «у физнаряда ролей нет»)
+              живут в одном месте, а не в двух копиях. */}
+          {isEventParticipation && (
+            <EventParticipationFields
+              rows={participations}
+              onChange={setParticipations}
+              enabled={open && isEventParticipation}
+              hint="Статус запишется в учёт раздела ОМ — там же, где его видят расход и сводки департамента."
+            />
+          )}
 
           {/* Наряд: только у «На дежурстве» */}
           {isOnDuty && (
