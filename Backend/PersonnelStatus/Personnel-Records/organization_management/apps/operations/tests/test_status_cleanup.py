@@ -21,6 +21,7 @@ from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     OpsStatusParticipation,
 )
+from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.status_cleanup import (
     find_orphan_participations,
     purge_orphan_participations,
@@ -163,3 +164,41 @@ def test_the_scope_limits_the_cleanup_to_the_named_events(
     assert [row.event_id for row in OpsStatusParticipation.objects.all()] == [
         stranger_id
     ]
+
+
+def test_the_cleanup_leaves_a_trace_in_the_journal(
+    types, division, participation_catalog  # noqa: F811
+):
+    """Тысяча снятых строк обязана быть ИМЕННОЙ (Plane №356).
+
+    31.08.2026 со стенда исчезли 1135 участий, и какой прогон их снял,
+    установить было нечем: уборка не писала в журнал, а звалась шеллом из
+    teardown — следа не осталось и в логе сервера. Проба держит то, чего тогда
+    не хватило: кто, сколько и по каким мероприятиям.
+    """
+    employee = make_employee(division)
+    doomed = make_event("ОМ-2026-47", "Снесённое")
+    seed_status(employee, [doomed])
+    doomed_id = doomed.id
+    doomed.delete()
+
+    purge_orphan_participations(actor="user:probe")
+
+    entry = OpsAuditLog.objects.filter(action="STATUS_PARTICIPATIONS_PURGED").get()
+    assert entry.actor_user_id == "user:probe"
+    assert entry.old_value["participations"] == 1
+    assert entry.old_value["statuses"] == 1
+    assert entry.old_value["eventIds"] == [doomed_id]
+
+
+def test_an_empty_cleanup_writes_nothing(
+    types, division, participation_catalog  # noqa: F811
+):
+    """Уборка зовётся после КАЖДОГО прогона и почти всегда находит пусто.
+
+    Строка «снято 0» на каждый запуск утопила бы журнал раздела и сделала бы
+    настоящую уборку неразличимой среди сотен пустых.
+    """
+    purge_orphan_participations()
+
+    assert not OpsAuditLog.objects.filter(action="STATUS_PARTICIPATIONS_PURGED").exists()
