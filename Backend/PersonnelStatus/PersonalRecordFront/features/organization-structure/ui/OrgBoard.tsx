@@ -9,8 +9,8 @@ import { useStaffUnits } from "@/hooks/use-staff-units";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import {
   EMPLOYEE_STATUS_PAINT,
-  getEmployeeStatusLabel,
 } from "@/lib/status";
+import { useStatusNaming } from "@/entities/status";
 import styles from "./org-board.module.css";
 
 const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "";
@@ -319,6 +319,9 @@ const formatDate = (dateString?: string) => {
 };
 
 export default function OrgBoard() {
+  // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
+  // в админке, иначе читается как «Не обновлено».
+  const naming = useStatusNaming();
   const [highlightedStatus, setHighlightedStatus] = useState<string | null>(
     null
   );
@@ -645,7 +648,7 @@ export default function OrgBoard() {
                                         вовсе, — а ветка сюда как раз и
                                         попадает при `undefined`. */}
                                     <span className="font-semibold text-blue-600">
-                                      {getEmployeeStatusLabel(
+                                      {naming.labelOf(
                                         employeeData.employee?.current_status
                                           ?.status_type,
                                         "Статус не назначен"
@@ -729,7 +732,7 @@ export default function OrgBoard() {
                                           статуса называется вслух, а не
                                           подменяется «В строю». */}
                                       <span className="font-semibold text-blue-600">
-                                        {getEmployeeStatusLabel(
+                                        {naming.labelOf(
                                           employeeData.employee?.current_status
                                             ?.status_type,
                                           "Статус не назначен"

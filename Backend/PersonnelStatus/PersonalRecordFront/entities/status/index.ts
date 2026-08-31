@@ -10,4 +10,9 @@ export {
   getEmployeeStatusColor,
 } from "./model";
 
+// Подписи и цвета ПО СПРАВОЧНИКУ (Plane №366). Таблицы выше остаются запасным
+// путём — они отвечают, пока каталог не доехал; источником подписи служит хук.
+export { useStatusNaming } from "./naming";
+export type { StatusNaming } from "./naming";
+
 export { StatusBadge } from "./ui/StatusBadge";

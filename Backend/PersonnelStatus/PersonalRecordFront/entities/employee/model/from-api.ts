@@ -1,4 +1,4 @@
-import { getFormattedEmployeeStatus } from "@/lib/status";
+import type { StatusNaming } from "@/entities/status";
 import type { Employee } from "./types";
 
 /**
@@ -15,6 +15,7 @@ export type EmployeePersonalFields = Pick<
   | "id"
   | "name"
   | "status"
+  | "statusCode"
   | "statusSince"
   | "statusUntil"
   | "rank"
@@ -25,13 +26,23 @@ export type EmployeePersonalFields = Pick<
   | "photo"
 >;
 
-export function personnelFields(emp: any): EmployeePersonalFields {
+/**
+ * `naming` приходит ПАРАМЕТРОМ, а не берётся хуком внутри: это чистый разбор
+ * ответа ручки, и хук превратил бы его в компонент — вызывать его из `useMemo`
+ * стало бы нельзя. Подпись при этом обязана идти из справочника (Plane №366),
+ * иначе тип, заведённый заказчиком в админке, читается как «Не обновлено».
+ */
+export function personnelFields(
+  emp: any,
+  naming: StatusNaming
+): EmployeePersonalFields {
   const currentStatus = emp.current_status;
   return {
     id: emp.id.toString(),
     name: `${emp.last_name} ${emp.first_name}`,
     // Форматированный статус учитывает `local_status` прикомандированных.
-    status: getFormattedEmployeeStatus(emp),
+    status: naming.formatEmployee(emp),
+    statusCode: currentStatus?.status_type ?? null,
     statusSince: currentStatus?.start_date || "",
     statusUntil: currentStatus?.end_date || "",
     // Ниже — то, что лежало в модели с самого начала и не клалось в ответ

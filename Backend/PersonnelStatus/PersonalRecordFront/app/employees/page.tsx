@@ -47,11 +47,11 @@ import {
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import {
-  EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_ITEMS,
   EMPLOYEE_STATUS_LABELS,
   getEmployeeStatusColor,
 } from "@/lib/status";
+import { useStatusNaming, type StatusNaming } from "@/entities/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -159,7 +159,7 @@ const PAGE_SIZE = 50;
  * теперь их две — страница для списка и весь состав для вкладок сбора сил, —
  * и разбор обязан быть один на обе.
  */
-function toEmployees(units: any[] | undefined): Employee[] {
+function toEmployees(units: any[] | undefined, naming: StatusNaming): Employee[] {
   if (!units) return [];
   const result: Employee[] = [];
   let globalIndex = 1;
@@ -175,7 +175,7 @@ function toEmployees(units: any[] | undefined): Employee[] {
         const emp = empData.employee;
         if (!emp) return;
         result.push({
-          ...personnelFields(emp),
+          ...personnelFields(emp, naming),
           staffUnitId: unit.id.toString(),
           number: globalIndex++,
           position: empData.position?.name || "Должность не указана",
@@ -185,7 +185,7 @@ function toEmployees(units: any[] | undefined): Employee[] {
       });
     } else if (employee) {
       result.push({
-        ...personnelFields(employee),
+        ...personnelFields(employee, naming),
         staffUnitId: unit.id.toString(),
         number: globalIndex++,
         position: (unit as any).position?.name || "Должность не указана",
@@ -304,22 +304,25 @@ function EmployeesScreen() {
   // человек это 2,7 МБ, и платить их при каждом открытии реестра незачем.
   const opsTabOpen = activeTab === "assigned" || activeTab === "in-service";
   const fullDirectorate = useStaffUnitsByDirectorate(opsTabOpen);
+  // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
+  // в админке, обязан подписываться сам, без правки клиента.
+  const naming = useStatusNaming();
 
   // Строки ТЕКУЩЕЙ СТРАНИЦЫ. Нумерация строк продолжает страницу, а не
   // начинается с единицы заново: «№ 51» на второй странице — это тот же
   // порядок, что и в выгрузке.
   const employees = useMemo<Employee[]>(() => {
     const offset = (page - 1) * PAGE_SIZE;
-    return toEmployees(data?.staff_units).map((employee) => ({
+    return toEmployees(data?.staff_units, naming).map((employee) => ({
       ...employee,
       number: employee.number + offset,
     }));
-  }, [data, page]);
+  }, [data, page, naming]);
 
   // Весь состав — только для вкладок сбора сил и только когда их открыли.
   const allEmployees = useMemo<Employee[]>(
-    () => toEmployees(fullDirectorate.data?.staff_units),
-    [fullDirectorate.data]
+    () => toEmployees(fullDirectorate.data?.staff_units, naming),
+    [fullDirectorate.data, naming]
   );
 
   // Отделы для фильтра — из статистики подразделения, а НЕ из показанной
@@ -574,7 +577,7 @@ function EmployeesScreen() {
         divisionId: departmentId,
         status: statusFilter === "all" ? undefined : statusFilter,
       });
-      selection = toEmployees(whole.staff_units).filter(visible);
+      selection = toEmployees(whole.staff_units, naming).filter(visible);
     } catch {
       // Сеть отказала — выгружаем хотя бы показанное, но молчать об этом
       // нельзя: файл, тихо ставший короче, читается как «столько и есть».
@@ -1283,13 +1286,13 @@ function EmployeesScreen() {
                             <div className="flex items-center justify-between mt-3">
                               <Badge
                                 className={
-                                  employee.status === "Не обновлено"
-                                    ? "bg-gray-100 text-gray-800"
-                                    : getEmployeeStatusColor(
-                                        EMPLOYEE_STATUS_CODE_BY_LABEL[
-                                          employee.status
-                                        ]
-                                      )
+                                  /* Цвет ПО КОДУ, а не обратным поиском по
+                                     русской подписи (Plane №366): подписи
+                                     перестали быть замкнутым списком, и поиск
+                                     отдавал `undefined` на каждом типе из
+                                     справочника — бейдж «Участие в ОМ» красился
+                                     серым, как неизвестный. */
+                                  naming.colorOf(employee.statusCode)
                                 }
                               >
                                 {employee.status}

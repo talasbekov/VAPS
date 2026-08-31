@@ -29,7 +29,6 @@ import {
 } from "lucide-react";
 import { useAuth, PermissionGate } from "@/lib/auth";
 import {
-  EMPLOYEE_STATUS_CODE_BY_LABEL,
   getEmployeeStatusColor,
 } from "@/lib/status";
 import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatusDialog";
@@ -72,15 +71,16 @@ export function EmployeeTable({
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    if (status === "Не обновлено") {
+  // Цвет — ПО КОДУ строки, а не обратным поиском по русской подписи
+  // (Plane №366). Поиск «подпись → код» работал ровно до первого типа из
+  // справочника: у «Участие в ОМ» строки в таблице подписей нет, поиск отдавал
+  // `undefined`, и статус красился серым, как неизвестный.
+  const getStatusBadge = (status: string, code: string | null) => {
+    if (!code) {
       return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
     }
 
-    const code = EMPLOYEE_STATUS_CODE_BY_LABEL[status];
-    const colorClass = getEmployeeStatusColor(code);
-
-    return <Badge className={colorClass}>{status}</Badge>;
+    return <Badge className={getEmployeeStatusColor(code as never)}>{status}</Badge>;
   };
 
   return (
@@ -194,10 +194,10 @@ export function EmployeeTable({
                         title="Открыть статусы сотрудника"
                         className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:opacity-80"
                       >
-                        {getStatusBadge(employee.status)}
+                        {getStatusBadge(employee.status, employee.statusCode)}
                       </button>
                     ) : (
-                      getStatusBadge(employee.status)
+                      getStatusBadge(employee.status, employee.statusCode)
                     )}
                   </TableCell>
                   {/* Подпись «Дата найма» врала: сюда клали начало ТЕКУЩЕГО

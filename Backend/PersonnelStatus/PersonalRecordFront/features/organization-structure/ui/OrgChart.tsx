@@ -34,8 +34,8 @@ import { useStaffUnits } from "@/hooks/use-staff-units";
 import {
   getEmployeeStatusColor,
   getEmployeeStatusDot,
-  getEmployeeStatusLabel,
 } from "@/lib/status";
+import { useStatusNaming } from "@/entities/status";
 import { OrgNode } from "./OrgNode";
 
 // Mock данные удалены - используем только данные из API
@@ -49,6 +49,9 @@ const statusStateLabels = {
 
 export default function OrgChart() {
   const { user } = useAuth();
+  // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
+  // в админке, иначе читается как «Не обновлено».
+  const naming = useStatusNaming();
 
   // Используем React Query для загрузки данных
   const {
@@ -226,7 +229,7 @@ export default function OrgChart() {
             aria-hidden="true"
           />
           <span className="sr-only">
-            {getEmployeeStatusLabel(employee.status, "Статус не назначен")}
+            {naming.labelOf(employee.status, "Статус не назначен")}
           </span>
         </div>
         <div className="flex-1 min-w-0">
@@ -440,11 +443,11 @@ export default function OrgChart() {
                                 Прежний вариант красил белым текстом поверх
                                 точечного цвета и подставлял «В строю». */}
                             <Badge
-                              className={`${getEmployeeStatusColor(
+                              className={`${naming.colorOf(
                                 selectedUnit.head.status
                               )} border-0 text-[10px] px-1.5 py-0.5 h-5`}
                             >
-                              {getEmployeeStatusLabel(
+                              {naming.labelOf(
                                 selectedUnit.head.status,
                                 "Статус не назначен"
                               )}
@@ -524,7 +527,7 @@ export default function OrgChart() {
                                 aria-hidden="true"
                               />
                               <span className="sr-only">
-                                {getEmployeeStatusLabel(
+                                {naming.labelOf(
                                   emp.status,
                                   "Статус не назначен"
                                 )}

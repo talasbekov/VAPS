@@ -40,10 +40,9 @@ import {
   Plus,
 } from "lucide-react";
 import {
-  EMPLOYEE_STATUS_ITEMS,
   getEmployeeStatusColor,
-  getEmployeeStatusLabel,
 } from "@/lib/status";
+import { useStatusNaming } from "@/entities/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { apiClient } from "@/lib/api";
 import { format } from "date-fns";
@@ -103,6 +102,8 @@ export function PlannedStatusesDialog({
   employeeName,
   onSchedule,
 }: PlannedStatusesDialogProps) {
+  // Подписи статусов — из справочника (Plane №366).
+  const naming = useStatusNaming();
   const queryClient = useQueryClient();
   // Каталог типов — с сервера, а не копией в коде (Plane №354): заказчик
   // заводит тип в админке, и список обязан узнать о нём без выкатки клиента.
@@ -418,12 +419,15 @@ export function PlannedStatusesDialog({
     return d.toLocaleDateString("ru-RU");
   };
 
-  const getStatusBadge = (statusType: EmployeeStatusDto["status_type"]) => {
-    const item = EMPLOYEE_STATUS_ITEMS.find((s) => s.code === statusType);
-    const colorClass = item?.color ?? getEmployeeStatusColor(statusType);
-    const label = getEmployeeStatusLabel(statusType);
-    return <Badge className={colorClass}>{label}</Badge>;
-  };
+  // Подпись — из справочника (Plane №366). Прежде она искалась в таблице
+  // тринадцати кадровых кодов, и запланированный «Участие в ОМ» в списке
+  // плановых статусов читался как «Не обновлено» — то есть окно уверяло, что
+  // статус не проставлен, показывая при этом его даты.
+  const getStatusBadge = (statusType: EmployeeStatusDto["status_type"]) => (
+    <Badge className={naming.colorOf(statusType)}>
+      {naming.labelOf(statusType)}
+    </Badge>
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
