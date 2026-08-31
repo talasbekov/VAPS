@@ -46,10 +46,8 @@ import { Badge } from "@/components/ui/badge";
 import { Trash2 } from "lucide-react";
 import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
 import { useSecurityEvents } from "@/hooks/use-security-events";
-import {
-  EVENT_PARTICIPATION_STATUS_CODES,
-  STATUS_LABEL_BY_CODE,
-} from "@/entities/daily-grid";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
+import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
 
 /** Коды участия в ОМ: только у них показывается выбор мероприятий.
  * Список — общий на всю систему, см. `entities/daily-grid`. */
@@ -119,9 +117,15 @@ export function SetStatusDialog({
     if (!needsParticipation) setRows([]);
   }, [needsParticipation]);
 
+  // Каталог статусов — СПРАВОЧНИК СЕРВЕРА, а не список в коде (Plane №342):
+  // типы заводит администратор, и константа на клиенте не узнаёт о новом типе
+  // никогда. Порядок — тот, в котором отдаёт ручка (сервер сортирует по
+  // приоритету): «важность» статуса — свойство справочника, и пересортировка
+  // на клиенте была бы вторым мнением о ней.
+  const catalogTypes = useOpsStatusTypes(open);
   const statuses = useMemo(
-    () => [...STATUS_LABEL_BY_CODE.entries()].map(([code, label]) => ({ code, label })),
-    []
+    () => catalogTypes.types.map((type) => ({ code: type.code, label: type.name })),
+    [catalogTypes.types]
   );
 
   const kindOf = (code: string) =>
@@ -187,6 +191,22 @@ export function SetStatusDialog({
                 <SelectValue placeholder="Выберите статус" />
               </SelectTrigger>
               <SelectContent>
+                {/* ЗАГРУЗКА, ПУСТОТА И ОТКАЗ — ТРИ РАЗНЫХ СОСТОЯНИЯ, и
+                    молчать нельзя ни в одном: пустой список читается как
+                    «статусов нет» и когда запрос ещё идёт, и когда справочник
+                    не ответил. Тот же приём, что у списка мероприятий ниже. */}
+                {catalogTypes.isLoading && (
+                  <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                    Загружаем справочник статусов…
+                  </div>
+                )}
+                {!catalogTypes.isLoading &&
+                  !catalogTypes.isError &&
+                  statuses.length === 0 && (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                      Активных типов в справочнике нет
+                    </div>
+                  )}
                 {statuses.map((row) => (
                   <SelectItem key={row.code} value={row.code}>
                     {row.label}
@@ -194,6 +214,19 @@ export function SetStatusDialog({
                 ))}
               </SelectContent>
             </Select>
+            {catalogTypes.isError && (
+              <p className="text-sm text-destructive-ink" role="alert">
+                Справочник статусов не ответил — выбирать не из чего.{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2"
+                  onClick={catalogTypes.refetch}
+                  disabled={catalogTypes.isFetching}
+                >
+                  {catalogTypes.isFetching ? "Повторяем…" : "Повторить"}
+                </button>
+              </p>
+            )}
           </div>
 
           {needsParticipation && (

@@ -5,41 +5,19 @@
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { TrafficLightNode } from "@/lib/api";
 
-// ── Каталог статус-типов (зеркало seed-каталога бэка, 18 типов) ──────────
+// ── Каталога статус-типов здесь БОЛЬШЕ НЕТ (Plane №342) ──────────────────
 //
-// 18, а не 17, с 28.08.2026: участие в ОМ делится на боевую группу и
-// физический наряд (сценарий заказчика, Plane №243). Обе строки отчитываются
-// в колонку «В строю» — человек на мероприятии из строя не выбывает, — а
-// различает их справочный счётчик расхода.
-
-export interface StatusOption {
-  code: string;
-  label: string;
-}
-
-export const STATUS_TYPE_OPTIONS: StatusOption[] = [
-  { code: "SICK_LEAVE", label: "На больничном" },
-  { code: "LEAVE_BY_REPORT", label: "Отпуск по рапорту" },
-  { code: "VACATION", label: "В отпуске" },
-  { code: "COMMAND", label: "В командировке" },
-  { code: "STUDY", label: "Учёба" },
-  { code: "COMPETITION", label: "Соревнования" },
-  { code: "CONFERENCE", label: "Конференция" },
-  { code: "OTHER_ABSENCE", label: "Иное отсутствие" },
-  { code: "DETACHED", label: "Откомандирован" },
-  { code: "ATTACHED", label: "Прикомандирован" },
-  { code: "REST_AFTER_DUTY", label: "После дежурства" },
-  { code: "BEFORE_DUTY", label: "Перед дежурством" },
-  { code: "DUTY", label: "На дежурстве" },
-  { code: "GEV", label: "Группа экстренного выезда" },
-  { code: "EVENT_ASSIGNMENT", label: "Привлечён на мероприятие (наряд)" },
-  {
-    code: "EVENT_ASSIGNMENT_GROUP",
-    label: "Привлечён на мероприятие (боевая группа)",
-  },
-  { code: "PENDING_CLARIFICATION", label: "Уточняется" },
-  { code: "IN_SERVICE", label: "В строю" },
-];
+// До 31.08.2026 модуль держал `STATUS_TYPE_OPTIONS` — 18 строк, подписанных
+// «зеркало seed-каталога бэка», — и из них строилась карта подписей
+// `STATUS_LABEL_BY_CODE`. Зеркало и есть дефект: каталог живёт на сервере
+// таблицей `ops_status_types` и правится в админке, а копия на клиенте о
+// правке не узнаёт никогда. Заказчик завёл 19-й тип («Участие в ОМ») и не
+// нашёл его на фронте нигде — ни в выборе окна простановки, ни в подписях.
+//
+// Читатели переведены на справочник: хук `hooks/use-ops-status-types.ts`
+// (`/api/operations/status-types/`) отдаёт активные типы и `labelOf`.
+// Заводить здесь список статусов снова НЕЛЬЗЯ: единственный владелец словаря —
+// сервер.
 
 // ── Клавиатурная грамматика (чистая state machine, ноль React/DOM) ───────
 // Модуль НЕ хранит значения ячеек и не двигает реальный фокус — он вычисляет
@@ -962,16 +940,6 @@ export function countSubmissions(nodes: TrafficLightNode[]): SubmissionCounts {
   }
   return counts;
 }
-
-// ── Подписи статусов раздела ─────────────────────────────────────────────
-
-/** Код статуса → подпись, ИЗ ЕДИНСТВЕННОГО каталога раздела. До ревью ветки
- * 22.08 эта карта была скопирована дословно в трёх местах
- * (`DailyExpenseBoard`, `LeadershipStrip`, экран профиля) — три копии одного
- * словаря разъехались бы при первом же новом статусе в каталоге. */
-export const STATUS_LABEL_BY_CODE: ReadonlyMap<string, string> = new Map(
-  STATUS_TYPE_OPTIONS.map((option) => [option.code, option.label])
-);
 
 /** Коды участия в ОМ — ОДИН список на всю систему (Plane №274, Ш-5).
  *
