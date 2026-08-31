@@ -99,6 +99,31 @@ test.describe('статусы: привлечение на ОМ из порта�
     await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
 
+    // Имя сотрудника первой строки нужно ПОСЛЕ сохранения: карточку статусов
+    // придётся открыть у него же, а порядок строк меняют соседние пробы.
+    const firstRow = page.locator('table tbody tr').first()
+    const employeeName = (await firstRow.locator('td').nth(2).innerText()).trim()
+
+    // 🔴 КАРТОЧКА ОТКРЫВАЕТСЯ ДО ЗАПИСИ — И ЭТО НЕ ЛИШНИЙ ШАГ. Так список
+    // учёта раздела попадает в кэш клиента, и дальше проба стережёт не только
+    // «раздел есть», но и то, что после записи он ОСВЕЖАЕТСЯ. Без сброса ключа
+    // повторно открытая карточка показала бы прежний список из кэша — человек
+    // не нашёл бы своё привлечение и поставил бы его второй раз.
+    const beforeRow = page.locator('table tbody tr', { hasText: employeeName }).first()
+    await beforeRow.getByTitle('Открыть статусы сотрудника').click()
+    const before = page.getByRole('dialog')
+    await expect(before.getByText('Учёт раздела ОМ')).toBeVisible({ timeout: 20_000 })
+    await expect(
+      before.getByText('Загружаем учёт раздела…'),
+      'список учёта раздела дождался ответа',
+    ).toHaveCount(0, { timeout: 20_000 })
+    const participationsBefore = await before
+      .locator('li')
+      .filter({ hasText: /ОМ-/ })
+      .count()
+    await before.getByRole('button', { name: 'Закрыть' }).click()
+    await expect(before).toHaveCount(0)
+
     await page.getByRole('button', { name: /^Действия: / }).first().click()
     await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
 
@@ -154,6 +179,14 @@ test.describe('статусы: привлечение на ОМ из порта�
       dialog.getByLabel('Мероприятие 1', { exact: true }),
       'мероприятие выбрано — в поле стоит код ОМ',
     ).toContainText(/ОМ-\d+/)
+    // Код выбранного ОМ держим строкой: по нему проба потом ищет привлечение
+    // в карточке сотрудника.
+    const eventCode = (
+      (await dialog.getByLabel('Мероприятие 1', { exact: true }).innerText()).match(
+        /ОМ-[\d-]+/,
+      ) ?? ['']
+    )[0]
+    expect(eventCode, 'код мероприятия не разобрался из поля').not.toBe('')
 
     await dialog.getByLabel('Вид участия 1', { exact: true }).click()
     await page.getByRole('option', { name: 'Физический наряд' }).click()
@@ -202,5 +235,26 @@ test.describe('статусы: привлечение на ОМ из порта�
     ).toBe('')
 
     await expect(dialog, 'после успеха окно закрывается').toHaveCount(0)
+
+    // (5) 🔴 СТАТУС ВИДЕН ЧЕЛОВЕКУ, А НЕ ТОЛЬКО СЕРВЕРУ (Plane №368, Ш-3).
+    // Ш-2 сам по себе заводил строку в учёте раздела и не показывал её нигде:
+    // карточка статусов сотрудника читала только кадровые строки, а ключ
+    // списка раздела после записи не сбрасывался — до перезагрузки страницы
+    // человек не находил своё привлечение и ставил его второй раз.
+    const row = page.locator('table tbody tr', { hasText: employeeName }).first()
+    await row.getByTitle('Открыть статусы сотрудника').click()
+    const card = page.getByRole('dialog')
+    await expect(card.getByText('Учёт раздела ОМ')).toBeVisible({ timeout: 20_000 })
+    await expect(
+      // `.first()`: у сотрудника может быть НЕСКОЛЬКО строк учёта с этим же
+      // мероприятием — проба ставит одну, а стенд накапливает их от прогона к
+      // прогону (снять статус расхода нельзя по устройству модели).
+      card.getByText(eventCode, { exact: false }).first(),
+      'привлечение записано, но в карточке сотрудника его не видно',
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(
+      card.locator('li').filter({ hasText: /ОМ-/ }),
+      'список учёта раздела не освежился после записи — карточка показывает кэш',
+    ).toHaveCount(participationsBefore + 1, { timeout: 20_000 })
   })
 })
