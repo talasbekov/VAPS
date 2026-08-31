@@ -128,6 +128,15 @@ PERMISSIONS = [
     # тесты проверяют механизм, не политику.
     ("personnel.view", "Просмотр кадровых записей"),
     ("orgstructure.view", "Просмотр оргструктуры"),
+    # Правка оргструктуры: штатное расписание и вакансии (Plane №352, Ш-3).
+    # Заведено потому, что переезжать было НЕ НА ЧТО: каталог знал только
+    # чтение (`orgstructure.view`), а кадровая система закрывала правку
+    # штатки шестью именами прав, читавшимися из `common.Role`. Код ОДИН на
+    # штатку и вакансии: вакансия — это штатная единица без человека
+    # (`Vacancy.staff_unit`), у неё нет ни своего экрана, ни своего
+    # владельца, и второе право было бы правом «на всякий случай» —
+    # запрещено правилом каталога (см. пункт 3 над ROLES).
+    ("orgstructure.manage", "Правка штатного расписания и вакансий"),
     # documents API gating — раскладка PROVISIONAL.
     ("document.view", "Скачивание вложений/документов"),
 ]
@@ -224,7 +233,7 @@ ROLE_PERMISSIONS = {
     # Составляет расход СВОЕГО управления и сдаёт его; выделяет людей на ОМ по
     # заявке штаба (это же действие проставляет статус участия).
     "DIRECTORATE_HEAD": [
-        "status.view", "status.manage",
+        "status.view", "status.manage", "orgstructure.manage",
         "daily_report.mark_update", "daily_report.correct",
         "forces.select", "feedback.create", *OPS_READ,
     ],
@@ -324,13 +333,15 @@ ROLE_PERMISSIONS = {
     # ГОН; нет `analytics.view` — нет Аналитики службы; нет `report.generate` —
     # нет Отчётов по ОМ.
     "HEAD_DIRECTORATE_LINE": [
-        "status.view", "status.manage", "object.view", "analytics.operations",
+        "status.view", "status.manage", "orgstructure.manage",
+        "object.view", "analytics.operations",
         "feedback.view", "feedback.create", *SECTION_READ,
     ],
     # То же плюс Аналитика службы и сведение суточного отчёта — департамент
     # сводит свои управления. Реестра ОМ и Отчётов по ОМ по-прежнему нет.
     "HEAD_DEPARTMENT_LINE": [
-        "status.view", "status.manage", "analytics.view", "analytics.drilldown",
+        "status.view", "status.manage", "orgstructure.manage",
+        "analytics.view", "analytics.drilldown",
         "daily_report.generate", "object.view", "analytics.operations",
         "feedback.view", "feedback.create", *SECTION_READ,
     ],
@@ -339,7 +350,8 @@ ROLE_PERMISSIONS = {
     # (департамент против управления) — она живёт в назначении, а не в роли.
     # Сбора сил, Аналитики службы и Ежедневного отчёта здесь нет.
     "HEAD_OPS_UNIT": [
-        "status.view", "status.manage", "object.view", "analytics.operations",
+        "status.view", "status.manage", "orgstructure.manage",
+        "object.view", "analytics.operations",
         "report.generate", "feedback.view", "feedback.create", *OPS_READ,
     ],
     # Ведёт сбор сил по своему департаменту: делит потребность и оповещает

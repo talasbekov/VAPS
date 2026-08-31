@@ -605,9 +605,15 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     // `*`), поэтому право снимается перехватом ответа о правах — тот же приём,
     // что в `command-center.spec.ts`. Подменяется ТОЛЬКО список прав; всё
     // остальное живое.
+    // `forces.select` в подмене ОБЯЗАТЕЛЕН с Ш-1 (Plane №352): пункт «Сбор
+    // сил» закрыт гейтом страницы на трёх правах сбора, и без одного из них
+    // экран целиком отвечает «Недостаточно прав для просмотра сбора сил на
+    // ОМ» — борда, о котором проба, на странице не оказывается вовсе.
+    // Проверяемое право (`status.view`) по-прежнему снято.
     await page.route(
       (url) => url.pathname.includes('/api/operations/my-permissions/'),
-      (route) => route.fulfill({ json: { permissions: ['event.view'] } }),
+      (route) =>
+        route.fulfill({ json: { permissions: ['event.view', 'forces.select'] } }),
     )
 
     // Гейт проверяется НЕ ТОЛЬКО текстом: считаем реальные запросы. Без этого
@@ -1099,9 +1105,15 @@ test.describe(
       // Права снимаются ТОЛЬКО у сборки свода: `status.view` оставлен, иначе
       // закрылся бы весь борд и блока свода не было бы вовсе — проба
       // проверяла бы пустой экран.
+      // `forces.select` — по той же причине, что у пробы гейта борда выше:
+      // без права модуля страница «Сбор сил» не открывается вовсе (Ш-1,
+      // Plane №352). Проверяемое `daily_report.generate` остаётся снятым.
       await page.route(
         (url) => url.pathname.includes('/api/operations/my-permissions/'),
-        (route) => route.fulfill({ json: { permissions: ['status.view'] } }),
+        (route) =>
+          route.fulfill({
+            json: { permissions: ['status.view', 'forces.select'] },
+          }),
       )
       await page.route(
         (url) => url.pathname === '/api/operations/traffic-light/tree/',
