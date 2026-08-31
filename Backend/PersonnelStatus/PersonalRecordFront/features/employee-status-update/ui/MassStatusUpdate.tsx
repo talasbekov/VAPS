@@ -44,9 +44,10 @@ import { employeeIdOfKey } from "../model/row-key";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_LABELS,
-  SELECTABLE_STATUS_ITEMS,
+  getEmployeeStatusColor,
   getEmployeeStatusPaint,
 } from "@/lib/status";
+import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { toast } from "@/shared/hooks/use-toast";
 import {
@@ -102,11 +103,28 @@ export function MassStatusUpdate({
   );
   const staffUnits = data?.staff_units || [];
 
-  const statusTypes = SELECTABLE_STATUS_ITEMS.map((item) => ({
+  // 🔴 СПИСОК С СЕРВЕРА, А НЕ ИЗ КОПИИ В КОДЕ (Plane №354). Жалоба заказчика
+  // дословно: «в админке добавил новый статус, там она не появилась» — это
+  // окно и есть «окошка для планирования».
+  //
+  // Цвет берётся по КОДУ из палитры клиента: в справочнике поле `color` у всех
+  // строк пустое, и красить по нему значило бы обесцветить весь список.
+  // Незнакомый код получает нейтральный цвет — это честнее, чем подставить
+  // зелёный «в строю» первому попавшемуся новому типу.
+  const {
+    types: catalogTypes,
+    isLoading: statusTypesLoading,
+    error: statusTypesError,
+  } = useEmployeeStatusTypes();
+  const statusTypes = catalogTypes.map((item) => ({
     value: item.label,
     label: item.label,
-    color: item.color,
+    color: item.color || getEmployeeStatusColor(item.code as never),
   }));
+  // Обратный перевод «подпись → код» строится ИЗ ТОГО ЖЕ ответа: статический
+  // словарь знает только тринадцать старых подписей и на заведённом в админке
+  // типе вернул бы undefined — форма отказала бы «Неверный тип статуса».
+  const codeByLabel = new Map(catalogTypes.map((item) => [item.label, item.code]));
 
   const status = watch("status");
   const startDate = watch("startDate");
@@ -176,8 +194,12 @@ export function MassStatusUpdate({
         return;
       }
 
-      // Преобразуем статус в формат API
-      const apiStatusType = EMPLOYEE_STATUS_CODE_BY_LABEL[values.status];
+      // Преобразуем статус в формат API: сперва по справочнику сервера,
+      // и только потом по старому словарю — он остаётся как запасной путь на
+      // случай, если справочник не доехал (Plane №354).
+      const apiStatusType =
+        codeByLabel.get(values.status) ??
+        EMPLOYEE_STATUS_CODE_BY_LABEL[values.status];
       if (!apiStatusType) {
         setError("root", { message: "Неверный тип статуса" });
         return;
@@ -324,9 +346,30 @@ export function MassStatusUpdate({
                           ref={input.ref}
                           onBlur={input.onBlur}
                         >
-                          <SelectValue placeholder="Выберите статус" />
+                          <SelectValue
+                            placeholder={
+                              statusTypesLoading
+                                ? "Загружаем статусы…"
+                                : "Выберите статус"
+                            }
+                          />
                         </SelectTrigger>
                         <SelectContent>
+                          {/* Пустой список читается как поломка, поэтому три
+                              состояния справочника названы словами (Plane
+                              №354): едет, не доехал, пуст. */}
+                          {statusTypes.length === 0 && (
+                            <div
+                              className="text-muted-foreground px-2 py-3 text-sm"
+                              role={statusTypesError ? "alert" : undefined}
+                            >
+                              {statusTypesLoading
+                                ? "Загружаем справочник статусов…"
+                                : statusTypesError
+                                  ? "Справочник статусов не загрузился. Обновите страницу."
+                                  : "Справочник типов статусов пуст — заведите тип в разделе «Система → Справочники»."}
+                            </div>
+                          )}
                           {statusTypes.map((statusType) => {
                             // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
                             // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —

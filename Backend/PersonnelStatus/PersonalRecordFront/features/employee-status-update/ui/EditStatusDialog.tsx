@@ -38,10 +38,11 @@ import { ru } from "date-fns/locale";
 import { apiClient } from "@/lib/api";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
-  EMPLOYEE_STATUS_ITEMS,
+  getEmployeeStatusColor,
   getEmployeeStatusLabel,
   getEmployeeStatusPaint,
 } from "@/lib/status";
+import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import {
   removeDutyAssignment,
   upsertDutyAssignment,
@@ -218,13 +219,32 @@ export function EditStatusDialog({
     }
   }, [open, reset]);
 
-  // Перечень статусов берётся целиком — включая прикомандирование: модалка
-  // показывает статусы сотрудника, а не подмножество, удобное форме.
-  const statusTypes = EMPLOYEE_STATUS_ITEMS.map((item) => ({
+  // 🔴 ЭТО И ЕСТЬ ОКНО ИЗ ЖАЛОБЫ ЗАКАЗЧИКА (Plane №354): «нажимаешь на статус,
+  // открывается окошка… нажимаешь на Запланировать и выходит другая окошка для
+  // планирования статуса. В этой окошке есть список статусов, они как будто
+  // захардкодены на фронте». Список приходит с сервера — из справочника,
+  // который заказчик и правит в админке.
+  //
+  // Перечень берётся ЦЕЛИКОМ (`selectableOnly = false`), включая
+  // прикомандирование: модалка показывает статусы сотрудника, а не
+  // подмножество, удобное форме, — это прежнее решение, и оно сохранено.
+  //
+  // Цвет — по КОДУ из палитры клиента: в справочнике поле `color` пустое у
+  // всех строк, и красить по нему значило бы обесцветить список.
+  const {
+    types: catalogTypes,
+    isLoading: statusTypesLoading,
+    error: statusTypesError,
+  } = useEmployeeStatusTypes(false);
+  const statusTypes = catalogTypes.map((item) => ({
     value: item.label,
     label: item.label,
-    color: item.color,
+    color: item.color || getEmployeeStatusColor(item.code as never),
   }));
+  // Обратный перевод «подпись → код» — из того же ответа: статический словарь
+  // знает лишь тринадцать старых подписей и на заведённом в админке типе
+  // вернул бы undefined, а форма отказала бы «Неверный тип статуса».
+  const codeByLabel = new Map(catalogTypes.map((item) => [item.label, item.code]));
 
   /** Кадровый снимок для наряда: звание из справочника, должность и
    * подразделение — от вызывающей таблицы, с запасным поиском по штатке. */
@@ -258,7 +278,9 @@ export function EditStatusDialog({
     // могут не иметь штатную единицу в текущем подразделении, но им тоже можно назначать статус
 
     // Преобразуем статус в формат API
-    const apiStatusType = EMPLOYEE_STATUS_CODE_BY_LABEL[values.status];
+    const apiStatusType =
+      codeByLabel.get(values.status) ??
+      EMPLOYEE_STATUS_CODE_BY_LABEL[values.status];
     if (!apiStatusType) {
       setError("root", { message: "Неверный тип статуса" });
       return;
@@ -385,9 +407,30 @@ export function EditStatusDialog({
                       ref={input.ref}
                       onBlur={input.onBlur}
                     >
-                      <SelectValue placeholder="Выберите статус" />
+                      <SelectValue
+                        placeholder={
+                          statusTypesLoading
+                            ? "Загружаем статусы…"
+                            : "Выберите статус"
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
+                      {/* Пустой список читается как поломка: человек не
+                          отличит «справочник пуст» от «не загрузилось».
+                          Три состояния названы словами (Plane №354). */}
+                      {statusTypes.length === 0 && (
+                        <div
+                          className="text-muted-foreground px-2 py-3 text-sm"
+                          role={statusTypesError ? "alert" : undefined}
+                        >
+                          {statusTypesLoading
+                            ? "Загружаем справочник статусов…"
+                            : statusTypesError
+                              ? "Справочник статусов не загрузился. Обновите страницу."
+                              : "Справочник типов статусов пуст — заведите тип в разделе «Система → Справочники»."}
+                        </div>
+                      )}
                       {statusTypes.map((statusType) => {
                         // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
                         // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —

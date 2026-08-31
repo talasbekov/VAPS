@@ -198,15 +198,17 @@ export const EMPLOYEE_STATUS_ITEMS = (
   color: EMPLOYEE_STATUS_COLORS[code],
 }));
 
-// Статусы, которые можно выбирать вручную (без откомандирования — для этого есть отдельный функционал)
-const EXCLUDED_FROM_SELECTION: EmployeeStatusType[] = [
-  "seconded_from",
-  "seconded_to",
-];
-
-export const SELECTABLE_STATUS_ITEMS = EMPLOYEE_STATUS_ITEMS.filter(
-  (item) => !EXCLUDED_FROM_SELECTION.includes(item.code)
-);
+// 🔴 СПИСОК ВЫБИРАЕМЫХ СТАТУСОВ ОТСЮДА УДАЛЁН (Plane №354).
+//
+// Он жил здесь как `SELECTABLE_STATUS_ITEMS` — тринадцать кодов минус два
+// прикомандирования — и его читали оба окна простановки статуса. Пока список
+// лежал в коде, тип, заведённый заказчиком в админке, не мог появиться в
+// выборе никогда: клиент про него не знал, а модель не приняла бы.
+//
+// Теперь каталог приходит с сервера (`useEmployeeStatusTypes`), и правило
+// «что можно выбрать руками» живёт ТАМ ЖЕ, где сам каталог, —
+// `statuses/catalog.py`. Таблицы подписей и цветов ниже остались: они
+// работают как ЗАПАСНОЙ путь, когда справочник пуст или не доехал.
 
 // Хелпер: получить отформатированный статус с учетом local_status для прикомандированных
 export const getFormattedEmployeeStatus = (
