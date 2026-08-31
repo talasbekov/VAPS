@@ -70,13 +70,19 @@ export default function DictionariesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {query.data.results.map((definition) => (
+                {query.data.results.map((definition) => {
+                  // Адрес значений спрашивается У СТРОКИ, а не строится по
+                  // соглашению «код = маршрут» (Plane №344): у справочника
+                  // типов статусов своя таблица и свой экран, и generic-ручка
+                  // его не обслуживает — ссылка по коду вела бы в 404.
+                  const href =
+                    definition.screen === null
+                      ? `/security-ops/dictionaries/${definition.code}`
+                      : `/security-ops/dictionaries/${definition.screen}`;
+                  return (
                   <TableRow key={definition.code}>
                     <TableCell>
-                      <Link
-                        href={`/security-ops/dictionaries/${definition.code}`}
-                        className="block"
-                      >
+                      <Link href={href} className="block">
                         <span className="font-mono text-xs text-muted-foreground">
                           {definition.code}
                         </span>
@@ -95,15 +101,13 @@ export default function DictionariesPage() {
                       {definition.activeCount}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Link
-                        href={`/security-ops/dictionaries/${definition.code}`}
-                        className="text-primary-ink"
-                      >
+                      <Link href={href} className="text-primary-ink">
                         ›
                       </Link>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </Card>

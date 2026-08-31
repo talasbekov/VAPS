@@ -216,6 +216,62 @@ def serialize_entry(entry):
     }
 
 
+#: Справочники раздела, живущие СВОЕЙ таблицей, а не generic-реестром.
+#:
+#: Заказчик завёл тип статуса в админке и не нашёл его на экране «Система →
+#: Справочники» (Plane №344): реестр показывал только `OpsDictionaryEntry`, а
+#: типы статусов — отдельная таблица со своими полями (приоритет, колонка
+#: расхода, жёсткая блокировка, предельный срок). Реестр справочников обязан
+#: перечислять ВСЕ справочники раздела, иначе он отвечает на вопрос «какие у
+#: нас справочники» неправдой.
+#:
+#: 🔴 ЭТИ СТРОКИ НЕ ПОПАДАЮТ В `DEFINITIONS`, и это не оплошность. `_CODES`
+#: собирается из `DEFINITIONS` и охраняет `entries`/`create_entry`: попади код
+#: туда, generic-ручка приняла бы его и попыталась завести `OpsDictionaryEntry`
+#: с чужим `dictionary_code` — а его отбивает CHECK-constraint таблицы, то есть
+#: ошибка вылезла бы из базы, а не из проверки. Реестр перечисляет — правит
+#: каждый своей ручкой.
+EXTERNAL_DEFINITIONS = [
+    {
+        "code": "STATUS_TYPES",
+        "label": "Типы статусов сотрудников",
+        "description": (
+            "Каталог статусов раздела ОМ: приоритет, колонка суточного "
+            "расхода, жёсткая блокировка, предельный срок."
+        ),
+        # Экран значений — свой; generic-адрес `/dictionaries/<код>/entries`
+        # этот справочник не обслуживает и обслуживать не должен.
+        "screen": "status-types",
+        # Правится сидом (`seed_status_types`), а не экраном: клиент обязан
+        # знать это до того, как нарисует кнопку «Добавить значение».
+        "readOnly": True,
+    },
+]
+
+
+def _external_definitions_with_counts():
+    """Счётчики внешних справочников — по их СОБСТВЕННЫМ таблицам.
+
+    Импорт локальный: `apps.ops` не должен тянуть модели `apps.operations` на
+    уровне модуля — это замкнуло бы импорт через `models_settings`.
+    """
+    from organization_management.apps.operations.status_types import StatusType
+
+    counts = {
+        "STATUS_TYPES": (
+            StatusType.objects.count(),
+            StatusType.objects.filter(is_active=True).count(),
+        ),
+    }
+    results = []
+    for definition in EXTERNAL_DEFINITIONS:
+        total, active = counts[definition["code"]]
+        results.append(
+            {**definition, "totalCount": total, "activeCount": active}
+        )
+    return results
+
+
 def definitions_with_counts():
     entries = list(
         OpsDictionaryEntry.objects.values_list("dictionary_code", "is_active")
@@ -226,11 +282,17 @@ def definitions_with_counts():
         results.append(
             {
                 **definition,
+                # Поля внешних справочников проставляются и здесь, а не только
+                # там: строка без `screen` читалась бы клиентом как undefined,
+                # и разбирающемуся пришлось бы гадать, забыли её или у неё нет
+                # своего экрана.
+                "screen": None,
+                "readOnly": False,
                 "totalCount": len(own),
                 "activeCount": sum(1 for row in own if row[1]),
             }
         )
-    return results
+    return results + _external_definitions_with_counts()
 
 
 def list_entries(dictionary_code):

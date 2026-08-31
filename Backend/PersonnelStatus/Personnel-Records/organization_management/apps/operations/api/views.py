@@ -29,6 +29,7 @@ from rest_framework.response import Response
 
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
+    require_any_permission,
     require_permission,
     resolve_actor_id,
 )
@@ -869,12 +870,19 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
 
 
 class StatusTypeViewSet(viewsets.ReadOnlyModelViewSet):
-    """Справочник типов статусов — чтение под правом status.view.
+    """Справочник типов статусов — чтение под status.view ИЛИ dictionary.view.
 
     Каталог, а не бизнес-данные: гейт мягче, чем admin.roles, потому что
     словарь нужен каждому, кто вообще видит статусы. Правка каталога —
     только сидом (канон пересинхронизируется из кода), поэтому запись здесь
     не открыта.
+
+    ВТОРОЕ ПРАВО ДОБАВЛЕНО В Plane №344. Этот справочник теперь стоит строкой
+    в реестре «Система → Справочники», а тот реестр открыт по
+    `dictionary.view`. У администратора справочников (`REFERENCE_ADMIN`)
+    права на статусы нет, и без второго ключа сервер показывал бы ему строку,
+    которая на клик отвечает «Доступ закрыт», — то есть звал бы туда, куда сам
+    же не пускает.
     """
 
     serializer_class = StatusTypeSerializer
@@ -882,11 +890,11 @@ class StatusTypeViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = StatusType.objects.all()
 
     def list(self, request, *args, **kwargs):
-        require_permission(request, "status.view")
+        require_any_permission(request, "status.view", "dictionary.view")
         return super().list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
-        require_permission(request, "status.view")
+        require_any_permission(request, "status.view", "dictionary.view")
         return super().retrieve(request, *args, **kwargs)
 
 

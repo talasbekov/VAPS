@@ -37,6 +37,10 @@ import { apiClient, type OpsStatusType } from "@/lib/api";
 export interface OpsStatusTypesResult {
   /** Активные типы в порядке справочника (сервер сортирует по приоритету). */
   types: OpsStatusType[];
+  /** ВЕСЬ каталог, включая неактивные (Plane №344). Экран справочника обязан
+   *  показывать и деактивированные строки: деактивация — не удаление, и
+   *  администратор смотрит справочник как раз затем, чтобы это увидеть. */
+  all: OpsStatusType[];
   /** Подпись кода. НЕЗНАКОМЫЙ КОД ПЕЧАТАЕТСЯ САМ СОБОЙ, а не исчезает под
    *  пустой строкой: код на экране — повод спросить, пустота — нет. */
   labelOf: (code: string) => string;
@@ -76,6 +80,7 @@ export function useOpsStatusTypes(enabled = true): OpsStatusTypesResult {
 
   return {
     types,
+    all: all ?? [],
     labelOf,
     isLoading: query.isPending && enabled,
     isError: query.isError,

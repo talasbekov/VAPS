@@ -18,7 +18,10 @@ export type DictionaryCode =
   | "EVENT_GROUP_ROLES";
 
 export interface DictionaryDefinition {
-  code: DictionaryCode;
+  /** Код generic-справочника ЛИБО внешнего (`STATUS_TYPES`, Plane №344):
+   *  реестр перечисляет и те, и другие, а закрытый `DictionaryCode` описывает
+   *  только те, чьи значения обслуживает generic-ручка. */
+  code: DictionaryCode | string;
   label: string;
   description: string;
 }
@@ -81,6 +84,18 @@ export function dictionaryEntryPath(id: string): string {
 export interface DictionaryDefinitionSummary extends DictionaryDefinition {
   totalCount: number;
   activeCount: number;
+  /**
+   * Экран значений, если справочник живёт СВОЕЙ таблицей (Plane №344).
+   * `null` — обычный generic-справочник, его значения открываются по коду.
+   * Строка — часть адреса: `/security-ops/dictionaries/<screen>`.
+   *
+   * Поле нужно затем, чтобы реестр не строил адрес по соглашению «код =
+   * маршрут»: у типов статусов generic-адреса нет вовсе, и ссылка по коду
+   * привела бы на ручку, которая этот справочник не обслуживает.
+   */
+  screen: string | null;
+  /** Правится сидом, а не экраном: кнопок правки на таком экране нет. */
+  readOnly: boolean;
 }
 
 export interface ListDictionaryDefinitionsResponse {

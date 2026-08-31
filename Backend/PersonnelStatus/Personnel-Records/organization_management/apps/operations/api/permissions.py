@@ -44,6 +44,28 @@ def require_permission(request, permission_code):
         raise PermissionDenied("PERMISSION_DENIED")
 
 
+def require_any_permission(request, *permission_codes):
+    """Гейт действия на ЛЮБОЕ из перечисленных прав.
+
+    Нужен там, где одну ручку зовут два экрана с разными правами. Первый такой
+    случай — справочник типов статусов (Plane №344): его читает и экран
+    статусов (право `status.view`), и реестр справочников «Система →
+    Справочники» (право `dictionary.view`). Требовать от администратора
+    справочников право на статусы значило бы показать ему строку справочника,
+    которая отвечает «Доступ закрыт», — а строку показал ему тот же сервер.
+
+    Прецедент тот же, что у `DivisionStatisticsViewSet._statistics_scope`, где
+    по той же причине принимаются `status.view` и `orgstructure.view`.
+    """
+    if resolve_actor_id(request) is None:
+        raise PermissionDenied("PERMISSION_DENIED")
+    perms = effective_permissions(request)
+    if "*" in perms:
+        return
+    if not any(code in perms for code in permission_codes):
+        raise PermissionDenied("PERMISSION_DENIED")
+
+
 def require_scoped_permission(request, permission_code, division_id):
     """Гейт действия на право В ОБЛАСТИ подразделения (Plane №74).
 
