@@ -16,7 +16,7 @@ import {
   Shield,
 } from "lucide-react";
 import Link from "next/link";
-import { PermissionGate } from "@/lib/auth";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { formatIsoDateLong } from "@/shared/lib/date";
 import {
   getEmployeeStatusColor,
@@ -40,6 +40,8 @@ export function EmployeeProfile({
   onClose,
   events = [],
 }: EmployeeProfileProps) {
+  const { hasPermission } = useOpsPermissions();
+  const canEditPersonnel = hasPermission("orgstructure.manage");
   // Цвет — ПО КОДУ строки, а не обратным поиском по русской подписи
   // (Plane №366). Поиск «подпись → код» работал ровно до первого типа из
   // справочника: у «Участие в ОМ» строки в таблице подписей нет, поиск отдавал
@@ -93,12 +95,16 @@ export function EmployeeProfile({
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <PermissionGate resource="employees" action="update">
+              {/* Право РАЗДЕЛА вместо зашитого набора портальной роли
+                  (Plane №352, Ш-4). Выбрано `orgstructure.manage` — то же,
+                  которым Ш-3 закрыл правку штатного расписания: карточка
+                  сотрудника правит те же кадровые данные. */}
+              {canEditPersonnel && (
                 <Button variant="outline">
                   <Edit className="h-4 w-4 mr-2" />
                   Редактировать
                 </Button>
-              </PermissionGate>
+              )}
               {/* Выход из карточки. `onClose` передавался сюда с самого
                   начала и не был подключён ни к чему: вкладка «Профиль
                   сотрудника» открывалась и не закрывалась. */}

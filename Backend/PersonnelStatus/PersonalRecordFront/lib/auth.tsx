@@ -11,220 +11,44 @@ import { useSession, signIn, signOut } from "next-auth/react";
 import { resetAccessToken } from "@/lib/access-token";
 import { apiClient } from "@/lib/api";
 
-export type UserRole =
-  | "role-1"
-  | "role-2"
-  | "role-3"
-  | "role-4"
-  | "role-5"
-  | "role-6"
-  // Роли матрицы доступа (Plane №348). Заказчик описал семь персон СПИСКАМИ
-  // НЕДОСТУПНЫХ МОДУЛЕЙ, и четырём из них ни один из шести наборов выше не
-  // подходит: сочетания «Статусы есть, а Сбор сил и Ежедневный отчёт — нет»
-  // среди них нет вовсе. Названы по НАБОРУ МОДУЛЕЙ, а не по должности: один и
-  // тот же набор просят и начальник управления, и начальник второго
-  // департамента — у них разная область, но одинаковое меню.
-  | "employee-ro"
-  | "head-basic"
-  | "head-reports"
-  | "forces-officer";
+/**
+ * 🔴 ПОРТАЛЬНОЙ РОЛИ БОЛЬШЕ НЕТ (Plane №352, Ш-4; карточка №361).
+ *
+ * Здесь жили девять кодов ролей (`role-1`…`role-6` плюс четыре профиля
+ * матрицы доступа), таблица `ROLES` с набором ресурсов у каждого и маппинг
+ * `ROLE_3 → role-3` из ответа сервера. Это был ТРЕТИЙ каталог прав — после
+ * `common.Role` на сервере и прав раздела ОМ, — и он решал, что человеку
+ * видно, НЕ СПРАШИВАЯ сервер: набор модулей был зашит в код.
+ *
+ * Заказчик потребовал работать по своим семи ролям, а они живут в каталоге
+ * раздела. Видимость меню переехала туда в Ш-1 (`entities/portal-access`),
+ * область экранов — в Ш-2, права штатки — в Ш-3. Здесь снимается последнее:
+ * роль и права БОЛЬШЕ НЕ ЧИТАЮТСЯ ИЗ ТОКЕНА. Кто что может — отвечает
+ * `/api/operations/my-permissions/` (`hooks/use-ops-permissions.ts`), и это
+ * единственный ответ на вопрос о правах на клиенте.
+ *
+ * Что здесь осталось: КТО ВОШЁЛ (имя, почта, идентификатор) и вход-выход.
+ * Это факты об учётной записи, а не о правах, и они переживают снос старой
+ * системы.
+ */
 
 export interface User {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
+  /** Подразделение, которым подписан человек. Факт о его штатной единице —
+   *  не роль и не право. */
   department: string;
   departmentId: string;
   directorateId?: string;
-  permissions: Permission[];
 }
 
-export interface Permission {
-  resource: string;
-  actions: string[];
-}
-
-export interface RoleDefinition {
-  id: UserRole;
-  name: string;
-  description: string;
-  color: string;
-  permissions: Permission[];
-}
-
-// Role definitions with permissions
-export const ROLES: Record<UserRole, RoleDefinition> = {
-  "role-1": {
-    id: "role-1",
-    name: "Роль-1: Просмотр организации",
-    description: "Просмотр всей организации",
-    color: "bg-gray-100 text-gray-800",
-    permissions: [
-      { resource: "organization", actions: ["read"] },
-      { resource: "employees", actions: ["read"] },
-      { resource: "reports", actions: ["read"] },
-    ],
-  },
-  "role-2": {
-    id: "role-2",
-    name: "Роль-2: Просмотр департамента",
-    description: "Полный доступ ко всем функциям",
-    color: "bg-blue-100 text-blue-800",
-    permissions: [
-      {
-        resource: "organization",
-        actions: ["read", "create", "update", "delete"],
-      },
-      {
-        resource: "employees",
-        actions: ["read", "create", "update", "delete", "update-status"],
-      },
-      {
-        resource: "statuses",
-        actions: ["read", "create", "update", "delete", "mass-update"],
-      },
-      { resource: "reports", actions: ["read", "create", "export"] },
-      { resource: "settings", actions: ["read", "update"] },
-      { resource: "users", actions: ["read", "create", "update", "delete"] },
-    ],
-  },
-  "role-3": {
-    id: "role-3",
-    name: "Роль-3: Редактирование статусов",
-    description: "Редактирование статусов управления",
-    color: "bg-green-100 text-green-800",
-    permissions: [
-      { resource: "organization", actions: ["read"] },
-      { resource: "employees", actions: ["read", "update-status", "create"] },
-      { resource: "statuses", actions: ["read", "update", "mass-update"] },
-      { resource: "reports", actions: ["read"] },
-    ],
-  },
-  "role-4": {
-    id: "role-4",
-    name: "Роль-4: Полный доступ",
-    description: "Полный доступ ко всем функциям",
-    color: "bg-purple-100 text-purple-800",
-    permissions: [
-      {
-        resource: "organization",
-        actions: ["read", "create", "update", "delete"],
-      },
-      {
-        resource: "employees",
-        actions: ["read", "create", "update", "delete", "update-status"],
-      },
-      {
-        resource: "statuses",
-        actions: ["read", "create", "update", "delete", "mass-update"],
-      },
-      { resource: "reports", actions: ["read", "create", "export"] },
-      { resource: "settings", actions: ["read", "update"] },
-      { resource: "users", actions: ["read", "create", "update", "delete"] },
-    ],
-  },
-  "role-5": {
-    id: "role-5",
-    name: "Роль-5: Кадровый администратор",
-    description: "Кадровый администратор подразделения",
-    color: "bg-orange-100 text-orange-800",
-    permissions: [
-      { resource: "organization", actions: ["read-department"] },
-      {
-        resource: "employees",
-        actions: ["read-department", "create", "update", "update-status"],
-      },
-      { resource: "statuses", actions: ["read", "update", "mass-update"] },
-      { resource: "reports", actions: ["read-department", "create", "export"] },
-    ],
-  },
-  // ── Матрица доступа заказчика (Plane №348) ──────────────────────────────
-  //
-  // Ресурс здесь решает ВИДИМОСТЬ ПУНКТА МЕНЮ (`components/navigation/sidebar`
-  // проверяет пару resource/action у портальных пунктов): `organization` —
-  // «Обзор», `statuses` — «Статусы сотрудников», `employees` — «Сбор сил на
-  // ОМ», `reports` — «Ежедневный отчёт». Пункт, которого в наборе нет, не
-  // рисуется — именно это заказчик и называет «модуль недоступен».
-  "employee-ro": {
-    id: "employee-ro",
-    name: "Сотрудник: просмотр статусов",
-    description: "Статусы своего управления, без правки",
-    color: "bg-slate-100 text-slate-800",
-    // ТОЛЬКО чтение: заказчик написал «видно своё управление, но без
-    // возможности редактирования». `update` и `mass-update` здесь появиться не
-    // должны — кнопки массовой правки берут право отсюда.
-    permissions: [{ resource: "statuses", actions: ["read"] }],
-  },
-  "head-basic": {
-    id: "head-basic",
-    name: "Руководитель: обзор и статусы",
-    description: "Обзор и статусы своего подразделения",
-    color: "bg-sky-100 text-sky-800",
-    permissions: [
-      { resource: "organization", actions: ["read"] },
-      { resource: "statuses", actions: ["read", "update", "mass-update"] },
-    ],
-  },
-  "head-reports": {
-    id: "head-reports",
-    name: "Руководитель: обзор, статусы, ежедневный отчёт",
-    description: "То же плюс ежедневный отчёт департамента",
-    color: "bg-emerald-100 text-emerald-800",
-    permissions: [
-      { resource: "organization", actions: ["read"] },
-      { resource: "statuses", actions: ["read", "update", "mass-update"] },
-      { resource: "reports", actions: ["read", "create", "export"] },
-    ],
-  },
-  "forces-officer": {
-    id: "forces-officer",
-    name: "Ответственный за сбор сил",
-    description: "Сбор сил, обзор, статусы и отчёт департамента",
-    color: "bg-amber-100 text-amber-800",
-    permissions: [
-      { resource: "organization", actions: ["read"] },
-      { resource: "employees", actions: ["read"] },
-      { resource: "statuses", actions: ["read", "update", "mass-update"] },
-      { resource: "reports", actions: ["read", "create", "export"] },
-    ],
-  },
-  "role-6": {
-    id: "role-6",
-    name: "Роль-6: Редактирование отдела",
-    description: "Полный доступ ко всем функциям",
-    color: "bg-yellow-100 text-yellow-800",
-    permissions: [
-      {
-        resource: "organization",
-        actions: ["read", "create", "update", "delete"],
-      },
-      {
-        resource: "employees",
-        actions: ["read", "create", "update", "delete", "update-status"],
-      },
-      {
-        resource: "statuses",
-        actions: ["read", "create", "update", "delete", "mass-update"],
-      },
-      { resource: "reports", actions: ["read", "create", "export"] },
-      { resource: "settings", actions: ["read", "update"] },
-      { resource: "users", actions: ["read", "create", "update", "delete"] },
-    ],
-  },
-};
 
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
-  hasPermission: (resource: string, action: string) => boolean;
-  canAccessResource: (resource: string) => boolean;
   isLoading: boolean;
-  canUserSeeUnit: (
-    unitType: "department" | "directorate",
-    unitId: string
-  ) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -250,51 +74,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (session && session.user) {
         try {
-          // Получаем информацию о пользователе из сессии NextAuth
-          // Новый формат: userData содержит { id, username, email, role: { code, name, scope: {...} } }
+          // КТО ВОШЁЛ — и только. Роль и права здесь больше не читаются
+          // (Plane №352, Ш-4): сервер их в токен не кладёт, а на вопрос «что
+          // можно» отвечает `/api/operations/my-permissions/`.
           const userDataFromBackend = (session.user as any).userData;
-          const backendRole =
-            userDataFromBackend?.role || (session.user as any).role;
-
-          // Маппинг ролей из бэкенда (ROLE_3) в фронтенд (role-3)
-          const mapBackendRoleToFrontend = (
-            backendRoleCode: string
-          ): UserRole => {
-            const roleMap: Record<string, UserRole> = {
-              ROLE_1: "role-1",
-              ROLE_2: "role-2",
-              ROLE_3: "role-3",
-              ROLE_4: "role-4",
-              ROLE_5: "role-5",
-              ROLE_6: "role-6",
-              // Матрица доступа (Plane №348)
-              EMPLOYEE_RO: "employee-ro",
-              HEAD_BASIC: "head-basic",
-              HEAD_REPORTS: "head-reports",
-              FORCES_OFFICER: "forces-officer",
-            };
-
-            if (backendRoleCode && roleMap[backendRoleCode]) {
-              return roleMap[backendRoleCode];
-            }
-
-            // 🔴 НЕИЗВЕСТНАЯ РОЛЬ ЗАКРЫВАЕТСЯ, А НЕ ОТКРЫВАЕТСЯ (Plane №349).
-            // Здесь стояло `return "role-4"` — полный доступ ко всему. Роль,
-            // заведённая в справочнике и забытая в этой таблице, получала не
-            // «ничего не видно», а «видно и можно всё»; и заметить это можно
-            // было только по тому, что лишние модули НЕ мешают работать.
-            // Самый узкий набор — отказ громкий: человек видит пустое меню и
-            // приходит с вопросом, вместо того чтобы молча править чужое.
-            return "employee-ro";
-          };
-
-          // Извлекаем код роли из нового формата: role.code
-          const roleCode = backendRole?.code;
-          const frontendRole = roleCode
-            ? mapBackendRoleToFrontend(roleCode)
-            : "employee-ro";
-
-          // Извлекаем данные из нового формата
           const userId =
             userDataFromBackend?.id?.toString() ||
             (session.user as any).id ||
@@ -307,17 +90,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             "Пользователь";
           const userEmail =
             userDataFromBackend?.email || session.user.email || "";
-          const departmentName = backendRole?.scope?.name || "Система";
-          const departmentId = backendRole?.scope?.id?.toString() || "system";
+          // Подразделение человека приходит отдельным полем ответа входа: это
+          // его штатная единица, а не область роли. Раньше сюда шло
+          // `role.scope` — область ПОРТАЛЬНОЙ роли, которой больше нет.
+          const departmentName = userDataFromBackend?.division?.name || "—";
+          const departmentId =
+            userDataFromBackend?.division?.id?.toString() || "";
 
           const userData: User = {
             id: userId,
             name: username,
             email: userEmail,
-            role: frontendRole,
             department: departmentName,
             departmentId: departmentId,
-            permissions: ROLES[frontendRole].permissions,
           };
 
           setUser(userData);
@@ -390,56 +175,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/";
   };
 
-  const hasPermission = (resource: string, action: string): boolean => {
-    if (!user) return false;
-
-    const permission = user.permissions.find((p) => p.resource === resource);
-    if (!permission) return false;
-
-    return (
-      permission.actions.includes(action) || permission.actions.includes("*")
-    );
-  };
-
-  const canAccessResource = (resource: string): boolean => {
-    if (!user) return false;
-    return user.permissions.some((p) => p.resource === resource);
-  };
-
-  const canUserSeeUnit = (
-    unitType: "department" | "directorate",
-    unitId: string
-  ): boolean => {
-    if (!user) return false;
-
-    // Leadership (role-2, role-4, role-6) and deputies can see everything
-    if (
-      user.role === "role-2" ||
-      user.role === "role-4" ||
-      user.role === "role-6" ||
-      user.departmentId === "leadership"
-    ) {
-      return true;
-    }
-
-    // Other roles follow department restrictions
-    if (unitType === "department") {
-      return user.departmentId === unitId;
-    }
-
-    return false;
-  };
-
   return (
     <AuthContext.Provider
       value={{
         user,
         login,
         logout,
-        hasPermission,
-        canAccessResource,
         isLoading,
-        canUserSeeUnit,
       }}
     >
       {children}
@@ -455,45 +197,8 @@ export function useAuth() {
   return context;
 }
 
-// Permission checking components
-interface PermissionGateProps {
-  resource: string;
-  action: string;
-  children: ReactNode;
-  fallback?: ReactNode;
-}
-
-export function PermissionGate({
-  resource,
-  action,
-  children,
-  fallback = null,
-}: PermissionGateProps) {
-  const { hasPermission } = useAuth();
-
-  if (!hasPermission(resource, action)) {
-    return <>{fallback}</>;
-  }
-
-  return <>{children}</>;
-}
-
-interface ResourceGateProps {
-  resource: string;
-  children: ReactNode;
-  fallback?: ReactNode;
-}
-
-export function ResourceGate({
-  resource,
-  children,
-  fallback = null,
-}: ResourceGateProps) {
-  const { canAccessResource } = useAuth();
-
-  if (!canAccessResource(resource)) {
-    return <>{fallback}</>;
-  }
-
-  return <>{children}</>;
-}
+// 🔴 `PermissionGate` и `ResourceGate` СНЯТЫ (Plane №352, Ш-4). Оба
+// спрашивали зашитый набор ресурсов портальной роли — то есть отвечали на
+// вопрос о правах, не спрашивая сервер. Их место занял `useOpsPermissions`:
+// экран сам спрашивает КОД ПРАВА раздела и печатает отказ словами
+// (`components/ops-access-denied.tsx`), а не прячет кнопку молча.

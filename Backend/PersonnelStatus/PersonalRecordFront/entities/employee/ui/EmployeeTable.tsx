@@ -27,7 +27,7 @@ import {
   Trash2,
   Eye,
 } from "lucide-react";
-import { useAuth, PermissionGate } from "@/lib/auth";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   getEmployeeStatusColor,
 } from "@/lib/status";
@@ -52,7 +52,11 @@ export function EmployeeTable({
 }: EmployeeTableProps) {
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [statusDialogFor, setStatusDialogFor] = useState<Employee | null>(null);
-  const { hasPermission } = useAuth();
+  // Кнопку массовых действий открывает право РАЗДЕЛА, а не зашитый набор
+  // портальной роли (Plane №352, Ш-4): массовые действия правят статусы, и
+  // ключ у них тот же, что у остальной правки статусов.
+  const { hasPermission } = useOpsPermissions();
+  const canEditPersonnel = hasPermission("orgstructure.manage");
   const queryClient = useQueryClient();
 
   const handleSelectAll = (checked: boolean) => {
@@ -93,11 +97,11 @@ export function EmployeeTable({
               <span className="text-sm text-muted-foreground">
                 Выбрано: {selectedEmployees.length}
               </span>
-              <PermissionGate resource="employees" action="update">
+              {hasPermission("status.manage") && (
                 <Button variant="outline" size="sm">
                   Массовые действия
                 </Button>
-              </PermissionGate>
+              )}
             </div>
           )}
         </div>
@@ -229,19 +233,22 @@ export function EmployeeTable({
                           <Eye className="mr-2 h-4 w-4" />
                           Просмотр профиля
                         </DropdownMenuItem>
-                        <PermissionGate resource="employees" action="update">
-                          <DropdownMenuItem>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Редактировать
-                          </DropdownMenuItem>
-                        </PermissionGate>
-                        <DropdownMenuSeparator />
-                        <PermissionGate resource="employees" action="delete">
-                          <DropdownMenuItem className="text-red-600">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Удалить
-                          </DropdownMenuItem>
-                        </PermissionGate>
+                        {/* Правка и удаление кадровой записи — право раздела
+                            `orgstructure.manage`, то же, которым Ш-3 закрыл
+                            правку штатного расписания (Plane №352, Ш-4). */}
+                        {canEditPersonnel && (
+                          <>
+                            <DropdownMenuItem>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Редактировать
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-red-600">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Удалить
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
