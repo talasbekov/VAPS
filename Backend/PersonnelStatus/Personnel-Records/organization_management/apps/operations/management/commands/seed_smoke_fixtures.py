@@ -55,7 +55,10 @@ from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_gvo import OpsProtectedPerson
 from organization_management.apps.operations.models_object import OpsSecurityObject
-from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.models_status import (
+    OpsEmployeeStatus,
+    OpsStatusParticipation,
+)
 from organization_management.apps.operations.status_types import StatusType
 from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.ops import security_events as event_service
@@ -63,6 +66,9 @@ from organization_management.apps.staff_unit.models import StaffUnit
 
 ACTOR = "stand-seed"
 ASSIGNMENT_CODE = "EVENT_ASSIGNMENT"
+#: Вид участия для фикстуры: физический наряд. Роли внутри у него нет вовсе,
+#: поэтому `role_code` остаётся пустым — см. комментарий у модели участия.
+PARTICIPATION_KIND = "PHYSICAL_SQUAD"
 #: Отсутствие для РАЗВЕДЕНИЯ «в строю» и «по списку». Отпуск, а не болезнь:
 #: болезнь — сведение о здоровье, и держать её выдумкой на стенде незачем,
 #: когда любой отпуск даёт ровно тот же эффект в отчёте.
@@ -163,6 +169,7 @@ class Command(BaseCommand):
         day = Clock.today_local()
         assigned = self._assignments(day, options["assigned"])
         event = self._forces_event(day)
+        attached = self._attach_participations(day, assigned, event)
         security_object, freshness = self._ready_object(day)
         recon = self._recon_event(day, security_object)
         closed = self._closed_event(day, security_object)
@@ -175,6 +182,7 @@ class Command(BaseCommand):
             self.stdout.write(f"STAND_ASSIGNED={employee.id} {employee.last_name}")
         self.stdout.write(f"STAND_DAY={day.isoformat()}")
         self.stdout.write(f"STAND_FORCES_EVENT={event.code}")
+        self.stdout.write(f"STAND_PARTICIPATIONS={attached}")
         self.stdout.write(f"STAND_RECON_EVENT={recon.code}")
         self.stdout.write(f"STAND_CLOSED_EVENT={closed.code}")
         self.stdout.write(f"STAND_CLEAN_PERSON={clean_person.id} {clean_person.name}")
@@ -191,6 +199,43 @@ class Command(BaseCommand):
         )
 
     # ── Привлечённые на мероприятие ─────────────────────────────────────────
+
+    def _attach_participations(self, day, assigned, event):
+        """Привязать привлечённых к ЖИВОМУ мероприятию фикстуры (Plane №346).
+
+        🔴 ЗАЧЕМ ЭТО ВООБЩЕ ПОЯВИЛОСЬ. Участий на стенде не заводил НИ ОДИН
+        сид: единственным их источником были сами пробы, а уборка сносит
+        заведённые ими мероприятия — и участия оставались ссылаться в пустоту.
+        Круг замыкался: свежих участий взять негде, старые непригодны, и проба
+        `tables-data.spec.ts:289` отвечала «на стенде сегодня нет ни одного
+        привлечения на ОМ — проверять нечего». Убрать сирот было половиной
+        дела; вторая половина — завести годные.
+
+        Мероприятие берётся ФИКСТУРНОЕ, а не пробное: его название намеренно
+        без метки «(e2e)», поэтому `purge_probe_events` его не трогает и
+        участие переживает любую уборку.
+
+        Идемпотентно: повторный запуск в тот же день ничего не добавляет.
+        """
+        # ДЕНЬ В ФИЛЬТРЕ ОБЯЗАТЕЛЕН. Без него берутся привлечённости человека
+        # за ВСЕ даты, накопленные прошлыми запусками: на трёх сотрудниках
+        # первый прогон завёл 20 участий вместо трёх и привязал вчерашние дни
+        # к сегодняшнему мероприятию.
+        statuses = OpsEmployeeStatus.objects.filter(
+            employee_id__in=[employee.id for employee in assigned],
+            status_type_code=ASSIGNMENT_CODE,
+            date_start=day,
+        )
+        attached = 0
+        for status in statuses:
+            _row, created = OpsStatusParticipation.objects.get_or_create(
+                status=status,
+                event_id=event.id,
+                defaults={"kind_code": PARTICIPATION_KIND, "role_code": ""},
+            )
+            attached += int(created)
+        return attached
+
 
     def _assignments(self, day, count):
         """Статусы `EVENT_ASSIGNMENT` на сегодня.
