@@ -1399,24 +1399,10 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
         return Response(response_data, status=status.HTTP_200_OK)
 
-    def _get_user_division(self, user):
-        """Определяет подразделение пользователя на основе его роли (для области видимости)"""
-        if user.is_superuser:
-            # Для суперпользователя можно вернуть корневое подразделение
-            return Division.objects.filter(level=0).first()
-
-        try:
-            # Получаем роль пользователя (OneToOneField)
-            user_role = user.role_info
-
-            if not user_role:
-                return None
-
-            # Используем effective_scope_division из роли
-            return user_role.effective_scope_division
-
-        except Exception:
-            return None
+    # 🔴 ЗДЕСЬ ЛЕЖАЛ МЁРТВЫЙ ДУБЛЬ `_get_user_division` (Plane №352, Ш-6).
+    # Он читал `user.role_info` — портальную роль, каталог которой снесён, —
+    # и был перекрыт одноимённым методом ниже (Python оставляет последнее
+    # определение в классе), то есть не выполнялся ни разу с самого Ш-2.
 
     def _scope_single_root(self, user, all_divisions, request=None):
         """Одно подразделение, описывающее область, либо `None`.

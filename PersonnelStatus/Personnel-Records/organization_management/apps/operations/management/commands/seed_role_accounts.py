@@ -32,14 +32,11 @@ from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from organization_management.apps.common.models import Role as PortalRole
-from organization_management.apps.common.models import UserRole as PortalUserRole
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.models import Role as OpsRole
 from organization_management.apps.operations.services import RoleAdminService
 
 USERNAME_PREFIX = "role_"
-BASELINE_PORTAL_ROLE = "ROLE_1"
 
 # Роли, которым область видимости осмысленна: без неё проверка «видит только
 # своё» ничего не показывает — учётка видит либо всё, либо ничего.
@@ -72,12 +69,11 @@ class Command(BaseCommand):
                 "передайте --password или переменную ROLE_ACCOUNTS_PASSWORD."
             )
 
-        portal_role = PortalRole.objects.filter(code=BASELINE_PORTAL_ROLE).first()
-        if portal_role is None:
-            raise CommandError(
-                f"Портальной роли {BASELINE_PORTAL_ROLE} нет в справочнике — учётки не смогут "
-                "войти в портал, и проверка прав раздела выродилась бы в проверку входа."
-            )
+        # 🔴 ПОРТАЛЬНОЙ РОЛИ УЧЁТКАМ БОЛЬШЕ НЕ ВЫДАЁТСЯ (Plane №352, Ш-6).
+        # Здесь стояла проверка «роли ROLE_1 нет в справочнике — отказ»: без
+        # неё учётки не вошли бы в портал. С Ш-1…Ш-4 вход и видимость держат
+        # права РАЗДЕЛА, портальную роль не читает никто, а её каталог этот
+        # шаг сносит совсем.
 
         created = updated = 0
         with transaction.atomic():
@@ -103,7 +99,6 @@ class Command(BaseCommand):
                 RoleAdminService.assign_role(
                     str(user.pk), role.code, scope_id, actor="seed_role_accounts"
                 )
-                PortalUserRole.objects.get_or_create(user=user, role=portal_role)
 
         self.stdout.write(
             self.style.SUCCESS(

@@ -19,12 +19,6 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from organization_management.apps.common.models import (
-    Permission as LegacyPermission,
-    Role as LegacyRole,
-    RolePermission as LegacyRolePermission,
-    UserRole as LegacyUserRole,
-)
 from organization_management.apps.common.rbac import (
     check_permission,
     get_user_scope_queryset,
@@ -140,25 +134,20 @@ def test_reading_permission_is_not_enough_to_write(tree):
     assert not check_permission(user, "create_vacancy")
 
 
-def test_a_legacy_personnel_role_grants_nothing(tree):
-    """Старый каталог БОЛЬШЕ НЕ ЧИТАЕТСЯ.
+def test_the_legacy_role_catalog_is_gone(tree):
+    """Старый каталог не «не читается», а НЕ СУЩЕСТВУЕТ (Plane №352, Ш-6).
 
-    Учётке выдано кадровое право ровно с тем же именем, что спрашивает экран.
-    До Ш-3 этого хватало; теперь имя ведёт в код раздела, а грантов раздела у
-    неё нет. Мутация «вернуть чтение common.Role» краснит именно эту пробу.
+    До Ш-6 проба заводила `common.Role` с правом `edit_staffing_position` и
+    проверяла, что оно ничего не даёт. Модели больше нет — заводить нечего, и
+    прежняя проверка стала бы тавтологией. Стережём возврат самих моделей:
+    вернуть их — значит вернуть второй каталог прав, ради сноса которого
+    делались шесть шагов.
     """
-    user = get_user_model().objects.create_user(username="sh3-legacy")
-    role = LegacyRole.objects.create(code="ROLE_6", name="Начальник отдела")
-    permission = LegacyPermission.objects.create(
-        code="edit_staffing_position", name="Правка штатной единицы"
-    )
-    LegacyRolePermission.objects.create(role=role, permission=permission)
-    LegacyUserRole.objects.create(
-        user=user, role=role, scope_division=tree["left"]
-    )
+    from django.apps import apps
 
-    assert not check_permission(user, "edit_staffing_position", tree["units"]["left"])
-    assert not check_permission(user, "view_staffing_table")
+    for model_name in ("Role", "Permission", "RolePermission", "UserRole"):
+        with pytest.raises(LookupError):
+            apps.get_model("common", model_name)
 
 
 def test_an_unknown_permission_name_is_refused(tree):

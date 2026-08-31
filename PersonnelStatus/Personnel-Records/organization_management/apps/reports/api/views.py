@@ -65,9 +65,14 @@ class ReportViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
                 return Response({'detail': 'Некорректное подразделение'}, status=400)
 
             if not PermissionService.can_access_division(user, div.id):
-                # Preserve the legacy behavior: return specific message if user has no scope at all,
-                # otherwise return a generic forbidden message.
-                if not PermissionService.get_user_division(user) and not user.is_superuser:
+                # Разные отказы для разных причин: «зоны нет вовсе» и «это
+                # подразделение не твоё» чинятся по-разному. Признак «зоны
+                # нет» теперь пустая область гранта, а не отсутствие
+                # портальной роли (Plane №352, Ш-6) — сообщения прежние.
+                if (
+                    not PermissionService.get_accessible_divisions(user).exists()
+                    and not user.is_superuser
+                ):
                     return Response({'detail': 'Нет зоны ответственности'}, status=403)
                 return Response({'detail': 'Подразделение вне зоны ответственности'}, status=403)
 
@@ -139,7 +144,13 @@ class ReportViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
 
         # Проверка прав доступа
         if not PermissionService.can_access_division(user, department.id):
-            if not PermissionService.get_user_division(user) and not user.is_superuser:
+            # «Зоны нет вовсе» — это пустая область гранта (Plane №352, Ш-6),
+            # раньше — отсутствие портальной роли. Два разных отказа остаются
+            # разными: их чинят разные люди.
+            if (
+                not PermissionService.get_accessible_divisions(user).exists()
+                and not user.is_superuser
+            ):
                 return Response({'detail': 'Нет зоны ответственности'}, status=status.HTTP_403_FORBIDDEN)
             return Response(
                 {'detail': 'Департамент вне зоны ответственности'},

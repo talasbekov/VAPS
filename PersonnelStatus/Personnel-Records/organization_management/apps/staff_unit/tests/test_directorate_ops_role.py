@@ -27,12 +27,6 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from organization_management.apps.common.models import (
-    Permission as LegacyPermission,
-    Role as LegacyRole,
-    RolePermission as LegacyRolePermission,
-    UserRole as LegacyUserRole,
-)
 from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
@@ -172,31 +166,26 @@ def test_no_role_at_all_is_still_refused(tree):
     assert response.status_code == 403, response.data
 
 
-def test_a_personnel_role_alone_no_longer_opens_the_screen(tree):
-    """Кадровая роль БОЛЬШЕ НЕ ключ (Plane №352, Ш-2).
+def test_a_user_without_section_grants_is_refused_by_name(tree):
+    """Экран открывает ТОЛЬКО право раздела — и отказ называет его.
 
-    🔴 ПРЕДМЕТ ПРОБЫ ПЕРЕВЁРНУТ ОСОЗНАННО, а не подогнан под вывод. Она
-    держала обратное: «ROLE_6 считает область прежним кадровым путём, а не
-    путём раздела» — и была права, пока ключей было два. Заказчик потребовал
-    «всё старое искоренить, работать по семи ролям»; ни один из трёх кодов
-    (ROLE_3/6/7), которые знал этот путь, среди его семи не встречается, и
-    список пришлось бы дописывать при каждой новой роли — молча, до первого
-    «почему у него не работает».
+    🔴 ПРОБА ПЕРЕПИСАНА ДВАЖДЫ, И ОБА РАЗА ОСОЗНАННО. Сначала она держала
+    «ROLE_6 считает область прежним кадровым путём» — это было верно, пока
+    ключей было два (Ш-2 снял второй). Затем — «кадровая роль с правом
+    `view_staffing_table` больше не открывает экран»: она заводила
+    `common.Role` и проверяла, что та ничего не даёт. Ш-6 снёс этот каталог
+    целиком, и заводить стало НЕЧЕГО: проверка «снятая система не работает»
+    без самой системы — тавтология.
 
-    Держать этот конец всё равно надо: мутация «вернуть кадровый список кодов
-    рядом с правом раздела» открыла бы экран учётке, которой раздел его не
-    открывал, и никакая другая проба этого не заметила бы.
+    Осталось то, что стеречь надо и дальше: человек, у которого нет ни одного
+    гранта раздела, получает 403, и отказ НАЗЫВАЕТ НУЖНОЕ ПРАВО. Мутация
+    «вернуть в гейт кадровое право или общий текст отказа» краснит именно
+    эту пробу.
     """
-    user = get_user_model().objects.create_user(username="ops-legacy-chief")
-    role = LegacyRole.objects.create(code="ROLE_6", name="Начальник отдела")
-    permission = LegacyPermission.objects.create(
-        code="view_staffing_table", name="Просмотр штатного расписания"
-    )
-    LegacyRolePermission.objects.create(role=role, permission=permission)
+    user = get_user_model().objects.create_user(username="ops-no-grants")
     employee = Employee.objects.get(personnel_number="ops-003")
     employee.user = user
     employee.save(update_fields=["user"])
-    LegacyUserRole.objects.create(user=user, role=role)
 
     response = ask(user)
 

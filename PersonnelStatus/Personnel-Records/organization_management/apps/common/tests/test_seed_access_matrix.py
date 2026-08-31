@@ -22,7 +22,6 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from organization_management.apps.common.models import UserRole as PortalUserRole
 from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
@@ -105,15 +104,23 @@ def test_the_seven_accounts_are_complete(stand):
     for username in usernames:
         user = User.objects.get(username=username)
         assert grants(username), f"{username} без роли раздела не покажет ни один экран ОМ"
-        # 🔴 ПОРТАЛЬНОЙ РОЛИ НЕТ НИ У КОГО (Ш-5). Проба перевёрнута осознанно:
-        # раньше она требовала обратного — «без портальной роли персона не
-        # покажет ни Обзор, ни Статусы». С Ш-1 портальные пункты спрашивают
-        # права РАЗДЕЛА, с Ш-4 токен портальную роль не носит вовсе, и выдача
-        # её здесь была бы тихим возвратом снятой системы.
-        assert not PortalUserRole.objects.filter(user=user).exists(), (
-            f"{username} снова получила портальную роль — снятая система прав вернулась"
-        )
         assert user.check_password(PASSWORD)
+
+
+def test_the_portal_role_catalog_is_gone():
+    """Портальной роли нет НЕ У ПЕРСОН, А В ПРОЕКТЕ ВООБЩЕ (Ш-6).
+
+    До Ш-6 здесь стояло «персона не получила портальную роль»: модель ещё
+    существовала, и выдать её было чем. Модели больше нет — утверждение о
+    персонах стало тавтологией и ничего бы не стерегло. Стережём то, что
+    осталось стеречь: возврат самой модели (а с ней и всей снятой системы)
+    краснит эту пробу.
+    """
+    from django.apps import apps
+
+    for model_name in ("Role", "Permission", "RolePermission", "UserRole"):
+        with pytest.raises(LookupError):
+            apps.get_model("common", model_name)
 
 
 def test_only_the_second_department_sees_the_events(stand):

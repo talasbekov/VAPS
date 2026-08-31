@@ -25,7 +25,6 @@ urlpatterns = [
     path('api/schema/redoc', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
     # API Endpoints:
-    path("api/common/", include("organization_management.apps.common.api.urls")),
     # Раздел «Охранные мероприятия» — нативный переезд из Backend/VAPS
     path("api/operations/", include("organization_management.apps.operations.api.urls")),
     # Своя учётная запись: профиль и смена собственного пароля. Код лежит в
