@@ -1,38 +1,45 @@
-from typing import Optional
 from django.db.models import QuerySet
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.reports.models import Report
 
+
 class PermissionService:
-    """
-    Centralized service for evaluating user permissions based on their role and division scope.
+    """Область видимости отчётов.
+
+    🔴 ОБЛАСТЬ ДАЁТ ГРАНТ ПРАВА РАЗДЕЛА (Plane №352, Ш-6). Раньше её брали у
+    `user.role_info` — портальной роли из `common.UserRole`; этот шаг сносит
+    её модель, и вместе с ней ушёл бы весь доступ к отчётам. Считается она
+    ровно так же, как область штатки в `common/rbac.py`: подразделения гранта
+    вместе с потомками.
+
+    ПРАВО ВЫБРАНО ТО ЖЕ, ЧТО У ШТАТКИ (`orgstructure.view`), а не своё
+    `report.*`: отчёт о расходе личного состава показывает те же
+    подразделения, что и штатное расписание, и второе имя для одной и той же
+    области разошлось бы с ним при первой раздаче прав.
+
+    Поведение для того, у кого прав нет, ПРЕЖНЕЕ: пустая область. Раньше её
+    давало отсутствие портальной роли, теперь — отсутствие гранта; человек
+    по-прежнему видит только СВОИ отчёты (`created_by`), это решает вызывающий.
     """
 
-    @staticmethod
-    def get_user_division(user) -> Optional[Division]:
-        """
-        Extracts the user's division from their role_info.
-        """
-        if hasattr(user, 'role_info') and hasattr(user.role_info, 'get_user_division'):
-            return user.role_info.get_user_division()
-        return None
+    #: Право, чьи гранты и очерчивают область отчётов.
+    SCOPE_PERMISSION = 'orgstructure.view'
 
     @staticmethod
     def get_accessible_divisions(user) -> QuerySet[Division]:
-        """
-        Returns a QuerySet of divisions the user is allowed to access.
-        For superusers, this is all divisions.
-        For others, it is their division and all of its descendants.
-        If the user has no division and is not a superuser, it returns none.
-        """
+        """Подразделения, доступные пользователю: грант права и всё под ним."""
         if user.is_superuser:
             return Division.objects.all()
 
-        user_division = PermissionService.get_user_division(user)
-        if not user_division:
-            return Division.objects.none()
+        from organization_management.apps.common.rbac import _scope_division_ids
 
-        return user_division.get_descendants(include_self=True)
+        visible = _scope_division_ids(user, PermissionService.SCOPE_PERMISSION)
+        if visible is None:
+            # Грант без области (в том числе wildcard администратора).
+            return Division.objects.all()
+        if not visible:
+            return Division.objects.none()
+        return Division.objects.filter(id__in=sorted(visible))
 
     @staticmethod
     def can_access_division(user, division_id: int) -> bool:

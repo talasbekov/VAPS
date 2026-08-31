@@ -155,15 +155,15 @@ def test_a_personnel_role_gives_no_scope_at_all(tree):
     «области нет», а нули сказали бы «область есть и она пуста» — это разные
     вещи, и №329 их как раз научился различать.
     """
-    from organization_management.apps.common.models import Role as LegacyRole
-    from organization_management.apps.common.models import UserRole as LegacyUserRole
-
+    # 🔴 КАДРОВУЮ РОЛЬ ЗАВЕСТИ БОЛЬШЕ НЕЧЕМ (Plane №352, Ш-6): её каталог
+    # снесён. Раньше проба выдавала `ROLE_7` с областью на департамент и
+    # проверяла, что область эта НЕ считается. Теперь у человека просто нет
+    # грантов раздела — и это ровно тот случай, ради которого проба и
+    # написана: сотрудник есть, подразделение у него есть, а области нет.
     user = get_user_model().objects.create_user(username="stat-legacy")
-    role = LegacyRole.objects.create(code="ROLE_7", name="Начальник департамента")
     employee = Employee.objects.get(personnel_number="stat-001")
     employee.user = user
     employee.save(update_fields=["user"])
-    LegacyUserRole.objects.create(user=user, role=role, scope_division=tree["department"])
 
     response = ask(user)
 

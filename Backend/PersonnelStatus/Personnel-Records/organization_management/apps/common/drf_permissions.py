@@ -119,45 +119,9 @@ class CanCloseVacancy(RoleBasedPermission):
     required_permission = 'close_vacancy'
 
 
-class ReadOnlyPermission(permissions.BasePermission):
-    """
-    Разрешает только безопасные методы (GET, HEAD, OPTIONS)
-    
-    Полезно для ролей-наблюдателей (ROLE_1, ROLE_2)
-    """
-    def has_permission(self, request, view):
-        return request.method in permissions.SAFE_METHODS
-    
-    def has_object_permission(self, request, view, obj):
-        return request.method in permissions.SAFE_METHODS
-
-
-class IsRoleAdmin(permissions.BasePermission):
-    """Проверка что пользователь имеет роль администратора (ROLE_4)"""
-    message = 'Только администраторы могут выполнять это действие'
-    
-    def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return False
-        
-        if request.user.is_superuser:
-            return True
-        
-        if hasattr(request.user, 'role_info'):
-            return request.user.role_info.get_role_code() == 'ROLE_4'
-
-        return False
-
-
-class IsRoleHRAdmin(permissions.BasePermission):
-    """Проверка что пользователь - кадровик (ROLE_5)"""
-    message = 'Только кадровые администраторы могут выполнять это действие'
-    
-    def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return False
-        
-        if hasattr(request.user, 'role_info'):
-            return request.user.role_info.get_role_code() in ['ROLE_4', 'ROLE_5']
-
-        return False
+# 🔴 ТРИ КЛАССА СНЯТЫ (Plane №352, Ш-6): `ReadOnlyPermission`,
+# `IsRoleAdmin` (спрашивал кадровую роль ROLE_4) и `IsRoleHRAdmin` (ROLE_4 или
+# ROLE_5). Первый был мёртвым с рождения, вторые два читали `user.role_info` —
+# портальную роль, каталог которой этот шаг сносит. Читателей у всех трёх не
+# было ни одного (проверено грепом по `apps`), поэтому снятие ничего не меняет
+# в поведении; администратора спрашивают правом раздела `admin.roles`.

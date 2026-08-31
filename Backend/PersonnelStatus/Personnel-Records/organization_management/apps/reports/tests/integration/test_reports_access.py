@@ -3,10 +3,37 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.common.models import Role, UserRole
+from organization_management.apps.operations.models import (
+    Permission as OpsPermission,
+    Role as OpsRole,
+    RolePermission as OpsRolePermission,
+)
+from organization_management.apps.operations.services import RoleAdminService
 from organization_management.apps.reports.models import Report
 
 User = get_user_model()
+
+
+def grant_scope(user, division, *, role_code):
+    """Область отчётов даёт ГРАНТ ПРАВА РАЗДЕЛА (Plane №352, Ш-6).
+
+    Раньше её задавала портальная роль с одним `scope_division`; её каталог
+    снесён. Способ описания области сменился, ПРОВЕРЯЕМОЕ ПОВЕДЕНИЕ — нет:
+    человек видит своё подразделение и всё под ним.
+    """
+    role, _ = OpsRole.objects.get_or_create(
+        code=role_code, defaults={"name": role_code}
+    )
+    permission, _ = OpsPermission.objects.get_or_create(
+        code="orgstructure.view", defaults={"name": "Просмотр оргструктуры"}
+    )
+    OpsRolePermission.objects.get_or_create(
+        role_code=role, permission_code=permission
+    )
+    RoleAdminService.assign_role(
+        str(user.pk), role.code, division.id, actor="test"
+    )
+
 
 @pytest.fixture
 def api_client():
@@ -19,13 +46,13 @@ def test_data():
 
     dept2 = Division.objects.create(name="Dept 2", code="dept2", division_type=Division.DivisionType.DEPARTMENT)
 
-    r_sysadmin = Role.objects.create(code="ROLE_4", name="Сисадмин")
-    r_head = Role.objects.create(code="ROLE_3", name="Нач Упр")
-
     u_admin = User.objects.create(username="admin", is_superuser=True)
 
+    # Начальник управления: область — грант права раздела на своё управление
+    # (Plane №352, Ш-6). Роли `ROLE_4`/`ROLE_3` заводились здесь, чтобы
+    # раздать области; их каталога больше нет.
     u_head = User.objects.create(username="head")
-    UserRole.objects.create(user=u_head, role=r_head, scope_division=dir1)
+    grant_scope(u_head, dir1, role_code="TEST_DIR_SCOPE")
 
     u_norole = User.objects.create(username="norole")
 
@@ -62,10 +89,8 @@ class TestReportsAccess:
         assert response.status_code == 403
 
         # To test success, we create a user scoped to dept1
-        from organization_management.apps.common.models import UserRole, Role
         u_dept_head = User.objects.create(username="dept_head")
-        r_dept = Role.objects.create(code="ROLE_2", name="Обсервер деп")
-        UserRole.objects.create(user=u_dept_head, role=r_dept, scope_division=test_data['dept1'])
+        grant_scope(u_dept_head, test_data['dept1'], role_code="TEST_DEPT_SCOPE")
 
         api_client.force_authenticate(user=u_dept_head)
         response = api_client.get(reverse('report-expense', kwargs={'department_id': test_data['dept1'].id}))
@@ -95,10 +120,8 @@ class TestReportsAccess:
         assert response.data['detail'] == 'Подразделение вне зоны ответственности'
 
     def test_generate_report_success_in_scope(self, api_client, test_data, monkeypatch):
-        from organization_management.apps.common.models import UserRole, Role
         u_dept_head = User.objects.create(username="dept_head2")
-        r_dept = Role.objects.create(code="ROLE_22", name="Обсервер деп 2")
-        UserRole.objects.create(user=u_dept_head, role=r_dept, scope_division=test_data['dept1'])
+        grant_scope(u_dept_head, test_data['dept1'], role_code="TEST_DEPT_SCOPE_2")
 
         api_client.force_authenticate(user=u_dept_head)
         # mock celery task

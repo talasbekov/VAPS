@@ -4,7 +4,12 @@ from django.contrib.auth import get_user_model
 from organization_management.apps.common.services.permissions import PermissionService
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.reports.models import Report
-from organization_management.apps.common.models import Role, UserRole
+from organization_management.apps.operations.models import (
+    Permission as OpsPermission,
+    Role as OpsRole,
+    RolePermission as OpsRolePermission,
+)
+from organization_management.apps.operations.services import RoleAdminService
 
 User = get_user_model()
 
@@ -35,24 +40,29 @@ class TestPermissionService:
 
     @pytest.fixture
     def user_with_role(self, setup_divisions):
+        """Область даёт ГРАНТ ПРАВА РАЗДЕЛА (Plane №352, Ш-6).
+
+        Была портальная роль `ROLE_2` с одним `scope_division`; её каталог
+        снесён. Область теперь описывается тем же способом, что и везде в
+        системе: роль раздела с правом `orgstructure.view`, выданная на
+        подразделение. Поведение сервиса от этого не изменилось — «своё и всё
+        под ним», — и ассерты ниже остались прежними, строка в строку.
+        """
         user = User.objects.create(username="testuser")
-        role = Role.objects.create(code="ROLE_2", name="Dir Head", hierarchy_level=2)
-        UserRole.objects.create(
-            user=user,
-            role=role,
-            scope_division=setup_divisions["child"],
+        role, _ = OpsRole.objects.get_or_create(
+            code="TEST_SCOPE_ROLE", defaults={"name": "Область под пробу"}
         )
-        # Ensure role_info is accessible
-        user.refresh_from_db()
+        permission, _ = OpsPermission.objects.get_or_create(
+            code=PermissionService.SCOPE_PERMISSION,
+            defaults={"name": PermissionService.SCOPE_PERMISSION},
+        )
+        OpsRolePermission.objects.get_or_create(
+            role_code=role, permission_code=permission
+        )
+        RoleAdminService.assign_role(
+            str(user.pk), role.code, setup_divisions["child"].id, actor="test"
+        )
         return user
-
-    def test_get_user_division_with_role(self, user_with_role, setup_divisions):
-        division = PermissionService.get_user_division(user_with_role)
-        assert division == setup_divisions["child"]
-
-    def test_get_user_division_no_role(self, user_no_role):
-        division = PermissionService.get_user_division(user_no_role)
-        assert division is None
 
     def test_get_accessible_divisions_superuser(self, superuser, setup_divisions):
         divisions = PermissionService.get_accessible_divisions(superuser)

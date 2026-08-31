@@ -24,12 +24,6 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from organization_management.apps.common.models import (
-    Permission,
-    Role,
-    RolePermission,
-    UserRole,
-)
 from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
