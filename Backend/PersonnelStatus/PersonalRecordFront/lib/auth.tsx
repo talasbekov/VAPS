@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
+import { resetAccessToken } from "@/lib/access-token";
 import { apiClient } from "@/lib/api";
 
 export type UserRole =
@@ -303,6 +304,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * остаются кэш react-query с чужими данными и состояние провайдеров.
    */
   const logout = async (): Promise<void> => {
+    // Кэш токена снимается ПЕРВЫМ и всегда, даже если `signOut` упадёт: он
+    // живёт в памяти вкладки и переживает выход (Plane №343). Пока он цел,
+    // следующие 15 секунд любой запрос подписывался бы токеном ушедшего
+    // человека — а это уже не медлительность, а чужие права.
+    resetAccessToken();
     try {
       await signOut({ redirect: false });
     } catch (error) {
