@@ -22,6 +22,7 @@
  * него проверять нечего — и «нет фикстуры» читалось бы как зелень.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { localIsoDate } from './business-date'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { probeComment } from './probe-statuses'
 
@@ -52,7 +53,14 @@ async function hydrated(page: Page): Promise<void> {
   })
 }
 
-const iso = (date: Date): string => date.toISOString().slice(0, 10)
+/** Местная календарная дата — та же, что видит человек на своих часах.
+ *
+ * 🔴 ЗДЕСЬ БЫЛ `toISOString()` (Plane №373). Он отдаёт UTC, а стенд живёт в
+ * UTC+5: после 19:00 по местному проба заводила статус ВЧЕРАШНИМ числом и
+ * потом искала на экране сегодняшний — «бессрочный статус» не находился, и
+ * краснота выглядела дефектом окна статуса. Ловушку сняли общим хелпером;
+ * этот файл — четвёртый её носитель. */
+const iso = (date: Date): string => localIsoDate(date)
 
 const shifted = (days: number): Date => {
   const date = new Date()
