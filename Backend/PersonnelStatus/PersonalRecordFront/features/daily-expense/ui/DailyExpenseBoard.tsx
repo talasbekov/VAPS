@@ -43,7 +43,6 @@ import {
   DAILY_DIVISIONS_PATH,
   DAILY_EMPLOYEES_PATH,
   DAILY_SUBMISSIONS_PATH,
-  STATUS_LABEL_BY_CODE,
   currentSubmission,
   parseSubmissionList,
 } from "@/entities/daily-grid";
@@ -51,14 +50,22 @@ import type { DaySubmission } from "@/entities/daily-grid";
 import { DaySubmissionPanel } from "@/features/ops-daily";
 import { SetStatusDialog } from "./SetStatusDialog";
 import { useCreateOpsStatus } from "@/hooks/use-ops-status-write";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { LeadershipStrip } from "./LeadershipStrip";
 import { SummaryVersions } from "./SummaryVersions";
 
-// Ярлык статуса — из ЕДИНСТВЕННОГО каталога раздела (`STATUS_LABEL_BY_CODE`,
-// `entities/daily-grid`), свой словарь заводить нельзя. До ревью ветки 22.08
-// эта карта строилась здесь дословной копией — и такие же копии стояли в
-// `LeadershipStrip` и на экране профиля; теперь она одна.
-const IN_SERVICE_LABEL = STATUS_LABEL_BY_CODE.get("IN_SERVICE") ?? "В строю";
+// Ярлык статуса — из СПРАВОЧНИКА СЕРВЕРА (`useOpsStatusTypes`,
+// `/api/operations/status-types/`), свой словарь заводить нельзя. До ревью
+// ветки 22.08 карта строилась здесь дословной копией — и такие же копии
+// стояли в `LeadershipStrip` и на экране профиля; после него копия стала
+// одна, а с Plane №342 её нет вовсе: одна копия расходится со справочником
+// ровно так же, как три, — что и показал 19-й тип, заведённый в админке.
+//
+// Подпись «В строю» на время загрузки справочника — НЕ словарь, а запасной
+// текст одного производного случая: статуса на дату нет, и человек в строю.
+// Печатать вместо него код `IN_SERVICE` значило бы показывать служебную
+// строку там, где справочник ещё едет.
+const IN_SERVICE_FALLBACK = "В строю";
 
 // Цвет пилюли НАМЕРЕННО один на все статусы: каталог несёт только код и
 // подпись, а колонка расхода (`report_column_code`, 11 колонок) и код статуса
@@ -75,10 +82,20 @@ const PAINT_GAP_LINE =
   "Статусы в списке показаны одной пилюлей без цвета: коды статусов раздела и колонки расхода — разные пространства кодов, и раскраска между ними была бы придуманным на фронте словарём; появится бэк-этапом.";
 
 /** Нет активного статуса на дату — не «нет данных», а derived «в строю»
- * (тот же инвариант, что в `use-forces-gathering.ts`). */
-function statusLabel(code: string | null): string {
-  if (code === null) return IN_SERVICE_LABEL;
-  return STATUS_LABEL_BY_CODE.get(code) ?? code;
+ * (тот же инвариант, что в `use-forces-gathering.ts`).
+ *
+ * `labelOf` приходит из справочника: чистая функция от каталога, а не чтение
+ * модульной константы — каталог живёт в запросе и на модульном уровне его
+ * не достать. */
+function statusLabel(
+  code: string | null,
+  labelOf: (code: string) => string,
+  catalogReady: boolean
+): string {
+  if (code === null) {
+    return catalogReady ? labelOf("IN_SERVICE") : IN_SERVICE_FALLBACK;
+  }
+  return labelOf(code);
 }
 
 /** Строка управления для `DivisionGroup`. Экспортируется целиком — тот же
@@ -282,6 +299,11 @@ function DivisionGroup({
     statusByEmployee.set(entry.employee_id, entry.status_type_code);
   }
 
+  // Справочник типов — общий запрос на весь экран (ключ `ops-status-types`
+  // один): раскрытые управления читают уже прогретый кэш, а не ходят за
+  // каталогом каждое своё.
+  const catalog = useOpsStatusTypes(open);
+
   // Кому сейчас проставляют статус: null — окно закрыто. Состояние держит
   // ГРУППА, а не строка таблицы: окно одно на управление, и его состояние не
   // должно жить в каждой из сотен строк.
@@ -439,7 +461,11 @@ function DivisionGroup({
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">
-                          {statusLabel(statusByEmployee.get(Number(person.id)) ?? null)}
+                          {statusLabel(
+                            statusByEmployee.get(Number(person.id)) ?? null,
+                            catalog.labelOf,
+                            !catalog.isLoading
+                          )}
                         </Badge>
                         {/* ПРОСТАНОВКА СТАТУСА (Plane №274, Ш-4). Экрана для
                             этого не было вовсе: доска только показывала

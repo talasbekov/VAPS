@@ -22,7 +22,7 @@ import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
-import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 
 /** Порог уровня должности: `level <= LEADERSHIP_MAX_LEVEL` — «руководство».
@@ -37,10 +37,17 @@ export const LEADERSHIP_MAX_LEVEL = 1;
  * «в строю»: там это инвариант раздела (нет активного статуса = в строю).
  * Для руководства отсутствие статуса называется как есть, а не подразумевает
  * умолчание — блок построен на другом срезе (штатке, не расходе), и
- * додумывать за расход здесь не его дело. */
-function leadershipStatusLabel(code: string | null): string {
+ * додумывать за расход здесь не его дело.
+ *
+ * Подпись кода берётся из СПРАВОЧНИКА раздела (`labelOf`, Plane №342), а не
+ * из константы в коде: типы заводит администратор, и копия каталога не
+ * узнала бы о новом типе никогда — на месте подписи стоял бы голый код. */
+function leadershipStatusLabel(
+  code: string | null,
+  labelOf: (code: string) => string
+): string {
   if (code === null) return "статус не заведён";
-  return STATUS_LABEL_BY_CODE.get(code) ?? code;
+  return labelOf(code);
 }
 
 // Однострочная константа, а не многострочный JSX-текст: JSX схлопывает
@@ -89,6 +96,10 @@ function SkeletonRows() {
 }
 
 export function LeadershipStrip({ businessDate }: { businessDate: string }) {
+  // Подписи статусов — из справочника раздела, одного на весь фронт
+  // (Plane №342).
+  const statusTypes = useOpsStatusTypes();
+
   // Отбор по уровню должности делает СЕРВЕР (Plane №235). До этого полоска
   // звала `useStaffUnitsByDirectorate()` — весь состав подразделения — и
   // отбирала руководство в браузере: десяток строк ценой 2,7 МБ на пяти
@@ -211,7 +222,9 @@ export function LeadershipStrip({ businessDate }: { businessDate: string }) {
                     </p>
                     <p className="text-xs text-muted-foreground">{leader.positionName}</p>
                   </div>
-                  <Badge variant="secondary">{leadershipStatusLabel(statusCode)}</Badge>
+                  <Badge variant="secondary">
+                    {leadershipStatusLabel(statusCode, statusTypes.labelOf)}
+                  </Badge>
                 </div>
               );
             })}

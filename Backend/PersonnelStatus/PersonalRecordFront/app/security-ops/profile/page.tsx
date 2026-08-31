@@ -35,7 +35,7 @@ import {
   LEGAL_DOCUMENT_KIND_LABEL,
   LEGAL_DOCUMENT_STATUS_LABEL,
 } from "@/entities/legal-document";
-import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { STAGE_LABEL } from "@/entities/security-event";
 import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
 import { EMPTY_FILTERS } from "@/entities/operational-rating";
@@ -59,11 +59,12 @@ const TAB_LABEL: Record<ProfileTab, string> = {
   instructions: "Инструкции",
 };
 
-/** Подписи статусов берутся из каталога раздела — одного владельца на все
- * экраны расхода; свой словарь здесь разошёлся бы с сеткой дня. Карта
- * `STATUS_LABEL_BY_CODE` живёт в `entities/daily-grid`: до ревью ветки 22.08
- * она была скопирована сюда и ещё в два места «Ежедневного расхода». */
-const STATUS_LABEL = STATUS_LABEL_BY_CODE;
+/* Подписи статусов берутся из СПРАВОЧНИКА СЕРВЕРА (`useOpsStatusTypes`) —
+ * одного владельца на все экраны расхода. До Plane №342 здесь стояла карта
+ * `STATUS_LABEL_BY_CODE` из `entities/daily-grid`: она сама была копией
+ * серверного каталога, и заведённый в админке тип на этом экране печатался
+ * голым кодом. Хук зовётся в КАЖДОМ из трёх мест, где нужна подпись, — ключ
+ * запроса один, и второго обращения к серверу это не делает. */
 
 /** Цвет отметки в календаре — по СОСТОЯНИЮ строки, а не по её типу: экран не
  * решает, какой статус «важнее», он показывает, что с ним сейчас. */
@@ -325,6 +326,7 @@ function HeroCard({
   statuses: OpsEmployeeStatusRow[];
   statusesLoading: boolean;
 }) {
+  const statusTypes = useOpsStatusTypes();
   // Текущий статус — тот, что ДЕЙСТВУЕТ по мнению сервера (`state`), а не
   // выведенный из дат в браузере: в минусовых зонах «сегодня» разъезжается.
   const active = statuses.find((row) => row.state === "ACTIVE") ?? null;
@@ -369,7 +371,7 @@ function HeroCard({
                     : "bg-primary/10 text-primary-ink"
                 }`}
               >
-                {STATUS_LABEL.get(active.status_type_code) ?? active.status_type_code}
+                {statusTypes.labelOf(active.status_type_code)}
               </span>
             )}
           </div>
@@ -1130,6 +1132,7 @@ function CalendarTab({
 }) {
   // Хуки стоят ДО раннего выхода на загрузке — иначе между рендерами
   // разъезжается их порядок.
+  const { labelOf } = useOpsStatusTypes();
   const [cursor, setCursor] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -1140,7 +1143,7 @@ function CalendarTab({
       [
         ...statuses.map((row) => ({
           key: `status-${row.id}`,
-          title: STATUS_LABEL.get(row.status_type_code) ?? row.status_type_code,
+          title: labelOf(row.status_type_code),
           from: row.date_start,
           to: row.date_end,
           state: row.state,
@@ -1155,7 +1158,7 @@ function CalendarTab({
           note: "",
         })),
       ].sort((a, b) => b.from.localeCompare(a.from)),
-    [statuses, shifts]
+    [statuses, shifts, labelOf]
   );
 
   // Сетка месяца: дню приписаны СОСТОЯНИЯ покрывающих его периодов — те же
@@ -1346,6 +1349,7 @@ function StatsTab({
   assignments: MyAssignment[];
   loading: boolean;
 }) {
+  const { labelOf } = useOpsStatusTypes();
   const distribution = useMemo(() => {
     // Считаются ДНИ статуса, а не строки: неделя отпуска и день отпуска — не
     // одно и то же, а строк у них поровну. Отменённые не учитываются: они
@@ -1356,13 +1360,13 @@ function StatsTab({
       const from = new Date(`${row.date_start}T00:00:00Z`).getTime();
       const to = new Date(`${row.date_end}T00:00:00Z`).getTime();
       const span = Math.max(1, Math.round((to - from) / 86_400_000) + 1);
-      const label = STATUS_LABEL.get(row.status_type_code) ?? row.status_type_code;
+      const label = labelOf(row.status_type_code);
       days.set(label, (days.get(label) ?? 0) + span);
     }
     const rows = [...days.entries()].sort((a, b) => b[1] - a[1]);
     const total = rows.reduce((sum, [, value]) => sum + value, 0);
     return { rows, total };
-  }, [statuses]);
+  }, [statuses, labelOf]);
 
   const posts = useMemo(() => {
     const counts = new Map<string, number>();
