@@ -555,11 +555,32 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     const row = rows.filter({ has: page.getByRole('link', { name: '→ Сбор сил' }) })
     await expect(row).toHaveCount(1)
     await expect(row.getByText(CAPTION, { exact: true })).toBeVisible()
-    // Участие «в группе» — тот же вид работы и та же ссылка. Раньше условие
-    // знало ОДИН код, и привлечённый группой оставался вовсе без неё.
+    // 🔴 ПИН ПОДПИСИ ПОДНЯТ ОСОЗНАННО (Plane №366). Здесь стояло «Участие в
+    // ОМ» — литерал, который клиент печатал САМ веточкой на два кода
+    // (`describeStatus` в `status-table.tsx`), одинаково для наряда и для
+    // боевой группы. Веточка снята: подпись приходит из справочника, а он эти
+    // два вида различает («…(наряд)» и «…(боевая группа)») — как их различает
+    // и сам заказчик, который справочник и правит.
+    //
+    // Ожидание берётся ИЗ СПРАВОЧНИКА, а не вписывается строкой: заказчик
+    // вправе переименовать тип в админке завтра, и пин обязан краснеть на
+    // поломке вывода, а не на переименовании. Ссылка «→ Сбор сил» по-прежнему
+    // проверена ВЫШЕ и по-прежнему стоит у обоих кодов — «тот же вид работы»
+    // держится предикатом по коду, а не совпадением подписей.
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const catalog = (await (
+      await fetch(`${API}/api/statuses/types/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as Array<{ code: string; label: string }>
+    const assignmentLabel = catalog.find((item) => item.code === EVENT_ASSIGNMENT)?.label
+    expect(
+      assignmentLabel,
+      `в справочнике нет кода ${EVENT_ASSIGNMENT} — сверять подпись не с чем`,
+    ).toBeTruthy()
     await expect(
-      row.getByText('Участие в ОМ', { exact: true }),
-      'подпись статуса общая для обоих видов участия',
+      row.getByText(assignmentLabel!, { exact: true }),
+      'подпись статуса разошлась со справочником — вывод снова печатает свой литерал',
     ).toBeVisible()
   })
 

@@ -39,9 +39,9 @@ import { apiClient } from "@/lib/api";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   getEmployeeStatusColor,
-  getEmployeeStatusLabel,
   getEmployeeStatusPaint,
 } from "@/lib/status";
+import { useStatusNaming } from "@/entities/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import {
   removeDutyAssignment,
@@ -84,6 +84,8 @@ export function EditStatusDialog({
   employeePosition,
   employeeDepartment,
 }: EditStatusDialogProps) {
+  // Подписи статусов — из справочника (Plane №366).
+  const naming = useStatusNaming();
   const {
     control,
     register,
@@ -170,7 +172,12 @@ export function EditStatusDialog({
 
       if (emp?.current_status) {
         const current = emp.current_status;
-        setValue("status", getEmployeeStatusLabel(current.status_type, ""));
+        // Подпись действующего статуса — из справочника (Plane №366): окно
+        // подставляет её в поле выбора, а выбор собран из того же каталога.
+        // Пока подпись бралась из таблицы тринадцати кодов, окно, открытое у
+        // человека с ОМ-статусом, показывало ПУСТОЕ поле — то есть предлагало
+        // проставить статус тому, у кого он есть.
+        setValue("status", naming.labelOf(current.status_type, ""));
         // Если передан initialStartDate (для планирования), используем его
         if (initialStartDate) {
           setValue("startDate", initialStartDate);

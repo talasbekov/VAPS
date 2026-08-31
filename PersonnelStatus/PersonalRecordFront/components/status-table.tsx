@@ -9,14 +9,12 @@ import { Pager } from "@/components/pager";
 import { DivisionPicker } from "@/components/division-picker";
 import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
 import {
-  EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_ITEMS,
   UNKNOWN_STATUS_PAINT,
   getEmployeeStatusColor,
-  getEmployeeStatusLabel,
-  getFormattedEmployeeStatus,
 } from "@/lib/status";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
+import { useStatusNaming, type StatusNaming } from "@/entities/status";
 import {
   Table,
   TableBody,
@@ -102,26 +100,30 @@ interface Employee {
 }
 
 /**
- * Текст статуса + его сырой код. «Участие в ОМ» (`EVENT_ASSIGNMENT`) — код
- * справочника operations («Сбор сил на ОМ»), эта ручка его не знает вовсе:
- * `getFormattedEmployeeStatus` прочитал бы его как «Не обновлено» — то есть
- * спутал бы «статус ЕСТЬ, просто из другого каталога» с «статуса нет
- * вовсе». В реальном ответе `staff-units/directorate/` такого кода не бывает
- * (модель `EmployeeStatus.StatusType` его не содержит) — веточка нужна
- * только затем, чтобы не соврать, если он всё же придёт.
+ * Текст статуса + его сырой код.
+ *
+ * Подпись спрашивается у СПРАВОЧНИКА (`useStatusNaming`, Plane №366): каталог
+ * типов правится в админке, и код, заведённый заказчиком, обязан подписываться
+ * сам, без правки клиента.
+ *
+ * 🔴 ЗДЕСЬ СТОЯЛА ВЕТОЧКА НА ДВА КОДА ОМ, и её снятие — половина смысла правки.
+ * Она подписывала `EVENT_ASSIGNMENT` и `EVENT_ASSIGNMENT_GROUP` строкой
+ * «Участие в ОМ» руками — то есть закрывала два кода из пяти новых и только на
+ * этом экране. Три остальных (`IN_EVENT`, `GEV`, `BEFORE_DUTY`) читались как
+ * «Не обновлено» здесь и всюду; жалоба заказчика по №365 пришла ровно про
+ * `IN_EVENT`. Дописывать коды в веточку значило бы держать четвёртую копию
+ * каталога — теперь подпись у всех пяти приходит оттуда же, откуда список в
+ * окне простановки.
  */
 function describeStatus(
   // `any`: вызывающие берут `emp`/`employee` из ответа API тем же способом
-  // (`(unit as any).employee`) — своя строгая форма здесь разошлась бы с
-  // `EmployeeStatusType`, который код `EVENT_ASSIGNMENT` в принципе не
-  // содержит (см. комментарий выше).
-  emp: any
+  // (`(unit as any).employee`), и своя строгая форма здесь разошлась бы с
+  // `EmployeeStatusType` — тот кодов справочника не содержит.
+  emp: any,
+  naming: StatusNaming
 ): { text: string; code: string | null } {
   const code = emp?.current_status?.status_type ?? null;
-  if (code !== null && EVENT_PARTICIPATION_STATUS_CODES.has(code)) {
-    return { text: "Участие в ОМ", code };
-  }
-  return { text: getFormattedEmployeeStatus(emp), code };
+  return { text: naming.formatEmployee(emp), code };
 }
 
 interface StatusTableProps {
@@ -303,6 +305,9 @@ export function StatusTable({
   // таблицы адресует сотрудника ключом `${staffUnitId}-${employeeId}`, а
   // участия приходят по числовому id — отсюда разбор ключа в `eventsOf`.
   const sectionStatuses = useOpsSectionStatuses();
+  // Подписи статусов — из справочника (Plane №366): иначе тип, заведённый
+  // заказчиком в админке, читается как «Не обновлено».
+  const naming = useStatusNaming();
   const departmentId =
     departmentFilter === "all" ? undefined : Number(departmentFilter) || undefined;
 
@@ -349,7 +354,7 @@ export function StatusTable({
           const status = emp?.current_status;
 
           // Используем форматированный статус с учетом local_status для прикомандированных
-          const { text: statusText, code: statusCode } = describeStatus(emp);
+          const { text: statusText, code: statusCode } = describeStatus(emp, naming);
 
           let priority: "normal" | "high" | "critical" = "normal";
           if (!status) {
@@ -384,7 +389,7 @@ export function StatusTable({
         const status = employee.current_status;
 
         // Используем форматированный статус с учетом local_status для прикомандированных
-        const { text: statusText, code: statusCode } = describeStatus(employee);
+        const { text: statusText, code: statusCode } = describeStatus(employee, naming);
 
         let priority: "normal" | "high" | "critical" = "normal";
         if (!status) {
@@ -428,7 +433,7 @@ export function StatusTable({
     });
 
     return result;
-  }, [data]);
+  }, [data, naming]);
 
   // Отделы для фильтра — из статистики подразделения, а не из показанной
   // страницы: на странице пятьдесят строк, и список сузился бы до тех отделов,
@@ -559,7 +564,7 @@ export function StatusTable({
     // и дату найма, и карточка с этого экрана выглядела беднее той же
     // карточки с соседнего.
     const employeeProfile: EmployeeType = {
-      ...personnelFields(emp),
+      ...personnelFields(emp, naming),
       number: employee.number,
       position: employee.position,
       department: employee.department,
@@ -620,16 +625,21 @@ export function StatusTable({
     };
   });
 
-  const getStatusBadge = (status: string) => {
-    if (status === "Не обновлено") {
-      // Не отдельный литерал: тот же серый, что и у любого нераспознанного
-      // кода (`UNKNOWN_STATUS_PAINT`) — один источник, а не вторая копия.
+  // Цвет и значок берутся ПО КОДУ, а не по подписи (Plane №366). Раньше код
+  // добывался обратным поиском по русскому тексту
+  // (`EMPLOYEE_STATUS_CODE_BY_LABEL[status]`), и это работало ровно до первого
+  // типа из справочника: у «Участие в ОМ» в таблице подписей строки нет, поиск
+  // отдавал `undefined`, и статус красился серым «как неизвестный», даже когда
+  // подпись у него уже была правильная.
+  const getStatusBadge = (status: string, code: string | null) => {
+    if (!code) {
+      // Статуса НЕТ вовсе (вакансия, никто не отмечал) — тот же серый, что у
+      // нераспознанного кода: один источник, а не вторая копия.
       return <Badge className={UNKNOWN_STATUS_PAINT.badge}>{status}</Badge>;
     }
 
     const statusType = statusTypes.find((s) => s.value === status);
-    const code = EMPLOYEE_STATUS_CODE_BY_LABEL[status];
-    const colorClass = statusType?.color ?? getEmployeeStatusColor(code);
+    const colorClass = naming.colorOf(code);
 
     if (!statusType) {
       return <Badge className={colorClass}>{status}</Badge>;
@@ -861,7 +871,7 @@ export function StatusTable({
                       её в одну строку через всю таблицу вместо переноса. */}
                   <TableCell className="whitespace-normal">
                     {isVacancyRow(employee) ? (
-                      getStatusBadge(employee.status)
+                      getStatusBadge(employee.status, employee.statusCode)
                     ) : (
                       <div className="flex flex-col items-start gap-1">
                         <button
@@ -870,7 +880,7 @@ export function StatusTable({
                           title="Открыть статусы сотрудника"
                           className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:opacity-80"
                         >
-                          {getStatusBadge(employee.status)}
+                          {getStatusBadge(employee.status, employee.statusCode)}
                         </button>
                       </div>
                     )}

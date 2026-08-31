@@ -19,7 +19,6 @@ import Link from "next/link";
 import { PermissionGate } from "@/lib/auth";
 import { formatIsoDateLong } from "@/shared/lib/date";
 import {
-  EMPLOYEE_STATUS_CODE_BY_LABEL,
   getEmployeeStatusColor,
 } from "@/lib/status";
 import type { OpsStatusParticipation } from "@/lib/api";
@@ -41,15 +40,16 @@ export function EmployeeProfile({
   onClose,
   events = [],
 }: EmployeeProfileProps) {
-  const getStatusBadge = (status: string) => {
-    if (status === "Не обновлено") {
+  // Цвет — ПО КОДУ строки, а не обратным поиском по русской подписи
+  // (Plane №366). Поиск «подпись → код» работал ровно до первого типа из
+  // справочника: у «Участие в ОМ» строки в таблице подписей нет, поиск отдавал
+  // `undefined`, и статус красился серым, как неизвестный.
+  const getStatusBadge = (status: string, code: string | null) => {
+    if (!code) {
       return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
     }
 
-    const code = EMPLOYEE_STATUS_CODE_BY_LABEL[status];
-    const colorClass = getEmployeeStatusColor(code);
-
-    return <Badge className={colorClass}>{status}</Badge>;
+    return <Badge className={getEmployeeStatusColor(code as never)}>{status}</Badge>;
   };
 
   // 🔴 Здесь лежали три набора выдуманных данных — «История изменения
@@ -83,7 +83,7 @@ export function EmployeeProfile({
                     : `${employee.rank} · ${employee.position}`}
                 </p>
                 <div className="flex items-center space-x-2 mt-2">
-                  {getStatusBadge(employee.status)}
+                  {getStatusBadge(employee.status, employee.statusCode)}
                   {employee.personnelNumber !== "" && (
                     <Badge variant="outline">
                       Табельный № {employee.personnelNumber}
