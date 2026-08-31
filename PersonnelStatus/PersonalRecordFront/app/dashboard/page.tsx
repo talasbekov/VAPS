@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { modulePermissionsOf } from "@/entities/portal-access";
 import { PageHeader } from "@/components/page-header";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { StatusOverview } from "@/widgets/status-overview";
@@ -15,6 +18,18 @@ import {
 } from "@/hooks/use-absence-statistics";
 
 export default function DashboardPage() {
+  // ГЕЙТ ПО ПРАВАМ РАЗДЕЛА (Plane №352, Ш-1). Экран был открыт каждому
+  // вошедшему: видимость решало только меню, а прямой адрес пускал любого.
+  // Спрятанный пункт при открытом экране — не разграничение прав, а его
+  // видимость. Право спрашивается из той же карты, по которой меню решает,
+  // показывать ли пункт.
+  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
+    useOpsPermissions();
+  const allowed = modulePermissionsOf("/dashboard").some((code) =>
+    hasOpsPermission(code)
+  );
+
+
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(
     null
   );
@@ -33,6 +48,15 @@ export default function DashboardPage() {
     error: statsError,
     refetch: refetchStats,
   } = useAbsenceStatistics();
+
+  // Отказ рисуется ПОСЛЕ всех хуков (правило хуков React): ранний возврат
+  // выше по функции пропускал бы `useState`/`useEffect` при смене прав, и
+  // React падал бы на «rendered fewer hooks than expected». Запросы при этом
+  // всё равно уходят и получают свои 403 — так же ведут себя все экраны
+  // раздела с `OpsAccessDenied`.
+  if (!opsPermissionsLoading && !allowed) {
+    return <OpsAccessDenied what="обзора организации" />;
+  }
 
   return (
     <DashboardLayout>

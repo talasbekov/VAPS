@@ -11,7 +11,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth, ROLES } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { modulePermissionOf } from "@/entities/portal-access";
+import { modulePermissionsOf } from "@/entities/portal-access";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -63,20 +63,21 @@ type NavItem = {
   name: string;
   href: string;
   icon: LucideIcon;
-  // Портальные экраны гейтятся парой resource/action (права хоста,
-  // `lib/auth.tsx`). У экранов РАЗДЕЛА ОМ право не пишется здесь: оно берётся
-  // по адресу из `entities/portal-access`, того же источника, из которого его
-  // берёт гейт самой страницы.
+  // Право пункта здесь НЕ пишется: оно берётся по адресу из
+  // `entities/portal-access` — того же источника, из которого его берёт гейт
+  // самой страницы.
   //
-  // 🔴 ПРАВИЛО ИЗМЕНИЛОСЬ 31.08.2026 (Plane №350, решение заказчика). Раньше
-  // тут стояло «прав у пунктов ОМ нет намеренно: их считают сами страницы, и
-  // дублировать решение в меню значило бы завести вторую правду о видимости».
-  // Довод был верным, а вывод — нет: под ролью «Сотрудник» в меню оставалось
-  // десять пунктов из шестнадцати, каждый из которых отвечает «Доступ закрыт»,
-  // и заказчик прочитал это как сломанную систему. Второй правды при этом не
-  // появилось — появился ОДИН источник на меню и на страницу.
-  resource?: string;
-  action?: string;
+  // 🔴 ПРАВИЛО ИЗМЕНИЛОСЬ ДВАЖДЫ ЗА ДЕНЬ, и оба раза по решению заказчика.
+  // 31.08.2026, Plane №350: раньше тут стояло «прав у пунктов ОМ нет
+  // намеренно: их считают сами страницы, и дублировать решение в меню значило
+  // бы завести вторую правду о видимости». Довод был верным, вывод — нет: под
+  // ролью «Сотрудник» в меню оставалось десять пунктов из шестнадцати, каждый
+  // отвечал «Доступ закрыт», и это читается как сломанная система. Второй
+  // правды не появилось — появился ОДИН источник на меню и на страницу.
+  // 31.08.2026, Plane №352: пара `resource`/`action` (права зашитой
+  // портальной роли из `lib/auth.tsx`) снята вовсе. Заказчик потребовал
+  // работать по семи ролям, а они живут в каталоге РАЗДЕЛА; портальные пункты
+  // теперь спрашивают его же.
   // Адреса, на которых пункт тоже подсвечивается. Нужен там, где у одного
   // экрана два входа: «Обратная связь» отрисована на /feedback, но открывается
   // и по /security-ops/feedback (реализация одна, адреса два).
@@ -101,11 +102,11 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
     title: "Ежедневный расход",
     items: [
       { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
-      { name: "Обзор", href: "/dashboard", icon: BarChart3, resource: "organization", action: "read" },
-      { name: "Статусы сотрудников", href: "/statuses", icon: Shield, resource: "statuses", action: "read" },
-      { name: "Сбор сил на ОМ", href: "/employees", icon: Users, resource: "employees", action: "read" },
+      { name: "Обзор", href: "/dashboard", icon: BarChart3 },
+      { name: "Статусы сотрудников", href: "/statuses", icon: Shield },
+      { name: "Сбор сил на ОМ", href: "/employees", icon: Users },
       { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
-      { name: "Ежедневный отчет", href: "/reports", icon: FileText, resource: "reports", action: "read" },
+      { name: "Ежедневный отчет", href: "/reports", icon: FileText },
     ],
   },
   {
@@ -355,12 +356,14 @@ export function Sidebar() {
     ...category,
     items: category.items.filter((item) => {
       if (user === null) return true;
-      if (item.resource !== undefined) {
-        return hasPermission(item.resource, item.action ?? "read");
-      }
-      const required = modulePermissionOf(item.href);
-      if (required === null || opsPermissionsLoading) return true;
-      return hasOpsPermission(required);
+      // ПОРТАЛЬНЫХ ПРАВ БОЛЬШЕ НЕТ (Plane №352, Ш-1). Раньше здесь стояла
+      // ветка `item.resource` — набор ресурсов зашитой портальной роли из
+      // `lib/auth.tsx`. Заказчик потребовал работать по семи ролям, а они
+      // живут в каталоге РАЗДЕЛА, поэтому и портальные пункты спрашивают
+      // раздел. Одна дорога вместо двух.
+      const required = modulePermissionsOf(item.href);
+      if (required.length === 0 || opsPermissionsLoading) return true;
+      return required.some((code) => hasOpsPermission(code));
     }),
   })).filter((category) => category.items.length > 0);
 

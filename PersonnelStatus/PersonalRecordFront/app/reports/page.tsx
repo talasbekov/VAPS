@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { modulePermissionsOf } from "@/entities/portal-access";
 import {
   Card,
   CardContent,
@@ -55,6 +58,16 @@ export default function ReportsPage() {
   // а не одним флагом на всю карточку: общий флаг гасил бы кнопки всех строк.
   const [exportingId, setExportingId] = useState<number | null>(null);
   const { toast } = useToast();
+
+  // ГЕЙТ ПО ПРАВАМ РАЗДЕЛА (Plane №352, Ш-1). Экран был открыт каждому
+  // вошедшему: видимость решало только меню, а прямой адрес пускал любого.
+  // Право спрашивается из той же карты, по которой меню решает, показывать ли
+  // пункт, — иначе спрятанный пункт и открытый экран разойдутся.
+  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
+    useOpsPermissions();
+  const allowed = modulePermissionsOf("/reports").some((code) =>
+    hasOpsPermission(code)
+  );
 
   const dateStr = date ? format(date, "yyyy-MM-dd") : undefined;
 
@@ -114,6 +127,13 @@ export default function ReportsPage() {
       setExportingId(null);
     }
   };
+
+  // Отказ — ПОСЛЕ всех хуков (правило хуков React): ранний возврат выше
+  // пропускал бы хуки при смене прав, и React падал бы на «rendered fewer
+  // hooks than expected».
+  if (!opsPermissionsLoading && !allowed) {
+    return <OpsAccessDenied what="ежедневного отчёта" />;
+  }
 
   return (
     <DashboardLayout>

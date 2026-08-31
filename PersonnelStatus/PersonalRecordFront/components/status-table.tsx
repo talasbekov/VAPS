@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect} from "react";
 import Link from "next/link";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
-import { useAuth } from "@/lib/auth";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { Pager } from "@/components/pager";
 import { DivisionPicker } from "@/components/division-picker";
@@ -262,8 +262,10 @@ export function StatusTable({
   // ИСКЛЮЧЕНИЕ — меню строки: там пустое место читается как «кнопку забыли»,
   // и вместо него ставится строка с причиной (то же правило, что у вакансии
   // ниже).
-  const { hasPermission } = useAuth();
-  const canEdit = hasPermission("statuses", "update");
+  // Право РАЗДЕЛА (Plane №352, Ш-1): портальный набор `statuses/update` снят
+  // вместе со старой системой ролей.
+  const { hasPermission: hasOpsPermission } = useOpsPermissions();
+  const canEdit = hasOpsPermission("status.manage");
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");

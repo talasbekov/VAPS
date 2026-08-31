@@ -23,6 +23,24 @@
  */
 export const MODULE_PERMISSION = {
   "/security-ops/profile": null,
+  // ── Портальные модули (Plane №352, Ш-1) ─────────────────────────────────
+  //
+  // Раньше их видимость решал набор ресурсов зашитой портальной роли
+  // (`lib/auth.tsx`, шесть ролей), а не права человека. Заказчик потребовал
+  // «всё старое искоренить, работать по семи ролям», и семь его ролей живут в
+  // каталоге РАЗДЕЛА — значит и портальные пункты обязаны спрашивать раздел.
+  //
+  // Новых кодов не заведено: все четыре модуля ложатся на существующие права.
+  // Заводить `dashboard.view` рядом с `orgstructure.view` значило бы завести
+  // второе имя для одного и того же права.
+  "/dashboard": "orgstructure.view",
+  "/statuses": "status.view",
+  // Сбор сил открывают ТРИ права, а не одно: делит потребность
+  // (`forces.command`), оповещает управления (`forces.allocate`) и выделяет
+  // людей (`forces.select`) — это три разные роли на одном экране, и
+  // требовать одно право значило бы закрыть его двум из трёх.
+  "/employees": ["forces.command", "forces.allocate", "forces.select"],
+  "/reports": "daily_report.generate",
   "/security-ops/command-center": "event.view",
   "/security-ops/analytics": "analytics.view",
   "/security-ops/objects": "object.view",
@@ -44,16 +62,21 @@ export const MODULE_PERMISSION = {
   // состояние, которое и читается как «система сломана».
   "/security-ops/changelog": "settings.view",
   "/feedback": "feedback.view",
-} as const satisfies Record<string, string | null>;
+} as const satisfies Record<string, string | readonly string[] | null>;
 
 export type ModuleHref = keyof typeof MODULE_PERMISSION;
 
 /**
- * Право пункта по его адресу. Неизвестный адрес — `null` («права не
- * требует»), а НЕ отказ: пункт, забытый в таблице, должен вести себя как
- * прежде и быть виден, иначе правка карты молча уносит модуль из меню у всех.
- * Забытый пункт ловит проба сверки, а не пустое меню у живого человека.
+ * Права пункта по его адресу — СПИСОК, потому что модуль может открываться
+ * любым из нескольких прав. Пустой список = «права не требует».
+ *
+ * Неизвестный адрес — тоже пустой список, а НЕ отказ: пункт, забытый в
+ * таблице, должен вести себя как прежде и быть виден, иначе правка карты
+ * молча уносит модуль из меню у всех. Забытый пункт ловит проба сверки, а не
+ * пустое меню у живого человека.
  */
-export function modulePermissionOf(href: string): string | null {
-  return (MODULE_PERMISSION as Record<string, string | null>)[href] ?? null;
+export function modulePermissionsOf(href: string): readonly string[] {
+  const value = (MODULE_PERMISSION as Record<string, string | readonly string[] | null>)[href];
+  if (value === undefined || value === null) return [];
+  return typeof value === "string" ? [value] : value;
 }

@@ -17,15 +17,27 @@ import { directorateDenial } from "@/hooks/use-staff-units-by-directorate"
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page"
 import { useQueryClient } from "@tanstack/react-query"
 import { SecondmentRequestsDialog } from "@/features/secondment-requests/ui/SecondmentRequestsDialog";
-import { useAuth } from "@/lib/auth";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { modulePermissionsOf } from "@/entities/portal-access";
 
 export default function StatusesPage() {
   // Роль-наблюдатель (Plane №348): «видит своё управление, но без возможности
   // редактирования». Управляющие элементы ей не показываются — обещание
   // действия, которое сервер отклонит, хуже их отсутствия. «Экспорт» остаётся:
   // это чтение.
-  const { hasPermission } = useAuth()
-  const canEdit = hasPermission("statuses", "update")
+  //
+  // ПРАВО ТЕПЕРЬ РАЗДЕЛА, А НЕ ПОРТАЛА (Plane №352, Ш-1): было
+  // `hasPermission("statuses", "update")` из зашитого набора портальной роли.
+  // Семь ролей заказчика живут в каталоге раздела, и портальный набор их не
+  // знает вовсе — под ними экран был бы либо целиком правимым, либо целиком
+  // закрытым, смотря какая портальная роль досталась учётке.
+  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
+    useOpsPermissions()
+  const canEdit = hasOpsPermission("status.manage")
+  const allowed = modulePermissionsOf("/statuses").some((code) =>
+    hasOpsPermission(code)
+  )
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
   const queryClient = useQueryClient()
 
@@ -75,6 +87,11 @@ export default function StatusesPage() {
   // Причина отказа передаётся заглушке: 403 и 400 чинятся разными людьми
   // (Plane №329).
   const denial = directorateDenial(queryError)
+  // Отказ — ПОСЛЕ всех хуков (правило хуков React).
+  if (!opsPermissionsLoading && !allowed) {
+    return <OpsAccessDenied what="статусов сотрудников" />
+  }
+
   if (denial) {
     return (
       <DashboardLayout>

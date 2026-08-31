@@ -35,7 +35,10 @@ import {
   Building2,
   Calendar,
 } from "lucide-react";
-import { useAuth, PermissionGate } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { modulePermissionsOf } from "@/entities/portal-access";
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice";
 import {
   directorateDenial,
@@ -255,7 +258,13 @@ function EmployeesScreen() {
   // подразделения (вкладки сбора сил) или хватит страницы (Plane №228).
   const [activeTab, setActiveTab] = useState("table");
   const queryClient = useQueryClient();
-  const { user, hasPermission } = useAuth();
+  // `user` остаётся ради подразделения человека (подпись и отбор «своё»);
+  // ПРАВА теперь спрашиваются у раздела (Plane №352, Ш-1).
+  const { user } = useAuth();
+  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
+    useOpsPermissions();
+  const allowedCodes = modulePermissionsOf("/employees");
+  const allowed = allowedCodes.some((code) => hasOpsPermission(code));
 
   // ── Страница вместо всего состава (Plane №228) ──────────────────────
   //
@@ -465,9 +474,15 @@ function EmployeesScreen() {
     [gathering.inService]
   );
 
-  const canSeeAll = hasPermission("employees", "read");
+  // Кто ведёт сбор сил по всей области (`forces.command` — деление
+  // потребности, `forces.allocate` — оповещение управлений), тот видит состав
+  // целиком; кто только выделяет людей (`forces.select`) — своё подразделение.
+  // Прежние `employees/read` и `employees/read-department` были ровно этим же
+  // делением, но в зашитом наборе портальной роли.
+  const canSeeAll =
+    hasOpsPermission("forces.command") || hasOpsPermission("forces.allocate");
 
-  const canSeeOwnDepartment = hasPermission("employees", "read-department");
+  const canSeeOwnDepartment = hasOpsPermission("forces.select");
 
   // ПРАВА — единственный отбор, оставшийся на клиенте (Plane №228). Поиск,
   // отдел и статус теперь считает сервер: клиентский поиск по загруженной
@@ -615,7 +630,12 @@ function EmployeesScreen() {
   // привязана к подразделению» чинятся разными людьми (Plane №329).
   const denial = directorateDenial(queryError);
   if (denial) {
-    return (
+    // Отказ — ПОСЛЕ всех хуков (правило хуков React).
+  if (!opsPermissionsLoading && !allowed) {
+    return <OpsAccessDenied what="сбора сил на ОМ" />;
+  }
+
+  return (
       <DashboardLayout>
         <DirectorateAccessNotice denial={denial} reason={error} />
       </DashboardLayout>
@@ -950,8 +970,9 @@ function EmployeesScreen() {
               {/* Выгрузка — ТОГО ОТБОРА, что показан в реестре. На вкладке
                   «Заявки» она выгрузила бы список людей, которого человек в
                   этот момент не видит. */}
-              {activeTab !== "requests" && activeTab !== "collections" && (
-                <PermissionGate resource="employees" action="read">
+              {activeTab !== "requests" &&
+                activeTab !== "collections" &&
+                canSeeAll && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -961,8 +982,7 @@ function EmployeesScreen() {
                     <Download className="h-4 w-4 mr-2" />
                     {exporting ? "Собираем файл…" : "Экспорт CSV"}
                   </Button>
-                </PermissionGate>
-              )}
+                )}
             </div>
           </div>
 
