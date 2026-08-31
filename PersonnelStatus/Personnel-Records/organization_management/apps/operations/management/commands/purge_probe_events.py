@@ -12,6 +12,15 @@
     python manage.py purge_probe_events                # что будет удалено
     python manage.py purge_probe_events --yes          # удалить
     python manage.py purge_probe_events --marker '(e2e)' --yes
+    python manage.py purge_probe_events --orphans-only --yes   # только сироты
+
+УБОРКА ТЕПЕРЬ ПОЛНАЯ (Plane №346). Раньше команда сносила МЕРОПРИЯТИЯ, а
+участия на них оставались ссылаться в пустоту: ссылка плоская, каскада нет.
+Каждый прогон добавлял партию сирот, и к 31.08.2026 их накопилось 1135 при 14
+живых участиях. Теперь после удаления мероприятий команда добирает участия на
+них, а `--orphans-only` вычищает накопленное за все прошлые прогоны — в том
+числе сирот от мероприятий, удалённых не этой командой (teardown смоука,
+кнопка в реестре).
 """
 
 from django.core.management.base import BaseCommand
@@ -19,6 +28,10 @@ from django.core.management.base import BaseCommand
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops import security_events as event_service
+from organization_management.apps.operations.status_cleanup import (
+    find_orphan_participations,
+    purge_orphan_participations,
+)
 
 #: Метка пробной строки. Не «Проба» и не «test»: подстрока «Проба» встречается
 #: в осмысленных названиях («Проба сил перед визитом» — живое мероприятие),
@@ -54,8 +67,19 @@ class Command(BaseCommand):
             default="purge_probe_events",
             help="Подпись в журнале мутаций.",
         )
+        parser.add_argument(
+            "--orphans-only",
+            action="store_true",
+            help=(
+                "Не трогать реестр ОМ вовсе — вычистить только участия, "
+                "чьё мероприятие уже удалено (накопленное прошлыми прогонами)."
+            ),
+        )
 
     def handle(self, *args, **options):
+        if options["orphans_only"]:
+            self._orphans(options["yes"], event_ids=None)
+            return
         marker = options["marker"]
         rows = list(
             OpsSecurityEvent.objects.filter(title__contains=marker).order_by("pk")
@@ -86,6 +110,7 @@ class Command(BaseCommand):
         # строк попадаются закрытые и проведённые, и падать на первой из них
         # значило бы оставить остальные двести.
         kept = []
+        touched = []
         for event in rows:
             try:
                 event_service.delete_event(
@@ -95,8 +120,33 @@ class Command(BaseCommand):
                 kept.append((event.code, refusal.message))
                 continue
             deleted += 1
+            touched.append(event.pk)
         self.stdout.write(self.style.SUCCESS(f"Удалено: {deleted}"))
         if kept:
             self.stdout.write(f"Оставлено (сервер отказал): {len(kept)}")
             for code, why in kept[:20]:
                 self.stdout.write(f"  {code}: {why}")
+        # Участия удалённых мероприятий — вторая половина той же уборки, а не
+        # «заодно»: без неё команда каждым запуском ПРОИЗВОДИТ сирот.
+        if touched:
+            self._orphans(True, event_ids=touched)
+
+    def _orphans(self, apply_it: bool, event_ids: list[int] | None) -> None:
+        """Сироты: показать либо снести. Область — либо только что удалённые
+        мероприятия, либо весь накопленный мусор (`event_ids=None`)."""
+        if not apply_it:
+            found = find_orphan_participations(event_ids)
+            self.stdout.write(f"Участий, чьё мероприятие удалено: {found.count()}")
+            self.stdout.write(
+                self.style.WARNING(
+                    "Сухой прогон. Для удаления повторите команду с --yes."
+                )
+            )
+            return
+        result = purge_orphan_participations(event_ids)
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Снято участий-сирот: {result.participations}; "
+                f"статусов, державшихся только ими: {result.statuses}"
+            )
+        )

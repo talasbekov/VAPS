@@ -40,22 +40,34 @@ const BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
 const BACKEND_PYTHON = path.join(BACKEND_ROOT, '.venv/bin/python')
 const DJANGO_SETTINGS = 'organization_management.config.settings.local_postgres'
 
-/** Снимает то, что API отдать отказался; null — бэкенда рядом нет. */
-async function purgeStubborn(): Promise<string | null> {
+/** Запуск purge_probe_events с нужными ключами; null — бэкенда рядом нет. */
+async function runPurge(extra: string[]): Promise<string | null> {
   if (!existsSync(BACKEND_PYTHON)) return null
   const { stdout } = await execFileAsync(
     BACKEND_PYTHON,
-    [
-      'manage.py',
-      'purge_probe_events',
-      '--yes',
-      '--force',
-      `--settings=${DJANGO_SETTINGS}`,
-    ],
+    ['manage.py', 'purge_probe_events', ...extra, `--settings=${DJANGO_SETTINGS}`],
     { cwd: BACKEND_ROOT, timeout: 120_000 },
   )
   const lines = stdout.trim().split('\n').filter((line) => line.trim() !== '')
   return lines[lines.length - 1] ?? ''
+}
+
+/** Снимает то, что API отдать отказался; null — бэкенда рядом нет. */
+async function purgeStubborn(): Promise<string | null> {
+  return runPurge(['--yes', '--force'])
+}
+
+/** Участия, чьё мероприятие уже снесено (Plane №346).
+ *
+ * 🔴 ЗАЧЕМ ОТДЕЛЬНЫМ ШАГОМ И ВСЕГДА. Ссылка участия на мероприятие плоская,
+ * каскада нет: сколько ОМ ни снеси через API, участия на них останутся
+ * ссылаться в пустоту. Раньше добивание звалось ТОЛЬКО когда API кому-то
+ * отказал (`refused > 0`) — то есть в самом частом случае, когда всё снялось
+ * штатно, уборка сирот не звалась вовсе, и каждый прогон добавлял партию. К
+ * 31.08.2026 накопилось 1135 сирот при 14 живых участиях, и проба
+ * `tables-data.spec.ts:289` краснела на каждом полном прогоне. */
+async function purgeOrphanParticipations(): Promise<string | null> {
+  return runPurge(['--orphans-only', '--yes'])
 }
 
 export default async function globalTeardown(): Promise<void> {
@@ -121,28 +133,47 @@ export default async function globalTeardown(): Promise<void> {
   const { dropped, refused } = await dropProbeEvents(token)
   if (refused === 0) {
     console.log(`уборка пробных ОМ: снято ${dropped}`)
-    return
-  }
-  try {
-    const purged = await purgeStubborn()
-    if (purged === null) {
+  } else {
+    try {
+      const purged = await purgeStubborn()
+      if (purged === null) {
+        console.log(
+          `уборка пробных ОМ: снято ${dropped}, оставлено ${refused} ` +
+            '(расстановка/журнал/закрытые; бэкенда рядом нет — снимите ' +
+            'purge_probe_events --yes --force с консоли)',
+        )
+      } else {
+        console.log(
+          `уборка пробных ОМ: снято через API ${dropped}, упрямых ${refused} — ` +
+            `добиты командой: ${purged}`,
+        )
+      }
+    } catch (error) {
+      // Падать уборке нельзя: она не предмет проверки, и красный прогон по её
+      // причине скрыл бы настоящий результат.
       console.log(
-        `уборка пробных ОМ: снято ${dropped}, оставлено ${refused} ` +
-          '(расстановка/журнал/закрытые; бэкенда рядом нет — снимите ' +
-          'purge_probe_events --yes --force с консоли)',
+        `уборка пробных ОМ: снято ${dropped}, оставлено ${refused}; ` +
+          `команда добивания не отработала (${String(error).slice(0, 120)})`,
       )
-      return
     }
-    console.log(
-      `уборка пробных ОМ: снято через API ${dropped}, упрямых ${refused} — ` +
-        `добиты командой: ${purged}`,
-    )
+  }
+
+  // Сироты добираются ВСЕГДА, каким бы ни был исход выше: и когда всё снялось
+  // штатно, и когда часть осталась. Прежние `return` из веток и были причиной
+  // накопления (Plane №346).
+  try {
+    const swept = await purgeOrphanParticipations()
+    if (swept === null) {
+      console.log(
+        'участия удалённых ОМ: бэкенда рядом нет — снимите ' +
+          'purge_probe_events --orphans-only --yes с консоли',
+      )
+    } else {
+      console.log(`участия удалённых ОМ: ${swept}`)
+    }
   } catch (error) {
-    // Падать уборке нельзя: она не предмет проверки, и красный прогон по её
-    // причине скрыл бы настоящий результат.
     console.log(
-      `уборка пробных ОМ: снято ${dropped}, оставлено ${refused}; ` +
-        `команда добивания не отработала (${String(error).slice(0, 120)})`,
+      `участия удалённых ОМ: уборка не отработала (${String(error).slice(0, 120)})`,
     )
   }
 }
