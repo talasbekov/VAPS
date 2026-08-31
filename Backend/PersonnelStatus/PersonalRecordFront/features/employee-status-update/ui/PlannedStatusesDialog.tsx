@@ -38,11 +38,13 @@ import {
   X,
   CalendarIcon,
   Plus,
+  Shield,
 } from "lucide-react";
 import {
   getEmployeeStatusColor,
 } from "@/lib/status";
 import { useStatusNaming } from "@/entities/status";
+import { useEmployeeStatuses } from "@/hooks/use-my-employee";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { apiClient } from "@/lib/api";
 import { format } from "date-fns";
@@ -122,6 +124,16 @@ export function PlannedStatusesDialog({
     open && wantedEmployeeId !== null
   );
   const staffUnits = data?.staff_units || [];
+
+  // 🔴 УЧЁТ РАЗДЕЛА ОМ — ВТОРОЙ УЧЁТ, И ОКНО ОБЯЗАНО ЕГО ПОКАЗЫВАТЬ
+  // (Plane №368, Ш-3 задачи №365). Привлечение на мероприятие пишется в
+  // модель расхода (решение заказчика по Ш-2), а это окно до сих пор
+  // показывало только кадровые строки: человек ставил привлечение и не
+  // находил его нигде — «статус заведён и невидим». Раздел ТОЛЬКО ДЛЯ
+  // ЧТЕНИЯ: правит эти строки раздел ОМ, у них своя дисциплина (снять
+  // поставленный статус расхода нельзя вовсе), и кнопки правки здесь
+  // обещали бы то, чего ручка не делает.
+  const opsStatuses = useEmployeeStatuses(open ? wantedEmployeeId : null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -975,6 +987,66 @@ export function PlannedStatusesDialog({
               ) : (
                 <div className="text-sm text-muted-foreground">
                   Для сотрудника нет запланированных статусов.
+                </div>
+              )}
+            </div>
+
+            {/* Учёт раздела ОМ: то, что заведено привлечением на мероприятие. */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Shield className="h-4 w-4 text-blue-600" aria-hidden="true" />
+                Учёт раздела ОМ
+              </h3>
+              {/* ЗАГРУЗКА, ПУСТОТА И ОТКАЗ — ТРИ РАЗНЫХ ОТВЕТА. Пустой раздел
+                  читается как «на мероприятия не привлекался» и когда запрос
+                  ещё идёт, и когда ручка отказала: человек решил бы, что
+                  привлечение не сохранилось, и поставил бы его второй раз. */}
+              {opsStatuses.isPending ? (
+                <div className="text-sm text-muted-foreground">
+                  Загружаем учёт раздела…
+                </div>
+              ) : opsStatuses.isError ? (
+                <div className="text-sm text-destructive-ink" role="alert">
+                  Учёт раздела ОМ не ответил — привлечения показать нечем.
+                </div>
+              ) : (opsStatuses.data ?? []).length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  В учёте раздела ОМ строк нет — на мероприятия не привлекался.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(opsStatuses.data ?? []).map((row) => (
+                    <div
+                      key={row.id}
+                      className="rounded-lg border p-4 flex flex-col gap-2 bg-card"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Подпись — из того же справочника, что и у кадровых
+                            строк (Plane №366): каталог у обоих учётов ОДИН. */}
+                        <Badge className={naming.colorOf(row.status_type_code)}>
+                          {naming.labelOf(row.status_type_code)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(row.date_start)} — {formatDate(row.date_end)}
+                        </span>
+                      </div>
+                      {row.participations.length > 0 && (
+                        <ul className="text-sm text-muted-foreground space-y-1">
+                          {row.participations.map((part) => (
+                            <li key={`${row.id}-${part.event_id}`}>
+                              {/* Мероприятие могло быть удалено: ссылка в
+                                  модели плоская, участие переживает удаление
+                                  ОМ. Тогда кода и названия нет, и врать
+                                  «мероприятие такое-то» нечем. */}
+                              {part.event_code === ""
+                                ? `Мероприятие удалено из реестра (№${part.event_id})`
+                                : `${part.event_code} · ${part.event_title}`}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

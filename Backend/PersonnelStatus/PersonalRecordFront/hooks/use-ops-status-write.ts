@@ -31,6 +31,15 @@ export function useCreateOpsStatus() {
       // остаётся со старым статусом до перезагрузки страницы.
       void client.invalidateQueries({ queryKey: ["daily-expense-board"] });
       void client.invalidateQueries({ queryKey: ["strength-report"] });
+      // 🔴 И СПИСКИ СТАТУСОВ РАЗДЕЛА (Plane №368, Ш-3 задачи №365). Их читают
+      // портальные экраны: колонка «По разделу ОМ» в таблице статусов
+      // (`["ops-statuses", "on", <дата>]`) и карточка статусов сотрудника
+      // (`["ops-statuses", "employee", <id>]`). Пока ключ не сбрасывался,
+      // человек, поставивший привлечение из портального окна, не видел его
+      // НИГДЕ до перезагрузки страницы — то есть Ш-2 заводил статус, а
+      // показать его было нечему. Префикс общий, поэтому оба ключа гасятся
+      // одной строкой.
+      void client.invalidateQueries({ queryKey: ["ops-statuses"] });
     },
   });
 }
