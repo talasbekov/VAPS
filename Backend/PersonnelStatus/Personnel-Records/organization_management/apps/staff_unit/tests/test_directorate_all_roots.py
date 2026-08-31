@@ -136,26 +136,49 @@ def test_division_is_the_root_when_there_is_only_one(admin, two_trees):
     assert payload["division"]["name"] == "Служба"
 
 
-def test_ordinary_user_still_sees_only_his_own_subtree(two_trees):
-    """Разграничение НЕ снято: расширение касается только суперпользователя."""
-    user = get_user_model().objects.create_user(username="roots-plain")
-    # Роль настоящая, а не флаг: ручку стережёт `CanViewStaffingTable`, и без
-    # права `view_staffing_table` проба отвечала бы 403 — то есть молчала бы о
-    # том, что должна проверять.
-    role = Role.objects.create(code="ROLE_6", name="Начальник отдела")
-    permission = Permission.objects.create(
-        code="view_staffing_table", name="Просмотр штатного расписания"
-    )
-    RolePermission.objects.create(role=role, permission=permission)
+def _grant_section_role(user, scope_division_id):
+    """Роль РАЗДЕЛА с правом чтения статусов и областью одного подразделения.
 
-    # Привязка учётки к сотруднику — ДО роли: модель роли отказывается
-    # сохраняться, пока у пользователя нет ни ручной области, ни сотрудника со
-    # штатной единицей, из которой её вывести.
+    Ручку стережёт право `status.view`: без него проба отвечала бы 403, то есть
+    молчала бы о том, что должна проверять.
+    """
+    from organization_management.apps.operations.models import (
+        Permission as OpsPermission,
+        Role as OpsRole,
+        RolePermission as OpsRolePermission,
+    )
+    from organization_management.apps.operations.services import RoleAdminService
+
+    role, _ = OpsRole.objects.get_or_create(
+        code=f"ROOTS-{user.username}", defaults={"name": user.username}
+    )
+    permission, _ = OpsPermission.objects.get_or_create(
+        code="status.view", defaults={"name": "Просмотр статусов"}
+    )
+    OpsRolePermission.objects.get_or_create(role_code=role, permission_code=permission)
+    RoleAdminService.assign_role(
+        str(user.pk), role.code, scope_division_id, actor="test"
+    )
+
+
+def test_ordinary_user_still_sees_only_his_own_subtree(two_trees):
+    """Разграничение НЕ снято: расширение касается только суперпользователя.
+
+    🔴 ПЕРЕПИСАНО В Plane №352 (Ш-2), и предмет пробы при этом НЕ подменён.
+    Раньше область обычного пользователя считал кадровый резолвер по коду роли
+    (ROLE_6 → «свой отдел»). Кадровый путь снят целиком: заказчик потребовал
+    работать по семи своим ролям, а они живут в каталоге раздела. Теперь
+    ограничение выражается ОБЛАСТЬЮ ГРАНТА — и проба держит ровно тот же
+    конец: человек, которому выдали право на своё подразделение, чужого не
+    видит. Мутация «отдать грант без области» (в разделе это значит «без
+    ограничения») красит её немедленно.
+    """
+    user = get_user_model().objects.create_user(username="roots-plain")
     employee = two_trees["in_main"][0]
     employee.user = user
     employee.save(update_fields=["user"])
 
-    UserRole.objects.create(user=user, role=role)
+    _grant_section_role(user, employee.staff_unit.division_id)
 
     payload = ask(user)
 

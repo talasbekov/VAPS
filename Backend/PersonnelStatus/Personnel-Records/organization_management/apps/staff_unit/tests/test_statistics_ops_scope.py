@@ -140,11 +140,20 @@ def test_without_either_permission_it_still_refuses(tree):
     assert response.status_code == 400, response.data
 
 
-def test_a_personnel_user_keeps_the_old_scope(tree):
-    """Кадровому пользователю область считает прежний резолвер.
+def test_a_personnel_role_gives_no_scope_at_all(tree):
+    """Кадровая роль области БОЛЬШЕ НЕ ДАЁТ (Plane №352, Ш-2).
 
-    Мутация «считать всем областью раздела» прошла бы пробы выше и тихо
-    сменила бы область кадровым — этот конец держит проба.
+    🔴 ПРЕДМЕТ ПРОБЫ ПЕРЕВЁРНУТ ОСОЗНАННО. Она держала обратное — «кадровому
+    пользователю область считает прежний резолвер» — и была права, пока
+    резолверов было два. Заказчик потребовал искоренить старое; кадровый путь
+    знал наизусть коды ROLE_3/6/7 и не знал ни одной из семи его ролей, то
+    есть его учётки получали либо чужую область, либо никакой.
+
+    Конец держать всё равно надо: мутация «вернуть кадровый резолвер первым»
+    вернула бы область людям, которым раздел её не давал, и статистика начала
+    бы считать чужие подразделения. Проверяется ОТКАЗ, а не ноль: 400 говорит
+    «области нет», а нули сказали бы «область есть и она пуста» — это разные
+    вещи, и №329 их как раз научился различать.
     """
     from organization_management.apps.common.models import Role as LegacyRole
     from organization_management.apps.common.models import UserRole as LegacyUserRole
@@ -158,5 +167,4 @@ def test_a_personnel_user_keeps_the_old_scope(tree):
 
     response = ask(user)
 
-    assert response.status_code == 200, response.data
-    assert response.data["scope_division"]["name"] == "Департамент"
+    assert response.status_code == 400, response.data
