@@ -62,6 +62,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import {
   Table,
   TableBody,
@@ -262,7 +263,7 @@ export default function ServiceAnalyticsPage() {
       ? "allowed"
       : "denied";
 
-  if (!permissionsLoading && !hasPermission("analytics.view")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/analytics"])) {
     return <OpsAccessDenied what="сервисной аналитики" />;
   }
 
@@ -454,8 +455,6 @@ export default function ServiceAnalyticsPage() {
         {snapshotQuery.isLoading && (
           <p className="text-sm text-muted-foreground">Загрузка аналитики…</p>
         )}
-
-
 
         {snapshot !== undefined && (
           <>

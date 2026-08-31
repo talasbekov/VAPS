@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { useVehicleArmorClasses, useVehicles } from "@/hooks/use-vehicles";
 import type { Vehicle } from "@/entities/vehicle";
@@ -48,7 +49,7 @@ function VehiclesScreen() {
   const search = searchParams.get("search") ?? "";
   const includeRetired = searchParams.get("includeRetired") === "1";
 
-  const canView = hasPermission("event.view");
+  const canView = hasPermission(MODULE_PERMISSION["/security-ops/vehicles"]);
   const query = useVehicles(
     { armorClass, search, includeRetired },
     { enabled: canView }

@@ -32,6 +32,7 @@ import type {
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 
 const JOB_STATE_CLASS: Record<ReportJobState, string> = {
   PENDING:
@@ -108,7 +109,7 @@ export default function ServiceReportsPage() {
     setAttempt((value) => value + 1);
   }
 
-  if (!permissionsLoading && !hasPermission("report.generate")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/service-reports"])) {
     return <OpsAccessDenied what="служебных отчётов" />;
   }
 

@@ -26,6 +26,7 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { formatIsoDateTime } from "@/shared/lib/date";
 
 export default function OpsAuditPage() {
@@ -47,7 +48,7 @@ export default function OpsAuditPage() {
     );
   }, [query.data, search]);
 
-  if (!permissionsLoading && !hasPermission("audit.view")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/audit"])) {
     return <OpsAccessDenied what="журнала аудита" />;
   }
 

@@ -17,13 +17,14 @@ import { useDictionaries } from "@/hooks/use-dictionaries";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { STAFF_DICTIONARIES } from "@/entities/staff-dictionary";
 
 export default function DictionariesPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useDictionaries();
 
-  if (!permissionsLoading && !hasPermission("dictionary.view")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/dictionaries"])) {
     return <OpsAccessDenied what="справочников" />;
   }
 

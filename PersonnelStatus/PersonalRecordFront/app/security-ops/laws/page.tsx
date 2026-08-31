@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { useLegalDocuments } from "@/hooks/use-legal-documents";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import {
@@ -57,7 +58,7 @@ export default function LegalDocumentsPage() {
   // Plane №267): рядовой сотрудник видит нормативная база, не видя
   // реестра мероприятий. Пока экран спрашивал право чтения ОМ, выдать
   // одно без другого было нельзя.
-  const canView = hasPermission("catalog.view");
+  const canView = hasPermission(MODULE_PERMISSION["/security-ops/laws"]);
   const query = useLegalDocuments({ enabled: canView });
 
   function updateParam(key: string, value: string): void {

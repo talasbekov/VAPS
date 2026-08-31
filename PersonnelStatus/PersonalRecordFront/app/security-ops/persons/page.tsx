@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useGvoSummaries, summariesByCode } from "@/hooks/use-gvo-summaries";
 import {
@@ -67,7 +68,7 @@ export default function ProtectedPersonsPage() {
   // Plane №267): рядовой сотрудник видит каталог охраняемых лиц, не видя
   // реестра мероприятий. Пока экран спрашивал право чтения ОМ, выдать
   // одно без другого было нельзя.
-  const canView = hasPermission("catalog.view");
+  const canView = hasPermission(MODULE_PERMISSION["/security-ops/persons"]);
   const personsQuery = useProtectedPersons({ enabled: canView });
   const eventsQuery = useSecurityEvents(
     { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: PAGE_SIZE },

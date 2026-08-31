@@ -10,6 +10,8 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth, ROLES } from "@/lib/auth";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { modulePermissionOf } from "@/entities/portal-access";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -61,10 +63,18 @@ type NavItem = {
   name: string;
   href: string;
   icon: LucideIcon;
-  // Права проверяются ТОЛЬКО у портальных экранов — там гвард живёт в хосте.
-  // У экранов раздела ОМ прав здесь нет намеренно: их считают сами страницы
-  // (hooks/use-ops-permissions), и дублировать решение в меню значило бы
-  // завести вторую правду о видимости.
+  // Портальные экраны гейтятся парой resource/action (права хоста,
+  // `lib/auth.tsx`). У экранов РАЗДЕЛА ОМ право не пишется здесь: оно берётся
+  // по адресу из `entities/portal-access`, того же источника, из которого его
+  // берёт гейт самой страницы.
+  //
+  // 🔴 ПРАВИЛО ИЗМЕНИЛОСЬ 31.08.2026 (Plane №350, решение заказчика). Раньше
+  // тут стояло «прав у пунктов ОМ нет намеренно: их считают сами страницы, и
+  // дублировать решение в меню значило бы завести вторую правду о видимости».
+  // Довод был верным, а вывод — нет: под ролью «Сотрудник» в меню оставалось
+  // десять пунктов из шестнадцати, каждый из которых отвечает «Доступ закрыт»,
+  // и заказчик прочитал это как сломанную систему. Второй правды при этом не
+  // появилось — появился ОДИН источник на меню и на страницу.
   resource?: string;
   action?: string;
   // Адреса, на которых пункт тоже подсвечивается. Нужен там, где у одного
@@ -332,14 +342,26 @@ export function Sidebar() {
   // (middleware эти пути не закрывает) — фильтр по правам оставлял меню
   // пустым, и модули «исчезали». Без host-логина показываем навигацию целиком
   // (страницы защищают себя сами); для залогиненных фильтр работает как раньше.
+  //
+  // ПРАВА РАЗДЕЛА ждут ответа сервера, и пока он не пришёл, пункты раздела
+  // показываются ВСЕ. Спрятать их на время загрузки значило бы устроить
+  // мигание меню на каждом открытии приложения — и, что хуже, показать
+  // человеку неполное меню как окончательное, если запрос прав не ответит
+  // вовсе. Отказ страницы остаётся вторым рубежом: он никуда не делся.
+  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
+    useOpsPermissions();
+
   const visibleCategories = CATEGORIES.map((category) => ({
     ...category,
-    items: category.items.filter(
-      (item) =>
-        user === null ||
-        item.resource === undefined ||
-        hasPermission(item.resource, item.action ?? "read")
-    ),
+    items: category.items.filter((item) => {
+      if (user === null) return true;
+      if (item.resource !== undefined) {
+        return hasPermission(item.resource, item.action ?? "read");
+      }
+      const required = modulePermissionOf(item.href);
+      if (required === null || opsPermissionsLoading) return true;
+      return hasOpsPermission(required);
+    }),
   })).filter((category) => category.items.length > 0);
 
   // Сквозной счётчик для stagger-анимации: задержка считается от начала

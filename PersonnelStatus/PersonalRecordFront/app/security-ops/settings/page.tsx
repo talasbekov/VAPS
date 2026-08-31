@@ -34,6 +34,7 @@ import type {
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { formatIsoDateTime } from "@/shared/lib/date";
 
 export default function OpsSettingsPage() {
@@ -44,7 +45,7 @@ export default function OpsSettingsPage() {
 
   const sections: SettingSectionCode[] = ["CONFLICT_RULES", "PASSPORT_FRESHNESS"];
 
-  if (!permissionsLoading && !hasPermission("settings.view")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/settings"])) {
     return <OpsAccessDenied what="настроек политик" />;
   }
 
