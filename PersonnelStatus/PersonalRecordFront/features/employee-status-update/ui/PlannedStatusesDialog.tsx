@@ -41,10 +41,10 @@ import {
 } from "lucide-react";
 import {
   EMPLOYEE_STATUS_ITEMS,
-  SELECTABLE_STATUS_ITEMS,
   getEmployeeStatusColor,
   getEmployeeStatusLabel,
 } from "@/lib/status";
+import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { apiClient } from "@/lib/api";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -104,6 +104,13 @@ export function PlannedStatusesDialog({
   onSchedule,
 }: PlannedStatusesDialogProps) {
   const queryClient = useQueryClient();
+  // Каталог типов — с сервера, а не копией в коде (Plane №354): заказчик
+  // заводит тип в админке, и список обязан узнать о нём без выкатки клиента.
+  const {
+    types: statusTypes,
+    isLoading: statusTypesLoading,
+    error: statusTypesError,
+  } = useEmployeeStatusTypes();
   // Штатная единица ОДНОГО сотрудника, и только когда диалог открыт
   // (Plane №234). Прежде здесь звался весь состав подразделения — 2,7 МБ ради
   // одной строки на пяти тысячах человек, и грузился он при открытии ЭКРАНА, а
@@ -759,18 +766,48 @@ export function PlannedStatusesDialog({
                                   })
                                 }
                               >
-                                <SelectTrigger aria-label="Статус">
-                                  <SelectValue placeholder="Выберите статус" />
+                                <SelectTrigger
+                                  aria-label="Статус"
+                                  // `aria-busy` — единственный признак, по
+                                  // которому скринридер узнаёт, что список
+                                  // ещё едет; глазу об этом говорит подпись.
+                                  aria-busy={statusTypesLoading || undefined}
+                                >
+                                  <SelectValue
+                                    placeholder={
+                                      statusTypesLoading
+                                        ? "Загружаем статусы…"
+                                        : "Выберите статус"
+                                    }
+                                  />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {SELECTABLE_STATUS_ITEMS.map((item) => (
-                                    <SelectItem
-                                      key={item.code}
-                                      value={item.code}
+                                  {/* Три состояния справочника названы словами
+                                      (Plane №354). Пустой выпадающий список
+                                      читается как поломка: человек не может
+                                      отличить «справочник пуст» от «не
+                                      загрузилось» и идёт спрашивать. */}
+                                  {statusTypes.length === 0 ? (
+                                    <div
+                                      className="text-muted-foreground px-2 py-3 text-sm"
+                                      role={statusTypesError ? "alert" : undefined}
                                     >
-                                      {item.label}
-                                    </SelectItem>
-                                  ))}
+                                      {statusTypesLoading
+                                        ? "Загружаем справочник статусов…"
+                                        : statusTypesError
+                                          ? "Справочник статусов не загрузился. Обновите страницу."
+                                          : "Справочник типов статусов пуст — заведите тип в разделе «Система → Справочники»."}
+                                    </div>
+                                  ) : (
+                                    statusTypes.map((item) => (
+                                      <SelectItem
+                                        key={item.code}
+                                        value={item.code}
+                                      >
+                                        {item.label}
+                                      </SelectItem>
+                                    ))
+                                  )}
                                 </SelectContent>
                               </Select>
                             </div>

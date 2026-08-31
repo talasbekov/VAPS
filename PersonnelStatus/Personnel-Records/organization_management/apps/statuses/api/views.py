@@ -6,6 +6,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
@@ -31,8 +32,10 @@ from .serializers import (
     StatusDocumentUploadSerializer,
     DivisionHeadcountSerializer,
     AbsenceStatisticsSerializer,
-    BulkStatusPlanSerializer
+    BulkStatusPlanSerializer,
+    StatusTypeCatalogSerializer,
 )
+from organization_management.apps.statuses import catalog
 
 class EmployeeStatusViewSet(viewsets.ModelViewSet):
     """
@@ -630,3 +633,35 @@ class StatusDocumentViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(status_id=status_id)
 
         return queryset
+
+
+class StatusTypeCatalogView(APIView):
+    """Каталог кадровых типов статусов для окон портала (Plane №354).
+
+    ЗАЧЕМ ОТДЕЛЬНАЯ РУЧКА, а не поле в ответе статусов. Список нужен ДО того,
+    как статус существует: окно планирования открывается на пустом месте и
+    первым делом спрашивает «какие бывают статусы». Складывать каталог в
+    каждый ответ реестра значило бы возить один и тот же словарь строкой к
+    каждой из пятисот строк.
+
+    `?selectable=1` — только то, что человек выбирает руками: без заглушек и
+    без прикомандирования (у него свой процесс с заявкой и согласованием).
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        summary="Каталог типов статусов сотрудников",
+        parameters=[
+            OpenApiParameter(
+                name="selectable",
+                type=bool,
+                description="Только выбираемые вручную типы.",
+            )
+        ],
+        responses={200: StatusTypeCatalogSerializer(many=True)},
+    )
+    def get(self, request):
+        selectable = request.query_params.get("selectable") in {"1", "true", "True"}
+        items = catalog.catalog(selectable_only=selectable)
+        return Response(StatusTypeCatalogSerializer(items, many=True).data)

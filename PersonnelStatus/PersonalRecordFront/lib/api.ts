@@ -1147,20 +1147,13 @@ class ApiClient {
     }>;
     employee_statuses: Array<{
       employee: number;
-      status_type:
-        | "in_service"
-        | "vacation"
-        | "leave_by_report"
-        | "sick_leave"
-        | "business_trip"
-        | "training"
-        | "competition"
-        | "conference"
-        | "other_absence"
-        | "on_duty"
-        | "after_duty"
-        | "seconded_from"
-        | "seconded_to";
+      // 🔴 `string`, а не перечисление тринадцати кодов (Plane №354). Здесь
+      // лежала ТРЕТЬЯ копия каталога статусов — после модели и клиентского
+      // зеркала. Типы обещали то, чего сервер уже не требует: список типов
+      // живёт в справочнике и пополняется администратором, и union запрещал
+      // отправить заведённый им код ещё до всякого запроса. Проверку взял на
+      // себя сервер — он сверяет код со справочником и отвечает словами.
+      status_type: string;
       start_date?: string;
       end_date?: string;
       comment?: string;
@@ -1352,20 +1345,10 @@ class ApiClient {
   // Создание нового статуса сотрудника
   async createEmployeeStatus(data: {
     employee: number;
-    status_type:
-      | "in_service"
-      | "vacation"
-      | "leave_by_report"
-      | "sick_leave"
-      | "business_trip"
-      | "training"
-      | "competition"
-      | "conference"
-      | "other_absence"
-      | "on_duty"
-      | "after_duty"
-      | "seconded_from"
-      | "seconded_to";
+    // `string`, а не тринадцать кодов (Plane №354): ЧЕТВЁРТАЯ копия каталога
+    // жила здесь и запрещала отправить тип, заведённый администратором, ещё
+    // до запроса. Список допустимого держит сервер и сверяет со справочником.
+    status_type: string;
     start_date?: string;
     end_date?: string;
     comment?: string;
@@ -1971,6 +1954,18 @@ class ApiClient {
       throw await toDomainError(response);
     }
     return response.json();
+  }
+
+  /** Каталог кадровых типов статусов (Plane №354).
+   *
+   * Список правится администратором в справочнике и меняется БЕЗ выкатки
+   * клиента — поэтому он спрашивается у сервера, а не лежит копией в коде.
+   */
+  async getEmployeeStatusTypes(
+    selectableOnly = true
+  ): Promise<Array<{ code: string; label: string; color: string }>> {
+    const query = selectableOnly ? "?selectable=1" : "";
+    return this.getDomainJson(`/api/statuses/types/${query}`);
   }
 
   // Статусы ОДНОГО сотрудника. Фильтр серверный (`employee_id`) и проверен

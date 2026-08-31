@@ -10,6 +10,25 @@ from organization_management.apps.statuses.models import (
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.divisions.models import Division
 
+from organization_management.apps.statuses import catalog
+
+
+def validate_status_type_code(value: str) -> str:
+    """Код типа обязан быть в СПРАВОЧНИКЕ, а не в списке внутри кода.
+
+    Отказ называет причину словами администратора: «типа нет в справочнике или
+    он выключен» — иначе человек, только что заведший тип и получивший отказ,
+    не поймёт, где искать (Plane №354).
+    """
+    known = catalog.known_codes()
+    if value not in known:
+        raise serializers.ValidationError(
+            f"Типа статуса «{value}» нет в справочнике типов статусов "
+            "или он выключен."
+        )
+    return value
+
+
 
 class EmployeeBasicSerializer(serializers.ModelSerializer):
     """Базовый сериализатор сотрудника для вложенного представления"""
@@ -81,8 +100,14 @@ class EmployeeStatusSerializer(serializers.ModelSerializer):
     """
     Основной сериализатор для статуса сотрудника
     """
+
+    def validate_status_type(self, value):
+        return validate_status_type_code(value)
+
     employee_data = EmployeeBasicSerializer(source='employee', read_only=True)
     related_division_data = DivisionBasicSerializer(source='related_division', read_only=True)
+    # Подпись по-прежнему берётся у модели — но сам метод теперь читает
+    # справочник, а не `choices` (Plane №354, см. EmployeeStatus).
     status_type_display = serializers.CharField(source='get_status_type_display', read_only=True)
     state_display = serializers.CharField(source='get_state_display', read_only=True)
     created_by_name = serializers.SerializerMethodField()
@@ -147,6 +172,11 @@ class EmployeeStatusDetailSerializer(EmployeeStatusSerializer):
 
 class EmployeeStatusCreateSerializer(serializers.ModelSerializer):
     """Сериализатор для создания статуса"""
+
+    def validate_status_type(self, value):
+        # Со снятием `choices` (Plane №354) поле само по себе принимает любую
+        # строку — допустимость решает справочник, и решает ЗДЕСЬ, на входе.
+        return validate_status_type_code(value)
 
     class Meta:
         model = EmployeeStatus
@@ -238,12 +268,17 @@ class BulkStatusPlanSerializer(serializers.Serializer):
         child=serializers.IntegerField(),
         min_length=1
     )
-    status_type = serializers.ChoiceField(choices=EmployeeStatus.StatusType.choices)
+    # Не ChoiceField по `choices` (Plane №354): список допустимого живёт в
+    # справочнике, и зашитый здесь отбивал бы тип, заведённый в админке.
+    status_type = serializers.CharField()
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     comment = serializers.CharField(required=False, allow_blank=True)
     location = serializers.CharField(required=False, allow_blank=True)
     related_division = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_status_type(self, value):
+        return validate_status_type_code(value)
 
     def validate(self, attrs):
         """Валидация данных"""
@@ -252,3 +287,17 @@ class BulkStatusPlanSerializer(serializers.Serializer):
                 'end_date': 'Дата окончания не может быть раньше даты начала.'
             })
         return attrs
+
+
+class StatusTypeCatalogSerializer(serializers.Serializer):
+    """Строка каталога типов статусов (Plane №354).
+
+    Ровно три поля: код для сохранения, подпись для человека и цвет. Приоритет,
+    колонка расхода и флаги справочника раздела сюда НЕ едут — окну статусов
+    они не нужны, а лишние поля в ответе читаются как обещание, что клиент
+    имеет право на них опираться.
+    """
+
+    code = serializers.CharField(read_only=True)
+    label = serializers.CharField(read_only=True)
+    color = serializers.CharField(read_only=True, allow_blank=True)

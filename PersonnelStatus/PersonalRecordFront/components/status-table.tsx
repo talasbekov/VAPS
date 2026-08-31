@@ -16,6 +16,7 @@ import {
   getEmployeeStatusLabel,
   getFormattedEmployeeStatus,
 } from "@/lib/status";
+import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import {
   Table,
   TableBody,
@@ -579,7 +580,22 @@ export function StatusTable({
 
   const loading = externalLoading || internalLoading;
 
-  const statusTypes = EMPLOYEE_STATUS_ITEMS.map((item) => {
+  // Фильтр «Все статусы» — по СПРАВОЧНИКУ (Plane №354). Иначе заведённый
+  // администратором тип можно проставить, но нельзя найти: список фильтра
+  // остался бы прежним, и человек решил бы, что статус не сохранился.
+  // Запасной путь — прежний зашитый перечень: пока справочник не доехал,
+  // фильтр обязан оставаться рабочим, а не пустым.
+  const { types: catalogStatusTypes } = useEmployeeStatusTypes(false);
+  const statusTypeSource =
+    catalogStatusTypes.length > 0
+      ? catalogStatusTypes.map((item) => ({
+          code: item.code,
+          label: item.label,
+          color: item.color || getEmployeeStatusColor(item.code as never),
+        }))
+      : EMPLOYEE_STATUS_ITEMS;
+
+  const statusTypes = statusTypeSource.map((item) => {
     let icon = Calendar;
     switch (item.code) {
       case "in_service":
