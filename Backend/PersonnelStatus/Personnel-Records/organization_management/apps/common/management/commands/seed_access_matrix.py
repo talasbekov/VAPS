@@ -12,12 +12,19 @@
 «как выглядит система под этим ЧЕЛОВЕКОМ», и роль подбирается под человека, а
 не наоборот.
 
-ДВЕ СИСТЕМЫ ПРАВ, И ОБЕ ОБЯЗАТЕЛЬНЫ:
-- портал (`common.UserRole`) — роль ОДНА и область ОДНА; она решает, какие
-  пункты «Ежедневного расхода» вообще видны (`lib/auth.tsx`);
-- раздел ОМ (`operations.UserRole`) — грантов НЕСКОЛЬКО, у каждого своя
-  область. Именно это позволяет выдать «категория ОМ на уровне организации, а
-  остальное — на уровне своего управления» одной учётке.
+🔴 СИСТЕМА ПРАВ ОДНА — РАЗДЕЛА (Plane №352, Ш-5). Портальной роли здесь больше
+нет вовсе. Раньше учётка получала ДВЕ роли из разных систем: портальная
+(`common.UserRole`) решала, какие пункты «Ежедневного расхода» видны, роль
+раздела — всё остальное. Заказчик потребовал «всё старое искоренить, работать
+по семи ролям», и портальные пункты меню с Ш-1 спрашивают права РАЗДЕЛА
+(`entities/portal-access`), а с Ш-4 токен портальной роли не носит вовсе.
+Выдавать её здесь значило бы заводить учётку по правилам, которых в системе
+больше нет.
+
+У роли раздела грантов НЕСКОЛЬКО, у каждого своя область, и это единственное,
+чем выражаются два требования заказчика: «категория ОМ на уровне организации, а
+остальное — на уровне своего управления» и «Обзор на уровне департамента, а
+остальное — на уровне своего управления». Оба — вторым грантом.
 
 ПАРОЛЬ НЕ ЗАШИТ: `--password` либо `ACCESS_MATRIX_PASSWORD`. Без него команда
 отказывается работать: это учётки с правами на статусы и мероприятия.
@@ -35,8 +42,6 @@ from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from organization_management.apps.common.models import Role as PortalRole
-from organization_management.apps.common.models import UserRole as PortalUserRole
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models import Role as OpsRole
@@ -44,29 +49,6 @@ from organization_management.apps.operations.models import UserRole as OpsUserRo
 from organization_management.apps.operations.services import RoleAdminService
 
 USERNAME_PREFIX = "acc_"
-
-# Портальные роли матрицы доступа. Заводятся ЗДЕСЬ, а не миграцией: портальные
-# роли в этом проекте — данные (`ROLE_1…ROLE_6` тоже заводит стенд, и проба
-# `test_the_empty_role_book_is_a_loud_refusal` держит справочник пустым на
-# чистой базе). Миграция, сеющая роли, ломала бы этот договор молча.
-#
-# Названы ПО НАБОРУ МОДУЛЕЙ, а не по должности: один и тот же набор («Обзор +
-# Статусы») просят и начальник управления, и начальник второго департамента — у
-# них разная область, но одинаковое меню. Роль с именем должности пришлось бы
-# дублировать под каждую область.
-#
-# 🔴 НАБОР МОДУЛЕЙ ЖИВЁТ НА КЛИЕНТЕ (`lib/auth.tsx`, `ROLES`), а не здесь: там
-# он и решает, какие пункты меню видны. Код роли обязан стоять в тамошней
-# таблице `roleMap` — иначе роль не опознана, и клиент отдаёт самый узкий
-# набор (до Plane №349 отдавал полный доступ).
-#
-# (код, имя, уровень иерархии, требует область, правит статусы, Обзор по департаменту)
-PORTAL_ROLES = [
-    ("EMPLOYEE_RO", "Сотрудник: просмотр статусов", 2, True, False, False),
-    ("HEAD_BASIC", "Руководитель: обзор и статусы", 2, True, True, True),
-    ("HEAD_REPORTS", "Руководитель: обзор, статусы, ежедневный отчёт", 1, True, True, False),
-    ("FORCES_OFFICER", "Ответственный за сбор сил", 1, True, True, False),
-]
 
 # Роли РАЗДЕЛА ОМ здесь не определяются — они живут в каталоге раздела
 # (`operations/management/commands/seed_operations.py`, профили Plane №348).
@@ -80,17 +62,17 @@ class Persona:
         self,
         key: str,
         title: str,
-        portal_role: str,
-        portal_scope: str,
+        scope_key: str,
         ops_grants: tuple[tuple[str, str], ...],
         closed: str,
     ):
         self.key = key
         self.title = title
-        self.portal_role = portal_role
-        # Ключ подразделения: 'dept_other' | 'dept_second' | 'dir_other' |
-        # 'dir_second' | 'none' (вся организация).
-        self.portal_scope = portal_scope
+        # Ключ подразделения, в котором персона работает: 'dept_other' |
+        # 'dept_second' | 'dir_other' | 'dir_second' | 'none' (вся
+        # организация). Он же решает, из какого дерева брать сотрудника под
+        # учётку — область прав задают гранты, а не он.
+        self.scope_key = scope_key
         # Пары (код роли раздела, ключ области). Их может быть ДВЕ.
         self.ops_grants = ops_grants
         self.closed = closed
@@ -104,7 +86,6 @@ PERSONAS = [
     Persona(
         "employee",
         "Сотрудник",
-        "EMPLOYEE_RO",
         "dir_other",
         (("EMPLOYEE", "dir_other"),),
         "Командный центр, Обзор, Сбор сил, Аналитика службы, Ежедневный отчёт, "
@@ -113,24 +94,41 @@ PERSONAS = [
     Persona(
         "dir_head",
         "Начальник управления (не второй департамент)",
-        "HEAD_BASIC",
         "dir_other",
-        (("HEAD_DIRECTORATE_LINE", "dir_other"),),
+        # 🔴 ВТОРОЙ ГРАНТ — дословная строка задания: «остальные модули на
+        # уровне своего управления ЗА ИСКЛЮЧЕНИЕМ Обзор. Обзор на уровне
+        # департамента должно показываться». Право одно
+        # (`orgstructure.view`), область шире; статусы им не расширяются —
+        # это и держит проба `test_overview_at_department.py`.
+        #
+        # До Ш-5 то же самое делал признак `overview_at_department` у
+        # портальной роли `HEAD_BASIC`. Роль снята, признак вместе с ней, и
+        # без этого гранта «Обзор» молча схлопнулся бы до управления.
+        (
+            ("HEAD_DIRECTORATE_LINE", "dir_other"),
+            ("OVERVIEW_DEPARTMENT", "dept_other"),
+        ),
         "Реестр ОМ, Сбор сил, Командный центр, Аналитика службы, Ежедневный отчёт, "
         "Транспорт ГОН, Отчёты по ОМ, Система",
     ),
     Persona(
         "dir_head_d2",
         "Начальник управления второго департамента",
-        "HEAD_BASIC",
         "dir_second",
-        (("HEAD_OPS_UNIT", "dir_second"), ("OM_CATEGORY_ORG", "none")),
+        # Грантов ТРИ, и каждый отвечает за свою область: профиль на своём
+        # управлении, категория ОМ на всей организации, Обзор на своём
+        # департаменте. Свести их в один нельзя ни в какой комбинации —
+        # область у гранта одна.
+        (
+            ("HEAD_OPS_UNIT", "dir_second"),
+            ("OM_CATEGORY_ORG", "none"),
+            ("OVERVIEW_DEPARTMENT", "dept_second"),
+        ),
         "Сбор сил, Аналитика службы, Ежедневный отчёт, Система",
     ),
     Persona(
         "dept_head",
         "Начальник департамента (не второй)",
-        "HEAD_REPORTS",
         "dept_other",
         (("HEAD_DEPARTMENT_LINE", "dept_other"),),
         "Реестр ОМ, Сбор сил, Командный центр, Транспорт ГОН, Отчёты по ОМ, Система",
@@ -138,15 +136,17 @@ PERSONAS = [
     Persona(
         "dept_head_d2",
         "Начальник второго департамента",
-        "HEAD_BASIC",
         "dept_second",
+        # Гранта «Обзор по департаменту» здесь НЕТ и не должно быть: персона и
+        # так работает на уровне департамента, и третий грант с той же
+        # областью ничего бы не добавил, зато создал бы вид, будто у неё есть
+        # что-то сверх профиля.
         (("HEAD_OPS_UNIT", "dept_second"), ("OM_CATEGORY_ORG", "none")),
         "Сбор сил, Аналитика службы, Ежедневный отчёт, Система",
     ),
     Persona(
         "forces_officer",
         "Ответственный за сбор сил",
-        "FORCES_OFFICER",
         "dept_other",
         (("FORCES_GATHERING_OFFICER", "dept_other"),),
         "Реестр ОМ, Командный центр, Транспорт ГОН, Отчёты по ОМ, Система",
@@ -154,7 +154,6 @@ PERSONAS = [
     Persona(
         "admin",
         "Администратор",
-        "ROLE_4",
         "none",
         (("ADMIN", "none"),),
         "— (полный доступ)",
@@ -187,7 +186,6 @@ class Command(BaseCommand):
 
         scopes = self._scopes()
         with transaction.atomic():
-            self._ensure_portal_roles()
             self._require_ops_roles()
             rows = [self._persona(p, scopes, password) for p in PERSONAS]
 
@@ -255,23 +253,6 @@ class Command(BaseCommand):
 
     # ── Роли раздела ОМ ─────────────────────────────────────────────────────
 
-    def _ensure_portal_roles(self) -> None:
-        for order, (code, name, level, scoped, edits, overview) in enumerate(
-            PORTAL_ROLES, start=7
-        ):
-            PortalRole.objects.update_or_create(
-                code=code,
-                defaults={
-                    "name": name,
-                    "hierarchy_level": level,
-                    "requires_scope": scoped,
-                    "can_edit_statuses": edits,
-                    "overview_at_department": overview,
-                    "is_active": True,
-                    "sort_order": order,
-                },
-            )
-
     def _require_ops_roles(self) -> None:
         wanted = {code for persona in PERSONAS for code, _ in persona.ops_grants}
         known = set(
@@ -290,14 +271,6 @@ class Command(BaseCommand):
     # ── Учётка ──────────────────────────────────────────────────────────────
 
     def _persona(self, persona: Persona, scopes, password: str) -> dict:
-        portal_role = PortalRole.objects.filter(code=persona.portal_role).first()
-        if portal_role is None:
-            raise CommandError(
-                f"Портальной роли {persona.portal_role} нет в справочнике — учётка "
-                f"«{persona.title}» вошла бы в портал с чужим набором модулей. "
-                "Прогоните миграции приложения common."
-            )
-
         user, created = User.objects.get_or_create(
             username=persona.username,
             defaults={
@@ -311,12 +284,8 @@ class Command(BaseCommand):
         user.last_name = persona.title[:150]
         user.save(update_fields=["password", "last_name"])
 
-        scope = scopes[persona.portal_scope]
+        scope = scopes[persona.scope_key]
         employee = self._bind_employee(user, scope)
-
-        PortalUserRole.objects.update_or_create(
-            user=user, defaults={"role": portal_role, "scope_division": scope}
-        )
 
         # Гранты раздела приводятся к заданным ЦЕЛИКОМ: команду зовут в том
         # числе после правки набора персоны, и оставленный старый грант открыл
@@ -417,7 +386,6 @@ class Command(BaseCommand):
             self.stdout.write(f"    логин:      {persona.username}")
             self.stdout.write(f"    пароль:     {password}")
             self.stdout.write(f"    область:    {self._where(scope)}")
-            self.stdout.write(f"    портальная роль: {persona.portal_role}")
             self.stdout.write(
                 "    роли раздела ОМ: "
                 + ", ".join(

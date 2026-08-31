@@ -3,14 +3,17 @@
 Заказчик описал персон тем, что видно в меню, и проверять будет тем же. Поэтому
 пробы говорят его словами, а не «у роли столько-то прав»:
 
-  1) учёток семь, у каждой есть портальная роль и роль раздела — иначе персона
-     заведена наполовину и половину модулей не покажет вовсе;
+  1) учёток семь, у каждой есть роль РАЗДЕЛА — и НИ У ОДНОЙ нет портальной
+     (Plane №352, Ш-5): система прав осталась одна, и выдача портальной роли
+     означала бы учётку, заведённую по правилам, которых больше нет;
   2) второй департамент отличается от остальных ровно тем, чем сказано:
      мероприятия ему открыты, прочим — нет;
   3) «Категории ОМ на уровне Организации» — это ВТОРОЙ грант с пустой областью,
      а не расширение первого: расширь первый — и статусы уедут на всю
      организацию вместе с мероприятиями;
-  4) повтор команды не плодит учёток и приводит гранты к заданным.
+  4) повтор команды не плодит учёток и приводит гранты к заданным;
+  5) «Обзор на уровне департамента» у начальника управления — это ВТОРОЙ грант
+     с одним правом, а не расширение первого (Ш-5).
 """
 from datetime import date
 
@@ -19,7 +22,6 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from organization_management.apps.common.models import Role as PortalRole
 from organization_management.apps.common.models import UserRole as PortalUserRole
 from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.divisions.models import Division
@@ -39,7 +41,9 @@ def stand():
     заказчика вообще выразимо: он делит персон на «второй департамент» и
     «любой другой»."""
     call_command("seed_operations")
-    PortalRole.objects.create(code="ROLE_4", name="Администратор системы", requires_scope=False)
+    # Портальных ролей фикстура больше не заводит: команда их не спрашивает
+    # (Ш-5). Раньше здесь создавалась `ROLE_4` — без неё персона
+    # «Администратор» падала на проверке справочника портальных ролей.
 
     position = Position.objects.create(name="Инспектор", code="am-insp", level=8)
     org = Division.objects.create(
@@ -100,10 +104,15 @@ def test_the_seven_accounts_are_complete(stand):
     }
     for username in usernames:
         user = User.objects.get(username=username)
-        assert PortalUserRole.objects.filter(user=user).exists(), (
-            f"{username} без портальной роли не покажет ни «Обзор», ни «Статусы»"
-        )
         assert grants(username), f"{username} без роли раздела не покажет ни один экран ОМ"
+        # 🔴 ПОРТАЛЬНОЙ РОЛИ НЕТ НИ У КОГО (Ш-5). Проба перевёрнута осознанно:
+        # раньше она требовала обратного — «без портальной роли персона не
+        # покажет ни Обзор, ни Статусы». С Ш-1 портальные пункты спрашивают
+        # права РАЗДЕЛА, с Ш-4 токен портальную роль не носит вовсе, и выдача
+        # её здесь была бы тихим возвратом снятой системы.
+        assert not PortalUserRole.objects.filter(user=user).exists(), (
+            f"{username} снова получила портальную роль — снятая система прав вернулась"
+        )
         assert user.check_password(PASSWORD)
 
 
@@ -123,10 +132,13 @@ def test_the_events_scope_is_the_whole_organisation_but_the_statuses_are_not(sta
     call_command("seed_access_matrix", "--password", PASSWORD)
 
     directorate = Division.objects.get(code="am-second-dir")
+    department = Division.objects.get(code="am-second")
     assert grants("acc_dir_head_d2") == {
         ("HEAD_OPS_UNIT", directorate.id),
         # Пустая область = вся организация: «Категории ОМ на уровне Организации».
         ("OM_CATEGORY_ORG", None),
+        # Третья область — департамент, и только под «Обзор» (Ш-5).
+        ("OVERVIEW_DEPARTMENT", department.id),
     }
 
 
@@ -140,6 +152,39 @@ def test_the_system_section_is_closed_to_everyone_but_the_admin(stand):
     ):
         assert modules(username) & system == set(), f"{username} видит «Систему»"
     assert "*" in modules("acc_admin")
+
+
+def test_the_overview_is_widened_by_a_second_grant_and_nothing_else(stand):
+    """«Обзор на уровне департамента» — вторым грантом, с ОДНИМ правом.
+
+    Заказчик про начальника управления: «остальные модули на уровне своего
+    управления ЗА ИСКЛЮЧЕНИЕМ Обзор. Обзор на уровне департамента должно
+    показываться». До Ш-5 это делал признак `overview_at_department` у
+    портальной роли; роль снята, и без гранта «Обзор» молча схлопнулся бы до
+    управления.
+
+    🔴 Проба стережёт и ОБРАТНОЕ — что грант не расширил ничего сверх обзора.
+    Допиши в роль `OVERVIEW_DEPARTMENT` второе право, и оно приедет на
+    ДЕПАРТАМЕНТ вместе с ней: статусы, которые заказчик оставил на управлении,
+    тихо разъедутся на весь департамент.
+    """
+    call_command("seed_access_matrix", "--password", PASSWORD)
+
+    department = Division.objects.get(code="am-first")
+    directorate = Division.objects.get(code="am-first-dir")
+    assert grants("acc_dir_head") == {
+        ("HEAD_DIRECTORATE_LINE", directorate.id),
+        ("OVERVIEW_DEPARTMENT", department.id),
+    }
+    assert RoleAdminService.role_permission_codes("OVERVIEW_DEPARTMENT") == [
+        "orgstructure.view"
+    ]
+
+    # У начальника ДЕПАРТАМЕНТА второго гранта нет: он и так работает на этом
+    # уровне, и третья строка означала бы права сверх профиля.
+    assert not any(
+        code == "OVERVIEW_DEPARTMENT" for code, _ in grants("acc_dept_head_d2")
+    )
 
 
 def test_a_repeat_run_neither_multiplies_nor_widens(stand):
