@@ -42,22 +42,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Trash2 } from "lucide-react";
 import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
-import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
+// Блок мероприятий — ОБЩИЙ с портальным окном статуса (Plane №367): те же
+// три списка и те же правила («роль принадлежит своей группе», «у физнаряда
+// ролей нет») понадобились там дословно, и вторая копия разошлась бы с этой.
+import {
+  EventParticipationFields,
+  participationsToPayload,
+  validateParticipations,
+  type ParticipationDraft,
+} from "@/features/event-participation/ui/EventParticipationFields";
 import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
 
 /** Коды участия в ОМ: только у них показывается выбор мероприятий.
  * Список — общий на всю систему, см. `entities/daily-grid`. */
 export const PARTICIPATION_CODES = EVENT_PARTICIPATION_STATUS_CODES;
-
-interface ParticipationDraft {
-  eventId: string;
-  kindCode: string;
-  roleCode: string;
-}
 
 export interface SetStatusDialogProps {
   open: boolean;
@@ -90,18 +90,10 @@ export function SetStatusDialog({
   const [formError, setFormError] = useState<string | null>(null);
 
   const needsParticipation = PARTICIPATION_CODES.has(statusCode);
+  // Каталог видов участия нужен окну и ПОСЛЕ того, как блок его отрисовал:
+  // по нему проверяется черновик перед отправкой. Запрос тот же самый —
+  // React Query отдаёт его из кэша по общему ключу, второго обращения нет.
   const catalog = useParticipationCatalog(open && needsParticipation);
-  // Мероприятия нужны ТОЛЬКО когда их выбирают: реестр ОМ закрыт своим правом,
-  // и запрашивать его у всех подряд значило бы ловить 403 на каждом открытии.
-  const events = useSecurityEvents(
-    // Отбор пустой намеренно: человека привлекают и на новое ОМ, и на идущее,
-    // и сузить список стадией значило бы спрятать половину мероприятий от
-    // того, кто ставит статус.
-    { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: 100 },
-    { enabled: open && needsParticipation }
-  );
-
-  const eventList = events.data?.results ?? [];
 
   useEffect(() => {
     if (!open) {
@@ -128,19 +120,6 @@ export function SetStatusDialog({
     [catalogTypes.types]
   );
 
-  const kindOf = (code: string) =>
-    catalog.data?.find((kind) => kind.code === code) ?? null;
-
-  function addRow(): void {
-    setRows((current) => [...current, { eventId: "", kindCode: "", roleCode: "" }]);
-  }
-
-  function patchRow(index: number, patch: Partial<ParticipationDraft>): void {
-    setRows((current) =>
-      current.map((row, i) => (i === index ? { ...row, ...patch } : row))
-    );
-  }
-
   async function save(): Promise<void> {
     if (statusCode === "") {
       setFormError("Выберите статус.");
@@ -153,26 +132,13 @@ export function SetStatusDialog({
       setFormError("Укажите хотя бы одно мероприятие.");
       return;
     }
-    for (const [index, row] of rows.entries()) {
-      if (row.eventId === "" || row.kindCode === "") {
-        setFormError(`Строка ${index + 1}: выберите мероприятие и вид участия.`);
-        return;
-      }
-      const kind = kindOf(row.kindCode);
-      if (kind !== null && kind.roles.length > 0 && row.roleCode === "") {
-        setFormError(`Строка ${index + 1}: у группы «${kind.label}» выберите роль.`);
-        return;
-      }
+    const invalid = validateParticipations(rows, catalog.data ?? []);
+    if (invalid !== null) {
+      setFormError(invalid);
+      return;
     }
     setFormError(null);
-    await onSubmit({
-      statusCode,
-      participations: rows.map((row) => ({
-        event_id: Number(row.eventId),
-        kind_code: row.kindCode,
-        role_code: row.roleCode === "" ? undefined : row.roleCode,
-      })),
-    });
+    await onSubmit({ statusCode, participations: participationsToPayload(rows) });
   }
 
   return (
@@ -230,132 +196,11 @@ export function SetStatusDialog({
           </div>
 
           {needsParticipation && (
-            <div className="flex flex-col gap-3 rounded-md border p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-semibold">Мероприятия</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Человек может быть причастен к нескольким ОМ, и на каждом
-                    идти по-своему.
-                  </p>
-                </div>
-                <Button type="button" variant="outline" size="sm" onClick={addRow}>
-                  + Мероприятие
-                </Button>
-              </div>
-
-              {events.isError && (
-                <p className="text-sm text-destructive-ink" role="alert">
-                  Реестр мероприятий не ответил — выбирать не из чего.
-                </p>
-              )}
-
-              {rows.map((row, index) => {
-                const kind = kindOf(row.kindCode);
-                return (
-                  <div
-                    key={index}
-                    /* ЯЧЕЙКИ СЖИМАЕМЫЕ (`min-w-0` у каждой): без этого
-                       длинное название ОМ («ОМ-2026-10 · Сценарий 2 — полный
-                       прогон») распирает колонку по своему содержимому, строка
-                       выходит за 720px окна, и содержимое обрезается С ОБЕИХ
-                       СТОРОН — вместе с заголовком и кнопкой «Проставить».
-                       Поймано снимком экрана; ассерты «текст на месте» этого
-                       не видят. */
-                    className="grid min-w-0 gap-2 md:grid-cols-[1fr_1fr_1fr_auto]"
-                  >
-                    <Select
-                      value={row.eventId}
-                      onValueChange={(value) => patchRow(index, { eventId: value })}
-                    >
-                      <SelectTrigger className="w-full min-w-0" aria-label={`Мероприятие ${index + 1}`}>
-                        <SelectValue placeholder="Мероприятие" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {/* ЗАГРУЗКА И ПУСТОТА — РАЗНЫЕ СОСТОЯНИЯ, и молчать
-                            нельзя ни в одном: пустой список читается как
-                            «мероприятий нет» и тогда, когда запрос ещё идёт.
-                            Поймано собственной пробой в полном прогоне —
-                            под нагрузкой реестр отвечал не сразу, и окно
-                            показывало пустоту как факт. */}
-                        {events.isPending && (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            Загружаем мероприятия…
-                          </div>
-                        )}
-                        {!events.isPending && eventList.length === 0 && (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            Мероприятий нет — привлекать не на что
-                          </div>
-                        )}
-                        {eventList.map((event) => (
-                          <SelectItem key={event.id} value={String(event.id)}>
-                            {event.code} · {event.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    <Select
-                      value={row.kindCode}
-                      onValueChange={(value) =>
-                        // Смена вида СБРАСЫВАЕТ роль: роль принадлежит группе,
-                        // и оставленная от прежней группы она была бы отвергнута
-                        // сервером — но человек увидел бы отказ вместо подсказки.
-                        patchRow(index, { kindCode: value, roleCode: "" })
-                      }
-                    >
-                      <SelectTrigger className="w-full min-w-0" aria-label={`Вид участия ${index + 1}`}>
-                        <SelectValue placeholder="Вид участия" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(catalog.data ?? []).map((item) => (
-                          <SelectItem key={item.code} value={item.code}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {kind !== null && kind.roles.length > 0 ? (
-                      <Select
-                        value={row.roleCode}
-                        onValueChange={(value) => patchRow(index, { roleCode: value })}
-                      >
-                        <SelectTrigger className="w-full min-w-0" aria-label={`Роль в группе ${index + 1}`}>
-                          <SelectValue placeholder="Роль в группе" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {kind.roles.map((role) => (
-                            <SelectItem key={role.code} value={role.code}>
-                              {role.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <div className="flex items-center">
-                        <Badge variant="outline" className="text-xs font-normal">
-                          {kind === null ? "выберите вид" : "ролей внутри нет"}
-                        </Badge>
-                      </div>
-                    )}
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Убрать мероприятие ${index + 1}`}
-                      onClick={() =>
-                        setRows((current) => current.filter((_, i) => i !== index))
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
+            <EventParticipationFields
+              rows={rows}
+              onChange={setRows}
+              enabled={open && needsParticipation}
+            />
           )}
 
           {(formError !== null || failure !== null) && (

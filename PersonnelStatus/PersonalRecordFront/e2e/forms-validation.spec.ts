@@ -23,6 +23,17 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
+const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+
+/** Токен для чтения справочника напрямую — как в соседних живых пробах. */
+async function tokenFor(): Promise<string> {
+  const res = await fetch(`${API}/api/token/`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
+  })
+  return ((await res.json()) as { access: string }).access
+}
 
 async function signIn(page: Page, username: string, password: string): Promise<void> {
   const api = page.context().request
@@ -213,8 +224,25 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
       },
     )
 
+    // 🔴 ПИН ПОДПИСИ СНЯТ ОСОЗНАННО (Plane №367). Здесь стояло «Отпуск» —
+    // подпись из старой таблицы тринадцати кодов. После №354 список собран из
+    // СПРАВОЧНИКА, где тот же тип назван «В отпуске», и проба искала пункт,
+    // которого в списке нет вовсе. Вписать новое слово значило бы ждать
+    // следующего переименования в админке: пробе нужен ЛЮБОЙ срочный статус —
+    // тот, у которого есть даты, то есть любой, кроме «В строю».
+    const token = await tokenFor()
+    const catalog = (await (
+      await fetch(`${API}/api/statuses/types/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as Array<{ code: string; label: string }>
+    const timed = catalog.find((item) => item.code !== 'in_service')
+    expect(timed, 'в справочнике нет ни одного срочного типа — проверять нечего').toBeTruthy()
+
     await form.locator('#status').click()
-    await page.getByRole('option', { name: 'Отпуск', exact: true }).click()
+    const option = page.getByRole('option', { name: timed!.label, exact: true })
+    await option.scrollIntoViewIfNeeded()
+    await option.click()
     await form.getByRole('button', { name: 'Применить изменения' }).click()
 
     // Правило то же, что в одиночной модалке: срочный статус требует период
