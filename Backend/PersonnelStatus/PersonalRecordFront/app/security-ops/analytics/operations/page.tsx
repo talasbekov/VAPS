@@ -55,6 +55,7 @@ import { LoadFailure } from "@/components/load-failure";
 import { OpsKpiCards } from "@/widgets/ops-kpi-cards";
 import type { OpsKpiItem } from "@/widgets/ops-kpi-cards";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 
 const LEVELS: readonly OpsLevel[] = ["ALL", "OBJECT", "EVENT", "DIRECTION", "POST"];
 
@@ -157,7 +158,7 @@ export default function OperationsAnalyticsPage() {
     router.replace(queryString === "" ? pathname : `${pathname}?${queryString}`);
   }
 
-  if (!permissionsLoading && !hasPermission("analytics.operations")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/analytics/operations"])) {
     return <OpsAccessDenied what="аналитики ОМ" />;
   }
 

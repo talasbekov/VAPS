@@ -39,6 +39,7 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { useDivisionsTree } from "@/hooks/use-divisions-tree";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import {
   useAccessAccounts,
   useAccessRoles,
@@ -55,7 +56,10 @@ import type { Division } from "@/lib/api";
 import { formatIsoDateTime } from "@/shared/lib/date";
 import { OpsApiError } from "@/lib/ops-errors";
 
-const ACCESS_ADMIN_PERMISSION = "admin.roles";
+// Право берётся из ОБЩЕЙ карты (Plane №350): пункт меню и гейт этого
+// экрана обязаны решать одно и то же, иначе спрятанный пункт и открытый
+// экран разойдутся молча.
+const ACCESS_ADMIN_PERMISSION = MODULE_PERMISSION["/settings/users"];
 /** Значение «без области» в выпадающем списке: пустая строка неотличима от
  * «ничего не выбрано», а область должна выбираться осознанно. */
 const WHOLE_SERVICE_VALUE = "WHOLE_SERVICE";

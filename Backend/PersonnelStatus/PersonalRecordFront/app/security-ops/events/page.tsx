@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/table";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import {
@@ -135,7 +136,7 @@ export default function SecurityEventsPage() {
     router.replace(qs === "" ? pathname : `${pathname}?${qs}`, { scroll: false });
   }
 
-  if (!permissionsLoading && !hasPermission("event.view")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/events"])) {
     return (
       <OpsAccessDenied what="реестра ОМ" />
     );

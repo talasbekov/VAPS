@@ -27,6 +27,7 @@ import {
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useStrengthReport } from "@/hooks/use-strength-report";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { CreateSecurityEventDialog } from "@/features/create-security-event";
 import { ExpenseTrafficCard } from "@/features/command-expense";
 import { OpsKpiCards } from "@/widgets/ops-kpi-cards";
@@ -194,7 +195,7 @@ export default function CommandCenterPage() {
     [events]
   );
 
-  if (!permissionsLoading && !hasPermission("event.view")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/command-center"])) {
     return (
       <OpsAccessDenied what="командного центра" />
     );

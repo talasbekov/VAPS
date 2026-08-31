@@ -38,6 +38,7 @@ import { LoadFailure } from "@/components/load-failure";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import {
   useAccessCatalog,
   useAccessPermissions,
@@ -47,7 +48,10 @@ import {
 import { accessMethodTone } from "@/entities/access";
 import type { AccessCatalogEntry, AccessPermission } from "@/entities/access";
 
-const ACCESS_ADMIN_PERMISSION = "admin.roles";
+// Право берётся из ОБЩЕЙ карты (Plane №350): пункт меню и гейт этого
+// экрана обязаны решать одно и то же, иначе спрятанный пункт и открытый
+// экран разойдутся молча.
+const ACCESS_ADMIN_PERMISSION = MODULE_PERMISSION["/settings/permissions"];
 
 export default function AccessPermissionsPage() {
   // useSearchParams требует границы Suspense — иначе пререндер падает на сборке.

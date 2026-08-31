@@ -68,6 +68,7 @@ import {
 } from "@/hooks/use-security-objects";
 import { EventHistoryDialog } from "@/features/event-history";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import {
   FRESHNESS_LABEL,
@@ -400,7 +401,7 @@ export default function SecurityObjectsPage() {
     applyParams(params);
   }
 
-  if (!permissionsLoading && !hasPermission("object.view")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/objects"])) {
     return <OpsAccessDenied what="реестра объектов" />;
   }
 

@@ -24,6 +24,7 @@ import type {
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 
 function formatMoment(iso: string): string {
@@ -95,7 +96,7 @@ export default function FeedbackPage() {
     changeFilter(() => setSearch(value))
   );
 
-  if (!permissionsLoading && !hasPermission("feedback.view")) {
+  if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/feedback"])) {
     return <OpsAccessDenied what="обращений" />;
   }
 
