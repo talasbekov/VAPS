@@ -974,7 +974,7 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     EmployeeStatus.objects.create(
                         employee=employee,
                         status_type=EmployeeStatus.StatusType.IN_SERVICE,
-                        start_date=timezone.now().date(),
+                        start_date=timezone.localdate(),
                         state=EmployeeStatus.StatusState.ACTIVE,
                         comment='Автоматически создан при создании сотрудника',
                         created_by=user

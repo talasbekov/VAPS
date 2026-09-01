@@ -74,7 +74,7 @@ class StatusApplicationService:
         # человека «в строю» было нельзя — save() падал на пересечении, — и
         # вернуть откомандированному обычный статус тоже. Правило теперь одно
         # и то же для всех типов: активный статус у сотрудника один.
-        today = timezone.now().date()
+        today = timezone.localdate()
 
         # ПЕРВЫМ ДЕЛОМ — снять запланированное «В строю», перекрытое новым
         # статусом. Порядок не косметический: закрытие активного статуса ниже
@@ -265,7 +265,7 @@ class StatusApplicationService:
         Returns:
             EmployeeStatus: Созданный запланированный статус
         """
-        if start_date <= timezone.now().date():
+        if start_date <= timezone.localdate():
             raise ValidationError("Дата начала запланированного статуса должна быть в будущем.")
 
         status = self.create_status(
@@ -401,7 +401,7 @@ class StatusApplicationService:
         третья копия выборки «текущего статуса», и она уже отличалась от двух
         остальных.
         """
-        return status_on_date(employee_id, timezone.now().date())
+        return status_on_date(employee_id, timezone.localdate())
 
     def get_employee_status_history(
         self,
@@ -496,7 +496,7 @@ class StatusApplicationService:
             List[EmployeeStatus]: Список примененных статусов
         """
         if target_date is None:
-            target_date = timezone.now().date()
+            target_date = timezone.localdate()
 
         planned_statuses = EmployeeStatus.objects.filter(
             state=EmployeeStatus.StatusState.PLANNED,
@@ -568,7 +568,7 @@ class StatusApplicationService:
             List[EmployeeStatus]: Список завершенных статусов
         """
         if target_date is None:
-            target_date = timezone.now().date()
+            target_date = timezone.localdate()
 
         expired_statuses = EmployeeStatus.objects.filter(
             state=EmployeeStatus.StatusState.ACTIVE,
@@ -644,7 +644,7 @@ class StatusApplicationService:
             Dict: Статистика по расходу
         """
         if target_date is None:
-            target_date = timezone.now().date()
+            target_date = timezone.localdate()
 
         # Получаем всех сотрудников подразделения
         from organization_management.apps.staff_unit.models import StaffUnit
@@ -704,9 +704,9 @@ class StatusApplicationService:
             Dict: Статистика по отсутствиям и количеству штата
         """
         if start_date is None:
-            start_date = timezone.now().date() - timedelta(days=30)
+            start_date = timezone.localdate() - timedelta(days=30)
         if end_date is None:
-            end_date = timezone.now().date()
+            end_date = timezone.localdate()
 
         # Получаем количество штата (сотрудников)
         from organization_management.apps.staff_unit.models import StaffUnit

@@ -93,7 +93,7 @@ def send_upcoming_status_notifications_task(days_before: int = 7):
     Задача выполняется ежедневно и отправляет уведомления
     о статусах, которые начнутся через N дней
     """
-    today = timezone.now().date()
+    today = timezone.localdate()
     notification_date = today + timedelta(days=days_before)
 
     try:
@@ -350,7 +350,7 @@ def send_ending_status_notifications_task(days_before: int = 3):
     Задача выполняется ежедневно и отправляет уведомления
     о статусах, которые завершатся через N дней
     """
-    today = timezone.now().date()
+    today = timezone.localdate()
     notification_date = today + timedelta(days=days_before)
 
     # Типы статусов, для которых отправляем уведомления

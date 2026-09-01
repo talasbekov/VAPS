@@ -40,7 +40,7 @@ def close_statuses_on_dismissal(sender, instance, **kwargs):
         return
 
     # Получаем дату увольнения
-    dismissal_date = instance.dismissal_date or timezone.now().date()
+    dismissal_date = instance.dismissal_date or timezone.localdate()
 
     # Находим активные статусы (завершаем)
     active_statuses = EmployeeStatus.objects.filter(
