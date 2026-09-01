@@ -30,6 +30,9 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { dropProbeEvents, probeToken } from './probe-events'
+
+/** Адрес бэкенда — тот же, что у остальных шагов уборки. */
+const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 import { dropOpsProbeStatuses, dropProbeStatuses } from './probe-statuses'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
@@ -68,6 +71,48 @@ async function purgeStubborn(): Promise<string | null> {
  * `tables-data.spec.ts:289` краснела на каждом полном прогоне. */
 async function purgeOrphanParticipations(): Promise<string | null> {
   return runPurge(['--orphans-only', '--yes'])
+}
+
+
+/** Пробные роли, заведённые пробами раздела доступа (Plane №379).
+ *
+ * 🔴 ДЕАКТИВАЦИЯ, А НЕ УДАЛЕНИЕ — и это не выбор, а устройство системы: код
+ * роли стоит в назначениях (`UserRole.role_code`, PROTECT), поэтому `destroy`
+ * у справочника ролей не объявлен вовсе. Роль снимается с работы флагом.
+ *
+ * Зачем вообще: пробы `access-users` и `access-multi-role` заводят себе роль,
+ * чтобы не трогать настоящие назначения стенда, и оставляли её ДЕЙСТВУЮЩЕЙ.
+ * К 02.09.2026 в боевом справочнике так и стояли две строки с нулём прав —
+ * администратор видел их рядом с рабочими ролями и мог выдать человеку.
+ */
+const PROBE_ROLE_CODES = ['E2E_PROBE_ROLE', 'E2E_SECOND_ROLE'] as const
+
+async function deactivateProbeRoles(token: string): Promise<string> {
+  let closed = 0
+  let refused = 0
+  for (const code of PROBE_ROLE_CODES) {
+    try {
+      const res = await fetch(`${API}/api/operations/roles/${code}/`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ is_active: false }),
+      })
+      // 404 — роли нет вовсе: пробы этого прогона её не заводили, и это норма.
+      if (res.status === 404) continue
+      if (res.ok) closed += 1
+      else refused += 1
+    } catch {
+      refused += 1
+    }
+  }
+  if (closed === 0 && refused === 0) return 'пробные роли: нечего снимать'
+  return (
+    `пробные роли: снято с работы ${closed}` +
+    (refused > 0 ? `, отказано ${refused}` : '')
+  )
 }
 
 export default async function globalTeardown(): Promise<void> {
@@ -128,6 +173,13 @@ export default async function globalTeardown(): Promise<void> {
     // Тот же довод, что и ниже у мероприятий: уборка не предмет проверки, и
     // падать на ней значило бы красить зелёный прогон по чужой причине.
     console.log(`уборка пробных статусов: не отработала (${String(error).slice(0, 120)})`)
+  }
+
+  try {
+    console.log(await deactivateProbeRoles(token))
+  } catch (error) {
+    // Тот же довод, что и у остальных шагов уборки: падать ей нельзя.
+    console.log(`пробные роли: уборка не отработала (${String(error).slice(0, 120)})`)
   }
 
   const { dropped, refused } = await dropProbeEvents(token)
