@@ -194,6 +194,38 @@ def test_the_overview_is_widened_by_a_second_grant_and_nothing_else(stand):
     )
 
 
+def test_the_overview_of_the_second_department_stops_at_its_department(stand):
+    """«Обзор» начальника управления второго департамента — департамент, а не
+    вся служба (Plane №372).
+
+    Заказчик про эту персону: «Категории ОМ на уровне Организации, остальное на
+    уровне своего управления, за исключением Обзор — на уровне департамента».
+    «Обзор» считается по области права `orgstructure.view`, и роль-добавка
+    `OM_CATEGORY_ORG` выдаётся с областью «вся организация»: пока она несла это
+    право, третий грант перебивал второй, и человек видел всю службу — 442
+    штатные единицы вместо 197 (замер по стенду 31.08.2026).
+
+    Проба спрашивает ОБЛАСТЬ, а не набор прав: расхождение было именно в ней.
+    """
+    from organization_management.apps.operations.services import PermissionService
+
+    call_command("seed_access_matrix", "--password", PASSWORD)
+    user = User.objects.get(username="acc_dir_head_d2")
+    department = Division.objects.get(code="am-second")
+    directorate = Division.objects.get(code="am-second-dir")
+
+    visible = PermissionService.visible_division_ids(str(user.pk), "orgstructure.view")
+
+    # None означало бы «видит всё дерево» — ровно та широта, из-за которой
+    # заведена карточка.
+    assert visible is not None, "«Обзор» открыт на всю организацию"
+    assert department.id in visible and directorate.id in visible
+    assert Division.objects.get(code="am-first").id not in visible
+    # Мероприятия при этом остаются на всей организации: их область даёт то же
+    # роль-добавка, и починка не должна была её сузить.
+    assert PermissionService.visible_division_ids(str(user.pk), "event.view") is None
+
+
 def test_a_repeat_run_neither_multiplies_nor_widens(stand):
     call_command("seed_access_matrix", "--password", PASSWORD)
     before = grants("acc_dept_head_d2")
