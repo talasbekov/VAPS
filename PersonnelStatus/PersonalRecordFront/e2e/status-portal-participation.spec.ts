@@ -90,6 +90,52 @@ async function pickNextMonthDay(page: Page, day: string): Promise<void> {
 test.describe('статусы: привлечение на ОМ из портального окна', () => {
   test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
 
+  test('«Участие в ОМ» тоже спрашивает мероприятие, а не одни даты', async ({
+    page,
+  }) => {
+    /**
+     * Plane №378 (найдено ручным тестированием №377).
+     *
+     * Заказчик в №365 писал про «Участие на ОМ», а блок привлечения включался
+     * только у двух других кодов — «Привлечён на мероприятие (наряд)» и
+     * «(боевая группа)». То есть он нажимал тип, для которого не сделано
+     * ничего: окно предлагало только даты и комментарий, а разрезы сбора сил
+     * считали такого человека В СТРОЮ и предлагали на новое привлечение.
+     *
+     * Проба стережёт мутацию: убрать `IN_EVENT` из общего списка кодов
+     * участия — блок снова исчезнет.
+     */
+    const label = await labelOfStatus('IN_EVENT')
+
+    await signIn(page)
+    await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
+
+    await page.getByRole('button', { name: /^Действия: / }).first().click()
+    await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText('Статусы сотрудника')).toBeVisible({ timeout: 20_000 })
+
+    // До выбора блока нет — иначе проверка «блок появился» ничего не значит.
+    await expect(dialog.getByText('Мероприятия', { exact: true })).toHaveCount(0)
+
+    await dialog.locator('#status').click()
+    await expect(page.getByRole('listbox')).toBeVisible()
+    const option = page.getByRole('option', { name: label, exact: true })
+    await option.scrollIntoViewIfNeeded()
+    await option.click()
+
+    await expect(
+      dialog.locator('#status'),
+      'в поле статуса встал не тот тип, который выбран',
+    ).toContainText(label)
+    await expect(
+      dialog.getByText('Мероприятия', { exact: true }),
+      'у «Участия в ОМ» блок мероприятий обязан появиться — иначе статус ' +
+        'заводится «неизвестно на что», а расход считает человека свободным',
+    ).toBeVisible()
+  })
+
   test('окно спрашивает мероприятие и физнаряд, а пишет в учёт раздела ОМ', async ({
     page,
   }) => {

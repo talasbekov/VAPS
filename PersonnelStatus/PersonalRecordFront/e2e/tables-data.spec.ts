@@ -549,7 +549,14 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     expect(rowCount, 'таблица пуста — пробе не на чем стоять').toBeGreaterThan(1)
 
     const links = page.getByRole('link', { name: '→ Сбор сил' })
-    await expect(links).toHaveCount(1)
+    // 🔴 ССЫЛОК МОЖЕТ БЫТЬ БОЛЬШЕ ОДНОЙ (Plane №378). Пин «ровно одна» стоял
+    // от времени, когда участием считались два кода из трёх: подменённая
+    // строка была единственной. С добавлением `IN_EVENT` в общий список
+    // ссылку законно получают и живые строки стенда с «Участием в ОМ» —
+    // проба падала на ПРАВИЛЬНОМ поведении. Предмет пробы не в числе ссылок,
+    // а в том, что ссылка есть у подменённой строки и НЕ у каждой; оба
+    // условия проверены ниже.
+    await expect(links.first()).toBeVisible()
     // `next.config.js` несёт `trailingSlash: true` — рендер добавляет слэш
     // перед строкой запроса (как и у соседней ссылки в PlacementStage.tsx,
     // см. `events-registry.spec.ts:170`); адрес назначения от этого не
@@ -564,9 +571,22 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       'ссылка есть у каждой строки — предикат статуса её не фильтрует',
     ).toBeGreaterThan(0)
 
-    const row = rows.filter({ has: page.getByRole('link', { name: '→ Сбор сил' }) })
-    await expect(row).toHaveCount(1)
-    await expect(row.getByText(CAPTION, { exact: true })).toBeVisible()
+    // Строки без известного мероприятия: подменённая точно есть, а с №378
+    // такие же могут стоять и на самом стенде (живой статус «Участие в ОМ»,
+    // заведённый без привязки). Проба требует ХОТЯ БЫ одну и проверяет, что у
+    // КАЖДОЙ такой строки ссылка ведёт на общий разрез — это и есть предмет.
+    const row = rows.filter({ hasText: CAPTION })
+    const rowsWithoutEvent = await row.count()
+    expect(
+      rowsWithoutEvent,
+      'подменённая строка не нашлась — перехват не сработал',
+    ).toBeGreaterThan(0)
+    for (let index = 0; index < rowsWithoutEvent; index += 1) {
+      await expect(
+        row.nth(index).getByRole('link', { name: '→ Сбор сил' }),
+        'у строки без известного мероприятия ссылка ведёт на общий разрез',
+      ).toHaveCount(1)
+    }
     // 🔴 ПИН ПОДПИСИ ПОДНЯТ ОСОЗНАННО (Plane №366). Здесь стояло «Участие в
     // ОМ» — литерал, который клиент печатал САМ веточкой на два кода
     // (`describeStatus` в `status-table.tsx`), одинаково для наряда и для

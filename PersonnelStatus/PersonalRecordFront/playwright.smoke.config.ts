@@ -42,6 +42,22 @@ if (process.env.ROLE_ACCOUNTS_PASSWORD === undefined) {
   }
 }
 
+// Пароль семи учёток матрицы доступа (`acc_*`) — оттуда же
+// (`~/.config/vaps/access-matrix-password`, права 600). До 02.09.2026 файла не
+// было вовсе, и проба `access-matrix-menu` молча скипалась КАЖДЫЙ прогон: в
+// итогах она читалась как «1 skipped», то есть матрица доступа заказчика не
+// проверялась ничем. Пароль задан единым для семи учёток; сами учётки заводит
+// `seed_access_matrix`.
+if (process.env.ACCESS_MATRIX_PASSWORD === undefined) {
+  try {
+    process.env.ACCESS_MATRIX_PASSWORD = fs
+      .readFileSync(path.join(os.homedir(), '.config', 'vaps', 'access-matrix-password'), 'utf8')
+      .trim()
+  } catch {
+    // Файла нет — проба скипнется с внятной причиной, а не упадёт на входе.
+  }
+}
+
 if (process.env.SMOKE_PASSWORD === undefined) {
   try {
     process.env.SMOKE_PASSWORD = fs
