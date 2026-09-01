@@ -7,6 +7,8 @@ conduct → closed. Правила, коды и тексты — порт мок
 девять стадий: цепочка целиком, а не девять изолированных проверок, — иначе
 выход одной стадии никогда не встретился бы со входом следующей.
 """
+from datetime import date
+
 import pytest
 from django.db.utils import IntegrityError
 
@@ -1915,6 +1917,87 @@ def test_event_delete_removes_the_row_and_leaves_a_trace(manager):
     assert row.old_value["code"] == data["code"]
     assert row.old_value["title"] == "Опечатка в названии"
     assert row.old_value["stage"] == "RECON"
+
+
+def test_event_delete_takes_its_participations_with_it(manager):
+    """Удаление ОМ снимает участия на него, а статус, который ими и держался,
+    закрывается (Plane №355, решение 02.09.2026).
+
+    Проверено делом до правки: участие переживало мероприятие, теряло код и
+    название («привлечён неизвестно куда») и ПРОДОЛЖАЛО занимать день
+    сотрудника — новый статус на те же даты не заводился.
+    """
+    from organization_management.apps.operations.models_status import (
+        OpsEmployeeStatus,
+        OpsStatusParticipation,
+    )
+
+    obj = make_object(with_passport=True)
+    data = create_event(manager, obj, title="ОМ под удаление с участием").json()
+    employee = make_employee()
+    status = OpsEmployeeStatus.objects.create(
+        employee_id=employee.pk,
+        status_type_code="EVENT_ASSIGNMENT",
+        date_start=date(2026, 9, 5),
+        date_end=date(2026, 9, 6),
+        created_by="test",
+    )
+    OpsStatusParticipation.objects.create(
+        status=status, event_id=int(data["id"]), kind_code="PHYSICAL_SQUAD"
+    )
+    remover, _ = client_for(
+        "ev-remover-part", "EV_REMOVER_PART", perms=("event.view", "event.delete")
+    )
+
+    assert remover.delete(f"{URL}{data['id']}/").status_code == 204
+
+    assert not OpsStatusParticipation.objects.filter(
+        event_id=int(data["id"])
+    ).exists(), "участие пережило своё мероприятие — снова сирота"
+    assert not OpsEmployeeStatus.objects.filter(pk=status.pk).exists(), (
+        "статус держался ТОЛЬКО этим участием и обязан был уйти вместе с ним — "
+        "иначе день сотрудника занят привлечением в никуда"
+    )
+
+
+def test_event_delete_keeps_a_status_that_has_another_participation(manager):
+    """А статус, у которого осталось живое участие, НЕ трогается.
+
+    Обратная сторона правила: снести его значило бы стереть привлечение на
+    другое, существующее мероприятие.
+    """
+    from organization_management.apps.operations.models_status import (
+        OpsEmployeeStatus,
+        OpsStatusParticipation,
+    )
+
+    obj = make_object(with_passport=True)
+    doomed = create_event(manager, obj, title="ОМ под удаление").json()
+    alive = create_event(manager, obj, title="ОМ, которое остаётся").json()
+    employee = make_employee()
+    status = OpsEmployeeStatus.objects.create(
+        employee_id=employee.pk,
+        status_type_code="EVENT_ASSIGNMENT",
+        date_start=date(2026, 9, 5),
+        date_end=date(2026, 9, 6),
+        created_by="test",
+    )
+    for event in (doomed, alive):
+        OpsStatusParticipation.objects.create(
+            status=status, event_id=int(event["id"]), kind_code="PHYSICAL_SQUAD"
+        )
+    remover, _ = client_for(
+        "ev-remover-keep", "EV_REMOVER_KEEP", perms=("event.view", "event.delete")
+    )
+
+    assert remover.delete(f"{URL}{doomed['id']}/").status_code == 204
+
+    assert OpsEmployeeStatus.objects.filter(pk=status.pk).exists()
+    assert set(
+        OpsStatusParticipation.objects.filter(status=status).values_list(
+            "event_id", flat=True
+        )
+    ) == {int(alive["id"])}
 
 
 def test_event_delete_refuses_closed_and_worked_events(manager):
