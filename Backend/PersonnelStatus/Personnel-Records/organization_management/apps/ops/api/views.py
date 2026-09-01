@@ -2983,11 +2983,27 @@ class OpsDailyDivisionsViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
 
 class OpsDailyEmployeesViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """GET /api/ops/daily/employees/?division_id= — состав подразделения для
+    """GET /api/ops/daily/employees/?division_id= — состав подразделений для
     грида. Чужое подразделение — 403 (общий резолвер области), а не пустой
-    список, неотличимый от «там никого нет»."""
+    список, неотличимый от «там никого нет».
+
+    🔴 ПАРАМЕТР ПОВТОРЯЕМЫЙ (Plane №376): `?division_id=1&division_id=2`
+    отдаёт состав обоих ОДНИМ ответом. Раньше принимался ровно один, и экран
+    «Сотрудники» спрашивал состав подразделение за подразделением — 51 запрос
+    на одно открытие (замер по прод-стенду 02.09.2026). Обязательность
+    параметра СОХРАНЕНА: «весь состав службы» ручка по-прежнему не отдаёт
+    (Plane №151), просто теперь список подразделений можно назвать целиком.
+
+    Область проверяется у КАЖДОГО названного подразделения, а не у первого:
+    иначе к своему подразделению можно было бы дописать чужое и прочитать его
+    состав в том же ответе.
+    """
 
     permission_map = {"list": _DAILY_READ_PERMISSION}
+
+    #: Потолок на список: запрос на тысячу подразделений — это уже выгрузка
+    #: всей службы в обход №151, и отвечать на неё эта ручка не должна.
+    MAX_DIVISIONS = 200
 
     @extend_schema(
         parameters=[
@@ -2995,24 +3011,53 @@ class OpsDailyEmployeesViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "division_id", OpenApiTypes.INT, OpenApiParameter.QUERY,
                 required=True,
                 description=(
-                    "Подразделение. ОБЯЗАТЕЛЕН: состав отдаётся по одному "
-                    "подразделению, «весь состав службы» эта ручка не отдаёт "
-                    "вовсе (Plane №151)."
+                    "Подразделение. ОБЯЗАТЕЛЕН: «весь состав службы» эта ручка "
+                    "не отдаёт вовсе (Plane №151). Можно повторить несколько "
+                    "раз — состав всех названных подразделений придёт одним "
+                    "ответом, у каждой строки стоит её `division_id` "
+                    "(Plane №376). Больше 200 подразделений за раз — 400."
                 ),
             )
         ]
     )
     def list(self, request):
-        division_id = _parse_int_param(request, "division_id")
-        if division_id is None:
+        raw = request.query_params.getlist("division_id")
+        division_ids = []
+        for value in raw:
+            try:
+                division_ids.append(int(value))
+            except (TypeError, ValueError):
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    400,
+                    detail={"division_id": ["Подразделение задаётся числом."]},
+                    message="Проверьте параметры запроса.",
+                )
+        # Порядок сохраняем, дубли снимаем: повторённый в адресе id не должен
+        # ни удваивать проверку области, ни удваивать людей в ответе.
+        division_ids = list(dict.fromkeys(division_ids))
+        if not division_ids:
             raise DomainError(
                 "VALIDATION_ERROR",
                 400,
                 detail={"division_id": ["Укажите подразделение."]},
                 message="Проверьте параметры запроса.",
             )
-        _resolve_division_scope(request, division_id, _DAILY_READ_PERMISSION)
-        results = daily_service.employee_rows([division_id])
+        if len(division_ids) > self.MAX_DIVISIONS:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={
+                    "division_id": [
+                        f"За один раз не больше {self.MAX_DIVISIONS} "
+                        "подразделений."
+                    ]
+                },
+                message="Проверьте параметры запроса.",
+            )
+        for division_id in division_ids:
+            _resolve_division_scope(request, division_id, _DAILY_READ_PERMISSION)
+        results = daily_service.employee_rows(division_ids)
         return Response(
             {
                 "count": len(results),

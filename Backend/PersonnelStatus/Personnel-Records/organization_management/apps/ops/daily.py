@@ -147,10 +147,17 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
 
 
 def employee_rows(division_ids):
-    """Состав подразделений: [{id: str, full_name, rank_code}].
+    """Состав подразделений: [{id: str, full_name, rank_code, division_id}].
 
     rank_code несёт ЧЕЛОВЕКОЧИТАЕМОЕ звание (контракт клиента показывает его
     как есть, подстрокой подписи), а не код справочника.
+
+    🔴 `division_id` В СТРОКЕ — НЕ УКРАШЕНИЕ (Plane №376). Пока его не было,
+    общий ответ по нескольким подразделениям был бесполезен: разложить людей
+    обратно клиент не мог, и ему приходилось спрашивать состав подразделение
+    за подразделением — 51 запрос на одно открытие экрана «Сотрудники».
+    Поле ДОБАВЛЕНО рядом со старыми, а не вместо: прежние читатели одного
+    подразделения его просто не замечают.
     """
     from organization_management.apps.employees.models import Employee
     from organization_management.apps.ops.security_events import (
@@ -170,6 +177,7 @@ def employee_rows(division_ids):
                 "id": str(employee.pk),
                 "full_name": personnel_display_name(employee),
                 "rank_code": employee.rank.name if employee.rank else "",
+                "division_id": employee.staff_unit.division_id,
             }
         )
     return rows
