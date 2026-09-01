@@ -75,11 +75,21 @@ def operator(division):
 
 
 @pytest.fixture
-def scoped_viewer(division):
-    other = Division.objects.create(name="Управление 2")
+def scoped_division(db):
+    """Подразделение, которое видит скоупованный зритель.
+
+    Отдельной фикстурой, а не внутри `scoped_viewer` (Plane №376): пробам
+    списка подразделений нужно и само подразделение — чтобы проверить, что
+    чужое в списке закрывает ответ целиком.
+    """
+    return Division.objects.create(name="Управление 2")
+
+
+@pytest.fixture
+def scoped_viewer(division, scoped_division):
     api, _ = client_for(
         "daily-scoped", "DAILY_SCOPED", perms=("status.view",),
-        scope_division_id=other.pk,
+        scope_division_id=scoped_division.pk,
     )
     return api
 
@@ -251,9 +261,76 @@ def test_employees_of_division_contract_shape(operator, division):
             "id": str(employee.pk),
             "full_name": "Иванов И.",
             "rank_code": "",
+            # Подразделение строки (Plane №376): без него общий ответ по
+            # нескольким подразделениям нельзя разложить обратно.
+            "division_id": division.pk,
         }
     ]
     assert payload["count"] == 1
+
+
+def test_employees_of_several_divisions_come_in_one_answer(operator, division):
+    """Состав нескольких подразделений отдаётся ОДНИМ ответом (Plane №376).
+
+    Ради этого и заведён повторяемый параметр: экран «Сотрудники» спрашивал
+    состав подразделение за подразделением и делал 51 запрос на одно открытие.
+    """
+    other = Division.objects.create(name="Управление 3")
+    first = make_employee(division)
+    second = make_employee(other)
+
+    payload = operator.get(
+        f"{EMPLOYEES}?division_id={division.pk}&division_id={other.pk}"
+    ).json()
+
+    assert payload["count"] == 2
+    assert {row["id"] for row in payload["results"]} == {
+        str(first.pk),
+        str(second.pk),
+    }
+    # Каждая строка знает СВОЁ подразделение — иначе разложить ответ нечем.
+    by_id = {row["id"]: row["division_id"] for row in payload["results"]}
+    assert by_id[str(first.pk)] == division.pk
+    assert by_id[str(second.pk)] == other.pk
+
+
+def test_repeated_division_id_neither_doubles_people_nor_widens(operator, division):
+    """Повтор одного и того же id в адресе не удваивает людей."""
+    make_employee(division)
+    payload = operator.get(
+        f"{EMPLOYEES}?division_id={division.pk}&division_id={division.pk}"
+    ).json()
+    assert payload["count"] == 1
+
+
+def test_foreign_division_in_the_list_is_403_and_nothing_leaks(
+    scoped_viewer, division, scoped_division
+):
+    """Чужое подразделение В СПИСКЕ закрывает ВЕСЬ ответ.
+
+    Проверять область только у первого названного значило бы отдать чужой
+    состав тому, кто дописал его вторым параметром к своему.
+    """
+    foreign = make_employee(division)
+    make_employee(scoped_division)
+
+    response = scoped_viewer.get(
+        f"{EMPLOYEES}?division_id={scoped_division.pk}&division_id={division.pk}"
+    )
+
+    assert response.status_code == 403
+    # Ни строки чужого состава в теле отказа: 403 должен закрывать ответ, а не
+    # приходить рядом с данными.
+    assert str(foreign.pk) not in response.content.decode()
+
+
+def test_division_id_must_be_a_number(operator):
+    assert operator.get(f"{EMPLOYEES}?division_id=abc").status_code == 400
+
+
+def test_too_many_divisions_at_once_is_400(operator, division):
+    ids = "&".join(f"division_id={n}" for n in range(1, 202))
+    assert operator.get(f"{EMPLOYEES}?{ids}").status_code == 400
 
 
 def test_employees_foreign_division_is_403(scoped_viewer, division):

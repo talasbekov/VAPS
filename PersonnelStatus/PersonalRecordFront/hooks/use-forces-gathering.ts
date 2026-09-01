@@ -17,7 +17,7 @@
 // (`/api/ops/daily/employees/`): он даёт ФИО и звание, которых нет ни в
 // статусе, ни в расходе. Запрос на подразделение — своя строка кэша: список
 // личного состава меняется несравнимо реже статусов.
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import type {
   OpsEmployeeStatusRow,
@@ -56,7 +56,14 @@ export interface GatheringPerson {
 }
 
 interface DailyEmployeesResponse {
-  results: { id: string; full_name: string; rank_code: string }[];
+  results: {
+    id: string;
+    full_name: string;
+    rank_code: string;
+    /** Подразделение строки (Plane №376): по нему общий ответ раскладывается
+     *  обратно. У старых ответов поля нет — тогда человек не раскладывается. */
+    division_id?: number;
+  }[];
 }
 
 export function useForcesGathering() {
@@ -91,15 +98,27 @@ export function useForcesGathering() {
   });
 
   const divisions = report.data?.rows ?? [];
-  const people = useQueries({
-    queries: divisions.map((row) => ({
-      queryKey: ["daily-employees", row.division_id],
-      queryFn: () =>
-        opsApiClient.get<DailyEmployeesResponse>(
-          `${DAILY_EMPLOYEES_PATH}?division_id=${row.division_id}`
-        ),
-      staleTime: 5 * 60 * 1000,
-    })),
+  //  🔴 ОДИН ЗАПРОС НА ВСЕ ПОДРАЗДЕЛЕНИЯ, А НЕ ЗАПРОС НА КАЖДОЕ (Plane №376).
+  //  Здесь стоял `useQueries` по строкам расхода: на живом дереве это 51
+  //  обращение к одной и той же ручке при каждом открытии экрана
+  //  «Сотрудники» (замер по прод-стенду 02.09.2026 — 74 обращения к API, из
+  //  них 51 сюда). Ручка теперь принимает `division_id` несколько раз и
+  //  отдаёт состав всех названных одним ответом, а строка несёт своё
+  //  подразделение — раскладываем по нему.
+  //
+  //  Ключ кэша — СПИСОК подразделений: сменился состав дерева, сменился и
+  //  ключ. Держать общий ключ значило бы отдать состав старого дерева новому.
+  const divisionIds = divisions.map((row) => row.division_id);
+  const peopleQuery = useQuery<DailyEmployeesResponse>({
+    queryKey: ["daily-employees", "batch", divisionIds],
+    queryFn: () =>
+      opsApiClient.get<DailyEmployeesResponse>(
+        `${DAILY_EMPLOYEES_PATH}?${divisionIds
+          .map((id) => `division_id=${id}`)
+          .join("&")}`
+      ),
+    enabled: divisionIds.length > 0,
+    staleTime: 5 * 60 * 1000,
   });
 
   const statusByEmployee = new Map<number, OpsEmployeeStatusRow>();
@@ -131,28 +150,36 @@ export function useForcesGathering() {
   const typeByCode = new Map<string, OpsStatusType>();
   for (const type of statusTypes.data ?? []) typeByCode.set(type.code, type);
 
+  const divisionById = new Map<number, { division_id: number; name: string }>();
+  for (const row of divisions) divisionById.set(row.division_id, row);
+
   const persons: GatheringPerson[] = [];
-  divisions.forEach((row, index) => {
-    const response = people[index]?.data;
-    for (const person of response?.results ?? []) {
-      const employeeId = Number(person.id);
-      if (!Number.isFinite(employeeId)) continue;
-      const status = statusByEmployee.get(employeeId) ?? null;
-      persons.push({
-        employeeId,
-        fullName: person.full_name,
-        rankCode: person.rank_code,
-        divisionId: row.division_id,
-        divisionName: row.name,
-        statusCode: status?.status_type_code ?? null,
-        statusLabel:
-          status === null
-            ? null
-            : typeByCode.get(status.status_type_code)?.name ??
-              status.status_type_code,
-      });
-    }
-  });
+  for (const person of peopleQuery.data?.results ?? []) {
+    const employeeId = Number(person.id);
+    if (!Number.isFinite(employeeId)) continue;
+    // Человек без подразделения в ответе пропускается ОСОЗНАННО: приписать
+    // его наугад значило бы посчитать его в чужом управлении, а разрез сбора
+    // сил читается по управлениям.
+    const division =
+      person.division_id === undefined
+        ? undefined
+        : divisionById.get(person.division_id);
+    if (division === undefined) continue;
+    const status = statusByEmployee.get(employeeId) ?? null;
+    persons.push({
+      employeeId,
+      fullName: person.full_name,
+      rankCode: person.rank_code,
+      divisionId: division.division_id,
+      divisionName: division.name,
+      statusCode: status?.status_type_code ?? null,
+      statusLabel:
+        status === null
+          ? null
+          : typeByCode.get(status.status_type_code)?.name ??
+            status.status_type_code,
+    });
+  }
 
   /** «В строю» — не список кодов, а КОЛОНКА расхода: отсутствие статуса и
    * любой статус, который расход относит к строю, кроме участия в ОМ (его
@@ -183,8 +210,14 @@ export function useForcesGathering() {
       // загрузке навсегда, если бы расход отказал.
       (businessDate !== null && statuses.isPending) ||
       statusTypes.isPending ||
-      people.some((query) => query.isPending),
-    isError: report.isError || statuses.isError || statusTypes.isError,
+      // Тот же приём, что и со статусами: пока подразделений нет, запрос
+      // состава отключён, и его `isPending` держал бы экран в загрузке.
+      (divisionIds.length > 0 && peopleQuery.isPending),
+    isError:
+      report.isError ||
+      statuses.isError ||
+      statusTypes.isError ||
+      peopleQuery.isError,
     businessDate,
     // Знаменатели — из расхода как есть.
     staffTotal: totals?.staff_total ?? 0,
