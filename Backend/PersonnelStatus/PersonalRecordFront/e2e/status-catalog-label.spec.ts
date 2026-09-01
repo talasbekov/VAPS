@@ -26,6 +26,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { localIsoDate } from './business-date'
 import { probeComment } from './probe-statuses'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -58,7 +59,11 @@ async function hydrated(page: Page): Promise<void> {
   })
 }
 
-const iso = (date: Date): string => date.toISOString().slice(0, 10)
+// Дата МЕСТНАЯ, а не UTC (Plane №373, повторно №377): `toISOString()` ночью
+// отдаёт вчерашнее число, и заведённый пробой статус приходил вчерашним днём —
+// сервер, считающий «сегодня» по местной зоне (№374), закрывал его сразу, а
+// проба читала это как «подпись из справочника не показана».
+const iso = (date: Date): string => localIsoDate(date)
 
 const shifted = (days: number): Date => {
   const date = new Date()

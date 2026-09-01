@@ -18,7 +18,7 @@
  * ассерт «просроченные отмечены» вырождается в «отмечены все» или «никто».
  */
 import { expect, test, type Page } from '@playwright/test'
-import { businessDateOf } from './business-date'
+import { businessDateOf, localIsoDate } from './business-date'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { probeComment } from './probe-statuses'
 
@@ -91,7 +91,9 @@ async function column(page: Page, head: string): Promise<string[]> {
 }
 
 /** Дата в формате API. */
-const iso = (date: Date): string => date.toISOString().slice(0, 10)
+// Местная дата, не UTC (Plane №373 и №377): ночью `toISOString()` отдаёт
+// вчерашнее число, и заведённый статус приходит вчерашним днём.
+const iso = (date: Date): string => localIsoDate(date)
 
 /**
  * Завести СРОЧНЫЙ действующий статус (с датой окончания) первому сотруднику
@@ -219,7 +221,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     YESTERDAY.setDate(YESTERDAY.getDate() - 3)
     const TOMORROW = new Date()
     TOMORROW.setDate(TOMORROW.getDate() + 5)
-    const iso = (value: Date) => value.toISOString().slice(0, 10)
+    const iso = (value: Date) => localIsoDate(value)
 
     await page.route(
       // 🔴 ТОЛЬКО ЗАПРОС СТРАНИЦЫ, не сводки. С 28.08.2026 экран статусов
