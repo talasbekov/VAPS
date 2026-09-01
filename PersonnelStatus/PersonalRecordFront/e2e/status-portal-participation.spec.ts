@@ -111,7 +111,12 @@ test.describe('статусы: привлечение на ОМ из порта�
     await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
 
-    await page.getByRole('button', { name: /^Действия: / }).first().click()
+    // 🔴 БЕРЁМ ПОСЛЕДНЮЮ СТРОКУ, А НЕ ПЕРВУЮ. Соседняя проба этого же файла
+    // работает с первой и ЗАПИСЫВАЕТ статус; когда обе брали одного человека,
+    // в общем прогоне вторая падала на состоянии, оставленном первой (в
+    // одиночку каждая была зелёной). Разные строки — разные подопытные.
+    const actions = page.getByRole('button', { name: /^Действия: / })
+    await actions.last().click()
     await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Статусы сотрудника')).toBeVisible({ timeout: 20_000 })
