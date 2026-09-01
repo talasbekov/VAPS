@@ -234,7 +234,7 @@ class EmployeeStatus(models.Model):
         # Запрещаем создавать пересекающиеся статусы для одного сотрудника
         if self.employee_id and self.start_date:
             # Определяем конечную дату для проверки
-            check_end_date = self.end_date or timezone.now().date() + timedelta(days=36500)  # 100 лет в будущее
+            check_end_date = self.end_date or timezone.localdate() + timedelta(days=36500)  # 100 лет в будущее
 
             # Ищем пересекающиеся активные статусы
             overlapping = EmployeeStatus.objects.filter(
@@ -266,7 +266,7 @@ class EmployeeStatus(models.Model):
                 if self_in_service != other_in_service:
                     continue
 
-                other_end = other_status.end_date or timezone.now().date() + timedelta(days=36500)
+                other_end = other_status.end_date or timezone.localdate() + timedelta(days=36500)
 
                 # Проверяем пересечение периодов
                 if not (check_end_date < other_status.start_date or self.start_date > other_end):
@@ -280,7 +280,7 @@ class EmployeeStatus(models.Model):
     def save(self, *args, **kwargs):
         """Переопределенный метод сохранения"""
         # Автоматически устанавливаем состояние в зависимости от дат
-        today = timezone.now().date()
+        today = timezone.localdate()
 
         # Только для новых записей или активных статусов автоматически определяем состояние
         if not self.state or self.state == self.StatusState.ACTIVE:
@@ -375,7 +375,7 @@ class EmployeeStatus(models.Model):
         if not self.start_date:
             return False
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         return (
             self.state == self.StatusState.ACTIVE and
             self.start_date <= today and

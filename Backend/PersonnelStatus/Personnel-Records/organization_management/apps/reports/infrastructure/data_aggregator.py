@@ -112,7 +112,7 @@ class DataAggregator:
             return report.date_to
         if report.date_from:
             return report.date_from
-        return timezone.now().date()
+        return timezone.localdate()
 
     def _active_on_date(self, queryset, ref_date):
         """Статусы, действующие на дату.

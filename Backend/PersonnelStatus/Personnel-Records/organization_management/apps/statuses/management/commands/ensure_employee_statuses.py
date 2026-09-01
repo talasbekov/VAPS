@@ -96,7 +96,7 @@ class Command(BaseCommand):
                 f'  {employee.personnel_number} {employee.last_name} '
                 f'{employee.first_name} — «в строю» с {start}'
             )
-            if start > timezone.now().date():
+            if start > timezone.localdate():
                 # Не создаём вовсе: `save()` сделал бы такую запись `planned`,
                 # инвариант она не восстановит, а повторные прогоны наплодили
                 # бы её копии — команда перестала бы быть идемпотентной.
@@ -149,7 +149,7 @@ class Command(BaseCommand):
 
     def _apply_planned(self, dry_run: bool) -> None:
         """Включить запланированные статусы, срок которых настал."""
-        today = timezone.now().date()
+        today = timezone.localdate()
         planned = EmployeeStatus.objects.filter(
             state=EmployeeStatus.StatusState.PLANNED,
             start_date__lte=today,
@@ -182,7 +182,7 @@ class Command(BaseCommand):
         """
         expired = EmployeeStatus.objects.filter(
             state=EmployeeStatus.StatusState.ACTIVE,
-            end_date__lt=timezone.now().date(),
+            end_date__lt=timezone.localdate(),
         )
         count = expired.count()
         if count == 0:

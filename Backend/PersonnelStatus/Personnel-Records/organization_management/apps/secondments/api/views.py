@@ -177,7 +177,7 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
         if forbidden is not None:
             return forbidden
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         open_status = EmployeeStatus.objects.filter(
             employee_id=instance.employee_id,
             status_type=EmployeeStatus.StatusType.SECONDED_TO,

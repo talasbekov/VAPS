@@ -171,7 +171,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
 
         # Разрешаем изменение только запланированных статусов
         if instance.state == EmployeeStatus.StatusState.PLANNED:
-            today = timezone.now().date()
+            today = timezone.localdate()
             if instance.start_date <= today:
                 return Response(
                     {'error': 'Нельзя изменить статус, дата начала которого уже наступила.'},
@@ -209,7 +209,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
 
         # Разрешаем изменение только запланированных статусов
         if instance.state == EmployeeStatus.StatusState.PLANNED:
-            today = timezone.now().date()
+            today = timezone.localdate()
             if instance.start_date <= today:
                 return Response(
                     {'error': 'Нельзя изменить статус, дата начала которого уже наступила.'},
@@ -234,7 +234,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         if instance.start_date <= today:
             return Response(
                 {'error': 'Нельзя удалить статус, дата начала которого уже наступила.'},
@@ -537,7 +537,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            target_date = date.fromisoformat(date_str) if date_str else timezone.now().date()
+            target_date = date.fromisoformat(date_str) if date_str else timezone.localdate()
         except ValueError:
             return Response(
                 {'error': 'Неверный формат даты. Используйте YYYY-MM-DD'},
@@ -599,8 +599,10 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Используем сегодняшнюю дату
-        today = date.today()
+        # Сегодня — по ЗОНЕ СИСТЕМЫ (Plane №374). `date.today()` берёт дату
+        # у часов процесса: в контейнере они стоят по UTC, и сводка отсутствий
+        # каждую ночь до пяти утра собиралась бы за вчера.
+        today = timezone.localdate()
 
         statistics_data = self.service.get_absence_statistics(
             division_id=division_id,
