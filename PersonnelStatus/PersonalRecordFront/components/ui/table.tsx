@@ -69,9 +69,19 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   )
 }
 
-function TableHead({ className, ...props }: React.ComponentProps<"th">) {
+function TableHead({ className, scope = "col", ...props }: React.ComponentProps<"th">) {
   return (
+    // 🔴 `scope="col"` — УМОЛЧАНИЕ ПРИМИТИВА, а не украшение (Plane №357).
+    // Без него Chromium не даёт заголовку роль `columnheader`: голый `th`
+    // остаётся обычной ячейкой, и скринридер, читая значение, не называет
+    // колонку — нарушение 1.3.1 Info and Relationships. Замер по стенду:
+    // на экранах справочников было 8 `th` и НОЛЬ `columnheader`, на
+    // `/security-ops/vehicles` (нативная разметка со `scope="col"`) — 7 из 7.
+    // Проверено перебором прямо в браузере: ни `role="table"` на таблице, ни
+    // `<caption>` роли не возвращают, а `scope`/явная роль на `th` — да.
+    // Заголовку СТРОКИ (первая ячейка ряда) передавайте `scope="row"`.
     <th
+      scope={scope}
       data-slot="table-head"
       className={cn(
         // Значения сняты из прототипа: padding:10px 14px; font-size:11px;
