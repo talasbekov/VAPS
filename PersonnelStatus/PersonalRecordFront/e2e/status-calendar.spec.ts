@@ -101,11 +101,29 @@ test.describe('панель занятости за день', () => {
     // «В строю» — числом из состава, а не списком: поимённо это весь состав.
     await expect(panel.getByText(/В строю:\s*\d+\s*из\s*\d+/)).toBeVisible()
 
-    // Клик по другому дню меняет заголовок панели: она читает ТОТ ЖЕ выбор,
+    // Клик по ДРУГОМУ дню меняет заголовок панели: она читает ТОТ ЖЕ выбор,
     // что подсвечен в сетке, а не свой собственный.
+    //
+    // 🔴 ДЕНЬ ВЫБИРАЕТСЯ НЕ ПО ИНДЕКСУ (Plane №377). Здесь стоял `days.nth(1)`
+    // — вторая кнопка сетки, то есть второе число месяца. Второго сентября
+    // это и есть уже выбранный день: заголовок законно не менялся, и проба
+    // падала не на своём предмете. Берём первую кнопку, которая НЕ отвечает
+    // текущему выбору панели.
     const before = await panel.getByRole('heading', { level: 3 }).textContent()
     const days = grid.getByRole('button')
-    await days.nth(1).click()
+    const total = await days.count()
+    let clicked = false
+    for (let index = 0; index < total; index += 1) {
+      const label = (await days.nth(index).textContent())?.trim() ?? ''
+      // В заголовке панели день стоит первым числом («2 сентября 2026»).
+      const selectedDay = (before ?? '').trim().split(' ')[0]
+      if (label !== '' && label !== selectedDay) {
+        await days.nth(index).click()
+        clicked = true
+        break
+      }
+    }
+    expect(clicked, 'в сетке не нашлось дня, отличного от выбранного').toBe(true)
     await expect
       .poll(async () => panel.getByRole('heading', { level: 3 }).textContent(), {
         timeout: 15_000,
