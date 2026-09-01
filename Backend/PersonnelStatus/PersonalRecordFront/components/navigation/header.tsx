@@ -155,19 +155,36 @@ export function Header({
                   <p className="text-sm leading-none text-muted-foreground">
                     {user?.email}
                   </p>
-                  {/* Роль в карточке профиля — та же, что в шапке: раздела.
-                      Область печатается рядом, иначе «Начальник управления»
-                      не отвечает, какого именно. */}
-                  <Badge
-                    variant={sectionRole ? "default" : "outline"}
-                    className="mt-2 w-fit text-sm"
-                  >
-                    {sectionRole
-                      ? sectionRole.scope_division_name
-                        ? `${sectionRole.name} · ${sectionRole.scope_division_name}`
-                        : sectionRole.name
-                      : "Роль не назначена"}
-                  </Badge>
+                  {/* СОСТАВ РОЛЕЙ ЦЕЛИКОМ (Plane №353). Ролей у человека
+                      может быть несколько — это прямое требование заказчика,
+                      — а карточка печатала одну первую. Полный список жил
+                      только в атрибуте `title` подписи в шапке: он не
+                      открывается ни с клавиатуры, ни касанием, то есть для
+                      половины входов состава ролей не существовало вовсе.
+                      Шапка остаётся короткой («· ещё N»), а список —
+                      здесь, где место есть. Область печатается у каждой
+                      строки: «Начальник управления» без указания, какого
+                      именно, отвечает на вопрос наполовину. */}
+                  {sectionRoles.length === 0 ? (
+                    <Badge variant="outline" className="mt-2 w-fit text-sm">
+                      Роль не назначена
+                    </Badge>
+                  ) : (
+                    <ul
+                      aria-label="Роли раздела"
+                      className="mt-2 flex flex-col items-start gap-1"
+                    >
+                      {sectionRoles.map((role) => (
+                        <li key={`${role.code}:${role.scope_division_id ?? "all"}`}>
+                          <Badge variant="default" className="w-fit text-sm">
+                            {role.scope_division_name
+                              ? `${role.name} · ${role.scope_division_name}`
+                              : role.name}
+                          </Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
