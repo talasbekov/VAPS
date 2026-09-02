@@ -488,7 +488,18 @@ function EmployeesScreen() {
   const canSeeAll =
     hasOpsPermission("forces.command") || hasOpsPermission("forces.allocate");
 
-  const canSeeOwnDepartment = hasOpsPermission("forces.select");
+  // Своё подразделение видит и тот, кто выделяет людей на ОМ
+  // (`forces.select`), и тот, у кого есть просто право на личный состав
+  // (`personnel.view`) — второй пришёл с решением заказчика 02.09.2026
+  // (Plane №375): «свои управления видны всем, строго на ознакомление».
+  // Правка от этого не открывается: кнопки живут на своих правах.
+  const canSeeOwnDepartment =
+    hasOpsPermission("forces.select") || hasOpsPermission("personnel.view");
+
+  /** Право ПРАВИТЬ кадровую запись — то же, которым закрыты правка и удаление
+   *  в карточке сотрудника (`entities/employee`). Без него экран остаётся
+   *  читаемым, но заводить людей с него нельзя. */
+  const canEditPersonnel = hasOpsPermission("orgstructure.manage");
 
   // ПРАВА — единственный отбор, оставшийся на клиенте (Plane №228). Поиск,
   // отдел и статус теперь считает сервер: клиентский поиск по загруженной
@@ -691,7 +702,11 @@ function EmployeesScreen() {
                 />
                 Обновить
               </Button>
-              {view === "forces" && (
+              {/* Заведение сотрудника — ПРАВО, а не вид экрана (Plane №375).
+                  Кнопка показывалась всякому, кто открыл вкладку сбора сил, и
+                  после того как экран открылся читателям, она предлагала бы
+                  им действие, на которое сервер отвечает отказом. */}
+              {view === "forces" && canEditPersonnel && (
                 <Button
                   className="bg-blue-600 hover:bg-blue-700"
                   onClick={() => setIsAddDialogOpen(true)}
