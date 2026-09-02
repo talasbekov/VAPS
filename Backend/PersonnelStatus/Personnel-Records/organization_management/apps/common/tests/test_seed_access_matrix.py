@@ -1,9 +1,9 @@
-"""Семь учёток матрицы доступа — по СПИСКУ МОДУЛЕЙ заказчика (Plane №348).
+"""Восемь учёток матрицы доступа — по СПИСКУ МОДУЛЕЙ заказчика (№348, №382).
 
 Заказчик описал персон тем, что видно в меню, и проверять будет тем же. Поэтому
 пробы говорят его словами, а не «у роли столько-то прав»:
 
-  1) учёток семь, у каждой есть роль РАЗДЕЛА — и НИ У ОДНОЙ нет портальной
+  1) учёток восемь, у каждой есть роль РАЗДЕЛА — и НИ У ОДНОЙ нет портальной
      (Plane №352, Ш-5): система прав осталась одна, и выдача портальной роли
      означала бы учётку, заведённую по правилам, которых больше нет;
   2) второй департамент отличается от остальных ровно тем, чем сказано:
@@ -91,7 +91,7 @@ def modules(username):
     }
 
 
-def test_the_seven_accounts_are_complete(stand):
+def test_the_eight_accounts_are_complete(stand):
     call_command("seed_access_matrix", "--password", PASSWORD)
 
     usernames = set(
@@ -99,7 +99,7 @@ def test_the_seven_accounts_are_complete(stand):
     )
     assert usernames == {
         "acc_employee", "acc_dir_head", "acc_dir_head_d2", "acc_dept_head",
-        "acc_dept_head_d2", "acc_forces_officer", "acc_admin",
+        "acc_dept_head_d2", "acc_forces_officer", "acc_employee_d2", "acc_admin",
     }
     for username in usernames:
         user = User.objects.get(username=username)
@@ -127,7 +127,9 @@ def test_only_the_second_department_sees_the_events(stand):
     call_command("seed_access_matrix", "--password", PASSWORD)
 
     # Реестр ОМ, Командный центр и Транспорт ГОН — одно право на три модуля.
-    for username in ("acc_dir_head_d2", "acc_dept_head_d2", "acc_admin"):
+    for username in (
+        "acc_dir_head_d2", "acc_dept_head_d2", "acc_employee_d2", "acc_admin",
+    ):
         assert "event.view" in modules(username) or "*" in modules(username)
     for username in ("acc_employee", "acc_dir_head", "acc_dept_head", "acc_forces_officer"):
         assert "event.view" not in modules(username), (
@@ -156,6 +158,7 @@ def test_the_system_section_is_closed_to_everyone_but_the_admin(stand):
     for username in (
         "acc_employee", "acc_dir_head", "acc_dir_head_d2",
         "acc_dept_head", "acc_dept_head_d2", "acc_forces_officer",
+        "acc_employee_d2",
     ):
         assert modules(username) & system == set(), f"{username} видит «Систему»"
     assert "*" in modules("acc_admin")
@@ -232,7 +235,7 @@ def test_a_repeat_run_neither_multiplies_nor_widens(stand):
 
     call_command("seed_access_matrix", "--password", PASSWORD)
 
-    assert User.objects.filter(username__startswith="acc_").count() == 7
+    assert User.objects.filter(username__startswith="acc_").count() == 8
     assert grants("acc_dept_head_d2") == before
 
 

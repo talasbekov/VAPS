@@ -105,7 +105,8 @@ def rater():
     api, _ = client_for(
         "pers-rater",
         "PERS_RATER",
-        perms=("event.view", "event.manage", "rating.view_aggregate"),
+        perms=("event.view", "event.manage", "event.create", "event.bulletin",
+               "rating.view_aggregate"),
     )
     return api
 
@@ -114,7 +115,7 @@ def rater():
 def plain():
     """Тот, кто ведёт мероприятия, но агрегат видеть НЕ вправе."""
     api, _ = client_for(
-        "pers-plain", "PERS_PLAIN", perms=("event.view", "event.manage")
+        "pers-plain", "PERS_PLAIN", perms=("event.view", "event.manage", "event.create", "event.bulletin")
     )
     return api
 
