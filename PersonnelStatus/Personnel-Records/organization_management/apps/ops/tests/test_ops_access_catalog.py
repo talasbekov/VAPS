@@ -23,10 +23,30 @@ def test_catalog_names_real_routes_of_a_permission():
 
     paths = {(row["method"], row["path"]) for row in rows}
 
-    assert ("POST", "/api/ops/security-events/") in paths
     # Завершение этапа осталось у ведущего мероприятие: это переход цепочки,
     # а не расстановка людей (Plane №74).
     assert ("POST", "/api/ops/security-events/<pk>/placement/complete/") in paths
+    # Заведение карточки УЕХАЛО на своё право (Plane №382) — проверяется в
+    # `test_creating_an_event_moved_to_its_own_permission`.
+
+
+def test_creating_an_event_moved_to_its_own_permission():
+    """POST реестра и бюллетень переехали с `event.manage` на свои права.
+
+    Та же мерка, что у расстановки (Plane №74): проверяется И появление ручки
+    у нового права, И пропажа у старого. Иначе восьмая персона получила бы
+    вместе с заведением бюллетеня всю правку мероприятия, а проба этого не
+    заметила бы.
+    """
+    create = ("POST", "/api/ops/security-events/")
+    bulletin = ("PATCH", "/api/ops/security-events/<pk>/bulletin/")
+
+    manage = {(row["method"], row["path"]) for row in catalog()["event.manage"]}
+    created_at = {(row["method"], row["path"]) for row in catalog()["event.create"]}
+    bulletin_at = {(row["method"], row["path"]) for row in catalog()["event.bulletin"]}
+
+    assert create in created_at and create not in manage
+    assert bulletin in bulletin_at and bulletin not in manage
 
 
 def test_catalog_sees_routes_closed_by_an_inline_check():

@@ -118,6 +118,10 @@ def manager():
             # чтение раздела у всех рабочих ролей.
             "catalog.view",
             "event.manage",
+            # Свои права с Plane №382: ведущий мероприятие заводит карточку и
+            # заполняет бюллетень, и разделение не должно у него ничего отнять.
+            "event.create",
+            "event.bulletin",
             "forces.command",
             "forces.allocate",
             "forces.select",
@@ -363,7 +367,7 @@ def test_owner_name_is_personnel_name_not_account_id():
     карточки и в значениях фильтра реестра стояло «1».
     """
     api, user = client_for(
-        "ev-owner", "EV_OWNER", perms=("event.view", "event.manage")
+        "ev-owner", "EV_OWNER", perms=("event.view", "event.manage", "event.create", "event.bulletin")
     )
     employee = make_employee(last_name="Сеитов", first_name="Алихан")
     employee.user = user
@@ -382,7 +386,7 @@ def test_owner_name_falls_back_to_username_without_personnel_record():
     """Привязки `Employee.user` у части учёток нет (сид её не заполняет) —
     username там штатный исход, а не аварийный."""
     api, _ = client_for(
-        "ev-nolink", "EV_NOLINK", perms=("event.view", "event.manage")
+        "ev-nolink", "EV_NOLINK", perms=("event.view", "event.manage", "event.create", "event.bulletin")
     )
     assert create_event(api, make_object(with_passport=True)).status_code == 201
 
@@ -1392,7 +1396,10 @@ def stage_admin():
     api, _ = client_for(
         "ev-stage-admin",
         "EV_STAGE_ADMIN",
-        perms=("event.view", "event.manage", "event.stage_override"),
+        perms=(
+            "event.view", "event.manage", "event.create", "event.bulletin",
+            "event.stage_override",
+        ),
     )
     return api
 

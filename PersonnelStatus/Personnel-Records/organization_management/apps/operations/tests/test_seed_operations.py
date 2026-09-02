@@ -169,6 +169,13 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     assert holders("assignment.approve") == {"EVENT_APPROVER"}
     assert holders("assignment.return") == {"EVENT_APPROVER"}
     assert holders("event.manage") == {"EVENT_OFFICER"}
+    # Заведение карточки ОМ и заполнение бюллетеня — СВОИ права (Plane №382).
+    # Держателей по двое, и это ровно смысл разделения: ведущий мероприятие
+    # умеет то же, что вчера, а рядовой сотрудник второго департамента умеет
+    # ТОЛЬКО завести и заполнить бюллетень. Вернуть `event.manage` восьмой
+    # персоне — значит покраснить эту строку и следующую пробу.
+    assert holders("event.create") == {"EVENT_OFFICER", "EMPLOYEE_OPS_D2"}
+    assert holders("event.bulletin") == {"EVENT_OFFICER", "EMPLOYEE_OPS_D2"}
     # Персональная детализация и выгрузка со скрытыми полями — «пока только
     # администратор» (решение №267), то есть ни одной роли, кроме «*».
     assert holders("analytics.personal_detail") == set()
@@ -244,6 +251,45 @@ def test_the_customer_profiles_see_exactly_the_modules_he_named(seeded):
         "FORCES_GATHERING_OFFICER",
     ):
         assert system & granted(code) == set()
+
+
+def test_the_second_department_employee_reads_everything_and_writes_a_bulletin(seeded):
+    """Восьмая персона (Plane №382) — словами заказчика, а не списком прав.
+
+    «Права обычного сотрудника и еще все что касается ОМ тоже видны, но без
+    возможности редактирования или удаление. Но у него должна быть возможность
+    создавать бюллетень.»
+
+    Проба стережёт обе половины требования сразу: расширение набора чтением
+    она пропустит, а появление ЛЮБОГО права записи мероприятия — нет.
+    """
+    codes = granted("EMPLOYEE_OPS_D2")
+
+    # Раздел ОМ виден целиком: реестр и командный центр, каталоги, аналитика
+    # ОМ, отчёты по ОМ, объекты.
+    assert {
+        "event.view", "catalog.view", "analytics.operations",
+        "report.generate", "object.view",
+    } <= codes
+    # Права обычного сотрудника — на месте.
+    assert {"status.view", "document.view", "feedback.view", "feedback.create"} <= codes
+    # Бюллетень — единственное, что персона пишет.
+    assert {"event.create", "event.bulletin"} <= codes
+
+    # 🔴 НИ ОДНОГО ПРАВА ПРАВКИ. Список поимённый, а не «нет event.manage»:
+    # заказчик запретил редактирование и удаление целиком, и любое из этих
+    # прав вернуло бы их с другой стороны.
+    assert not codes & {
+        "event.manage", "event.delete", "event.stage_override", "gvo.manage",
+        "placement.manage", "assignment.approve", "assignment.return",
+        "status.manage", "object.manage", "orgstructure.manage",
+        "forces.command", "forces.allocate", "forces.select",
+    }
+    # Обзор и кадровый реестр персоне не открываются: она рядовой сотрудник,
+    # и у профиля `EMPLOYEE` их тоже нет.
+    assert not codes & {"orgstructure.view", "personnel.view"}
+    # «Система» закрыта, как и у семи прежних профилей.
+    assert not codes & {"dictionary.view", "settings.view", "admin.roles", "audit.view"}
 
 
 def test_only_the_admin_holds_the_wildcard(seeded):

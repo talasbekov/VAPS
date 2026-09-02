@@ -48,7 +48,11 @@ pytestmark = pytest.mark.django_db
 URL = "/api/ops/security-events/"
 CHAIN_PERMISSIONS = (
     "event.view",
+    # Заведение и бюллетень — свои права с Plane №382, у ведущего мероприятие
+    # они стоят рядом с `event.manage`, и фикстура изображает именно его.
     "event.manage",
+    "event.create",
+    "event.bulletin",
     "forces.command",
     "forces.allocate",
     "forces.select",

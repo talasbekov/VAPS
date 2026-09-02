@@ -47,7 +47,7 @@ def manager(name="ops-gvo-manager"):
 def event_manager(name="ops-gvo-event-manager"):
     """Ведущий мероприятие БЕЗ права правки сводки — персона, на которой видно,
     что новый гейт работает: у неё есть `event.manage`, и раньше этого хватало."""
-    api, user = client_for(name, "MANAGER", ["event.view", "event.manage"])
+    api, user = client_for(name, "MANAGER", ["event.view", "event.manage", "event.create", "event.bulletin"])
     return api, user
 
 

@@ -403,7 +403,7 @@ def test_allocation_works_without_an_ambient_transaction():
     api, _ = client_for(
         "veh-tx",
         "VEH_TX",
-        perms=("event.view", "event.manage"),
+        perms=("event.view", "event.manage", "event.create", "event.bulletin"),
     )
     car = _car()
     event = _event(api)

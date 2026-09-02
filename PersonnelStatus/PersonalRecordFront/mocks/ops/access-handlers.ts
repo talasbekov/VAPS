@@ -50,7 +50,23 @@ const PERMISSIONS: AccessPermission[] = [
   {
     code: "event.manage",
     name: "Ведение мероприятий",
-    description: "Заведение ОМ, этапы, закрытие.",
+    description: "Этапы мероприятия, расстановка, закрытие.",
+    is_active: true,
+  },
+  // Заведение карточки и бюллетень отделены от ведения ОМ (Plane №382):
+  // сотрудник второго департамента заводит и заполняет бюллетень, но
+  // мероприятие дальше не ведёт. Контракт держится с двух концов — коды
+  // добавлены в мок в тот же заход, что и на сервере.
+  {
+    code: "event.create",
+    name: "Заведение мероприятия",
+    description: "Создание карточки ОМ в реестре.",
+    is_active: true,
+  },
+  {
+    code: "event.bulletin",
+    name: "Заполнение бюллетеня",
+    description: "Описание, задачи и открытие рекогносцировки.",
     is_active: true,
   },
   {
@@ -199,16 +215,39 @@ const CATALOG: AccessCatalogEntry[] = [
     functions: [
       {
         permission: "event.manage",
+        method: "DELETE",
+        path: "/api/ops/security-events/{id}/",
+        action: "destroy",
+        view: "SecurityEventViewSet",
+      },
+    ],
+  },
+  {
+    code: "event.create",
+    name: "Заведение мероприятия",
+    isKnown: true,
+    isActive: true,
+    functions: [
+      {
+        permission: "event.create",
         method: "POST",
         path: "/api/ops/security-events/",
         action: "create",
         view: "SecurityEventViewSet",
       },
+    ],
+  },
+  {
+    code: "event.bulletin",
+    name: "Заполнение бюллетеня",
+    isKnown: true,
+    isActive: true,
+    functions: [
       {
-        permission: "event.manage",
-        method: "DELETE",
-        path: "/api/ops/security-events/{id}/",
-        action: "destroy",
+        permission: "event.bulletin",
+        method: "PATCH",
+        path: "/api/ops/security-events/{id}/bulletin/",
+        action: "bulletin",
         view: "SecurityEventViewSet",
       },
     ],

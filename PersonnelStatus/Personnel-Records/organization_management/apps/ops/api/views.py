@@ -198,6 +198,15 @@ from organization_management.apps.ops.api.serializers import (
 
 _READ_EVENT_PERMISSION = "event.view"
 _MANAGE_EVENT_PERMISSION = "event.manage"
+#: Заведение карточки ОМ и заполнение бюллетеня — ОТДЕЛЬНО от ведения
+#: мероприятия (Plane №382, решение заказчика 02.09.2026). До этого `create`,
+#: `bulletin` и `bulletin_complete` охранял тот же `event.manage`, что и
+#: расстановку, согласование и закрытие: сотрудник, которому разрешено только
+#: заводить бюллетень, получал вместе с ним всю правку мероприятия.
+#: Ведущий ОМ ничего не теряет — `EVENT_OFFICER` получил оба права рядом с
+#: `event.manage` в том же заходе.
+_CREATE_EVENT_PERMISSION = "event.create"
+_BULLETIN_PERMISSION = "event.bulletin"
 #: Решение согласующего по расстановке (Plane №267). Отдельно от ведения
 #: мероприятия: утверждающий видит расстановку целиком, но не правит её.
 #: Чтение каталогов раздела: охраняемые лица и нормативная база. Отдельно от
@@ -228,7 +237,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {
         "list": _READ_EVENT_PERMISSION,
         "retrieve": _READ_EVENT_PERMISSION,
-        "create": _MANAGE_EVENT_PERMISSION,
+        "create": _CREATE_EVENT_PERMISSION,
         # Удаление — СВОЁ право: ведущий мероприятие его правит, стирает из
         # реестра администратор (та же мерка, что у stage_override).
         "destroy": _DELETE_EVENT_PERMISSION,
@@ -254,8 +263,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # иначе назначенный смог бы назначить себе смену и разрастить круг.
         "visit_object_deputy_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_deputy_remove": _MANAGE_EVENT_PERMISSION,
-        "bulletin": _MANAGE_EVENT_PERMISSION,
-        "bulletin_complete": _MANAGE_EVENT_PERMISSION,
+        # Заполнение бюллетеня и открытие рекогносцировки — своё право:
+        # заказчик разрешил восьмой персоне заводить и заполнять бюллетени,
+        # но не вести мероприятие дальше.
+        "bulletin": _BULLETIN_PERMISSION,
+        "bulletin_complete": _BULLETIN_PERMISSION,
         "recon": _MANAGE_EVENT_PERMISSION,
         "recon_import": _MANAGE_EVENT_PERMISSION,
         "recon_complete": _MANAGE_EVENT_PERMISSION,
