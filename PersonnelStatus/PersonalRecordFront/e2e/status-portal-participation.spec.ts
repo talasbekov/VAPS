@@ -181,7 +181,23 @@ test.describe('статусы: привлечение на ОМ из порта�
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Статусы сотрудника')).toBeVisible({ timeout: 20_000 })
 
-    // (1) У статуса не про ОМ блока мероприятий нет вовсе.
+    // (1) У статуса НЕ ПРО ОМ блока мероприятий нет вовсе.
+    //
+    // 🔴 СНАЧАЛА СТАВИМ ЗАВЕДОМО НЕ-ОМ ТИП, а не смотрим на умолчание
+    // (Plane №378): с добавлением `IN_EVENT` в список кодов участия окно у
+    // человека, чей текущий статус — «Участие в ОМ», законно открывается с
+    // блоком мероприятий, и проверка «блока нет» падала на правильном
+    // поведении. Предмет проверки — что блок ЗАВИСИТ ОТ ТИПА, а не то, каким
+    // статусом сейчас живёт первый попавшийся сотрудник.
+    await dialog.locator('#status').click()
+    await expect(page.getByRole('listbox')).toBeVisible()
+    const plainOption = page
+      .getByRole('option')
+      .filter({ hasNotText: 'ОМ' })
+      .filter({ hasNotText: 'мероприяти' })
+      .first()
+    await plainOption.scrollIntoViewIfNeeded()
+    await plainOption.click()
     await expect(
       dialog.getByText('Мероприятия', { exact: true }),
       'блок мероприятий показан до того, как выбран статус привлечения',
