@@ -4,6 +4,9 @@ from rest_framework.routers import DefaultRouter
 from organization_management.apps.ops.api.views_status_calendar import (
     OpsStatusCalendarViewSet,
 )
+from organization_management.apps.ops.api.views_bulletin_issues import (
+    OpsBulletinIssuesViewSet,
+)
 from organization_management.apps.ops.api.views import (
     AccessCatalogViewSet,
     OpsGvoSummariesViewSet,
@@ -183,6 +186,11 @@ router.register(
     # (очередь, повтор, ревизия), а документ собирается одним ответом.
     "event-documents", OpsEventDocumentsViewSet,
     basename="ops-event-documents",
+)
+# Выпуски бюллетеня (Plane №420): срез, автор, снимок строк и PDF — то, что
+# ушло адресатам; сборка на лету осталась в event-documents/render.
+router.register(
+    "bulletin-issues", OpsBulletinIssuesViewSet, basename="ops-bulletin-issues"
 )
 
 # «Расход дня» раздела ОМ — адаптеры над живым /api/operations/ (своего
