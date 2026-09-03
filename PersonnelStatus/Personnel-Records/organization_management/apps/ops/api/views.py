@@ -34,6 +34,7 @@ from organization_management.apps.ops import ratings as ratings_service
 import base64
 
 from organization_management.apps.ops import documents_registry
+from organization_management.apps.ops.bulletin_issues import parse_as_of
 from organization_management.apps.ops import reports as reports_service
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
@@ -3360,6 +3361,9 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         payload, name = documents_registry.render(
             (request.query_params.get("kind") or "").strip(),
             event_code=request.query_params.get("event"),
+            # Срез бюллетеня (`[БЛН-04]`, Plane №420): ISO-дата-время; без него
+            # сборщик берёт «сейчас», как и прежде.
+            as_of=parse_as_of(request.query_params.get("asOf")),
             fmt=fmt,
             visit_object_id=request.query_params.get("visitObject"),
         )

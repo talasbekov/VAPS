@@ -6,13 +6,17 @@
 // приходят метаданные; содержимое появляется в памяти вкладки ровно на время
 // сохранения файла.
 import { useMemo, useState } from "react";
+import { formatIsoDateTime } from "@/shared/lib/date";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import {
   useCreateReportJob,
   useDownloadArtifact,
+  useBulletinIssueFile,
+  useBulletinIssues,
   useEventDocumentKinds,
+  useIssueBulletin,
   useRenderEventDocument,
   useReportJobs,
   useReportTypes,
@@ -64,12 +68,26 @@ export default function ServiceReportsPage() {
   // поэтому расхождения умолчаний человек не видит.
   const [documentFormat, setDocumentFormat] = useState<EventDocumentFormat>("docx");
   const [documentSaved, setDocumentSaved] = useState<string | null>(null);
+  // Срез бюллетеня (`[БЛН-04]`, Plane №420): дата и время, от которых идёт
+  // отбор и которые печатаются в заголовке. Умолчание — сегодня, 08:00, как в
+  // образце заголовка («на 08:00 ч. ДД.ММ.ГГГГ»).
+  const [documentAsOf, setDocumentAsOf] = useState(() => defaultSliceLocal());
   const renderDocument = useRenderEventDocument((file) => {
     saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
     setDocumentSaved(file.fileName);
   });
   const chosenKind =
     documentKinds.data?.results.find((row) => row.kind === documentKind) ?? null;
+  const needsAsOf = chosenKind?.needsAsOf === true;
+  // Выпуски бюллетеня — только когда выбран бюллетень: у остальных видов
+  // выпусков нет, и список ни о чём не говорил бы.
+  const bulletinIssues = useBulletinIssues(needsAsOf);
+  const [issued, setIssued] = useState<string | null>(null);
+  const issueBulletin = useIssueBulletin((issue) => setIssued(issue.fileName));
+  const issueFile = useBulletinIssueFile((file) => {
+    saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
+    setDocumentSaved(file.fileName);
+  });
   // Кнопка выключается ровно тогда, когда собрать НЕЛЬЗЯ, и причина
   // называется словами рядом — выключенная кнопка без объяснения оставляет
   // человека гадать, что он сделал не так.
@@ -303,6 +321,21 @@ export default function ServiceReportsPage() {
               {/* Поле мероприятия показывается ТОЛЬКО тем видам, которым оно
                   нужно: спрашивать код ОМ у бюллетеня, который строится по
                   всем мероприятиям, значило бы требовать лишнее. */}
+              {needsAsOf && (
+                <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                  Срез (дата и время)
+                  <input
+                    type="datetime-local"
+                    aria-label="Срез бюллетеня"
+                    className="mt-0.5 block h-9 w-52 rounded-md border border-input bg-background px-2 text-sm"
+                    value={documentAsOf}
+                    onChange={(e) => {
+                      setDocumentAsOf(e.target.value);
+                      setDocumentSaved(null);
+                    }}
+                  />
+                </label>
+              )}
               {chosenKind?.needsEvent === true && (
                 <label className="text-[11px] font-bold uppercase text-muted-foreground">
                   Код мероприятия
@@ -328,6 +361,7 @@ export default function ServiceReportsPage() {
                   renderDocument.mutate({
                     kind: documentKind,
                     eventCode: documentEvent,
+                    asOf: needsAsOf ? documentAsOf : undefined,
                     // Формат шлём только когда сервер его предложил: иначе
                     // старая ручка получила бы незнакомый параметр.
                     format:
@@ -362,6 +396,82 @@ export default function ServiceReportsPage() {
             <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
               Сохранён файл «{documentSaved}».
             </p>
+          )}
+          {needsAsOf && (
+            /* Выпуск — ХРАНИМЫЙ документ (`[МД-01]`, Plane №420): сборка выше
+               отвечает «как бюллетень выглядит сейчас», выпуск — «что ушло
+               адресатам» на выбранный срез, и повторно его не пересобирают. */
+            <div
+              className="mt-4 rounded-lg border bg-muted/30 p-3"
+              role="group"
+              aria-label="Выпуски бюллетеня"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold">Выпуски бюллетеня</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Выпуск замораживает строки и PDF на выбранный срез — это то, что
+                    ушло адресатам
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center rounded-md border bg-background px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={documentAsOf.trim() === "" || issueBulletin.isPending}
+                  aria-busy={issueBulletin.isPending}
+                  onClick={() => {
+                    setIssued(null);
+                    issueBulletin.mutate({ asOf: documentAsOf });
+                  }}
+                >
+                  {issueBulletin.isPending ? "Выпускаем…" : "Выпустить на этот срез"}
+                </button>
+              </div>
+              {issueBulletin.error !== null && (
+                <p className="mt-2 text-xs text-red-700" role="alert">
+                  Выпуск не состоялся: {issueBulletin.error.message}
+                </p>
+              )}
+              {issued !== null && (
+                <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
+                  Выпущен «{issued}».
+                </p>
+              )}
+              {bulletinIssues.isPending ? (
+                <p className="mt-2 text-xs text-muted-foreground">Загрузка выпусков…</p>
+              ) : (bulletinIssues.data?.results ?? []).length === 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Выпусков ещё не было.
+                </p>
+              ) : (
+                <ul className="mt-2 divide-y text-xs" aria-label="Список выпусков">
+                  {(bulletinIssues.data?.results ?? []).map((issue) => (
+                    <li
+                      key={issue.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-1.5"
+                    >
+                      <span>
+                        <span className="font-semibold tabular-nums">
+                          на {formatIsoDateTime(issue.asOf)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {" "}· {issue.eventCount} стр. · {issue.issuedBy || "—"}
+                          {issue.issuedAt !== null && ` · ${formatIsoDateTime(issue.issuedAt)}`}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        className="rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted"
+                        disabled={issueFile.isPending}
+                        onClick={() => issueFile.mutate({ id: issue.id })}
+                      >
+                        Скачать PDF
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </section>
 
@@ -488,4 +598,11 @@ export default function ServiceReportsPage() {
       </div>
     </DashboardLayout>
   );
+}
+
+/** Сегодня 08:00 в формате `datetime-local` — умолчание среза бюллетеня. */
+function defaultSliceLocal(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T08:00`;
 }

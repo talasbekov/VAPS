@@ -266,3 +266,31 @@ class OpsIssuedDocument(TimeStampedModel):
 
     def __str__(self):
         return f"{self.doc_type} №{self.number}/{self.year} ({self.status})"
+
+
+class OpsBulletinIssue(TimeStampedModel):
+    """Выпуск информационного бюллетеня (`[МД-01]`, `[БЛН-04]`, Plane №420).
+
+    До этого бюллетень СОБИРАЛСЯ НА ЛЕТУ «на сейчас» и нигде не оставался: два
+    человека, выгрузившие его с разницей в час, получали разные документы, и
+    какой из них ушёл адресатам, установить было нечем. Выпуск — это срез
+    (дата и время, выбранные человеком), кто выпустил, снимок строк и байты
+    PDF. Содержимое неизменно: новый срез — новая строка, старая не правится
+    (та же мерка, что у `OpsIssuedDocument`).
+
+    Байты — во вложении с PROTECT: удалить файл выпущенного документа нельзя.
+    """
+
+    as_of = models.DateTimeField(db_index=True)
+    issued_by = models.CharField(max_length=200, blank=True, default="")
+    rows = models.JSONField(default=list, blank=True)
+    event_count = models.PositiveIntegerField(default=0)
+    attachment = models.ForeignKey(
+        OpsAttachment, on_delete=models.PROTECT, related_name="bulletin_issues"
+    )
+
+    class Meta:
+        db_table = "ops_bulletin_issues"
+        verbose_name = "Выпуск бюллетеня"
+        verbose_name_plural = "Выпуски бюллетеня"
+        ordering = ["-as_of", "-id"]

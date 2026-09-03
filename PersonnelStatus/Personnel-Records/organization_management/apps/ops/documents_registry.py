@@ -30,6 +30,10 @@ KINDS = {
     "bulletin": {
         "label": "Информационный бюллетень",
         "needs_event": False,
+        # Срез выбирает ЧЕЛОВЕК (`[БЛН-04]`, Plane №420): в бюллетень попадают
+        # мероприятия с датой ≥ среза, и заголовок несёт его же. Без параметра
+        # ручка, как прежде, берёт «сейчас».
+        "needs_as_of": True,
         "file": "byulleten",
     },
     "arrival": {
@@ -93,6 +97,7 @@ def list_kinds():
             "kind": kind,
             "label": meta["label"],
             "needsEvent": meta["needs_event"],
+            "needsAsOf": bool(meta.get("needs_as_of", False)),
         }
         for kind, meta in KINDS.items()
     ]

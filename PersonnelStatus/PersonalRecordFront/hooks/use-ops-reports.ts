@@ -13,6 +13,10 @@ import {
   reportJobRerunPath,
   OPS_EVENT_DOCUMENTS_PATH,
   eventDocumentRenderPath,
+  BulletinIssue,
+  BulletinIssuesResponse,
+  OPS_BULLETIN_ISSUES_PATH,
+  bulletinIssueFilePath,
 } from "@/entities/service-report";
 import type {
   CreateReportJobRequest,
@@ -160,13 +164,44 @@ export function useRenderEventDocument(
 ) {
   return useOpsMutation<
     EventDocumentResponse,
-    { kind: string; eventCode?: string; format?: EventDocumentFormat }
+    { kind: string; eventCode?: string; format?: EventDocumentFormat; asOf?: string }
   >({
     mutationFn: (params) =>
       opsApiClient.get<EventDocumentResponse>(eventDocumentRenderPath(params)),
     // Сохранение — в onSuccess, а не в эффекте по data: эффект сработал бы
     // повторно на ререндере и сохранил бы файл второй раз (та же причина, что
     // у скачивания артефакта).
+    onSuccess: onReady,
+  });
+}
+
+/** Выпуски бюллетеня, новые сверху (Plane №420). */
+export function useBulletinIssues(enabled = true) {
+  return useQuery<BulletinIssuesResponse, OpsApiFailure>({
+    queryKey: ["ops-bulletin-issues"],
+    queryFn: () => opsApiClient.get<BulletinIssuesResponse>(OPS_BULLETIN_ISSUES_PATH),
+    enabled,
+  });
+}
+
+/** Выпустить бюллетень на срез: сервер замораживает строки и PDF. */
+export function useIssueBulletin(onIssued: (issue: BulletinIssue) => void) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<BulletinIssue, { asOf: string }>({
+    mutationFn: (params) =>
+      opsApiClient.post<BulletinIssue>(OPS_BULLETIN_ISSUES_PATH, params),
+    onSuccess: (issue) => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-bulletin-issues"] });
+      onIssued(issue);
+    },
+  });
+}
+
+/** Файл выпуска — тем же конвертом, что и сборка на лету. */
+export function useBulletinIssueFile(onReady: (file: EventDocumentResponse) => void) {
+  return useOpsMutation<EventDocumentResponse, { id: string }>({
+    mutationFn: (params) =>
+      opsApiClient.get<EventDocumentResponse>(bulletinIssueFilePath(params.id)),
     onSuccess: onReady,
   });
 }

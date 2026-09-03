@@ -584,6 +584,10 @@ export interface EventDocumentKind {
   /** Строится ПО мероприятию: без него собирать нечего. У бюллетеня и
    * графиков это `false` — они идут по всем ОМ на момент среза. */
   needsEvent: boolean;
+  /** Срез выбирает человек (`[БЛН-04]`, Plane №420): дата и время, от
+   * которых идёт отбор и которые печатаются в заголовке. Сегодня — только у
+   * бюллетеня; поле может отсутствовать у старого сервера. */
+  needsAsOf?: boolean;
 }
 
 /**
@@ -618,10 +622,13 @@ export function eventDocumentRenderPath(params: {
   kind: string;
   eventCode?: string;
   format?: EventDocumentFormat;
+  /** ISO-дата-время среза; без него сервер берёт «сейчас», как прежде. */
+  asOf?: string;
 }): string {
   const query = new URLSearchParams({ kind: params.kind });
   if ((params.eventCode ?? "").trim() !== "")
     query.set("event", (params.eventCode as string).trim());
+  if ((params.asOf ?? "").trim() !== "") query.set("asOf", (params.asOf as string).trim());
   // Формат ставится в адрес ТОЛЬКО когда он задан: без него ручка отдаёт PDF,
   // и подставлять его здесь значило бы держать умолчание в двух местах.
   //
@@ -630,4 +637,29 @@ export function eventDocumentRenderPath(params: {
   // «Not found» ещё до вьюхи. Нашлось пробой, не рассуждением.
   if (params.format !== undefined) query.set("ext", params.format);
   return `${OPS_EVENT_DOCUMENT_RENDER_PATH}?${query.toString()}`;
+}
+
+// ── Выпуски бюллетеня (`[МД-01]`, `[БЛН-04]`, Plane №420) ────────────────────
+//
+// Выпуск — срез, кто выпустил, число строк и замороженный PDF: то, что ушло
+// адресатам. Сборка на лету (`render`) остаётся рядом — она отвечает «как
+// выглядит бюллетень сейчас», выпуск — «что было отправлено».
+
+export const OPS_BULLETIN_ISSUES_PATH = "/api/ops/bulletin-issues/";
+
+export interface BulletinIssue {
+  id: string;
+  asOf: string;
+  issuedBy: string;
+  issuedAt: string | null;
+  eventCount: number;
+  fileName: string;
+}
+
+export interface BulletinIssuesResponse {
+  results: BulletinIssue[];
+}
+
+export function bulletinIssueFilePath(id: string): string {
+  return `${OPS_BULLETIN_ISSUES_PATH}${id}/file/`;
 }

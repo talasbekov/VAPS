@@ -186,6 +186,7 @@ from organization_management.apps.operations.models_notification import (  # noq
 # Вложения раздела — тоже отдельным модулем.
 from organization_management.apps.operations.models_document import (  # noqa: E402
     OpsAttachment,  # noqa: F401
+    OpsBulletinIssue,  # noqa: F401
     OpsDocumentSequence,  # noqa: F401
     OpsIssuedDocument,  # noqa: F401
 )
