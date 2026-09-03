@@ -44,7 +44,9 @@ export default function OpsSettingsPage() {
   const changeLog = useSettingChangeLog();
   const [editing, setEditing] = useState<PolicySetting | null>(null);
 
-  const sections: SettingSectionCode[] = ["CONFLICT_RULES", "PASSPORT_FRESHNESS"];
+  // «Политика согласования» (Plane №431): порог автосрочности возврата —
+  // число, поэтому живёт обычной настройкой рядом с правилами.
+  const sections: SettingSectionCode[] = ["CONFLICT_RULES", "PASSPORT_FRESHNESS", "APPROVAL_POLICY"];
 
   if (!permissionsLoading && !hasPermission(MODULE_PERMISSION["/security-ops/settings"])) {
     return <OpsAccessDenied what="настроек политик" />;

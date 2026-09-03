@@ -650,6 +650,13 @@ class Command(BaseCommand):
              "Срок упреждения ознакомления",
              "За сколько дней до смены отсутствие ознакомления — наблюдение.",
              3, 1, 14, None, True, None),
+            # `[ВОЗ-02]` (Plane №431): «Срочно» ставится автоматически, если до
+            # даты мероприятия осталось не больше порога; вручную — всегда.
+            ("APPROVAL.RETURN_URGENT_DAYS", "APPROVAL_POLICY", "NUMBER", "DAYS",
+             "Срочность возврата: порог в днях",
+             "Замечание возврата становится «Срочно» само, если до даты "
+             "мероприятия осталось не больше стольких дней.",
+             1, 0, 30, None, True, None),
             ("LIMITS.REPORT_PERIOD.PERSONNEL_EXPENSE", "REPORT_LIMITS",
              "NUMBER", "DAYS", "Предел периода «Расход личного состава»",
              "Максимальный период одной выгрузки.",
@@ -684,6 +691,7 @@ class Command(BaseCommand):
             ("ANALYTICS_LIMITS", "analytics-limits-v1"),
             ("LOAD_POLICY", "load-policy-v1"),
             ("ATTENTION_POLICY", "attention-policy-v1"),
+            ("APPROVAL_POLICY", "approval-policy-v1"),
             ("REPORT_LIMITS", "report-limits-v1"),
         ]:
             OpsPolicySectionVersion.objects.get_or_create(

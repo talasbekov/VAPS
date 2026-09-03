@@ -14,7 +14,8 @@ export type SettingSectionCode =
   | "ANALYTICS_LIMITS"
   | "LOAD_POLICY"
   | "ATTENTION_POLICY"
-  | "REPORT_LIMITS";
+  | "REPORT_LIMITS"
+  | "APPROVAL_POLICY";
 
 export const SECTION_LABEL: Record<SettingSectionCode, string> = {
   CONFLICT_RULES: "Правила конфликтов дежурств",
@@ -24,6 +25,7 @@ export const SECTION_LABEL: Record<SettingSectionCode, string> = {
   LOAD_POLICY: "Методика нагрузки",
   ATTENTION_POLICY: "Политика наблюдений «Требует внимания»",
   REPORT_LIMITS: "Пределы отчётности",
+  APPROVAL_POLICY: "Политика согласования",
 };
 
 /** Вариант значения-перечисления. description — следствие для планирующего,

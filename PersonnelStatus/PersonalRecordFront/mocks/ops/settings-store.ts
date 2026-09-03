@@ -269,6 +269,22 @@ function buildSeed(): SettingsState {
         lockedReason: null,
       },
       {
+        settingCode: "APPROVAL.RETURN_URGENT_DAYS",
+        sectionCode: "APPROVAL_POLICY",
+        kind: "NUMBER",
+        valueType: "DAYS",
+        safeLabel: "Срочность возврата: порог в днях",
+        description:
+          "Замечание возврата становится «Срочно» само, если до даты мероприятия осталось не больше стольких дней.",
+        value: 1,
+        minValue: 0,
+        maxValue: 30,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
         settingCode: "ATTENTION.ACKNOWLEDGEMENT_MISSING.PARAMETER",
         sectionCode: "ATTENTION_POLICY",
         kind: "NUMBER",
@@ -326,6 +342,7 @@ function buildSeed(): SettingsState {
       LOAD_POLICY: "load-policy-v1",
       ATTENTION_POLICY: "attention-policy-v1",
       REPORT_LIMITS: "report-limits-v1",
+      APPROVAL_POLICY: "approval-policy-v1",
       // Формат версии методики рейтинга — свой (OPERATIONAL-RATING-<год>.<мес>.N):
       // ею подписываются агрегаты, и точки динамики прошлых редакций несут
       // версии того же формата.
