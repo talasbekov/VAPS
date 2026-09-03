@@ -162,9 +162,49 @@ def approver():
     return api
 
 
+def chief_for(api):
+    """Старший объекта для фикстур — сотрудник, СВЯЗАННЫЙ с пользователем
+    клиента (`[РЕК-02]`, Plane №424). Не любой сотрудник: расстановку ведёт
+    старший объекта (`placement_is_led_by`, №74/№403), и чужой старший
+    отнял бы у клиента-фикстуры его же мероприятие."""
+    user = getattr(api.handler, "_force_user", None)
+    existing = Employee.objects.filter(user=user).first() if user is not None else None
+    if existing is not None:
+        return existing
+    chief = make_employee(last_name="Старший", first_name="Объекта")
+    if user is not None:
+        chief.user = user
+        chief.save(update_fields=["user"])
+    return chief
+
+
+def give_chief(api, event_id):
+    """Старший каждому объекту посещения без него: объект, дописанный кнопкой
+    «+», старшего не наследует — а без старшего сервер закрывает
+    рекогносцировку. Назначение идёт СЕРВИСОМ, а не ручкой: права на старшего
+    у клиентов-фикстур нет, и это не предмет проб."""
+    from organization_management.apps.ops import security_events as _service
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEventVisitObject,
+    )
+
+    chief = chief_for(api)
+    for visit in OpsSecurityEventVisitObject.objects.filter(
+        event_id=event_id, chief_employee_id__isnull=True
+    ):
+        _service.assign_visit_object_chief(
+            event_id, visit.pk, employee_id=str(chief.pk), actor="user:tests"
+        )
+
+
 def create_event(
     api, obj, title="Визит делегации", business_date="2026-08-10", **extra
 ):
+    # Старший объекта по умолчанию (`[РЕК-02]`/`[РЕК-07]`, Plane №424): без
+    # него рекогносцировка закрыта сервером. Проба, которой нужен ОМ БЕЗ
+    # старшего, передаёт `chiefEmployeeId=None` явно.
+    if "chiefEmployeeId" not in extra:
+        extra["chiefEmployeeId"] = str(chief_for(api).pk)
     return api.post(
         URL,
         {
@@ -172,7 +212,7 @@ def create_event(
             "objectId": str(obj.pk),
             "businessDate": business_date,
             "kind": "INTERNAL",
-            **extra,
+            **{k: v for k, v in extra.items() if v is not None},
         },
         format="json",
     )
@@ -320,7 +360,7 @@ def test_create_carries_bulletin_fields(manager):
 
 def test_create_optional_bulletin_fields_stay_empty(manager):
     """Незаполненные поля остаются пустыми, а не подставляются за автора."""
-    resp = create_event(manager, make_object())
+    resp = create_event(manager, make_object(), chiefEmployeeId=None)
     assert resp.status_code == 201
     data = resp.json()
     assert data["eventTime"] is None
@@ -393,7 +433,7 @@ def test_owner_name_falls_back_to_username_without_personnel_record():
     api, _ = client_for(
         "ev-nolink", "EV_NOLINK", perms=("event.view", "event.manage", "event.create", "event.bulletin")
     )
-    assert create_event(api, make_object(with_passport=True)).status_code == 201
+    assert create_event(api, make_object(with_passport=True), chiefEmployeeId=None).status_code == 201
 
     data = api.get(URL).json()
     assert data["results"][0]["ownerName"] == "ev-nolink"
@@ -1298,7 +1338,7 @@ def test_assign_and_replace_visit_object_chief(manager):
 
 def test_visit_object_chief_rejects_unknown_employee_and_empty_removal(manager):
     obj = make_object(with_passport=True)
-    event_id = create_event(manager, obj).json()["id"]
+    event_id = create_event(manager, obj, chiefEmployeeId=None).json()["id"]
     visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
 
     resp = manager.post(
@@ -1832,6 +1872,7 @@ def test_deputy_of_one_object_cannot_touch_unmarked_posts_of_a_multi_object_even
     # Появился ВТОРОЙ объект — принадлежность НЕРАЗМЕЧЕННОГО поста стала
     # неизвестной, и то же действие теперь отбивается.
     manager.post(f"{base}visit-objects/", {"objectId": str(other.pk)}, format="json")
+    give_chief(manager, base.rstrip("/").rsplit("/", 1)[-1])
     # 🔴 Разметку снимаем намеренно — см. пояснение в
     # `test_second_visit_object_without_post_mapping_reports_unknown` (Plane
     # №408): импорт теперь помечает посты, и старый мир надо изобразить.

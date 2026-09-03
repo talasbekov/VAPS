@@ -600,6 +600,7 @@ class Command(BaseCommand):
             kind=OpsSecurityEvent.Kind.INTERNAL,
             actor=ACTOR,
         )
+        self._assign_visit_chief(event)
         event = event_service.update_bulletin(
             event.id,
             brief_description="Фикстура стенда: мероприятие стоит на рекогносцировке.",
@@ -673,6 +674,7 @@ class Command(BaseCommand):
             kind=OpsSecurityEvent.Kind.INTERNAL,
             actor=ACTOR,
         )
+        self._assign_visit_chief(event)
         if event.stage == "BULLETIN":
             event = event_service.complete_bulletin(event.id)
         event = event_service.update_recon(
@@ -746,6 +748,20 @@ class Command(BaseCommand):
         # Перевод этапа — админ-полномочие и штатный путь: он оставляет след в
         # журнале переходов, а запись в поле — нет.
         return event_service.override_stage(event.id, stage="CONDUCT", actor=ACTOR)
+
+    def _assign_visit_chief(self, event):
+        """Старший объекта — условие рекогносцировки (`[РЕК-02]`/`[РЕК-07]`,
+        Plane №424): без него импорт постов и «Завершить» отвечают 422."""
+        chief = Employee.objects.order_by("id").first()
+        if chief is None:
+            raise CommandError("нет сотрудников — старшего объекта взять неоткуда")
+        for visit in event.visit_objects.all():
+            if visit.chief_employee_id is None:
+                event_service.assign_visit_object_chief(
+                    event.id, visit.pk, employee_id=str(chief.pk), actor=ACTOR
+                )
+        event.refresh_from_db()
+        return event
 
     def _employee_count(self):
         from organization_management.apps.employees.models import Employee
@@ -866,6 +882,7 @@ class Command(BaseCommand):
             protected_person_id=str(persons[0].pk),
             actor=ACTOR,
         )
+        self._assign_visit_chief(event)
         # Расчёт постов — ИМПОРТОМ ИЗ ПАСПОРТА, а не пустой: итоги закрытия
         # собираются ПО НАПРАВЛЕНИЯМ, а направления — это секторы расчёта.
         # Пока расчёт был пуст, `close_event` получал пустой список итогов, и
@@ -878,6 +895,7 @@ class Command(BaseCommand):
             object_id=str(second_object.pk),
             protected_person_id=str(persons[1].pk),
         )
+        event = self._assign_visit_chief(event)
         # ЛЮДИ НА ПОСТАХ, а не пустая расстановка (Plane №196): вкладка
         # «История» своего профиля показывает закрытые ОМ, в расстановке
         # которых человек НАЗВАН, и оттуда же берёт форму одежды, вооружение и

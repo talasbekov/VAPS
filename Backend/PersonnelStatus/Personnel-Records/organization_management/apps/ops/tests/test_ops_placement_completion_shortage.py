@@ -24,7 +24,9 @@ from organization_management.apps.operations.models_event import (
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.ops import security_events as service
-from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: F401
+from organization_management.apps.ops.tests.test_ops_security_events_api import (
+    chief_for,
+    give_chief,  # noqa: F401
     make_employee,
     make_object,
     manager,
@@ -46,6 +48,7 @@ def event_ready_for_placement(manager):  # noqa: F811
             "objectId": str(obj.pk),
             "businessDate": "2026-09-03",
             "kind": "INTERNAL",
+            "chiefEmployeeId": str(chief_for(manager).pk),
         },
         format="json",
     )
@@ -176,6 +179,7 @@ def test_completing_one_object_does_not_touch_the_other(manager):  # noqa: F811
             "objectId": str(first_object.pk),
             "businessDate": "2026-09-03",
             "kind": "INTERNAL",
+            "chiefEmployeeId": str(chief_for(manager).pk),
         },
         format="json",
     )
@@ -185,6 +189,7 @@ def test_completing_one_object_does_not_touch_the_other(manager):  # noqa: F811
         code="OBJ-SHORTAGE-2", name="Второй объект", with_passport=True
     )
     manager.post(f"{base}visit-objects/", {"objectId": str(second_object.pk)}, format="json")
+    give_chief(manager, event_id)
     first, second = OpsSecurityEventVisitObject.objects.filter(
         event_id=event_id
     ).order_by("position", "pk")

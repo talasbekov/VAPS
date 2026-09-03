@@ -15,6 +15,7 @@
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { anyChiefId } from './stand-chief'
 import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
@@ -672,6 +673,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       objectId: withPassport!.id,
       businessDate: '2026-08-26',
       kind: 'INTERNAL',
+      chiefEmployeeId: await anyChiefId(token),
     })
     const base = `/api/ops/security-events/${created.id}`
     await call('patch', `${base}/bulletin/`, { briefDescription: 'x', initialTasks: '—' })
@@ -784,6 +786,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       objectId: object.id,
       businessDate: '2026-09-03',
       kind: 'INTERNAL',
+      chiefEmployeeId: await anyChiefId(token),
     })) as { id: string }
     const base = `/api/ops/security-events/${created.id}`
 
@@ -880,6 +883,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       objectId: object.id,
       businessDate: '2026-12-31',
       kind: 'INTERNAL',
+      chiefEmployeeId: await anyChiefId(token),
     })) as { id: string }
     const base = `/api/ops/security-events/${created.id}`
     await call('POST', `${base}/recon/import-from-passport/`)

@@ -1136,6 +1136,20 @@ def remove_visit_object_deputy(event_id, visit_object_id, deputy_id, *, actor):
 # ── Старший объекта посещения ───────────────────────────────────────────────
 
 
+def _require_visit_chief(visit):
+    """`[РЕК-02]`/`[РЕК-07]` (Plane №424): без старшего объекта рекогносцировка
+    закрыта — правило у сервера, экран лишь повторяет его пустым состоянием."""
+    if visit.chief_employee_id is None:
+        raise DomainError(
+            "VISIT_CHIEF_REQUIRED",
+            422,
+            message=(
+                f"Назначьте старшего объекта «{visit.object_name}», чтобы "
+                "начать рекогносцировку."
+            ),
+        )
+
+
 @transaction.atomic
 def assign_visit_object_chief(event_id, visit_object_id, *, employee_id, actor):
     """Назначить старшего НА ОБЪЕКТ посещения (Plane «Реестр ОМ-35.2»).
@@ -1477,7 +1491,12 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     каждом чужом сохранении."""
     event = lock_event(event_id)
     checklist = checklist or []
-    sector_posts = sector_posts or []
+    # «Ключа нет» — не «пусто» (Plane №416, учтено в №424): отметка чек-листа
+    # отдельным вызовом без пересылки постов стирала расчёт в пустой список, и
+    # `recon/complete` падал `RECON_SECTOR_POSTS_EMPTY` без понятной причины.
+    # Та же трактовка, что у `force_request` строкой ниже.
+    if sector_posts is None:
+        sector_posts = list(event.recon_sector_posts or [])
     field_errors = {}
     if force_request is not None:
         try:
@@ -1514,6 +1533,15 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
             ]
     if field_errors:
         raise _validation(field_errors)
+    # Посты объекта пишет его старший — без старшего объект закрыт (№424).
+    # Нераспределённые строки (без `visitObjectId`) гард не трогает.
+    touched = {
+        str(row.get("visitObjectId") or "").strip()
+        for row in sector_posts
+        if str(row.get("visitObjectId") or "").strip()
+    }
+    for visit in event.visit_objects.filter(pk__in=touched or [-1]):
+        _require_visit_chief(visit)
     event.recon_checklist = [
         {**item, "comment": str(item.get("comment", "")).strip()}
         for item in checklist
@@ -1690,6 +1718,9 @@ def import_recon_from_passport(event_id, *, visit_object_id=None):
             "Привязанная версия паспорта недоступна — обратитесь к владельцу "
             "объекта.",
         )
+    # Старший проверяется ПОСЛЕ паспорта: «импортировать не из чего» — ответ
+    # про объект, и он не должен прятаться за «назначьте старшего» (№424).
+    _require_visit_chief(target)
     # Повтор считается В ПРЕДЕЛАХ ОБЪЕКТА: один и тот же пост паспорта у двух
     # объектов посещения — это два разных поста расчёта, а не дубль.
     already_imported = {
@@ -1743,6 +1774,11 @@ def complete_recon(event_id):
         "RECON",
         "Рекогносцировку можно завершить только на этапе «Рекогносцировка».",
     )
+    # `[РЕК-07]` (№424): «Завершить» недоступна, пока не назначен старший
+    # объекта — у каждого объекта посещения, что идёт этим этапом.
+    for visit in event.visit_objects.all():
+        if visit.stage == "RECON":
+            _require_visit_chief(visit)
     if not all(item.get("done") for item in event.recon_checklist):
         raise DomainError("RECON_CHECKLIST_INCOMPLETE", 422, message=
             "Не все пункты чек-листа отмечены выполненными.",

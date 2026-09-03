@@ -25,6 +25,9 @@ from organization_management.apps.ops.api.serializers import (
     serialize_security_event,
 )
 from organization_management.apps.ops.tests.test_ops_security_events_api import (
+    chief_for,
+    give_chief,
+    make_employee,
     make_object,
     manager,  # noqa: F401 — фикстура ведущего мероприятие, одна на раздел
 )
@@ -43,6 +46,7 @@ def event_on_recon(manager):
             "objectId": str(obj.pk),
             "businessDate": "2026-08-26",
             "kind": "INTERNAL",
+            "chiefEmployeeId": str(chief_for(manager).pk),
         },
         format="json",
     )
@@ -84,6 +88,7 @@ def test_import_refuses_to_guess_when_objects_are_many(manager, event_on_recon):
         {"objectId": str(second.pk)},
         format="json",
     )
+    give_chief(manager, event_id)
 
     resp = manager.post(
         f"/api/ops/security-events/{event_id}/recon/import-from-passport/"
@@ -101,6 +106,7 @@ def test_same_passport_post_imports_once_per_object(manager, event_on_recon):
         {"objectId": str(second_object.pk)},
         format="json",
     )
+    give_chief(manager, event_id)
     assert added.status_code in (200, 201), added.content
     second = (
         OpsSecurityEventVisitObject.objects.filter(event_id=event_id)
@@ -232,6 +238,7 @@ def test_migration_marks_posts_only_where_the_answer_is_single(manager, event_on
         {"objectId": str(second_object.pk)},
         format="json",
     )
+    give_chief(manager, event_id)
     event = service.lock_event(event_id)
     event.recon_sector_posts = [
         {**row, "visitObjectId": None} for row in event.recon_sector_posts

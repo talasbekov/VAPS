@@ -22,6 +22,7 @@
  * работа людей. Снимает только `purge_probe_events --yes --force` с консоли.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -362,3 +363,4 @@ async function prepareEvent(
   await call('POST', `${base}/approval/approve/`)
   return created.code
 }
+    chiefEmployeeId: await anyChiefId(token),

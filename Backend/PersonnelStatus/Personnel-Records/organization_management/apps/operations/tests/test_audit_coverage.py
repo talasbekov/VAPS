@@ -815,6 +815,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         # (Plane «Реестр ОМ-23»): её итог адресуется штабу 2-го департамента.
         force_request=12,
     ).recon_sector_posts[0]["id"]
+    # `[РЕК-02]`/`[РЕК-07]` (Plane №424): без старшего объекта рекогносцировку
+    # не завершить — сценарий называет его тем же сотрудником, что и выше.
+    for _visit in om.visit_objects.all():
+        event_service.assign_visit_object_chief(
+            om.pk, _visit.pk, employee_id=str(employee.pk), actor="system:audit"
+        )
     event_service.complete_recon(om.pk)
     # Стадии «Потребность» и «Запрос сил» проходит сервер сам (Plane №110):
     # завершение рекогносцировки оставляет ОМ уже на «Расстановке», и ручное
@@ -1101,6 +1107,10 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
 
     _svc.import_recon_from_passport(shortage_event.pk)
     shortage_event.refresh_from_db()
+    for _visit in shortage_event.visit_objects.all():
+        _svc.assign_visit_object_chief(
+            shortage_event.pk, _visit.pk, employee_id=str(employee.pk), actor="system:audit"
+        )
     for item in shortage_event.recon_checklist:
         item["done"] = True
         item["result"] = "MATCHES"

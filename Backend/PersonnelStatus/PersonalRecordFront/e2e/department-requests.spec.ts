@@ -16,6 +16,7 @@
  *    рисуют одинаково полную полосу, то есть «всё в порядке».
  */
 import { expect, test, type Page } from '@playwright/test'
+import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -80,6 +81,7 @@ async function createDepartmentAllocationFixture(
     objectId: object.id,
     businessDate: options.businessDate ?? '2026-09-25',
     kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
   })) as { id: string }
 
   await apiCall(token, 'POST', `/api/ops/security-events/${created.id}/recon/import-from-passport/`)

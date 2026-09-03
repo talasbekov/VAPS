@@ -20,6 +20,7 @@
  * `assignment.approve` у `HEAD_OPS_UNIT` в `seed_operations` — вторая.
  */
 import path from 'node:path'
+import { anyChiefId } from './stand-chief'
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
@@ -80,6 +81,7 @@ async function prepareSentEvent(token: string): Promise<void> {
     objectId: object.id,
     businessDate: '2026-09-20',
     kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, { briefDescription: 'Проба прав.', initialTasks: '—' })
