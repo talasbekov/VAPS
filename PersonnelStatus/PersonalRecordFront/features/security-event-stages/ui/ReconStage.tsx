@@ -115,6 +115,57 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   });
   const complete = useCompleteRecon(event.id);
 
+  /* ── Принадлежность расчёта объекту посещения (Plane №409) ──────────────
+   *
+   * Спецификация `[МД-04]`: у объекта СВОИ этапы, `[РЕК-07]`: подвал считает
+   * «потребность ПО ОБЪЕКТУ». Пост принадлежит объекту с №408, но выбрать
+   * этот объект было негде: импорт у ОМ с двумя объектами отвечал «выберите,
+   * для какого», а выбора на экране не было.
+   *
+   * Объект показан ПЕРЕКЛЮЧАТЕЛЕМ, а не тринадцатой колонкой таблицы: в ней
+   * уже двенадцать, и аудит `[РЕК-09]` жалуется именно на ширину. Заодно это
+   * ближе к эталону: там этапы ведут по объекту, а не по мероприятию.
+   */
+  const UNASSIGNED = "__unassigned__";
+  const unassignedCount = rows.filter(
+    (row) => (row.visitObjectId ?? null) === null
+  ).length;
+  const [activeVisit, setActiveVisit] = useState<string>(
+    () => event.visitObjects[0]?.id ?? UNASSIGNED
+  );
+  // Объект мог быть снят с мероприятия в соседней вкладке — тогда показанный
+  // выбор указывает в пустоту, и честнее вернуться к первому существующему.
+  const activeVisitExists =
+    activeVisit === UNASSIGNED ||
+    event.visitObjects.some((visit) => visit.id === activeVisit);
+  const shownVisit = activeVisitExists
+    ? activeVisit
+    : (event.visitObjects[0]?.id ?? UNASSIGNED);
+  const activeVisitObject =
+    event.visitObjects.find((visit) => visit.id === shownVisit) ?? null;
+  /** Строки показанного объекта. Остальные не удалены и не забыты — они
+   *  сохраняются вместе со всеми, просто сейчас не на экране. */
+  const visibleRows = useMemo(
+    () =>
+      rows.filter((row) =>
+        shownVisit === UNASSIGNED
+          ? (row.visitObjectId ?? null) === null
+          : row.visitObjectId === shownVisit
+      ),
+    [rows, shownVisit]
+  );
+
+  /** Отнести строки к объекту: одну (перенос) или все нераспределённые. */
+  function assignToVisit(visitObjectId: string, only?: string): void {
+    setRows((prev) =>
+      prev.map((row) =>
+        (only === undefined ? (row.visitObjectId ?? null) === null : row.id === only)
+          ? { ...row, visitObjectId }
+          : row
+      )
+    );
+  }
+
   const dirty =
     JSON.stringify({ checklist, rows }) !==
     JSON.stringify({
@@ -127,12 +178,33 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
    * чтобы старший наряда видел, что уходит. */
   const needFromPosts = rows.reduce((sum, row) => sum + (row.need || 0), 0);
 
+  /** Паспорт, из которого пойдёт импорт: у объекта СВОЙ снимок версии
+   *  (`[РЕК-05]` — «импорт из паспорта объекта посещения»).
+   *
+   *  Снимок мероприятия годится ТОЛЬКО когда объект посещения — тот же объект
+   *  реестра, что у мероприятия: так выглядят строки, заведённые до появления
+   *  собственных привязок. Для ЧУЖОГО объекта такая подстановка означала бы
+   *  импорт постов одного объекта в расчёт другого — ТО ЖЕ ПРАВИЛО СТОИТ НА
+   *  СЕРВЕРЕ, и разойтись с ним нельзя: кнопка была бы живой, а сервер
+   *  отвечал бы отказом (поймано пробой). */
+  const importPassport =
+    activeVisitObject?.passportBinding ??
+    (activeVisitObject !== null &&
+    activeVisitObject.objectId !== null &&
+    activeVisitObject.objectId === event.objectId
+      ? event.passportBinding
+      : null);
+
+  /** Потребность ПОКАЗАННОГО объекта — то, что просит подвал `[РЕК-07]`.
+   *  Общее число остаётся рядом: штабу уходит сумма по мероприятию. */
+  const needOfVisit = visibleRows.reduce((sum, row) => sum + (row.need || 0), 0);
+
   /** Группы «сектор → строки» в порядке появления строк. Пустые секторы
    * дописываются в хвост. */
   const groups: SectorGroup[] = useMemo(() => {
     const order: string[] = [];
     const byName = new Map<string, ReconSectorPost[]>();
-    for (const row of rows) {
+    for (const row of visibleRows) {
       let bucket = byName.get(row.sector);
       if (bucket === undefined) {
         bucket = [];
@@ -147,7 +219,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
       order.push(name);
     }
     return order.map((name) => ({ name, rows: byName.get(name) ?? [] }));
-  }, [rows, emptySectors]);
+  }, [visibleRows, emptySectors]);
 
   function patchItem(id: string, patch: Partial<ReconChecklistItem>): void {
     setChecklist((prev) =>
@@ -178,6 +250,9 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
       weapon: "",
       uniform: "",
       parentPostId: "",
+      // Новый пост заводится У ПОКАЗАННОГО объекта: человек видит расчёт
+      // одного объекта и добавляет строку в него, а не «в мероприятие».
+      visitObjectId: shownVisit === UNASSIGNED ? null : shownVisit,
       ...patch,
     };
   }
@@ -356,8 +431,10 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
             <div>
               <h3 className="text-sm font-semibold">Посты и секторы</h3>
               <p className="text-xs text-muted-foreground">
-                Расчёт для текущего ОМ ·{" "}
-                {dirty ? "есть несохранённые изменения" : "изменения сохранены"}
+                {activeVisitObject === null
+                  ? "Расчёт для текущего ОМ"
+                  : `Расчёт объекта «${activeVisitObject.objectName}»`}{" "}
+                · {dirty ? "есть несохранённые изменения" : "изменения сохранены"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -365,13 +442,21 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={importPosts.isPending || event.passportBinding === null}
-                title={
-                  event.passportBinding === null
-                    ? "Мероприятие не привязано к версии паспорта."
-                    : undefined
+                disabled={
+                  importPosts.isPending ||
+                  activeVisitObject === null ||
+                  importPassport === null
                 }
-                onClick={() => importPosts.mutate({})}
+                title={
+                  activeVisitObject === null
+                    ? "Выберите объект посещения — посты импортируются в него."
+                    : importPassport === null
+                      ? "У объекта нет привязанной версии паспорта."
+                      : undefined
+                }
+                onClick={() =>
+                  importPosts.mutate({ visitObjectId: shownVisit })
+                }
               >
                 {importPosts.isPending ? "Импорт…" : "Импорт из паспорта"}
               </Button>
@@ -393,9 +478,66 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               </Button>
             </div>
           </div>
+          {/* Переключатель объекта. Показывается, когда выбор ЕСТЬ: у ОМ с
+              единственным объектом и без нераспределённых строк выбирать не
+              из чего, и элемент управления с одним значением только мешает. */}
+          {(event.visitObjects.length > 1 || unassignedCount > 0) && (
+            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+              <label
+                className="text-xs font-semibold"
+                htmlFor="recon-visit-object"
+              >
+                Объект посещения
+              </label>
+              <select
+                id="recon-visit-object"
+                className="h-8 rounded-md border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={shownVisit}
+                onChange={(e) => setActiveVisit(e.target.value)}
+              >
+                {event.visitObjects.map((visit) => (
+                  <option key={visit.id} value={visit.id}>
+                    {visit.objectName} · постов{" "}
+                    {rows.filter((row) => row.visitObjectId === visit.id).length}
+                  </option>
+                ))}
+                {unassignedCount > 0 && (
+                  <option value={UNASSIGNED}>
+                    Не отнесены к объекту · постов {unassignedCount}
+                  </option>
+                )}
+              </select>
+              {shownVisit === UNASSIGNED && event.visitObjects.length > 0 && (
+                /* Строки, заведённые до Plane №408: объект в них не записан, и
+                   приписать его мог только человек — сервер честно оставил их
+                   без владельца, а не разделил поровну. */
+                <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>Эти посты заведены до разметки. Отнести все к:</span>
+                  {event.visitObjects.map((visit) => (
+                    <Button
+                      key={visit.id}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => {
+                        assignToVisit(visit.id);
+                        setActiveVisit(visit.id);
+                      }}
+                    >
+                      {visit.objectName}
+                    </Button>
+                  ))}
+                  <span>— затем «Сохранить расчёт».</span>
+                </span>
+              )}
+            </div>
+          )}
           {groups.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              Постов пока нет — добавьте сектор или импортируйте из паспорта.
+              {shownVisit === UNASSIGNED
+                ? "Нераспределённых постов нет."
+                : "Постов пока нет — добавьте сектор или импортируйте из паспорта."}
             </p>
           ) : (
             /* Таблица шире экрана: десять колонок расчёта не сжимаются до
@@ -686,7 +828,16 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-            Расчёт по постам: {needFromPosts}
+            {activeVisitObject !== null && (
+              <>
+                Потребность объекта «{activeVisitObject.objectName}»:{" "}
+                <span className="font-semibold text-foreground">
+                  {needOfVisit}
+                </span>
+                {" · "}
+              </>
+            )}
+            Расчёт по постам всего: {needFromPosts}
             {needFromPosts === 0 && " (постов пока нет)"}. Завершение этапа
             направит это число штабу 2-го департамента — он разложит его по
             департаментам в разделе{" "}

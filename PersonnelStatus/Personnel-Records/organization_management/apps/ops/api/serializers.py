@@ -108,10 +108,17 @@ def _visit_placement(event, visit, *, single):
     scoped = [
         p for p in posts if str(p.get("visitObjectId") or "") == str(visit.pk)
     ]
-    if not scoped:
+    unmarked = [p for p in posts if not str(p.get("visitObjectId") or "")]
+    if unmarked:
+        # НЕРАЗМЕЧЕННЫЕ строки и делают ответ неизвестным (Plane №409). У
+        # единственного объекта они всё равно его — принадлежать другим
+        # некому. У второго и последующих — неизвестно, и None честнее числа.
         if not single:
             return None, None
-        scoped = posts
+        scoped = [*scoped, *unmarked]
+    # Разметка полная: объект без своих постов — это НОЛЬ, а не «неизвестно».
+    # До №409 здесь возвращался None, и объект, которому ничего не расписали,
+    # выглядел на экране так же, как объект, про который нечего сказать.
     need = sum(int(p.get("need") or 0) for p in scoped)
     post_ids = {str(p.get("id")) for p in scoped}
     assigned = sum(
