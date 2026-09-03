@@ -49,6 +49,70 @@ import type {
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDateTime } from "@/shared/lib/date";
 import { useVisitObjectScope, type VisitObjectScope } from "./useVisitObjectScope";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useMyEmployee } from "@/hooks/use-my-employee";
+
+/**
+ * Кто что может на этапе 3 (`[СОГ-12]`, Plane №401).
+ *
+ * Правило раздела: недоступное действие ВЫКЛЮЧАЕТСЯ и говорит, чьё оно, а не
+ * прячется (см. `forces-split/ui/chain-access.ts`). Клиент гейтит по КОДУ
+ * права и по РОЛИ В ДАННЫХ показанного объекта — тем же двум признакам, по
+ * которым решает сервер (`permission_override` у вьюсета): старший объекта
+ * отправляет и отзывает, его замещающий отвечает на замечания, и ни тому, ни
+ * другому для этого не нужен общий `event.manage`. Область права клиент не
+ * считает — её проверяет сервер, и его отказ человек читает словами там же.
+ */
+interface ApprovalRights {
+  /** Маршрут (добавить / снять / переставить) — настройка процесса, ведущий. */
+  manageRoute: boolean;
+  /** Отправить и отозвать — ведущий мероприятие или старший объекта. */
+  send: boolean;
+  /** Ответить на замечание — то же плюс замещающий объекта. */
+  answerRemarks: boolean;
+  approve: boolean;
+  returnBack: boolean;
+}
+
+const RIGHT_REASON = {
+  manageRoute: "Маршрут согласования настраивает ведущий мероприятие",
+  send: "Отправляет и отзывает старший объекта или ведущий мероприятие",
+  answerRemarks:
+    "На замечания отвечает старший объекта, его замещающий или ведущий мероприятие",
+  approve: "Согласовывает расстановку утверждающий",
+  returnBack: "Возвращает расстановку на доработку утверждающий",
+} as const;
+
+/** Подсказка выключенной кнопки; `undefined` — кнопка доступна. */
+function reasonUnless(allowed: boolean, key: keyof typeof RIGHT_REASON) {
+  return allowed ? undefined : RIGHT_REASON[key];
+}
+
+function useApprovalRights(
+  event: SecurityEvent,
+  visit: VisitObject | null | undefined
+): ApprovalRights {
+  const { hasPermission, permissions } = useOpsPermissions();
+  const me = useMyEmployee();
+  // Пока права не пришли, кнопки НЕ выключаются с ложной причиной: серверный
+  // отказ всё равно стоит за ними, а мигание «нельзя → можно» вводит в
+  // заблуждение сильнее, чем секунда доступной кнопки.
+  const loading = permissions === undefined;
+  const myId = me.data?.employee ? String(me.data.employee.id) : null;
+  const manage = loading || hasPermission("event.manage");
+  const chiefId = visit ? visit.chiefEmployeeId : event.chiefEmployeeId;
+  const isChief = myId !== null && chiefId !== null && chiefId === myId;
+  const isDeputy =
+    myId !== null &&
+    (visit?.deputies ?? []).some((deputy) => deputy.employeeId === myId);
+  return {
+    manageRoute: manage,
+    send: manage || isChief,
+    answerRemarks: manage || isChief || isDeputy,
+    approve: loading || hasPermission("assignment.approve"),
+    returnBack: loading || hasPermission("assignment.return"),
+  };
+}
 
 /**
  * Согласование ПОКАЗАННОГО объекта посещения (Plane №411, Ш-5 плана №385).
@@ -308,6 +372,7 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
   // первом же переходе по ссылке из реестра.
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
   const view = approvalViewOf(event, scope.visit);
+  const rights = useApprovalRights(event, scope.visit);
 
   const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
   const postLabel = (postId: string): string => {
@@ -383,9 +448,9 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           <Kpi value={formatIsoDateTime(event.updatedAt)} label="обновлено" />
         </div>
 
-        <ApprovalRoute event={event} view={view} />
+        <ApprovalRoute event={event} view={view} rights={rights} />
 
-        <ApprovalRemarks event={event} view={view} />
+        <ApprovalRemarks event={event} view={view} rights={rights} />
 
         <DocumentVersionHistory view={view} />
 
@@ -475,9 +540,11 @@ const APPROVER_STATUS_CLASS: Record<string, string> = {
 function ApprovalRoute({
   event,
   view,
+  rights,
 }: {
   event: SecurityEvent;
   view: ApprovalView;
+  rights: ApprovalRights;
 }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -561,6 +628,8 @@ function ApprovalRoute({
             type="button"
             variant="outline"
             size="sm"
+            disabled={!rights.manageRoute}
+            title={reasonUnless(rights.manageRoute, "manageRoute")}
             onClick={() => setAdding((prev) => !prev)}
           >
             + Добавить согласующего
@@ -569,8 +638,14 @@ function ApprovalRoute({
             type="button"
             variant="outline"
             size="sm"
-            disabled={withdraw.isPending || !sent}
-            title={sent ? undefined : "Расстановка ещё не отправлена."}
+            disabled={withdraw.isPending || !sent || !rights.send}
+            title={
+              !rights.send
+                ? RIGHT_REASON.send
+                : sent
+                  ? undefined
+                  : "Расстановка ещё не отправлена."
+            }
             onClick={() => withdraw.mutate({ visitObjectId })}
           >
             Отозвать с согласования
@@ -578,9 +653,13 @@ function ApprovalRoute({
           <Button
             type="button"
             size="sm"
-            disabled={send.isPending || route.length === 0}
+            disabled={send.isPending || route.length === 0 || !rights.send}
             title={
-              route.length === 0 ? "Маршрут согласования пуст." : undefined
+              !rights.send
+                ? RIGHT_REASON.send
+                : route.length === 0
+                  ? "Маршрут согласования пуст."
+                  : undefined
             }
             onClick={() => send.mutate({ visitObjectId })}
           >
@@ -667,7 +746,8 @@ function ApprovalRoute({
                           type="button"
                           className="rounded px-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
                           aria-label={`Выше: ${approver.name}`}
-                          disabled={index === 0 || move.isPending}
+                          disabled={index === 0 || move.isPending || !rights.manageRoute}
+                          title={reasonUnless(rights.manageRoute, "manageRoute")}
                           onClick={() =>
                             move.mutate({
                               approverId: approver.id,
@@ -682,7 +762,8 @@ function ApprovalRoute({
                           type="button"
                           className="rounded px-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
                           aria-label={`Ниже: ${approver.name}`}
-                          disabled={index === route.length - 1 || move.isPending}
+                          disabled={index === route.length - 1 || move.isPending || !rights.manageRoute}
+                          title={reasonUnless(rights.manageRoute, "manageRoute")}
                           onClick={() =>
                             move.mutate({
                               approverId: approver.id,
@@ -726,7 +807,8 @@ function ApprovalRoute({
                             <Button
                               type="button"
                               size="sm"
-                              disabled={decide.isPending}
+                              disabled={decide.isPending || !rights.approve}
+                              title={reasonUnless(rights.approve, "approve")}
                               onClick={() =>
                                 decide.mutate({
                                   approverId: approver.id,
@@ -742,6 +824,8 @@ function ApprovalRoute({
                               type="button"
                               size="sm"
                               variant="outline"
+                              disabled={!rights.returnBack}
+                              title={reasonUnless(rights.returnBack, "returnBack")}
                               onClick={() =>
                                 setReturnFor((prev) =>
                                   prev === approver.id ? null : approver.id
@@ -758,7 +842,8 @@ function ApprovalRoute({
                             size="sm"
                             variant="outline"
                             aria-label={`Снять согласующего ${approver.name}`}
-                            disabled={remove.isPending}
+                            disabled={remove.isPending || !rights.manageRoute}
+                            title={reasonUnless(rights.manageRoute, "manageRoute")}
                             onClick={() =>
                               remove.mutate({
                                 approverId: approver.id,
@@ -820,7 +905,8 @@ function ApprovalRoute({
                           <Button
                             type="button"
                             size="sm"
-                            disabled={decide.isPending}
+                            disabled={decide.isPending || !rights.returnBack}
+                            title={reasonUnless(rights.returnBack, "returnBack")}
                             onClick={() =>
                               decide.mutate({
                                 approverId: approver.id,
@@ -864,9 +950,11 @@ function ApprovalRoute({
 function ApprovalRemarks({
   event,
   view,
+  rights,
 }: {
   event: SecurityEvent;
   view: ApprovalView;
+  rights: ApprovalRights;
 }) {
   // «Не согласен» требует ответа (`[ВОЗ-04]`) — поле раскрывается под
   // строкой, как причина возврата у согласующего, и только для одного
@@ -942,7 +1030,8 @@ function ApprovalRemarks({
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={resolve.isPending}
+                      disabled={resolve.isPending || !rights.answerRemarks}
+                      title={reasonUnless(rights.answerRemarks, "answerRemarks")}
                       onClick={() =>
                         resolve.mutate({
                           remarkId: remark.id,
@@ -957,6 +1046,8 @@ function ApprovalRemarks({
                       type="button"
                       size="sm"
                       variant="outline"
+                      disabled={!rights.answerRemarks}
+                      title={reasonUnless(rights.answerRemarks, "answerRemarks")}
                       onClick={() =>
                         setRespondFor((prev) =>
                           prev === remark.id ? null : remark.id
@@ -971,7 +1062,8 @@ function ApprovalRemarks({
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={resolve.isPending}
+                    disabled={resolve.isPending || !rights.answerRemarks}
+                    title={reasonUnless(rights.answerRemarks, "answerRemarks")}
                     onClick={() =>
                       resolve.mutate({
                         remarkId: remark.id,
@@ -1002,7 +1094,8 @@ function ApprovalRemarks({
                   <Button
                     type="button"
                     size="sm"
-                    disabled={resolve.isPending}
+                    disabled={resolve.isPending || !rights.answerRemarks}
+                    title={reasonUnless(rights.answerRemarks, "answerRemarks")}
                     onClick={() =>
                       resolve.mutate({
                         remarkId: remark.id,
