@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useId,
   useSyncExternalStore,
 } from "react";
 import Link from "next/link";
@@ -13,6 +14,11 @@ import { useAuth } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { modulePermissionsOf } from "@/entities/portal-access";
 import { useSecurityEvents } from "@/hooks/use-security-events";
+import { InDevelopmentBadge } from "@/components/in-development-badge";
+import {
+  inDevelopmentOfRoute,
+  inDevelopmentSummary,
+} from "@/shared/config/in-development";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -184,12 +190,21 @@ function NavLink({
   active: boolean;
   counter?: { value: number; hint: string };
 }) {
+  // Метка «В разработке» у пункта (Plane №450) — из того же реестра, что и у
+  // шапки экрана. Внутри ссылки она СКРЫТА от скринридера, а список читается
+  // через `aria-describedby`: имя ссылки остаётся «Реестр ОМ», и пробы, и
+  // человек, ищущий пункт по имени, находят его как прежде; описание идёт
+  // следом, а не вклинивается в имя.
+  const note = inDevelopmentOfRoute(href);
+  const noteId = useId();
   return (
+    <>
     <Link
       href={href}
       // aria-current="page" — единственный признак «вы здесь», который читает
       // скринридер; цветом он же дублируется для глаза.
       aria-current={active ? "page" : undefined}
+      aria-describedby={note === null ? undefined : noteId}
       className={`${ITEM_CLASS} ${
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -210,7 +225,16 @@ function NavLink({
           {counter.value}
         </span>
       )}
+      {note !== null && (
+        <InDevelopmentBadge note={note} size="sm" decorative className="ml-2" />
+      )}
     </Link>
+    {note !== null && (
+      <span id={noteId} className="sr-only">
+        {inDevelopmentSummary(note)}
+      </span>
+    )}
+    </>
   );
 }
 

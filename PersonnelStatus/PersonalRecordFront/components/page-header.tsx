@@ -1,5 +1,10 @@
-import type { ReactNode } from "react";
+"use client";
 
+import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+
+import { InDevelopmentBadge } from "@/components/in-development-badge";
+import { inDevelopmentOfRoute } from "@/shared/config/in-development";
 import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
@@ -10,6 +15,10 @@ interface PageHeaderProps {
   /** Кнопки справа; выравниваются по верхнему краю блока заголовка. */
   actions?: ReactNode;
   className?: string;
+  /** Метка «В разработке» по адресу экрана (Plane №450) ставится сама из
+   * реестра `shared/config/in-development`; `false` — не ставить (экран
+   * внутри уже помеченного раздела показывает её один раз). */
+  inDevelopment?: boolean;
 }
 
 /**
@@ -32,7 +41,10 @@ export function PageHeader({
   description,
   actions,
   className,
+  inDevelopment = true,
 }: PageHeaderProps) {
+  const pathname = usePathname();
+  const note = inDevelopment ? inDevelopmentOfRoute(pathname) : null;
   return (
     <div className={cn("flex flex-wrap items-start justify-between gap-4", className)}>
       <div className="min-w-0">
@@ -44,9 +56,12 @@ export function PageHeader({
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="mb-1.5 text-[25px] leading-[1.15] font-bold tracking-[-.02em]">
-          {title}
-        </h1>
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <h1 className="text-[25px] leading-[1.15] font-bold tracking-[-.02em]">
+            {title}
+          </h1>
+          {note !== null && <InDevelopmentBadge note={note} />}
+        </div>
         {description ? (
           <p className="text-muted-foreground text-sm">{description}</p>
         ) : null}

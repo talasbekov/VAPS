@@ -9,6 +9,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
+import { InDevelopmentBadge } from "@/components/in-development-badge";
+import { inDevelopmentOfStage } from "@/shared/config/in-development";
 import { GvoSummaryPanel } from "@/widgets/gvo-summary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -426,12 +428,19 @@ const STAGE_HEADING: Record<
 
 function StageHeading({ stage }: { stage: SecurityEventStage }) {
   const heading = STAGE_HEADING[stage];
+  const stageNote = inDevelopmentOfStage(stage);
   return (
     <div className="mb-3" data-slot="stage-heading">
       <p className="text-primary-ink text-[10.5px] font-bold uppercase tracking-[.12em]">
         Этап {heading.step} из {EVENT_STEPS.length}
       </p>
-      <h2 className="mt-1 text-xl font-bold tracking-tight">{heading.title}</h2>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <h2 className="text-xl font-bold tracking-tight">{heading.title}</h2>
+        {/* Метка этапа (Plane №450): у карточки ОМ шапка экрана помечает
+            реестр целиком, а что не доделано на ЭТОМ этапе — говорит его
+            шапка, иначе метка сверху обещала бы недоделки везде разом. */}
+        {stageNote !== null && <InDevelopmentBadge note={stageNote} />}
+      </div>
       <p className="text-muted-foreground mt-0.5 text-[12.5px]">
         {heading.description}
       </p>
