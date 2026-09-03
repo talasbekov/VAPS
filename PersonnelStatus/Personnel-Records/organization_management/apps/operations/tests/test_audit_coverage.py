@@ -19,6 +19,7 @@ from django.test.utils import CaptureQueriesContext
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations import audit_service, clock
+from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.block_override import (
     override_tomorrow_block,
 )
@@ -1082,6 +1083,41 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         actor=ACTOR,
     )
     event_service.delete_event(doomed.pk, actor=ACTOR)
+
+    # Завершение расстановки с НЕДОБОРОМ (`[РАС-06]`, Plane №396) — решение
+    # человека обойти проверку укомплектованности, именное и с комментарием.
+    # Отдельное мероприятие с ОДНИМ незанятым постом: `om` выше уже полностью
+    # укомплектован и довёден до закрытия, портить его недобором незачем.
+    shortage_event = event_service.create_event(
+        title="Проба недобора расстановки",
+        object_id=str(secured.pk),
+        business_date=TODAY.isoformat(),
+        kind="INTERNAL",
+        actor=ACTOR,
+    )
+    shortage_event.refresh_from_db()
+    from organization_management.apps.ops import security_events as _svc
+
+    _svc.import_recon_from_passport(shortage_event.pk)
+    shortage_event.refresh_from_db()
+    for item in shortage_event.recon_checklist:
+        item["done"] = True
+        item["result"] = "MATCHES"
+    _svc.update_recon(
+        shortage_event.pk,
+        checklist=shortage_event.recon_checklist,
+        sector_posts=shortage_event.recon_sector_posts,
+    )
+    _svc.complete_recon(shortage_event.pk)
+    with pytest.raises(DomainError) as blocked:
+        event_service.complete_placement(shortage_event.pk, actor=ACTOR)
+    assert blocked.value.code == "PLACEMENT_UNDERSTAFFED"
+    event_service.complete_placement(
+        shortage_event.pk,
+        override=True,
+        override_reason="Второй кандидат заболел, замену найдём к выезду.",
+        actor=ACTOR,
+    )
 
     # ГВО: ручная правка сводки и её сброс — оба пишут журнал (сводные
     # данные уходят в бумагу); база сводки — производная бюллетеня, следа

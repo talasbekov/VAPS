@@ -1883,26 +1883,58 @@ export const securityEventsHandlers = [
     }
   ),
 
-  http.post(`*${securityEventPlacementCompletePath(":id")}`, ({ params }) => {
-    const { event, response } = findEvent(params.id as string);
-    if (event === null) return response;
-    if (event.stage !== "PLACEMENT") {
-      return businessRuleError(
-        "INVALID_STAGE_TRANSITION",
-        "Расстановку можно завершить только на этапе «Расстановка»."
+  // Завершение расстановки — `[РАС-06]` (Plane №396). Недобор МЯГКИЙ: 409
+  // `PLACEMENT_UNDERSTAFFED`, повтор с `override`+`override_reason` проходит
+  // тем же протоколом, что и обход предупреждения по рейтингу при назначении.
+  // Документ получает версию 1 ЗДЕСЬ, а не при первой отправке (Ш-5, №411) —
+  // порт правила сервера, а не вторая его копия.
+  http.post(
+    `*${securityEventPlacementCompletePath(":id")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      if (event.stage !== "PLACEMENT") {
+        return businessRuleError(
+          "INVALID_STAGE_TRANSITION",
+          "Расстановку можно завершить только на этапе «Расстановка»."
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as {
+        override?: boolean;
+        override_reason?: string;
+      };
+      // пост укомплектован при хотя бы одном назначении (упрощённое правило)
+      const assignedPostIds = new Set(event.placementAssignments.map((a) => a.postId));
+      const unstaffed = event.reconSectorPosts.filter(
+        (p) => !assignedPostIds.has(p.id)
       );
-    }
-    // пост укомплектован при хотя бы одном назначении (упрощённое правило)
-    const assignedPostIds = new Set(event.placementAssignments.map((a) => a.postId));
-    const unstaffed = event.reconSectorPosts.filter(
-      (p) => !assignedPostIds.has(p.id)
-    );
-    if (event.reconSectorPosts.length === 0 || unstaffed.length > 0) {
-      return businessRuleError("PLACEMENT_INCOMPLETE", "Не все посты укомплектованы.");
-    }
-    return HttpResponse.json(
-      saveEvent({ ...event, stage: "APPROVAL", readinessPercent: 75, updatedAt: nowIso() })
-    );
+      if (event.reconSectorPosts.length === 0) {
+        return businessRuleError("PLACEMENT_INCOMPLETE", "Не все посты укомплектованы.");
+      }
+      if (unstaffed.length > 0) {
+        const reason = (body.override_reason ?? "").trim();
+        if (!(body.override === true && reason !== "")) {
+          const noun = unstaffed.length === 1 ? "пост" : "постов";
+          return errorEnvelope(
+            "PLACEMENT_UNDERSTAFFED",
+            `${unstaffed.length} ${noun} без людей. Завершить с недобором?`,
+            { unfilledCount: unstaffed.length },
+            409
+          );
+        }
+      }
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          stage: "APPROVAL",
+          readinessPercent: 75,
+          visitObjects: event.visitObjects.map((visit) => ({
+            ...visit,
+            documentVersion: Math.max(visit.documentVersion, 1),
+          })),
+          updatedAt: nowIso(),
+        })
+      );
   }),
 
   http.delete(

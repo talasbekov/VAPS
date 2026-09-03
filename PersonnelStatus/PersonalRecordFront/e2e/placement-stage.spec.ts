@@ -746,4 +746,102 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       .delete(`${API}/api/ops/security-events/${created.id}/`, { headers: auth })
       .catch(() => undefined)
   })
+
+
+  /**
+   * Завершение расстановки с недобором (`[РАС-06]`, Plane №396).
+   *
+   * Проба заводит СВОЙ ОМ с ОДНИМ постом и НЕ занимает его: «Завершить»
+   * обязана попросить подтверждение, а не завершить молча и не блокировать
+   * намертво. Подтверждение с причиной — общий `ConflictDialog` раздела
+   * (тот же путь, что у обхода предупреждения по рейтингу), поэтому проба
+   * заодно проверяет, что новый код ошибки (`PLACEMENT_UNDERSTAFFED`)
+   * подключён к диалогу, а не повис отдельным необработанным путём.
+   */
+  test('недобор просит подтверждение, версия документа появляется после завершения', async ({
+    page,
+    request,
+  }) => {
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const call = async (method: string, path: string, body?: unknown) => {
+      const res = await fetch(`${API}${path}`, {
+        method,
+        headers: auth,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+      return res.json().catch(() => ({}))
+    }
+
+    const objects = (await call('GET', '/api/ops/security-events/bindable-objects/')) as {
+      results: { id: string; publishedVersionCount: number }[]
+    }
+    const object = objects.results.find((item) => item.publishedVersionCount > 0)
+    if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+
+    const created = (await call('POST', '/api/ops/security-events/', {
+      title: 'Проба недобора расстановки (e2e)',
+      objectId: object.id,
+      businessDate: '2026-09-03',
+      kind: 'INTERNAL',
+    })) as { id: string }
+    const base = `/api/ops/security-events/${created.id}`
+
+    await call('POST', `${base}/recon/import-from-passport/`)
+    const afterImport = (await call('GET', `${base}/`)) as {
+      reconChecklist: Record<string, unknown>[]
+      reconSectorPosts: { id: string; sector: string; post: string }[]
+    }
+    await call('PATCH', `${base}/recon/`, {
+      checklist: afterImport.reconChecklist.map((item) => ({
+        ...item,
+        done: true,
+        result: 'MATCHES',
+      })),
+      sectorPosts: afterImport.reconSectorPosts,
+    })
+    await call('POST', `${base}/recon/complete/`)
+    const post = (await call('GET', `${base}/`) as {
+      reconSectorPosts: { id: string; sector: string; post: string }[]
+    }).reconSectorPosts[0]
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${created.id}/`)
+    const card = page.getByRole('region', { name: 'Расстановка сил' })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
+    // Ни один пост не занят — «Завершить» обязана спросить подтверждение.
+    await card.getByRole('button', { name: 'Завершить этап и перейти далее' }).click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 15_000 })
+    await expect(dialog).toContainText('без людей')
+    await expect(dialog).toContainText('Завершить с недобором')
+
+    // Причина короче минимума — подтвердить нельзя (общий диалог, Plane №239).
+    const textarea = dialog.getByRole('textbox')
+    await textarea.fill('коротко')
+    const confirm = dialog.getByRole('button', { name: /Подтвердить|Обойти/ })
+    await expect(confirm).toBeDisabled()
+
+    await textarea.fill('Второй кандидат заболел, замену найдём к выезду.')
+    await expect(confirm).toBeEnabled()
+    await confirm.click()
+
+    // Сервер принял — этап ушёл на «Согласование», диалог закрылся.
+    await expect(dialog).toBeHidden({ timeout: 15_000 })
+    await expect
+      .poll(async () => {
+        const fresh = (await call('GET', `${base}/`)) as { stage: string }
+        return fresh.stage
+      }, { timeout: 15_000 })
+      .toBe('APPROVAL')
+
+    // Документ получил версию 1 — «Черновик» из `[РАС-06]`, не 0.
+    const finalState = (await call('GET', `${base}/`)) as {
+      visitObjects: { documentVersion: number }[]
+    }
+    expect(finalState.visitObjects[0].documentVersion).toBe(1)
+    void post
+  })
 })

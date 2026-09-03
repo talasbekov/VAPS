@@ -134,6 +134,11 @@ SECURITY_EVENT_DEPUTY_REVOKED = "SECURITY_EVENT_DEPUTY_REVOKED"
 # этапа админом: действие совершено в обход общего права, по роли в данных, и
 # его след обязан быть в журнале мутаций, а не только в самом агрегате.
 SECURITY_EVENT_PLACEMENT_BY_DEPUTY = "SECURITY_EVENT_PLACEMENT_BY_DEPUTY"
+# Завершение расстановки С НЕДОБОРОМ (`[РАС-06]`, Plane №396): решение
+# человека обойти проверку укомплектованности, с обязательным комментарием —
+# «почему отправили ОМ на согласование, недорасставив K постов» обязано иметь
+# именной ответ, а не потеряться в самом факте перехода этапа.
+PLACEMENT_COMPLETED_WITH_SHORTAGE = "PLACEMENT_COMPLETED_WITH_SHORTAGE"
 # Старший объекта посещения: назначение и снятие (Plane «Реестр ОМ-35.2»).
 # Пишется по тому же основанию, что и замещающий: это ИМЕННОЕ назначение
 # ответственного за объект — по нему спрашивают доклад и расстановку. Без
@@ -276,6 +281,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_DEPUTY_ASSIGNED,
         SECURITY_EVENT_DEPUTY_REVOKED,
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
+        PLACEMENT_COMPLETED_WITH_SHORTAGE,
         VISIT_OBJECT_CHIEF_ASSIGNED,
         FORCE_ALLOCATION_NOTIFIED,
         FORCE_ALLOCATION_SPLIT,

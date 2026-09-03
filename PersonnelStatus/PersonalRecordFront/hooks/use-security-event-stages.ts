@@ -59,6 +59,7 @@ import type {
   ReplaceAssignmentRequest,
   AddApproverRequest,
   VisitObjectAddressed,
+  CompletePlacementRequest,
   DecideApproverRequest,
   MoveApproverRequest,
   ResolveRemarkRequest,
@@ -350,8 +351,8 @@ export function useSetSectorSenior(id: string) {
 }
 
 export function useCompletePlacement(id: string) {
-  return useEventMutation<Record<string, never>>(id, () =>
-    opsApiClient.post<SecurityEvent>(securityEventPlacementCompletePath(id))
+  return useEventMutation<CompletePlacementRequest>(id, (body) =>
+    opsApiClient.post<SecurityEvent>(securityEventPlacementCompletePath(id), body)
   );
 }
 

@@ -135,8 +135,15 @@ def two_objects_on_approval(manager):  # noqa: F811
             )
             assert resp.status_code == 200, resp.content
         staffed.add(post["id"])
-    done = manager.post(f"{base}placement/complete/")
-    assert done.status_code == 200, done.content
+    # Завершение расстановки — ОПЕРАЦИЯ ОБЪЕКТА (Plane №396, `[РАС-06]`): у
+    # каждого объекта своя расстановка, и завершать её нужно по отдельности.
+    for visit in (first, second):
+        done = manager.post(
+            f"{base}placement/complete/",
+            {"visitObjectId": str(visit.pk)},
+            format="json",
+        )
+        assert done.status_code == 200, done.content
     return base, event_id, first, second, assigned
 
 
@@ -286,15 +293,20 @@ def test_the_document_version_grows_with_every_sending(
 ):
     base, _, first, second, _ = two_objects_on_approval
     _add_approver(manager, base, first)
-    assert first.document_version == 0, "версия выдана до отправки"
+    # ВЕРСИЯ 1 УЖЕ ВЫДАНА заведением документа при завершении расстановки
+    # (`[РАС-06]`, Plane №396) — фикстура доводит объект ДО «Согласования»
+    # именно через `placement/complete/`. «Черновик» — это версия 1, а не 0;
+    # первая ОТПРАВКА растит её дальше, на N+1 (`[ВОЗ-06]`).
+    first.refresh_from_db()
+    assert first.document_version == 1, "черновик не заведён завершением расстановки"
 
     manager.post(
         f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
     )
     first.refresh_from_db()
     second.refresh_from_db()
-    assert first.document_version == 1
-    assert second.document_version == 0, "версию выдали и соседнему объекту"
+    assert first.document_version == 2
+    assert second.document_version == 1, "у соседа тоже черновик — своя расстановка"
 
     # Отзыв номер НЕ откатывает: состав уже уходил людям, и выдать двум разным
     # составам один номер значило бы соврать в документе.
@@ -304,13 +316,13 @@ def test_the_document_version_grows_with_every_sending(
         format="json",
     )
     first.refresh_from_db()
-    assert first.document_version == 1
+    assert first.document_version == 2
 
     manager.post(
         f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
     )
     first.refresh_from_db()
-    assert first.document_version == 2
+    assert first.document_version == 3
 
 
 def test_the_version_reaches_the_contract(
@@ -324,7 +336,7 @@ def test_the_version_reaches_the_contract(
 
     rows = manager.get(base).json()["visitObjects"]
     mine = next(row for row in rows if row["id"] == str(first.pk))
-    assert mine["documentVersion"] == 1
+    assert mine["documentVersion"] == 2, "черновик (v1) + одна отправка"
     assert [a["name"] for a in mine["approvalRoute"]] == ["К. Оразов"]
 
 

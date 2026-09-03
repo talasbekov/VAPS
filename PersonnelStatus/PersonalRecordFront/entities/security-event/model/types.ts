@@ -749,6 +749,16 @@ export interface AssignPlacementRequest extends Record<string, unknown> {
   override_reason?: string;
 }
 
+/**
+ * Завершение расстановки (`[РАС-06]`, Plane №396). Полная укомплектованность —
+ * пустое тело; недобор — `override`/`override_reason` протоколом мягкого
+ * конфликта (тем же, что у обхода предупреждения по рейтингу при назначении).
+ */
+export interface CompletePlacementRequest extends VisitObjectAddressed {
+  override?: boolean;
+  override_reason?: string;
+}
+
 export interface ReturnPlacementRequest extends VisitObjectAddressed {
   comment: string;
 }

@@ -294,8 +294,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const placementWarning: string | null = (() => {
     const parts: string[] = [];
     if (posts.length > 0 && unfilled > 0)
+      // Недобор БЛОКИРУЕТ не сам переход, а только его молчаливый вариант
+      // (`[РАС-06]`, Plane №396): «Завершить» останется активной и попросит
+      // подтверждения с причиной — этот текст только предупреждает заранее.
       parts.push(
-        `не укомплектовано постов: ${unfilled} — этап не завершится, пока на каждом посту есть люди`
+        `не укомплектовано постов: ${unfilled} — завершение спросит подтверждения`
       );
     if (conflicts > 0)
       parts.push(`назначений с обходом предупреждения по рейтингу: ${conflicts}`);
@@ -555,7 +558,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
               type="button"
               size="sm"
               disabled={complete.isPending}
-              onClick={() => complete.mutate({})}
+              onClick={() =>
+                complete.mutate({ visitObjectId: scope.visit?.id })
+              }
             >
               {complete.isPending ? "Завершение…" : "Завершить этап и перейти далее"}
             </Button>
@@ -1404,6 +1409,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           conflict={assign.conflict}
           onOverride={(reason) => assign.confirmOverride(reason)}
           onCancel={() => assign.dismissConflict()}
+        />
+        <ConflictDialog
+          conflict={complete.conflict}
+          onOverride={(reason) => complete.confirmOverride(reason)}
+          onCancel={() => complete.dismissConflict()}
         />
       </CardContent>
     </Card>
