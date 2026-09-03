@@ -172,10 +172,11 @@ def test_the_route_lands_in_the_visit_object_and_not_in_the_event(
 
     first.refresh_from_db()
     second.refresh_from_db()
-    event = service.lock_event(event_id)
     assert [a["name"] for a in first.approval_route] == ["К. Оразов"]
     assert second.approval_route == [], "маршрут уехал и в чужой объект"
-    assert event.approval_route == [], "мутация всё ещё пишет в мероприятие"
+    # Поле `event.approval_route` СНЯТО с мероприятия (Plane №413, Ш-7): у
+    # него больше некуда «всё ещё писать» — ассерт на этот счёт стал
+    # невозможен вместе с полем, а не только не нужен.
 
 
 def test_the_route_of_one_object_is_not_the_route_of_the_other(

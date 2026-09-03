@@ -212,13 +212,15 @@ def serialize_visit_object(event, visit, *, single):
 def _primary_approval(event, field):
     """Поле согласования ПЕРВОГО объекта — то, чем отвечают поля мероприятия.
 
-    Мост до Ш-7 (№413), который эти поля снимет. Объектов нет вовсе — ответ
-    берётся у мероприятия: у таких строк согласование ещё лежит там, и
-    подменять его пустотой значило бы стереть с экрана живые данные.
+    Мост Ш-5…Ш-7 (Plane №411-413): поля `approval_route/remarks/snapshot` у
+    `OpsSecurityEvent` сняты — согласуют объект, и мутации пишут только туда.
+    Объектов нет вовсе (бюллетень без объекта) — согласовывать нечего в
+    принципе: `pick_visit_object` отбивает такую попытку `VISIT_OBJECT_REQUIRED`
+    ещё на входе, и честный ответ здесь — пустое значение, а не выдуманное.
     """
     visit = security_events.primary_visit_object(event)
     if visit is None:
-        return getattr(event, field)
+        return [] if field != "approval_snapshot" else ""
     return getattr(visit, field)
 
 
@@ -334,13 +336,11 @@ def serialize_security_event(event):
             else None
         ),
         "chiefName": event.chief_name,
-        # 🔴 МАРШРУТ И ЗАМЕЧАНИЯ МЕРОПРИЯТИЯ — ВИД ПЕРВОГО ОБЪЕКТА (Plane
-        # №411). Мутации согласования пишут в объект, а не в мероприятие;
-        # столбцы `OpsSecurityEvent.approval_route/remarks/snapshot` остались
-        # только под старых читателей и снимаются в Ш-7 (№413). Отдавать их
-        # содержимое значило бы показывать состояние, которого уже никто не
-        # правит, — поэтому здесь ответ ПЕРВОГО объекта: ровно его и показывал
-        # экран до разреза, когда согласование было одно на мероприятие.
+        # 🔴 МАРШРУТ И ЗАМЕЧАНИЯ МЕРОПРИЯТИЯ — ВИД ПЕРВОГО ОБЪЕКТА (Plane №411,
+        # снятие столбцов — №413). Согласуют объект посещения, столбцов
+        # `OpsSecurityEvent.approval_route/remarks/snapshot` больше нет —
+        # здесь ответ ПЕРВОГО объекта: ровно его показывал экран до разреза,
+        # когда согласование было одно на мероприятие.
         "approvalRoute": _primary_approval(event, "approval_route") or [],
         "approvalRemarks": _primary_approval(event, "approval_remarks") or [],
         # ВЫВОД, а не поле: «расстановка изменилась после отправки» клиент

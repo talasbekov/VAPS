@@ -80,8 +80,8 @@ def event_with_people(django_user_model):
         force_requests=[],
         journal_entries=[],
         closure_direction_summaries=[],
-        approval_route=[],
-        approval_remarks=[],
+        # `approval_route`/`approval_remarks` СНЯТЫ с мероприятия (Plane
+        # №413, Ш-7): согласуют объект посещения, здесь их больше нет.
         approval_status="APPROVED",
     )
     return event, account, boss, unlinked
