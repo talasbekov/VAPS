@@ -556,7 +556,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // сводку, что несёт колонка «Потребность» строки бюллетеня.
     await expect(details).toContainText(
       first!.visitObjects[0].placementNeed === null
-        ? /по объекту не разнесена/
+        ? /расчёт постов не размечен по объектам/
         : /потребность \d+, назначено \d+|посты не рассчитаны/,
     )
 
@@ -973,6 +973,20 @@ async function createEvent(
     // Заголовок врезки читается КАПСОМ, но капс делает CSS: в DOM текст
     // обычный, и ассерт по «ОБЪЕКТЫ ПОСЕЩЕНИЯ» был бы вечно красным.
     await expect(details).toContainText('Объекты посещения · 2')
+
+    // ВТОРОЙ ПУТЬ К ТОМУ ЖЕ ДИАЛОГУ — кнопка «+ Добавить объект» в шапке
+    // врезки (`[РЕЕ-04]`, Plane №387). Проба стоит ЗДЕСЬ, когда объектов уже
+    // два, и этим стережёт заодно «без лимита»: заполненный список не
+    // закрывает добавление, кнопка на месте и открывает выбор.
+    const headerAdd = details.getByRole('button', {
+      name: `Добавить объект посещения в мероприятие ${created.code}`,
+    })
+    await expect(headerAdd).toBeVisible()
+    await headerAdd.click()
+    const reopened = page.getByRole('dialog')
+    await expect(reopened).toBeVisible()
+    await reopened.getByRole('button', { name: 'Отмена' }).click()
+    await expect(reopened).toBeHidden()
 
     // Сервер, а не только экран: список приходит из ответа реестра.
     const after = (await (
