@@ -17,6 +17,8 @@ import {
   securityEventDepartmentRequestPath,
   securityEventDepartmentRequestsPath,
   securityEventForcesDirectorateSplitPath,
+  securityEventForcesNotifyPath,
+  securityEventForcesSubmitPath,
   type DepartmentRequestDetail,
   type DepartmentRequestRow,
 } from "@/entities/security-event";
@@ -72,6 +74,50 @@ export function useSplitDirectorateQuotas(eventId: string, allocationId: string)
       // Обе выдачи описывают одно и то же: список заявок несёт итог, карточка
       // — строки. Обновить одну и забыть вторую значит показать человеку два
       // разных ответа на один вопрос на соседних экранах.
+      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
+      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+    },
+  });
+}
+
+/**
+ * Оповестить управления департамента о заявке (Plane №389, `[СБС-01]`/
+ * `[СБС-22]`).
+ *
+ * 🔴 РУЧКА УЖЕ БЫЛА, ПРОВОДА НЕ БЫЛО. `POST …/forces/allocation/<id>/notify/`
+ * существует с плана №74 (Ш-4) и гейтится ТОЛЬКО `forces.allocate` со
+ * скопом департамента строки — `event.view` ему не нужен вовсе (аудит
+ * Plane №384 прочитал код неверно: решил, что оповещение обязано идти со
+ * страницы мероприятия, а сервер туда `event.view` не требовал никогда).
+ * Кнопки на этой карточке не было — вызывать ручку без `event.view` было
+ * неоткуда. `useNotifyDirectorates` в `hooks/use-security-event-stages.ts`
+ * не годится: он инвалидирует кэш ПОЛНОГО мероприятия, которого у этой
+ * персоны нет и не будет, и молчит про `ops-department-request`.
+ */
+export function useNotifyDepartmentDirectorates(eventId: string, allocationId: string) {
+  const client = useQueryClient();
+  return useMutation<unknown, OpsApiFailure, Record<string, never>>({
+    mutationFn: () => opsApiClient.post(securityEventForcesNotifyPath(eventId, allocationId)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
+      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+    },
+  });
+}
+
+/**
+ * Отправить собранный список штабу (Plane №389, `[СБС-23]`).
+ *
+ * Тот же довод, что у оповещения: ручка `.../submit/` существует с плана
+ * №74, гейтится `forces.allocate` со скопом департамента, `event.view` не
+ * требует. Подтверждение — на самом экране (диалог `AlertDialog`), а не
+ * здесь: хук не знает, полон список или нет, это знает карточка.
+ */
+export function useSubmitDepartmentAllocation(eventId: string, allocationId: string) {
+  const client = useQueryClient();
+  return useMutation<unknown, OpsApiFailure, Record<string, never>>({
+    mutationFn: () => opsApiClient.post(securityEventForcesSubmitPath(eventId, allocationId)),
+    onSuccess: () => {
       void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
       void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
     },

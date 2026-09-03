@@ -18,12 +18,21 @@
  * Выключить без объяснения значит оставить человека гадать, что он сделал не
  * так.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -37,9 +46,43 @@ import {
 import type { ForceAllocationDirectorate } from "@/entities/security-event";
 import {
   useDepartmentRequest,
+  useNotifyDepartmentDirectorates,
   useSplitDirectorateQuotas,
+  useSubmitDepartmentAllocation,
 } from "@/hooks/use-department-requests";
+import { apiClient, type CoreDivision } from "@/lib/api";
 import { formatIsoDate } from "@/shared/lib/date";
+
+/**
+ * Управления ДЕПАРТАМЕНТА заявки — из общего справочника оргструктуры, а не
+ * из `allocation.directorates` (Plane №389).
+ *
+ * 🔴 ПОЧЕМУ ЭТО ОТДЕЛЬНЫЙ ЗАПРОС, А НЕ `allocation.directorates` НАПРЯМУЮ.
+ * `directorates[]` заводит ПЕРВОЕ действие цепочки (`split` или `notify`,
+ * обе службы читают дерево оргструктуры сами) — до него список пуст. Таблица
+ * ниже рендерилась ИЗ ЭТОГО ПОЛЯ и потому была пуста при первом визите
+ * ВСЕГДА: ни строки, ни поля ввода, ни кнопки «Сохранить раскладку» — форма
+ * штатного Ш-4 не могла создать первую раскладку сама, только править уже
+ * существующую. `/api/core/divisions/` не требует `forces.*` вовсе (это
+ * справочник оргструктуры, не звено цепочки), поэтому годится ответственному
+ * за департамент, у которого `event.view` нет и не будет.
+ */
+function useDepartmentDirectorates(departmentId: string | undefined) {
+  const divisions = useQuery<CoreDivision[]>({
+    queryKey: ["core-divisions"],
+    queryFn: () => apiClient.getCoreDivisions(),
+    staleTime: 10 * 60_000,
+    enabled: departmentId !== undefined,
+  });
+  const directorates = useMemo(() => {
+    if (departmentId === undefined) return [];
+    const parent = Number(departmentId);
+    return (divisions.data ?? []).filter(
+      (division) => division.type_code === "directorate" && division.parent === parent
+    );
+  }, [divisions.data, departmentId]);
+  return { directorates, isLoading: divisions.isPending };
+}
 
 export function DepartmentRequestCard({
   allocationId,
@@ -54,19 +97,50 @@ export function DepartmentRequestCard({
   const locked = allocation !== undefined && allocation.status !== "DRAFT";
 
   const split = useSplitDirectorateQuotas(detail?.eventId ?? "", allocationId);
+  const notify = useNotifyDepartmentDirectorates(detail?.eventId ?? "", allocationId);
+  const submit = useSubmitDepartmentAllocation(detail?.eventId ?? "", allocationId);
+  const [submitOpen, setSubmitOpen] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
 
-  // Черновик наполняется ИЗ ОТВЕТА, а не заводится пустым: пустое поле над
-  // сохранённой квотой читается как «ноль», и человек сохранил бы ноль,
-  // ничего не набрав.
+  const { directorates: orgDirectorates } = useDepartmentDirectorates(
+    allocation?.departmentId
+  );
+  /** Строки таблицы = дерево оргструктуры, дополненное тем, что уже известно
+   *  заявке (квота, выделено, оповещено). Управление, выбывшее из дерева, но
+   *  ещё живущее в заявке (см. `split_directorate_quotas`), не теряется —
+   *  тем же правилом, что и на сервере: его след — факт. */
+  const directorateRows = useMemo(() => {
+    const known = new Map(allocation?.directorates.map((row) => [row.divisionId, row]) ?? []);
+    const merged: ForceAllocationDirectorate[] = orgDirectorates.map((division) => {
+      const id = String(division.id);
+      const existing = known.get(id);
+      known.delete(id);
+      return (
+        existing ?? {
+          id: `force-directorate-${id}`,
+          divisionId: id,
+          name: division.name,
+          need: 0,
+          assigned: 0,
+          notifiedAt: null,
+        }
+      );
+    });
+    return [...merged, ...known.values()];
+  }, [orgDirectorates, allocation?.directorates]);
+
+  // Черновик наполняется ИЗ СВОДНОГО СПИСКА, а не из одного `allocation.
+  // directorates` (Plane №389, `[СБС-21]`/`[СБС-22]`): до первого действия
+  // цепочки заявка не знает о СВОИХ управлениях ничего, и форма, читавшая
+  // только `allocation.directorates`, была пуста при первом визите ВСЕГДА —
+  // ни строки, ни поля, ни кнопки «Сохранить». Пустое поле над сохранённой
+  // квотой читается как «ноль», и человек сохранил бы ноль, ничего не
+  // набрав, — черновик поэтому не заводится пустым.
   useEffect(() => {
-    if (allocation === undefined) return;
     setDraft(
-      Object.fromEntries(
-        allocation.directorates.map((row) => [row.divisionId, String(row.need ?? 0)])
-      )
+      Object.fromEntries(directorateRows.map((row) => [row.divisionId, String(row.need ?? 0)]))
     );
-  }, [allocation]);
+  }, [directorateRows]);
 
   if (request.isPending) {
     return (
@@ -174,16 +248,45 @@ export function DepartmentRequestCard({
       </div>
 
       <section aria-labelledby="split-heading" className="space-y-3">
-        <div>
-          <h3 id="split-heading" className="font-semibold">
-            Распределение по управлениям
-          </h3>
-          <p className="text-muted-foreground text-sm">
-            {locked
-              ? "Управления уже запрошены — квоты правятся до запроса"
-              : "Квоты редактируются до запроса управлений"}
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 id="split-heading" className="font-semibold">
+              Распределение по управлениям
+            </h3>
+            <p className="text-muted-foreground text-sm">
+              {locked
+                ? "Управления уже запрошены — квоты правятся до запроса"
+                : "Квоты редактируются до запроса управлений"}
+            </p>
+          </div>
+          {/* 🔴 КНОПКА, КОТОРОЙ НЕ БЫЛО (Plane №389, `[СБС-22]`). До правки
+              оповестить свои управления мог только штаб — из панели
+              мероприятия, куда у ответственного за департамент нет доступа
+              (`event.view` не выдаётся этой роли намеренно). Ручка на
+              сервере оповещение по СВОЕМУ департаменту всегда разрешала —
+              кнопки не было НА ЭТОМ экране.
+              Условие НЕ читает `allocation.directorates`: `notify_directorates`
+              сама заводит строки управлений из дерева оргструктуры при первом
+              вызове (см. `useDepartmentDirectorates` выше) — требовать
+              непустой список означало бы просить департамент раскладывать
+              несуществующие строки, чтобы получить кнопку их создать. */}
+          {directorateRows.length > 0 && !locked && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={notify.isPending}
+              onClick={() => notify.mutate({})}
+            >
+              {notify.isPending ? "Оповещаю…" : "Оповестить управления"}
+            </Button>
+          )}
         </div>
+        {notify.isError && (
+          <p role="alert" className="text-destructive-ink text-sm">
+            {notify.error?.message ?? "Управления не оповещены"}
+          </p>
+        )}
 
         <div className="overflow-x-auto rounded-lg border">
           <Table>
@@ -196,16 +299,21 @@ export function DepartmentRequestCard({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {allocation.directorates.length === 0 && (
+              {directorateRows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="whitespace-normal">
                     <p className="text-muted-foreground text-sm">
-                      Управления ещё не оповещены — списка нет
+                      {/* Пусто теперь означает РОВНО ОДНО: в дереве
+                          оргструктуры у департамента нет ни одного
+                          действующего управления — а не «раскладка ещё не
+                          начата» (та причина закрыта самим бутстрапом выше). */}
+                      У департамента «{allocation.departmentName}» нет
+                      действующих управлений — раскладывать некуда.
                     </p>
                   </TableCell>
                 </TableRow>
               )}
-              {allocation.directorates.map((row: ForceAllocationDirectorate) => (
+              {directorateRows.map((row: ForceAllocationDirectorate) => (
                 <TableRow key={row.divisionId}>
                   <TableCell className="font-medium">{row.name}</TableCell>
                   <TableCell>
@@ -240,7 +348,7 @@ export function DepartmentRequestCard({
           </Table>
         </div>
 
-        {!locked && allocation.directorates.length > 0 && (
+        {!locked && directorateRows.length > 0 && (
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={() => void save()} disabled={split.isPending}>
               {split.isPending ? "Сохраняем…" : "Сохранить раскладку"}
@@ -314,7 +422,89 @@ export function DepartmentRequestCard({
             </TableBody>
           </Table>
         </div>
+
+        {/* 🔴 КНОПКА, КОТОРОЙ НЕ БЫЛО (Plane №389, `[СБС-23]`): «Отправить
+            список в штаб» жила только на панели мероприятия у ШТАБА
+            (`ForcesSplitPanel`), куда у ответственного за департамент нет
+            доступа. Ручка `.../submit/` разрешала действие СВОЕМУ
+            департаменту всегда — экрана не было. */}
+        {(allocation.status === "NOTIFIED" || allocation.status === "RETURNED") && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              disabled={submit.isPending}
+              onClick={() => setSubmitOpen(true)}
+            >
+              Отправить список в штаб
+            </Button>
+            {assigned < quota && (
+              <p className="text-muted-foreground text-sm">
+                Недобор {quota - assigned} — список можно отправить и так,
+                штаб решит, довыделять или принять как есть.
+              </p>
+            )}
+          </div>
+        )}
+        {allocation.status === "SUBMITTED" && (
+          <p className="text-muted-foreground text-sm">
+            Отправлено — ждём решения штаба.
+          </p>
+        )}
+        {allocation.status === "RETURNED" && allocation.decisionComment !== "" && (
+          <p role="alert" className="text-destructive-ink text-sm">
+            Возвращено штабом: {allocation.decisionComment}
+          </p>
+        )}
       </section>
+
+      <Dialog open={submitOpen} onOpenChange={setSubmitOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Отправить список в штаб?</DialogTitle>
+            <DialogDescription>
+              {/* Подтверждение спецификации `[СБС-13]`: «при недоборе —
+                  подтверждение с комментарием». Комментария к отправке у
+                  этого шага нет — штаб видит недобор числом на своей
+                  карточке (Ш-5 плана №74) и решает там; здесь только
+                  предупреждение, чтобы отправка «не глядя» не выглядела как
+                  сбой.
+                  🔴 НОЛЬ — ОТДЕЛЬНЫЙ СЛУЧАЙ, а не «недобор в 100 %»: сервер
+                  отвечает `ALLOCATION_EMPTY` и отправку отклоняет вовсе
+                  («Никто не выделен — отправлять нечего»), пока недобор
+                  1..N-1 отправить можно — решает штаб. Формулировка не
+                  обещает то, чего действие не сделает. */}
+              {assigned === 0
+                ? "Никто ещё не выделен — штаб получит пустой список. Отправить всё равно?"
+                : assigned < quota
+                  ? `Выделено ${assigned} из ${quota} — отправить список с недобором ${quota - assigned}?`
+                  : `Выделено ${assigned} из ${quota} — список полный, отправить штабу?`}
+              {" "}После отправки раскладку по управлениям не поправить —
+              только отозвать список целиком.
+            </DialogDescription>
+          </DialogHeader>
+          {submit.isError && (
+            <p role="alert" className="text-destructive-ink text-sm">
+              {submit.error?.message ?? "Список не отправлен"}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubmitOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              disabled={submit.isPending}
+              onClick={() => {
+                submit.mutate(
+                  {},
+                  { onSuccess: () => setSubmitOpen(false) }
+                );
+              }}
+            >
+              {submit.isPending ? "Отправляю…" : "Отправить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
