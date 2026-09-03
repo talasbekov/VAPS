@@ -131,3 +131,25 @@ def refuse_to_delete_a_used_status_type(sender, instance, **kwargs):
             "снимите его с обращения через is_active, а не удалением",
             {instance},
         )
+
+
+# ── Проекция заявки на сбор сил в таблицы (`[МД-06]`, Plane №425) ────────────
+# Ловится СОХРАНЕНИЕ мероприятия с полями JSON: писателей в security_events
+# около дюжины, и хук в каждом отстал бы от первого же нового. Проекция
+# идемпотентна и append-only; при откате транзакции откатывается вместе с JSON.
+from organization_management.apps.operations.models_event import OpsSecurityEvent  # noqa: E402
+
+_FORCES_JSON_FIELDS = {"force_requests", "force_allocation"}
+
+
+@receiver(post_save, sender=OpsSecurityEvent)
+def project_forces_ledger(sender, instance, update_fields=None, created=False, **kwargs):
+    if not created and update_fields is not None and not (
+        set(update_fields) & _FORCES_JSON_FIELDS
+    ):
+        return
+    if getattr(instance, "_skip_forces_ledger", False):
+        return
+    from organization_management.apps.ops import forces_ledger
+
+    forces_ledger.project(instance)
