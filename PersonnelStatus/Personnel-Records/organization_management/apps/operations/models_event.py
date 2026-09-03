@@ -360,6 +360,55 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
     chief_employee_id = models.PositiveIntegerField(null=True, blank=True)
     chief_name = models.CharField(max_length=255, blank=True)
 
+    # ── Ход работы ПО ОБЪЕКТУ (Plane №385, шаг Ш-1) ──────────────────────
+    #
+    # Требование спецификации `[МД-04]`: «У объекта свои этапы 1–5 и свой
+    # документ „Расстановка сил“ с версиями». До этого шага чек-лист, посты,
+    # потребность, расстановка, согласование, журнал и закрытие были полями
+    # МЕРОПРИЯТИЯ, и экран говорил об этом прямо: «Этапы ниже ведутся по
+    # мероприятию целиком». Мероприятие с двумя объектами вести было нельзя:
+    # расчёт постов у него один на оба.
+    #
+    # 🔴 ПОЛЯ ЗАВЕДЕНЫ РЯДОМ, А НЕ ВМЕСТО. У одноимённых полей
+    # `OpsSecurityEvent` около 160 читателей на сервере и 250 на клиенте
+    # (замер грепом 03.09.2026); снести их одним движением значило бы
+    # оставить раздел нерабочим на всё время переезда. Читатели переезжают
+    # шагами Ш-2…Ш-6, поля мероприятия снимает Ш-7 (Plane №413).
+    #
+    # Типы повторяют одноимённые поля мероприятия НАМЕРЕННО: разойдись они —
+    # и перенос значения перестал бы быть переносом. Отличие одно: здесь у
+    # всех есть дефолт, потому что объект посещения заводится в реестре
+    # кнопкой «+», а не через конструктор мероприятия.
+    stage = models.CharField(
+        max_length=20,
+        choices=OpsSecurityEvent.Stage.choices,
+        default=OpsSecurityEvent.Stage.BULLETIN,
+    )
+    recon_checklist = models.JSONField(default=list, blank=True)
+    recon_sector_posts = models.JSONField(default=list, blank=True)
+    # Примечания старшего по итогам выезда `[РЕК-06]` — у объекта свои: осмотр
+    # ведётся по объекту, и общее поле мероприятия смешало бы два выезда.
+    recon_notes = models.TextField(blank=True, default="")
+    # «Потребность N, назначено 0» из `[РЕК-08]`: обе цифры показывает реестр
+    # в раскрытой строке (Plane №387). `force_assigned` — снимок счёта, а не
+    # длина `placement_assignments`: назначение переживает снятие с поста, и
+    # два ответа на «сколько дали» разошлись бы.
+    force_need = models.PositiveIntegerField(default=0)
+    force_assigned = models.PositiveIntegerField(default=0)
+    placement_assignments = models.JSONField(default=list, blank=True)
+    approval_status = models.CharField(
+        max_length=20,
+        choices=OpsSecurityEvent.ApprovalStatus.choices,
+        default=OpsSecurityEvent.ApprovalStatus.PENDING,
+    )
+    approval_route = models.JSONField(default=list, blank=True)
+    approval_remarks = models.JSONField(default=list, blank=True)
+    approval_snapshot = models.TextField(blank=True, default="")
+    journal_entries = models.JSONField(default=list, blank=True)
+    # Закрытие объекта `[ЗАК-05]`; автозакрытие мероприятия по всем объектам —
+    # соседняя карточка №404, этот шаг только заводит момент.
+    closed_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = "ops_security_event_visit_objects"
         verbose_name = "Объект посещения ОМ"
@@ -378,6 +427,12 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
                 fields=["event", "security_object"],
                 condition=models.Q(security_object__isnull=False),
                 name="uniq_ops_event_visit_object",
+            ),
+            # Стадия без дефолта в базе была бы пустой строкой у любой
+            # вставки мимо ORM — ту же мерку держит `OpsSecurityEvent`.
+            models.CheckConstraint(
+                condition=models.Q(stage__in=_STAGES),
+                name="chk_ops_event_visit_object_stage",
             ),
         ]
 
