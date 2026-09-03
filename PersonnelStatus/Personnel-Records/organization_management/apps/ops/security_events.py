@@ -1412,6 +1412,12 @@ def advance_visits(event, stage, visits=None):
         visit.save(update_fields=["stage", "updated_at"])
     return recompute_event_stage(event)
 
+    if stage == "CONDUCT":
+        # Оценивание открывается входом в этап 5 (`[ЗАК-02]`, Plane №433):
+        # задания оценщика заводятся здесь, а не закрытием ОМ — иначе на
+        # этапе оценивать было бы нечего. Вызов идемпотентен.
+        from organization_management.apps.ops import ratings as ratings_service
+        ratings_service.open_evaluation_for_event(event, actor=None)
 
 def _advance(event, stage):
     """Стадия мероприятия целиком: объектам ставится та же, событие — вывод.
@@ -5369,6 +5375,11 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
     необязателен. Оценки и инциденты (`[ЗАК-02]`/`[ЗАК-03]`) этот шаг не
     заводит — их карточек в очереди нет; подтверждение «оценено K из N» на
     экране появится вместе с ними.
+    if stage == "CONDUCT":
+        # Обход админа тоже открывает этап 5 — оценивание заводится и здесь
+        # (Plane №433), иначе на этапе оценивать нечего.
+        from organization_management.apps.ops import ratings as ratings_service
+        ratings_service.open_evaluation_for_event(event, actor=actor)
 
     Последний закрытый объект закрывает МЕРОПРИЯТИЕ (`[ЗАК-12]`): стадия
     мероприятия — наименьшая среди объектов, и «Закрыто» у всех даёт

@@ -14,6 +14,9 @@ import {
   useAddJournalEntry,
   useCloseSecurityEvent,
   useCloseVisitObject,
+  useScoreAll,
+  useSetEvaluation,
+  useVisitEvaluations,
   useReplaceAssignment,
 } from "@/hooks/use-security-event-stages";
 import {
@@ -25,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useVisitObjectScope } from "./useVisitObjectScope";
+import type { VisitEvaluationRow } from "@/entities/security-event";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
@@ -45,6 +49,7 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
   // аудитом, поэтому они сохранены здесь, а не выброшены вслед за макетом.
   return (
     <div className="flex flex-col gap-4">
+      <EvaluationPanel event={event} />
       <VisitObjectClosurePanel event={event} />
       <ClosurePanel event={event} />
       <PostControlPanel event={event} />
@@ -364,6 +369,174 @@ export function closureFacts(event: SecurityEvent): {
  * Панель «Закрытие и итоги» с итогами направлений ниже ОСТАЁТСЯ: ручное
  * закрытие мероприятия целиком — путь для ОМ без объектов и для штаба.
  */
+const SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+
+/**
+ * Оценка сотрудников — главный блок этапа 5 (`[ЗАК-02]`/`[МД-08]`, Plane №433).
+ * По секторам и постам: ФИО · управление · ознакомлен; шкала 1–10 — клик
+ * ставит, повторный снимает; комментарий необязателен, при ≤ 5 — подсказка
+ * «желательно пояснить» без блокировки; «Всем 10» — только неоценённым;
+ * снятый заменой показан с пометкой «снят» и без шкалы. Прогресс
+ * «Оценено K из N». Оценки пишутся в модель рейтинга — средний балл
+ * сотрудника считается по ним же.
+ */
+function EvaluationPanel({ event }: { event: SecurityEvent }) {
+  const scope = useVisitObjectScope(event, event.reconSectorPosts);
+  const visit = scope.visit;
+  const query = useVisitEvaluations(event.id, visit?.id ?? null);
+  const setScore = useSetEvaluation(event.id, visit?.id ?? "");
+  const scoreAll = useScoreAll(event.id, visit?.id ?? "");
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  if (visit === null) return null;
+  const summary = query.data;
+  const closed = visit.stage === "CLOSED";
+  const busy = setScore.isPending || scoreAll.isPending;
+  const groups = new Map<string, VisitEvaluationRow[]>();
+  for (const row of summary?.rows ?? []) {
+    const key = row.sector || "Без сектора";
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const commentOf = (row: VisitEvaluationRow) =>
+    drafts[row.assignmentId ?? ""] ?? row.comment;
+  return (
+    <Card data-slot="evaluation-panel">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <div>
+          <CardTitle>Оценка сотрудников · «{visit.objectName}»</CardTitle>
+          <p className="text-xs text-muted-foreground" data-slot="evaluation-progress">
+            {summary ? `Оценено ${summary.evaluated} из ${summary.total}` : "Загрузка…"}
+          </p>
+        </div>
+        {!closed && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy || !summary || summary.evaluated === summary.total}
+            onClick={() => scoreAll.mutate({ score: 10 })}
+          >
+            Всем 10
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <StageError error={setScore.error} />
+        <StageError error={scoreAll.error} />
+        {query.isError && (
+          <p className="text-sm text-destructive">Оценки не загрузились — обновите страницу.</p>
+        )}
+        {summary && summary.rows.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            На постах объекта никого не назначено — оценивать некого.
+          </p>
+        )}
+        {[...groups.entries()].map(([sector, rows]) => (
+          <section key={sector} className="space-y-2">
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              {sector}
+            </h3>
+            <ul className="space-y-2">
+              {rows.map((row) => {
+                const low = row.score !== null && row.score <= 5;
+                return (
+                  <li
+                    key={row.assignmentId ?? `${row.post}-${row.employeeName}`}
+                    className="rounded-md border px-3 py-2"
+                    data-slot="evaluation-row"
+                    data-score={row.score ?? ""}
+                  >
+                    <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
+                      <span className="font-medium">{row.post}</span>
+                      <span>· {row.employeeName}</span>
+                      {row.divisionName !== "" && (
+                        <span className="text-muted-foreground">· {row.divisionName}</span>
+                      )}
+                      {row.replaced ? (
+                        <span className="rounded-full bg-muted px-2 text-[11px]">снят</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {row.acknowledgedAt !== null
+                            ? `· ознакомлен ${new Date(row.acknowledgedAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
+                            : "· не ознакомлен"}
+                        </span>
+                      )}
+                    </div>
+                    {!row.replaced && (
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <div
+                          className="flex flex-wrap gap-1"
+                          role="group"
+                          aria-label={`Оценка: ${row.employeeName}`}
+                        >
+                          {SCALE.map((value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              aria-pressed={row.score === value}
+                              disabled={closed || busy}
+                              className={
+                                "h-8 min-w-8 rounded-md border px-2 text-xs tabular-nums transition-colors disabled:opacity-60 " +
+                                (row.score === value
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "bg-background hover:bg-muted")
+                              }
+                              onClick={() =>
+                                setScore.mutate({
+                                  assignmentId: row.assignmentId ?? "",
+                                  score: row.score === value ? null : value,
+                                  comment: commentOf(row),
+                                })
+                              }
+                            >
+                              {value}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="min-w-[220px] flex-1 space-y-1">
+                          <Input
+                            className="h-8 text-xs"
+                            placeholder="Комментарий (необязательно)"
+                            aria-label={`Комментарий к оценке: ${row.employeeName}`}
+                            disabled={closed}
+                            value={commentOf(row)}
+                            onChange={(e) =>
+                              setDrafts((prev) => ({
+                                ...prev,
+                                [row.assignmentId ?? ""]: e.target.value,
+                              }))
+                            }
+                            onBlur={() => {
+                              if (row.score !== null && commentOf(row) !== row.comment) {
+                                setScore.mutate({
+                                  assignmentId: row.assignmentId ?? "",
+                                  score: row.score,
+                                  comment: commentOf(row),
+                                });
+                              }
+                            }}
+                          />
+                          {low && commentOf(row).trim() === "" && (
+                            <p
+                              className="text-[11px] text-amber-700 dark:text-amber-300"
+                              data-slot="low-score-hint"
+                            >
+                              Оценка {row.score} — желательно пояснить.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
   const [open, setOpen] = useState(false);
@@ -371,7 +544,14 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
   const close = useCloseVisitObject(event.id, { onEvent: () => setOpen(false) });
   const access = useChainAccess();
   const visit = scope.visit;
+  // Сводка оценок — для подтверждения «Оценено K из N, инцидентов N»
+  // (`[ЗАК-05]`, Plane №433); неоценённые закрытию не мешают.
+  const evaluations = useVisitEvaluations(event.id, visit?.id ?? null);
   if (visit === null) return null;
+  const evaluated = evaluations.data?.evaluated ?? 0;
+  const totalRated = evaluations.data?.total ?? 0;
+  const incidents = evaluations.data?.incidents ?? closureFacts(event).incidents;
+  const unrated = totalRated - evaluated;
   const others = event.visitObjects.filter((item) => item.id !== visit.id);
   const openOthers = others.filter((item) => item.stage !== "CLOSED").length;
   const isLast = openOthers === 0;
@@ -415,10 +595,20 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Закрыть объект «{visit.objectName}»?</DialogTitle>
-                  <DialogDescription>
-                    После закрытия изменения по объекту невозможны.
+                  <DialogDescription data-slot="close-summary">
+                    Оценено {evaluated} из {totalRated}, инцидентов {incidents}. После
+                    закрытия изменения по объекту невозможны.
                     {isLast ? " Мероприятие при этом закроется целиком." : ""}
                   </DialogDescription>
+                  {unrated > 0 && (
+                    <p
+                      className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
+                      data-slot="close-unrated"
+                    >
+                      {unrated} сотрудников без оценки. Закрыть? Неоценённые в средний балл не
+                      войдут.
+                    </p>
+                  )}
                 </DialogHeader>
                 <div className="space-y-1">
                   <Label htmlFor={`closing-comment-${visit.id}`}>

@@ -2348,7 +2348,9 @@ def open_evaluation_for_event(event, *, actor):
             "object_label": event.object_name or "",
             "actual_starts_at": starts_at,
             "actual_ends_at": starts_at,
-            "state_label": "Завершено",
+            # Заводится входом объекта в «Проведение» (Plane №433), закрытие
+            # ОМ лишь обновляет подпись состояния.
+            "state_label": "Завершено" if event.stage == "CLOSED" else "Проведение",
             "security_event_id": event.pk,
         },
     )

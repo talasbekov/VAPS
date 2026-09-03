@@ -49,6 +49,10 @@ import {
   securityEventReplaceAssignmentPath,
   NO_PUBLISHED_VERSION_TEXT,
   visitObjectClosePath,
+  visitObjectEvaluationsAllPath,
+  visitObjectEvaluationsPath,
+  type VisitEvaluationRow,
+  type VisitEvaluationSummary,
 } from "@/entities/security-event";
 import type {
   AddApproverRequest,
@@ -324,6 +328,57 @@ function visitChiefRequired(objectName: string) {
     },
     { status: 422 }
   );
+}
+
+
+// Оценки этапа «Проведение» (Plane №433) — хранилище мока.
+const mockScores = new Map<string, { score: number; comment: string }>();
+
+function evaluationGuard(event: SecurityEvent, visitObjectId: string) {
+  if (event.stage !== "CONDUCT") {
+    return businessRuleError("INVALID_STAGE_TRANSITION", "Оценки ставятся на этапе «Проведение».");
+  }
+  const visit = event.visitObjects.find((item) => item.id === visitObjectId);
+  if (visit !== undefined && visit.stage === "CLOSED") {
+    return businessRuleError(
+      "VISIT_OBJECT_ALREADY_CLOSED",
+      "Объект закрыт — изменения после закрытия невозможны."
+    );
+  }
+  return null;
+}
+
+function evaluationSummary(event: SecurityEvent, visitObjectId: string): VisitEvaluationSummary {
+  const posts = new Map(event.reconSectorPosts.map((post) => [post.id, post]));
+  const rows: VisitEvaluationRow[] = event.placementAssignments
+    .filter((a) => {
+      const post = posts.get(a.postId);
+      // Объект у мока один — его посты все (как visit_object_posts сервера).
+      return post !== undefined && (event.visitObjects.length <= 1 || (post.visitObjectId ?? null) === visitObjectId);
+    })
+    .map((a) => {
+      const post = posts.get(a.postId)!;
+      const stored = mockScores.get(`${event.id}:${a.id}`);
+      return {
+        assignmentId: a.id,
+        postId: a.postId,
+        post: post.post,
+        sector: post.sector,
+        employeeId: a.employeeId,
+        employeeName: a.employeeName,
+        divisionName: "",
+        acknowledgedAt: a.acknowledgedAt,
+        replaced: false,
+        score: stored?.score ?? null,
+        comment: stored?.comment ?? "",
+      };
+    });
+  return {
+    rows,
+    evaluated: rows.filter((r) => r.score !== null).length,
+    total: rows.length,
+    incidents: event.journalEntries.filter((e) => e.type === "INCIDENT").length,
+  };
 }
 
 function mirrorApproval(event: SecurityEvent): SecurityEvent {
@@ -2559,6 +2614,50 @@ export const securityEventsHandlers = [
           )
         )
       );
+    }
+  ),
+
+  // ── Оценки этапа «Проведение» (Plane №433) — зеркало conduct_evaluations ──
+  // Оценки живут в памяти мока по ключу «ОМ + назначение»; правила те же:
+  // только на «Проведении», закрытый объект отбивается, «Всем 10» не трогает
+  // поставленное вручную.
+  http.get(`*${visitObjectEvaluationsPath(":id", ":visitObjectId")}`, ({ params }) => {
+    const { event, response } = findEvent(params.id as string);
+    if (event === null) return response;
+    return HttpResponse.json(evaluationSummary(event, params.visitObjectId as string));
+  }),
+  http.post(
+    `*${visitObjectEvaluationsPath(":id", ":visitObjectId")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const guard = evaluationGuard(event, params.visitObjectId as string);
+      if (guard !== null) return guard;
+      const body = (await request.json()) as { assignmentId: string; score: number | null; comment?: string };
+      if (body.score !== null && (!Number.isInteger(body.score) || body.score < 1 || body.score > 10)) {
+        return businessRuleError("SCORE_OUT_OF_SCALE", "Оценка вне шкалы 1–10.");
+      }
+      const key = `${event.id}:${body.assignmentId}`;
+      if (body.score === null) mockScores.delete(key);
+      else mockScores.set(key, { score: body.score, comment: (body.comment ?? "").trim() });
+      return HttpResponse.json(evaluationSummary(event, params.visitObjectId as string));
+    }
+  ),
+  http.post(
+    `*${visitObjectEvaluationsAllPath(":id", ":visitObjectId")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const guard = evaluationGuard(event, params.visitObjectId as string);
+      if (guard !== null) return guard;
+      const body = (await request.json().catch(() => ({}))) as { score?: number };
+      const score = body.score ?? 10;
+      for (const row of evaluationSummary(event, params.visitObjectId as string).rows) {
+        if (!row.replaced && row.score === null && row.assignmentId !== null) {
+          mockScores.set(`${event.id}:${row.assignmentId}`, { score, comment: "" });
+        }
+      }
+      return HttpResponse.json(evaluationSummary(event, params.visitObjectId as string));
     }
   ),
 
