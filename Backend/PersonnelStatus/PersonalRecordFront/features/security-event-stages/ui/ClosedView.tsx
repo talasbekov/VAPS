@@ -28,6 +28,10 @@ import { EMPTY_FILTERS } from "@/entities/operational-rating";
 import { JournalList } from "./JournalList";
 import { closureFacts } from "./ConductStage";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { Button } from "@/components/ui/button";
+import { useRenderEventDocument } from "@/hooks/use-ops-reports";
+import { saveBinaryFile } from "@/features/ops-reports/report-shared";
+import { useState } from "react";
 
 /**
  * Период мероприятия строкой. Архив — единственное место, где ОМ читают уже
@@ -72,6 +76,9 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
           read-only
         </span>
       </div>
+      {/* «Скачать дело» — про архив целиком, поэтому в шапке, а не в карточке
+          оценок (та рисуется только с правом на рейтинг). */}
+      <CaseDownload event={event} />
 
       <Card>
         <CardHeader>
@@ -334,5 +341,46 @@ function EvaluationsSection({ event }: { event: SecurityEvent }) {
         </Link>
       </CardContent>
     </Card>
+  );
+}
+
+
+/**
+ * «Скачать дело» (`[ЗАК-11]`, Plane №437): один файл со всеми вложениями —
+ * расстановка с версиями, лист ознакомления, замечания, оценки, журнал.
+ * Тот же путь, что у экрана отчётов: ручка отдаёт base64, файл сохраняется
+ * по нажатию (мутация, не запрос — у скачивания нет кэша).
+ */
+function CaseDownload({ event }: { event: SecurityEvent }) {
+  const [saved, setSaved] = useState<string | null>(null);
+  const render = useRenderEventDocument((file) => {
+    saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
+    setSaved(file.fileName);
+  });
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2" data-slot="case-download">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={render.isPending}
+        onClick={() => render.mutate({ kind: "case", eventCode: event.code, format: "pdf" })}
+      >
+        {render.isPending ? "Сборка дела…" : "Скачать дело (PDF)"}
+      </Button>
+      <span className="text-xs text-muted-foreground">
+        расстановка с версиями · лист ознакомления · замечания · оценки · журнал
+      </span>
+      {saved !== null && (
+        <span className="text-xs text-muted-foreground" role="status">
+          сохранено: {saved}
+        </span>
+      )}
+      {render.error && (
+        <span role="alert" className="text-destructive-ink text-xs">
+          {render.error.message}
+        </span>
+      )}
+    </div>
   );
 }

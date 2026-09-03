@@ -184,6 +184,12 @@ def render_placement(event_code, as_of=None, fmt="pdf", visit_object_id=None):
         # должность, ДД.ММ.ГГГГ ЧЧ:ММ, версия N» — по строке на подпись.
         for line in signature_lines(visit):
             document.add_paragraph(line)
+        # `[ОЗН-07]` (Plane №437): после завершения ознакомления документ
+        # получает приложение «Лист ознакомления».
+        from organization_management.apps.ops import documents_case
+
+        if visit is not None and documents_case.acknowledgement_completed(event):
+            documents_case.append_acknowledgement_sheet(document, event, visit)
         document.save(filled_path)
         payload = emit(filled_path, fmt)
         # `[СОГ-03]` (Plane №430): «Скачать PDF» доступна всегда, до
