@@ -67,3 +67,74 @@ def directorate_request_view(allocation_id, allowed_division_ids):
                 ],
             }
     raise _not_found("Запрос управлению не найден.", allocation_id)
+
+
+def select_for_request(allocation_id, employee_ids, allowed_division_ids, *, actor):
+    """Начальник управления выделяет людей ПО ЗАПРОСУ (Plane №395, `[СБС-31]`).
+
+    Спецификация: «Начальник отмечает сотрудников чекбоксами. Статус „Участие
+    в ОМ“ создаётся автоматически с мероприятием и датами из запроса. Поле
+    „мероприятие“ он не выбирает и не видит. Объект на этом шаге пуст».
+
+    Мероприятие и даты берутся ИЗ ЗАЯВКИ, а статус ставит тот же путь, что и
+    штабное выделение (`add_allocation_member`): второй способ ставить статус
+    привлечения разошёлся бы с первым в правилах занятости и в расходе дня.
+
+    ПООДИНОЧКЕ, А НЕ ПАКЕТОМ. Каждый сотрудник — своё решение сервера:
+    пересечение статусов у одного не должно отменять выделение остальных.
+    Поэтому отказы СОБИРАЮТСЯ, а не роняют запрос: ответ называет, кого
+    выделили и кому отказано — с причиной, поимённо. Мягкий конфликт (409)
+    приходит той же причиной; обход по причине — тем же полем `override`,
+    что у штаба.
+
+    Область — управления актора под `status.manage`: чужого сотрудника
+    выделить нельзя, и это отказ по конкретному человеку, а не по запросу.
+    """
+    from organization_management.apps.operations.exceptions import DomainError
+    from organization_management.apps.ops.security_events import (
+        add_allocation_member,
+        employee_scope_division,
+        personnel_display_name,
+        _find_personnel,
+    )
+
+    request = directorate_request_view(allocation_id, allowed_division_ids)
+    event_id = request["eventId"]
+    selected, refused = [], []
+    for raw in employee_ids or []:
+        employee_id = str(raw).strip()
+        if not employee_id:
+            continue
+        division = employee_scope_division(employee_id)
+        if allowed_division_ids is not None and (
+            division is None or division not in allowed_division_ids
+        ):
+            employee = _find_personnel(employee_id)
+            refused.append(
+                {
+                    "employeeId": employee_id,
+                    "name": personnel_display_name(employee) if employee else employee_id,
+                    "code": "PERMISSION_DENIED",
+                    "message": "Сотрудник не вашего управления.",
+                }
+            )
+            continue
+        try:
+            add_allocation_member(event_id, allocation_id, employee_id=employee_id, actor=actor)
+        except DomainError as error:
+            employee = _find_personnel(employee_id)
+            refused.append(
+                {
+                    "employeeId": employee_id,
+                    "name": personnel_display_name(employee) if employee else employee_id,
+                    "code": error.code,
+                    "message": error.message,
+                }
+            )
+            continue
+        selected.append(employee_id)
+    return {
+        "selected": selected,
+        "refused": refused,
+        "request": directorate_request_view(allocation_id, allowed_division_ids),
+    }

@@ -128,7 +128,13 @@ export default function StatusesPage() {
             клиентского layout — без границы прод-сборка падает на
             пререндере (Plane №112). */}
         <Suspense fallback={null}>
-          <ForcesRequestBanner />
+          <ForcesRequestBanner
+            selectedEmployees={selectedEmployees}
+            onSelected={() => {
+              setSelectedEmployees([])
+              handleRefresh()
+            }}
+          />
         </Suspense>
 
         {/* Stats Cards */}

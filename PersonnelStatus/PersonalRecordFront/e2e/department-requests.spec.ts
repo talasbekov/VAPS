@@ -689,4 +689,75 @@ test.describe('заявки департаменту', () => {
       await dropEvent(token, fixture.eventId)
     }
   })
+
+  test('чекбоксы на «Статусах» + «Выделить на ОМ» ставят «Участие в ОМ» из запроса (Plane №395)', async ({
+    page,
+  }) => {
+    /**
+     * `[СБС-31]`: «Начальник отмечает сотрудников чекбоксами. Статус „Участие
+     * в ОМ“ создаётся автоматически с мероприятием и датами из запроса. Поле
+     * „мероприятие“ он не выбирает и не видит». До правки статус ставился
+     * диалогом с ручным выбором мероприятия, а реестр начальнику отвечал 403.
+     *
+     * Проба: раскладка Первому управлению → `acc_dir_head` открывает баннер
+     * → отмечает СВОЕГО сотрудника чекбоксом в таблице → «Выделить на
+     * ОМ-…: 1» → баннер «выделено 1 из 2», а в заявке (API) человек числится
+     * выделенным. Дата ОМ — своя на прогон: у сотрудника не должно быть
+     * пересечения статусов с прошлыми прогонами.
+     */
+    const bossPassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+    test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
+
+    const token = await apiToken()
+    const day = new Date(Date.UTC(2027, 5, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
+    const fixture = await createDepartmentAllocationFixture(token, {
+      businessDate: day.toISOString().slice(0, 10),
+    })
+    try {
+      const divisions = (await apiCall(token, 'GET', '/api/core/divisions/?page_size=200')) as {
+        results: { id: number; name: string; parent: number | null }[]
+      }
+      const first = divisions.results.find(
+        (d) => d.name === 'Первое управление' && String(d.parent) === fixture.departmentId,
+      )!
+      await apiCall(
+        token,
+        'POST',
+        `/api/ops/security-events/${fixture.eventId}/forces/allocation/${fixture.allocationId}/split/`,
+        { rows: [{ divisionId: String(first.id), need: 2 }] },
+      )
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+
+      const api = page.context().request
+      const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
+      await api.post(`${APP}/api/auth/callback/credentials/`, {
+        form: { csrfToken: csrf.csrfToken, username: 'acc_dir_head', password: bossPassword, json: 'true' },
+      })
+      await page.goto(`${APP}/statuses/?forcesRequest=${encodeURIComponent(fixture.allocationId)}`)
+      const banner = page.getByRole('status', { name: `Запрос на ${event.code}` })
+      await expect(banner).toBeVisible({ timeout: 30_000 })
+      // Без отметок кнопка выключена и говорит, что делать.
+      await expect(banner.getByRole('button', { name: /Отметьте сотрудников/ })).toBeDisabled()
+
+      // Свой сотрудник — чекбокс в строке таблицы. «Токтаров А.» — учётка
+      // `acc_employee`, штатно в Первом управлении.
+      const row = page.locator('tbody tr', { hasText: 'Токтаров' }).first()
+      await expect(row).toBeVisible({ timeout: 30_000 })
+      await row.getByRole('checkbox').check()
+      const select = banner.getByRole('button', { name: `Выделить на ${event.code}: 1` })
+      await expect(select).toBeEnabled()
+      await select.click()
+
+      await expect(banner.getByText('Выделено:', { exact: false })).toBeVisible({ timeout: 15_000 })
+      await expect(banner.getByText('выделено 1 из 2', { exact: false })).toBeVisible({ timeout: 15_000 })
+
+      // Сервер: человек в заявке, статус — от мероприятия.
+      const fresh = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      const members = (fresh.forceAllocation as { members: { name: string; statusId: string }[] }[])[0].members
+      expect(members.map((m) => m.name)).toContain('Токтаров А.')
+      expect(members[0].statusId, 'статус привлечения не поставлен').toBeTruthy()
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
 })
