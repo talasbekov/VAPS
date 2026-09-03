@@ -24,13 +24,36 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Megaphone } from "lucide-react";
 
-import { useDirectorateForcesRequest } from "@/hooks/use-forces-request-banner";
+import { Button } from "@/components/ui/button";
+import {
+  useDirectorateForcesRequest,
+  useSelectForRequest,
+} from "@/hooks/use-forces-request-banner";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
-export function ForcesRequestBanner() {
+export function ForcesRequestBanner({
+  selectedEmployees = [],
+  onSelected,
+}: {
+  /** Кого начальник отметил чекбоксами в таблице ниже (Plane №395,
+   *  `[СБС-31]`): выделение идёт ИЗ ЗАПРОСА — мероприятие и даты он не
+   *  выбирает, статус ставит сервер. */
+  selectedEmployees?: string[];
+  /** После выделения — таблице пора перечитать статусы и снять отметки. */
+  onSelected?: () => void;
+}) {
   const searchParams = useSearchParams();
   const allocationId = searchParams.get("forcesRequest");
   const request = useDirectorateForcesRequest(allocationId);
+  const select = useSelectForRequest(allocationId);
+  // 🔴 СТРОКА ТАБЛИЦЫ СТАТУСОВ АДРЕСУЕТ СОТРУДНИКА СОСТАВНЫМ КЛЮЧОМ
+  // `${staffUnitId}-${employeeId}` (см. `status-table.tsx`, `employeeIdOf`),
+  // а вакансии — `${unitId}-vacant…`. Серверу нужен ГОЛЫЙ employeeId: первая
+  // редакция слала ключ как есть, и сервер честно отвечал «5132-18 —
+  // Сотрудник не вашего управления» (поймано живой пробой).
+  const employeeIds = selectedEmployees
+    .map((key) => key.split("-")[1])
+    .filter((id): id is string => id !== undefined && !id.startsWith("vacant") && /^\d+$/.test(id));
 
   if (allocationId === null) return null;
   if (request.isPending) {
@@ -86,16 +109,53 @@ export function ForcesRequestBanner() {
           );
         })}
       </ul>
-      <p className="text-muted-foreground text-xs">
-        Отметьте сотрудников статусом «Участие в ОМ» на это мероприятие —
-        выделенные появятся в заявке департамента сами.{" "}
-        <Link
-          href={`/security-ops/events/${data.eventId}/`}
-          className="text-primary-ink font-medium hover:underline"
+      {/* ЧЕКБОКСЫ → «УЧАСТИЕ В ОМ» (`[СБС-31]`, Plane №395). Кнопка живёт в
+          баннере, а не в диалоге статуса: человек не выбирает мероприятие и
+          дат не вводит — всё это даёт запрос. Отказы сервер называет
+          поимённо (пересечение статусов, чужое управление), и они видны
+          здесь же, а не в тосте, который уедет. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          size="sm"
+          disabled={employeeIds.length === 0 || select.isPending}
+          onClick={() =>
+            select.mutate({ employeeIds }, { onSuccess: () => onSelected?.() })
+          }
         >
-          Карточка мероприятия →
-        </Link>
-      </p>
+          {select.isPending
+            ? "Выделяю…"
+            : employeeIds.length === 0
+              ? "Отметьте сотрудников в таблице — и выделите на ОМ"
+              : `Выделить на ${data.code}: ${employeeIds.length}`}
+        </Button>
+        <span className="text-muted-foreground text-xs">
+          Статус «Участие в ОМ» с датами мероприятия проставится сам; объект
+          назначит штаб.{" "}
+          <Link
+            href={`/security-ops/events/${data.eventId}/`}
+            className="text-primary-ink font-medium hover:underline"
+          >
+            Карточка мероприятия →
+          </Link>
+        </span>
+      </div>
+      {select.data !== undefined && (
+        <p role="status" className="text-sm" data-slot="select-report">
+          Выделено: <b className="tabular-nums">{select.data.selected.length}</b>
+          {select.data.refused.length > 0 && (
+            <>
+              {" "}· не выделены:{" "}
+              {select.data.refused.map((row) => `${row.name} — ${row.message}`).join("; ")}
+            </>
+          )}
+        </p>
+      )}
+      {select.isError && (
+        <p role="alert" className="text-destructive-ink text-sm">
+          {select.error?.message ?? "Выделить не удалось"}
+        </p>
+      )}
     </section>
   );
 }

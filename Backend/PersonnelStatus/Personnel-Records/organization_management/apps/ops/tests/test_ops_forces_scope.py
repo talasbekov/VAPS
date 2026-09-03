@@ -1062,3 +1062,82 @@ def test_the_directorate_request_is_closed_without_status_manage():
     api, _ = client_for("dir-head-noperm", "DIR_HEAD_RQ3", perms=("event.view", "forces.select"))
 
     assert api.get(f"{URL}forces/requests/whatever/directorate/").status_code == 403
+
+
+# ── Выделение по запросу: чекбоксы → «Участие в ОМ» (Plane №395, `[СБС-31]`) ─
+
+
+def test_the_head_selects_people_and_the_status_is_created_from_the_request(manager):  # noqa: F811
+    """Начальник управления отмечает людей — статус привлечения ставится ИЗ
+    ЗАЯВКИ (мероприятие и даты), человек становится выделенным.
+
+    Красная на мутации: замени `add_allocation_member` на запись без статуса —
+    статуса у сотрудника не будет.
+    """
+    from organization_management.apps.operations.models_status import OpsEmployeeStatus
+
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    person = employee_of(first, "Выделяемов")
+    make_assignment_status_type()
+    head = _status_head("dir-head-select", "DIR_HEAD_SEL1", first)
+
+    resp = head.post(
+        f"{URL}forces/requests/{allocation_id}/directorate/select/",
+        {"employeeIds": [str(person.pk)]},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.data
+    body = resp.json()
+    assert body["selected"] == [str(person.pk)]
+    assert body["refused"] == []
+    assert body["request"]["directorates"][0]["assigned"] == 1
+    assert OpsEmployeeStatus.objects.filter(employee_id=person.pk).exists()
+
+
+def test_a_stranger_in_the_list_is_refused_by_name_and_the_rest_proceed(manager):  # noqa: F811
+    """Чужой сотрудник — отказ ПО ЧЕЛОВЕКУ с причиной; свои выделяются."""
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    second = make_directorate(own, "Управление А-2")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    mine = employee_of(first, "Свойов")
+    stranger = employee_of(second, "Чужойов")
+    make_assignment_status_type()
+    head = _status_head("dir-head-select-2", "DIR_HEAD_SEL2", first)
+
+    resp = head.post(
+        f"{URL}forces/requests/{allocation_id}/directorate/select/",
+        {"employeeIds": [str(mine.pk), str(stranger.pk)]},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.data
+    body = resp.json()
+    assert body["selected"] == [str(mine.pk)]
+    assert [r["employeeId"] for r in body["refused"]] == [str(stranger.pk)]
+    assert body["refused"][0]["code"] == "PERMISSION_DENIED"
+
+
+def test_selecting_twice_reports_the_double_assignment_instead_of_failing(manager):  # noqa: F811
+    """Повторное выделение того же человека — отказ по нему с причиной сервера
+    (`DOUBLE_ASSIGNMENT`), а не 422 на весь запрос."""
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    person = employee_of(first, "Дваждыов")
+    make_assignment_status_type()
+    head = _status_head("dir-head-select-3", "DIR_HEAD_SEL3", first)
+    url = f"{URL}forces/requests/{allocation_id}/directorate/select/"
+    head.post(url, {"employeeIds": [str(person.pk)]}, format="json")
+
+    again = head.post(url, {"employeeIds": [str(person.pk)]}, format="json")
+
+    assert again.status_code == 200
+    assert again.json()["selected"] == []
+    assert again.json()["refused"][0]["code"] == "DOUBLE_ASSIGNMENT"

@@ -289,6 +289,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
         "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
         "forces_directorate_request": _STATUS_MANAGE_PERMISSION,
+        "forces_directorate_select": _STATUS_MANAGE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
         "forces_notify": _FORCES_ALLOCATE_PERMISSION,
         "forces_respond": _FORCES_ALLOCATE_PERMISSION,
@@ -824,6 +825,38 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             resolve_actor_id(request), _STATUS_MANAGE_PERMISSION
         )
         return Response(directorate_request_view(allocation_id, allowed))
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path=r"forces/requests/(?P<allocation_id>[^/]+)/directorate/select",
+    )
+    def forces_directorate_select(self, request, allocation_id=None):
+        """Выделить отмеченных сотрудников по запросу (Plane №395, `[СБС-31]`).
+
+        Тело: `{"employeeIds": ["18", …]}`. Статус «Участие в ОМ» ставится из
+        заявки — мероприятие и даты человек не выбирает. Отказы по отдельным
+        людям СОБИРАЮТСЯ в ответ (`refused[]` с причиной), а не роняют запрос.
+        Гейт — `status.manage`, область — управления актора.
+        """
+        from organization_management.apps.operations.services import (
+            PermissionService,
+        )
+        from organization_management.apps.ops.forces_requests import (
+            select_for_request,
+        )
+
+        actor_id = resolve_actor_id(request)
+        allowed = PermissionService.visible_division_ids(actor_id, _STATUS_MANAGE_PERMISSION)
+        data = request.data or {}
+        return Response(
+            select_for_request(
+                allocation_id,
+                data.get("employeeIds") or [],
+                allowed,
+                actor=actor_id,
+            )
+        )
 
     @action(
         detail=True,
