@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
 import { useOpsMutation } from "@/hooks/use-ops-mutation";
 import type { OpsApiFailure } from "@/lib/ops-errors";
+import type { EventProtectedPersonDetails } from "@/entities/security-event";
 import {
   BINDABLE_OBJECTS_PATH,
   SECURITY_EVENTS_PATH,
@@ -70,5 +71,11 @@ export interface UpdateBulletinDetailsRequest extends Record<string, unknown> {
    * включая пустой массив: пустой означает «снять всех», а отсутствие ключа —
    * «не трогать», и окно правки обязано уметь снимать. */
   protectedPersonIds: string[];
-  location: string;
+  /** Строка локации — вызовы до №418; окно шлёт структуру ниже. */
+  location?: string;
+  /** Локация структурой и атрибуты лиц (Plane №418). */
+  countryId?: string;
+  cityId?: string;
+  address?: string;
+  protectedPersonDetails?: EventProtectedPersonDetails[];
 }

@@ -12,6 +12,7 @@ from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
 )
 from organization_management.apps.ops.passport import snapshot_sectors
+from organization_management.apps.ops import event_location
 from organization_management.apps.ops import security_events
 from organization_management.apps.ops import vehicles as vehicles_service
 
@@ -355,13 +356,14 @@ def serialize_security_event(event):
         # нет, и вывод «как легло» менялся бы от перезаписи списка, читаясь при
         # этом как значимый. Главное лицо названо отдельным полем, поэтому
         # старшинства в списке не требуется.
-        "protectedPersons": [
-            {"id": str(person.pk), "name": person.name}
-            for person in sorted(
-                event.protected_persons.all(), key=lambda p: p.name
-            )
-        ],
+        # С атрибутами визита (Plane №418): `{id, code, name, arrivalAt,
+        # departureAt, flightArrival, flightDeparture, isSenior, note}`;
+        # старые читатели берут `id`/`name` как прежде.
+        "protectedPersons": event_location.person_links_view(event),
         "location": event.location,
+        # Локация структурой (Plane №418): строка выше остаётся и собрана
+        # сервером из этих полей.
+        **event_location.location_view(event),
         "chiefEmployeeId": (
             str(event.chief_employee_id)
             if event.chief_employee_id is not None

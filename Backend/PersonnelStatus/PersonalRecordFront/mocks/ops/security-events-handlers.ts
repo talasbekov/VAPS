@@ -17,6 +17,7 @@
 // «Рекогносцировки» и получает объект посещения, без объекта — с «Бюллетеня» и
 // без него. Меняется правило на сервере — правится и здесь, в тот же заход.
 import { http, HttpResponse } from "msw";
+import { CITIES, COUNTRIES } from "./geo-handlers";
 import {
   bindPassportVersion,
   resolveApplicableVersion,
@@ -387,6 +388,12 @@ function emptyEvent(
     // читающий его, падал бы только на моке.
     protectedPersons: [],
     location: "",
+    // Локация структурой (Plane №418) — мок несёт поля контракта.
+    countryId: null,
+    countryName: "",
+    cityId: null,
+    cityName: "",
+    address: "",
     chiefEmployeeId: null,
     chiefName: "",
     stage: "BULLETIN",
@@ -837,10 +844,36 @@ export const securityEventsHandlers = [
     // Вывод сортируется ПО ИМЕНИ — как это делает сервер: у связи своего
     // порядка нет, и мок, отдающий «как легло», расходился бы с бэком в
     // порядке строк, то есть в том, что видно глазами.
-    created.protectedPersons = [...persons].sort((a, b) =>
-      a.name.localeCompare(b.name, "ru")
-    );
-    created.location = (body.location ?? "").trim();
+    created.protectedPersons = [...persons]
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+      .map((p) => ({
+        id: p.id,
+        // Код `OL-N` (Plane №417): у строк каталога он есть, у сидов
+        // до №417 — выводится из id тем же правилом, что на сервере.
+        code: (p as { code?: string }).code ?? `OL-${p.id}`,
+        name: p.name,
+        arrivalAt: null,
+        departureAt: null,
+        flightArrival: "",
+        flightDeparture: "",
+        isSenior: false,
+        note: "",
+      }));
+    // Локация структурой (Plane №418): строка собирается из справочника
+    // мока тем же правилом, что на сервере («Страна, Город, адрес»).
+    const country = COUNTRIES.find((c) => c.id === (body.countryId ?? "")) ?? null;
+    const city = CITIES.find((c) => c.id === (body.cityId ?? "")) ?? null;
+    const address = (body.address ?? "").trim();
+    created.countryId = country?.id ?? city?.countryId ?? null;
+    created.countryName =
+      country?.name ?? COUNTRIES.find((c) => c.id === city?.countryId)?.name ?? "";
+    created.cityId = city?.id ?? null;
+    created.cityName = city?.name ?? "";
+    created.address = address || (body.location ?? "").trim();
+    created.location =
+      country || city || address
+        ? [created.countryName, created.cityName, address].filter(Boolean).join(", ")
+        : (body.location ?? "").trim();
     created.chiefEmployeeId = chief === null ? null : chief.id;
     created.chiefName = chief === null ? "" : chief.name;
     // версия паспорта выбирается по бизнес-дате ОМ; её отсутствие — не ошибка

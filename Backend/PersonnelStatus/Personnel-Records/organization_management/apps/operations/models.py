@@ -268,6 +268,9 @@ from organization_management.apps.operations.models_gvo import (  # noqa: E402
     OpsGvoSummaryPatch,  # noqa: F401
     OpsProtectedPerson,  # noqa: F401
 )
+from organization_management.apps.operations.models_event import (  # noqa: E402
+    OpsSecurityEventPerson,  # noqa: F401
+)
 from organization_management.apps.operations.models_geo import (  # noqa: E402
     OpsCity,  # noqa: F401
     OpsCountry,  # noqa: F401

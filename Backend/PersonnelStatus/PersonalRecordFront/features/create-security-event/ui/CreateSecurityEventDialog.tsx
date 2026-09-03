@@ -34,6 +34,7 @@ import {
   useCreateSecurityEvent,
 } from "@/hooks/use-create-security-event";
 import { useProtectedPersons } from "@/hooks/use-protected-persons";
+import { LocationFields } from "./LocationFields";
 import { PersonnelPicker } from "@/features/personnel-picker";
 import { ProtectedPersonsPicker } from "./ProtectedPersonsPicker";
 import type { SecurityEventKind } from "@/entities/security-event";
@@ -84,7 +85,11 @@ const formSchema = z
       .regex(/^(\d{2}:\d{2})?$/, "Укажите время в формате ЧЧ:ММ."),
     // Лиц может быть НЕСКОЛЬКО (Plane №188); первое — главное.
     protectedPersonIds: z.array(z.string()),
-    location: z.string().max(255, "Не длиннее 255 символов."),
+    // Локация структурой (Plane №418): страна → город → адрес. Строка
+    // `location` собирается сервером, окно её больше не шлёт.
+    countryId: z.string(),
+    cityId: z.string(),
+    address: z.string().max(255, "Не длиннее 255 символов."),
     // Объект НЕОБЯЗАТЕЛЕН (решение заказчика 24.08, ClickUp 86eyqf7a7):
     // бюллетень заводят до согласования маршрута, объекты дописывают позже
     // кнопкой у строки реестра.
@@ -112,7 +117,9 @@ const EMPTY_FORM: FormValues = {
   businessDateEnd: "",
   eventTime: "",
   protectedPersonIds: [],
-  location: DEFAULT_LOCATION,
+  countryId: "",
+  cityId: "",
+  address: DEFAULT_LOCATION,
   objectId: "",
   chiefEmployeeId: "",
 };
@@ -244,7 +251,9 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
                   kind: values.kind as SecurityEventKind,
                   eventTime: values.eventTime,
                   protectedPersonIds: values.protectedPersonIds,
-                  location: values.location,
+                  countryId: values.countryId,
+                  cityId: values.cityId,
+                  address: values.address,
                   chiefEmployeeId: values.chiefEmployeeId,
                 }),
               (invalid) => focusFirstError(invalid)
@@ -424,24 +433,37 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
               )}
             </Field>
 
-            <Field
-              name="location"
-              label="Локация"
+            <LocationFields
+              countryId={watch("countryId")}
+              cityId={watch("cityId")}
+              onCountry={(next) => {
+                setValue("countryId", next, { shouldDirty: true });
+                setValue("cityId", "", { shouldDirty: true });
+              }}
+              onCity={(next) => setValue("cityId", next, { shouldDirty: true })}
+              addressField={
+                <Field
+                  name="address"
+                  label="Адрес / место"
+                  labelClassName={LABEL_CLASS}
+                  hint={`По умолчанию — ${DEFAULT_LOCATION}`}
+                  hintClassName={HINT_CLASS}
+                  error={errors.address}
+                  className="space-y-1.5"
+                >
+                  {(field) => (
+                    <Input
+                      {...field}
+                      className={CONTROL_CLASS}
+                      placeholder={DEFAULT_LOCATION}
+                      {...register("address")}
+                    />
+                  )}
+                </Field>
+              }
               labelClassName={LABEL_CLASS}
-              hint={`По умолчанию — ${DEFAULT_LOCATION}`}
-              hintClassName={HINT_CLASS}
-              error={errors.location}
-              className="space-y-1.5"
-            >
-              {(field) => (
-                <Input
-                  {...field}
-                  className={CONTROL_CLASS}
-                  placeholder={DEFAULT_LOCATION}
-                  {...register("location")}
-                />
-              )}
-            </Field>
+              selectClassName={SELECT_CLASS}
+            />
           </div>
 
           {/* Эталон здесь снова в силе: объект НЕОБЯЗАТЕЛЕН — старший наряда

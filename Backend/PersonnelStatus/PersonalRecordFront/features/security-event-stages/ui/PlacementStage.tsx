@@ -51,6 +51,7 @@ import { RatingBriefDialog } from "./RatingBriefDialog";
 import {
   PLACEMENT_MANAGE,
   useChainAccess,
+  EVENT_MANAGE,
 } from "@/features/forces-split/ui/chain-access";
 import {
   useAssignPlacement,
@@ -669,7 +670,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             <Button
               type="button"
               size="sm"
-              disabled={complete.isPending}
+              disabled={complete.isPending || !access.can(EVENT_MANAGE)}
+              title={access.reason(EVENT_MANAGE) || undefined}
               onClick={() =>
                 complete.mutate({ visitObjectId: scope.visit?.id })
               }

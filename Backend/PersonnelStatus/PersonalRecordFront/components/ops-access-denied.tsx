@@ -32,8 +32,16 @@ export function OpsAccessDenied({ what }: OpsAccessDeniedProps): ReactElement {
   return (
     <DashboardLayout>
       <Card>
-        <CardContent className="p-9 text-center text-sm text-muted-foreground">
-          Недостаточно прав для просмотра {what}.
+        {/* Заголовок — словами заказчика (`[РЕЕ-09]`, Plane №422): экран
+            без права отвечает «Доступ закрыт». Фраза под ним — прежняя: по
+            ней закрытый экран опознают обход и пробы отказа. */}
+        <CardContent className="p-9 text-center">
+          <p className="text-base font-semibold" role="heading" aria-level={2}>
+            Доступ закрыт
+          </p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Недостаточно прав для просмотра {what}.
+          </p>
         </CardContent>
       </Card>
     </DashboardLayout>

@@ -135,9 +135,16 @@ def create_event(
     protected_person_id=None,
     protected_person_ids=None,
     location=None,
+    # Локация структурой и атрибуты лиц (Plane №418) — см. `event_location`.
+    country_id=None,
+    city_id=None,
+    address=None,
+    protected_person_details=None,
     chief_employee_id=None,
     actor,
 ):
+    from organization_management.apps.ops import event_location as loc
+
     field_errors = {}
     title = str(title or "").strip()
     if title == "":
@@ -189,6 +196,17 @@ def create_event(
     location = str(location or "").strip()
     if len(location) > 255:
         field_errors["location"] = ["Не длиннее 255 символов."]
+    country, city, address = loc.resolve_location(
+        country_id=country_id, city_id=city_id, address=address,
+        field_errors=field_errors,
+    )
+    # Структура названа — строка собирается из неё; названа только строка
+    # (вызовы до №418) — она и есть адрес. Читатели `location` не меняются.
+    if country is not None or city is not None or address:
+        location = loc.compose_location(country, city, address)
+    elif location and not address:
+        address = location
+    person_details = loc.parse_person_details(protected_person_details, field_errors)
 
     # ЛИЦ МОЖЕТ БЫТЬ НЕСКОЛЬКО (Plane №188), и старое одиночное поле принимается
     # ПО-ПРЕЖНЕМУ: его шлют мок-слой, сиды и все вызовы, написанные до №188.
@@ -269,6 +287,9 @@ def create_event(
         # лица из справочника не должно стирать имя из истории.
         protected_person_name=person.name if person is not None else "",
         location=location,
+        country=country,
+        city=city,
+        address=address,
         chief_employee_id=chief.pk if chief is not None else None,
         chief_name=personnel_display_name(chief) if chief is not None else "",
         stage=initial_stage,
@@ -308,6 +329,7 @@ def create_event(
     # `OpsSecurityEvent` до сохранения ещё не существует.
     if persons:
         event.protected_persons.set(persons)
+        loc.apply_person_details(event, person_details)
     if security_object is not None:
         OpsSecurityEventVisitObject.objects.create(
             event=event,
@@ -366,6 +388,10 @@ def update_bulletin_details(
     protected_person_id=None,
     protected_person_ids=None,
     location=None,
+    country_id=None,
+    city_id=None,
+    address=None,
+    protected_person_details=None,
     actor,
 ):
     """Править СВЕДЕНИЯ бюллетеня после создания (Plane №192).
@@ -477,6 +503,8 @@ def update_bulletin_details(
             except ValueError:
                 field_errors["eventTime"] = ["Укажите время в формате ЧЧ:ММ."]
 
+    from organization_management.apps.ops import event_location as loc
+
     if location is not None:
         new_location = str(location).strip()
         if len(new_location) > 255:
@@ -484,6 +512,22 @@ def update_bulletin_details(
         else:
             event.location = new_location
             updates.append("location")
+    # Структура (Plane №418): любой из трёх ключей — правка локации, строка
+    # `location` пересобирается из структуры. Ключа нет — поле не трогается.
+    if country_id is not None or city_id is not None or address is not None:
+        country, city, new_address = loc.resolve_location(
+            country_id=country_id if country_id is not None else event.country_id,
+            city_id=city_id if city_id is not None else event.city_id,
+            address=address if address is not None else event.address,
+            field_errors=field_errors,
+        )
+        if not field_errors:
+            event.country = country
+            event.city = city
+            event.address = new_address
+            event.location = loc.compose_location(country, city, new_address)
+            updates += ["country", "city", "address", "location"]
+    person_details = loc.parse_person_details(protected_person_details, field_errors)
 
     # Лиц может быть несколько (Plane №188). Ключа нет — список не трогаем;
     # пустой список — снимаем всех, ровно как пустая строка снимала одного.
@@ -524,7 +568,7 @@ def update_bulletin_details(
         event.business_date_end = new_end
         updates.append("business_date_end")
 
-    if not updates and new_persons is None:
+    if not updates and new_persons is None and not person_details:
         # Нечего менять — отвечаем мероприятием как есть, без записи журнала:
         # «правка без изменений» это не событие, и лента, засоренная такими,
         # перестаёт отвечать на вопрос «что менялось».
@@ -536,6 +580,7 @@ def update_bulletin_details(
         # назначение, и «пусто значит не трогать» здесь было бы вторым
         # смыслом пустоты в одной функции.
         event.protected_persons.set(new_persons)
+    loc.apply_person_details(event, person_details)
     audit_service.record(
         actor=actor,
         action=audit_service.SECURITY_EVENT_DETAILS_UPDATED,

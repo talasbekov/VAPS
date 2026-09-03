@@ -24,6 +24,10 @@ export const PLACEMENT_MANAGE = "placement.manage";
  * иначе подписывающий переписывает подписываемое. */
 export const APPROVAL_APPROVE = "assignment.approve";
 export const APPROVAL_RETURN = "assignment.return";
+/** Переход этапа и закрытие (`[РЕЕ-09]`, Plane №422): «Завершить этап»,
+ * «Закрыть объект», «Закрыть мероприятие» — работа ведущего мероприятие.
+ * До №422 эти кнопки были активны у читателя и отвечали 403 без слов. */
+export const EVENT_MANAGE = "event.manage";
 
 /** Причина отказа — ЧТО ЗА РОЛЬ это делает, а не «нет прав».
  *
@@ -38,6 +42,7 @@ const REASON: Record<string, string> = {
   [PLACEMENT_MANAGE]: "Расставляет людей по постам старший объекта",
   [APPROVAL_APPROVE]: "Согласовывает расстановку утверждающий",
   [APPROVAL_RETURN]: "Возвращает расстановку на доработку утверждающий",
+  [EVENT_MANAGE]: "Переводит этапы и закрывает мероприятие ведущий ОМ или штаб",
 };
 
 export interface ChainAccess {

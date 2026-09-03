@@ -1,6 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
+import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 
 // Этап 7 «Ознакомление»: каждый назначенный подтверждает прочтение; этап
 // завершается только когда подтвердили все (правило бэка, не экрана).
@@ -48,6 +49,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
   const acknowledge = useAcknowledgePlacement(event.id);
   const complete = useCompleteAcknowledgement(event.id);
   const notify = useNotifyAcknowledgement(event.id);
+  const access = useChainAccess();
   const [scope, setScope] = useState<Scope>("all");
 
   const me = usePersonnelMe();
@@ -235,7 +237,8 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           </Button>
           <Button
             type="button"
-            disabled={complete.isPending}
+            disabled={complete.isPending || !access.can(EVENT_MANAGE)}
+            title={access.reason(EVENT_MANAGE) || undefined}
             onClick={() => complete.mutate({})}
           >
             {complete.isPending

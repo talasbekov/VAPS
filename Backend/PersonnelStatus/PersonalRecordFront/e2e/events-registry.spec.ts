@@ -807,13 +807,31 @@ async function createEvent(
     // строку уже не нашла бы, и стенд копил бы переименованные пробные ОМ.
     const renamed = probeTitle('Правленое название')
     await dialog.getByLabel('Название мероприятия').fill(renamed)
-    await dialog.getByLabel('Локация').fill('Правленая локация')
+    // Локация структурой (Plane №418): страна → город (каскад: город
+    // доступен только после страны) → адрес; строку собирает сервер.
+    const city = dialog.getByLabel('Город')
+    await expect(city).toBeDisabled()
+    await dialog.getByLabel('Страна').selectOption({ label: 'Казахстан' })
+    await expect(city).toBeEnabled()
+    await city.selectOption({ label: 'Астана' })
+    await dialog.getByLabel('Адрес / место').fill('Правленая локация')
     await dialog.getByRole('button', { name: 'Сохранить' }).click()
 
-    // Правка видна В СТРОКЕ, а не только в ответе сервера.
+    // Правка видна В СТРОКЕ, а не только в ответе сервера — строкой,
+    // собранной из структуры.
     const row = page.getByRole('row').filter({ hasText: created.code }).first()
     await expect(row).toContainText(renamed, { timeout: 15_000 })
-    await expect(row).toContainText('Правленая локация')
+    await expect(row).toContainText('Казахстан, Астана, Правленая локация')
+    const saved = (await (
+      await fetch(`${API}/api/ops/security-events/${created.id}/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { countryName: string; cityName: string; address: string; location: string }
+    expect([saved.countryName, saved.cityName, saved.address]).toEqual([
+      'Казахстан',
+      'Астана',
+      'Правленая локация',
+    ])
 
     // Окно закрылось — правка принята. Ассерт нужен: окно, оставшееся
     // открытым поверх изменившейся строки, читается как «не сохранилось».

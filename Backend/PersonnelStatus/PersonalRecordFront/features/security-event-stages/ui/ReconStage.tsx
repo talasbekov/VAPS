@@ -37,6 +37,7 @@ import {
 } from "@/hooks/use-security-event-stages";
 import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import type {
   ReconChecklistItem,
   ReconSectorPost,
@@ -119,6 +120,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
       ]),
   });
   const complete = useCompleteRecon(event.id);
+  const access = useChainAccess();
 
   /* ── Принадлежность расчёта объекту посещения (Plane №409) ──────────────
    *
@@ -798,8 +800,14 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
           </p>
           <Button
             type="button"
-            disabled={complete.isPending || dirty}
-            title={dirty ? "Сохраните расчёт перед завершением этапа." : undefined}
+            disabled={complete.isPending || dirty || !access.can(EVENT_MANAGE)}
+            title={
+              !access.can(EVENT_MANAGE)
+                ? access.reason(EVENT_MANAGE)
+                : dirty
+                  ? "Сохраните расчёт перед завершением этапа."
+                  : undefined
+            }
             onClick={() => complete.mutate({})}
           >
             {complete.isPending

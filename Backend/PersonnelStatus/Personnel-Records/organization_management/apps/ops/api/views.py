@@ -478,6 +478,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             # поле: им пользуются мок-слой, сиды и вызовы до №188.
             protected_person_ids=data.get("protectedPersonIds"),
             location=data.get("location"),
+            # Локация структурой и атрибуты лиц (Plane №418).
+            country_id=data.get("countryId"),
+            city_id=data.get("cityId"),
+            address=data.get("address"),
+            protected_person_details=data.get("protectedPersonDetails"),
             chief_employee_id=data.get("chiefEmployeeId"),
             actor=resolve_actor_id(request),
         )
@@ -688,6 +693,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 protected_person_id=data.get("protectedPersonId"),
                 protected_person_ids=data.get("protectedPersonIds"),
                 location=data.get("location"),
+                country_id=data.get("countryId"),
+                city_id=data.get("cityId"),
+                address=data.get("address"),
+                protected_person_details=data.get("protectedPersonDetails"),
                 actor=request.user,
             )
         )
