@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, Suspense } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { PageHeader } from "@/components/page-header"
 import { StatusTable } from "@/components/status-table"
@@ -20,6 +20,7 @@ import { SecondmentRequestsDialog } from "@/features/secondment-requests/ui/Seco
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { modulePermissionsOf } from "@/entities/portal-access";
+import { ForcesRequestBanner } from "@/features/forces-request-banner/ui/ForcesRequestBanner";
 
 export default function StatusesPage() {
   // Роль-наблюдатель (Plane №348): «видит своё управление, но без возможности
@@ -120,6 +121,15 @@ export default function StatusesPage() {
             </div>
           }
         />
+
+        {/* Баннер запроса сил (Plane №394, `[СБС-30]`): начальник управления
+            приходит сюда из уведомления по адресу `?forcesRequest=…`. Своя
+            граница Suspense: `useSearchParams` внутри, а у `/statuses` нет
+            клиентского layout — без границы прод-сборка падает на
+            пререндере (Plane №112). */}
+        <Suspense fallback={null}>
+          <ForcesRequestBanner />
+        </Suspense>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -222,6 +222,10 @@ _DELETE_EVENT_PERMISSION = "event.delete"
 _FORCES_COMMAND_PERMISSION = "forces.command"
 _FORCES_ALLOCATE_PERMISSION = "forces.allocate"
 _FORCES_SELECT_PERMISSION = "forces.select"
+# Баннер запроса сил на «Статусах» (Plane №394): читает тот, кто ПРОСТАВЛЯЕТ
+# статусы по управлению, — у профилей заказчика `forces.*` нет намеренно, а
+# `status.manage` с областью на управление есть (см. Decisions).
+_STATUS_MANAGE_PERMISSION = "status.manage"
 _PLACEMENT_PERMISSION = "placement.manage"
 
 
@@ -284,6 +288,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_collection": _FORCES_COMMAND_PERMISSION,
         "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
         "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
+        "forces_directorate_request": _STATUS_MANAGE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
         "forces_notify": _FORCES_ALLOCATE_PERMISSION,
         "forces_respond": _FORCES_ALLOCATE_PERMISSION,
@@ -793,6 +798,32 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             event_service.department_request_detail(allocation_id, allowed)
         )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"forces/requests/(?P<allocation_id>[^/]+)/directorate",
+    )
+    def forces_directorate_request(self, request, allocation_id=None):
+        """Запрос сил глазами УПРАВЛЕНИЯ (Plane №394, `[СБС-30]`).
+
+        Строка своего управления в заявке департамента — для баннера на
+        «Статусах сотрудников». Гейт — `status.manage` (тот, кто проставляет
+        статусы «Участие в ОМ» по своему управлению, `[СБС-31]`), область —
+        его управления; чужая заявка — 404. Не `forces.select`: у профилей
+        заказчика его нет, и живой стенд ответил бы начальнику управления 403.
+        """
+        from organization_management.apps.operations.services import (
+            PermissionService,
+        )
+        from organization_management.apps.ops.forces_requests import (
+            directorate_request_view,
+        )
+
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _STATUS_MANAGE_PERMISSION
+        )
+        return Response(directorate_request_view(allocation_id, allowed))
 
     @action(
         detail=True,
