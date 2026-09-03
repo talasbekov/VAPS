@@ -12,6 +12,7 @@
  * иначе баг «ссылка всегда на первый/самый частый объект» остался бы
  * незамеченным (событие с частым объектом привело бы туда же по случайности).
  */
+import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { requireFixture } from './fixtures'
 import { probeTitle } from './probe-events'
@@ -173,6 +174,17 @@ async function pickChief(
   await option.click()
   await expect(dialog.getByRole('button', { name: `Снять старшего ${name.trim()}` })).toBeVisible()
   return name.trim()
+}
+
+/**
+ * Действия строки живут в меню «⋯» справа (`[РЕЕ-02]`, `[РЕЕ-10]`, Plane №440):
+ * пункты носят прежние имена, поэтому пробы открывают меню и берут пункт.
+ */
+async function rowAction(page: Page, code: string, name: string) {
+  await page.getByRole('button', { name: `Действия ${code}` }).click()
+  const item = page.getByRole('menuitem', { name })
+  await expect(item).toBeVisible()
+  return item
 }
 
 test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет SMOKE_LIVE=1)', () => {
@@ -836,11 +848,8 @@ async function createEvent(
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/`)
-    const pencil = page.getByRole('button', {
-      name: `Редактировать бюллетень ${created.code}`,
-    })
-    await expect(pencil).toBeVisible({ timeout: 15_000 })
-    await pencil.click()
+    await expect(page.getByText(created.code, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+    await (await rowAction(page, created.code, `Редактировать бюллетень ${created.code}`)).click()
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toContainText('Правка бюллетеня')
@@ -896,9 +905,8 @@ async function createEvent(
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/`)
-    await page
-      .getByRole('button', { name: `Редактировать бюллетень ${created.code}` })
-      .click()
+    await expect(page.getByText(created.code, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+    await (await rowAction(page, created.code, `Редактировать бюллетень ${created.code}`)).click()
 
     const dialog = page.getByRole('dialog')
     await dialog.getByLabel('Название мероприятия').fill('   ')
@@ -1004,11 +1012,10 @@ async function createEvent(
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/?search=${encodeURIComponent(created.code)}`)
-    const add = page.getByRole('button', {
-      name: `Добавить объекты посещения ${created.code}`,
-    })
-    await expect(add).toBeVisible({ timeout: 15_000 })
-    await add.click()
+    await expect(page.getByText(created.code, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+    // Снимок строки с меню «⋯» (Plane №440) — до открытия диалога.
+    await page.screenshot({ path: path.join(__dirname, '..', '..', '..', '..', 'docs', 'audit', 'om-2026-09-03', 'registry-row-menu.png') })
+    await (await rowAction(page, created.code, `Добавить объекты посещения ${created.code}`)).click()
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
@@ -1104,10 +1111,12 @@ async function createEvent(
     expect(created.objectId).toBeNull()
     expect(created.visitObjects).toHaveLength(0)
 
-    // В реестре пустой объект НАЗВАН, а не оставлен пустой ячейкой.
+    // Пустой объект — ПУСТАЯ ячейка (`[РЕЕ-10]`, Plane №440): серых подсказок в
+    // реестре больше нет; пин перевёрнут осознанно.
     await page.goto(`${APP}/security-ops/events/?search=${encodeURIComponent(created.code)}`)
     const row = page.locator('tbody tr').first()
-    await expect(row).toContainText('объект не выбран', { timeout: 15_000 })
+    await expect(row).toContainText(created.code, { timeout: 15_000 })
+    await expect(row).not.toContainText('объект не выбран')
 
     // Второй путь: поиск в списке объектов сужает выбор и выбирает объект.
     await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
@@ -1374,9 +1383,7 @@ async function createEvent(
       timeout: 20_000,
     })
 
-    await page
-      .getByRole('button', { name: `Удалить мероприятие ${doomed.code}` })
-      .click()
+    await (await rowAction(page, doomed.code, `Удалить мероприятие ${doomed.code}`)).click()
     const dialog = page.getByRole('dialog')
     // Спрашиваем ИМЕНЕМ того, что исчезнет: иначе человек соглашается вслепую.
     await expect(dialog).toContainText(`Удалить ${doomed.code}?`)

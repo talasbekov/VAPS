@@ -5,7 +5,13 @@
 import { useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -255,7 +261,9 @@ export default function SecurityEventsPage() {
             }
           >
             <option value="ALL">Все этапы</option>
-            {SECURITY_EVENT_STAGES.map((stage) => (
+            {/* «Потребность» и «Запрос сил» — стадии, которые проходит сервер
+                сам (Plane №110); в фильтре их нет (`[РЕЕ-01]`, Plane №440). */}
+            {SECURITY_EVENT_STAGES.filter((stage) => stage !== "DEMAND" && stage !== "FORCES").map((stage) => (
               <option key={stage} value={stage}>
                 {STAGE_LABEL[stage]}
               </option>
@@ -527,50 +535,9 @@ function EventRow({
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
-            {canEditObjects && (
-              <button
-                type="button"
-                onClick={() => {
-                  setExpanded(true);
-                  setAddOpen(true);
-                }}
-                aria-label={`Добавить объекты посещения ${event.code}`}
-                title="Добавить объекты посещения"
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-              </button>
-            )}
-            {/* ПРАВКА БЮЛЛЕТЕНЯ — сразу после «+», как просил заказчик
-                (Plane №192). Порядок кнопок в колонке — по частоте и по
-                тяжести последствий: раскрыть, добавить объект, поправить
-                сведения, удалить. Разрушительное — последним и одно. */}
-            {canEditObjects && (
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                aria-label={`Редактировать бюллетень ${event.code}`}
-                title="Редактировать бюллетень"
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            )}
-            {/* Удаление ошибочно заведённого бюллетеня. Отдельное право
-                `event.delete`: ведущий мероприятие его правит, стирает из
-                реестра администратор. Кнопки НЕТ у того, кто не может
-                удалять, — кнопка, обречённая на 403, это обещание. */}
-            {canDeleteEvent && (
-              <button
-                type="button"
-                onClick={() => setDeleteOpen(true)}
-                aria-label={`Удалить мероприятие ${event.code}`}
-                title="Удалить мероприятие"
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            )}
+            {/* Действия строки — в меню «⋯» справа (`[РЕЕ-02]`, `[РЕЕ-10]`,
+                Plane №440): четырёх иконок слева от кода больше нет; порядок
+                пунктов — прежний (Plane №192): объект, бюллетень, удалить. */}
           </span>
         </TableCell>
         {/* Ширина названия ОГРАНИЧЕНА, и это не украшение. Колонок с №189
@@ -646,9 +613,9 @@ function EventRow({
                     находимым глазами. Пусто — ОТВЕТ: бюллетень заводят и без
                     лица, когда визит ещё не подтверждён. */}
                 <TableCell className="text-muted-foreground">
-                  {event.protectedPersonName === "" ? (
-                    <span className="text-[11px]">лицо не назначено</span>
-                  ) : (
+                  {/* Пусто — пусто (`[РЕЕ-10]`, Plane №440): серых подсказок в
+                      ячейках нет. */}
+                  {event.protectedPersonName === "" ? null : (
                     <>
                       <span className="text-foreground">
                         {event.protectedPersonName}
@@ -684,18 +651,14 @@ function EventRow({
                     мероприятия выше. */}
                 <TableCell className="text-muted-foreground">
                   <span className="block max-w-[210px] whitespace-normal">
-                    {event.location === "" ? (
-                      <span className="text-[11px]">локация не указана</span>
-                    ) : (
-                      event.location
-                    )}
+                    {event.location === "" ? null : event.location}
                   </span>
                   <span className="mt-[3px] block max-w-[210px] whitespace-normal text-[11px] text-muted-foreground/80">
                     {/* Пустое имя — «объект не выбран», а не пустая подпись:
                         ОМ заводят до согласования маршрута, и объекты
                         дописывают позже кнопкой в первой колонке. */}
                     {event.objectName === ""
-                      ? "объект не выбран · добавляется кнопкой «+»"
+                      ? null
                       : `${event.objectName} · ${
                           event.passportBinding === null
                             ? "паспорт не привязан"
@@ -747,10 +710,13 @@ function EventRow({
                     — он ушёл подписью: реестр остаётся местом, где видно, с
                     кого спрашивать за карточку. */}
                 <TableCell>
+                  {/* Ячейка по `[РЕЕ-03]` (Plane №440): «не назначен» + «+ Назначить»
+                      либо «Фамилия» + ✎; подпись под значением — роль по типу
+                      ОМ. Позывной не печатается: у сотрудника его в модели нет
+                      (Decisions). «ведёт: …» снято (`[РЕЕ-10]`) — ведущий
+                      виден в карточке. */}
                   {event.chiefName === "" ? (
-                    <span className="text-[11px] text-muted-foreground">
-                      старший не назначен
-                    </span>
+                    <span className="text-[11px] text-muted-foreground">не назначен</span>
                   ) : (
                     event.chiefName
                   )}
@@ -771,12 +737,17 @@ function EventRow({
                           : `Заменить старшего наряда ${event.code}`
                       }
                       className="ml-1 rounded px-1 py-0.5 text-[11px] font-semibold text-primary-ink hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      title={event.chiefName === "" ? undefined : "Изменить"}
                     >
-                      {event.chiefName === "" ? "+ Старший" : "Заменить"}
+                      {event.chiefName === "" ? (
+                        "+ Назначить"
+                      ) : (
+                        <Pencil className="inline h-3 w-3" aria-hidden="true" />
+                      )}
                     </button>
                   )}
                   <span className="mt-[3px] block text-[11px] text-muted-foreground/80">
-                    ведёт: {event.ownerName}
+                    {event.kind === "FOREIGN" ? "ГВО" : "Старший наряда"}
                   </span>
                 </TableCell>
         {/* Стрелка — ЕДИНСТВЕННЫЙ явный вход в карточку ОМ из строки, и
@@ -785,6 +756,50 @@ function EventRow({
             значило бы сделать половину цикла недостижимой. «›» скринридеру
             ничего не говорит — имя называет и действие, и адресата. */}
         <TableCell className="text-center text-muted-foreground">
+          {(canEditObjects || canDeleteEvent) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`Действия ${event.code}`}
+                  title="Действия"
+                  className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canEditObjects && (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setExpanded(true);
+                      setAddOpen(true);
+                    }}
+                    aria-label={`Добавить объекты посещения ${event.code}`}
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" /> Добавить объект
+                  </DropdownMenuItem>
+                )}
+                {canEditObjects && (
+                  <DropdownMenuItem
+                    onSelect={() => setEditOpen(true)}
+                    aria-label={`Редактировать бюллетень ${event.code}`}
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" /> Редактировать бюллетень
+                  </DropdownMenuItem>
+                )}
+                {canDeleteEvent && (
+                  <DropdownMenuItem
+                    onSelect={() => setDeleteOpen(true)}
+                    aria-label={`Удалить мероприятие ${event.code}`}
+                    className="text-destructive-ink"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" /> Удалить
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <Link
             href={`/security-ops/events/${event.id}${backSuffix}`}
             aria-label={`Открыть этапы мероприятия ${event.code}`}
@@ -830,7 +845,13 @@ function EventRow({
         <AddVisitObjectsDialog
           event={event}
           open={addOpen}
-          onClose={() => setAddOpen(false)}
+          onClose={() => {
+            setAddOpen(false);
+            // Добавленное видно В РАСКРЫТИИ строки — раскрываем явно: пункт
+            // меню «⋯» (Plane №440) закрывается раньше, чем открывается диалог,
+            // и на состояние строки полагаться нельзя.
+            setExpanded(true);
+          }}
         />
       )}
 
