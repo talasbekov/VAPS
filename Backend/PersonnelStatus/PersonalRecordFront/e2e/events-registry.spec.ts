@@ -473,7 +473,11 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await pickFirstObject(page, dialog)
     await dialog.getByLabel('Дата начала').fill('2026-09-14')
     await dialog.getByLabel('Время').fill('09:30')
-    await dialog.getByLabel('Локация').fill('г. Алматы')
+    // Локация — каскадом (Plane №418): страна → город → адрес; строку
+    // «Казахстан, Алматы, …» собирает сервер, и карточка печатает её.
+    await dialog.getByLabel('Страна').selectOption({ label: 'Казахстан' })
+    await dialog.getByLabel('Город').selectOption({ label: 'Алматы' })
+    await dialog.getByLabel('Адрес / место').fill('пр. Абая, 1')
 
     // Подпись поля сменилась с «Охраняемое лицо» на «Охраняемые лица»
     // осознанно (Plane №188): лиц теперь несколько, и единственное число
@@ -504,7 +508,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const facts = page.getByRole('main')
     await expect(facts).toContainText('С участием иностранцев', { timeout: 20_000 })
     await expect(facts).toContainText('09:30')
-    await expect(facts).toContainText('г. Алматы')
+    await expect(facts).toContainText('Казахстан, Алматы, пр. Абая, 1')
     // Подписи выпадающих списков несут разделитель « · » — на карточке
     // стоит только имя, поэтому сверяем по первой части подписи.
     await expect(facts).toContainText(personName.split(' · ')[0]!.trim())
