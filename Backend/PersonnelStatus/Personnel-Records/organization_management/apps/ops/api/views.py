@@ -1237,6 +1237,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 decision=data.get("decision"),
                 comment=data.get("comment"),
                 visit_object_id=self._visit_object_of(request),
+                # Привязка замечания (`[МД-07]`, Plane №386) — пост или
+                # «общее»; срочность подсказывает клиент, сервер решает сам,
+                # если её не прислали (`[ВОЗ-02]`).
+                post_id=data.get("postId"),
+                urgent=data.get("urgent"),
             )
         )
 
@@ -1283,7 +1288,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             event_service.resolve_remark(
                 pk,
                 remark_id,
-                resolved=bool(data.get("resolved", True)),
+                decision=data.get("decision"),
+                response=data.get("response"),
                 visit_object_id=self._visit_object_of(request),
             )
         )
