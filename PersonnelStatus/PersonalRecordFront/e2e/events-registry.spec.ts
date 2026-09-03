@@ -549,6 +549,9 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(preview).toContainText(personName)
     await expect(preview).toContainText('Казахстан, Алматы')
     await expect(preview).toContainText(chiefLabel)
+    // Период в превью — как в бюллетене (`[МД-10]`, Plane №438): без года,
+    // с днём недели; 14.09.2026 — понедельник.
+    await expect(preview.getByTestId('preview-Дата')).toHaveText('14 сентября (пн.)')
 
     await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
     await expect(page).toHaveURL(/\/security-ops\/events\/\d+/, { timeout: 30_000 })

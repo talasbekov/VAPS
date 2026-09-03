@@ -4,7 +4,7 @@
 // форма ляжет в бланк — теми же колонками, что печатает документ
 // (`documents_bulletin.bulletin_rows`: дата · время · ОЛ · мероприятие ·
 // локация · старший). Человек проверяет ТО, что получится, а не поля.
-import { formatIsoDate } from "@/shared/lib/date";
+import { formatBulletinPeriod } from "@/shared/lib/date";
 
 export interface BulletinRowPreviewProps {
   businessDate: string;
@@ -21,12 +21,9 @@ export interface BulletinRowPreviewProps {
 const EMPTY = "—";
 
 export function composeBulletinRow(p: BulletinRowPreviewProps) {
-  const period =
-    p.businessDate === ""
-      ? EMPTY
-      : p.businessDateEnd === "" || p.businessDateEnd === p.businessDate
-        ? formatIsoDate(p.businessDate)
-        : `${formatIsoDate(p.businessDate)} — ${formatIsoDate(p.businessDateEnd)}`;
+  // Период — как в бюллетене (`[МД-10]`, Plane №438): без года, с днями
+  // недели; превью обязано показывать то, что напечатает документ.
+  const period = p.businessDate === "" ? EMPTY : formatBulletinPeriod(p.businessDate, p.businessDateEnd);
   const time =
     p.eventTime === "" ? EMPTY : p.timeMark === "" ? p.eventTime : `${p.eventTime} (${p.timeMark})`;
   return {
