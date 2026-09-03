@@ -82,6 +82,14 @@ export interface GvoSummary {
   groups: GvoGroup[];
   transport: GvoTransportRow[];
   visits: GvoVisitDay[];
+  /** Ссылки на справочник сотрудников (`[ГВО-08]`, Plane №435): встречающие,
+   * провожающие, состав делегации — идентификаторами; подписи считает сервер. */
+  meetEmployeeIds?: string[];
+  farewellEmployeeIds?: string[];
+  delegationEmployeeIds?: string[];
+  meetRefs?: { id: string; name: string }[];
+  farewellRefs?: { id: string; name: string }[];
+  delegationRefs?: { id: string; name: string }[];
 }
 
 /**
@@ -148,12 +156,26 @@ export interface ListGvoSummaryPatchesResponse {
  * ручная правка. Клиент это больше не вычисляет: признак приходит оттуда же,
  * откуда сводка.
  */
+/** Визит иностранного ОЛ — сущность со статусом (Plane №435, `[МД-05]`);
+ * null — у внутреннего ОМ визита нет. */
+export interface GvoVisit {
+  status: "DRAFT" | "READY" | "APPROVED";
+  version: number;
+  protectedPersonId: string | null;
+  /** Поля, у которых «данных нет от принимающей стороны» (`[ГВО-06]`). */
+  unspecified: string[];
+  approvedAt: string | null;
+}
+
 export interface GvoSummaryRow {
   omCode: string;
   summary: GvoSummary;
   filled: boolean;
   /** null — правок не было вовсе, а не «время неизвестно». */
   updatedAt: string | null;
+  visit: GvoVisit | null;
+  /** Ключи полей с флагом «уточняется» (`[ГВО-06]`). */
+  unspecified: string[];
 }
 
 export interface ListGvoSummariesResponse {
@@ -171,6 +193,8 @@ export interface UpdateGvoSummaryRequest extends Record<string, unknown> {
   section: GvoSection;
   /** Разобранные значения формы — разбор текста живёт на клиенте. */
   values: GvoSummaryPatch;
+  /** Полный список полей с флагом «уточняется» после правки (Plane №435). */
+  unspecified?: string[];
 }
 
 export interface ResetGvoSummaryRequest extends Record<string, unknown> {

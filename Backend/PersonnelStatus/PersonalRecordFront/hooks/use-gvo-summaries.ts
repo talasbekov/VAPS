@@ -85,15 +85,18 @@ interface SaveSectionVariables extends Record<string, unknown> {
   omCode: string;
   section: GvoSection;
   values: GvoSummaryPatch;
+  unspecified?: string[];
 }
 
 export function useSaveGvoSection(options: { onSaved?: () => void } = {}) {
   const queryClient = useQueryClient();
   return useOpsMutation<GvoSummaryPatchRecord, SaveSectionVariables>({
-    mutationFn: ({ omCode, section, values }) =>
+    mutationFn: ({ omCode, section, values, unspecified }) =>
       opsApiClient.patch<GvoSummaryPatchRecord>(gvoSummaryPatchPath(omCode), {
         section,
         values,
+        // Флаги «уточняется» (Plane №435) — полным списком, если окно их вело.
+        ...(unspecified === undefined ? {} : { unspecified }),
       }),
     onSuccess: () => {
       // QUERY_KEY сбрасывает и патчи, и собранный список: ключ списка

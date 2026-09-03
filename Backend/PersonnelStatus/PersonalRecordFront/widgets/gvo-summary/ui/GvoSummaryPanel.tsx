@@ -598,6 +598,7 @@ export function GvoSummaryPanel({
           omTitle={event.title}
           section={section}
           summary={summary}
+          unspecified={summaryQuery.data.unspecified ?? []}
           onClose={() => setSection(null)}
         />
       )}

@@ -118,7 +118,7 @@ const MONTENEGRO_PATCH: GvoSummaryPatch = {
   sbChief: "Руководитель службы безопасности Президента Черногории — Иван Фемич",
   weapons:
     "Безопасность — 3 сотрудника СБ Президента и супруги Черногории (без вооружения)",
-  wishes: UNSPECIFIED,
+  wishes: "",
   obVariant: "трасса № 2, объекты № 1",
   radio: "В-1 / В-12 / С-12",
   responsible: { name: "Шитов", callsign: "2-9", role: "ответственный" },
@@ -256,6 +256,15 @@ function assembledRow(event: { code: string }): GvoSummaryRow {
     omCode: event.code,
     summary: mergeGvoSummary(deriveGvoSummary(event as never), patch),
     filled: Object.keys(patch).length > 0,
+    // Визит (Plane №435): мок держит его у каждой строки — черновик/заполнен.
+    visit: {
+      status: Object.keys(patch).length > 0 ? "READY" : "DRAFT",
+      version: 1,
+      protectedPersonId: null,
+      unspecified: [],
+      approvedAt: null,
+    },
+    unspecified: [],
     updatedAt: record?.updatedAt ?? null,
   };
 }

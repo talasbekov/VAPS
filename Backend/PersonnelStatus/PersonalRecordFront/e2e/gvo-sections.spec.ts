@@ -43,6 +43,11 @@ async function apiToken(): Promise<string> {
   return ((await res.json()) as { access: string }).access
 }
 
+async function apiGet<T>(path: string, token: string): Promise<T> {
+  const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } })
+  return (await res.json()) as T
+}
+
 async function registryEvents(): Promise<EventRow[]> {
   const token = await apiToken()
   const res = await fetch(`${API}/api/ops/security-events/?page_size=200`, {
@@ -355,6 +360,63 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // Повторное нажатие закрывает — кнопка меняет и подпись, и состояние.
     await page.getByRole('button', { name: 'Скрыть информацию по ГВО' }).click()
     await expect(page.getByText('Сводные данные ГВО')).toHaveCount(0)
+  })
+
+  test('«уточняется» — флаг поля, не значение; визит хранит его и версию (Plane №435)', async ({
+    page,
+  }) => {
+    /**
+     * `[ГВО-06]`/`[МД-05]`: пустое поле остаётся пустым, слово «уточняется»
+     * ставится чекбоксом и хранится списком у визита; правка сводки растит
+     * версию визита. У внутреннего ОМ визита нет.
+     */
+    const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
+    expect(target, 'в реестре нет ОМ с иностранным ОЛ').toBeTruthy()
+    const token = await apiToken()
+    const before = await apiGet<{ visit: { version: number } | null; unspecified: string[] }>(
+      `/api/ops/gvo-summaries/${encodeURIComponent(target!.code)}/`,
+      token,
+    )
+    expect(before.visit, 'у мероприятия с иностранцами обязан быть визит').not.toBeNull()
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}?gvo=1`)
+    await expect(page.getByText('Сводные данные ГВО')).toBeVisible({ timeout: 20_000 })
+    await page.getByRole('button', { name: 'Изменить организацию' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('textbox', { name: 'Канал р/связи' }).fill('')
+    await dialog.getByRole('checkbox', { name: 'Уточняется: Канал р/связи' }).check()
+    await dialog.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(dialog).toBeHidden({ timeout: 15_000 })
+
+    const after = await apiGet<{
+      visit: { version: number; status: string } | null
+      unspecified: string[]
+      summary: { radio: string }
+    }>(`/api/ops/gvo-summaries/${encodeURIComponent(target!.code)}/`, token)
+    expect(after.unspecified).toContain('radio')
+    expect(after.summary.radio, 'пустое остаётся пустым — слово не значение').toBe('')
+    expect(after.visit!.version).toBeGreaterThan(before.visit!.version)
+
+    // Внутреннему ОМ сводка не пишется вовсе.
+    const internal = (await registryEvents()).find((r) => r.kind === 'INTERNAL')
+    if (internal !== undefined) {
+      const refused = await fetch(
+        `${API}/api/ops/gvo-summaries/${encodeURIComponent(internal.code)}/`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ section: 'head', values: { country: 'X' } }),
+        },
+      )
+      expect(refused.status).toBe(422)
+    }
+    // Уборка: снять флаг, чтобы соседние пробы читали чистую сводку.
+    await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(target!.code)}/`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ section: 'org', values: {}, unspecified: [] }),
+    })
   })
 
   test('у внутреннего мероприятия кнопки «Информация по ГВО» нет', async ({

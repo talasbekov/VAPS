@@ -25,6 +25,8 @@ pytestmark = pytest.mark.django_db
 def make_event(**over):
     data = dict(
         code="ОМ-Д-1",
+        # Визит — только у мероприятий с иностранцами (Plane №435).
+        kind="FOREIGN",
         title="Официальный визит",
         object_name="Резиденция",
         business_date=dt.date(2026, 9, 10),
