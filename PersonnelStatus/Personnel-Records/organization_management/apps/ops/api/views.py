@@ -286,6 +286,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_return": _FORCES_COMMAND_PERMISSION,
         "forces_collections": _FORCES_COMMAND_PERMISSION,
         "forces_collection": _FORCES_COMMAND_PERMISSION,
+        "forces_collection_objects": _FORCES_COMMAND_PERMISSION,
+        "forces_collection_handover": _FORCES_COMMAND_PERMISSION,
         "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
         "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
         "forces_directorate_request": _STATUS_MANAGE_PERMISSION,
@@ -753,7 +755,42 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         Область не сужается по той же причине, что и у списка: штаб обязан
         видеть всю свою раскладку.
         """
-        return Response(event_service.force_collection_detail(pk))
+        from organization_management.apps.ops.force_collection import (
+            collection_with_objects,
+        )
+
+        # Состав с объектами и передача (Plane №390) — поверх карточки сбора,
+        # тем же ответом: экран штаба один, и второй запрос за составом
+        # означал бы два ответа на «кого куда отдали».
+        return Response(collection_with_objects(pk))
+
+    @action(detail=True, methods=["post"], url_path="force-collection/objects")
+    def forces_collection_objects(self, request, pk=None):
+        """Отдать людей состава объектам посещения (Plane №390, `[СБС-13]`).
+        Тело: `{"rows": [{"employeeId": "18", "visitObjectId": "3498"|null}]}`."""
+        from organization_management.apps.ops.force_collection import (
+            assign_roster_objects,
+        )
+
+        return Response(
+            assign_roster_objects(
+                pk, (request.data or {}).get("rows") or [], actor=resolve_actor_id(request)
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="force-collection/hand-over")
+    def forces_collection_handover(self, request, pk=None):
+        """«Передать на расстановку» (Plane №390): при недоборе — комментарий
+        обязателен, нераспределённые — отказ."""
+        from organization_management.apps.ops.force_collection import (
+            hand_over_to_placement,
+        )
+
+        return Response(
+            hand_over_to_placement(
+                pk, comment=(request.data or {}).get("comment"), actor=resolve_actor_id(request)
+            )
+        )
 
     @action(detail=False, methods=["get"], url_path="forces/requests")
     def forces_department_requests(self, request):

@@ -230,4 +230,85 @@ test.describe('сборы сил (вид штаба)', () => {
     await expect(page.getByPlaceholder('Поиск по ФИО, должности, отделу...')).toHaveCount(0)
     await expect(page.getByRole('button', { name: /Экспорт CSV/ })).toHaveCount(0)
   })
+  test('собранные отдаются объектам, «Передать на расстановку» с недобором просит комментарий (Plane №390)', async ({
+    page,
+  }) => {
+    /**
+     * `[СБС-13]`: блок «Собранные сотрудники → объекты» на карточке штаба:
+     * люди состава с чекбоксами, объекты с ёмкостью «потребность N /
+     * назначено M», «На объект…», «Передать на расстановку» — при недоборе
+     * подтверждение с комментарием. До правки «Принять в мероприятие» сыпал
+     * весь список в общий пул, и у ОМ с двумя объектами люди одного объекта
+     * предлагались на посты другого.
+     *
+     * Фикстура доводит заявку до «принято штабом» по API (раскладка →
+     * оповещение → выделение одного человека → отправка → приём), дальше —
+     * экран: отметить человека → «Отдать объекту» → ёмкость «назначено 1» →
+     * «Передать на расстановку» → недобор → комментарий → передано.
+     */
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const call = async (method: string, path: string, body?: unknown): Promise<any> =>
+      (await fetch(`${API}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })).json().catch(() => ({}))
+    const day = new Date(Date.UTC(2027, 7, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
+    const own = await prepareDemandEvent(token, day.toISOString().slice(0, 10))
+    const list = (await call('GET', '/api/ops/security-events/forces/collections/')) as {
+      results: { code: string; eventId: string }[]
+    }
+    const target = list.results.find((row) => row.code === own.code)!
+    const eventId = target.eventId
+    const divisions = (await call('GET', '/api/core/divisions/?page_size=200')) as {
+      results: { id: number; name: string; type_code: string; parent: number | null }[]
+    }
+    const department = divisions.results.find((d) => d.name === 'Первый департамент')!
+    const split = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/`, {
+      rows: [{ departmentId: String(department.id), need: own.total }],
+    })
+    const allocationId = split.forceAllocation[0].id as string
+    await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/notify/`)
+    const person = (await call('GET', '/api/ops/personnel/?search=%D0%A2%D0%BE%D0%BA%D1%82%D0%B0%D1%80%D0%BE%D0%B2&page_size=1')).results[0]
+    const added = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/members/`, {
+      employeeId: person.id,
+    })
+    expect(added.error_code, 'выделение не прошло').toBeUndefined()
+    await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/submit/`)
+    const accepted = await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/accept/`)
+    expect(accepted.error_code, 'приём не прошёл').toBeUndefined()
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      await page.getByRole('tab', { name: 'Сборы', exact: true }).click()
+      await page.getByRole('button', { name: `Открыть сбор ${own.code}` }).click()
+
+      const block = page.locator('section[aria-labelledby="roster-objects-heading"]')
+      await expect(block).toBeVisible({ timeout: 20_000 })
+      await expect(block.getByText('не распределены: 1', { exact: false })).toBeVisible()
+      const objectId = (await call('GET', `/api/ops/security-events/${eventId}/`)).visitObjects[0].id as string
+      const capacity = block.locator(`[data-testid="object-capacity-${objectId}"]`)
+      await expect(capacity).toContainText('назначено 0')
+
+      await block.getByRole('checkbox', { name: /Отметить/ }).first().check()
+      await block.locator('#roster-target').selectOption(objectId)
+      await block.getByRole('button', { name: 'Отдать объекту: 1' }).click()
+      await expect(capacity).toContainText('назначено 1', { timeout: 15_000 })
+      await expect(block.getByText('не распределены', { exact: false })).toHaveCount(0)
+
+      // Недобор: потребность объекта больше одного человека — диалог с
+      // обязательным комментарием.
+      await block.getByRole('button', { name: 'Передать на расстановку' }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible()
+      await expect(dialog.getByRole('button', { name: 'Передать с недобором' })).toBeDisabled()
+      await dialog.getByLabel('Комментарий к передаче с недобором').fill('Остальных доберём к среде')
+      await dialog.getByRole('button', { name: 'Передать с недобором' }).click()
+      await expect(block.getByText('Передано на расстановку', { exact: false })).toBeVisible({ timeout: 15_000 })
+
+      const fresh = await call('GET', `/api/ops/security-events/${eventId}/force-collection/`)
+      expect(fresh.handover.comment).toBe('Остальных доберём к среде')
+      expect(fresh.roster[0].visitObjectId).toBe(objectId)
+    } finally {
+      await fetch(`${API}/api/ops/security-events/${eventId}/`, { method: 'DELETE', headers })
+    }
+  })
 })

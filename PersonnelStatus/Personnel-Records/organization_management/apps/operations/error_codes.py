@@ -95,6 +95,9 @@ CODES = {
     "ALLOCATION_EMPTY": frozenset({422}),
     # Цифра «Выделяем» правится до отправки списка (Plane №391, [СБС-21]).
     "ALLOCATION_ANSWER_LOCKED": frozenset({422}),
+    # Передача собранных на расстановку (Plane №390, [СБС-13]).
+    "FORCE_HANDED_OVER": frozenset({422}),
+    "FORCE_ROSTER_UNASSIGNED": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
     # Старший сектора (Plane №65): сектор берётся у поста назначения, и без
