@@ -1446,11 +1446,29 @@ def import_recon_from_passport(event_id, *, visit_object_id=None):
             "Расчёт постов формируется на этапе рекогносцировки.",
         )
     target = _import_target(event, visit_object_id)
-    # Паспорт берётся у ОБЪЕКТА посещения; у мероприятия он остаётся снимком
-    # для бюллетеня и для ОМ, заведённых до появления объектов.
-    binding = target.passport_binding or event.passport_binding
+    # Паспорт берётся у ОБЪЕКТА посещения.
+    #
+    # Снимок мероприятия годится ТОЛЬКО когда объект посещения — тот же самый
+    # объект реестра, что у мероприятия: так выглядят строки, заведённые
+    # бэкфиллом до появления собственных привязок. Для ЧУЖОГО объекта эта
+    # подстановка импортировала бы посты одного объекта в расчёт другого —
+    # молча и без единого признака на экране.
+    same_object = (
+        target.security_object_id is not None
+        and target.security_object_id == event.security_object_id
+    )
+    binding = target.passport_binding or (
+        event.passport_binding if same_object else None
+    )
     if binding is None:
-        raise DomainError("NO_PASSPORT_VERSION", 422, message= NO_PUBLISHED_VERSION_TEXT)
+        raise DomainError(
+            "NO_PASSPORT_VERSION",
+            422,
+            message=(
+                f"У объекта «{target.object_name}» нет привязанной версии "
+                "паспорта — импортировать посты не из чего."
+            ),
+        )
     version = OpsPassportVersion.objects.filter(
         pk=binding.get("versionId", "")
         if str(binding.get("versionId", "")).isdigit()

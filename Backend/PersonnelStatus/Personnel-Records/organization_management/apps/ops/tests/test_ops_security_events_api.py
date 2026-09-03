@@ -1041,7 +1041,13 @@ def test_second_visit_object_without_post_mapping_reports_unknown(manager):
     event.save(update_fields=["recon_sector_posts"])
 
     visits = manager.get(f"{base}").json()["visitObjects"]
-    assert visits[0]["placementNeed"] is None
+    # 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №409). Неразмеченных строк в расчёте не
+    # осталось — значит про ПЕРВЫЙ объект теперь известно всё: постов у него
+    # нет, и это НОЛЬ, а не «неизвестно». Раньше здесь стоял None, и объект,
+    # которому ничего не расписали, выглядел так же, как объект, про который
+    # нечего сказать. «Неизвестно» осталось ровно там, где оно правда: пока
+    # хоть одна строка расчёта не размечена (ассерты выше).
+    assert visits[0]["placementNeed"] == 0
     assert (visits[1]["placementNeed"], visits[1]["placementAssigned"]) == (1, 0)
 
 

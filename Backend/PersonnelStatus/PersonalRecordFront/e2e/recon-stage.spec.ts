@@ -277,6 +277,87 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await dropEvent(call, fixture.id)
   })
 
+  test('объект посещения выбирается на экране, и импорт адресуется ему', async ({
+    page,
+  }) => {
+    // Plane №409 (Ш-3 плана №385), требование `[РЕК-05]`: импорт идёт из
+    // паспорта ОБЪЕКТА посещения. С №408 сервер при двух объектах отвечает
+    // «выберите, для какого» — а выбирать на экране было негде, и кнопка
+    // «Импорт из паспорта» у такого ОМ просто переставала работать.
+    //
+    // 🔴 ПРОБА НИЧЕГО НЕ ПУБЛИКУЕТ В РЕЕСТРЕ ОБЪЕКТОВ. Первая её редакция
+    // доводила второй объект сама — публиковала ему версию паспорта, — и этим
+    // ЛОМАЛА ЧУЖИЕ ПРОБЫ: соседние спеки берут «первый объект с
+    // опубликованным паспортом», и им доставался объект пробы с пустым
+    // адресом и единственным постом (замерено: 2 красных в полном смоуке
+    // 03.09.2026). Адресность импорта проверяется без этого — по тому, КОМУ
+    // сервер отвечает отказом и КОМУ достаются посты.
+    const token = await apiToken()
+    const call = await apiCall(token)
+    const fixture = await createWithObject(token)
+
+    // Второй объект посещения — БЕЗ своего паспорта: он и нужен, чтобы
+    // отличить «импорт для второго» от «импорт в мероприятие вообще».
+    const bindable = await call('GET', '/api/ops/security-events/bindable-objects/')
+    const second = (bindable.results as { id: string; name: string }[]).find(
+      (item) => item.id !== fixture.objectId,
+    )
+    if (second === undefined) throw new Error('на стенде один объект — выбирать не из чего')
+    const withSecond = await call(
+      'POST',
+      `/api/ops/security-events/${fixture.id}/visit-objects/`,
+      { objectId: second.id },
+    )
+    const secondVisitId = (
+      withSecond.visitObjects as { id: string; objectName: string }[]
+    ).find((v) => v.objectName === second.name)!.id
+    const firstVisitId = (
+      withSecond.visitObjects as { id: string; objectName: string }[]
+    ).find((v) => v.objectName === fixture.objectName)!.id
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${fixture.id}/`)
+    const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
+    await expect(stage).toBeVisible({ timeout: 15_000 })
+
+    // Переключатель появляется ровно тогда, когда выбор есть.
+    const picker = stage.getByLabel('Объект посещения')
+    await expect(picker).toBeVisible()
+
+    // Выбран ВТОРОЙ объект — кнопка импорта названа его нехваткой паспорта,
+    // а не молчит и не тащит паспорт мероприятия: подстановка чужого паспорта
+    // и была бы «импортом в мероприятие вообще».
+    await picker.selectOption(secondVisitId)
+    const importButton = stage.getByRole('button', { name: 'Импорт из паспорта' })
+    await expect(importButton).toBeDisabled()
+    await expect(importButton).toHaveAttribute(
+      'title',
+      'У объекта нет привязанной версии паспорта.',
+    )
+
+    // Выбран ПЕРВЫЙ — импорт проходит, и посты достаются именно ему.
+    await picker.selectOption(firstVisitId)
+    await expect(importButton).toBeEnabled()
+    await importButton.click()
+
+    const needOf = async (objectName: string): Promise<number | null> => {
+      const fresh = await call('GET', `/api/ops/security-events/${fixture.id}/`)
+      const visit = (
+        fresh.visitObjects as { objectName: string; placementNeed: number | null }[]
+      ).find((v) => v.objectName === objectName)
+      return visit?.placementNeed ?? null
+    }
+    await expect
+      .poll(async () => await needOf(fixture.objectName), { timeout: 15_000 })
+      .toBeGreaterThan(0)
+    expect(
+      await needOf(second.name),
+      'посты уехали и второму объекту — импорт не адресный',
+    ).toBe(0)
+
+    await dropEvent(call, fixture.id)
+  })
+
 })
 
 /** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта. */
@@ -416,3 +497,4 @@ async function dropEvent(
 ): Promise<void> {
   await call('DELETE', `/api/ops/security-events/${eventId}/`).catch(() => ({}))
 }
+
