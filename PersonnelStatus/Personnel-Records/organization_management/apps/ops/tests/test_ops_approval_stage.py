@@ -323,6 +323,9 @@ def test_two_returns_by_the_same_approver_give_two_remarks(manager, approver):  
         {"decision": "RETURNED", "comment": "первое замечание"},
         format="json",
     )
+    # Возврат подписанта вернул объект на «Расстановку» (`[СОГ-08]`, №399) —
+    # до повторной отправки расстановку завершают заново.
+    manager.post(f"{base}placement/complete/")
     manager.post(f"{base}approval/send/")
     data = approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",

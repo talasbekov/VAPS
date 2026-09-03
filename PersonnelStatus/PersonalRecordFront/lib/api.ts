@@ -552,7 +552,11 @@ export interface TrafficLightTree {
 export interface OpsNotification {
   id: number;
   recipient: string;
-  kind: "SUBMISSION_LAGGING" | "EVENT_ACKNOWLEDGEMENT" | "FORCES_REQUEST";
+  kind:
+    | "SUBMISSION_LAGGING"
+    | "EVENT_ACKNOWLEDGEMENT"
+    | "FORCES_REQUEST"
+    | "PLACEMENT_RETURNED";
   business_date: string;
   /** `laggard_division_ids` — только у `SUBMISSION_LAGGING`; остальные поля —
    *  у `EVENT_ACKNOWLEDGEMENT` (Plane №402, `acknowledgement_notify.py`).
@@ -573,6 +577,13 @@ export interface OpsNotification {
     directorateName?: string;
     need?: number;
     dueAt?: string | null;
+    /** `PLACEMENT_RETURNED` (Plane №400, `[ВОЗ-03]`): возврат расстановки
+     *  объекта — старшему и замещающим. */
+    visitObjectId?: string;
+    comment?: string;
+    remarksOpen?: number;
+    urgent?: boolean;
+    documentVersion?: number;
   };
   read_at: string | null;
   created_at: string;

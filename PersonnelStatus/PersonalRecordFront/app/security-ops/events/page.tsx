@@ -77,6 +77,20 @@ function isStage(value: string | null): value is SecurityEventStage {
   return (SECURITY_EVENT_STAGES as readonly string[]).includes(value ?? "");
 }
 
+/** «1 замечание · 2 замечания · 5 замечаний» — бейдж читают глазами, и
+ *  «1 замечаний» в нём режет так же, как ошибка в цифре. */
+function remarksLabel(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  const word =
+    mod10 === 1 && mod100 !== 11
+      ? "замечание"
+      : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)
+        ? "замечания"
+        : "замечаний";
+  return `${n} ${word}`;
+}
+
 export default function SecurityEventsPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -1078,6 +1092,29 @@ function VisitObjectList({
                   <span className="tabular-nums text-[11px] text-muted-foreground">
                     потребность {need}, назначено {assigned}
                   </span>
+                </span>
+              )}
+              {/* Бейджи возврата (`[РЕЕ-08]`/`[ВОЗ-03]`, Plane №400): объект
+                  вернули с согласования — реестр говорит это словами, не
+                  заставляя открывать карточку. Считаются замечания БЕЗ ОТВЕТА:
+                  именно их старшему чинить; «Срочно» — если хоть одно из них
+                  срочное. Ширина ограничена nowrap: бейдж не переносится. */}
+              {visit.approvalStatus === "RETURNED" && (
+                <span
+                  className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                  data-slot="visit-returned-badge"
+                >
+                  Возвращено · {remarksLabel(
+                    visit.approvalRemarks.filter((r) => r.status === "OPEN").length
+                  )}
+                </span>
+              )}
+              {visit.approvalRemarks.some((r) => r.status === "OPEN" && r.urgent) && (
+                <span
+                  className="inline-flex whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[10.5px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
+                  data-slot="visit-urgent-badge"
+                >
+                  Срочно
                 </span>
               )}
               {known && need === 0 && (

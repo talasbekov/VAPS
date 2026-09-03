@@ -4929,11 +4929,49 @@ def _return_visit(event, visit, comment):
     # осталась бы «Открыто» навсегда — ответить на «общую причину» нечем.
     visit.approval_status = "RETURNED"
     visit.approval_comment = comment
+    # МАРШРУТ ОБНУЛЯЕТСЯ, ВСЕ ПОДПИСИ СНЯТЫ (`[ВОЗ-03]`, Plane №400): подпись
+    # под возвращённым составом ничего не говорит о следующем — при повторной
+    # отправке маршрут проходится заново с первого подписанта (`[ВОЗ-07]`).
+    # Снимаются ПОДПИСИ («Согласовано» → «Не отправлено», автоподпись «Без
+    # замечаний» стирается). Строка ВЕРНУВШЕГО остаётся `RETURNED` с причиной:
+    # возврат — не подпись, а решение, из-за которого всё и обнулилось; его
+    # причина объясняет, что чинили, и `send_for_approval` бережёт её именно
+    # по этому статусу при повторной отправке.
+    route = list(visit.approval_route or [])
+    for item in route:
+        if item.get("status") in ("APPROVED", "PENDING"):
+            item["status"] = "NOT_SENT"
+            item["decidedAt"] = None
+            if item.get("comment") == "Без замечаний":
+                item["comment"] = ""
+    visit.approval_route = route
     visit.save(
-        update_fields=["approval_status", "approval_comment", "updated_at"]
+        update_fields=[
+            "approval_status", "approval_comment", "approval_route", "updated_at",
+        ]
     )
     _decide_document_version(event, visit, "RETURNED")
     _sync_event_approval(event)
+    # Уведомление старшему объекта и замещающим (`[ВОЗ-03]`) — следствие
+    # возврата, и его сбой не откатывает сам возврат: рассылка «не дошла»
+    # — состояние адресатов (нет учётки), а не ошибка решения.
+    open_remarks = [
+        r for r in (visit.approval_remarks or []) if r.get("status") == "OPEN"
+    ]
+    try:
+        from organization_management.apps.ops.placement_return_notify import (
+            notify_placement_returned,
+        )
+
+        notify_placement_returned(
+            event,
+            visit,
+            comment=comment,
+            remarks_open=len(open_remarks),
+            urgent=any(bool(r.get("urgent")) for r in open_remarks),
+        )
+    except (DomainError, ValueError):
+        pass
     # ВОЗВРАТ ОДНОГО ОБЪЕКТА ВОЗВРАЩАЕТ МЕРОПРИЯТИЕ. Здесь правило обратное
     # утверждению, и намеренно: согласование ждёт всех, а работа находится по
     # одному. Отдельного «вернуть мероприятие» не нужно — наименьшая стадия
