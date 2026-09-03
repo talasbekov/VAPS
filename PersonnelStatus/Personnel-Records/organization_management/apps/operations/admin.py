@@ -31,6 +31,8 @@ from organization_management.apps.operations.models_submission import (
     OpsDivisionNotifyRecipient,
     OpsSubmissionControlSettings,
 )
+from organization_management.apps.operations.models_geo import OpsCity, OpsCountry
+from organization_management.apps.operations.models_gvo import OpsProtectedPerson
 
 
 @admin.register(OpsSubmissionControlSettings)
@@ -76,5 +78,34 @@ class OpsDivisionNotifyRecipientAdmin(admin.ModelAdmin):
 # авторегистратор не трогает; см. organization_management/admin_auto.py — там же
 # записано, чем это оплачено (правка мимо сервисов и мимо аудита).
 from organization_management.admin_auto import register_remaining  # noqa: E402
+# ── Справочники Ш-1 (Plane №417): страна → город, охраняемое лицо ──────────
+
+
+@admin.register(OpsCountry)
+class OpsCountryAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "is_active")
+    search_fields = ("code", "name")
+    list_filter = ("is_active",)
+
+
+@admin.register(OpsCity)
+class OpsCityAdmin(admin.ModelAdmin):
+    list_display = ("name", "country", "is_active")
+    search_fields = ("name", "country__name")
+    list_filter = ("country", "is_active")
+    autocomplete_fields = ("country",)
+
+
+@admin.register(OpsProtectedPerson)
+class OpsProtectedPersonAdmin(admin.ModelAdmin):
+    # Код только читается: его выдаёт модель, и ручная правка сломала бы
+    # ссылки в бюллетенях и сводках, где он напечатан.
+    list_display = ("code", "name", "callsign", "category", "is_active")
+    search_fields = ("code", "name", "callsign")
+    list_filter = ("category", "is_active")
+    readonly_fields = ("code",)
+
+
 
 register_remaining("operations")
+

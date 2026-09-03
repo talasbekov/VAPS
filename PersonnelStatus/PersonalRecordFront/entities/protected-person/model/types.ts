@@ -21,6 +21,8 @@ export const PROTECTED_PERSON_CATEGORY_LABEL: Record<
 
 export interface ProtectedPerson {
   id: string;
+  /** Код `OL-N` (Plane №417): выдаётся сервером, руками не правится. */
+  code: string;
   name: string;
   /** Позывной лица; в карточке показывается как «Позывной «Сокол»». */
   callsign: string;

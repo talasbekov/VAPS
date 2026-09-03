@@ -51,6 +51,8 @@ def list_persons():
     return [
         {
             "id": str(p.id),
+            # Код `OL-N` (Plane №417) — печатается в бюллетене и сводках.
+            "code": p.display_code,
             "name": p.name,
             "callsign": p.callsign,
             "category": p.category,

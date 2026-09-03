@@ -241,6 +241,14 @@ function PersonCard({
         </div>
         <div className="min-w-56 flex-1">
           <div className="flex flex-wrap items-center gap-[10px]">
+            {/* Код `OL-N` (Plane №417) — тот, что печатается в бюллетене;
+                стоит перед именем, как код ОМ в реестре. */}
+            <span
+              className="rounded-[20px] bg-primary/10 px-[10px] py-1 font-mono text-[10.5px] font-bold tabular-nums text-primary"
+              data-testid={`person-code-${person.id}`}
+            >
+              {person.code}
+            </span>
             <h2 className="text-[19px] font-bold tracking-[-0.01em]">
               {person.name}
             </h2>

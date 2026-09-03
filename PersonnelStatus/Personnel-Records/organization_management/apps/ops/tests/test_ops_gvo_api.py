@@ -95,7 +95,12 @@ def test_persons_list_active_only_ordered_ids_are_strings():
     rows = r.json()["results"]
     assert [p["name"] for p in rows] == ["Алиев", "Бекетов"]
     assert all(isinstance(p["id"], str) for p in rows)
-    assert set(rows[0]) == {"id", "name", "callsign", "category", "bio"}
+    # `code` дописан 04.09.2026 (Plane №417): код `OL-N` — часть контракта
+    # каталога, печатается в бюллетене и на карточке.
+    assert set(rows[0]) == {"id", "code", "name", "callsign", "category", "bio"}
+    # Строки заведены `bulk_create` — мимо `save()`, кода в базе нет, но в
+    # ответе он выводим из идентификатора и пустым не приезжает.
+    assert all(p["code"] == f"OL-{p['id']}" for p in rows)
 
 
 def test_persons_denied_without_permission():

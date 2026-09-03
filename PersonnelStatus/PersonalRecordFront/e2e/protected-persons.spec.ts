@@ -76,6 +76,19 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
 
     const card = page.locator('article', { hasText: PERSON })
 
+    // Код `OL-N` (Plane №417): сервер выдаёт его сам, карточка печатает
+    // перед именем — ровно тот код, что пришёл в каталоге, а не выдуманный.
+    const catalog = await apiGet<{ results: { id: string; code: string; name: string }[] }>(
+      '/api/ops/protected-persons/',
+      await apiToken(),
+    )
+    const mine = requireFixture(
+      catalog.results.find((r) => r.name === PERSON),
+      'лицо пробы не найдено в каталоге',
+    )
+    expect(mine.code).toMatch(/^OL-\d+$/)
+    await expect(card.getByTestId(`person-code-${mine.id}`)).toHaveText(mine.code)
+
     // До правки сводки связи нет — и экран говорит об этом прямо.
     await card.getByRole('button', { name: 'Все мероприятия с ОЛ' }).click()
     await expect(card).toContainText('не назван ни в одной сводке ГВО', {

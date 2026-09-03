@@ -18,6 +18,13 @@ class OpsProtectedPerson(TimeStampedModel):
         OURS = "OURS", "Свои"
         FOREIGN = "FOREIGN", "Иностранные"
 
+    # Код `OL-N` (Plane №417, `[МД-09]`): выдаётся сам при первом сохранении
+    # и руками не правится — N это идентификатор строки, он монотонный,
+    # не переиспользуется и не требует второй последовательности в базе.
+    # NULL в базе допустим: `bulk_create` минует `save()`, и строка без кода
+    # не должна ронять вставку — код у неё ВЫВОДИМ (`code_for(pk)`), и
+    # читатели берут его через `display_code`, а не сырым полем.
+    code = models.CharField(max_length=24, unique=True, editable=False, null=True)
     name = models.CharField(max_length=200)
     callsign = models.CharField(max_length=100, blank=True)
     # Без дефолта: категорию обязан назвать тот, кто заводит запись.
@@ -38,8 +45,26 @@ class OpsProtectedPerson(TimeStampedModel):
             ),
         ]
 
+    @staticmethod
+    def code_for(pk):
+        return f"OL-{pk}"
+
+    @property
+    def display_code(self):
+        """Код для печати: сохранённый либо выведенный из pk — один и тот же."""
+        return self.code or self.code_for(self.pk)
+
+    def save(self, *args, **kwargs):
+        # Код зависит от pk, а pk появляется только после INSERT — поэтому
+        # две записи на создании; на правке — одна, код уже есть.
+        if self.code or self.pk is None:
+            super().save(*args, **kwargs)
+        if not self.code:
+            self.code = self.code_for(self.pk)
+            super().save(update_fields=["code"])
+
     def __str__(self):
-        return self.name
+        return f"{self.display_code} {self.name}"
 
 
 class OpsGvoSummaryPatch(TimeStampedModel):
