@@ -35,6 +35,32 @@ TEMPLATE = os.path.join(
 )
 
 
+def _document_target(event, visit_object_id):
+    """Объект посещения, чей документ собирается (Plane №411, Ш-5).
+
+    Спецификация `[МД-04]`: документ «Расстановка сил» — СВОЙ У ОБЪЕКТА. Общий
+    документ мероприятия с двумя объектами сваливал посты двух разных мест в
+    одну таблицу, и подписывать его было нечем: согласуют объект.
+
+    Объектов нет вовсе — собирается ВЕСЬ расчёт мероприятия, как и до этого
+    шага. Это не поблажка, а сохранение живых данных: у таких ОМ расчёт лежит
+    в мероприятии, и отказ вместо документа отнял бы у них то, что работало.
+    """
+    from organization_management.apps.ops import security_events
+
+    if not event.visit_objects.exists():
+        return None
+    return security_events.pick_visit_object(
+        event,
+        visit_object_id,
+        no_objects="",  # недостижимо: список проверен строкой выше
+        ambiguous=(
+            "У мероприятия несколько объектов посещения — выберите, чей "
+            "документ «Расстановка сил» собрать: документ принадлежит объекту."
+        ),
+    )
+
+
 def _assigned_names(event, post_id):
     """Кто стоит на посту — фамилиями и позывными, столбиком.
 
@@ -53,9 +79,18 @@ def _assigned_names(event, post_id):
     return "\n".join(names)
 
 
-def placement_rows(event):
-    """Строки документа: по одной на пост расчёта, в порядке секторов."""
-    posts = event.recon_sector_posts or []
+def placement_rows(event, visit=None):
+    """Строки документа: по одной на пост расчёта, в порядке секторов.
+
+    Объект назван — только ЕГО посты (`visit_object_posts`, тот же разрез, что
+    у согласования и у экрана этапа).
+    """
+    if visit is None:
+        posts = event.recon_sector_posts or []
+    else:
+        from organization_management.apps.ops import security_events
+
+        posts = security_events.visit_object_posts(event, visit)
     rows = []
     for post in posts:
         post_id = post.get("id")
@@ -74,8 +109,8 @@ def placement_rows(event):
     return rows
 
 
-def render_placement(event_code, as_of=None, fmt="pdf"):
-    """Байты расстановки мероприятия по его коду; `fmt` — «docx» либо «pdf»."""
+def render_placement(event_code, as_of=None, fmt="pdf", visit_object_id=None):
+    """Байты расстановки ОБЪЕКТА посещения; `fmt` — «docx» либо «pdf»."""
     from docx import Document
 
     event = OpsSecurityEvent.objects.filter(code=event_code).first()
@@ -86,11 +121,25 @@ def render_placement(event_code, as_of=None, fmt="pdf"):
             detail={"code": [str(event_code)]},
             message="Мероприятие не найдено.",
         )
+    visit = _document_target(event, visit_object_id)
     moment = as_of or Clock.now()
     if isinstance(moment, dt.date) and not isinstance(moment, dt.datetime):
         moment = dt.datetime.combine(moment, dt.time(8, 0))
+    # Объект и версия дописываются В СТРОКУ ЗАГОЛОВКА, а не своими метками:
+    # шаблон достался от бюллетеня (см. докстринг модуля) и новых мест под
+    # текст не имеет, а править чужую вёрстку ради двух слов — менять то, что
+    # заказчик утверждал, ради того, чего он ещё не видел.
+    #
+    # «версия N» печатается ТОЛЬКО у объекта, чей документ уже уходил
+    # согласующим: «версия 0» на бумаге читалась бы как номер, а означает
+    # «не отправляли».
+    title = f"{event.code} — {event.title}"
+    if visit is not None:
+        title += f" · объект: {visit.object_name}"
+        if visit.document_version:
+            title += f" · версия документа {visit.document_version}"
     values = {
-        "event": f"{event.code} — {event.title}",
+        "event": title,
         "as_of": (
             f"{moment.strftime('%H:%M')} ч. "
             f"{moment.day:02d}.{moment.month:02d}.{moment.year} года"
@@ -99,7 +148,7 @@ def render_placement(event_code, as_of=None, fmt="pdf"):
     filled_path, _left = fill_template(TEMPLATE, values)
     try:
         document = Document(filled_path)
-        fill_table_rows(document.tables[0], placement_rows(event))
+        fill_table_rows(document.tables[0], placement_rows(event, visit))
         document.save(filled_path)
         return emit(filled_path, fmt)
     finally:

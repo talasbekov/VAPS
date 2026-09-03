@@ -50,9 +50,141 @@ import {
   useSendForApproval,
   useWithdrawApproval,
 } from "@/hooks/use-security-event-stages";
-import type { SecurityEvent } from "@/entities/security-event";
+import type { SecurityEvent, VisitObject } from "@/entities/security-event";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDateTime } from "@/shared/lib/date";
+import { useVisitObjectScope, type VisitObjectScope } from "./useVisitObjectScope";
+
+/**
+ * Согласование ПОКАЗАННОГО объекта посещения (Plane №411, Ш-5 плана №385).
+ *
+ * Требование `[МД-04]`: «У объекта свои этапы 1–5 и свой документ „Расстановка
+ * сил“ с версиями». До этого шага маршрут, замечания и снимок состава были
+ * полями МЕРОПРИЯТИЯ: у ОМ с двумя объектами согласующий подписывался под
+ * общим списком, где посты двух разных мест лежали вперемешку, а вернуть на
+ * доработку один объект было нельзя вовсе.
+ *
+ * Объектов нет вовсе — отвечают поля мероприятия: у ОМ, заведённых без
+ * объекта, согласование ещё лежит там, и подменять его пустотой значило бы
+ * стереть с экрана живые данные. Версии документа у них нет — её завёл сам
+ * объект, и `null` здесь означает «спрашивать не у кого», а не «версия 0».
+ */
+interface ApprovalView {
+  visitObjectId?: string;
+  status: SecurityEvent["approvalStatus"];
+  comment: string;
+  route: SecurityEvent["approvalRoute"];
+  remarks: SecurityEvent["approvalRemarks"];
+  stale: boolean;
+  documentVersion: number | null;
+}
+
+function approvalViewOf(
+  event: SecurityEvent,
+  visit: VisitObject | null
+): ApprovalView {
+  if (visit === null) {
+    return {
+      status: event.approvalStatus,
+      comment: event.approvalComment,
+      route: event.approvalRoute,
+      remarks: event.approvalRemarks,
+      stale: event.approvalStale,
+      documentVersion: null,
+    };
+  }
+  return {
+    visitObjectId: visit.id,
+    status: visit.approvalStatus,
+    comment: visit.approvalComment,
+    route: visit.approvalRoute,
+    remarks: visit.approvalRemarks,
+    stale: visit.approvalStale,
+    documentVersion: visit.documentVersion,
+  };
+}
+
+const VISIT_APPROVAL_LABEL: Record<SecurityEvent["approvalStatus"], string> = {
+  PENDING: "ожидает",
+  APPROVED: "согласовано",
+  RETURNED: "возвращено",
+};
+
+const VISIT_APPROVAL_CLASS: Record<SecurityEvent["approvalStatus"], string> = {
+  PENDING: "bg-muted text-muted-foreground",
+  APPROVED: "bg-green-100 text-green-800",
+  RETURNED: "bg-amber-100 text-amber-900",
+};
+
+/** Подпись версии документа. `0` — не «версия ноль», а «не отправлялся»:
+ *  число на бумаге читалось бы как номер выпуска, которого не было. */
+function documentVersionLabel(version: number | null): string | null {
+  if (version === null) return null;
+  return version === 0 ? "документ не отправлялся" : `документ v${version}`;
+}
+
+/**
+ * Состояние согласования ПО ВСЕМ объектам одной строкой.
+ *
+ * Почему здесь НЕ селект-переключатель, как на рекогносцировке и расстановке
+ * ([[Frontend/Decisions]], 03.09.2026): там переключатель отвечает на «что
+ * показано» и о состоянии объекта не говорит ничего. Здесь состояние объекта —
+ * сама суть экрана: «у первого согласовано, у второго возврат» человек обязан
+ * видеть НЕ ПЕРЕКЛЮЧАЯСЬ, иначе он узнает о возврате, только заглянув. Ряд
+ * кнопок отвечает на оба вопроса одним элементом вместо двух.
+ *
+ * Выбор берётся у общего разреза `useVisitObjectScope` — того же, что у
+ * соседних этапов: своё состояние здесь развело бы «объект в шапке» и «объект
+ * на этапе», а это ровно тот дефект, который чинила №388.
+ */
+function VisitObjectApprovalStrip({
+  event,
+  scope,
+}: {
+  event: SecurityEvent;
+  scope: VisitObjectScope;
+}) {
+  if (event.visitObjects.length < 2) return null;
+  return (
+    <section
+      className="rounded-md border bg-muted/30 px-3 py-2"
+      aria-label="Согласование по объектам посещения"
+    >
+      <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
+        Согласуется объект посещения — у каждого свой маршрут, свои замечания и
+        свой документ «Расстановка сил»
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {event.visitObjects.map((visit) => {
+          const shown = visit.id === scope.shown;
+          return (
+            <button
+              key={visit.id}
+              type="button"
+              /* Кнопка с `aria-pressed`, а не кликабельный div: состояние
+                 «выбран» обязано быть слышно, а не только видно. */
+              aria-pressed={shown}
+              onClick={() => scope.setShown(visit.id)}
+              className={`inline-flex min-h-8 items-center gap-2 rounded-md border px-2.5 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                shown ? "border-foreground/40 bg-background" : "hover:bg-muted"
+              }`}
+            >
+              <span className="font-semibold">{visit.objectName}</span>
+              <span
+                className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${VISIT_APPROVAL_CLASS[visit.approvalStatus]}`}
+              >
+                {VISIT_APPROVAL_LABEL[visit.approvalStatus]}
+              </span>
+              <span className="whitespace-nowrap text-[11px] text-muted-foreground">
+                {documentVersionLabel(visit.documentVersion)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 export function ApprovalStage({ event }: { event: SecurityEvent }) {
   // Кнопки решения выключаются, если права нет, и говорят ЧЬЁ это действие:
@@ -69,22 +201,33 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
     onFormError: (details) => setFieldErrors(details),
   });
 
+  // Разрез по объекту — ТОТ ЖЕ хук, что у рекогносцировки и расстановки:
+  // второй ответ на «какой объект сейчас ведём» разошёлся бы с первым при
+  // первом же переходе по ссылке из реестра.
+  const scope = useVisitObjectScope(event, event.reconSectorPosts);
+  const view = approvalViewOf(event, scope.visit);
+
   const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
   const postLabel = (postId: string): string => {
     const post = postById.get(postId);
     return post ? `${post.sector} · ${post.post}` : postId;
   };
 
-  const totalNeed = event.reconSectorPosts.reduce(
-    (sum, post) => sum + post.need,
-    0
+  // СЧИТАЕМ ПО ПОСТАМ ОБЪЕКТА, а не мероприятия: сводка над маршрутом должна
+  // отвечать про то, что согласуют. Ровно тот же разрез держит сервер, когда
+  // считает снимок расстановки объекта (`placement_signature`), — иначе
+  // «назначено 5 из 12» на экране и «расстановка изменилась» от сервера
+  // говорили бы о разных наборах постов.
+  const scopedPostIds = new Set(scope.rows.map((post) => post.id));
+  const scopedAssignments = event.placementAssignments.filter((a) =>
+    scopedPostIds.has(a.postId)
   );
-  const understaffed = event.reconSectorPosts.filter(
+  const totalNeed = scope.rows.reduce((sum, post) => sum + post.need, 0);
+  const understaffed = scope.rows.filter(
     (post) =>
-      event.placementAssignments.filter((a) => a.postId === post.id).length <
-      post.need
+      scopedAssignments.filter((a) => a.postId === post.id).length < post.need
   ).length;
-  const overrides = event.placementAssignments.filter(
+  const overrides = scopedAssignments.filter(
     (a) => a.ratingOverrideReason !== null
   );
 
@@ -97,10 +240,12 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           содержимого. Подзаголовки внутри карточки остаются — они называют
           блоки, а не этап. */}
       <CardContent className="space-y-4">
-        {event.approvalStatus === "RETURNED" && event.approvalComment !== "" && (
+        <VisitObjectApprovalStrip event={event} scope={scope} />
+
+        {view.status === "RETURNED" && view.comment !== "" && (
           <Alert>
             <AlertDescription>
-              Прошлый возврат: {event.approvalComment}
+              Прошлый возврат: {view.comment}
             </AlertDescription>
           </Alert>
         )}
@@ -108,7 +253,7 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
         {/* Баннер эталона. Признак считает СЕРВЕР: по нему же он блокирует
             завершение этапа, и второй расчёт на клиенте разошёлся бы с ним
             молча. */}
-        {event.approvalStale && (
+        {view.stale && (
           <Alert className="border-amber-300 bg-amber-50">
             <AlertDescription className="text-amber-900">
               Расстановка изменилась после отправки. Необходимо повторное
@@ -118,9 +263,9 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
         )}
 
         <div className="flex flex-wrap gap-4 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-          <Kpi value={String(event.reconSectorPosts.length)} label="постов" />
+          <Kpi value={String(scope.rows.length)} label="постов" />
           <Kpi
-            value={`${event.placementAssignments.length} / ${totalNeed}`}
+            value={`${scopedAssignments.length} / ${totalNeed}`}
             label="назначено / потребность"
           />
           <Kpi
@@ -136,19 +281,19 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           <Kpi value={formatIsoDateTime(event.updatedAt)} label="обновлено" />
         </div>
 
-        <ApprovalRoute event={event} />
+        <ApprovalRoute event={event} view={view} />
 
-        <ApprovalRemarks event={event} />
+        <ApprovalRemarks event={event} view={view} />
 
         <section>
           <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
             Расчёт на согласование
           </p>
-          {event.placementAssignments.length === 0 ? (
+          {scopedAssignments.length === 0 ? (
             <p className="text-xs text-muted-foreground">Назначений нет.</p>
           ) : (
             <ul className="flex flex-col gap-1.5">
-              {event.placementAssignments.map((assignment) => (
+              {scopedAssignments.map((assignment) => (
                 <li key={assignment.id} className="rounded-md border p-2.5 text-sm">
                   <span className="font-semibold">{assignment.employeeName}</span>{" "}
                   <span className="text-muted-foreground">
@@ -220,7 +365,7 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
             title={access.reason(APPROVAL_RETURN) || "Вернуть расстановку на доработку"}
             onClick={() => {
               setFieldErrors(null);
-              returnBack.mutate({ comment });
+              returnBack.mutate({ comment, visitObjectId: view.visitObjectId });
             }}
           >
             {returnBack.isPending ? "Возврат…" : "Вернуть на доработку"}
@@ -230,7 +375,9 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
             disabled={approve.isPending || !access.can(APPROVAL_APPROVE)}
             aria-disabled={!access.can(APPROVAL_APPROVE)}
             title={access.reason(APPROVAL_APPROVE) || "Согласовать расстановку"}
-            onClick={() => approve.mutate({})}
+            onClick={() =>
+              approve.mutate({ visitObjectId: view.visitObjectId })
+            }
           >
             {approve.isPending
               ? "Утверждение…"
@@ -287,7 +434,13 @@ const APPROVER_STATUS_CLASS: Record<string, string> = {
  * первым. Меняется стрелками, а не перетаскиванием: перетаскивание в таблице
  * с полями ввода отбирает клик у самих полей.
  */
-function ApprovalRoute({ event }: { event: SecurityEvent }) {
+function ApprovalRoute({
+  event,
+  view,
+}: {
+  event: SecurityEvent;
+  view: ApprovalView;
+}) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
@@ -322,20 +475,36 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
     },
   });
 
-  const route = event.approvalRoute;
+  const route = view.route;
+  const visitObjectId = view.visitObjectId;
   const sent = route.some((approver) => approver.status !== "NOT_SENT");
-  const subtitle = event.approvalStale
+  const subtitle = view.stale
     ? "Согласование сброшено: расстановка изменена"
     : sent
       ? "Отправлено на согласование"
       : "Не отправлено";
+  // Номер версии стоит РЯДОМ С КНОПКОЙ ОТПРАВКИ, потому что растит его именно
+  // она: увидев «документ v2», человек знает, что следующая отправка сделает
+  // третью. Отдельной плиткой в сводке версия отвечала бы на вопрос, которого
+  // в сводке никто не задаёт.
+  const versionLabel = documentVersionLabel(view.documentVersion);
 
   return (
     <section className="rounded-md border">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
         <div>
           <p className="text-xs font-semibold">Маршрут согласования</p>
-          <p className="text-[11px] text-muted-foreground">{subtitle}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {subtitle}
+            {versionLabel !== null && (
+              /* `role="status"` с целой фразой, а не голым числом: смена
+                 версии обязана прочитаться осмысленно, а не как «2». */
+              <>
+                {" · "}
+                <span role="status">{versionLabel}</span>
+              </>
+            )}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -352,7 +521,7 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
             size="sm"
             disabled={withdraw.isPending || !sent}
             title={sent ? undefined : "Расстановка ещё не отправлена."}
-            onClick={() => withdraw.mutate({})}
+            onClick={() => withdraw.mutate({ visitObjectId })}
           >
             Отозвать с согласования
           </Button>
@@ -363,7 +532,7 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
             title={
               route.length === 0 ? "Маршрут согласования пуст." : undefined
             }
-            onClick={() => send.mutate({})}
+            onClick={() => send.mutate({ visitObjectId })}
           >
             {send.isPending ? "Отправка…" : "Отправить на согласование"}
           </Button>
@@ -397,7 +566,9 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
             type="button"
             size="sm"
             disabled={add.isPending}
-            onClick={() => add.mutate({ name, unit, position })}
+            onClick={() =>
+              add.mutate({ name, unit, position, visitObjectId })
+            }
           >
             Добавить
           </Button>
@@ -451,6 +622,7 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
                             move.mutate({
                               approverId: approver.id,
                               direction: "UP",
+                              visitObjectId,
                             })
                           }
                         >
@@ -465,6 +637,7 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
                             move.mutate({
                               approverId: approver.id,
                               direction: "DOWN",
+                              visitObjectId,
                             })
                           }
                         >
@@ -509,6 +682,7 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
                                   approverId: approver.id,
                                   decision: "APPROVED",
                                   comment: "",
+                                  visitObjectId,
                                 })
                               }
                             >
@@ -536,7 +710,10 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
                             aria-label={`Снять согласующего ${approver.name}`}
                             disabled={remove.isPending}
                             onClick={() =>
-                              remove.mutate({ approverId: approver.id })
+                              remove.mutate({
+                                approverId: approver.id,
+                                visitObjectId,
+                              })
                             }
                           >
                             <X className="h-4 w-4" aria-hidden="true" />
@@ -572,6 +749,7 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
                                 approverId: approver.id,
                                 decision: "RETURNED",
                                 comment: reason,
+                                visitObjectId,
                               })
                             }
                           >
@@ -604,9 +782,15 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
  * закрывают их по одному. Пока хоть одно открыто, этап не завершается — это
  * правило сервера, экран только называет его вслух.
  */
-function ApprovalRemarks({ event }: { event: SecurityEvent }) {
+function ApprovalRemarks({
+  event,
+  view,
+}: {
+  event: SecurityEvent;
+  view: ApprovalView;
+}) {
   const resolve = useResolveRemark(event.id);
-  const remarks = event.approvalRemarks;
+  const remarks = view.remarks;
   const open = remarks.filter((remark) => !remark.resolved).length;
 
   return (
@@ -655,6 +839,7 @@ function ApprovalRemarks({ event }: { event: SecurityEvent }) {
                   resolve.mutate({
                     remarkId: remark.id,
                     resolved: !remark.resolved,
+                    visitObjectId: view.visitObjectId,
                   })
                 }
               >

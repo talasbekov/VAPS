@@ -1175,6 +1175,20 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def placement_complete(self, request, pk=None):
         return self._event_response(event_service.complete_placement(pk))
 
+    # Адресат согласования — ОБЪЕКТ ПОСЕЩЕНИЯ (Plane №411). `visitObjectId`
+    # читается и из тела, и из строки запроса: удаление согласующего —
+    # DELETE, а тело у DELETE шлют не все клиенты (и не всякий прокси его
+    # доносит). Не прислали вовсе — сервис возьмёт единственный объект, а при
+    # нескольких откажет с просьбой выбрать: угаданный адресат согласования
+    # потом не отличить от названного.
+    @staticmethod
+    def _visit_object_of(request):
+        data = request.data if isinstance(request.data, dict) else {}
+        raw = data.get("visitObjectId") or request.query_params.get(
+            "visitObjectId"
+        )
+        return str(raw).strip() if raw not in (None, "") else None
+
     @action(detail=True, methods=["post"], url_path="approval/route")
     def approval_route_add(self, request, pk=None):
         data = request.data or {}
@@ -1184,6 +1198,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 name=data.get("name"),
                 unit=data.get("unit"),
                 position=data.get("position"),
+                visit_object_id=self._visit_object_of(request),
             )
         )
 
@@ -1193,7 +1208,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"approval/route/(?P<approver_id>(?!decide/)[^/]+)",
     )
     def approval_route_remove(self, request, pk=None, approver_id=None):
-        return self._event_response(event_service.remove_approver(pk, approver_id))
+        return self._event_response(
+            event_service.remove_approver(
+                pk, approver_id, visit_object_id=self._visit_object_of(request)
+            )
+        )
 
     @action(
         detail=True,
@@ -1208,16 +1227,25 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 approver_id=approver_id,
                 decision=data.get("decision"),
                 comment=data.get("comment"),
+                visit_object_id=self._visit_object_of(request),
             )
         )
 
     @action(detail=True, methods=["post"], url_path="approval/send")
     def approval_send(self, request, pk=None):
-        return self._event_response(event_service.send_for_approval(pk))
+        return self._event_response(
+            event_service.send_for_approval(
+                pk, visit_object_id=self._visit_object_of(request)
+            )
+        )
 
     @action(detail=True, methods=["post"], url_path="approval/withdraw")
     def approval_withdraw(self, request, pk=None):
-        return self._event_response(event_service.withdraw_from_approval(pk))
+        return self._event_response(
+            event_service.withdraw_from_approval(
+                pk, visit_object_id=self._visit_object_of(request)
+            )
+        )
 
     @action(
         detail=True,
@@ -1228,7 +1256,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         data = request.data or {}
         return self._event_response(
             event_service.move_approver(
-                pk, approver_id, direction=data.get("direction")
+                pk,
+                approver_id,
+                direction=data.get("direction"),
+                visit_object_id=self._visit_object_of(request),
             )
         )
 
@@ -1241,19 +1272,30 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         data = request.data or {}
         return self._event_response(
             event_service.resolve_remark(
-                pk, remark_id, resolved=bool(data.get("resolved", True))
+                pk,
+                remark_id,
+                resolved=bool(data.get("resolved", True)),
+                visit_object_id=self._visit_object_of(request),
             )
         )
 
     @action(detail=True, methods=["post"], url_path="approval/approve")
     def approval_approve(self, request, pk=None):
-        return self._event_response(event_service.approve_placement(pk))
+        return self._event_response(
+            event_service.approve_placement(
+                pk, visit_object_id=self._visit_object_of(request)
+            )
+        )
 
     @action(detail=True, methods=["post"], url_path="approval/return")
     def approval_return(self, request, pk=None):
         data = request.data or {}
         return self._event_response(
-            event_service.return_placement(pk, comment=data.get("comment"))
+            event_service.return_placement(
+                pk,
+                comment=data.get("comment"),
+                visit_object_id=self._visit_object_of(request),
+            )
         )
 
     # Раздельные сегменты acknowledge/… и acknowledgement/complete — контракт
@@ -2966,6 +3008,17 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 ),
             ),
             OpenApiParameter(
+                "visitObject", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Идентификатор объекта посещения для вида `placement`: "
+                    "документ «Расстановка сил» принадлежит ОБЪЕКТУ, а не "
+                    "мероприятию (Plane №411). Не указан и объект один — "
+                    "берётся он; объектов несколько — отказ с просьбой "
+                    "выбрать."
+                ),
+            ),
+            OpenApiParameter(
                 "ext", OpenApiTypes.STR, OpenApiParameter.QUERY,
                 required=False,
                 description=(
@@ -2986,6 +3039,7 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
             (request.query_params.get("kind") or "").strip(),
             event_code=request.query_params.get("event"),
             fmt=fmt,
+            visit_object_id=request.query_params.get("visitObject"),
         )
         # Отдаём JSON с содержимым, а НЕ файл потоком, — по контракту раздела
         # (`download_artifact` устроен так же). Причина не в красоте: клиент

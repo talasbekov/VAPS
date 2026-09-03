@@ -35,6 +35,7 @@ interface EventRow {
     ratingOverrideReason: string | null
   }[]
   approvalRoute: { id: string; name: string; status: string; comment: string }[]
+  visitObjects: { id: string; objectName: string; documentVersion: number }[]
 }
 
 async function apiToken(): Promise<string> {
@@ -169,6 +170,70 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     await card.getByRole('button', { name: 'Вернуть на доработку' }).click()
     await expect(card).toContainText('Укажите причину возврата', { timeout: 15_000 })
     expect((await events(token)).find((e) => e.id === target.id)?.stage).toBe('APPROVAL')
+  })
+
+  /**
+   * Номер версии документа «Расстановка сил» (Plane №411, Ш-5 плана №385).
+   *
+   * Версия принадлежит ОБЪЕКТУ ПОСЕЩЕНИЯ и растёт ОТПРАВКОЙ на согласование:
+   * версия — это состав, под которым подписываются. Проба сверяет экран с
+   * сервером, а не с самим собой: подпись «документ vN» обязана совпадать с
+   * `visitObjects[].documentVersion`, иначе экран рисовал бы свой счётчик.
+   *
+   * Отправка состояние не ломает и фикстуру не тратит: маршрут после неё
+   * отзывается тут же, а номер версии откату не подлежит по правилу — под
+   * ним уже подписывались.
+   */
+  test('версия документа растёт отправкой и совпадает с ответом сервера', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const onApproval = (rows: EventRow[]): EventRow | undefined =>
+      rows.find((e) => e.stage === 'APPROVAL' && e.visitObjects.length > 0)
+    let event = onApproval(await events(token))
+    if (event === undefined) {
+      await prepareEvent(token)
+      event = onApproval(await events(token))
+      expect(event, 'не удалось подготовить фикстуру').toBeDefined()
+    }
+    const target = event!
+    const before = target.visitObjects[0].documentVersion
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    const card = page.getByRole('region', { name: 'Согласование расстановки' })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+    const route = card.locator('section', { hasText: 'Маршрут согласования' }).first()
+
+    // Подпись ДО отправки — та, что отдал сервер. `0` пишется словами: число
+    // на экране читалось бы как номер выпуска, которого не было.
+    await expect(route).toContainText(
+      before === 0 ? 'документ не отправлялся' : `документ v${before}`,
+      { timeout: 15_000 },
+    )
+
+    // Маршрут нужен, иначе отправка отбивается «маршрут пуст».
+    await route.getByRole('button', { name: '+ Добавить согласующего' }).click()
+    const who = `Версия ${Date.now()}`
+    await route.getByLabel('ФИО согласующего').fill(who)
+    await route.getByRole('button', { name: 'Добавить', exact: true }).click()
+    await expect(route).toContainText(who, { timeout: 15_000 })
+
+    await route.getByRole('button', { name: 'Отправить на согласование' }).click()
+
+    // Сервер выдал следующий номер…
+    await expect
+      .poll(async () => {
+        const fresh = (await events(token)).find((e) => e.id === target.id)
+        return fresh?.visitObjects[0].documentVersion ?? null
+      }, { timeout: 15_000 })
+      .toBe(before + 1)
+    // …и экран показывает ЕГО, а не свой счёт.
+    await expect(route).toContainText(`документ v${before + 1}`, { timeout: 15_000 })
+
+    // Отзыв номер НЕ откатывает: состав уже уходил людям.
+    await route.getByRole('button', { name: 'Отозвать с согласования' }).click()
+    await expect(route).toContainText(`документ v${before + 1}`, { timeout: 15_000 })
   })
 })
 
