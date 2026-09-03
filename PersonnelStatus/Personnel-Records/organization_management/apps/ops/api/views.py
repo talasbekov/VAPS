@@ -249,6 +249,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_detail": _MANAGE_EVENT_PERMISSION,
         "visit_object_chief": _MANAGE_EVENT_PERMISSION,
+        # Закрытие объекта (`[ЗАК-05]`, Plane №404) — под правом ведения
+        # мероприятия; разведение «старший объекта закрывает, замещающий — нет»
+        # (`[ЗАК-14]`) — карточка прав этапа 5, её в очереди пока нет.
+        "visit_object_close": _MANAGE_EVENT_PERMISSION,
         # Выделение транспорта — правка мероприятия, а не отдельная область
         # (Plane №215): машину ставит в кортеж тот же, кто ведёт ОМ, и своё
         # право под неё защищало бы одно и то же по-разному.
@@ -610,6 +614,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.remove_visit_object_deputy(
                 pk, visit_object_id, deputy_id, actor=request.user
+            )
+        )
+
+    # ── Закрытие объекта посещения (`[ЗАК-05]`/`[ЗАК-12]`, Plane №404) ────
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"visit-objects/(?P<visit_object_id>[^/.]+)/close",
+    )
+    def visit_object_close(self, request, pk=None, visit_object_id=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.close_visit_object(
+                pk,
+                visit_object_id,
+                comment=data.get("comment"),
+                actor=resolve_actor_id(request),
             )
         )
 
@@ -3803,7 +3824,6 @@ class OpsCountriesViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 ]
             }
         )
-
 
 
 class OpsVehiclesViewSet(RequirePermissionMixin, viewsets.ViewSet):

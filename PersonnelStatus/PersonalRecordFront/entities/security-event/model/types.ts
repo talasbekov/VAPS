@@ -460,6 +460,8 @@ export interface VisitObject {
   stage: SecurityEventStage;
   /** Момент закрытия объекта; `null` — объект не закрыт. */
   closedAt: string | null;
+  /** Итоговый комментарий по объекту при закрытии (`[ЗАК-04]`, Plane №404). */
+  closingComment: string;
   /**
    * ── Согласование ОБЪЕКТА (Plane №411, Ш-5 плана №385) ──────────────────
    *
@@ -1295,6 +1297,16 @@ export function securityEventJournalPath(id: string): string {
 export function securityEventReplaceAssignmentPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/conduct/replace/`;
 }
+/** Закрыть ОБЪЕКТ посещения (`[ЗАК-05]`, Plane №404); последний закрытый
+ *  закрывает мероприятие само (`[ЗАК-12]`). */
+export function visitObjectClosePath(eventId: string, visitObjectId: string): string {
+  return `${visitObjectsPath(eventId)}${visitObjectId}/close/`;
+}
+
+export interface CloseVisitObjectRequest extends Record<string, unknown> {
+  comment?: string;
+}
+
 export function securityEventClosePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/close/`;
 }

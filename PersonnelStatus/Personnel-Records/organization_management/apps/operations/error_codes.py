@@ -110,6 +110,8 @@ CODES = {
     # Расстановка объекта заморожена (`[СОГ-04]`, Plane №398): документ на
     # согласовании или согласован — состав меняется только новой версией.
     "PLACEMENT_FROZEN": frozenset({422}),
+    # Закрытый объект посещения не закрыть дважды (`[ЗАК-05]`, Plane №404).
+    "VISIT_OBJECT_ALREADY_CLOSED": frozenset({422}),
     "ACKNOWLEDGEMENT_INCOMPLETE": frozenset({422}),
     "CLOSURE_DIRECTIONS_INCOMPLETE": frozenset({422}),
     # Мягкий конфликт расстановки обходится причиной — 409 и overridable.

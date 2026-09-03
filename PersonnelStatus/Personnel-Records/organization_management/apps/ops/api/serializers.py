@@ -178,6 +178,8 @@ def serialize_visit_object(event, visit, *, single):
         "closedAt": (
             visit.closed_at.isoformat() if visit.closed_at is not None else None
         ),
+        # Итоговый комментарий по объекту при закрытии (`[ЗАК-04]`, №404).
+        "closingComment": visit.closing_comment,
         # ── Согласование ОБЪЕКТА (Plane №411, Ш-5 плана №385) ──────────────
         # Требование `[МД-04]`: «У объекта свои этапы 1–5 и свой документ
         # „Расстановка сил“ с версиями». Одноимённые поля мероприятия ниже

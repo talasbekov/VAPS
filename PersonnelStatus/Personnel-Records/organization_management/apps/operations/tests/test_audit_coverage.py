@@ -987,12 +987,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         om.pk, om.placement_assignments[0]["id"]
     )
     event_service.complete_acknowledgement(om.pk)
-    event_service.close_event(
-        om.pk,
-        direction_summaries=[
-            {"direction": "Периметр", "summary": "Без происшествий."}
-        ],
-        actor=ACTOR,
+    # Закрытие ОБЪЕКТА (`[ЗАК-05]`, Plane №404) — именное решение; единственный
+    # объект закрывает и мероприятие (`[ЗАК-12]`): оба следа — из одного
+    # вызова, ручной `close_event` здесь больше не нужен.
+    om.refresh_from_db()
+    event_service.close_visit_object(
+        om.pk, om.visit_objects.first().pk, comment="Без происшествий.", actor=ACTOR
     )
 
     # Смены дежурств: журнал пишут заведение и отмена (исполнение — штампы
