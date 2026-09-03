@@ -81,3 +81,39 @@ def notify_directorate_heads(event, allocation, directorates):
             notify_service.notify(user_id, KIND, event.business_date, payload)
             notified += 1
     return {"notified": notified, "headlessDirectorates": headless}
+
+
+# ── Штабу: департамент ответил «Выделяем: X» (`[СБС-12]`, Plane №426) ──────
+RESPONSE_KIND = "FORCES_RESPONSE"
+HEADQUARTERS_ROLE = "HEAD_OPS_UNIT"
+
+
+def _headquarters_users():
+    """Учётки штаба второго департамента — роль `HEAD_OPS_UNIT` (Plane №421)."""
+    from organization_management.apps.operations.models import UserRole
+
+    return {
+        str(user_id)
+        for user_id in UserRole.objects.filter(
+            is_active=True, role_code_id=HEADQUARTERS_ROLE
+        ).values_list("user_id", flat=True)
+    }
+
+
+def notify_headquarters_response(event, allocation, *, allocating):
+    """Штаб получает уведомление при КАЖДОМ изменении «Выделяют» департаментом."""
+    payload = {
+        "eventId": str(event.pk),
+        "eventCode": event.code,
+        "eventTitle": event.title,
+        "businessDate": event.business_date.isoformat(),
+        "allocationId": allocation.get("id"),
+        "departmentName": allocation.get("departmentName", ""),
+        "requested": int(allocation.get("need") or 0),
+        "allocating": int(allocating),
+    }
+    notified = 0
+    for user_id in _headquarters_users():
+        notify_service.notify(user_id, RESPONSE_KIND, event.business_date, payload)
+        notified += 1
+    return {"notified": notified}

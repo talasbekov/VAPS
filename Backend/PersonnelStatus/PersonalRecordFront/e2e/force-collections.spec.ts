@@ -25,14 +25,13 @@ interface CollectionRow {
   code: string
   need: number
   gathered: number
-  collectionStatus: 'NEW' | 'NOTIFIED' | 'IN_PROGRESS'
+  // `[СБС-10]` (Plane №426): выделяют / прислано / статус словами / срочно / новая.
+  allocating: number
+  sent: number
+  boardStatus: { code: string; label: string }
+  urgent: boolean
+  isNew: boolean
 }
-
-const STATUS_LABEL = {
-  NEW: 'Новый',
-  NOTIFIED: 'Разнарядка разослана',
-  IN_PROGRESS: 'Сбор идёт',
-} as const
 
 async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
@@ -91,10 +90,16 @@ test.describe('сборы сил (вид штаба)', () => {
       section.getByText(`${first.gathered} из ${first.need}`, { exact: false }).first(),
       'прогресс не назван числом',
     ).toBeVisible()
-    await expect(
-      section.getByText(STATUS_LABEL[first.collectionStatus], { exact: true }).first(),
-      'состояние сбора названо словом эталона',
-    ).toBeVisible()
+    // Статус — подпись сервера по спецификации `[СБС-10]` (Новая / Запросы
+    // отправлены / Ответы получены K из M / Распределено), не словарь клиента.
+    const firstRow = section.locator('[data-slot="force-collection-row"]').first()
+    await expect(firstRow.locator('[data-slot="collection-status"]')).toHaveText(first.boardStatus.label)
+    await expect(firstRow.locator('[data-slot="collection-allocating"]')).toHaveText(String(first.allocating))
+    await expect(firstRow.locator('[data-slot="collection-urgent"]')).toHaveCount(first.urgent ? 1 : 0)
+    await expect(firstRow.locator('[data-slot="collection-new"]')).toHaveCount(first.isNew ? 1 : 0)
+    // Порядок — с сервера: срочные, потом новые, потом по дате.
+    const codes = await section.locator('[data-slot="force-collection-row"] .font-mono').allInnerTexts()
+    expect(codes.slice(0, server.results.length)).toEqual(server.results.map((r) => r.code))
 
     const bar = section.locator('[role="progressbar"]').first()
     await expect(bar).toHaveAttribute('aria-valuemax', String(first.need))
@@ -171,6 +176,14 @@ test.describe('сборы сил (вид штаба)', () => {
       await tab.click()
 
       await page.getByRole('button', { name: `Открыть сбор ${target!.code}` }).click()
+    // `[СБС-11]`/`[СБС-12]` (Plane №426): потребность по объектам с «Итого»,
+    // итог «потребность · выделяют · прислано · недобор», колонки департаментов.
+    await expect(page.locator('[data-slot="collection-need"]')).toBeVisible()
+    await expect(page.locator('[data-slot="need-total"]')).toContainText('Итого')
+    await expect(page.locator('[data-slot="collection-totals"]')).toContainText(/потребность \d+ · выделяют \d+ · прислано \d+ · недобор \d+/)
+    for (const header of ['Запрошено', 'Выделяют', 'Прислано', 'Комментарий', 'Статус', 'Ответственный']) {
+      await expect(page.getByRole('columnheader', { name: header, exact: true }).first()).toBeVisible()
+    }
       await expect(
         page.getByRole('button', { name: 'Назад к списку сборов' }),
         'карточка открылась на месте списка',

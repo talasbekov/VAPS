@@ -64,6 +64,11 @@ def collection_with_objects(event_id):
 
     detail = force_collection_detail(event_id)
     event = OpsSecurityEvent.objects.get(pk=event_id)
+    # Поля `[СБС-11]`/`[СБС-12]` (Plane №426): потребность по объектам, итоги,
+    # статус по спецификации, колонки департаментов с историей довыделений.
+    from organization_management.apps.ops import force_collection_board as board
+
+    detail = {**detail, **board.detail_extras(event, detail["allocations"])}
     return {
         **detail,
         "roster": force_roster_view(event),
