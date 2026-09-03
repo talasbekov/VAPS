@@ -294,6 +294,24 @@ function versionsDecide(
   };
 }
 
+// Статус объекта словами (Plane №423) — зеркало `visit_status_label` сервера.
+const VISIT_STATUS_LABELS: Record<string, string> = {
+  BULLETIN: "Бюллетень",
+  RECON: "Рекогносцировка",
+  DEMAND: "Рекогносцировка завершена",
+  FORCES: "Рекогносцировка завершена",
+  PLACEMENT: "Расстановка",
+  APPROVAL: "На согласовании",
+  ACKNOWLEDGEMENT: "Ознакомление",
+  CONDUCT: "Проведение",
+  CLOSED: "Закрыто",
+};
+
+function visitStatusLabel(stage: string, assigned: number | null): string {
+  if (stage === "PLACEMENT" && assigned === 0) return VISIT_STATUS_LABELS.DEMAND;
+  return VISIT_STATUS_LABELS[stage] ?? stage;
+}
+
 function mirrorApproval(event: SecurityEvent): SecurityEvent {
   return {
     ...event,
@@ -303,6 +321,7 @@ function mirrorApproval(event: SecurityEvent): SecurityEvent {
       // один, и наименьшая стадия среди одного — она сама (Plane №412).
       stage: event.stage,
       closedAt: event.closedAt,
+      statusLabel: visitStatusLabel(event.stage, visit.placementAssigned),
       approvalStatus: event.approvalStatus,
       approvalComment: event.approvalComment,
       approvalRoute: event.approvalRoute,
@@ -358,6 +377,7 @@ function emptyEvent(
         placementAssigned: 0,
         deputies: [],
         closingComment: "",
+        statusLabel: "Бюллетень",
         // Этап объекта (Plane №412): у свежего ОМ он тот же, что у
         // мероприятия, — этапы ещё не начинались.
         stage: "BULLETIN",
