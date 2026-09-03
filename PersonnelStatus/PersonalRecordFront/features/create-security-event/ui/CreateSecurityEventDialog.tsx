@@ -256,17 +256,20 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
     return [country, city, object, address.trim()].filter((p) => p !== "").join(", ");
   }, [address, cities.data, cityId, countries.data, countryId, objectId, objectsQuery.data]);
 
-  // Кнопка гаснет, пока обязательное не заполнено (`[БЛН-12]`). Но гасится
-  // ВИДОМ, а не `disabled`: нажать её можно, и тогда форма скажет, чего
-  // именно не хватает, вместо молчаливого тупика.
-  const incomplete =
-    kind === "" ||
-    businessDate === "" ||
-    businessDateEnd === "" ||
-    personIds.length === 0 ||
-    title.trim() === "" ||
-    countryId === "" ||
-    cityId === "";
+  // Кнопка ПО-НАСТОЯЩЕМУ `disabled`, пока обязательное не заполнено
+  // (`[БЛН-12]`, Plane №439): раньше она гасла видом и кликалась — клик
+  // уходил в проверку формы, а спецификация требует неактивную кнопку.
+  // Чего не хватает, подсказывает строка под кнопкой, а не сам клик.
+  const missing = [
+    kind === "" ? "тип" : "",
+    businessDate === "" ? "дата начала" : "",
+    businessDateEnd === "" ? "дата окончания" : "",
+    personIds.length === 0 ? "охраняемое лицо" : "",
+    title.trim() === "" ? "название" : "",
+    countryId === "" ? "страна" : "",
+    cityId === "" ? "город" : "",
+  ].filter((part) => part !== "");
+  const incomplete = missing.length > 0;
 
   return (
     <Dialog
@@ -659,23 +662,31 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             >
               Отмена
             </Button>
-            <Button
-              type="submit"
-              className={cn(
-                "h-[38px] rounded-lg text-[13px] font-semibold",
-                incomplete &&
-                  "bg-secondary text-muted-foreground shadow-none hover:bg-secondary"
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                type="submit"
+                className="h-[38px] rounded-lg text-[13px] font-semibold"
+                disabled={incomplete || mutation.isPending}
+                title={incomplete ? missingHint(missing) : undefined}
+              >
+                {mutation.isPending ? "Создание…" : "Создать бюллетень"}
+              </Button>
+              {incomplete && (
+                <p className="text-[11px] text-muted-foreground" data-testid="missing-required">
+                  {missingHint(missing)}
+                </p>
               )}
-              aria-disabled={incomplete || undefined}
-              disabled={mutation.isPending}
-            >
-              {mutation.isPending ? "Создание…" : "Создать бюллетень"}
-            </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Подпись под неактивной кнопкой: чего не хватает (`[БЛН-12]`). */
+function missingHint(missing: string[]): string {
+  return `Заполните: ${missing.join(", ")}`;
 }
 
 /**
