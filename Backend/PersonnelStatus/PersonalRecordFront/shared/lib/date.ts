@@ -59,3 +59,32 @@ export function formatIsoDateTime(value: string, fallback = "—"): string {
     minute: "2-digit",
   });
 }
+
+const BULLETIN_MONTHS = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+] as const;
+const BULLETIN_WEEKDAYS = ["пн.", "вт.", "ср.", "чт.", "пт.", "сб.", "вс."] as const;
+
+/**
+ * Период мероприятия в формате бюллетеня (`[МД-10]`, Plane №438): без года,
+ * с днями недели — «20-23 апреля (пн.-чт.)», «24 апреля (пт.)»,
+ * «30 апреля - 2 мая (чт.-сб.)». Зеркало `documents_bulletin.format_period`
+ * сервера: превью в окне создания обязано показывать то, что напечатает
+ * документ. Пустое начало — пусто.
+ */
+export function formatBulletinPeriod(startIso: string, endIso: string | null): string {
+  const start = parseIsoDate(startIso);
+  if (start === null) return "";
+  const end = endIso === null || endIso === "" ? null : parseIsoDate(endIso);
+  const wd = (d: Date) => BULLETIN_WEEKDAYS[(d.getDay() + 6) % 7];
+  const month = (d: Date) => BULLETIN_MONTHS[d.getMonth()];
+  if (end === null || end.getTime() === start.getTime()) {
+    return `${start.getDate()} ${month(start)} (${wd(start)})`;
+  }
+  const days =
+    start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()
+      ? `${start.getDate()}-${end.getDate()} ${month(start)}`
+      : `${start.getDate()} ${month(start)} - ${end.getDate()} ${month(end)}`;
+  return `${days} (${wd(start)}-${wd(end)})`;
+}
