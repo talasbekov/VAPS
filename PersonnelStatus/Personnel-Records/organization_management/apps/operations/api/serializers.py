@@ -76,9 +76,12 @@ def warm_event_index(context, status_rows):
     if missing:
         index.update(
             (event.id, event)
-            for event in OpsSecurityEvent.objects.filter(id__in=missing).only(
-                "id", "code", "title"
-            )
+            # `placement_assignments` и `recon_sector_posts` — ради колонки
+            # «По разделу ОМ» (Plane №427, `[СБС-32]`/`[ОЗН-06]`): объект,
+            # пост и отметка ознакомления берутся из расстановки мероприятия.
+            for event in OpsSecurityEvent.objects.filter(id__in=missing)
+            .only("id", "code", "title", "placement_assignments", "recon_sector_posts")
+            .prefetch_related("visit_objects")
         )
     return index
 
@@ -98,6 +101,59 @@ class StatusParticipationReadSerializer(StatusParticipationSerializer):
 
     event_code = serializers.SerializerMethodField()
     event_title = serializers.SerializerMethodField()
+    # Колонка «По разделу ОМ» = «ОМ-код → объект · Пост · ознакомлен»
+    # (Plane №427): объект посещения и пост — из назначения сотрудника в
+    # расстановке этого ОМ, отметка — `acknowledgedAt` того же назначения.
+    # Пусто, пока штаб не распределил человека по объекту.
+    visit_object_name = serializers.SerializerMethodField()
+    post_label = serializers.SerializerMethodField()
+    acknowledged_at = serializers.SerializerMethodField()
+
+    def _assignment(self, obj):
+        event = self._event(obj)
+        if event is None:
+            return None, None, None
+        status = getattr(obj, "status", None)
+        employee_id = str(getattr(status, "employee_id", "") or "")
+        row = next(
+            (
+                a
+                for a in (event.placement_assignments or [])
+                if str(a.get("employeeId")) == employee_id
+            ),
+            None,
+        )
+        if row is None:
+            return event, None, None
+        post = next(
+            (
+                p
+                for p in (event.recon_sector_posts or [])
+                if str(p.get("id")) == str(row.get("postId"))
+            ),
+            None,
+        )
+        return event, row, post
+
+    def get_visit_object_name(self, obj) -> str:
+        event, row, post = self._assignment(obj)
+        if event is None or post is None:
+            return ""
+        visit_id = str(post.get("visitObjectId") or "")
+        for visit in event.visit_objects.all():
+            if str(visit.pk) == visit_id:
+                return visit.object_name
+        return ""
+
+    def get_post_label(self, obj) -> str:
+        _event, _row, post = self._assignment(obj)
+        if post is None:
+            return ""
+        return f"{post.get('sector', '')} · {post.get('post', '')}".strip(" ·")
+
+    def get_acknowledged_at(self, obj) -> str | None:
+        _event, row, _post = self._assignment(obj)
+        return None if row is None else row.get("acknowledgedAt")
 
     def _event(self, obj):
         event_id = getattr(obj, "event_id", None)

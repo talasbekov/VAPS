@@ -280,6 +280,33 @@ def _assert_no_conflict(
     return report.soft
 
 
+#: Статусы «Участие в ОМ» (Plane №427, `[СТА-04]`): ставятся ТОЛЬКО из
+#: запроса на сбор сил (`system_participations=True` — чекбоксы начальника
+#: управления и штабное выделение); ручной ввод человеком отбивается — у
+#: такого статуса всегда есть мероприятие и даты объекта, и выбирать их
+#: вручную значило бы завести второй источник правды о привлечении. Набор
+#: кодов — тот же, что у клиента (`EVENT_PARTICIPATION_STATUS_CODES`).
+PARTICIPATION_STATUS_CODES = frozenset(
+    {"EVENT_ASSIGNMENT", "EVENT_ASSIGNMENT_GROUP", "IN_EVENT"}
+)
+
+
+def _refuse_manual_participation(status_type_code, system):
+    """Ручной СТАТУС участия — отказ; системный путь (`system=True`) проходит.
+    Строки участия у прочих статусов (Ш-3, «привлечён группой» на дежурстве)
+    правило не трогает — они не «Участие в ОМ»."""
+    if system or status_type_code not in PARTICIPATION_STATUS_CODES:
+        return
+    raise DomainError(
+        "PARTICIPATION_MANUAL_FORBIDDEN",
+        422,
+        message=(
+            "Статус «Участие в ОМ» ставится только из запроса на сбор сил — "
+            "чекбоксами на «Статусах сотрудников»; вручную он не заводится."
+        ),
+    )
+
+
 @transaction.atomic
 def create_status(
     *,
@@ -308,6 +335,7 @@ def create_status(
     обязано быть вытеснено поправкой (см. amendment_enforcement). Без
     причины такая правка — 422, обычная правка причины не требует.
     """
+    _refuse_manual_participation(status_type_code, system_participations)
     _require_actor(actor)
     employee = _lock_employee(employee_id)
     assert_employee_is_employed(employee)

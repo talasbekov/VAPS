@@ -57,6 +57,14 @@ class OpsNotification(TimeStampedModel):
         # его замещающих: чинить замечания им, и узнать о возврате они должны
         # не заглянув в карточку, а сразу.
         PLACEMENT_RETURNED = "PLACEMENT_RETURNED", "Возврат расстановки"
+        # За час до заступления (Plane №427, `[ОЗН-06]`): начальник
+        # управления получает список СВОИХ, кто не подтвердил ознакомление.
+        # Свой вид, а не EVENT_ACKNOWLEDGEMENT: ключ «одно на день» иначе
+        # глотал бы напоминание — руководитель уже получил уведомление о
+        # заступлении на тот же день при открытии этапа.
+        ACKNOWLEDGEMENT_DUE_SOON = "ACKNOWLEDGEMENT_DUE_SOON", "Не подтвердили заступление — час до начала"
+        # Департамент ответил «Выделяем: X» — штабу (`[СБС-12]`, Plane №426).
+        FORCES_RESPONSE = "FORCES_RESPONSE", "Ответ департамента на запрос сил"
 
     # Получатель строкой: str(User.pk) для человека, метка — для роли/службы.
     recipient = models.CharField(max_length=100)
@@ -98,6 +106,8 @@ class OpsNotification(TimeStampedModel):
                         "EVENT_ACKNOWLEDGEMENT",
                         "FORCES_REQUEST",
                         "PLACEMENT_RETURNED",
+                        "ACKNOWLEDGEMENT_DUE_SOON",
+                        "FORCES_RESPONSE",
                     ]
                 ),
                 name="chk_ops_notif_kind",

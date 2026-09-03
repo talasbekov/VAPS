@@ -122,6 +122,8 @@ CODES = {
     # Оценки этапа «Проведение» (Plane №433).
     "EVALUATION_TARGET_UNKNOWN": frozenset({422}),
     "ASSIGNMENT_NOT_FOUND": frozenset({404}),
+    # Довыделение недобора (`[СБС-12]`, Plane №426).
+    "ALLOCATION_NOT_SENT": frozenset({422}),
     # Закрытый объект посещения не закрыть дважды (`[ЗАК-05]`, Plane №404).
     "VISIT_OBJECT_ALREADY_CLOSED": frozenset({422}),
     "ACKNOWLEDGEMENT_INCOMPLETE": frozenset({422}),

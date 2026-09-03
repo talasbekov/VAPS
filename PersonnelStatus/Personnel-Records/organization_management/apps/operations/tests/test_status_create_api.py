@@ -288,6 +288,12 @@ def test_the_single_route_carries_participations_to_the_database(
             "role_code": "SCREENER",
             "event_code": "",
             "event_title": "",
+            # 🔴 ПИН РАСШИРЕН ЕЩЁ РАЗ (Plane №427, [СБС-32]/[ОЗН-06]): колонка
+            # «По разделу ОМ» читает объект, пост и отметку ознакомления из
+            # расстановки ОМ; у выдуманного мероприятия их нет — пусто.
+            "visit_object_name": "",
+            "post_label": "",
+            "acknowledged_at": None,
         },
     ]
 
