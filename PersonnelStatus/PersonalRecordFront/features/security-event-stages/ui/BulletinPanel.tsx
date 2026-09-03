@@ -388,6 +388,15 @@ function EventFacts({ event }: { event: SecurityEvent }) {
           label="Локация"
           value={event.location.trim() === "" ? "не указана" : event.location}
         />
+        {/* Структура локации (Plane №418) — отдельными фактами, пока
+            строка выше собирается из них сервером. */}
+        <Fact
+          label="Страна / город"
+          value={
+            [event.countryName, event.cityName].filter(Boolean).join(", ") ||
+            "не указаны"
+          }
+        />
         <Fact label="Дата начала" value={dayLabel(event.businessDate)} />
         <Fact
           label="Время начала"

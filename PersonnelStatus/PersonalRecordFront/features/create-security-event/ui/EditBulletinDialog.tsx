@@ -23,7 +23,7 @@
 // ЧАСТИЧНАЯ ручка, но окно шлёт ВСЕ поля, включая пустые: сервер понимает
 // «ключа нет» как «не трогай», а пустую строку — как «очисти», и человек,
 // стерший локацию, ждёт, что она сотрётся.
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import {
   Dialog,
@@ -39,6 +39,9 @@ import { Field, focusFirstError, focusFirstOf, useZodForm } from "@/shared/lib/f
 import { useToast } from "@/shared/hooks/use-toast";
 import { useUpdateBulletinDetails } from "@/hooks/use-create-security-event";
 import { useProtectedPersons } from "@/hooks/use-protected-persons";
+import { LocationFields } from "./LocationFields";
+import { PersonDetailsFields, detailsOf } from "./PersonDetailsFields";
+import type { PersonDetailsMap } from "./PersonDetailsFields";
 import type { SecurityEvent } from "@/entities/security-event";
 import { ProtectedPersonsPicker } from "./ProtectedPersonsPicker";
 
@@ -65,7 +68,10 @@ const formSchema = z
       .regex(/^(\d{2}:\d{2})?$/, "Укажите время в формате ЧЧ:ММ."),
     // Список, а не одно лицо (Plane №188). Первое — главное.
     protectedPersonIds: z.array(z.string()),
-    location: z.string().max(255, "Не длиннее 255 символов."),
+    // Локация структурой (Plane №418); строку собирает сервер.
+    countryId: z.string(),
+    cityId: z.string(),
+    address: z.string().max(255, "Не длиннее 255 символов."),
   })
   // Ту же пару сверяет сервер, но ждать от него отказа незачем: человек видит
   // обе даты на экране и вправе узнать о перевёрнутом периоде сразу.
@@ -109,7 +115,9 @@ function valuesOf(event: SecurityEvent): FormValues {
     // сервер отдаёт список отсортированным по имени, и без этой перестановки
     // открытое и сразу сохранённое окно молча меняло бы главное лицо.
     protectedPersonIds: orderedPersonIds(event),
-    location: event.location,
+    countryId: event.countryId ?? "",
+    cityId: event.cityId ?? "",
+    address: event.address,
   };
 }
 
@@ -125,6 +133,11 @@ export function EditBulletinDialog({
   const { toast } = useToast();
   const personsQuery = useProtectedPersons();
   const form = useZodForm(formSchema, valuesOf(event));
+  // Атрибуты визита лиц (Plane №418) — вне zod-формы: строк столько, сколько
+  // отмечено лиц, и состав меняется по ходу правки.
+  const [personDetails, setPersonDetails] = useState<PersonDetailsMap>(() =>
+    detailsOf(event.protectedPersons)
+  );
   const {
     register,
     handleSubmit,
@@ -138,7 +151,10 @@ export function EditBulletinDialog({
   // Открыли окно — начинаем с ТЕКУЩИХ значений мероприятия. Без этого второе
   // открытие показывало бы черновик первого, в том числе после отмены.
   useEffect(() => {
-    if (open) reset(valuesOf(event));
+    if (open) {
+      reset(valuesOf(event));
+      setPersonDetails(detailsOf(event.protectedPersons));
+    }
   }, [open, event, reset]);
 
   // Окно закрывается ОТВЕТОМ сервера, а не кликом: отказ («закрытое
@@ -172,7 +188,9 @@ export function EditBulletinDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      {/* Шире прежнего (`3xl`): таблица атрибутов лиц (Plane №418) в 2xl
+          прокручивалась уже на двух лицах. */}
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Правка бюллетеня</DialogTitle>
           <DialogDescription>
@@ -187,7 +205,14 @@ export function EditBulletinDialog({
           noValidate
           onSubmit={(submitEvent) =>
             void handleSubmit(
-              (values) => save.mutate(values),
+              (values) =>
+                save.mutate({
+                  ...values,
+                  // Только отмеченные лица: у снятого атрибутов больше нет.
+                  protectedPersonDetails: values.protectedPersonIds
+                    .map((id) => personDetails[id])
+                    .filter((row) => row !== undefined),
+                }),
               (invalid) => focusFirstError(invalid)
             )(submitEvent)
           }
@@ -285,22 +310,44 @@ export function EditBulletinDialog({
               )}
             </Field>
 
-            <Field
-              name="location"
-              label="Локация"
+            <LocationFields
+              countryId={watch("countryId")}
+              cityId={watch("cityId")}
+              onCountry={(next) => {
+                setValue("countryId", next, { shouldDirty: true });
+                setValue("cityId", "", { shouldDirty: true });
+              }}
+              onCity={(next) => setValue("cityId", next, { shouldDirty: true })}
+              addressField={
+                <Field
+                  name="address"
+                  label="Адрес / место"
+                  labelClassName={LABEL_CLASS}
+                  error={errors.address}
+                  className="space-y-1.5"
+                >
+                  {(field) => (
+                    <Input
+                      {...field}
+                      className={CONTROL_CLASS}
+                      {...register("address")}
+                    />
+                  )}
+                </Field>
+              }
               labelClassName={LABEL_CLASS}
-              error={errors.location}
-              className="space-y-1.5"
-            >
-              {(field) => (
-                <Input
-                  {...field}
-                  className={CONTROL_CLASS}
-                  {...register("location")}
-                />
-              )}
-            </Field>
+              selectClassName={SELECT_CLASS}
+            />
           </div>
+
+          <PersonDetailsFields
+            persons={event.protectedPersons}
+            selectedIds={watch("protectedPersonIds") ?? []}
+            value={personDetails}
+            onChange={setPersonDetails}
+            labelClassName={LABEL_CLASS}
+            controlClassName={CONTROL_CLASS}
+          />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

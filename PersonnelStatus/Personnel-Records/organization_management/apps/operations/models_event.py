@@ -117,7 +117,28 @@ class OpsSecurityEvent(TimeStampedModel):
         "operations.OpsProtectedPerson",
         blank=True,
         related_name="security_events_as_participant",
+        # ПРОМЕЖУТОЧНАЯ МОДЕЛЬ (Plane №418, `[МД-03]`): у лица на мероприятии
+        # есть свои атрибуты — время, вылет/прилёт, борт, признак старшего.
+        # Таблица та же, что была у авто-связи (`db_table` совпадает), строки
+        # сохранены — см. миграцию 0079.
+        through="operations.OpsSecurityEventPerson",
+        through_fields=("event", "person"),
     )
+    # ЛОКАЦИЯ СТРУКТУРОЙ (Plane №418, `[МД-02]`): страна → город → адрес.
+    # Строка `location` ОСТАЁТСЯ и читается всеми, кто читал её вчера
+    # (реестр, бюллетень, заявки, сборы): сервер собирает её из структуры при
+    # каждой правке (`compose_location`), а у строк, заведённых раньше,
+    # `address` бэкфиллен из неё. SET_NULL: скрытие города из справочника не
+    # вправе стирать историю мероприятий — подпись живёт в `location`.
+    country = models.ForeignKey(
+        "operations.OpsCountry", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="+",
+    )
+    city = models.ForeignKey(
+        "operations.OpsCity", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="+",
+    )
+    address = models.CharField(max_length=255, blank=True)
     location = models.CharField(max_length=255, blank=True)
     # Плоская ссылка на employees.Employee без FK — идиома раздела ОМ
     # (см. models_status: контексты разделены, каскады старой структуры не
@@ -602,3 +623,39 @@ class OpsPlacementDocumentVersion(TimeStampedModel):
 
     def __str__(self):
         return f"{self.visit_object_id}: v{self.number} ({self.status})"
+
+
+class OpsSecurityEventPerson(models.Model):
+    """Охраняемое лицо НА МЕРОПРИЯТИИ с атрибутами визита (Plane №418).
+
+    Таблица — та же, что у прежней авто-связи `protected_persons`
+    (`db_table` и имена колонок совпадают), поэтому переезд на промежуточную
+    модель не тронул ни одной строки. Атрибуты необязательны: бюллетень
+    заводят до того, как известен борт; «не указано» — честное состояние.
+    """
+
+    event = models.ForeignKey(
+        OpsSecurityEvent, on_delete=models.CASCADE,
+        db_column="opssecurityevent_id", related_name="person_links",
+    )
+    person = models.ForeignKey(
+        "operations.OpsProtectedPerson", on_delete=models.CASCADE,
+        db_column="opsprotectedperson_id", related_name="event_links",
+    )
+    arrival_at = models.DateTimeField(null=True, blank=True)
+    departure_at = models.DateTimeField(null=True, blank=True)
+    flight_arrival = models.CharField(max_length=100, blank=True)
+    flight_departure = models.CharField(max_length=100, blank=True)
+    # Старший делегации — тот, «за кого» мероприятие; главное лицо бланка
+    # (`protected_person`) остаётся отдельным полем и им не подменяется.
+    is_senior = models.BooleanField(default=False)
+    note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        db_table = "ops_security_events_protected_persons"
+        unique_together = (("event", "person"),)
+        verbose_name = "Лицо на мероприятии"
+        verbose_name_plural = "Лица на мероприятии"
+
+    def __str__(self):
+        return f"{self.event.code}: {self.person.name}"

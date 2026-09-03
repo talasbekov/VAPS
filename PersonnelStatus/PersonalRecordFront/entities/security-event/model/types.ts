@@ -236,6 +236,34 @@ export interface ForceRosterMember {
 }
 
 /** Назначение сотрудника на пост. Двойное назначение внутри одного ОМ запрещено. */
+/** Лицо бюллетеня с атрибутами визита (Plane №418, `[МД-03]`). Атрибуты
+ * необязательны: бюллетень заводят до того, как известен борт. */
+export interface EventProtectedPerson {
+  id: string;
+  /** Код `OL-N` (Plane №417). */
+  code: string;
+  name: string;
+  /** ISO «ГГГГ-ММ-ДДTЧЧ:ММ»; null — не указано. */
+  arrivalAt: string | null;
+  departureAt: string | null;
+  flightArrival: string;
+  flightDeparture: string;
+  /** Старший делегации; главное лицо бланка — отдельное поле. */
+  isSenior: boolean;
+  note: string;
+}
+
+/** Строка `protectedPersonDetails` запроса: ключи, которых нет, не трогаются. */
+export interface EventProtectedPersonDetails {
+  id: string;
+  arrivalAt?: string;
+  departureAt?: string;
+  flightArrival?: string;
+  flightDeparture?: string;
+  isSenior?: boolean;
+  note?: string;
+}
+
 export interface PlacementAssignment {
   id: string;
   postId: string;
@@ -537,9 +565,17 @@ export interface SecurityEvent {
    * значимое. Главное лицо названо отдельным полем, поэтому старшинство
    * списку не нужно.
    */
-  protectedPersons: { id: string; name: string }[];
-  /** Локация мероприятия; пусто — не указана. */
+  protectedPersons: EventProtectedPerson[];
+  /** Локация строкой; пусто — не указана. С Plane №418 собирается сервером
+   * из структуры ниже («Страна, Город, адрес») и остаётся у всех, кто читал
+   * её раньше. */
   location: string;
+  /** Локация структурой (Plane №418, `[МД-02]`): страна → город → адрес. */
+  countryId: string | null;
+  countryName: string;
+  cityId: string | null;
+  cityName: string;
+  address: string;
   /** Старший (наряда или ГВО — по типу мероприятия); null — не назначен. */
   chiefEmployeeId: string | null;
   /** Снимок подписи старшего — как ownerName. */
@@ -741,7 +777,14 @@ export interface CreateSecurityEventRequest extends Record<string, unknown> {
   protectedPersonId?: string;
   /** Список лиц бюллетеня (Plane №188); первое — главное. */
   protectedPersonIds?: string[];
+  /** Атрибуты визита лиц из списка выше (Plane №418). */
+  protectedPersonDetails?: EventProtectedPersonDetails[];
+  /** Строка локации — вызовы до №418; при структуре ниже игнорируется. */
   location?: string;
+  /** Локация структурой (Plane №418): страна → город → адрес. */
+  countryId?: string;
+  cityId?: string;
+  address?: string;
   /** Id сотрудника — старшего наряда или ГВО; пусто — не назначен. */
   chiefEmployeeId?: string;
 }

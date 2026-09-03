@@ -27,6 +27,7 @@ import {
 import { useVisitObjectScope } from "./useVisitObjectScope";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import type {
   JournalEntryType,
   SecurityEvent,
@@ -368,6 +369,7 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
   const close = useCloseVisitObject(event.id, { onEvent: () => setOpen(false) });
+  const access = useChainAccess();
   const visit = scope.visit;
   if (visit === null) return null;
   const others = event.visitObjects.filter((item) => item.id !== visit.id);
@@ -399,7 +401,13 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
             </p>
             <StageError error={close.error} />
             <div className="flex justify-end">
-              <Button type="button" variant="outline" onClick={() => setOpen(true)}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!access.can(EVENT_MANAGE)}
+                title={access.reason(EVENT_MANAGE) || undefined}
+                onClick={() => setOpen(true)}
+              >
                 Закрыть объект
               </Button>
             </div>
@@ -444,6 +452,7 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
 }
 
 function ClosurePanel({ event }: { event: SecurityEvent }) {
+  const closeAccess = useChainAccess();
   // направления = секторы расчёта; итог обязателен по каждому
   const directions = [...new Set(event.reconSectorPosts.map((p) => p.sector))];
   const [summaries, setSummaries] = useState<Record<string, string>>({});
@@ -554,7 +563,8 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
         <div className="flex justify-end">
           <Button
             type="button"
-            disabled={close.isPending}
+            disabled={close.isPending || !closeAccess.can(EVENT_MANAGE)}
+            title={closeAccess.reason(EVENT_MANAGE) || undefined}
             onClick={() => {
               setFieldErrors(null);
               close.mutate({
