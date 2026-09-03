@@ -87,9 +87,24 @@ def test_changing_the_placement_after_sending_invalidates_approval(manager, appr
     ).json()
     assert data["approvalStale"] is False
 
-    # Расстановку правят после согласования.
+    # ПРАВИТЬ ОТПРАВЛЕННУЮ РАССТАНОВКУ НЕЛЬЗЯ (`[СОГ-04]`, Plane №398) —
+    # заморозка отбивает снятие с поста. Путь к изменению один: возврат на
+    # доработку → правка на «Расстановке» → повторное завершение. После него
+    # состав отличается от того, что уходило согласующим, — это и есть
+    # «изменилась после отправки», пока не отправили заново.
     assignment_id = data["placementAssignments"][0]["id"]
-    data = manager.delete(f"{base}placement/{assignment_id}/").json()
+    frozen = manager.delete(f"{base}placement/{assignment_id}/")
+    assert frozen.status_code == 422
+    assert frozen.json()["error_code"] == "PLACEMENT_FROZEN"
+
+    approver.post(f"{base}approval/return/", {"comment": "заменить"}, format="json")
+    manager.delete(f"{base}placement/{assignment_id}/")
+    manager.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(make_employee().pk)},
+        format="json",
+    )
+    data = manager.post(f"{base}placement/complete/").json()
 
     assert data["approvalStale"] is True
     resp = approver.post(f"{base}approval/approve/")

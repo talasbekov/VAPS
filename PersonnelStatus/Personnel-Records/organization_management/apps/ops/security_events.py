@@ -20,6 +20,7 @@ from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import (
+    OpsPlacementDocumentVersion,
     OpsSecurityEvent,
     OpsSecurityEventTransition,
     OpsSecurityEventVisitObject,
@@ -3784,6 +3785,7 @@ def assign_placement(
     deputy=None,
 ):
     event = lock_event(event_id)
+    _require_placement_editable(event, post_id)
     employee = _find_personnel(employee_id)
     if employee is None:
         raise _validation({"employeeId": ["Сотрудник не найден."]})
@@ -3879,6 +3881,12 @@ def assign_placement(
 @transaction.atomic
 def unassign_placement(event_id, assignment_id, *, deputy=None):
     event = lock_event(event_id)
+    victim = next(
+        (a for a in event.placement_assignments if a.get("id") == assignment_id),
+        None,
+    )
+    if victim is not None:
+        _require_placement_editable(event, victim.get("postId"))
     event.placement_assignments = [
         a for a in event.placement_assignments if a.get("id") != assignment_id
     ]
@@ -3918,6 +3926,10 @@ def remove_placement_post(event_id, post_id, *, deputy=None):
       счётом того же факта.
     """
     event = lock_event(event_id)
+    # Заморозка по ОБЪЕКТУ поста (`[СОГ-04]`, Plane №398): гвард стадии
+    # мероприятия ниже не спасает у двух объектов — мероприятие стоит на
+    # «Расстановке» наименьшим, пока сосед уже на согласовании.
+    _require_placement_editable(event, post_id)
     _require_stage(
         event,
         "PLACEMENT",
@@ -4006,6 +4018,7 @@ def set_sector_senior(event_id, assignment_id, *, senior, actor):
     )
     if target is None:
         raise _not_found("Назначение не найдено.", assignment_id)
+    _require_placement_editable(event, target.get("postId"))
     post = _post_of_assignment(event, target)
     if post is None:
         raise DomainError(
@@ -4143,11 +4156,166 @@ def complete_placement(
     if visit.document_version < 1:
         visit.document_version = 1
         visit.save(update_fields=["document_version", "updated_at"])
+    # Строка истории версий (`[СОГ-04]`, Plane №398): черновик v1 — или
+    # текущая версия, если объект уже ходил на согласование и вернулся.
+    _ensure_document_version(event, visit, actor=actor)
     old_stage = event.stage
     advance_visits(event, "APPROVAL", visits=[visit])
     if event.stage != old_stage:
         record_transition(event, old_stage, event.stage)
     return event
+
+
+# ── Версии документа «Расстановка сил» (`[СОГ-04]`, Plane №398) ──────────────
+#
+# Требование: «После согласования версия замораживается: правка невозможна;
+# любое изменение = новая версия → повторное согласование. Все версии
+# хранятся, видны в „Истории версий“; отменённые помечены».
+#
+# НОМЕР — по `[СОГ-01]`/`[ВОЗ-06]`: завершение расстановки заводит черновик v1;
+# ПЕРВАЯ отправка делает его «на согласовании» с тем же номером; отзыв и
+# повторная отправка того же состава номер не трогают; N+1 появляется только
+# повторной отправкой ПОСЛЕ ВОЗВРАТА — это другой состав, под ним подписываются
+# заново, и прежняя версия помечается отменённой (`superseded_at`), не стирая
+# своего статуса. Это уточняет правило Ш-5 (№411), где номер рос на каждую
+# отправку — см. Decisions за 03.09.2026.
+#
+# ЗАМОРОЗКА — по стадии ОБЪЕКТА: назначение, снятие и смена старшего сектора
+# отбиваются, как только объект дошёл до «Согласования» и дальше. Так
+# покрываются и «на согласовании» (`[СОГ-07]`: после отправки форма только для
+# чтения), и «согласовано» (`[СОГ-04]`); возврат переводит объект на
+# «Расстановку» и тем же правилом размораживает. Гвард ищет объект ПО ПОСТУ —
+# у назначения адреса объекта нет, а пост свой объект знает.
+#
+# 🔴 Правило «до „Согласования“», а не «только на „Расстановке“» — НАМЕРЕННО.
+# Первая версия запирала и «Рекогносцировку» с «Бюллетенем», и полный прогон
+# дал 27 красных: старые пробы и сокращённые фикстуры расставляют людей до
+# завершения осмотра. Спецификация замораживает ДОКУМЕНТ, а до отправки
+# документа нет — запирать ранние стадии значило бы придумать правило, которого
+# заказчик не писал (Decisions за 03.09.2026, №398).
+
+
+def _visit_of_post(event, post_id):
+    """Объект посещения, которому принадлежит пост; None — объектов нет."""
+    visits = list(event.visit_objects.order_by("position", "pk"))
+    if not visits:
+        return None
+    if len(visits) == 1:
+        return visits[0]
+    post = next(
+        (p for p in (event.recon_sector_posts or []) if str(p.get("id")) == str(post_id)),
+        None,
+    )
+    owner = str((post or {}).get("visitObjectId") or "")
+    return next((v for v in visits if str(v.pk) == owner), None)
+
+
+_FROZEN_FROM = _STAGE_ORDER.index("APPROVAL")
+
+
+def _require_placement_editable(event, post_id):
+    """Отказ, если расстановка объекта этого поста заморожена — объект на
+    «Согласовании» или дальше."""
+    visit = _visit_of_post(event, post_id)
+    if visit is None or _stage_index(visit.stage) < _FROZEN_FROM:
+        return
+    raise DomainError(
+        "PLACEMENT_FROZEN",
+        422,
+        detail={"visitObjectId": str(visit.pk), "stage": visit.stage},
+        message=(
+            "Расстановка объекта заморожена: документ на согласовании или "
+            "согласован. Изменение состава — через возврат на доработку, "
+            "новой версией документа."
+        ),
+    )
+
+
+def _document_snapshot(event, visit):
+    """Снимок того, что подписывают: посты объекта и назначения на них."""
+    posts = visit_object_posts(event, visit)
+    post_ids = {str(p.get("id")) for p in posts}
+    return {
+        "posts": posts,
+        "assignments": [
+            a for a in (event.placement_assignments or [])
+            if str(a.get("postId")) in post_ids
+        ],
+    }
+
+
+def _current_document_version(visit):
+    return visit.document_versions.order_by("-number").first()
+
+
+def _ensure_document_version(event, visit, *, actor=None):
+    """Строка ТЕКУЩЕЙ версии; заводится, если её ещё нет.
+
+    Объекты, чей `document_version` вырос до этой таблицы (№396/№411), строки
+    не имеют — бэкфилла нет намеренно (см. миграцию 0073). Первый же переход
+    заводит её из живого состава: история начинается честно, «с этого
+    момента», а не реконструкцией.
+    """
+    current = _current_document_version(visit)
+    if current is not None:
+        return current
+    number = max(int(visit.document_version or 0), 1)
+    row = OpsPlacementDocumentVersion.objects.create(
+        visit_object=visit,
+        number=number,
+        status=(
+            "APPROVED" if visit.approval_status == "APPROVED"
+            else "RETURNED" if visit.approval_status == "RETURNED"
+            else "SUBMITTED" if visit.approval_snapshot
+            else "DRAFT"
+        ),
+        signature=visit.approval_snapshot or placement_signature(event, visit),
+        snapshot=_document_snapshot(event, visit),
+        created_by=actor_display_name(actor) if actor is not None else "",
+        sent_at=Clock.now() if visit.approval_snapshot else None,
+    )
+    if visit.document_version != number:
+        visit.document_version = number
+        visit.save(update_fields=["document_version", "updated_at"])
+    return row
+
+
+def _submit_document_version(event, visit, *, actor=None):
+    """Отправка: черновик → «на согласовании» тем же номером; после возврата —
+    новая версия N+1, прежняя помечена отменённой."""
+    now = Clock.now()
+    current = _ensure_document_version(event, visit, actor=actor)
+    if current.status == "RETURNED":
+        current.superseded_at = now
+        current.save(update_fields=["superseded_at", "updated_at"])
+        current = OpsPlacementDocumentVersion.objects.create(
+            visit_object=visit,
+            number=current.number + 1,
+            status="SUBMITTED",
+            signature=placement_signature(event, visit),
+            snapshot=_document_snapshot(event, visit),
+            created_by=actor_display_name(actor) if actor is not None else "",
+            sent_at=now,
+        )
+        visit.document_version = current.number
+        visit.save(update_fields=["document_version", "updated_at"])
+        return current
+    current.status = "SUBMITTED"
+    current.sent_at = now
+    current.signature = placement_signature(event, visit)
+    current.snapshot = _document_snapshot(event, visit)
+    current.save(
+        update_fields=["status", "sent_at", "signature", "snapshot", "updated_at"]
+    )
+    return current
+
+
+def _decide_document_version(event, visit, status, *, actor=None):
+    current = _ensure_document_version(event, visit, actor=actor)
+    current.status = status
+    current.decided_at = Clock.now()
+    current.save(update_fields=["status", "decided_at", "updated_at"])
+    return current
 
 
 # ── Согласование ────────────────────────────────────────────────────────────
@@ -4477,15 +4645,11 @@ def send_for_approval(event_id, *, visit_object_id=None):
             item["comment"] = ""
     visit.approval_route = route
     visit.approval_snapshot = scoped_assignments
-    visit.document_version = (visit.document_version or 0) + 1
-    visit.save(
-        update_fields=[
-            "approval_route",
-            "approval_snapshot",
-            "document_version",
-            "updated_at",
-        ]
-    )
+    visit.save(update_fields=["approval_route", "approval_snapshot", "updated_at"])
+    # Версия документа (`[СОГ-04]`, Plane №398): черновик становится «на
+    # согласовании» тем же номером; после возврата — N+1. Указатель
+    # `document_version` ведёт сама история.
+    _submit_document_version(event, visit)
     return event
 
 
@@ -4633,6 +4797,7 @@ def approve_placement(event_id, *, visit_object_id=None):
     visit.save(
         update_fields=["approval_status", "approval_comment", "updated_at"]
     )
+    _decide_document_version(event, visit, "APPROVED")
     _sync_event_approval(event)
     # МЕРОПРИЯТИЕ ИДЁТ ДАЛЬШЕ, КОГДА СОГЛАСОВАНЫ ВСЕ ЕГО ОБЪЕКТЫ. Утверждение
     # переводит на «Ознакомление» ЭТОТ объект; мероприятие берёт наименьшую
@@ -4704,6 +4869,7 @@ def return_placement(event_id, *, comment, visit_object_id=None):
     visit.save(
         update_fields=["approval_status", "approval_comment", "updated_at"]
     )
+    _decide_document_version(event, visit, "RETURNED")
     _sync_event_approval(event)
     # ВОЗВРАТ ОДНОГО ОБЪЕКТА ВОЗВРАЩАЕТ МЕРОПРИЯТИЕ. Здесь правило обратное
     # утверждению, и намеренно: согласование ждёт всех, а работа находится по

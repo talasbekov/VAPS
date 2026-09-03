@@ -221,13 +221,16 @@ def test_the_address_is_required_when_objects_are_many(
 
 
 def test_changing_the_neighbour_does_not_stale_this_objects_approval(
-    manager, two_objects_on_approval  # noqa: F811
+    manager, approver, two_objects_on_approval  # noqa: F811
 ):
     """Подпись объекта считается по ЕГО постам.
 
     Пока снимок брался со всего мероприятия, снятие человека с поста ВТОРОГО
     объекта объявляло согласование ПЕРВОГО недействительным — ложная тревога,
     после которой баннеру перестают верить.
+
+    Второй объект сначала ВОЗВРАЩАЕТСЯ на расстановку (`[СОГ-04]`, №398): на
+    «Согласовании» его состав заморожен, и снять человека нельзя.
     """
     base, _, first, second, _ = two_objects_on_approval
     _add_approver(manager, base, first)
@@ -235,6 +238,12 @@ def test_changing_the_neighbour_does_not_stale_this_objects_approval(
         f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
     )
     assert sent.status_code == 200, sent.content
+    back = approver.post(
+        f"{base}approval/return/",
+        {"comment": "переделать второй", "visitObjectId": str(second.pk)},
+        format="json",
+    )
+    assert back.status_code == 200, back.content
 
     # Снимаем человека с поста ВТОРОГО объекта.
     fresh = manager.get(base).json()
@@ -259,14 +268,24 @@ def test_changing_the_neighbour_does_not_stale_this_objects_approval(
 
 
 def test_changing_this_object_does_stale_its_approval(
-    manager, two_objects_on_approval  # noqa: F811
+    manager, approver, two_objects_on_approval  # noqa: F811
 ):
     """Обратная половина: подпись обязана ЛОВИТЬ смену СВОЕГО состава, иначе
-    «не менялась» было бы вечнозелёным."""
+    «не менялась» было бы вечнозелёным.
+
+    Путь изменения — единственный разрешённый (`[СОГ-04]`, №398): возврат →
+    правка на «Расстановке» → повторное завершение. Пока не отправили заново,
+    состав отличается от ушедшего согласующим — расстановка «изменилась».
+    """
     base, event_id, first, _, _ = two_objects_on_approval
     _add_approver(manager, base, first)
     manager.post(
         f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    approver.post(
+        f"{base}approval/return/",
+        {"comment": "заменить", "visitObjectId": str(first.pk)},
+        format="json",
     )
 
     fresh = manager.get(base).json()
@@ -279,6 +298,15 @@ def test_changing_this_object_does_stale_its_approval(
         a for a in fresh["placementAssignments"] if a["postId"] in own_posts
     )
     manager.delete(f"{base}placement/{victim['id']}/")
+    manager.post(
+        f"{base}placement/assign/",
+        {"postId": victim["postId"], "employeeId": str(make_employee().pk)},
+        format="json",
+    )
+    done = manager.post(
+        f"{base}placement/complete/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert done.status_code == 200, done.content
 
     event = service.lock_event(event_id)
     first.refresh_from_db()
@@ -289,14 +317,19 @@ def test_changing_this_object_does_stale_its_approval(
 
 
 def test_the_document_version_grows_with_every_sending(
-    manager, two_objects_on_approval  # noqa: F811
+    manager, approver, two_objects_on_approval  # noqa: F811
 ):
+    """Номер версии — по `[СОГ-01]`/`[ВОЗ-06]` (Plane №398), а не «+1 на каждую
+    отправку»: завершение расстановки заводит черновик v1; ПЕРВАЯ отправка
+    делает его «на согласовании», номер тот же; отзыв и повторная отправка того
+    же состава номер не трогают; растёт номер только повторной отправкой ПОСЛЕ
+    ВОЗВРАТА — это другой состав, под ним подписываются заново.
+
+    Проба переписана при №398: прежнее ожидание «1 → 2 → 3» было моим
+    прочтением Ш-5, спецификация читается иначе.
+    """
     base, _, first, second, _ = two_objects_on_approval
     _add_approver(manager, base, first)
-    # ВЕРСИЯ 1 УЖЕ ВЫДАНА заведением документа при завершении расстановки
-    # (`[РАС-06]`, Plane №396) — фикстура доводит объект ДО «Согласования»
-    # именно через `placement/complete/`. «Черновик» — это версия 1, а не 0;
-    # первая ОТПРАВКА растит её дальше, на N+1 (`[ВОЗ-06]`).
     first.refresh_from_db()
     assert first.document_version == 1, "черновик не заведён завершением расстановки"
 
@@ -305,24 +338,40 @@ def test_the_document_version_grows_with_every_sending(
     )
     first.refresh_from_db()
     second.refresh_from_db()
-    assert first.document_version == 2
+    assert first.document_version == 1, "первая отправка накрутила номер"
     assert second.document_version == 1, "у соседа тоже черновик — своя расстановка"
 
-    # Отзыв номер НЕ откатывает: состав уже уходил людям, и выдать двум разным
-    # составам один номер значило бы соврать в документе.
+    # Отзыв и повторная отправка ТОГО ЖЕ состава — тот же номер.
     manager.post(
-        f"{base}approval/withdraw/",
-        {"visitObjectId": str(first.pk)},
-        format="json",
+        f"{base}approval/withdraw/", {"visitObjectId": str(first.pk)}, format="json"
     )
-    first.refresh_from_db()
-    assert first.document_version == 2
-
     manager.post(
         f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
     )
     first.refresh_from_db()
-    assert first.document_version == 3
+    assert first.document_version == 1
+
+    # Возврат → правка → повторная отправка: версия 2.
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "RETURNED", "comment": "переделать", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    approver.post(
+        f"{base}approval/return/",
+        {"comment": "на доработку", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    manager.post(
+        f"{base}placement/complete/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    first.refresh_from_db()
+    assert first.document_version == 2
 
 
 def test_the_version_reaches_the_contract(
@@ -336,7 +385,9 @@ def test_the_version_reaches_the_contract(
 
     rows = manager.get(base).json()["visitObjects"]
     mine = next(row for row in rows if row["id"] == str(first.pk))
-    assert mine["documentVersion"] == 2, "черновик (v1) + одна отправка"
+    # Черновик v1 → первая отправка — та же v1, «на согласовании» (№398).
+    assert mine["documentVersion"] == 1
+    assert mine["documentStatus"] == "SUBMITTED"
     assert [a["name"] for a in mine["approvalRoute"]] == ["К. Оразов"]
 
 

@@ -189,9 +189,31 @@ def serialize_visit_object(event, visit, *, single):
         "approvalRemarks": visit.approval_remarks or [],
         # ВЫВОД, а не поле: «расстановка объекта изменилась после отправки».
         "approvalStale": security_events.approval_is_stale(event, visit),
-        # 0 — документ не уходил согласующим; растёт отправкой на согласование.
-        # Историю версий ведёт №398 [СОГ-04].
+        # Номер ТЕКУЩЕЙ версии документа «Расстановка сил» (№396/№411): 0 —
+        # расстановка ещё не завершалась ни разу.
         "documentVersion": visit.document_version,
+        # ── История версий документа (`[СОГ-04]`, Plane №398) ───────────────
+        # Все версии, отменённые помечены `supersededAt`. Статус документа
+        # (`[СОГ-01]`: Черновик → На согласовании → Согласовано → Возвращено) —
+        # статус ТЕКУЩЕЙ версии; `null` — версий ещё нет.
+        "documentStatus": _document_status(visit),
+        "documentVersions": [
+            {
+                "number": row.number,
+                "status": row.status,
+                "signature": row.signature,
+                "createdAt": row.created_at.isoformat(),
+                "createdBy": row.created_by,
+                "sentAt": row.sent_at.isoformat() if row.sent_at else None,
+                "decidedAt": (
+                    row.decided_at.isoformat() if row.decided_at else None
+                ),
+                "supersededAt": (
+                    row.superseded_at.isoformat() if row.superseded_at else None
+                ),
+            }
+            for row in visit.document_versions.all()
+        ],
         # Замещающие — часть строки объекта, а не отдельный запрос: экран
         # показывает их в том же раскрытии реестра, и второй круг за списком
         # на каждую строку превратил бы раскрытие в N+1.
@@ -224,13 +246,21 @@ def _primary_approval(event, field):
     return getattr(visit, field)
 
 
+def _document_status(visit):
+    """Статус текущей версии документа объекта; `None` — версий ещё нет."""
+    current = max(visit.document_versions.all(), key=lambda r: r.number, default=None)
+    return current.status if current is not None else None
+
+
 def _serialize_visit_objects(event):
     """Список объектов посещения ОМ в форме контракта.
 
     `single` считается ОДИН раз по всему списку: от него зависит, можно ли
     отнести нерасписанный расчёт постов к объекту (см. `_visit_placement`).
     """
-    visits = list(event.visit_objects.prefetch_related("deputies"))
+    visits = list(
+        event.visit_objects.prefetch_related("deputies", "document_versions")
+    )
     single = len(visits) == 1
     return [serialize_visit_object(event, v, single=single) for v in visits]
 

@@ -511,3 +511,84 @@ class OpsVisitObjectDeputy(TimeStampedModel):
     def __str__(self):
         return f"{self.visit_object_id}: {self.employee_name}"
 
+
+
+class OpsPlacementDocumentVersion(TimeStampedModel):
+    """Версия документа «Расстановка сил» объекта посещения (`[СОГ-04]`,
+    Plane №398).
+
+    Требование спецификации: «После согласования версия замораживается:
+    правка невозможна; любое изменение = новая версия → повторное
+    согласование. Все версии хранятся, видны в „Истории версий“; отменённые
+    помечены». До этой таблицы у объекта был только НОМЕР текущей версии
+    (`document_version`, №396/№411) — сам состав, под которым подписывались,
+    жил лишь строкой-подписью `approval_snapshot` и терялся при следующей
+    отправке.
+
+    ОТДЕЛЬНОЙ ТАБЛИЦЕЙ, а не JSONB у объекта: версия несёт СНИМОК расчёта и
+    расстановки, её читают поимённо (история, PDF «версия N», diff в
+    `[ВОЗ-06]`), она append-only и переживает любую правку объекта. Это ровно
+    тот случай, который оговорка в докстринге модуля выносит за скобки.
+
+    `number` — тот же счётчик, что `visit_object.document_version`: строка с
+    наибольшим номером и есть текущая версия. `status` — жизнь ЭТОЙ версии
+    (`Черновик → На согласовании → Согласовано | Возвращено`, `[СОГ-01]`);
+    `superseded_at` — момент, когда версию сменила следующая: «отменённые
+    помечены», но статус при этом не стирается — согласованная и позже
+    заменённая версия остаётся согласованной в истории.
+
+    Снимок — ПОСТЫ и НАЗНАЧЕНИЯ объекта в форме контракта: ровно то, что
+    подписывают; подпись (`signature`) — та же строка, что `approval_snapshot`,
+    чтобы «расстановка изменилась после отправки» считалось по одному правилу.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Черновик"
+        SUBMITTED = "SUBMITTED", "На согласовании"
+        APPROVED = "APPROVED", "Согласовано"
+        RETURNED = "RETURNED", "Возвращено"
+
+    visit_object = models.ForeignKey(
+        OpsSecurityEventVisitObject,
+        on_delete=models.CASCADE,
+        related_name="document_versions",
+    )
+    number = models.PositiveIntegerField()
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.DRAFT
+    )
+    signature = models.TextField(blank=True, default="")
+    snapshot = models.JSONField(default=dict, blank=True)
+    # Подпись того, кто открыл версию (завершил расстановку / отправил
+    # повторно) — снимок имени, как `owner_name` у ОМ.
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ops_placement_document_versions"
+        verbose_name = "Версия документа «Расстановка сил»"
+        verbose_name_plural = "Версии документа «Расстановка сил»"
+        ordering = ["visit_object_id", "number"]
+        constraints = [
+            # Номер версии у объекта уникален: две «версии 3» — это не две
+            # версии, а сбой счётчика.
+            models.UniqueConstraint(
+                fields=["visit_object", "number"],
+                name="uniq_ops_placement_document_version",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(number__gte=1),
+                name="chk_ops_placement_document_version_number",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=("DRAFT", "SUBMITTED", "APPROVED", "RETURNED")
+                ),
+                name="chk_ops_placement_document_version_status",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.visit_object_id}: v{self.number} ({self.status})"
