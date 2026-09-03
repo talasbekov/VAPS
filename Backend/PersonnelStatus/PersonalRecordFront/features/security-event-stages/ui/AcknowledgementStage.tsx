@@ -156,6 +156,16 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                     <span className="ml-auto inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
                       Подтверждено ({formatIsoDateTime(assignment.acknowledgedAt ?? "")})
                     </span>
+                  ) : (assignment.declinedAt ?? null) !== null ? (
+                    // «Не могу заступить» из профиля (Plane №405): старший
+                    // видит причину здесь и решает, кем заменить.
+                    <span
+                      className="ml-auto inline-flex max-w-[320px] rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
+                      title={assignment.declineReason ?? undefined}
+                    >
+                      Не может заступить
+                      {assignment.declineReason ? `: ${assignment.declineReason}` : ""}
+                    </span>
                   ) : (
                     <>
                       <span className="ml-auto inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">

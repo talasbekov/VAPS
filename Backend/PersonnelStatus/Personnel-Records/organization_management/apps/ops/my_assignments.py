@@ -15,9 +15,14 @@
 """
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models_event import OpsSecurityEvent
+from django.db import transaction
+
+from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.ops.security_events import (
+    _now_iso,
     _placement_chiefs,
     employee_scope_division,
+    lock_event,
 )
 
 UNLINKED_REASON = (
@@ -128,3 +133,67 @@ def assignments_of(employee_id):
                 }
             )
     return rows
+
+
+# ── Ответ сотрудника на назначение (Plane №405, `[ПРФ-04]`) ─────────────────
+#
+# Два ответа на карточке: «Ознакомлен, заступлю» и «Не могу заступить» с
+# причиной. Оба — поля той же строки `placement_assignments`, а не отдельная
+# сущность: этап «Ознакомление» считает готовность по `acknowledgedAt`, и
+# отказ обязан быть виден там же, где подтверждение. Отказ снимает
+# подтверждение и наоборот — два ответа разом были бы ложью.
+
+
+def _find_assignment(event, assignment_id):
+    if not any(
+        str(a.get("id")) == str(assignment_id)
+        for a in (event.placement_assignments or [])
+    ):
+        raise DomainError(
+            "ENTITY_NOT_FOUND", 404, detail={"id": str(assignment_id)},
+            message="Назначение не найдено.",
+        )
+
+
+def _patch_assignment(event, assignment_id, **fields):
+    event.placement_assignments = [
+        {**a, **fields} if str(a.get("id")) == str(assignment_id) else a
+        for a in (event.placement_assignments or [])
+    ]
+    event.save(update_fields=["placement_assignments", "updated_at"])
+    return event
+
+
+@transaction.atomic
+def acknowledge(event_id, assignment_id):
+    """«Ознакомлен, заступлю»: подтверждение ставится, отказ снимается."""
+    event = lock_event(event_id)
+    _find_assignment(event, assignment_id)
+    return _patch_assignment(
+        event, assignment_id,
+        acknowledgedAt=_now_iso(), declinedAt=None, declineReason=None,
+    )
+
+
+@transaction.atomic
+def decline(event_id, assignment_id, reason):
+    """«Не могу заступить»: причина обязательна — старшему надо знать, кого
+    и почему заменять; отказ без слов читался бы как сбой."""
+    event = lock_event(event_id)
+    _find_assignment(event, assignment_id)
+    text = (reason or "").strip()
+    if not text:
+        raise DomainError(
+            "VALIDATION_ERROR", 400,
+            detail={"reason": ["Укажите причину, по которой не можете заступить."]},
+            message="Проверьте заполнение формы.",
+        )
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION", 422,
+            message="Мероприятие закрыто — отказаться от назначения уже нельзя.",
+        )
+    return _patch_assignment(
+        event, assignment_id,
+        acknowledgedAt=None, declinedAt=_now_iso(), declineReason=text,
+    )

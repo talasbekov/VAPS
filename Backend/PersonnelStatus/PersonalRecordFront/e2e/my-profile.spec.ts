@@ -126,7 +126,7 @@ test.use({ serviceWorkers: 'block' })
 test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('сотрудник БЕЗ права на реестр видит СВОИ назначения (Plane №403)', async ({ page }) => {
+  test('сотрудник БЕЗ права на реестр видит СВОИ назначения и отвечает с карточки (Plane №403, №405)', async ({ page }) => {
     /**
      * `[ОЗН-09]`. До правки вкладка ходила за реестром ОМ, а он открыт только
      * держателю `event.view`: рядовому `acc_employee` профиль отвечал «реестр
@@ -212,6 +212,42 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       await expect(upcoming.getByText(created.code, { exact: true })).toBeVisible({ timeout: 15_000 })
       await expect(page.getByText(`${target.sector} · ${target.post}`).first()).toBeVisible()
       await expect(page.getByText('назначения не показаны')).toHaveCount(0)
+
+      // Plane №405 `[ПРФ-04]`: ответ с карточки. «Не могу заступить» просит
+      // причину (кнопка отправки заперта, пока поле пустое), после отправки
+      // бейдж красный с причиной, сервер хранит отказ; «Ознакомлен,
+      // заступлю» снимает отказ и ставит подтверждение.
+      const assignmentId = (
+        await get<{ results: { eventCode: string; assignmentId: string }[] }>(
+          employeeToken,
+          '/api/ops/security-events/my-assignments/',
+        )
+      ).results.find((r) => r.eventCode === created.code)!.assignmentId
+      const card = page.getByTestId(`my-assignment-${assignmentId}`)
+      await card.getByRole('button', { name: 'Не могу заступить' }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible()
+      const send = dialog.getByRole('button', { name: 'Отправить отказ' })
+      await expect(send).toBeDisabled()
+      await dialog.getByLabel('Причина').fill('Командировка по приказу')
+      await send.click()
+      await expect(dialog).toBeHidden()
+      await expect(card.getByText('Не могу заступить: Командировка по приказу')).toBeVisible({
+        timeout: 15_000,
+      })
+      await expect
+        .poll(async () => {
+          const rows = await get<{ results: { assignmentId: string; declineReason: string | null }[] }>(
+            employeeToken,
+            '/api/ops/security-events/my-assignments/',
+          )
+          return rows.results.find((r) => r.assignmentId === assignmentId)?.declineReason ?? null
+        })
+        .toBe('Командировка по приказу')
+
+      await card.getByRole('button', { name: 'Ознакомлен, заступлю' }).click()
+      await expect(card.getByText(/^Ознакомлен: /)).toBeVisible({ timeout: 15_000 })
+      await expect(card.getByText('Не могу заступить: Командировка по приказу')).toHaveCount(0)
     } finally {
       // ОМ с расстановкой не удаляется (422) — сначала снять назначения.
       const current = await get<{ placementAssignments: { id: string }[] }>(admin, base)

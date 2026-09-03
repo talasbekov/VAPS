@@ -27,7 +27,23 @@ import {
   useEmployeeStatuses,
   useMyEmployee,
 } from "@/hooks/use-my-employee";
-import { useMyAssignments } from "@/hooks/use-my-assignments";
+import {
+  useAcknowledgeMyAssignment,
+  useDeclineMyAssignment,
+  useMyAssignments,
+} from "@/hooks/use-my-assignments";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Check, X } from "lucide-react";
 import type { MyAssignmentRow } from "@/hooks/use-my-assignments";
 import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
 import { useLegalDocuments } from "@/hooks/use-legal-documents";
@@ -538,6 +554,9 @@ interface MyAssignment {
   post: MyAssignmentPost | null;
   postLabel: string;
   acknowledgedAt: string | null;
+  /** «Не могу заступить» (Plane №405): отказ и подтверждение взаимоисключающи. */
+  declinedAt: string | null;
+  declineReason: string | null;
 }
 
 /** Плоская строка сервера → форма, которую читают вкладки. Мероприятие
@@ -569,6 +588,8 @@ function toMyAssignment(row: MyAssignmentRow): MyAssignment {
       ? `${row.sector} · ${row.post}`
       : "пост не найден в расчёте",
     acknowledgedAt: row.acknowledgedAt,
+    declinedAt: row.declinedAt ?? null,
+    declineReason: row.declineReason ?? null,
   };
 }
 
@@ -889,7 +910,9 @@ function QualificationsCard() {
  * есть личное действие со сроком, а срок — дата мероприятия.
  */
 function AttentionCard({ assignments }: { assignments: MyAssignment[] }) {
-  const pending = assignments.filter((item) => item.acknowledgedAt === null);
+  const pending = assignments.filter(
+    (item) => item.acknowledgedAt === null && item.declinedAt === null
+  );
 
   return (
     <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30">
@@ -984,7 +1007,28 @@ function DateTile({ iso }: { iso: string }) {
   );
 }
 
-function AckBadge({ acknowledgedAt }: { acknowledgedAt: string | null }) {
+function AckBadge({
+  acknowledgedAt,
+  declinedAt = null,
+  declineReason = null,
+}: {
+  acknowledgedAt: string | null;
+  declinedAt?: string | null;
+  declineReason?: string | null;
+}) {
+  // Отказ — отдельное состояние, а не «не подтверждено» (Plane №405): старший
+  // читает причину здесь же, а карточка не зовёт подтвердить то, от чего
+  // человек отказался.
+  if (declinedAt !== null) {
+    return (
+      <span
+        className="inline-flex w-fit max-w-[260px] rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
+        title={declineReason ?? undefined}
+      >
+        Не могу заступить{declineReason ? `: ${declineReason}` : ""}
+      </span>
+    );
+  }
   return acknowledgedAt === null ? (
     <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
       Ознакомление не подтверждено
@@ -997,6 +1041,14 @@ function AckBadge({ acknowledgedAt }: { acknowledgedAt: string | null }) {
 }
 
 function AssignmentRow({ item }: { item: MyAssignment }) {
+  const acknowledge = useAcknowledgeMyAssignment();
+  const decline = useDeclineMyAssignment();
+  const [declineOpen, setDeclineOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  // Ответить можно, пока мероприятие живо: закрытому ОМ ответ уже никому не
+  // нужен, и сервер его не примет.
+  const answerable = item.event.stage !== "CLOSED";
+  const busy = acknowledge.isPending || decline.isPending;
   const period =
     item.event.businessDateEnd !== null &&
     item.event.businessDateEnd !== item.event.businessDate
@@ -1040,8 +1092,58 @@ function AssignmentRow({ item }: { item: MyAssignment }) {
         </p>
       </div>
 
-      <div className="flex flex-col items-end justify-between gap-2">
-        <AckBadge acknowledgedAt={item.acknowledgedAt} />
+      <div
+        className="flex flex-col items-end justify-between gap-2"
+        data-testid={`my-assignment-${item.id}`}
+      >
+        <AckBadge
+          acknowledgedAt={item.acknowledgedAt}
+          declinedAt={item.declinedAt}
+          declineReason={item.declineReason}
+        />
+        {/* Ответ сотрудника (Plane №405, `[ПРФ-04]`): «Ознакомлен, заступлю»
+            ставит подтверждение, «Не могу заступить» просит причину. Уже
+            данный ответ можно переменить — обстоятельства меняются. */}
+        {answerable && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {item.acknowledgedAt === null && (
+              <Button
+                type="button"
+                size="sm"
+                className="h-[31px] text-[11px]"
+                disabled={busy}
+                onClick={() =>
+                  acknowledge.mutate({
+                    eventId: item.event.id,
+                    assignmentId: item.id,
+                  })
+                }
+              >
+                <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                Ознакомлен, заступлю
+              </Button>
+            )}
+            {item.declinedAt === null && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-[31px] text-[11px]"
+                disabled={busy}
+                onClick={() => setDeclineOpen(true)}
+              >
+                <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                Не могу заступить
+              </Button>
+            )}
+          </div>
+        )}
+        {(acknowledge.error || decline.error) && (
+          <p className="text-[11px] text-destructive" role="alert">
+            {(acknowledge.error ?? decline.error)?.message ??
+              "Ответ не сохранён — попробуйте ещё раз."}
+          </p>
+        )}
         <Link
           href={`/security-ops/events/${item.event.id}`}
           className="hover:bg-muted inline-flex h-[31px] shrink-0 items-center rounded-lg border bg-background px-3 text-[11px] font-medium whitespace-nowrap transition-colors"
@@ -1049,6 +1151,54 @@ function AssignmentRow({ item }: { item: MyAssignment }) {
           Инструкция по посту
         </Link>
       </div>
+
+      <Dialog open={declineOpen} onOpenChange={setDeclineOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Не могу заступить — {item.event.code}</DialogTitle>
+            <DialogDescription>
+              {item.postLabel}, {period}. Причина уйдёт старшему объекта: ему
+              нужно понять, кого и почему заменять.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor={`decline-reason-${item.id}`}>Причина</Label>
+            <Textarea
+              id={`decline-reason-${item.id}`}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Например: болезнь, командировка, отпуск по приказу"
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeclineOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={reason.trim() === "" || decline.isPending}
+              onClick={() => {
+                // Диалог закрывается только на успех: ошибка остаётся в
+                // `decline.error` и показана под кнопками карточки.
+                void decline
+                  .mutateAsync({
+                    eventId: item.event.id,
+                    assignmentId: item.id,
+                    reason: reason.trim(),
+                  })
+                  .then(() => {
+                    setDeclineOpen(false);
+                    setReason("");
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              Отправить отказ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </li>
   );
 }

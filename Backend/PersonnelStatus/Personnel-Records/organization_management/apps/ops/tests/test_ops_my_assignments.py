@@ -132,3 +132,36 @@ def test_employee_acknowledges_own_assignment_but_not_a_colleagues(manager):  # 
     assert api.get(MINE).json()["results"][0]["acknowledgedAt"] is not None
 
     assert api.post(f"{their_base}acknowledge/{their_assignment}/").status_code == 403
+
+
+def test_decline_needs_a_reason_and_is_exclusive_with_acknowledgement(manager):  # noqa: F811
+    """«Не могу заступить» (Plane №405): причина обязательна, отказ и
+    подтверждение снимают друг друга, чужое назначение — 403."""
+    me = make_employee("Свой", "С")
+    colleague = make_employee("Коллега", "К")
+    base, my_assignment = placed(manager, me)
+    their_base, their_assignment = placed(manager, colleague)
+    api = linked_client("emp-decline", me)
+
+    resp = api.post(f"{base}decline/{my_assignment}/", {"reason": "  "}, format="json")
+    assert resp.status_code == 400
+    assert "reason" in resp.json()["details"]
+
+    resp = api.post(
+        f"{base}decline/{my_assignment}/", {"reason": "Болен"}, format="json"
+    )
+    assert resp.status_code == 200, resp.data
+    row = resp.json()["placementAssignments"][0]
+    assert (row["declineReason"], row["acknowledgedAt"]) == ("Болен", None)
+    assert row["declinedAt"] is not None
+    mine = api.get(MINE).json()["results"][0]
+    assert (mine["declineReason"], mine["declinedAt"] is not None) == ("Болен", True)
+
+    # Передумал — подтверждение снимает отказ.
+    row = api.post(f"{base}acknowledge/{my_assignment}/").json()["placementAssignments"][0]
+    assert row["acknowledgedAt"] is not None
+    assert (row["declinedAt"], row["declineReason"]) == (None, None)
+
+    assert api.post(
+        f"{their_base}decline/{their_assignment}/", {"reason": "Не моё"}, format="json"
+    ).status_code == 403
