@@ -98,7 +98,7 @@ def list_kinds():
     ]
 
 
-def render(kind, *, event_code=None, as_of=None, fmt="pdf"):
+def render(kind, *, event_code=None, as_of=None, fmt="pdf", visit_object_id=None):
     """Собрать документ выбранного вида. Возвращает пару (байты, имя файла).
 
     Разница в подписях сборщиков спрятана ЗДЕСЬ и только здесь.
@@ -154,7 +154,12 @@ def render(kind, *, event_code=None, as_of=None, fmt="pdf"):
             render_placement,
         )
 
-        payload = render_placement(code, as_of=as_of, fmt=fmt)
+        # Документ «Расстановка сил» принадлежит ОБЪЕКТУ посещения (Plane
+        # №411): у ОМ с несколькими объектами сборщик просит выбрать, а не
+        # склеивает посты разных мест в одну таблицу.
+        payload = render_placement(
+            code, as_of=as_of, fmt=fmt, visit_object_id=visit_object_id
+        )
     elif kind == "placement_full":
         from organization_management.apps.ops.documents_placement_full import (
             render_placement_full,

@@ -58,6 +58,7 @@ import type {
   PersonnelSummarySnapshot,
   ReplaceAssignmentRequest,
   AddApproverRequest,
+  VisitObjectAddressed,
   DecideApproverRequest,
   MoveApproverRequest,
   ResolveRemarkRequest,
@@ -355,8 +356,8 @@ export function useCompletePlacement(id: string) {
 }
 
 export function useApprovePlacement(id: string) {
-  return useEventMutation<Record<string, never>>(id, () =>
-    opsApiClient.post<SecurityEvent>(securityEventApprovalApprovePath(id))
+  return useEventMutation<VisitObjectAddressed>(id, (body) =>
+    opsApiClient.post<SecurityEvent>(securityEventApprovalApprovePath(id), body)
   );
 }
 
@@ -457,6 +458,12 @@ export function usePersonnelMe(options: { enabled?: boolean } = {}) {
   });
 }
 
+/** Адрес объекта посещения в строке запроса — для ручек без тела (DELETE). */
+function withVisitObject(path: string, visitObjectId?: string): string {
+  if (!visitObjectId) return path;
+  return `${path}?visitObjectId=${encodeURIComponent(visitObjectId)}`;
+}
+
 /** Маршрут согласования: добавление, снятие и решение по строке. */
 export function useAddApprover(id: string, options?: StageMutationOptions) {
   return useEventMutation<AddApproverRequest>(
@@ -468,10 +475,15 @@ export function useAddApprover(id: string, options?: StageMutationOptions) {
 }
 
 export function useRemoveApprover(id: string, options?: StageMutationOptions) {
-  return useEventMutation<{ approverId: string } & Record<string, unknown>>(
+  return useEventMutation<{ approverId: string } & VisitObjectAddressed>(
     id,
-    ({ approverId }) =>
-      opsApiClient.del<SecurityEvent>(securityEventApproverPath(id, approverId)),
+    ({ approverId, visitObjectId }) =>
+      // Адрес объекта уходит СТРОКОЙ ЗАПРОСА, а не телом: снятие
+      // согласующего — DELETE, а тело у DELETE доносят не все клиенты и не
+      // всякий прокси. Сервер читает оба места (Plane №411).
+      opsApiClient.del<SecurityEvent>(
+        withVisitObject(securityEventApproverPath(id, approverId), visitObjectId)
+      ),
     options
   );
 }
@@ -479,17 +491,22 @@ export function useRemoveApprover(id: string, options?: StageMutationOptions) {
 /** Отправить расстановку согласующим: до отправки маршрут — список людей, а
  * не процесс. Отправка фиксирует на сервере снимок состава. */
 export function useSendForApproval(id: string, options?: StageMutationOptions) {
-  return useEventMutation<Record<string, never>>(
+  return useEventMutation<VisitObjectAddressed>(
     id,
-    () => opsApiClient.post<SecurityEvent>(securityEventApprovalSendPath(id)),
+    (body) =>
+      opsApiClient.post<SecurityEvent>(securityEventApprovalSendPath(id), body),
     options
   );
 }
 
 export function useWithdrawApproval(id: string, options?: StageMutationOptions) {
-  return useEventMutation<Record<string, never>>(
+  return useEventMutation<VisitObjectAddressed>(
     id,
-    () => opsApiClient.post<SecurityEvent>(securityEventApprovalWithdrawPath(id)),
+    (body) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventApprovalWithdrawPath(id),
+        body
+      ),
     options
   );
 }

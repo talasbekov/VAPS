@@ -105,9 +105,10 @@ def _visit_placement(event, visit, *, single):
     число, которого в системе нет.
     """
     posts = event.recon_sector_posts or []
-    scoped = [
-        p for p in posts if str(p.get("visitObjectId") or "") == str(visit.pk)
-    ]
+    # Разрез — один на весь раздел (`security_events.visit_object_posts`):
+    # так же считает согласование объекта (Plane №411) и экран этапа. Вторая
+    # копия правила разошлась бы с первой при первой же правке.
+    scoped = security_events.visit_object_posts(event, visit)
     unmarked = [p for p in posts if not str(p.get("visitObjectId") or "")]
     if unmarked:
         # НЕРАЗМЕЧЕННЫЕ строки и делают ответ неизвестным (Plane №409). У
@@ -115,7 +116,8 @@ def _visit_placement(event, visit, *, single):
         # некому. У второго и последующих — неизвестно, и None честнее числа.
         if not single:
             return None, None
-        scoped = [*scoped, *unmarked]
+        # При единственном объекте `visit_object_posts` неразмеченные строки
+        # уже вернул — доклеивать их второй раз значило бы посчитать дважды.
     # Разметка полная: объект без своих постов — это НОЛЬ, а не «неизвестно».
     # До №409 здесь возвращался None, и объект, которому ничего не расписали,
     # выглядел на экране так же, как объект, про который нечего сказать.
@@ -167,6 +169,20 @@ def serialize_visit_object(event, visit, *, single):
         # «посты не рассчитаны». Экран различает эти два случая словами.
         "placementNeed": need,
         "placementAssigned": assigned,
+        # ── Согласование ОБЪЕКТА (Plane №411, Ш-5 плана №385) ──────────────
+        # Требование `[МД-04]`: «У объекта свои этапы 1–5 и свой документ
+        # „Расстановка сил“ с версиями». Одноимённые поля мероприятия ниже
+        # остаются и до Ш-7 показывают состояние ПЕРВОГО объекта — старый
+        # клиент ничего не теряет, новый читает разрез.
+        "approvalStatus": visit.approval_status,
+        "approvalComment": visit.approval_comment,
+        "approvalRoute": visit.approval_route or [],
+        "approvalRemarks": visit.approval_remarks or [],
+        # ВЫВОД, а не поле: «расстановка объекта изменилась после отправки».
+        "approvalStale": security_events.approval_is_stale(event, visit),
+        # 0 — документ не уходил согласующим; растёт отправкой на согласование.
+        # Историю версий ведёт №398 [СОГ-04].
+        "documentVersion": visit.document_version,
         # Замещающие — часть строки объекта, а не отдельный запрос: экран
         # показывает их в том же раскрытии реестра, и второй круг за списком
         # на каждую строку превратил бы раскрытие в N+1.
@@ -182,6 +198,19 @@ def serialize_visit_object(event, visit, *, single):
             for d in visit.deputies.all()
         ],
     }
+
+
+def _primary_approval(event, field):
+    """Поле согласования ПЕРВОГО объекта — то, чем отвечают поля мероприятия.
+
+    Мост до Ш-7 (№413), который эти поля снимет. Объектов нет вовсе — ответ
+    берётся у мероприятия: у таких строк согласование ещё лежит там, и
+    подменять его пустотой значило бы стереть с экрана живые данные.
+    """
+    visit = security_events.primary_visit_object(event)
+    if visit is None:
+        return getattr(event, field)
+    return getattr(visit, field)
 
 
 def _serialize_visit_objects(event):
@@ -296,8 +325,15 @@ def serialize_security_event(event):
             else None
         ),
         "chiefName": event.chief_name,
-        "approvalRoute": event.approval_route or [],
-        "approvalRemarks": event.approval_remarks or [],
+        # 🔴 МАРШРУТ И ЗАМЕЧАНИЯ МЕРОПРИЯТИЯ — ВИД ПЕРВОГО ОБЪЕКТА (Plane
+        # №411). Мутации согласования пишут в объект, а не в мероприятие;
+        # столбцы `OpsSecurityEvent.approval_route/remarks/snapshot` остались
+        # только под старых читателей и снимаются в Ш-7 (№413). Отдавать их
+        # содержимое значило бы показывать состояние, которого уже никто не
+        # правит, — поэтому здесь ответ ПЕРВОГО объекта: ровно его и показывал
+        # экран до разреза, когда согласование было одно на мероприятие.
+        "approvalRoute": _primary_approval(event, "approval_route") or [],
+        "approvalRemarks": _primary_approval(event, "approval_remarks") or [],
         # ВЫВОД, а не поле: «расстановка изменилась после отправки» клиент
         # иначе считал бы сам — то есть завёл бы вторую реализацию правила,
         # по которой сервер завершение этапа не блокирует.

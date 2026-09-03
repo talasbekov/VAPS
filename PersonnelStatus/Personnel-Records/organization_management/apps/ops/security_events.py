@@ -1390,39 +1390,25 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     return event
 
 
-def _import_target(event, visit_object_id):
-    """Объект посещения, для которого идёт импорт постов (Plane №408).
+def pick_visit_object(event, visit_object_id, *, no_objects, ambiguous):
+    """Объект посещения, которому адресована операция этапа.
 
-    Спецификация `[РЕК-05]`: «Импорт из паспорта ОБЪЕКТА ПОСЕЩЕНИЯ». До этого
-    шага импорт брал паспорт МЕРОПРИЯТИЯ и клал посты в общий расчёт без
-    указания, чьи они, — а `_visit_placement` из-за этого отвечал «неизвестно»
-    у любого ОМ с двумя объектами: потребность объекта посчитать было не из
-    чего.
+    ОДНО ПРАВИЛО НА ВСЕ ЭТАПЫ (Plane №408 — импорт постов, №411 —
+    согласование): объект не назван и он ОДИН — берётся он, другого адресата
+    нет; объектов несколько — ОТКАЗ, а не «первый попавшийся», потому что
+    выбор за человеком, а угаданный адресат потом не отличить от названного;
+    объектов нет вовсе — отказ с указанием завести объект.
 
-    Объект не назван и он ОДИН — берётся он: другого адресата у постов нет.
-    Объектов несколько — ОТКАЗ, а не «первый попавшийся»: выбор за человеком,
-    и угадать его значило бы приписать посты чужому объекту.
+    Тексты отказов приходят от вызывающего: «посты расчёта принадлежат
+    объекту» и «документ принадлежит объекту» чинятся по-разному, и общая
+    формулировка не подсказала бы ни того, ни другого.
     """
     visits = list(event.visit_objects.order_by("position", "pk"))
     if not visits:
-        raise DomainError(
-            "VISIT_OBJECT_REQUIRED",
-            422,
-            message=(
-                "У мероприятия нет объектов посещения: добавьте объект — "
-                "посты расчёта принадлежат ему, а не мероприятию."
-            ),
-        )
+        raise DomainError("VISIT_OBJECT_REQUIRED", 422, message=no_objects)
     if visit_object_id in (None, ""):
         if len(visits) > 1:
-            raise DomainError(
-                "VISIT_OBJECT_REQUIRED",
-                422,
-                message=(
-                    "У мероприятия несколько объектов посещения — выберите, "
-                    "для какого импортировать посты."
-                ),
-            )
+            raise DomainError("VISIT_OBJECT_REQUIRED", 422, message=ambiguous)
         return visits[0]
     target = next(
         (v for v in visits if str(v.pk) == str(visit_object_id)), None
@@ -1434,6 +1420,60 @@ def _import_target(event, visit_object_id):
             message="Объект посещения не найден в этом мероприятии.",
         )
     return target
+
+
+def primary_visit_object(event):
+    """Объект, которым отвечают ПОЛЯ МЕРОПРИЯТИЯ, пока их читатели не переехали.
+
+    Мост шагов Ш-5…Ш-7 плана №385, а не самостоятельное понятие. Поля
+    `approval_*` у `OpsSecurityEvent` ещё читает сериализатор (и через него —
+    клиент, написанный до разреза по объектам); писать в них мутации перестали,
+    поэтому единственный честный ответ «что показать в них» — состояние ПЕРВОГО
+    объекта: ровно его показывал экран и до переезда, когда согласование было
+    одно на мероприятие. Снимается вместе с полями в Ш-7 (№413).
+    """
+    return event.visit_objects.order_by("position", "pk").first()
+
+
+def visit_object_posts(event, visit):
+    """Строки расчёта постов, принадлежащие объекту посещения.
+
+    У ЕДИНСТВЕННОГО объекта его посты — ВСЕ, включая неразмеченные: другим
+    объектам они принадлежать не могут (так же считает `_visit_placement`
+    сериализатора и разрез экрана `useVisitObjectScope`). У второго и
+    последующих неразмеченная строка не принадлежит никому: приписать её
+    объекту значило бы выдумать факт, которого в данных нет.
+    """
+    posts = event.recon_sector_posts or []
+    scoped = [
+        p for p in posts if str(p.get("visitObjectId") or "") == str(visit.pk)
+    ]
+    if event.visit_objects.count() == 1:
+        return list(posts)
+    return scoped
+
+
+def _import_target(event, visit_object_id):
+    """Объект посещения, для которого идёт импорт постов (Plane №408).
+
+    Спецификация `[РЕК-05]`: «Импорт из паспорта ОБЪЕКТА ПОСЕЩЕНИЯ». До этого
+    шага импорт брал паспорт МЕРОПРИЯТИЯ и клал посты в общий расчёт без
+    указания, чьи они, — а `_visit_placement` из-за этого отвечал «неизвестно»
+    у любого ОМ с двумя объектами: потребность объекта посчитать было не из
+    чего.
+    """
+    return pick_visit_object(
+        event,
+        visit_object_id,
+        no_objects=(
+            "У мероприятия нет объектов посещения: добавьте объект — "
+            "посты расчёта принадлежат ему, а не мероприятию."
+        ),
+        ambiguous=(
+            "У мероприятия несколько объектов посещения — выберите, "
+            "для какого импортировать посты."
+        ),
+    )
 
 
 @transaction.atomic
@@ -3796,6 +3836,37 @@ def complete_placement(event_id):
 
 
 # ── Согласование ────────────────────────────────────────────────────────────
+#
+# 🔴 СОГЛАСУЮТ ОБЪЕКТ ПОСЕЩЕНИЯ, А НЕ МЕРОПРИЯТИЕ (Plane №411, Ш-5 плана
+# №385). Требование `[МД-04]`: «У объекта свои этапы 1–5 и свой документ
+# „Расстановка сил“ с версиями». До этого шага маршрут, замечания и снимок
+# состава были полями МЕРОПРИЯТИЯ: у ОМ с двумя объектами согласующий
+# подписывался под общим списком, в котором посты двух разных объектов лежали
+# вперемешку, а вернуть на доработку один объект было нельзя вовсе.
+#
+# Все мутации ниже принимают `visit_object_id` и пишут В ОБЪЕКТ. Поля
+# `approval_*` у `OpsSecurityEvent` мутации больше НЕ ПИШУТ — кроме двух
+# сводных (`approval_status`, `approval_comment`), по которым считается стадия
+# мероприятия и которые снимает Ш-7. Читателям (сериализатор) отвечает
+# `primary_visit_object`. Это и есть правило плана «старый адрес пишет в
+# объект, а не рядом»: двух источников правды в промежутке не заводим.
+
+
+def _approval_target(event, visit_object_id):
+    """Объект посещения, чьё согласование правит операция."""
+    return pick_visit_object(
+        event,
+        visit_object_id,
+        no_objects=(
+            "У мероприятия нет объектов посещения: добавьте объект — документ "
+            "«Расстановка сил» и маршрут согласования принадлежат ему, а не "
+            "мероприятию."
+        ),
+        ambiguous=(
+            "У мероприятия несколько объектов посещения — выберите, "
+            "согласование какого из них вы правите."
+        ),
+    )
 
 
 def _next_approver_number(route):
@@ -3807,18 +3878,48 @@ def _next_approver_number(route):
     return (max(numbers) + 1) if numbers else 1
 
 
+def _sync_event_approval(event):
+    """Свести согласование мероприятия по его объектам.
+
+    Мост до Ш-6, который делает производными ВСЕ поля мероприятия. Здесь
+    сведены два, от которых зависит стадия: пока хоть один объект возвращён —
+    возвращено мероприятие (работа есть); согласовано — только когда
+    согласованы все; иначе ожидание. Причина возврата берётся у последнего
+    возвращённого объекта: она и есть то, что человек читает баннером.
+    """
+    visits = list(event.visit_objects.order_by("position", "pk"))
+    if not visits:
+        return
+    returned = [v for v in visits if v.approval_status == "RETURNED"]
+    if returned:
+        status = "RETURNED"
+        comment = returned[-1].approval_comment
+    elif all(v.approval_status == "APPROVED" for v in visits):
+        status = "APPROVED"
+        comment = ""
+    else:
+        status = "PENDING"
+        comment = ""
+    if event.approval_status == status and event.approval_comment == comment:
+        return
+    event.approval_status = status
+    event.approval_comment = comment
+    event.save(update_fields=["approval_status", "approval_comment", "updated_at"])
+
+
 @transaction.atomic
-def add_approver(event_id, *, name, unit, position):
-    """Добавляет согласующего в конец маршрута.
+def add_approver(event_id, *, name, unit, position, visit_object_id=None):
+    """Добавляет согласующего в конец маршрута ОБЪЕКТА.
 
     Порядок — позиция в списке: у согласования он значим (кто первый), и
     отдельного поля под номер не нужно, иначе появятся два источника правды.
     """
     event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
     clean_name = str(name or "").strip()
     if clean_name == "":
         raise _validation({"name": ["Обязательное поле."]})
-    route = list(event.approval_route or [])
+    route = list(visit.approval_route or [])
     route.append(
         {
             # Идентификатор едет в URL, поэтому без времени и двоеточий:
@@ -3837,33 +3938,39 @@ def add_approver(event_id, *, name, unit, position):
             "comment": "",
         }
     )
-    event.approval_route = route
-    event.save(update_fields=["approval_route", "updated_at"])
+    visit.approval_route = route
+    visit.save(update_fields=["approval_route", "updated_at"])
     return event
 
 
 @transaction.atomic
-def remove_approver(event_id, approver_id):
+def remove_approver(event_id, approver_id, *, visit_object_id=None):
     event = lock_event(event_id)
-    route = [a for a in (event.approval_route or []) if a.get("id") != approver_id]
-    if len(route) == len(event.approval_route or []):
+    visit = _approval_target(event, visit_object_id)
+    route = [
+        a for a in (visit.approval_route or []) if a.get("id") != approver_id
+    ]
+    if len(route) == len(visit.approval_route or []):
         raise _not_found("Согласующий не найден.", approver_id)
-    event.approval_route = route
-    event.save(update_fields=["approval_route", "updated_at"])
+    visit.approval_route = route
+    visit.save(update_fields=["approval_route", "updated_at"])
     return event
 
 
 @transaction.atomic
-def decide_approver(event_id, *, approver_id, decision, comment):
+def decide_approver(
+    event_id, *, approver_id, decision, comment, visit_object_id=None
+):
     """Решение одного согласующего. Возврат требует причины — как и возврат
     расстановки: «вернул без объяснения» неисполнимо для исполнителя."""
     event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
     if decision not in ("APPROVED", "RETURNED"):
         raise _validation({"decision": ["Допустимо APPROVED или RETURNED."]})
     clean_comment = str(comment or "").strip()
     if decision == "RETURNED" and clean_comment == "":
         raise _validation({"comment": ["Укажите причину возврата."]})
-    route = list(event.approval_route or [])
+    route = list(visit.approval_route or [])
     target = next(
         (item for item in route if item.get("id") == approver_id), None
     )
@@ -3882,12 +3989,12 @@ def decide_approver(event_id, *, approver_id, decision, comment):
     # При согласовании комментарий не спрашивают: эталон проставляет «Без
     # замечаний» сам, и пустая графа читалась бы как «забыли написать».
     target["comment"] = clean_comment if decision == "RETURNED" else "Без замечаний"
-    event.approval_route = route
+    visit.approval_route = route
     fields = ["approval_route", "updated_at"]
     if decision == "RETURNED":
         # Возврат порождает ЗАМЕЧАНИЕ: решение согласующего живёт в его
         # строке, а работа по нему — в списке, который закрывают по одному.
-        remarks = list(event.approval_remarks or [])
+        remarks = list(visit.approval_remarks or [])
         remarks.append(
             {
                 "id": f"remark-{len(remarks) + 1}-{approver_id}",
@@ -3899,58 +4006,82 @@ def decide_approver(event_id, *, approver_id, decision, comment):
                 "resolvedAt": None,
             }
         )
-        event.approval_remarks = remarks
+        visit.approval_remarks = remarks
         fields.insert(1, "approval_remarks")
-    event.save(update_fields=fields)
+    visit.save(update_fields=fields)
     return event
 
 
-def placement_signature(event):
+def placement_signature(event, visit=None):
     """Подпись расстановки: что именно согласуют.
 
     Сортированная, потому что порядок назначений в списке — деталь хранения, а
     не факт о расстановке: перестановка тех же людей по тем же постам не
     является изменением, и «расстановка изменилась» на неё было бы ложной
     тревогой. В подпись входят пост и человек — ровно то, что подписывают.
+
+    Объект назван — в подпись входят ТОЛЬКО назначения на его посты (Plane
+    №411): иначе правка расстановки соседнего объекта сбрасывала бы чужое
+    согласование, под которым ничего не менялось.
     """
+    assignments = event.placement_assignments or []
+    if visit is not None:
+        post_ids = {
+            str(p.get("id")) for p in visit_object_posts(event, visit)
+        }
+        assignments = [
+            a for a in assignments if str(a.get("postId")) in post_ids
+        ]
     pairs = sorted(
         f"{item.get('postId')}:{item.get('employeeId')}"
-        for item in (event.placement_assignments or [])
+        for item in assignments
     )
     return ";".join(pairs)
 
 
-def approval_is_stale(event):
+def approval_is_stale(event, visit=None):
     """Расстановка изменилась ПОСЛЕ отправки на согласование.
 
     Пустой снимок — «не отправляли», а не «не изменилась»: до отправки
     сравнивать не с чем, и баннер о повторном согласовании там был бы шумом.
+
+    Объект не назван — отвечает ПЕРВЫЙ объект мероприятия: поля мероприятия
+    остаются его видом до Ш-7 (см. `primary_visit_object`). Объектов нет
+    вовсе — сравнивать не с чем и ответ «не изменилась».
     """
-    if event.approval_snapshot == "":
+    if visit is None:
+        visit = primary_visit_object(event)
+    if visit is None:
         return False
-    return event.approval_snapshot != placement_signature(event)
+    if visit.approval_snapshot == "":
+        return False
+    return visit.approval_snapshot != placement_signature(event, visit)
 
 
 @transaction.atomic
-def send_for_approval(event_id):
-    """Отправить расстановку согласующим.
+def send_for_approval(event_id, *, visit_object_id=None):
+    """Отправить расстановку объекта согласующим.
 
     До отправки маршрут — это список людей, а не процесс: решать им нечего.
     Отправка фиксирует СНИМОК расстановки — тот состав, под которым они
-    подпишутся.
+    подпишутся, — и выдаёт документу объекта СЛЕДУЮЩИЙ НОМЕР ВЕРСИИ: версия
+    это то, под чем подписываются, и растёт она отправкой, а не каждым
+    движением человека по постам.
     """
     event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
     _require_stage(
         event,
         "APPROVAL",
         "Отправить на согласование можно только на этапе «Согласование».",
     )
-    route = list(event.approval_route or [])
+    route = list(visit.approval_route or [])
     if not route:
         raise DomainError("APPROVAL_ROUTE_EMPTY", 422, message=
             "Маршрут согласования пуст — добавьте хотя бы одного согласующего.",
         )
-    if not event.placement_assignments:
+    scoped_assignments = placement_signature(event, visit)
+    if scoped_assignments == "":
         raise DomainError("PLACEMENT_EMPTY", 422, message=
             "Расстановка пуста — согласовывать нечего.",
         )
@@ -3964,44 +4095,54 @@ def send_for_approval(event_id):
         item["decidedAt"] = None
         if not was_returned:
             item["comment"] = ""
-    event.approval_route = route
-    event.approval_snapshot = placement_signature(event)
-    event.save(
-        update_fields=["approval_route", "approval_snapshot", "updated_at"]
+    visit.approval_route = route
+    visit.approval_snapshot = scoped_assignments
+    visit.document_version = (visit.document_version or 0) + 1
+    visit.save(
+        update_fields=[
+            "approval_route",
+            "approval_snapshot",
+            "document_version",
+            "updated_at",
+        ]
     )
     return event
 
 
 @transaction.atomic
-def withdraw_from_approval(event_id):
+def withdraw_from_approval(event_id, *, visit_object_id=None):
     """Отозвать с согласования.
 
     Уже принятые решения не отменяются: согласовавший согласовал, вернувший
     вернул — стирать чужое решение отзывом значило бы переписывать историю.
-    Снимок тоже остаётся: отзыв не меняет расстановку.
+    Снимок тоже остаётся: отзыв не меняет расстановку. Номер версии тоже: она
+    уже уходила людям, и «откатить» её значило бы выдать двум разным составам
+    один номер.
     """
     event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
     _require_stage(
         event,
         "APPROVAL",
         "Отозвать с согласования можно только на этапе «Согласование».",
     )
-    route = list(event.approval_route or [])
+    route = list(visit.approval_route or [])
     for item in route:
         if item.get("status") == "PENDING":
             item["status"] = "NOT_SENT"
-    event.approval_route = route
-    event.save(update_fields=["approval_route", "updated_at"])
+    visit.approval_route = route
+    visit.save(update_fields=["approval_route", "updated_at"])
     return event
 
 
 @transaction.atomic
-def move_approver(event_id, approver_id, *, direction):
+def move_approver(event_id, approver_id, *, direction, visit_object_id=None):
     """Переставить согласующего в маршруте на позицию вверх или вниз."""
     event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
     if direction not in ("UP", "DOWN"):
         raise _validation({"direction": ["Допустимо UP или DOWN."]})
-    route = list(event.approval_route or [])
+    route = list(visit.approval_route or [])
     index = next(
         (i for i, item in enumerate(route) if item.get("id") == approver_id), None
     )
@@ -4012,16 +4153,17 @@ def move_approver(event_id, approver_id, *, direction):
     # клиента считать границы, которые сервер и так знает.
     if 0 <= target < len(route):
         route[index], route[target] = route[target], route[index]
-        event.approval_route = route
-        event.save(update_fields=["approval_route", "updated_at"])
+        visit.approval_route = route
+        visit.save(update_fields=["approval_route", "updated_at"])
     return event
 
 
 @transaction.atomic
-def resolve_remark(event_id, remark_id, *, resolved):
+def resolve_remark(event_id, remark_id, *, resolved, visit_object_id=None):
     """Отметить замечание устранённым (или вернуть его в работу)."""
     event = lock_event(event_id)
-    remarks = list(event.approval_remarks or [])
+    visit = _approval_target(event, visit_object_id)
+    remarks = list(visit.approval_remarks or [])
     found = False
     for item in remarks:
         if item.get("id") == remark_id:
@@ -4031,14 +4173,15 @@ def resolve_remark(event_id, remark_id, *, resolved):
             break
     if not found:
         raise _not_found("Замечание не найдено.", remark_id)
-    event.approval_remarks = remarks
-    event.save(update_fields=["approval_remarks", "updated_at"])
+    visit.approval_remarks = remarks
+    visit.save(update_fields=["approval_remarks", "updated_at"])
     return event
 
 
 @transaction.atomic
-def approve_placement(event_id):
+def approve_placement(event_id, *, visit_object_id=None):
     event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
     _require_stage(
         event,
         "APPROVAL",
@@ -4047,13 +4190,13 @@ def approve_placement(event_id):
     # Условия завершения этапа — из эталона (задача заказчика «ОМ-37.3»).
     # Каждое отвечает на свой вопрос, поэтому и текст у каждого свой: «не
     # получилось» без причины не подсказывает, что чинить.
-    route = list(event.approval_route or [])
+    route = list(visit.approval_route or [])
     if not route:
         raise DomainError("APPROVAL_ROUTE_EMPTY", 422, message=
             "Маршрут согласования пуст — добавьте согласующих и отправьте им "
             "расстановку.",
         )
-    if approval_is_stale(event):
+    if approval_is_stale(event, visit):
         raise DomainError("APPROVAL_STALE", 422, message=
             "Расстановка изменилась после отправки — отправьте её на "
             "повторное согласование.",
@@ -4072,32 +4215,35 @@ def approve_placement(event_id):
             if pending
             else "Расстановка не отправлена на согласование.",
         )
-    if any(not item.get("resolved") for item in (event.approval_remarks or [])):
+    if any(not item.get("resolved") for item in (visit.approval_remarks or [])):
         raise DomainError("APPROVAL_REMARKS_OPEN", 422, message=
             "Есть неустранённые замечания — закройте их перед завершением "
             "этапа.",
         )
-    # утверждение сразу открывает «Ознакомление», без отдельного клика
-    event.approval_status = "APPROVED"
-    event.approval_comment = ""
-    event.stage = "ACKNOWLEDGEMENT"
-    event.readiness_percent = STAGE_READINESS["ACKNOWLEDGEMENT"]
-    event.save(
-        update_fields=[
-            "approval_status",
-            "approval_comment",
-            "stage",
-            "readiness_percent",
-            "updated_at",
-        ]
+    visit.approval_status = "APPROVED"
+    visit.approval_comment = ""
+    visit.save(
+        update_fields=["approval_status", "approval_comment", "updated_at"]
     )
-    record_transition(event, "APPROVAL", "ACKNOWLEDGEMENT")
+    _sync_event_approval(event)
+    # МЕРОПРИЯТИЕ ИДЁТ ДАЛЬШЕ, КОГДА СОГЛАСОВАНЫ ВСЕ ЕГО ОБЪЕКТЫ. Ознакомление
+    # идёт по назначениям, а они у объектов разные: открыть его по первому
+    # согласованному объекту значило бы позвать людей второго знакомиться с
+    # расстановкой, которую ещё правят. Полный разбор «мероприятие считается по
+    # объектам» — Ш-6 (Plane №412); здесь ровно то, без чего цепочка встала бы.
+    if event.approval_status == "APPROVED":
+        # утверждение сразу открывает «Ознакомление», без отдельного клика
+        event.stage = "ACKNOWLEDGEMENT"
+        event.readiness_percent = STAGE_READINESS["ACKNOWLEDGEMENT"]
+        event.save(update_fields=["stage", "readiness_percent", "updated_at"])
+        record_transition(event, "APPROVAL", "ACKNOWLEDGEMENT")
     return event
 
 
 @transaction.atomic
-def return_placement(event_id, *, comment):
+def return_placement(event_id, *, comment, visit_object_id=None):
     event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
     comment = str(comment or "").strip()
     if comment == "":
         raise _validation({"comment": ["Укажите причину возврата."]})
@@ -4106,19 +4252,19 @@ def return_placement(event_id, *, comment):
         "APPROVAL",
         "Вернуть на доработку можно только на этапе «Согласование».",
     )
-    event.approval_status = "RETURNED"
-    event.approval_comment = comment
+    visit.approval_status = "RETURNED"
+    visit.approval_comment = comment
+    visit.save(
+        update_fields=["approval_status", "approval_comment", "updated_at"]
+    )
+    _sync_event_approval(event)
+    # ВОЗВРАТ ОДНОГО ОБЪЕКТА ВОЗВРАЩАЕТ МЕРОПРИЯТИЕ. Здесь правило обратное
+    # утверждению, и намеренно: согласование ждёт всех, а работа находится по
+    # одному. Расстановку правят на этапе «Расстановка» — не вернув туда
+    # мероприятие, исправлять замечание было бы негде.
     event.stage = "PLACEMENT"
     event.readiness_percent = STAGE_READINESS["PLACEMENT"]
-    event.save(
-        update_fields=[
-            "approval_status",
-            "approval_comment",
-            "stage",
-            "readiness_percent",
-            "updated_at",
-        ]
-    )
+    event.save(update_fields=["stage", "readiness_percent", "updated_at"])
     record_transition(event, "APPROVAL", "PLACEMENT")
     return event
 

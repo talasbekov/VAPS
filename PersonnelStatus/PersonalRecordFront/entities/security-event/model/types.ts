@@ -383,6 +383,30 @@ export interface VisitObject {
    * не имея общего права вести мероприятие. Приходят вместе со строкой
    * объекта — раскрытие реестра иначе стучалось бы за списком на каждую. */
   deputies: VisitObjectDeputy[];
+  /**
+   * ── Согласование ОБЪЕКТА (Plane №411, Ш-5 плана №385) ──────────────────
+   *
+   * Требование `[МД-04]`: «У объекта свои этапы 1–5 и свой документ
+   * „Расстановка сил“ с версиями». Согласуют ОБЪЕКТ: у каждого свой маршрут,
+   * свои замечания и свой снимок состава. Одноимённые поля мероприятия
+   * остаются и до Ш-7 (№413) показывают состояние ПЕРВОГО объекта — старый
+   * читатель ничего не теряет.
+   */
+  approvalStatus: ApprovalStatus;
+  /** Причина последнего возврата ЭТОГО объекта; пусто — возвратов не было. */
+  approvalComment: string;
+  approvalRoute: Approver[];
+  approvalRemarks: ApprovalRemark[];
+  /** Расстановка ОБЪЕКТА изменилась после отправки. Считает сервер — по
+   * этому же признаку он отбивает завершение этапа. */
+  approvalStale: boolean;
+  /**
+   * Номер версии документа «Расстановка сил» объекта. `0` — документ ещё не
+   * уходил согласующим, и это ОТВЕТ, а не «первая версия»; растёт при каждой
+   * отправке на согласование. Историю версий ведёт отдельная карточка
+   * (№398) — здесь только номер текущей.
+   */
+  documentVersion: number;
 }
 
 /** Замещающий на объекте посещения (Plane «Реестр ОМ-24»). */
@@ -716,7 +740,7 @@ export interface AssignPlacementRequest extends Record<string, unknown> {
   override_reason?: string;
 }
 
-export interface ReturnPlacementRequest extends Record<string, unknown> {
+export interface ReturnPlacementRequest extends VisitObjectAddressed {
   comment: string;
 }
 
@@ -1073,13 +1097,23 @@ export function securityEventApproverDecidePath(
   return `${securityEventApproverPath(id, approverId)}decide/`;
 }
 
-export interface AddApproverRequest extends Record<string, unknown> {
+/**
+ * Адресат операции согласования (Plane №411, Ш-5 плана №385): согласуют
+ * ОБЪЕКТ ПОСЕЩЕНИЯ, а не мероприятие. Не прислали — сервер возьмёт
+ * единственный объект; при нескольких откажет с просьбой выбрать, а не
+ * угадает: приписанное чужому объекту согласование потом не различить.
+ */
+export interface VisitObjectAddressed extends Record<string, unknown> {
+  visitObjectId?: string;
+}
+
+export interface AddApproverRequest extends VisitObjectAddressed {
   name: string;
   unit: string;
   position: string;
 }
 
-export interface DecideApproverRequest extends Record<string, unknown> {
+export interface DecideApproverRequest extends VisitObjectAddressed {
   decision: "APPROVED" | "RETURNED";
   comment: string;
 }
@@ -1091,7 +1125,7 @@ export function securityEventApproverMovePath(
   return `${securityEventApproverPath(id, approverId)}move/`;
 }
 
-export interface MoveApproverRequest extends Record<string, unknown> {
+export interface MoveApproverRequest extends VisitObjectAddressed {
   direction: "UP" | "DOWN";
 }
 
@@ -1108,7 +1142,7 @@ export function securityEventRemarkResolvePath(
   return `${SECURITY_EVENTS_PATH}${id}/approval/remarks/${encodeURIComponent(remarkId)}/resolve/`;
 }
 
-export interface ResolveRemarkRequest extends Record<string, unknown> {
+export interface ResolveRemarkRequest extends VisitObjectAddressed {
   resolved: boolean;
 }
 

@@ -968,7 +968,13 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         om.pk, name="К. Оразов", unit="Департамент охраны", position="Зам."
     )
     om.refresh_from_db()
-    approver_id = om.approval_route[0]["id"]
+    # МАРШРУТ СОГЛАСОВАНИЯ ЖИВЁТ У ОБЪЕКТА ПОСЕЩЕНИЯ (Plane №411, Ш-5 плана
+    # №385): согласуют объект и его документ «Расстановка сил», а не
+    # мероприятие целиком. Столбец `om.approval_route` мутации больше не
+    # пишут — он остался под старых читателей и снимается в Ш-7 (№413),
+    # поэтому проба спрашивает там, где теперь ответ.
+    approver_id = om.visit_objects.order_by("position", "pk").first(
+    ).approval_route[0]["id"]
     event_service.send_for_approval(om.pk)
     event_service.decide_approver(
         om.pk, approver_id=approver_id, decision="APPROVED", comment=""

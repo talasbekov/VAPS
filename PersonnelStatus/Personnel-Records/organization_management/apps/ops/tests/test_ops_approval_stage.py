@@ -97,13 +97,44 @@ def test_changing_the_placement_after_sending_invalidates_approval(manager, appr
     assert resp.json()["error_code"] == "APPROVAL_STALE"
 
 
+class _VisitStub:
+    """Объект посещения «на бумаге».
+
+    СНИМОК РАССТАНОВКИ ЖИВЁТ У ОБЪЕКТА, а не у мероприятия (Plane №411, Ш-5
+    плана №385): согласуют объект, и его подпись считается по ЕГО постам.
+    Поэтому бумажная модель переехала сюда вместе с полем — иначе проба
+    сторожила бы столбец, в который больше никто не пишет.
+    """
+
+    pk = 1
+
+    def __init__(self, snapshot=""):
+        self.approval_snapshot = snapshot
+
+
+class _VisitManagerStub:
+    """Ровно то, что спрашивает `visit_object_posts`: сколько их всего."""
+
+    def __init__(self, total):
+        self._total = total
+
+    def count(self):
+        return self._total
+
+
 class _Stub:
     """Мероприятие «на бумаге»: подпись расстановки — чистая функция от
     назначений, и гонять ради неё всю цепочку стадий незачем."""
 
     def __init__(self, assignments, snapshot=""):
         self.placement_assignments = assignments
-        self.approval_snapshot = snapshot
+        # Посты нужны разрезу по объекту: чьи назначения входят в подпись,
+        # решается по постам объекта. Объект здесь ОДИН — значит его все.
+        self.recon_sector_posts = [
+            {"id": row["postId"], "visitObjectId": None} for row in assignments
+        ]
+        self.visit_objects = _VisitManagerStub(1)
+        self.visit = _VisitStub(snapshot)
 
 
 def test_the_snapshot_is_blind_to_the_order_of_assignments():
@@ -126,7 +157,7 @@ def test_the_snapshot_is_blind_to_the_order_of_assignments():
     shuffled = _Stub([rows[2], rows[0], rows[1]], snapshot=signature)
 
     assert service.placement_signature(shuffled) == signature
-    assert service.approval_is_stale(shuffled) is False
+    assert service.approval_is_stale(shuffled, shuffled.visit) is False
 
 
 def test_a_different_person_on_the_same_post_changes_the_signature():
@@ -145,7 +176,7 @@ def test_a_different_person_on_the_same_post_changes_the_signature():
     )
 
     assert service.placement_signature(replaced) != signature
-    assert service.approval_is_stale(replaced) is True
+    assert service.approval_is_stale(replaced, replaced.visit) is True
 
 
 def test_an_event_never_sent_is_not_stale(manager):  # noqa: F811

@@ -194,10 +194,38 @@ const approvalSnapshots = new Map<string, string>();
  * Зовётся отовсюду, где меняется состав. */
 function withStaleFlag(event: SecurityEvent): SecurityEvent {
   const snapshot = approvalSnapshots.get(event.id);
-  return {
+  return mirrorApproval({
     ...event,
     approvalStale:
       snapshot !== undefined && snapshot !== placementSignature(event),
+  });
+}
+
+/**
+ * Согласование мероприятия отражается в его объект посещения (Plane №411).
+ *
+ * У сервера правда живёт в ОБЪЕКТЕ, а поля мероприятия — вид первого объекта.
+ * В мире мока объект у мероприятия ровно ОДИН (`emptyEvent` заводит его вместе
+ * с ОМ), и потому обе картины совпадают до последнего поля — зеркало здесь
+ * даёт клиенту ту же форму, что и сервер, не заводя в моке вторую реализацию
+ * правил согласования. Как только у мока появятся ОМ с двумя объектами, это
+ * место придётся переписать по-настоящему — и падать оно начнёт заметно, а не
+ * молча: маршруты объектов совпадут там, где обязаны различаться.
+ *
+ * `documentVersion` НЕ трогается: у мероприятия такого поля нет вовсе, номер
+ * растит только отправка на согласование.
+ */
+function mirrorApproval(event: SecurityEvent): SecurityEvent {
+  return {
+    ...event,
+    visitObjects: event.visitObjects.map((visit) => ({
+      ...visit,
+      approvalStatus: event.approvalStatus,
+      approvalComment: event.approvalComment,
+      approvalRoute: event.approvalRoute,
+      approvalRemarks: event.approvalRemarks,
+      approvalStale: event.approvalStale,
+    })),
   };
 }
 
@@ -246,6 +274,15 @@ function emptyEvent(
         placementNeed: 0,
         placementAssigned: 0,
         deputies: [],
+        // Согласование объекта (Plane №411) — свежий объект ничего ещё не
+        // согласовывал, и версии документа у него нет: 0 значит «не
+        // отправлялся», а не «версия ноль».
+        approvalStatus: "PENDING",
+        approvalComment: "",
+        approvalRoute: [],
+        approvalRemarks: [],
+        approvalStale: false,
+        documentVersion: 0,
       },
     ],
     businessDate: date,
@@ -454,10 +491,10 @@ function saveEvent(updated: SecurityEvent): SecurityEvent {
   // выдаче. В моке он пересчитывается здесь, на общем пути сохранения, иначе
   // каждая ручка обязана была бы помнить про него — и первая же забывшая
   // отдала бы клиенту раскладку с нулевой потребностью.
-  const withTotal: SecurityEvent = {
+  const withTotal: SecurityEvent = mirrorApproval({
     ...updated,
     forceDemandTotal: updated.reconForceRequest || updated.forceNeed,
-  };
+  });
   events = getEvents().map((e) => (e.id === withTotal.id ? withTotal : e));
   persist(events);
   return withTotal;
@@ -1990,6 +2027,14 @@ export const securityEventsHandlers = [
           comment: approver.status === "RETURNED" ? approver.comment : "",
         })),
         approvalStale: false,
+        // ВЕРСИЮ ДОКУМЕНТА РАСТИТ ОТПРАВКА (Plane №411): версия — это состав,
+        // под которым подписываются, а не каждое движение человека по постам.
+        // Отзыв её не откатывает: состав уже уходил людям, и выдать двум
+        // разным составам один номер значило бы соврать в документе.
+        visitObjects: event.visitObjects.map((visit) => ({
+          ...visit,
+          documentVersion: visit.documentVersion + 1,
+        })),
         updatedAt: nowIso(),
       })
     );
