@@ -51,6 +51,9 @@ import { formatIsoDateTime } from "@/shared/lib/date";
 import { useVisitObjectScope, type VisitObjectScope } from "./useVisitObjectScope";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useMyEmployee } from "@/hooks/use-my-employee";
+import { useRenderEventDocument } from "@/hooks/use-ops-reports";
+import { saveBinaryFile } from "@/features/ops-reports/report-shared";
+import { formatIsoDate } from "@/shared/lib/date";
 
 /**
  * Кто что может на этапе 3 (`[СОГ-12]`, Plane №401).
@@ -454,25 +457,13 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
 
         <DocumentVersionHistory view={view} />
 
-        <section>
-          <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
-            Расчёт на согласование
-          </p>
-          {scopedAssignments.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Назначений нет.</p>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {scopedAssignments.map((assignment) => (
-                <li key={assignment.id} className="rounded-md border p-2.5 text-sm">
-                  <span className="font-semibold">{assignment.employeeName}</span>{" "}
-                  <span className="text-muted-foreground">
-                    — {postLabel(assignment.postId)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <PrintedPlacement
+          event={event}
+          visit={scope.visit ?? null}
+          posts={scope.rows}
+          assignments={scopedAssignments}
+          approved={view.status === "APPROVED"}
+        />
 
         {/* `[СОГ-11]` (Plane №399): здесь НЕТ блока «Обходы предупреждений»
             (его место — аудит; число обходов остаётся плиткой сводки), НЕТ
@@ -1115,6 +1106,156 @@ function ApprovalRemarks({
       )}
       <FieldErrors errors={respondErrors} />
       <StageError error={resolve.error} />
+    </section>
+  );
+}
+
+/**
+ * Печатный вид «Расчёт расстановки сил» (`[СОГ-02]`, Plane №430) — ровно то,
+ * что уйдёт в PDF: шапка, секторы, посты с людьми, итог. До этого блок был
+ * списком «ФИО — Сектор · Пост», и согласующий подписывал не то, что печатают.
+ *
+ * «Скачать PDF» — всегда (`[СОГ-03]`): до согласования сервер кладёт на
+ * страницы водяной знак «Проект», после — чистый документ. Подпись у кнопки
+ * говорит об этом заранее, чтобы «Проект» на бумаге не читался как сбой.
+ *
+ * Звание и вооружение в строке не печатаются: назначение их не несёт
+ * (звания нет в составе, вооружение раздел не хранит) — печатать пустые
+ * колонки значило бы обещать данные, которых нет.
+ */
+function PrintedPlacement({
+  event,
+  visit,
+  posts,
+  assignments,
+  approved,
+}: {
+  event: SecurityEvent;
+  visit: VisitObject | null;
+  posts: SecurityEvent["reconSectorPosts"];
+  assignments: SecurityEvent["placementAssignments"];
+  approved: boolean;
+}) {
+  const [saved, setSaved] = useState<string | null>(null);
+  const render = useRenderEventDocument((file) => {
+    saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
+    setSaved(file.fileName);
+  });
+  const unitOf = new Map(
+    event.forceRoster.map((member) => [member.employeeId, member.divisionName])
+  );
+  const byPost = new Map<string, SecurityEvent["placementAssignments"]>();
+  for (const assignment of assignments) {
+    byPost.set(assignment.postId, [...(byPost.get(assignment.postId) ?? []), assignment]);
+  }
+  const sectors = Array.from(new Set(posts.map((post) => post.sector)));
+  const need = posts.reduce((sum, post) => sum + post.need, 0);
+  const shortage = posts.reduce(
+    (sum, post) => sum + Math.max(0, post.need - (byPost.get(post.id)?.length ?? 0)),
+    0
+  );
+  const chief = visit === null ? event.chiefName : visit.chiefName;
+
+  return (
+    <section
+      className="rounded-md border"
+      aria-label="Расчёт расстановки сил"
+      data-slot="printed-placement"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+        <p className="text-xs font-semibold">Расчёт расстановки сил</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {!approved && (
+            <span className="text-[11px] text-muted-foreground">
+              до согласования — с водяным знаком «Проект»
+            </span>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={render.isPending}
+            aria-busy={render.isPending}
+            onClick={() => {
+              setSaved(null);
+              render.mutate({
+                kind: "placement",
+                eventCode: event.code,
+                format: "pdf",
+                visitObjectId: visit?.id,
+              });
+            }}
+          >
+            {render.isPending ? "Собираем…" : "Скачать PDF"}
+          </Button>
+        </div>
+      </div>
+      <div className="px-3 py-2 text-sm">
+        <p className="text-[11px] font-bold uppercase tracking-[.08em]">
+          Расчёт расстановки сил
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {event.code} «{event.title}»
+          {visit !== null && ` · Объект «${visit.objectName}»`}
+          {" · "}
+          {formatIsoDate(visit?.visitDay ?? event.businessDate)}
+          {" · Старший объекта: "}
+          {chief === "" ? "не назначен" : chief}
+        </p>
+        {sectors.length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">Посты не рассчитаны.</p>
+        ) : (
+          <div className="mt-2 space-y-2">
+            {sectors.map((sector) => (
+              <div key={sector}>
+                <p className="text-xs font-semibold">Сектор «{sector}»</p>
+                <ul className="mt-0.5 space-y-0.5">
+                  {posts
+                    .filter((post) => post.sector === sector)
+                    .map((post) => {
+                      const people = byPost.get(post.id) ?? [];
+                      return (
+                        <li key={post.id} className="pl-3 text-xs">
+                          <span className="font-semibold">{post.post}</span>
+                          {post.task !== "" && ` · ${post.task}`}
+                          {(post.shift ?? "") !== "" && ` · ${post.shift}`}
+                          {" · "}
+                          {people.length === 0 ? (
+                            <span className="text-amber-800">не назначено</span>
+                          ) : (
+                            people
+                              .map((a) => {
+                                const unit = unitOf.get(a.employeeId);
+                                return unit ? `${a.employeeName}, ${unit}` : a.employeeName;
+                              })
+                              .join("; ")
+                          )}
+                          {post.requirements !== "" && (
+                            <span className="text-muted-foreground"> · {post.requirements}</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-xs" data-slot="printed-placement-total">
+          Итого: секторов {sectors.length} · постов {posts.length} · сотрудников{" "}
+          {assignments.length} · потребность {need} · недобор {shortage}
+        </p>
+        {render.error !== null && (
+          <p className="mt-1 text-xs text-red-700" role="alert">
+            Документ не собрался: {render.error.message}
+          </p>
+        )}
+        {saved !== null && (
+          <p className="mt-1 text-xs text-muted-foreground" aria-live="polite">
+            Сохранён файл «{saved}».
+          </p>
+        )}
+      </div>
     </section>
   );
 }

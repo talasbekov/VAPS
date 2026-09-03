@@ -164,7 +164,13 @@ export function useRenderEventDocument(
 ) {
   return useOpsMutation<
     EventDocumentResponse,
-    { kind: string; eventCode?: string; format?: EventDocumentFormat; asOf?: string }
+    {
+      kind: string;
+      eventCode?: string;
+      format?: EventDocumentFormat;
+      asOf?: string;
+      visitObjectId?: string;
+    }
   >({
     mutationFn: (params) =>
       opsApiClient.get<EventDocumentResponse>(eventDocumentRenderPath(params)),

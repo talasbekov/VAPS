@@ -281,3 +281,51 @@ def render_pdf_from_template(template_path, values, *, allow_unresolved=False):
         return docx_to_pdf(filled_path)
     finally:
         _drop_temp(filled_path, template_path)
+
+
+def stamp_draft(pdf_bytes, label="ПРОЕКТ"):
+    """Водяной знак на каждой странице PDF (`[СОГ-03]`, Plane №430).
+
+    До согласования документ «Расстановка сил» — проект: скачать его можно
+    всегда, но бумага обязана говорить, что подписей под ней ещё нет. Знак
+    накладывается на ГОТОВЫЙ PDF, а не в шаблон DOCX: шаблон утверждал
+    заказчик, и вписывать в него слово, которое после согласования исчезает,
+    значило бы держать два шаблона.
+
+    Шрифт — DejaVu Sans из системы: у встроенных шрифтов reportlab кириллицы
+    нет, и «ПРОЕКТ» превратился бы в чёрные квадраты.
+    """
+    import io
+
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.lib.colors import Color
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfgen import canvas
+
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    if "DejaVuSans" not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    writer = PdfWriter()
+    for page in reader.pages:
+        width = float(page.mediabox.width)
+        height = float(page.mediabox.height)
+        overlay_buffer = io.BytesIO()
+        overlay = canvas.Canvas(overlay_buffer, pagesize=(width, height))
+        overlay.saveState()
+        overlay.setFont("DejaVuSans", 96)
+        overlay.setFillColor(Color(0.55, 0.55, 0.55, alpha=0.22))
+        overlay.translate(width / 2, height / 2)
+        overlay.rotate(35)
+        overlay.drawCentredString(0, 0, label)
+        overlay.restoreState()
+        overlay.save()
+        overlay_buffer.seek(0)
+        stamp = PdfReader(overlay_buffer).pages[0]
+        page.merge_page(stamp)
+        writer.add_page(page)
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()

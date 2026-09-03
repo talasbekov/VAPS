@@ -28,7 +28,7 @@ from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops.document_tables import fill_table_rows
-from organization_management.apps.ops.documents import emit, fill_template
+from organization_management.apps.ops.documents import emit, fill_template, stamp_draft
 
 TEMPLATE = os.path.join(
     os.path.dirname(__file__), "document_templates", "placement.docx"
@@ -109,6 +109,13 @@ def placement_rows(event, visit=None):
     return rows
 
 
+def _is_draft(visit):
+    """Документ объекта ещё не согласован — на бумаге он проект."""
+    if visit is None:
+        return True
+    return visit.approval_status != "APPROVED"
+
+
 def render_placement(event_code, as_of=None, fmt="pdf", visit_object_id=None):
     """Байты расстановки ОБЪЕКТА посещения; `fmt` — «docx» либо «pdf»."""
     from docx import Document
@@ -150,7 +157,15 @@ def render_placement(event_code, as_of=None, fmt="pdf", visit_object_id=None):
         document = Document(filled_path)
         fill_table_rows(document.tables[0], placement_rows(event, visit))
         document.save(filled_path)
-        return emit(filled_path, fmt)
+        payload = emit(filled_path, fmt)
+        # `[СОГ-03]` (Plane №430): «Скачать PDF» доступна всегда, до
+        # согласования — с водяным знаком «Проект». Проект — пока объект не
+        # согласован (статус согласования объекта, а не мероприятия: у
+        # соседнего объекта своя подпись). DOCX без знака: его дозаполняют
+        # руками, и знак в правимом файле — не знак, а помеха.
+        if fmt == "pdf" and _is_draft(visit):
+            payload = stamp_draft(payload)
+        return payload
     finally:
         try:
             os.unlink(filled_path)
