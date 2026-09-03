@@ -178,24 +178,18 @@ class OpsSecurityEvent(TimeStampedModel):
         max_length=20, choices=ApprovalStatus.choices
     )
     approval_comment = models.TextField(blank=True)
-    # Маршрут согласования из прототипа: список согласующих по порядку со
-    # своим решением у каждого. Отдельной таблицей не заводится сознательно —
-    # маршрут живёт и меняется ВМЕСТЕ с мероприятием, отдельной жизни у строки
-    # согласующего нет, а остальные списки карточки (посты, потребность,
-    # журнал) хранятся тем же способом.
-    approval_route = models.JSONField(default=list, blank=True)
-    # Снимок расстановки в момент отправки на согласование. Согласуют не
-    # «мероприятие вообще», а КОНКРЕТНУЮ расстановку: подпись под одним
-    # составом людей ничего не говорит о другом. Строка-сигнатура, а не копия
-    # назначений: хранить вторую копию значило бы завести второй источник
-    # правды о том, кто на каком посту (задача заказчика «ОМ-37.3», эталон —
-    # баннер «Расстановка была изменена. Необходимо повторное согласование»).
-    approval_snapshot = models.TextField(blank=True, default="")
-    # Замечания, порождённые ВОЗВРАТАМИ согласующих. Отдельный список, а не
-    # поле у согласующего: один и тот же человек может вернуть дважды по
-    # разным поводам, и последняя причина затёрла бы предыдущую — а закрывают
-    # их по одной.
-    approval_remarks = models.JSONField(default=list, blank=True)
+    # 🔴 МАРШРУТ, ЗАМЕЧАНИЯ И СНИМОК РАССТАНОВКИ СНЯТЫ ОТСЮДА (Plane №413,
+    # Ш-7 плана №385). Требование `[МД-04]`: «у объекта свой документ
+    # „Расстановка сил“ с версиями». С Ш-5 (№411) согласуют ОБЪЕКТ посещения —
+    # `OpsSecurityEventVisitObject.approval_route/remarks/snapshot`, и все
+    # мутации пишут ТОЛЬКО туда; каждый ОМ несёт хотя бы один объект посещения
+    # (миграция 0068), а завести согласование без объекта нельзя вовсе
+    # (`pick_visit_object` отказывает `VISIT_OBJECT_REQUIRED`). Эти три поля
+    # с Ш-5 не писал никто — снесены без бэкфилла, копия уже лежит в объекте.
+    #
+    # `approval_status`/`approval_comment` ОСТАЮТСЯ: это СВОДНЫЕ поля
+    # (`_sync_event_approval`, Ш-6, Plane №412) — по ним считается стадия
+    # мероприятия, и они не копия чужого поля, а вывод по всем объектам.
     journal_entries = models.JSONField()
     closure_direction_summaries = models.JSONField()
     closed_at = models.DateTimeField(null=True)
@@ -384,18 +378,23 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
         choices=OpsSecurityEvent.Stage.choices,
         default=OpsSecurityEvent.Stage.BULLETIN,
     )
-    recon_checklist = models.JSONField(default=list, blank=True)
-    recon_sector_posts = models.JSONField(default=list, blank=True)
-    # Примечания старшего по итогам выезда `[РЕК-06]` — у объекта свои: осмотр
-    # ведётся по объекту, и общее поле мероприятия смешало бы два выезда.
-    recon_notes = models.TextField(blank=True, default="")
+    # 🔴 `recon_checklist`, `recon_sector_posts`, `recon_notes`,
+    # `placement_assignments`, `journal_entries` ЗАВЕДЕНЫ Ш-1 И НЕ ПРИЖИЛИСЬ
+    # (Plane №413, Ш-7 плана №385): Ш-1 задумывал их как дубликат
+    # одноимённых полей мероприятия, но Ш-2 выбрал ДРУГОЙ путь — ОДИН общий
+    # расчёт постов мероприятия (`event.recon_sector_posts`), где строка несёт
+    # `visitObjectId` (Plane №408). Разметка внутри общего массива работает
+    # лучше дублирования: два ОМ-2026-11 с 32 назначениями на 5 постов не
+    # завели бы второй источник расхождения. Пять полей ни разу не получили
+    # писателя — грепом подтверждено при взятии этого шага — и снимаются без
+    # бэкфилла: переносить в них было нечего.
+    #
     # «Потребность N, назначено 0» из `[РЕК-08]`: обе цифры показывает реестр
     # в раскрытой строке (Plane №387). `force_assigned` — снимок счёта, а не
-    # длина `placement_assignments`: назначение переживает снятие с поста, и
-    # два ответа на «сколько дали» разошлись бы.
+    # длина `event.placement_assignments`: назначение переживает снятие с
+    # поста, и два ответа на «сколько дали» разошлись бы.
     force_need = models.PositiveIntegerField(default=0)
     force_assigned = models.PositiveIntegerField(default=0)
-    placement_assignments = models.JSONField(default=list, blank=True)
     approval_status = models.CharField(
         max_length=20,
         choices=OpsSecurityEvent.ApprovalStatus.choices,
@@ -424,7 +423,6 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
     # «Возвращено (v N)») ведёт соседняя карточка №398 [СОГ-04] — ей нужна
     # своя таблица, и заводить её тут значило бы сделать её работу наполовину.
     document_version = models.PositiveIntegerField(default=0)
-    journal_entries = models.JSONField(default=list, blank=True)
     # Закрытие объекта `[ЗАК-05]`; автозакрытие мероприятия по всем объектам —
     # соседняя карточка №404, этот шаг только заводит момент.
     closed_at = models.DateTimeField(null=True, blank=True)
