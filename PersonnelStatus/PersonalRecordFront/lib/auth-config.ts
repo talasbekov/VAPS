@@ -1,5 +1,6 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import type { JWT } from "next-auth/jwt";
 
 // Для серверных запросов NextAuth нужно использовать прямой URL к бэкенду
 // Прокси rewrites работают только для клиентских запросов
@@ -18,6 +19,89 @@ const getBackendUrl = () => {
 
   return url;
 };
+
+/** Срок жизни refresh-токена на сервере (`SIMPLE_JWT.REFRESH_TOKEN_LIFETIME`,
+ *  7 дней). Дублируется здесь потому, что клиент этого числа не спрашивает
+ *  ниоткуда; разойдётся — вернётся дефект №383, поэтому число названо один раз
+ *  и с указанием, где лежит первоисточник. */
+const REFRESH_TOKEN_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
+
+/** За сколько до истечения токен считается протухшим. Минута — запас на
+ *  дорогу запроса и на расхождение часов клиента и сервера: токен, истекающий
+ *  через две секунды, до бэкенда уже не доедет. */
+const EXPIRY_SKEW_MS = 60_000;
+
+/** Момент истечения access-токена (мс), прочитанный из самого токена.
+ *
+ *  Читаем `exp` ИЗ ТОКЕНА, а не считаем «сейчас + 8 часов»: срок задан
+ *  настройкой сервера, и локальная копия этого числа разошлась бы с ним при
+ *  первой же правке `ACCESS_TOKEN_LIFETIME`. `null` — прочитать не удалось;
+ *  тогда токен считается протухшим (см. `isExpiring`), и его продлят. Лучше
+ *  лишнее продление, чем 401 на каждом экране.
+ */
+function jwtExpiryMs(raw: unknown): number | null {
+  if (typeof raw !== "string") return null;
+  const payload = raw.split(".")[1];
+  if (payload === undefined) return null;
+  try {
+    const json = JSON.parse(
+      Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")
+    ) as { exp?: unknown };
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function isExpiring(expires: unknown): boolean {
+  if (typeof expires !== "number") return true;
+  return Date.now() >= expires - EXPIRY_SKEW_MS;
+}
+
+/**
+ * Продлить access-токен по refresh-токену.
+ *
+ * `ROTATE_REFRESH_TOKENS` на сервере выключен, поэтому ответ несёт только
+ * `access`, а refresh остаётся прежним — переписывать его нечем и не нужно.
+ *
+ * Отказ НЕ МОЛЧИТ: в токен кладётся `error`, а `accessToken` снимается
+ * совсем. Оставить мёртвый токен на месте значило бы вернуть ровно тот
+ * симптом, из-за которого задача и появилась: клиент шлёт его дальше и
+ * получает 401 на каждом экране, не понимая, что дело в сессии.
+ */
+async function refreshed(token: JWT): Promise<JWT> {
+  const refreshToken = token.refreshToken;
+  if (typeof refreshToken !== "string" || refreshToken === "") {
+    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+  }
+  try {
+    const response = await fetch(`${getBackendUrl()}/api/token/refresh/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ refresh: refreshToken }),
+    });
+    if (!response.ok) {
+      console.error("Token refresh failed:", response.status);
+      return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+    }
+    const data = (await response.json()) as { access?: string };
+    if (typeof data.access !== "string" || data.access === "") {
+      return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+    }
+    const next: JWT = {
+      ...token,
+      accessToken: data.access,
+      accessTokenExpires: jwtExpiryMs(data.access),
+    };
+    delete next.error;
+    return next;
+  } catch (error) {
+    // Сеть могла просто икнуть — но и тогда честнее сказать «войдите
+    // заново», чем отдать экранам токен, который бэкенд не примет.
+    console.error("Token refresh error:", error);
+    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -150,11 +234,22 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.accessToken = (user as any).accessToken;
         token.refreshToken = (user as any).refreshToken;
+        token.accessTokenExpires = jwtExpiryMs((user as any).accessToken);
         token.id = user.id;
         token.role = (user as any).role;
         token.userData = (user as any).userData;
+        delete token.error;
+        return token;
       }
-      return token;
+      // 🔴 ЗДЕСЬ И БЫЛ ДЕФЕКТ (Plane №383). Колбэк зовётся при КАЖДОМ
+      // обращении к сессии, но всё, что не вход, раньше просто возвращало
+      // токен как есть — то есть протухший `accessToken` жил в живой сессии
+      // до её конца. Сессия действует 30 дней (было — по умолчанию), а
+      // access-токен восемь часов: через восемь часов портал открывался как
+      // рабочий, а КАЖДЫЙ запрос к бэку отвечал 401. Заказчик сказал «не
+      // работает проект» на полностью здоровом стенде.
+      if (!isExpiring(token.accessTokenExpires)) return token;
+      return await refreshed(token);
     },
     async session({ session, token }) {
       if (token && session.user) {
@@ -163,6 +258,10 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).userData = token.userData;
       }
+      // Отказ продления виден КЛИЕНТУ: сессия с этим полем означает «войти
+      // заново», и портал обязан отвести человека на форму входа, а не
+      // показывать пустые экраны с «не удалось загрузить».
+      if (token?.error !== undefined) (session as any).error = token.error;
       return session;
     },
   },
@@ -171,6 +270,12 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
+    // 🔴 СЕССИЯ НЕ ЖИВЁТ ДОЛЬШЕ REFRESH-ТОКЕНА. По умолчанию NextAuth даёт
+    // тридцать дней, а `REFRESH_TOKEN_LIFETIME` бэкенда — семь
+    // (`config/settings/base.py`). Оставь тридцать — и на восьмой день
+    // вернулась бы та же болезнь: сессия жива, продлить нечем, портал молча
+    // мёртв. Семь дней означают «пока сессия действует, продление возможно».
+    maxAge: REFRESH_TOKEN_LIFETIME_SECONDS,
   },
   // Fail-closed, как у бэкенда (прод без VAPS_SECRET_KEY не стартует):
   // известный фолбэк в проде позволял бы подписывать чужие сессии всем, кто

@@ -58,6 +58,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  /**
+   * ПРОДЛИТЬ НЕ УДАЛОСЬ — УВОДИМ НА ФОРМУ ВХОДА (Plane №383).
+   *
+   * Сессия с полем `error` означает «refresh-токен мёртв»: продлевать нечем,
+   * и ни один запрос к бэку больше не пройдёт. Раньше такая сессия выглядела
+   * рабочей — меню на месте, на вход не выкидывает, — а тело каждого экрана
+   * говорило «не удалось загрузить», и разбор уходил в стенд, который здоров.
+   *
+   * Причина УХОДИТ В АДРЕС (`?reason=expired`): форма входа скажет, почему
+   * человек здесь. Молчаливый возврат на вход после восьми часов работы
+   * читается как «система выкинула ни с того ни с сего».
+   */
+  useEffect(() => {
+    if (status === "loading") return;
+    if ((session as { error?: string } | null)?.error === undefined) return;
+    resetAccessToken();
+    void signOut({ redirect: false }).finally(() => {
+      window.location.href = "/?reason=expired";
+    });
+  }, [session, status]);
+
   // Загружаем информацию о пользователе из бэкенда при наличии сессии
   useEffect(() => {
     const loadUser = async () => {

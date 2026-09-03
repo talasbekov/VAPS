@@ -58,6 +58,15 @@ function LoginScreen() {
   const { login, user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  // ПРИЧИНА, ПО КОТОРОЙ ЧЕЛОВЕК ЗДЕСЬ (Plane №383). Провайдер сессии уводит
+  // сюда с `?reason=expired`, когда продлить токен не удалось. Без этой
+  // строки выход после восьми часов работы читается как «система выкинула ни
+  // с того ни с сего» — а сказать нам есть что.
+  //
+  // Отдельно от `error` формы: то — ответ на попытку входа, это — состояние,
+  // с которым человек пришёл, и первая же неудачная попытка входа обязана
+  // заменить его своим сообщением, а не спорить с ним рядом.
+  const expired = searchParams.get("reason") === "expired" && error === "";
 
   // Вошедшему форма входа не нужна: он попадал на неё по прямой ссылке на «/»
   // и видел приглашение залогиниться поверх уже живой сессии.
@@ -336,6 +345,22 @@ function LoginScreen() {
                 />
               </div>
 
+              {expired && (
+                /* НЕ `destructive`: истёкшая сессия — не ошибка человека и не
+                   поломка, а обычный конец рабочего дня. Красная плашка тут
+                   пугала бы там, где надо просто объяснить. Но и вид по
+                   умолчанию не годится: `AlertDescription` рисует текст
+                   `text-muted-foreground` на `bg-card`, то есть серым по
+                   белому внутри белой карточки входа — на снимке это читалось
+                   как placeholder поля, а не как сообщение. Отсюда своя рамка
+                   и обычный цвет текста. */
+                <Alert className="border-primary/40 bg-primary/5 text-left">
+                  <AlertCircle className="h-4 w-4 text-primary-ink" />
+                  <AlertDescription className="text-foreground">
+                    Сессия истекла — войдите заново.
+                  </AlertDescription>
+                </Alert>
+              )}
               {error && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />

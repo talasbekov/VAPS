@@ -72,6 +72,13 @@ export async function getAccessToken(): Promise<string | null> {
     try {
       const { getSession } = await import("next-auth/react");
       const session = await getSession();
+      // Сессия, у которой не удалось продлить токен, токена не даёт вовсе
+      // (Plane №383): подписать запрос мёртвым токеном значит получить 401 и
+      // показать человеку «не удалось загрузить» вместо «войдите заново».
+      if ((session as { error?: string } | null)?.error !== undefined) {
+        cached = { token: null, at: Date.now() };
+        return null;
+      }
       const user = session?.user as { accessToken?: string } | undefined;
       const token = user?.accessToken ?? null;
       cached = { token, at: Date.now() };
