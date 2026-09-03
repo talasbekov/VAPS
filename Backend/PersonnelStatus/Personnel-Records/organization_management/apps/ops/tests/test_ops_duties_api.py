@@ -325,3 +325,49 @@ def test_mutations_require_manage(viewer):
     assert resp.status_code == 403
     resp = viewer.post(SHIFTS, {}, format="json")
     assert resp.status_code == 403
+
+
+# ── «Мои смены»: самообслуживание без права на чужие (Plane №381) ────────────
+
+
+def test_mine_returns_own_shifts_without_duty_view(planner):
+    """Рядовой сотрудник читает СВОИ смены, не имея `duty.view`.
+
+    Красная проба к №381: до неё «Мой календарь» ходил за реестром целиком,
+    а реестр отвечает такому человеку 403 — смены не показывались никогда.
+    """
+    obj = make_object()
+    mine_employee = make_employee(last_name="Своев")
+    other_employee = make_employee(last_name="Чужов")
+    assert create_shift(planner, obj, mine_employee, "2026-08-15").status_code == 201
+    assert create_shift(planner, obj, other_employee, "2026-08-16").status_code == 201
+
+    api, user = client_for("duty-self")  # ни одной роли, ни одного права
+    mine_employee.user = user
+    mine_employee.save(update_fields=["user"])
+
+    # Реестр целиком ему по-прежнему закрыт — право на чужие смены не выдано.
+    assert api.get(SHIFTS).status_code == 403
+
+    resp = api.get(SHIFTS + "mine/")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["unlinkedReason"] is None
+    assert [row["businessDate"] for row in body["results"]] == ["2026-08-15"]
+    assert body["results"][0]["employeeId"] == str(mine_employee.pk)
+
+
+def test_mine_without_employee_link_answers_reason(planner):
+    """Учётка без кадровой привязки — 200 с причиной, а не 403 и не 404."""
+    api, _ = client_for("duty-unlinked")
+    resp = api.get(SHIFTS + "mine/")
+    assert resp.status_code == 200
+    assert resp.json()["results"] == []
+    assert "не связана с кадровой" in resp.json()["unlinkedReason"]
+
+
+def test_mine_open_to_duty_view_holder(viewer):
+    """Держатель `duty.view` ручку не теряет: у него та же ручка о себе."""
+    resp = viewer.get(SHIFTS + "mine/")
+    assert resp.status_code == 200
+    assert resp.json()["results"] == []

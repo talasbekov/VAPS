@@ -1690,6 +1690,14 @@ _READ_DUTY_PERMISSION = "duty.view"
 _MANAGE_DUTY_PERMISSION = "duty.manage"
 _APPROVE_DUTY_PERMISSION = "duty.approve_plan"
 
+# Причина пустого ответа «моих смен» — той же формулировкой, что у
+# `/api/operations/my-employee/`: связь учётки с кадровой записью заполняется
+# руками, и её отсутствие это не сбой, а состояние данных.
+_UNLINKED_REASON = (
+    "Учётная запись не связана с кадровой: пока связи нет, смены дежурств "
+    "показать не из чего."
+)
+
 
 def _duty_rights(request):
     perms = effective_permissions(request)
@@ -1773,6 +1781,7 @@ class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     permission_map = {
         "list": _READ_DUTY_PERMISSION,
+        "mine": _READ_DUTY_PERMISSION,
         "retrieve": _READ_DUTY_PERMISSION,
         "create": _MANAGE_DUTY_PERMISSION,
         "cancel": _MANAGE_DUTY_PERMISSION,
@@ -1781,6 +1790,26 @@ class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "clock_in": _MANAGE_DUTY_PERMISSION,
         "clock_out": _MANAGE_DUTY_PERMISSION,
     }
+
+    def permission_override(self, request):
+        """`mine` — самообслуживание: своё расписание читает любой вошедший.
+
+        Право `duty.view` открывает ВЕСЬ реестр смен, и его нет ни у одной
+        персоны рядового сотрудника (проверено на стенде: `acc_employee` →
+        403). До Plane №381 «Мой календарь» в профиле ходил именно за реестром
+        целиком и фильтровал его на клиенте: сотруднику смены не показывались
+        никогда, а обещание вкладки «статусы и смены дежурств» оставалось
+        невыполнимым. Здесь тот же хук «роль в данных», что у замещающего на
+        объекте: человек читает СВОИ строки, найденные по связи
+        `User → Employee`, а не по коду права.
+        """
+        if self.action != "mine":
+            return False
+        # Кадровая привязка здесь НЕ проверяется: её отсутствие — состояние
+        # данных, и отвечать на него 403 значило бы сказать «нельзя» там, где
+        # верно «показать нечего». Ответ ручки в этом случае пустой, с
+        # причиной.
+        return resolve_actor_id(request) is not None
 
     def list(self, request):
         from organization_management.apps.operations.models_duty import (
@@ -1794,6 +1823,41 @@ class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "passportStatuses": [
                     duty_service.passport_status_of(s) for s in shifts
                 ],
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="mine")
+    def mine(self, request):
+        """GET /api/ops/duty-shifts/mine/ — смены САМОГО вызывающего.
+
+        Отдельная ручка, а не фильтр списка: список гейтится `duty.view`, то
+        есть правом на чужие смены, и сузить его параметром значило бы
+        оставить гейт на месте. Ответ — та же форма строки, что у списка,
+        чтобы клиент читал смену одним типом.
+
+        Привязки может не быть — это штатный исход, как у `my-employee`:
+        200 с пустым списком и причиной, а не 404.
+        """
+        from organization_management.apps.employees.models import Employee
+        from organization_management.apps.operations.models_duty import (
+            OpsDutyShift,
+        )
+
+        actor_id = resolve_actor_id(request)
+        employee = (
+            Employee.objects.filter(user_id=actor_id).first()
+            if actor_id
+            else None
+        )
+        if employee is None:
+            return Response({"results": [], "unlinkedReason": _UNLINKED_REASON})
+        shifts = list(
+            OpsDutyShift.objects.filter(employee_id=str(employee.pk))
+        )
+        return Response(
+            {
+                "results": [duty_service.serialize_shift(s) for s in shifts],
+                "unlinkedReason": None,
             }
         )
 
