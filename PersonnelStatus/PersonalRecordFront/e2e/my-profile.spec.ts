@@ -126,6 +126,105 @@ test.use({ serviceWorkers: 'block' })
 test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
+  test('сотрудник БЕЗ права на реестр видит СВОИ назначения (Plane №403)', async ({ page }) => {
+    /**
+     * `[ОЗН-09]`. До правки вкладка ходила за реестром ОМ, а он открыт только
+     * держателю `event.view`: рядовому `acc_employee` профиль отвечал «реестр
+     * недоступен — назначения не показаны», хотя назначение у него было.
+     * Теперь профиль читает `/security-events/my-assignments/` — свои строки
+     * по кадровой привязке, без права на чужие мероприятия.
+     *
+     * Гвард пробы — реестр под той же учёткой по-прежнему 403: иначе «видит
+     * свои» было бы неотличимо от «ему открыли всё».
+     */
+    const password = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+    test.skip(password === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
+
+    const admin = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const employeeToken = await tokenFor('acc_employee', password)
+    const me = await get<MyEmployee>(employeeToken, '/api/operations/my-employee/')
+    expect(me.employee, 'у acc_employee нет кадровой записи — проба вакуумна').not.toBeNull()
+    const employeeId = me.employee!.id
+
+    const registry = await fetch(`${API}/api/ops/security-events/`, {
+      headers: { Authorization: `Bearer ${employeeToken}` },
+    })
+    expect(registry.status, 'реестр открыт сотруднику — гвард пробы не работает').toBe(403)
+
+    // Своё назначение — руками admin, тем же путём, что и человек: ОМ →
+    // импорт постов → рекогносцировка закрыта → расстановка.
+    const post = async (path: string, body?: unknown) =>
+      fetch(`${API}${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+    const objects = await get<{ results: { id: string; publishedVersionCount: number }[] }>(
+      admin,
+      '/api/ops/security-events/bindable-objects/',
+    )
+    const object = objects.results.find((o) => o.publishedVersionCount > 0)
+    expect(object, 'нет объекта с опубликованным паспортом').toBeDefined()
+    const created = (await (
+      await post('/api/ops/security-events/', {
+        title: `Своё назначение (e2e №403) ${Date.now()}`,
+        objectId: object!.id,
+        businessDate: '2028-06-06',
+        kind: 'INTERNAL',
+      })
+    ).json()) as { id: string; code: string }
+    const base = `/api/ops/security-events/${created.id}/`
+    try {
+      const imported = (await (await post(`${base}recon/import-from-passport/`)).json()) as {
+        reconChecklist: { done: boolean }[]
+        reconSectorPosts: { id: string; sector: string; post: string }[]
+      }
+      await fetch(`${API}${base}recon/`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          checklist: imported.reconChecklist.map((i) => ({ ...i, done: true })),
+          sectorPosts: imported.reconSectorPosts,
+        }),
+      })
+      await post(`${base}recon/complete/`)
+      const target = imported.reconSectorPosts[0]
+      const assigned = await post(`${base}placement/assign/`, {
+        postId: target.id,
+        employeeId: String(employeeId),
+      })
+      expect(assigned.status, await assigned.text()).toBe(200)
+
+      // Сервер: своя ручка отдаёт строку, реестр не нужен.
+      const mine = await get<{ results: { eventCode: string; assignmentId: string }[] }>(
+        employeeToken,
+        '/api/ops/security-events/my-assignments/',
+      )
+      expect(mine.results.map((r) => r.eventCode)).toContain(created.code)
+
+      // Экран: назначение в «Предстоящих», без «реестр недоступен».
+      await signIn(page, 'acc_employee', password)
+      await page.goto(`${APP}${SCREEN}`)
+      await expect(page.getByRole('heading', { name: me.employee!.full_name })).toBeVisible({
+        timeout: 20_000,
+      })
+      const upcoming = page.locator('div').filter({ hasText: /^Предстоящие назначения/ }).first()
+      await expect(upcoming.getByText(created.code, { exact: true })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText(`${target.sector} · ${target.post}`).first()).toBeVisible()
+      await expect(page.getByText('назначения не показаны')).toHaveCount(0)
+    } finally {
+      // ОМ с расстановкой не удаляется (422) — сначала снять назначения.
+      const current = await get<{ placementAssignments: { id: string }[] }>(admin, base)
+      for (const row of current.placementAssignments ?? []) {
+        await fetch(`${API}${base}placement/${row.id}/`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${admin}` },
+        })
+      }
+      await fetch(`${API}${base}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin}` } })
+    }
+  })
+
   test('карточка и назначения собраны вокруг СВОЕЙ кадровой записи', async ({ page }) => {
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const me = await get<MyEmployee>(token, '/api/operations/my-employee/')
