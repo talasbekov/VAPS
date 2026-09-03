@@ -132,6 +132,49 @@ async function pickFirstObject(page: Page, dialog: ReturnType<Page['getByRole']>
   await expect(picker).not.toHaveText(/объект не выбран/)
 }
 
+/** Охраняемое лицо — combobox с поиском (Plane №419): подпись поля ведёт на
+ *  поле поиска, пункты — кнопки списка. Без имени берётся первое. Возвращает
+ *  имя выбранного (по чипу). */
+async function pickPerson(
+  page: Page,
+  dialog: ReturnType<Page['getByRole']>,
+  name?: string,
+): Promise<string> {
+  const input = dialog.getByLabel('Охраняемые лица')
+  await expect(input).toBeEnabled({ timeout: 20_000 })
+  await input.click()
+  if (name !== undefined) await input.fill(name)
+  const option = page
+    .locator('[data-slot="persons-combobox"] li button')
+    .filter(name === undefined ? {} : { hasText: name })
+    .first()
+  await expect(option).toBeVisible({ timeout: 20_000 })
+  const label = (await option.locator('span > span').first().textContent()) ?? ''
+  await option.click()
+  // Код `OL-N` стоит в пункте перед именем — в чип уходит только имя.
+  const picked = label.replace(/^OL-\d+\s*/, '').trim()
+  await expect(dialog.getByRole('button', { name: `Убрать ${picked} из списка охраняемых лиц` })).toBeVisible()
+  return picked
+}
+
+/** Старший — combobox с поиском на сервере (Plane №419): первый из
+ *  найденных. Возвращает имя выбранного. */
+async function pickChief(
+  page: Page,
+  dialog: ReturnType<Page['getByRole']>,
+  label: 'Старший наряда' | 'Старший ГВО',
+): Promise<string> {
+  const input = dialog.getByLabel(label)
+  await expect(input).toBeVisible({ timeout: 20_000 })
+  await input.click()
+  const option = page.locator('[data-slot="chief-combobox"] li button').first()
+  await expect(option).toBeVisible({ timeout: 20_000 })
+  const name = (await option.locator('span > span').first().textContent()) ?? ''
+  await option.click()
+  await expect(dialog.getByRole('button', { name: `Снять старшего ${name.trim()}` })).toBeVisible()
+  return name.trim()
+}
+
 test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
@@ -400,6 +443,8 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await pickFirstObject(page, dialog)
     await dialog.getByLabel('Дата начала').fill('2026-09-10')
     await dialog.getByLabel('Дата окончания').fill('2026-09-12')
+    // Лицо обязательно (`[БЛН-11]`, Plane №419).
+    await pickPerson(page, dialog)
 
     // Сводка периода читает ОБЕ даты: до неё человек проверял ввод по двум
     // машинным полям и не видел ни дней недели, ни числа дней.
@@ -472,6 +517,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // списке искать было нечем, а реестр объектов растёт.
     await pickFirstObject(page, dialog)
     await dialog.getByLabel('Дата начала').fill('2026-09-14')
+    await dialog.getByLabel('Дата окончания').fill('2026-09-14')
     await dialog.getByLabel('Время').fill('09:30')
     // Локация — каскадом (Plane №418): страна → город → адрес; строку
     // «Казахстан, Алматы, …» собирает сервер, и карточка печатает её.
@@ -479,26 +525,18 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await dialog.getByLabel('Город').selectOption({ label: 'Алматы' })
     await dialog.getByLabel('Адрес / место').fill('пр. Абая, 1')
 
-    // Подпись поля сменилась с «Охраняемое лицо» на «Охраняемые лица»
-    // осознанно (Plane №188): лиц теперь несколько, и единственное число
-    // обещало бы одно. Контрол при этом остался обычным одиночным `<select>`
-    // — он не поле, а действие «добавить»; выбранные стоят чипами над ним.
-    const personSelect = dialog.getByLabel('Охраняемые лица')
-    await expect(personSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
-    const personName = (await personSelect.locator('option').nth(1).textContent()) ?? ''
-    await personSelect.selectOption({ index: 1 })
+    // Лица — combobox из справочника, чипами (Plane №419); старший — combobox
+    // с поиском на сервере вместо списка со страницами (`[БЛН-13]`).
+    const personName = await pickPerson(page, dialog)
+    const chiefLabel = await pickChief(page, dialog, 'Старший ГВО')
 
-    // Старший выбирается ПОДБОРОМ с поиском на сервере, а не <select> (Plane
-    // №61): в родном списке искать было нечем, а кадровая база растёт. Подпись
-    // поля ведёт на поле поиска — оно и есть контрол выбора.
-    const chiefSearch = dialog.getByLabel('Старший ГВО')
-    await expect(chiefSearch).toBeVisible({ timeout: 20_000 })
-    const chiefOption = dialog
-      .locator('[data-slot="personnel-picker"] li button')
-      .first()
-    await expect(chiefOption).toBeVisible({ timeout: 20_000 })
-    const chiefLabel = (await chiefOption.locator('span > span').first().textContent()) ?? ''
-    await chiefOption.click()
+    // Превью строки бюллетеня собрано из тех же значений, что уйдут на
+    // сервер: название, лицо, локация, старший.
+    const preview = dialog.getByTestId('bulletin-row-preview')
+    await expect(preview).toContainText(title)
+    await expect(preview).toContainText(personName)
+    await expect(preview).toContainText('Казахстан, Алматы')
+    await expect(preview).toContainText(chiefLabel)
 
     await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
     await expect(page).toHaveURL(/\/security-ops\/events\/\d+/, { timeout: 30_000 })
@@ -891,13 +929,13 @@ async function createEvent(
     const title = probeTitle('Проба нескольких ОЛ')
     await dialog.getByLabel('Название ОМ').fill(title)
     await dialog.getByLabel('Дата начала').fill('2026-08-25')
+    await dialog.getByLabel('Дата окончания').fill('2026-08-25')
     await dialog.getByRole('button', { name: 'Внутреннее' }).click()
 
-    // Добавление — обычным одиночным списком, дважды: в этом и состоит
+    // Добавление — combobox с поиском, дважды (Plane №419): в этом и состоит
     // «возможность добавления ОЛ в список».
-    const picker = dialog.getByLabel('Охраняемые лица')
-    await picker.selectOption(persons[0]!.id)
-    await picker.selectOption(persons[1]!.id)
+    await pickPerson(page, dialog, persons[0]!.name)
+    await pickPerson(page, dialog, persons[1]!.name)
 
     // Первое выбранное помечено ГЛАВНЫМ — правило есть, и его видно.
     await expect(dialog).toContainText('главное')
@@ -914,7 +952,7 @@ async function createEvent(
     // возвращается в выпадающий список выбора, и ассерт по тексту окна
     // краснел бы на верном поведении.
     await expect(removeSecond).toBeHidden()
-    await picker.selectOption(persons[1]!.id)
+    await pickPerson(page, dialog, persons[1]!.name)
     await expect(removeSecond).toBeVisible()
 
     await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
@@ -1049,6 +1087,8 @@ async function createEvent(
     await dialog.getByLabel('Название ОМ').fill(title)
     await dialog.getByRole('button', { name: 'Внутреннее' }).click()
     await dialog.getByLabel('Дата начала').fill('2026-09-18')
+    await dialog.getByLabel('Дата окончания').fill('2026-09-18')
+    await pickPerson(page, dialog)
 
     // Объект НЕ трогаем вовсе — кнопка обязана сработать.
     await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()

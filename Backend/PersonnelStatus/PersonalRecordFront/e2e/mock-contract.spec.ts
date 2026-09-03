@@ -61,6 +61,11 @@ test.describe(
       await dialog.getByLabel('Название ОМ').fill(title)
       await dialog.getByRole('button', { name: 'Внутреннее' }).click()
       await dialog.getByLabel('Дата начала').fill('2026-09-20')
+      // Окончание и лицо обязательны (`[БЛН-11]`, Plane №419); лицо — из
+      // мок-каталога через combobox.
+      await dialog.getByLabel('Дата окончания').fill('2026-09-20')
+      await dialog.getByLabel('Охраняемые лица').click()
+      await page.locator('[data-slot="persons-combobox"] li button').first().click()
       await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
 
       // Дошли до карточки — значит мок создание ПРИНЯЛ. До правки он отбивал
