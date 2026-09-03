@@ -165,9 +165,13 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # SECURITY_ADMIN.
     assert holders("admin.roles") == {"SECURITY_ADMIN"}
     # Решение согласующего разведено с ведением мероприятия (решение
-    # заказчика №267): подпись и возврат держит ТОЛЬКО утверждающий.
-    assert holders("assignment.approve") == {"EVENT_APPROVER"}
-    assert holders("assignment.return") == {"EVENT_APPROVER"}
+    # заказчика №267): подпись и возврат держит утверждающий — и, с №401
+    # (`[СОГ-12]`), штаб второго департамента: спецификация называет
+    # согласующими `acc_dept_head_d2` / `acc_dir_head_d2`, обе персоны носят
+    # `HEAD_OPS_UNIT`. Пин поднят осознанно; `event.manage` у штаба по-прежнему
+    # нет — подписывающий расстановку не правит.
+    assert holders("assignment.approve") == {"EVENT_APPROVER", "HEAD_OPS_UNIT"}
+    assert holders("assignment.return") == {"EVENT_APPROVER", "HEAD_OPS_UNIT"}
     assert holders("event.manage") == {"EVENT_OFFICER"}
     # Заведение карточки ОМ и заполнение бюллетеня — СВОИ права (Plane №382).
     # Держателей по двое, и это ровно смысл разделения: ведущий мероприятие

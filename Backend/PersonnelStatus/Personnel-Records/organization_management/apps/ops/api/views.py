@@ -336,6 +336,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "approval_route_add": _MANAGE_EVENT_PERMISSION,
         "approval_route_remove": _MANAGE_EVENT_PERMISSION,
         "approval_route_move": _MANAGE_EVENT_PERMISSION,
+        # …либо СТАРШИЙ ОБЪЕКТА по данным — без права, через
+        # `permission_override` (`[СОГ-12]`, Plane №401); замечания закрывает
+        # и его замещающий.
         "approval_send": _MANAGE_EVENT_PERMISSION,
         "approval_withdraw": _MANAGE_EVENT_PERMISSION,
         "approval_remark_resolve": _MANAGE_EVENT_PERMISSION,
@@ -1138,17 +1141,35 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         {"placement_assign", "placement_unassign", "placement_post_remove"}
     )
 
-    def permission_override(self, request):
-        """Замещающий на объекте посещения правит расстановку ЭТОГО объекта.
+    # ── Исключение гейта: старший объекта ведёт согласование своего объекта ──
+    #
+    # `[СОГ-12]` (Plane №401): «старший объекта — отправить, отозвать, ответить
+    # на замечания; замещающий — ответить на замечания, не отправляет». Ни у
+    # того, ни у другого нет общего `event.manage` — они старшие ПО ДАННЫМ, а
+    # не по роли, ровно как замещающий у расстановки выше. Маршрут (добавить,
+    # снять, переставить) остаётся у ведущего мероприятие: это настройка
+    # процесса, а не работа по объекту.
+    _OBJECT_LEAD_ACTIONS = frozenset(
+        {"approval_send", "approval_withdraw", "approval_remark_resolve"}
+    )
+    _OBJECT_DEPUTY_ACTIONS = frozenset({"approval_remark_resolve"})
 
-        Открываются только два действия — назначить и снять; завершение этапа
-        (`placement_complete`) остаётся у ведущего мероприятие: это переход
-        цепочки, а не работа по объекту.
+    def permission_override(self, request):
+        """Роль В ДАННЫХ открывает действие человеку без кода права.
+
+        Два исключения, оба поимённые: замещающий правит расстановку СВОЕГО
+        объекта (назначить и снять; завершение этапа остаётся у ведущего —
+        это переход цепочки), старший объекта ведёт согласование СВОЕГО
+        объекта (отправить, отозвать, ответить на замечание; замещающий —
+        только ответить).
 
         Признак запоминается на вьюхе, чтобы операция попала в журнал мутаций
         поимённо: действие в обход общего права обязано быть названным.
         """
         self._acting_as_deputy = False
+        self._acting_as_object_lead = False
+        if self.action in self._OBJECT_LEAD_ACTIONS:
+            return self._object_lead_override(request)
         if self.action not in self._DEPUTY_ACTIONS:
             return False
         employee = getattr(request.user, "employee", None)
@@ -1166,6 +1187,37 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = allowed
         self._deputy_employee = employee if allowed else None
         return allowed
+
+    def _object_lead_override(self, request):
+        """Старший объекта посещения — или его замещающий — по данным объекта.
+
+        Объект берётся тем же правилом, что и у самой операции
+        (`_approval_target`): единственный — сам, несколько — только названный.
+        Не назвали при нескольких или объектов нет вовсе — исключения нет, и
+        отказ будет тем же 403, что у любого без права: гадать, чей это объект,
+        гейт не имеет права.
+        """
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None:
+            return False
+        try:
+            visit = event_service._approval_target(
+                event, self._visit_object_of(request)
+            )
+        except DomainError:
+            return False
+        if visit.chief_employee_id == employee.pk:
+            self._acting_as_object_lead = True
+            return True
+        if self.action in self._OBJECT_DEPUTY_ACTIONS and visit.deputies.filter(
+            employee_id=employee.pk
+        ).exists():
+            self._acting_as_object_lead = True
+            return True
+        return False
 
     def _require_placement_lead(self, event_id):
         """Расстановку ведёт СТАРШИЙ объекта/мероприятия (Plane №74).
