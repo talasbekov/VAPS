@@ -173,7 +173,14 @@ function SectionAccountCell({
   legacyHint,
 }: {
   status: { code: string; name: string } | null;
-  participations: { event_id: number; event_code: string; event_title: string }[];
+  participations: {
+    event_id: number;
+    event_code: string;
+    event_title: string;
+    visit_object_name?: string;
+    post_label?: string;
+    acknowledged_at?: string | null;
+  }[];
   loading: boolean;
   legacyHint: boolean;
 }) {
@@ -210,7 +217,7 @@ function SectionAccountCell({
     );
   }
   return (
-    <div className="flex max-w-[170px] flex-col items-start gap-0.5">
+    <div className="flex max-w-[260px] flex-col items-start gap-0.5">
       {status !== null && (
         /* Две строки максимум, полное имя — в подсказке. Имена справочника
            раздела длинные («Привлечён на мероприятие (наряд)»), и без предела
@@ -228,10 +235,17 @@ function SectionAccountCell({
           <Link
             key={participation.event_id}
             href={`/security-ops/events/${participation.event_id}`}
-            className="text-primary-ink whitespace-nowrap text-xs hover:underline"
+            // Подпись стала длиннее (объект · пост · ознакомлен) — переносится,
+            // а не обрезается: снимок №427 поймал «· Пост 1 · …» без хвоста.
+            className="text-primary-ink text-xs leading-tight hover:underline"
             title={participation.event_title}
           >
+            {/* «ОМ-код → объект · Пост · ознакомлен» (Plane №427, [СБС-32]/
+                [ОЗН-06]); до распределения штабом — один код. */}
             → {participation.event_code}
+            {participation.visit_object_name ? ` → ${participation.visit_object_name}` : ""}
+            {participation.post_label ? ` · ${participation.post_label}` : ""}
+            {participation.acknowledged_at ? " · ознакомлен" : ""}
           </Link>
         ) : (
           <span

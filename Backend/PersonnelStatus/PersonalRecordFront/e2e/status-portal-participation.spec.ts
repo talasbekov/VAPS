@@ -90,238 +90,58 @@ async function pickNextMonthDay(page: Page, day: string): Promise<void> {
 test.describe('статусы: привлечение на ОМ из портального окна', () => {
   test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
 
-  test('«Участие в ОМ» тоже спрашивает мероприятие, а не одни даты', async ({
+  test('«Участие в ОМ» вручную не ставится: окно отбивает словами, API — 422 (Plane №427)', async ({
     page,
   }) => {
     /**
-     * Plane №378 (найдено ручным тестированием №377).
-     *
-     * Заказчик в №365 писал про «Участие на ОМ», а блок привлечения включался
-     * только у двух других кодов — «Привлечён на мероприятие (наряд)» и
-     * «(боевая группа)». То есть он нажимал тип, для которого не сделано
-     * ничего: окно предлагало только даты и комментарий, а разрезы сбора сил
-     * считали такого человека В СТРОЮ и предлагали на новое привлечение.
-     *
-     * Проба стережёт мутацию: убрать `IN_EVENT` из общего списка кодов
-     * участия — блок снова исчезнет.
+     * `[СТА-04]`: такой статус заводится только из запроса на сбор сил
+     * (чекбоксы начальника управления, №395). Тип в портальном списке
+     * остаётся видимым (им подписан текущий статус привлечённых), но
+     * отправка отбивается с указанием, куда идти; сервер держит то же
+     * правило кодом PARTICIPATION_MANUAL_FORBIDDEN.
      */
     const label = await labelOfStatus('IN_EVENT')
-
     await signIn(page)
     await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
-
-    // 🔴 БЕРЁМ ПОСЛЕДНЮЮ СТРОКУ, А НЕ ПЕРВУЮ. Соседняя проба этого же файла
-    // работает с первой и ЗАПИСЫВАЕТ статус; когда обе брали одного человека,
-    // в общем прогоне вторая падала на состоянии, оставленном первой (в
-    // одиночку каждая была зелёной). Разные строки — разные подопытные.
     const actions = page.getByRole('button', { name: /^Действия: / })
     await actions.last().click()
     await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Статусы сотрудника')).toBeVisible({ timeout: 20_000 })
-
-    // До выбора блока нет — иначе проверка «блок появился» ничего не значит.
-    await expect(dialog.getByText('Мероприятия', { exact: true })).toHaveCount(0)
-
     await dialog.locator('#status').click()
     await expect(page.getByRole('listbox')).toBeVisible()
     const option = page.getByRole('option', { name: label, exact: true })
     await option.scrollIntoViewIfNeeded()
     await option.click()
+    // Блока мероприятий больше нет: выбирать ОМ вручную негде; причина видна
+    // сразу, кнопка сохранения заперта.
+    await expect(dialog.getByText('Мероприятия', { exact: true })).toHaveCount(0)
+    await expect(dialog.getByTestId('participation-refusal')).toContainText(
+      'только из запроса на сбор сил',
+    )
+    await expect(dialog.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
 
-    await expect(
-      dialog.locator('#status'),
-      'в поле статуса встал не тот тип, который выбран',
-    ).toContainText(label)
-    await expect(
-      dialog.getByText('Мероприятия', { exact: true }),
-      'у «Участия в ОМ» блок мероприятий обязан появиться — иначе статус ' +
-        'заводится «неизвестно на что», а расход считает человека свободным',
-    ).toBeVisible()
-  })
-
-  test('окно спрашивает мероприятие и физнаряд, а пишет в учёт раздела ОМ', async ({
-    page,
-  }) => {
-    const squadLabel = await labelOfStatus(SQUAD_STATUS_CODE)
-
-    await signIn(page)
-    await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
-
-    // Имя сотрудника первой строки нужно ПОСЛЕ сохранения: карточку статусов
-    // придётся открыть у него же, а порядок строк меняют соседние пробы.
-    const firstRow = page.locator('table tbody tr').first()
-    const employeeName = (await firstRow.locator('td').nth(2).innerText()).trim()
-
-    // 🔴 КАРТОЧКА ОТКРЫВАЕТСЯ ДО ЗАПИСИ — И ЭТО НЕ ЛИШНИЙ ШАГ. Так список
-    // учёта раздела попадает в кэш клиента, и дальше проба стережёт не только
-    // «раздел есть», но и то, что после записи он ОСВЕЖАЕТСЯ. Без сброса ключа
-    // повторно открытая карточка показала бы прежний список из кэша — человек
-    // не нашёл бы своё привлечение и поставил бы его второй раз.
-    const beforeRow = page.locator('table tbody tr', { hasText: employeeName }).first()
-    await beforeRow.getByTitle('Открыть статусы сотрудника').click()
-    const before = page.getByRole('dialog')
-    await expect(before.getByText('Учёт раздела ОМ')).toBeVisible({ timeout: 20_000 })
-    await expect(
-      before.getByText('Загружаем учёт раздела…'),
-      'список учёта раздела дождался ответа',
-    ).toHaveCount(0, { timeout: 20_000 })
-    const participationsBefore = await before
-      .locator('li')
-      .filter({ hasText: /ОМ-/ })
-      .count()
-    await before.getByRole('button', { name: 'Закрыть' }).click()
-    await expect(before).toHaveCount(0)
-
-    await page.getByRole('button', { name: /^Действия: / }).first().click()
-    await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
-
-    const dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('Статусы сотрудника')).toBeVisible({ timeout: 20_000 })
-
-    // (1) У статуса НЕ ПРО ОМ блока мероприятий нет вовсе.
-    //
-    // 🔴 СНАЧАЛА СТАВИМ ЗАВЕДОМО НЕ-ОМ ТИП, а не смотрим на умолчание
-    // (Plane №378): с добавлением `IN_EVENT` в список кодов участия окно у
-    // человека, чей текущий статус — «Участие в ОМ», законно открывается с
-    // блоком мероприятий, и проверка «блока нет» падала на правильном
-    // поведении. Предмет проверки — что блок ЗАВИСИТ ОТ ТИПА, а не то, каким
-    // статусом сейчас живёт первый попавшийся сотрудник.
-    await dialog.locator('#status').click()
-    await expect(page.getByRole('listbox')).toBeVisible()
-    const plainOption = page
-      .getByRole('option')
-      .filter({ hasNotText: 'ОМ' })
-      .filter({ hasNotText: 'мероприяти' })
-      .first()
-    await plainOption.scrollIntoViewIfNeeded()
-    await plainOption.click()
-    await expect(
-      dialog.getByText('Мероприятия', { exact: true }),
-      'блок мероприятий показан до того, как выбран статус привлечения',
-    ).toHaveCount(0)
-
-    await dialog.locator('#status').click()
-    // 🔴 ВЫБОР НАБОРОМ С КЛАВИАТУРЫ, А НЕ КЛИКОМ. В списке шестнадцать типов,
-    // и Radix открывает его прокрученным к подсвеченному варианту: нужный
-    // оказывается ВЫШЕ видимой области, Playwright честно говорит «element is
-    // outside of the viewport» и падает по таймауту. Сам список отрисован
-    // верно — ломается проба, а не окно (разобрано в `status-set-dialog.spec.ts`).
-    // Печатаем подпись целиком: две подписи привлечения различаются только
-    // хвостом «(наряд)» / «(боевая группа)», и короткого префикса не хватит.
-    await expect(page.getByRole('listbox')).toBeVisible()
-    const squadOption = page.getByRole('option', { name: squadLabel, exact: true })
-    await squadOption.scrollIntoViewIfNeeded()
-    await squadOption.click()
-    await expect(
-      dialog.locator('#status'),
-      'в поле статуса встал не тот тип, который выбран',
-    ).toContainText(squadLabel)
-    await expect(
-      dialog.getByText('Мероприятия', { exact: true }),
-      'у статуса привлечения блок мероприятий обязан появиться',
-    ).toBeVisible()
-
-    // (2) Мероприятие и вид участия.
-    await dialog.getByRole('button', { name: '+ Мероприятие' }).click()
-    await dialog.getByLabel('Мероприятие 1', { exact: true }).click()
-    // Ждём НАПОЛНЕНИЯ списка, а не кликаем в пустоту: под нагрузкой реестр ОМ
-    // отвечает не сразу, и «первый вариант» истекал бы по таймауту.
-    await expect(
-      page.getByText('Загружаем мероприятия…'),
-      'состояние загрузки списка ОМ сменяется списком',
-    ).toHaveCount(0, { timeout: 30_000 })
-    await expect(
-      page.getByText('Мероприятий нет — привлекать не на что'),
-      'на стенде есть хотя бы одно ОМ — иначе проба вакуумна',
-    ).toHaveCount(0)
-    // Выбор С КЛАВИАТУРЫ, а не кликом в «первый по DOM»: на подросшем реестре
-    // Radix открывает список прокрученным, и первый по разметке оказывается
-    // выше видимой области (разобрано в `status-set-dialog.spec.ts`).
-    await expect(page.getByRole('listbox')).toBeVisible()
-    await page.keyboard.press('Enter')
-    await expect(
-      dialog.getByLabel('Мероприятие 1', { exact: true }),
-      'мероприятие выбрано — в поле стоит код ОМ',
-    ).toContainText(/ОМ-\d+/)
-    // Код выбранного ОМ держим строкой: по нему проба потом ищет привлечение
-    // в карточке сотрудника.
-    const eventCode = (
-      (await dialog.getByLabel('Мероприятие 1', { exact: true }).innerText()).match(
-        /ОМ-[\d-]+/,
-      ) ?? ['']
-    )[0]
-    expect(eventCode, 'код мероприятия не разобрался из поля').not.toBe('')
-
-    await dialog.getByLabel('Вид участия 1', { exact: true }).click()
-    await page.getByRole('option', { name: 'Физический наряд' }).click()
-
-    // (3) У физнаряда ролей внутри нет — поле роли не показывается.
-    await expect(
-      dialog.getByLabel('Роль в группе 1', { exact: true }),
-      'физнаряду предложена роль, которой у него не бывает',
-    ).toHaveCount(0)
-    await expect(dialog.getByText('ролей внутри нет')).toBeVisible()
-
-    // Период: у привлечения есть начало и конец, бессрочным оно не бывает.
-    await dialog.locator('#startDate').click()
-    await pickNextMonthDay(page, '10')
-    await dialog.locator('#endDate').click()
-    await pickNextMonthDay(page, '20')
-
-    // (4) 🔴 АДРЕС РУЧКИ — ГЛАВНЫЙ АССЕРТ. Ждём ИМЕННО ручку расхода: попади
-    // запись в кадровую, ответ пришёл бы с другого адреса и ожидание истекло.
-    const [response] = await Promise.all([
-      page.waitForResponse(
-        (r) =>
-          r.url().includes('/api/operations/statuses/') && r.request().method() === 'POST',
-        { timeout: 20_000 },
-      ),
-      dialog.getByRole('button', { name: 'Сохранить' }).click(),
-    ])
-
-    expect(response.status(), await response.text()).toBe(201)
-    const saved = (await response.json()) as {
-      status_type_code: string
-      participations: { event_id: number; kind_code: string; role_code: string }[]
-    }
-    expect(
-      saved.status_type_code,
-      'на сервер ушёл не тот код статуса, который выбрал человек',
-    ).toBe(SQUAD_STATUS_CODE)
-    expect(
-      saved.participations,
-      'мероприятие доехало до сервера и вернулось из него',
-    ).toHaveLength(1)
-    expect(saved.participations[0].kind_code).toBe('PHYSICAL_SQUAD')
-    expect(
-      saved.participations[0].role_code,
-      'физнаряду роль не приписана — ролей внутри у него нет',
-    ).toBe('')
-
-    await expect(dialog, 'после успеха окно закрывается').toHaveCount(0)
-
-    // (5) 🔴 СТАТУС ВИДЕН ЧЕЛОВЕКУ, А НЕ ТОЛЬКО СЕРВЕРУ (Plane №368, Ш-3).
-    // Ш-2 сам по себе заводил строку в учёте раздела и не показывал её нигде:
-    // карточка статусов сотрудника читала только кадровые строки, а ключ
-    // списка раздела после записи не сбрасывался — до перезагрузки страницы
-    // человек не находил своё привлечение и ставил его второй раз.
-    const row = page.locator('table tbody tr', { hasText: employeeName }).first()
-    await row.getByTitle('Открыть статусы сотрудника').click()
-    const card = page.getByRole('dialog')
-    await expect(card.getByText('Учёт раздела ОМ')).toBeVisible({ timeout: 20_000 })
-    await expect(
-      // `.first()`: у сотрудника может быть НЕСКОЛЬКО строк учёта с этим же
-      // мероприятием — проба ставит одну, а стенд накапливает их от прогона к
-      // прогону (снять статус расхода нельзя по устройству модели).
-      card.getByText(eventCode, { exact: false }).first(),
-      'привлечение записано, но в карточке сотрудника его не видно',
-    ).toBeVisible({ timeout: 20_000 })
-    await expect(
-      card.locator('li').filter({ hasText: /ОМ-/ }),
-      'список учёта раздела не освежился после записи — карточка показывает кэш',
-    ).toHaveCount(participationsBefore + 1, { timeout: 20_000 })
+    // Тот же запрет на сервере — прямым вызовом.
+    const token = await tokenFor()
+    const employees = (await (
+      await fetch(`${API}/api/core/employees/?page_size=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { results: { id: number }[] }
+    const refused = await fetch(`${API}/api/operations/statuses/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        employee_id: employees.results[0]!.id,
+        status_type_code: SQUAD_STATUS_CODE,
+        date_start: '2030-01-10',
+        date_end: '2030-01-11',
+      }),
+    })
+    expect(refused.status).toBe(422)
+    expect(((await refused.json()) as { error_code: string }).error_code).toBe(
+      'PARTICIPATION_MANUAL_FORBIDDEN',
+    )
   })
 })

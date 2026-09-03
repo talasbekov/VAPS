@@ -42,17 +42,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 // Блок мероприятий — ОБЩИЙ с портальным окном статуса (Plane №367): те же
 // три списка и те же правила («роль принадлежит своей группе», «у физнаряда
 // ролей нет») понадобились там дословно, и вторая копия разошлась бы с этой.
-import {
-  EventParticipationFields,
-  participationsToPayload,
-  validateParticipations,
-  type ParticipationDraft,
-} from "@/features/event-participation/ui/EventParticipationFields";
 import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
 
 /** Коды участия в ОМ: только у них показывается выбор мероприятий.
@@ -86,28 +79,14 @@ export function SetStatusDialog({
   failure,
 }: SetStatusDialogProps) {
   const [statusCode, setStatusCode] = useState("");
-  const [rows, setRows] = useState<ParticipationDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
-
-  const needsParticipation = PARTICIPATION_CODES.has(statusCode);
-  // Каталог видов участия нужен окну и ПОСЛЕ того, как блок его отрисовал:
-  // по нему проверяется черновик перед отправкой. Запрос тот же самый —
-  // React Query отдаёт его из кэша по общему ключу, второго обращения нет.
-  const catalog = useParticipationCatalog(open && needsParticipation);
 
   useEffect(() => {
     if (!open) {
       setStatusCode("");
-      setRows([]);
       setFormError(null);
     }
   }, [open]);
-
-  // Смена статуса на «не участие» снимает выбранные мероприятия: держать их
-  // у отпуска значило бы отправить на сервер заведомо бессмысленное тело.
-  useEffect(() => {
-    if (!needsParticipation) setRows([]);
-  }, [needsParticipation]);
 
   // Каталог статусов — СПРАВОЧНИК СЕРВЕРА, а не список в коде (Plane №342):
   // типы заводит администратор, и константа на клиенте не узнаёт о новом типе
@@ -115,8 +94,15 @@ export function SetStatusDialog({
   // приоритету): «важность» статуса — свойство справочника, и пересортировка
   // на клиенте была бы вторым мнением о ней.
   const catalogTypes = useOpsStatusTypes(open);
+  // «Участие в ОМ» из списка снято (Plane №427, `[СТА-04]`): такой статус
+  // ставится только из запроса на сбор сил — чекбоксами на «Статусах
+  // сотрудников» — и всегда с мероприятием и датами объекта. Ручной ввод
+  // был вторым источником правды о привлечении.
   const statuses = useMemo(
-    () => catalogTypes.types.map((type) => ({ code: type.code, label: type.name })),
+    () =>
+      catalogTypes.types
+        .filter((type) => !PARTICIPATION_CODES.has(type.code))
+        .map((type) => ({ code: type.code, label: type.name })),
     [catalogTypes.types]
   );
 
@@ -125,20 +111,10 @@ export function SetStatusDialog({
       setFormError("Выберите статус.");
       return;
     }
-    if (needsParticipation && rows.length === 0) {
-      // Статус участия без единого мероприятия — «привлечён неизвестно куда»:
-      // расход его посчитает, а департамент не увидит, на какое ОМ человек
-      // отдан.
-      setFormError("Укажите хотя бы одно мероприятие.");
-      return;
-    }
-    const invalid = validateParticipations(rows, catalog.data ?? []);
-    if (invalid !== null) {
-      setFormError(invalid);
-      return;
-    }
     setFormError(null);
-    await onSubmit({ statusCode, participations: participationsToPayload(rows) });
+    // Участий окно больше не шлёт (Plane №427): «Участие в ОМ» ставится из
+    // запроса на сбор сил, а не отсюда.
+    await onSubmit({ statusCode, participations: [] });
   }
 
   return (
@@ -194,14 +170,6 @@ export function SetStatusDialog({
               </p>
             )}
           </div>
-
-          {needsParticipation && (
-            <EventParticipationFields
-              rows={rows}
-              onChange={setRows}
-              enabled={open && needsParticipation}
-            />
-          )}
 
           {(formError !== null || failure !== null) && (
             <Alert variant="destructive">

@@ -937,6 +937,9 @@ def test_a_status_set_outside_the_chain_reaches_the_department(manager):  # noqa
         status_service.create_status(
             employee_id=employee.pk,
             status_type_code="EVENT_ASSIGNMENT",
+            # Путь начальника — ЧЕКБОКСЫ запроса (Ш-11, Plane №427): ручной
+            # ввод участия закрыт, статус ставит система.
+            system_participations=True,
             date_start=dt.date(2026, 8, 10),
             date_end=dt.date(2026, 8, 11),
             actor="user:directorate-chief",
@@ -980,6 +983,8 @@ def test_a_status_of_another_department_does_not_leak(manager):  # noqa: F811
             participations=[
                 {"event_id": int(event_pk(base)), "kind_code": "PHYSICAL_SQUAD"}
             ],
+            # Чекбоксы запроса ставят статус системным путём (Ш-11, Plane №427).
+            system_participations=True,
         )
 
     members = manager.get(base).json()["forceAllocation"][0]["members"]

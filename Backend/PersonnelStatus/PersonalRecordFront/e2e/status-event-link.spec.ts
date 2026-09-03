@@ -89,19 +89,41 @@ async function seed(token: string): Promise<Fixture> {
   const nextDay = new Date(`${businessDate}T00:00:00Z`)
   nextDay.setUTCDate(nextDay.getUTCDate() + 1)
 
+  // Статус участия ставится ТОЛЬКО системным путём (Plane №427, `[СТА-04]`):
+  // штаб раскладывает потребность по департаментам и добавляет человека в
+  // список — тот же путь, что у чекбоксов запроса. Прямой POST статуса с
+  // типом участия сервер отбивает 422.
+  const roster = await call('GET', '/api/ops/personnel/?page_size=1')
   const created = await call('POST', '/api/ops/security-events/', {
     title: 'Проба ссылки на ОМ (e2e)',
     objectId: object.id,
     businessDate,
     kind: 'INTERNAL',
+    chiefEmployeeId: String(roster.payload.results[0].id),
   })
   expect(created.status, JSON.stringify(created.payload)).toBe(201)
-
-  // СОТРУДНИК ПОДБИРАЕТСЯ ПЕРЕБОРОМ, а не вычисляется списком занятых.
-  // Список статусов на день отвечает про раздел ОМ, но пересечение сервер
-  // считает шире (сюда попадают и «мягкие» конфликты, и соседние интервалы),
-  // и «свободный по списку» получал 409 STATUS_OVERLAP_WARNING. Спрашиваем у
-  // сервера, а не гадаем: первый, кого он принял, и есть свободный.
+  const base = `/api/ops/security-events/${created.payload.id}`
+  const imported = await call('POST', `${base}/recon/import-from-passport/`)
+  await call('PATCH', `${base}/recon/`, {
+    checklist: (imported.payload.reconChecklist as Record<string, unknown>[]).map((i) => ({
+      ...i,
+      done: true,
+    })),
+    sectorPosts: imported.payload.reconSectorPosts,
+  })
+  const completed = await call('POST', `${base}/recon/complete/`)
+  expect(completed.status, JSON.stringify(completed.payload)).toBe(200)
+  const divisions = await call('GET', '/api/core/divisions/?page_size=200')
+  const rows = divisions.payload.results as { id: number; name: string; type_code?: string | null }[]
+  const department =
+    rows.find((d) => (d.type_code ?? '').toUpperCase() === 'DEPARTMENT') ??
+    rows.find((d) => /департамент/i.test(d.name))
+  expect(department, 'на стенде нет департамента').toBeDefined()
+  const split = await call('POST', `${base}/forces/allocation/`, {
+    rows: [{ departmentId: String(department!.id), need: Number(completed.payload.forceNeed) || 1 }],
+  })
+  expect(split.status, JSON.stringify(split.payload)).toBe(200)
+  const allocationId = split.payload.forceAllocation[0].id as string
   const people = await call('GET', '/api/core/employees/?page_size=200')
   const candidates = (people.payload.results ?? []).map(
     (person: {
@@ -111,58 +133,33 @@ async function seed(token: string): Promise<Fixture> {
       personnel_number?: string
     }) => ({
       id: Number(person.id),
-      // ИМЕННО «Фамилия Имя», а не `full_name`: в справочнике полное имя идёт
-      // с отчеством («Абенов Канат Ерланович»), а таблица печатает две части.
       name: `${person.last_name ?? ''} ${person.first_name ?? ''}`.trim(),
-      // Поиск идёт по ТАБЕЛЬНОМУ НОМЕРУ, а не по фамилии: фамилия на стенде
-      // не уникальна (полных тёзок по четверо), и отбор по ней даёт больше
-      // строк, чем помещается на страницу — нужный человек оказывался на
-      // второй, и проба падала «через раз».
       personnelNumber: person.personnel_number ?? '',
     }),
   )
   expect(candidates.length, 'справочник сотрудников пуст').toBeGreaterThan(0)
-
   let free: { id: number; name: string; personnelNumber: string } | undefined
   for (const candidate of candidates) {
-    const status = await call('POST', '/api/operations/statuses/', {
-      employee_id: candidate.id,
-      status_type_code: EVENT_ASSIGNMENT,
-      date_start: businessDate,
-      date_end: nextDay.toISOString().slice(0, 10),
-      participations: [
-        { event_id: created.payload.id, kind_code: 'PHYSICAL_SQUAD' },
-      ],
+    const added = await call('POST', `${base}/forces/allocation/${allocationId}/members/`, {
+      employeeId: String(candidate.id),
     })
-    if (status.status === 201) {
-      // 🔴 ID РЕГИСТРИРУЕТСЯ СРАЗУ, а не после возврата из `seed()`. Ниже в
-      // этой же функции есть ассерты, и падение любого из них раньше
-      // оставляло заведённый статус на стенде навсегда: `seededStatusId`
-      // присваивался из результата `seed()`, которого при падении не будет.
-      // Пометки `probeComment` на ops-строке нет, а глобальная уборка ходит
-      // по КАДРОВОМУ каталогу и её не видит — то есть утечка была тихой
-      // (найдено ревью).
-      seededStatusId = Number(status.payload.id)
-      // 🔴 201 ЗНАЧИТ ТОЛЬКО «периоды не пересеклись». Каким РОДИЛСЯ статус —
-      // действующим или запланированным — из кода ответа не следует: `state`
-      // выводится из дат, и у человека с активным статусом, начатым раньше,
-      // новый его вытесняет, а начатый сегодня — отменяется. В одном из этих
-      // случаев участие висело бы на статусе, который на экране не текущий, и
-      // проба покраснела бы через два шага на непонятном месте. Проверяем
-      // здесь: пусть сервер скажет сам, если однажды заведёт статус иначе.
-      expect(
-        status.payload.state,
-        'заведённый статус не действующий — участие повиснет не на том',
-      ).toBe('ACTIVE')
-      free = candidate
-      break
-    }
+    if (added.status !== 200) continue
+    const statuses = await call(
+      'GET',
+      `/api/operations/statuses/?employee=${candidate.id}&page_size=50`,
+    )
+    const own = (statuses.payload.results as { id: number; state: string; participations: { event_id: number }[] }[]).find(
+      (row) => row.participations.some((x) => x.event_id === Number(created.payload.id)),
+    )
+    if (own === undefined || own.state !== 'ACTIVE') continue
+    seededStatusId = own.id
+    free = candidate
+    break
   }
   expect(
     free,
     'ни один сотрудник страницы не свободен на этот день — привлекать некого',
   ).toBeDefined()
-
   return {
     eventId: Number(created.payload.id),
     eventCode: String(created.payload.code),

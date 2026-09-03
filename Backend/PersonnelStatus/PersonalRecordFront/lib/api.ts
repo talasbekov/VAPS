@@ -426,6 +426,11 @@ export interface OpsStatusParticipation {
   role_code: string;
   event_code: string;
   event_title: string;
+  /** Колонка «По разделу ОМ» (Plane №427): объект посещения и пост из
+   *  расстановки ОМ, отметка ознакомления; пусто — штаб ещё не распределил. */
+  visit_object_name?: string;
+  post_label?: string;
+  acknowledged_at?: string | null;
 }
 
 /**
