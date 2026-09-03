@@ -1,19 +1,24 @@
 "use client";
 
-// «Создать бюллетень»: RHF + Zod, форма эталона Smart Жоспарлау (окно по
-// кнопке «+ Создать бюллетень» в реестре ОМ). 400-канал бэка кладёт ошибки в
-// поля через setError; успех — переход в карточку созданного ОМ.
+// Окно «Создать бюллетень» — по спецификации `[БЛН-11]`…`[БЛН-13]`
+// (Plane №419, Ш-3 плана P2). Порядок полей = порядок колонок бланка:
 //
-// Состав полей — из прототипа: название, ТИП МЕРОПРИЯТИЯ (от него зависят
-// маршрут согласования и то, кто старший), период с необязательным временем,
-// охраняемое лицо, локация, старший. Одно отклонение от эталона осознанное:
-// «Объект» в окне ОСТАЁТСЯ (решение заказчика 23.08.2026) — по нему
-// привязывается версия паспорта, без него расчёт постов не к чему привязать.
+//   1. тип мероприятия (две кнопки — оба варианта видны сразу);
+//   2. даты начала и окончания (обе обязательны), время и пометка
+//      «вылет / прилёт» с бортом — пометка ложится в атрибуты визита
+//      ГЛАВНОГО лица (№418), своего поля у мероприятия для неё нет намеренно;
+//   3. охраняемые лица — combobox из справочника, чипами; первое — главное,
+//      обязательно минимум одно;
+//   4. название;
+//   5. локация: страна → город (по умолчанию Казахстан → Астана, обязательны),
+//      ниже объект посещения и адрес — необязательно;
+//   6. старший наряда / ГВО — combobox с поиском на сервере, без списка на
+//      440 строк и страниц «Назад / Дальше» (`[БЛН-13]`);
+//   7. живое превью строки бюллетеня — как форма ляжет в бланк.
 //
-// Форма была на RHF раньше остальных, но собирала поля вручную: `aria-invalid`
-// и `aria-describedby` у неё не было ни у одного поля — текст ошибки лежал
-// рядом и ни с чем не связан. Общий `Field` эту связку ставит сам.
-import { useEffect, useRef } from "react";
+// Кнопка «Создать бюллетень» гаснет видом, пока обязательное не заполнено
+// (`[БЛН-12]`), но нажать её можно: тогда форма скажет, чего не хватает.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import {
@@ -34,10 +39,16 @@ import {
   useCreateSecurityEvent,
 } from "@/hooks/use-create-security-event";
 import { useProtectedPersons } from "@/hooks/use-protected-persons";
+import { useCities, useCountries } from "@/hooks/use-geo";
 import { LocationFields } from "./LocationFields";
-import { PersonnelPicker } from "@/features/personnel-picker";
 import { ProtectedPersonsPicker } from "./ProtectedPersonsPicker";
-import type { SecurityEventKind } from "@/entities/security-event";
+import { ChiefCombobox } from "./ChiefCombobox";
+import type { ChiefChoice } from "./ChiefCombobox";
+import { BulletinRowPreview } from "./BulletinRowPreview";
+import type {
+  EventProtectedPersonDetails,
+  SecurityEventKind,
+} from "@/entities/security-event";
 
 const KINDS = ["INTERNAL", "FOREIGN"] as const;
 
@@ -56,16 +67,22 @@ const KIND_HINT: Record<string, string> = {
     "Запись появится в реестре ГВО — старший ГВО заполнит сводку по данным МИД и выберет объекты посещения",
 };
 
-/** Локация по умолчанию — из эталона: почти все ОМ проходят в столице. */
-const DEFAULT_LOCATION = "г. Астана";
+/** Пометка к времени (`[БЛН-11]`): к какому событию визита относится час. */
+const TIME_MARKS = ["", "arrival", "departure"] as const;
+const TIME_MARK_LABEL: Record<(typeof TIME_MARKS)[number], string> = {
+  "": "без пометки",
+  arrival: "прилёт",
+  departure: "вылет",
+};
+
+/** Умолчания локации (`[БЛН-11]`): Казахстан → Астана. Ищутся в справочнике
+ * по коду и имени, а не по id: id на стендах разные. */
+const DEFAULT_COUNTRY_CODE = "KZ";
+const DEFAULT_CITY_NAME = "Астана";
 
 /** Поля — в порядке появления на экране: так схему проще читать. */
 const formSchema = z
   .object({
-    title: z.string().trim().min(1, "Обязательное поле."),
-    // Без сужения типа (`value is SecurityEventKind`) намеренно: значение
-    // поля до выбора — пустая строка, и суженный тип не дал бы её в
-    // начальные значения формы.
     kind: z
       .string()
       .refine(
@@ -75,24 +92,25 @@ const formSchema = z
     businessDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Укажите дату в формате ГГГГ-ММ-ДД."),
-    // Пусто — однодневное ОМ: поле НЕобязательное, и пустая строка не должна
-    // краснеть как незаполненная.
+    // Окончание ОБЯЗАТЕЛЬНО (`[БЛН-11]`): однодневное — та же дата.
     businessDateEnd: z
       .string()
-      .regex(/^(\d{4}-\d{2}-\d{2})?$/, "Укажите дату в формате ГГГГ-ММ-ДД."),
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Укажите дату окончания."),
     eventTime: z
       .string()
       .regex(/^(\d{2}:\d{2})?$/, "Укажите время в формате ЧЧ:ММ."),
-    // Лиц может быть НЕСКОЛЬКО (Plane №188); первое — главное.
-    protectedPersonIds: z.array(z.string()),
-    // Локация структурой (Plane №418): страна → город → адрес. Строка
-    // `location` собирается сервером, окно её больше не шлёт.
-    countryId: z.string(),
-    cityId: z.string(),
+    timeMark: z.string(),
+    flight: z.string().max(100, "Не длиннее 100 символов."),
+    // Минимум одно лицо (`[БЛН-11]`); первое — главное.
+    protectedPersonIds: z
+      .array(z.string())
+      .min(1, "Укажите хотя бы одно охраняемое лицо."),
+    title: z.string().trim().min(1, "Обязательное поле."),
+    countryId: z.string().min(1, "Укажите страну."),
+    cityId: z.string().min(1, "Укажите город."),
     address: z.string().max(255, "Не длиннее 255 символов."),
-    // Объект НЕОБЯЗАТЕЛЕН (решение заказчика 24.08, ClickUp 86eyqf7a7):
-    // бюллетень заводят до согласования маршрута, объекты дописывают позже
-    // кнопкой у строки реестра.
+    // Объект НЕОБЯЗАТЕЛЕН (решение заказчика 24.08): бюллетень заводят до
+    // согласования маршрута, объекты дописывают позже кнопкой у строки.
     objectId: z.string(),
     chiefEmployeeId: z.string(),
   })
@@ -111,15 +129,17 @@ const formSchema = z
 type FormValues = z.infer<typeof formSchema>;
 
 const EMPTY_FORM: FormValues = {
-  title: "",
   kind: "",
   businessDate: "",
   businessDateEnd: "",
   eventTime: "",
+  timeMark: "",
+  flight: "",
   protectedPersonIds: [],
+  title: "",
   countryId: "",
   cityId: "",
-  address: DEFAULT_LOCATION,
+  address: "",
   objectId: "",
   chiefEmployeeId: "",
 };
@@ -155,6 +175,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const objectsQuery = useBindableObjects();
   const personsQuery = useProtectedPersons();
+  const countries = useCountries();
 
   const {
     register,
@@ -171,7 +192,31 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
   const objectId = watch("objectId");
   const businessDate = watch("businessDate");
   const businessDateEnd = watch("businessDateEnd");
-  const chiefEmployeeId = watch("chiefEmployeeId") ?? "";
+  const eventTime = watch("eventTime");
+  const timeMark = watch("timeMark");
+  const countryId = watch("countryId");
+  const cityId = watch("cityId");
+  const address = watch("address");
+  const personIds = watch("protectedPersonIds") ?? [];
+  const cities = useCities(countryId === "" ? null : countryId);
+  // Старший — и id для формы, и имя для превью: сервер отдаёт только id.
+  const [chief, setChief] = useState<ChiefChoice | null>(null);
+
+  // Умолчания локации ставятся ОДИН раз, когда справочник приехал и поле
+  // ещё пусто: выбор человека не перекрывается.
+  useEffect(() => {
+    if (countryId !== "" || countries.data === undefined) return;
+    const kz = countries.data.results.find((c) => c.code === DEFAULT_COUNTRY_CODE);
+    if (kz !== undefined) setValue("countryId", kz.id);
+  }, [countries.data, countryId, setValue]);
+  useEffect(() => {
+    if (cityId !== "" || cities.data === undefined) return;
+    const country = countries.data?.results.find((c) => c.id === countryId);
+    if (country?.code !== DEFAULT_COUNTRY_CODE) return;
+    const astana = cities.data.results.find((c) => c.name === DEFAULT_CITY_NAME);
+    if (astana !== undefined) setValue("cityId", astana.id);
+  }, [cities.data, cityId, countries.data, countryId, setValue]);
+
   // Старший наряда или ГВО — по типу мероприятия: у визита иностранного лица
   // старший другой, и подпись поля обязана это называть до выбора, а не после.
   const foreign = kind === "FOREIGN";
@@ -196,11 +241,32 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
     }
   }, [mutation.data, router, onClose]);
 
-  // Кнопка гаснет, пока обязательное не заполнено — как в эталоне. Но гасится
-  // ВИДОМ, а не `disabled`: нажать её можно, и тогда форма скажет, чего именно
-  // не хватает, вместо молчаливого тупика.
+  // Превью строки бюллетеня — из тех же значений, что уйдут на сервер.
+  const personNames = useMemo(() => {
+    const byId = new Map(
+      (personsQuery.data?.results ?? []).map((p) => [p.id, p.name])
+    );
+    return personIds.map((id) => byId.get(id) ?? `лицо №${id}`);
+  }, [personIds, personsQuery.data]);
+  const previewLocation = useMemo(() => {
+    const country = countries.data?.results.find((c) => c.id === countryId)?.name ?? "";
+    const city = cities.data?.results.find((c) => c.id === cityId)?.name ?? "";
+    const object =
+      objectsQuery.data?.results.find((o) => o.id === objectId)?.name ?? "";
+    return [country, city, object, address.trim()].filter((p) => p !== "").join(", ");
+  }, [address, cities.data, cityId, countries.data, countryId, objectId, objectsQuery.data]);
+
+  // Кнопка гаснет, пока обязательное не заполнено (`[БЛН-12]`). Но гасится
+  // ВИДОМ, а не `disabled`: нажать её можно, и тогда форма скажет, чего
+  // именно не хватает, вместо молчаливого тупика.
   const incomplete =
-    title.trim() === "" || kind === "" || businessDate === "";
+    kind === "" ||
+    businessDate === "" ||
+    businessDateEnd === "" ||
+    personIds.length === 0 ||
+    title.trim() === "" ||
+    countryId === "" ||
+    cityId === "";
 
   return (
     <Dialog
@@ -211,34 +277,35 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
     >
       <DialogContent
         ref={contentRef}
-        className="gap-0 p-[22px] sm:max-w-[560px]"
+        // Колонка на всю высоту: шапка и подвал с кнопками закреплены, крутится
+        // только тело формы. Прокрутка ВСЕГО окна прятала кнопку «Создать
+        // бюллетень» под краем экрана, и клик по ней не стабилизировался.
+        className="flex max-h-[92vh] flex-col gap-0 p-0 sm:max-w-[640px]"
         // Фокус на САМО окно, а не на первое поле.
         //
-        // 🔴 Штатный автофокус Radix вставал в «Название ОМ». Первый же клик
+        // 🔴 Штатный автофокус Radix вставал в первое поле. Первый же клик
         // мимо него уводил фокус с пустого обязательного поля, проверка
         // `onTouched` показывала «Обязательное поле.», строка ошибки
-        // раздвигала форму — и кнопка «Внутреннее» УЕЗЖАЛА из-под курсора
-        // между нажатием и отпусканием: клик не срабатывал вовсе. Снимок
-        // окна поймал это дважды подряд.
+        // раздвигала форму — и кнопка типа УЕЗЖАЛА из-под курсора между
+        // нажатием и отпусканием: клик не срабатывал вовсе.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           contentRef.current?.focus();
         }}
       >
-        <DialogHeader className="mb-4 gap-1 border-b pb-3.5">
-          {/* Заголовок и надзаголовок эталона. Кнопка реестра называется
-              «+ Создать бюллетень» — окно, открывающееся по ней, обязано
-              называться так же, иначе человек не уверен, что попал куда хотел. */}
+        <DialogHeader className="shrink-0 gap-1 border-b px-[22px] pb-3.5 pt-[22px]">
           <p className="text-primary-ink text-[10.5px] font-bold uppercase tracking-[.12em]">
             Новое охранное мероприятие
           </p>
           <DialogTitle>Создать бюллетень</DialogTitle>
           <DialogDescription className="text-[11.5px]">
-            Бюллетень создаётся в реестре, полный мастер — далее по этапам
+            Поля идут в порядке колонок бланка бюллетеня; внизу — строка, как
+            она ляжет в документ.
           </DialogDescription>
         </DialogHeader>
+
         <form
-          className="flex flex-col gap-3.5"
+          className="flex min-h-0 flex-1 flex-col"
           noValidate
           onSubmit={(e) =>
             void handleSubmit(
@@ -251,6 +318,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
                   kind: values.kind as SecurityEventKind,
                   eventTime: values.eventTime,
                   protectedPersonIds: values.protectedPersonIds,
+                  protectedPersonDetails: personDetailsOf(values),
                   countryId: values.countryId,
                   cityId: values.cityId,
                   address: values.address,
@@ -260,9 +328,187 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             )(e)
           }
         >
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-[22px] py-4">
+          {/* 1. Тип — не выпадающий список, а две кнопки: выбор из двух, и оба
+              варианта должны быть видны сразу вместе с их последствиями. */}
+          <fieldset
+            className="space-y-1.5"
+            aria-describedby={
+              errors.kind?.message === undefined ? undefined : "kind-error"
+            }
+          >
+            <legend className={cn(LABEL_CLASS, "mb-1.5")}>
+              Тип мероприятия *
+            </legend>
+            {/* Поле РЕГИСТРИРУЕТСЯ, хотя вводится кнопками: `setValue` по
+                незарегистрированному имени не будит `watch`. */}
+            <input type="hidden" {...register("kind")} />
+            <div className="flex flex-wrap gap-2">
+              {KIND_OPTIONS.map((option, index) => (
+                <Button
+                  key={option.value}
+                  // id на ПЕРВОЙ кнопке: `focusFirstError` ищет элемент по
+                  // имени поля и зовёт focus().
+                  id={index === 0 ? "kind" : undefined}
+                  type="button"
+                  variant={kind === option.value ? "default" : "outline"}
+                  className="h-[38px] rounded-lg px-4 text-[12.5px] font-semibold"
+                  aria-pressed={kind === option.value}
+                  aria-invalid={errors.kind?.message === undefined ? undefined : true}
+                  onClick={() => {
+                    setValue("kind", option.value, { shouldDirty: true });
+                    clearErrors("kind");
+                  }}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+            <p className={HINT_CLASS}>{KIND_HINT[kind] ?? KIND_HINT[""]}</p>
+            {errors.kind?.message !== undefined && (
+              <p id="kind-error" role="alert" className="text-xs text-destructive-ink">
+                {errors.kind.message}
+              </p>
+            )}
+          </fieldset>
+
+          {/* 2. Период и время. Обе даты обязательны (`[БЛН-11]`), под ними —
+              сводка периода словами: человек вводит даты в машинном формате,
+              а проверить обязан то, что получилось. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              name="businessDate"
+              label="Дата начала *"
+              labelClassName={LABEL_CLASS}
+              error={errors.businessDate}
+              className="space-y-1.5"
+            >
+              {(field) => (
+                <Input
+                  {...field}
+                  type="date"
+                  className={CONTROL_CLASS}
+                  aria-required="true"
+                  {...register("businessDate")}
+                />
+              )}
+            </Field>
+            <Field
+              name="businessDateEnd"
+              label="Дата окончания *"
+              labelClassName={LABEL_CLASS}
+              hint="Однодневное — та же дата"
+              hintClassName={HINT_CLASS}
+              error={errors.businessDateEnd}
+              className="space-y-1.5"
+            >
+              {(field) => (
+                <Input
+                  {...field}
+                  type="date"
+                  className={CONTROL_CLASS}
+                  aria-required="true"
+                  {...register("businessDateEnd")}
+                />
+              )}
+            </Field>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field
+              name="eventTime"
+              label="Время"
+              labelClassName={LABEL_CLASS}
+              hint="Необязательно"
+              hintClassName={HINT_CLASS}
+              error={errors.eventTime}
+              className="space-y-1.5"
+            >
+              {(field) => (
+                <Input {...field} type="time" className={CONTROL_CLASS} {...register("eventTime")} />
+              )}
+            </Field>
+            <Field
+              name="timeMark"
+              label="Пометка к времени"
+              labelClassName={LABEL_CLASS}
+              hint="Вылет / прилёт главного лица"
+              hintClassName={HINT_CLASS}
+              error={errors.timeMark}
+              className="space-y-1.5"
+            >
+              {(field) => (
+                <select {...field} className={SELECT_CLASS} {...register("timeMark")}>
+                  {TIME_MARKS.map((mark) => (
+                    <option key={mark} value={mark}>
+                      {TIME_MARK_LABEL[mark]}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field
+              name="flight"
+              label="Борт"
+              labelClassName={LABEL_CLASS}
+              hint="Рейс или тип борта — при пометке"
+              hintClassName={HINT_CLASS}
+              error={errors.flight}
+              className="space-y-1.5"
+            >
+              {(field) => (
+                <Input
+                  {...field}
+                  className={CONTROL_CLASS}
+                  placeholder="KC 871"
+                  disabled={timeMark === ""}
+                  {...register("flight")}
+                />
+              )}
+            </Field>
+          </div>
+          <p
+            className="rounded-lg border bg-muted/40 px-3 py-2.5 text-[11.5px] text-muted-foreground"
+            aria-live="polite"
+          >
+            {periodSummary(businessDate, businessDateEnd)}
+          </p>
+
+          {/* 3. Охраняемые лица — combobox из справочника, чипами. */}
+          <Field
+            name="protectedPersonIds"
+            label="Охраняемые лица *"
+            labelClassName={LABEL_CLASS}
+            hint="Первое в списке — главное: оно печатается в бланке бюллетеня"
+            hintClassName={HINT_CLASS}
+            error={errors.protectedPersonIds}
+            className="space-y-1.5"
+          >
+            {(control) => (
+              <>
+                <ProtectedPersonsPicker
+                  selectId={control.id}
+                  value={personIds}
+                  onChange={(next) => {
+                    setValue("protectedPersonIds", next, { shouldDirty: true });
+                    if (next.length > 0) clearErrors("protectedPersonIds");
+                  }}
+                  options={personsQuery.data?.results ?? []}
+                  loading={personsQuery.isPending}
+                />
+                {personsQuery.isError && (
+                  <p className="text-xs text-destructive-ink" role="alert">
+                    Справочник охраняемых лиц недоступен — лица можно указать
+                    позже правкой бюллетеня.
+                  </p>
+                )}
+              </>
+            )}
+          </Field>
+
+          {/* 4. Название. */}
           <Field
             name="title"
-            label="Название ОМ"
+            label="Название ОМ *"
             labelClassName={LABEL_CLASS}
             error={errors.title}
             className="space-y-1.5"
@@ -278,234 +524,87 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             )}
           </Field>
 
-          {/* Тип — не выпадающий список, а две кнопки: выбор из двух, и оба
-              варианта должны быть видны сразу вместе с их последствиями. */}
-          <fieldset
-            className="space-y-1.5"
-            aria-describedby={
-              errors.kind?.message === undefined ? undefined : "kind-error"
-            }
-          >
-            <legend className={cn(LABEL_CLASS, "mb-1.5")}>
-              Тип мероприятия *
-            </legend>
-            {/* Поле РЕГИСТРИРУЕТСЯ, хотя вводится кнопками: `setValue` по
-                незарегистрированному имени кладёт значение в форму, но не
-                будит подписчиков `watch` — снимок поймал это буквально
-                (первый выбор типа не подсвечивал кнопку и не менял подсказку,
-                второй — менял, потому что перерисовку приносила посторонняя
-                ошибка поля выше). */}
-            <input type="hidden" {...register("kind")} />
-            <div className="flex flex-wrap gap-2">
-              {KIND_OPTIONS.map((option, index) => (
-                <Button
-                  key={option.value}
-                  // id на ПЕРВОЙ кнопке, а не на обёртке: `focusFirstError`
-                  // ищет элемент по имени поля и зовёт focus() — на div это
-                  // тихо ничего не делает, и фокус на ошибке терялся бы.
-                  id={index === 0 ? "kind" : undefined}
-                  type="button"
-                  variant={kind === option.value ? "default" : "outline"}
-                  className="h-[38px] rounded-lg px-4 text-[12.5px] font-semibold"
-                  aria-pressed={kind === option.value}
-                  aria-invalid={errors.kind?.message === undefined ? undefined : true}
-                  // Выбор гасит ошибку САМОГО поля, а не запускает проверку
-                  // формы: `shouldValidate` прогонял схему целиком, и клик по
-                  // типу подсвечивал красным ещё не тронутое «Название ОМ».
-                  onClick={() => {
-                    setValue("kind", option.value, { shouldDirty: true });
-                    clearErrors("kind");
-                  }}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
-            <p className={HINT_CLASS}>{KIND_HINT[kind] ?? KIND_HINT[""]}</p>
-            {errors.kind?.message !== undefined && (
-              <p
-                id="kind-error"
-                role="alert"
-                className="text-xs text-destructive-ink"
+          {/* 5. Локация: страна → город обязательны, объект и адрес — нет.
+              Объект живёт ВНУТРИ блока локации (`[БЛН-13]`), а не отдельным
+              полем: это то же «где», что страна и город. */}
+          <fieldset className="space-y-3 rounded-lg border p-3">
+            <legend className={cn(LABEL_CLASS, "px-1")}>Локация *</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <LocationFields
+                countryId={countryId}
+                cityId={cityId}
+                onCountry={(next) => {
+                  setValue("countryId", next, { shouldDirty: true });
+                  setValue("cityId", "", { shouldDirty: true });
+                  if (next !== "") clearErrors("countryId");
+                }}
+                onCity={(next) => {
+                  setValue("cityId", next, { shouldDirty: true });
+                  if (next !== "") clearErrors("cityId");
+                }}
+                addressField={
+                  <Field
+                    name="address"
+                    label="Адрес / место"
+                    labelClassName={LABEL_CLASS}
+                    hint="Необязательно"
+                    hintClassName={HINT_CLASS}
+                    error={errors.address}
+                    className="space-y-1.5"
+                  >
+                    {(field) => (
+                      <Input
+                        {...field}
+                        className={CONTROL_CLASS}
+                        placeholder="Улица, дом, площадка"
+                        {...register("address")}
+                      />
+                    )}
+                  </Field>
+                }
+                labelClassName={LABEL_CLASS}
+                selectClassName={SELECT_CLASS}
+              />
+              <Field
+                name="objectId"
+                label="Объект посещения"
+                labelClassName={LABEL_CLASS}
+                hint="Необязательно — объекты можно добавить позже кнопкой «+» у строки"
+                hintClassName={HINT_CLASS}
+                error={errors.objectId}
+                className="space-y-1.5"
               >
-                {errors.kind.message}
+                {() => (
+                  <>
+                    <input type="hidden" {...register("objectId")} />
+                    <ObjectPicker
+                      objects={objectsQuery.data?.results ?? []}
+                      isLoading={objectsQuery.isPending}
+                      value={objectId}
+                      onChange={(next) =>
+                        setValue("objectId", next, { shouldDirty: true })
+                      }
+                      controlClassName={SELECT_CLASS}
+                    />
+                    {objectsQuery.isError && (
+                      <p className="text-xs text-destructive-ink" role="alert">
+                        Реестр объектов недоступен — мероприятие можно завести
+                        и без объекта.
+                      </p>
+                    )}
+                  </>
+                )}
+              </Field>
+            </div>
+            {(errors.countryId?.message !== undefined ||
+              errors.cityId?.message !== undefined) && (
+              <p className="text-xs text-destructive-ink" role="alert">
+                {errors.countryId?.message ?? errors.cityId?.message}
               </p>
             )}
           </fieldset>
 
-          {/* Три поля периода в ряд, как в эталоне: период мероприятия
-              читается целиком, а не тремя разрозненными полями. Окончание
-              принимает и бэк (`business_date_end`), и реестр — колонка «Даты»
-              показывает по нему продолжительность; до 23.08.2026 ввести его
-              было негде, и каждое созданное вручную ОМ выходило однодневным. */}
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field
-              name="businessDate"
-              label="Дата начала"
-              labelClassName={LABEL_CLASS}
-              error={errors.businessDate}
-              className="space-y-1.5"
-            >
-              {(field) => (
-                <Input
-                  {...field}
-                  type="date"
-                  className={CONTROL_CLASS}
-                  aria-required="true"
-                  {...register("businessDate")}
-                />
-              )}
-            </Field>
-
-            <Field
-              name="businessDateEnd"
-              label="Дата окончания"
-              labelClassName={LABEL_CLASS}
-              error={errors.businessDateEnd}
-              className="space-y-1.5"
-            >
-              {(field) => (
-                <Input
-                  {...field}
-                  type="date"
-                  className={CONTROL_CLASS}
-                  {...register("businessDateEnd")}
-                />
-              )}
-            </Field>
-
-            <Field
-              name="eventTime"
-              label="Время (необязательно)"
-              labelClassName={LABEL_CLASS}
-              error={errors.eventTime}
-              className="space-y-1.5"
-            >
-              {(field) => (
-                <Input
-                  {...field}
-                  type="time"
-                  className={CONTROL_CLASS}
-                  {...register("eventTime")}
-                />
-              )}
-            </Field>
-          </div>
-
-          {/* Сводка периода: человек вводит две даты в машинном формате, а
-              проверить обязан то, что получилось — с днями недели и числом
-              дней. */}
-          <p
-            className="rounded-lg border bg-muted/40 px-3 py-2.5 text-[11.5px] text-muted-foreground"
-            aria-live="polite"
-          >
-            {periodSummary(businessDate, businessDateEnd)}
-          </p>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field
-              name="protectedPersonIds"
-              label="Охраняемые лица"
-              labelClassName={LABEL_CLASS}
-              hint="Первое в списке — главное: оно печатается в бланке бюллетеня"
-              hintClassName={HINT_CLASS}
-              error={errors.protectedPersonIds}
-              className="space-y-1.5"
-            >
-              {(control) => (
-                <>
-                  <ProtectedPersonsPicker
-                    selectId={control.id}
-                    value={watch("protectedPersonIds") ?? []}
-                    onChange={(next) =>
-                      setValue("protectedPersonIds", next, { shouldDirty: true })
-                    }
-                    options={personsQuery.data?.results ?? []}
-                    loading={personsQuery.isPending}
-                  />
-                  {personsQuery.isError && (
-                    <p className="text-xs text-destructive-ink" role="alert">
-                      Справочник охраняемых лиц недоступен — лица можно указать
-                      позже правкой бюллетеня.
-                    </p>
-                  )}
-                </>
-              )}
-            </Field>
-
-            <LocationFields
-              countryId={watch("countryId")}
-              cityId={watch("cityId")}
-              onCountry={(next) => {
-                setValue("countryId", next, { shouldDirty: true });
-                setValue("cityId", "", { shouldDirty: true });
-              }}
-              onCity={(next) => setValue("cityId", next, { shouldDirty: true })}
-              addressField={
-                <Field
-                  name="address"
-                  label="Адрес / место"
-                  labelClassName={LABEL_CLASS}
-                  hint={`По умолчанию — ${DEFAULT_LOCATION}`}
-                  hintClassName={HINT_CLASS}
-                  error={errors.address}
-                  className="space-y-1.5"
-                >
-                  {(field) => (
-                    <Input
-                      {...field}
-                      className={CONTROL_CLASS}
-                      placeholder={DEFAULT_LOCATION}
-                      {...register("address")}
-                    />
-                  )}
-                </Field>
-              }
-              labelClassName={LABEL_CLASS}
-              selectClassName={SELECT_CLASS}
-            />
-          </div>
-
-          {/* Эталон здесь снова в силе: объект НЕОБЯЗАТЕЛЕН — старший наряда
-              определяет его позже (решение заказчика 24.08 отменяет обратное
-              решение от 23.08). Без объекта не будет привязки паспорта, и
-              импорт постов на рекогносцировке отвечает своим отказом, пока
-              объект не добавлен кнопкой у строки реестра. */}
-          <Field
-            name="objectId"
-            label="Объект"
-            labelClassName={LABEL_CLASS}
-            hint="Необязательно: без объекта версия паспорта не привяжется — объекты можно добавить позже"
-            hintClassName={HINT_CLASS}
-            error={errors.objectId}
-            className="space-y-1.5"
-          >
-            {() => (
-              <>
-                {/* Поле РЕГИСТРИРУЕТСЯ, хотя вводится поповером — ровно та же
-                    яма, что у «Типа мероприятия» выше: `setValue` по
-                    незарегистрированному имени не будит `watch`, и выбранный
-                    объект не появился бы в подписи кнопки. */}
-                <input type="hidden" {...register("objectId")} />
-                <ObjectPicker
-                  objects={objectsQuery.data?.results ?? []}
-                  isLoading={objectsQuery.isPending}
-                  value={objectId}
-                  onChange={(next) =>
-                    setValue("objectId", next, { shouldDirty: true })
-                  }
-                  controlClassName={SELECT_CLASS}
-                />
-                {objectsQuery.isError && (
-                  <p className="text-xs text-destructive-ink" role="alert">
-                    Реестр объектов недоступен — выбрать объект не из чего;
-                    мероприятие можно завести и без него.
-                  </p>
-                )}
-              </>
-            )}
-          </Field>
-
+          {/* 6. Старший — combobox с поиском на сервере. */}
           <Field
             name="chiefEmployeeId"
             label={chiefLabel}
@@ -517,43 +616,41 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
           >
             {() => (
               <>
-                {/* Поле остаётся ЗАРЕГИСТРИРОВАННЫМ в форме, хотя человек
-                    выбирает мышью: `setValue` по незарегистрированному полю
-                    кладёт значение, но не будит `watch` — первый выбор
-                    выглядел бы «не сработавшим». */}
                 <input type="hidden" {...register("chiefEmployeeId")} />
-                {/* Список кадров — с поиском и страницами НА СЕРВЕРЕ (Plane
-                    №61). Раньше здесь стоял `select` со ВСЕМ кадровым
-                    снимком: на живой базе это тысячи строк одним ответом и
-                    прокрутка вместо поиска. */}
-                <PersonnelPicker
-                  value={chiefEmployeeId === "" ? null : chiefEmployeeId}
-                  onPick={(id) =>
-                    setValue(
-                      "chiefEmployeeId",
-                      // Повторный клик по выбранному СНИМАЕТ выбор: старший
-                      // необязателен, и назначить «никого» иначе было бы
-                      // нечем — очистить список выбором нельзя.
-                      id === chiefEmployeeId ? "" : id,
-                      { shouldValidate: true, shouldDirty: true },
-                    )
-                  }
-                  pageSize={8}
-                  // Подпись поля («Старший наряда» / «Старший ГВО») ведёт
-                  // именно сюда: иначе `<label for>` указывал бы на скрытое
-                  // поле формы, то есть в никуда.
-                  searchInputId="chiefEmployeeId"
+                <ChiefCombobox
+                  inputId="chiefEmployeeId"
+                  value={chief}
+                  onChange={(next) => {
+                    setChief(next);
+                    setValue("chiefEmployeeId", next?.id ?? "", {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    });
+                  }}
                 />
               </>
             )}
           </Field>
+
+          {/* 7. Превью строки бюллетеня. */}
+          <BulletinRowPreview
+            businessDate={businessDate}
+            businessDateEnd={businessDateEnd}
+            eventTime={eventTime}
+            timeMark={timeMark === "" ? "" : TIME_MARK_LABEL[timeMark as "arrival" | "departure"] ?? ""}
+            persons={personNames}
+            title={title}
+            location={previewLocation}
+            chief={chief?.name ?? ""}
+          />
 
           {mutation.error !== null && (
             <p className="text-sm text-destructive-ink" role="alert">
               Не удалось создать мероприятие. Проверьте поля и попробуйте снова.
             </p>
           )}
-          <DialogFooter className="mt-1 border-t pt-3.5">
+          </div>
+          <DialogFooter className="shrink-0 border-t px-[22px] py-3.5">
             <Button
               type="button"
               variant="outline"
@@ -579,6 +676,23 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Пометка «вылет / прилёт» и борт — атрибуты визита ГЛАВНОГО лица (№418):
+ * час относится к его прилёту или вылету, и своего поля у мероприятия для
+ * этого нет намеренно. Без пометки или без времени детали не шлются.
+ */
+function personDetailsOf(values: FormValues): EventProtectedPersonDetails[] {
+  const main = values.protectedPersonIds[0];
+  if (main === undefined || values.timeMark === "" || values.eventTime === "") {
+    return [];
+  }
+  const when = `${values.businessDate}T${values.eventTime}`;
+  const flight = values.flight.trim();
+  return values.timeMark === "arrival"
+    ? [{ id: main, arrivalAt: when, flightArrival: flight }]
+    : [{ id: main, departureAt: when, flightDeparture: flight }];
 }
 
 /**

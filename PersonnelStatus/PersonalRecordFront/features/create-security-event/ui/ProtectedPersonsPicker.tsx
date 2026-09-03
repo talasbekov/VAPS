@@ -15,7 +15,9 @@
 // колонке «ОЛ» бланка бюллетеня, где место ровно одно. Поэтому чипы стоят в
 // порядке добавления (сервер сортирует по имени только ВЫВОД), а первый
 // помечен словом — иначе правило есть, а увидеть его негде.
-import { X } from "lucide-react";
+import { Search, X } from "lucide-react";
+import { useId, useState } from "react";
+import { Input } from "@/components/ui/input";
 import type { ProtectedPerson } from "@/entities/protected-person";
 
 export function ProtectedPersonsPicker({
@@ -71,42 +73,123 @@ export function ProtectedPersonsPicker({
         </ul>
       )}
 
-      {/* Значение селекта НЕ хранится: он не поле формы, а действие
-          «добавить». Оставаясь выбранным, лицо выглядело бы выбранным дважды
-          — и чипом, и в списке. */}
-      <select
-        id={selectId}
-        className={
-          "h-10 w-full rounded-lg border border-input bg-background px-2.5 text-sm " +
-          "outline-none transition-[color,box-shadow] focus-visible:border-ring " +
-          "focus-visible:ring-ring/50 focus-visible:ring-[3px] " +
-          "aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-50"
-        }
-        value=""
-        disabled={loading || free.length === 0}
-        onChange={(e) => {
-          if (e.target.value !== "") onChange([...value, e.target.value]);
-        }}
-      >
-        <option value="">
-          {loading
+      {/* Добавление — combobox с поиском по справочнику, а не нативный
+          <select> (Plane №419, `[БЛН-11]`): лиц в справочнике десятки, и
+          человек ищет по фамилии или позывному. Значение поиска НЕ поле
+          формы — выбранные стоят чипами выше. */}
+      <PersonsCombobox
+        inputId={selectId}
+        options={free}
+        loading={loading}
+        emptyLabel={
+          loading
             ? "Загрузка справочника…"
             : free.length === 0
               ? value.length === 0
                 ? "Справочник охраняемых лиц пуст"
                 : "Все лица справочника уже добавлены"
               : value.length === 0
-                ? "— выберите из справочника ОЛ —"
-                : "— добавить ещё лицо —"}
-        </option>
-        {free.map((person) => (
-          <option key={person.id} value={person.id}>
-            {person.name}
-            {person.callsign === "" ? "" : ` · ${person.callsign}`}
-            {person.category === "FOREIGN" ? " · иностранное ОЛ" : ""}
-          </option>
-        ))}
-      </select>
+                ? "Найти в справочнике ОЛ…"
+                : "Добавить ещё лицо…"
+        }
+        onPick={(id) => onChange([...value, id])}
+      />
+    </div>
+  );
+}
+
+
+function PersonsCombobox({
+  inputId,
+  options,
+  loading,
+  emptyLabel,
+  onPick,
+}: {
+  inputId: string;
+  options: ProtectedPerson[];
+  loading: boolean;
+  emptyLabel: string;
+  onPick: (id: string) => void;
+}) {
+  const listId = useId();
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const needle = search.trim().toLowerCase();
+  const matches = options.filter(
+    (person) =>
+      needle === "" ||
+      person.name.toLowerCase().includes(needle) ||
+      person.callsign.toLowerCase().includes(needle) ||
+      person.code.toLowerCase().includes(needle)
+  );
+  return (
+    <div className="relative" data-slot="persons-combobox">
+      <Search
+        className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+        aria-hidden="true"
+      />
+      <Input
+        id={inputId}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        autoComplete="off"
+        className="h-10 rounded-lg pl-8"
+        placeholder={emptyLabel}
+        disabled={loading || options.length === 0}
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      {open && options.length > 0 && (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border bg-popover text-xs shadow-md"
+        >
+          {matches.length === 0 && (
+            <li className="px-3 py-2 text-muted-foreground">Никого не нашлось.</li>
+          )}
+          {matches.map((person) => (
+            <li key={person.id} role="option" aria-selected={false} className="border-b last:border-0">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onPick(person.id);
+                  setSearch("");
+                  setOpen(false);
+                }}
+                className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              >
+                <span className="min-w-0">
+                  <span className="block font-medium">
+                    <span className="mr-1.5 font-mono text-[10px] text-primary">{person.code}</span>
+                    {person.name}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {[
+                      person.callsign === "" ? "" : `позывной «${person.callsign}»`,
+                      person.category === "FOREIGN" ? "иностранное ОЛ" : "",
+                    ]
+                      .filter((part) => part !== "")
+                      .join(" · ")}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -87,6 +87,7 @@ import {
   PERSONNEL_ROSTER,
 } from "./fixtures/personnel";
 import { PROTECTED_PERSONS_CATALOG } from "./protected-persons-handlers";
+import { isOpsProtectedPersonsLive } from "@/lib/ops-env";
 import { appendAudit } from "./audit-store";
 
 /** Подпись автозаявки на силы — порт `AUTO_FORCE_REQUEST_GROUP` бэкенда
@@ -312,6 +313,19 @@ function visitStatusLabel(stage: string, assigned: number | null): string {
   return VISIT_STATUS_LABELS[stage] ?? stage;
 }
 
+// `[РЕК-02]`/`[РЕК-07]` (Plane №424): без старшего объекта рекогносцировка
+// закрыта — зеркало `_require_visit_chief` сервера.
+function visitChiefRequired(objectName: string) {
+  return HttpResponse.json(
+    {
+      error_code: "VISIT_CHIEF_REQUIRED",
+      message: `Назначьте старшего объекта «${objectName}», чтобы начать рекогносцировку.`,
+      details: {},
+    },
+    { status: 422 }
+  );
+}
+
 function mirrorApproval(event: SecurityEvent): SecurityEvent {
   return {
     ...event,
@@ -371,8 +385,9 @@ function emptyEvent(
         visitDay: null,
         note: "",
         // Старший объекта не назначен: у свежего ОМ маршрут только заведён.
-        chiefEmployeeId: null,
-        chiefName: "",
+        // Старший объекта назначен: без него рекогносцировка закрыта (№424).
+        chiefEmployeeId: "1",
+        chiefName: "Ахметова С.",
         placementNeed: 0,
         placementAssigned: 0,
         deputies: [],
@@ -795,7 +810,16 @@ export const securityEventsHandlers = [
     for (const raw of rawPersons) {
       const id = (raw ?? "").trim();
       if (id === "" || persons.some((p) => p.id === id)) continue;
-      const found = PROTECTED_PERSONS_CATALOG.find((p) => p.id === id) ?? null;
+      // Каталог ОЛ может быть ЖИВЫМ, пока мероприятия — на моке
+      // (`NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,…`): тогда окно шлёт
+      // id с бэка, которых в мок-каталоге нет, и отказ «не найдено» был бы
+      // ложью мока о чужом домене. Проверка принадлежит владельцу каталога:
+      // при живом каталоге id принимается как есть (Plane №419).
+      const found =
+        PROTECTED_PERSONS_CATALOG.find((p) => p.id === id) ??
+        (isOpsProtectedPersonsLive()
+          ? { id, code: `OL-${id}`, name: `лицо №${id}`, callsign: "", category: "OURS" as const, bio: "" }
+          : null);
       if (found === null) unknownPersons.push(id);
       else persons.push({ id: found.id, name: found.name });
     }
@@ -1056,7 +1080,15 @@ export const securityEventsHandlers = [
         fieldErrors[`checklist.${index}.comment`] = ["Укажите комментарий."];
       }
     });
-    body.sectorPosts.forEach((row, index) => {
+    // «Ключа нет» ≠ «пусто» (Plane №416/№424): без sectorPosts посты остаются.
+    const incomingPosts = body.sectorPosts ?? event.reconSectorPosts;
+    const chiefless = event.visitObjects.find(
+      (visit) =>
+        visit.chiefEmployeeId === null &&
+        incomingPosts.some((row) => row.visitObjectId === visit.id)
+    );
+    if (chiefless !== undefined) return visitChiefRequired(chiefless.objectName);
+    incomingPosts.forEach((row, index) => {
       if (row.sector.trim() === "")
         fieldErrors[`sectorPosts.${index}.sector`] = ["Обязательное поле."];
       if (row.post.trim() === "")
@@ -1071,7 +1103,7 @@ export const securityEventsHandlers = [
     }));
     const knownIds = new Set(event.reconSectorPosts.map((row) => row.id));
     const sectorPosts: ReconSectorPost[] = normalizePostIds(
-      body.sectorPosts.map((row) => ({
+      incomingPosts.map((row) => ({
         ...row,
         sector: row.sector.trim(),
         post: row.post.trim(),
@@ -1102,6 +1134,8 @@ export const securityEventsHandlers = [
   http.post(`*${securityEventReconImportPath(":id")}`, async ({ params, request }) => {
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;
+    const chieflessImport = event.visitObjects.find((visit) => visit.chiefEmployeeId === null);
+    if (chieflessImport !== undefined) return visitChiefRequired(chieflessImport.objectName);
     if (event.stage !== "RECON") {
       return businessRuleError(
         "RECON_STAGE_REQUIRED",
@@ -1206,6 +1240,10 @@ export const securityEventsHandlers = [
   http.post(`*${securityEventReconCompletePath(":id")}`, ({ params }) => {
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;
+    const chieflessComplete = event.visitObjects.find(
+      (visit) => visit.stage === "RECON" && visit.chiefEmployeeId === null
+    );
+    if (chieflessComplete !== undefined) return visitChiefRequired(chieflessComplete.objectName);
     if (event.stage !== "RECON") {
       return businessRuleError(
         "INVALID_STAGE_TRANSITION",
