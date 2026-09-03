@@ -81,6 +81,10 @@ interface ApprovalView {
   remarks: SecurityEvent["approvalRemarks"];
   stale: boolean;
   documentVersion: number | null;
+  /** История версий документа объекта (`[СОГ-04]`, Plane №398); у ОМ без
+   * объектов — пусто: документ принадлежит объекту. */
+  documentVersions: VisitObject["documentVersions"];
+  documentStatus: VisitObject["documentStatus"];
 }
 
 function approvalViewOf(
@@ -95,6 +99,8 @@ function approvalViewOf(
       remarks: event.approvalRemarks,
       stale: event.approvalStale,
       documentVersion: null,
+      documentVersions: [],
+      documentStatus: null,
     };
   }
   return {
@@ -105,7 +111,95 @@ function approvalViewOf(
     remarks: visit.approvalRemarks,
     stale: visit.approvalStale,
     documentVersion: visit.documentVersion,
+    documentVersions: visit.documentVersions,
+    documentStatus: visit.documentStatus,
   };
+}
+
+/** Подписи статуса версии документа — `[СОГ-01]`: Черновик → На согласовании
+ *  → Согласовано → Возвращено. Словами, не цветом: статус читается и без
+ *  палитры (скилл: «Compact Label Semantics»). */
+const DOCUMENT_STATUS_LABEL: Record<
+  NonNullable<VisitObject["documentStatus"]>,
+  string
+> = {
+  DRAFT: "Черновик",
+  SUBMITTED: "На согласовании",
+  APPROVED: "Согласовано",
+  RETURNED: "Возвращено",
+};
+
+const DOCUMENT_STATUS_CLASS: Record<
+  NonNullable<VisitObject["documentStatus"]>,
+  string
+> = {
+  DRAFT: "bg-muted text-muted-foreground",
+  SUBMITTED: "bg-blue-100 text-blue-900",
+  APPROVED: "bg-green-100 text-green-800",
+  RETURNED: "bg-amber-100 text-amber-900",
+};
+
+/**
+ * «История версий» документа «Расстановка сил» (`[СОГ-04]`, Plane №398).
+ *
+ * Показывается, когда версий больше одной ЛИБО единственная уже не черновик:
+ * у свежего черновика история — это он сам, и отдельный блок повторял бы
+ * подпись «документ v1» у маршрута. Отменённые версии помечены словом, а не
+ * только приглушены: «отменена» — факт, который должен читаться и в
+ * чёрно-белом снимке.
+ *
+ * Пилюли статические: по версии здесь ничего не делают — diff и PDF версии
+ * приходят с `[ВОЗ-06]`/`[СОГ-03]`, и делать пилюлю кнопкой заранее значило бы
+ * обещать действие, которого нет.
+ */
+function DocumentVersionHistory({ view }: { view: ApprovalView }) {
+  const versions = view.documentVersions;
+  if (versions.length === 0) return null;
+  if (versions.length === 1 && versions[0].status === "DRAFT") return null;
+  const current = versions[versions.length - 1];
+  return (
+    <section className="rounded-md border" aria-label="История версий документа">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-3 py-2">
+        <p className="text-xs font-semibold">История версий документа «Расстановка сил»</p>
+        <p className="text-[11px] text-muted-foreground">
+          текущая — v{current.number}
+          {versions.length > 1 ? ` · возвратов ${versions.length - 1}` : ""}
+        </p>
+      </div>
+      <ul className="divide-y">
+        {[...versions].reverse().map((version) => (
+          <li
+            key={version.number}
+            className={`flex flex-wrap items-center gap-2 px-3 py-2 text-sm ${
+              version.supersededAt !== null ? "text-muted-foreground" : ""
+            }`}
+          >
+            <span className="font-semibold tabular-nums">v{version.number}</span>
+            <span
+              className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${DOCUMENT_STATUS_CLASS[version.status]}`}
+            >
+              {DOCUMENT_STATUS_LABEL[version.status]}
+            </span>
+            {version.supersededAt !== null && (
+              <span className="inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px]">
+                отменена
+              </span>
+            )}
+            <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
+              заведена {formatIsoDateTime(version.createdAt)}
+              {version.createdBy !== "" ? ` · ${version.createdBy}` : ""}
+              {version.sentAt !== null
+                ? ` · отправлена ${formatIsoDateTime(version.sentAt)}`
+                : ""}
+              {version.decidedAt !== null
+                ? ` · решение ${formatIsoDateTime(version.decidedAt)}`
+                : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 const REMARK_STATUS_LABEL: Record<ApprovalRemark["status"], string> = {
@@ -136,9 +230,17 @@ const VISIT_APPROVAL_CLASS: Record<SecurityEvent["approvalStatus"], string> = {
 
 /** Подпись версии документа. `0` — не «версия ноль», а «не отправлялся»:
  *  число на бумаге читалось бы как номер выпуска, которого не было. */
-function documentVersionLabel(version: number | null): string | null {
+function documentVersionLabel(
+  version: number | null,
+  status: VisitObject["documentStatus"] = null
+): string | null {
   if (version === null) return null;
-  return version === 0 ? "документ не отправлялся" : `документ v${version}`;
+  if (version === 0) return "документ не отправлялся";
+  // Статус документа словами (`[СОГ-01]`) — рядом с номером, а не отдельной
+  // плиткой: это одно утверждение «какая версия и в каком она состоянии».
+  return status === null
+    ? `документ v${version}`
+    : `документ v${version} · ${DOCUMENT_STATUS_LABEL[status].toLowerCase()}`;
 }
 
 /**
@@ -302,6 +404,8 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
         <ApprovalRoute event={event} view={view} />
 
         <ApprovalRemarks event={event} view={view} />
+
+        <DocumentVersionHistory view={view} />
 
         <section>
           <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
@@ -517,7 +621,7 @@ function ApprovalRoute({
   // она: увидев «документ v2», человек знает, что следующая отправка сделает
   // третью. Отдельной плиткой в сводке версия отвечала бы на вопрос, которого
   // в сводке никто не задаёт.
-  const versionLabel = documentVersionLabel(view.documentVersion);
+  const versionLabel = documentVersionLabel(view.documentVersion, view.documentStatus);
 
   return (
     <section className="rounded-md border">

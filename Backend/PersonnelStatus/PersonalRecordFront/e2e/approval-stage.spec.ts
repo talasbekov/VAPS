@@ -35,7 +35,12 @@ interface EventRow {
     ratingOverrideReason: string | null
   }[]
   approvalRoute: { id: string; name: string; status: string; comment: string }[]
-  visitObjects: { id: string; objectName: string; documentVersion: number }[]
+  visitObjects: {
+    id: string
+    objectName: string
+    documentVersion: number
+    documentStatus: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'RETURNED' | null
+  }[]
 }
 
 async function apiToken(): Promise<string> {
@@ -226,6 +231,12 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     }
     const target = event!
     const before = target.visitObjects[0].documentVersion
+    // `[СОГ-01]`/`[ВОЗ-06]` (Plane №398): первая отправка НЕ меняет номер —
+    // черновик становится «на согласовании»; номер растёт только повторной
+    // отправкой ПОСЛЕ ВОЗВРАТА. Ожидание считается от статуса документа, а
+    // не «+1 всегда» — иначе проба зеленела бы на неверном правиле.
+    const expectedAfterSend =
+      target.visitObjects[0].documentStatus === 'RETURNED' ? before + 1 : Math.max(before, 1)
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
@@ -249,19 +260,28 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
 
     await route.getByRole('button', { name: 'Отправить на согласование' }).click()
 
-    // Сервер выдал следующий номер…
+    // Сервер отвечает номером по правилу выше…
     await expect
       .poll(async () => {
         const fresh = (await events(token)).find((e) => e.id === target.id)
         return fresh?.visitObjects[0].documentVersion ?? null
       }, { timeout: 15_000 })
-      .toBe(before + 1)
-    // …и экран показывает ЕГО, а не свой счёт.
-    await expect(route).toContainText(`документ v${before + 1}`, { timeout: 15_000 })
+      .toBe(expectedAfterSend)
+    // …и экран показывает ЕГО и статус «на согласовании», а не свой счёт.
+    await expect(route).toContainText(`документ v${expectedAfterSend}`, { timeout: 15_000 })
+    await expect(route).toContainText('на согласовании')
+
+    // История версий (`[СОГ-04]`, Plane №398): после отправки единственный
+    // черновик стал «на согласовании» — блок истории появляется и называет
+    // текущую версию тем же номером, что и подпись у маршрута.
+    const history = card.getByRole('region', { name: 'История версий документа' })
+    await expect(history).toBeVisible({ timeout: 15_000 })
+    await expect(history).toContainText(`текущая — v${expectedAfterSend}`)
+    await expect(history).toContainText(`v${expectedAfterSend}`)
 
     // Отзыв номер НЕ откатывает: состав уже уходил людям.
     await route.getByRole('button', { name: 'Отозвать с согласования' }).click()
-    await expect(route).toContainText(`документ v${before + 1}`, { timeout: 15_000 })
+    await expect(route).toContainText(`документ v${expectedAfterSend}`, { timeout: 15_000 })
   })
 })
 

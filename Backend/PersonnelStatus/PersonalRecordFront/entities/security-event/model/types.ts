@@ -330,6 +330,32 @@ export interface ApprovalRemark {
   resolvedInDocumentVersion: number | null;
 }
 
+/**
+ * Статус версии документа «Расстановка сил» (`[СОГ-01]`, Plane №398):
+ * Черновик → На согласовании → Согласовано | Возвращено. Одна версия проходит
+ * эти состояния; новый номер появляется только повторной отправкой после
+ * возврата (`[ВОЗ-06]`).
+ */
+export type DocumentVersionStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "RETURNED";
+
+/**
+ * Версия документа «Расстановка сил» объекта (`[СОГ-04]`). Все версии
+ * хранятся; отменённая помечена `supersededAt`, статус её не стирается —
+ * согласованная и позже заменённая версия остаётся согласованной в истории.
+ */
+export interface DocumentVersion {
+  number: number;
+  status: DocumentVersionStatus;
+  /** Подпись состава — та же строка, по которой сервер считает «расстановка
+   * изменилась после отправки». */
+  signature: string;
+  createdAt: string;
+  createdBy: string;
+  sentAt: string | null;
+  decidedAt: string | null;
+  supersededAt: string | null;
+}
+
 /** Внешний кадровый read-only снимок — только для подбора кандидатов. */
 export interface PersonnelSummarySnapshot {
   id: string;
@@ -454,6 +480,11 @@ export interface VisitObject {
    * (№398) — здесь только номер текущей.
    */
   documentVersion: number;
+  /** Статус ТЕКУЩЕЙ версии документа; `null` — версий ещё нет (расстановка не
+   * завершалась). */
+  documentStatus: DocumentVersionStatus | null;
+  /** История версий документа — вся, включая отменённые (`[СОГ-04]`). */
+  documentVersions: DocumentVersion[];
 }
 
 /** Замещающий на объекте посещения (Plane «Реестр ОМ-24»). */

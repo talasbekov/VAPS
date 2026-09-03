@@ -215,6 +215,83 @@ function withStaleFlag(event: SecurityEvent): SecurityEvent {
  * `documentVersion` НЕ трогается: у мероприятия такого поля нет вовсе, номер
  * растит только отправка на согласование.
  */
+/**
+ * Версии документа «Расстановка сил» в моке (`[СОГ-04]`, Plane №398) — порт
+ * правил сервера, а не вторая их версия: завершение расстановки заводит v1
+ * «Черновик»; первая отправка делает черновик «На согласовании» с тем же
+ * номером; повторная отправка после возврата заводит N+1 и помечает прежнюю
+ * отменённой; решения ставят статус текущей версии.
+ */
+type MockVersion = SecurityEvent["visitObjects"][number]["documentVersions"][number];
+
+function withVersions(
+  event: SecurityEvent,
+  update: (versions: MockVersion[], now: string) => MockVersion[]
+): SecurityEvent {
+  const now = nowIso();
+  return {
+    ...event,
+    visitObjects: event.visitObjects.map((visit) => {
+      const versions = update(visit.documentVersions, now);
+      const current = versions[versions.length - 1];
+      return {
+        ...visit,
+        documentVersions: versions,
+        documentStatus: current?.status ?? null,
+        documentVersion: current?.number ?? visit.documentVersion,
+      };
+    }),
+  };
+}
+
+function versionsOpenDraft(versions: MockVersion[], now: string): MockVersion[] {
+  if (versions.length > 0) return versions;
+  return [
+    {
+      number: 1,
+      status: "DRAFT",
+      signature: "",
+      createdAt: now,
+      createdBy: "",
+      sentAt: null,
+      decidedAt: null,
+      supersededAt: null,
+    },
+  ];
+}
+
+function versionsSubmit(versions: MockVersion[], now: string): MockVersion[] {
+  const base = versionsOpenDraft(versions, now);
+  const current = base[base.length - 1];
+  if (current.status === "RETURNED") {
+    return [
+      ...base.slice(0, -1),
+      { ...current, supersededAt: now },
+      {
+        number: current.number + 1,
+        status: "SUBMITTED",
+        signature: "",
+        createdAt: now,
+        createdBy: "",
+        sentAt: now,
+        decidedAt: null,
+        supersededAt: null,
+      },
+    ];
+  }
+  return [...base.slice(0, -1), { ...current, status: "SUBMITTED", sentAt: now }];
+}
+
+function versionsDecide(
+  status: "APPROVED" | "RETURNED"
+): (versions: MockVersion[], now: string) => MockVersion[] {
+  return (versions, now) => {
+    if (versions.length === 0) return versions;
+    const current = versions[versions.length - 1];
+    return [...versions.slice(0, -1), { ...current, status, decidedAt: now }];
+  };
+}
+
 function mirrorApproval(event: SecurityEvent): SecurityEvent {
   return {
     ...event,
@@ -291,6 +368,10 @@ function emptyEvent(
         approvalRemarks: [],
         approvalStale: false,
         documentVersion: 0,
+        // История версий документа (`[СОГ-04]`, Plane №398): у свежего
+        // объекта версий нет — расстановка ещё не завершалась.
+        documentStatus: null,
+        documentVersions: [],
       },
     ],
     businessDate: date,
@@ -1924,16 +2005,17 @@ export const securityEventsHandlers = [
         }
       }
       return HttpResponse.json(
-        saveEvent({
-          ...event,
-          stage: "APPROVAL",
-          readinessPercent: 75,
-          visitObjects: event.visitObjects.map((visit) => ({
-            ...visit,
-            documentVersion: Math.max(visit.documentVersion, 1),
-          })),
-          updatedAt: nowIso(),
-        })
+        saveEvent(
+          withVersions(
+            {
+              ...event,
+              stage: "APPROVAL",
+              readinessPercent: 75,
+              updatedAt: nowIso(),
+            },
+            versionsOpenDraft
+          )
+        )
       );
   }),
 
@@ -2056,27 +2138,26 @@ export const securityEventsHandlers = [
       );
     }
     return HttpResponse.json(
-      saveEvent({
-        ...event,
-        approvalRoute: event.approvalRoute.map((approver) => ({
-          ...approver,
-          status: "PENDING" as const,
-          decidedAt: null,
-          // Причина возврата остаётся: она объясняет, что чинили. «Без
-          // замечаний» от прошлого состава — нет.
-          comment: approver.status === "RETURNED" ? approver.comment : "",
-        })),
-        approvalStale: false,
-        // ВЕРСИЮ ДОКУМЕНТА РАСТИТ ОТПРАВКА (Plane №411): версия — это состав,
-        // под которым подписываются, а не каждое движение человека по постам.
-        // Отзыв её не откатывает: состав уже уходил людям, и выдать двум
-        // разным составам один номер значило бы соврать в документе.
-        visitObjects: event.visitObjects.map((visit) => ({
-          ...visit,
-          documentVersion: visit.documentVersion + 1,
-        })),
-        updatedAt: nowIso(),
-      })
+      saveEvent(
+        // Номер версии — по `[СОГ-01]`/`[ВОЗ-06]`: первая отправка черновик не
+        // перенумеровывает, N+1 появляется только после возврата (Plane №398).
+        withVersions(
+          {
+            ...event,
+            approvalRoute: event.approvalRoute.map((approver) => ({
+              ...approver,
+              status: "PENDING" as const,
+              decidedAt: null,
+              // Причина возврата остаётся: она объясняет, что чинили. «Без
+              // замечаний» от прошлого состава — нет.
+              comment: approver.status === "RETURNED" ? approver.comment : "",
+            })),
+            approvalStale: false,
+            updatedAt: nowIso(),
+          },
+          versionsSubmit
+        )
+      )
     );
   }),
 
@@ -2303,14 +2384,19 @@ export const securityEventsHandlers = [
     }
     // утверждение сразу открывает «Ознакомление», без отдельного клика
     return HttpResponse.json(
-      saveEvent({
-        ...event,
-        stage: "ACKNOWLEDGEMENT",
-        approvalStatus: "APPROVED",
-        approvalComment: "",
-        readinessPercent: 85,
-        updatedAt: nowIso(),
-      })
+      saveEvent(
+        withVersions(
+          {
+            ...event,
+            stage: "ACKNOWLEDGEMENT",
+            approvalStatus: "APPROVED",
+            approvalComment: "",
+            readinessPercent: 85,
+            updatedAt: nowIso(),
+          },
+          versionsDecide("APPROVED")
+        )
+      )
     );
   }),
 
@@ -2330,14 +2416,19 @@ export const securityEventsHandlers = [
         );
       }
       return HttpResponse.json(
-        saveEvent({
-          ...event,
-          stage: "PLACEMENT",
-          approvalStatus: "RETURNED",
-          approvalComment: body.comment.trim(),
-          readinessPercent: 60,
-          updatedAt: nowIso(),
-        })
+        saveEvent(
+          withVersions(
+            {
+              ...event,
+              stage: "PLACEMENT",
+              approvalStatus: "RETURNED",
+              approvalComment: body.comment.trim(),
+              readinessPercent: 60,
+              updatedAt: nowIso(),
+            },
+            versionsDecide("RETURNED")
+          )
+        )
       );
     }
   ),

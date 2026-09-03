@@ -217,12 +217,16 @@ def test_disagreeing_does_not_block_completion(manager, approver):  # noqa: F811
 
 
 def test_the_resolution_stamps_the_current_document_version(manager, approver):  # noqa: F811
+    """Версия ЗАКРЫТИЯ — та, что текущая в момент решения. Номер растёт только
+    повторной отправкой ПОСЛЕ ВОЗВРАТА (`[ВОЗ-06]`, Plane №398) — поэтому
+    между замечанием и решением объект возвращается и отправляется заново."""
     base, event_id, _ = _event_on_approval(manager)
     remark = _returned_remark(manager, approver, base)
     created_version = remark["documentVersion"]
 
+    approver.post(f"{base}approval/return/", {"comment": "переделать"}, format="json")
     manager.post(f"{base}placement/complete/")
-    manager.post(f"{base}approval/send/")  # версия растёт повторной отправкой
+    manager.post(f"{base}approval/send/")  # после возврата — версия N+1
     resp = manager.post(
         f"{base}approval/remarks/{remark['id']}/resolve/",
         {"decision": "RESOLVED"},
