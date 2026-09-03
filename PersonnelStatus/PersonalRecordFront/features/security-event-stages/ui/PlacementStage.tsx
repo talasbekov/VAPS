@@ -66,6 +66,7 @@ import { usePlacementRoles } from "@/hooks/use-placement-roles";
 import { usePlacementSections } from "@/hooks/use-placement-sections";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import type {
+  ApprovalRemark,
   PersonnelSummarySnapshot,
   PlacementAssignment,
   ReconSectorPost,
@@ -121,6 +122,90 @@ export function PlacementStage({ event }: { event: SecurityEvent }) {
 const CANDIDATE_PAGE_SIZE = 50;
 
 // ── Расстановка: три колонки прототипа ───────────────────────────────────
+
+const REMARK_LABEL: Record<ApprovalRemark["status"], string> = {
+  OPEN: "открыто",
+  RESOLVED: "устранено",
+  DISAGREED: "не согласен",
+};
+
+/**
+ * Панель замечаний НАД деревом постов (`[РАС-07]`, Plane №397).
+ *
+ * Показывается только когда замечания есть: на «Расстановке» они появляются
+ * ровно после возврата с согласования, и пустая панель «замечаний нет» была
+ * бы шумом на каждом свежем ОМ. Клик по замечанию с постом подсвечивает пост
+ * в дереве и открывает его карточку; общее замечание (без поста) — текст, не
+ * кнопка: подсвечивать нечего, и кнопка без действия обманывала бы.
+ *
+ * Ответить на замечание здесь нельзя — намеренно: решение «Устранено / Не
+ * согласен» принимается на экране согласования (№386), где виден маршрут и
+ * версия документа. Здесь — где чинить, а не что ответить.
+ */
+function ReturnedRemarksPanel({
+  remarks,
+  posts,
+  onPickPost,
+}: {
+  remarks: ApprovalRemark[];
+  posts: ReconSectorPost[];
+  onPickPost: (postId: string) => void;
+}) {
+  if (remarks.length === 0) return null;
+  const postById = new Map(posts.map((post) => [post.id, post]));
+  const open = remarks.filter((remark) => remark.status === "OPEN").length;
+  return (
+    <section
+      className="rounded-md border border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/30"
+      aria-label="Замечания согласования"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-amber-200 px-3 py-2 dark:border-amber-900">
+        <p className="text-xs font-semibold">Замечания согласования</p>
+        <p className="text-[11px] text-muted-foreground">
+          {open === 0
+            ? `все ${remarks.length} с ответом`
+            : `${open} без ответа · ${remarks.length} всего`}{" "}
+          · клик по замечанию подсветит пост
+        </p>
+      </div>
+      <ul className="divide-y divide-amber-200 dark:divide-amber-900">
+        {remarks.map((remark) => {
+          const post = remark.postId === null ? null : postById.get(remark.postId) ?? null;
+          const meta = (
+            <span className="block text-[11px] text-muted-foreground">
+              {remark.author} · {REMARK_LABEL[remark.status]}
+              {remark.urgent ? " · срочно" : ""} ·{" "}
+              {post === null
+                ? remark.postId === null
+                  ? "общее"
+                  : "пост другого объекта"
+                : `${post.sector} · ${post.post}`}
+            </span>
+          );
+          return (
+            <li key={remark.id} className="text-sm">
+              {post === null ? (
+                <div className="px-3 py-2">
+                  <span className="block">{remark.text}</span>
+                  {meta}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left hover:bg-amber-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-amber-900/40"
+                  onClick={() => onPickPost(post.id)}
+                >
+                  <span className="block">{remark.text}</span>
+                  {meta}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 function PlacementBoard({ event }: { event: SecurityEvent }) {
   // Расстановку заказчик закрепил за старшим объекта/мероприятия (Plane №74).
@@ -227,6 +312,28 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const allPosts = event.reconSectorPosts;
   const scope = useVisitObjectScope(event, allPosts);
   const posts = scope.rows;
+  // Замечания согласования ПОКАЗАННОГО объекта (`[РАС-07]`, Plane №397):
+  // согласуют объект, и замечания живут у него (№386/№411). У ОМ без
+  // объектов замечаний быть не может — согласование без объекта отбивается.
+  const objectRemarks = scope.visit?.approvalRemarks ?? [];
+  const remarksOfPost = (postId: string) =>
+    objectRemarks.filter((remark) => remark.postId === postId);
+  const openRemarksOf = (postId: string) =>
+    remarksOfPost(postId).filter((remark) => remark.status === "OPEN").length;
+  // Клик по замечанию ПОДСВЕЧИВАЕТ пост: выбирает его (тот же путь, что клик
+  // в дереве) и прокручивает дерево к нему. Прокрутка плавная, но уважает
+  // `prefers-reduced-motion` — иначе человек с укачиванием получал бы рывок.
+  const focusPost = (postId: string) => {
+    setSelectedPostId(postId);
+    setComment(null);
+    const node = document.getElementById(`placement-post-${postId}`);
+    if (node === null) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    node.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    node.focus({ preventScroll: true });
+  };
   const selected = posts.find((p) => p.id === selectedPostId) ?? posts[0] ?? null;
   const assignmentsOf = (postId: string): PlacementAssignment[] =>
     event.placementAssignments.filter((a) => a.postId === postId);
@@ -530,6 +637,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             </AlertDescription>
           </Alert>
         )}
+        <ReturnedRemarksPanel
+          remarks={objectRemarks}
+          posts={posts}
+          onPickPost={focusPost}
+        />
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2">
           <div className="flex flex-wrap gap-4 text-xs">
@@ -660,15 +772,28 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           <li key={post.id} className="flex items-start gap-1">
                             <button
                               type="button"
+                              id={`placement-post-${post.id}`}
                               aria-current={selected?.id === post.id}
                               onClick={() => {
                                 setSelectedPostId(post.id);
                                 setComment(null);
                               }}
-                              className={`flex w-full min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                              className={`flex w-full min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                                 selected?.id === post.id ? "bg-accent" : "hover:bg-muted"
                               }`}
                             >
+                              {/* Открытое замечание к посту видно В ДЕРЕВЕ
+                                  (`[РАС-07]`): иначе «где чинить» читалось бы
+                                  только по одному посту за раз. */}
+                              {openRemarksOf(post.id) > 0 && (
+                                <span
+                                  className="inline-flex shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800"
+                                  title={`Замечаний без ответа: ${openRemarksOf(post.id)}`}
+                                  aria-label={`Замечаний без ответа: ${openRemarksOf(post.id)}`}
+                                >
+                                  !{openRemarksOf(post.id)}
+                                </span>
+                              )}
                               <span
                                 aria-hidden
                                 className={`h-2 w-2 shrink-0 rounded-full ${full ? "bg-green-500" : "bg-amber-500"}`}
@@ -781,6 +906,32 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 <p className="mb-2 text-xs">
                   <b>Задача поста:</b> {selected.task === "" ? "—" : selected.task}
                 </p>
+                {remarksOfPost(selected.id).length > 0 && (
+                  <div
+                    className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950/40"
+                    data-slot="post-remarks"
+                  >
+                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                      Замечания по посту
+                    </p>
+                    <ul className="flex flex-col gap-1">
+                      {remarksOfPost(selected.id).map((remark) => (
+                        <li key={remark.id} className="text-xs">
+                          <span className="font-semibold">{remark.text}</span>{" "}
+                          <span className="text-muted-foreground">
+                            — {remark.author} · {REMARK_LABEL[remark.status]}
+                            {remark.urgent ? " · срочно" : ""}
+                          </span>
+                          {remark.response !== "" && (
+                            <span className="block text-muted-foreground">
+                              Ответ: {remark.response}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <ul className="mb-2 flex flex-col gap-1.5">
                   {assignmentsOf(selected.id).map((assignment) => (

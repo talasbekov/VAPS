@@ -844,4 +844,104 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     expect(finalState.visitObjects[0].documentVersion).toBe(1)
     void post
   })
+
+
+  /**
+   * Панель замечаний над деревом после возврата с согласования (`[РАС-07]`,
+   * Plane №397).
+   *
+   * Проба заводит СВОЙ ОМ, доводит до согласования, согласующий возвращает его
+   * с замечанием К ПОСТУ (№386) — объект уходит обратно на «Расстановку».
+   * Там над деревом обязана появиться панель, клик по замечанию — подсветить
+   * именно этот пост (aria-current) и показать замечание в карточке поста.
+   */
+  test('после возврата замечания стоят над деревом, клик подсвечивает пост', async ({
+    page,
+  }) => {
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    // Админ стенда держит и ведение, и утверждение — отдельная учётка
+    // согласующего пробе не нужна: проверяется экран, а не права.
+    const approverToken = token
+    const call = async (method: string, path: string, body?: unknown, who = token) => {
+      const res = await fetch(`${API}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${who}`, 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+      return res.json().catch(() => ({}))
+    }
+    const objects = (await call('GET', '/api/ops/security-events/bindable-objects/')) as {
+      results: { id: string; publishedVersionCount: number }[]
+    }
+    const object = objects.results.find((item) => item.publishedVersionCount > 0)
+    if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+    const created = (await call('POST', '/api/ops/security-events/', {
+      title: 'Проба панели замечаний (e2e)',
+      objectId: object.id,
+      businessDate: '2026-12-31',
+      kind: 'INTERNAL',
+    })) as { id: string }
+    const base = `/api/ops/security-events/${created.id}`
+    await call('POST', `${base}/recon/import-from-passport/`)
+    const afterImport = (await call('GET', `${base}/`)) as {
+      reconChecklist: Record<string, unknown>[]
+      reconSectorPosts: { id: string; sector: string; post: string; need: number }[]
+    }
+    await call('PATCH', `${base}/recon/`, {
+      checklist: afterImport.reconChecklist.map((item) => ({ ...item, done: true, result: 'MATCHES' })),
+      sectorPosts: afterImport.reconSectorPosts,
+    })
+    await call('POST', `${base}/recon/complete/`)
+    const roster = (await call('GET', '/api/ops/personnel/')) as { results: { id: string }[] }
+    let i = 0
+    for (const post of afterImport.reconSectorPosts) {
+      for (let k = 0; k < Math.max(post.need, 1); k += 1) {
+        await call('POST', `${base}/placement/assign/`, { postId: post.id, employeeId: roster.results[i].id })
+        i += 1
+      }
+    }
+    await call('POST', `${base}/placement/complete/`)
+    const route = (await call('POST', `${base}/approval/route/`, {
+      name: 'Проба Согласующий', unit: 'Департамент охраны', position: 'Зам.',
+    })) as { approvalRoute: { id: string }[] }
+    await call('POST', `${base}/approval/send/`)
+    // Пост, к которому ставится замечание, — ВТОРОЙ, если он есть: первый пост
+    // выбран в дереве по умолчанию, и клик по замечанию к нему ничего не
+    // доказал бы.
+    const targetPost = afterImport.reconSectorPosts[1] ?? afterImport.reconSectorPosts[0]
+    const decided = (await call(
+      'POST',
+      `${base}/approval/route/${route.approvalRoute[0].id}/decide/`,
+      { decision: 'RETURNED', comment: 'Усилить пост вторым сотрудником', postId: targetPost.id, urgent: true },
+      approverToken,
+    )) as { error_code?: string }
+    if (decided.error_code) throw new Error(`возврат не прошёл: ${decided.error_code}`)
+    // Возврат ОБЪЕКТА — большой кнопкой: объект уходит на «Расстановку».
+    await call('POST', `${base}/approval/return/`, { comment: 'На доработку по замечанию' }, approverToken)
+    const state = (await call('GET', `${base}/`)) as { stage: string }
+    expect(state.stage).toBe('PLACEMENT')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${created.id}/`)
+    const card = page.getByRole('region', { name: 'Расстановка сил' })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
+    const panel = card.getByRole('region', { name: 'Замечания согласования' })
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText('Усилить пост вторым сотрудником')
+    await expect(panel).toContainText(`${targetPost.sector} · ${targetPost.post}`)
+    await expect(panel).toContainText('срочно')
+
+    // Клик по замечанию подсвечивает ИМЕННО его пост в дереве…
+    await panel.getByRole('button', { name: /Усилить пост вторым сотрудником/ }).click()
+    const treeButton = card.locator(`#placement-post-${targetPost.id}`)
+    await expect(treeButton).toHaveAttribute('aria-current', 'true')
+    // …и в карточке поста видно замечание по нему.
+    const postRemarks = card.locator('[data-slot="post-remarks"]')
+    await expect(postRemarks).toBeVisible()
+    await expect(postRemarks).toContainText('Усилить пост вторым сотрудником')
+    await expect(postRemarks).toContainText('срочно')
+    // Метка «!N» у поста в дереве — открытое замечание видно и без клика.
+    await expect(treeButton).toContainText('!1')
+  })
 })
