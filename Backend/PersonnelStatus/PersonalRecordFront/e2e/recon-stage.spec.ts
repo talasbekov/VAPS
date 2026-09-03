@@ -358,6 +358,61 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await dropEvent(call, fixture.id)
   })
 
+  test('ссылка на объект открывает этапы ЭТОГО объекта, выбор пишется в адрес', async ({
+    page,
+  }) => {
+    // Plane №388, требование `[РЕЕ-06]`: «клик по объекту → страница этапов
+    // объекта». Из раскрытой строки реестра сюда приходят адресом
+    // `?visit=<id>`, и до этой правки понятий «текущий объект» у карточки было
+    // ДВА: шапка читала адрес, а дерево постов держало своё состояние и всегда
+    // начиналось с ПЕРВОГО объекта. Человек по ссылке на второй объект видел
+    // второй в шапке и посты первого в дереве.
+    const token = await apiToken()
+    const call = await apiCall(token)
+    const fixture = await createWithObject(token)
+
+    const bindable = await call('GET', '/api/ops/security-events/bindable-objects/')
+    const second = (bindable.results as { id: string; name: string }[]).find(
+      (item) => item.id !== fixture.objectId,
+    )
+    if (second === undefined) throw new Error('на стенде один объект — выбирать не из чего')
+    const withSecond = await call(
+      'POST',
+      `/api/ops/security-events/${fixture.id}/visit-objects/`,
+      { objectId: second.id },
+    )
+    const byName = (name: string): string =>
+      (withSecond.visitObjects as { id: string; objectName: string }[]).find(
+        (v) => v.objectName === name,
+      )!.id
+    const secondVisitId = byName(second.name)
+    const firstVisitId = byName(fixture.objectName)
+
+    await signIn(page)
+    // ВТОРОЙ объект в адресе — именно он и должен быть показан на этапе.
+    // Ассерт по значению `select`, а не по видимому тексту: до правки текст
+    // первого объекта был бы на экране в шапке тоже, и проба зеленела бы.
+    await page.goto(`${APP}/security-ops/events/${fixture.id}/?visit=${secondVisitId}`)
+    const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
+    await expect(stage).toBeVisible({ timeout: 15_000 })
+    const picker = stage.getByLabel('Объект посещения')
+    await expect(picker).toHaveValue(secondVisitId)
+
+    // Шапка показывает ТО ЖЕ: одно значение, а не два согласованных вручную.
+    await expect(
+      page.getByRole('button', { name: second.name, pressed: true }),
+    ).toBeVisible()
+
+    // Обратная сторона того же правила: выбор на этапе уезжает в адрес, и
+    // ссылку можно переслать. Без этого «этапы объекта» жили бы только внутри
+    // вкладки того, кто нажал.
+    await picker.selectOption(firstVisitId)
+    await expect(page).toHaveURL(new RegExp(`visit=${firstVisitId}(&|$)`))
+    await expect(picker).toHaveValue(firstVisitId)
+
+    await dropEvent(call, fixture.id)
+  })
+
 })
 
 /** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта. */
