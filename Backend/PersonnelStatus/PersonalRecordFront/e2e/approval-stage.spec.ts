@@ -183,6 +183,18 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
       'Уточнить расчёт постов',
     )
 
+    // Бейдж возврата в РЕЕСТРЕ (`[РЕЕ-08]`/`[ВОЗ-03]`, Plane №400): о возврате
+    // видно, не открывая карточку, — «Возвращено · N замечаний» в раскрытой
+    // строке объекта.
+    await page.goto(`${APP}/security-ops/events/`)
+    await page
+      .getByRole('button', { name: `Развернуть объекты посещения ${target.code}` })
+      .click()
+    const returnedBadge = page.locator('[data-slot="visit-returned-badge"]').first()
+    await expect(returnedBadge).toBeVisible({ timeout: 15_000 })
+    await expect(returnedBadge).toContainText(/Возвращено · \d+ замечани/)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+
     // Старший завершает расстановку заново (состав не менялся) — объект снова
     // на согласовании, и замечание ждёт ответа там.
     await fetch(`${API}/api/ops/security-events/${target.id}/placement/complete/`, {

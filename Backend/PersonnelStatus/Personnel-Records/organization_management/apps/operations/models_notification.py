@@ -51,6 +51,12 @@ class OpsNotification(TimeStampedModel):
         # получает уведомление со ссылкой — выделить людей. Получатель —
         # учётка с областью ровно на это управление.
         FORCES_REQUEST = "FORCES_REQUEST", "Запрос сил управлению"
+        # Возврат расстановки объекта с согласования (Plane №400, `[ВОЗ-03]`):
+        # «уведомление старшему объекта и замещающим „Расстановка по объекту
+        # …“ возвращена: N замечаний». Получатели — учётки старшего объекта и
+        # его замещающих: чинить замечания им, и узнать о возврате они должны
+        # не заглянув в карточку, а сразу.
+        PLACEMENT_RETURNED = "PLACEMENT_RETURNED", "Возврат расстановки"
 
     # Получатель строкой: str(User.pk) для человека, метка — для роли/службы.
     recipient = models.CharField(max_length=100)
@@ -91,6 +97,7 @@ class OpsNotification(TimeStampedModel):
                         "SUBMISSION_LAGGING",
                         "EVENT_ACKNOWLEDGEMENT",
                         "FORCES_REQUEST",
+                        "PLACEMENT_RETURNED",
                     ]
                 ),
                 name="chk_ops_notif_kind",

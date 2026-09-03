@@ -58,6 +58,27 @@ function describeOpsNotification(row: OpsNotificationRow): {
         : "/statuses/",
     };
   }
+  if (row.kind === "PLACEMENT_RETURNED") {
+    // Возврат расстановки объекта с согласования (Plane №400, `[ВОЗ-03]`):
+    // «Расстановка по объекту „…“ возвращена: N замечаний». Ссылка ведёт в
+    // карточку СРАЗУ на этот объект (`?visit=`): чинить замечания — там, над
+    // деревом постов (№397). «Срочно» — словом в заголовке, не только цветом.
+    const p = row.payload;
+    const object = p.objectName ? `«${p.objectName}»` : "(объект не указан)";
+    const n = p.remarksOpen ?? 0;
+    const remarks =
+      n === 1 ? "1 замечание" : n >= 2 && n <= 4 ? `${n} замечания` : `${n} замечаний`;
+    return {
+      title: `${p.urgent ? "Срочно: " : ""}Расстановка по объекту ${object} возвращена: ${remarks}`,
+      message: `${p.eventCode ?? ""} ${p.eventTitle ?? ""} · ${p.businessDate ?? ""}${p.comment ? ` · ${p.comment}` : ""}`.trim(),
+      link:
+        p.eventId && p.visitObjectId
+          ? `/security-ops/events/${p.eventId}/?visit=${encodeURIComponent(p.visitObjectId)}`
+          : p.eventId
+            ? `/security-ops/events/${p.eventId}/`
+            : null,
+    };
+  }
   if (row.kind === "EVENT_ACKNOWLEDGEMENT") {
     const p = row.payload;
     const event = `${p.eventCode ?? ""} ${p.eventTitle ?? ""}`.trim();
