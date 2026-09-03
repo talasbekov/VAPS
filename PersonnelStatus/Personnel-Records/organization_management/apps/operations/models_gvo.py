@@ -89,3 +89,61 @@ class OpsGvoSummaryPatch(TimeStampedModel):
 
     def __str__(self):
         return f"ГВО-патч {self.event.code}"
+
+
+class OpsForeignVisit(TimeStampedModel):
+    """Визит иностранного ОЛ — своя сущность со статусом (Plane №435,
+    `[МД-05]`, Ш-19 плана P2).
+
+    ТОЛЬКО у мероприятий `kind=FOREIGN`: у внутреннего ОМ визита нет как
+    понятия (`[ГВО-01]`), и заводить его туда сервис отказывается.
+
+    `data` — те же секции, что нёс JSON-патч сводки (`OpsGvoSummaryPatch`):
+    страна, лица, прибытие/убытие, встречающие, размещение, группы,
+    транспорт. Патч ОСТАЁТСЯ и читается, пока страницу не переведут (Ш-20):
+    правка пишется в обе записи, чтение предпочитает визит. Поля, по
+    которым «данных нет от принимающей стороны», помечаются в `unspecified`
+    списком ключей (`[ГВО-06]`) — слово «уточняется» больше не значение по
+    умолчанию, а флаг, который печатает документ.
+
+    Ссылки на справочники (`[ГВО-08]`): встречающие/провожающие/состав ГВО —
+    идентификаторы сотрудников в `data.meetEmployeeIds` и т. п.; ОЛ — лица
+    бюллетеня (`event.protected_persons`); транспорт — выделенные машины
+    реестра ГОН (`event.vehicles`). Текстовые строки живут рядом, пока их
+    читает документ.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Черновик"
+        READY = "READY", "Заполнен"
+        APPROVED = "APPROVED", "Утверждён"
+
+    event = models.OneToOneField(
+        OpsSecurityEvent, on_delete=models.CASCADE, related_name="foreign_visit"
+    )
+    protected_person = models.ForeignKey(
+        "operations.OpsProtectedPerson",
+        on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.DRAFT
+    )
+    version = models.PositiveIntegerField(default=1)
+    data = models.JSONField(default=dict, blank=True)
+    unspecified = models.JSONField(default=list, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ["event_id"]
+        verbose_name = "Визит иностранного ОЛ"
+        verbose_name_plural = "Визиты иностранных ОЛ"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=("DRAFT", "READY", "APPROVED")),
+                name="chk_ops_foreign_visit_status",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Визит {self.event.code} · {self.get_status_display()}"

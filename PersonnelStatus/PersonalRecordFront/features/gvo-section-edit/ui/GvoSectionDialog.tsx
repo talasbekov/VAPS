@@ -12,7 +12,7 @@
 // 🔴 `required` у полей НЕ ставим: `Field` дописал бы к подписи звёздочку, а
 // подписи этого окна пинит проба `e2e/gvo-sections.spec.ts` по доступному
 // имени («Название группы»).
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 import {
   Dialog,
@@ -46,6 +46,8 @@ export interface GvoSectionDialogProps {
   section: GvoSection;
   /** Сводка ДО правки: из неё берётся текст формы и полные списки для патча. */
   summary: GvoSummary;
+  /** Поля с флагом «уточняется» у визита (`[ГВО-06]`, Plane №435). */
+  unspecified?: string[];
   onClose: () => void;
 }
 
@@ -59,10 +61,22 @@ function OpenDialog({
   omTitle,
   section,
   summary,
+  unspecified = [],
   onClose,
 }: GvoSectionDialogProps) {
   const { toast } = useToast();
   const spec = gvoSectionSpec(section);
+  // Флаги «уточняется» — по ключам полей (`[ГВО-06]`): пустое поле остаётся
+  // пустым, слово печатает документ только по флагу. Список хранится целиком
+  // у визита; окно правит свои ключи и возвращает весь.
+  const [flags, setFlags] = useState<Set<string>>(() => new Set(unspecified));
+  const toggleFlag = (key: string, on: boolean) =>
+    setFlags((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
 
   // Схема по спеке раздела: полей у разных разделов разное число, и
   // перечислять их вторым списком значило бы завести копию спеки.
@@ -124,6 +138,7 @@ function OpenDialog({
       omCode,
       section,
       values: gvoPatchFromForm(section, values, summary),
+      unspecified: [...flags].sort(),
     });
   }
 
@@ -174,12 +189,24 @@ function OpenDialog({
                     {...register(field.key)}
                   />
                 ) : (
-                  <Input
-                    {...control}
-                    className="h-[38px] text-[13px]"
-                    placeholder={field.placeholder}
-                    {...register(field.key)}
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      {...control}
+                      className="h-[38px] text-[13px]"
+                      placeholder={field.placeholder}
+                      {...register(field.key)}
+                    />
+                    <label className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5"
+                        checked={flags.has(field.key)}
+                        onChange={(e) => toggleFlag(field.key, e.target.checked)}
+                        aria-label={`Уточняется: ${field.label}`}
+                      />
+                      уточняется
+                    </label>
+                  </div>
                 )
               }
             </Field>

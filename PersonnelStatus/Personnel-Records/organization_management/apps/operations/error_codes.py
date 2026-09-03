@@ -103,6 +103,8 @@ CODES = {
     "NOTHING_TO_REMIND": frozenset({422}),
     # «Участие в ОМ» только из запроса (Plane №427, [СТА-04]).
     "PARTICIPATION_MANUAL_FORBIDDEN": frozenset({422}),
+    # Визит иностранного ОЛ только у FOREIGN (Plane №435, [МД-05]).
+    "VISIT_FOREIGN_ONLY": frozenset({422}),
     # Передача собранных на расстановку (Plane №390, [СБС-13]).
     "FORCE_HANDED_OVER": frozenset({422}),
     "FORCE_ROSTER_UNASSIGNED": frozenset({422}),

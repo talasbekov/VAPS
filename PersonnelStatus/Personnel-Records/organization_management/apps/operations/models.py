@@ -273,6 +273,7 @@ from organization_management.apps.operations.models_forces import (  # noqa: E40
     OpsUnitRequest,
 )
 from organization_management.apps.operations.models_gvo import (  # noqa: E402
+    OpsForeignVisit,  # noqa: F401
     OpsGvoSummaryPatch,  # noqa: F401
     OpsProtectedPerson,  # noqa: F401
 )

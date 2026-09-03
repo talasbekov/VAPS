@@ -104,7 +104,7 @@ def derive_summary(event):
     # собираться на каждого. Это осознанная граница, а не пропуск.
     owner = (event.owner_name or "").strip()
     return {
-        "country": UNSPECIFIED,
+        "country": "",
         # Пусто, если в бюллетене лицо не назвали: подставлять сюда
         # «уточняется» вместо человека нечем.
         "persons": (
@@ -112,25 +112,23 @@ def derive_summary(event):
             if person
             else []
         ),
-        "arrival": {"date": day, "time": UNSPECIFIED, "route": UNSPECIFIED,
-                    "flight": UNSPECIFIED, "dur": UNSPECIFIED},
-        "departure": {"date": day, "time": UNSPECIFIED, "route": UNSPECIFIED,
-                      "flight": UNSPECIFIED, "dur": UNSPECIFIED},
+        "arrival": {"date": day, "time": "", "route": "", "flight": "", "dur": ""},
+        "departure": {"date": day, "time": "", "route": "", "flight": "", "dur": ""},
         "meet": [],
         "farewell": [],
-        "stay": {"place": UNSPECIFIED, "room": UNSPECIFIED},
+        "stay": {"place": "", "room": ""},
         "delegation": [],
-        "sbChief": UNSPECIFIED,
-        "weapons": UNSPECIFIED,
-        "wishes": UNSPECIFIED,
-        "obVariant": UNSPECIFIED,
-        "radio": UNSPECIFIED,
+        "sbChief": "",
+        "weapons": "",
+        "wishes": "",
+        "obVariant": "",
+        "radio": "",
         "responsible": (
-            {"name": owner, "callsign": UNSPECIFIED, "role": "ответственный"}
+            {"name": owner, "callsign": "", "role": "ответственный"}
             if owner
             else None
         ),
-        "groups": [{"name": "ГВО (состав уточняется)", "members": []}],
+        "groups": [{"name": "ГВО", "members": []}],
         # Свободный текст «Выделяемый транспорт»: его набирает человек в
         # разделе сводки. ОСТАЁТСЯ пустым в базе и наполняется патчем — так
         # было и до реестра транспорта.
@@ -169,18 +167,71 @@ def _deep_merge(base, patch):
     return result
 
 
-def summary_for_event(event):
-    """Сводка мероприятия: база плюс сохранённые ручные правки."""
+def _visit_of(event):
+    from organization_management.apps.operations.models_gvo import OpsForeignVisit
+
+    return OpsForeignVisit.objects.filter(event_id=event.pk).first()
+
+
+def _employee_refs(ids):
+    """Ссылки на сотрудников (`[ГВО-08]`) → подписи для экрана и документа."""
+    from organization_management.apps.ops.security_events import (
+        _find_personnel,
+        personnel_display_name,
+    )
+
+    refs = []
+    for raw in ids or []:
+        employee = _find_personnel(raw)
+        refs.append(
+            {
+                "id": str(raw),
+                "name": personnel_display_name(employee) if employee else f"сотрудник №{raw}",
+            }
+        )
+    return refs
+
+
+def _with_refs(summary):
+    for key in ("meet", "farewell", "delegation"):
+        ids = summary.get(f"{key}EmployeeIds")
+        if ids:
+            summary[f"{key}Refs"] = _employee_refs(ids)
+    return summary
+
+
+def summary_for_event(event, visit=None):
+    """Сводка мероприятия: база плюс правки. Источник правок — визит
+    (Plane №435), у мероприятий без визита — патч (внутренние ОМ и строки
+    до бэкфилла)."""
     from organization_management.apps.operations.models_gvo import (
         OpsGvoSummaryPatch,
     )
 
-    patch = (
-        OpsGvoSummaryPatch.objects.filter(event_id=event.pk)
-        .values_list("patch", flat=True)
-        .first()
-    )
-    return _deep_merge(derive_summary(event), patch or {})
+    visit = visit if visit is not None else _visit_of(event)
+    if visit is not None:
+        data = visit.data or {}
+    else:
+        data = (
+            OpsGvoSummaryPatch.objects.filter(event_id=event.pk)
+            .values_list("patch", flat=True)
+            .first()
+        ) or {}
+    return _with_refs(_deep_merge(derive_summary(event), data))
+
+
+def visit_view(visit):
+    if visit is None:
+        return None
+    return {
+        "status": visit.status,
+        "version": visit.version,
+        "protectedPersonId": (
+            str(visit.protected_person_id) if visit.protected_person_id else None
+        ),
+        "unspecified": list(visit.unspecified or []),
+        "approvedAt": visit.approved_at.isoformat() if visit.approved_at else None,
+    }
 
 
 def summary_row(event, record=None, *, fetch=True):
@@ -195,15 +246,22 @@ def summary_row(event, record=None, *, fetch=True):
         )
 
         record = OpsGvoSummaryPatch.objects.filter(event_id=event.pk).first()
+    visit = _visit_of(event) if fetch else getattr(event, "_visit_cache", None)
     patch = (record.patch if record else None) or {}
+    data = (visit.data or {}) if visit is not None else patch
     return {
         "omCode": event.code,
-        "summary": _deep_merge(derive_summary(event), patch),
-        # «Заполнена» — если по мероприятию есть хоть одна ручная правка.
-        # Иначе «Черновик»: всё показанное выведено из бюллетеня.
-        "filled": bool(patch),
-        # null — правок не было вовсе, а не «время неизвестно».
-        "updatedAt": record.updated_at.isoformat() if record else None,
+        "summary": _with_refs(_deep_merge(derive_summary(event), data)),
+        "filled": bool(data),
+        "updatedAt": (
+            visit.updated_at.isoformat()
+            if visit is not None
+            else record.updated_at.isoformat() if record else None
+        ),
+        # Визит (Plane №435): статус, версия, флаги «уточняется»; None — у
+        # внутреннего ОМ визита нет.
+        "visit": visit_view(visit),
+        "unspecified": list(visit.unspecified or []) if visit is not None else [],
     }
 
 
@@ -226,20 +284,21 @@ def assembled_summaries():
         OpsGvoSummaryPatch,
     )
 
+    from organization_management.apps.operations.models_gvo import OpsForeignVisit
+
     patches = {
         record.event_id: record
         for record in OpsGvoSummaryPatch.objects.all()
     }
-    # `vehicles__vehicle` в предзагрузке, а не запрос на строку: реестр из
-    # сорока ОМ иначе стоил бы сорок запросов за машинами (та же причина, по
-    # которой патчи собраны одним проходом выше).
+    visits = {v.event_id: v for v in OpsForeignVisit.objects.all()}
     events = OpsSecurityEvent.objects.prefetch_related(
         "visit_objects", "vehicles__vehicle"
     ).order_by("code")
-    return [
-        summary_row(event, patches.get(event.pk), fetch=False)
-        for event in events
-    ]
+    rows = []
+    for event in events:
+        event._visit_cache = visits.get(event.pk)
+        rows.append(summary_row(event, patches.get(event.pk), fetch=False))
+    return rows
 
 
 def _person_lines(person):
@@ -257,11 +316,19 @@ def document_values(event):
     «уточняется»: пустая строка под подписью читается как «сведений нет», и
     это честно; выдуманное слово читалось бы как факт.
     """
-    summary = summary_for_event(event)
+    visit = _visit_of(event)
+    summary = summary_for_event(event, visit)
+    flagged = set((visit.unspecified or []) if visit is not None else [])
+
+    def field(key, value):
+        """Пустое и помеченное «уточняется» — печатается словом (`[ГВО-06]`)."""
+        text = value.strip() if isinstance(value, str) else (value or "")
+        return UNSPECIFIED if (not text and key in flagged) else text
+
     persons = summary.get("persons") or []
     values = {}
 
-    values["country_1"] = summary.get("country") or ""
+    values["country_1"] = field("country", summary.get("country"))
     for index in (1, 2):
         person = persons[index - 1] if len(persons) >= index else {}
         values[f"person{index}_title"] = person.get("role", "") if person else ""
@@ -286,11 +353,11 @@ def document_values(event):
     values["accommodation_1"] = " ".join(
         part for part in (stay.get("place"), stay.get("room")) if part
     )
-    values["security_chief_1"] = summary.get("sbChief") or ""
-    values["armament_1"] = summary.get("weapons") or ""
-    values["wishes_1"] = summary.get("wishes") or ""
-    values["route_variant_1"] = summary.get("obVariant") or ""
-    values["radio_channel_1"] = summary.get("radio") or ""
+    values["security_chief_1"] = field("sbChief", summary.get("sbChief"))
+    values["armament_1"] = field("weapons", summary.get("weapons"))
+    values["wishes_1"] = field("wishes", summary.get("wishes"))
+    values["route_variant_1"] = field("obVariant", summary.get("obVariant"))
+    values["radio_channel_1"] = field("radio", summary.get("radio"))
 
     for line_no, item in enumerate(summary.get("meet") or [], start=1):
         values[f"meeting_{line_no}"] = str(item)

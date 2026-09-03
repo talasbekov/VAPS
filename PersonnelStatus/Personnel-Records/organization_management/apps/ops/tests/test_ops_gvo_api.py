@@ -58,6 +58,9 @@ def nobody(name="ops-gvo-nobody"):
 
 def make_event(code="ОМ-Т-9"):
     return OpsSecurityEvent.objects.create(
+        # Визит — только у мероприятий с иностранцами (Plane №435): сводка
+        # ГВО у внутреннего ОМ отбивается 422.
+        kind="FOREIGN",
         code=code,
         title="Визит",
         object_name="Объект",

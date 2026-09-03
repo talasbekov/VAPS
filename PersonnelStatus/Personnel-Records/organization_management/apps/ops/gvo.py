@@ -5,6 +5,8 @@
 повторяют мок фронта: {"results": [...]}, ключи camelCase.
 """
 from django.core.exceptions import ValidationError
+
+from organization_management.apps.operations.exceptions import DomainError
 from django.db.models import Q
 
 from organization_management.apps.operations import audit_service
@@ -38,6 +40,11 @@ ALLOWED_PATCH_KEYS = (
     "responsible",
     "groups",
     "transport",
+    # Ссылки на справочники (Plane №435, `[ГВО-08]`): встречающие,
+    # провожающие, состав делегации/ГВО — идентификаторы сотрудников.
+    "meetEmployeeIds",
+    "farewellEmployeeIds",
+    "delegationEmployeeIds",
 )
 # `visits` СНЯТ («Реестр ОМ-35.1»): объекты посещения живут таблицей
 # `ops_security_event_visit_objects`, и патч сводки был вторым списком тех же
@@ -258,6 +265,45 @@ def _section_keys(section):
     raise ValidationError({"section": f"Неизвестный раздел: {section!r}"})
 
 
+# ── Визит иностранного ОЛ (Plane №435, `[МД-05]`) ───────────────────────────
+
+
+def visit_for_event(event, *, create=False):
+    """Визит мероприятия: только у `kind=FOREIGN`; `create=True` заводит его
+    при первом обращении. У внутреннего ОМ — `None` всегда."""
+    from organization_management.apps.operations.models_gvo import OpsForeignVisit
+
+    if event.kind != "FOREIGN":
+        return None
+    if not create:
+        return OpsForeignVisit.objects.filter(event=event).first()
+    visit, _created = OpsForeignVisit.objects.get_or_create(
+        event=event, defaults={"protected_person_id": event.protected_person_id}
+    )
+    return visit
+
+
+def _require_foreign(event):
+    if event.kind != "FOREIGN":
+        raise DomainError(
+            "VISIT_FOREIGN_ONLY",
+            422,
+            message=(
+                "Сводные данные ГВО ведутся только у мероприятий с участием "
+                "иностранцев — у внутреннего ОМ визита нет."
+            ),
+        )
+
+
+def _parse_unspecified(raw):
+    """Флаги «уточняется» (`[ГВО-06]`): список ключей полей."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or any(not isinstance(k, str) for k in raw):
+        raise ValidationError({"unspecified": "Ожидается список ключей полей."})
+    return sorted(set(k.strip() for k in raw if k.strip()))
+
+
 def apply_patch(om_code, body, user, actor=None):
     """Тело — {section, values} (контракт UpdateGvoSummaryRequest фронта):
     values мержатся по ключам верхнего уровня — присланный ключ замещает
@@ -276,12 +322,24 @@ def apply_patch(om_code, body, user, actor=None):
         raise ValidationError(
             {"patch": f"Неизвестные секции патча: {', '.join(unknown)}"}
         )
+    _require_foreign(event)
+    unspecified = _parse_unspecified(body.get("unspecified"))
     rec, _created = OpsGvoSummaryPatch.objects.get_or_create(
         event=event, defaults={"patch": {}}
     )
     rec.patch = {**rec.patch, **values}
     rec.updated_by = user if getattr(user, "is_authenticated", False) else None
     rec.save(update_fields=["patch", "updated_by", "updated_at"])
+    # Визит — новый источник правды (Plane №435): та же правка пишется в
+    # него, версия растёт; патч живёт рядом, пока его читают.
+    visit = visit_for_event(event, create=True)
+    visit.data = {**(visit.data or {}), **values}
+    if unspecified is not None:
+        visit.unspecified = unspecified
+    visit.version += 1
+    if visit.status == "DRAFT":
+        visit.status = "READY"
+    visit.save(update_fields=["data", "unspecified", "version", "status", "updated_at"])
     audit_service.record(
         actor=actor,
         action=audit_service.GVO_SUMMARY_PATCHED,
@@ -302,7 +360,13 @@ def reset_patch(om_code, body, actor=None):
     event = _event_or_none(om_code)
     if event is None:
         return None
+    _require_foreign(event)
     keys = _section_keys((body or {}).get("section"))
+    visit = visit_for_event(event)
+    if visit is not None:
+        visit.data = {k: v for k, v in (visit.data or {}).items() if k not in keys}
+        visit.version += 1
+        visit.save(update_fields=["data", "version", "updated_at"])
     rec = OpsGvoSummaryPatch.objects.filter(event=event).first()
     remaining = {}
     if rec is not None:

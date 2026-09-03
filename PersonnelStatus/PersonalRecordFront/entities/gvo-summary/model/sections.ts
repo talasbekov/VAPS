@@ -285,10 +285,11 @@ export function gvoFormFromSummary(
 
 // ── Текст формы → патч ──────────────────────────────────────────────────
 
-/** Пустое поле — не «пусто», а «уточняется»: в сводке нет незаполненных мест. */
+/** Пустое поле — ПУСТОЕ (`[ГВО-06]`, Plane №435): «уточняется» больше не
+ * подставляется как значение — это флаг поля (`unspecified` визита), который
+ * ставят чекбоксом в окне раздела и печатает документ. */
 function filled(value: string | undefined): string {
-  const trimmed = (value ?? "").trim();
-  return trimmed === "" ? UNSPECIFIED : trimmed;
+  return (value ?? "").trim();
 }
 
 function lines(value: string | undefined): string[] {
@@ -317,9 +318,9 @@ function parts(line: string): string[] {
 function parseMember(line: string): GvoMember {
   const [name, callsign, role] = parts(line);
   return {
-    name: name ?? UNSPECIFIED,
-    callsign: callsign === undefined || callsign === "" ? UNSPECIFIED : callsign,
-    role: role === undefined || role === "" ? UNSPECIFIED : role,
+    name: name ?? "",
+    callsign: callsign ?? "",
+    role: role ?? "",
   };
 }
 
@@ -327,8 +328,8 @@ function parseResponsible(value: string | undefined): GvoMember | null {
   if ((value ?? "").trim() === "") return null;
   const [name, callsign, role] = parts(value ?? "");
   return {
-    name: name ?? UNSPECIFIED,
-    callsign: callsign === undefined || callsign === "" ? UNSPECIFIED : callsign,
+    name: name ?? "",
+    callsign: callsign ?? "",
     role: role === undefined || role === "" ? "ответственный" : role,
   };
 }
@@ -336,7 +337,7 @@ function parseResponsible(value: string | undefined): GvoMember | null {
 function parseFacts(value: string | undefined): GvoFact[] {
   return lines(value).map((line) => {
     const at = line.indexOf("=");
-    if (at < 0) return { key: line, value: UNSPECIFIED };
+    if (at < 0) return { key: line, value: "" };
     return {
       key: line.slice(0, at).trim(),
       value: filled(line.slice(at + 1)),
@@ -348,8 +349,8 @@ function parseTransport(value: string | undefined): GvoTransportRow[] {
   return lines(value).map((line) => {
     const [code, car, note] = parts(line);
     return {
-      code: code ?? UNSPECIFIED,
-      car: car === undefined || car === "" ? UNSPECIFIED : car,
+      code: code ?? "",
+      car: car ?? "",
       note: note ?? "",
     };
   });
@@ -381,10 +382,7 @@ export function gvoPatchFromForm(
     const person: GvoPerson = {
       name: filled(form.name),
       role: filled(form.role),
-      facts:
-        facts.length > 0
-          ? facts
-          : [{ key: "Антропометрические данные", value: UNSPECIFIED }],
+      facts,
     };
     const next = summary.persons.slice();
     const index = sectionIndex(section);
@@ -400,8 +398,8 @@ export function gvoPatchFromForm(
         persons: blocks(form.persons).map((block) => {
           const [name, role] = parts(block[0]);
           return {
-            name: name ?? UNSPECIFIED,
-            role: role === undefined || role === "" ? UNSPECIFIED : role,
+            name: name ?? "",
+            role: role ?? "",
             facts: parseFacts(block.slice(1).join("\n")),
           };
         }),
