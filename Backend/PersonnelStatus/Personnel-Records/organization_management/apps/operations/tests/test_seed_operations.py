@@ -178,8 +178,13 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # умеет то же, что вчера, а рядовой сотрудник второго департамента умеет
     # ТОЛЬКО завести и заполнить бюллетень. Вернуть `event.manage` восьмой
     # персоне — значит покраснить эту строку и следующую пробу.
-    assert holders("event.create") == {"EVENT_OFFICER", "EMPLOYEE_OPS_D2"}
-    assert holders("event.bulletin") == {"EVENT_OFFICER", "EMPLOYEE_OPS_D2"}
+    # …и штаб второго департамента (`[БЛН-10]`, Plane №421) — пин поднят
+    # осознанно: спецификация называет создателями бюллетеня `acc_employee_d2`,
+    # штаб и админа.
+    assert holders("event.create") == {"EVENT_OFFICER", "EMPLOYEE_OPS_D2", "HEAD_OPS_UNIT"}
+    assert holders("event.bulletin") == {"EVENT_OFFICER", "EMPLOYEE_OPS_D2", "HEAD_OPS_UNIT"}
+    # Расстановка на любом объекте — только штаб (`[РАС-08]`, №421).
+    assert holders("placement.command") == {"HEAD_OPS_UNIT"}
     # Персональная детализация и выгрузка со скрытыми полями — «пока только
     # администратор» (решение №267), то есть ни одной роли, кроме «*».
     assert holders("analytics.personal_detail") == set()
