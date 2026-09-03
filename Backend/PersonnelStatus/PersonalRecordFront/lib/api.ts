@@ -552,9 +552,21 @@ export interface TrafficLightTree {
 export interface OpsNotification {
   id: number;
   recipient: string;
-  kind: "SUBMISSION_LAGGING";
+  kind: "SUBMISSION_LAGGING" | "EVENT_ACKNOWLEDGEMENT";
   business_date: string;
-  payload: { laggard_division_ids?: number[] };
+  /** `laggard_division_ids` — только у `SUBMISSION_LAGGING`; остальные поля —
+   *  у `EVENT_ACKNOWLEDGEMENT` (Plane №402, `acknowledgement_notify.py`).
+   *  `asSupervisor` отличает уведомление руководителя от уведомления самого
+   *  заступающего — текст один и тот же payload, а звучать должен по-разному. */
+  payload: {
+    laggard_division_ids?: number[];
+    eventId?: string;
+    eventCode?: string;
+    eventTitle?: string;
+    businessDate?: string;
+    objectName?: string;
+    asSupervisor?: boolean;
+  };
   read_at: string | null;
   created_at: string;
 }
@@ -1956,6 +1968,31 @@ class ApiClient {
     return response.json();
   }
 
+  /** POST под тем же конвертом ошибок, что и `getDomainJson` — для действий
+   *  раздела, у которых нет своего именованного `postXxx`-метода. */
+  private async postDomainJson<T>(
+    endpoint: string,
+    body: Record<string, unknown>
+  ): Promise<T> {
+    const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
+    const token = await getAccessToken();
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      accept: "application/json",
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw await toDomainError(response);
+    }
+    return response.json();
+  }
+
   /** Каталог кадровых типов статусов (Plane №354).
    *
    * Список правится администратором в справочнике и меняется БЕЗ выкатки
@@ -2139,6 +2176,23 @@ class ApiClient {
     const queryString = query.toString();
     return this.getDomainJson<OpsNotificationPage>(
       `/api/operations/notifications/${queryString ? `?${queryString}` : ""}`
+    );
+  }
+
+  /** Отметить ОДНО уведомление раздела прочитанным (Plane №402). Идемпотентно
+   *  на сервере — повторный вызов не двигает момент прочтения. */
+  async markOpsNotificationRead(id: number): Promise<OpsNotification> {
+    return this.postDomainJson<OpsNotification>(
+      `/api/operations/notifications/${id}/read/`,
+      {}
+    );
+  }
+
+  /** Отметить прочитанными ВСЕ свои уведомления раздела. */
+  async markAllOpsNotificationsRead(): Promise<{ marked: number }> {
+    return this.postDomainJson<{ marked: number }>(
+      `/api/operations/notifications/read-all/`,
+      {}
     );
   }
 

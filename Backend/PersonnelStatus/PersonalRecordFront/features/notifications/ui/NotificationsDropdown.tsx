@@ -69,7 +69,7 @@ export function NotificationsDropdown() {
   const notifications = unreadQuery.data || [];
 
   const readMutation = useMutation({
-    mutationFn: markNotificationRead,
+    mutationFn: (notification: Notification) => markNotificationRead(notification),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
@@ -97,7 +97,15 @@ export function NotificationsDropdown() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="relative">
+        {/* Имя у кнопки-иконки: без него колокольчик для скринридера и для
+            проб — безымянная «кнопка» (Plane №402). Счётчик в имя не
+            входит намеренно — он меняется, а имя должно быть стабильным. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="relative"
+          aria-label="Уведомления"
+        >
           <motion.div
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.95 }}
@@ -198,7 +206,7 @@ export function NotificationsDropdown() {
                   layout
                 >
                   <DropdownMenuItem
-                    onSelect={() => readMutation.mutate(n.id)}
+                    onSelect={() => readMutation.mutate(n)}
                     className="flex flex-col items-start space-y-0.5 py-3 cursor-pointer hover:bg-accent/50 transition-colors"
                   >
                     <motion.span 
