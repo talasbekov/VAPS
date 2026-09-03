@@ -351,6 +351,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # привязкой, подчинённого — по области `status.manage`; `event.view`
         # открывает всех (штаб, админ).
         "my_assignments": _READ_EVENT_PERMISSION,
+        # «Не могу заступить» (Plane №405) — тем же кругом, что и
+        # подтверждение: чьё назначение, старший, ведущий.
+        "decline": _MANAGE_EVENT_PERMISSION,
         "journal": _MANAGE_EVENT_PERMISSION,
         "conduct_replace": _MANAGE_EVENT_PERMISSION,
         "close": _MANAGE_EVENT_PERMISSION,
@@ -1175,7 +1178,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
-        if self.action in ("my_assignments", "acknowledge"):
+        if self.action in ("my_assignments", "acknowledge", "decline"):
             return self._my_assignments_override(request)
         if self.action in self._OBJECT_LEAD_ACTIONS:
             return self._object_lead_override(request)
@@ -1573,8 +1576,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"acknowledge/(?P<assignment_id>[^/]+)",
     )
     def acknowledge(self, request, pk=None, assignment_id=None):
+        # Через `my_assignments`: подтверждение снимает отказ (Plane №405).
+        from organization_management.apps.ops import my_assignments as mine
+
+        return self._event_response(mine.acknowledge(pk, assignment_id))
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"decline/(?P<assignment_id>[^/]+)",
+    )
+    def decline(self, request, pk=None, assignment_id=None):
+        """«Не могу заступить» с причиной (Plane №405, `[ПРФ-04]`)."""
+        from organization_management.apps.ops import my_assignments as mine
+
         return self._event_response(
-            event_service.acknowledge_assignment(pk, assignment_id)
+            mine.decline(pk, assignment_id, (request.data or {}).get("reason"))
         )
 
     @action(detail=True, methods=["post"], url_path="acknowledgement/complete")

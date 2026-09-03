@@ -243,6 +243,10 @@ export interface PlacementAssignment {
   employeeName: string;
   /** Ознакомление: null до подтверждения. */
   acknowledgedAt: string | null;
+  /** «Не могу заступить» (Plane №405): отказ и подтверждение снимают друг
+   * друга. Строки, заведённые до №405, ключей не несут — читать как null. */
+  declinedAt?: string | null;
+  declineReason?: string | null;
   /** Обоснование обхода предупреждения по рейтингу; заполнено только если предупреждение было. */
   ratingOverrideReason: string | null;
   /** Роль наряда из справочника `PLACEMENT_ROLES` (Plane №238). `null` —
