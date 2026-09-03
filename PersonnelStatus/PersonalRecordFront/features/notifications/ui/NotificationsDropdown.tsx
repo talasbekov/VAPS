@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -58,6 +59,7 @@ const itemVariants = {
 
 export function NotificationsDropdown() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const unreadQuery = useQuery({
@@ -206,7 +208,14 @@ export function NotificationsDropdown() {
                   layout
                 >
                   <DropdownMenuItem
-                    onSelect={() => readMutation.mutate(n)}
+                    // Уведомление СО ССЫЛКОЙ ведёт туда, о чём сообщает
+                    // (Plane №392): «выделите людей» без перехода к списку
+                    // людей — половина уведомления. Отметка прочтения идёт
+                    // тем же нажатием — человек его увидел.
+                    onSelect={() => {
+                      readMutation.mutate(n);
+                      if (n.link) router.push(n.link);
+                    }}
                     className="flex flex-col items-start space-y-0.5 py-3 cursor-pointer hover:bg-accent/50 transition-colors"
                   >
                     <motion.span 

@@ -38,7 +38,26 @@ async function authorizedFetch(endpoint: string, init?: RequestInit) {
  *  вовсе (сервер отдаёт факт: вид + сырой payload), формулировку складывает
  *  экран (Plane №402). Один `kind` живёт здесь один раз — второе место, где
  *  выдумывался бы текст, разошлось бы с этим при первой же правке подписи. */
-function describeOpsNotification(row: OpsNotificationRow): { title: string; message: string } {
+function describeOpsNotification(row: OpsNotificationRow): {
+  title: string;
+  message: string;
+  link: string | null;
+} {
+  if (row.kind === "FORCES_REQUEST") {
+    // Запрос сил управлению (Plane №392, `[СБС-22]`): «Выделите N сотрудников
+    // на ОМ-… (дата)». Ссылка ведёт в «Статусы сотрудников» — там начальник
+    // управления отмечает людей (`[СБС-30]`/`[СБС-31]`, Plane №394/№395);
+    // баннер запроса на том экране — их шаг, здесь только адрес.
+    const p = row.payload;
+    const need = p.need ?? 0;
+    return {
+      title: `Выделите ${need} сотрудников на ${p.eventCode ?? "мероприятие"}`,
+      message: `${p.eventTitle ?? ""} · ${p.businessDate ?? ""} · запрос от ${p.departmentName ?? "департамента"}`,
+      link: p.allocationId
+        ? `/statuses/?forcesRequest=${encodeURIComponent(p.allocationId)}`
+        : "/statuses/",
+    };
+  }
   if (row.kind === "EVENT_ACKNOWLEDGEMENT") {
     const p = row.payload;
     const event = `${p.eventCode ?? ""} ${p.eventTitle ?? ""}`.trim();
@@ -47,13 +66,15 @@ function describeOpsNotification(row: OpsNotificationRow): { title: string; mess
     // как факт.
     const object = p.objectName ? `объект «${p.objectName}»` : "объект не указан";
     const message = `${event} · ${object} · ${p.businessDate ?? ""}`;
+    const link = p.eventId ? `/security-ops/events/${p.eventId}/` : null;
     return p.asSupervisor === true
-      ? { title: "Подчинённый заступает на мероприятие", message }
-      : { title: "Вы назначены на мероприятие", message };
+      ? { title: "Подчинённый заступает на мероприятие", message, link }
+      : { title: "Вы назначены на мероприятие", message, link };
   }
   return {
     title: "Отставание по сдаче",
     message: `Подразделений без сдачи: ${row.payload.laggard_division_ids?.length ?? 0}`,
+    link: null,
   };
 }
 
@@ -77,13 +98,13 @@ export async function fetchUnreadNotifications(): Promise<Notification[]> {
   ]);
   const legacy: Notification[] = legacyRes.map((row) => ({ ...row, source: "legacy" }));
   const ops: Notification[] = opsPage.results.map((row) => {
-    const { title, message } = describeOpsNotification(row);
+    const { title, message, link } = describeOpsNotification(row);
     return {
       id: row.id,
       notification_type: row.kind,
       title,
       message,
-      link: null,
+      link,
       is_read: row.read_at !== null,
       created_at: row.created_at,
       source: "ops",

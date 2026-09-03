@@ -46,6 +46,11 @@ class OpsNotification(TimeStampedModel):
         # назначенные на посты И отвечающие за их подразделения: сценарий
         # заказчика требует уведомить и людей, и их руководителей.
         EVENT_ACKNOWLEDGEMENT = "EVENT_ACKNOWLEDGEMENT", "Заступление на ОМ"
+        # Запрос сил управлению (Plane №392, `[СБС-22]`): ответственный
+        # департамента «отправил в управления», и начальник управления
+        # получает уведомление со ссылкой — выделить людей. Получатель —
+        # учётка с областью ровно на это управление.
+        FORCES_REQUEST = "FORCES_REQUEST", "Запрос сил управлению"
 
     # Получатель строкой: str(User.pk) для человека, метка — для роли/службы.
     recipient = models.CharField(max_length=100)
@@ -82,7 +87,11 @@ class OpsNotification(TimeStampedModel):
             # — то есть мимо. Расхождение с Kind ловит отдельный тест.
             models.CheckConstraint(
                 condition=models.Q(
-                    kind__in=["SUBMISSION_LAGGING", "EVENT_ACKNOWLEDGEMENT"]
+                    kind__in=[
+                        "SUBMISSION_LAGGING",
+                        "EVENT_ACKNOWLEDGEMENT",
+                        "FORCES_REQUEST",
+                    ]
                 ),
                 name="chk_ops_notif_kind",
             ),

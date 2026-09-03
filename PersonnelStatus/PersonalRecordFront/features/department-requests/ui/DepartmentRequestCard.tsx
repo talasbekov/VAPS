@@ -185,6 +185,13 @@ export function DepartmentRequestCard({
   }
 
   const quota = allocation.need;
+  // ПРЕДЕЛ РАСКЛАДКИ — ОТ «ВЫДЕЛЯЕМ» (`[СБС-22]`, Plane №392): раскладывать
+  // между управлениями департамент обязан СВОЮ цифру, а не запрос штаба.
+  // Пока ответа нет — запрос штаба, как и раньше.
+  const splitCap =
+    allocation.allocating === null || allocation.allocating === undefined
+      ? quota
+      : allocation.allocating;
   const splitTotal = allocation.directorates.reduce(
     (sum, row) => sum + (row.need ?? 0),
     0
@@ -346,11 +353,11 @@ export function DepartmentRequestCard({
         <StatCard
           label="Разложено по управлениям"
           value={splitTotal}
-          tone={splitTotal > quota ? "danger" : "neutral"}
+          tone={splitTotal > splitCap ? "danger" : "neutral"}
           caption={
-            splitTotal > quota
-              ? `Больше квоты на ${splitTotal - quota}`
-              : `Ещё не разложено ${quota - splitTotal}`
+            splitTotal > splitCap
+              ? `Больше «Выделяем» на ${splitTotal - splitCap}`
+              : `Ещё не разложено ${Math.max(0, splitCap - splitTotal)}`
           }
         />
         <StatCard
@@ -379,8 +386,10 @@ export function DepartmentRequestCard({
             </h3>
             <p className="text-muted-foreground text-sm">
               {locked
-                ? "Управления уже запрошены — квоты правятся до запроса"
-                : "Квоты редактируются до запроса управлений"}
+                ? "Управления уже запрошены — цифры правятся до запроса"
+                : allocation.allocating === null || allocation.allocating === undefined
+                  ? "Разложите запрос по управлениям и отправьте им — начальники получат уведомление"
+                  : `Разложите «Выделяем: ${allocation.allocating}» по управлениям и отправьте им`}
             </p>
           </div>
           {/* 🔴 КНОПКА, КОТОРОЙ НЕ БЫЛО (Plane №389, `[СБС-22]`). До правки
@@ -402,7 +411,7 @@ export function DepartmentRequestCard({
               disabled={notify.isPending}
               onClick={() => notify.mutate({})}
             >
-              {notify.isPending ? "Оповещаю…" : "Оповестить управления"}
+              {notify.isPending ? "Отправляю…" : "Отправить в управления"}
             </Button>
           )}
         </div>
@@ -416,10 +425,15 @@ export function DepartmentRequestCard({
           <Table>
             <TableHeader>
               <TableRow>
+                {/* Колонки — эталон `[СБС-22]`: «Управление | Запрошено |
+                    Проставлено „Участие в ОМ“ | Статус». «В строю» из эталона
+                    здесь нет намеренно: строевой численности управления у
+                    заявки нет, а тянуть расход дня ради колонки — второй
+                    источник числа, который разошёлся бы с экраном расхода. */}
                 <TableHead>Управление</TableHead>
-                <TableHead className="w-32">Квота</TableHead>
-                <TableHead>Выделено</TableHead>
-                <TableHead>Оповещено</TableHead>
+                <TableHead className="w-32">Запрошено</TableHead>
+                <TableHead>Проставлено «Участие в ОМ»</TableHead>
+                <TableHead>Статус</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -464,7 +478,11 @@ export function DepartmentRequestCard({
                     {row.assigned ?? 0} из {row.need ?? 0}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {row.notifiedAt === null ? "—" : "Запрошено"}
+                    {row.notifiedAt === null
+                      ? "Не запрошено"
+                      : (row.assigned ?? 0) >= (row.need ?? 0) && (row.need ?? 0) > 0
+                        ? "Выделено"
+                        : `Запрошено ${formatIsoDate(row.notifiedAt)}`}
                   </TableCell>
                 </TableRow>
               ))}
@@ -481,10 +499,10 @@ export function DepartmentRequestCard({
                 сервер ещё не знает. Перебор называется до нажатия — сервер
                 отобьёт его и сам, но узнать об этом заранее дешевле. */}
             <p
-              className={`text-sm ${draftTotal > quota ? "text-destructive-ink" : "text-muted-foreground"}`}
+              className={`text-sm ${draftTotal > splitCap ? "text-destructive-ink" : "text-muted-foreground"}`}
             >
-              Набрано {draftTotal} из {quota}
-              {draftTotal > quota ? ` · перебор ${draftTotal - quota}` : ""}
+              Набрано {draftTotal} из {splitCap}
+              {draftTotal > splitCap ? ` · перебор ${draftTotal - splitCap}` : ""}
             </p>
           </div>
         )}

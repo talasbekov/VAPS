@@ -2347,13 +2347,21 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
         total += need
         prepared.append((key, need))
 
-    quota = int(target.get("need") or 0)
+    # ПРЕДЕЛ — ОТ «ВЫДЕЛЯЕМ» (Plane №392, `[СБС-22]`: «разбивка по
+    # управлениям — от цифры „Выделяем“»). Пока департамент не ответил —
+    # запрос штаба, как и раньше: раскладывать больше, чем сам решил дать,
+    # нельзя; больше, чем просили, — тоже (ответ это разрешает, раскладка нет:
+    # она делит именно ответ).
+    answered = target.get("allocating")
+    quota = int(answered if answered is not None else (target.get("need") or 0))
     if total > quota:
         raise DomainError(
             "DIRECTORATE_QUOTA_OVERFLOW",
             422,
             message=(
-                f"Разложено {total} при квоте департамента {quota} — "
+                f"Разложено {total} при «Выделяем» {quota} — лишних {total - quota}."
+                if answered is not None
+                else f"Разложено {total} при квоте департамента {quota} — "
                 f"лишних {total - quota}."
             ),
             detail={"quota": str(quota), "split": str(total)},
@@ -2495,6 +2503,14 @@ def notify_directorates(event_id, allocation_id, *, actor):
         for item in event.force_allocation
     ]
     event.save(update_fields=["force_allocation", "updated_at"])
+    # Персональная рассылка начальникам управлений (Plane №392, `[СБС-22]`):
+    # с ролями и областями (№74) адресат есть — учётка с областью ровно на
+    # управление. Отчёт (кому не дошло) уходит в журнал: экран заявки
+    # получает мероприятие, а не отчёт, и терять имена управлений без
+    # начальника молча нельзя.
+    from organization_management.apps.ops.forces_notify import notify_directorate_heads
+
+    delivery = notify_directorate_heads(event, target, rows)
     audit_service.record(
         actor=actor,
         action=audit_service.FORCE_ALLOCATION_NOTIFIED,
@@ -2506,6 +2522,8 @@ def notify_directorates(event_id, allocation_id, *, actor):
             "departmentName": target["departmentName"],
             "need": target["need"],
             "directorates": [row["name"] for row in rows],
+            "notifiedHeads": delivery["notified"],
+            "headlessDirectorates": delivery["headlessDirectorates"],
         },
     )
     return event

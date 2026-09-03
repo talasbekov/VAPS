@@ -67,6 +67,7 @@ async function apiCall(token: string, method: string, path: string, body?: unkno
  */
 async function createDepartmentAllocationFixture(
   token: string,
+  options: { businessDate?: string } = {},
 ): Promise<{ eventId: string; allocationId: string; departmentId: string }> {
   const objects = (await apiCall(token, 'GET', '/api/ops/security-events/bindable-objects/')) as {
     results: { id: string; publishedVersionCount: number }[]
@@ -77,7 +78,7 @@ async function createDepartmentAllocationFixture(
   const created = (await apiCall(token, 'POST', '/api/ops/security-events/', {
     title: `Проба заявки департаменту (e2e) ${Date.now()}`,
     objectId: object.id,
-    businessDate: '2026-09-25',
+    businessDate: options.businessDate ?? '2026-09-25',
     kind: 'INTERNAL',
   })) as { id: string }
 
@@ -393,8 +394,10 @@ test.describe('заявки департаменту', () => {
         timeout: 15_000,
       })
 
-      // Оповестить управления — кнопки на этом экране не было вовсе.
-      await splitSection.getByRole('button', { name: 'Оповестить управления' }).click()
+      // «Отправить в управления» — кнопки на этом экране не было вовсе.
+      // Подпись — словами спецификации `[СБС-22]` (Plane №392); в №389 она
+      // звалась «Оповестить управления» — пин правлен осознанно.
+      await splitSection.getByRole('button', { name: 'Отправить в управления' }).click()
       await expect(splitSection.getByText('Запрошено', { exact: false }).first()).toBeVisible({
         timeout: 15_000,
       })
@@ -526,6 +529,162 @@ test.describe('заявки департаменту', () => {
       await answer.getByRole('button', { name: 'Сохранить ответ' }).click()
       await expect.poll(async () => (await rowOf()).status, { timeout: 15_000 }).not.toBe('DECLINED')
       await expect(answer.getByText('Запрос закрыт отказом', { exact: false })).toHaveCount(0)
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
+
+  test('«Отправить в управления» доставляет начальнику управления уведомление со ссылкой (Plane №392)', async ({
+    page,
+  }) => {
+    /**
+     * `[СБС-22]`: «Кнопка „Отправить в управления“ → уведомления начальникам
+     * со ссылкой». До правки оповещение ставило управлению только момент
+     * `notifiedAt` — персональной рассылки не было, начальник узнавал о
+     * запросе, только если ему сказали словами.
+     *
+     * Читает уведомление `acc_dir_head` (область — «Первое управление»
+     * Первого департамента). Фикстура раскладывает запрос ЕМУ и отправляет
+     * с экрана ответственного. Проверяется сервер (лента по API) и экран
+     * (колокольчик: текст с цифрой и переход по ссылке в «Статусы»).
+     *
+     * Дата ОМ — своя на прогон: ключ уведомления «одно на день».
+     */
+    const bossPassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+    test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
+
+    const token = await apiToken()
+    const day = new Date(Date.UTC(2027, 3, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
+    const businessDate = day.toISOString().slice(0, 10)
+    const fixture = await createDepartmentAllocationFixture(token, { businessDate })
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+
+      const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+      // Раскладка — Первому управлению (у него есть начальник на стенде).
+      const firstInput = splitSection.locator('tr', { hasText: 'Первое управление' }).locator('input')
+      await expect(firstInput).toBeVisible({ timeout: 20_000 })
+      await firstInput.fill('1')
+      await splitSection.getByRole('button', { name: 'Сохранить раскладку' }).click()
+      await expect(splitSection.getByText('Набрано 1 из', { exact: false })).toBeVisible({ timeout: 15_000 })
+      await splitSection.getByRole('button', { name: 'Отправить в управления' }).click()
+      await expect(splitSection.getByText('Запрошено', { exact: false }).first()).toBeVisible({ timeout: 15_000 })
+
+      // Сервер: у начальника управления — запрос об ЭТОЙ заявке.
+      const bossToken = (
+        (await (
+          await fetch(`${API}/api/token/`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ username: 'acc_dir_head', password: bossPassword }),
+          })
+        ).json()) as { access: string }
+      ).access
+      const feedOf = async () =>
+        (await (
+          await fetch(`${API}/api/operations/notifications/?unread=true`, {
+            headers: { Authorization: `Bearer ${bossToken}` },
+          })
+        ).json()) as { results: { id: number; kind: string; payload: { allocationId?: string; need?: number } }[] }
+      await expect
+        .poll(
+          async () =>
+            (await feedOf()).results.some(
+              (r) => r.kind === 'FORCES_REQUEST' && r.payload.allocationId === fixture.allocationId,
+            ),
+          { timeout: 15_000 },
+        )
+        .toBe(true)
+
+      // Экран начальника: колокольчик называет цифру и ведёт в «Статусы».
+      const ctx = await page.context().browser()!.newContext()
+      const boss = await ctx.newPage()
+      const csrf = (await (await ctx.request.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
+      await ctx.request.post(`${APP}/api/auth/callback/credentials/`, {
+        form: { csrfToken: csrf.csrfToken, username: 'acc_dir_head', password: bossPassword, json: 'true' },
+      })
+      await boss.goto(`${APP}/dashboard`)
+      await boss.getByRole('button', { name: 'Уведомления' }).click()
+      const item = boss.getByRole('menu').getByText(`Выделите 1 сотрудников на ${event.code}`, { exact: false })
+      await expect(item).toBeVisible({ timeout: 15_000 })
+      await item.click()
+      await expect(boss).toHaveURL(new RegExp(`/statuses/\\?forcesRequest=`), { timeout: 15_000 })
+
+      // Уборка ленты: своё уведомление отмечено прочитанным.
+      for (const row of (await feedOf()).results.filter((r) => r.payload.allocationId === fixture.allocationId)) {
+        await fetch(`${API}/api/operations/notifications/${row.id}/read/`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${bossToken}` },
+        })
+      }
+      await ctx.close()
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
+
+  test('ссылка запроса открывает «Статусы» с баннером «Запрос на ОМ-…: выделено X из Y» (Plane №394)', async ({
+    page,
+  }) => {
+    /**
+     * `[СБС-30]`: «Отдельной страницы нет — работает в „Статусы сотрудников“.
+     * Уведомление … открывает таблицу с фильтром своего управления и
+     * баннером „Запрос на ОМ-…: выделено 1 из 2“». До правки баннера не было
+     * (`grep` — 0), и ссылка приводила бы на обычную таблицу.
+     *
+     * Проба НЕ ждёт уведомления: баннер живёт по адресу
+     * `?forcesRequest=<allocationId>`, и его достаточно раскладки — так
+     * баннер проверяется отдельно от рассылки (№392), и обе пробы падают
+     * каждая на своём. Читает `acc_dir_head` (область — «Первое управление»);
+     * чужому управлению баннер отвечает словами «не найден».
+     */
+    const bossPassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+    test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
+
+    const token = await apiToken()
+    const fixture = await createDepartmentAllocationFixture(token)
+    try {
+      const divisions = (await apiCall(token, 'GET', '/api/core/divisions/?page_size=200')) as {
+        results: { id: number; name: string; parent: number | null }[]
+      }
+      const first = divisions.results.find(
+        (d) => d.name === 'Первое управление' && String(d.parent) === fixture.departmentId,
+      )!
+      const split = await apiCall(
+        token,
+        'POST',
+        `/api/ops/security-events/${fixture.eventId}/forces/allocation/${fixture.allocationId}/split/`,
+        { rows: [{ divisionId: String(first.id), need: 2 }] },
+      )
+      expect(split.error_code, 'раскладка не сохранилась').toBeUndefined()
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+
+      const api = page.context().request
+      const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
+      await api.post(`${APP}/api/auth/callback/credentials/`, {
+        form: { csrfToken: csrf.csrfToken, username: 'acc_dir_head', password: bossPassword, json: 'true' },
+      })
+      await page.goto(`${APP}/statuses/?forcesRequest=${encodeURIComponent(fixture.allocationId)}`)
+
+      const banner = page.getByRole('status', { name: `Запрос на ${event.code}` })
+      await expect(banner).toBeVisible({ timeout: 30_000 })
+      await expect(banner.getByText('выделено 0 из 2', { exact: false })).toBeVisible()
+      await expect(banner.getByText('Первое управление', { exact: false })).toBeVisible()
+
+      // Чужая/снятая заявка — словами, а не пустотой.
+      await page.goto(`${APP}/statuses/?forcesRequest=force-allocation-nope`)
+      await expect(page.getByText('Запрос на сбор сил по ссылке не найден', { exact: false })).toBeVisible({
+        timeout: 30_000,
+      })
     } finally {
       await dropEvent(token, fixture.eventId)
     }
