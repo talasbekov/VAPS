@@ -342,8 +342,15 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "approval_send": _MANAGE_EVENT_PERMISSION,
         "approval_withdraw": _MANAGE_EVENT_PERMISSION,
         "approval_remark_resolve": _MANAGE_EVENT_PERMISSION,
+        # Подтверждение ознакомления открыто и по РОЛИ В ДАННЫХ — тому, чьё
+        # это назначение, и старшему (Plane №403, `[ОЗН-09]`): см.
+        # `_my_assignments_override`. Код права остаётся у ведущего.
         "acknowledge": _MANAGE_EVENT_PERMISSION,
         "acknowledgement_complete": _MANAGE_EVENT_PERMISSION,
+        # «Мои назначения» (Plane №403): свои — любой вошедший с кадровой
+        # привязкой, подчинённого — по области `status.manage`; `event.view`
+        # открывает всех (штаб, админ).
+        "my_assignments": _READ_EVENT_PERMISSION,
         "journal": _MANAGE_EVENT_PERMISSION,
         "conduct_replace": _MANAGE_EVENT_PERMISSION,
         "close": _MANAGE_EVENT_PERMISSION,
@@ -1168,6 +1175,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
+        if self.action in ("my_assignments", "acknowledge"):
+            return self._my_assignments_override(request)
         if self.action in self._OBJECT_LEAD_ACTIONS:
             return self._object_lead_override(request)
         if self.action not in self._DEPUTY_ACTIONS:
@@ -1187,6 +1196,68 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = allowed
         self._deputy_employee = employee if allowed else None
         return allowed
+
+    def _my_assignments_override(self, request):
+        """Сотрудник — своя карточка, старший — своё, начальник — чтение
+        (Plane №403, `[ОЗН-09]`). Правила — в `ops.my_assignments`.
+
+        Чтение: без параметра `employee` — свои строки (нужна только кадровая
+        привязка; её отсутствие — не 403, а пустой ответ с причиной);
+        с параметром — чужие, по области `status.manage` актора.
+        Подтверждение: чьё назначение или старший мероприятия/объекта.
+        """
+        from organization_management.apps.operations.services import (
+            PermissionService,
+        )
+        from organization_management.apps.ops import my_assignments as mine
+
+        actor_id = resolve_actor_id(request)
+        if actor_id is None:
+            return False
+        employee = mine.employee_of_user(actor_id)
+        if self.action == "my_assignments":
+            target = (request.query_params.get("employee") or "").strip()
+            if not target:
+                return True
+            allowed = PermissionService.visible_division_ids(
+                actor_id, _STATUS_MANAGE_PERMISSION
+            )
+            return mine.may_read(target, employee, allowed)
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None:
+            return False
+        return mine.may_acknowledge(
+            event, self.kwargs.get("assignment_id"), employee
+        )
+
+    @action(detail=False, methods=["get"], url_path="my-assignments")
+    def my_assignments(self, request):
+        """GET /api/ops/security-events/my-assignments/[?employee=<id>] —
+        назначения сотрудника плоским списком (Plane №403).
+
+        Своя ручка, а не фильтр реестра: реестр гейтится `event.view`, то есть
+        правом на ЧУЖИЕ мероприятия, и сузить его параметром значило бы
+        оставить гейт на месте. Без привязки — 200 с причиной, как у
+        `duty-shifts/mine`.
+        """
+        from organization_management.apps.ops import my_assignments as mine
+
+        target = (request.query_params.get("employee") or "").strip()
+        if not target:
+            employee = mine.employee_of_user(resolve_actor_id(request))
+            if employee is None:
+                return Response(
+                    {"results": [], "employeeId": None,
+                     "unlinkedReason": mine.UNLINKED_REASON}
+                )
+            target = str(employee.pk)
+        return Response(
+            {
+                "results": mine.assignments_of(target),
+                "employeeId": target,
+                "unlinkedReason": None,
+            }
+        )
 
     def _object_lead_override(self, request):
         """Старший объекта посещения — или его замещающий — по данным объекта.

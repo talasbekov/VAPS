@@ -27,7 +27,8 @@ import {
   useEmployeeStatuses,
   useMyEmployee,
 } from "@/hooks/use-my-employee";
-import { useSecurityEvents } from "@/hooks/use-security-events";
+import { useMyAssignments } from "@/hooks/use-my-assignments";
+import type { MyAssignmentRow } from "@/hooks/use-my-assignments";
 import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
 import { useLegalDocuments } from "@/hooks/use-legal-documents";
 import {
@@ -42,7 +43,7 @@ import { EMPTY_FILTERS } from "@/entities/operational-rating";
 import { DUTY_STATE_LABEL } from "@/entities/duty-shift";
 import type { DutyShift } from "@/entities/duty-shift";
 import type { CoreEmployee, OpsEmployeeStatusRow } from "@/lib/api";
-import type { ReconSectorPost, SecurityEvent } from "@/entities/security-event";
+import type { SecurityEvent } from "@/entities/security-event";
 
 // «История» стоит ПОСЛЕ «Моей статистики» — так просил заказчик (Plane
 // «Реестр ОМ-40»). Порядок вкладок здесь и есть порядок на экране.
@@ -256,45 +257,19 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
   const [tab, setTab] = useState<ProfileTab>("events");
   const directories = useCoreDirectories();
   const statuses = useEmployeeStatuses(employee.id);
-  // Реестр целиком: назначения лежат ВНУТРИ мероприятий, и своего адреса
-  // «назначения сотрудника» у бэка нет. Столько же грузит командный центр.
-  const events = useSecurityEvents({
-    search: "",
-    stage: "ALL",
-    page: 1,
-    from: "",
-    to: "",
-    owner: "",
-    pageSize: 100,
-  });
+  // СВОИ назначения своей ручкой, а не реестр целиком (Plane №403): реестр
+  // открыт держателю `event.view`, и рядовому сотруднику вкладка отвечала
+  // «реестр недоступен» — назначения не показывались никогда.
+  const events = useMyAssignments();
   // СВОИ смены, а не реестр целиком: реестр открыт только держателю
   // `duty.view`, и рядовому сотруднику он отвечал 403 — смены в календаре не
   // показывались никогда, а ошибка гасилась молча (Plane №381).
   const shifts = useMyDutyShifts();
 
-  const myAssignments = useMemo(() => {
-    const rows = events.data?.results ?? [];
-    const mine: MyAssignment[] = [];
-    for (const event of rows) {
-      for (const assignment of event.placementAssignments) {
-        // Сравнение по ИДЕНТИФИКАТОРУ: подписи совпадают у однофамильцев.
-        if (String(assignment.employeeId) !== String(employee.id)) continue;
-        const post = event.reconSectorPosts.find(
-          (item) => item.id === assignment.postId
-        );
-        mine.push({
-          event,
-          post: post ?? null,
-          postLabel:
-            post === undefined
-              ? "пост не найден в расчёте"
-              : `${post.sector} · ${post.post}`,
-          acknowledgedAt: assignment.acknowledgedAt,
-        });
-      }
-    }
-    return mine;
-  }, [events.data, employee.id]);
+  const myAssignments = useMemo(
+    () => (events.data?.results ?? []).map(toMyAssignment),
+    [events.data]
+  );
 
   // Почему смен не видно, если их не видно. Молчаливый ноль читается как
   // «дежурств нет», а это разные вещи.
@@ -534,14 +509,67 @@ function ServiceGauges() {
 /* Вкладка «Охранные мероприятия»                                      */
 /* ------------------------------------------------------------------ */
 
+type MyAssignmentEvent = Pick<
+  SecurityEvent,
+  | "id"
+  | "code"
+  | "title"
+  | "stage"
+  | "businessDate"
+  | "businessDateEnd"
+  | "objectName"
+>;
+
+interface MyAssignmentPost {
+  sector: string;
+  post: string;
+  task: string;
+  requirements: string;
+  uniform?: string;
+  weapon?: string;
+}
+
 interface MyAssignment {
-  event: SecurityEvent;
+  id: string;
+  event: MyAssignmentEvent;
   /** Строка расчёта, к которой привязано назначение; null — расчёт её потерял.
    * Задача поста и есть «краткая инструкция» прототипа: своего документа-
    * инструкции в модели нет, а эта строка — то, что человеку велено делать. */
-  post: ReconSectorPost | null;
+  post: MyAssignmentPost | null;
   postLabel: string;
   acknowledgedAt: string | null;
+}
+
+/** Плоская строка сервера → форма, которую читают вкладки. Мероприятие
+ * здесь — срез полей, а не карточка ОМ: сотруднику без `event.view` карточка
+ * и не положена. */
+function toMyAssignment(row: MyAssignmentRow): MyAssignment {
+  return {
+    id: row.assignmentId,
+    event: {
+      id: row.eventId,
+      code: row.eventCode,
+      title: row.eventTitle,
+      stage: row.eventStage,
+      businessDate: row.businessDate,
+      businessDateEnd: row.businessDateEnd,
+      objectName: row.objectName,
+    },
+    post: row.postFound
+      ? {
+          sector: row.sector,
+          post: row.post,
+          task: row.task,
+          requirements: row.requirements,
+          uniform: row.uniform,
+          weapon: row.weapon,
+        }
+      : null,
+    postLabel: row.postFound
+      ? `${row.sector} · ${row.post}`
+      : "пост не найден в расчёте",
+    acknowledgedAt: row.acknowledgedAt,
+  };
 }
 
 function EventsTab({
@@ -560,7 +588,7 @@ function EventsTab({
     return (
       <Card>
         <CardContent className="p-5 text-sm text-muted-foreground">
-          Реестр мероприятий сейчас недоступен — назначения не показаны.
+          Назначения сейчас недоступны — запрос к серверу не прошёл.
         </CardContent>
       </Card>
     );
