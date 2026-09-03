@@ -934,3 +934,131 @@ def test_the_staff_resaving_the_split_keeps_the_department_answer(manager):  # n
     row = _allocation(resaved)
     assert row["allocating"] == 2
     assert row["answerComment"] == "Ответ"
+
+
+# ── «Отправить в управления» → уведомления, предел от «Выделяем» (Plane №392) ─
+
+
+def test_notifying_directorates_sends_the_request_to_their_heads(manager, django_user_model):  # noqa: F811
+    """`notify_directorates` — не только `notifiedAt`: начальник управления
+    получает `FORCES_REQUEST` с цифрой раскладки и заявкой.
+
+    Красная на мутации: убери вызов `notify_directorate_heads` из
+    `notify_directorates` — строки не будет.
+    """
+    from organization_management.apps.operations.models import Role, UserRole
+    from organization_management.apps.operations.models_notification import OpsNotification
+
+    own = make_department("Департамент А")
+    directorate = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-notify-heads", "DEPT_LEAD_N1", own.pk)
+    head = django_user_model.objects.create_user(username="dir-head-n1", password="x")
+    UserRole.objects.create(
+        user_id=str(head.pk),
+        role_code=Role.objects.create(code="DIR_HEAD_N1", name="Начальник"),
+        scope_division_id=directorate.pk,
+    )
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": 2}]},
+        format="json",
+    )
+
+    resp = dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    assert resp.status_code == 200, resp.data
+    row = OpsNotification.objects.get(recipient=str(head.pk), kind="FORCES_REQUEST")
+    assert row.payload["allocationId"] == allocation_id
+    assert row.payload["need"] == 2
+
+
+def test_the_split_is_capped_by_the_department_answer_not_the_staff_request(manager):  # noqa: F811
+    """Разбивка по управлениям — от «Выделяем»: ответил «2» при запросе «3» —
+    разложить 3 нельзя, 2 можно."""
+    own = make_department("Департамент А")
+    directorate = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-split-cap", "DEPT_LEAD_N2", own.pk)
+    total = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1]).force_allocation[0]["need"]
+    assert total >= 2, "фикстуре нужен запрос хотя бы на двоих"
+    _respond(dept_lead, base, allocation_id, total - 1)
+
+    over = manager.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": total}]},
+        format="json",
+    )
+    fits = manager.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": total - 1}]},
+        format="json",
+    )
+
+    assert over.status_code == 422
+    assert over.json()["error_code"] == "DIRECTORATE_QUOTA_OVERFLOW"
+    assert "Выделяем" in over.json()["message"]
+    assert fits.status_code == 200, fits.data
+
+
+# ── Запрос сил глазами управления (Plane №394, `[СБС-30]`) ───────────────────
+
+
+def _split_first(manager, base, allocation_id, directorate, need=2):  # noqa: F811
+    return manager.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": need}]},
+        format="json",
+    )
+
+
+def _status_head(username, role_code, division):
+    """Начальник управления ГЛАЗАМИ СТАТУСОВ: `status.manage` с областью на
+    управление — ровно то, что есть у профилей заказчика (`forces.*` у них нет
+    намеренно, и гейт баннера на `forces.select` отвечал бы им 403 — так и
+    было на живом стенде)."""
+    api, _ = client_for(
+        username, role_code, perms=("status.view", "status.manage"), scope_division_id=division.pk
+    )
+    return api
+
+
+def test_the_directorate_head_reads_his_own_row_of_the_request(manager):  # noqa: F811
+    """Начальник управления (`status.manage` с областью на управление) видит
+    СВОЮ строку заявки: цифру раскладки и сколько уже проставлено."""
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    make_directorate(own, "Управление А-2")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    head = _status_head("dir-head-reads", "DIR_HEAD_RQ1", first)
+
+    resp = head.get(f"{URL}forces/requests/{allocation_id}/directorate/")
+
+    assert resp.status_code == 200, resp.data
+    body = resp.json()
+    assert body["allocationId"] == allocation_id
+    assert [row["name"] for row in body["directorates"]] == ["Управление А-1"]
+    assert body["directorates"][0]["need"] == 2
+    assert body["directorates"][0]["assigned"] == 0
+
+
+def test_a_request_of_a_foreign_directorate_is_not_found(manager):  # noqa: F811
+    """Чужая заявка — 404, не 403: существование чужой строки не
+    подтверждается перебором идентификаторов."""
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    foreign_dep = make_department("Департамент Б")
+    foreign_dir = make_directorate(foreign_dep, "Управление Б-1")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    stranger = _status_head("dir-head-foreign", "DIR_HEAD_RQ2", foreign_dir)
+
+    assert stranger.get(f"{URL}forces/requests/{allocation_id}/directorate/").status_code == 404
+
+
+def test_the_directorate_request_is_closed_without_status_manage():
+    """`forces.select` БЕЗ `status.manage` — не пропуск: баннер про статусы."""
+    api, _ = client_for("dir-head-noperm", "DIR_HEAD_RQ3", perms=("event.view", "forces.select"))
+
+    assert api.get(f"{URL}forces/requests/whatever/directorate/").status_code == 403
