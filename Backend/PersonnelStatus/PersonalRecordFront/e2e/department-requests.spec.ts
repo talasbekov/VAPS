@@ -46,6 +46,82 @@ async function signIn(page: Page): Promise<void> {
   })
 }
 
+async function apiCall(token: string, method: string, path: string, body?: unknown): Promise<any> {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  return res.json().catch(() => ({}))
+}
+
+/**
+ * Заводит ОМ на «Расстановке» с ОДНИМ департаментом в раскладке — фикстура
+ * для пробы №389 (СБС-21/22/23). Возвращает `eventId` и `allocationId`.
+ *
+ * 🔴 ОБХОДНОЙ ПУТЬ, НЕ ФИКС (найдено при ручной проверке №389, заводится
+ * отдельной карточкой). `PATCH .../recon/` без ключа `sectorPosts` СТИРАЕТ
+ * посты: `request.data.get("sectorPosts")` на сервере не отличает
+ * «ключа нет» от `null`, хотя докстринг `update_recon` обещает обратное.
+ * Обходится передачей ТЕКУЩИХ постов явно при отметке чек-листа.
+ */
+async function createDepartmentAllocationFixture(
+  token: string,
+): Promise<{ eventId: string; allocationId: string; departmentId: string }> {
+  const objects = (await apiCall(token, 'GET', '/api/ops/security-events/bindable-objects/')) as {
+    results: { id: string; publishedVersionCount: number }[]
+  }
+  const object = objects.results.find((item) => item.publishedVersionCount > 0)
+  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+
+  const created = (await apiCall(token, 'POST', '/api/ops/security-events/', {
+    title: `Проба заявки департаменту (e2e) ${Date.now()}`,
+    objectId: object.id,
+    businessDate: '2026-09-25',
+    kind: 'INTERNAL',
+  })) as { id: string }
+
+  await apiCall(token, 'POST', `/api/ops/security-events/${created.id}/recon/import-from-passport/`)
+  const withRecon = await apiCall(token, 'GET', `/api/ops/security-events/${created.id}/`)
+  await apiCall(token, 'PATCH', `/api/ops/security-events/${created.id}/recon/`, {
+    checklist: (withRecon.reconChecklist as { done: boolean }[]).map((item) => ({
+      ...item,
+      done: true,
+    })),
+    sectorPosts: withRecon.reconSectorPosts,
+  })
+  await apiCall(token, 'POST', `/api/ops/security-events/${created.id}/recon/complete/`)
+
+  const departments = (await apiCall(token, 'GET', '/api/core/divisions/?page_size=200')) as {
+    results: { id: number; name: string; type_code: string }[]
+  }
+  // «Первый департамент» — гарантированно укомплектован (используется другими
+  // фикстурами стенда), в отличие от первого попавшегося: у того управления
+  // могут стоять без единого сотрудника, и выделить будет некого.
+  const department =
+    departments.results.find((d) => d.name === 'Первый департамент') ??
+    departments.results.find((d) => d.type_code === 'department')
+  if (department === undefined) throw new Error('на стенде нет ни одного департамента')
+
+  const withDemand = await apiCall(token, 'GET', `/api/ops/security-events/${created.id}/`)
+  const need: number = withDemand.forceNeed
+  const afterSplit = await apiCall(
+    token,
+    'POST',
+    `/api/ops/security-events/${created.id}/forces/allocation/`,
+    { rows: [{ departmentId: String(department.id), need }] },
+  )
+  const allocation = (afterSplit.forceAllocation as { id: string; departmentId: string }[])[0]
+  return { eventId: created.id, allocationId: allocation.id, departmentId: allocation.departmentId }
+}
+
+async function dropEvent(token: string, eventId: string): Promise<void> {
+  await fetch(`${API}/api/ops/security-events/${eventId}/`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
 test.describe('заявки департаменту', () => {
   test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
 
@@ -255,5 +331,130 @@ test.describe('заявки департаменту', () => {
       section.getByText(`перебор ${over!.assigned - over!.need}`, { exact: false }),
       'перебор не назван числом — полная полоса читается как «всё в порядке»',
     ).toBeVisible()
+  })
+
+  test('раскладка, оповещение и отправка штабу — целиком через ЭТОТ экран (Plane №389)', async ({
+    page,
+  }) => {
+    /**
+     * `[СБС-21]`/`[СБС-22]`/`[СБС-23]`. До этой правки на СВЕЖЕЙ заявке
+     * (`directorates: []`) таблица не рендерила ни строки, ни поля ввода —
+     * «Сохранить раскладку» показывалась ровно по тому же условию, что и
+     * сама таблица, и оба были пусты одновременно. Кнопок «Оповестить
+     * управления» и «Отправить список в штаб» на этом экране не было
+     * вовсе — обе жили только на панели МЕРОПРИЯТИЯ у штаба
+     * (`ForcesSplitPanel`), куда у ответственного за департамент нет
+     * доступа (`event.view` не выдаётся этой роли намеренно).
+     *
+     * Проба ведёт ОДНУ заявку от пустого состояния до отправки, не выходя
+     * с этого экрана. Работает под `admin` (как и соседние пробы файла) —
+     * предмет пробы: что позволяет РУЧКА и что рисует ЭКРАН, а не то, кому
+     * какая роль выдана на стенде.
+     */
+    const token = await apiToken()
+    const fixture = await createDepartmentAllocationFixture(token)
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+
+      // Заявок на стенде много — открываем СВОЮ по коду мероприятия, а не
+      // первую попавшуюся.
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+
+      // 🔴 ОБЛАСТЬ ВИДИМОСТИ — СВОЯ СЕКЦИЯ КАРТОЧКИ, А НЕ СТРАНИЦА ЦЕЛИКОМ.
+      // Соседняя вкладка «Сборы» (штабной `ForceCollectionCard`) несёт
+      // ТЕКСТУАЛЬНО ТЕ ЖЕ подписи («Отправить список в штаб», «Оповестить…»)
+      // в своей собственной, другой цепочке — Radix Tabs держит содержимое
+      // неактивной вкладки в DOM (не удаляет), и `.first()` без адреса
+      // секции ловит ЧУЖУЮ кнопку молча (страница не падает, просто щёлкает
+      // не туда). `split-heading`/`members-heading` — id, которые несёт
+      // именно `DepartmentRequestCard`.
+      const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+      const membersSection = page.locator('section[aria-labelledby="members-heading"]')
+      const quotaInputs = splitSection.locator('input[id^="quota-"]')
+      await expect(quotaInputs.first()).toBeVisible({ timeout: 20_000 })
+      expect(
+        await quotaInputs.count(),
+        'таблица управлений пуста на свежей заявке — раскладывать некуда',
+      ).toBeGreaterThan(0)
+
+      const eventForNeed = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      const need: number = eventForNeed.forceNeed
+      await quotaInputs.first().fill(String(need))
+      await splitSection.getByRole('button', { name: 'Сохранить раскладку' }).click()
+      await expect(splitSection.getByText(`Набрано ${need} из ${need}`, { exact: false })).toBeVisible({
+        timeout: 15_000,
+      })
+
+      // Оповестить управления — кнопки на этом экране не было вовсе.
+      await splitSection.getByRole('button', { name: 'Оповестить управления' }).click()
+      await expect(splitSection.getByText('Запрошено', { exact: false }).first()).toBeVisible({
+        timeout: 15_000,
+      })
+      await expect(
+        membersSection.getByRole('button', { name: 'Отправить список в штаб' }),
+        'кнопка отправки не появилась после оповещения',
+      ).toBeVisible()
+
+      // Отправка без единого выделенного отклоняется СЕРВЕРОМ, и отказ
+      // виден В ДИАЛОГЕ, а не молча.
+      await membersSection.getByRole('button', { name: 'Отправить список в штаб' }).click()
+      await expect(page.getByRole('dialog')).toBeVisible()
+      await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click()
+      await expect(
+        page.getByText('Никто не выделен — отправлять нечего.', { exact: false }).first(),
+      ).toBeVisible({ timeout: 15_000 })
+      await page.getByRole('dialog').getByRole('button', { name: 'Отмена' }).click()
+
+      // Выделяем человека МИМО экрана (это работа начальника управления,
+      // не этой карточки) и отправляем список успешно.
+      const roster = (await apiCall(
+        token,
+        'GET',
+        `/api/core/divisions/?page_size=200`,
+      )) as { results: { id: number; parent: number | null; type_code: string }[] }
+      const directorate = roster.results.find(
+        (d) => d.type_code === 'directorate' && String(d.parent) === fixture.departmentId,
+      )!
+      const employees = (await apiCall(
+        token,
+        'GET',
+        `/api/ops/daily/employees/?division_id=${directorate.id}&page_size=1`,
+      )) as { results: { id: string }[] }
+      await apiCall(
+        token,
+        'POST',
+        `/api/ops/security-events/${fixture.eventId}/forces/allocation/${fixture.allocationId}/members/`,
+        { employeeId: employees.results[0].id },
+      )
+      // Перезаход на список и повторное открытие: `reload()` сбрасывает
+      // локальное состояние `opened` карточки в `DepartmentRequestsTable`
+      // (адреса у карточки нет — она открывается кликом, а не маршрутом).
+      await page.reload()
+      await tab.click()
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+      // «Выделено» — колонка ТАБЛИЦЫ управлений (splitSection), а не блока
+      // выделенных сотрудников: там строка называет ЧЕЛОВЕКА, а число «сколько
+      // из скольких» — свойство управления.
+      await expect(splitSection.getByText(`1 из ${need}`, { exact: false }).first()).toBeVisible({
+        timeout: 15_000,
+      })
+      await membersSection.getByRole('button', { name: 'Отправить список в штаб' }).click()
+      await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click()
+      await expect(
+        membersSection.getByText('Отправлено — ждём решения штаба.', { exact: false }),
+      ).toBeVisible({ timeout: 15_000 })
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
   })
 })
