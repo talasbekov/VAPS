@@ -406,10 +406,23 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         .poll(async () => (await assignmentsOf()).length, { timeout: 15_000 })
         .toBe(before.size + 1)
 
-      await page
-        .getByRole('combobox', { name: /^Секция бланка: / })
-        .first()
-        .selectOption(section!.code)
+      // 🔴 СТРОКА ИЩЕТСЯ ПО id НАЗНАЧЕНИЯ, А НЕ `.first()` (Plane №415).
+      // Пост без предела численности несёт десятки строк, среди них —
+      // одноимённые сотрудники: `getByRole('combobox', {name: /^Секция
+      // бланка: /})` без адреса строки ловит ЛЮБУЮ из них, и на живых данных
+      // это почти никогда не новая строка. Якорь — `data-testid`
+      // (`placement-assignment-<id>`), а не имя: оно не единственно.
+      //
+      // 🔴 И СЕКЦИЯ, И РОЛЬ МЕНЯЮТСЯ СНЯТИЕМ И НАЗНАЧЕНИЕМ ЗАНОВО (своей
+      // операции «сменить» у бэка нет, см. `PlacementStage`) — id строки
+      // меняется ПОСЛЕ КАЖДОГО клика. Locator на старый id после смены
+      // указывал бы на узел, которого уже нет в DOM: строка ищется заново
+      // перед каждым действием, а не запоминается один раз.
+      const rowOf = (id: string) => page.getByTestId(`placement-assignment-${id}`)
+      const mine = mineOf(await assignmentsOf())
+      if (mine === null) throw new Error('назначение не появилось — искать строку негде')
+
+      await rowOf(mine.id).getByRole('combobox', { name: /^Секция бланка: / }).selectOption(section!.code)
 
       await expect
         .poll(async () => mineOf(await assignmentsOf())?.sectionCode ?? null, {
@@ -417,11 +430,11 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         })
         .toBe(section!.code)
 
-      // Смена РОЛИ не должна снести секцию.
-      await page
-        .getByRole('combobox', { name: /^Роль наряда: / })
-        .first()
-        .selectOption(role!.code)
+      // Смена РОЛИ не должна снести секцию. Строка перечитывается заново —
+      // назначение сектора её уже пересоздало.
+      const afterSection = mineOf(await assignmentsOf())
+      if (afterSection === null) throw new Error('строка пропала после смены секции')
+      await rowOf(afterSection.id).getByRole('combobox', { name: /^Роль наряда: / }).selectOption(role!.code)
 
       await expect
         .poll(async () => mineOf(await assignmentsOf())?.roleCode ?? null, { timeout: 20_000 })
@@ -485,6 +498,8 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     }
 
     const before = new Set((await assignmentsOf()).map((row) => row.id))
+    const mineOf = (rows: { id: string; roleCode: string | null }[]) =>
+      rows.filter((row) => !before.has(row.id)).at(-1) ?? null
 
     try {
       await signIn(page)
@@ -496,25 +511,48 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         .poll(async () => (await assignmentsOf()).length, { timeout: 15_000 })
         .toBe(before.size + 1)
 
+      // 🔴 СТРОКА ИЩЕТСЯ ПО id, А НЕ `.first()` (Plane №415, тот же разбор,
+      // что и у соседней пробы «секция бланка…»): пост без предела
+      // численности несёт десятки строк, среди них — одноимённые сотрудники,
+      // и `.first()` по имени роли попадает в произвольную ЧУЖУЮ строку.
+      const created = mineOf(await assignmentsOf())
+      if (created === null) throw new Error('назначение не появилось — искать строку негде')
+
       // Роль ставится ИЗ СТРОКИ, как это делает человек.
       await page
+        .getByTestId(`placement-assignment-${created.id}`)
         .getByRole('combobox', { name: /^Роль наряда: / })
-        .first()
         .selectOption(role!.code)
 
+      // 🔴 СМЕНА РОЛИ ПЕРЕСОЗДАЁТ НАЗНАЧЕНИЕ (снятие + назначение заново —
+      // своей операции «сменить роль» у бэка нет, см. `PlacementStage`), а
+      // значит id строки меняется вместе с ней. Строка после клика ищется
+      // ЗАНОВО по САМОМУ СВЕЖЕМУ id вне `before`, а не по старому `created.id`
+      // — иначе ассерт спрашивал бы у DOM узел, которого уже нет.
+      let assignedId: string | null = null
       await expect
         .poll(
           async () => {
-            const rows = await assignmentsOf()
-            const mine = rows.filter((row) => !before.has(row.id))
-            return mine.at(-1)?.roleCode ?? null
+            const mine = mineOf(await assignmentsOf())
+            assignedId = mine?.id ?? null
+            return mine?.roleCode ?? null
           },
           { timeout: 20_000 },
         )
         .toBe(role!.code)
 
-      // Подпись роли видна в самой строке, а не только в выпадающем списке.
-      await expect(page.getByText(role!.label, { exact: true }).first()).toBeVisible()
+      // Подпись роли видна в СВОЕЙ строке, а не только в выпадающем списке —
+      // и не в чужой строке с тем же текстом где-то ещё на экране. `.first()`
+      // здесь безопасен (в отличие от `.first()` по всей странице до
+      // правки): выбор уже сужен до ОДНОЙ строки, и внутри нее совпадений
+      // ровно два — бейдж роли и спрятанный `<option>` того же текста в
+      // `<select>` — бейдж в разметке строки идёт ПЕРВЫМ. Таймаут больше
+      // стандартного: строка на экране обновляется инвалидацией react-query
+      // ПОСЛЕ того, как сервер уже ответил (что мы и дождались выше
+      // поллингом по API) — эти два момента не совпадают.
+      await expect(
+        page.getByTestId(`placement-assignment-${assignedId}`).getByText(role!.label, { exact: true }).first(),
+      ).toBeVisible({ timeout: 15_000 })
     } finally {
       for (const row of await assignmentsOf()) {
         if (before.has(row.id)) continue

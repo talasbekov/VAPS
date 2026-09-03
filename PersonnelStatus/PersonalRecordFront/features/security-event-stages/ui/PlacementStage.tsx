@@ -781,6 +781,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   {assignmentsOf(selected.id).map((assignment) => (
                     <li
                       key={assignment.id}
+                      // Строка строго ОДНОГО назначения (Plane №415): пост без
+                      // предела численности может нести десятки одноимённых
+                      // сотрудников (тот же дефект, что и в №414), и
+                      // `aria-label` вида «Роль наряда: Иванов И.» на такой
+                      // странице не единственен. Пробам нужен якорь, который
+                      // не путает строки, — id назначения, а не имя.
+                      data-testid={`placement-assignment-${assignment.id}`}
                       className="flex flex-wrap items-start gap-2 rounded-md border p-2 text-sm"
                     >
                       <Initials
