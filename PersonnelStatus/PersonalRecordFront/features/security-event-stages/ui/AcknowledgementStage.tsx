@@ -1,122 +1,168 @@
 "use client";
 
-import { Check } from "lucide-react";
-import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
-
-// Этап 7 «Ознакомление»: каждый назначенный подтверждает прочтение; этап
-// завершается только когда подтвердили все (правило бэка, не экрана).
+// Этап 7 «Ознакомление» — экран старшего объекта по спецификации
+// `[ОЗН-02]`…`[ОЗН-04]`, `[ОЗН-08]` (Plane №432, Ш-16 плана P2):
 //
-// Компоновка — «экран старшего объекта» из прототипа Smart Josparlau: полоса
-// готовности, счётчик и список с состоянием по каждому. Добавлен фильтр
-// «Ожидают»: на большом ОМ список назначений — сотни строк, и найти в нём
-// оставшихся глазами нельзя, а именно они держат этап.
+//  • шапка — «Ознакомились K из N · не подтвердили N · отказов N» и полоса
+//    из трёх цветов (зелёный — подтвердил, красный — отказ, серый — ждёт);
+//  • список НАЗНАЧЕННЫХ ПО СЕКТОРАМ И ПОСТАМ — так читает расстановку
+//    старший, а плоский список на сотне строк не читается никем;
+//  • у каждого — «Напомнить» (адресное уведомление ему и руководителям),
+//    отказ красным с причиной и «Заменить →» тут же, на этапе 4 (замена
+//    больше не ждёт «Проведения»);
+//  • «Напомнить всем, кто не подтвердил» вместо кнопки «Отправить
+//    уведомления» — рассылка при открытии этапа уходит сама (№402);
+//  • «Завершить ознакомление» — активна, когда подтвердили все; иначе
+//    подтверждение «K сотрудников не подтвердили. Завершить?» с
+//    обязательным комментарием, который ложится в журнал мутаций.
 //
-// Экран двухколоночный, как в прототипе: слева «Экран сотрудника» — своё
-// назначение и подтверждение от первого лица, справа «Экран старшего
-// объекта» — готовность по всем назначенным.
-//
-// Своё назначение опознаётся по ЖИВОЙ связи учётки с кадровой записью
-// (`/api/ops/personnel/me/` → Employee.user). Сопоставление по ФИО отвергнуто:
-// тёзка увидел бы чужое назначение как своё. Привязки может не быть — тогда
-// колонка честно говорит, что учётка не привязана, а не молчит.
-//
-// Статуса «Недоступен» из прототипа нет: доступности сотрудника на дату в
-// назначении не хранится.
-//
-// РАССЫЛКА УВЕДОМЛЕНИЙ появилась 28.08.2026 (Plane №243) — до этого её не
-// было вовсе, и здесь стояла запись «ручки повторного уведомления не
-// существует». Теперь кнопка есть, и уходит уведомление И назначенным, И
-// тем, кто отвечает за их подразделения: сценарий заказчика требует обоих.
-// Кнопка не одноразовая — повтор законен (человек мог не увидеть), а модель
-// уведомлений сама держит «одно на день» и дубликата не создаст.
-import { useState } from "react";
+// Панели «Экран сотрудника» на странице этапа больше нет (`[ОЗН-08]`):
+// сотрудник отвечает со своей карточки в профиле (№405), а здесь — экран
+// старшего. Отметка «Отметить ознакомление» за сотрудника осталась —
+// «доведено лично» (`[ОЗН-05]`) старший подтверждает сам.
+import { useMemo, useState } from "react";
+import { Bell, Check, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
   useAcknowledgePlacement,
   useCompleteAcknowledgement,
-  useNotifyAcknowledgement,
-  usePersonnelMe,
+  useRemindAllPending,
+  useRemindAssignment,
+  useReplaceAssignment,
 } from "@/hooks/use-security-event-stages";
-import { objectLabel } from "@/entities/security-event";
-import type { SecurityEvent } from "@/entities/security-event";
+import { PersonnelPicker } from "@/features/personnel-picker";
+import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
+import type { PlacementAssignment, SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
-import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 type Scope = "all" | "pending";
 
-export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
-  const acknowledge = useAcknowledgePlacement(event.id);
-  const complete = useCompleteAcknowledgement(event.id);
-  const notify = useNotifyAcknowledgement(event.id);
-  const access = useChainAccess();
-  const [scope, setScope] = useState<Scope>("all");
+type RowState = "confirmed" | "declined" | "pending";
 
-  const me = usePersonnelMe();
+function stateOf(a: PlacementAssignment): RowState {
+  if (a.acknowledgedAt !== null) return "confirmed";
+  if ((a.declinedAt ?? null) !== null) return "declined";
+  return "pending";
+}
+
+export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
+  const access = useChainAccess();
+  const acknowledge = useAcknowledgePlacement(event.id);
+  const remindOne = useRemindAssignment(event.id);
+  const remindAll = useRemindAllPending(event.id);
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [completeComment, setCompleteComment] = useState("");
+  const complete = useCompleteAcknowledgement(event.id);
+  const [scope, setScope] = useState<Scope>("all");
+  const [replacing, setReplacing] = useState<PlacementAssignment | null>(null);
+
   const assignments = event.placementAssignments;
-  const acknowledgedCount = assignments.filter(
-    (a) => a.acknowledgedAt !== null
-  ).length;
-  const pending = assignments.filter((a) => a.acknowledgedAt === null);
-  const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
-  const visible = scope === "pending" ? pending : assignments;
-  const percent =
-    assignments.length === 0
-      ? 0
-      : Math.round((acknowledgedCount / assignments.length) * 100);
+  const confirmed = assignments.filter((a) => stateOf(a) === "confirmed");
+  const declined = assignments.filter((a) => stateOf(a) === "declined");
+  const pending = assignments.filter((a) => stateOf(a) === "pending");
+  const total = assignments.length;
+  const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 100));
+
+  // Группировка по секторам и постам — в порядке расчёта постов.
+  const groups = useMemo(() => {
+    const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
+    const rows = scope === "pending" ? pending : assignments;
+    const bySector = new Map<string, Map<string, { post: string; rows: PlacementAssignment[] }>>();
+    for (const a of rows) {
+      const post = postById.get(a.postId);
+      const sector = post?.sector ?? "Пост вне расчёта";
+      const label = post?.post ?? a.postId;
+      const posts = bySector.get(sector) ?? new Map();
+      const bucket = posts.get(a.postId) ?? { post: label, rows: [] };
+      bucket.rows.push(a);
+      posts.set(a.postId, bucket);
+      bySector.set(sector, posts);
+    }
+    return [...bySector.entries()].map(([sector, posts]) => ({
+      sector,
+      posts: [...posts.values()],
+    }));
+  }, [assignments, event.reconSectorPosts, pending, scope]);
+
+  const canManage = access.can(EVENT_MANAGE);
+  const allConfirmed = total > 0 && confirmed.length === total;
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>
-          Ознакомление ({acknowledgedCount}/{assignments.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-md border p-3">
-          <p className="text-xs font-semibold text-muted-foreground">
-            Экран сотрудника
-          </p>
-          <MyAssignment
-            event={event}
-            meId={me.data?.id ?? null}
-            meFailed={me.isError}
-            loading={me.isLoading}
-            onAcknowledge={(assignmentId) => acknowledge.mutate({ assignmentId })}
-            pending={acknowledge.isPending}
-          />
-        </section>
-
-        <section className="space-y-4">
-        <p className="text-xs font-semibold text-muted-foreground">
-          Экран старшего объекта
-        </p>
-        <div>
-          <div
-            className="h-2 w-full overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-valuenow={percent}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Готовность ознакомления"
-          >
-            <div
-              className={percent === 100 ? "h-full bg-green-500" : "h-full bg-amber-500"}
-              style={{ width: `${percent}%` }}
-            />
+      <CardHeader className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Ознакомление</CardTitle>
+            {/* Шапка одной строкой (`[ОЗН-02]`) — без дублирующего «(K/N)». */}
+            <p className="mt-1 text-sm text-muted-foreground" data-testid="ack-summary">
+              Ознакомились <b className="text-foreground">{confirmed.length} из {total}</b>
+              {" · "}не подтвердили {pending.length}
+              {" · "}отказов {declined.length}
+            </p>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {pending.length === 0
-              ? "Подтвердили все назначенные."
-              : `Ожидают подтверждения: ${pending.length}. Пока подтвердили не все, этап не завершится.`}
-          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={remindAll.isPending || pending.length === 0 || !canManage}
+              title={
+                !canManage
+                  ? access.reason(EVENT_MANAGE) || undefined
+                  : pending.length === 0
+                    ? "Все подтвердили — напоминать некому"
+                    : "Напомнить каждому, кто ещё не подтвердил, и их руководителям"
+              }
+              onClick={() => remindAll.mutate({})}
+            >
+              <Bell className="mr-1.5 h-4 w-4" aria-hidden="true" />
+              {remindAll.isPending ? "Отправка…" : `Напомнить всем, кто не подтвердил (${pending.length})`}
+            </Button>
+            <Button
+              type="button"
+              disabled={complete.isPending || !canManage || total === 0}
+              title={access.reason(EVENT_MANAGE) || undefined}
+              onClick={() =>
+                allConfirmed ? complete.mutate({}) : setCompleteOpen(true)
+              }
+            >
+              {complete.isPending ? "Завершение…" : "Завершить ознакомление"}
+            </Button>
+          </div>
         </div>
 
+        {/* Полоса трёх цветов: подтвердил / отказ / ждёт (`[ОЗН-02]`). */}
+        <div
+          className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-valuenow={pct(confirmed.length)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Готовность ознакомления"
+        >
+          <div className="h-full bg-green-500" style={{ width: `${pct(confirmed.length)}%` }} />
+          <div className="h-full bg-red-500" style={{ width: `${pct(declined.length)}%` }} />
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
         {pending.length > 0 && (
           <div className="inline-flex gap-1 rounded-md bg-muted p-1">
             {(
               [
-                ["all", `Все (${assignments.length})`],
+                ["all", `Все (${total})`],
                 ["pending", `Ожидают (${pending.length})`],
               ] as const
             ).map(([value, label]) => (
@@ -135,209 +181,285 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           </div>
         )}
 
-        {visible.length === 0 ? (
+        {groups.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            {assignments.length === 0
+            {total === 0
               ? "Назначений нет — ознакамливаться некому."
               : "В этой выборке никого нет."}
           </p>
         ) : (
-          <ul className="flex flex-col gap-1.5">
-            {visible.map((assignment) => {
-              const post = postById.get(assignment.postId);
-              return (
-                <li
-                  key={assignment.id}
-                  className="flex flex-wrap items-center gap-2 rounded-md border p-2.5 text-sm"
-                >
-                  <span className="font-semibold">{assignment.employeeName}</span>
-                  <span className="text-muted-foreground">
-                    {post ? `${post.sector} · ${post.post}` : assignment.postId}
-                  </span>
-                  {assignment.acknowledgedAt !== null ? (
-                    <span className="ml-auto inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
-                      Подтверждено ({formatIsoDateTime(assignment.acknowledgedAt ?? "")})
-                    </span>
-                  ) : (assignment.declinedAt ?? null) !== null ? (
-                    // «Не могу заступить» из профиля (Plane №405): старший
-                    // видит причину здесь и решает, кем заменить.
-                    <span
-                      className="ml-auto inline-flex max-w-[320px] rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
-                      title={assignment.declineReason ?? undefined}
-                    >
-                      Не может заступить
-                      {assignment.declineReason ? `: ${assignment.declineReason}` : ""}
-                    </span>
-                  ) : (
-                    <>
-                      <span className="ml-auto inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                        Ожидается
-                      </span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={acknowledge.isPending}
-                        onClick={() =>
-                          acknowledge.mutate({ assignmentId: assignment.id })
-                        }
-                      >
-                        Отметить ознакомление
-                      </Button>
-                    </>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          <div className="space-y-4" data-testid="ack-groups">
+            {groups.map((group) => (
+              <section key={group.sector} aria-label={`Сектор ${group.sector}`} className="space-y-2">
+                <h3 className="text-[11px] font-bold uppercase tracking-[.08em] text-muted-foreground">
+                  {group.sector}
+                </h3>
+                {group.posts.map((bucket) => (
+                  <div key={bucket.post} className="rounded-md border">
+                    <p className="border-b bg-muted/40 px-2.5 py-1.5 text-xs font-semibold">
+                      {bucket.post}
+                    </p>
+                    <ul className="divide-y">
+                      {bucket.rows.map((assignment) => (
+                        <AssignmentRow
+                          key={assignment.id}
+                          assignment={assignment}
+                          canManage={canManage}
+                          onAcknowledge={() => acknowledge.mutate({ assignmentId: assignment.id })}
+                          onRemind={() => remindOne.mutate({ assignmentId: assignment.id })}
+                          onReplace={() => setReplacing(assignment)}
+                          busy={acknowledge.isPending || remindOne.isPending}
+                        />
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </section>
+            ))}
+          </div>
         )}
 
         <StageError error={acknowledge.error} />
+        <StageError error={remindOne.error} />
+        <StageError error={remindAll.error} />
         <StageError error={complete.error} />
-        <StageError error={notify.error} />
 
-        {/* ОТЧЁТ О РАССЫЛКЕ, а не «готово»: рассылка, которая молчит о
-            недоставленном, выглядит успешной, и пропажу замечают в день
-            мероприятия. Поэтому названо и сколько ушло, и скольким нет. */}
-        {notify.data !== undefined && (
+        {(remindOne.data ?? remindAll.data) !== undefined && (
           <p
             className={
-              notify.data.unlinkedEmployeeIds.length > 0
+              (remindOne.data ?? remindAll.data)!.unlinkedEmployeeIds.length > 0
                 ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
                 : "rounded-md border px-3 py-2 text-xs text-muted-foreground"
             }
+            data-testid="remind-report"
           >
-            Уведомления отправлены: {notify.data.employees} заступающим и{" "}
-            {notify.data.supervisors} руководителям.
-            {notify.data.unlinkedEmployeeIds.length > 0 && (
+            Напоминание отправлено: {(remindOne.data ?? remindAll.data)!.employees} заступающим и{" "}
+            {(remindOne.data ?? remindAll.data)!.supervisors} руководителям.
+            {(remindOne.data ?? remindAll.data)!.unlinkedEmployeeIds.length > 0 && (
               <>
-                {" "}Не дошло до {notify.data.unlinkedEmployeeIds.length}:
-                у их кадровых записей нет связанной учётной записи — связь
-                заполняется в карточке сотрудника.
+                {" "}Не дошло до {(remindOne.data ?? remindAll.data)!.unlinkedEmployeeIds.length}:
+                у их кадровых записей нет связанной учётной записи.
               </>
             )}
           </p>
         )}
 
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={notify.isPending || assignments.length === 0}
-            // Причина словами, а не одна погашенная кнопка: выключенная без
-            // объяснения оставляет человека гадать.
-            title={
-              assignments.length === 0
-                ? "Никто не назначен — уведомлять некого"
-                : "Уведомить заступающих и их руководителей"
-            }
-            onClick={() => notify.mutate({})}
-          >
-            {notify.isPending ? "Отправка…" : "Отправить уведомления"}
-          </Button>
-          <Button
-            type="button"
-            disabled={complete.isPending || !access.can(EVENT_MANAGE)}
-            title={access.reason(EVENT_MANAGE) || undefined}
-            onClick={() => complete.mutate({})}
-          >
-            {complete.isPending
-              ? "Завершение…"
-              : "Завершить этап и перейти далее"}
-          </Button>
-        </div>
-        </section>
+        {replacing !== null && (
+          <ReplaceInline
+            event={event}
+            assignment={replacing}
+            onClose={() => setReplacing(null)}
+          />
+        )}
       </CardContent>
+
+      {/* Подтверждение завершения при неподтвердивших (`[ОЗН-04]`). */}
+      <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {total - confirmed.length} {peopleWord(total - confirmed.length)} не подтвердили. Завершить?
+            </DialogTitle>
+            <DialogDescription>
+              Этап перейдёт на «Проведение» без их подтверждения. Комментарий
+              обязателен — он ложится в журнал мутаций вместе с числом
+              неподтвердивших.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="ack-complete-comment">Комментарий</Label>
+            <Textarea
+              id="ack-complete-comment"
+              rows={3}
+              placeholder="Например: доведено устно на разводе"
+              value={completeComment}
+              onChange={(e) => setCompleteComment(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCompleteOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={completeComment.trim() === "" || complete.isPending}
+              onClick={() => {
+                void complete
+                  .mutateAsync({ force: true, comment: completeComment.trim() })
+                  .then(() => {
+                    setCompleteOpen(false);
+                    setCompleteComment("");
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              Завершить без подтверждения всех
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
 
-/**
- * «Ваше назначение» — карточка от первого лица. Три честных исхода: учётка не
- * привязана к сотруднику, привязана но в этом ОМ не назначен, назначен —
- * тогда подтверждение доступно прямо здесь.
- */
-function MyAssignment({
-  event,
-  meId,
-  meFailed,
-  loading,
+function AssignmentRow({
+  assignment,
+  canManage,
   onAcknowledge,
-  pending,
+  onRemind,
+  onReplace,
+  busy,
 }: {
-  event: SecurityEvent;
-  meId: string | null;
-  meFailed: boolean;
-  loading: boolean;
-  onAcknowledge: (assignmentId: string) => void;
-  pending: boolean;
+  assignment: PlacementAssignment;
+  canManage: boolean;
+  onAcknowledge: () => void;
+  onRemind: () => void;
+  onReplace: () => void;
+  busy: boolean;
 }) {
-  if (loading) {
-    return <p className="mt-2 text-xs text-muted-foreground">Загрузка…</p>;
-  }
-  if (meFailed || meId === null) {
-    return (
-      <p className="mt-2 text-xs text-muted-foreground">
-        Учётная запись не привязана к сотруднику — своё назначение показать
-        нечем.
-      </p>
-    );
-  }
-  const mine = event.placementAssignments.find((a) => a.employeeId === meId);
-  if (mine === undefined) {
-    return (
-      <p className="mt-2 text-xs text-muted-foreground">
-        Вы не назначены на это мероприятие.
-      </p>
-    );
-  }
-  const post = event.reconSectorPosts.find((p) => p.id === mine.postId);
+  const state = stateOf(assignment);
   return (
-    <div className="mt-2 space-y-2">
-      <p className="text-sm font-semibold">Ваше назначение · {event.code}</p>
-      <dl className="space-y-1 text-xs">
-        <Row label="Объект" value={objectLabel(event)} />
-        <Row
-          label="Сектор / пост"
-          value={post ? `${post.sector} · ${post.post}` : mine.postId}
-        />
-        <Row
-          label="Дата"
-          // Период целиком: у многодневного ОМ одна дата в карточке своего
-          // назначения читается как «заступаю на день».
-          value={
-            event.businessDateEnd === null ||
-            event.businessDateEnd === event.businessDate
-              ? formatIsoDate(event.businessDate)
-              : `${formatIsoDate(event.businessDate)} — ${formatIsoDate(event.businessDateEnd)}`
-          }
-        />
-        <Row label="Задача поста" value={post?.task === "" ? "—" : (post?.task ?? "—")} />
-      </dl>
-      {mine.acknowledgedAt !== null ? (
-        <p className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
-          Подтверждено ({formatIsoDateTime(mine.acknowledgedAt ?? "")})
-        </p>
-      ) : (
-        <Button
-          type="button"
-          size="sm"
-          disabled={pending}
-          onClick={() => onAcknowledge(mine.id)}
-        >
-          <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
-          Ознакомлен
-        </Button>
+    <li
+      className="flex flex-wrap items-center gap-2 px-2.5 py-2 text-sm"
+      data-testid={`ack-row-${assignment.id}`}
+      data-state={state}
+    >
+      <span className="font-semibold">{assignment.employeeName}</span>
+      {assignment.divisionName !== "" && (
+        <span className="text-xs text-muted-foreground">{assignment.divisionName}</span>
       )}
-    </div>
+      {state === "confirmed" && (
+        <span className="ml-auto inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
+          Ознакомлен {formatIsoDateTime(assignment.acknowledgedAt ?? "")}
+        </span>
+      )}
+      {state === "declined" && (
+        <>
+          <span
+            className="ml-auto inline-flex max-w-[320px] rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
+            title={assignment.declineReason ?? undefined}
+          >
+            <X className="mr-1 h-3 w-3" aria-hidden="true" />
+            Не может заступить
+            {assignment.declineReason ? `: ${assignment.declineReason}` : ""}
+          </span>
+          <Button type="button" size="sm" variant="destructive" disabled={!canManage} onClick={onReplace}>
+            <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            Заменить →
+          </Button>
+        </>
+      )}
+      {state === "pending" && (
+        <>
+          <span className="ml-auto inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+            Ожидается
+            {(assignment.remindedAt ?? null) !== null &&
+              ` · напомнили ${formatIsoDateTime(assignment.remindedAt ?? "")}`}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy || !canManage}
+            aria-label={`Напомнить: ${assignment.employeeName}`}
+            onClick={onRemind}
+          >
+            <Bell className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            Напомнить
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy || !canManage}
+            title="Ознакомлен лично — доведено устно, отметка старшего"
+            onClick={onAcknowledge}
+          >
+            <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            Отметить ознакомление
+          </Button>
+        </>
+      )}
+    </li>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex gap-2">
-      <dt className="w-28 shrink-0 text-muted-foreground">{label}</dt>
-      <dd>{value}</dd>
-    </div>
+/** Замена отказавшегося прямо на этапе (`[ОЗН-03]`): кого — задано строкой,
+ * кем — подбор с поиском на сервере, причина — обязательна. */
+function ReplaceInline({
+  event,
+  assignment,
+  onClose,
+}: {
+  event: SecurityEvent;
+  assignment: PlacementAssignment;
+  onClose: () => void;
+}) {
+  const [incomingEmployeeId, setIncomingEmployeeId] = useState("");
+  const [reasonCode, setReasonCode] = useState(
+    assignment.declineReason ? `Отказ: ${assignment.declineReason}` : ""
   );
+  const replace = useReplaceAssignment(event.id);
+  const post = event.reconSectorPosts.find((p) => p.id === assignment.postId);
+  return (
+    <section
+      aria-label="Замена отказавшегося"
+      className="space-y-3 rounded-md border border-red-200 bg-red-50/40 p-3"
+      data-testid="ack-replace"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm">
+          Заменить <b>{assignment.employeeName}</b>
+          {post ? ` на посту «${post.sector} · ${post.post}»` : ""}
+        </p>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Закрыть замену">
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="ack-replace-reason">Причина *</Label>
+        <Input
+          id="ack-replace-reason"
+          value={reasonCode}
+          onChange={(e) => setReasonCode(e.target.value)}
+          placeholder="Например: болезнь"
+        />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium">Кем заменить</p>
+        <PersonnelPicker
+          value={incomingEmployeeId === "" ? null : incomingEmployeeId}
+          onPick={(id) => setIncomingEmployeeId((current) => (current === id ? "" : id))}
+          pageSize={8}
+          searchInputId="ack-replace-search"
+        />
+      </div>
+      <StageError error={replace.error} />
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onClose}>
+          Отмена
+        </Button>
+        <Button
+          type="button"
+          disabled={replace.isPending || incomingEmployeeId === "" || reasonCode.trim() === ""}
+          onClick={() => {
+            void replace
+              .mutateAsync({ assignmentId: assignment.id, incomingEmployeeId, reasonCode: reasonCode.trim() })
+              .then(onClose)
+              .catch(() => undefined);
+          }}
+        >
+          {replace.isPending ? "Замена…" : "Заменить"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function peopleWord(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (ones === 1 && tens !== 11) return "сотрудник";
+  if (ones >= 2 && ones <= 4 && (tens < 12 || tens > 14)) return "сотрудника";
+  return "сотрудников";
 }

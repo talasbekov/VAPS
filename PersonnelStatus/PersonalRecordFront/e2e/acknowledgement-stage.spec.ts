@@ -38,6 +38,8 @@ interface EventRow {
     id: string
     employeeId: string
     employeeName: string
+    remindedAt?: string | null
+    declinedAt?: string | null
     acknowledgedAt: string | null
   }[]
 }
@@ -69,13 +71,22 @@ async function signIn(page: Page): Promise<void> {
 test.describe(LIVE ? 'ознакомление' : 'ознакомление (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('счётчик и фильтр идут от подтверждений, этап держит сервер', async ({ page }) => {
+  test('шапка, группы по постам, напоминание и завершение с подтверждением (Plane №432)', async ({ page }) => {
+    /**
+     * `[ОЗН-02]`…`[ОЗН-04]`, `[ОЗН-08]`. Экран старшего: шапка «Ознакомились
+     * K из N», список по секторам и постам, «Напомнить» одному и всем,
+     * «Завершить ознакомление» при неподтвердивших — только через окно с
+     * комментарием (сервер держит 422 без него). Панели «Экран сотрудника»
+     * и кнопки «Отправить уведомления» на этапе больше нет.
+     */
     const token = await apiToken()
     const suitable = (rows: EventRow[]): EventRow | undefined =>
       rows.find(
         (e) =>
           e.stage === 'ACKNOWLEDGEMENT' &&
-          e.placementAssignments.filter((a) => a.acknowledgedAt === null).length >= 2,
+          e.placementAssignments.filter(
+            (a) => a.acknowledgedAt === null && (a.declinedAt ?? null) === null,
+          ).length >= 2,
       )
     let event = suitable(await events(token))
     if (event === undefined) {
@@ -85,7 +96,11 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     }
     event = event!
     const total = event.placementAssignments.length
-    const pending = event.placementAssignments.filter((a) => a.acknowledgedAt === null)
+    // «Ожидают» — без отказавшихся: им не напоминают, их заменяют.
+    const pending = event.placementAssignments.filter(
+      (a) => a.acknowledgedAt === null && (a.declinedAt ?? null) === null,
+    )
+    const confirmed = event.placementAssignments.filter((a) => a.acknowledgedAt !== null)
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${event.id}/`)
@@ -93,62 +108,147 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
       has: page.locator('[data-slot="card-title"]', { hasText: 'Ознакомление' }),
     })
     await expect(card).toBeVisible({ timeout: 15_000 })
-    await expect(card).toContainText(`Ознакомление (${total - pending.length}/${total})`)
+    await expect(card.getByTestId('ack-summary')).toContainText(
+      `Ознакомились ${confirmed.length} из ${total}`,
+    )
+    // `[ОЗН-08]`: ни панели сотрудника, ни старой рассылки, ни «(K/N)».
+    await expect(card.getByText('Экран сотрудника')).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Отправить уведомления' })).toHaveCount(0)
+    await expect(card.getByText(`Ознакомление (${confirmed.length}/${total})`)).toHaveCount(0)
 
-    // Две колонки прототипа: свой экран и экран старшего объекта
-    await expect(card.getByText('Экран сотрудника')).toBeVisible()
-    await expect(card.getByText('Экран старшего объекта')).toBeVisible()
-    // Своё назначение опознаётся по ЖИВОЙ связи учётки с кадровой записью.
-    // Ассерт различающий: спрашиваем бэк, кто «я», и сверяем, ЧТО именно
-    // показала колонка — назначение или «вы не назначены». Проверка «нет
-    // текста про непривязанную учётку» была бы вакуумной: этот текст исчезает
-    // и когда колонка сломана.
-    const meRes = await fetch(`${API}/api/ops/personnel/me/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    expect(meRes.status, 'у admin должна быть привязка к сотруднику').toBe(200)
-    const me = (await meRes.json()) as { id: string }
-    const mine = event.placementAssignments.find((a) => a.employeeId === me.id)
-    const own = card.locator('section', { hasText: 'Экран сотрудника' }).first()
-    if (mine === undefined) {
-      await expect(own).toContainText('Вы не назначены на это мероприятие')
-    } else {
-      await expect(own).toContainText(`Ваше назначение · ${event.code}`)
-      await expect(own).toContainText(event.objectName)
+    // Список — по секторам и постам расчёта.
+    const groups = card.getByTestId('ack-groups')
+    const sectors = new Set(
+      event.placementAssignments.map(
+        (a) => event!.reconSectorPosts.find((p) => p.id === a.postId)?.sector ?? 'Пост вне расчёта',
+      ),
+    )
+    for (const sector of sectors) {
+      await expect(groups.getByRole('region', { name: `Сектор ${sector}` })).toBeVisible()
     }
 
-    // Полоса готовности отражает долю подтверждённых
     const bar = card.getByRole('progressbar', { name: 'Готовность ознакомления' })
     await expect(bar).toHaveAttribute(
       'aria-valuenow',
-      String(Math.round(((total - pending.length) / total) * 100)),
+      String(Math.round((confirmed.length / total) * 100)),
     )
 
-    // Фильтр «Ожидают» показывает РОВНО неподтверждённых
+    // «Напомнить» одному — отчёт и отметка «напомнили» в строке.
+    const first = pending[0]!
+    const row = card.getByTestId(`ack-row-${first.id}`)
+    await row.getByRole('button', { name: `Напомнить: ` }).click()
+    await expect(card.getByTestId('remind-report')).toContainText('Напоминание отправлено', {
+      timeout: 15_000,
+    })
+    await expect(row).toContainText('напомнили', { timeout: 15_000 })
+    const fresh = (await events(token)).find((e) => e.id === event!.id)!
+    expect(fresh.placementAssignments.find((a) => a.id === first.id)?.remindedAt).toBeTruthy()
+
+    // «Напомнить всем, кто не подтвердил» — столько же, сколько ожидают.
+    await card.getByRole('button', { name: `Напомнить всем, кто не подтвердил (${pending.length})` }).click()
+    await expect(card.getByTestId('remind-report')).toBeVisible({ timeout: 15_000 })
+
     await card.getByRole('button', { name: `Ожидают (${pending.length})` }).click()
-    await expect(card.locator('li')).toHaveCount(pending.length)
-    await expect(card.getByText('Подтверждено', { exact: false })).toHaveCount(0)
+    await expect(card.locator('li[data-state]')).toHaveCount(pending.length)
+    await expect(card.locator('li[data-state="confirmed"]')).toHaveCount(0)
 
-    // Завершить этап не даёт сервер, а не экран: кнопка активна
-    const finish = card.getByRole('button', { name: /Завершить этап/ })
-    await expect(finish).toBeEnabled()
-    await finish.click()
-    await expect(card).toContainText('подтвердили ознакомление', { timeout: 15_000 })
-    expect((await events(token)).find((e) => e.id === event.id)?.stage).toBe(
-      'ACKNOWLEDGEMENT',
-    )
+    // Завершение при неподтвердивших — окно с комментарием; без него кнопка
+    // заперта, сервер не трогается.
+    await card.getByRole('button', { name: 'Завершить ознакомление' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText(`${pending.length}`)
+    await expect(dialog).toContainText('не подтвердили. Завершить?')
+    const finish = dialog.getByRole('button', { name: 'Завершить без подтверждения всех' })
+    await expect(finish).toBeDisabled()
+    expect((await events(token)).find((e) => e.id === event!.id)?.stage).toBe('ACKNOWLEDGEMENT')
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
 
-    // Подтверждение одного — живая мутация: счётчик и фильтр пересчитались
+    // «Отметить ознакомление» (доведено лично) — счётчик растёт.
     await card.getByRole('button', { name: 'Отметить ознакомление' }).first().click()
-    await expect(card).toContainText(
-      `Ознакомление (${total - pending.length + 1}/${total})`,
+    await expect(card.getByTestId('ack-summary')).toContainText(
+      `Ознакомились ${confirmed.length + 1} из ${total}`,
       { timeout: 15_000 },
     )
-    await expect(card).toContainText(`Ожидают (${pending.length - 1})`)
-    const fresh = (await events(token)).find((e) => e.id === event.id)
-    expect(
-      fresh?.placementAssignments.filter((a) => a.acknowledgedAt !== null).length,
-    ).toBe(total - pending.length + 1)
+  })
+
+  test('отказ показан красным и заменяется прямо на этапе; завершение с комментарием уходит в журнал (Plane №432)', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const code = await prepareEvent(token)
+    const event = (await events(token)).find((e) => e.code === code)!
+    const target = event.placementAssignments[0]!
+    // Отказ — от имени сотрудника не завести (учётки нет), поэтому по API
+    // тем же admin: ручка открыта ведущему.
+    const declined = await fetch(`${API}/api/ops/security-events/${event.id}/decline/${target.id}/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Командировка' }),
+    })
+    expect(declined.status, await declined.text()).toBe(200)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${event.id}/`)
+    const card = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Ознакомление' }),
+    })
+    const row = card.getByTestId(`ack-row-${target.id}`)
+    await expect(row).toHaveAttribute('data-state', 'declined', { timeout: 15_000 })
+    await expect(row).toContainText('Не может заступить: Командировка')
+    await expect(card.getByTestId('ack-summary')).toContainText('отказов 1')
+
+    // «Заменить →» — подбор с поиском тут же, на этапе 4.
+    await row.getByRole('button', { name: 'Заменить →' }).click()
+    const replace = card.getByTestId('ack-replace')
+    await expect(replace).toContainText(`Заменить ${target.employeeName}`)
+    await expect(replace.getByLabel('Причина')).toHaveValue('Отказ: Командировка')
+    // Кандидат — заведомо не из расстановки (назначенного дважды сервер
+    // отобьёт): берём из кадрового списка и ищем его по фамилии в подборе.
+    const roster = (await (
+      await fetch(`${API}/api/ops/personnel/?page_size=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { results: { id: string; name: string }[] }
+    const assignedIds = new Set(event.placementAssignments.map((a) => a.employeeId))
+    // Подпись в подборе — «Фамилия И.», и однофамильцев в базе много: берём
+    // того, чья подпись в списке единственная, иначе клик попал бы в тёзку,
+    // а тёзка может стоять в расстановке.
+    const counts = new Map<string, number>()
+    for (const p of roster.results) counts.set(p.name, (counts.get(p.name) ?? 0) + 1)
+    const candidate = roster.results.find(
+      (p) => !assignedIds.has(p.id) && counts.get(p.name) === 1,
+    )
+    expect(candidate, 'в кадровом списке нет никого вне расстановки').toBeDefined()
+    await replace.locator('#ack-replace-search').fill(candidate!.name.split(' ')[0]!)
+    const option = replace
+      .locator('[data-slot="personnel-picker"] li button')
+      .filter({ hasText: candidate!.name })
+      .first()
+    await expect(option).toBeVisible({ timeout: 20_000 })
+    await option.click()
+    await replace.getByRole('button', { name: 'Заменить' }).click()
+    // Панель закрывается ОТВЕТОМ сервера; если не закрылась — в тексте
+    // ошибки покажется её содержимое (отказ сервера читается прямо оттуда).
+    await expect
+      .poll(async () => ((await replace.isVisible()) ? await replace.textContent() : null), {
+        timeout: 15_000,
+        message: 'панель замены не закрылась',
+      })
+      .toBeNull()
+    await expect(card.getByTestId(`ack-row-${target.id}`)).toHaveCount(0)
+    await expect(card.getByTestId('ack-summary')).toContainText('отказов 0')
+
+    // Завершение с комментарием — этап уходит на «Проведение», журнал мутаций
+    // несёт число неподтвердивших и слова старшего.
+    await card.getByRole('button', { name: 'Завершить ознакомление' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Комментарий').fill('Доведено устно на разводе (e2e)')
+    await dialog.getByRole('button', { name: 'Завершить без подтверждения всех' }).click()
+    await expect(dialog).toBeHidden({ timeout: 15_000 })
+    await expect
+      .poll(async () => (await events(token)).find((e) => e.id === event.id)?.stage, { timeout: 15_000 })
+      .toBe('CONDUCT')
   })
 
   test('утверждение расстановки САМО оповещает — колокольчик руководителя это видит', async ({
@@ -297,6 +397,7 @@ async function prepareEvent(
     // выходит undefined, и проба падает не на своём предмете, а на строке
     // «не удалось подготовить фикстуру».
     kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
   })) as unknown as { id: string; code: string }
   const id = created.id
   const base = `/api/ops/security-events/${id}`
@@ -363,4 +464,3 @@ async function prepareEvent(
   await call('POST', `${base}/approval/approve/`)
   return created.code
 }
-    chiefEmployeeId: await anyChiefId(token),

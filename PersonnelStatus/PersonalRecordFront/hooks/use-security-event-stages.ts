@@ -13,6 +13,8 @@ import {
   opsPersonnelPagePath,
   OPS_PERSONNEL_ME_PATH,
   securityEventAcknowledgePath,
+  securityEventAcknowledgementRemindAllPath,
+  securityEventAcknowledgementRemindPath,
   securityEventAcknowledgementCompletePath,
   securityEventAcknowledgementNotifyPath,
   securityEventApprovalApprovePath,
@@ -52,6 +54,7 @@ import {
 } from "@/entities/security-event";
 import type {
   AcknowledgementNotifyReport,
+  CompleteAcknowledgementRequest,
   AddJournalEntryRequest,
   AssignPlacementRequest,
   CloseSecurityEventRequest,
@@ -396,10 +399,41 @@ export function useNotifyAcknowledgement(id: string) {
   });
 }
 
-export function useCompleteAcknowledgement(id: string) {
-  return useEventMutation<Record<string, never>>(id, () =>
-    opsApiClient.post<SecurityEvent>(securityEventAcknowledgementCompletePath(id))
+export function useCompleteAcknowledgement(id: string, options?: StageMutationOptions) {
+  return useEventMutation<CompleteAcknowledgementRequest>(
+    id,
+    (body) =>
+      opsApiClient.post<SecurityEvent>(securityEventAcknowledgementCompletePath(id), body),
+    options
   );
+}
+
+/** «Напомнить» одному / всем, кто не подтвердил (Plane №432). Ответ — отчёт,
+ * а не мероприятие; карточка перечитывается ради `remindedAt`. */
+export function useRemindAssignment(id: string) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<AcknowledgementNotifyReport, { assignmentId: string }>({
+    mutationFn: ({ assignmentId }) =>
+      opsApiClient.post<AcknowledgementNotifyReport>(
+        securityEventAcknowledgementRemindPath(id, assignmentId)
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+    },
+  });
+}
+
+export function useRemindAllPending(id: string) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<AcknowledgementNotifyReport, Record<string, never>>({
+    mutationFn: () =>
+      opsApiClient.post<AcknowledgementNotifyReport>(
+        securityEventAcknowledgementRemindAllPath(id)
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+    },
+  });
 }
 
 // ── Проведение и закрытие ────────────────────────────────────────────────

@@ -355,6 +355,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # `_my_assignments_override`. Код права остаётся у ведущего.
         "acknowledge": _MANAGE_EVENT_PERMISSION,
         "acknowledgement_complete": _MANAGE_EVENT_PERMISSION,
+        # Напоминания этапа «Ознакомление» (Plane №432) — тем же кругом, что
+        # ведение этапа; старший объекта — ролью в данных (override ниже).
+        "acknowledgement_remind": _MANAGE_EVENT_PERMISSION,
+        "acknowledgement_remind_all": _MANAGE_EVENT_PERMISSION,
         # «Мои назначения» (Plane №403): свои — любой вошедший с кадровой
         # привязкой, подчинённого — по области `status.manage`; `event.view`
         # открывает всех (штаб, админ).
@@ -1214,6 +1218,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_object_lead = False
         if self.action in ("my_assignments", "acknowledge", "decline"):
             return self._my_assignments_override(request)
+        if self.action in self._STAGE_LEAD_ACTIONS:
+            return self._stage_lead_override(request)
         if self.action in self._OBJECT_LEAD_ACTIONS:
             return self._object_lead_override(request)
         if self.action not in self._DEPUTY_ACTIONS:
@@ -1233,6 +1239,20 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = allowed
         self._deputy_employee = employee if allowed else None
         return allowed
+
+    # Старший мероприятия/объекта ведёт «Ознакомление» по данным (Plane №432,
+    # `[ОЗН-09]`): напоминает, заменяет, завершает.
+    _STAGE_LEAD_ACTIONS = frozenset(
+        {"acknowledgement_remind", "acknowledgement_remind_all",
+         "acknowledgement_complete", "conduct_replace"}
+    )
+
+    def _stage_lead_override(self, request):
+        from organization_management.apps.ops import my_assignments as mine
+
+        employee = mine.employee_of_user(resolve_actor_id(request))
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        return event is not None and mine.may_manage_stage(event, employee)
 
     def _my_assignments_override(self, request):
         """Сотрудник — своя карточка, старший — своё, начальник — чтение
@@ -1635,7 +1655,34 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="acknowledgement/complete")
     def acknowledgement_complete(self, request, pk=None):
-        return self._event_response(event_service.complete_acknowledgement(pk))
+        """Подтвердили все — переход; иначе `{"force": true, "comment"}`
+        (Plane №432, `[ОЗН-04]`) — переход с записью в журнал мутаций."""
+        from organization_management.apps.ops import acknowledgement_stage as stage
+
+        data = request.data or {}
+        return self._event_response(
+            stage.complete(
+                pk, force=bool(data.get("force")), comment=data.get("comment"),
+                actor=resolve_actor_id(request),
+            )
+        )
+
+    @action(
+        detail=True, methods=["post"],
+        url_path=r"acknowledgement/remind/(?P<assignment_id>[^/]+)",
+    )
+    def acknowledgement_remind(self, request, pk=None, assignment_id=None):
+        """«Напомнить» одному назначенному (Plane №432)."""
+        from organization_management.apps.ops import acknowledgement_stage as stage
+
+        return Response(stage.remind_assignment(pk, assignment_id))
+
+    @action(detail=True, methods=["post"], url_path="acknowledgement/remind-all")
+    def acknowledgement_remind_all(self, request, pk=None):
+        """«Напомнить всем, кто не подтвердил» (Plane №432)."""
+        from organization_management.apps.ops import acknowledgement_stage as stage
+
+        return Response(stage.remind_pending(pk))
 
     @action(detail=True, methods=["post"], url_path="journal")
     def journal(self, request, pk=None):

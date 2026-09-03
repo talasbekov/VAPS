@@ -122,6 +122,9 @@ STATUS_PARTICIPATIONS_PURGED = "STATUS_PARTICIPATIONS_PURGED"
 # ОМ оказалось на согласовании с пустой расстановкой» упиралось бы в
 # безымянный RETURN.
 SECURITY_EVENT_STAGE_OVERRIDDEN = "SECURITY_EVENT_STAGE_OVERRIDDEN"
+# «Ознакомление» завершено при неподтвердивших — решение старшего с
+# комментарием (Plane №432, `[ОЗН-04]`); число неподтвердивших — в old_value.
+SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED = "SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED"
 # Замещающий на объекте посещения: выдача и отзыв права (Plane «Реестр
 # ОМ-24»). Это раздача ПРАВА в данных — человек получает возможность править
 # расстановку своего объекта, не имея общего `event.manage`. Такое решение
@@ -280,6 +283,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_CREATED,
         SECURITY_EVENT_CLOSED,
         SECURITY_EVENT_DELETED,
+        SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED,
         STATUS_PARTICIPATIONS_PURGED,
         SECURITY_EVENT_STAGE_OVERRIDDEN,
         SECURITY_EVENT_DEPUTY_ASSIGNED,
