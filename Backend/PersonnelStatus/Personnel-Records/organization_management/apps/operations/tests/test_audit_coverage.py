@@ -989,10 +989,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # `approve_placement` здесь больше не зовётся: последняя подпись выше
     # завершила этап сама (`[СОГ-09]`, Plane №399); журнал у перехода тот же.
     om.refresh_from_db()
-    event_service.acknowledge_assignment(
-        om.pk, om.placement_assignments[0]["id"]
+    # Подтверждений нет НАРОЧНО: «Ознакомление» завершается С НЕПОДТВЕРДИВШИМИ — силой и с комментарием
+    # (Plane №432): так пишется SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED.
+    from organization_management.apps.ops import acknowledgement_stage
+    acknowledgement_stage.complete(
+        om.pk, force=True, comment="доведено устно на разводе", actor=ACTOR
     )
-    event_service.complete_acknowledgement(om.pk)
     # Закрытие ОБЪЕКТА (`[ЗАК-05]`, Plane №404) — именное решение; единственный
     # объект закрывает и мероприятие (`[ЗАК-12]`): оба следа — из одного
     # вызова, ручной `close_event` здесь больше не нужен.
@@ -1105,12 +1107,12 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     shortage_event.refresh_from_db()
     from organization_management.apps.ops import security_events as _svc
 
-    _svc.import_recon_from_passport(shortage_event.pk)
-    shortage_event.refresh_from_db()
     for _visit in shortage_event.visit_objects.all():
         _svc.assign_visit_object_chief(
             shortage_event.pk, _visit.pk, employee_id=str(employee.pk), actor="system:audit"
         )
+    _svc.import_recon_from_passport(shortage_event.pk)
+    shortage_event.refresh_from_db()
     for item in shortage_event.recon_checklist:
         item["done"] = True
         item["result"] = "MATCHES"

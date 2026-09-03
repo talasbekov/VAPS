@@ -275,6 +275,8 @@ export interface PlacementAssignment {
    * друга. Строки, заведённые до №405, ключей не несут — читать как null. */
   declinedAt?: string | null;
   declineReason?: string | null;
+  /** Последнее напоминание (Plane №432); нет ключа — не напоминали. */
+  remindedAt?: string | null;
   /** Обоснование обхода предупреждения по рейтингу; заполнено только если предупреждение было. */
   ratingOverrideReason: string | null;
   /** Роль наряда из справочника `PLACEMENT_ROLES` (Plane №238). `null` —
@@ -1327,6 +1329,21 @@ export function securityEventAcknowledgementNotifyPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/acknowledgement/notify/`;
 }
 
+/** Напоминания этапа «Ознакомление» (Plane №432): одному и всем, кто не подтвердил. */
+export function securityEventAcknowledgementRemindPath(id: string, assignmentId: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/acknowledgement/remind/${assignmentId}/`;
+}
+
+export function securityEventAcknowledgementRemindAllPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/acknowledgement/remind-all/`;
+}
+
+/** Завершение при неподтвердивших — только с `force` и комментарием (Plane №432). */
+export interface CompleteAcknowledgementRequest extends Record<string, unknown> {
+  force?: boolean;
+  comment?: string;
+}
+
 export interface AcknowledgementNotifyReport {
   /** Всего адресатов: сотрудники плюс их руководители. */
   notified: number;
@@ -1335,6 +1352,8 @@ export interface AcknowledgementNotifyReport {
   /** Кому НЕ ушло: у кадровой записи нет связанной учётки. Поимённо, а не
    *  числом — иначе чинить это некому. */
   unlinkedEmployeeIds: string[];
+  /** Кому напомнили (Plane №432); у рассылки этапа поля нет. */
+  remindedAssignmentIds?: string[];
 }
 export function securityEventJournalPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/journal/`;

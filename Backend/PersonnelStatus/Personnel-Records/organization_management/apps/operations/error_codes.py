@@ -95,6 +95,9 @@ CODES = {
     "ALLOCATION_EMPTY": frozenset({422}),
     # Цифра «Выделяем» правится до отправки списка (Plane №391, [СБС-21]).
     "ALLOCATION_ANSWER_LOCKED": frozenset({422}),
+    # Напоминания этапа «Ознакомление» (Plane №432, [ОЗН-03]/[ОЗН-04]).
+    "ALREADY_ACKNOWLEDGED": frozenset({422}),
+    "NOTHING_TO_REMIND": frozenset({422}),
     # Передача собранных на расстановку (Plane №390, [СБС-13]).
     "FORCE_HANDED_OVER": frozenset({422}),
     "FORCE_ROSTER_UNASSIGNED": frozenset({422}),
@@ -110,10 +113,10 @@ CODES = {
     # Расстановка объекта заморожена (`[СОГ-04]`, Plane №398): документ на
     # согласовании или согласован — состав меняется только новой версией.
     "PLACEMENT_FROZEN": frozenset({422}),
+    "VISIT_CHIEF_REQUIRED": frozenset({422}),
     # Закрытый объект посещения не закрыть дважды (`[ЗАК-05]`, Plane №404).
     "VISIT_OBJECT_ALREADY_CLOSED": frozenset({422}),
     "ACKNOWLEDGEMENT_INCOMPLETE": frozenset({422}),
-    "VISIT_CHIEF_REQUIRED": frozenset({422}),
     "CLOSURE_DIRECTIONS_INCOMPLETE": frozenset({422}),
     # Мягкий конфликт расстановки обходится причиной — 409 и overridable.
     "SOFT_CONFLICT_DETECTED": frozenset({409}),

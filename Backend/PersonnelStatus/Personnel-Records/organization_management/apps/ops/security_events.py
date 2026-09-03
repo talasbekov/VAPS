@@ -5177,7 +5177,13 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
     incoming = _find_personnel(incoming_employee_id)
     if incoming is None:
         raise _validation({"incomingEmployeeId": ["Сотрудник не найден."]})
-    _require_stage(event, "CONDUCT", "Замена доступна только на этапе «Проведение».")
+    # Замена и на «Ознакомлении» (Plane №432, `[ОЗН-03]`): отказавшийся
+    # заменяется там, где отказ виден, а не после перехода на «Проведение».
+    if event.stage not in ("ACKNOWLEDGEMENT", "CONDUCT"):
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION", 422,
+            message="Замена доступна на этапах «Ознакомление» и «Проведение».",
+        )
     outgoing = next(
         (a for a in event.placement_assignments if a.get("id") == assignment_id),
         None,

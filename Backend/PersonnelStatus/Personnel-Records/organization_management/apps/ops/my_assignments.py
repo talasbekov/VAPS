@@ -60,6 +60,15 @@ def may_acknowledge(event, assignment_id, employee):
     return int(employee.pk) in _placement_chiefs(event)
 
 
+def may_manage_stage(event, employee):
+    """Старший мероприятия/объекта ведёт «Ознакомление» по данным
+    (Plane №432, `[ОЗН-09]`): напоминает, заменяет, завершает — без
+    `event.manage`."""
+    if employee is None or not employee.is_active:
+        return False
+    return int(employee.pk) in _placement_chiefs(event)
+
+
 def may_read(target_employee_id, actor_employee, allowed_division_ids):
     """Чьи назначения можно прочитать без `event.view`.
 
