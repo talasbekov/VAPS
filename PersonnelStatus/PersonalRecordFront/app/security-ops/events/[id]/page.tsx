@@ -159,7 +159,17 @@ function SecurityEventScreen() {
   // Обход этапов — админ-полномочие; у всех остальных цепочка остаётся такой,
   // какой была: показывает, где мероприятие, и никуда не ведёт.
   const canOverrideStage = hasPermission("event.stage_override");
-  const currentIndex = stepIndexOfStage(event.stage);
+  // 🔴 ЦЕПОЧКА ЭТАПОВ ПОКАЗЫВАЕТ ЭТАП ПОКАЗАННОГО ОБЪЕКТА (Plane №412, Ш-6
+  // плана №385). Требование `[МД-04]`: «у объекта свои этапы 1–5». Стадия
+  // мероприятия — НАИМЕНЬШАЯ среди объектов, и рисовать ею цепочку значило бы
+  // говорить «Расстановка» человеку, стоящему на согласованном объекте:
+  // согласование первого объекта он уже закончил, а карточка звала бы его
+  // расставлять людей заново.
+  //
+  // «Строки без объекта» (`?visit=__unassigned__`) своей стадии не имеют — их
+  // не существует как сущности, и там отвечает мероприятие.
+  const objectStage = selectedVisit?.stage ?? event.stage;
+  const currentIndex = stepIndexOfStage(objectStage);
   // Номер шага из адреса чинится, а не доверяется: чужая ссылка с `step=99`
   // не должна открывать пустоту, а без права обхода параметр не действует
   // вовсе — иначе он был бы дырой в обход гварда.
@@ -177,7 +187,7 @@ function SecurityEventScreen() {
   // расстановке), а в чужом — входную стадию шага.
   const viewedStage = viewingOtherStep
     ? STEP_ENTRY_STAGE[EVENT_STEPS[viewedIndex].key]
-    : event.stage;
+    : objectStage;
 
   return (
     <DashboardLayout>
@@ -201,6 +211,9 @@ function SecurityEventScreen() {
             <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
               {event.code}
             </span>
+            {/* Бейдж и готовность — у МЕРОПРИЯТИЯ: это его строка в реестре,
+                и она обязана читаться одинаково в обоих местах. Этап объекта
+                показывает цепочка ниже — там, где человек и работает. */}
             <StageBadge stage={event.stage} />
             <span className="text-xs text-muted-foreground tabular-nums">
               готовность {event.readinessPercent}%
@@ -265,7 +278,7 @@ function SecurityEventScreen() {
           />
           <div className="mt-3">
             <EventStepper
-              stage={event.stage}
+              stage={objectStage}
               viewedIndex={viewedIndex}
               onSelect={canOverrideStage ? selectStep : undefined}
             />
@@ -283,7 +296,7 @@ function SecurityEventScreen() {
           заполнена, а после снятия модуля («ОМ-35.8») другого входа в неё не
           останется. */}
       <BulletinPanel
-        key={`bulletin-${event.stage}`}
+        key={`bulletin-${objectStage}`}
         event={event}
         onDirtyChange={setBulletinDirty}
         gvoOpen={gvoOpen}
@@ -310,7 +323,7 @@ function SecurityEventScreen() {
       {viewingOtherStep && (
         <StageViewNotice
           eventId={event.id}
-          currentStage={event.stage}
+          currentStage={objectStage}
           viewedStage={viewedStage}
           viewedStepIndex={viewedIndex}
           onLeaveView={() => selectStep(currentIndex)}

@@ -330,6 +330,11 @@ def create_event(
             chief_employee_id=chief.pk if chief is not None else None,
             chief_name=personnel_display_name(chief) if chief is not None else "",
             position=0,
+            # Стадия объекта — стадия мероприятия с первой секунды (Plane
+            # №412). Без этого ОМ, заведённое сразу на рекогносцировке,
+            # получало объект на «Бюллетене», и карточка звала заполнять
+            # бюллетень, который сервер уже закрыл.
+            stage=initial_stage,
         )
     record_transition(event, None, initial_stage)
     audit_service.record(
@@ -719,6 +724,13 @@ def add_visit_object(event_id, *, object_id, protected_person_id=None):
         protected_person=person,
         protected_person_name=person.name if person is not None else "",
         position=0 if last is None else last.position + 1,
+        # ОБЪЕКТ ВСТУПАЕТ В МЕРОПРИЯТИЕ ТАМ, ГДЕ ОНО СЕЙЧАС (Plane №412).
+        # Стадия по умолчанию («Бюллетень») откатывала бы ВСЁ мероприятие
+        # назад при каждом добавленном объекте: стадия мероприятия —
+        # наименьшая среди объектов, и новичок на бюллетене утянул бы за
+        # собой согласованные. Такого решения никто не принимал, а работу по
+        # новому объекту открывает обход этапов (`event.stage_override`).
+        stage=event.stage,
     )
     event.refresh_from_db()
     return event
@@ -1242,12 +1254,94 @@ def record_transition(event, from_stage, to_stage):
     )
 
 
+# ── Мероприятие считается по объектам (Plane №412, Ш-6 плана №385) ──────────
+#
+# 🔴 СТАДИЮ, ГОТОВНОСТЬ И ПОТРЕБНОСТЬ МЕРОПРИЯТИЯ БОЛЬШЕ НЕ ВЕДУТ — ИХ СЧИТАЮТ.
+# Требование `[МД-04]`: «у объекта свои этапы 1–5». Пока стадию вели у
+# мероприятия, ОМ с двумя объектами имел ОДНУ стадию на оба: первый объект
+# согласован, второй ещё на расстановке — а карточка говорила что-то одно, и
+# что именно, зависело от того, кто последним нажал кнопку.
+#
+# ПОЛЯ ОСТАЛИСЬ КОЛОНКАМИ, А НЕ СТАЛИ СВОЙСТВАМИ. По `stage` реестр фильтрует
+# и сортирует запросом (`api/views.py`, фильтр «Этап»), по нему же считает
+# воронку аналитика; вычисляемое свойство пришлось бы обходить перебором в
+# память на каждом экране. Колонка теперь ХРАНИТ ВЫВОД: её пересчитывает
+# `recompute_event_stage` в той же транзакции, что и правку объектов.
+#
+# У ОМ БЕЗ ОБЪЕКТОВ ПОСЕЩЕНИЯ считать не из чего, и там стадия остаётся своей:
+# такие ОМ есть (бюллетень без объекта, посты заведены руками), и обнулить им
+# стадию значило бы стереть работающее ради стройности.
+
+
+def _stage_index(stage):
+    return _STAGE_ORDER.index(stage) if stage in _STAGE_ORDER else 0
+
+
+def recompute_event_stage(event):
+    """Свести стадию, готовность и потребность мероприятия по его объектам.
+
+    Стадия — НАИМЕНЬШАЯ среди объектов: мероприятие прошло этап тогда, когда
+    его прошёл последний объект. Взять наибольшую значило бы объявить готовым
+    ОМ, у которого половина мест ещё не расписана.
+
+    Потребность — СУММА потребностей объектов: людей просят на все места
+    сразу, и штаб делит одно число.
+
+    Запись идёт, только если что-то изменилось: лишний `save` дёргал бы
+    `updated_at`, а по нему на экране написано «обновлено».
+    """
+    visits = list(event.visit_objects.all())
+    if not visits:
+        return event
+    stage = min((v.stage for v in visits), key=_stage_index)
+    need = sum(int(v.force_need or 0) for v in visits)
+    fields = []
+    if event.stage != stage:
+        event.stage = stage
+        event.readiness_percent = STAGE_READINESS[stage]
+        fields += ["stage", "readiness_percent"]
+    if event.force_need != need:
+        event.force_need = need
+        fields.append("force_need")
+    if fields:
+        event.save(update_fields=[*fields, "updated_at"])
+    return event
+
+
+def advance_visits(event, stage, visits=None):
+    """Перевести объекты на стадию и пересчитать по ним мероприятие.
+
+    `visits=None` — ВСЕ объекты: так работают переходы, которые человек делает
+    для мероприятия целиком (бюллетень, ознакомление, закрытие). Переходы,
+    у которых адресат — объект (согласование, возврат), передают его явно.
+    """
+    rows = visits if visits is not None else list(event.visit_objects.all())
+    for visit in rows:
+        if visit.stage == stage:
+            continue
+        visit.stage = stage
+        visit.save(update_fields=["stage", "updated_at"])
+    return recompute_event_stage(event)
+
+
 def _advance(event, stage):
+    """Стадия мероприятия целиком: объектам ставится та же, событие — вывод.
+
+    Переход в журнал (`record_transition`) пишется по ФАКТУ смены стадии
+    МЕРОПРИЯТИЯ. У ОМ с двумя объектами один объект может уйти вперёд, а
+    мероприятие остаться — и записать такой переход значило бы соврать ленте:
+    мероприятие никуда не переходило.
+    """
     old_stage = event.stage
-    event.stage = stage
-    event.readiness_percent = STAGE_READINESS[stage]
-    event.save(update_fields=["stage", "readiness_percent", "updated_at"])
-    record_transition(event, old_stage, stage)
+    if event.visit_objects.exists():
+        advance_visits(event, stage)
+    else:
+        # ОМ без объектов посещения: считать не из чего, стадия своя.
+        event.stage = stage
+        event.readiness_percent = STAGE_READINESS[stage]
+        event.save(update_fields=["stage", "readiness_percent", "updated_at"])
+    if event.stage != old_stage:
+        record_transition(event, old_stage, event.stage)
     return event
 
 
@@ -1387,6 +1481,8 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
         event.recon_force_request = parsed_request
         fields.append("recon_force_request")
     event.save(update_fields=fields)
+    # Разметка постов могла переехать — с ней переезжает и потребность объекта.
+    recompute_visit_needs(event)
     return event
 
 
@@ -1676,6 +1772,37 @@ def _sync_auto_force_request(event):
     ]
 
 
+def recompute_visit_needs(event):
+    """Потребность и «назначено» у каждого объекта — по ЕГО постам.
+
+    Оба числа — СНИМКИ, а не выводы на чтении: их показывает раскрытая строка
+    реестра (Plane №387), и считать их запросом на каждую строку значило бы
+    вернуть N+1, ради ухода от которого замещающие и потребность вообще
+    попали в строку объекта.
+
+    Разрез тот же, что у согласования и у экрана (`visit_object_posts`): у
+    единственного объекта неразмеченные посты — его, у второго и последующих —
+    ничьи. Неразмеченные строки при нескольких объектах в сумму НЕ входят
+    нигде: приписать их кому-то значило бы выдумать факт.
+    """
+    assignments = event.placement_assignments or []
+    for visit in event.visit_objects.all():
+        post_ids = {str(p.get("id")) for p in visit_object_posts(event, visit)}
+        need = sum(
+            int(p.get("need") or 0)
+            for p in visit_object_posts(event, visit)
+        )
+        assigned = sum(
+            1 for a in assignments if str(a.get("postId")) in post_ids
+        )
+        if visit.force_need == need and visit.force_assigned == assigned:
+            continue
+        visit.force_need = need
+        visit.force_assigned = assigned
+        visit.save(update_fields=["force_need", "force_assigned", "updated_at"])
+    return event
+
+
 def _demand_rows_of(posts):
     """Строки потребности по расчёту постов.
 
@@ -1709,7 +1836,13 @@ def _autopass_demand_and_forces(event):
     rows = _demand_rows_of(event.recon_sector_posts)
     event.demand_rows = rows
     event.demand_approved = True
-    event.force_need = sum(int(row["need"]) for row in rows)
+    # ПОТРЕБНОСТЬ СНАЧАЛА У ОБЪЕКТОВ, потом сумма у мероприятия (Plane №412):
+    # число мероприятия — вывод, и считать его отдельно значило бы завести
+    # второй ответ на «сколько людей просим».
+    recompute_visit_needs(event)
+    event.force_need = sum(
+        int(v.force_need or 0) for v in event.visit_objects.all()
+    ) or sum(int(row["need"]) for row in rows)
     # Заявка на силы — ОДНА на мероприятие, а не по группам: групп больше
     # никто не вводит. Число в ней то же, что штаб видит во входящих, и
     # расходиться с `force_need` оно не может — считается из тех же строк.
@@ -1728,6 +1861,12 @@ def _autopass_demand_and_forces(event):
         else []
     )
     from_stage = event.stage
+    # Стадию ставим ОБЪЕКТАМ, мероприятие берёт наименьшую (Plane №412). У ОМ
+    # без объектов посещения считать не из чего — там стадия по-прежнему своя.
+    if event.visit_objects.exists():
+        for visit in event.visit_objects.all():
+            visit.stage = "PLACEMENT"
+            visit.save(update_fields=["stage", "updated_at"])
     event.stage = "PLACEMENT"
     event.readiness_percent = STAGE_READINESS["PLACEMENT"]
     event.save(
@@ -3627,6 +3766,8 @@ def assign_placement(
     }
     event.placement_assignments = [*event.placement_assignments, assignment]
     event.save(update_fields=["placement_assignments", "updated_at"])
+    # Числа объекта — снимки, и правка расстановки их двигает (Plane №412).
+    recompute_visit_needs(event)
     _record_deputy_placement(
         event,
         deputy,
@@ -3646,6 +3787,8 @@ def unassign_placement(event_id, assignment_id, *, deputy=None):
         a for a in event.placement_assignments if a.get("id") != assignment_id
     ]
     event.save(update_fields=["placement_assignments", "updated_at"])
+    # Числа объекта — снимки, и правка расстановки их двигает (Plane №412).
+    recompute_visit_needs(event)
     _record_deputy_placement(
         event, deputy, {"operation": "UNASSIGN", "assignmentId": str(assignment_id)}
     )
@@ -3726,6 +3869,8 @@ def remove_placement_post(event_id, post_id, *, deputy=None):
             "updated_at",
         ]
     )
+    # Числа объекта — снимки, и правка расстановки их двигает (Plane №412).
+    recompute_visit_needs(event)
     _record_deputy_placement(
         event,
         deputy,
@@ -4226,17 +4371,18 @@ def approve_placement(event_id, *, visit_object_id=None):
         update_fields=["approval_status", "approval_comment", "updated_at"]
     )
     _sync_event_approval(event)
-    # МЕРОПРИЯТИЕ ИДЁТ ДАЛЬШЕ, КОГДА СОГЛАСОВАНЫ ВСЕ ЕГО ОБЪЕКТЫ. Ознакомление
+    # МЕРОПРИЯТИЕ ИДЁТ ДАЛЬШЕ, КОГДА СОГЛАСОВАНЫ ВСЕ ЕГО ОБЪЕКТЫ. Утверждение
+    # переводит на «Ознакомление» ЭТОТ объект; мероприятие берёт наименьшую
+    # стадию своих объектов и потому ждёт последнего (Plane №412). Ознакомление
     # идёт по назначениям, а они у объектов разные: открыть его по первому
     # согласованному объекту значило бы позвать людей второго знакомиться с
-    # расстановкой, которую ещё правят. Полный разбор «мероприятие считается по
-    # объектам» — Ш-6 (Plane №412); здесь ровно то, без чего цепочка встала бы.
-    if event.approval_status == "APPROVED":
-        # утверждение сразу открывает «Ознакомление», без отдельного клика
-        event.stage = "ACKNOWLEDGEMENT"
-        event.readiness_percent = STAGE_READINESS["ACKNOWLEDGEMENT"]
-        event.save(update_fields=["stage", "readiness_percent", "updated_at"])
-        record_transition(event, "APPROVAL", "ACKNOWLEDGEMENT")
+    # расстановкой, которую ещё правят.
+    #
+    # Утверждение сразу открывает «Ознакомление», без отдельного клика.
+    old_stage = event.stage
+    advance_visits(event, "ACKNOWLEDGEMENT", visits=[visit])
+    if event.stage != old_stage:
+        record_transition(event, old_stage, event.stage)
     return event
 
 
@@ -4260,12 +4406,12 @@ def return_placement(event_id, *, comment, visit_object_id=None):
     _sync_event_approval(event)
     # ВОЗВРАТ ОДНОГО ОБЪЕКТА ВОЗВРАЩАЕТ МЕРОПРИЯТИЕ. Здесь правило обратное
     # утверждению, и намеренно: согласование ждёт всех, а работа находится по
-    # одному. Расстановку правят на этапе «Расстановка» — не вернув туда
-    # мероприятие, исправлять замечание было бы негде.
-    event.stage = "PLACEMENT"
-    event.readiness_percent = STAGE_READINESS["PLACEMENT"]
-    event.save(update_fields=["stage", "readiness_percent", "updated_at"])
-    record_transition(event, "APPROVAL", "PLACEMENT")
+    # одному. Отдельного «вернуть мероприятие» не нужно — наименьшая стадия
+    # объектов делает это сама: вернувшийся объект и есть наименьший.
+    old_stage = event.stage
+    advance_visits(event, "PLACEMENT", visits=[visit])
+    if event.stage != old_stage:
+        record_transition(event, old_stage, event.stage)
     return event
 
 
@@ -4451,6 +4597,16 @@ def override_stage(event_id, *, stage, actor):
     # переход из этапа в него же.
     if old_stage == stage:
         return event
+    # Обход админа двигает ВСЕ объекты разом (Plane №412): он переводит
+    # карточку целиком, а «половину объектов вперёд» никто не просил — такая
+    # выборочность была бы решением, которого администратор не принимал.
+    for visit in event.visit_objects.all():
+        visit.stage = stage
+        # Выход из закрытия снимает штамп и у объекта: закрытый объект в живом
+        # мероприятии — то же враньё, что и закрытое мероприятие.
+        if old_stage == "CLOSED":
+            visit.closed_at = None
+        visit.save(update_fields=["stage", "closed_at", "updated_at"])
     event.stage = stage
     event.readiness_percent = STAGE_READINESS[stage]
     fields = ["stage", "readiness_percent", "updated_at"]
@@ -4495,6 +4651,16 @@ def close_event(event_id, *, direction_summaries, actor):
             f"Не хватает итогов направлений: {', '.join(missing)}.",
         )
     old_stage = event.stage
+    # Закрывается мероприятие — значит закрыты и все его объекты (Plane №412):
+    # закрытое ОМ с объектом «на расстановке» показывало бы работу, которой
+    # больше нет. Автозакрытие в обратную сторону («все объекты закрыты →
+    # закрыть мероприятие») — соседняя карточка №404 [ЗАК-12], и этот шаг её
+    # не делает.
+    closed_at = Clock.now()
+    for visit in event.visit_objects.all():
+        visit.stage = "CLOSED"
+        visit.closed_at = visit.closed_at or closed_at
+        visit.save(update_fields=["stage", "closed_at", "updated_at"])
     event.stage = "CLOSED"
     event.readiness_percent = STAGE_READINESS["CLOSED"]
     event.closure_direction_summaries = [
@@ -4504,7 +4670,7 @@ def close_event(event_id, *, direction_summaries, actor):
         }
         for item in summaries
     ]
-    event.closed_at = Clock.now()
+    event.closed_at = closed_at
     event.save(
         update_fields=[
             "stage",
