@@ -220,6 +220,10 @@ function mirrorApproval(event: SecurityEvent): SecurityEvent {
     ...event,
     visitObjects: event.visitObjects.map((visit) => ({
       ...visit,
+      // Этап объекта в мире мока равен этапу мероприятия: объект у ОМ ровно
+      // один, и наименьшая стадия среди одного — она сама (Plane №412).
+      stage: event.stage,
+      closedAt: event.closedAt,
       approvalStatus: event.approvalStatus,
       approvalComment: event.approvalComment,
       approvalRoute: event.approvalRoute,
@@ -274,6 +278,10 @@ function emptyEvent(
         placementNeed: 0,
         placementAssigned: 0,
         deputies: [],
+        // Этап объекта (Plane №412): у свежего ОМ он тот же, что у
+        // мероприятия, — этапы ещё не начинались.
+        stage: "BULLETIN",
+        closedAt: null,
         // Согласование объекта (Plane №411) — свежий объект ничего ещё не
         // согласовывал, и версии документа у него нет: 0 значит «не
         // отправлялся», а не «версия ноль».
