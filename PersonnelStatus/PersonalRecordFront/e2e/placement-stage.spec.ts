@@ -18,6 +18,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { anyChiefId } from './stand-chief'
 import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { acceptRosterFor } from './stand-roster'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -44,6 +45,30 @@ async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PA
   })
 }
 
+/**
+ * ОМ на «Расстановке» С ПРИНЯТЫМ СОСТАВОМ (Plane №428, `[РАС-04]`): правая
+ * колонка показывает только людей, принятых штабом, — кадровой базы там больше
+ * нет. Первый попавшийся ОМ без состава проводится через сбор сил общим
+ * помощником `stand-roster`, чтобы кликать было по кому.
+ */
+async function placementEventWithRoster(
+  request: APIRequestContext,
+  auth: Record<string, string>,
+  token: string,
+): Promise<{ id: string; code: string } | undefined> {
+  const list = (await (
+    await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
+      headers: auth,
+    })
+  ).json()) as { results: { id: string; code: string; forceRoster: unknown[] }[] }
+  const ready = list.results.find((row) => (row.forceRoster ?? []).length > 0)
+  if (ready !== undefined) return ready
+  const first = list.results[0]
+  if (first === undefined) return undefined
+  await acceptRosterFor(token, first.id, { count: 3 })
+  return first
+}
+
 test.describe(LIVE ? 'расстановка' : 'расстановка (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
@@ -61,12 +86,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     // не зависела от того, что осталось в БД от прошлых прогонов.
     // Стадию фильтрует СЕРВЕР: на растущем реестре стенда фикстура уходит со
     // первой страницы, и проба молча превращается в skip.
-    const list = (await (
-      await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
-        headers: auth,
-      })
-    ).json()) as { results: { id: string; code: string; stage: string }[] }
-    const target = list.results[0]
+    const target = await placementEventWithRoster(request, auth, token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
@@ -98,20 +118,24 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     await expect(panel).toContainText(`из ${post.need}`)
 
     // Правая колонка подбора — из прототипа: заголовок, чипы пула, кандидаты
-    await expect(page.getByText('Доступные сотрудники')).toBeVisible()
+    // Заголовок — по РАС-04 (Plane №428): колонка называет ПРОИСХОЖДЕНИЕ
+    // пула — штаб, и число выделенных против потребности.
+    await expect(page.getByText('Выделено на объект штабом')).toBeVisible()
     // Подзаголовок сменился осознанно (Plane №110): вместо «Подбор по
     // требованиям поста» колонка называет ПРОИСХОЖДЕНИЕ пула. Форм потребности
     // и выделения сил на шаге больше нет, и без этой строки человек не узнал
     // бы, почему в подборе именно эти люди. Пин стережёт, что строка есть и
     // говорит об одном из двух оснований, а не что она вообще какая-то.
     await expect(
-      page.getByText(/Состав мероприятия: те, кого штаб принял|Кадровый список: состав мероприятия ещё не собран/)
+      page.getByText(/Выделено \d+ из потребности \d+/)
     ).toBeVisible()
     // Путь к сбору состава — из снятого бокса «выделение сил»: пул собирают там.
     await expect(
       page.getByRole('main').getByRole('link', { name: /Сбор сил на ОМ/ })
     ).toBeVisible()
-    await expect(page.getByText(/Выделено \d+/)).toBeVisible()
+    // Плашка «Выделено N» — ровно чип; подзаголовок колонки «Выделено X из
+    // потребности N» (Plane №428) тоже начинается с этого слова.
+    await expect(page.getByText(/^Выделено \d+$/)).toBeVisible()
     await expect(page.getByText(/Совпадение \d+%/).first()).toBeVisible()
 
     // Сводка шага — шесть показателей прототипа
@@ -169,12 +193,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
 
-    const list = (await (
-      await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
-        headers: auth,
-      })
-    ).json()) as { results: { id: string }[] }
-    const target = list.results[0]
+    const target = await placementEventWithRoster(request, auth, token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
@@ -377,12 +396,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     requireFixture(section, 'справочник секций бланка пуст — назначать нечего')
     requireFixture(role, 'справочник ролей наряда пуст — менять роль нечем')
 
-    const list = (await (
-      await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
-        headers: auth,
-      })
-    ).json()) as { results: { id: string }[] }
-    const target = list.results[0]
+    const target = await placementEventWithRoster(request, auth, token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
@@ -482,12 +496,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const role = roles.results[0]
     requireFixture(role, 'справочник ролей наряда пуст — назначать нечего')
 
-    const list = (await (
-      await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
-        headers: auth,
-      })
-    ).json()) as { results: { id: string }[] }
-    const target = list.results[0]
+    const target = await placementEventWithRoster(request, auth, token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
@@ -565,77 +574,35 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     }
   })
 
-  test('отбор по рейтингу уходит НА СЕРВЕР, а не фильтрует страницу', async ({
+  test('отбор по рейтингу идёт по СОСТАВУ, кадровая база не спрашивается', async ({
     page,
     request,
   }) => {
-    // Дефект, ради которого шаг делался (Plane №67): панель отбирала по
-    // рейтингу в пределах ЗАГРУЖЕННОЙ страницы, и «нет кандидатов» означало
-    // «нет на этой странице». Отличить это от правды с экрана было нельзя.
-    //
-    // Проба стережёт ровно наблюдаемое следствие переезда: выбор полосы
-    // ОТПРАВЛЯЕТ запрос кадров с `rating_band`. Вернётся клиентская фильтрация
-    // — параметра не будет, и проба покраснеет.
-    const auth = { Authorization: `Bearer ${await apiToken(STAND_USERNAME, STAND_PASSWORD)}` }
-    const events = (await (
-      await request.get(`${API}/api/ops/security-events/?stage=PLACEMENT`, { headers: auth })
-    ).json()) as { results: { id: string; forceRoster?: unknown[] }[] }
-    // Мероприятие берётся с ПУСТЫМ составом, и это не придирка к фикстуре.
-    // При непустом составе доска СОЗНАТЕЛЬНО не ходит в кадровую ручку вовсе:
-    // кандидаты — принятые штабом люди, они уже пришли карточкой ОМ, и отбор
-    // по ним идёт на клиенте (см. РЙ-5). Тогда `rating_band` не уходит никуда
-    // — не потому, что отбор вернулся на страницу, а потому, что кадровую
-    // базу здесь не спрашивают.
-    //
-    // Первая редакция пробы брала ПЕРВОЕ попавшееся мероприятие и на составном
-    // падала с сообщением «отбор не ушёл на сервер» — то есть врала о причине.
-    // Поймано соседней сессией: в блоке красная, в одиночку зелёная, потому
-    // что соседние пробы меняют порядок мероприятий в реестре.
-    const withoutRoster = events.results.filter(
-      (event) => (event.forceRoster ?? []).length === 0,
-    )
-    test.skip(
-      withoutRoster.length === 0,
-      'на стенде нет ОМ на расстановке БЕЗ состава — кадровую базу спрашивать неоткуда',
-    )
-    const eventId = withoutRoster[0].id
-
+    /**
+     * До №428 эта проба стерегла обратное — что отбор уходит на сервер по
+     * всей базе. По РАС-04 «поиска по всей базе нет»: пул — только состав,
+     * принятый штабом, и отбор по полосе рейтинга идёт по нему на клиенте.
+     * Пин ПЕРЕВЁРНУТ осознанно: любой запрос к `/api/ops/personnel/` с этого
+     * экрана теперь дефект, а не признак работы.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const target = await placementEventWithRoster(request, auth, token)
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const asked: string[] = []
     page.on('request', (req) => {
       const url = new URL(req.url())
       if (url.pathname === '/api/ops/personnel/') asked.push(url.search)
     })
-
     await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${eventId}/`)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
     const aside = page.locator('aside')
     await expect(aside.getByLabel('Фильтр по рейтингу')).toBeVisible({ timeout: 25_000 })
-
-    asked.length = 0
     await aside.getByLabel('Фильтр по рейтингу').selectOption('9,0–10,0')
-
-    await expect
-      .poll(() => asked.some((query) => query.includes('rating_band=9_10')), {
-        timeout: 15_000,
-        // Сообщение обязано отличать «ушло не то» от «не спрашивали вовсе»:
-        // без этого «не ушёл на сервер» читается как приговор коду. Факты
-        // печатает ассерт ниже — `poll` принимает только строку.
-        message: 'отбор по рейтингу не ушёл на сервер (запросы ниже)',
-      })
-      .toBe(true)
-    expect(asked, 'запросы кадровой ручки после выбора полосы').not.toEqual([])
-
-    // И то же для порядка: ранжирование по баллу считает сервер по всей базе
-    // (решение заказчика 26.08.2026), а не страница сама себя.
-    asked.length = 0
     await aside.getByLabel('Сортировка кандидатов').selectOption('По рейтингу')
-
-    await expect
-      .poll(() => asked.some((query) => query.includes('ordering=rating')), {
-        timeout: 15_000,
-        message: 'порядок по баллу не ушёл на сервер (запросы ниже)',
-      })
-      .toBe(true)
+    await expect(aside.getByText(/Состав мероприятия: \d+ чел\./)).toBeVisible()
+    await page.waitForLoadState('networkidle').catch(() => {})
+    expect(asked, 'кадровая база не должна спрашиваться с расстановки').toEqual([])
   })
 
   test('расстановка ведётся по объекту посещения, а не по мероприятию целиком', async ({
@@ -686,6 +653,12 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const firstVisit = (withSecond.visitObjects as { id: string; objectName: string }[]).find(
       (v) => v.id !== secondVisit.id,
     )!
+    // Старший нужен КАЖДОМУ объекту (гвард №424): рекогносцировка второго
+    // объекта без него отвечает VISIT_CHIEF_REQUIRED, и ОМ не доходит до
+    // расстановки.
+    await call('post', `${base}/visit-objects/${secondVisit.id}/chief/`, {
+      employeeId: await anyChiefId(token),
+    })
 
     // Пост ВТОРОГО объекта: у него своего паспорта нет, и посты ему заводят
     // руками — ровно так это и делается на экране.
@@ -717,7 +690,10 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       ],
     })
     const onPlacement = await call('post', `${base}/recon/complete/`)
-    expect(onPlacement.stage, 'ОМ не дошёл до расстановки — фикстура непригодна').toBe(
+    expect(
+      onPlacement.stage,
+      `ОМ не дошёл до расстановки — фикстура непригодна: ${JSON.stringify(onPlacement).slice(0, 300)}`,
+    ).toBe(
       'PLACEMENT',
     )
 
