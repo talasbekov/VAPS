@@ -181,6 +181,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       reconSectorPosts: { id: string; post: string; need: number }[]
       placementAssignments: { id: string; postId: string; employeeId: string }[]
       forceRoster?: { employeeId: string }[]
+      visitObjects: { id: string; objectName: string }[]
       forceNeed: number
     }
     const read = async (): Promise<Snapshot> =>
@@ -215,8 +216,16 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         data: {
           sectorPosts: [
             ...before.reconSectorPosts,
-            { sector: 'Проба №259', post: doomedName, need: 1, task: '', requirements: '' },
-            { sector: 'Проба №259', post: keptName, need: 1, task: '', requirements: '' },
+            // 🔴 Пост заводится С ОБЪЕКТОМ ПОСЕЩЕНИЯ (Plane №410). Экран
+            // расстановки показывает расчёт ВЫБРАННОГО объекта, и ничейный
+            // пост у ОМ с несколькими объектами лежит в отдельном пункте
+            // «Не отнесены» — на экране по умолчанию его нет, и проба искала
+            // бы кнопку, до которой не дошла. Через экран пост и заводится
+            // так же: у показанного объекта.
+            { sector: 'Проба №259', post: doomedName, need: 1, task: '', requirements: '',
+              visitObjectId: before.visitObjects[0]?.id ?? null },
+            { sector: 'Проба №259', post: keptName, need: 1, task: '', requirements: '',
+              visitObjectId: before.visitObjects[0]?.id ?? null },
           ],
         },
       },
@@ -588,5 +597,115 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         message: 'порядок по баллу не ушёл на сервер (запросы ниже)',
       })
       .toBe(true)
+  })
+
+  test('расстановка ведётся по объекту посещения, а не по мероприятию целиком', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * Plane №410 (Ш-4 плана №385), требование `[МД-04]`: у объекта СВОИ этапы.
+     * До этого шага дерево постов и счётчики этапа складывали разные объекты
+     * в одно число — «назначено 5 из 12» ничего не говорило о том, где
+     * недобор.
+     *
+     * Проба заводит СВОЁ мероприятие с двумя объектами: на стенде таких мало,
+     * и брать чужое значило бы проверять чьи-то остатки.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const call = async (method: 'get' | 'post' | 'patch', path: string, data?: unknown) => {
+      const res = await request[method](`${API}${path}`, { headers: auth, data: data as never })
+      return (await res.json().catch(() => ({}))) as any
+    }
+
+    const objects = await call('get', '/api/ops/security-events/bindable-objects/')
+    const withPassport = (objects.results as { id: string; publishedVersionCount: number }[]).find(
+      (item) => item.publishedVersionCount > 0,
+    )
+    requireFixture(withPassport, 'объект с опубликованным паспортом')
+    const other = (objects.results as { id: string; name: string }[]).find(
+      (item) => item.id !== withPassport!.id,
+    )
+    requireFixture(other, 'второй объект реестра')
+
+    const created = await call('post', '/api/ops/security-events/', {
+      title: `Проба №410 · расстановка по объекту ${Date.now()}`,
+      objectId: withPassport!.id,
+      businessDate: '2026-08-26',
+      kind: 'INTERNAL',
+    })
+    const base = `/api/ops/security-events/${created.id}`
+    await call('patch', `${base}/bulletin/`, { briefDescription: 'x', initialTasks: '—' })
+    await call('post', `${base}/bulletin/complete/`)
+    await call('post', `${base}/recon/import-from-passport/`)
+    const withSecond = await call('post', `${base}/visit-objects/`, { objectId: other!.id })
+    const secondVisit = (withSecond.visitObjects as { id: string; objectName: string }[]).find(
+      (v) => v.objectName === other!.name,
+    )!
+    const firstVisit = (withSecond.visitObjects as { id: string; objectName: string }[]).find(
+      (v) => v.id !== secondVisit.id,
+    )!
+
+    // Пост ВТОРОГО объекта: у него своего паспорта нет, и посты ему заводят
+    // руками — ровно так это и делается на экране.
+    const ownPost = `Пост объекта ${secondVisit.objectName} ${Date.now()}`
+    const state = await call('get', `${base}/`)
+    await call('patch', `${base}/recon/`, {
+      checklist: (state.reconChecklist as { id: string }[]).map((item) => ({
+        ...item,
+        done: true,
+        result: 'MATCHES',
+      })),
+      sectorPosts: [
+        ...(state.reconSectorPosts as Record<string, unknown>[]),
+        {
+          id: `local-${Date.now()}`,
+          sector: 'Сектор второго объекта',
+          post: ownPost,
+          task: 'Охрана',
+          need: 2,
+          shift: '',
+          requirements: '',
+          result: null,
+          comment: '',
+          sourceSectorId: null,
+          sourcePostId: null,
+          minRating: null,
+          visitObjectId: secondVisit.id,
+        },
+      ],
+    })
+    const onPlacement = await call('post', `${base}/recon/complete/`)
+    expect(onPlacement.stage, 'ОМ не дошёл до расстановки — фикстура непригодна').toBe(
+      'PLACEMENT',
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${created.id}/`)
+    const tree = page.getByRole('complementary', { name: 'Дерево постов' })
+    await expect(tree).toBeVisible({ timeout: 25_000 })
+
+    // Показан ПЕРВЫЙ объект: его посты есть, поста второго — нет.
+    await expect(tree).not.toContainText(ownPost)
+
+    // Переключились на второй — видно только его пост.
+    // Именно COMBOBOX: подпись «объект посещения» есть и в шапке карточки ОМ,
+    // и `getByLabel` находит два элемента.
+    const picker = page.getByRole('combobox', { name: 'Объект посещения' })
+    await expect(picker).toBeVisible()
+    await picker.selectOption(secondVisit.id)
+    await expect(tree).toContainText(ownPost)
+    await expect(tree).toContainText('Сектор второго объекта')
+    // Счётчик дерева — потребность ЭТОГО объекта (2), а не сумма по ОМ
+    // (у первого объекта постов из паспорта больше).
+    await expect(tree).toContainText('назначено 0 из 2')
+
+    // Уборка: своё мероприятие проба уносит за собой. Отказ её не роняет —
+    // это уборка, а не предмет проверки; не удалённое подберёт
+    // `manage.py purge_probe_events`.
+    await request
+      .delete(`${API}/api/ops/security-events/${created.id}/`, { headers: auth })
+      .catch(() => undefined)
   })
 })

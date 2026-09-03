@@ -42,6 +42,11 @@ import type {
   ReconSectorPost,
   SecurityEvent,
 } from "@/entities/security-event";
+import {
+  useVisitObjectScope,
+  UNASSIGNED_VISIT,
+  VisitObjectPicker,
+} from "./useVisitObjectScope";
 import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDate } from "@/shared/lib/date";
@@ -122,38 +127,12 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
    * этот объект было негде: импорт у ОМ с двумя объектами отвечал «выберите,
    * для какого», а выбора на экране не было.
    *
-   * Объект показан ПЕРЕКЛЮЧАТЕЛЕМ, а не тринадцатой колонкой таблицы: в ней
-   * уже двенадцать, и аудит `[РЕК-09]` жалуется именно на ширину. Заодно это
-   * ближе к эталону: там этапы ведут по объекту, а не по мероприятию.
+   * Разрез общий с расстановкой (`useVisitObjectScope`): два экрана обязаны
+   * отвечать на «что показано» одинаково.
    */
-  const UNASSIGNED = "__unassigned__";
-  const unassignedCount = rows.filter(
-    (row) => (row.visitObjectId ?? null) === null
-  ).length;
-  const [activeVisit, setActiveVisit] = useState<string>(
-    () => event.visitObjects[0]?.id ?? UNASSIGNED
-  );
-  // Объект мог быть снят с мероприятия в соседней вкладке — тогда показанный
-  // выбор указывает в пустоту, и честнее вернуться к первому существующему.
-  const activeVisitExists =
-    activeVisit === UNASSIGNED ||
-    event.visitObjects.some((visit) => visit.id === activeVisit);
-  const shownVisit = activeVisitExists
-    ? activeVisit
-    : (event.visitObjects[0]?.id ?? UNASSIGNED);
-  const activeVisitObject =
-    event.visitObjects.find((visit) => visit.id === shownVisit) ?? null;
-  /** Строки показанного объекта. Остальные не удалены и не забыты — они
-   *  сохраняются вместе со всеми, просто сейчас не на экране. */
-  const visibleRows = useMemo(
-    () =>
-      rows.filter((row) =>
-        shownVisit === UNASSIGNED
-          ? (row.visitObjectId ?? null) === null
-          : row.visitObjectId === shownVisit
-      ),
-    [rows, shownVisit]
-  );
+  const scope = useVisitObjectScope(event, rows);
+  const activeVisitObject = scope.visit;
+  const visibleRows = scope.rows;
 
   /** Отнести строки к объекту: одну (перенос) или все нераспределённые. */
   function assignToVisit(visitObjectId: string, only?: string): void {
@@ -252,7 +231,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
       parentPostId: "",
       // Новый пост заводится У ПОКАЗАННОГО объекта: человек видит расчёт
       // одного объекта и добавляет строку в него, а не «в мероприятие».
-      visitObjectId: shownVisit === UNASSIGNED ? null : shownVisit,
+      visitObjectId: scope.shown === UNASSIGNED_VISIT ? null : scope.shown,
       ...patch,
     };
   }
@@ -455,7 +434,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                       : undefined
                 }
                 onClick={() =>
-                  importPosts.mutate({ visitObjectId: shownVisit })
+                  importPosts.mutate({ visitObjectId: scope.shown })
                 }
               >
                 {importPosts.isPending ? "Импорт…" : "Импорт из паспорта"}
@@ -478,64 +457,35 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               </Button>
             </div>
           </div>
-          {/* Переключатель объекта. Показывается, когда выбор ЕСТЬ: у ОМ с
-              единственным объектом и без нераспределённых строк выбирать не
-              из чего, и элемент управления с одним значением только мешает. */}
-          {(event.visitObjects.length > 1 || unassignedCount > 0) && (
-            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-              <label
-                className="text-xs font-semibold"
-                htmlFor="recon-visit-object"
-              >
-                Объект посещения
-              </label>
-              <select
-                id="recon-visit-object"
-                className="h-8 rounded-md border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={shownVisit}
-                onChange={(e) => setActiveVisit(e.target.value)}
-              >
+          <VisitObjectPicker event={event} scope={scope} allRows={rows}>
+            {scope.shown === UNASSIGNED_VISIT && event.visitObjects.length > 0 && (
+              /* Строки, заведённые до Plane №408: объект в них не записан, и
+                 приписать его мог только человек — сервер честно оставил их
+                 без владельца, а не разделил поровну. */
+              <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>Эти посты заведены до разметки. Отнести все к:</span>
                 {event.visitObjects.map((visit) => (
-                  <option key={visit.id} value={visit.id}>
-                    {visit.objectName} · постов{" "}
-                    {rows.filter((row) => row.visitObjectId === visit.id).length}
-                  </option>
+                  <Button
+                    key={visit.id}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7"
+                    onClick={() => {
+                      assignToVisit(visit.id);
+                      scope.setShown(visit.id);
+                    }}
+                  >
+                    {visit.objectName}
+                  </Button>
                 ))}
-                {unassignedCount > 0 && (
-                  <option value={UNASSIGNED}>
-                    Не отнесены к объекту · постов {unassignedCount}
-                  </option>
-                )}
-              </select>
-              {shownVisit === UNASSIGNED && event.visitObjects.length > 0 && (
-                /* Строки, заведённые до Plane №408: объект в них не записан, и
-                   приписать его мог только человек — сервер честно оставил их
-                   без владельца, а не разделил поровну. */
-                <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>Эти посты заведены до разметки. Отнести все к:</span>
-                  {event.visitObjects.map((visit) => (
-                    <Button
-                      key={visit.id}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7"
-                      onClick={() => {
-                        assignToVisit(visit.id);
-                        setActiveVisit(visit.id);
-                      }}
-                    >
-                      {visit.objectName}
-                    </Button>
-                  ))}
-                  <span>— затем «Сохранить расчёт».</span>
-                </span>
-              )}
-            </div>
-          )}
+                <span>— затем «Сохранить расчёт».</span>
+              </span>
+            )}
+          </VisitObjectPicker>
           {groups.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              {shownVisit === UNASSIGNED
+              {scope.shown === UNASSIGNED_VISIT
                 ? "Нераспределённых постов нет."
                 : "Постов пока нет — добавьте сектор или импортируйте из паспорта."}
             </p>
