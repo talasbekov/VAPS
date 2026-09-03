@@ -64,6 +64,13 @@ KINDS = {
     # «Список броней в ГОН» — про ПАРК, а не про мероприятие (Plane №216):
     # в образце это перечень машин автохозяйства, и требовать для него код ОМ
     # значило бы спрашивать то, чего документу не нужно.
+    "case": {
+        # «Скачать дело» (`[ЗАК-11]`, Plane №437): расстановка с версиями,
+        # лист ознакомления, замечания, оценки, журнал — одним файлом.
+        "label": "Дело объекта (все вложения)",
+        "needs_event": True,
+        "file": "delo",
+    },
     "vehicles": {
         "label": "Список броней в ГОН",
         "needs_event": False,
@@ -171,6 +178,10 @@ def render(kind, *, event_code=None, as_of=None, fmt="pdf", visit_object_id=None
         )
 
         payload = render_placement_full(code, as_of=as_of, fmt=fmt)
+    elif kind == "case":
+        from organization_management.apps.ops.documents_case import render_case
+
+        payload = render_case(code, visit_object_id=visit_object_id, fmt=fmt)
     elif kind == "vehicles":
         from organization_management.apps.ops.documents_vehicles import (
             render_vehicles,

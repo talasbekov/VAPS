@@ -175,6 +175,15 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       has: page.locator('[data-slot="card-title"]', { hasText: 'Итоги направлений' }),
     })
     await expect(card).toBeVisible({ timeout: 15_000 })
+    // «Скачать дело» (`[ЗАК-11]`, Plane №437): один PDF со всеми вложениями
+    // приходит из ручки документов и сохраняется по нажатию.
+    const caseBlock = page.locator('[data-slot="case-download"]')
+    await expect(caseBlock).toBeVisible({ timeout: 15_000 })
+    const download = page.waitForEvent('download', { timeout: 60_000 })
+    await caseBlock.getByRole('button', { name: /Скачать дело/ }).click()
+    const file = await download
+    expect(file.suggestedFilename()).toMatch(/^delo-.*\.pdf$/)
+    await expect(caseBlock.locator('[role="status"]')).toContainText('сохранено')
 
     const need = target.reconSectorPosts.reduce((sum, p) => sum + p.need, 0)
     await expect(card).toContainText(
