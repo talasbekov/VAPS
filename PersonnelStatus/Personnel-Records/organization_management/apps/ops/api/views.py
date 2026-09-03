@@ -227,6 +227,9 @@ _FORCES_SELECT_PERMISSION = "forces.select"
 # `status.manage` с областью на управление есть (см. Decisions).
 _STATUS_MANAGE_PERMISSION = "status.manage"
 _PLACEMENT_PERMISSION = "placement.manage"
+#: Расстановка на ЛЮБОМ объекте — штаб (`[РАС-08]`, Plane №421). Гейт действия
+#: остаётся `placement.manage`; этот код снимает только проверку «своё ли».
+_PLACEMENT_COMMAND_PERMISSION = "placement.command"
 
 
 class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
@@ -1328,7 +1331,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """
         if self._acting_as_deputy_now():
             return
-        if "*" in effective_permissions(self.request):
+        permissions = effective_permissions(self.request)
+        if "*" in permissions:
+            return
+        # Штаб расставляет на любом объекте (`[РАС-08]`, Plane №421) — своим
+        # кодом, а не ослаблением проверки для всех, кто умеет расставлять.
+        if _PLACEMENT_COMMAND_PERMISSION in permissions:
             return
         event = OpsSecurityEvent.objects.filter(pk=event_id).first()
         if event is None:
