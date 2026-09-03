@@ -107,7 +107,7 @@ def test_approving_the_last_object_moves_the_event(
     manager, approver, two_objects_on_approval  # noqa: F811
 ):
     base, event_id, first, second, _ = two_objects_on_approval
-    for visit in (first, second):
+    for index, visit in enumerate((first, second)):
         manager.post(
             f"{base}approval/route/",
             {
@@ -131,15 +131,16 @@ def test_approving_the_last_object_moves_the_event(
             },
             format="json",
         )
+        if index == 0:
+            assert service.lock_event(event_id).stage == "APPROVAL", (
+                "мероприятие ушло вперёд по одному объекту"
+            )
 
-    approver.post(
-        f"{base}approval/approve/", {"visitObjectId": str(first.pk)}, format="json"
-    )
-    assert service.lock_event(event_id).stage == "APPROVAL"
-
-    approver.post(
-        f"{base}approval/approve/", {"visitObjectId": str(second.pk)}, format="json"
-    )
+    # Подпись единственного согласующего завершает объект САМА (`[СОГ-09]`,
+    # Plane №399) — цикл выше уже согласовал оба; ручки `approve/` не нужны.
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert (first.stage, second.stage) == ("ACKNOWLEDGEMENT", "ACKNOWLEDGEMENT")
     assert service.lock_event(event_id).stage == "ACKNOWLEDGEMENT"
 
 

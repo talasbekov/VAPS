@@ -79,6 +79,9 @@ def test_changing_the_placement_after_sending_invalidates_approval(manager, appr
     """
     base, employee_id, post_id = event_on_approval(manager)
     route = add_approver(manager, base)
+    # ДВА согласующих: подпись единственного завершила бы этап сама
+    # (`[СОГ-09]`, Plane №399), и править было бы уже нечего.
+    route = add_approver(manager, base, name="А. Жанибеков")
     manager.post(f"{base}approval/send/")
     data = approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
@@ -97,7 +100,13 @@ def test_changing_the_placement_after_sending_invalidates_approval(manager, appr
     assert frozen.status_code == 422
     assert frozen.json()["error_code"] == "PLACEMENT_FROZEN"
 
-    approver.post(f"{base}approval/return/", {"comment": "заменить"}, format="json")
+    # Возврат — РЕШЕНИЕМ второго согласующего в маршруте (`[СОГ-08]`, №399):
+    # отдельной кнопки возврата у него нет.
+    approver.post(
+        f"{base}approval/route/{route[1]['id']}/decide/",
+        {"decision": "RETURNED", "comment": "заменить"},
+        format="json",
+    )
     manager.delete(f"{base}placement/{assignment_id}/")
     manager.post(
         f"{base}placement/assign/",
@@ -252,6 +261,9 @@ def test_resending_keeps_the_return_reason_and_clears_the_rest(manager, approver
         {"decision": "RETURNED", "comment": "поменять старшего"},
         format="json",
     )
+    # Возврат подписанта вернул объект на «Расстановку» (`[СОГ-08]`, №399) —
+    # повторная отправка идёт после повторного завершения расстановки.
+    manager.post(f"{base}placement/complete/")
 
     data = manager.post(f"{base}approval/send/").json()
 
@@ -377,11 +389,13 @@ def test_the_approver_decides_without_the_right_to_lead_the_event(manager, appro
         {"decision": "APPROVED", "comment": "Согласовано."},
         format="json",
     )
-    approved = approver.post(f"{base}approval/approve/")
 
     assert decided.status_code == 200, decided.data
-    assert approved.status_code == 200, approved.data
-    assert approved.json()["approvalStatus"] == "APPROVED"
+    # Последняя подпись завершает этап САМА (`[СОГ-09]`, Plane №399) — и делает
+    # это утверждающий без права вести мероприятие: ручка `approve/` для
+    # этого больше не нужна.
+    assert decided.json()["approvalStatus"] == "APPROVED"
+    assert decided.json()["stage"] == "ACKNOWLEDGEMENT"
 
 
 def test_the_approver_cannot_touch_the_placement_he_signs(manager, approver):  # noqa: F811

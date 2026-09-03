@@ -980,7 +980,8 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.decide_approver(
         om.pk, approver_id=approver_id, decision="APPROVED", comment=""
     )
-    event_service.approve_placement(om.pk)
+    # `approve_placement` здесь больше не зовётся: последняя подпись выше
+    # завершила этап сама (`[СОГ-09]`, Plane №399); журнал у перехода тот же.
     om.refresh_from_db()
     event_service.acknowledge_assignment(
         om.pk, om.placement_assignments[0]["id"]

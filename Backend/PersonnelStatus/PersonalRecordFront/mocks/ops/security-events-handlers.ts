@@ -2304,14 +2304,50 @@ export const securityEventsHandlers = [
               },
             ]
           : event.approvalRemarks;
-      return HttpResponse.json(
-        saveEvent({
-          ...event,
-          approvalRoute: route,
-          approvalRemarks: remarks,
-          updatedAt: now,
-        })
-      );
+      // Решение — действие (`[СОГ-08]`/`[СОГ-09]`, Plane №399), порт правил
+      // сервера: возврат подписанта возвращает объект на «Расстановку»;
+      // последняя подпись без открытых замечаний завершает этап сама.
+      const decided: SecurityEvent = {
+        ...event,
+        approvalRoute: route,
+        approvalRemarks: remarks,
+        updatedAt: now,
+      };
+      if (body.decision === "RETURNED") {
+        return HttpResponse.json(
+          saveEvent(
+            withVersions(
+              {
+                ...decided,
+                stage: "PLACEMENT",
+                approvalStatus: "RETURNED",
+                approvalComment: comment,
+                readinessPercent: 60,
+              },
+              versionsDecide("RETURNED")
+            )
+          )
+        );
+      }
+      const allSigned = route.every((approver) => approver.status === "APPROVED");
+      const noOpen = remarks.every((remark) => remark.status !== "OPEN");
+      if (allSigned && noOpen && !decided.approvalStale) {
+        return HttpResponse.json(
+          saveEvent(
+            withVersions(
+              {
+                ...decided,
+                stage: "ACKNOWLEDGEMENT",
+                approvalStatus: "APPROVED",
+                approvalComment: "",
+                readinessPercent: 85,
+              },
+              versionsDecide("APPROVED")
+            )
+          )
+        );
+      }
+      return HttpResponse.json(saveEvent(decided));
     }
   ),
 

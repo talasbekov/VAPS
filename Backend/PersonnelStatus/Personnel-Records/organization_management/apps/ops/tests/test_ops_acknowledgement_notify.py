@@ -168,7 +168,8 @@ def test_approving_the_placement_notifies_without_a_click(
     движением.
 
     Красная на мутации: убери `_autonotify_acknowledgement` из
-    `approve_placement` — строка уведомления не появится, и ассерт упадёт.
+    `_approve_visit` (общее тело ручки и автозавершения, №399) — строка
+    уведомления не появится, и ассерт упадёт.
     """
     from .test_ops_approval_stage import add_approver, event_on_approval
 
@@ -182,14 +183,17 @@ def test_approving_the_placement_notifies_without_a_click(
 
     route = add_approver(manager, base)
     manager.post(f"{base}approval/send/")
+    # До подписи рассылки нет: отправка на согласование — ещё не заступление.
+    assert not OpsNotification.objects.filter(kind=KIND).exists()
     approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
     )
-    assert not OpsNotification.objects.filter(kind=KIND).exists()
 
-    approved = approver.post(f"{base}approval/approve/")
+    # Последняя подпись завершает этап сама (`[СОГ-09]`, Plane №399) —
+    # уведомления уходят из того же перехода; читаем состояние после решения.
+    approved = manager.get(base)
 
     assert approved.status_code == 200, approved.data
     assert approved.json()["stage"] == "ACKNOWLEDGEMENT"
@@ -215,7 +219,9 @@ def test_approving_an_event_nobody_is_linked_to_still_approves(manager, approver
         format="json",
     )
 
-    approved = approver.post(f"{base}approval/approve/")
+    # Последняя подпись завершает этап сама (`[СОГ-09]`, Plane №399) —
+    # уведомления уходят из того же перехода; читаем состояние после решения.
+    approved = manager.get(base)
 
     assert approved.status_code == 200, approved.data
     assert approved.json()["stage"] == "ACKNOWLEDGEMENT"

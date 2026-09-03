@@ -29,24 +29,15 @@ import { X } from "lucide-react";
 //   предупреждения по рейтингу с причиной, введённой при назначении.
 import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  APPROVAL_APPROVE,
-  APPROVAL_RETURN,
-  useChainAccess,
-} from "@/features/forces-split/ui/chain-access";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   useAddApprover,
-  useApprovePlacement,
   useDecideApprover,
   useMoveApprover,
   useRemoveApprover,
   useResolveRemark,
-  useReturnPlacement,
   useSendForApproval,
   useWithdrawApproval,
 } from "@/hooks/use-security-event-stages";
@@ -311,15 +302,6 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
   // с 28.08.2026 подпись и возврат — работа утверждающего, а не ведущего
   // мероприятие (решение заказчика, Plane №267). Спрятать их было бы хуже —
   // человек не узнал бы, к кому идти.
-  const access = useChainAccess();
-  const approve = useApprovePlacement(event.id);
-  const [comment, setComment] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
-    null
-  );
-  const returnBack = useReturnPlacement(event.id, {
-    onFormError: (details) => setFieldErrors(details),
-  });
 
   // Разрез по объекту — ТОТ ЖЕ хук, что у рекогносцировки и расстановки:
   // второй ответ на «какой объект сейчас ведём» разошёлся бы с первым при
@@ -427,85 +409,19 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           )}
         </section>
 
-        {/* Обходы предупреждений — то, ради чего согласующий и смотрит расчёт:
-            назначения, прошедшие мимо требования поста к рейтингу. */}
-        <section>
-          <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
-            Обходы предупреждений при назначении
-          </p>
-          {overrides.length === 0 ? (
-            <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
-              Обходов не было — все назначения прошли без предупреждений.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {overrides.map((assignment) => (
-                <li
-                  key={assignment.id}
-                  className="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-sm"
-                >
-                  <span className="font-semibold">{assignment.employeeName}</span>{" "}
-                  <span className="text-muted-foreground">
-                    — {postLabel(assignment.postId)}
-                  </span>
-                  <p className="text-xs text-amber-800">
-                    Обоснование: {assignment.ratingOverrideReason}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <div className="space-y-1">
-          <Label htmlFor="approval-comment">Причина возврата (при возврате)</Label>
-          <Textarea
-            id="approval-comment"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-          />
-        </div>
-
-        <FieldErrors errors={fieldErrors} />
-        <StageError error={approve.error} />
-        <StageError error={returnBack.error} />
-
-        {/* Причина словами и ОДИН раз на шаг: у обеих кнопок она одна и та
-            же, и повтор превратил бы низ карточки в частокол. */}
-        {access.reason(APPROVAL_APPROVE) !== "" && (
-          <p className="text-xs text-muted-foreground">
-            {access.reason(APPROVAL_APPROVE)}
-          </p>
-        )}
-
-        <div className="flex justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={returnBack.isPending || !access.can(APPROVAL_RETURN)}
-            aria-disabled={!access.can(APPROVAL_RETURN)}
-            title={access.reason(APPROVAL_RETURN) || "Вернуть расстановку на доработку"}
-            onClick={() => {
-              setFieldErrors(null);
-              returnBack.mutate({ comment, visitObjectId: view.visitObjectId });
-            }}
-          >
-            {returnBack.isPending ? "Возврат…" : "Вернуть на доработку"}
-          </Button>
-          <Button
-            type="button"
-            disabled={approve.isPending || !access.can(APPROVAL_APPROVE)}
-            aria-disabled={!access.can(APPROVAL_APPROVE)}
-            title={access.reason(APPROVAL_APPROVE) || "Согласовать расстановку"}
-            onClick={() =>
-              approve.mutate({ visitObjectId: view.visitObjectId })
-            }
-          >
-            {approve.isPending
-              ? "Утверждение…"
-              : "Завершить этап и перейти далее"}
-          </Button>
-        </div>
+        {/* `[СОГ-11]` (Plane №399): здесь НЕТ блока «Обходы предупреждений»
+            (его место — аудит; число обходов остаётся плиткой сводки), НЕТ
+            постоянного поля «Причина возврата» (причину спрашивает строка
+            возврата в маршруте) и НЕТ кнопки «Завершить этап и перейти
+            далее»: этап завершается сам последней подписью (`[СОГ-09]`), а
+            возврат согласующего возвращает объект сразу (`[СОГ-08]`). Одно
+            решение — в одном месте. Ручки `approve/`/`return/` на сервере
+            остались под админа и API. */}
+        <p className="text-[11px] text-muted-foreground" data-slot="approval-autocomplete-note">
+          Этап завершится сам, когда подпишут все согласующие и не останется
+          замечаний без ответа. Возврат любым согласующим возвращает объект на
+          «Расстановку».
+        </p>
       </CardContent>
     </Card>
   );

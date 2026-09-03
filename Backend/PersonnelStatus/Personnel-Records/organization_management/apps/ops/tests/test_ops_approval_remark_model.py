@@ -204,13 +204,14 @@ def test_disagreeing_does_not_block_completion(manager, approver):  # noqa: F811
     manager.post(f"{base}approval/send/")
     fresh = manager.get(base).json()
     approver_id = fresh["approvalRoute"][0]["id"]
-    approver.post(
+
+    # Подпись — последняя, замечание закрыто несогласием С ОТВЕТОМ: этап
+    # завершается сам (`[СОГ-09]`, №399), несогласие его не держит.
+    resp = approver.post(
         f"{base}approval/route/{approver_id}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
     )
-
-    resp = approver.post(f"{base}approval/approve/")
 
     assert resp.status_code == 200, resp.content
     assert resp.json()["stage"] == "ACKNOWLEDGEMENT"
