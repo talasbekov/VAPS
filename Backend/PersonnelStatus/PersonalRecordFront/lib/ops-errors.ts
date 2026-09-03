@@ -23,6 +23,10 @@ export const OVERRIDABLE_CODES: ReadonlySet<string> = new Set([
   "SOFT_CONFLICT_DETECTED",
   "STATUS_OVERLAP_WARNING",
   "DUTY_CONFLICT_DETECTED",
+  // Недобор при завершении расстановки (`[РАС-06]`, Plane №396): «K постов
+  // без людей. Завершить с недобором?» — тот же протокол подтверждения
+  // причиной, что и у обхода предупреждения по рейтингу.
+  "PLACEMENT_UNDERSTAFFED",
 ]);
 
 export interface OpsApiErrorInit {

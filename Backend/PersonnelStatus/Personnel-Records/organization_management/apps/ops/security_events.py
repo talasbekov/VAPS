@@ -3964,20 +3964,94 @@ def set_sector_senior(event_id, assignment_id, *, senior, actor):
 
 
 @transaction.atomic
-def complete_placement(event_id):
+@transaction.atomic
+def complete_placement(
+    event_id, *, visit_object_id=None, override=False, override_reason=None,
+    actor=None,
+):
+    """Завершить расстановку ОБЪЕКТА (`[РАС-06]`, Plane №396).
+
+    Требование заказчика буквально: «активна при полной укомплектованности;
+    иначе подтверждение „K постов без людей. Завершить с недобором?“ +
+    комментарий... После завершения → этап 3, документ „Расстановка сил“
+    версия 1 в статусе „Черновик“».
+
+    Недобор — МЯГКИЙ конфликт (409, `overridable`), той же формы, что и обход
+    предупреждения по рейтингу при назначении: клиент показывает диалог,
+    человек пишет причину, повтор уходит с `override=True`. Комментарий
+    ОБЯЗАТЕЛЕН — «завершили с недобором без объяснения» неисполнимо для
+    штаба, который потом ищет недостающих людей.
+
+    ПОЛНОЕ ОТСУТСТВИЕ ПОСТОВ override не снимает: «K постов без людей»
+    подразумевает K > 0, а расстановка без единого поста — не недобор,
+    а нечего согласовывать.
+    """
     event = lock_event(event_id)
+    visit = pick_visit_object(
+        event,
+        visit_object_id,
+        no_objects=(
+            "У мероприятия нет объектов посещения: добавьте объект — "
+            "расстановка принадлежит ему, а не мероприятию."
+        ),
+        ambiguous=(
+            "У мероприятия несколько объектов посещения — выберите, чью "
+            "расстановку завершить."
+        ),
+    )
     _require_stage(
         event,
         "PLACEMENT",
         "Расстановку можно завершить только на этапе «Расстановка».",
     )
+    posts = visit_object_posts(event, visit)
+    if not posts:
+        raise DomainError(
+            "PLACEMENT_INCOMPLETE", 422, message="Не все посты укомплектованы."
+        )
     assigned = {a.get("postId") for a in event.placement_assignments}
-    unstaffed = [
-        p for p in event.recon_sector_posts if p.get("id") not in assigned
-    ]
-    if not event.recon_sector_posts or unstaffed:
-        raise DomainError("PLACEMENT_INCOMPLETE", 422, message= "Не все посты укомплектованы.")
-    return _advance(event, "APPROVAL")
+    unstaffed = [p for p in posts if p.get("id") not in assigned]
+    if unstaffed:
+        clean_reason = str(override_reason or "").strip()
+        if not (override is True and clean_reason != ""):
+            count = len(unstaffed)
+            noun = "постов" if count != 1 else "пост"
+            raise DomainError(
+                "PLACEMENT_UNDERSTAFFED",
+                409,
+                detail={"unfilledCount": count},
+                overridable=True,
+                message=(
+                    f"{count} {noun} без людей. Завершить с недобором?"
+                ),
+            )
+        audit_service.record(
+            actor=actor,
+            action=audit_service.PLACEMENT_COMPLETED_WITH_SHORTAGE,
+            entity_type=audit_service.ENTITY_SECURITY_EVENT,
+            entity_id=event.pk,
+            new_value={
+                "visitObjectId": str(visit.pk),
+                "unfilledCount": len(unstaffed),
+                "comment": clean_reason,
+            },
+        )
+    # ДОКУМЕНТ «РАССТАНОВКА СИЛ» ЗАВОДИТСЯ ВЕРСИЕЙ 1 ЗДЕСЬ, а не на первой
+    # отправке согласующим: `[РАС-06]` требует «версия 1 в статусе Черновик»
+    # сразу после завершения этапа, до какой-либо отправки. `send_for_approval`
+    # (Ш-5) растит версию ДАЛЬШЕ, на N+1 при повторной отправке (`[ВОЗ-06]`) —
+    # эти два места пишут разные переходы одного счётчика, а не спорят.
+    # `max`, а не безусловная единица: повторное завершение после возврата
+    # (объект уже вернулся на «Расстановку» — `[ВОЗ-…]`) не обязано откатывать
+    # версию назад, если она успела вырасти отправками.
+    if visit.document_version < 1:
+        visit.document_version = 1
+        visit.save(update_fields=["document_version", "updated_at"])
+    old_stage = event.stage
+    advance_visits(event, "APPROVAL", visits=[visit])
+    if event.stage != old_stage:
+        record_transition(event, old_stage, event.stage)
+    return event
 
 
 # ── Согласование ────────────────────────────────────────────────────────────

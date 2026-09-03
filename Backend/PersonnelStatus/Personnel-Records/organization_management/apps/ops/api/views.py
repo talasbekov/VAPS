@@ -1173,7 +1173,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="placement/complete")
     def placement_complete(self, request, pk=None):
-        return self._event_response(event_service.complete_placement(pk))
+        data = request.data or {}
+        return self._event_response(
+            event_service.complete_placement(
+                pk,
+                visit_object_id=self._visit_object_of(request),
+                override=bool(data.get("override")),
+                override_reason=data.get("override_reason"),
+                actor=request.user,
+            )
+        )
 
     # Адресат согласования — ОБЪЕКТ ПОСЕЩЕНИЯ (Plane №411). `visitObjectId`
     # читается и из тела, и из строки запроса: удаление согласующего —
