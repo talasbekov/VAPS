@@ -918,13 +918,45 @@ export const securityEventsHandlers = [
     );
   }),
 
-  http.post(`*${securityEventReconImportPath(":id")}`, ({ params }) => {
+  http.post(`*${securityEventReconImportPath(":id")}`, async ({ params, request }) => {
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;
     if (event.stage !== "RECON") {
       return businessRuleError(
         "RECON_STAGE_REQUIRED",
         "Расчёт постов формируется на этапе рекогносцировки."
+      );
+    }
+    // Импорт идёт из паспорта ОБЪЕКТА ПОСЕЩЕНИЯ (Plane №408): мок повторяет
+    // правило сервера, иначе контракт зелен на одной стороне и врёт про другую.
+    const body = (await request.json().catch(() => ({}))) as {
+      visitObjectId?: string;
+    };
+    const visits = [...event.visitObjects].sort(
+      (a, b) => a.position - b.position
+    );
+    if (visits.length === 0) {
+      return businessRuleError(
+        "VISIT_OBJECT_REQUIRED",
+        "У мероприятия нет объектов посещения: добавьте объект — посты расчёта принадлежат ему, а не мероприятию."
+      );
+    }
+    const target =
+      body.visitObjectId === undefined || body.visitObjectId === ""
+        ? visits.length > 1
+          ? null
+          : visits[0]
+        : (visits.find((v) => v.id === body.visitObjectId) ?? undefined);
+    if (target === null) {
+      return businessRuleError(
+        "VISIT_OBJECT_REQUIRED",
+        "У мероприятия несколько объектов посещения — выберите, для какого импортировать посты."
+      );
+    }
+    if (target === undefined) {
+      return businessRuleError(
+        "VISIT_OBJECT_NOT_FOUND",
+        "Объект посещения не найден в этом мероприятии."
       );
     }
     const binding = event.passportBinding;
@@ -942,8 +974,11 @@ export const securityEventsHandlers = [
     }
     // импорт ДОБАВЛЯЕТ строки, не заменяет расчёт; повторный импорт не плодит
     // дубли — пост, уже пришедший из этой версии, пропускается
+    // Повтор считается В ПРЕДЕЛАХ ОБЪЕКТА: один пост паспорта у двух объектов
+    // посещения — два разных поста расчёта, а не дубль.
     const alreadyImported = new Set(
       event.reconSectorPosts
+        .filter((row) => (row.visitObjectId ?? null) === target.id)
         .map((row) => row.sourcePostId)
         .filter((sourcePostId): sourcePostId is string => sourcePostId !== null)
     );
@@ -968,6 +1003,7 @@ export const securityEventsHandlers = [
           sourceSectorId: sector.id,
           sourcePostId: post.id,
           minRating: null,
+          visitObjectId: target.id,
         });
       }
     }

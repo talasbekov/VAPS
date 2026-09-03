@@ -48,6 +48,10 @@ CODES = {
     "NO_PASSPORT_VERSION": frozenset({422}),
     "PASSPORT_VERSION_NOT_FOUND": frozenset({422}),
     "NOTHING_TO_IMPORT": frozenset({422}),
+    # Импорт постов идёт из паспорта ОБЪЕКТА посещения (Plane №408): объект
+    # не назван, а их несколько — отказ с просьбой выбрать, а не догадка.
+    "VISIT_OBJECT_REQUIRED": frozenset({422}),
+    "VISIT_OBJECT_NOT_FOUND": frozenset({404}),
     "RECON_CHECKLIST_INCOMPLETE": frozenset({422}),
     "RECON_SECTOR_POSTS_EMPTY": frozenset({422}),
     "EVENT_DELETE_FORBIDDEN": frozenset({422}),
