@@ -28,7 +28,7 @@ import {
   useMyEmployee,
 } from "@/hooks/use-my-employee";
 import { useSecurityEvents } from "@/hooks/use-security-events";
-import { useDutyShiftsAll } from "@/hooks/use-duty-shifts";
+import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
 import { useLegalDocuments } from "@/hooks/use-legal-documents";
 import {
   LEGAL_DOCUMENT_KIND_BADGE_CLASS,
@@ -39,6 +39,8 @@ import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { STAGE_LABEL } from "@/entities/security-event";
 import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
 import { EMPTY_FILTERS } from "@/entities/operational-rating";
+import { DUTY_STATE_LABEL } from "@/entities/duty-shift";
+import type { DutyShift } from "@/entities/duty-shift";
 import type { CoreEmployee, OpsEmployeeStatusRow } from "@/lib/api";
 import type { ReconSectorPost, SecurityEvent } from "@/entities/security-event";
 
@@ -91,6 +93,68 @@ const MONTH_ABBR = [
   "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК",
 ] as const;
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
+
+/** Цвет отметки СМЕНЫ: у смены свой набор состояний (есть «Ознакомлен»,
+ *  которого у статуса нет), и подставлять сюда карту статусов значило бы
+ *  печатать голый код там, где у службы дежурств есть подпись. */
+const DUTY_DOT: Record<string, string> = {
+  PLANNED: "bg-amber-500",
+  ACKNOWLEDGED: "bg-amber-600",
+  ACTIVE: "bg-emerald-600",
+  COMPLETED: "bg-muted-foreground",
+  CANCELLED: "bg-red-600",
+};
+
+/** Строка календаря: статус или смена, приведённые к одной форме. Приводятся
+ *  ЗДЕСЬ, а не в двух разных списках, потому что и сетка, и панель дня, и
+ *  список месяца задают им один и тот же вопрос — «что было в этот день». */
+interface CalendarPeriod {
+  key: string;
+  kind: "status" | "shift";
+  title: string;
+  /** Чем эта строка отличается от соседней с тем же названием: мероприятие у
+   *  статуса привлечения, объект у смены. Пустая строка — отличать нечем. */
+  detail: string;
+  from: string;
+  to: string;
+  state: string;
+  stateLabel: string;
+  dot: string;
+  note: string;
+}
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+/** ISO-дата по номеру месяца ОТ НУЛЯ — как его хранит курсор и отдаёт Date. */
+const isoOf = (year: number, month: number, day: number) =>
+  `${year}-${pad2(month + 1)}-${pad2(day)}`;
+const coversDay = (period: CalendarPeriod, iso: string) =>
+  iso >= period.from && iso <= (period.to ?? period.from);
+
+const MONTH_GENITIVE = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+] as const;
+
+/** «3 сентября 2026» из ISO — заголовок панели выбранного дня. */
+function dayTitle(iso: string): string {
+  const [year, month, day] = iso.split("-");
+  return `${Number(day)} ${MONTH_GENITIVE[Number(month) - 1]} ${year}`;
+}
+
+/** Подпись дня для озвучивания: точки цветом ничего не говорят без текста. */
+function dayAriaLabel(iso: string, count: number): string {
+  if (count === 0) return `${dayTitle(iso)} — ничего не назначено`;
+  return `${dayTitle(iso)} — ${count} ${periodWord(count)}`;
+}
+
+function periodWord(count: number): string {
+  const tail = count % 10;
+  const teen = count % 100;
+  if (teen >= 11 && teen <= 14) return "периодов";
+  if (tail === 1) return "период";
+  if (tail >= 2 && tail <= 4) return "периода";
+  return "периодов";
+}
 
 /** Блоки прототипа, которым источника нет И которым не нашлось места прямо в
  * раскладке. Те, что в прототипе занимают собственную карточку (рейтинг,
@@ -203,7 +267,10 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
     owner: "",
     pageSize: 100,
   });
-  const shifts = useDutyShiftsAll();
+  // СВОИ смены, а не реестр целиком: реестр открыт только держателю
+  // `duty.view`, и рядовому сотруднику он отвечал 403 — смены в календаре не
+  // показывались никогда, а ошибка гасилась молча (Plane №381).
+  const shifts = useMyDutyShifts();
 
   const myAssignments = useMemo(() => {
     const rows = events.data?.results ?? [];
@@ -229,13 +296,11 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
     return mine;
   }, [events.data, employee.id]);
 
-  const myShifts = useMemo(
-    () =>
-      (shifts.data?.results ?? []).filter(
-        (shift) => String(shift.employeeId) === String(employee.id)
-      ),
-    [shifts.data, employee.id]
-  );
+  // Почему смен не видно, если их не видно. Молчаливый ноль читается как
+  // «дежурств нет», а это разные вещи.
+  const shiftsNote = shifts.isError
+    ? "запрос к службе дежурств не прошёл, попробуйте обновить страницу."
+    : (shifts.data?.unlinkedReason ?? null);
 
   return (
     <>
@@ -278,8 +343,9 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
       {tab === "calendar" && (
         <CalendarTab
           statuses={statuses.data ?? []}
-          shifts={myShifts}
-          loading={statuses.isPending}
+          shifts={shifts.data?.results ?? []}
+          shiftsNote={shiftsNote}
+          loading={statuses.isPending || shifts.isPending}
         />
       )}
       {tab === "stats" && (
@@ -1124,10 +1190,14 @@ function InstructionsTab({
 function CalendarTab({
   statuses,
   shifts,
+  shiftsNote,
   loading,
 }: {
   statuses: OpsEmployeeStatusRow[];
-  shifts: { id: string; businessDate: string; stateCode: string; target: { safeLabel: string } }[];
+  shifts: DutyShift[];
+  /** Почему смен не видно, если их не видно: причина от сервера («учётка не
+   *  связана с кадровой») или сорванный запрос. null — смены пришли. */
+  shiftsNote: string | null;
   loading: boolean;
 }) {
   // Хуки стоят ДО раннего выхода на загрузке — иначе между рендерами
@@ -1137,25 +1207,48 @@ function CalendarTab({
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
+  // Выбранный день: пока не выбран, справа стоит список месяца целиком.
+  const [selectedIso, setSelectedIso] = useState<string | null>(null);
 
-  const periods = useMemo(
+  const periods = useMemo<CalendarPeriod[]>(
     () =>
       [
-        ...statuses.map((row) => ({
-          key: `status-${row.id}`,
-          title: labelOf(row.status_type_code),
-          from: row.date_start,
-          to: row.date_end,
-          state: row.state,
-          note: row.comment,
-        })),
+        ...statuses.map((row) => {
+          // Подпись мероприятия у статуса привлечения: без неё десять строк
+          // «Привлечён на мероприятие (наряд)» неразличимы (Plane №381).
+          // `event_code`/`event_title` приезжают вместе с участием, пустые —
+          // если ОМ удалено.
+          const event = row.participations[0];
+          const eventLabel =
+            event === undefined
+              ? ""
+              : [event.event_code, event.event_title]
+                  .filter((part) => part !== "")
+                  .join(" · ");
+          return {
+            key: `status-${row.id}`,
+            kind: "status" as const,
+            title: labelOf(row.status_type_code),
+            detail: eventLabel,
+            from: row.date_start,
+            to: row.date_end,
+            state: row.state,
+            stateLabel: STATE_LABEL[row.state] ?? row.state,
+            dot: STATE_DOT[row.state] ?? "bg-muted-foreground",
+            note: row.comment,
+          };
+        }),
         ...shifts.map((shift) => ({
           key: `shift-${shift.id}`,
-          title: `Дежурство · ${shift.target.safeLabel}`,
+          kind: "shift" as const,
+          title: "Дежурство",
+          detail: shift.target.safeLabel,
           from: shift.businessDate,
           to: shift.businessDate,
           state: shift.stateCode,
-          note: "",
+          stateLabel: DUTY_STATE_LABEL[shift.stateCode] ?? shift.stateCode,
+          dot: DUTY_DOT[shift.stateCode] ?? "bg-muted-foreground",
+          note: shift.note ?? "",
         })),
       ].sort((a, b) => b.from.localeCompare(a.from)),
     [statuses, shifts, labelOf]
@@ -1164,39 +1257,70 @@ function CalendarTab({
   // Сетка месяца: дню приписаны СОСТОЯНИЯ покрывающих его периодов — те же
   // цвета, что у списка рядом. Сравнение ISO-строк, без арифметики дат.
   const grid = useMemo(() => {
-    const pad = (value: number) => String(value).padStart(2, "0");
     const daysInMonth = new Date(
       Date.UTC(cursor.year, cursor.month + 1, 0)
     ).getUTCDate();
     const lead =
       (new Date(Date.UTC(cursor.year, cursor.month, 1)).getUTCDay() + 6) % 7;
-    const cells: { iso: string; day: number; states: string[] }[] = [];
+    const cells: { iso: string; day: number; dots: string[]; count: number }[] =
+      [];
     for (let day = 1; day <= daysInMonth; day += 1) {
-      const iso = `${cursor.year}-${pad(cursor.month + 1)}-${pad(day)}`;
-      const states: string[] = [];
-      for (const period of periods) {
-        const to = period.to ?? period.from;
-        if (iso >= period.from && iso <= to && !states.includes(period.state)) {
-          states.push(period.state);
-        }
+      const iso = isoOf(cursor.year, cursor.month, day);
+      const covering = periods.filter((period) => coversDay(period, iso));
+      const dots: string[] = [];
+      for (const period of covering) {
+        if (!dots.includes(period.dot)) dots.push(period.dot);
       }
-      cells.push({ iso, day, states: states.slice(0, 3) });
+      cells.push({ iso, day, dots: dots.slice(0, 3), count: covering.length });
     }
     return { lead, cells };
   }, [cursor, periods]);
+
+  // Список справа связан с показанным месяцем: 30 строк за все годы сразу
+  // читать нельзя, а листание месяца, которое ничего в списке не меняет,
+  // выглядит сломанным.
+  const monthStart = isoOf(cursor.year, cursor.month, 1);
+  const monthEnd = isoOf(
+    cursor.year,
+    cursor.month,
+    new Date(Date.UTC(cursor.year, cursor.month + 1, 0)).getUTCDate()
+  );
+  const monthPeriods = useMemo(
+    () =>
+      periods.filter(
+        (period) =>
+          period.from <= monthEnd && (period.to ?? period.from) >= monthStart
+      ),
+    [periods, monthStart, monthEnd]
+  );
+  const outsideCount = periods.length - monthPeriods.length;
+  const dayPeriods =
+    selectedIso === null
+      ? []
+      : periods.filter((period) => coversDay(period, selectedIso));
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Загрузка календаря…</p>;
   }
 
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const todayIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const todayIso = isoOf(
+    new Date().getFullYear(),
+    new Date().getMonth(),
+    new Date().getDate()
+  );
   const shiftMonth = (delta: number) => {
     setCursor((current) => {
       const next = new Date(Date.UTC(current.year, current.month + delta, 1));
       return { year: next.getUTCFullYear(), month: next.getUTCMonth() };
     });
+    // Выбор дня снимается: выбранный день чужого месяца в сетке не виден, и
+    // панель рядом рассказывала бы о дне, которого на экране нет.
+    setSelectedIso(null);
+  };
+  // Клик по строке списка ведёт к дню: у периода, начавшегося раньше месяца,
+  // это первый его день В ПОКАЗАННОМ месяце.
+  const selectPeriodDay = (period: CalendarPeriod) => {
+    setSelectedIso(period.from < monthStart ? monthStart : period.from);
   };
 
   return (
@@ -1208,14 +1332,15 @@ function CalendarTab({
               Мой календарь · {MONTH_NAME[cursor.month]} {cursor.year}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Дни с отметками моих статусов и смен
+              Дни с отметками моих статусов и смен — выберите день, чтобы
+              увидеть, что в нём
             </p>
           </div>
           <div className="flex gap-1">
             <button
               type="button"
               aria-label="Предыдущий месяц"
-              className="grid h-8 w-8 place-items-center rounded-md border text-sm hover:bg-muted"
+              className="grid h-9 w-9 place-items-center rounded-md border text-sm hover:bg-muted"
               onClick={() => shiftMonth(-1)}
             >
               ‹
@@ -1223,7 +1348,7 @@ function CalendarTab({
             <button
               type="button"
               aria-label="Следующий месяц"
-              className="grid h-8 w-8 place-items-center rounded-md border text-sm hover:bg-muted"
+              className="grid h-9 w-9 place-items-center rounded-md border text-sm hover:bg-muted"
               onClick={() => shiftMonth(1)}
             >
               ›
@@ -1231,6 +1356,12 @@ function CalendarTab({
           </div>
         </CardHeader>
         <CardContent>
+          {shiftsNote !== null && (
+            <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+              Смены дежурств не показаны: {shiftsNote} Статусы ниже это не
+              затрагивает.
+            </p>
+          )}
           <div className="grid grid-cols-7 gap-1">
             {WEEKDAYS.map((day) => (
               <span
@@ -1244,27 +1375,41 @@ function CalendarTab({
               <span key={`lead-${index}`} aria-hidden />
             ))}
             {grid.cells.map((cell) => (
-              <div
+              <button
                 key={cell.iso}
-                className={
-                  cell.iso === todayIso
-                    ? "flex min-h-[46px] flex-col items-center rounded-md border border-primary p-1"
-                    : "flex min-h-[46px] flex-col items-center rounded-md border p-1"
+                type="button"
+                // Кнопка, а не блок: день открывает свой состав, а значит это
+                // управляющий элемент — с клавиатуры и с озвучиванием тоже.
+                aria-pressed={cell.iso === selectedIso}
+                aria-label={dayAriaLabel(cell.iso, cell.count)}
+                onClick={() =>
+                  setSelectedIso((current) =>
+                    current === cell.iso ? null : cell.iso
+                  )
                 }
+                className={[
+                  "flex min-h-[46px] flex-col items-center rounded-md border p-1 transition-colors",
+                  "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  cell.iso === selectedIso
+                    ? "border-primary bg-primary/10 ring-1 ring-primary"
+                    : cell.iso === todayIso
+                      ? "border-primary"
+                      : "",
+                ].join(" ")}
               >
                 <span className="text-[11px] font-semibold tabular-nums">
                   {cell.day}
                 </span>
                 <span className="mt-0.5 flex gap-0.5">
-                  {cell.states.map((state) => (
+                  {cell.dots.map((dot) => (
                     <span
-                      key={state}
-                      title={STATE_LABEL[state] ?? state}
-                      className={`h-1.5 w-1.5 rounded-full ${STATE_DOT[state] ?? "bg-muted-foreground"}`}
+                      key={dot}
+                      aria-hidden
+                      className={`h-1.5 w-1.5 rounded-full ${dot}`}
                     />
                   ))}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-4 border-t pt-3">
@@ -1279,57 +1424,96 @@ function CalendarTab({
                 {label}
               </span>
             ))}
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className={`h-2.5 w-2.5 rounded-full ${DUTY_DOT.PLANNED}`} />
+              Дежурство
+            </span>
           </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Мои периоды</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Статусы и смены дежурств; состояние каждой строки задаёт сервер
-          </p>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle>
+              {selectedIso === null
+                ? `Периоды за ${MONTH_NAME[cursor.month].toLowerCase()}`
+                : dayTitle(selectedIso)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {selectedIso === null
+                ? "Статусы и смены дежурств показанного месяца; состояние каждой строки задаёт сервер"
+                : "Что назначено на этот день"}
+            </p>
+          </div>
+          {selectedIso !== null && (
+            <button
+              type="button"
+              className="shrink-0 rounded-md border px-2.5 py-1.5 text-xs hover:bg-muted"
+              onClick={() => setSelectedIso(null)}
+            >
+              Весь месяц
+            </button>
+          )}
         </CardHeader>
         <CardContent>
-        {periods.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Ни статусов, ни смен за вами не числится.
+          {(selectedIso === null ? monthPeriods : dayPeriods).length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {selectedIso === null
+                ? `За ${MONTH_NAME[cursor.month].toLowerCase()} ${cursor.year} за вами ни статусов, ни смен не числится.`
+                : "В этот день ничего не назначено."}
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {(selectedIso === null ? monthPeriods : dayPeriods).map(
+                (period) => (
+                  <li key={period.key} className="border-b last:border-0">
+                    <button
+                      type="button"
+                      onClick={() => selectPeriodDay(period)}
+                      className="flex w-full flex-wrap items-baseline gap-2 rounded-md px-1 py-2 text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span
+                        aria-hidden
+                        className={`h-2 w-2 shrink-0 rounded-full ${period.dot}`}
+                      />
+                      <span className="flex-1 min-w-0">
+                        <span className="block">{period.title}</span>
+                        {period.detail !== "" && (
+                          <span className="block text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                            {period.detail}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {period.from === period.to
+                          ? period.from
+                          : `${period.from} — ${period.to}`}
+                      </span>
+                      <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+                        {period.stateLabel}
+                      </span>
+                      {period.note !== "" && (
+                        <span className="w-full text-xs text-muted-foreground">
+                          {period.note}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                )
+              )}
+            </ul>
+          )}
+          {selectedIso === null && outsideCount > 0 && (
+            <p className="mt-3 border-t pt-3 text-[11px] text-muted-foreground">
+              Ещё {outsideCount} {periodWord(outsideCount)} вне этого месяца —
+              листайте месяцы стрелками.
+            </p>
+          )}
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Пересечения периодов здесь не помечаются: их считает служба дежурств
+            по своей политике конфликтов, и второй счёт разошёлся бы с ней.
           </p>
-        ) : (
-          <ul className="space-y-1">
-            {periods.map((period) => (
-              <li
-                key={period.key}
-                className="flex flex-wrap items-baseline gap-2 border-b py-2 text-sm last:border-0"
-              >
-                <span
-                  aria-hidden
-                  className={`h-2 w-2 shrink-0 rounded-full ${
-                    STATE_DOT[period.state] ?? "bg-muted-foreground"
-                  }`}
-                />
-                <span className="flex-1">{period.title}</span>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {period.from === period.to
-                    ? period.from
-                    : `${period.from} — ${period.to}`}
-                </span>
-                <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
-                  {STATE_LABEL[period.state] ?? period.state}
-                </span>
-                {period.note !== "" && (
-                  <span className="w-full text-[11px] text-muted-foreground">
-                    {period.note}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          Пересечения периодов здесь не помечаются: их считает служба дежурств
-          по своей политике конфликтов, и второй счёт разошёлся бы с ней.
-        </p>
         </CardContent>
       </Card>
     </div>

@@ -83,6 +83,20 @@ async function signIn(page: Page, username: string, password: string): Promise<v
   })
 }
 
+/** Месяц, который календарь показывает при открытии, — текущий, в ISO `YYYY-MM`. */
+function monthOfToday(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Пересекается ли период с показанным месяцем — тем же сравнением ISO-строк,
+ *  каким это считает экран. */
+function touchesMonth(from: string, to: string, month: string): boolean {
+  const start = `${month}-01`
+  const end = `${month}-31`
+  return from <= end && (to ?? from) >= start
+}
+
 /** Сколько строк расстановки принадлежит сотруднику по ответу реестра. */
 function assignmentsOf(events: EventRow[], employeeId: number): Assignment[] {
   return events.flatMap((event) =>
@@ -210,7 +224,10 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       'обе учётки указывают на одну запись — связь не проверяется',
     ).not.toBe(mineAsAdmin.employee!.id)
 
-    const statuses = await get<{ results: StatusRow[]; next: string | null }>(
+    const statuses = await get<{
+      results: (StatusRow & { date_start: string; date_end: string })[]
+      next: string | null
+    }>(
       otherToken,
       `/api/operations/statuses/?employee_id=${mineAsOther.employee!.id}&limit=200`,
     )
@@ -228,7 +245,12 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(page.getByText(mineAsAdmin.employee!.full_name)).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Мой календарь' }).click()
-    const periods = page.locator('[data-slot="card"]', { hasText: 'Мои периоды' }).first()
+    // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №381). Раньше карточка звалась «Мои
+    // периоды» и печатала ВСЕ строки за все годы разом — заказчик назвал это
+    // нечитаемым, и список стал разрезом ПОКАЗАННОГО месяца. Сравнивать его с
+    // полным ответом ручки больше нельзя: сравнение считалось бы верным
+    // только в месяце, в который попали все статусы стенда.
+    const periods = page.locator('[data-slot="card"]', { hasText: 'Периоды за' }).first()
     // 🔴 `limit`, А НЕ `page_size` (в запросе выше). Списки раздела ОМ
     // пагинируются LimitOffsetPagination: `page_size` она игнорирует и молча
     // отдаёт 50 строк. Проба сравнивала «50 из ручки» с полным списком на
@@ -240,7 +262,59 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       statuses.next,
       'статусы не поместились на страницу — сравнение с экраном стало неполным',
     ).toBeFalsy()
-    await expect(periods.getByRole('listitem')).toHaveCount(statuses.results.length)
+    const mineShifts = await get<{ results: { businessDate: string }[] }>(
+      otherToken,
+      '/api/ops/duty-shifts/mine/',
+    )
+    const shown = monthOfToday()
+    const expected =
+      statuses.results.filter((row) => touchesMonth(row.date_start, row.date_end, shown))
+        .length + mineShifts.results.filter((row) => row.businessDate.startsWith(shown)).length
+    await expect(periods.getByRole('listitem')).toHaveCount(expected)
+  })
+
+  test('день календаря открывает свой состав, а список привязан к месяцу', async ({ page }) => {
+    // Жалоба заказчика в №381: «по дню нельзя кликнуть» и «список нечитаем».
+    // Проба стережёт оба ответа сразу — выбор дня и разрез месяца.
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const me = await get<MyEmployee>(token, '/api/operations/my-employee/')
+    const employee = me.employee as CoreEmployee
+    const statuses = await get<{ results: (StatusRow & { date_start: string; date_end: string })[] }>(
+      token,
+      `/api/operations/statuses/?employee_id=${employee.id}&limit=500`,
+    )
+    const shown = monthOfToday()
+    const inMonth = statuses.results.filter((row) =>
+      touchesMonth(row.date_start, row.date_end, shown),
+    )
+    expect(
+      inMonth.length,
+      'в показанном месяце у стенда нет статусов — проверять выбор дня нечем',
+    ).toBeGreaterThan(0)
+    // День, в котором заведомо что-то есть: первый день первого такого статуса
+    // (или первое число, если статус начался в прошлом месяце).
+    const target = inMonth[0].date_start.startsWith(shown)
+      ? inMonth[0].date_start
+      : `${shown}-01`
+    const dayNumber = Number(target.slice(8))
+
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto(`${APP}${SCREEN}`)
+    await page.getByRole('button', { name: 'Мой календарь' }).click()
+
+    const periods = page.locator('[data-slot="card"]', { hasText: 'Периоды за' }).first()
+    await expect(periods).toBeVisible({ timeout: 20_000 })
+
+    // Клик по дню: панель перестаёт быть списком месяца и называет день.
+    await page.getByRole('button', { name: new RegExp(`^${dayNumber} \\S+ \\d{4} — `) }).click()
+    const dayCard = page.locator('[data-slot="card"]', { hasText: 'Что назначено на этот день' })
+    await expect(dayCard).toBeVisible()
+    const dayRows = await dayCard.getByRole('listitem').count()
+    expect(dayRows, 'в выбранном дне пусто, хотя статус его покрывает').toBeGreaterThan(0)
+
+    // Возврат к месяцу — той же кнопкой, что предложена на экране.
+    await page.getByRole('button', { name: 'Весь месяц' }).click()
+    await expect(page.locator('[data-slot="card"]', { hasText: 'Периоды за' })).toBeVisible()
   })
 
   test('учётка без кадровой записи получает причину, а не пустой профиль', async ({ page }) => {

@@ -13,6 +13,12 @@ export const DUTY_SHIFTS_PATH = "/api/ops/duty-shifts/";
 export const DUTY_MONTHLY_PLAN_PATH = "/api/ops/duty-monthly-plan/";
 export const DUTY_PLAN_OBJECTS_PATH = "/api/ops/duty-plan-objects/";
 export const DUTY_CANDIDATES_PATH = "/api/ops/duty-candidates/";
+/** Свои смены — самообслуживание (Plane №381).
+ *
+ *  Отдельный адрес, а не фильтр списка: список гейтится `duty.view`, то есть
+ *  правом на ЧУЖИЕ смены, и у рядового сотрудника его нет — «Мой календарь»
+ *  тянул весь реестр и получал 403, а ошибка гасилась молча. */
+export const DUTY_SHIFTS_MINE_PATH = "/api/ops/duty-shifts/mine/";
 
 export function dutyPlanDraftPath(): string {
   return `${DUTY_MONTHLY_PLAN_PATH}draft/`;
@@ -171,4 +177,12 @@ export interface CancelDutyShiftRequest extends Record<string, unknown> {
 export interface ListDutyShiftsResponse {
   results: DutyShift[];
   passportStatuses: DutyPassportStatus[];
+}
+
+/** Ответ «моих смен». `unlinkedReason` не пуст, когда учётка не связана с
+ *  кадровой записью: показывать нечего, и причина этого — не ошибка сети, а
+ *  состояние данных, поэтому она едет строкой, а не пустотой. */
+export interface ListMyDutyShiftsResponse {
+  results: DutyShift[];
+  unlinkedReason: string | null;
 }

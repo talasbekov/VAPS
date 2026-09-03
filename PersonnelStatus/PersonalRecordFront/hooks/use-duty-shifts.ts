@@ -15,6 +15,7 @@ import {
   dutyShiftDetailPath,
   DUTY_CANDIDATES_PATH,
   DUTY_PLAN_OBJECTS_PATH,
+  DUTY_SHIFTS_MINE_PATH,
   DUTY_SHIFTS_PATH,
 } from "@/entities/duty-shift";
 import type {
@@ -24,14 +25,21 @@ import type {
   DutyShiftDetail,
   ListDutyCandidatesResponse,
   ListDutyPlanObjectsResponse,
-  ListDutyShiftsResponse,
+  ListMyDutyShiftsResponse,
 } from "@/entities/duty-shift";
 
-export function useDutyShiftsAll(options?: { enabled?: boolean }) {
-  return useQuery<ListDutyShiftsResponse, OpsApiFailure>({
-    queryKey: ["ops-duty-shifts", "all"],
-    queryFn: () => opsApiClient.get<ListDutyShiftsResponse>(DUTY_SHIFTS_PATH),
-    enabled: options?.enabled ?? true,
+/** Свои смены дежурств (Plane №381).
+ *
+ *  Профиль спрашивает СВОИ строки, а не весь реестр: реестр открыт только
+ *  держателю `duty.view`, и до этой ручки вкладка «Мой календарь» обещала
+ *  «статусы и смены дежурств», а сотруднику показывала одни статусы. Заодно
+ *  снимается лишний вес: раньше тянулись все смены организации, чтобы
+ *  оставить на экране свои. */
+export function useMyDutyShifts() {
+  return useQuery<ListMyDutyShiftsResponse, OpsApiFailure>({
+    queryKey: ["ops-duty-shifts", "mine"],
+    queryFn: () =>
+      opsApiClient.get<ListMyDutyShiftsResponse>(DUTY_SHIFTS_MINE_PATH),
   });
 }
 
