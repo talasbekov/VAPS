@@ -77,6 +77,14 @@ class OpsApiClient {
     });
   }
 
+  /** Замена ресурса целиком (маршрут согласования, Plane №429). */
+  async put<T>(endpoint: string, body?: unknown): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: "PUT",
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+
   async del<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: "DELETE" });
   }

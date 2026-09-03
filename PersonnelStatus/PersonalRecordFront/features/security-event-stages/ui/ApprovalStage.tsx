@@ -28,6 +28,7 @@ import { X } from "lucide-react";
 //   него показано то, что бэк действительно записывает: обходы мягкого
 //   предупреждения по рейтингу с причиной, введённой при назначении.
 import { Fragment, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -615,16 +616,10 @@ function ApprovalRoute({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!rights.manageRoute}
-            title={reasonUnless(rights.manageRoute, "manageRoute")}
-            onClick={() => setAdding((prev) => !prev)}
-          >
-            + Добавить согласующего
-          </Button>
+          {/* «+ Добавить согласующего» и стрелок порядка на объекте НЕТ
+              (`[СОГ-05]`, Plane №429): маршрут задаётся в настройках раздела,
+              объект получает его копию. Ручки маршрута на сервере остались
+              под админа и API. */}
           <Button
             type="button"
             variant="outline"
@@ -659,7 +654,7 @@ function ApprovalRoute({
         </div>
       </div>
 
-      {adding && (
+      {adding && rights.manageRoute && false && (
         <div className="flex flex-wrap gap-2 border-b p-2">
           <Input
             className="h-8 w-48 text-xs"
@@ -704,8 +699,12 @@ function ApprovalRoute({
       )}
 
       {route.length === 0 ? (
-        <p className="px-3 py-3 text-xs text-muted-foreground">
-          Маршрут пуст — согласующие не назначены.
+        <p className="px-3 py-3 text-xs text-muted-foreground" data-slot="approval-route-empty">
+          Маршрут согласования не настроен — подписантов задаёт администратор в{" "}
+          <Link href="/security-ops/settings" className="font-semibold text-primary-ink">
+            «Администрировании»
+          </Link>
+          ; объект получит маршрут при отправке.
         </p>
       ) : (
         /* Семь граф не сжимаются до читаемости — скроллится таблица, а не
@@ -731,43 +730,32 @@ function ApprovalRoute({
                 <Fragment key={approver.id}>
                   <tr className="border-t align-top text-xs">
                     <td className="px-2 py-1.5">
-                      <span className="flex items-center gap-0.5">
-                        <span className="tabular-nums">{index + 1}</span>
-                        <button
-                          type="button"
-                          className="rounded px-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
-                          aria-label={`Выше: ${approver.name}`}
-                          disabled={index === 0 || move.isPending || !rights.manageRoute}
-                          title={reasonUnless(rights.manageRoute, "manageRoute")}
-                          onClick={() =>
-                            move.mutate({
-                              approverId: approver.id,
-                              direction: "UP",
-                              visitObjectId,
-                            })
-                          }
-                        >
-                          ▲
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded px-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
-                          aria-label={`Ниже: ${approver.name}`}
-                          disabled={index === route.length - 1 || move.isPending || !rights.manageRoute}
-                          title={reasonUnless(rights.manageRoute, "manageRoute")}
-                          onClick={() =>
-                            move.mutate({
-                              approverId: approver.id,
-                              direction: "DOWN",
-                              visitObjectId,
-                            })
-                          }
-                        >
-                          ▼
-                        </button>
-                      </span>
+                      {/* Порядок — только число: стрелки сняты (`[СОГ-05]`,
+                          Plane №429), маршрут задаётся в настройках. */}
+                      <span className="tabular-nums">{index + 1}</span>
                     </td>
-                    <td className="px-2 py-1.5 font-semibold">{approver.name}</td>
+                    <td className="px-2 py-1.5 font-semibold">
+                      {approver.name}
+                      {(approver.username ?? "") !== "" && (
+                        <span className="block text-[11px] font-normal text-muted-foreground">
+                          учётка {approver.username}
+                        </span>
+                      )}
+                      {approver.signature != null && (
+                        /* Реквизиты подписи (`[СОГ-10]`): кто, кем, когда,
+                           под какой версией — те же, что в подвале PDF. */
+                        <span
+                          className="block text-[11px] font-normal text-muted-foreground"
+                          data-slot="approval-signature"
+                        >
+                          Согласовано {formatIsoDateTime(approver.signature.signedAt)} ·{" "}
+                          {approver.signature.fullName}
+                          {approver.signature.position !== "" && `, ${approver.signature.position}`}
+                          {" · версия "}
+                          {approver.signature.versionNumber} · {approver.signature.versionHash}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-muted-foreground">
                       {approver.unit === "" ? "—" : approver.unit}
                     </td>
@@ -826,24 +814,6 @@ function ApprovalRoute({
                               Вернуть
                             </Button>
                           </>
-                        )}
-                        {approver.status === "NOT_SENT" && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            aria-label={`Снять согласующего ${approver.name}`}
-                            disabled={remove.isPending || !rights.manageRoute}
-                            title={reasonUnless(rights.manageRoute, "manageRoute")}
-                            onClick={() =>
-                              remove.mutate({
-                                approverId: approver.id,
-                                visitObjectId,
-                              })
-                            }
-                          >
-                            <X className="h-4 w-4" aria-hidden="true" />
-                          </Button>
                         )}
                       </span>
                     </td>

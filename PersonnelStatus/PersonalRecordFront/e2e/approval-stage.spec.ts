@@ -60,6 +60,20 @@ async function events(token: string): Promise<EventRow[]> {
   return ((await res.json()) as { results: EventRow[] }).results
 }
 
+/**
+ * Согласующий на объект — по API, а не кнопкой: с №429 (`[СОГ-05]`) маршрут
+ * задаётся в настройках, и «+ Добавить согласующего» на объекте нет. Ручка
+ * `approval/route/` осталась под админа и API — ею проба и пользуется.
+ */
+async function addApproverViaApi(token: string, eventId: string, who: string): Promise<void> {
+  const res = await fetch(`${API}/api/ops/security-events/${eventId}/approval/route/`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ name: who, unit: 'Управление ОМ', position: 'полковник' }),
+  })
+  if (!res.ok) throw new Error(`согласующий не добавлен: ${res.status} ${await res.text()}`)
+}
+
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -128,12 +142,9 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     // Маршрут согласования из прототипа: добавляем согласующего, решаем по
     // нему и сверяем с тем, что вернул БЭК, а не с экраном.
     const route = card.locator('section', { hasText: 'Маршрут согласования' }).first()
-    await route.getByRole('button', { name: '+ Добавить согласующего' }).click()
     const who = `Проба ${Date.now()}`
-    await route.getByLabel('ФИО согласующего').fill(who)
-    await route.getByLabel('Подразделение согласующего').fill('Управление ОМ')
-    await route.getByLabel('Должность согласующего').fill('полковник')
-    await route.getByRole('button', { name: 'Добавить', exact: true }).click()
+    await addApproverViaApi(token, target.id, who)
+    await page.reload()
     await expect(route).toContainText(who, { timeout: 15_000 })
     // Внесённый в маршрут — ещё НЕ на согласовании: расстановку ему не
     // отправляли (эталон, задача «ОМ-37.3»).
@@ -296,11 +307,10 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
       { timeout: 15_000 },
     )
 
-    // Маршрут нужен, иначе отправка отбивается «маршрут пуст».
-    await route.getByRole('button', { name: '+ Добавить согласующего' }).click()
+    // Маршрут нужен, иначе отправка отбивается «маршрут не настроен».
     const who = `Версия ${Date.now()}`
-    await route.getByLabel('ФИО согласующего').fill(who)
-    await route.getByRole('button', { name: 'Добавить', exact: true }).click()
+    await addApproverViaApi(token, target.id, who)
+    await page.reload()
     await expect(route).toContainText(who, { timeout: 15_000 })
 
     await route.getByRole('button', { name: 'Отправить на согласование' }).click()

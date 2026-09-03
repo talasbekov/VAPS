@@ -186,3 +186,32 @@ export interface UpdateSettingResponse {
   sectionVersions: Record<SettingSectionCode, string>;
   event: SettingChangeEvent;
 }
+
+// ── Маршрут согласования расстановки (`[СОГ-05]`, Plane №429) ────────────────
+//
+// Задаётся в настройках, не на объекте: объект получает копию при выходе на
+// «Согласование». Шаг — роль подписанта с необязательной привязкой к учётке
+// («если в маршруте»): с учёткой подписать может только она.
+
+export const APPROVAL_ROUTE_PATH = "/api/ops/approval-route/";
+
+export interface ApprovalRouteStep {
+  id: string;
+  position: number;
+  roleLabel: string;
+  unit: string;
+  username: string;
+  fullName: string;
+}
+
+export interface ApprovalRouteResponse {
+  results: ApprovalRouteStep[];
+}
+
+/** Строка редактора — без `id`/`position`: порядок задаёт список. */
+export interface ApprovalRouteStepInput {
+  roleLabel: string;
+  unit: string;
+  username: string;
+  fullName: string;
+}

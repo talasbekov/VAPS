@@ -11,12 +11,16 @@ import {
   settingPath,
   SETTINGS_PATH,
   SETTING_CHANGES_PATH,
+  APPROVAL_ROUTE_PATH,
 } from "@/entities/policy-setting";
 import type {
   ListSettingChangeLogResponse,
   ListSettingsResponse,
   UpdateSettingRequest,
   UpdateSettingResponse,
+  ApprovalRouteResponse,
+  ApprovalRouteStep,
+  ApprovalRouteStepInput,
 } from "@/entities/policy-setting";
 
 export function useOpsSettings() {
@@ -50,6 +54,33 @@ export function useUpdateSetting(
       void queryClient.invalidateQueries({ queryKey: ["ops-duty-types"] });
       void queryClient.invalidateQueries({ queryKey: ["ops-objects"] });
       void queryClient.invalidateQueries({ queryKey: ["ops-audit-logs"] });
+    },
+    onFormError: options?.onFormError,
+  });
+}
+
+/** Маршрут согласования из настроек (Plane №429). */
+export function useApprovalRoute() {
+  return useQuery<ApprovalRouteResponse, OpsApiFailure>({
+    queryKey: ["ops-approval-route"],
+    queryFn: () => opsApiClient.get<ApprovalRouteResponse>(APPROVAL_ROUTE_PATH),
+  });
+}
+
+/** Заменить маршрут целиком: порядок строк — порядок подписей. */
+export function useReplaceApprovalRoute(
+  options?: {
+    onFormError?: (details: Record<string, unknown>) => void;
+    onSaved?: () => void;
+  }
+) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<{ results: ApprovalRouteStep[] }, { steps: ApprovalRouteStepInput[] }>({
+    mutationFn: (body) => opsApiClient.put<{ results: ApprovalRouteStep[] }>(APPROVAL_ROUTE_PATH, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-approval-route"] });
+      void queryClient.invalidateQueries({ queryKey: ["ops-audit-logs"] });
+      options?.onSaved?.();
     },
     onFormError: options?.onFormError,
   });

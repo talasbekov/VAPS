@@ -137,6 +137,11 @@ SECURITY_EVENT_DEPUTY_REVOKED = "SECURITY_EVENT_DEPUTY_REVOKED"
 # этапа админом: действие совершено в обход общего права, по роли в данных, и
 # его след обязан быть в журнале мутаций, а не только в самом агрегате.
 SECURITY_EVENT_PLACEMENT_BY_DEPUTY = "SECURITY_EVENT_PLACEMENT_BY_DEPUTY"
+#: Подпись согласующего с реквизитами (`[СОГ-10]`, Plane №429): ФИО,
+#: должность, логин, время сервера, номер и хэш версии, IP.
+SECURITY_EVENT_APPROVAL_SIGNED = "SECURITY_EVENT_APPROVAL_SIGNED"
+#: Маршрут согласования в настройках заменён (`[СОГ-05]`, Plane №429).
+APPROVAL_ROUTE_REPLACED = "APPROVAL_ROUTE_REPLACED"
 # Завершение расстановки С НЕДОБОРОМ (`[РАС-06]`, Plane №396): решение
 # человека обойти проверку укомплектованности, с обязательным комментарием —
 # «почему отправили ОМ на согласование, недорасставив K постов» обязано иметь
@@ -289,6 +294,8 @@ ACTIONS = frozenset(
         SECURITY_EVENT_DEPUTY_ASSIGNED,
         SECURITY_EVENT_DEPUTY_REVOKED,
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
+        SECURITY_EVENT_APPROVAL_SIGNED,
+        APPROVAL_ROUTE_REPLACED,
         PLACEMENT_COMPLETED_WITH_SHORTAGE,
         VISIT_OBJECT_CLOSED,
         VISIT_OBJECT_CHIEF_ASSIGNED,

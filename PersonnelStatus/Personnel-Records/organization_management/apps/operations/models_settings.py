@@ -171,3 +171,34 @@ class OpsDictionaryEntry(TimeStampedModel):
 
     def __str__(self):
         return f"{self.dictionary_code}/{self.code}"
+
+
+class OpsApprovalRouteStep(TimeStampedModel):
+    """Шаг маршрута согласования расстановки (`[СОГ-05]`, Plane №429).
+
+    Маршрут задаётся В НАСТРОЙКАХ раздела (администрирование), а не на объекте:
+    при выходе объекта на «Согласование» его маршрут копируется отсюда. Шаг —
+    роль подписанта («Начальник 2-го департамента») с необязательной привязкой
+    к учётке: с учёткой подписать может только она («если в маршруте»),
+    без учётки — любой держатель права подписи (будущая роль).
+    """
+
+    position = models.PositiveIntegerField()
+    role_label = models.CharField(max_length=200)
+    unit = models.CharField(max_length=200, blank=True, default="")
+    username = models.CharField(max_length=150, blank=True, default="")
+    full_name = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        db_table = "ops_approval_route_steps"
+        verbose_name = "Шаг маршрута согласования"
+        verbose_name_plural = "Маршрут согласования"
+        ordering = ["position", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["position"], name="uniq_ops_approval_route_position"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.position}. {self.role_label}"

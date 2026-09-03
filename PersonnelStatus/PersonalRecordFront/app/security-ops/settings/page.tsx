@@ -32,6 +32,7 @@ import type {
   SettingSectionCode,
 } from "@/entities/policy-setting";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { ApprovalRouteCard } from "@/features/approval-route/ui/ApprovalRouteCard";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
@@ -123,6 +124,10 @@ export default function OpsSettingsPage() {
               </CardContent>
             </Card>
           ))}
+
+        {/* Маршрут согласования расстановки (`[СОГ-05]`, Plane №429) — своя
+            карточка, а не политика-число: список подписантов. */}
+        <ApprovalRouteCard canManage={hasPermission("settings.manage")} />
 
         <Card>
           <CardHeader>

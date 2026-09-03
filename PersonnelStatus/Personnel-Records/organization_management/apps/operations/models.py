@@ -221,6 +221,7 @@ from organization_management.apps.operations.models_combat import (  # noqa: E40
 
 # Настройки раздела ОМ и generic-справочники.
 from organization_management.apps.operations.models_settings import (  # noqa: E402
+    OpsApprovalRouteStep,  # noqa: F401
     OpsDictionaryEntry,  # noqa: F401
     OpsPolicySectionVersion,  # noqa: F401
     OpsPolicySetting,  # noqa: F401
@@ -264,6 +265,12 @@ from organization_management.apps.operations.models_feedback import (  # noqa: E
     OpsFeedbackEvent,  # noqa: F401
     OpsFeedbackRegistry,  # noqa: F401
     OpsFeedbackRequest,  # noqa: F401
+)
+from organization_management.apps.operations.models_forces import (  # noqa: E402
+    OpsDepartmentRequest,
+    OpsForceRequest,
+    OpsForceRequestMember,
+    OpsUnitRequest,
 )
 from organization_management.apps.operations.models_gvo import (  # noqa: E402
     OpsGvoSummaryPatch,  # noqa: F401

@@ -67,6 +67,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   SECURITY_EVENT_DEPUTY_ASSIGNED: "Назначен замещающий на объекте",
   SECURITY_EVENT_DEPUTY_REVOKED: "Замещающий на объекте снят",
   SECURITY_EVENT_PLACEMENT_BY_DEPUTY: "Расстановка изменена замещающим",
+  SECURITY_EVENT_APPROVAL_SIGNED: "Подпись согласующего с реквизитами",
+  APPROVAL_ROUTE_REPLACED: "Маршрут согласования в настройках заменён",
   PLACEMENT_COMPLETED_WITH_SHORTAGE: "Расстановка завершена с недобором",
   VISIT_OBJECT_CLOSED: "Объект посещения закрыт",
   VISIT_OBJECT_CHIEF_ASSIGNED: "Назначен старший объекта",

@@ -109,6 +109,30 @@ def placement_rows(event, visit=None):
     return rows
 
 
+def signature_lines(visit):
+    """Строки подвала по подписям маршрута объекта; без подписей — пусто."""
+    if visit is None:
+        return []
+    lines = []
+    for item in visit.approval_route or []:
+        signature = item.get("signature") if item.get("status") == "APPROVED" else None
+        if not signature:
+            continue
+        signed_at = signature.get("signedAt") or item.get("decidedAt") or ""
+        try:
+            moment = dt.datetime.fromisoformat(signed_at)
+            when = moment.strftime("%d.%m.%Y %H:%M")
+        except ValueError:
+            when = signed_at
+        position = signature.get("position") or item.get("position") or ""
+        lines.append(
+            "Согласовано: "
+            f"{signature.get('fullName') or item.get('name', '')}, {position}, "
+            f"{when}, версия {signature.get('versionNumber', visit.document_version)}"
+        )
+    return lines
+
+
 def _is_draft(visit):
     """Документ объекта ещё не согласован — на бумаге он проект."""
     if visit is None:
@@ -156,6 +180,10 @@ def render_placement(event_code, as_of=None, fmt="pdf", visit_object_id=None):
     try:
         document = Document(filled_path)
         fill_table_rows(document.tables[0], placement_rows(event, visit))
+        # Подвал подписей (`[СОГ-10]`, Plane №429): «Согласовано: ФИО,
+        # должность, ДД.ММ.ГГГГ ЧЧ:ММ, версия N» — по строке на подпись.
+        for line in signature_lines(visit):
+            document.add_paragraph(line)
         document.save(filled_path)
         payload = emit(filled_path, fmt)
         # `[СОГ-03]` (Plane №430): «Скачать PDF» доступна всегда, до
