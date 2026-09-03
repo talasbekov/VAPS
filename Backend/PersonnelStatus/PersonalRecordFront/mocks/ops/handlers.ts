@@ -25,6 +25,7 @@ import { dutiesHandlers } from "./duties-handlers";
 import { auditHandlers } from "./audit-store";
 import { settingsHandlers } from "./settings-store";
 import { dictionariesHandlers } from "./dictionaries-handlers";
+import { geoHandlers } from "./geo-handlers";
 import { ratingsHandlers } from "./ratings-handlers";
 import { analyticsHandlers } from "./analytics-handlers";
 import { reportsHandlers } from "./reports-handlers";
@@ -55,6 +56,8 @@ export function composeOpsHandlers() {
     // для ещё не переведённых слайсов.
     ...(isOpsSettingsLive() ? [] : settingsHandlers),
     ...(isOpsDictionariesLive() ? [] : dictionariesHandlers),
+    // Страна → город (Plane №417) — тот же переключатель, что у справочников.
+    ...(isOpsDictionariesLive() ? [] : geoHandlers),
     // Рейтинг живьём — тот же пер-доменный переключатель (срез G): в live
     // его handlers не регистрируются, запросы уходят bypass-ом в сеть.
     ...(isOpsRatingsLive() ? [] : ratingsHandlers),

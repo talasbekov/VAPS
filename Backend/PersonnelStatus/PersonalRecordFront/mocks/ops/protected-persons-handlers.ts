@@ -21,6 +21,7 @@ import type {
 export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
   {
     id: "pp-1",
+    code: "OL-1",
     name: "Оспанов Бахыт Дюсенбаевич",
     callsign: "Сокол",
     category: "OURS",
@@ -28,6 +29,7 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
   },
   {
     id: "pp-2",
+    code: "OL-2",
     name: "Салимова Гульнара Ержановна",
     callsign: "Гранит",
     category: "OURS",
@@ -35,6 +37,7 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
   },
   {
     id: "pp-3",
+    code: "OL-3",
     name: "Ахметов Тимур Болатович",
     callsign: "Беркут",
     category: "OURS",
@@ -42,6 +45,7 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
   },
   {
     id: "pp-4",
+    code: "OL-4",
     name: "James Miller",
     callsign: "Дельта-1",
     category: "FOREIGN",
@@ -49,6 +53,7 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
   },
   {
     id: "pp-5",
+    code: "OL-5",
     name: "Hassan Al-Farsi",
     callsign: "Оазис",
     category: "FOREIGN",

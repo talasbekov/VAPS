@@ -3759,6 +3759,53 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response({"results": gvo_service.person_event_history(pk)})
 
 
+class OpsCountriesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/countries/ — справочник «страна → город» (Plane №417).
+
+    Только чтение; правка — Django Admin, как у остальных справочников.
+    Право — `catalog.view`, то же, что у охраняемых лиц: список стран нужен
+    тем, кто заводит мероприятие и читает бюллетень, а `dictionary.view`
+    (управление значениями справочников) держит один REFERENCE_ADMIN — под
+    ним форма ОМ у ведущего отвечала бы 403. Скрытые строки не приезжают.
+    """
+
+    permission_map = {"list": _CATALOG_PERMISSION, "cities": _CATALOG_PERMISSION}
+
+    def list(self, request):
+        from organization_management.apps.operations.models_geo import OpsCountry
+
+        return Response(
+            {
+                "results": [
+                    {"id": str(c.pk), "code": c.code, "name": c.name}
+                    for c in OpsCountry.objects.filter(is_active=True)
+                ]
+            }
+        )
+
+    @action(detail=True, methods=["get"], url_path="cities")
+    def cities(self, request, pk=None):
+        from organization_management.apps.operations.models_geo import (
+            OpsCity,
+            OpsCountry,
+        )
+
+        if not OpsCountry.objects.filter(pk=pk, is_active=True).exists():
+            raise DomainError(
+                "ENTITY_NOT_FOUND", 404, detail={"id": str(pk)},
+                message="Страна не найдена.",
+            )
+        return Response(
+            {
+                "results": [
+                    {"id": str(c.pk), "countryId": str(c.country_id), "name": c.name}
+                    for c in OpsCity.objects.filter(country_id=pk, is_active=True)
+                ]
+            }
+        )
+
+
+
 class OpsVehiclesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """/api/ops/vehicles/ — реестр транспорта ГОН (только чтение).
 

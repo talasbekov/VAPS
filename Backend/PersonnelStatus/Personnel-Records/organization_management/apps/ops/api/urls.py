@@ -9,6 +9,7 @@ from organization_management.apps.ops.api.views import (
     OpsGvoSummariesViewSet,
     OpsLegalDocumentsViewSet,
     OpsVehiclesViewSet,
+    OpsCountriesViewSet,
     OpsProtectedPersonsViewSet,
     CombatDutyShiftViewSet,
     OpsAuditLogViewSet,
@@ -210,6 +211,7 @@ router.register(
 )
 
 # ГВО: каталог лиц и патчи сводок (спека 2026-08-20).
+router.register("countries", OpsCountriesViewSet, basename="ops-countries")
 router.register(
     "protected-persons", OpsProtectedPersonsViewSet,
     basename="ops-protected-persons",
