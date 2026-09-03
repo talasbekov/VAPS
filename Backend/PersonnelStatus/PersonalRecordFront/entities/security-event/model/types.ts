@@ -1367,6 +1367,45 @@ export function visitObjectClosePath(eventId: string, visitObjectId: string): st
   return `${visitObjectsPath(eventId)}${visitObjectId}/close/`;
 }
 
+// ── Оценки этапа «Проведение» (`[МД-08]`/`[ЗАК-02]`, Plane №433) ──────────
+/** Строка оценки: назначение объекта (или снятый заменой — `replaced`). */
+export interface VisitEvaluationRow {
+  assignmentId: string | null;
+  postId: string | null;
+  post: string;
+  sector: string;
+  employeeId: string | null;
+  employeeName: string;
+  divisionName: string;
+  acknowledgedAt: string | null;
+  replaced: boolean;
+  /** null — не оценён; шкала 1–10. */
+  score: number | null;
+  comment: string;
+}
+
+export interface VisitEvaluationSummary {
+  rows: VisitEvaluationRow[];
+  evaluated: number;
+  total: number;
+  incidents: number;
+}
+
+export interface SetEvaluationRequest {
+  assignmentId: string;
+  /** null — снять оценку (повторный клик по цифре). */
+  score: number | null;
+  comment?: string;
+}
+
+export function visitObjectEvaluationsPath(eventId: string, visitObjectId: string): string {
+  return `${visitObjectsPath(eventId)}${visitObjectId}/evaluations/`;
+}
+
+export function visitObjectEvaluationsAllPath(eventId: string, visitObjectId: string): string {
+  return `${visitObjectEvaluationsPath(eventId, visitObjectId)}all/`;
+}
+
 export interface CloseVisitObjectRequest extends Record<string, unknown> {
   comment?: string;
 }

@@ -257,6 +257,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # мероприятия; разведение «старший объекта закрывает, замещающий — нет»
         # (`[ЗАК-14]`) — карточка прав этапа 5, её в очереди пока нет.
         "visit_object_close": _MANAGE_EVENT_PERMISSION,
+        # Оценки этапа «Проведение» (`[ЗАК-02]`, Plane №433): читает тот, кто
+        # видит ОМ; ставит тот, кто его ведёт.
+        "visit_object_evaluations": _MANAGE_EVENT_PERMISSION,
+        "visit_object_evaluations_all": _MANAGE_EVENT_PERMISSION,
         # Выделение транспорта — правка мероприятия, а не отдельная область
         # (Plane №215): машину ставит в кортеж тот же, кто ведёт ОМ, и своё
         # право под неё защищало бы одно и то же по-разному.
@@ -643,6 +647,53 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 pk,
                 visit_object_id,
                 comment=data.get("comment"),
+                actor=resolve_actor_id(request),
+            )
+        )
+
+    # ── Оценки этапа «Проведение» (`[ЗАК-02]`, Plane №433) ──────────────
+
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path=r"visit-objects/(?P<visit_object_id>[^/.]+)/evaluations",
+    )
+    def visit_object_evaluations(self, request, pk=None, visit_object_id=None):
+        from organization_management.apps.ops import conduct_evaluations
+
+        if request.method == "GET":
+            from django.db import transaction as _tx
+
+            with _tx.atomic():
+                event = event_service.lock_event(pk)
+                visit = event_service._visit_object_or_404(event, visit_object_id)
+                return Response(conduct_evaluations.visit_evaluations(event, visit))
+        data = request.data or {}
+        return Response(
+            conduct_evaluations.set_score(
+                pk,
+                visit_object_id,
+                assignment_id=str(data.get("assignmentId") or ""),
+                score=data.get("score"),
+                comment=data.get("comment") or "",
+                actor=resolve_actor_id(request),
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"visit-objects/(?P<visit_object_id>[^/.]+)/evaluations/all",
+    )
+    def visit_object_evaluations_all(self, request, pk=None, visit_object_id=None):
+        from organization_management.apps.ops import conduct_evaluations
+
+        data = request.data or {}
+        return Response(
+            conduct_evaluations.score_all(
+                pk,
+                visit_object_id,
+                score=data.get("score", 10),
                 actor=resolve_actor_id(request),
             )
         )

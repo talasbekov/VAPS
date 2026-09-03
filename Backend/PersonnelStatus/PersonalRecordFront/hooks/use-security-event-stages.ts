@@ -51,6 +51,8 @@ import {
   securityEventStagePath,
   CloseVisitObjectRequest,
   visitObjectClosePath,
+  visitObjectEvaluationsAllPath,
+  visitObjectEvaluationsPath,
 } from "@/entities/security-event";
 import type {
   AcknowledgementNotifyReport,
@@ -72,10 +74,12 @@ import type {
   SecurityEvent,
   AddAllocationMemberRequest,
   ReturnAllocationRequest,
+  SetEvaluationRequest,
   SplitForceDemandRequest,
   UpdateBulletinRequest,
   UpdateForceAllocationRequest,
   UpdateReconRequest,
+  VisitEvaluationSummary,
 } from "@/entities/security-event";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 
@@ -480,6 +484,51 @@ export function useCloseVisitObject(id: string, options?: StageMutationOptions) 
     ({ visitObjectId, ...body }) =>
       opsApiClient.post<SecurityEvent>(visitObjectClosePath(id, visitObjectId), body),
     options
+  );
+}
+
+// ── Оценки этапа «Проведение» (Plane №433) ──────────────────────────────
+export function visitEvaluationsKey(id: string, visitObjectId: string) {
+  return ["ops-visit-evaluations", id, visitObjectId] as const;
+}
+
+export function useVisitEvaluations(id: string, visitObjectId: string | null) {
+  return useQuery({
+    queryKey: visitEvaluationsKey(id, visitObjectId ?? ""),
+    queryFn: () =>
+      opsApiClient.get<VisitEvaluationSummary>(
+        visitObjectEvaluationsPath(id, visitObjectId ?? "")
+      ),
+    enabled: visitObjectId !== null,
+  });
+}
+
+function useEvaluationMutation<TBody>(
+  id: string,
+  visitObjectId: string,
+  request: (body: TBody) => Promise<VisitEvaluationSummary>
+) {
+  const queryClient = useQueryClient();
+  return useMutation<VisitEvaluationSummary, OpsApiFailure, TBody>({
+    mutationFn: request,
+    onSuccess: (summary) => {
+      queryClient.setQueryData(visitEvaluationsKey(id, visitObjectId), summary);
+    },
+  });
+}
+
+export function useSetEvaluation(id: string, visitObjectId: string) {
+  return useEvaluationMutation<SetEvaluationRequest>(id, visitObjectId, (body) =>
+    opsApiClient.post<VisitEvaluationSummary>(visitObjectEvaluationsPath(id, visitObjectId), body)
+  );
+}
+
+export function useScoreAll(id: string, visitObjectId: string) {
+  return useEvaluationMutation<{ score?: number }>(id, visitObjectId, (body) =>
+    opsApiClient.post<VisitEvaluationSummary>(
+      visitObjectEvaluationsAllPath(id, visitObjectId),
+      body
+    )
   );
 }
 
