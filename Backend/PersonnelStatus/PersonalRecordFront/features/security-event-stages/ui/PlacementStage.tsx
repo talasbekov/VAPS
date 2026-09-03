@@ -240,6 +240,10 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<SortOption>("Рекомендуемые");
   const [band, setBand] = useState<RateOption>("Все");
+  // Фильтр по управлению (`[РАС-04]`) — по составу, принятому штабом: список
+  // управлений берётся из самих строк, а не из справочника, чтобы не
+  // предлагать управление, из которого никого не выделили.
+  const [unitFilter, setUnitFilter] = useState("");
   const [comment, setComment] = useState<string | null>(null);
   const setSenior = useSetSectorSenior(event.id);
   /** Объяснение автоподбора живёт ТОЛЬКО в этой сессии экрана: сервер факта
@@ -265,11 +269,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // ними ничего бы не уточнил. Там же, где список листается страницами, отбор
   // по показанному был прямым враньём — «нет кандидатов» означало «нет на этой
   // странице».
+  // `[РАС-04]` (Plane №428): «поиска по всей базе нет; постороннего назначить
+  // нельзя». До этого, пока штаб не принял состав, колонка показывала ВСЮ
+  // кадровую базу (440 человек) — и предлагала тех, кого сервер всё равно
+  // откажется ставить. Запрос к базе выключен насовсем; без состава колонка
+  // показывает пустое состояние `[РАС-05]` со ссылкой в «Сбор сил».
   const roster = usePersonnelPage({
     search,
     page,
     pageSize: CANDIDATE_PAGE_SIZE,
-    enabled: !fromRoster,
+    enabled: false,
     ratingBand: canSeeRatings ? BAND_CODE[band] : undefined,
     ordering: canSeeRatings && sort === "По рейтингу" ? "rating" : undefined,
     // Статус спрашивается на день МЕРОПРИЯТИЯ: подбор отвечает на вопрос
@@ -453,6 +462,23 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   }, [posts]);
 
   const assignedIds = new Set(event.placementAssignments.map((a) => a.employeeId));
+  // «свободен / на посту K» (`[РАС-04]`): пост занятого — словами, а не
+  // одним признаком занятости; ищется по ВСЕМ постам мероприятия, потому что
+  // человек бывает занят на соседнем объекте.
+  const postOfEmployee = new Map(
+    event.placementAssignments.map((a) => [a.employeeId, a.postId])
+  );
+  const postTitleById = new Map(
+    event.reconSectorPosts.map((post) => [post.id, `${post.sector} · ${post.post}`])
+  );
+  const unitOptions = Array.from(
+    new Set(rosterPeople.map((person) => person.unit).filter((unit) => unit !== ""))
+  ).sort((a, b) => a.localeCompare(b, "ru"));
+  // «Прислано Y из N» для пустого состояния — по заявкам штаба.
+  const requestedTotal = event.forceRequests.reduce(
+    (sum, request) => sum + request.requestedCount,
+    0
+  );
 
   /**
    * «Совпадение» — прозрачная арифметика, а не выдуманный балл: 60 базовых,
@@ -522,8 +548,10 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     // Поиск по составу идёт НА КЛИЕНТЕ: состав — десятки строк, они уже на
     // руках, и круг к серверу за подстрокой в них ничего бы не уточнил.
     const source = fromRoster
-      ? rosterPeople.filter((person) =>
-          person.name.toLowerCase().includes(query.trim().toLowerCase())
+      ? rosterPeople.filter(
+          (person) =>
+            person.name.toLowerCase().includes(query.trim().toLowerCase()) &&
+            (unitFilter === "" || person.unit === unitFilter)
         )
       : (roster.data?.results ?? []);
     const list = fromRoster
@@ -558,6 +586,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     rosterPeople,
     fromRoster,
     query,
+    unitFilter,
     sort,
     band,
     selected,
@@ -1271,7 +1300,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
 
             <aside className="rounded-md border">
               <div className="border-b px-3 py-2">
-                <p className="text-xs font-semibold">Доступные сотрудники</p>
+                <p className="text-xs font-semibold">Выделено на объект штабом</p>
                 {/* Откуда пул — словами. Форм потребности и выделения сил на
                     шаге больше нет (Plane №110), и без этой строки человек не
                     узнал бы, ПОЧЕМУ здесь именно эти люди и что делать, если
@@ -1279,17 +1308,54 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     кадровый список — разные основания подбора. */}
                 <p className="text-[11px] text-muted-foreground">
                   {fromRoster
-                    ? "Состав мероприятия: те, кого штаб принял в «Сборе сил»"
-                    : "Кадровый список: состав мероприятия ещё не собран"}
+                    ? `Выделено ${allocated} из потребности ${totalNeed}`
+                    : "Силы на объект ещё не выделены"}
                 </p>
-                <Link
-                  href="/employees?view=forces"
-                  className="mt-0.5 inline-block text-[11px] font-semibold text-primary-ink"
-                >
-                  Открыть «Сбор сил на ОМ» →
-                </Link>
+                {/* Без состава ссылка стоит в пустом состоянии ниже, а не
+                    дважды: две одинаковые ссылки в одной колонке — шум, и
+                    пробы карточки читают её как одну. */}
+                {fromRoster && (
+                  <Link
+                    href="/employees?view=forces"
+                    className="mt-0.5 inline-block text-[11px] font-semibold text-primary-ink"
+                  >
+                    Открыть «Сбор сил на ОМ» →
+                  </Link>
+                )}
               </div>
+              {!fromRoster ? (
+                /* `[РАС-05]`: без состава списка нет ВОВСЕ — прежде под этой
+                   подписью всё равно шла вся база. */
+                <div className="p-3 text-xs" data-slot="placement-pool-empty">
+                  <p className="font-semibold">Силы на объект ещё не выделены</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Заявка {event.code}: прислано {allocated} из {requestedTotal}
+                  </p>
+                  <Link
+                    href="/employees?view=forces"
+                    className="mt-1.5 inline-block font-semibold text-primary-ink"
+                  >
+                    Сбор сил на ОМ →
+                  </Link>
+                </div>
+              ) : (
               <div className="space-y-2 p-2">
+                <label className="block text-[9px] font-bold uppercase text-muted-foreground">
+                  Управление
+                  <select
+                    aria-label="Фильтр по управлению"
+                    className="mt-0.5 block h-8 w-full rounded-md border bg-background px-2 text-xs"
+                    value={unitFilter}
+                    onChange={(e) => setUnitFilter(e.target.value)}
+                  >
+                    <option value="">Все управления</option>
+                    {unitOptions.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {unit}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <Input
                   className="h-8 text-xs"
                   placeholder="Поиск по ФИО или подразделению"
@@ -1447,6 +1513,10 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           </span>
                           <span className="block truncate text-muted-foreground">
                             {person.unit}
+                            {" · "}
+                            {busy
+                              ? `на посту ${postTitleById.get(postOfEmployee.get(person.id) ?? "") ?? "—"}`
+                              : "свободен"}
                           </span>
                           <span className="mt-0.5 flex flex-wrap items-center gap-1">
                             <StatusBadge
@@ -1497,6 +1567,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   )}
                 </div>
               </div>
+              )}
             </aside>
           </div>
         )}
