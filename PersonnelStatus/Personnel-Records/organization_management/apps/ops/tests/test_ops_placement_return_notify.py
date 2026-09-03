@@ -25,7 +25,8 @@ from organization_management.apps.ops.placement_return_notify import (
     notify_placement_returned,
 )
 from organization_management.apps.ops import security_events as service
-from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: F401
+from organization_management.apps.ops.tests.test_ops_security_events_api import (
+    chief_for,  # noqa: F401
     approver,
     make_employee,
     make_object,
@@ -46,6 +47,7 @@ def _event_sent(manager, *, approvers=("Первый", "Второй")):  # noqa
             "objectId": str(obj.pk),
             "businessDate": "2026-12-31",
             "kind": "INTERNAL",
+            "chiefEmployeeId": str(chief_for(manager).pk),
         },
         format="json",
     )
@@ -185,6 +187,11 @@ def test_the_route_is_reset_and_the_return_reason_survives(manager, approver):  
 
 def test_nobody_to_notify_is_not_an_error(manager, approver):  # noqa: F811
     base, event_id, visit = _event_sent(manager)
+    # Старшего фикстура даёт по умолчанию (`[РЕК-02]`, №424) — снимаем его
+    # после отправки: предмет пробы — возврат, когда уведомлять некого.
+    visit.chief_employee_id = None
+    visit.chief_name = ""
+    visit.save(update_fields=["chief_employee_id", "chief_name"])
     route = manager.get(base).json()["visitObjects"][0]["approvalRoute"]
 
     resp = approver.post(

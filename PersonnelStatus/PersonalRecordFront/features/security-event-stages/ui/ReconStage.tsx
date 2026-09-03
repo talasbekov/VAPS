@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, X } from "lucide-react";
+import { AssignChiefDialog } from "@/features/event-visit-objects/ui/AssignChiefDialog";
 
 // Этап «Рекогносцировка»: чек-лист объекта и event-specific расчёт постов.
 // Импорт из привязанной версии паспорта ДОБАВЛЯЕТ строки (ручные не
@@ -24,7 +25,7 @@ import { ChevronDown, ChevronRight, X } from "lucide-react";
 //   а не нарисовано пустой кнопкой;
 // * «Задача поста» в эталоне — выбор из кодов приказов; у нас это текст из
 //   паспорта объекта, справочника нарядов в данных нет.
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -87,6 +88,8 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   // это честно: сохранять нечего.
   const [emptySectors, setEmptySectors] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const [chiefDialogOpen, setChiefDialogOpen] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
   );
@@ -314,6 +317,48 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     update.mutate({ checklist, sectorPosts: rows });
   }
 
+  // `[РЕК-02]` (Plane №424): без старшего объекта рекогносцировка закрыта —
+  // сервер отвечает 422 `VISIT_CHIEF_REQUIRED` на импорт, сохранение и
+  // завершение, а экран не рисует форму, которую нельзя отправить. Хуки
+  // выше уже отработали, ранний return их порядок не ломает.
+  if (activeVisitObject !== null && activeVisitObject.chiefEmployeeId === null) {
+    return (
+      <Card role="region" aria-label="Рекогносцировка объекта">
+        <CardContent className="space-y-5">
+          <ObjectFacts event={event} />
+          <VisitObjectPicker event={event} scope={scope} allRows={rows} />
+          <div
+            className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-10 text-center"
+            data-slot="recon-chief-empty"
+          >
+            <p className="text-sm font-semibold">
+              Назначьте старшего объекта, чтобы начать рекогносцировку
+            </p>
+            <p className="max-w-md text-xs text-muted-foreground">
+              Чек-лист, посты и завершение этапа откроются старшему объекта
+              «{activeVisitObject.objectName}».
+            </p>
+            {access.can(EVENT_MANAGE) ? (
+              <Button type="button" size="sm" onClick={() => setChiefDialogOpen(true)}>
+                + Назначить
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {access.reason(EVENT_MANAGE)}
+              </p>
+            )}
+          </div>
+          <AssignChiefDialog
+            event={event}
+            visit={activeVisitObject}
+            open={chiefDialogOpen}
+            onClose={() => setChiefDialogOpen(false)}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     // Карточка этапа — ОБЛАСТЬ с именем: видимого заголовка внутри больше
     // нет (Plane №70), а имя у блока быть обязано — им пользуются и чтение с
@@ -492,34 +537,24 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                 : "Постов пока нет — добавьте сектор или импортируйте из паспорта."}
             </p>
           ) : (
-            /* Таблица шире экрана: десять колонок расчёта не сжимаются до
-               читаемости. Скроллится ОНА, а не страница. */
+            /* Компактная строка поста (`[РЕК-05]`, Plane №424): № · задача ·
+               сотрудников · смена · требования · [+ Подпост] [✎] [✕]. Тип,
+               вооружение, форма одежды, примечание и мин. рейтинг — в
+               раскрытии ✎: десять колонок с горизонтальным скроллом
+               спецификация запрещает (`[РЕК-09]`). */
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1060px] table-fixed border-collapse text-left">
+              <table className="w-full min-w-[840px] table-fixed border-collapse text-left">
                 <thead>
                   <tr className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     <th scope="col" className="w-8 pb-1">
                       <span className="sr-only">Свернуть сектор</span>
                     </th>
-                    <th scope="col" className="w-[180px] pb-1">Сектор / Пост</th>
+                    <th scope="col" className="w-[200px] pb-1">Сектор / Пост</th>
                     <th scope="col" className="pb-1 pl-2">Задача поста</th>
-                    <th scope="col" className="w-[92px] pb-1 pl-2">Сотрудники</th>
-                    {/* Смена — свойство ПОСТА, как в эталоне («Сектор A ·
-                        смена 07:00–15:00»). Стоит рядом с численностью:
-                        «сколько человек» и «когда стоят» читаются вместе, а
-                        расстановка показывает их одной строкой (Plane №123). */}
+                    <th scope="col" className="w-[92px] pb-1 pl-2">Сотрудников</th>
                     <th scope="col" className="w-[116px] pb-1 pl-2">Смена</th>
-                    <th scope="col" className="w-[128px] pb-1 pl-2">Тип</th>
-                    <th scope="col" className="pb-1 pl-2">Вооружение</th>
-                    <th scope="col" className="pb-1 pl-2">Форма одежды</th>
-                    <th scope="col" className="pb-1 pl-2">Примечание</th>
-                    {/* Колонок эталона тут две лишних — их читает расстановка:
-                        по «Требованиям» и «Мин. рейтингу» она считает пригодность
-                        кандидата. Убрать поля значило бы сделать эти данные
-                        нередактируемыми. */}
                     <th scope="col" className="pb-1 pl-2">Требования</th>
-                    <th scope="col" className="w-[72px] pb-1 pl-2">Мин. рейтинг</th>
-                    <th scope="col" className="w-[136px] pb-1 pl-2">
+                    <th scope="col" className="w-[210px] pb-1 pl-2">
                       <span className="sr-only">Действия</span>
                     </th>
                   </tr>
@@ -560,7 +595,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                             }
                           />
                         </td>
-                        <td className="py-1 pl-2 text-xs text-muted-foreground" colSpan={6}>
+                        <td className="py-1 pl-2 text-xs text-muted-foreground" colSpan={4}>
                           {group.rows.length === 0
                             ? "постов в секторе нет"
                             : `постов: ${group.rows.length} · сотрудников: ${group.rows.reduce(
@@ -568,7 +603,6 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                                 0
                               )}`}
                         </td>
-                        <td className="py-1" colSpan={2} />
                         <td className="py-1 pl-2">
                           <div className="flex gap-1">
                             <Button
@@ -594,175 +628,221 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                       {!isCollapsed &&
                         group.rows.map((row) => {
                           const isSub = (row.parentPostId ?? "") !== "";
+                          const isOpen = expanded.includes(row.id);
+                          const name = row.post || "новый";
                           return (
-                            <tr key={row.id} className="align-top">
-                              <td />
-                              <td className="py-1">
-                                <Input
-                                  className="h-8 text-xs"
-                                  style={isSub ? { marginLeft: 24 } : undefined}
-                                  placeholder={isSub ? "Подпост" : "Пост"}
-                                  aria-label={isSub ? "Подпост" : "Пост"}
-                                  value={row.post}
-                                  onChange={(e) =>
-                                    patchRow(row.id, { post: e.target.value })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <Input
-                                  className="h-8 text-xs"
-                                  placeholder="Задача"
-                                  aria-label="Задача"
-                                  value={row.task}
-                                  onChange={(e) =>
-                                    patchRow(row.id, { task: e.target.value })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <Input
-                                  className="h-8 text-xs"
-                                  type="number"
-                                  min={1}
-                                  aria-label="Потребность"
-                                  value={row.need}
-                                  onChange={(e) =>
-                                    patchRow(row.id, {
-                                      need: Number(e.target.value) || 0,
-                                    })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <Input
-                                  className="h-8 text-xs"
-                                  placeholder="07:00–15:00"
-                                  aria-label={`Смена поста: ${row.post || "новый"}`}
-                                  value={row.shift ?? ""}
-                                  onChange={(e) =>
-                                    patchRow(row.id, { shift: e.target.value })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <select
-                                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                                  aria-label={`Тип поста: ${row.post || "новый"}`}
-                                  value={row.postType ?? ""}
-                                  onChange={(e) =>
-                                    patchRow(row.id, { postType: e.target.value })
-                                  }
-                                >
-                                  <option value="">—</option>
-                                  {POST_TYPES.map((type) => (
-                                    <option key={type} value={type}>
-                                      {type}
-                                    </option>
-                                  ))}
-                                  {(row.postType ?? "") !== "" &&
-                                    !POST_TYPES.includes(
-                                      row.postType as (typeof POST_TYPES)[number]
-                                    ) && (
-                                      <option value={row.postType}>
-                                        {row.postType}
-                                      </option>
+                            <Fragment key={row.id}>
+                              <tr className="align-top">
+                                <td />
+                                <td className="py-1">
+                                  <Input
+                                    className="h-8 text-xs"
+                                    style={isSub ? { marginLeft: 24 } : undefined}
+                                    placeholder={isSub ? "Подпост" : "Пост"}
+                                    aria-label={isSub ? "Подпост" : "Пост"}
+                                    value={row.post}
+                                    onChange={(e) =>
+                                      patchRow(row.id, { post: e.target.value })
+                                    }
+                                  />
+                                </td>
+                                <td className="py-1 pl-2">
+                                  <Input
+                                    className="h-8 text-xs"
+                                    placeholder="Задача"
+                                    aria-label="Задача"
+                                    value={row.task}
+                                    onChange={(e) =>
+                                      patchRow(row.id, { task: e.target.value })
+                                    }
+                                  />
+                                </td>
+                                <td className="py-1 pl-2">
+                                  <Input
+                                    className="h-8 text-xs"
+                                    type="number"
+                                    min={1}
+                                    aria-label="Потребность"
+                                    value={row.need}
+                                    onChange={(e) =>
+                                      patchRow(row.id, {
+                                        need: Number(e.target.value) || 0,
+                                      })
+                                    }
+                                  />
+                                </td>
+                                <td className="py-1 pl-2">
+                                  <Input
+                                    className="h-8 text-xs"
+                                    placeholder="07:00–15:00"
+                                    aria-label={`Смена поста: ${name}`}
+                                    value={row.shift ?? ""}
+                                    onChange={(e) =>
+                                      patchRow(row.id, { shift: e.target.value })
+                                    }
+                                  />
+                                </td>
+                                <td className="py-1 pl-2">
+                                  <Input
+                                    className="h-8 text-xs"
+                                    placeholder="Требования"
+                                    aria-label="Требования"
+                                    value={row.requirements}
+                                    onChange={(e) =>
+                                      patchRow(row.id, { requirements: e.target.value })
+                                    }
+                                  />
+                                </td>
+                                <td className="py-1 pl-2">
+                                  <div className="flex gap-1">
+                                    {!isSub && (
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        aria-label={`Добавить подпост: ${name}`}
+                                        onClick={() => addSubPost(row)}
+                                      >
+                                        + Подпост
+                                      </Button>
                                     )}
-                                </select>
-                              </td>
-                              <td className="py-1 pl-2">
-                                <Input
-                                  className="h-8 text-xs"
-                                  placeholder="—"
-                                  aria-label={`Вооружение: ${row.post || "новый"}`}
-                                  value={row.weapon ?? ""}
-                                  onChange={(e) =>
-                                    patchRow(row.id, { weapon: e.target.value })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <Input
-                                  className="h-8 text-xs"
-                                  placeholder="—"
-                                  aria-label={`Форма одежды: ${row.post || "новый"}`}
-                                  value={row.uniform ?? ""}
-                                  onChange={(e) =>
-                                    patchRow(row.id, { uniform: e.target.value })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <Input
-                                  className="h-8 text-xs"
-                                  placeholder="—"
-                                  aria-label={`Примечание к посту: ${row.post || "новый"}`}
-                                  value={row.comment}
-                                  onChange={(e) =>
-                                    patchRow(row.id, { comment: e.target.value })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <Input
-                                  className="h-8 text-xs"
-                                  placeholder="Требования"
-                                  aria-label="Требования"
-                                  value={row.requirements}
-                                  onChange={(e) =>
-                                    patchRow(row.id, { requirements: e.target.value })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <Input
-                                  className="h-8 text-xs"
-                                  type="number"
-                                  aria-label="Минимальный рейтинг"
-                                  value={row.minRating ?? ""}
-                                  onChange={(e) =>
-                                    patchRow(row.id, {
-                                      minRating:
-                                        e.target.value === ""
-                                          ? null
-                                          : Number(e.target.value),
-                                    })
-                                  }
-                                />
-                              </td>
-                              <td className="py-1 pl-2">
-                                <div className="flex gap-1">
-                                  {!isSub && (
+                                    <Button
+                                      type="button"
+                                      variant={isOpen ? "secondary" : "outline"}
+                                      size="sm"
+                                      aria-label={`Подробнее: ${name}`}
+                                      aria-expanded={isOpen}
+                                      aria-controls={`recon-post-details-${row.id}`}
+                                      onClick={() =>
+                                        setExpanded((prev) =>
+                                          isOpen
+                                            ? prev.filter((id) => id !== row.id)
+                                            : [...prev, row.id]
+                                        )
+                                      }
+                                    >
+                                      <Pencil className="h-4 w-4" aria-hidden="true" />
+                                    </Button>
                                     <Button
                                       type="button"
                                       variant="outline"
                                       size="sm"
-                                      aria-label={`Добавить подпост: ${row.post || "новый"}`}
-                                      onClick={() => addSubPost(row)}
+                                      aria-label={
+                                        isSub ? "Удалить подпост" : "Удалить пост"
+                                      }
+                                      onClick={() => removeRow(row)}
                                     >
-                                      + Подпост
+                                      <X className="h-4 w-4" aria-hidden="true" />
                                     </Button>
-                                  )}
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    aria-label={
-                                      isSub ? "Удалить подпост" : "Удалить пост"
-                                    }
-                                    onClick={() => removeRow(row)}
-                                  >
-                                    <X className="h-4 w-4" aria-hidden="true" />
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
+                                  </div>
+                                </td>
+                              </tr>
+                              {isOpen && (
+                                <tr id={`recon-post-details-${row.id}`} className="bg-muted/20">
+                                  <td />
+                                  <td className="py-2 pr-2" colSpan={6}>
+                                    <div className="grid gap-2 md:grid-cols-5">
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Тип</span>
+                                        <select
+                                          className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                                          aria-label={`Тип поста: ${name}`}
+                                          value={row.postType ?? ""}
+                                          onChange={(e) =>
+                                            patchRow(row.id, { postType: e.target.value })
+                                          }
+                                        >
+                                          <option value="">—</option>
+                                          {POST_TYPES.map((type) => (
+                                            <option key={type} value={type}>
+                                              {type}
+                                            </option>
+                                          ))}
+                                          {(row.postType ?? "") !== "" &&
+                                            !POST_TYPES.includes(
+                                              row.postType as (typeof POST_TYPES)[number]
+                                            ) && (
+                                              <option value={row.postType}>
+                                                {row.postType}
+                                              </option>
+                                            )}
+                                        </select>
+                                      </label>
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Вооружение</span>
+                                        <Input
+                                          className="h-8 text-xs"
+                                          placeholder="—"
+                                          aria-label={`Вооружение: ${name}`}
+                                          value={row.weapon ?? ""}
+                                          onChange={(e) =>
+                                            patchRow(row.id, { weapon: e.target.value })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Форма одежды</span>
+                                        <Input
+                                          className="h-8 text-xs"
+                                          placeholder="—"
+                                          aria-label={`Форма одежды: ${name}`}
+                                          value={row.uniform ?? ""}
+                                          onChange={(e) =>
+                                            patchRow(row.id, { uniform: e.target.value })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Примечание</span>
+                                        <Input
+                                          className="h-8 text-xs"
+                                          placeholder="—"
+                                          aria-label={`Примечание к посту: ${name}`}
+                                          value={row.comment}
+                                          onChange={(e) =>
+                                            patchRow(row.id, { comment: e.target.value })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Мин. рейтинг</span>
+                                        <Input
+                                          className="h-8 text-xs"
+                                          type="number"
+                                          aria-label="Минимальный рейтинг"
+                                          value={row.minRating ?? ""}
+                                          onChange={(e) =>
+                                            patchRow(row.id, {
+                                              minRating:
+                                                e.target.value === ""
+                                                  ? null
+                                                  : Number(e.target.value),
+                                            })
+                                          }
+                                        />
+                                      </label>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           );
                         })}
                     </tbody>
                   );
                 })}
               </table>
+              {/* Итог под таблицей — словами (`[РЕК-05]`). */}
+              <p className="mt-2 text-xs text-muted-foreground" data-slot="recon-totals">
+                Итого: секторов {groups.length} · постов{" "}
+                {groups.reduce((sum, group) => sum + group.rows.length, 0)} · потребность{" "}
+                {groups.reduce(
+                  (sum, group) =>
+                    sum + group.rows.reduce((inner, row) => inner + (row.need || 0), 0),
+                  0
+                )}{" "}
+                сотрудников
+              </p>
             </div>
           )}
           {/* Названо вслух, а не нарисовано: «Материалы рекогносцировки» из

@@ -11,6 +11,8 @@
  * и спека, взявшая чужое мероприятие, зелена в одиночку и красна в полном
  * прогоне: сосед успевает перевести его в состояние, где правка отбивается.
  */
+import { anyChiefId } from './stand-chief'
+
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
 export async function prepareDemandEvent(
@@ -37,6 +39,7 @@ export async function prepareDemandEvent(
     objectId: object.id,
     businessDate,
     kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, {

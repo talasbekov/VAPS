@@ -16,6 +16,7 @@
  * ней сделал сосед.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -73,6 +74,7 @@ async function seedOverdueRequest(token: string): Promise<Fixture> {
     objectId: object.id,
     businessDate: '2027-07-01',
     kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
   })
   expect(created.status, JSON.stringify(created.payload)).toBe(201)
   const base = `/api/ops/security-events/${created.payload.id}`

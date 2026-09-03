@@ -30,7 +30,8 @@ from organization_management.apps.ops.documents_placement import (
     _document_target,
     placement_rows,
 )
-from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: F401
+from organization_management.apps.ops.tests.test_ops_security_events_api import (
+    give_chief,  # noqa: F401
     approver,
     make_employee,
     make_object,
@@ -79,6 +80,7 @@ def two_objects_on_approval(manager):  # noqa: F811
         f"{base}visit-objects/", {"objectId": str(second_object.pk)}, format="json"
     )
     assert added.status_code in (200, 201), added.content
+    give_chief(manager, event_id)
 
     first, second = _visits(event_id)
     for visit in (first, second):

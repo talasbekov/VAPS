@@ -26,7 +26,8 @@ import datetime as dt
 import pytest
 
 from organization_management.apps.ops import security_events as service
-from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: F401
+from organization_management.apps.ops.tests.test_ops_security_events_api import (
+    chief_for,  # noqa: F401
     approver,
     make_employee,
     make_object,
@@ -54,6 +55,7 @@ def _event_on_approval(manager, *, business_date="2026-12-31"):  # noqa: F811
             "objectId": str(obj.pk),
             "businessDate": business_date,
             "kind": "INTERNAL",
+            "chiefEmployeeId": str(chief_for(manager).pk),
         },
         format="json",
     )

@@ -17,6 +17,7 @@
  * не работает, а раздел живой и мок ему не нужен.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -171,6 +172,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
         objectId: object!.id,
         businessDate: '2028-06-06',
         kind: 'INTERNAL',
+        chiefEmployeeId: await anyChiefId(admin),
       })
     ).json()) as { id: string; code: string }
     const base = `/api/ops/security-events/${created.id}/`

@@ -307,7 +307,13 @@ def test_placement_assign_passes_when_no_chief_is_named_anywhere(manager):  # no
     base, _allocation_id = allocated_event(manager, department)
     event_id = base.rstrip("/").rsplit("/", 1)[-1]
     event = OpsSecurityEvent.objects.get(pk=event_id)
-    assert event.chief_employee_id is None, "фикстура уже назвала старшего — проверять нечего"
+    # Фикстура даёт старшего по умолчанию (`[РЕК-02]`, №424: без него не пройти
+    # рекогносцировку) — снимаем его ПОСЛЕ прохода, предмет пробы — расстановка
+    # у ОМ, где старшего не назвали нигде.
+    OpsSecurityEvent.objects.filter(pk=event_id).update(chief_employee_id=None, chief_name="")
+    event.visit_objects.update(chief_employee_id=None, chief_name="")
+    event.refresh_from_db()
+    assert event.chief_employee_id is None
     post_id = event.recon_sector_posts[0]["id"]
     worker = employee_of(make_directorate(department, "Управление А-1"), "Постовой")
     lead = scoped_client("placement-no-chief", "PLACE_LEAD2", department.pk)

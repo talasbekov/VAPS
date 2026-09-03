@@ -15,6 +15,7 @@
  * причине, он состояние не меняет.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -355,6 +356,7 @@ async function prepareEvent(token: string): Promise<void> {
     title: 'Проба согласования (e2e)',
     objectId: object.id,
     businessDate: '2026-08-23',
+    chiefEmployeeId: await anyChiefId(token),
     // См. recon-stage: без обязательного `kind` создание отбивается 400.
     kind: 'INTERNAL',
   })

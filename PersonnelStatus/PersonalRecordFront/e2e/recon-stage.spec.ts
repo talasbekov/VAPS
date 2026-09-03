@@ -11,6 +11,7 @@
  * фикстура стала бы одноразовой.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -117,6 +118,8 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     // «Тип поста» с 25.08 — ВЫБОР из списка эталона, а не свободный текст.
     const post = target.reconSectorPosts[0]
     const note = `Проба осмотра ${Date.now()}`
+    // Тип, вооружение, форма одежды и примечание — в раскрытии ✎ (`[РЕК-05]`, №424).
+    await stage.getByLabel(`Подробнее: ${post.post}`, { exact: true }).click()
     await stage
       .getByLabel(`Тип поста: ${post.post}`, { exact: true })
       .selectOption('Группа досмотра')
@@ -328,6 +331,25 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     // а не молчит и не тащит паспорт мероприятия: подстановка чужого паспорта
     // и была бы «импортом в мероприятие вообще».
     await picker.selectOption(secondVisitId)
+    // `[РЕК-02]` (№424): объект, дописанный кнопкой «+», старшего не наследует —
+    // вместо формы пустое состояние, кнопки импорта нет вовсе. Старший
+    // назначается через API, страница перечитывается — форма открывается.
+    await expect(stage.locator('[data-slot="recon-chief-empty"]')).toContainText(
+      'Назначьте старшего объекта, чтобы начать рекогносцировку',
+    )
+    await expect(stage.getByRole('button', { name: 'Импорт из паспорта' })).toHaveCount(0)
+    const withChief = await call('POST', `/api/ops/security-events/${fixture.id}/visit-objects/${secondVisitId}/chief/`, {
+      employeeId: await anyChiefId(token),
+    })
+    expect(
+      (withChief.visitObjects as { id: string; chiefEmployeeId: string | null }[] | undefined)?.find(
+        (v) => v.id === secondVisitId,
+      )?.chiefEmployeeId,
+      `старший объекту не назначен: ${JSON.stringify(withChief).slice(0, 200)}`,
+    ).toBeTruthy()
+    await page.reload()
+    await expect(stage).toBeVisible({ timeout: 15_000 })
+    await picker.selectOption(secondVisitId)
     const importButton = stage.getByRole('button', { name: 'Импорт из паспорта' })
     await expect(importButton).toBeDisabled()
     await expect(importButton).toHaveAttribute(
@@ -438,6 +460,7 @@ async function prepareEvent(token: string): Promise<void> {
     // `kind` обязателен с 23.08 — без него создание отбивается 400, и вся
     // подготовка дальше бьёт по /security-events/undefined/.
     kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, {
@@ -472,6 +495,7 @@ async function createWithObject(token: string): Promise<EventRow> {
     objectId: object.id,
     businessDate: '2026-08-25',
     kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
   })) as EventRow
 }
 
@@ -507,6 +531,7 @@ async function createRequestFixture(
     objectId: object.id,
     businessDate: '2026-08-25',
     kind: 'INTERNAL',
+    chiefEmployeeId: (await call('GET', '/api/ops/personnel/?page_size=1')).results[0].id,
   })
   const base = `/api/ops/security-events/${created.id}`
   // Сторож фикстуры (Plane №196): версия паспорта привязывается по деловой
