@@ -21,6 +21,17 @@
 import { useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/stat-card";
@@ -36,7 +47,12 @@ import type {
   ForceAllocationRow,
   ForceCollectionStatus,
 } from "@/entities/security-event";
-import { useForceCollection } from "@/hooks/use-force-collections";
+import {
+  useAssignRosterObjects,
+  useForceCollection,
+  useHandOverToPlacement,
+  type ForceCollectionWithObjects,
+} from "@/hooks/use-force-collections";
 import { formatIsoDate } from "@/shared/lib/date";
 
 const STATUS_LABEL: Record<ForceCollectionStatus, string> = {
@@ -263,6 +279,242 @@ export function ForceCollectionCard({
           </Table>
         </div>
       </section>
+
+      <RosterToObjects data={data} />
     </div>
+  );
+}
+
+/**
+ * Блок 3 «Собранные сотрудники → объекты» (`[СБС-13]`, Plane №390).
+ *
+ * Появляется с первым принятым списком (состав непуст). Слева — люди состава
+ * по департаментам с чекбоксами, справа — объекты посещения с ёмкостью
+ * «потребность N / назначено M». Отметил → «На объект…» — люди отданы
+ * объекту; «Передать на расстановку» — при недоборе диалог с обязательным
+ * комментарием. Перетаскивания нет намеренно: чекбоксы + список делают то же
+ * с клавиатуры и на планшете, а drag-and-drop без второго пути был бы
+ * недоступен половине пользователей.
+ *
+ * После передачи блок читается, но не правится: распределение — решение
+ * штаба, и менять его после того, как старшие объектов начали расставлять,
+ * значило бы менять условия задним числом.
+ */
+function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
+  const assign = useAssignRosterObjects(data.eventId);
+  const handOver = useHandOverToPlacement(data.eventId);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [target, setTarget] = useState<string>("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [comment, setComment] = useState("");
+  const roster = data.roster ?? [];
+  const objects = data.objects ?? [];
+  const handedOver = Object.keys(data.handover ?? {}).length > 0;
+  if (roster.length === 0) return null;
+
+  const objectName = (id: string | null | undefined) =>
+    objects.find((o) => o.visitObjectId === id)?.objectName ?? null;
+  const unassigned = roster.filter((m) => !m.visitObjectId).length;
+  const shortfall = objects.filter(
+    (o) => o.need !== null && o.assigned < o.need
+  );
+  const byDepartment = new Map<string, typeof roster>();
+  for (const member of roster) {
+    const key = member.departmentName || "Без департамента";
+    byDepartment.set(key, [...(byDepartment.get(key) ?? []), member]);
+  }
+  const togglePicked = (employeeId: string, on: boolean) =>
+    setPicked((prev) => (on ? [...prev, employeeId] : prev.filter((id) => id !== employeeId)));
+
+  return (
+    <section aria-labelledby="roster-objects-heading" className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 id="roster-objects-heading" className="font-semibold">
+            Собранные сотрудники → объекты
+          </h3>
+          <p className="text-muted-foreground text-sm">
+            {handedOver
+              ? `Передано на расстановку ${formatIsoDate((data.handover.at ?? "").slice(0, 10))}${
+                  data.handover.comment ? ` · ${data.handover.comment}` : ""
+                }`
+              : `Прислано ${data.gathered} из ${data.need}${
+                  unassigned > 0 ? ` · не распределены: ${unassigned}` : ""
+                }`}
+          </p>
+        </div>
+        {!handedOver && (
+          <Button
+            type="button"
+            size="sm"
+            disabled={handOver.isPending || unassigned > 0}
+            title={unassigned > 0 ? "Сначала отдайте объектам всех собранных" : undefined}
+            onClick={() => (shortfall.length > 0 ? setDialogOpen(true) : handOver.mutate({ comment: "" }))}
+          >
+            {handOver.isPending ? "Передаю…" : "Передать на расстановку"}
+          </Button>
+        )}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10" />
+                <TableHead>Сотрудник</TableHead>
+                <TableHead>Управление</TableHead>
+                <TableHead>Объект</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...byDepartment.entries()].map(([department, members]) => (
+                <>
+                  <TableRow key={`dep-${department}`}>
+                    <TableCell colSpan={4} className="text-muted-foreground bg-muted/30 text-xs font-semibold uppercase tracking-wide">
+                      {department}
+                    </TableCell>
+                  </TableRow>
+                  {members.map((member) => (
+                    <TableRow key={member.employeeId} data-testid={`roster-${member.employeeId}`}>
+                      <TableCell>
+                        <Checkbox
+                          aria-label={`Отметить ${member.name}`}
+                          disabled={handedOver}
+                          checked={picked.includes(member.employeeId)}
+                          onCheckedChange={(on) => togglePicked(member.employeeId, on === true)}
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium">{member.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{member.divisionName || "—"}</TableCell>
+                      <TableCell>
+                        {objectName(member.visitObjectId) ?? (
+                          <span className="text-muted-foreground">не распределён</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="space-y-3">
+          <ul className="space-y-2">
+            {objects.map((object) => {
+              const full = object.need !== null && object.assigned >= object.need;
+              return (
+                <li
+                  key={object.visitObjectId}
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  data-testid={`object-capacity-${object.visitObjectId}`}
+                >
+                  <div className="font-medium">{object.objectName}</div>
+                  <div className={`tabular-nums ${full ? "text-green-700" : "text-muted-foreground"}`}>
+                    {object.need === null
+                      ? `назначено ${object.assigned} · потребность не размечена`
+                      : `потребность ${object.need} / назначено ${object.assigned}`}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {!handedOver && (
+            <div className="space-y-2">
+              <label className="text-xs font-semibold" htmlFor="roster-target">
+                На объект…
+              </label>
+              <select
+                id="roster-target"
+                className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+              >
+                <option value="">— выберите объект —</option>
+                {objects.map((o) => (
+                  <option key={o.visitObjectId} value={o.visitObjectId}>
+                    {o.objectName}
+                  </option>
+                ))}
+                <option value="__none__">снять с объекта</option>
+              </select>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={picked.length === 0 || target === "" || assign.isPending}
+                onClick={() =>
+                  assign.mutate(
+                    {
+                      rows: picked.map((employeeId) => ({
+                        employeeId,
+                        visitObjectId: target === "__none__" ? null : target,
+                      })),
+                    },
+                    { onSuccess: () => setPicked([]) }
+                  )
+                }
+              >
+                {assign.isPending
+                  ? "Отдаю…"
+                  : picked.length === 0
+                    ? "Отметьте людей слева"
+                    : `Отдать объекту: ${picked.length}`}
+              </Button>
+              {assign.isError && (
+                <p role="alert" className="text-destructive-ink text-xs">
+                  {assign.error?.message ?? "Не удалось отдать объекту"}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      {handOver.isError && (
+        <p role="alert" className="text-destructive-ink text-sm">
+          {handOver.error?.message ?? "Передать не удалось"}
+        </p>
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Передать на расстановку с недобором?</DialogTitle>
+            <DialogDescription>
+              {shortfall
+                .map((o) => `«${o.objectName}»: ${o.assigned} из ${o.need}`)
+                .join(" · ")}
+              . Старшие объектов получат состав меньше потребности — укажите,
+              почему; комментарий увидят они и штаб.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label="Комментарий к передаче с недобором"
+            placeholder="Например: остальных доберём к среде"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+          />
+          {handOver.isError && (
+            <p role="alert" className="text-destructive-ink text-sm">
+              {handOver.error?.message ?? "Передать не удалось"}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              disabled={comment.trim() === "" || handOver.isPending}
+              onClick={() =>
+                handOver.mutate({ comment }, { onSuccess: () => setDialogOpen(false) })
+              }
+            >
+              {handOver.isPending ? "Передаю…" : "Передать с недобором"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }

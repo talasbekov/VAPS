@@ -173,6 +173,12 @@ class OpsSecurityEvent(TimeStampedModel):
     # остаётся в нём, когда его снимают с поста; сложить их в одно поле значило
     # бы терять первый факт при каждом снятии.
     force_roster = models.JSONField(default=list, blank=True)
+    # ПЕРЕДАЧА СОБРАННЫХ НА РАССТАНОВКУ (Plane №390, `[СБС-13]`): штаб разложил
+    # состав по объектам посещения (`visitObjectId` в строках `force_roster`)
+    # и передал его старшим объектов. `{}` — ещё не передано. При недоборе —
+    # обязательный комментарий («передать с недобором»): решение штаба
+    # отдать меньше, чем просили, остаётся записанным, а не растворяется.
+    force_handover = models.JSONField(default=dict, blank=True)
     placement_assignments = models.JSONField()
     approval_status = models.CharField(
         max_length=20, choices=ApprovalStatus.choices

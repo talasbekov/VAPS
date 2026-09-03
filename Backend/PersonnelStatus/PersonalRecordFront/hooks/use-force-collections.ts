@@ -6,13 +6,14 @@
 // меня», этот — «сколько я раздал и сколько мне вернули». Вопросы разные,
 // поэтому и запрос свой, а не тот же список под другим правом: колонки,
 // порядок и действия не совпадают.
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   securityEventForceCollectionPath,
   securityEventForceCollectionsPath,
   type ForceCollectionDetail,
   type ForceCollectionRow,
+  type ForceRosterMember,
 } from "@/entities/security-event";
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
@@ -30,17 +31,80 @@ export function useForceCollections(options: { enabled?: boolean } = {}) {
   });
 }
 
+/** Состав с объектами и передача (Plane №390, `[СБС-13]`) — поверх карточки
+ *  сбора, тем же ответом ручки `force-collection/`. Типы здесь, а не в общем
+ *  `types.ts`: читатель один — карточка штаба. */
+export interface ForceCollectionObject {
+  visitObjectId: string;
+  objectName: string;
+  /** `null` — расчёт постов по объекту не размечен (см. №387). */
+  need: number | null;
+  assigned: number;
+}
+
+export interface ForceHandover {
+  at?: string;
+  by?: string;
+  comment?: string;
+  shortfall?: (ForceCollectionObject & { short: number })[];
+}
+
+export type ForceCollectionWithObjects = ForceCollectionDetail & {
+  roster: (ForceRosterMember & { visitObjectId?: string | null })[];
+  objects: ForceCollectionObject[];
+  /** `{}` — состав ещё не передан на расстановку. */
+  handover: ForceHandover;
+};
+
 /** Один сбор целиком: плитки и раскладка с людьми (Plane №271, Ш-2). */
 export function useForceCollection(
   eventId: string | null,
   options: { enabled?: boolean } = {}
 ) {
-  return useQuery<ForceCollectionDetail, OpsApiFailure>({
+  return useQuery<ForceCollectionWithObjects, OpsApiFailure>({
     queryKey: ["ops-force-collection", eventId],
     queryFn: () =>
-      opsApiClient.get<ForceCollectionDetail>(
+      opsApiClient.get<ForceCollectionWithObjects>(
         securityEventForceCollectionPath(eventId as string)
       ),
     enabled: (options.enabled ?? true) && eventId !== null,
+  });
+}
+
+/** Отдать людей состава объектам посещения (Plane №390). */
+export function useAssignRosterObjects(eventId: string) {
+  const client = useQueryClient();
+  return useMutation<
+    ForceCollectionWithObjects,
+    OpsApiFailure,
+    { rows: { employeeId: string; visitObjectId: string | null }[] }
+  >({
+    mutationFn: (body) =>
+      opsApiClient.post<ForceCollectionWithObjects>(
+        `${securityEventForceCollectionPath(eventId)}objects/`,
+        body
+      ),
+    onSuccess: (data) => {
+      client.setQueryData(["ops-force-collection", eventId], data);
+      void client.invalidateQueries({ queryKey: FORCE_COLLECTIONS_KEY });
+    },
+  });
+}
+
+/** «Передать на расстановку» (Plane №390): при недоборе — с комментарием. */
+export function useHandOverToPlacement(eventId: string) {
+  const client = useQueryClient();
+  return useMutation<ForceCollectionWithObjects, OpsApiFailure, { comment: string }>({
+    mutationFn: (body) =>
+      opsApiClient.post<ForceCollectionWithObjects>(
+        `${securityEventForceCollectionPath(eventId)}hand-over/`,
+        body
+      ),
+    onSuccess: (data) => {
+      client.setQueryData(["ops-force-collection", eventId], data);
+      void client.invalidateQueries({ queryKey: FORCE_COLLECTIONS_KEY });
+      // Расстановка читает состав из карточки мероприятия — ей тоже пора.
+      void client.invalidateQueries({ queryKey: ["ops-security-events"] });
+    },
   });
 }
