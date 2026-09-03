@@ -678,8 +678,11 @@ def test_full_lifecycle_walkthrough(manager, approver_client):
     # Форма замечания — `[МД-07]` (Plane №386): статус тройной
     # (Открыто/Устранено/Не согласен), не булев «устранено».
     assert (remark["text"], remark["status"]) == ("уточнить пост 1", "OPEN")
-    resp = approver_client.post(f"{base}approval/approve/")
-    assert resp.json()["error_code"] == "APPROVAL_RETURNED"
+    # Возврат подписанта — ДЕЙСТВИЕ (`[СОГ-08]`, Plane №399): объект уже на
+    # «Расстановке», отдельной кнопки возврата нет.
+    assert data["stage"] == "PLACEMENT"
+    data = manager.post(f"{base}placement/complete/").json()
+    assert data["stage"] == "APPROVAL"
 
     data = manager.post(f"{base}approval/send/").json()
     data = approver_client.post(
@@ -689,16 +692,17 @@ def test_full_lifecycle_walkthrough(manager, approver_client):
     ).json()
     # Комментарий согласования проставляет СЕРВЕР — его не спрашивают.
     assert data["approvalRoute"][0]["comment"] == "Без замечаний"
-    # Замечание ещё открыто — этап не завершить.
+    # Замечание ещё открыто — подпись этап не завершила (`[ВОЗ-05]`).
+    assert data["stage"] == "APPROVAL"
     resp = approver_client.post(f"{base}approval/approve/")
     assert resp.json()["error_code"] == "APPROVAL_REMARKS_OPEN"
-    manager.post(
+    # Ответ на последнее замечание — «последняя подпись» (`[СОГ-09]`): этап
+    # завершается сам, без отдельного клика.
+    data = manager.post(
         f"{base}approval/remarks/{remark['id']}/resolve/",
         {"decision": "RESOLVED"},
         format="json",
-    )
-
-    data = approver_client.post(f"{base}approval/approve/").json()
+    ).json()
     assert (data["stage"], data["approvalStatus"]) == (
         "ACKNOWLEDGEMENT",
         "APPROVED",

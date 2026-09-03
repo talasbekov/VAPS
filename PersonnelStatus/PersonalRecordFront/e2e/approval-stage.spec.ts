@@ -111,11 +111,15 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
       ),
     )
 
-    // Обход показан ИМЕННО с тем обоснованием, что записал бэк
+    // Блока «Обходы предупреждений» на согласовании НЕТ (`[СОГ-11]`, Plane
+    // №399) — его место в аудите; число обходов остаётся плиткой сводки выше.
+    // Назначение с обходом по-прежнему видно в расчёте на согласование.
     const post = target.reconSectorPosts.find((p) => p.id === override.postId)!
     await expect(card).toContainText(override.employeeName)
-    await expect(card).toContainText(`Обоснование: ${override.ratingOverrideReason}`)
     await expect(card).toContainText(`${post.sector} · ${post.post}`)
+    await expect(card.getByText('Обходы предупреждений при назначении')).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Завершить этап и перейти далее' })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Вернуть на доработку' })).toHaveCount(0)
 
     // Маршрут согласования из прототипа: добавляем согласующего, решаем по
     // нему и сверяем с тем, что вернул БЭК, а не с экраном.
@@ -165,6 +169,30 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
       }, { timeout: 15_000 })
       .toBe('RETURNED|Уточнить расчёт постов')
 
+    // РЕШЕНИЕ «ВЕРНУТЬ» — ДЕЙСТВИЕ (`[СОГ-08]`, Plane №399): объект сразу
+    // возвращается на «Расстановку», отдельной кнопки для этого нет. Замечание
+    // видно там, над деревом постов (№397).
+    await expect
+      .poll(async () => (await events(token)).find((e) => e.id === target.id)?.stage ?? null, {
+        timeout: 15_000,
+      })
+      .toBe('PLACEMENT')
+    const placement = page.getByRole('region', { name: 'Расстановка сил' })
+    await expect(placement).toBeVisible({ timeout: 15_000 })
+    await expect(placement.getByRole('region', { name: 'Замечания согласования' })).toContainText(
+      'Уточнить расчёт постов',
+    )
+
+    // Старший завершает расстановку заново (состав не менялся) — объект снова
+    // на согласовании, и замечание ждёт ответа там.
+    await fetch(`${API}/api/ops/security-events/${target.id}/placement/complete/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: '{}',
+    })
+    await page.reload()
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
     // Возврат согласующего порождает ЗАМЕЧАНИЕ — экран показывает его
     // отдельным списком, и закрывается оно по одному.
     const remarks = card.locator('section', { hasText: 'Замечания' }).first()
@@ -199,9 +227,10 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
       }, { timeout: 15_000 })
       .toBe('DISAGREED')
 
-    // Пустую причину возврата отбивает сервер; стадия не двигается
-    await card.getByRole('button', { name: 'Вернуть на доработку' }).click()
-    await expect(card).toContainText('Укажите причину возврата', { timeout: 15_000 })
+    // Нижней «Вернуть на доработку» на согласовании больше нет (`[СОГ-11]`):
+    // пустую причину отбивает строка возврата в маршруте — проверено выше.
+    // Этап остаётся на согласовании: несогласие с ответом его не двигает, а
+    // подписи ещё нет.
     expect((await events(token)).find((e) => e.id === target.id)?.stage).toBe('APPROVAL')
   })
 

@@ -413,29 +413,24 @@ def test_the_event_waits_for_every_object_before_acknowledgement(
     _add_approver(manager, base, first)
     _add_approver(manager, base, second)
 
-    for visit in (first, second):
-        _, approver_id = _approve(manager, base, visit)
-        approver.post(
-            f"{base}approval/route/{approver_id}/decide/",
-            {
-                "decision": "APPROVED",
-                "comment": "",
-                "visitObjectId": str(visit.pk),
-            },
-            format="json",
-        )
-
-    # Утверждает УТВЕРЖДАЮЩИЙ, а не ведущий мероприятие (Plane №267): у
-    # `manager` этого права нет, и проба под ним проверяла бы только 403.
-    done = approver.post(
-        f"{base}approval/approve/", {"visitObjectId": str(first.pk)}, format="json"
+    # Подпись единственного согласующего завершает согласование ОБЪЕКТА сама
+    # (`[СОГ-09]`, Plane №399); мероприятие ждёт второго объекта.
+    _, approver_id = _approve(manager, base, first)
+    approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
     )
-    assert done.status_code == 200, done.content
+    first.refresh_from_db()
+    assert first.stage == "ACKNOWLEDGEMENT"
     event = service.lock_event(event_id)
     assert event.stage == "APPROVAL", "мероприятие ушло вперёд по одному объекту"
 
+    _, approver_id = _approve(manager, base, second)
     approver.post(
-        f"{base}approval/approve/", {"visitObjectId": str(second.pk)}, format="json"
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(second.pk)},
+        format="json",
     )
     event = service.lock_event(event_id)
     assert event.stage == "ACKNOWLEDGEMENT"

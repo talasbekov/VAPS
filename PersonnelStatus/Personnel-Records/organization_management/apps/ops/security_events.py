@@ -4575,7 +4575,14 @@ def decide_approver(
         visit.approval_remarks = remarks
         fields.insert(1, "approval_remarks")
     visit.save(update_fields=fields)
-    return event
+    # РЕШЕНИЕ СОГЛАСУЮЩЕГО — ДЕЙСТВИЕ, а не запись в таблицу (`[СОГ-08]`,
+    # Plane №399): «Вернуть» возвращает объект на доработку сразу (тем же
+    # телом, что ручка `approval/return/`), а последняя подпись завершает
+    # этап сама (`[СОГ-09]`). Отдельных кнопок для того же у согласующего нет
+    # (`[СОГ-11]`) — иначе одно решение принималось бы в двух местах.
+    if decision == "RETURNED":
+        return _return_visit(event, visit, clean_comment)
+    return _autocomplete_approval(event, visit)
 
 
 def placement_signature(event, visit=None):
@@ -4759,18 +4766,19 @@ def resolve_remark(
         raise _not_found("Замечание не найдено.", remark_id)
     visit.approval_remarks = remarks
     visit.save(update_fields=["approval_remarks", "updated_at"])
-    return event
+    # Ответ на последнее открытое замечание — тоже «последняя подпись»
+    # (`[СОГ-09]`): если все уже согласовали и держало только оно, этап
+    # завершается сам.
+    return _autocomplete_approval(event, visit)
 
 
-@transaction.atomic
-def approve_placement(event_id, *, visit_object_id=None):
-    event = lock_event(event_id)
-    visit = _approval_target(event, visit_object_id)
-    _require_stage(
-        event,
-        "APPROVAL",
-        "Согласовать расстановку можно только на этапе «Согласование».",
-    )
+def _approve_visit(event, visit):
+    """Согласование ОБЪЕКТА: проверки эталона и переход на «Ознакомление».
+
+    Общее тело для ручки `approval/approve/` и для АВТОЗАВЕРШЕНИЯ последней
+    подписью (`[СОГ-09]`, Plane №399) — правила одни, и держать их в двух
+    местах значило бы разойтись при первой правке.
+    """
     # Условия завершения этапа — из эталона (задача заказчика «ОМ-37.3»).
     # Каждое отвечает на свой вопрос, поэтому и текст у каждого свой: «не
     # получилось» без причины не подсказывает, что чинить.
@@ -4819,18 +4827,16 @@ def approve_placement(event_id, *, visit_object_id=None):
     _sync_event_approval(event)
     # МЕРОПРИЯТИЕ ИДЁТ ДАЛЬШЕ, КОГДА СОГЛАСОВАНЫ ВСЕ ЕГО ОБЪЕКТЫ. Утверждение
     # переводит на «Ознакомление» ЭТОТ объект; мероприятие берёт наименьшую
-    # стадию своих объектов и потому ждёт последнего (Plane №412). Ознакомление
-    # идёт по назначениям, а они у объектов разные: открыть его по первому
-    # согласованному объекту значило бы позвать людей второго знакомиться с
-    # расстановкой, которую ещё правят.
-    #
-    # Утверждение сразу открывает «Ознакомление», без отдельного клика.
+    # стадию своих объектов и потому ждёт последнего (Plane №412).
     old_stage = event.stage
     advance_visits(event, "ACKNOWLEDGEMENT", visits=[visit])
     if event.stage != old_stage:
         record_transition(event, old_stage, event.stage)
-        if event.stage == "ACKNOWLEDGEMENT":
-            _autonotify_acknowledgement(event)
+    # Рассылка о заступлении САМА (Plane №402, `[ОЗН-01]`) — тем же движением,
+    # что и переход на «Ознакомление», и для ручки, и для автозавершения
+    # последней подписью (№399): общее тело — одна точка рассылки.
+    if event.stage == "ACKNOWLEDGEMENT":
+        _autonotify_acknowledgement(event)
     return event
 
 
@@ -4861,27 +4867,66 @@ def _autonotify_acknowledgement(event):
         pass
 
 
+def _approval_ready(visit):
+    """Можно ли завершить согласование объекта БЕЗ отказа — для автозавершения.
+
+    Те же условия, что в `_approve_visit`, но ответом «да/нет», а не отказом:
+    автозавершение не имеет права падать — оно побочный эффект подписи или
+    ответа на замечание, и его отказ сорвал бы само действие человека.
+    """
+    route = list(visit.approval_route or [])
+    if not route or any(item.get("status") != "APPROVED" for item in route):
+        return False
+    if any(item.get("status") == "OPEN" for item in (visit.approval_remarks or [])):
+        return False
+    return True
+
+
+def _autocomplete_approval(event, visit):
+    """`[СОГ-09]`: «Этап завершается автоматически последней подписью» —
+    кнопки «Завершить этап» у согласующего нет (`[СОГ-11]`).
+
+    Зовётся после решения согласующего и после ответа на замечание: последним
+    действием может оказаться и ответ старшего (все подписи уже есть, держало
+    только открытое замечание). Устаревшая расстановка автозавершение не
+    проходит — `_approve_visit` откажет, и отказ здесь ГЛОТАЕТСЯ намеренно:
+    подпись состоялась, а этап дождётся повторной отправки.
+    """
+    if event.stage != "APPROVAL" or not _approval_ready(visit):
+        return event
+    try:
+        return _approve_visit(event, visit)
+    except DomainError:
+        return event
+
+
 @transaction.atomic
-def return_placement(event_id, *, comment, visit_object_id=None):
+def approve_placement(event_id, *, visit_object_id=None):
+    """Ручка `approval/approve/` — ручное завершение (админ, API). У
+    согласующего на экране такой кнопки больше нет (`[СОГ-11]`): его действие —
+    подпись в маршруте, а этап закрывается сам (`[СОГ-09]`)."""
     event = lock_event(event_id)
     visit = _approval_target(event, visit_object_id)
-    comment = str(comment or "").strip()
-    if comment == "":
-        raise _validation({"comment": ["Укажите причину возврата."]})
     _require_stage(
         event,
         "APPROVAL",
-        "Вернуть на доработку можно только на этапе «Согласование».",
+        "Согласовать расстановку можно только на этапе «Согласование».",
     )
+    return _approve_visit(event, visit)
+
+
+def _return_visit(event, visit, comment):
+    """Возврат ОБЪЕКТА на доработку: статус, версия документа, стадия.
+
+    Общее тело для ручки `approval/return/` и для решения согласующего
+    «Вернуть» в маршруте (`[СОГ-08]`, Plane №399): возврат подписанта — это
+    и есть возврат объекта, второй кнопки для того же действия у него нет.
+    """
     # 🔴 ЗАМЕЧАНИЕ ЗДЕСЬ НЕ ЗАВОДИТСЯ, И ЭТО РЕШЕНИЕ, А НЕ НЕДОСМОТР (Plane
-    # №386). Структурированные замечания (`[МД-07]`, с привязкой к посту и
-    # требующие ответа) заводит МАРШРУТ согласующих — `decide_approver` с
-    # решением RETURNED. Эта кнопка — общий возврат БЕЗ структурированного
-    # списка ([ВОЗ-01]'s «список замечаний» этот шаг не строит): заведи она
-    # свою запись в `approval_remarks`, эта запись осталась бы «Открыто»
-    # НАВСЕГДА — ответить на «общую причину» нечем, отдельного действия для
-    # неё нет, и она заперла бы `approve_placement` до ручной правки в базе.
-    # Причина возврата остаётся в `approval_comment`, как и раньше.
+    # №386). Структурированные замечания заводит решение согласующего в
+    # маршруте (`decide_approver`, RETURNED). Общая причина возврата живёт в
+    # `approval_comment`; заведи она свою запись в `approval_remarks`, та
+    # осталась бы «Открыто» навсегда — ответить на «общую причину» нечем.
     visit.approval_status = "RETURNED"
     visit.approval_comment = comment
     visit.save(
@@ -4898,6 +4943,21 @@ def return_placement(event_id, *, comment, visit_object_id=None):
     if event.stage != old_stage:
         record_transition(event, old_stage, event.stage)
     return event
+
+
+@transaction.atomic
+def return_placement(event_id, *, comment, visit_object_id=None):
+    event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
+    comment = str(comment or "").strip()
+    if comment == "":
+        raise _validation({"comment": ["Укажите причину возврата."]})
+    _require_stage(
+        event,
+        "APPROVAL",
+        "Вернуть на доработку можно только на этапе «Согласование».",
+    )
+    return _return_visit(event, visit, comment)
 
 
 # ── Ознакомление ────────────────────────────────────────────────────────────

@@ -116,8 +116,9 @@ def test_an_event_walks_from_bulletin_to_closure(manager, approver):  # noqa: F8
     )
     assert decided.status_code == 200, decided.json()
 
-    approved = approver.post(f"{base}approval/approve/")
-    assert approved.status_code == 200, approved.json()
+    # Последняя подпись завершает этап САМА (`[СОГ-09]`, Plane №399) — ручка
+    # `approve/` для этого больше не нужна, ответ на решение уже несёт стадию.
+    approved = decided
     assert approved.json()["stage"] == "ACKNOWLEDGEMENT", approved.json()["stage"]
 
     # Шаг 9: ознакомление — кнопка рассылки и завершение этапа.

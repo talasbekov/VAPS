@@ -90,15 +90,15 @@ def _send_and_return(manager, approver, base):  # noqa: F811
     )
     manager.post(f"{base}approval/send/")
     route = manager.get(base).json()["visitObjects"][0]["approvalRoute"]
-    approver.post(
+    # Возврат подписанта — ДЕЙСТВИЕ (`[СОГ-08]`, №399): объект уже на
+    # «Расстановке», отдельного `approval/return/` не нужно.
+    resp = approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "RETURNED", "comment": "переделать"},
         format="json",
     )
-    resp = approver.post(
-        f"{base}approval/return/", {"comment": "на доработку"}, format="json"
-    )
     assert resp.status_code == 200, resp.content
+    assert resp.json()["stage"] == "PLACEMENT"
 
 
 # ── Заведение и рост номера ─────────────────────────────────────────────────
@@ -175,13 +175,13 @@ def test_approving_marks_the_current_version(manager, approver, staffed_event): 
     )
     manager.post(f"{base}approval/send/")
     route = manager.get(base).json()["visitObjects"][0]["approvalRoute"]
-    approver.post(
+
+    # Последняя подпись завершает согласование сама (`[СОГ-09]`, №399).
+    resp = approver.post(
         f"{base}approval/route/{route[0]['id']}/decide/",
         {"decision": "APPROVED", "comment": ""},
         format="json",
     )
-
-    resp = approver.post(f"{base}approval/approve/")
 
     assert resp.status_code == 200, resp.content
     rows = _versions(event_id)
