@@ -22,6 +22,8 @@ _SECTIONS = (
     "LOAD_POLICY",
     "ATTENTION_POLICY",
     "REPORT_LIMITS",
+    # Политика согласования (`[ВОЗ-02]`, Plane №431): порог автосрочности.
+    "APPROVAL_POLICY",
 )
 _KINDS = ("NUMBER", "CHOICE")
 _DICTIONARIES = (

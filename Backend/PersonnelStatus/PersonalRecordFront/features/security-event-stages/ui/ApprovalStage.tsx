@@ -34,6 +34,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   useAddApprover,
   useDecideApprover,
   useMoveApprover,
@@ -242,6 +250,23 @@ function DocumentVersionHistory({ view }: { view: ApprovalView }) {
             {version.supersededAt !== null && (
               <span className="inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px]">
                 отменена
+              </span>
+            )}
+            {version.diff != null && (
+              /* Diff с предыдущей версией (`[ВОЗ-06]`, Plane №431): что
+                 согласующий подписывает заново — словами, не «изменилась». */
+              <span className="block w-full text-[11px]" data-slot="version-diff">
+                {version.diff.addedPosts.length === 0 &&
+                version.diff.removedPosts.length === 0 &&
+                version.diff.replacedPeople.length === 0
+                  ? "Изменений против предыдущей версии нет"
+                  : [
+                      ...version.diff.addedPosts.map((p) => `добавлен пост ${p}`),
+                      ...version.diff.removedPosts.map((p) => `снят пост ${p}`),
+                      ...version.diff.replacedPeople.map(
+                        (r) => `${r.post}: ${r.was.join(", ") || "—"} → ${r.now.join(", ") || "—"}`
+                      ),
+                    ].join(" · ")}
               </span>
             )}
             <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
@@ -544,8 +569,12 @@ function ApprovalRoute({
   const [position, setPosition] = useState("");
   const [returnFor, setReturnFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
-  const [returnPost, setReturnPost] = useState("");
-  const [returnUrgent, setReturnUrgent] = useState(false);
+  // Замечания модалки возврата (`[ВОЗ-01]`, Plane №431): список, каждое с
+  // привязкой к посту и своей срочностью; пустой список — одно замечание из
+  // причины (старый контракт).
+  const [returnRemarks, setReturnRemarks] = useState<
+    { text: string; postId: string; urgent: boolean }[]
+  >([]);
   // Посты, к которым можно привязать замечание, — посты ПОКАЗАННОГО объекта
   // (тот же разрез, что у сводки этапа); у ОМ без объектов — все.
   const returnPosts = event.reconSectorPosts.filter(
@@ -578,8 +607,7 @@ function ApprovalRoute({
     onEvent: () => {
       setReturnFor(null);
       setReason("");
-      setReturnPost("");
-      setReturnUrgent(false);
+      setReturnRemarks([]);
       setDecideErrors(null);
     },
   });
@@ -818,80 +846,152 @@ function ApprovalRoute({
                       </span>
                     </td>
                   </tr>
-                  {returnFor === approver.id && (
-                    <tr className="text-xs">
-                      <td />
-                      <td className="px-2 pb-2" colSpan={7}>
-                        <span className="flex flex-wrap items-center gap-2">
-                          <label
-                            className="text-[11px] font-semibold"
-                            htmlFor={`return-${approver.id}`}
-                          >
-                            Причина возврата *
-                          </label>
-                          <Input
-                            id={`return-${approver.id}`}
-                            className="h-8 w-72 text-xs"
-                            placeholder="Укажите, что необходимо исправить"
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                          />
-                          {/* Привязка замечания (`[МД-07]`, Plane №386): пост
-                              или «общее». Список — посты ПОКАЗАННОГО объекта:
-                              замечание к чужому посту сервер отобьёт. */}
-                          <label className="sr-only" htmlFor={`return-post-${approver.id}`}>
-                            Пост замечания
-                          </label>
-                          <select
-                            id={`return-post-${approver.id}`}
-                            className="h-8 rounded-md border bg-background px-2 text-xs"
-                            value={returnPost}
-                            onChange={(e) => setReturnPost(e.target.value)}
-                          >
-                            <option value="">Общее замечание</option>
-                            {returnPosts.map((post) => (
-                              <option key={post.id} value={post.id}>
-                                {post.sector} · {post.post}
-                              </option>
-                            ))}
-                          </select>
-                          <label className="flex items-center gap-1 text-[11px]">
-                            <input
-                              type="checkbox"
-                              checked={returnUrgent}
-                              onChange={(e) => setReturnUrgent(e.target.checked)}
-                            />
-                            Срочно
-                          </label>
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={decide.isPending || !rights.returnBack}
-                            title={reasonUnless(rights.returnBack, "returnBack")}
-                            onClick={() =>
-                              decide.mutate({
-                                approverId: approver.id,
-                                decision: "RETURNED",
-                                comment: reason,
-                                postId: returnPost === "" ? null : returnPost,
-                                urgent: returnUrgent,
-                                visitObjectId,
-                              })
-                            }
-                          >
-                            Подтвердить возврат
-                          </Button>
-                        </span>
-                      </td>
-                    </tr>
-                  )}
                 </Fragment>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <FieldErrors errors={decideErrors} />
+      {/* Модалка «Вернуть на доработку» (`[ВОЗ-01]`, Plane №431): общая
+          причина (обязательна) + список замечаний с привязкой к посту и
+          «Срочно» у каждого. До неё причина вводилась строкой в таблице, а
+          замечание было одно. Автосрочность (`[ВОЗ-02]`) считает сервер по
+          порогу из настроек — подпись под списком говорит об этом. */}
+      <Dialog
+        open={returnFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setReturnFor(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl" data-slot="return-dialog">
+          <DialogHeader>
+            <DialogTitle>Вернуть на доработку</DialogTitle>
+            <DialogDescription>
+              Расстановка вернётся на этап 2, подписи снимутся, маршрут пройдётся заново.
+              Замечания увидит старший объекта над деревом постов.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <label className="block text-[11px] font-semibold" htmlFor="return-reason">
+              Общая причина *
+              <Input
+                id="return-reason"
+                className="mt-0.5 h-8 text-xs"
+                placeholder="Что необходимо исправить"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold">Замечания</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setReturnRemarks((prev) => [...prev, { text: "", postId: "", urgent: false }])
+                  }
+                >
+                  + Замечание
+                </Button>
+              </div>
+              {returnRemarks.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Без отдельных замечаний причина станет единственным замечанием.
+                </p>
+              )}
+              <ul className="space-y-2" aria-label="Замечания возврата">
+                {returnRemarks.map((remark, index) => (
+                  <li key={index} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+                    <Input
+                      className="h-8 min-w-[14rem] flex-1 text-xs"
+                      aria-label={`Текст замечания ${index + 1}`}
+                      placeholder="Текст замечания"
+                      value={remark.text}
+                      onChange={(e) =>
+                        setReturnRemarks((prev) =>
+                          prev.map((r, i) => (i === index ? { ...r, text: e.target.value } : r))
+                        )
+                      }
+                    />
+                    <select
+                      aria-label={`Пост замечания ${index + 1}`}
+                      className="h-8 rounded-md border bg-background px-2 text-xs"
+                      value={remark.postId}
+                      onChange={(e) =>
+                        setReturnRemarks((prev) =>
+                          prev.map((r, i) => (i === index ? { ...r, postId: e.target.value } : r))
+                        )
+                      }
+                    >
+                      <option value="">Общее</option>
+                      {returnPosts.map((post) => (
+                        <option key={post.id} value={post.id}>
+                          {post.sector} · {post.post}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="flex items-center gap-1 text-[11px]">
+                      <input
+                        type="checkbox"
+                        aria-label={`Срочно ${index + 1}`}
+                        checked={remark.urgent}
+                        onChange={(e) =>
+                          setReturnRemarks((prev) =>
+                            prev.map((r, i) => (i === index ? { ...r, urgent: e.target.checked } : r))
+                          )
+                        }
+                      />
+                      Срочно
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded px-1 text-muted-foreground hover:bg-muted"
+                      aria-label={`Убрать замечание ${index + 1}`}
+                      onClick={() => setReturnRemarks((prev) => prev.filter((_, i) => i !== index))}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-muted-foreground">
+                «Срочно» ставится само, если до даты мероприятия осталось не больше порога из
+                «Администрирования» (Политика согласования); вручную — в любой момент.
+              </p>
+            </div>
+            <FieldErrors errors={decideErrors} />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setReturnFor(null)}>
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              // Пустую причину отбивает СЕРВЕР (400 с полем) — кнопка не
+              // выключается: так проба и человек видят одну и ту же причину
+              // отказа, а не молчаливую серую кнопку.
+              disabled={decide.isPending || !rights.returnBack}
+              title={reasonUnless(rights.returnBack, "returnBack")}
+              onClick={() =>
+                returnFor !== null &&
+                decide.mutate({
+                  approverId: returnFor,
+                  decision: "RETURNED",
+                  comment: reason,
+                  remarks: returnRemarks
+                    .filter((r) => r.text.trim() !== "")
+                    .map((r) => ({ text: r.text.trim(), postId: r.postId === "" ? null : r.postId, urgent: r.urgent })),
+                  visitObjectId,
+                })
+              }
+            >
+              {decide.isPending ? "Возвращаем…" : "Подтвердить возврат"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <StageError error={add.error} />
       <StageError error={remove.error} />
       <StageError error={move.error} />

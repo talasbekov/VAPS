@@ -404,6 +404,15 @@ export interface DocumentVersion {
   sentAt: string | null;
   decidedAt: string | null;
   supersededAt: string | null;
+  /** Что изменилось против предыдущей версии (`[ВОЗ-06]`, Plane №431);
+   * `null` — первая версия, сравнивать не с чем. */
+  diff?: DocumentVersionDiff | null;
+}
+
+export interface DocumentVersionDiff {
+  addedPosts: string[];
+  removedPosts: string[];
+  replacedPeople: { post: string; was: string[]; now: string[] }[];
 }
 
 /** Внешний кадровый read-only снимок — только для подбора кандидатов. */
@@ -1284,6 +1293,9 @@ export interface DecideApproverRequest extends VisitObjectAddressed {
   postId?: string | null;
   /** Срочно вручную; не прислали — сервер решит по дате ОМ (`[ВОЗ-02]`). */
   urgent?: boolean;
+  /** Список замечаний модалки возврата (`[ВОЗ-01]`, Plane №431): каждое со
+   * своей привязкой и срочностью; пусто — одно замечание из причины. */
+  remarks?: { text: string; postId: string | null; urgent: boolean }[];
 }
 
 export function securityEventApproverMovePath(

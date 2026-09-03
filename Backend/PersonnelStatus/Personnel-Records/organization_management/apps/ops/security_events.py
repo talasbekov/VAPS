@@ -4387,6 +4387,42 @@ def _current_document_version(visit):
     return visit.document_versions.order_by("-number").first()
 
 
+def document_version_diff(previous, current):
+    """Что изменилось между снимками версий (`[ВОЗ-06]`, Plane №431):
+    снятые и добавленные посты, замены людей на постах. Пустые списки —
+    «без изменений»; `None` — сравнивать не с чем (первая версия)."""
+    if not previous:
+        return None
+    def posts_of(snapshot):
+        return {
+            str(p.get("id")): f"{p.get('sector', '')} · {p.get('post', '')}"
+            for p in (snapshot or {}).get("posts", [])
+        }
+    def people_of(snapshot):
+        people = {}
+        for a in (snapshot or {}).get("assignments", []):
+            people.setdefault(str(a.get("postId")), set()).add(
+                str(a.get("employeeName") or a.get("employeeId") or "")
+            )
+        return people
+    prev_posts, cur_posts = posts_of(previous), posts_of(current)
+    prev_people, cur_people = people_of(previous), people_of(current)
+    added = [cur_posts[k] for k in cur_posts if k not in prev_posts]
+    removed = [prev_posts[k] for k in prev_posts if k not in cur_posts]
+    replaced = []
+    for post_id, label in cur_posts.items():
+        if post_id not in prev_posts:
+            continue
+        was, now = prev_people.get(post_id, set()), cur_people.get(post_id, set())
+        if was != now:
+            replaced.append({
+                "post": label,
+                "was": sorted(was),
+                "now": sorted(now),
+            })
+    return {"addedPosts": added, "removedPosts": removed, "replacedPeople": replaced}
+
+
 def _ensure_document_version(event, visit, *, actor=None):
     """Строка ТЕКУЩЕЙ версии; заводится, если её ещё нет.
 
@@ -4510,17 +4546,33 @@ def _approval_target(event, visit_object_id):
 _REMARK_STATUSES = ("OPEN", "RESOLVED", "DISAGREED")
 
 
+URGENT_DAYS_SETTING = "APPROVAL.RETURN_URGENT_DAYS"
+
+
+def return_urgent_days():
+    """Порог автосрочности (`[ВОЗ-02]`, Plane №431) — настройка раздела;
+    без записи в базе — сутки, как было до настройки."""
+    from organization_management.apps.operations.models_settings import (
+        OpsPolicySetting,
+    )
+
+    row = OpsPolicySetting.objects.filter(setting_code=URGENT_DAYS_SETTING).first()
+    try:
+        return int(row.value) if row is not None else 1
+    except (TypeError, ValueError):
+        return 1
+
+
 def _is_urgent(event, explicit):
     """Срочно — явно поставлено человеком ИЛИ автоматически (`[ВОЗ-02]`):
-    до даты мероприятия остались не более суток. Порог не настраивается по
-    ОМ (это часть спецификации, которую отдельная задача ещё не завела) —
-    здесь ровно та часть правила, для которой уже есть данные.
+    до даты мероприятия осталось не больше порога из настроек раздела
+    (`APPROVAL.RETURN_URGENT_DAYS`, по умолчанию сутки).
     """
     if explicit is True:
         return True
     if event.business_date is None:
         return False
-    return (event.business_date - Clock.today_local()).days <= 1
+    return (event.business_date - Clock.today_local()).days <= return_urgent_days()
 
 
 def new_remark(
@@ -4662,6 +4714,7 @@ def _signature_of(visit, target, *, actor, ip, at):
 def decide_approver(
     event_id, *, approver_id, decision, comment, visit_object_id=None,
     post_id=None, urgent=None, actor=None, ip=None, bypass_identity=False,
+    remarks=None,
 ):
     """Решение одного согласующего. Возврат требует причины — как и возврат
     расстановки: «вернул без объяснения» неисполнимо для исполнителя.
@@ -4732,23 +4785,33 @@ def decide_approver(
     visit.approval_route = route
     fields = ["approval_route", "updated_at"]
     if decision == "RETURNED":
-        # Возврат порождает ЗАМЕЧАНИЕ: решение согласующего живёт в его
-        # строке, а работа по нему — в списке, который закрывают по одному.
-        remarks = list(visit.approval_remarks or [])
-        remarks.append(
-            new_remark(
-                event,
-                remark_id=f"remark-{len(remarks) + 1}-{approver_id}",
-                approver_id=approver_id,
-                author=target.get("name", ""),
-                text=clean_comment,
-                post_id=post_id,
-                urgent=urgent,
-                document_version=visit.document_version,
-                created_at=now,
+        # Возврат порождает ЗАМЕЧАНИЯ: решение согласующего живёт в его
+        # строке, а работа по ним — в списке, который закрывают по одному.
+        # Модалка возврата (`[ВОЗ-01]`, Plane №431) шлёт общую причину и
+        # СПИСОК замечаний, каждое с привязкой и срочностью; старый вызов без
+        # списка даёт одно замечание из причины — контракт не ломается.
+        existing = list(visit.approval_remarks or [])
+        incoming = [
+            row for row in (remarks or [])
+            if isinstance(row, dict) and str(row.get("text") or "").strip()
+        ]
+        if not incoming:
+            incoming = [{"text": clean_comment, "postId": post_id, "urgent": urgent}]
+        for row in incoming:
+            existing.append(
+                new_remark(
+                    event,
+                    remark_id=f"remark-{len(existing) + 1}-{approver_id}",
+                    approver_id=approver_id,
+                    author=target.get("name", ""),
+                    text=str(row.get("text") or "").strip(),
+                    post_id=row.get("postId"),
+                    urgent=row.get("urgent"),
+                    document_version=visit.document_version,
+                    created_at=now,
+                )
             )
-        )
-        visit.approval_remarks = remarks
+        visit.approval_remarks = existing
         fields.insert(1, "approval_remarks")
     visit.save(update_fields=fields)
     # РЕШЕНИЕ СОГЛАСУЮЩЕГО — ДЕЙСТВИЕ, а не запись в таблицу (`[СОГ-08]`,

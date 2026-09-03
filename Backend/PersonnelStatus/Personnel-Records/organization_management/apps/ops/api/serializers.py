@@ -208,6 +208,10 @@ def serialize_visit_object(event, visit, *, single):
                 "number": row.number,
                 "status": row.status,
                 "signature": row.signature,
+                # Diff с предыдущей версией (`[ВОЗ-06]`, Plane №431).
+                "diff": _version_diff(
+                    previous.snapshot if previous is not None else None, row.snapshot
+                ),
                 "createdAt": row.created_at.isoformat(),
                 "createdBy": row.created_by,
                 "sentAt": row.sent_at.isoformat() if row.sent_at else None,
@@ -218,7 +222,7 @@ def serialize_visit_object(event, visit, *, single):
                     row.superseded_at.isoformat() if row.superseded_at else None
                 ),
             }
-            for row in visit.document_versions.all()
+            for previous, row in _with_previous(list(visit.document_versions.all()))
         ],
         # Замещающие — часть строки объекта, а не отдельный запрос: экран
         # показывает их в том же раскрытии реестра, и второй круг за списком
@@ -250,6 +254,22 @@ def _primary_approval(event, field):
     if visit is None:
         return [] if field != "approval_snapshot" else ""
     return getattr(visit, field)
+
+
+def _version_diff(previous_snapshot, snapshot):
+    # Ленивый импорт: сервис этапов сам импортирует сериализаторы через вьюхи,
+    # и импорт на уровне модуля замкнул бы круг.
+    from organization_management.apps.ops.security_events import document_version_diff
+
+    return document_version_diff(previous_snapshot, snapshot)
+
+
+def _with_previous(rows):
+    """Пары (предыдущая, текущая) по порядку номеров — для diff версий."""
+    previous = None
+    for row in sorted(rows, key=lambda r: r.number):
+        yield previous, row
+        previous = row
 
 
 def _document_status(visit):

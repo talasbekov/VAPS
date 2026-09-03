@@ -166,16 +166,17 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     await route.getByRole('button', { name: 'Отправить на согласование' }).click()
     await expect(row).toContainText('На согласовании', { timeout: 15_000 })
 
-    // Возврат требует причины — отказ приходит от сервера
+    // Возврат — модалка (`[ВОЗ-01]`, Plane №431): причина обязательна, и отказ
+    // на пустую по-прежнему приходит от СЕРВЕРА — кнопка не выключается.
     await row.getByRole('button', { name: 'Вернуть' }).click()
-    await route.getByRole('button', { name: 'Подтвердить возврат' }).click()
-    await expect(card).toContainText('Укажите причину возврата', { timeout: 15_000 })
+    const dialog = page.locator('[data-slot="return-dialog"]')
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Подтвердить возврат' }).click()
+    await expect(dialog).toContainText('Укажите причину возврата', { timeout: 15_000 })
 
     // С причиной решение фиксируется, и его видит бэк
-    await route
-      .getByPlaceholder('Укажите, что необходимо исправить')
-      .fill('Уточнить расчёт постов')
-    await route.getByRole('button', { name: 'Подтвердить возврат' }).click()
+    await dialog.getByLabel('Общая причина *').fill('Уточнить расчёт постов')
+    await dialog.getByRole('button', { name: 'Подтвердить возврат' }).click()
     await expect
       .poll(async () => {
         const fresh = (await events(token)).find((e) => e.id === target.id)

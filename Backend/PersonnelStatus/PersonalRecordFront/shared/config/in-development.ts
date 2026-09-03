@@ -101,7 +101,6 @@ const BY_STAGE: Partial<Record<SecurityEventStage, InDevelopmentNote>> = {
   },
   APPROVAL: {
     pending: [
-      "Модалка возврата, авто-«Срочно», исход «Не согласен», diff версий (№431)",
       "Статусы документа с версией, счётчик возвратов, снятие лишнего (№446)",
     ],
   },

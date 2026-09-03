@@ -2432,24 +2432,31 @@ export const securityEventsHandlers = [
       const daysToEvent = Math.round(
         (new Date(event.businessDate).getTime() - Date.now()) / 86_400_000
       );
+      // Список замечаний модалки возврата (`[ВОЗ-01]`, Plane №431): каждое со
+      // своей привязкой и срочностью; без списка — одно из причины, как у
+      // сервера.
+      const incoming = (body.remarks ?? []).filter((r) => r.text.trim() !== "");
+      const rows = incoming.length > 0
+        ? incoming
+        : [{ text: comment, postId: body.postId ?? null, urgent: body.urgent === true }];
       const remarks =
         body.decision === "RETURNED"
           ? [
               ...event.approvalRemarks,
-              {
-                id: `remark-${event.approvalRemarks.length + 1}-${target.id}`,
+              ...rows.map((row, offset) => ({
+                id: `remark-${event.approvalRemarks.length + 1 + offset}-${target.id}`,
                 approverId: target.id,
                 author: target.name,
                 createdAt: now,
-                text: comment,
-                postId: body.postId ?? null,
-                urgent: body.urgent === true || daysToEvent <= 1,
+                text: row.text.trim(),
+                postId: row.postId ?? null,
+                urgent: row.urgent === true || daysToEvent <= 1,
                 status: "OPEN" as const,
                 response: "",
                 respondedAt: null,
                 documentVersion: event.visitObjects[0]?.documentVersion ?? 0,
                 resolvedInDocumentVersion: null,
-              },
+              })),
             ]
           : event.approvalRemarks;
       // Решение — действие (`[СОГ-08]`/`[СОГ-09]`, Plane №399), порт правил
