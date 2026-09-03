@@ -93,6 +93,8 @@ CODES = {
     "ALLOCATION_NOT_SUBMITTABLE": frozenset({422}),
     "ALLOCATION_NOT_WITHDRAWABLE": frozenset({422}),
     "ALLOCATION_EMPTY": frozenset({422}),
+    # Цифра «Выделяем» правится до отправки списка (Plane №391, [СБС-21]).
+    "ALLOCATION_ANSWER_LOCKED": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
     # Старший сектора (Plane №65): сектор берётся у поста назначения, и без

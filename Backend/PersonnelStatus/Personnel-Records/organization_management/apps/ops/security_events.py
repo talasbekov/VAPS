@@ -2233,6 +2233,14 @@ def split_force_demand(event_id, *, rows):
                 "decisionComment": kept.get("decisionComment", ""),
                 "directorates": kept.get("directorates", []),
                 "members": kept.get("members", []),
+                # Ответ департамента «Выделяем: X» (Plane №391, `[СБС-21]`)
+                # переносится по тому же правилу, что и опоздание выше: строка
+                # пересобирается явным перечнем, и забытый ключ — стёртый
+                # факт. Штаб, пересохранивший раскладку ради чужого `need`,
+                # стирал бы ответ департамента.
+                "allocating": kept.get("allocating"),
+                "answerComment": kept.get("answerComment", ""),
+                "declinedAt": kept.get("declinedAt"),
             }
         )
     event.force_allocation = saved
@@ -3296,6 +3304,94 @@ def _update_allocation(event, allocation_id, patch):
         for row in event.force_allocation
     ]
     event.save(update_fields=["force_allocation", "updated_at"])
+    return event
+
+
+# Статус «Отказ» (Plane №391, `[СБС-21]`): «0» закрывает запрос. Отдельное
+# значение, а не `SUBMITTED` с пустым списком: штаб обязан отличать «нам
+# отказали» от «прислали пустой список» — второе сервер и не принимает.
+_ALLOCATION_DECLINED = "DECLINED"
+
+
+@transaction.atomic
+def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
+    """Ответ департамента на запрос штаба: «Выделяем: X · Комментарий»
+    (Plane №391, `[СБС-21]`).
+
+    Правила — из спецификации, а не выдуманы:
+
+    - **Цифру ставит только ответственный, штаб читает.** Область — департамент
+      строки раскладки (проверяет вьюха, как у оповещения и отправки).
+    - **Ограничений нет: меньше, больше, 0.** Запрос штаба — пожелание, а не
+      наряд (`[СБС-01]`); отказ здесь превратил бы форму в ультиматум.
+    - **«0» закрывает запрос статусом «Отказ».** Ненулевая цифра после отказа
+      его СНИМАЕТ — статус возвращается к тому, каким был бы без него
+      (оповещено или ещё нет): отказ — решение, а решение можно передумать,
+      пока список не ушёл.
+    - **Редактируема до отправки списка.** После `SUBMITTED` штаб уже решает
+      по присланному, и менять цифру под ним значило бы менять условия задним
+      числом.
+    - **Комментарий необязателен.** «Желательно пояснить» при цифре меньше
+      запрошенной — подсказка экрана, не правило сервера.
+    """
+    event = lock_event(event_id)
+    if event.stage not in _ALLOCATION_STAGES:
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message=(
+                "Отвечать на запрос можно после рекогносцировки и до "
+                "согласования расстановки."
+            ),
+        )
+    target = _find_allocation(event, allocation_id)
+    if target.get("status") in ("SUBMITTED", "ACCEPTED"):
+        raise DomainError(
+            "ALLOCATION_ANSWER_LOCKED",
+            422,
+            message=(
+                "Список уже у штаба — цифра «Выделяем» правится до отправки. "
+                "Чтобы изменить её, отзовите список."
+            ),
+        )
+    try:
+        count = int(allocating)
+    except (TypeError, ValueError):
+        raise _validation({"allocating": ["Укажите целое число."]})
+    if count < 0:
+        raise _validation({"allocating": ["Число не может быть меньше нуля."]})
+
+    # СВОЙ ключ, а не `comment`: тот — комментарий ШТАБА к строке раскладки
+    # (приходит с `forces/allocation/` и пересохраняется им же). Пиши ответ
+    # департамента туда — и штаб, пересохранив раскладку, стёр бы его
+    # (поймано пробой `test_the_staff_resaving_the_split_keeps_the_department_answer`).
+    patch = {
+        "allocating": count,
+        "answerComment": str(comment or "").strip(),
+    }
+    if count == 0:
+        patch["status"] = _ALLOCATION_DECLINED
+        patch["declinedAt"] = _now_iso()
+    elif target.get("status") == _ALLOCATION_DECLINED:
+        # Отказ снят: статус — по факту оповещения, а не «как было до отказа»
+        # (этого сервер не помнит, и помнить не должен).
+        patch["status"] = "NOTIFIED" if target.get("notifiedAt") else _ALLOCATION_DRAFT
+        patch["declinedAt"] = None
+    event = _update_allocation(event, allocation_id, patch)
+    audit_service.record(
+        actor=actor,
+        action=audit_service.FORCE_ALLOCATION_SPLIT,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "departmentName": target.get("departmentName"),
+            "requested": target.get("need"),
+            "allocating": count,
+            "declined": count == 0,
+            "comment": patch["answerComment"],
+        },
+    )
     return event
 
 

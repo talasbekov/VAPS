@@ -802,3 +802,135 @@ def test_the_collection_card_is_closed_without_the_staff_permission(manager):  #
     api, _user = client_for("card-noperm", "CARD_VIEWER", perms=("event.view",))
 
     assert api.get(collection_url(base)).status_code == 403
+
+
+# ── Ответ департамента «Выделяем: X» (Plane №391, `[СБС-21]`) ────────────────
+
+
+def _respond(client, base, allocation_id, allocating, comment=""):
+    return client.post(
+        f"{base}forces/allocation/{allocation_id}/respond/",
+        {"allocating": allocating, "comment": comment},
+        format="json",
+    )
+
+
+def _allocation(resp):
+    return resp.json()["forceAllocation"][0]
+
+
+def test_the_department_answers_with_its_own_number_and_a_comment(manager):  # noqa: F811
+    """«Выделяем» и комментарий ложатся в строку раскладки; цифра — любая.
+
+    Красная на мутации: убери ключ `allocating` из `_update_allocation` — ответ
+    не сохранится.
+    """
+    own = make_department("Департамент А")
+    make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-respond-own", "DEPT_LEAD_R1", own.pk)
+
+    resp = _respond(dept_lead, base, allocation_id, 2, "Двое в отпуске")
+
+    assert resp.status_code == 200, resp.data
+    row = _allocation(resp)
+    assert row["allocating"] == 2
+    assert row["answerComment"] == "Двое в отпуске"
+    assert row["status"] == "DRAFT"
+
+
+def test_zero_closes_the_request_as_declined_and_a_number_reopens_it(manager):  # noqa: F811
+    """«0» закрывает запрос статусом «Отказ»; ненулевая цифра его снимает.
+
+    Снятый отказ возвращает статус ПО ФАКТУ оповещения, а не «как было»: этого
+    сервер не помнит и помнить не должен.
+    """
+    own = make_department("Департамент А")
+    make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-respond-zero", "DEPT_LEAD_R2", own.pk)
+    dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    declined = _allocation(_respond(dept_lead, base, allocation_id, 0, "Все на объекте"))
+    assert declined["status"] == "DECLINED"
+    assert declined["declinedAt"] is not None
+
+    reopened = _allocation(_respond(dept_lead, base, allocation_id, 1))
+    assert reopened["status"] == "NOTIFIED"
+    assert reopened["declinedAt"] is None
+    assert reopened["allocating"] == 1
+
+
+def test_the_answer_is_locked_once_the_list_is_with_the_staff(manager):  # noqa: F811
+    """После отправки списка цифра «Выделяем» не правится — штаб уже решает
+    по присланному, и менять условия под ним значило бы менять их задним
+    числом."""
+    own = make_department("Департамент А")
+    directorate = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-respond-locked", "DEPT_LEAD_R3", own.pk)
+    dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    person = employee_of(directorate, "Выделенов")
+    make_assignment_status_type()
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(person.pk)},
+        format="json",
+    )
+    assert dept_lead.post(f"{base}forces/allocation/{allocation_id}/submit/").status_code == 200
+
+    resp = _respond(dept_lead, base, allocation_id, 5)
+
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "ALLOCATION_ANSWER_LOCKED"
+
+
+def test_the_answer_of_a_foreign_department_is_refused(manager):  # noqa: F811
+    """Цифру ставит ТОЛЬКО ответственный своего департамента — штаб читает."""
+    own = make_department("Департамент А")
+    foreign = make_department("Департамент Б")
+    base, allocation_id = allocated_event(manager, foreign)
+    dept_lead = scoped_client("forces-respond-foreign", "DEPT_LEAD_R4", own.pk)
+
+    assert _respond(dept_lead, base, allocation_id, 3).status_code == 403
+
+
+def test_a_negative_or_garbage_number_is_refused_by_the_field(manager):  # noqa: F811
+    """Отказ по ФОРМЕ (400, `VALIDATION_ERROR` с именем поля), а не по правилу
+    (422): человек ошибся в поле, и ответ указывает на поле."""
+    own = make_department("Департамент А")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-respond-bad", "DEPT_LEAD_R5", own.pk)
+
+    negative = _respond(dept_lead, base, allocation_id, -1)
+    garbage = _respond(dept_lead, base, allocation_id, "много")
+
+    assert negative.status_code == 400
+    assert "allocating" in negative.json()["details"]
+    assert garbage.status_code == 400
+
+
+def test_the_staff_resaving_the_split_keeps_the_department_answer(manager):  # noqa: F811
+    """Пересохранение раскладки штабом НЕ стирает ответ департамента.
+
+    Строка пересобирается явным перечнем ключей (см. `split_force_demand`), и
+    забытый ключ — стёртый факт. Красная на мутации: убери `allocating` из
+    перечня — ответ пропадёт после `forces/allocation/`.
+    """
+    own = make_department("Департамент А")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-respond-keep", "DEPT_LEAD_R6", own.pk)
+    _respond(dept_lead, base, allocation_id, 2, "Ответ")
+
+    event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1])
+    need = event.force_allocation[0]["need"]
+    resaved = manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(own.pk), "need": need}]},
+        format="json",
+    )
+
+    assert resaved.status_code == 200, resaved.data
+    row = _allocation(resaved)
+    assert row["allocating"] == 2
+    assert row["answerComment"] == "Ответ"

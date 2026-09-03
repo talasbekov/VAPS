@@ -457,4 +457,77 @@ test.describe('заявки департаменту', () => {
       await dropEvent(token, fixture.eventId)
     }
   })
+
+  test('ответ департамента «Выделяем: X» — своя цифра, отказ нулём и снятие отказа (Plane №391)', async ({
+    page,
+  }) => {
+    /**
+     * `[СБС-21]`: «Запрошено штабом: N · Выделяем: [ввод] · Комментарий».
+     * Цифру ставит ответственный, штаб читает; ограничений нет; «0» закрывает
+     * запрос статусом «Отказ». До правки поля не было вовсе — департамент не
+     * мог сказать штабу «даём меньше» иначе как молча недобрав.
+     *
+     * Проба ведёт три состояния подряд на ОДНОЙ заявке: цифра меньше
+     * запрошенной (с подсказкой «желательно пояснить»), отказ нулём (статус
+     * «Отказ» и на карточке, и в таблице заявок), ненулевая цифра после
+     * отказа (отказ снят). Всё — через экран, факт сверяется по API.
+     */
+    const token = await apiToken()
+    const fixture = await createDepartmentAllocationFixture(token)
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      const need: number = event.forceNeed
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+
+      const answer = page.locator('section[aria-labelledby="answer-heading"]')
+      await expect(answer).toBeVisible({ timeout: 20_000 })
+      await expect(answer.getByText(`Запрошено штабом: ${need}`, { exact: false })).toBeVisible()
+
+      const rowOf = async () => {
+        const fresh = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+        return (fresh.forceAllocation as {
+          id: string
+          status: string
+          allocating: number | null
+          answerComment: string
+        }[]).find((r) => r.id === fixture.allocationId)!
+      }
+
+      // 1. Меньше запрошенного — подсказка без блокировки, ответ доезжает.
+      const less = Math.max(1, need - 1)
+      await answer.getByLabel('Выделяем').fill(String(less))
+      if (less < need) {
+        await expect(answer.getByText('желательно пояснить', { exact: false })).toBeVisible()
+      }
+      await answer.getByLabel('Комментарий').fill('Двое в отпуске')
+      await answer.getByRole('button', { name: 'Сохранить ответ' }).click()
+      await expect.poll(async () => (await rowOf()).allocating, { timeout: 15_000 }).toBe(less)
+      expect((await rowOf()).answerComment).toBe('Двое в отпуске')
+
+      // 2. Ноль — отказ: статус на карточке и в таблице.
+      await answer.getByLabel('Выделяем').fill('0')
+      await expect(answer.getByText('закроет запрос отказом', { exact: false })).toBeVisible()
+      await answer.getByRole('button', { name: 'Сохранить ответ' }).click()
+      await expect.poll(async () => (await rowOf()).status, { timeout: 15_000 }).toBe('DECLINED')
+      await expect(answer.getByText('Запрос закрыт отказом', { exact: false })).toBeVisible({
+        timeout: 15_000,
+      })
+
+      // 3. Ненулевая цифра снимает отказ.
+      await answer.getByLabel('Выделяем').fill(String(need))
+      await answer.getByRole('button', { name: 'Сохранить ответ' }).click()
+      await expect.poll(async () => (await rowOf()).status, { timeout: 15_000 }).not.toBe('DECLINED')
+      await expect(answer.getByText('Запрос закрыт отказом', { exact: false })).toHaveCount(0)
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
 })

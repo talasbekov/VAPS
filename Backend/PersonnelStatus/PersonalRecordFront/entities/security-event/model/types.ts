@@ -134,7 +134,11 @@ export type ForceAllocationStatus =
   | "NOTIFIED"
   | "SUBMITTED"
   | "ACCEPTED"
-  | "RETURNED";
+  | "RETURNED"
+  /** Департамент ответил «Выделяем: 0» (Plane №391, `[СБС-21]`). Отдельно от
+   *  `SUBMITTED` с пустым списком: штаб отличает «нам отказали» от «прислали
+   *  пусто» — второе сервер и не принимает. */
+  | "DECLINED";
 
 /** Управление внутри департамента, которому ушла заявка (заполняется СС-2). */
 export interface ForceAllocationDirectorate {
@@ -183,7 +187,18 @@ export interface ForceAllocationRow {
   departmentName: string;
   need: number;
   status: ForceAllocationStatus;
+  /** Комментарий ШТАБА к строке раскладки (с `forces/allocation/`). Ответ
+   *  департамента живёт в `answerComment`, причина возврата штабом — в
+   *  `decisionComment`: три разных автора, три разных ключа. */
   comment: string;
+  /** «Выделяем: X» — ответ департамента на запрос `need` (Plane №391,
+   *  `[СБС-21]`). `null`/нет поля — департамент ещё не отвечал. Цифру ставит
+   *  ответственный, штаб читает; ограничений нет — меньше, больше, 0. */
+  allocating?: number | null;
+  /** Комментарий департамента к цифре «Выделяем» (Plane №391). */
+  answerComment?: string;
+  /** Момент отказа (`allocating === 0`); `null` — отказа нет или снят. */
+  declinedAt?: string | null;
   /** Срок сдачи списка (Plane №287). По умолчанию — за сутки до начала ОМ,
    *  штаб может назначить свой. `null`/отсутствует — срока нет. */
   dueAt?: string | null;
@@ -1035,6 +1050,13 @@ export function securityEventDepartmentRequestPath(allocationId: string): string
   return `${SECURITY_EVENTS_PATH}forces/requests/${encodeURIComponent(
     allocationId
   )}/`;
+}
+
+/** Ответ департамента «Выделяем: X · Комментарий» (Plane №391, `[СБС-21]`). */
+export function securityEventForcesRespondPath(id: string, allocationId: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/allocation/${encodeURIComponent(
+    allocationId
+  )}/respond/`;
 }
 
 /** Оповещение управлений департамента о заявке (Plane №73, шаг СС-2). */

@@ -286,6 +286,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
         "forces_notify": _FORCES_ALLOCATE_PERMISSION,
+        "forces_respond": _FORCES_ALLOCATE_PERMISSION,
         "forces_submit": _FORCES_ALLOCATE_PERMISSION,
         "forces_withdraw": _FORCES_ALLOCATE_PERMISSION,
         "forces_member_add": _FORCES_SELECT_PERMISSION,
@@ -905,6 +906,33 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 pk,
                 allocation_id,
                 employee_id,
+                actor=resolve_actor_id(request),
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/respond",
+    )
+    def forces_respond(self, request, pk=None, allocation_id=None):
+        """Ответ департамента «Выделяем: X · Комментарий» (Plane №391,
+        `[СБС-21]`). Область — департамент строки раскладки, как у оповещения:
+        цифру ставит только ответственный, штаб читает. Тело:
+        `{"allocating": 3, "comment": "…"}`; 0 — отказ.
+        """
+        data = request.data or {}
+        require_scoped_permission(
+            request,
+            _FORCES_ALLOCATE_PERMISSION,
+            event_service.allocation_scope_division(pk, allocation_id),
+        )
+        return self._event_response(
+            event_service.respond_allocation(
+                pk,
+                allocation_id,
+                allocating=data.get("allocating"),
+                comment=data.get("comment"),
                 actor=resolve_actor_id(request),
             )
         )

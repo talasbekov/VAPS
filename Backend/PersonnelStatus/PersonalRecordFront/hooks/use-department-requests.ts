@@ -18,6 +18,7 @@ import {
   securityEventDepartmentRequestsPath,
   securityEventForcesDirectorateSplitPath,
   securityEventForcesNotifyPath,
+  securityEventForcesRespondPath,
   securityEventForcesSubmitPath,
   type DepartmentRequestDetail,
   type DepartmentRequestRow,
@@ -117,6 +118,23 @@ export function useSubmitDepartmentAllocation(eventId: string, allocationId: str
   const client = useQueryClient();
   return useMutation<unknown, OpsApiFailure, Record<string, never>>({
     mutationFn: () => opsApiClient.post(securityEventForcesSubmitPath(eventId, allocationId)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
+      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+    },
+  });
+}
+
+/**
+ * Ответ департамента на запрос штаба: «Выделяем: X · Комментарий»
+ * (Plane №391, `[СБС-21]`). Цифру ставит ответственный, штаб читает;
+ * 0 — отказ, сервер закрывает запрос статусом `DECLINED`.
+ */
+export function useRespondDepartmentAllocation(eventId: string, allocationId: string) {
+  const client = useQueryClient();
+  return useMutation<unknown, OpsApiFailure, { allocating: number; comment: string }>({
+    mutationFn: (body) =>
+      opsApiClient.post(securityEventForcesRespondPath(eventId, allocationId), body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
       void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
