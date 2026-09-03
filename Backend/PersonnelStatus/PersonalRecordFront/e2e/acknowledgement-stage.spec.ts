@@ -34,8 +34,10 @@ interface EventRow {
   code: string
   stage: string
   objectName: string
+  reconSectorPosts: { id: string; sector: string; post: string }[]
   placementAssignments: {
     id: string
+    postId: string
     employeeId: string
     employeeName: string
     remindedAt?: string | null
