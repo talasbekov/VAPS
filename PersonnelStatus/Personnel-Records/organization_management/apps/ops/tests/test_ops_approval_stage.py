@@ -311,7 +311,10 @@ def test_two_returns_by_the_same_approver_give_two_remarks(manager, approver):  
 
 def test_a_remark_can_be_reopened(manager, approver):  # noqa: F811
     """«Устранено» — не финальное состояние: замечание закрывают ошибочно, и
-    вернуть его в работу должно быть можно, иначе этап завершат по недосмотру."""
+    вернуть его в работу должно быть можно, иначе этап завершат по недосмотру.
+
+    Возврат к «Открыто» — той же ручкой (`decision="OPEN"`), а не отдельным
+    путём: снятое решение симметрично отзыву согласования."""
     base, _, _ = event_on_approval(manager)
     route = add_approver(manager, base)
     manager.post(f"{base}approval/send/")
@@ -324,17 +327,17 @@ def test_a_remark_can_be_reopened(manager, approver):  # noqa: F811
 
     manager.post(
         f"{base}approval/remarks/{remark_id}/resolve/",
-        {"resolved": True},
+        {"decision": "RESOLVED"},
         format="json",
     )
     data = manager.post(
         f"{base}approval/remarks/{remark_id}/resolve/",
-        {"resolved": False},
+        {"decision": "OPEN"},
         format="json",
     ).json()
 
-    assert data["approvalRemarks"][0]["resolved"] is False
-    assert data["approvalRemarks"][0]["resolvedAt"] is None
+    assert data["approvalRemarks"][0]["status"] == "OPEN"
+    assert data["approvalRemarks"][0]["respondedAt"] is None
 
 
 # ── Разграничение: утверждающий решает, но не правит (Plane №267) ───────────

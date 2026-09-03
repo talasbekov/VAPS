@@ -278,18 +278,41 @@ export interface Approver {
 }
 
 /**
+ * Статус замечания (`[МД-07]`, Plane №386): «Открыто → Устранено | Не
+ * согласен». Тройной, а не булев: «не согласен, вот почему» — законный исход,
+ * который бинарное «устранено/нет» выразить не могло.
+ */
+export type ApprovalRemarkStatus = "OPEN" | "RESOLVED" | "DISAGREED";
+
+/**
  * Замечание, порождённое ВОЗВРАТОМ согласующего. Отдельный список, а не поле
  * у согласующего: один человек возвращает дважды по разным поводам, и вторая
  * причина затёрла бы первую, хотя закрывают их по одной.
+ *
+ * Форма — `[МД-07]` (Plane №386): привязка, срочность, статус, ответ, версия.
  */
 export interface ApprovalRemark {
   id: string;
-  approverId: string;
+  /** Согласующий маршрута, вернувший расстановку; `null` — общий возврат. */
+  approverId: string | null;
   author: string;
   createdAt: string;
   text: string;
-  resolved: boolean;
-  resolvedAt: string | null;
+  /** Привязка к посту расчёта; `null` — замечание общее по объекту. Сектора
+   * как отдельной привязки нет: у него нет своего идентификатора. */
+  postId: string | null;
+  /** Срочно — поставлено согласующим ИЛИ автоматически, если до даты ОМ
+   * осталось не более суток (`[ВОЗ-02]`). */
+  urgent: boolean;
+  status: ApprovalRemarkStatus;
+  /** Ответ старшего объекта. Обязателен при «Не согласен», иначе пусто. */
+  response: string;
+  /** Когда ответили; `null` — замечание ещё открыто. */
+  respondedAt: string | null;
+  /** Версия документа «Расстановка сил», в которой замечание ПОСТАВЛЕНО. */
+  documentVersion: number;
+  /** Версия, в которой замечание ЗАКРЫТО решением; `null` — ещё открыто. */
+  resolvedInDocumentVersion: number | null;
 }
 
 /** Внешний кадровый read-only снимок — только для подбора кандидатов. */
@@ -1135,6 +1158,10 @@ export interface AddApproverRequest extends VisitObjectAddressed {
 export interface DecideApproverRequest extends VisitObjectAddressed {
   decision: "APPROVED" | "RETURNED";
   comment: string;
+  /** Привязка замечания к посту при возврате (`[МД-07]`); не прислали — общее. */
+  postId?: string | null;
+  /** Срочно вручную; не прислали — сервер решит по дате ОМ (`[ВОЗ-02]`). */
+  urgent?: boolean;
 }
 
 export function securityEventApproverMovePath(
@@ -1161,8 +1188,13 @@ export function securityEventRemarkResolvePath(
   return `${SECURITY_EVENTS_PATH}${id}/approval/remarks/${encodeURIComponent(remarkId)}/resolve/`;
 }
 
+/**
+ * Решение по замечанию (`[ВОЗ-04]`): «Устранено» — ответ необязателен;
+ * «Не согласен» — обязателен; «Открыто» возвращает замечание в работу.
+ */
 export interface ResolveRemarkRequest extends VisitObjectAddressed {
-  resolved: boolean;
+  decision: ApprovalRemarkStatus;
+  response?: string;
 }
 
 export function securityEventApprovalApprovePath(id: string): string {

@@ -675,7 +675,9 @@ def test_full_lifecycle_walkthrough(manager, approver_client):
         format="json",
     ).json()
     remark = data["approvalRemarks"][0]
-    assert (remark["text"], remark["resolved"]) == ("уточнить пост 1", False)
+    # Форма замечания — `[МД-07]` (Plane №386): статус тройной
+    # (Открыто/Устранено/Не согласен), не булев «устранено».
+    assert (remark["text"], remark["status"]) == ("уточнить пост 1", "OPEN")
     resp = approver_client.post(f"{base}approval/approve/")
     assert resp.json()["error_code"] == "APPROVAL_RETURNED"
 
@@ -692,7 +694,7 @@ def test_full_lifecycle_walkthrough(manager, approver_client):
     assert resp.json()["error_code"] == "APPROVAL_REMARKS_OPEN"
     manager.post(
         f"{base}approval/remarks/{remark['id']}/resolve/",
-        {"resolved": True},
+        {"decision": "RESOLVED"},
         format="json",
     )
 

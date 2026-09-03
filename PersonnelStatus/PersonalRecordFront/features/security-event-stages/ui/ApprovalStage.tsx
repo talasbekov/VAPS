@@ -50,7 +50,11 @@ import {
   useSendForApproval,
   useWithdrawApproval,
 } from "@/hooks/use-security-event-stages";
-import type { SecurityEvent, VisitObject } from "@/entities/security-event";
+import type {
+  ApprovalRemark,
+  SecurityEvent,
+  VisitObject,
+} from "@/entities/security-event";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDateTime } from "@/shared/lib/date";
 import { useVisitObjectScope, type VisitObjectScope } from "./useVisitObjectScope";
@@ -103,6 +107,20 @@ function approvalViewOf(
     documentVersion: visit.documentVersion,
   };
 }
+
+const REMARK_STATUS_LABEL: Record<ApprovalRemark["status"], string> = {
+  OPEN: "Открыто",
+  RESOLVED: "Устранено",
+  DISAGREED: "Не согласен",
+};
+
+const REMARK_STATUS_CLASS: Record<ApprovalRemark["status"], string> = {
+  OPEN: "bg-amber-100 text-amber-800",
+  RESOLVED: "bg-green-100 text-green-800",
+  // Несогласие с ответом — ЗАКРЫТОЕ состояние, не тревога: цвет нейтральный,
+  // иначе честный ответ читался бы как невыполненная работа.
+  DISAGREED: "bg-muted text-muted-foreground",
+};
 
 const VISIT_APPROVAL_LABEL: Record<SecurityEvent["approvalStatus"], string> = {
   PENDING: "ожидает",
@@ -447,6 +465,16 @@ function ApprovalRoute({
   const [position, setPosition] = useState("");
   const [returnFor, setReturnFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [returnPost, setReturnPost] = useState("");
+  const [returnUrgent, setReturnUrgent] = useState(false);
+  // Посты, к которым можно привязать замечание, — посты ПОКАЗАННОГО объекта
+  // (тот же разрез, что у сводки этапа); у ОМ без объектов — все.
+  const returnPosts = event.reconSectorPosts.filter(
+    (post) =>
+      view.visitObjectId === undefined ||
+      event.visitObjects.length === 1 ||
+      post.visitObjectId === view.visitObjectId
+  );
 
   const add = useAddApprover(event.id, {
     onEvent: () => {
@@ -471,6 +499,8 @@ function ApprovalRoute({
     onEvent: () => {
       setReturnFor(null);
       setReason("");
+      setReturnPost("");
+      setReturnUrgent(false);
       setDecideErrors(null);
     },
   });
@@ -740,6 +770,33 @@ function ApprovalRoute({
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
                           />
+                          {/* Привязка замечания (`[МД-07]`, Plane №386): пост
+                              или «общее». Список — посты ПОКАЗАННОГО объекта:
+                              замечание к чужому посту сервер отобьёт. */}
+                          <label className="sr-only" htmlFor={`return-post-${approver.id}`}>
+                            Пост замечания
+                          </label>
+                          <select
+                            id={`return-post-${approver.id}`}
+                            className="h-8 rounded-md border bg-background px-2 text-xs"
+                            value={returnPost}
+                            onChange={(e) => setReturnPost(e.target.value)}
+                          >
+                            <option value="">Общее замечание</option>
+                            {returnPosts.map((post) => (
+                              <option key={post.id} value={post.id}>
+                                {post.sector} · {post.post}
+                              </option>
+                            ))}
+                          </select>
+                          <label className="flex items-center gap-1 text-[11px]">
+                            <input
+                              type="checkbox"
+                              checked={returnUrgent}
+                              onChange={(e) => setReturnUrgent(e.target.checked)}
+                            />
+                            Срочно
+                          </label>
                           <Button
                             type="button"
                             size="sm"
@@ -749,6 +806,8 @@ function ApprovalRoute({
                                 approverId: approver.id,
                                 decision: "RETURNED",
                                 comment: reason,
+                                postId: returnPost === "" ? null : returnPost,
+                                urgent: returnUrgent,
                                 visitObjectId,
                               })
                             }
@@ -789,9 +848,30 @@ function ApprovalRemarks({
   event: SecurityEvent;
   view: ApprovalView;
 }) {
-  const resolve = useResolveRemark(event.id);
+  // «Не согласен» требует ответа (`[ВОЗ-04]`) — поле раскрывается под
+  // строкой, как причина возврата у согласующего, и только для одного
+  // замечания за раз.
+  const [respondFor, setRespondFor] = useState<string | null>(null);
+  const [response, setResponse] = useState("");
+  const [respondErrors, setRespondErrors] = useState<Record<string, unknown> | null>(
+    null
+  );
+  const resolve = useResolveRemark(event.id, {
+    onFormError: (details) => setRespondErrors(details),
+    onEvent: () => {
+      setRespondFor(null);
+      setResponse("");
+      setRespondErrors(null);
+    },
+  });
   const remarks = view.remarks;
-  const open = remarks.filter((remark) => !remark.resolved).length;
+  const open = remarks.filter((remark) => remark.status === "OPEN").length;
+  const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
+  const postLabel = (postId: string | null): string => {
+    if (postId === null) return "общее";
+    const post = postById.get(postId);
+    return post ? `${post.sector} · ${post.post}` : `пост ${postId}`;
+  };
 
   return (
     <section className="rounded-md border">
@@ -801,7 +881,7 @@ function ApprovalRemarks({
           Формируются при возврате на доработку ·{" "}
           {remarks.length === 0
             ? "замечаний нет"
-            : `${open} не устранено · ${remarks.length} всего`}
+            : `${open} без ответа · ${remarks.length} всего`}
         </p>
       </div>
       {remarks.length === 0 ? (
@@ -811,44 +891,116 @@ function ApprovalRemarks({
       ) : (
         <ul className="divide-y">
           {remarks.map((remark) => (
-            <li
-              key={remark.id}
-              className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block">{remark.text}</span>
-                <span className="block text-[11px] text-muted-foreground">
-                  {remark.author} · {formatIsoDateTime(remark.createdAt)}
+            <li key={remark.id} className="px-3 py-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block">{remark.text}</span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {remark.author} · {formatIsoDateTime(remark.createdAt)} ·{" "}
+                    {postLabel(remark.postId)} · документ v{remark.documentVersion}
+                  </span>
+                  {remark.response !== "" && (
+                    <span className="mt-1 block text-xs">
+                      <span className="text-muted-foreground">Ответ: </span>
+                      {remark.response}
+                    </span>
+                  )}
                 </span>
-              </span>
-              <span
-                className={
-                  remark.resolved
-                    ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
-                    : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
-                }
-              >
-                {remark.resolved ? "Устранено" : "Не устранено"}
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={resolve.isPending}
-                onClick={() =>
-                  resolve.mutate({
-                    remarkId: remark.id,
-                    resolved: !remark.resolved,
-                    visitObjectId: view.visitObjectId,
-                  })
-                }
-              >
-                {remark.resolved ? "Вернуть в работу" : "Отметить устранённым"}
-              </Button>
+                {remark.urgent && (
+                  <span className="inline-flex whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800">
+                    Срочно
+                  </span>
+                )}
+                <span
+                  className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${REMARK_STATUS_CLASS[remark.status]}`}
+                >
+                  {REMARK_STATUS_LABEL[remark.status]}
+                </span>
+                {remark.status === "OPEN" ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={resolve.isPending}
+                      onClick={() =>
+                        resolve.mutate({
+                          remarkId: remark.id,
+                          decision: "RESOLVED",
+                          visitObjectId: view.visitObjectId,
+                        })
+                      }
+                    >
+                      Устранено
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setRespondFor((prev) =>
+                          prev === remark.id ? null : remark.id
+                        )
+                      }
+                    >
+                      Не согласен
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={resolve.isPending}
+                    onClick={() =>
+                      resolve.mutate({
+                        remarkId: remark.id,
+                        decision: "OPEN",
+                        visitObjectId: view.visitObjectId,
+                      })
+                    }
+                  >
+                    Вернуть в работу
+                  </Button>
+                )}
+              </div>
+              {respondFor === remark.id && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <label
+                    className="text-[11px] font-semibold"
+                    htmlFor={`respond-${remark.id}`}
+                  >
+                    Почему не согласны *
+                  </label>
+                  <Input
+                    id={`respond-${remark.id}`}
+                    className="h-8 w-72 text-xs"
+                    placeholder="Ответ согласующему"
+                    value={response}
+                    onChange={(e) => setResponse(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={resolve.isPending}
+                    onClick={() =>
+                      resolve.mutate({
+                        remarkId: remark.id,
+                        decision: "DISAGREED",
+                        response,
+                        visitObjectId: view.visitObjectId,
+                      })
+                    }
+                  >
+                    Подтвердить несогласие
+                  </Button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
+      <FieldErrors errors={respondErrors} />
       <StageError error={resolve.error} />
     </section>
   );

@@ -164,7 +164,35 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     // отдельным списком, и закрывается оно по одному.
     const remarks = card.locator('section', { hasText: 'Замечания' }).first()
     await expect(remarks).toContainText('Уточнить расчёт постов', { timeout: 15_000 })
-    await expect(remarks).toContainText('Не устранено')
+    // Статус замечания — тройной (`[МД-07]`, Plane №386): свежее — «Открыто».
+    await expect(remarks).toContainText('Открыто')
+    // Общий возврат согласующего без выбранного поста — «общее»; версия
+    // документа при замечании — та, что была на момент постановки.
+    await expect(remarks).toContainText('общее')
+    await expect(remarks).toContainText(/документ v\d+/)
+
+    // «Не согласен» БЕЗ ответа отбивает СЕРВЕР (`[ВОЗ-04]`) — ошибка поля,
+    // а не молчание; со ответом замечание закрывается несогласием и больше
+    // не считается «без ответа».
+    const remarkRow = remarks.locator('li', { hasText: 'Уточнить расчёт постов' }).first()
+    await remarkRow.getByRole('button', { name: 'Не согласен' }).click()
+    await remarkRow.getByRole('button', { name: 'Подтвердить несогласие' }).click()
+    await expect(remarks).toContainText('Укажите, почему вы не согласны', { timeout: 15_000 })
+    await remarkRow.getByLabel('Почему не согласны *').fill('Пост режимный, снять нельзя')
+    await remarkRow.getByRole('button', { name: 'Подтвердить несогласие' }).click()
+    await expect(remarkRow).toContainText('Не согласен', { timeout: 15_000 })
+    await expect(remarkRow).toContainText('Ответ: Пост режимный, снять нельзя')
+    await expect
+      .poll(async () => {
+        const fresh = (await events(token)).find((e) => e.id === target.id) as
+          | (EventRow & { visitObjects: { approvalRemarks: { status: string; response: string }[] }[] })
+          | undefined
+        const mine = fresh?.visitObjects[0]?.approvalRemarks.find(
+          (r) => r.response === 'Пост режимный, снять нельзя',
+        )
+        return mine?.status ?? null
+      }, { timeout: 15_000 })
+      .toBe('DISAGREED')
 
     // Пустую причину возврата отбивает сервер; стадия не двигается
     await card.getByRole('button', { name: 'Вернуть на доработку' }).click()

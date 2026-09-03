@@ -2119,16 +2119,36 @@ export const securityEventsHandlers = [
           404
         );
       }
+      // Три исхода (`[ВОЗ-04]`, Plane №386) — порт правил сервера: «Не
+      // согласен» без ответа отбивается, «Открыто» снимает решение.
+      if (!["OPEN", "RESOLVED", "DISAGREED"].includes(body.decision)) {
+        return validationError({ decision: ["Допустимо: OPEN, RESOLVED, DISAGREED."] });
+      }
+      const answer = (body.response ?? "").trim();
+      if (body.decision === "DISAGREED" && answer === "") {
+        return validationError({ response: ["Укажите, почему вы не согласны."] });
+      }
+      const version = event.visitObjects[0]?.documentVersion ?? 0;
       return HttpResponse.json(
         saveEvent({
           ...event,
           approvalRemarks: event.approvalRemarks.map((remark) =>
             remark.id === params.remarkId
-              ? {
-                  ...remark,
-                  resolved: body.resolved,
-                  resolvedAt: body.resolved ? nowIso() : null,
-                }
+              ? body.decision === "OPEN"
+                ? {
+                    ...remark,
+                    status: "OPEN" as const,
+                    response: "",
+                    respondedAt: null,
+                    resolvedInDocumentVersion: null,
+                  }
+                : {
+                    ...remark,
+                    status: body.decision,
+                    response: answer,
+                    respondedAt: nowIso(),
+                    resolvedInDocumentVersion: version,
+                  }
               : remark
           ),
           updatedAt: nowIso(),
@@ -2178,6 +2198,11 @@ export const securityEventsHandlers = [
             }
           : approver
       );
+      // Срочно — вручную ИЛИ автоматически при ≤ 1 суток до даты ОМ
+      // (`[ВОЗ-02]`): порт правила сервера, а не вторая его версия.
+      const daysToEvent = Math.round(
+        (new Date(event.businessDate).getTime() - Date.now()) / 86_400_000
+      );
       const remarks =
         body.decision === "RETURNED"
           ? [
@@ -2188,8 +2213,13 @@ export const securityEventsHandlers = [
                 author: target.name,
                 createdAt: now,
                 text: comment,
-                resolved: false,
-                resolvedAt: null,
+                postId: body.postId ?? null,
+                urgent: body.urgent === true || daysToEvent <= 1,
+                status: "OPEN" as const,
+                response: "",
+                respondedAt: null,
+                documentVersion: event.visitObjects[0]?.documentVersion ?? 0,
+                resolvedInDocumentVersion: null,
               },
             ]
           : event.approvalRemarks;
@@ -2263,10 +2293,12 @@ export const securityEventsHandlers = [
           : "Расстановка не отправлена на согласование."
       );
     }
-    if (event.approvalRemarks.some((remark) => !remark.resolved)) {
+    // Блокирует только ОТКРЫТОЕ (`[ВОЗ-05]`): «Не согласен» с ответом не
+    // хуже «Устранено».
+    if (event.approvalRemarks.some((remark) => remark.status === "OPEN")) {
       return businessRuleError(
         "APPROVAL_REMARKS_OPEN",
-        "Есть неустранённые замечания — закройте их перед завершением этапа."
+        "Есть замечания без ответа — ответьте на них перед завершением этапа."
       );
     }
     // утверждение сразу открывает «Ознакомление», без отдельного клика

@@ -4088,6 +4088,63 @@ def _approval_target(event, visit_object_id):
     )
 
 
+# ── Замечание согласования (`[МД-07]`, Plane №386) ──────────────────────────
+#
+# Требование заказчика буквально: «текст, автор, дата, привязка (пост /
+# сектор / общее), срочно (да/нет), статус (Открыто → Устранено | Не
+# согласен), ответ старшего + дата, версия документа, в которой поставлено /
+# закрыто». До этого шага замечание несло только текст и булеву «устранено» —
+# бинарный переключатель не мог выразить «не согласен, вот почему», а версии
+# документа замечание не помнило вовсе (её и не было до №396).
+#
+# ПРИВЯЗКА — ТОЛЬКО ПОСТ, СЕКТОРА НЕТ. У сектора в разделе нет собственного
+# идентификатора: это строка `post.get("sector")`, и несколько постов делят
+# одну и ту же строку. Заводить привязку по имени сектора значило бы держать
+# ссылку, которая рвётся при переименовании сектора и не различает «этот
+# сектор» от «сектор с таким же названием у другого объекта». Как только
+# сектору понадобится собственная сущность — привязка расширяется, а не
+# подменяется.
+_REMARK_STATUSES = ("OPEN", "RESOLVED", "DISAGREED")
+
+
+def _is_urgent(event, explicit):
+    """Срочно — явно поставлено человеком ИЛИ автоматически (`[ВОЗ-02]`):
+    до даты мероприятия остались не более суток. Порог не настраивается по
+    ОМ (это часть спецификации, которую отдельная задача ещё не завела) —
+    здесь ровно та часть правила, для которой уже есть данные.
+    """
+    if explicit is True:
+        return True
+    if event.business_date is None:
+        return False
+    return (event.business_date - Clock.today_local()).days <= 1
+
+
+def new_remark(
+    event, *, remark_id, approver_id, author, text, post_id, urgent,
+    document_version, created_at,
+):
+    """Собрать (не сохранить) замечание в форме контракта."""
+    return {
+        "id": remark_id,
+        "approverId": approver_id,
+        "author": author,
+        "createdAt": created_at,
+        "text": text,
+        # Пусто — «общее», не привязано к посту (`[МД-07]`).
+        "postId": str(post_id) if post_id not in (None, "") else None,
+        "urgent": _is_urgent(event, urgent),
+        "status": "OPEN",
+        "response": "",
+        "respondedAt": None,
+        # Версия документа, В КОТОРОЙ ПОСТАВЛЕНО. Закрывающая версия
+        # проставляется решением (`resolve_remark`) — до него закрывать
+        # нечего.
+        "documentVersion": document_version,
+        "resolvedInDocumentVersion": None,
+    }
+
+
 def _next_approver_number(route):
     numbers = []
     for item in route:
@@ -4178,10 +4235,16 @@ def remove_approver(event_id, approver_id, *, visit_object_id=None):
 
 @transaction.atomic
 def decide_approver(
-    event_id, *, approver_id, decision, comment, visit_object_id=None
+    event_id, *, approver_id, decision, comment, visit_object_id=None,
+    post_id=None, urgent=None,
 ):
     """Решение одного согласующего. Возврат требует причины — как и возврат
-    расстановки: «вернул без объяснения» неисполнимо для исполнителя."""
+    расстановки: «вернул без объяснения» неисполнимо для исполнителя.
+
+    `post_id`/`urgent` — привязка замечания (`[МД-07]`, Plane №386): пост или
+    «общее» (не прислали), и признак срочности. Оба необязательны — решение
+    согласующего может остаться общим по объекту.
+    """
     event = lock_event(event_id)
     visit = _approval_target(event, visit_object_id)
     if decision not in ("APPROVED", "RETURNED"):
@@ -4215,15 +4278,17 @@ def decide_approver(
         # строке, а работа по нему — в списке, который закрывают по одному.
         remarks = list(visit.approval_remarks or [])
         remarks.append(
-            {
-                "id": f"remark-{len(remarks) + 1}-{approver_id}",
-                "approverId": approver_id,
-                "author": target.get("name", ""),
-                "createdAt": now,
-                "text": clean_comment,
-                "resolved": False,
-                "resolvedAt": None,
-            }
+            new_remark(
+                event,
+                remark_id=f"remark-{len(remarks) + 1}-{approver_id}",
+                approver_id=approver_id,
+                author=target.get("name", ""),
+                text=clean_comment,
+                post_id=post_id,
+                urgent=urgent,
+                document_version=visit.document_version,
+                created_at=now,
+            )
         )
         visit.approval_remarks = remarks
         fields.insert(1, "approval_remarks")
@@ -4378,16 +4443,38 @@ def move_approver(event_id, approver_id, *, direction, visit_object_id=None):
 
 
 @transaction.atomic
-def resolve_remark(event_id, remark_id, *, resolved, visit_object_id=None):
-    """Отметить замечание устранённым (или вернуть его в работу)."""
+def resolve_remark(
+    event_id, remark_id, *, decision, response=None, visit_object_id=None
+):
+    """Решить замечание (`[ВОЗ-04]`): «Устранено» — ответ необязателен;
+    «Не согласен» — ОБЯЗАТЕЛЕН, иначе замечание превращается в отказ без
+    объяснения, и согласующий не узнает, почему старший не исправил.
+
+    Возврат к «Открыто» — той же ручкой, `decision="OPEN"`: снятое решение не
+    должно требовать отдельного пути, симметрично отзыву согласования.
+    """
     event = lock_event(event_id)
     visit = _approval_target(event, visit_object_id)
+    if decision not in _REMARK_STATUSES:
+        raise _validation(
+            {"decision": [f"Допустимо: {', '.join(_REMARK_STATUSES)}."]}
+        )
+    clean_response = str(response or "").strip()
+    if decision == "DISAGREED" and clean_response == "":
+        raise _validation({"response": ["Укажите, почему вы не согласны."]})
     remarks = list(visit.approval_remarks or [])
     found = False
     for item in remarks:
         if item.get("id") == remark_id:
-            item["resolved"] = bool(resolved)
-            item["resolvedAt"] = _now_iso() if resolved else None
+            item["status"] = decision
+            if decision == "OPEN":
+                item["response"] = ""
+                item["respondedAt"] = None
+                item["resolvedInDocumentVersion"] = None
+            else:
+                item["response"] = clean_response
+                item["respondedAt"] = _now_iso()
+                item["resolvedInDocumentVersion"] = visit.document_version
             found = True
             break
     if not found:
@@ -4434,9 +4521,15 @@ def approve_placement(event_id, *, visit_object_id=None):
             if pending
             else "Расстановка не отправлена на согласование.",
         )
-    if any(not item.get("resolved") for item in (visit.approval_remarks or [])):
+    if any(
+        item.get("status") == "OPEN"
+        for item in (visit.approval_remarks or [])
+    ):
+        # `[ВОЗ-05]`: блокирует только ОТКРЫТОЕ, без ответа — «Не согласен» с
+        # объяснением не хуже «Устранено», и держать этап из-за несогласия,
+        # на которое уже ответили, значило бы наказывать за честный ответ.
         raise DomainError("APPROVAL_REMARKS_OPEN", 422, message=
-            "Есть неустранённые замечания — закройте их перед завершением "
+            "Есть замечания без ответа — ответьте на них перед завершением "
             "этапа.",
         )
     visit.approval_status = "APPROVED"
@@ -4501,6 +4594,15 @@ def return_placement(event_id, *, comment, visit_object_id=None):
         "APPROVAL",
         "Вернуть на доработку можно только на этапе «Согласование».",
     )
+    # 🔴 ЗАМЕЧАНИЕ ЗДЕСЬ НЕ ЗАВОДИТСЯ, И ЭТО РЕШЕНИЕ, А НЕ НЕДОСМОТР (Plane
+    # №386). Структурированные замечания (`[МД-07]`, с привязкой к посту и
+    # требующие ответа) заводит МАРШРУТ согласующих — `decide_approver` с
+    # решением RETURNED. Эта кнопка — общий возврат БЕЗ структурированного
+    # списка ([ВОЗ-01]'s «список замечаний» этот шаг не строит): заведи она
+    # свою запись в `approval_remarks`, эта запись осталась бы «Открыто»
+    # НАВСЕГДА — ответить на «общую причину» нечем, отдельного действия для
+    # неё нет, и она заперла бы `approve_placement` до ручной правки в базе.
+    # Причина возврата остаётся в `approval_comment`, как и раньше.
     visit.approval_status = "RETURNED"
     visit.approval_comment = comment
     visit.save(
