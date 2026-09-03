@@ -20,7 +20,6 @@ import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
-import { StatCard } from "@/components/stat-card";
 import { formatIsoDate } from "@/shared/lib/date";
 import {
   useCoreDirectories,
@@ -46,12 +45,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Check, X } from "lucide-react";
 import type { MyAssignmentRow } from "@/hooks/use-my-assignments";
 import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
-import { useLegalDocuments } from "@/hooks/use-legal-documents";
-import {
-  LEGAL_DOCUMENT_KIND_BADGE_CLASS,
-  LEGAL_DOCUMENT_KIND_LABEL,
-  LEGAL_DOCUMENT_STATUS_LABEL,
-} from "@/entities/legal-document";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { STAGE_LABEL } from "@/entities/security-event";
 import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
@@ -63,19 +56,14 @@ import type { SecurityEvent } from "@/entities/security-event";
 
 // «История» стоит ПОСЛЕ «Моей статистики» — так просил заказчик (Plane
 // «Реестр ОМ-40»). Порядок вкладок здесь и есть порядок на экране.
-type ProfileTab =
-  | "events"
-  | "calendar"
-  | "stats"
-  | "history"
-  | "instructions";
+// Три вкладки спецификации `[ПРФ-03]` (Plane №434): «Моя статистика» и
+// «Инструкции» сняты — источника в системе у них не было (`[ПРФ-01]`).
+type ProfileTab = "events" | "calendar" | "history";
 
 const TAB_LABEL: Record<ProfileTab, string> = {
-  events: "Охранные мероприятия",
-  calendar: "Мой календарь",
-  stats: "Моя статистика",
+  events: "Мои назначения",
+  calendar: "Календарь",
   history: "История",
-  instructions: "Инструкции",
 };
 
 /* Подписи статусов берутся из СПРАВОЧНИКА СЕРВЕРА (`useOpsStatusTypes`) —
@@ -178,28 +166,6 @@ function periodWord(count: number): string {
  * готовность, имущество, инструкция по посту), стоят на своих местах и несут
  * причину внутри — читать её там, где ждёшь данные, честнее, чем в сноске.
  * Список статический: это решение переноса, а не данные сервера. */
-const MISSING_BLOCKS: readonly { title: string; reason: string }[] = [
-  {
-    title: "Стаж службы",
-    reason:
-      "Дата приёма в карточке есть, но стаж — не разность дат: перерывы, льготная выслуга и переводы в него входят по кадровым правилам, которых модель не знает. Показана сама дата приёма.",
-  },
-  {
-    title: "Допуски, подготовка и инструктажи",
-    reason:
-      "Квалификаций и их сроков модель не хранит. Ознакомление с расстановкой ОМ фиксируется (и показано во вкладке мероприятий), но это отметка о конкретном назначении, а не допуск.",
-  },
-  {
-    title: "Часы на посту и «без замечаний» в статистике",
-    reason:
-      "Назначение расстановки — строка без часов: интервалов у постов ОМ нет, складывать нечего. Итог участия («без замечаний», «благодарность») тоже не фиксируется — есть только отметка ознакомления.",
-  },
-  {
-    title: "Мои документы",
-    reason:
-      "Вложения в системе привязаны к мероприятиям и объектам, а не к сотруднику: своей папки у человека нет.",
-  },
-];
 
 export default function MyProfilePage() {
   const me = useMyEmployee();
@@ -244,26 +210,6 @@ export default function MyProfilePage() {
 
         {employee !== null && <ProfileBody employee={employee} />}
 
-        <Card className="border-dashed bg-muted/30">
-          <CardHeader>
-            <CardTitle>Чего в профиле нет</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Блоки прототипа, которым источника в системе не нашлось
-            </p>
-          </CardHeader>
-          <CardContent>
-            <ul className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
-              {MISSING_BLOCKS.map((block) => (
-                <li key={block.title} className="text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">
-                    {block.title}
-                  </span>{" "}
-                  — {block.reason}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
       </div>
     </DashboardLayout>
   );
@@ -277,6 +223,25 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
   // открыт держателю `event.view`, и рядовому сотруднику вкладка отвечала
   // «реестр недоступен» — назначения не показывались никогда.
   const events = useMyAssignments();
+  // Оценки по закрытым ОМ (`[ПРФ-02]`, `[ПРФ-06]`): один запрос на профиль —
+  // шапке нужен средний балл, истории — балл по мероприятию.
+  const evaluations = useEvaluationRegistry({
+    ...EMPTY_FILTERS,
+    employee: String(employee.id),
+  });
+  const scoreByEvent = useMemo(() => {
+    const map = new Map<string, number | null>();
+    for (const row of evaluations.data?.results ?? []) {
+      if (String(row.employeeId) !== String(employee.id)) continue;
+      map.set(row.eventNumber, row.aggregateRating);
+    }
+    return map;
+  }, [evaluations.data, employee.id]);
+  const rating = useMemo(() => {
+    const scores = [...scoreByEvent.values()].filter((v): v is number => v !== null);
+    if (scores.length === 0) return null;
+    return { average: scores.reduce((a, b) => a + b, 0) / scores.length, events: scores.length };
+  }, [scoreByEvent]);
   // СВОИ смены, а не реестр целиком: реестр открыт только держателю
   // `duty.view`, и рядовому сотруднику он отвечал 403 — смены в календаре не
   // показывались никогда, а ошибка гасилась молча (Plane №381).
@@ -302,6 +267,7 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
         divisionLabel={directories.divisionLabel(employee.division)}
         statuses={statuses.data ?? []}
         statusesLoading={statuses.isPending}
+        rating={rating}
       />
 
       <nav
@@ -339,25 +305,15 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
           loading={statuses.isPending || shifts.isPending}
         />
       )}
-      {tab === "stats" && (
-        <StatsTab
-          statuses={statuses.data ?? []}
-          assignments={myAssignments}
-          loading={statuses.isPending || events.isPending}
-        />
-      )}
       {tab === "history" && (
         <HistoryTab
           assignments={myAssignments}
-          employeeId={String(employee.id)}
+          scoreByEvent={scoreByEvent}
+          rating={rating}
+          scoresDenied={evaluations.isError}
+          scoresLoading={evaluations.isPending}
           loading={events.isPending}
           failed={events.isError}
-        />
-      )}
-      {tab === "instructions" && (
-        <InstructionsTab
-          assignments={myAssignments}
-          loading={events.isPending}
         />
       )}
     </>
@@ -368,6 +324,50 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
 /* Карточка-шапка                                                      */
 /* ------------------------------------------------------------------ */
 
+/** Статус словами (`[ПРФ-02]`). */
+function statusWords(
+  statuses: OpsEmployeeStatusRow[],
+  labelOf: (code: string) => string
+): { text: string; inService: boolean } {
+  const active = statuses.find((row) => row.state === "ACTIVE") ?? null;
+  if (active !== null) {
+    const participation = active.participations[0];
+    if (participation !== undefined) {
+      return {
+        text: ["Участие в ОМ", participation.event_code, formatIsoDate(active.date_start)]
+          .filter((part) => part)
+          .join(" "),
+        inService: false,
+      };
+    }
+    const label = labelOf(active.status_type_code);
+    return {
+      text:
+        active.status_type_code === "IN_SERVICE"
+          ? label
+          : `${label} до ${formatIsoDate(active.date_end)}`,
+      inService: active.status_type_code === "IN_SERVICE",
+    };
+  }
+  const planned = statuses
+    .filter((row) => row.state === "PLANNED")
+    .sort((a, b) => a.date_start.localeCompare(b.date_start))[0];
+  if (planned !== undefined) {
+    return {
+      text: `В строю · с ${formatIsoDate(planned.date_start)} ${labelOf(planned.status_type_code).toLowerCase()}`,
+      inService: true,
+    };
+  }
+  return { text: "В строю", inService: true };
+}
+
+function eventsWord(n: number): string {
+  const tens = n % 100;
+  const ones = n % 10;
+  if (ones === 1 && tens !== 11) return "мероприятия";
+  return "мероприятий";
+}
+
 function HeroCard({
   employee,
   rankLabel,
@@ -375,6 +375,7 @@ function HeroCard({
   divisionLabel,
   statuses,
   statusesLoading,
+  rating,
 }: {
   employee: CoreEmployee;
   rankLabel: string | null;
@@ -382,23 +383,23 @@ function HeroCard({
   divisionLabel: string | null;
   statuses: OpsEmployeeStatusRow[];
   statusesLoading: boolean;
+  /** Средний балл по закрытым ОМ и число оценённых мероприятий; null —
+   * оценок нет, и блока рейтинга нет (`[ПРФ-02]`, `[ПРФ-01]`). */
+  rating: { average: number; events: number } | null;
 }) {
   const statusTypes = useOpsStatusTypes();
-  // Текущий статус — тот, что ДЕЙСТВУЕТ по мнению сервера (`state`), а не
-  // выведенный из дат в браузере: в минусовых зонах «сегодня» разъезжается.
-  const active = statuses.find((row) => row.state === "ACTIVE") ?? null;
   const initials = `${employee.last_name.slice(0, 1)}${employee.first_name.slice(0, 1)}`;
-
+  // Статус СЛОВАМИ (`[ПРФ-02]`, Plane №434): действующий — с «до …», без
+  // действующего — ближайший запланированный «с …», иначе «В строю».
+  // «Действующих статусов нет» читалось как пустота, а это и есть строй.
+  const statusLine = statusWords(statuses, statusTypes.labelOf);
+  // Чипы только с данными (`[ПРФ-01]`: нет данных — нет блока).
   const chips: string[] = [
-    employee.personnel_number === null
-      ? "Табельный № — нет данных"
-      : `Табельный № ${employee.personnel_number}`,
-    divisionLabel ?? "подразделение не указано",
-    employee.hire_date === null
-      ? "дата приёма — нет данных"
-      : `В службе с ${formatIsoDate(employee.hire_date)}`,
-    employee.is_active ? "Числится в учёте" : "Не числится в учёте",
-  ];
+    employee.personnel_number === null ? "" : `Табельный № ${employee.personnel_number}`,
+    divisionLabel ?? "",
+    employee.hire_date === null ? "" : `В службе с ${formatIsoDate(employee.hire_date)}`,
+    employee.is_active ? "" : "Не числится в учёте",
+  ].filter((chip) => chip !== "");
 
   return (
     <Card className="bg-gradient-to-br from-card via-card to-primary/10">
@@ -413,22 +414,26 @@ function HeroCard({
               <span className="text-xs text-muted-foreground">
                 статус загружается…
               </span>
-            ) : active === null ? (
-              <span className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
-                действующих статусов нет
-              </span>
             ) : (
-              // Зелёный — только у «В строю», как в прототипе: цвет здесь
-              // утверждение о готовности человека, и красить им «В отпуске»
-              // значило бы врать глазом при верной подписи.
               <span
+                data-testid="profile-status"
                 className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                  active.status_type_code === "IN_SERVICE"
+                  statusLine.inService
                     ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
                     : "bg-primary/10 text-primary-ink"
                 }`}
               >
-                {statusTypes.labelOf(active.status_type_code)}
+                {statusLine.text}
+              </span>
+            )}
+            {rating !== null && (
+              <span
+                data-testid="profile-rating"
+                title="Средний балл по закрытым мероприятиям"
+                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+              >
+                {rating.average.toFixed(1).replace(".", ",")} · из {rating.events}{" "}
+                {eventsWord(rating.events)}
               </span>
             )}
           </div>
@@ -446,78 +451,20 @@ function HeroCard({
               </span>
             ))}
           </div>
-          <p className="mt-2.5 text-[11px] text-muted-foreground">
-            Служебный телефон: {employee.work_phone ?? "нет данных"} · Служебная
-            почта: {employee.work_email ?? "нет данных"}
-          </p>
+          {(employee.work_phone || employee.work_email) && (
+            <p className="mt-2.5 text-[11px] text-muted-foreground">
+              {[
+                employee.work_phone ? `Служебный телефон: ${employee.work_phone}` : "",
+                employee.work_email ? `Служебная почта: ${employee.work_email}` : "",
+              ]
+                .filter((part) => part !== "")
+                .join(" · ")}
+            </p>
+          )}
         </div>
 
-        <ServiceGauges />
       </CardContent>
     </Card>
-  );
-}
-
-/**
- * Правая половина шапки прототипа: кольцо рейтинга и полоса готовности.
- *
- * Обе величины система НЕ СЧИТАЕТ — рейтинг ведёт своё пространство
- * идентификаторов, а правила «готовности в процентах» нет ни в справочниках,
- * ни в настройках. Место под них занято формой прототипа, но внутри стоит
- * прочерк и причина: подставить сюда правдоподобное число значило бы выдать
- * выдуманную оценку живого человека за настоящую.
- */
-function ServiceGauges() {
-  const RADIUS = 42;
-  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-  return (
-    <div className="flex w-full shrink-0 flex-wrap items-center gap-5 border-t pt-5 lg:w-[23rem] lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-      <div className="text-center">
-        <span className="relative flex h-[104px] w-[104px] items-center justify-center">
-          <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-            <circle
-              cx="50"
-              cy="50"
-              r={RADIUS}
-              fill="none"
-              strokeWidth="8"
-              className="stroke-muted"
-              strokeDasharray={CIRCUMFERENCE}
-              strokeLinecap="round"
-            />
-          </svg>
-          <span className="absolute flex flex-col items-center leading-tight">
-            <span className="text-2xl font-extrabold text-muted-foreground">—</span>
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Рейтинг
-              <br />
-              из 10
-            </span>
-          </span>
-        </span>
-        <p className="mt-1 max-w-[7rem] text-[10px] leading-tight text-muted-foreground">
-          Оценки службы система не ведёт
-        </p>
-      </div>
-
-      <div className="min-w-[11rem] flex-1">
-        <p className="text-sm font-medium text-muted-foreground">
-          Готовность к службе
-        </p>
-        <p className="mt-0.5 text-3xl font-extrabold tracking-tight text-muted-foreground">
-          —
-        </p>
-        <div
-          className="mt-2 h-2.5 w-full rounded-full bg-muted-foreground/15"
-          role="presentation"
-        />
-        <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-          Процент готовности система не считает: правила, которое сводит статус
-          и назначения в одно число, нет.
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -616,13 +563,23 @@ function EventsTab({
   }
   // Граница «предстоящее / прошедшее» — по дате мероприятия и стадии: закрытое
   // ОМ не предстоит, даже если его дата ещё не наступила.
-  const upcoming = assignments.filter(
-    (item) => item.event.stage !== "CLOSED"
-  );
+  // Порядок `[ПРФ-04]`: требуют действия → подтверждённые → готовятся
+  // (расстановка ещё не согласована — кнопок нет).
+  const rank = (item: MyAssignment) =>
+    !isPreparing(item) && item.acknowledgedAt === null && item.declinedAt === null
+      ? 0
+      : item.acknowledgedAt !== null
+        ? 1
+        : isPreparing(item)
+          ? 3
+          : 2;
+  const upcoming = assignments
+    .filter((item) => item.event.stage !== "CLOSED")
+    .sort((a, b) => rank(a) - rank(b) || a.event.businessDate.localeCompare(b.event.businessDate));
   const past = assignments.filter((item) => item.event.stage === "CLOSED");
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:items-start">
+    <div className="space-y-4">
       <div className="space-y-4">
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
@@ -656,11 +613,6 @@ function EventsTab({
 
       </div>
 
-      <div className="space-y-4">
-        <EquipmentCard />
-        <QualificationsCard />
-        <AttentionCard assignments={upcoming} />
-      </div>
     </div>
   );
 }
@@ -690,29 +642,25 @@ function EventsTab({
  */
 function HistoryTab({
   assignments,
-  employeeId,
+  scoreByEvent,
+  rating,
+  scoresDenied,
+  scoresLoading,
   loading,
   failed,
 }: {
   assignments: MyAssignment[];
-  employeeId: string;
+  scoreByEvent: Map<string, number | null>;
+  rating: { average: number; events: number } | null;
+  scoresDenied: boolean;
+  scoresLoading: boolean;
   loading: boolean;
   failed: boolean;
 }) {
-  const past = assignments.filter((item) => item.event.stage === "CLOSED");
-  // Реестр оценок — СВОЙ запрос и сужен по себе: чужие баллы сюда не едут.
-  const evaluations = useEvaluationRegistry({
-    ...EMPTY_FILTERS,
-    employee: employeeId,
-  });
-  const scoreByEvent = useMemo(() => {
-    const map = new Map<string, number | null>();
-    for (const row of evaluations.data?.results ?? []) {
-      if (String(row.employeeId) !== employeeId) continue;
-      map.set(row.eventNumber, row.aggregateRating);
-    }
-    return map;
-  }, [evaluations.data, employeeId]);
+  // Только закрытые ОМ (`[ПРФ-06]`), свежие сверху.
+  const past = assignments
+    .filter((item) => item.event.stage === "CLOSED")
+    .sort((a, b) => b.event.businessDate.localeCompare(a.event.businessDate));
 
   if (loading) {
     return (
@@ -738,8 +686,10 @@ function HistoryTab({
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle>История заступлений на ОМ</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Закрытые мероприятия — {past.length}
+          <p className="text-xs text-muted-foreground" data-testid="history-summary">
+            Участие в ОМ: {past.length} {eventsWord(past.length)}
+            {rating !== null &&
+              ` · средний балл ${rating.average.toFixed(1).replace(".", ",")}`}
           </p>
         </div>
         <Link
@@ -756,21 +706,23 @@ function HistoryTab({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[900px]">
-              <div className="grid grid-cols-[1.6fr_1.1fr_96px_1fr_1fr_84px_150px] gap-2 rounded-md bg-muted/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                <span>Мероприятие</span>
-                <span>Пост</span>
+            <div className="min-w-[860px]">
+              <div className="grid grid-cols-[96px_1.6fr_1.1fr_1.1fr_150px_84px] gap-2 rounded-md bg-muted/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 <span>Дата</span>
-                <span>Форма одежды</span>
-                <span>Вооружение</span>
-                <span>Балл</span>
+                <span>Мероприятие</span>
+                <span>Объект</span>
+                <span>Пост</span>
                 <span>Ознакомление</span>
+                <span>Балл</span>
               </div>
               {past.map((item) => (
                 <div
                   key={`${item.event.id}:${item.postLabel}`}
-                  className="grid grid-cols-[1.6fr_1.1fr_96px_1fr_1fr_84px_150px] items-baseline gap-2 border-b px-3 py-2.5 last:border-0"
+                  className="grid grid-cols-[96px_1.6fr_1.1fr_1.1fr_150px_84px] items-baseline gap-2 border-b px-3 py-2.5 last:border-0"
                 >
+                  <span className="text-xs tabular-nums">
+                    {formatIsoDate(item.event.businessDate)}
+                  </span>
                   <Link
                     href={`/security-ops/events/${item.event.id}`}
                     className="truncate text-sm font-semibold hover:underline"
@@ -778,45 +730,27 @@ function HistoryTab({
                     {item.event.code} — {item.event.title}
                   </Link>
                   <span className="truncate text-xs text-muted-foreground">
+                    {item.event.objectName || "—"}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
                     {item.postLabel}
                   </span>
-                  <span className="text-xs tabular-nums">
-                    {formatIsoDate(item.event.businessDate)}
-                  </span>
-                  {/* Пустое поле поста — «не указано», а не пустая ячейка:
-                      рекогносцировка эти графы заполняет не всегда, и пустое
-                      место читалось бы как потерянное значение. */}
-                  <span className="truncate text-xs text-muted-foreground">
-                    {item.post === null
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {item.acknowledgedAt === null
                       ? "—"
-                      : (item.post.uniform ?? "").trim() === ""
-                        ? "не указана"
-                        : item.post.uniform}
-                  </span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {item.post === null
-                      ? "—"
-                      : (item.post.weapon ?? "").trim() === ""
-                        ? "не указано"
-                        : item.post.weapon}
+                      : formatIsoDate(item.acknowledgedAt.slice(0, 10))}
                   </span>
                   <ScoreCell
                     score={scoreByEvent.get(item.event.code)}
                     known={scoreByEvent.has(item.event.code)}
-                    denied={evaluations.isError}
-                    loading={evaluations.isPending}
+                    denied={scoresDenied}
+                    loading={scoresLoading}
                   />
-                  <AckBadge acknowledgedAt={item.acknowledgedAt} />
                 </div>
               ))}
             </div>
           </div>
         )}
-        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-          Часов службы здесь нет: назначение расстановки не несёт интервалов
-          времени, а присутствие домен не учитывает. Форма одежды и вооружение
-          — из расчёта постов мероприятия, а не из карточки человека.
-        </p>
       </CardContent>
     </Card>
   );
@@ -878,122 +812,6 @@ function countLabel(count: number): string {
  * своём месте раскладки пустой: перечислить здесь «Огневую подготовку до
  * 30.09» значило бы выдать человеку допуск, которого система не выдавала.
  */
-function QualificationsCard() {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-        <div>
-          <CardTitle>Допуски и подготовка</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Срок действия квалификаций
-          </p>
-        </div>
-        <span className="bg-secondary text-secondary-foreground shrink-0 rounded-full px-3 py-1 text-xs font-semibold">
-          нет данных
-        </span>
-      </CardHeader>
-      <CardContent>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Квалификаций, инструктажей и их сроков система не ведёт. Единственная
-          отметка об ознакомлении, которая в ней есть, — по конкретному
-          назначению в ОМ; она показана в карточке назначения и во вкладке
-          «Инструкции».
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-/**
- * «Требует внимания» — единственная карточка правой колонки прототипа,
- * которой источник ЕСТЬ: неподтверждённое ознакомление с назначением это и
- * есть личное действие со сроком, а срок — дата мероприятия.
- */
-function AttentionCard({ assignments }: { assignments: MyAssignment[] }) {
-  const pending = assignments.filter(
-    (item) => item.acknowledgedAt === null && item.declinedAt === null
-  );
-
-  return (
-    <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30">
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-        <div>
-          <CardTitle>Требует внимания</CardTitle>
-          <p className="text-xs text-amber-800 dark:text-amber-300/80">
-            Личные действия и сроки
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">
-          {pending.length}
-        </span>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {pending.length === 0 ? (
-          <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
-            Несделанного нет: ознакомление подтверждено по всем действующим
-            назначениям.
-          </p>
-        ) : (
-          pending.slice(0, 5).map((item) => (
-            <p
-              key={`${item.event.id}:${item.postLabel}`}
-              className="border-b border-amber-200/70 pb-2 text-xs leading-relaxed text-amber-900 last:border-0 last:pb-0 dark:border-amber-900/50 dark:text-amber-200"
-            >
-              <strong className="font-bold">
-                К {formatIsoDate(item.event.businessDate)}
-              </strong>{" "}
-              — подтвердить ознакомление с назначением: {item.event.code},{" "}
-              {item.postLabel}.
-            </p>
-          ))
-        )}
-        {pending.length > 5 && (
-          <p className="text-[11px] text-amber-800 dark:text-amber-300/80">
-            И ещё {pending.length - 5} — весь список во вкладке «Охранные
-            мероприятия».
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/**
- * «Закреплённое имущество» — блок прототипа без источника: материального учёта
- * в системе нет вовсе. Карточка стоит на своём месте раскладки, но вместо
- * выдуманных радиостанций и жилетов несёт причину — ту же, которой прототип
- * помечает блок сам («после введения цифрового склада»).
- */
-function EquipmentCard() {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-        <div>
-          <CardTitle>Закреплённое имущество</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            По данным материального учёта
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">
-          нет данных
-        </span>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-snug text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-          Имущество будет доступно после введения цифрового склада
-        </p>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Оружия, средств связи и экипировки система сейчас не хранит — ни за
-          сотрудником, ни за подразделением. Список и акт приёма-передачи
-          появятся здесь вместе с учётом; до тех пор строки в этом блоке были бы
-          выдуманными.
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-/** Плитка даты назначения — как в прототипе: число крупно, месяц подписью. */
 function DateTile({ iso }: { iso: string }) {
   return (
     <span className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-lg bg-primary/10 leading-tight">
@@ -1040,6 +858,12 @@ function AckBadge({
   );
 }
 
+/** Назначение «готовится» — расстановка ещё не согласована (`[ПРФ-04]`):
+ * этап мероприятия раньше «Ознакомления». */
+function isPreparing(item: MyAssignment): boolean {
+  return !["ACKNOWLEDGEMENT", "CONDUCT", "CLOSED"].includes(item.event.stage);
+}
+
 function AssignmentRow({ item }: { item: MyAssignment }) {
   const acknowledge = useAcknowledgeMyAssignment();
   const decline = useDeclineMyAssignment();
@@ -1047,7 +871,8 @@ function AssignmentRow({ item }: { item: MyAssignment }) {
   const [reason, setReason] = useState("");
   // Ответить можно, пока мероприятие живо: закрытому ОМ ответ уже никому не
   // нужен, и сервер его не примет.
-  const answerable = item.event.stage !== "CLOSED";
+  const preparing = isPreparing(item);
+  const answerable = item.event.stage !== "CLOSED" && !preparing;
   const busy = acknowledge.isPending || decline.isPending;
   const period =
     item.event.businessDateEnd !== null &&
@@ -1096,11 +921,17 @@ function AssignmentRow({ item }: { item: MyAssignment }) {
         className="flex flex-col items-end justify-between gap-2"
         data-testid={`my-assignment-${item.id}`}
       >
-        <AckBadge
-          acknowledgedAt={item.acknowledgedAt}
-          declinedAt={item.declinedAt}
-          declineReason={item.declineReason}
-        />
+        {preparing ? (
+          <span className="inline-flex w-fit rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+            назначение готовится
+          </span>
+        ) : (
+          <AckBadge
+            acknowledgedAt={item.acknowledgedAt}
+            declinedAt={item.declinedAt}
+            declineReason={item.declineReason}
+          />
+        )}
         {/* Ответ сотрудника (Plane №405, `[ПРФ-04]`): «Ознакомлен, заступлю»
             ставит подтверждение, «Не могу заступить» просит причину. Уже
             данный ответ можно переменить — обстоятельства меняются. */}
@@ -1215,152 +1046,6 @@ function AssignmentRow({ item }: { item: MyAssignment }) {
  * есть, по мероприятиям: это то же, что читает начальник смены в расстановке,
  * и придумывать поверх этого «регламент» не из чего.
  */
-function InstructionsTab({
-  assignments,
-  loading,
-}: {
-  assignments: MyAssignment[];
-  loading: boolean;
-}) {
-  const documents = useLegalDocuments();
-
-  if (loading) {
-    return <p className="text-sm text-muted-foreground">Загрузка инструкций…</p>;
-  }
-
-  const open = assignments.filter((item) => item.event.stage !== "CLOSED");
-
-  return (
-    <div className="space-y-4">
-    <Card>
-      <CardHeader>
-        <CardTitle>Инструкции перед выходом на пост</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Приказы, регламенты и инструкции по организации ОМ
-        </p>
-      </CardHeader>
-      <CardContent>
-        {documents.isPending ? (
-          <p className="text-sm text-muted-foreground">Загрузка нормативной базы…</p>
-        ) : documents.isError ? (
-          <p className="text-sm text-muted-foreground">
-            Нормативная база сейчас недоступна — список не показан.
-          </p>
-        ) : (
-          <ul className="divide-y">
-            {(documents.data?.results ?? [])
-              // Инструктирует не всякий документ: закон описывает право, а
-              // перед выходом на пост читают приказ, регламент и инструкцию.
-              .filter((doc) => doc.kind !== "LAW")
-              .map((doc) => (
-                <li key={doc.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                  <span
-                    className={`grid size-[38px] shrink-0 place-items-center rounded-[9px] text-[10.5px] font-extrabold ${
-                      LEGAL_DOCUMENT_KIND_BADGE_CLASS[doc.kind]
-                    }`}
-                  >
-                    {LEGAL_DOCUMENT_KIND_LABEL[doc.kind].slice(0, 3).toUpperCase()}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12.5px] font-semibold">
-                      {doc.title}
-                    </span>
-                    <span className="text-muted-foreground mt-0.5 block truncate text-[11px]">
-                      {doc.code} · {doc.revision} · {doc.pages} с.
-                    </span>
-                  </span>
-                  <span
-                    className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[10.5px] font-bold ${
-                      doc.status === "IN_FORCE"
-                        ? "bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-200"
-                        : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200"
-                    }`}
-                  >
-                    {LEGAL_DOCUMENT_STATUS_LABEL[doc.status]}
-                  </span>
-                  <Link
-                    href="/security-ops/laws"
-                    className="hover:bg-muted inline-flex h-8 shrink-0 items-center rounded-lg border bg-background px-3 text-xs font-medium transition-colors"
-                  >
-                    Открыть
-                  </Link>
-                </li>
-              ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-        <div>
-          <CardTitle>Задачи и требования по моим постам</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Из расчёта сил действующих мероприятий
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">
-          {countLabel(open.length)}
-        </span>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {open.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Действующих назначений нет — читать нечего.
-          </p>
-        ) : (
-          open.map((item) => (
-            <div
-              key={`${item.event.id}:${item.postLabel}`}
-              className="rounded-lg border p-3.5"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold tabular-nums text-secondary-foreground">
-                  {item.event.code}
-                </span>
-                <span className="text-sm font-semibold">{item.postLabel}</span>
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {formatIsoDate(item.event.businessDate)}
-                </span>
-              </div>
-              <dl className="mt-2.5 grid gap-2 sm:grid-cols-2">
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Задача поста
-                  </dt>
-                  <dd className="mt-0.5 text-xs leading-relaxed">
-                    {item.post === null || item.post.task.trim() === ""
-                      ? "не заполнена в расчёте"
-                      : item.post.task}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Требования
-                  </dt>
-                  <dd className="mt-0.5 text-xs leading-relaxed">
-                    {item.post === null || item.post.requirements.trim() === ""
-                      ? "не заполнены в расчёте"
-                      : item.post.requirements}
-                  </dd>
-                </div>
-              </dl>
-              <p className="mt-2.5">
-                <AckBadge acknowledgedAt={item.acknowledgedAt} />
-              </p>
-            </div>
-          ))
-        )}
-        <p className="text-[11px] text-muted-foreground">
-          Подтверждение ознакомления в модели одно — с назначением целиком;
-          отдельной отметки «прочитал инструкцию по посту» нет.
-        </p>
-      </CardContent>
-    </Card>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Вкладка «Мой календарь»                                             */
 /* ------------------------------------------------------------------ */
@@ -1701,171 +1386,3 @@ function CalendarTab({
 /* ------------------------------------------------------------------ */
 /* Вкладка «Моя статистика»                                            */
 /* ------------------------------------------------------------------ */
-
-function StatsTab({
-  statuses,
-  assignments,
-  loading,
-}: {
-  statuses: OpsEmployeeStatusRow[];
-  assignments: MyAssignment[];
-  loading: boolean;
-}) {
-  const { labelOf } = useOpsStatusTypes();
-  const distribution = useMemo(() => {
-    // Считаются ДНИ статуса, а не строки: неделя отпуска и день отпуска — не
-    // одно и то же, а строк у них поровну. Отменённые не учитываются: они
-    // означают, что периода не было.
-    const days = new Map<string, number>();
-    for (const row of statuses) {
-      if (row.state === "CANCELLED") continue;
-      const from = new Date(`${row.date_start}T00:00:00Z`).getTime();
-      const to = new Date(`${row.date_end}T00:00:00Z`).getTime();
-      const span = Math.max(1, Math.round((to - from) / 86_400_000) + 1);
-      const label = labelOf(row.status_type_code);
-      days.set(label, (days.get(label) ?? 0) + span);
-    }
-    const rows = [...days.entries()].sort((a, b) => b[1] - a[1]);
-    const total = rows.reduce((sum, [, value]) => sum + value, 0);
-    return { rows, total };
-  }, [statuses, labelOf]);
-
-  const posts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of assignments) {
-      counts.set(item.postLabel, (counts.get(item.postLabel) ?? 0) + 1);
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [assignments]);
-
-  if (loading) {
-    return <p className="text-sm text-muted-foreground">Загрузка статистики…</p>;
-  }
-
-  const acknowledged = assignments.filter(
-    (item) => item.acknowledgedAt !== null
-  ).length;
-
-  return (
-    <div className="space-y-4">
-      <section
-        role="group"
-        aria-label="Показатели службы"
-        className="grid grid-cols-2 gap-3 lg:grid-cols-4"
-      >
-        <StatCard
-          label="Участие в ОМ"
-          value={String(new Set(assignments.map((item) => item.event.id)).size)}
-          caption="мероприятий с вашим назначением"
-          tone="info"
-        />
-        <StatCard
-          label="Назначений на посты"
-          value={String(assignments.length)}
-          caption="строк расстановки"
-        />
-        <StatCard
-          label="Ознакомлено"
-          value={String(acknowledged)}
-          caption={`из ${assignments.length} назначений`}
-          tone="success"
-        />
-        <StatCard
-          label="Дней под статусом"
-          value={String(distribution.total)}
-          caption="по всем неотменённым строкам"
-        />
-      </section>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Статистика статусов</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Дни по всем строкам, кроме отменённых
-            </p>
-          </CardHeader>
-          <CardContent>
-            {distribution.rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Строк статусов за вами не числится.
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {distribution.rows.map(([label, value]) => (
-                  <li
-                    key={label}
-                    className="grid grid-cols-[minmax(110px,175px)_1fr_auto] items-center gap-3"
-                  >
-                    <span className="text-sm leading-tight">{label}</span>
-                    <span className="block h-2 overflow-hidden rounded-full bg-muted">
-                      <span
-                        className="block h-full rounded-full bg-primary"
-                        style={{
-                          width: `${(value / distribution.total) * 100}%`,
-                        }}
-                      />
-                    </span>
-                    <span className="text-right text-xs tabular-nums text-muted-foreground">
-                      {value} дн. ·{" "}
-                      {((value / distribution.total) * 100)
-                        .toFixed(1)
-                        .replace(".", ",")}
-                      %
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Топ постов</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Где вас чаще всего ставили в расчёт
-            </p>
-          </CardHeader>
-          <CardContent>
-            {posts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Назначений на посты не было.
-              </p>
-            ) : (
-              <ol className="space-y-3">
-                {posts.map(([label, count], index) => (
-                  <li
-                    key={label}
-                    className="grid grid-cols-[24px_1fr] items-start gap-2.5"
-                  >
-                    <b className="grid h-6 w-6 place-items-center rounded-full bg-primary/10 text-[11px] font-bold text-primary-ink">
-                      {index + 1}
-                    </b>
-                    <span className="min-w-0">
-                      <span className="flex items-baseline justify-between gap-3">
-                        <span className="truncate text-sm font-semibold">
-                          {label}
-                        </span>
-                        <span className="text-xs tabular-nums text-muted-foreground">
-                          {count}
-                        </span>
-                      </span>
-                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-muted">
-                        <span
-                          className="block h-full rounded-full bg-primary"
-                          style={{ width: `${(count / posts[0][1]) * 100}%` }}
-                        />
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-

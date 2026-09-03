@@ -196,6 +196,24 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
         employeeId: String(employeeId),
       })
       expect(assigned.status, await assigned.text()).toBe(200)
+      // До «Ознакомления» карточка «готовится» — без кнопок (`[ПРФ-04]`,
+      // Plane №434); ответ сотрудника проверяется на согласованной расстановке.
+      // Паспорт объекта несёт несколько постов, назначен один — завершение
+      // с недобором подтверждается явно, как это делает человек в окне.
+      await post(`${base}placement/complete/`, {
+        override: true,
+        override_reason: 'проба: один пост из расчёта',
+      })
+      const route = (await (
+        await post(`${base}approval/route/`, {
+          name: 'Согласующий пробы', unit: 'Управление ОМ', position: 'полковник',
+        })
+      ).json()) as { approvalRoute: { id: string }[] }
+      await post(`${base}approval/send/`)
+      await post(`${base}approval/route/${route.approvalRoute[0]!.id}/decide/`, {
+        decision: 'APPROVED', comment: '',
+      })
+      await post(`${base}approval/approve/`)
 
       // Сервер: своя ручка отдаёт строку, реестр не нужен.
       const mine = await get<{ results: { eventCode: string; assignmentId: string }[] }>(
@@ -325,29 +343,19 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       page.getByText(new RegExp(`^${active.length} назначени[ея]?й?$`)),
     ).toBeVisible()
 
-    // «Требует внимания»: карточка правой колонки прототипа, у которой в
-    // системе ЕСТЬ источник — назначения без подтверждённого ознакомления.
-    // Счётчик сверяется с ответом сервера, а не с самим собой; закрытые ОМ в
-    // него не входят — подтверждать ознакомление задним числом уже нечем.
-    const pending = registry.results
-      .filter((event) => event.stage !== 'CLOSED')
-      .flatMap((event) =>
-        event.placementAssignments.filter(
-          (assignment) =>
-            String(assignment.employeeId) === String(employee.id) &&
-            assignment.acknowledgedAt === null,
-        ),
-      ).length
-    const attention = page.locator('div').filter({ hasText: /^Требует внимания/ }).first()
-    await expect(page.getByText('Личные действия и сроки')).toBeVisible()
-    await expect(attention).toContainText(String(pending))
-
-    await page.getByRole('button', { name: 'Моя статистика' }).click()
-    const stats = page.getByRole('group', { name: 'Показатели службы' })
-    await expect(stats).toContainText(String(mine.length))
-    const acknowledged = mine.filter((item) => item.acknowledgedAt !== null).length
-    await expect(stats).toContainText(`из ${mine.length} назначений`)
-    await expect(stats).toContainText(String(acknowledged))
+    // Спецификация `[ПРФ-01]`/`[ПРФ-07]` (Plane №434): блоков-заглушек и
+    // круга «рейтинг из 10» нет; вкладки — ровно три.
+    for (const gone of ['Требует внимания', 'Закреплённое имущество', 'Допуски и подготовка', 'Чего в профиле нет', 'Готовность к службе']) {
+      await expect(page.getByText(gone)).toHaveCount(0)
+    }
+    const tabs = page.getByRole('navigation', { name: 'Разделы профиля' })
+    expect((await tabs.getByRole('button').allInnerTexts()).map((t) => t.trim())).toEqual([
+      'Мои назначения',
+      'Календарь',
+      'История',
+    ])
+    // Статус — словами, не «действующих статусов нет».
+    await expect(page.getByTestId('profile-status')).not.toHaveText(/действующих статусов нет/)
   })
 
   test('другая учётка получает ДРУГУЮ запись и свои статусы', async ({ page }) => {
@@ -381,7 +389,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     // Чужая карточка на этом экране не появляется.
     await expect(page.getByText(mineAsAdmin.employee!.full_name)).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Мой календарь' }).click()
+    await page.getByRole('button', { name: 'Календарь' }).click()
     // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №381). Раньше карточка звалась «Мои
     // периоды» и печатала ВСЕ строки за все годы разом — заказчик назвал это
     // нечитаемым, и список стал разрезом ПОКАЗАННОГО месяца. Сравнивать его с
@@ -437,7 +445,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto(`${APP}${SCREEN}`)
-    await page.getByRole('button', { name: 'Мой календарь' }).click()
+    await page.getByRole('button', { name: 'Календарь' }).click()
 
     const periods = page.locator('[data-slot="card"]', { hasText: 'Периоды за' }).first()
     await expect(periods).toBeVisible({ timeout: 20_000 })
@@ -470,12 +478,9 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(page.getByRole('button', { name: 'Моя статистика' })).toHaveCount(0)
   })
 
-  test('вкладка «История» стоит после «Моей статистики» и несёт пост, форму и вооружение', async ({
+  test('«История» — закрытые ОМ со средним баллом, без формы и вооружения (Plane №434)', async ({
     page,
   }) => {
-    // Задача заказчика «Реестр ОМ-40»: бокс истории переехал из вкладки
-    // «Охранные мероприятия» в свою вкладку ПОСЛЕ «Моей статистики», и в нём
-    // появились форма одежды, вооружение и балл.
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const profile = await get<MyEmployee>(token, '/api/operations/my-employee/')
     const employee = profile.employee as CoreEmployee
@@ -486,42 +491,33 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     const closedMine = registry.results.filter(
       (event) =>
         event.stage === 'CLOSED' &&
-        event.placementAssignments.some(
-          (a) => String(a.employeeId) === String(employee.id),
-        ),
+        event.placementAssignments.some((a) => String(a.employeeId) === String(employee.id)),
     )
 
     await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto(`${APP}${SCREEN}`)
     const tabs = page.getByRole('navigation', { name: 'Разделы профиля' })
     await expect(tabs).toBeVisible({ timeout: 20_000 })
-
-    // Порядок вкладок — часть требования: «поставь её после Моей статистики».
-    const labels = (await tabs.getByRole('button').allInnerTexts()).map((t) =>
-      t.trim(),
-    )
-    expect(labels.indexOf('История')).toBe(labels.indexOf('Моя статистика') + 1)
-
-    // Со старой вкладки блок УШЁЛ — иначе «перенесли» означало бы «скопировали».
-    await tabs.getByRole('button', { name: 'Охранные мероприятия' }).click()
-    await expect(page.getByText('История заступлений на ОМ')).toHaveCount(0)
-
     await tabs.getByRole('button', { name: 'История' }).click()
     const card = page.locator('[data-slot="card"]', {
       has: page.getByText('История заступлений на ОМ'),
     })
     await expect(card).toBeVisible()
-    for (const column of ['Форма одежды', 'Вооружение', 'Балл']) {
+    // Шапка «Участие в ОМ: N мероприятий» — число закрытых ОМ по реестру.
+    await expect(card.getByTestId('history-summary')).toContainText(
+      `Участие в ОМ: ${closedMine.length}`,
+    )
+    for (const column of ['Дата', 'Мероприятие', 'Объект', 'Пост', 'Ознакомление', 'Балл']) {
       await expect(card).toContainText(column)
     }
-
-    test.skip(
-      closedMine.length === 0,
-      'у admin нет закрытых ОМ с назначением — строки истории не проверить',
-    )
-    // Строка ТОГО САМОГО закрытого ОМ, а не любая: иначе проба зеленела бы на
-    // чужой истории.
-    await expect(card).toContainText(closedMine[0].code)
+    for (const gone of ['Форма одежды', 'Вооружение']) {
+      await expect(card).not.toContainText(gone)
+    }
+    if (closedMine.length > 0) {
+      await expect(card).toContainText(closedMine[0]!.code)
+    } else {
+      await expect(card).toContainText('Закрытых мероприятий с вашим участием нет.')
+    }
   })
 
 })
