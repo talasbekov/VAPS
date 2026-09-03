@@ -968,6 +968,14 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
 
     event_service.complete_placement(om.pk)
+    # Маршрут в настройках (`[СОГ-05]`, Plane №429): замена пишет своё событие;
+    # у этого ОМ маршрут уже свой (пустая настройка при завершении расстановки),
+    # так что добавление строки на объекте ниже остаётся рабочим.
+    from organization_management.apps.ops import approval_route as route_settings
+
+    route_settings.replace_steps(
+        [{"roleLabel": "Начальник 2-го департамента"}], actor=ACTOR
+    )
     # Согласование по эталону («ОМ-37.3») требует маршрута, отправки и решения:
     # завершить этап «просто так» больше нельзя.
     om.refresh_from_db()

@@ -1,4 +1,5 @@
 """Маршруты раздела ОМ. Имена ресурсов — те, под которые написана SPA."""
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from organization_management.apps.ops.api.views_status_calendar import (
@@ -6,6 +7,9 @@ from organization_management.apps.ops.api.views_status_calendar import (
 )
 from organization_management.apps.ops.api.views_bulletin_issues import (
     OpsBulletinIssuesViewSet,
+)
+from organization_management.apps.ops.api.views_approval_route import (
+    OpsApprovalRouteViewSet,
 )
 from organization_management.apps.ops.api.views import (
     AccessCatalogViewSet,
@@ -192,6 +196,10 @@ router.register(
 router.register(
     "bulletin-issues", OpsBulletinIssuesViewSet, basename="ops-bulletin-issues"
 )
+# Маршрут согласования в настройках (Plane №429): GET — шаги, PUT — заменить.
+router.register(
+    "approval-route", OpsApprovalRouteViewSet, basename="ops-approval-route"
+)
 
 # «Расход дня» раздела ОМ — адаптеры над живым /api/operations/ (своего
 # бэка нет намеренно: группа L плана — «не строить, дубликат»).
@@ -251,4 +259,12 @@ router.register(
     "access-catalog", AccessCatalogViewSet, basename="ops-access-catalog",
 )
 
-urlpatterns = router.urls
+# PUT /approval-route/ — замена маршрута целиком: роутер у коллекции знает
+# только GET/POST, поэтому явный путь стоит ПЕРЕД маршрутами роутера.
+urlpatterns = [
+    path(
+        "approval-route/",
+        OpsApprovalRouteViewSet.as_view({"get": "list", "put": "replace"}),
+        name="ops-approval-route-collection",
+    ),
+] + router.urls

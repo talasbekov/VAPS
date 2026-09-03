@@ -71,6 +71,9 @@ CODES = {
     # код, потому что чинятся они по-разному.
     "APPROVAL_ROUTE_EMPTY": frozenset({422}),
     "APPROVAL_NOT_SENT": frozenset({422}),
+    # Маршрут последовательный и «если в маршруте» (`[СОГ-05]`, Plane №429).
+    "APPROVAL_OUT_OF_ORDER": frozenset({422}),
+    "APPROVAL_NOT_YOUR_TURN": frozenset({403}),
     "APPROVAL_STALE": frozenset({422}),
     "APPROVAL_RETURNED": frozenset({422}),
     "APPROVAL_INCOMPLETE": frozenset({422}),
@@ -98,6 +101,8 @@ CODES = {
     # Напоминания этапа «Ознакомление» (Plane №432, [ОЗН-03]/[ОЗН-04]).
     "ALREADY_ACKNOWLEDGED": frozenset({422}),
     "NOTHING_TO_REMIND": frozenset({422}),
+    # «Участие в ОМ» только из запроса (Plane №427, [СТА-04]).
+    "PARTICIPATION_MANUAL_FORBIDDEN": frozenset({422}),
     # Передача собранных на расстановку (Plane №390, [СБС-13]).
     "FORCE_HANDED_OVER": frozenset({422}),
     "FORCE_ROSTER_UNASSIGNED": frozenset({422}),

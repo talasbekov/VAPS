@@ -1607,6 +1607,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 # если её не прислали (`[ВОЗ-02]`).
                 post_id=data.get("postId"),
                 urgent=data.get("urgent"),
+                # Подпись «если в маршруте» и её реквизиты (`[СОГ-05]`,
+                # `[СОГ-10]`, Plane №429): кто и откуда; админ не сужается.
+                actor=request.user,
+                ip=request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
+                or request.META.get("REMOTE_ADDR", ""),
+                bypass_identity="*" in effective_permissions(request),
             )
         )
 

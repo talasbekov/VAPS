@@ -324,6 +324,22 @@ export interface Approver {
   /** null — решение ещё не принято. */
   decidedAt: string | null;
   comment: string;
+  /** Учётка, которой закреплена строка («если в маршруте», `[СОГ-05]`,
+   * Plane №429); пусто — подписывает любой держатель права. Строки старых
+   * маршрутов поля не несут. */
+  username?: string;
+  /** Реквизиты подписи (`[СОГ-10]`): появляются при «Согласовано». */
+  signature?: ApprovalSignature | null;
+}
+
+export interface ApprovalSignature {
+  fullName: string;
+  position: string;
+  login: string;
+  signedAt: string;
+  versionNumber: number;
+  versionHash: string;
+  ip: string;
 }
 
 /**

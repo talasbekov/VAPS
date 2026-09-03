@@ -12,11 +12,13 @@ handlers.ts) ДОСЛОВНО — он был первой реализацие�
 исполняются ПОСЛЕ замка — по свежей строке, а не по той, что видел клиент.
 """
 import datetime as dt
+import hashlib
 from uuid import uuid4
 
 from django.db import transaction
 
 from organization_management.apps.operations import audit_service
+from organization_management.apps.ops import approval_route as approval_route_service
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import (
@@ -1410,14 +1412,14 @@ def advance_visits(event, stage, visits=None):
             continue
         visit.stage = stage
         visit.save(update_fields=["stage", "updated_at"])
-    return recompute_event_stage(event)
-
     if stage == "CONDUCT":
         # Оценивание открывается входом в этап 5 (`[ЗАК-02]`, Plane №433):
         # задания оценщика заводятся здесь, а не закрытием ОМ — иначе на
         # этапе оценивать было бы нечего. Вызов идемпотентен.
         from organization_management.apps.ops import ratings as ratings_service
         ratings_service.open_evaluation_for_event(event, actor=None)
+    return recompute_event_stage(event)
+
 
 def _advance(event, stage):
     """Стадия мероприятия целиком: объектам ставится та же, событие — вывод.
@@ -4293,6 +4295,9 @@ def complete_placement(
     # Строка истории версий (`[СОГ-04]`, Plane №398): черновик v1 — или
     # текущая версия, если объект уже ходил на согласование и вернулся.
     _ensure_document_version(event, visit, actor=actor)
+    # Маршрут — из настроек (`[СОГ-05]`, Plane №429): объект получает копию
+    # при выходе на «Согласование», на самом объекте его не собирают.
+    approval_route_service.seed_route(visit)
     old_stage = event.stage
     advance_visits(event, "APPROVAL", visits=[visit])
     if event.stage != old_stage:
@@ -4631,10 +4636,32 @@ def remove_approver(event_id, approver_id, *, visit_object_id=None):
     return event
 
 
+def _signature_of(visit, target, *, actor, ip, at):
+    """Реквизиты подписи согласующего (`[СОГ-10]`, Plane №429)."""
+    employee = getattr(actor, "employee", None)
+    full_name = ""
+    if employee is not None:
+        full_name = " ".join(
+            part for part in (employee.last_name, employee.first_name, employee.middle_name)
+            if part
+        ).strip()
+    version = _current_document_version(visit)
+    snapshot = visit.approval_snapshot or ""
+    return {
+        "fullName": full_name or target.get("name", ""),
+        "position": target.get("position", ""),
+        "login": str(getattr(actor, "username", "") or ""),
+        "signedAt": at,
+        "versionNumber": version.number if version is not None else int(visit.document_version or 0),
+        "versionHash": hashlib.sha256(snapshot.encode("utf-8")).hexdigest()[:16],
+        "ip": str(ip or ""),
+    }
+
+
 @transaction.atomic
 def decide_approver(
     event_id, *, approver_id, decision, comment, visit_object_id=None,
-    post_id=None, urgent=None,
+    post_id=None, urgent=None, actor=None, ip=None, bypass_identity=False,
 ):
     """Решение одного согласующего. Возврат требует причины — как и возврат
     расстановки: «вернул без объяснения» неисполнимо для исполнителя.
@@ -4663,9 +4690,42 @@ def decide_approver(
         raise DomainError("APPROVAL_NOT_SENT", 422, message=
             "Расстановка не отправлена на согласование — решать нечего.",
         )
+    # Маршрут ПОСЛЕДОВАТЕЛЬНЫЙ (`[СОГ-05]`, Plane №429): решает тот, чья
+    # очередь — все предыдущие уже подписали. Иначе второй подписант ставил
+    # бы подпись под составом, которого первый ещё не видел.
+    index = route.index(target)
+    earlier = route[:index]
+    if any(item.get("status") != "APPROVED" for item in earlier):
+        waiting = next(
+            item for item in earlier if item.get("status") != "APPROVED"
+        )
+        raise DomainError("APPROVAL_OUT_OF_ORDER", 422, message=
+            f"Очередь ещё не дошла: сначала решает «{waiting.get('name', '')}».",
+        )
+    # «Если в маршруте»: строка с учёткой подписывается ТОЛЬКО ею. Админ («*»)
+    # не сужается — как и в остальном гейте раздела.
+    expected_login = str(target.get("username") or "")
+    actor_login = str(getattr(actor, "username", "") or "")
+    if expected_login and not bypass_identity and actor_login != expected_login:
+        raise DomainError("APPROVAL_NOT_YOUR_TURN", 403, message=
+            f"Эту строку маршрута подписывает учётка «{expected_login}».",
+        )
     now = _now_iso()
     target["status"] = decision
     target["decidedAt"] = now
+    if decision == "APPROVED":
+        # Реквизиты подписи (`[СОГ-10]`): ФИО, должность, логин, время
+        # сервера, номер и хэш версии, IP — в маршрут, в аудит и в подвал PDF.
+        target["signature"] = _signature_of(visit, target, actor=actor, ip=ip, at=now)
+        audit_service.record(
+            actor=actor_login or "system",
+            action=audit_service.SECURITY_EVENT_APPROVAL_SIGNED,
+            entity_type=audit_service.ENTITY_SECURITY_EVENT,
+            entity_id=str(event.pk),
+            new_value={"eventCode": event.code, "visitObjectId": str(visit.pk),
+                       "approverId": approver_id,
+                       **target["signature"]},
+        )
     # При согласовании комментарий не спрашивают: эталон проставляет «Без
     # замечаний» сам, и пустая графа читалась бы как «забыли написать».
     target["comment"] = clean_comment if decision == "RETURNED" else "Без замечаний"
@@ -4764,10 +4824,13 @@ def send_for_approval(event_id, *, visit_object_id=None):
         "APPROVAL",
         "Отправить на согласование можно только на этапе «Согласование».",
     )
+    # Объекты, вышедшие на этап до настройки маршрута, получают его здесь.
+    approval_route_service.seed_route(visit)
     route = list(visit.approval_route or [])
     if not route:
         raise DomainError("APPROVAL_ROUTE_EMPTY", 422, message=
-            "Маршрут согласования пуст — добавьте хотя бы одного согласующего.",
+            "Маршрут согласования не настроен — задайте подписантов в "
+            "«Администрировании» (Система → Маршрут согласования).",
         )
     scoped_assignments = placement_signature(event, visit)
     if scoped_assignments == "":
@@ -5312,6 +5375,11 @@ def override_stage(event_id, *, stage, actor):
         if old_stage == "CLOSED":
             visit.closed_at = None
         visit.save(update_fields=["stage", "closed_at", "updated_at"])
+    if stage == "CONDUCT":
+        # Обход админа тоже открывает этап 5 — оценивание заводится и здесь
+        # (Plane №433), иначе на этапе оценивать нечего.
+        from organization_management.apps.ops import ratings as ratings_service
+        ratings_service.open_evaluation_for_event(event, actor=actor)
     event.stage = stage
     event.readiness_percent = STAGE_READINESS[stage]
     fields = ["stage", "readiness_percent", "updated_at"]
@@ -5375,11 +5443,6 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
     необязателен. Оценки и инциденты (`[ЗАК-02]`/`[ЗАК-03]`) этот шаг не
     заводит — их карточек в очереди нет; подтверждение «оценено K из N» на
     экране появится вместе с ними.
-    if stage == "CONDUCT":
-        # Обход админа тоже открывает этап 5 — оценивание заводится и здесь
-        # (Plane №433), иначе на этапе оценивать нечего.
-        from organization_management.apps.ops import ratings as ratings_service
-        ratings_service.open_evaluation_for_event(event, actor=actor)
 
     Последний закрытый объект закрывает МЕРОПРИЯТИЕ (`[ЗАК-12]`): стадия
     мероприятия — наименьшая среди объектов, и «Закрыто» у всех даёт

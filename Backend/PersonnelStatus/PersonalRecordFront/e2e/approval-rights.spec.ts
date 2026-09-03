@@ -157,9 +157,10 @@ test.describe(LIVE ? 'права согласования' : 'права сог�
     const send = card.getByRole('button', { name: 'Отправить на согласование' })
     await expect(send).toBeDisabled()
     await expect(send).toHaveAttribute('title', /старший объекта или ведущий мероприятие/)
-    const add = card.getByRole('button', { name: '+ Добавить согласующего' })
-    await expect(add).toBeDisabled()
-    await expect(add).toHaveAttribute('title', /ведущий мероприятие/)
+    // «+ Добавить согласующего» на объекте НЕТ ни у кого (`[СОГ-05]`, Plane
+    // №429): маршрут задаётся в настройках. Пин сменился с «выключена» на
+    // «отсутствует» осознанно.
+    await expect(card.getByRole('button', { name: '+ Добавить согласующего' })).toHaveCount(0)
 
     const approve = card.getByRole('button', { name: 'Согласовать', exact: true }).first()
     await expect(approve).toBeDisabled()
