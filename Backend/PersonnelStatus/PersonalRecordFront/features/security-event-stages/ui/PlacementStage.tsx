@@ -27,6 +27,11 @@
 // старший сектора (шаг «Р-4»), статус дня и подразделение у людей (шаги
 // «Р-1»/«Р-2»), модалка рейтинга (шаг «Р-5»), смена поста (шаг «Р-7»).
 import { useEffect, useMemo, useState } from "react";
+import {
+  useVisitObjectScope,
+  UNASSIGNED_VISIT,
+  VisitObjectPicker,
+} from "./useVisitObjectScope";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -207,7 +212,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const posts = event.reconSectorPosts;
+  /* Расстановка ведётся ПО ОБЪЕКТУ ПОСЕЩЕНИЯ (Plane №410, `[МД-04]`).
+   *
+   * До этого шага дерево постов и все счётчики этапа считались по
+   * мероприятию целиком: у ОМ с двумя объектами «назначено 5 из 12»
+   * складывало разные объекты в одно число, и понять, где именно недобор,
+   * было нельзя. Разрез — тот же, что у рекогносцировки: одна реализация на
+   * оба этапа (`useVisitObjectScope`).
+   *
+   * `allPosts` остаётся там, где вопрос ПРО МЕРОПРИЯТИЕ: завершение этапа
+   * сервер проверяет по всем постам, и счётчик «свободно» считается от людей,
+   * выделенных мероприятию, а не объекту (разделение состава по объектам —
+   * задача №390). */
+  const allPosts = event.reconSectorPosts;
+  const scope = useVisitObjectScope(event, allPosts);
+  const posts = scope.rows;
   const selected = posts.find((p) => p.id === selectedPostId) ?? posts[0] ?? null;
   const assignmentsOf = (postId: string): PlacementAssignment[] =>
     event.placementAssignments.filter((a) => a.postId === postId);
@@ -250,13 +269,22 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     (sum, request) => sum + request.allocatedCount,
     0
   );
-  const assignedCount = event.placementAssignments.length;
+  // Назначено — НА ВИДИМЫХ ПОСТАХ: рядом стоит «требуется» того же объекта, и
+  // два числа из разных областей читались бы как одно.
+  const visiblePostIds = new Set(posts.map((post) => post.id));
+  const assignedCount = event.placementAssignments.filter((a) =>
+    visiblePostIds.has(a.postId)
+  ).length;
+  const assignedInEvent = event.placementAssignments.length;
   const totalNeed = posts.reduce((sum, post) => sum + post.need, 0);
   const unfilled = posts.filter((p) => assignmentsOf(p.id).length < p.need).length;
   const conflicts = event.placementAssignments.filter(
-    (a) => a.ratingOverrideReason !== null
+    (a) => a.ratingOverrideReason !== null && visiblePostIds.has(a.postId)
   ).length;
-  const free = Math.max(0, allocated - assignedCount);
+  // «Свободно» — про МЕРОПРИЯТИЕ: люди выделены ему, а не объекту, и вычитать
+  // из общего состава назначения одного объекта значило бы показать человека
+  // свободным на одном экране и занятым на другом.
+  const free = Math.max(0, allocated - assignedInEvent);
   /** Что мешает завершить этап — словами и в одном месте.
    *
    * Порядок не случаен: недобор запирает завершение (сервер отбивает
@@ -551,15 +579,29 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           </div>
         )}
 
+        <VisitObjectPicker event={event} scope={scope} allRows={allPosts} />
+
         {posts.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            Постов нет — расчёт формируется на этапе рекогносцировки.
+            {scope.shown === UNASSIGNED_VISIT
+              ? "Нераспределённых постов нет."
+              : scope.visit === null
+                ? "Постов нет — расчёт формируется на этапе рекогносцировки."
+                : `У объекта «${scope.visit.objectName}» постов нет — расчёт формируется на этапе рекогносцировки.`}
           </p>
         ) : (
           <div className="grid gap-3 lg:grid-cols-[minmax(200px,240px)_1fr_minmax(240px,300px)]">
-            <aside className="rounded-md border">
+            {/* Имя ОБЛАСТИ, а не только видимая подпись: подпись теперь
+                называет объект («Посты объекта «Мейрам»»), и указывать на
+                дерево текстом стало нельзя — проба ловила его по строке
+                «Объекты и посты» (Plane №410). */}
+            <aside className="rounded-md border" aria-label="Дерево постов">
               <div className="border-b px-3 py-2">
-                <p className="text-xs font-semibold">Объекты и посты</p>
+                <p className="text-xs font-semibold">
+                  {scope.visit === null
+                    ? "Объекты и посты"
+                    : `Посты объекта «${scope.visit.objectName}»`}
+                </p>
                 <p className="text-[11px] text-muted-foreground">
                   {posts.length} постов · назначено {assignedCount} из {totalNeed}
                 </p>
@@ -1130,9 +1172,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   </label>
                 </div>
                 <div className="flex flex-wrap gap-1">
+                  {/* Плашки состава — ПРО МЕРОПРИЯТИЕ: люди выделены ему, и
+                      подбор предлагает их на любой его объект. Число объекта
+                      стоит выше, в сводке этапа (Plane №410). */}
                   <Chip tone="info">Выделено {allocated}</Chip>
                   <Chip>Свободны {free}</Chip>
-                  <Chip>Назначены {assignedCount}</Chip>
+                  <Chip>Назначены {assignedInEvent}</Chip>
                 </div>
                 {/* «Найдено N» считает СЕРВЕР, а не длина страницы: счётчик по
                     странице обещал бы, что список кончился, ровно на её краю.

@@ -737,7 +737,11 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
-    const tree = page.getByRole('main').getByText('Объекты и посты').locator('..').locator('..')
+    // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №410): подпись дерева теперь называет
+    // объект посещения («Посты объекта «…»»), и ловить его по строке
+    // «Объекты и посты» стало нельзя. У области появилось ИМЯ — по нему и
+    // ищем: оно не зависит от того, чей расчёт сейчас показан.
+    const tree = page.getByRole('complementary', { name: 'Дерево постов' })
     await expect(tree).toContainText('Периметр', { timeout: 25_000 })
     // До назначения имени в дереве НЕТ — иначе ассерт ниже проходил бы всегда.
     await expect(tree).not.toContainText(name)
