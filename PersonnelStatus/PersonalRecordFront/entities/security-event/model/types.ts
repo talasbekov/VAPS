@@ -186,6 +186,13 @@ export interface ForceAllocationRow {
   departmentId: string;
   departmentName: string;
   need: number;
+  /** Прислано (людей в списке), ответственный департамента, история строк
+   *  запроса из таблиц `[МД-06]`, ссылка на исходный запрос при довыделении
+   *  (Plane №426). На карточке ОМ (`forceAllocation`) этих полей нет. */
+  sent?: number;
+  responsibleName?: string;
+  history?: ForceRequestHistoryRow[];
+  topUpOf?: string | null;
   status: ForceAllocationStatus;
   /** Комментарий ШТАБА к строке раскладки (с `forces/allocation/`). Ответ
    *  департамента живёт в `answerComment`, причина возврата штабом — в
@@ -1095,11 +1102,61 @@ export interface DepartmentRequestRow {
 export type ForceCollectionStatus = "NEW" | "NOTIFIED" | "IN_PROGRESS";
 
 /** Строка списка сборов — вид ШТАБА (Plane №271, Ш-1). */
+export interface ForceBoardStatus {
+  code: "NEW" | "SENT" | "ANSWERED" | "DISTRIBUTED";
+  label: string;
+  answered: number;
+  total: number;
+}
+
+export interface ForceNeedByObject {
+  visitObjectId: string;
+  objectName: string;
+  need: number;
+  statusLabel: string;
+  chiefName: string;
+}
+
+export interface ForceTotals {
+  need: number;
+  requested: number;
+  allocating: number;
+  sent: number;
+  shortage: number;
+}
+
+export interface ForceRequestHistoryRow {
+  sequence: number;
+  requested: number;
+  allocating: number | null;
+  status: string;
+  dueAt: string | null;
+  recordedAt: string;
+}
+
+export interface TopUpAllocationRequest {
+  count: number;
+  dueAt?: string | null;
+}
+
+export function securityEventForceTopUpPath(eventId: string, allocationId: string): string {
+  return `${SECURITY_EVENTS_PATH}${eventId}/forces/allocation/${allocationId}/top-up/`;
+}
+
 export interface ForceCollectionRow {
   eventId: string;
   code: string;
   title: string;
   businessDate: string;
+  /** `[СБС-10]` (Plane №426): запрошено у департаментов, выделяют, прислано, недобор. */
+  requested: number;
+  allocating: number;
+  sent: number;
+  shortage: number;
+  /** Статус по спецификации: Новая / Запросы отправлены / Ответы получены K из M / Распределено. */
+  boardStatus: ForceBoardStatus;
+  urgent: boolean;
+  isNew: boolean;
   /** Время самого ОМ — не срок сбора. Срок живёт у КАЖДОЙ заявки отдельно
    *  (`dueAt`, Plane №287): общего срока у мероприятия нет, департаментам их
    *  назначает штаб по отдельности. */
@@ -1122,6 +1179,12 @@ export interface ForceCollectionDetail {
   code: string;
   title: string;
   businessDate: string;
+  /** `[СБС-11]`: потребность по объектам посещения. */
+  needByObject: ForceNeedByObject[];
+  /** `[СБС-12]`: итог «потребность · выделяют · прислано · недобор». */
+  totals: ForceTotals;
+  boardStatus: ForceBoardStatus;
+  urgent: boolean;
   eventTime: string | null;
   location: string;
   stage: SecurityEventStage;

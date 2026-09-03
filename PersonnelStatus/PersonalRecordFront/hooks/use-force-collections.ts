@@ -14,6 +14,9 @@ import {
   type ForceCollectionDetail,
   type ForceCollectionRow,
   type ForceRosterMember,
+  securityEventForceTopUpPath,
+  type SecurityEvent,
+  type TopUpAllocationRequest,
 } from "@/entities/security-event";
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
@@ -105,6 +108,22 @@ export function useHandOverToPlacement(eventId: string) {
       void client.invalidateQueries({ queryKey: FORCE_COLLECTIONS_KEY });
       // Расстановка читает состав из карточки мероприятия — ей тоже пора.
       void client.invalidateQueries({ queryKey: ["ops-security-events"] });
+    },
+  });
+}
+
+
+/** «Довыделить недобор → …» (`[СБС-12]`, Plane №426): новая строка запроса
+ *  тому же департаменту; отвечает карточкой ОМ, сбор перечитывается. */
+export function useTopUpAllocation(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<SecurityEvent, OpsApiFailure, { allocationId: string } & TopUpAllocationRequest>({
+    mutationFn: ({ allocationId, ...body }) =>
+      opsApiClient.post<SecurityEvent>(securityEventForceTopUpPath(eventId, allocationId), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-force-collection", eventId] });
+      void queryClient.invalidateQueries({ queryKey: ["ops-force-collections"] });
+      void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
     },
   });
 }

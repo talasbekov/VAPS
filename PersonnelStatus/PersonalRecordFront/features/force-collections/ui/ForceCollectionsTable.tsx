@@ -29,20 +29,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type {
-  ForceCollectionRow,
-  ForceCollectionStatus,
-} from "@/entities/security-event";
+import type { ForceCollectionRow } from "@/entities/security-event";
 import { useForceCollections } from "@/hooks/use-force-collections";
 import { ForceCollectionCard } from "./ForceCollectionCard";
 import { formatIsoDate } from "@/shared/lib/date";
 
-/** Подписи ровно те, что на эталоне заказчика. */
-const STATUS_LABEL: Record<ForceCollectionStatus, string> = {
-  NEW: "Новый",
-  NOTIFIED: "Разнарядка разослана",
-  IN_PROGRESS: "Сбор идёт",
-};
 
 function Progress({ done, need }: { done: number; need: number }) {
   const percent = need > 0 ? Math.min(100, Math.round((done / need) * 100)) : 0;
@@ -100,10 +91,13 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
         <Table>
           <TableHeader>
             <TableRow>
+              {/* Колонки `[СБС-10]` (Plane №426): код · название · дата ·
+                  потребность · выделяют · прислано · статус. */}
               <TableHead>Мероприятие</TableHead>
               <TableHead>Дата ОМ</TableHead>
-              <TableHead className="text-right">Требуется</TableHead>
-              <TableHead>Прогресс сбора</TableHead>
+              <TableHead className="text-right">Потребность</TableHead>
+              <TableHead className="text-right">Выделяют</TableHead>
+              <TableHead>Прислано</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead className="w-10" />
             </TableRow>
@@ -112,7 +106,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
             {collections.isPending &&
               [0, 1, 2].map((index) => (
                 <TableRow key={index}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <div
                       className="bg-muted h-9 w-full animate-pulse rounded"
                       aria-hidden
@@ -123,7 +117,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
 
             {!collections.isPending && collections.isError && (
               <TableRow>
-                <TableCell colSpan={6}>
+                <TableCell colSpan={7}>
                   <p role="alert" className="text-destructive-ink text-sm">
                     {collections.error?.message ??
                       "Сборы не загрузились — список показать нечем"}
@@ -134,7 +128,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
 
             {!collections.isPending && !collections.isError && rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="whitespace-normal">
+                <TableCell colSpan={7} className="whitespace-normal">
                   <p className="text-muted-foreground text-sm">
                     Сборов нет — ни у одного мероприятия ещё не посчитана
                     потребность в силах
@@ -146,16 +140,32 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
             {!collections.isPending &&
               !collections.isError &&
               rows.map((row: ForceCollectionRow) => (
-                <TableRow key={row.eventId}>
+                <TableRow
+                  key={row.eventId}
+                  data-slot="force-collection-row"
+                  data-urgent={row.urgent ? "true" : "false"}
+                  data-new={row.isNew ? "true" : "false"}
+                >
                   <TableCell>
-                    <Badge variant="secondary" className="mb-1 font-mono text-[11px]">
-                      {row.code}
-                    </Badge>
+                    <div className="mb-1 flex flex-wrap items-center gap-1">
+                      <Badge variant="secondary" className="font-mono text-[11px]">
+                        {row.code}
+                      </Badge>
+                      {/* «Срочно» и «Новая» — бейджи `[СБС-10]`; порядок строк
+                          (срочные и новые сверху) задаёт сервер. */}
+                      {row.urgent && (
+                        <Badge variant="destructive" data-slot="collection-urgent">
+                          Срочно
+                        </Badge>
+                      )}
+                      {row.isNew && (
+                        <Badge variant="outline" data-slot="collection-new">
+                          Новая
+                        </Badge>
+                      )}
+                    </div>
                     <p className="font-medium">{row.title}</p>
                     <p className="text-muted-foreground text-xs">
-                      {/* Место может быть не заполнено — тогда не печатаем
-                          пустой разделитель, он читается как потерянные
-                          данные. */}
                       {[
                         row.location,
                         row.eventTime,
@@ -173,19 +183,19 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
                   <TableCell className="text-right font-semibold tabular-nums">
                     {row.need}
                   </TableCell>
-                  <TableCell>
-                    <Progress done={row.gathered} need={row.need} />
+                  <TableCell className="text-right tabular-nums" data-slot="collection-allocating">
+                    {row.allocating}
+                  </TableCell>
+                  <TableCell data-slot="collection-sent">
+                    <Progress done={row.sent} need={row.need} />
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">
-                      {STATUS_LABEL[row.collectionStatus]}
+                    <Badge variant="outline" data-slot="collection-status">
+                      {row.boardStatus.label}
                     </Badge>
-                    {/* ОТСТАЮЩИЕ НАЗВАНЫ ЧИСЛОМ И СЛОВОМ. Штабу важно не
-                        «когда срок», а «есть ли те, кто его прошёл»: сроки у
-                        заявок разные, и одна дата на сбор была бы выдумкой. */}
                     {(row.overdueCount ?? 0) > 0 && (
-                      <p className="text-destructive-ink mt-1 text-xs font-medium">
-                        Просрочено заявок: {row.overdueCount}
+                      <p className="text-destructive-ink mt-1 text-xs">
+                        просрочено заявок: {row.overdueCount ?? 0}
                       </p>
                     )}
                   </TableCell>
@@ -194,7 +204,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
                       type="button"
                       onClick={() => setOpened(row.eventId)}
                       aria-label={`Открыть сбор ${row.code}`}
-                      className="text-muted-foreground hover:text-foreground inline-flex size-11 items-center justify-center rounded-md"
+                      className="hover:bg-muted rounded-md p-1"
                     >
                       <ChevronRight className="size-4" aria-hidden="true" />
                     </button>

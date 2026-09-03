@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,34 +44,46 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type {
-  ForceAllocationRow,
-  ForceCollectionStatus,
-} from "@/entities/security-event";
+import type { ForceAllocationRow } from "@/entities/security-event";
 import {
   useAssignRosterObjects,
   useForceCollection,
   useHandOverToPlacement,
+  useTopUpAllocation,
   type ForceCollectionWithObjects,
 } from "@/hooks/use-force-collections";
 import { formatIsoDate } from "@/shared/lib/date";
 
-const STATUS_LABEL: Record<ForceCollectionStatus, string> = {
-  NEW: "Новый",
-  NOTIFIED: "Разнарядка разослана",
-  IN_PROGRESS: "Сбор идёт",
+
+const ALLOCATION_STATUS: Record<string, string> = {
+  DRAFT: "Не отправлен",
+  NOTIFIED: "Отправлен",
+  SUBMITTED: "Список прислан",
+  ACCEPTED: "Принят",
+  RETURNED: "Возвращён",
+  DECLINED: "Отказ",
 };
 
-function DepartmentRow({ row }: { row: ForceAllocationRow }) {
+/**
+ * Строка департамента `[СБС-12]`: Запрошено · Выделяют · Прислано ·
+ * Комментарий · Статус · Ответственный; раскрытие — люди и история строк
+ * запроса из таблиц `[МД-06]`; «Довыделить недобор → …» — новая строка
+ * запроса тому же департаменту (старая не правится).
+ */
+function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: string }) {
   const [open, setOpen] = useState(false);
+  const [topUpOpen, setTopUpOpen] = useState(false);
+  const [count, setCount] = useState("");
+  const topUp = useTopUpAllocation(eventId);
   const members = row.members ?? [];
   const need = row.need ?? 0;
-  const percent = need > 0 ? Math.min(100, Math.round((members.length / need) * 100)) : 0;
-  const over = need > 0 && members.length > need;
-
+  const sent = row.sent ?? members.length;
+  const allocating = row.allocating ?? null;
+  const shortage = Math.max(0, need - sent);
+  const canTopUp = row.status !== "DRAFT" && shortage > 0;
   return (
     <>
-      <TableRow>
+      <TableRow data-slot="department-row" data-top-up-of={row.topUpOf ?? ""}>
         <TableCell>
           <button
             type="button"
@@ -85,41 +98,45 @@ function DepartmentRow({ row }: { row: ForceAllocationRow }) {
             )}
             {row.departmentName || `Департамент ${row.departmentId}`}
           </button>
+          {row.topUpOf && (
+            <p className="text-muted-foreground text-xs">довыделение</p>
+          )}
         </TableCell>
         <TableCell className="text-right font-semibold tabular-nums">{need}</TableCell>
-        <TableCell>
-          <div className="min-w-[130px]">
-            <p className="text-sm tabular-nums">
-              {members.length} из {need}
-              {over && (
-                <span className="text-destructive-ink ml-1 text-xs">
-                  · сверх {members.length - need}
-                </span>
-              )}
-            </p>
-            <div
-              className="bg-muted mt-1 h-1.5 w-full overflow-hidden rounded-full"
-              role="progressbar"
-              aria-valuenow={members.length}
-              aria-valuemin={0}
-              aria-valuemax={need}
-              aria-label={`${row.departmentName}: собрано ${members.length} из ${need}`}
-            >
-              <div
-                className={`h-full rounded-full ${over ? "bg-destructive" : "bg-primary"}`}
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-          </div>
+        <TableCell className="text-right tabular-nums" data-slot="department-allocating">
+          {allocating === null ? <span className="text-muted-foreground">—</span> : allocating}
         </TableCell>
-        <TableCell className="text-muted-foreground text-sm">
-          {row.status === "DRAFT" ? "Разнарядка не разослана" : "Разнарядка разослана"}
+        <TableCell className="tabular-nums" data-slot="department-sent">
+          {sent} из {need}
+        </TableCell>
+        <TableCell className="text-muted-foreground max-w-[220px] truncate text-sm">
+          {row.answerComment || row.comment || "—"}
+        </TableCell>
+        <TableCell className="text-sm" data-slot="department-status">
+          {ALLOCATION_STATUS[row.status] ?? row.status}
+        </TableCell>
+        <TableCell className="text-sm" data-slot="department-responsible">
+          {row.responsibleName || <span className="text-muted-foreground">не назначен</span>}
+        </TableCell>
+        <TableCell>
+          {canTopUp && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setCount(String(shortage));
+                setTopUpOpen(true);
+              }}
+            >
+              Довыделить недобор →
+            </Button>
+          )}
         </TableCell>
       </TableRow>
-
       {open && (
         <TableRow>
-          <TableCell colSpan={4} className="bg-muted/40">
+          <TableCell colSpan={8} className="bg-muted/40">
             <p className="text-muted-foreground mb-2 text-xs tracking-wide uppercase">
               Выделенные сотрудники
             </p>
@@ -138,8 +155,6 @@ function DepartmentRow({ row }: { row: ForceAllocationRow }) {
                     <span className="text-muted-foreground">
                       {member.divisionName || "подразделение не указано"}
                     </span>
-                    {/* Откуда человек взялся — штабу это нужно не меньше, чем
-                        департаменту: строку «по статусу» он не выделял. */}
                     <Badge variant={member.source === "STATUS" ? "secondary" : "outline"}>
                       {member.source === "STATUS" ? "По статусу" : "Выделен штабом"}
                     </Badge>
@@ -147,9 +162,69 @@ function DepartmentRow({ row }: { row: ForceAllocationRow }) {
                 ))}
               </ul>
             )}
+            {(row.history ?? []).length > 1 && (
+              <div className="mt-3" data-slot="department-history">
+                <p className="text-muted-foreground mb-1 text-xs tracking-wide uppercase">
+                  История запроса
+                </p>
+                <ul className="space-y-0.5 text-xs">
+                  {(row.history ?? []).map((item) => (
+                    <li key={item.sequence} className="tabular-nums">
+                      №{item.sequence} · запрошено {item.requested}
+                      {item.allocating !== null ? ` · выделяют ${item.allocating}` : ""} ·{" "}
+                      {ALLOCATION_STATUS[item.status] ?? item.status} ·{" "}
+                      {new Date(item.recordedAt).toLocaleString("ru-RU")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </TableCell>
         </TableRow>
       )}
+      <Dialog open={topUpOpen} onOpenChange={setTopUpOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Довыделить недобор — {row.departmentName}</DialogTitle>
+            <DialogDescription>
+              Уйдёт новой строкой запроса: прежние цифры не меняются и не удаляются.
+              Недобор сейчас — {shortage}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1">
+            <Label htmlFor={`top-up-${row.id}`}>Сколько человек довыделить</Label>
+            <Input
+              id={`top-up-${row.id}`}
+              type="number"
+              min={1}
+              value={count}
+              onChange={(e) => setCount(e.target.value)}
+            />
+          </div>
+          {topUp.error && (
+            <p role="alert" className="text-destructive-ink text-sm">
+              {topUp.error.message}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTopUpOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              disabled={topUp.isPending || Number(count) < 1}
+              onClick={() =>
+                topUp.mutate(
+                  { allocationId: row.id, count: Number(count) },
+                  { onSuccess: () => setTopUpOpen(false) }
+                )
+              }
+            >
+              {topUp.isPending ? "Отправка…" : "Отправить запрос"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -201,7 +276,12 @@ export function ForceCollectionCard({
           <Badge variant="secondary" className="font-mono text-[11px]">
             {data.code}
           </Badge>
-          <Badge variant="outline">{STATUS_LABEL[data.collectionStatus]}</Badge>
+          <Badge variant="outline" data-slot="collection-status">{data.boardStatus.label}</Badge>
+          {data.urgent && (
+            <Badge variant="destructive" data-slot="collection-urgent">
+              Срочно
+            </Badge>
+          )}
         </div>
         <h2 className="text-xl font-semibold">{data.title}</h2>
         <p className="text-muted-foreground text-sm">
@@ -211,6 +291,31 @@ export function ForceCollectionCard({
         </p>
       </div>
 
+      {/* Блок 1 «Потребность» (`[СБС-11]`, Plane №426): по объектам посещения
+          «„Мейрам“ — 8 (рекогносцировка завершена, Тлесов)» → Итого N. */}
+      <section aria-labelledby="collection-need-heading" className="space-y-2" data-slot="collection-need">
+        <h3 id="collection-need-heading" className="font-semibold">
+          Потребность
+        </h3>
+        {data.needByObject.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Объектов посещения у мероприятия нет.</p>
+        ) : (
+          <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            {data.needByObject.map((item) => (
+              <li key={item.visitObjectId} data-slot="need-by-object">
+                «{item.objectName}» — <b className="tabular-nums">{item.need}</b>
+                <span className="text-muted-foreground">
+                  {" "}
+                  ({[item.statusLabel.toLowerCase(), item.chiefName].filter((p) => p !== "").join(", ")})
+                </span>
+              </li>
+            ))}
+            <li className="font-semibold" data-slot="need-total">
+              Итого {data.need}
+            </li>
+          </ul>
+        )}
+      </section>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Требуется по рекогносцировке"
@@ -255,16 +360,21 @@ export function ForceCollectionCard({
           <Table>
             <TableHeader>
               <TableRow>
+                {/* Колонки `[СБС-12]` (Plane №426). */}
                 <TableHead>Департамент</TableHead>
-                <TableHead className="text-right">Квота</TableHead>
-                <TableHead>Собрано</TableHead>
-                <TableHead>Разнарядка</TableHead>
+                <TableHead className="text-right">Запрошено</TableHead>
+                <TableHead className="text-right">Выделяют</TableHead>
+                <TableHead>Прислано</TableHead>
+                <TableHead>Комментарий</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead>Ответственный</TableHead>
+                <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.allocations.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="whitespace-normal">
+                  <TableCell colSpan={8} className="whitespace-normal">
                     <p className="text-muted-foreground text-sm">
                       Раскладки нет — штаб ещё не решил, кому сколько.
                       Разложить можно в ленте входящих на этом же экране.
@@ -273,11 +383,19 @@ export function ForceCollectionCard({
                 </TableRow>
               )}
               {data.allocations.map((row) => (
-                <DepartmentRow key={row.id} row={row} />
+                <DepartmentRow key={row.id} row={row} eventId={data.eventId} />
               ))}
             </TableBody>
           </Table>
         </div>
+        <p className="text-sm" data-slot="collection-totals">
+          Итог: потребность <b className="tabular-nums">{data.totals.need}</b> · выделяют{" "}
+          <b className="tabular-nums">{data.totals.allocating}</b> · прислано{" "}
+          <b className="tabular-nums">{data.totals.sent}</b> · недобор{" "}
+          <b className={`tabular-nums ${data.totals.shortage > 0 ? "text-destructive-ink" : ""}`}>
+            {data.totals.shortage}
+          </b>
+        </p>
       </section>
 
       <RosterToObjects data={data} />

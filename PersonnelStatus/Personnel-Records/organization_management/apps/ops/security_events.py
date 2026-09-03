@@ -3515,6 +3515,13 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
         patch["status"] = "NOTIFIED" if target.get("notifiedAt") else _ALLOCATION_DRAFT
         patch["declinedAt"] = None
     event = _update_allocation(event, allocation_id, patch)
+    # Штаб узнаёт о каждом изменении «Выделяют» (`[СБС-12]`, Plane №426).
+    try:
+        from organization_management.apps.ops import forces_notify
+
+        forces_notify.notify_headquarters_response(event, target, allocating=count)
+    except Exception:  # noqa: BLE001 — уведомление не должно ронять ответ
+        pass
     audit_service.record(
         actor=actor,
         action=audit_service.FORCE_ALLOCATION_SPLIT,

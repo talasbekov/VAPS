@@ -300,6 +300,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_collection": _FORCES_COMMAND_PERMISSION,
         "forces_collection_objects": _FORCES_COMMAND_PERMISSION,
         "forces_collection_handover": _FORCES_COMMAND_PERMISSION,
+        # «Довыделить недобор» — новая строка запроса (`[СБС-12]`, Plane №426).
+        "forces_top_up": _FORCES_COMMAND_PERMISSION,
         "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
         "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
         "forces_directorate_request": _STATUS_MANAGE_PERMISSION,
@@ -840,7 +842,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         половину собственной раскладки. Гейт — `forces.command`, право самого
         штаба.
         """
-        return Response({"results": event_service.force_collections_view()})
+        # Строки и порядок — по `[СБС-10]` (Plane №426): потребность / выделяют /
+        # прислано / статус, «Срочно» и новые — вверх.
+        from organization_management.apps.operations.models_event import (
+            OpsSecurityEvent,
+        )
+        from organization_management.apps.ops import force_collection_board as board
+
+        rows = []
+        for event in OpsSecurityEvent.objects.exclude(
+            stage=OpsSecurityEvent.Stage.CLOSED
+        ).order_by("business_date", "code"):
+            if event_service.force_demand_total(event) <= 0:
+                continue
+            rows.append(board.board_row(event))
+        rows.sort(key=board.sort_key)
+        return Response({"results": rows})
 
     # 🔴 ПУТЬ НЕ `forces/collection`: он попадал бы в уже заведённый
     # `<id>/forces/<requestId>/` (правка строки запроса, только PATCH), и
@@ -865,6 +882,28 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # тем же ответом: экран штаба один, и второй запрос за составом
         # означал бы два ответа на «кого куда отдали».
         return Response(collection_with_objects(pk))
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/top-up",
+    )
+    def forces_top_up(self, request, pk=None, allocation_id=None):
+        """«Довыделить недобор → …» (`[СБС-12]`, Plane №426): новая строка
+        запроса тому же департаменту; отправленные цифры не правятся.
+        Тело: `{"count": 3, "dueAt": "…"|null}`."""
+        from organization_management.apps.ops import force_collection_board as board
+
+        data = request.data or {}
+        return self._event_response(
+            board.top_up(
+                pk,
+                allocation_id,
+                count=data.get("count"),
+                due_at=data.get("dueAt"),
+                actor=resolve_actor_id(request),
+            )
+        )
 
     @action(detail=True, methods=["post"], url_path="force-collection/objects")
     def forces_collection_objects(self, request, pk=None):
