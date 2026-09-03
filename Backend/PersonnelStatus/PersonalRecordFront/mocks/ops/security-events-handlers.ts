@@ -47,6 +47,7 @@ import {
   securityEventReconPath,
   securityEventReplaceAssignmentPath,
   NO_PUBLISHED_VERSION_TEXT,
+  visitObjectClosePath,
 } from "@/entities/security-event";
 import type {
   AddApproverRequest,
@@ -355,6 +356,7 @@ function emptyEvent(
         placementNeed: 0,
         placementAssigned: 0,
         deputies: [],
+        closingComment: "",
         // Этап объекта (Plane №412): у свежего ОМ он тот же, что у
         // мероприятия, — этапы ещё не начинались.
         stage: "BULLETIN",
@@ -2465,6 +2467,45 @@ export const securityEventsHandlers = [
             versionsDecide("RETURNED")
           )
         )
+      );
+    }
+  ),
+
+  // Закрытие ОБЪЕКТА (`[ЗАК-05]`/`[ЗАК-12]`, Plane №404): в мире мока объект
+  // один — его закрытие закрывает мероприятие, как и на сервере.
+  http.post(
+    `*${visitObjectClosePath(":id", ":visitObjectId")}`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      if (event.stage !== "CONDUCT") {
+        return businessRuleError(
+          "INVALID_STAGE_TRANSITION",
+          "Закрыть объект можно только на этапе «Проведение»."
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as { comment?: string };
+      const now = nowIso();
+      const visits = event.visitObjects.map((visit) =>
+        visit.id === params.visitObjectId
+          ? {
+              ...visit,
+              stage: "CLOSED" as const,
+              closedAt: now,
+              closingComment: (body.comment ?? "").trim(),
+            }
+          : visit
+      );
+      const allClosed = visits.every((visit) => visit.stage === "CLOSED");
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          visitObjects: visits,
+          ...(allClosed
+            ? { stage: "CLOSED" as const, readinessPercent: 100, closedAt: now }
+            : {}),
+          updatedAt: now,
+        })
       );
     }
   ),

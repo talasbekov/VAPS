@@ -13,8 +13,18 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useAddJournalEntry,
   useCloseSecurityEvent,
+  useCloseVisitObject,
   useReplaceAssignment,
 } from "@/hooks/use-security-event-stages";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useVisitObjectScope } from "./useVisitObjectScope";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import type {
@@ -34,6 +44,7 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
   // аудитом, поэтому они сохранены здесь, а не выброшены вслед за макетом.
   return (
     <div className="flex flex-col gap-4">
+      <VisitObjectClosurePanel event={event} />
       <ClosurePanel event={event} />
       <PostControlPanel event={event} />
       <JournalPanel event={event} />
@@ -337,6 +348,99 @@ export function closureFacts(event: SecurityEvent): {
       .length,
     incidents: event.journalEntries.filter((e) => e.type === "INCIDENT").length,
   };
+}
+
+/**
+ * Закрытие ОБЪЕКТА посещения (`[ЗАК-05]`, Plane №404) и автозакрытие
+ * мероприятия последним объектом (`[ЗАК-12]`).
+ *
+ * Показанный объект — тот же разрез, что у остальных этапов
+ * (`useVisitObjectScope`, адрес `?visit=`). Подтверждение — диалог, а не
+ * `window.confirm`: у закрытия нет обратного хода («после закрытия изменения
+ * невозможны»), и модальное окно браузера ещё и ломает автоматизацию.
+ * Комментарий по объекту (`[ЗАК-04]`) — необязателен, поле в том же диалоге.
+ *
+ * Панель «Закрытие и итоги» с итогами направлений ниже ОСТАЁТСЯ: ручное
+ * закрытие мероприятия целиком — путь для ОМ без объектов и для штаба.
+ */
+function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
+  const scope = useVisitObjectScope(event, event.reconSectorPosts);
+  const [open, setOpen] = useState(false);
+  const [comment, setComment] = useState("");
+  const close = useCloseVisitObject(event.id, { onEvent: () => setOpen(false) });
+  const visit = scope.visit;
+  if (visit === null) return null;
+  const others = event.visitObjects.filter((item) => item.id !== visit.id);
+  const openOthers = others.filter((item) => item.stage !== "CLOSED").length;
+  const isLast = openOthers === 0;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Закрытие объекта «{visit.objectName}»</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {visit.stage === "CLOSED" ? (
+          <p className="text-sm">
+            Объект закрыт
+            {visit.closedAt !== null
+              ? ` · ${new Date(visit.closedAt).toLocaleString("ru-RU")}`
+              : ""}
+            {visit.closingComment !== "" ? ` · ${visit.closingComment}` : ""}
+            . Изменения по объекту невозможны.
+          </p>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              {isLast
+                ? event.visitObjects.length > 1
+                  ? "Остальные объекты уже закрыты — закрытие этого закроет мероприятие целиком."
+                  : "Единственный объект мероприятия — его закрытие закроет мероприятие целиком."
+                : `Ещё не закрыто объектов: ${openOthers}. Мероприятие закроется само, когда будут закрыты все.`}
+            </p>
+            <StageError error={close.error} />
+            <div className="flex justify-end">
+              <Button type="button" variant="outline" onClick={() => setOpen(true)}>
+                Закрыть объект
+              </Button>
+            </div>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Закрыть объект «{visit.objectName}»?</DialogTitle>
+                  <DialogDescription>
+                    После закрытия изменения по объекту невозможны.
+                    {isLast ? " Мероприятие при этом закроется целиком." : ""}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-1">
+                  <Label htmlFor={`closing-comment-${visit.id}`}>
+                    Итоговый комментарий по объекту (необязательно)
+                  </Label>
+                  <Textarea
+                    id={`closing-comment-${visit.id}`}
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                    Отмена
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={close.isPending}
+                    onClick={() => close.mutate({ visitObjectId: visit.id, comment })}
+                  >
+                    {close.isPending ? "Закрытие…" : "Подтвердить закрытие"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function ClosurePanel({ event }: { event: SecurityEvent }) {

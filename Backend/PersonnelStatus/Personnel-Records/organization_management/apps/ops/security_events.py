@@ -5212,6 +5212,88 @@ def override_stage(event_id, *, stage, actor):
     return event
 
 
+def _finalize_event_closure(event, *, actor, old_stage):
+    """Закрыть МЕРОПРИЯТИЕ: штамп, готовность, переход, оценивание, аудит.
+
+    Общее тело для ручного `close_event` и для АВТОЗАКРЫТИЯ последним объектом
+    (`[ЗАК-12]`, Plane №404): «мероприятие закрывается автоматически, когда
+    закрыты все его объекты; в реестре „Закрыто · 100%“». Два пути — одни
+    следствия, иначе автозакрытие не открывало бы оценивание или не писало бы
+    аудит.
+    """
+    event.stage = "CLOSED"
+    event.readiness_percent = STAGE_READINESS["CLOSED"]
+    if event.closed_at is None:
+        event.closed_at = Clock.now()
+    event.save(update_fields=["stage", "readiness_percent", "closed_at", "updated_at"])
+    if old_stage != "CLOSED":
+        record_transition(event, old_stage, "CLOSED")
+    # Оценивание заводится ЗАКРЫТИЕМ (задача заказчика Plane №96: «оценивание
+    # на каждом ОМ»). Импорт локальный: модуль рейтинга читает мероприятия ОМ,
+    # и импорт на уровне модуля замкнул бы их друг на друга.
+    from organization_management.apps.ops import ratings as ratings_service
+    ratings_service.open_evaluation_for_event(event, actor=actor)
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECURITY_EVENT_CLOSED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        old_value={"stage": old_stage},
+        new_value={"stage": "CLOSED", "code": event.code},
+    )
+    return event
+
+
+@transaction.atomic
+def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
+    """Закрыть ОБЪЕКТ посещения (`[ЗАК-05]`, Plane №404).
+
+    Спецификация: «Кнопка „Закрыть объект“. Подтверждение: „… После закрытия
+    изменения невозможны“». Итоговый комментарий по объекту — `[ЗАК-04]`,
+    необязателен. Оценки и инциденты (`[ЗАК-02]`/`[ЗАК-03]`) этот шаг не
+    заводит — их карточек в очереди нет; подтверждение «оценено K из N» на
+    экране появится вместе с ними.
+
+    Последний закрытый объект закрывает МЕРОПРИЯТИЕ (`[ЗАК-12]`): стадия
+    мероприятия — наименьшая среди объектов, и «Закрыто» у всех даёт
+    «Закрыто» у него; финал закрытия — тот же, что у ручного `close_event`.
+    """
+    event = lock_event(event_id)
+    visit = _visit_object_or_404(event, visit_object_id)
+    _require_stage(
+        event, "CONDUCT", "Закрыть объект можно только на этапе «Проведение»."
+    )
+    if visit.stage == "CLOSED":
+        raise DomainError(
+            "VISIT_OBJECT_ALREADY_CLOSED",
+            422,
+            message="Объект уже закрыт — изменения после закрытия невозможны.",
+        )
+    visit.stage = "CLOSED"
+    visit.closed_at = Clock.now()
+    visit.closing_comment = str(comment or "").strip()
+    visit.save(update_fields=["stage", "closed_at", "closing_comment", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.VISIT_OBJECT_CLOSED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "visitObjectId": str(visit.pk),
+            "objectName": visit.object_name,
+            "code": event.code,
+            "comment": visit.closing_comment,
+        },
+    )
+    old_stage = event.stage
+    recompute_event_stage(event)
+    if event.stage == "CLOSED":
+        # Стадия уже «Закрыто» по объектам — финал (штамп, переход,
+        # оценивание, аудит) делает то же, что ручное закрытие.
+        _finalize_event_closure(event, actor=actor, old_stage=old_stage)
+    return event
+
+
 @transaction.atomic
 def close_event(event_id, *, direction_summaries, actor):
     event = lock_event(event_id)
@@ -5236,16 +5318,14 @@ def close_event(event_id, *, direction_summaries, actor):
     old_stage = event.stage
     # Закрывается мероприятие — значит закрыты и все его объекты (Plane №412):
     # закрытое ОМ с объектом «на расстановке» показывало бы работу, которой
-    # больше нет. Автозакрытие в обратную сторону («все объекты закрыты →
-    # закрыть мероприятие») — соседняя карточка №404 [ЗАК-12], и этот шаг её
-    # не делает.
+    # больше нет. Обратный путь — «все объекты закрыты → закрыто мероприятие»
+    # — `close_visit_object` (`[ЗАК-12]`, №404).
     closed_at = Clock.now()
     for visit in event.visit_objects.all():
-        visit.stage = "CLOSED"
-        visit.closed_at = visit.closed_at or closed_at
-        visit.save(update_fields=["stage", "closed_at", "updated_at"])
-    event.stage = "CLOSED"
-    event.readiness_percent = STAGE_READINESS["CLOSED"]
+        if visit.stage != "CLOSED":
+            visit.stage = "CLOSED"
+            visit.closed_at = visit.closed_at or closed_at
+            visit.save(update_fields=["stage", "closed_at", "updated_at"])
     event.closure_direction_summaries = [
         {
             "direction": item.get("direction"),
@@ -5254,27 +5334,5 @@ def close_event(event_id, *, direction_summaries, actor):
         for item in summaries
     ]
     event.closed_at = closed_at
-    event.save(
-        update_fields=[
-            "stage",
-            "readiness_percent",
-            "closure_direction_summaries",
-            "closed_at",
-            "updated_at",
-        ]
-    )
-    record_transition(event, old_stage, "CLOSED")
-    # Оценивание заводится ЗАКРЫТИЕМ (задача заказчика Plane №96: «оценивание
-    # на каждом ОМ»). Импорт локальный: модуль рейтинга читает мероприятия ОМ,
-    # и импорт на уровне модуля замкнул бы их друг на друга.
-    from organization_management.apps.ops import ratings as ratings_service
-    ratings_service.open_evaluation_for_event(event, actor=actor)
-    audit_service.record(
-        actor=actor,
-        action=audit_service.SECURITY_EVENT_CLOSED,
-        entity_type=audit_service.ENTITY_SECURITY_EVENT,
-        entity_id=event.pk,
-        old_value={"stage": old_stage},
-        new_value={"stage": "CLOSED", "code": event.code},
-    )
-    return event
+    event.save(update_fields=["closure_direction_summaries", "closed_at", "updated_at"])
+    return _finalize_event_closure(event, actor=actor, old_stage=old_stage)

@@ -429,9 +429,13 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
     # «Возвращено (v N)») ведёт соседняя карточка №398 [СОГ-04] — ей нужна
     # своя таблица, и заводить её тут значило бы сделать её работу наполовину.
     document_version = models.PositiveIntegerField(default=0)
-    # Закрытие объекта `[ЗАК-05]`; автозакрытие мероприятия по всем объектам —
-    # соседняя карточка №404, этот шаг только заводит момент.
+    # Закрытие объекта `[ЗАК-05]` (Plane №404): момент закрытия и итоговый
+    # комментарий по объекту (`[ЗАК-04]`, необязателен). Мероприятие
+    # закрывается САМО, когда закрыт последний объект (`[ЗАК-12]`) —
+    # `recompute_event_stage` берёт наименьшую стадию, и «Закрыто» у всех
+    # даёт «Закрыто» у мероприятия.
     closed_at = models.DateTimeField(null=True, blank=True)
+    closing_comment = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "ops_security_event_visit_objects"

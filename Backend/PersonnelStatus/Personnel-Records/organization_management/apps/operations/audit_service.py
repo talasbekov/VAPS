@@ -139,6 +139,10 @@ SECURITY_EVENT_PLACEMENT_BY_DEPUTY = "SECURITY_EVENT_PLACEMENT_BY_DEPUTY"
 # «почему отправили ОМ на согласование, недорасставив K постов» обязано иметь
 # именной ответ, а не потеряться в самом факте перехода этапа.
 PLACEMENT_COMPLETED_WITH_SHORTAGE = "PLACEMENT_COMPLETED_WITH_SHORTAGE"
+# Закрытие ОБЪЕКТА посещения (`[ЗАК-05]`, Plane №404): после него изменения
+# по объекту невозможны, а закрытие последнего объекта закрывает мероприятие
+# само (`[ЗАК-12]`) — решение старшего объекта обязано быть именным.
+VISIT_OBJECT_CLOSED = "VISIT_OBJECT_CLOSED"
 # Старший объекта посещения: назначение и снятие (Plane «Реестр ОМ-35.2»).
 # Пишется по тому же основанию, что и замещающий: это ИМЕННОЕ назначение
 # ответственного за объект — по нему спрашивают доклад и расстановку. Без
@@ -282,6 +286,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_DEPUTY_REVOKED,
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
         PLACEMENT_COMPLETED_WITH_SHORTAGE,
+        VISIT_OBJECT_CLOSED,
         VISIT_OBJECT_CHIEF_ASSIGNED,
         FORCE_ALLOCATION_NOTIFIED,
         FORCE_ALLOCATION_SPLIT,

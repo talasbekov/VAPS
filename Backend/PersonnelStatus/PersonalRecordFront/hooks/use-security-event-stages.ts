@@ -47,6 +47,8 @@ import {
   securityEventReconPath,
   securityEventReplaceAssignmentPath,
   securityEventStagePath,
+  CloseVisitObjectRequest,
+  visitObjectClosePath,
 } from "@/entities/security-event";
 import type {
   AcknowledgementNotifyReport,
@@ -433,6 +435,16 @@ export function useOverrideStage(id: string, options?: StageMutationOptions) {
   return useEventMutation<OverrideStageRequest>(
     id,
     (body) => opsApiClient.post<SecurityEvent>(securityEventStagePath(id), body),
+    options
+  );
+}
+
+/** Закрыть объект посещения (`[ЗАК-05]`, Plane №404). */
+export function useCloseVisitObject(id: string, options?: StageMutationOptions) {
+  return useEventMutation<{ visitObjectId: string } & CloseVisitObjectRequest>(
+    id,
+    ({ visitObjectId, ...body }) =>
+      opsApiClient.post<SecurityEvent>(visitObjectClosePath(id, visitObjectId), body),
     options
   );
 }
