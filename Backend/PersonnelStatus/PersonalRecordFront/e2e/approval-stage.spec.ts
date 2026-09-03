@@ -117,7 +117,10 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     // Назначение с обходом по-прежнему видно в расчёте на согласование.
     const post = target.reconSectorPosts.find((p) => p.id === override.postId)!
     await expect(card).toContainText(override.employeeName)
-    await expect(card).toContainText(`${post.sector} · ${post.post}`)
+    // Печатный вид (Plane №430, [СОГ-02]) пишет сектор заголовком, а пост —
+    // строкой под ним; прежний пин «Сектор · Пост» ждал список назначений.
+    await expect(card).toContainText(`Сектор «${post.sector}»`)
+    await expect(card).toContainText(post.post)
     await expect(card.getByText('Обходы предупреждений при назначении')).toHaveCount(0)
     await expect(card.getByRole('button', { name: 'Завершить этап и перейти далее' })).toHaveCount(0)
     await expect(card.getByRole('button', { name: 'Вернуть на доработку' })).toHaveCount(0)

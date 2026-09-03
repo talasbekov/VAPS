@@ -624,11 +624,16 @@ export function eventDocumentRenderPath(params: {
   format?: EventDocumentFormat;
   /** ISO-дата-время среза; без него сервер берёт «сейчас», как прежде. */
   asOf?: string;
+  /** Объект посещения — у документов, принадлежащих объекту («Расстановка
+   * сил», Plane №411): при нескольких объектах без него сервер отказывает. */
+  visitObjectId?: string;
 }): string {
   const query = new URLSearchParams({ kind: params.kind });
   if ((params.eventCode ?? "").trim() !== "")
     query.set("event", (params.eventCode as string).trim());
   if ((params.asOf ?? "").trim() !== "") query.set("asOf", (params.asOf as string).trim());
+  if ((params.visitObjectId ?? "").trim() !== "")
+    query.set("visitObject", (params.visitObjectId as string).trim());
   // Формат ставится в адрес ТОЛЬКО когда он задан: без него ручка отдаёт PDF,
   // и подставлять его здесь значило бы держать умолчание в двух местах.
   //
