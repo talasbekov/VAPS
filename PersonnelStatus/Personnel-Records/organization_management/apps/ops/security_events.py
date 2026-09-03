@@ -4457,7 +4457,36 @@ def approve_placement(event_id, *, visit_object_id=None):
     advance_visits(event, "ACKNOWLEDGEMENT", visits=[visit])
     if event.stage != old_stage:
         record_transition(event, old_stage, event.stage)
+        if event.stage == "ACKNOWLEDGEMENT":
+            _autonotify_acknowledgement(event)
     return event
+
+
+def _autonotify_acknowledgement(event):
+    """Разослать уведомления о заступлении САМИМ, без клика (Plane №402,
+    `[ОЗН-01]`).
+
+    До этого шага рассылка ждала ручную кнопку на этапе «Ознакомление» —
+    заступающие узнавали о назначении, только если кто-то не забыл нажать.
+    Утверждение расстановки уже переводит объект на этот этап без отдельного
+    клика (см. комментарий выше); рассылка идёт тем же движением, а не
+    отдельным решением человека.
+
+    НЕ ПАДАЕТ НАРУЖУ. Согласование — то, что действительно произошло;
+    рассылка — его следствие, и сбой следствия не должен откатывать причину.
+    `PLACEMENT_EMPTY` (никто не назначен) — законное состояние: расстановку
+    можно согласовать пустой, если недобор принят как есть, и тогда уведомлять
+    некого — это не ошибка, а факт. Ручная кнопка на этапе остаётся: повторно
+    оповестить того, кто сменился после первой рассылки, всё ещё нужно руками.
+    """
+    from organization_management.apps.ops.acknowledgement_notify import (
+        notify_acknowledgement,
+    )
+
+    try:
+        notify_acknowledgement(event.pk)
+    except DomainError:
+        pass
 
 
 @transaction.atomic

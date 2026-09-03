@@ -149,6 +149,110 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
       fresh?.placementAssignments.filter((a) => a.acknowledgedAt !== null).length,
     ).toBe(total - pending.length + 1)
   })
+
+  test('утверждение расстановки САМО оповещает — колокольчик руководителя это видит', async ({
+    page,
+  }) => {
+    /**
+     * Plane №402, `[ОЗН-01]`. Два дефекта одной цепочки:
+     *  1. рассылка ждала ручную кнопку на этапе — заступающие узнавали о
+     *     назначении, только если кто-то не забыл нажать;
+     *  2. колокольчик хедера читал ТОЛЬКО легаси-ленту `/api/notifications/`,
+     *     а уведомления о заступлении пишутся в `OpsNotification`
+     *     (`/api/operations/notifications/`) — запись была, счётчик рос,
+     *     хедер показывал «Нет новых уведомлений».
+     *
+     * Проба НЕ нажимает «Отправить уведомления»: если после `approval/approve/`
+     * уведомление есть — его разослало само утверждение. Читает его
+     * НАЧАЛЬНИК УПРАВЛЕНИЯ (`acc_dir_head`, область «Первое управление»): он
+     * получает уведомление как руководитель заступающего — своего сотрудника
+     * «Токтаров А.» (учётка `acc_employee`, связанная кадровая запись стенда).
+     *
+     * Дата мероприятия — своя на каждый прогон: ключ уведомления «одно на
+     * день», и с одной и той же датой второй прогон читал бы ПРОШЛУЮ строку
+     * с чужим кодом мероприятия.
+     */
+    const bossPassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+    test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
+
+    const token = await apiToken()
+    const found = (await (
+      await fetch(`${API}/api/ops/personnel/?search=${encodeURIComponent('Токтаров')}&page_size=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { results: { id: string }[] }
+    expect(found.results.length, 'на стенде нет сотрудника «Токтаров»').toBeGreaterThan(0)
+    const linkedEmployeeId = found.results[0].id
+
+    // 2027-02-01 + (секунды эпохи mod 300) дней — уникально на прогон и
+    // всегда валидная дата.
+    const day = new Date(Date.UTC(2027, 1, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
+    const businessDate = day.toISOString().slice(0, 10)
+    const code = await prepareEvent(token, { firstEmployeeId: linkedEmployeeId, businessDate })
+
+    // Сервер: у руководителя появилась строка об ЭТОМ мероприятии — без клика.
+    const bossToken = (
+      (await (
+        await fetch(`${API}/api/token/`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username: 'acc_dir_head', password: bossPassword }),
+        })
+      ).json()) as { access: string }
+    ).access
+    await expect
+      .poll(
+        async () => {
+          const feed = (await (
+            await fetch(`${API}/api/operations/notifications/?unread=true`, {
+              headers: { Authorization: `Bearer ${bossToken}` },
+            })
+          ).json()) as {
+            results: { kind: string; payload: { eventCode?: string; asSupervisor?: boolean } }[]
+          }
+          return feed.results.some(
+            (r) =>
+              r.kind === 'EVENT_ACKNOWLEDGEMENT' &&
+              r.payload.eventCode === code &&
+              r.payload.asSupervisor === true,
+          )
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true)
+
+    // Экран: колокольчик руководителя показывает это уведомление словами.
+    const api = page.context().request
+    const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
+    await api.post(`${APP}/api/auth/callback/credentials/`, {
+      form: { csrfToken: csrf.csrfToken, username: 'acc_dir_head', password: bossPassword, json: 'true' },
+    })
+    await page.goto(`${APP}/dashboard`)
+    const bell = page.getByRole('button', { name: 'Уведомления' })
+    await expect(bell).toBeVisible({ timeout: 20_000 })
+    await bell.click()
+    const menu = page.getByRole('menu')
+    await expect(menu).toBeVisible()
+    await expect(menu.getByText('Подчинённый заступает на мероприятие').first()).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(menu.getByText(code, { exact: false }).first()).toBeVisible()
+
+    // Уборка ленты: своё уведомление отмечается прочитанным, иначе каждый
+    // прогон оставлял бы руководителю по непрочитанной строке. Само ОМ
+    // уборка не снимает (в нём есть расстановка) — см. шапку файла.
+    const feed = (await (
+      await fetch(`${API}/api/operations/notifications/?unread=true`, {
+        headers: { Authorization: `Bearer ${bossToken}` },
+      })
+    ).json()) as { results: { id: number; payload: { eventCode?: string } }[] }
+    for (const row of feed.results.filter((r) => r.payload.eventCode === code)) {
+      await fetch(`${API}/api/operations/notifications/${row.id}/read/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${bossToken}` },
+      })
+    }
+  })
 })
 
 /**
@@ -156,7 +260,10 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
  * назначениями. Тем же путём, каким это делает человек в интерфейсе, —
  * своих служебных ручек у стенда нет.
  */
-async function prepareEvent(token: string): Promise<string> {
+async function prepareEvent(
+  token: string,
+  options: { firstEmployeeId?: string; businessDate?: string } = {},
+): Promise<string> {
   const headers = {
     Authorization: `Bearer ${token}`,
     'content-type': 'application/json',
@@ -184,7 +291,7 @@ async function prepareEvent(token: string): Promise<string> {
   const created = (await call('POST', '/api/ops/security-events/', {
     title: 'Проба ознакомления (e2e)',
     objectId: object.id,
-    businessDate: '2026-08-22',
+    businessDate: options.businessDate ?? '2026-08-22',
     // `kind` обязателен с 23.08: без него сервер отдаёт 400, `created.id`
     // выходит undefined, и проба падает не на своём предмете, а на строке
     // «не удалось подготовить фикстуру».
@@ -228,7 +335,13 @@ async function prepareEvent(token: string): Promise<string> {
   for (const [index, post] of afterImport.reconSectorPosts.entries()) {
     await call('POST', `${base}/placement/assign/`, {
       postId: post.id,
-      employeeId: roster.results[index].id,
+      // Первый пост — НАЗВАННОМУ человеку, если проба его назвала: рассылке
+      // о заступлении нужен сотрудник, СВЯЗАННЫЙ с учёткой, а первые строки
+      // реестра такой связи не обещают.
+      employeeId:
+        index === 0 && options.firstEmployeeId !== undefined
+          ? options.firstEmployeeId
+          : roster.results[index].id,
     })
   }
   await call('POST', `${base}/placement/complete/`)

@@ -17,6 +17,10 @@ from organization_management.apps.ops.acknowledgement_notify import (
     KIND,
     notify_acknowledgement,
 )
+from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: F401
+    approver,
+    manager,
+)
 from organization_management.apps.operations.tests.test_strength_report import (
     make_employee,
 )
@@ -148,3 +152,70 @@ def test_notifying_outside_the_stage_is_refused_with_a_reason(event_with_people)
         notify_acknowledgement(event.pk)
 
     assert failure.value.code == "ACKNOWLEDGEMENT_STAGE_REQUIRED"
+
+
+# ── Автоотправка при открытии этапа (Plane №402, `[ОЗН-01]`) ─────────────────
+
+
+def test_approving_the_placement_notifies_without_a_click(
+    manager, approver, django_user_model
+):  # noqa: F811
+    """Утверждение расстановки САМО рассылает уведомления о заступлении.
+
+    До этого шага рассылка ждала ручную кнопку на этапе «Ознакомление»;
+    заступающие узнавали о назначении, только если кто-то не забыл нажать.
+    Утверждение уже открывает этап без отдельного клика — рассылка идёт тем же
+    движением.
+
+    Красная на мутации: убери `_autonotify_acknowledgement` из
+    `approve_placement` — строка уведомления не появится, и ассерт упадёт.
+    """
+    from .test_ops_approval_stage import add_approver, event_on_approval
+
+    base, employee_id, _post_id = event_on_approval(manager)
+    # Заступающий обязан быть СВЯЗАН с учёткой — иначе рассылка честно
+    # запишет его в «не дошло», и проверять будет нечего.
+    from organization_management.apps.employees.models import Employee
+
+    account = django_user_model.objects.create_user(username="ack-auto", password="x")
+    Employee.objects.filter(pk=employee_id).update(user=account)
+
+    route = add_approver(manager, base)
+    manager.post(f"{base}approval/send/")
+    approver.post(
+        f"{base}approval/route/{route[0]['id']}/decide/",
+        {"decision": "APPROVED", "comment": ""},
+        format="json",
+    )
+    assert not OpsNotification.objects.filter(kind=KIND).exists()
+
+    approved = approver.post(f"{base}approval/approve/")
+
+    assert approved.status_code == 200, approved.data
+    assert approved.json()["stage"] == "ACKNOWLEDGEMENT"
+    row = OpsNotification.objects.get(recipient=str(account.pk), kind=KIND)
+    assert row.payload["eventCode"] == approved.json()["code"]
+
+
+def test_approving_an_event_nobody_is_linked_to_still_approves(manager, approver):  # noqa: F811
+    """Сбой рассылки НЕ откатывает согласование.
+
+    Согласование — то, что действительно произошло; рассылка — его следствие.
+    Заступающий без связанной учётки — законный случай (связь заполняется
+    руками), и этап обязан открыться, даже если уведомить некого.
+    """
+    from .test_ops_approval_stage import add_approver, event_on_approval
+
+    base, _employee_id, _post_id = event_on_approval(manager)
+    route = add_approver(manager, base)
+    manager.post(f"{base}approval/send/")
+    approver.post(
+        f"{base}approval/route/{route[0]['id']}/decide/",
+        {"decision": "APPROVED", "comment": ""},
+        format="json",
+    )
+
+    approved = approver.post(f"{base}approval/approve/")
+
+    assert approved.status_code == 200, approved.data
+    assert approved.json()["stage"] == "ACKNOWLEDGEMENT"
