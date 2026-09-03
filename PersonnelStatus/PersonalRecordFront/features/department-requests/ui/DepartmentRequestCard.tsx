@@ -47,6 +47,7 @@ import type { ForceAllocationDirectorate } from "@/entities/security-event";
 import {
   useDepartmentRequest,
   useNotifyDepartmentDirectorates,
+  useRespondDepartmentAllocation,
   useSplitDirectorateQuotas,
   useSubmitDepartmentAllocation,
 } from "@/hooks/use-department-requests";
@@ -99,7 +100,25 @@ export function DepartmentRequestCard({
   const split = useSplitDirectorateQuotas(detail?.eventId ?? "", allocationId);
   const notify = useNotifyDepartmentDirectorates(detail?.eventId ?? "", allocationId);
   const submit = useSubmitDepartmentAllocation(detail?.eventId ?? "", allocationId);
+  const respond = useRespondDepartmentAllocation(detail?.eventId ?? "", allocationId);
   const [submitOpen, setSubmitOpen] = useState(false);
+  // Ответ «Выделяем: X · Комментарий» (Plane №391). Черновик наполняется ИЗ
+  // ОТВЕТА сервера тем же доводом, что и квоты ниже: пустое поле над
+  // сохранённой цифрой читалось бы как «ноль», а ноль здесь — отказ.
+  const [answer, setAnswer] = useState<{ allocating: string; comment: string }>({
+    allocating: "",
+    comment: "",
+  });
+  useEffect(() => {
+    if (allocation === undefined) return;
+    setAnswer({
+      allocating:
+        allocation.allocating === null || allocation.allocating === undefined
+          ? ""
+          : String(allocation.allocating),
+      comment: allocation.answerComment ?? "",
+    });
+  }, [allocation]);
   const [draft, setDraft] = useState<Record<string, string>>({});
 
   const { directorates: orgDirectorates } = useDepartmentDirectorates(
@@ -207,6 +226,111 @@ export function DepartmentRequestCard({
           {detail.eventTime !== null ? ` · ${detail.eventTime}` : ""}
         </p>
       </div>
+
+      {/* ШАПКА-ОТВЕТ (`[СБС-21]`, Plane №391): «Запрошено штабом: N ·
+          Выделяем: [ввод] · Комментарий: [ввод]». Цифру ставит только
+          ответственный, штаб читает. Ограничений нет — меньше, больше, 0;
+          «0» закрывает запрос статусом «Отказ». Правится до отправки
+          списка. Комментарий необязателен: при цифре меньше запрошенной —
+          подсказка «желательно пояснить», без блокировки. */}
+      <section
+        aria-labelledby="answer-heading"
+        className="rounded-lg border p-4 space-y-3"
+        data-slot="department-answer"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 id="answer-heading" className="font-semibold">
+            Ответ департамента
+          </h3>
+          <p className="text-muted-foreground text-sm">
+            Запрошено штабом: <b className="tabular-nums text-foreground">{quota}</b>
+          </p>
+        </div>
+        {allocation.status === "DECLINED" && (
+          <p role="status" className="text-destructive-ink text-sm">
+            Запрос закрыт отказом («Выделяем: 0»). Поставьте ненулевую цифру,
+            чтобы снять отказ.
+          </p>
+        )}
+        {(() => {
+          const answerLocked =
+            allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
+          const parsed = Number.parseInt(answer.allocating, 10);
+          const short = Number.isFinite(parsed) && parsed > 0 && parsed < quota;
+          const dirty =
+            answer.allocating !==
+              (allocation.allocating === null || allocation.allocating === undefined
+                ? ""
+                : String(allocation.allocating)) || answer.comment !== (allocation.answerComment ?? "");
+          return (
+            <>
+              <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
+                <div className="space-y-1">
+                  <Label htmlFor="answer-allocating">Выделяем</Label>
+                  <Input
+                    id="answer-allocating"
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className="tabular-nums"
+                    disabled={answerLocked || respond.isPending}
+                    value={answer.allocating}
+                    onChange={(event) =>
+                      setAnswer((prev) => ({ ...prev, allocating: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="answer-comment">Комментарий</Label>
+                  <Input
+                    id="answer-comment"
+                    disabled={answerLocked || respond.isPending}
+                    value={answer.comment}
+                    placeholder={short ? "Желательно пояснить, почему меньше" : "Необязательно"}
+                    onChange={(event) =>
+                      setAnswer((prev) => ({ ...prev, comment: event.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={answerLocked || respond.isPending || answer.allocating === "" || !dirty}
+                  onClick={() =>
+                    respond.mutate({
+                      allocating: Number.parseInt(answer.allocating, 10),
+                      comment: answer.comment,
+                    })
+                  }
+                >
+                  {respond.isPending ? "Сохраняю…" : "Сохранить ответ"}
+                </Button>
+                {answerLocked ? (
+                  <p className="text-muted-foreground text-sm">
+                    Список уже у штаба — цифра правится до отправки
+                  </p>
+                ) : short && answer.comment.trim() === "" ? (
+                  // Подсветка без блокировки — ровно как в спецификации.
+                  <p className="text-sm text-amber-700">
+                    Меньше запрошенного на {quota - parsed} — желательно пояснить
+                  </p>
+                ) : parsed === 0 && answer.allocating !== "" ? (
+                  <p className="text-muted-foreground text-sm">
+                    «0» закроет запрос отказом
+                  </p>
+                ) : null}
+              </div>
+              {respond.isError && (
+                <p role="alert" className="text-destructive-ink text-sm">
+                  {respond.error?.message ?? "Ответ не сохранился"}
+                </p>
+              )}
+            </>
+          );
+        })()}
+      </section>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {/* Плитки — ОБЩИЕ (`StatCard` из набора прототипа), а не свои.

@@ -48,6 +48,7 @@ const STATUS_LABEL: Record<ForceAllocationStatus, string> = {
   SUBMITTED: "Список отправлен в штаб",
   ACCEPTED: "Принято штабом",
   RETURNED: "Возвращено департаменту",
+  DECLINED: "Отказ",
 };
 
 function Progress({ assigned, need }: { assigned: number; need: number }) {
