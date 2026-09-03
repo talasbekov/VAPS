@@ -490,6 +490,8 @@ export interface VisitObject {
   closedAt: string | null;
   /** Итоговый комментарий по объекту при закрытии (`[ЗАК-04]`, Plane №404). */
   closingComment: string;
+  /** Статус объекта словами (`[РЕЕ-08]`/`[РЕК-08]`, Plane №423) — считает сервер. */
+  statusLabel: string;
   /**
    * ── Согласование ОБЪЕКТА (Plane №411, Ш-5 плана №385) ──────────────────
    *

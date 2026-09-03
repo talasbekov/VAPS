@@ -525,7 +525,7 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // тогда падала бы на состоянии реестра, а не на предмете.
     const first = ((await res.json()) as {
       results: (EventRow & {
-        visitObjects: { objectName: string; placementNeed: number | null }[]
+        visitObjects: { objectName: string; placementNeed: number | null; statusLabel: string }[]
       })[]
     }).results.find((e) => e.visitObjects.length > 0)
     expect(first, 'на первой странице реестра нет ОМ с объектами посещения').toBeDefined()
@@ -558,6 +558,12 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
       first!.visitObjects[0].placementNeed === null
         ? /расчёт постов не размечен по объектам/
         : /потребность \d+, назначено \d+|посты не рассчитаны/,
+    )
+
+    // СТАТУС ОБЪЕКТА словами (`[РЕЕ-08]`/`[РЕК-08]`, Plane №423): чип печатает
+    // подпись сервера, а не выводит её из этапа сам — сверяем с API.
+    await expect(details.locator('[data-slot="visit-status-chip"]').first()).toHaveText(
+      first!.visitObjects[0].statusLabel,
     )
 
     // ДАТА ПОСЕЩЕНИЯ (Plane №194): у объекта либо свой день, либо прямая

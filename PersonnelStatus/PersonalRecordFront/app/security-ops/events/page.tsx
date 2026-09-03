@@ -1067,6 +1067,16 @@ function VisitObjectList({
                 )}
               </span>
 
+              {/* Статус объекта словами (`[РЕЕ-08]`/`[РЕК-08]`, Plane №423):
+                  нейтральный чип ПЕРЕД полосой готовности и тревожными
+                  бейджами — это состояние, а не предупреждение, и цветом с
+                  «Возвращено»/«Срочно» оно не спорит. Подпись даёт сервер. */}
+              <span
+                className="inline-flex whitespace-nowrap rounded-full border border-border bg-muted px-2 py-0.5 text-[10.5px] font-medium text-foreground/80"
+                data-slot="visit-status-chip"
+              >
+                {visit.statusLabel}
+              </span>
               {/* Полоса рисуется только когда есть что мерить: шкала с нулём
                   при нерассчитанных постах читается как «расстановка пуста»,
                   хотя постов ещё нет вовсе. */}
