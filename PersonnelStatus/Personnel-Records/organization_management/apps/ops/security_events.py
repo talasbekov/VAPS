@@ -1324,6 +1324,13 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
             item.get("comment", "")
         ).strip():
             field_errors[f"checklist.{index}.comment"] = ["Укажите комментарий."]
+    # Объекты посещения ЭТОГО мероприятия: пост может принадлежать только им.
+    # Чужой (или выдуманный) идентификатор молча превращал бы потребность
+    # объекта в потребность никого — «неизвестно» вместо числа, и разбирались
+    # бы с этим на экране, а не здесь (Plane №408).
+    own_visit_ids = {
+        str(pk) for pk in event.visit_objects.values_list("pk", flat=True)
+    }
     for index, row in enumerate(sector_posts):
         if not str(row.get("sector", "")).strip():
             field_errors[f"sectorPosts.{index}.sector"] = ["Обязательное поле."]
@@ -1331,6 +1338,11 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
             field_errors[f"sectorPosts.{index}.post"] = ["Обязательное поле."]
         if int(row.get("need", 0)) < 1:
             field_errors[f"sectorPosts.{index}.need"] = ["Должно быть не меньше 1."]
+        visit_id = str(row.get("visitObjectId") or "").strip()
+        if visit_id and visit_id not in own_visit_ids:
+            field_errors[f"sectorPosts.{index}.visitObjectId"] = [
+                "Объекта посещения нет в этом мероприятии."
+            ]
     if field_errors:
         raise _validation(field_errors)
     event.recon_checklist = [
@@ -1358,6 +1370,11 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
                 # один из двух форматов, не спросив заказчика, значило бы
                 # решить за него.
                 "shift": str(row.get("shift", "")).strip(),
+                # Чей пост. Пустая строка приводится к None: «не размечен» —
+                # это отсутствие ответа, а не объект с пустым именем.
+                "visitObjectId": (
+                    str(row.get("visitObjectId") or "").strip() or None
+                ),
                 "requirements": str(row.get("requirements", "")).strip(),
                 "comment": str(row.get("comment", "")).strip(),
             }
@@ -1373,8 +1390,54 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     return event
 
 
+def _import_target(event, visit_object_id):
+    """Объект посещения, для которого идёт импорт постов (Plane №408).
+
+    Спецификация `[РЕК-05]`: «Импорт из паспорта ОБЪЕКТА ПОСЕЩЕНИЯ». До этого
+    шага импорт брал паспорт МЕРОПРИЯТИЯ и клал посты в общий расчёт без
+    указания, чьи они, — а `_visit_placement` из-за этого отвечал «неизвестно»
+    у любого ОМ с двумя объектами: потребность объекта посчитать было не из
+    чего.
+
+    Объект не назван и он ОДИН — берётся он: другого адресата у постов нет.
+    Объектов несколько — ОТКАЗ, а не «первый попавшийся»: выбор за человеком,
+    и угадать его значило бы приписать посты чужому объекту.
+    """
+    visits = list(event.visit_objects.order_by("position", "pk"))
+    if not visits:
+        raise DomainError(
+            "VISIT_OBJECT_REQUIRED",
+            422,
+            message=(
+                "У мероприятия нет объектов посещения: добавьте объект — "
+                "посты расчёта принадлежат ему, а не мероприятию."
+            ),
+        )
+    if visit_object_id in (None, ""):
+        if len(visits) > 1:
+            raise DomainError(
+                "VISIT_OBJECT_REQUIRED",
+                422,
+                message=(
+                    "У мероприятия несколько объектов посещения — выберите, "
+                    "для какого импортировать посты."
+                ),
+            )
+        return visits[0]
+    target = next(
+        (v for v in visits if str(v.pk) == str(visit_object_id)), None
+    )
+    if target is None:
+        raise DomainError(
+            "VISIT_OBJECT_NOT_FOUND",
+            404,
+            message="Объект посещения не найден в этом мероприятии.",
+        )
+    return target
+
+
 @transaction.atomic
-def import_recon_from_passport(event_id):
+def import_recon_from_passport(event_id, *, visit_object_id=None):
     event = lock_event(event_id)
     # Свой код у кнопки импорта (контракт мока): та же стадийная беда, что
     # INVALID_STAGE_TRANSITION, но карточка показывает свою подсказку.
@@ -1382,7 +1445,10 @@ def import_recon_from_passport(event_id):
         raise DomainError("RECON_STAGE_REQUIRED", 422, message=
             "Расчёт постов формируется на этапе рекогносцировки.",
         )
-    binding = event.passport_binding
+    target = _import_target(event, visit_object_id)
+    # Паспорт берётся у ОБЪЕКТА посещения; у мероприятия он остаётся снимком
+    # для бюллетеня и для ОМ, заведённых до появления объектов.
+    binding = target.passport_binding or event.passport_binding
     if binding is None:
         raise DomainError("NO_PASSPORT_VERSION", 422, message= NO_PUBLISHED_VERSION_TEXT)
     version = OpsPassportVersion.objects.filter(
@@ -1395,10 +1461,13 @@ def import_recon_from_passport(event_id):
             "Привязанная версия паспорта недоступна — обратитесь к владельцу "
             "объекта.",
         )
+    # Повтор считается В ПРЕДЕЛАХ ОБЪЕКТА: один и тот же пост паспорта у двух
+    # объектов посещения — это два разных поста расчёта, а не дубль.
     already_imported = {
         row.get("sourcePostId")
         for row in event.recon_sector_posts
         if row.get("sourcePostId") is not None
+        and str(row.get("visitObjectId") or "") == str(target.pk)
     }
     added = []
     for sector in version.sectors_snapshot:
@@ -1424,6 +1493,9 @@ def import_recon_from_passport(event_id):
                     "sourceSectorId": sector.get("id"),
                     "sourcePostId": post.get("id"),
                     "minRating": None,
+                    # Чей это пост. Из этой разметки считаются «потребность» и
+                    # «назначено» объекта в раскрытой строке реестра.
+                    "visitObjectId": str(target.pk),
                 }
             )
     if not added:

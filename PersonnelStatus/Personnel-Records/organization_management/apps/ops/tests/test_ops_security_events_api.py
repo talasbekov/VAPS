@@ -259,7 +259,12 @@ def test_create_without_object(manager):
     manager.post(f"{base}bulletin/complete/")
     failed = manager.post(f"{base}recon/import-from-passport/")
     assert failed.status_code == 422
-    assert failed.json()["error_code"] == "NO_PASSPORT_VERSION"
+    # 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №408). Раньше импорт спотыкался о
+    # ПАСПОРТ мероприятия и отвечал «нет опубликованной версии»; теперь посты
+    # принадлежат объекту посещения, и у ОМ без объектов дело до паспорта не
+    # доходит вовсе — отказ называет настоящую причину. Оба отказа 422, и
+    # проверяется здесь именно то же самое: без объекта импортировать нечего.
+    assert failed.json()["error_code"] == "VISIT_OBJECT_REQUIRED"
 
 
 def test_create_with_unknown_object_still_refused(manager):
@@ -1013,6 +1018,16 @@ def test_second_visit_object_without_post_mapping_reports_unknown(manager):
         passport_binding=None,
         position=1,
     )
+
+    # 🔴 РАЗМЕТКУ СНИМАЕМ НАМЕРЕННО (Plane №408). С этого шага импорт помечает
+    # посты объектом, и «неразмеченный расчёт» сам собой больше не получается —
+    # а правило про него ОСТАЛОСЬ и стережёт строки, заведённые раньше. Не
+    # снять здесь значило бы тихо перестать его проверять.
+    stored = OpsSecurityEvent.objects.get(pk=event_id)
+    stored.recon_sector_posts = [
+        {**row, "visitObjectId": None} for row in stored.recon_sector_posts
+    ]
+    stored.save(update_fields=["recon_sector_posts"])
 
     visits = manager.get(f"{base}").json()["visitObjects"]
     assert [v["objectName"] for v in visits] == ["Резиденция", "Концертный зал"]
@@ -1802,9 +1817,17 @@ def test_deputy_of_one_object_cannot_touch_unmarked_posts_of_a_multi_object_even
         f"{base}placement/{first.json()['placementAssignments'][0]['id']}/"
     )
 
-    # Появился ВТОРОЙ объект — принадлежность нерасписанного поста стала
+    # Появился ВТОРОЙ объект — принадлежность НЕРАЗМЕЧЕННОГО поста стала
     # неизвестной, и то же действие теперь отбивается.
     manager.post(f"{base}visit-objects/", {"objectId": str(other.pk)}, format="json")
+    # 🔴 Разметку снимаем намеренно — см. пояснение в
+    # `test_second_visit_object_without_post_mapping_reports_unknown` (Plane
+    # №408): импорт теперь помечает посты, и старый мир надо изобразить.
+    stored = OpsSecurityEvent.objects.get(pk=data["id"])
+    stored.recon_sector_posts = [
+        {**row, "visitObjectId": None} for row in stored.recon_sector_posts
+    ]
+    stored.save(update_fields=["recon_sector_posts"])
     assert (
         deputy_api.post(
             f"{base}placement/assign/", payload, format="json"

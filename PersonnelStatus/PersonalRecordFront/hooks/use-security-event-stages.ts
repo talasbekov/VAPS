@@ -191,13 +191,23 @@ export function useUpdateRecon(id: string, options?: StageMutationOptions) {
   );
 }
 
+/** Импорт постов из паспорта ОБЪЕКТА ПОСЕЩЕНИЯ (Plane №408, `[РЕК-05]`).
+ *
+ *  `visitObjectId` не назван и объект у мероприятия один — сервер берёт его.
+ *  Объектов несколько — сервер отвечает `VISIT_OBJECT_REQUIRED` и просит
+ *  выбрать: угадывать адресата постов нельзя, приписанные чужому объекту
+ *  посты потом не различить. */
 export function useImportReconPosts(
   id: string,
   options?: StageMutationOptions
 ) {
-  return useEventMutation<Record<string, never>>(
+  return useEventMutation<{ visitObjectId?: string }>(
     id,
-    () => opsApiClient.post<SecurityEvent>(securityEventReconImportPath(id)),
+    (variables) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventReconImportPath(id),
+        variables ?? {}
+      ),
     options
   );
 }

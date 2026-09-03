@@ -688,7 +688,14 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="recon/import-from-passport")
     def recon_import(self, request, pk=None):
-        return self._event_response(event_service.import_recon_from_passport(pk))
+        # `visitObjectId` — ЧЕЙ паспорт импортируется (Plane №408, `[РЕК-05]`).
+        # Ключа нет и объект один — берётся он; объектов несколько — сервис
+        # отвечает отказом с просьбой выбрать, а не угадывает адресата.
+        return self._event_response(
+            event_service.import_recon_from_passport(
+                pk, visit_object_id=(request.data or {}).get("visitObjectId")
+            )
+        )
 
     @action(detail=True, methods=["post"], url_path="recon/complete")
     def recon_complete(self, request, pk=None):
