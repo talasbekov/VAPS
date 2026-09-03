@@ -14,7 +14,8 @@
  * (03.09.2026, Plane №409): в расчёте уже двенадцать колонок, и аудит
  * `[РЕК-09]` жалуется именно на ширину.
  */
-import { useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ReconSectorPost, SecurityEvent } from "@/entities/security-event";
 
 /** Псевдо-объект «строки без владельца». Не `null`: значение переключателя
@@ -38,12 +39,39 @@ export interface VisitObjectScope {
   hasChoice: boolean;
 }
 
+/**
+ * 🔴 ПОКАЗАННЫЙ ОБЪЕКТ ЖИВЁТ В АДРЕСЕ (`?visit=`), а не в состоянии вкладки
+ * (Plane №388, `[РЕЕ-06]`).
+ *
+ * До этого шага понятий «текущий объект» у карточки было ДВА: шапка читала
+ * `?visit=` (по нему приходят кликом из раскрытой строки реестра), а этап
+ * держал свой `useState` и всегда стартовал с первого объекта. Человек,
+ * пришедший по ссылке на второй объект, видел его подсвеченным в шапке и
+ * посты ПЕРВОГО в дереве — то есть экран отвечал сам себе противоположное.
+ *
+ * Адрес выбран источником правды, а не поднятое наверх состояние: «этапы вот
+ * этого объекта» — то, что пересылают ссылкой на разборе, и то, что обязано
+ * переживать перезагрузку страницы. Заодно шапка и этап синхронны без
+ * прокладывания пропсов через каждый этап: оба читают одно место.
+ */
 export function useVisitObjectScope(
   event: SecurityEvent,
   rows: ReconSectorPost[]
 ): VisitObjectScope {
-  const [wanted, setWanted] = useState<string>(
-    () => event.visitObjects[0]?.id ?? UNASSIGNED_VISIT
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const wanted =
+    searchParams.get("visit") ?? event.visitObjects[0]?.id ?? UNASSIGNED_VISIT;
+  // `replace`, а не `push`: смена показанного объекта — это не шаг навигации,
+  // и «назад» после трёх переключений обязано вернуть в реестр, а не пройти
+  // их в обратном порядке.
+  const setWanted = useCallback(
+    (value: string) => {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("visit", value);
+      router.replace(`?${next.toString()}`, { scroll: false });
+    },
+    [router, searchParams]
   );
   const unassignedCount = rows.filter(
     (row) => (row.visitObjectId ?? null) === null

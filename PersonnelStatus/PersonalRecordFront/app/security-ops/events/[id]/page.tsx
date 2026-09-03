@@ -26,6 +26,7 @@ import {
   ConductStage,
   PlacementStage,
   ReconStage,
+  UNASSIGNED_VISIT,
 } from "@/features/security-event-stages";
 import {
   NO_OBJECT_TEXT,
@@ -81,10 +82,16 @@ function SecurityEventScreen() {
   // Объекты посещения и выбранный из них считаются ДО ранних веток: ниже
   // стоят гварды прав и ошибки, а хуки не могут жить за ними.
   const visits = query.data?.visitObjects ?? [];
+  // «Строки без объекта» — ТАКОЕ ЖЕ значение адреса, как объект (Plane №388):
+  // этап расчёта умеет показывать неразмеченные посты, и раз показанное живёт
+  // в `?visit=`, шапка обязана понимать это значение, а не чинить его молча в
+  // первый объект — иначе шапка и дерево постов снова разошлись бы.
+  const unassignedShown = visitParam === UNASSIGNED_VISIT;
   // Неизвестный `visit` в адресе (объект сняли с мероприятия по чужой ссылке)
   // не должен выглядеть как выбранный: берём первый, а не подставляем пустоту.
-  const selectedVisit =
-    visits.find((visit) => visit.id === visitParam) ?? visits[0] ?? null;
+  const selectedVisit = unassignedShown
+    ? null
+    : (visits.find((visit) => visit.id === visitParam) ?? visits[0] ?? null);
   const replaceVisit = useCallback(
     (visitId: string) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -97,11 +104,12 @@ function SecurityEventScreen() {
   // один объект, а в ссылке стоит другой, и пересланный адрес разносит ошибку
   // дальше.
   useEffect(() => {
+    if (unassignedShown) return;
     if (selectedVisit === null) return;
     if (visitParam === selectedVisit.id) return;
     if (visitParam === null) return;
     replaceVisit(selectedVisit.id);
-  }, [replaceVisit, selectedVisit, visitParam]);
+  }, [replaceVisit, selectedVisit, unassignedShown, visitParam]);
 
 
   // Просматриваемый шаг цепочки живёт в АДРЕСЕ (`?step=` — номер шага, как его
@@ -252,6 +260,7 @@ function SecurityEventScreen() {
           <VisitObjectContext
             event={event}
             selected={selectedVisit}
+            unassignedShown={unassignedShown}
             onSelect={replaceVisit}
           />
           <div className="mt-3">
@@ -527,21 +536,28 @@ function ActiveStage({
  * Переключатель появляется, когда объектов больше одного; выбор пишется в
  * адрес (`?visit=`), чтобы ссылку можно было переслать.
  *
- * Расчёт постов по объектам НЕ разнесён (`recon_sector_posts` не размечены
- * `visitObjectId`), и строка об этом стоит рядом с выбором: иначе смена
- * объекта выглядела бы фильтром этапов, который на деле ничего не меняет.
+ * Выбор ЗДЕСЬ и выбор НА ЭТАПЕ — одно и то же (Plane №388): оба пишут `?visit=`
+ * и оба его читают. До этого шага переключатель шапки менял только справку, а
+ * дерево постов жило своим состоянием и всегда начиналось с первого объекта.
  */
 function VisitObjectContext({
   event,
   selected,
+  unassignedShown,
   onSelect,
 }: {
   event: SecurityEvent;
   selected: VisitObject | null;
+  /** На этапе показаны строки расчёта без объекта (`?visit=__unassigned__`).
+   *  Шапка ОТРАЖАЕТ это, а не предлагает как выбор: сколько таких строк, знает
+   *  этап — он их и считает, — и заводить второй счётчик здесь значило бы
+   *  завести второй ответ на тот же вопрос. */
+  unassignedShown: boolean;
   onSelect: (visitId: string) => void;
 }) {
   const visits = event.visitObjects ?? [];
-  if (visits.length === 0 || selected === null) return null;
+  if (visits.length === 0) return null;
+  if (selected === null && !unassignedShown) return null;
 
   return (
     <div className="mt-2 rounded-md border bg-muted/30 px-3 py-2" data-slot="visit-context">
@@ -549,8 +565,10 @@ function VisitObjectContext({
         <span className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
           Объект посещения
         </span>
-        {visits.length === 1 ? (
-          <span className="text-xs font-semibold">{selected.objectName}</span>
+        {unassignedShown ? (
+          <span className="text-xs font-semibold">Не отнесены к объекту</span>
+        ) : visits.length === 1 ? (
+          <span className="text-xs font-semibold">{selected!.objectName}</span>
         ) : (
           <span
             role="group"
@@ -558,7 +576,7 @@ function VisitObjectContext({
             className="flex flex-wrap gap-1"
           >
             {visits.map((visit) => {
-              const active = visit.id === selected.id;
+              const active = visit.id === selected?.id;
               return (
                 <button
                   key={visit.id}
@@ -577,7 +595,7 @@ function VisitObjectContext({
             })}
           </span>
         )}
-        {selected.objectId !== null && (
+        {selected !== null && selected.objectId !== null && (
           <Link
             href={`/security-ops/objects/${selected.objectId}`}
             className="text-xs font-semibold text-primary-ink"
@@ -586,25 +604,32 @@ function VisitObjectContext({
           </Link>
         )}
       </div>
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        {selected.protectedPersonName === ""
-          ? "охраняемое лицо не назначено"
-          : `Охраняемое лицо: ${selected.protectedPersonName}`}
-        {" · "}
-        {selected.passportBinding === null
-          ? "паспорт не привязан"
-          : `паспорт вер. ${selected.passportBinding.versionNumber}`}
-      </p>
-      {visits.length > 1 && (
-        /* Справка была обратной («этапы ведутся по мероприятию целиком») и
-           устарела с Plane №409/№410: расчёт разнесён по объектам, и объект
-           выбирается на самих этапах. Строка осталась, потому что переключение
-           ЗДЕСЬ и переключение НА ЭТАПЕ — разные вещи, и об этом стоит сказать
-           прямо, а не оставлять человека гадать. */
+      {selected === null ? (
+        // У «ничейных строк» нет ни охраняемого лица, ни паспорта — и молчать
+        // здесь нельзя: пустая строка читалась бы как «не загрузилось».
         <p className="mt-1 text-[11px] text-muted-foreground">
-          Этапы ниже ведутся ПО ОБЪЕКТУ: объект выбирается на самом этапе
-          («Объект посещения» над расчётом), а этот переключатель меняет только
-          справку в шапке.
+          Показаны строки расчёта, не отнесённые ни к одному объекту.
+        </p>
+      ) : (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {selected.protectedPersonName === ""
+            ? "охраняемое лицо не назначено"
+            : `Охраняемое лицо: ${selected.protectedPersonName}`}
+          {" · "}
+          {selected.passportBinding === null
+            ? "паспорт не привязан"
+            : `паспорт вер. ${selected.passportBinding.versionNumber}`}
+        </p>
+      )}
+      {visits.length > 1 && (
+        /* Справка правится ТРЕТИЙ раз и каждый раз вслед за устройством: до
+           №409/№410 она говорила «этапы ведутся по мероприятию целиком», после
+           них — «переключатель меняет только справку в шапке». С №388 верно
+           третье: переключатель и выбор на этапе — одно и то же. */
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Этапы ниже ведутся ПО ЭТОМУ ОБЪЕКТУ. Тот же выбор стоит над расчётом
+          на самом этапе — это одно значение, и оно записано в адресе страницы:
+          ссылку можно переслать.
         </p>
       )}
     </div>
