@@ -98,4 +98,49 @@ test.describe('расход: постановка статуса с меропр
       expect(saved.participations).toHaveLength(0)
     }
   })
+
+  test('на «Статусах сотрудников» типы участия тоже не предлагаются', async ({ page }) => {
+    /**
+     * Plane №486 (заказчик): «Убери статусы Привлечен на мероприятия(обе)».
+     *
+     * Окно расхода их не предлагало с №427, а ЭТО окно — «Запланировать
+     * статус» на «Статусах сотрудников» — предлагало по-прежнему: в коде
+     * прямо стояло «тип в списке остаётся видимым, но отправка отбивается
+     * словами». То есть человек выбирал «Привлечён на мероприятие (наряд)»,
+     * заполнял форму и получал отказ — выбор, который не мог сработать
+     * НИКОГДА.
+     *
+     * Сами типы из справочника НЕ удаляются: их ставит система при
+     * назначении на мероприятие, по ним считаются колонки расхода и разрезы
+     * сбора сил. Убран только ручной выбор.
+     *
+     * Красная проверка — снять фильтр `EVENT_PARTICIPATION_STATUS_CODES` в
+     * `EditStatusDialog`: оба типа возвращаются в список.
+     */
+    await signIn(page)
+    await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
+
+    const menu = page.getByRole('button', { name: /^Действия: / }).first()
+    await expect(menu, 'в таблице нет строки с действиями').toBeVisible({ timeout: 20_000 })
+    await menu.click()
+    const plan = page.getByRole('menuitem', { name: 'Запланировать статус' })
+    await expect(plan, 'у сотрудника нет пункта «Запланировать статус»').toBeVisible()
+    await plan.click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 20_000 })
+    await dialog.getByLabel('Новый статус').click()
+    const options = await page.getByRole('option').allTextContents()
+    expect(options.length, 'справочник статусов пуст — проба вакуумна').toBeGreaterThan(0)
+    expect(
+      options.some((o) => /Привлечён на мероприятие/i.test(o)),
+      `типы участия не должны предлагаться вручную: ${options.join(' | ')}`,
+    ).toBe(false)
+    // Обычные статусы на месте — фильтр убрал участие, а не список целиком.
+    expect(
+      options.some((o) => /В командировке|В отпуске|На больничном/i.test(o)),
+      `из списка пропали обычные статусы: ${options.join(' | ')}`,
+    ).toBe(true)
+  })
 })
