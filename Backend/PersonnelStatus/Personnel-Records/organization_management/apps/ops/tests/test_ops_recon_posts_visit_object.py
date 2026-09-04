@@ -249,3 +249,163 @@ def test_migration_marks_posts_only_where_the_answer_is_single(manager, event_on
 
     event = service.lock_event(event_id)
     assert {r["visitObjectId"] for r in event.recon_sector_posts} == {None}
+
+
+# ── Снимок потребности и разметка (Plane №414) ──────────────────────────────
+#
+# `placementNeed`/`placementAssigned` в строке ОБЪЕКТА считаются на чтении, а
+# `force_need`/`force_assigned` — СНИМКИ в строке объекта, и из них
+# `recompute_event_stage` складывает потребность МЕРОПРИЯТИЯ (`forceNeed`).
+# Два ответа на один вопрос расходятся ровно там, где меняется ПРИНАДЛЕЖНОСТЬ
+# постов, а сами посты не трогали: неразмеченная строка принадлежит
+# ЕДИНСТВЕННОМУ объекту и НИКОМУ — как только объектов стало двое
+# (`visit_object_posts`). Добавление и снятие объекта — единственные две
+# операции, которые меняют это число, ничего не написав в расчёт.
+
+
+def _save_unmarked_posts(api, event_id, needs):
+    """Сохранить расчёт БЕЗ разметки по объектам — так его ведут, пока объект один."""
+    resp = api.patch(
+        f"/api/ops/security-events/{event_id}/recon/",
+        {
+            "checklist": [],
+            "sectorPosts": [
+                {
+                    "sector": f"Сектор {index}",
+                    "post": f"Пост {index}",
+                    "task": "",
+                    "need": need,
+                    "shift": "",
+                    "requirements": "",
+                    "comment": "",
+                }
+                for index, need in enumerate(needs, start=1)
+            ],
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+    return resp
+
+
+def test_adding_a_second_object_refreshes_the_need_snapshot(manager, event_on_recon):
+    """Второй объект отбирает у первого неразмеченные посты — снимок обязан это увидеть.
+
+    Красная проба к `add_visit_object`: пока он не звал `recompute_visit_needs`,
+    первый объект уносил в снимке потребность, посчитанную когда он был
+    ЕДИНСТВЕННЫМ. Строка объекта на экране при этом честно писала «неизвестно»
+    (она считается на чтении), а потребность МЕРОПРИЯТИЯ складывалась из
+    снимков и печатала число, которого в расчёте больше нет.
+    """
+    event_id, _ = event_on_recon
+    visit = OpsSecurityEventVisitObject.objects.get(event_id=event_id)
+    _save_unmarked_posts(manager, event_id, [4, 8])
+
+    visit.refresh_from_db()
+    assert (visit.force_need, visit.force_assigned) == (12, 0), (
+        "единственный объект должен был унести весь расчёт — проба вакуумна"
+    )
+
+    second = make_object(code="OBJ-SECOND", name="Второй объект")
+    added = manager.post(
+        f"/api/ops/security-events/{event_id}/visit-objects/",
+        {"objectId": str(second.pk)},
+        format="json",
+    )
+    assert added.status_code in (200, 201), added.content
+
+    visit.refresh_from_db()
+    assert (visit.force_need, visit.force_assigned) == (0, 0), (
+        "снимок остался от времён единственного объекта: неразмеченные посты "
+        "при двух объектах не принадлежат никому"
+    )
+
+    event = service.recompute_event_stage(service.lock_event(event_id))
+    assert event.force_need == 0, (
+        "потребность мероприятия сложена из устаревших снимков"
+    )
+
+
+def test_removing_the_second_object_refreshes_the_need_snapshot(manager, event_on_recon):
+    """Снятие второго объекта возвращает первому неразмеченные посты.
+
+    Обратная сторона той же дыры: объект снова стал единственным, расчёт снова
+    его — но снимок остался нулевым, и мероприятие показывало потребность 0
+    при непустом расчёте.
+    """
+    event_id, _ = event_on_recon
+    visit = OpsSecurityEventVisitObject.objects.get(event_id=event_id)
+    second = make_object(code="OBJ-SECOND", name="Второй объект")
+    added = manager.post(
+        f"/api/ops/security-events/{event_id}/visit-objects/",
+        {"objectId": str(second.pk)},
+        format="json",
+    )
+    assert added.status_code in (200, 201), added.content
+    second_visit = (
+        OpsSecurityEventVisitObject.objects.filter(event_id=event_id)
+        .exclude(pk=visit.pk)
+        .get()
+    )
+    _save_unmarked_posts(manager, event_id, [3, 7])
+
+    visit.refresh_from_db()
+    assert (visit.force_need, visit.force_assigned) == (0, 0), (
+        "при двух объектах неразмеченные посты ничьи — проба вакуумна"
+    )
+
+    removed = manager.delete(
+        f"/api/ops/security-events/{event_id}/visit-objects/{second_visit.pk}/"
+    )
+    assert removed.status_code in (200, 204), removed.content
+
+    visit.refresh_from_db()
+    assert (visit.force_need, visit.force_assigned) == (10, 0), (
+        "объект снова единственный — весь расчёт его, а снимок это проспал"
+    )
+
+
+def test_migration_0090_brings_stale_snapshots_back_to_the_calculation(
+    manager, event_on_recon
+):
+    """Строки, разошедшиеся ДО правки, чинит миграция.
+
+    Красная проба к бэкфиллу: объект заводится в обход сервиса (так его
+    заводили, пока `add_visit_object` не пересчитывал снимок), поэтому снимок
+    первого объекта остаётся от времён, когда он был единственным. Без
+    миграции такая строка врала бы вечно — её снимок никто больше не тронет,
+    пока кто-нибудь не отредактирует расчёт.
+    """
+    import importlib
+
+    from django.apps import apps as django_apps
+
+    migration = importlib.import_module(
+        "organization_management.apps.operations.migrations."
+        "0090_refresh_visit_need_snapshots"
+    )
+
+    event_id, _ = event_on_recon
+    visit = OpsSecurityEventVisitObject.objects.get(event_id=event_id)
+    _save_unmarked_posts(manager, event_id, [5, 7])
+    visit.refresh_from_db()
+    assert visit.force_need == 12, "проба вакуумна — снимок не заполнился"
+
+    # В ОБХОД сервиса: снимок остаётся прежним, как у строк до Plane №414.
+    second_object = make_object(code="OBJ-СТАРЫЙ", name="Заведён в обход")
+    OpsSecurityEventVisitObject.objects.create(
+        event_id=event_id,
+        security_object=second_object,
+        object_name=second_object.name,
+        position=visit.position + 1,
+        stage=visit.stage,
+    )
+    visit.refresh_from_db()
+    assert visit.force_need == 12, "объект в обход сервиса не должен был чинить снимок"
+
+    migration._refresh_snapshots(django_apps, None)
+
+    visit.refresh_from_db()
+    assert (visit.force_need, visit.force_assigned) == (0, 0), (
+        "миграция не привела снимок к расчёту"
+    )
