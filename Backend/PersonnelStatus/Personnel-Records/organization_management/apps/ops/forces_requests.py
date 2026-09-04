@@ -211,11 +211,23 @@ def select_for_request(allocation_id, employee_ids, allowed_division_ids, *, act
         if allowed_division_ids is not None and (
             division is None or division not in allowed_division_ids
         ):
-            employee = _find_personnel(employee_id)
+            # 🔴 ФАМИЛИЮ ЧУЖОГО НЕ НАЗЫВАЕМ (Plane №543). Здесь стояло
+            # `personnel_display_name(_find_personnel(employee_id))` — ровно
+            # обратное инварианту, записанному в `employee_scope_division`:
+            # «существование сотрудника СОЗНАТЕЛЬНО не подтверждается,
+            # отвечать „такого нет“ значило бы отдать проверяющему перебор по
+            # кадрам». Начальнику управления довольно было прислать пятьсот
+            # идентификаторов, чтобы получить 200 с фамилиями сотрудников
+            # чужих департаментов — и заодно узнать, какие идентификаторы
+            # вообще существуют.
+            #
+            # Отдаётся присланный идентификатор: экран показывает отказ той же
+            # строкой чекбокса, которую человек отметил, и подпись у него уже
+            # есть — своя, законная.
             refused.append(
                 {
                     "employeeId": employee_id,
-                    "name": personnel_display_name(employee) if employee else employee_id,
+                    "name": employee_id,
                     "code": "PERMISSION_DENIED",
                     "message": "Сотрудник не вашего управления.",
                 }

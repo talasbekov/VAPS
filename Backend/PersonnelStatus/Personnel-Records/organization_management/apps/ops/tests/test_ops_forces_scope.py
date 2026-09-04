@@ -24,6 +24,8 @@ permission` отвечает на вопрос про область (его с�
 ведут цепочку): предмет проверки — ГЕЙТ действия, и путь к нему не должен
 упираться в тот же гейт.
 """
+import json
+
 import pytest
 
 from organization_management.apps.operations.models_event import OpsSecurityEvent
@@ -1104,8 +1106,18 @@ def test_the_head_selects_people_and_the_status_is_created_from_the_request(mana
     assert OpsEmployeeStatus.objects.filter(employee_id=person.pk).exists()
 
 
-def test_a_stranger_in_the_list_is_refused_by_name_and_the_rest_proceed(manager):  # noqa: F811
-    """Чужой сотрудник — отказ ПО ЧЕЛОВЕКУ с причиной; свои выделяются."""
+def test_a_stranger_in_the_list_is_refused_without_naming_him(manager):  # noqa: F811
+    """Чужой сотрудник — отказ по строке, БЕЗ его фамилии; свои выделяются.
+
+    🔴 ИМЯ ПРОБЫ ИЗМЕНЕНО ВМЕСТЕ С ПОВЕДЕНИЕМ (Plane №543). Раньше она
+    называлась «…refused_by_name», и отказ действительно нёс фамилию — ровно
+    обратное инварианту `employee_scope_division`: «существование сотрудника
+    сознательно не подтверждается, иначе это перебор по кадрам». Начальнику
+    управления довольно было прислать список идентификаторов, чтобы получить
+    фамилии сотрудников чужих департаментов и узнать, какие идентификаторы
+    существуют. Отказ по-прежнему адресный (по строке чекбокса), но человека
+    не называет.
+    """
     own = make_department("Департамент А")
     first = make_directorate(own, "Управление А-1")
     second = make_directorate(own, "Управление А-2")
@@ -1127,6 +1139,9 @@ def test_a_stranger_in_the_list_is_refused_by_name_and_the_rest_proceed(manager)
     assert body["selected"] == [str(mine.pk)]
     assert [r["employeeId"] for r in body["refused"]] == [str(stranger.pk)]
     assert body["refused"][0]["code"] == "PERMISSION_DENIED"
+    # Фамилии чужого в ответе нет НИГДЕ — ни в подписи строки, ни в тексте.
+    assert stranger.last_name not in json.dumps(body, ensure_ascii=False)
+    assert body["refused"][0]["name"] == str(stranger.pk)
 
 
 def test_employee_ids_must_be_a_list_of_scalars(manager):  # noqa: F811
