@@ -33,6 +33,39 @@ export function directorateForcesRequestPath(allocationId: string): string {
   return `/api/ops/security-events/forces/requests/${encodeURIComponent(allocationId)}/directorate/`;
 }
 
+/** Список запросов, адресованных управлениям актора (Plane №487).
+ *
+ * 🔴 Имя пути РАЗВЕДЕНО с `forces/requests/…`: `forces/requests/directorate/`
+ * попадает в маршрут ОДНОЙ заявки (`allocation_id = "directorate"`) и
+ * отвечает 403 чужим правом департамента. Поймано прогоном пробы. */
+export const DIRECTORATE_FORCES_REQUESTS_KEY = ["ops-directorate-forces-requests"] as const;
+
+export function directorateForcesRequestsPath(): string {
+  return "/api/ops/security-events/forces/directorate-requests/";
+}
+
+/**
+ * Что просят У МОЕГО управления — без ссылки из уведомления (Plane №487).
+ *
+ * Заказчик: «с модуля не ставятся статус Участие на ОМ». Ручной статус
+ * запрещён (№427), а единственный путь к чекбоксам лежал через параметр
+ * адреса `?forcesRequest=…`, который кладёт только уведомление. Открывший
+ * раздел из меню не мог поставить статус ничем.
+ */
+export function useDirectorateForcesRequests(options: { enabled?: boolean } = {}) {
+  return useQuery<{ results: DirectorateForcesRequest[] }, OpsApiFailure>({
+    queryKey: DIRECTORATE_FORCES_REQUESTS_KEY,
+    queryFn: () =>
+      opsApiClient.get<{ results: DirectorateForcesRequest[] }>(
+        directorateForcesRequestsPath()
+      ),
+    enabled: options.enabled ?? true,
+    // Нет права `status.manage` — 403; повторять его нечего, а баннера у
+    // такого человека и быть не должно.
+    retry: false,
+  });
+}
+
 export function useDirectorateForcesRequest(allocationId: string | null) {
   return useQuery<DirectorateForcesRequest, OpsApiFailure>({
     queryKey: ["ops-directorate-forces-request", allocationId],
@@ -72,6 +105,9 @@ export function useSelectForRequest(allocationId: string | null) {
       // Баннер и таблица статусов читают разные ручки — обновить обе: иначе
       // «выделено 1 из 2» в баннере спорило бы со статусом в строке ниже.
       void client.invalidateQueries({ queryKey: ["ops-directorate-forces-request", allocationId] });
+      // Список тоже: он несёт «выделено X из Y» по каждому запросу, и без
+      // сброса чипы выбора спорили бы с цифрой в самом баннере (Plane №487).
+      void client.invalidateQueries({ queryKey: DIRECTORATE_FORCES_REQUESTS_KEY });
       void client.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
       void client.invalidateQueries({ queryKey: ["staff-units-page"] });
     },

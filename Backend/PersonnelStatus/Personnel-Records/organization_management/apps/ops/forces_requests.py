@@ -9,10 +9,14 @@ X из Y». Ему нужна ОДНА строка управления из з
 
 Своя ручка, а не `forces/requests/<id>/` департамента: та гейтится
 `forces.allocate` (ответственный за департамент), у начальника управления
-его нет и не будет — у него `forces.select`. Область — управления, которые
-он видит под `forces.select`; чужая заявка — 404, а не 403 (существование
-чужой строки не подтверждается перебором идентификаторов, как и у
-департамента).
+его нет и не будет. Гейт здесь — `status.manage` (тот, кто проставляет
+«Участие в ОМ» по своему управлению), и область берётся под ним же. НЕ
+`forces.select`: у профилей заказчика его нет, и живой стенд отвечал бы
+начальнику управления 403 — см. `forces_directorate_request` во вьюхах.
+(Строка исправлена в №487: она обещала `forces.select` и расходилась с
+кодом, который под ней же и написан.) Чужая заявка — 404, а не 403:
+существование чужой строки не подтверждается перебором идентификаторов,
+как и у департамента.
 
 Модуль отдельный от `security_events.py`: у чтения свой предмет, а тот файл
 и так под пять тысяч строк.
@@ -23,6 +27,93 @@ from organization_management.apps.ops.security_events import (
     _not_found,
     allocation_members_view,
 )
+
+
+def _directorate_row_view(event, allocation, mine, allocation_id):
+    """Шапка мероприятия плюс СВОИ строки управлений одной заявки.
+
+    Вынесено из `directorate_request_view`, чтобы список и одиночная заявка
+    отдавали ОДНУ И ТУ ЖЕ форму: разойдись они — баннер, читающий обе ручки,
+    показывал бы разные поля в зависимости от того, пришёл человек по ссылке
+    из уведомления или открыл раздел из меню.
+    """
+    return {
+        "eventId": str(event.pk),
+        "code": event.code,
+        "title": event.title,
+        "businessDate": event.business_date.isoformat(),
+        "allocationId": allocation_id,
+        "departmentName": allocation.get("departmentName", ""),
+        "status": allocation.get("status"),
+        "dueAt": allocation.get("dueAt"),
+        # Обычно одна строка; несколько — у роли с областью на
+        # департамент (она видит все его управления).
+        "directorates": [
+            {
+                "divisionId": str(row.get("divisionId")),
+                "name": row.get("name", ""),
+                "need": int(row.get("need") or 0),
+                "assigned": int(row.get("assigned") or 0),
+                "notifiedAt": row.get("notifiedAt"),
+            }
+            for row in mine
+        ],
+    }
+
+
+def _mine_of(allocation, allowed_division_ids):
+    """Строки управлений заявки, попадающие в область актора.
+
+    `allowed_division_ids is None` — область не сужена (администратор): своя
+    любая строка.
+    """
+    return [
+        row
+        for row in allocation.get("directorates", [])
+        if allowed_division_ids is None
+        or _as_division_id(row.get("divisionId")) in allowed_division_ids
+    ]
+
+
+def directorate_requests_view(allowed_division_ids):
+    """Все ОПОВЕЩЁННЫЕ запросы, адресованные управлениям актора (Plane №487).
+
+    🔴 ЗАЧЕМ ЭТА РУЧКА ВООБЩЕ ЕСТЬ. Статус «Участие в ОМ» вручную не
+    заводится (решение заказчика в №427: `_refuse_manual_participation`
+    отвечает 422 и отсылает к чекбоксам запроса). Чекбоксы показывает баннер
+    на «Статусах сотрудников», а тот до №487 выходил ТОЛЬКО по параметру
+    адреса `?forcesRequest=<id>`, который кладёт единственная ссылка — из
+    уведомления. Списка «что просят у МОЕГО управления» не существовало:
+    реестр `forces/requests` гейтится `forces.allocate`, правом ДЕПАРТАМЕНТА.
+    Человек, открывший раздел из меню, статус поставить не мог ничем — это и
+    есть жалоба «с модуля не ставятся статус Участие на ОМ».
+
+    Опираться на одно уведомление нельзя и по второй причине: доставка у него
+    дырявая (идемпотентность по дню и получатели без фильтра прав — отдельные
+    карточки). Список отвечает на вопрос «что от меня ждут» из данных, а не
+    из письма.
+
+    ОПОВЕЩЁННЫЕ, а не все: пока штаб не разослал запрос, выделять нечего —
+    показать такую строку значило бы позвать человека к работе, которой ему
+    ещё не поручали. Порядок — по дате мероприятия: ближайшее сверху.
+    """
+    if allowed_division_ids is not None and not allowed_division_ids:
+        return []
+    rows = []
+    for event in OpsSecurityEvent.objects.exclude(force_allocation=[]):
+        for allocation in allocation_members_view(event):
+            mine = [
+                row
+                for row in _mine_of(allocation, allowed_division_ids)
+                if row.get("notifiedAt")
+            ]
+            if not mine:
+                continue
+            rows.append(
+                _directorate_row_view(event, allocation, mine, allocation.get("id"))
+            )
+    rows.sort(key=lambda row: (row["businessDate"], row["code"]))
+    return rows
 
 
 def directorate_request_view(allocation_id, allowed_division_ids):
@@ -36,36 +127,10 @@ def directorate_request_view(allocation_id, allowed_division_ids):
         for allocation in allocation_members_view(event):
             if allocation.get("id") != allocation_id:
                 continue
-            mine = [
-                row
-                for row in allocation.get("directorates", [])
-                if allowed_division_ids is None
-                or _as_division_id(row.get("divisionId")) in allowed_division_ids
-            ]
+            mine = _mine_of(allocation, allowed_division_ids)
             if not mine:
                 raise _not_found("Запрос управлению не найден.", allocation_id)
-            return {
-                "eventId": str(event.pk),
-                "code": event.code,
-                "title": event.title,
-                "businessDate": event.business_date.isoformat(),
-                "allocationId": allocation_id,
-                "departmentName": allocation.get("departmentName", ""),
-                "status": allocation.get("status"),
-                "dueAt": allocation.get("dueAt"),
-                # Обычно одна строка; несколько — у роли с областью на
-                # департамент (она видит все его управления).
-                "directorates": [
-                    {
-                        "divisionId": str(row.get("divisionId")),
-                        "name": row.get("name", ""),
-                        "need": int(row.get("need") or 0),
-                        "assigned": int(row.get("assigned") or 0),
-                        "notifiedAt": row.get("notifiedAt"),
-                    }
-                    for row in mine
-                ],
-            }
+            return _directorate_row_view(event, allocation, mine, allocation_id)
     raise _not_found("Запрос управлению не найден.", allocation_id)
 
 
