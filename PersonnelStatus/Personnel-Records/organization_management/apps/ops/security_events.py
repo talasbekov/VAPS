@@ -5287,7 +5287,7 @@ def complete_acknowledgement(event_id):
 
 
 @transaction.atomic
-def add_journal_entry(event_id, *, entry_type, title, description):
+def add_journal_entry(event_id, *, entry_type, title, description, occurred_at=None, post_id=None, measures=""):
     event = lock_event(event_id)
     title = str(title or "").strip()
     if title == "":
@@ -5296,6 +5296,10 @@ def add_journal_entry(event_id, *, entry_type, title, description):
         event, "CONDUCT", "Журнал штаба доступен только на этапе «Проведение»."
     )
     entry = {
+        # Инцидент (`[ЗАК-03]`, Plane №448): время, пост, принятые меры.
+        "occurredAt": str(occurred_at or "").strip() or None,
+        "postId": str(post_id or "").strip() or None,
+        "measures": str(measures or "").strip(),
         "id": f"journal-{len(event.journal_entries) + 1}-{_now_iso()}",
         "type": entry_type,
         "title": title,
@@ -5555,7 +5559,7 @@ def close_visit_object(event_id, visit_object_id, *, actor, comment=""):
 
 
 @transaction.atomic
-def close_event(event_id, *, direction_summaries, actor):
+def close_event(event_id, *, direction_summaries=None, actor, comment=""):
     event = lock_event(event_id)
     summaries = direction_summaries or []
     field_errors = {}
@@ -5567,14 +5571,10 @@ def close_event(event_id, *, direction_summaries, actor):
     if field_errors:
         raise _validation(field_errors)
     _require_stage(event, "CONDUCT", "Закрыть ОМ можно только на этапе «Проведение».")
-    # итоги ВСЕХ направлений обязательны — не частичное закрытие
-    directions = {p.get("sector") for p in event.recon_sector_posts}
-    covered = {item.get("direction") for item in summaries}
-    missing = sorted(d for d in directions if d not in covered)
-    if missing:
-        raise DomainError("CLOSURE_DIRECTIONS_INCOMPLETE", 422, message=
-            f"Не хватает итогов направлений: {', '.join(missing)}.",
-        )
+    # `[ЗАК-04]` (Plane №448): итоги по направлениям больше НЕ обязательны —
+    # один необязательный комментарий. Присланные итоги сохраняются как
+    # прежде (история закрытых ОМ), незаполненные направления не мешают;
+    # прежний отказ CLOSURE_DIRECTIONS_INCOMPLETE снят.
     old_stage = event.stage
     # Закрывается мероприятие — значит закрыты и все его объекты (Plane №412):
     # закрытое ОМ с объектом «на расстановке» показывало бы работу, которой
@@ -5594,5 +5594,6 @@ def close_event(event_id, *, direction_summaries, actor):
         for item in summaries
     ]
     event.closed_at = closed_at
-    event.save(update_fields=["closure_direction_summaries", "closed_at", "updated_at"])
+    event.closing_comment = str(comment or "").strip()
+    event.save(update_fields=["closure_direction_summaries", "closing_comment", "closed_at", "updated_at"])
     return _finalize_event_closure(event, actor=actor, old_stage=old_stage)

@@ -50,6 +50,7 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
   return (
     <div className="flex flex-col gap-4">
       <EvaluationPanel event={event} />
+      <IncidentsPanel event={event} />
       <VisitObjectClosurePanel event={event} />
       <ClosurePanel event={event} />
       <PostControlPanel event={event} />
@@ -643,9 +644,7 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
 
 function ClosurePanel({ event }: { event: SecurityEvent }) {
   const closeAccess = useChainAccess();
-  // направления = секторы расчёта; итог обязателен по каждому
-  const directions = [...new Set(event.reconSectorPosts.map((p) => p.sector))];
-  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [comment, setComment] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
   );
@@ -653,92 +652,29 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
     onFormError: (details) => setFieldErrors(details),
   });
   const { hasPermission } = useOpsPermissions();
-
-  const facts = closureFacts(event);
-  const ready = directions.filter(
-    (direction) => (summaries[direction] ?? "").trim() !== ""
-  );
-
+  const summary = event.closureSummary;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Закрытие и итоги</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-4 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-          <Fact value={`${facts.assigned} / ${facts.need}`} label="назначено / потребность" />
-          <Fact value={String(facts.replacements)} label="замен" />
-          <Fact
-            value={String(facts.incidents)}
-            label="инцидентов"
-            alarming={facts.incidents > 0}
+        {/* `[ЗАК-01]` (Plane №448): итог одной строкой, считает сервер. */}
+        <p className="text-sm tabular-nums" data-slot="closure-summary-line">
+          Постов <b>{summary.posts}</b> · назначено <b>{summary.assigned} из {summary.need}</b> · замен{" "}
+          <b>{summary.replacements}</b> · отказов <b>{summary.declines}</b> · инцидентов{" "}
+          <b className={summary.incidents > 0 ? "text-amber-700" : ""}>{summary.incidents}</b>
+        </p>
+        {/* `[ЗАК-04]`: один необязательный комментарий вместо обязательных
+            итогов по направлениям. */}
+        <div className="space-y-1">
+          <Label htmlFor="closing-comment">Итоговый комментарий (необязательно)</Label>
+          <Textarea
+            id="closing-comment"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
           />
         </div>
-
-        {/* Готовность к закрытию — из прототипа: до этого о нехватке итогов
-            узнавали только по 422 после нажатия. Кнопка при этом НЕ
-            блокируется: владелец правила один — сервер, и клиентский гард
-            рядом с ним лишь маскировал бы его отказ. */}
-        <div className="rounded-md border">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-            <div>
-              <p className="text-sm font-semibold">Готовность к закрытию</p>
-              <p className="text-xs text-muted-foreground">
-                Итоги обязательны по каждому направлению — частичное закрытие
-                невозможно.
-              </p>
-            </div>
-            <span
-              className={
-                ready.length === directions.length && directions.length > 0
-                  ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
-                  : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
-              }
-            >
-              {ready.length} из {directions.length} готовы
-            </span>
-          </div>
-          {directions.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-muted-foreground">
-              Направлений нет — расчёт постов пуст.
-            </p>
-          ) : (
-            <div className="space-y-3 p-3">
-              {directions.map((direction) => {
-                const filled = (summaries[direction] ?? "").trim() !== "";
-                return (
-                  <div key={direction} className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor={`closure-${direction}`}>{direction} *</Label>
-                      <span
-                        className={
-                          filled
-                            ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[10.5px] font-semibold text-green-800"
-                            : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-800"
-                        }
-                      >
-                        {filled ? "Готово" : "Ожидается"}
-                      </span>
-                    </div>
-                    <Textarea
-                      id={`closure-${direction}`}
-                      value={summaries[direction] ?? ""}
-                      onChange={(e) =>
-                        setSummaries((prev) => ({
-                          ...prev,
-                          [direction]: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Оценка участников — живой отдельный экран (§19), а не копия его
-            таблицы здесь: две точки ввода оценок расходились бы. */}
         {hasPermission("rating.evaluate") && (
           <Link
             href="/security-ops/ratings/workspace"
@@ -747,7 +683,6 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
             Оценка участников ОМ →
           </Link>
         )}
-
         <FieldErrors errors={fieldErrors} />
         <StageError error={close.error} />
         <div className="flex justify-end">
@@ -757,17 +692,139 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
             title={closeAccess.reason(EVENT_MANAGE) || undefined}
             onClick={() => {
               setFieldErrors(null);
-              close.mutate({
-                directionSummaries: directions.map((direction) => ({
-                  direction,
-                  summary: summaries[direction] ?? "",
-                })),
-              });
+              close.mutate({ comment });
             }}
           >
             {close.isPending ? "Закрытие…" : "Закрыть мероприятие"}
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Инциденты и замечания (`[ЗАК-03]`, Plane №448): список записей журнала
+ * типа «инцидент» с временем, постом, описанием и принятыми мерами;
+ * «+ Добавить» — форма; пусто — одна строка «Инцидентов не было».
+ */
+function IncidentsPanel({ event }: { event: SecurityEvent }) {
+  const [open, setOpen] = useState(false);
+  const [occurredAt, setOccurredAt] = useState("");
+  const [postId, setPostId] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [measures, setMeasures] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(null);
+  const add = useAddJournalEntry(event.id, {
+    onFormError: (details) => setFieldErrors(details),
+    onEvent: () => {
+      setOpen(false);
+      setTitle("");
+      setDescription("");
+      setMeasures("");
+      setOccurredAt("");
+    },
+  });
+  const incidents = event.journalEntries.filter((e) => e.type === "INCIDENT");
+  const postName = (id: string | null | undefined) => {
+    const post = event.reconSectorPosts.find((p) => p.id === id);
+    return post ? `${post.sector} · ${post.post}` : "—";
+  };
+  return (
+    <Card data-slot="incidents-panel">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <CardTitle>Инциденты и замечания</CardTitle>
+        <Button type="button" variant="outline" size="sm" onClick={() => setOpen((v) => !v)}>
+          + Добавить
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {incidents.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-slot="incidents-empty">
+            Инцидентов не было
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {incidents.map((entry) => (
+              <li key={entry.id} className="rounded-md border px-3 py-2 text-sm" data-slot="incident-row">
+                <p>
+                  <span className="text-muted-foreground tabular-nums">
+                    {entry.occurredAt
+                      ? new Date(entry.occurredAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+                      : new Date(entry.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </span>{" "}
+                  · {postName(entry.postId)} · <b>{entry.title}</b>
+                </p>
+                {entry.description !== "" && <p className="text-muted-foreground">{entry.description}</p>}
+                {(entry.measures ?? "") !== "" && (
+                  <p className="text-xs">Принятые меры: {entry.measures}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {open && (
+          <div className="grid gap-2 rounded-md border p-3 md:grid-cols-2" data-slot="incident-form">
+            <div className="space-y-1">
+              <Label htmlFor="incident-time">Время</Label>
+              <Input id="incident-time" type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="incident-post">Пост</Label>
+              <select
+                id="incident-post"
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                value={postId}
+                onChange={(e) => setPostId(e.target.value)}
+              >
+                <option value="">— не привязан —</option>
+                {event.reconSectorPosts.map((post) => (
+                  <option key={post.id} value={post.id}>
+                    {post.sector} · {post.post}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <Label htmlFor="incident-title">Описание *</Label>
+              <Input id="incident-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <Label htmlFor="incident-details">Подробности</Label>
+              <Input id="incident-details" value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <Label htmlFor="incident-measures">Принятые меры</Label>
+              <Input id="incident-measures" value={measures} onChange={(e) => setMeasures(e.target.value)} />
+            </div>
+            <FieldErrors errors={fieldErrors} />
+            <StageError error={add.error} />
+            <div className="flex justify-end gap-2 md:col-span-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+                Отмена
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={add.isPending}
+                onClick={() => {
+                  setFieldErrors(null);
+                  add.mutate({
+                    type: "INCIDENT",
+                    title,
+                    description,
+                    measures,
+                    postId: postId || null,
+                    occurredAt: occurredAt ? new Date(occurredAt).toISOString() : null,
+                  });
+                }}
+              >
+                {add.isPending ? "Запись…" : "Записать инцидент"}
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

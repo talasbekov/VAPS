@@ -120,7 +120,7 @@ test.describe(LIVE ? 'цепочка этапов' : 'цепочка этапо�
     await page.goto(`${APP}/security-ops/events/${collapsed!.id}/`)
     const expected: Record<string, string> = {
       CONDUCT: 'Проведение и закрытие',
-      CLOSED: 'Дело закрыто',
+      CLOSED: 'Архив ОМ',
     }
     await expect(page.getByText(expected[collapsed!.stage])).toBeVisible({
       timeout: 15_000,

@@ -447,6 +447,7 @@ function emptyEvent(
         placementAssigned: 0,
         deputies: [],
         closingComment: "",
+        closureSummary: { posts: 0, need: 0, assigned: 0, replacements: 0, declines: 0, incidents: 0 },
         statusLabel: "Бюллетень",
         // Этап объекта (Plane №412): у свежего ОМ он тот же, что у
         // мероприятия, — этапы ещё не начинались.
@@ -517,6 +518,8 @@ function emptyEvent(
     approvalStale: false,
     journalEntries: [],
     closureDirectionSummaries: [],
+    closingComment: "",
+    closureSummary: { posts: 0, need: 0, assigned: 0, replacements: 0, declines: 0, incidents: 0 },
     closedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -2779,6 +2782,10 @@ export const securityEventsHandlers = [
         type: body.type,
         title: body.title.trim(),
         description: body.description.trim(),
+        // Инцидент (`[ЗАК-03]`, Plane №448): время, пост, меры.
+        occurredAt: body.occurredAt ?? null,
+        postId: body.postId ?? null,
+        measures: (body.measures ?? "").trim(),
         createdAt: nowIso(),
       };
       return HttpResponse.json(
@@ -2920,7 +2927,8 @@ export const securityEventsHandlers = [
       if (event === null) return response;
       const body = (await request.json()) as CloseSecurityEventRequest;
       const fieldErrors: Record<string, string[]> = {};
-      body.directionSummaries.forEach((d, index) => {
+      const summaries = body.directionSummaries ?? [];
+      summaries.forEach((d, index) => {
         if (d.summary.trim() === "") {
           fieldErrors[`directionSummaries.${index}.summary`] = [
             "Обязательное поле.",
@@ -2936,14 +2944,7 @@ export const securityEventsHandlers = [
       }
       // итоги ВСЕХ направлений обязательны — не частичное закрытие
       const directions = new Set(event.reconSectorPosts.map((p) => p.sector));
-      const covered = new Set(body.directionSummaries.map((d) => d.direction));
-      const missing = [...directions].filter((d) => !covered.has(d));
-      if (missing.length > 0) {
-        return businessRuleError(
-          "CLOSURE_DIRECTIONS_INCOMPLETE",
-          `Не хватает итогов направлений: ${missing.join(", ")}.`
-        );
-      }
+      // `[ЗАК-04]` (Plane №448): итоги по направлениям не обязательны — отказа нет.
       appendAudit({
         action: "security_event.close",
         entityType: "SecurityEvent",
@@ -2956,7 +2957,8 @@ export const securityEventsHandlers = [
           ...event,
           stage: "CLOSED",
           readinessPercent: 100,
-          closureDirectionSummaries: body.directionSummaries.map((d) => ({
+          closingComment: (body.comment ?? "").trim(),
+          closureDirectionSummaries: summaries.map((d) => ({
             direction: d.direction,
             summary: d.summary.trim(),
           })),

@@ -219,6 +219,10 @@ class OpsSecurityEvent(TimeStampedModel):
     # мероприятия, и они не копия чужого поля, а вывод по всем объектам.
     journal_entries = models.JSONField()
     closure_direction_summaries = models.JSONField()
+    # Один необязательный итоговый комментарий (`[ЗАК-04]`, Plane №448) —
+    # вместо обязательных итогов по направлениям; старые итоги остаются в
+    # данных закрытых ОМ и показываются в истории.
+    closing_comment = models.TextField(blank=True, default="")
     closed_at = models.DateTimeField(null=True)
 
     class Meta:

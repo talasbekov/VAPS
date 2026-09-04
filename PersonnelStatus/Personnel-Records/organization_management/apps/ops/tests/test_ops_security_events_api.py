@@ -778,9 +778,8 @@ def test_full_lifecycle_walkthrough(manager, approver_client):
     assert data["journalEntries"][0]["type"] == "REPLACEMENT"
     assert "Абенов С. → Оспанова А." in data["journalEntries"][0]["description"]
 
-    # CLOSED: итоги всех направлений обязательны
-    resp = manager.post(f"{base}close/", {"directionSummaries": []}, format="json")
-    assert resp.json()["error_code"] == "CLOSURE_DIRECTIONS_INCOMPLETE"
+    # CLOSED: итоги по направлениям больше не обязательны (`[ЗАК-04]`, Plane
+    # №448) — присланные сохраняются как история.
     data = manager.post(
         f"{base}close/",
         {
