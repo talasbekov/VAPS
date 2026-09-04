@@ -1147,3 +1147,26 @@ def test_selecting_twice_reports_the_double_assignment_instead_of_failing(manage
     assert again.status_code == 200
     assert again.json()["selected"] == []
     assert again.json()["refused"][0]["code"] == "DOUBLE_ASSIGNMENT"
+
+
+def test_the_requests_list_carries_the_department_answer(manager):  # noqa: F811
+    """Строка заявки несёт «выделяем» — ответ департамента (`[СБС-20]`,
+    Plane №444): `None`, пока ответа нет, и цифру после него. Колонка
+    «выделяем» экрана читает это поле, а не «собрано».
+
+    Красная на мутации: убери ключ `allocating` из `department_requests_view`.
+    """
+    own = make_department("Департамент А")
+    base, _ = allocated_event(manager, own)
+    api = scoped_client("dep-a-answer", "DEP_A_ANS", own.pk)
+
+    before = api.get(REQUESTS_URL).json()["results"]
+    assert before, "заявки нет — проверять нечего"
+    assert before[0]["allocating"] is None
+
+    allocation_id = before[0]["allocationId"]
+    assert _respond(manager, base, allocation_id, 3).status_code == 200
+
+    after = api.get(REQUESTS_URL).json()["results"]
+    assert after[0]["allocating"] == 3
+    assert after[0]["assigned"] == 0, "«выделяем» и «собрано» — разные числа"

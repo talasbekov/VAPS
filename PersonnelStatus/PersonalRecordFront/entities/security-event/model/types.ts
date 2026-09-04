@@ -1107,6 +1107,9 @@ export interface DepartmentRequestRow {
   departmentId: string;
   departmentName: string;
   need: number;
+  /** Ответ департамента «Выделяем: X» (Plane №391); `null` — ответа ещё нет.
+   * Колонка «выделяем» строки `[СБС-20]` (Plane №444). */
+  allocating: number | null;
   assigned: number;
   status: ForceAllocationStatus;
   /** Срок сдачи списка: момент, к которому департамент обязан отдать людей

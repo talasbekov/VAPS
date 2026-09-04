@@ -3048,6 +3048,10 @@ def department_requests_view(allowed_division_ids):
                     "departmentId": str(department_id),
                     "departmentName": allocation.get("departmentName") or "",
                     "need": int(allocation.get("need") or 0),
+                    # Ответ департамента «Выделяем: X» (Plane №391) — колонка
+                    # «выделяем» строки `[СБС-20]` (Plane №444); None — ответа
+                    # ещё нет.
+                    "allocating": allocation.get("allocating"),
                     "assigned": len(members),
                     "status": allocation.get("status") or _ALLOCATION_DRAFT,
                     # Срок сдачи списка и признак опоздания (Plane №287).
