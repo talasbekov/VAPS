@@ -1129,6 +1129,42 @@ def test_a_stranger_in_the_list_is_refused_by_name_and_the_rest_proceed(manager)
     assert body["refused"][0]["code"] == "PERMISSION_DENIED"
 
 
+def test_employee_ids_must_be_a_list_of_scalars(manager):  # noqa: F811
+    """Тело проверяется ДО работы: строка и словарь — 400 (Plane №544).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. `employeeIds` уходил в цикл как есть, а строка `"18"`
+    — это последовательность: цикл шёл ПО СИМВОЛАМ и выделял сотрудников 1 и
+    8; словарь перебирался по ключам. Попади получившиеся идентификаторы в
+    область актора — и сервер РЕАЛЬНО заводил статусы участия не тем людям,
+    молча и без единого отказа в ответе.
+    """
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    person = employee_of(first, "Скалярнов")
+    make_assignment_status_type()
+    head = _status_head("dir-head-types", "DIR_HEAD_TYPES", first)
+    url = f"{URL}forces/requests/{allocation_id}/directorate/select/"
+
+    for payload in ({"employeeIds": "18"}, {"employeeIds": {"a": 1}},
+                    {"employeeIds": [["18"]]}, {"employeeIds": [{"id": "18"}]}):
+        refused = head.post(url, payload, format="json")
+        assert refused.status_code == 400, (payload, refused.data)
+        assert refused.json()["error_code"] == "VALIDATION_ERROR"
+
+    # Пустое тело и пустой список — по-прежнему НЕ ошибка: «никого не отметил»
+    # это законное состояние формы, а не опечатка в типе.
+    for payload in ({}, {"employeeIds": []}, {"employeeIds": None}):
+        empty = head.post(url, payload, format="json")
+        assert empty.status_code == 200, (payload, empty.data)
+        assert empty.json()["selected"] == []
+
+    # И нормальный список работает как работал.
+    ok = head.post(url, {"employeeIds": [str(person.pk)]}, format="json")
+    assert ok.status_code == 200 and ok.json()["selected"] == [str(person.pk)]
+
+
 def test_selecting_twice_reports_the_double_assignment_instead_of_failing(manager):  # noqa: F811
     """Повторное выделение того же человека — отказ по нему с причиной сервера
     (`DOUBLE_ASSIGNMENT`), а не 422 на весь запрос."""
