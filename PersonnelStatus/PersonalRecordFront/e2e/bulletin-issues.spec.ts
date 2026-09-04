@@ -58,6 +58,9 @@ test.describe(LIVE ? 'выпуски бюллетеня' : 'выпуски бю�
 
     const issues = page.getByRole('group', { name: 'Выпуски бюллетеня' })
     await expect(issues).toBeVisible()
+    // Считать только ПОСЛЕ загрузки списка: пока он грузится, элементов ноль,
+    // и «before + 1» ждал одного выпуска при трёх на стенде (прогон 04.09.2026).
+    await expect(issues.getByText(/Выпусков ещё не было|Скачать PDF/).first()).toBeVisible()
     const before = await issues.getByRole('listitem').count()
 
     await slice.fill('2099-01-01T08:00')
