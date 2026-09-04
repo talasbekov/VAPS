@@ -283,6 +283,86 @@ def visit_for_event(event, *, create=False):
     return visit
 
 
+# Обязательные поля визита (`[ГВО-07]`, Plane №436): без них «Утвердить»
+# недоступна. Ключ — путь в собранной сводке; поле считается заполненным, если
+# в нём есть данные ЛИБО оно помечено «уточняется» (`[ГВО-06]`): «данных нет от
+# принимающей стороны» — тоже ответ, и утверждение он не держит.
+REQUIRED_VISIT_FIELDS = (
+    ("country", "Страна"),
+    ("persons", "Охраняемые лица"),
+    ("arrival.date", "Дата прибытия"),
+    ("departure.date", "Дата убытия"),
+    ("responsible", "Старший ГВО"),
+)
+
+
+def _field_value(summary, path):
+    node = summary
+    for part in path.split("."):
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    return node
+
+
+def missing_required(summary, visit):
+    """Незаполненные обязательные поля визита — подписями, по порядку."""
+    flagged = set((visit.unspecified or []) if visit is not None else [])
+    missing = []
+    for path, label in REQUIRED_VISIT_FIELDS:
+        if path in flagged:
+            continue
+        value = _field_value(summary or {}, path)
+        empty = (
+            value is None
+            or value == ""
+            or (isinstance(value, (list, dict)) and len(value) == 0)
+        )
+        if empty:
+            missing.append(label)
+    return missing
+
+
+def approve_visit(om_code, *, actor):
+    """«Утвердить» визит (`[ГВО-07]`, `[ГВО-09]`): штаб; недоступно, пока не
+    заполнены обязательные поля. Повторное утверждение — отказ, а не тихое
+    «ок»: утверждённая версия одна."""
+    from organization_management.apps.ops import documents_summary
+
+    event = _event_or_none(om_code)
+    if event is None:
+        return None
+    _require_foreign(event)
+    visit = visit_for_event(event, create=True)
+    if visit.status == "APPROVED":
+        raise DomainError(
+            "VISIT_ALREADY_APPROVED", 422,
+            message="Визит уже утверждён — правки заведут новую версию.",
+        )
+    row = documents_summary.summary_row(event)
+    missing = missing_required(row.get("summary"), visit)
+    if missing:
+        raise DomainError(
+            "VISIT_REQUIRED_MISSING", 422,
+            detail={"missing": missing},
+            message="Заполните обязательные поля: " + ", ".join(missing) + ".",
+        )
+    from organization_management.apps.operations.clock import Clock
+
+    visit.status = "APPROVED"
+    visit.approved_at = Clock.now()
+    visit.approved_by = str(actor or "")[:100]
+    visit.save(update_fields=["status", "approved_at", "approved_by", "updated_at"])
+    audit_service.record(
+        actor=str(actor or "system"),
+        action=audit_service.GVO_VISIT_APPROVED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=str(event.pk),
+        new_value={"omCode": event.code, "version": visit.version},
+    )
+    return documents_summary.summary_row(event)
+
+
 def _require_foreign(event):
     if event.kind != "FOREIGN":
         raise DomainError(

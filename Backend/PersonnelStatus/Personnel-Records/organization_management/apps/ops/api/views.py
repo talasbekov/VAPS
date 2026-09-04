@@ -8,7 +8,7 @@ documents: заводить второй механизм прав ради но
 from django.db.models import Exists, OuterRef
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.response import Response
 
 from organization_management.apps.operations import audit_service
@@ -4074,6 +4074,9 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "retrieve": "event.view",
         "partial_update": "gvo.manage",
         "reset": "gvo.manage",
+        # Утверждает ШТАБ (`[ГВО-09]`, Plane №436): старший ГВО заполняет, но
+        # не утверждает — в `_CHIEF_ACTIONS` действия нет намеренно.
+        "approve": "gvo.manage",
     }
     # Код ОМ содержит кириллицу и дефисы («ОМ-2026-1») — дефолтный lookup
     # [^/.]+ подходит, но объявим явно ради читаемости.
@@ -4114,6 +4117,15 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     def list(self, request):
         return Response({"results": gvo_service.list_patches()})
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        """POST /gvo-summaries/{code}/approve/ — «Утвердить» визит
+        (`[ГВО-07]`, Plane №436); отказ словами, если обязательные не заполнены."""
+        row = gvo_service.approve_visit(pk, actor=resolve_actor_id(request) or request.user)
+        if row is None:
+            raise NotFound("Мероприятие не найдено.")
+        return Response(row)
 
     @action(detail=False, methods=["get"], url_path="assembled")
     def assembled(self, request):

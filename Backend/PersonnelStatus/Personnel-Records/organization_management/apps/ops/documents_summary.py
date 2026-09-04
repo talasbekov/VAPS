@@ -262,6 +262,22 @@ def summary_row(event, record=None, *, fetch=True):
         # внутреннего ОМ визита нет.
         "visit": visit_view(visit),
         "unspecified": list(visit.unspecified or []) if visit is not None else [],
+        # Обязательные поля (`[ГВО-07]`, Plane №436): чего не хватает до
+        # «Утвердить» и прогресс «заполнено K из N» для шапки визита.
+        **_required_progress(event, visit, data),
+    }
+
+
+def _required_progress(event, visit, data):
+    from organization_management.apps.ops import gvo as gvo_service
+
+    summary = _with_refs(_deep_merge(derive_summary(event), data))
+    missing = gvo_service.missing_required(summary, visit)
+    total = len(gvo_service.REQUIRED_VISIT_FIELDS)
+    return {
+        "missingRequired": missing,
+        "requiredTotal": total,
+        "requiredFilled": total - len(missing),
     }
 
 

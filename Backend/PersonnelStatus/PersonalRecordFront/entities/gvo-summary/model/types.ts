@@ -176,6 +176,11 @@ export interface GvoSummaryRow {
   visit: GvoVisit | null;
   /** Ключи полей с флагом «уточняется» (`[ГВО-06]`). */
   unspecified: string[];
+  /** Обязательные поля (`[ГВО-07]`, Plane №436): чего не хватает до
+   * «Утвердить» и прогресс «заполнено K из N». Старый сервер полей не несёт. */
+  missingRequired?: string[];
+  requiredTotal?: number;
+  requiredFilled?: number;
 }
 
 export interface ListGvoSummariesResponse {

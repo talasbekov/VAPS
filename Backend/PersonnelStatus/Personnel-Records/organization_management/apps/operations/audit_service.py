@@ -142,6 +142,8 @@ SECURITY_EVENT_PLACEMENT_BY_DEPUTY = "SECURITY_EVENT_PLACEMENT_BY_DEPUTY"
 SECURITY_EVENT_APPROVAL_SIGNED = "SECURITY_EVENT_APPROVAL_SIGNED"
 #: Маршрут согласования в настройках заменён (`[СОГ-05]`, Plane №429).
 APPROVAL_ROUTE_REPLACED = "APPROVAL_ROUTE_REPLACED"
+#: Визит иностранного ОЛ утверждён штабом (`[ГВО-07]`/`[ГВО-09]`, Plane №436).
+GVO_VISIT_APPROVED = "GVO_VISIT_APPROVED"
 # Завершение расстановки С НЕДОБОРОМ (`[РАС-06]`, Plane №396): решение
 # человека обойти проверку укомплектованности, с обязательным комментарием —
 # «почему отправили ОМ на согласование, недорасставив K постов» обязано иметь
@@ -296,6 +298,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
         SECURITY_EVENT_APPROVAL_SIGNED,
         APPROVAL_ROUTE_REPLACED,
+        GVO_VISIT_APPROVED,
         PLACEMENT_COMPLETED_WITH_SHORTAGE,
         VISIT_OBJECT_CLOSED,
         VISIT_OBJECT_CHIEF_ASSIGNED,
