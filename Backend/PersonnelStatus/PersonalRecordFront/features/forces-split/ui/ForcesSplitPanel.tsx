@@ -82,8 +82,20 @@ function toLocalInput(value: string | null | undefined): string {
   );
 }
 
+/** 🔴 РЕДАКТОР ПРАВИТ ТОЛЬКО БАЗОВЫЕ СТРОКИ (Plane №675).
+ *
+ * Довыделение недобора (`[СБС-12]`, №426) дописывает департаменту ВТОРУЮ
+ * строку с `topUpOf`. Форма же устроена «одна строка на департамент» — сервер
+ * прямо отбивает две («Департамент уже есть в раскладке»). Пока сюда попадали
+ * все строки, после довыделения форма показывала департамент дважды и
+ * сохранение отказывало; а до починки сервера — уничтожало обе строки.
+ * Довыделенные показывает карточка сбора (`ForceCollectionCard`), где у них
+ * своя пометка; здесь их не правят. */
+const baseRows = (event: SecurityEvent) =>
+  event.forceAllocation.filter((row) => !row.topUpOf);
+
 function seedRows(event: SecurityEvent): DraftRow[] {
-  return event.forceAllocation.map((row) => ({
+  return baseRows(event).map((row) => ({
     key: row.id,
     departmentId: row.departmentId,
     need: String(row.need),
@@ -129,8 +141,11 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
   const taken = new Set(rows.map((row) => row.departmentId).filter(Boolean));
   // Состояние заявки живёт на СЕРВЕРЕ и в форме не редактируется: форма про
   // «кому сколько», а оповещение и списки — про то, что с заявкой уже сделали.
+  // Тоже по БАЗОВЫМ строкам (Plane №675): с довыделением в карте оставалась
+  // последняя строка департамента, и статус, срок и момент оповещения
+  // подписывались бы к базовой строке чужие.
   const stored = new Map(
-    event.forceAllocation.map((row) => [row.departmentId, row])
+    baseRows(event).map((row) => [row.departmentId, row])
   );
 
   return (

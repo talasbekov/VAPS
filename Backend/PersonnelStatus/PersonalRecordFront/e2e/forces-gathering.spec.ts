@@ -544,7 +544,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
 
   test('раскладка по департаментам сохраняется, перебор отбивается', async ({ page }) => {
     const token = await apiToken()
-    const { code, total } = await prepareDemandEvent(token)
+    const { id, code, total } = await prepareDemandEvent(token)
     // Сторож фикстуры: делить нечего, если расчёт постов просит одного —
     // тогда и «остаток», и «перебор» проверялись бы вакуумно.
     expect(total, 'у пробного ОМ потребность меньше двух — делить нечего').toBeGreaterThan(1)
@@ -582,6 +582,46 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
       { timeout: 25_000 },
     )
     await expect(saved.getByLabel('Департамент, строка 1', { exact: true })).toHaveValue(String(department!.id))
+
+    // 🔴 ДОВЫДЕЛЕНИЕ НЕ ДОЛЖНО ПОПАДАТЬ В РЕДАКТОР РАСКЛАДКИ (Plane №675).
+    //
+    // Довыделение недобора (`[СБС-12]`) дописывает департаменту ВТОРУЮ строку,
+    // а форма устроена «одна строка на департамент» — сервер прямо отбивает
+    // две («Департамент уже есть в раскладке»). Пока сюда попадали все строки,
+    // после довыделения департамент показывался дважды, и сохранение
+    // отказывало; а до починки сервера пересохранение уничтожало обе строки
+    // вместе с ответом департамента и составом.
+    const state = await get<{ forceAllocation: { id: string }[] }>(
+      token,
+      `/api/ops/security-events/${id}/`,
+    )
+    const allocationId = state.forceAllocation[0]!.id
+    await send(token, 'POST', `/api/ops/security-events/${id}/forces/allocation/${allocationId}/notify/`)
+    const topped = await send<{ forceAllocation: { id: string; topUpOf?: string | null }[] }>(
+      token,
+      'POST',
+      `/api/ops/security-events/${id}/forces/allocation/${allocationId}/top-up/`,
+      { count: 1 },
+    )
+    expect(
+      topped.forceAllocation.filter((row) => row.topUpOf).length,
+      'довыделенная строка не завелась — проверять нечего',
+    ).toBe(1)
+
+    await page.reload()
+    const afterTopUp = page.locator('div.rounded-lg.border').filter({ hasText: code }).first()
+    await expect(
+      afterTopUp.getByLabel('Департамент, строка 1', { exact: true }),
+      'редактор не дождался данных',
+    ).toBeVisible({ timeout: 25_000 })
+    await expect(
+      afterTopUp.getByLabel('Департамент, строка 2', { exact: true }),
+      'довыделенная строка попала в редактор раскладки — департамент показан дважды',
+    ).toHaveCount(0)
+    // И счётчик считает базовую раскладку, а не базовую плюс довыделение.
+    await expect(afterTopUp.locator('[data-slot="forces-split-total"]')).toContainText(
+      `разложено ${total - 1} из ${total}`,
+    )
   })
 
   test('оповещение управлений видно у заявки и повтор не переписывает момент', async ({
