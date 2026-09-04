@@ -686,7 +686,7 @@ test.describe(LIVE ? 'расход: занятость ОМ' : 'расход: з
     test.skip(
       busy === undefined,
       'на стенде никто не привлечён на ОМ — колонку проверять не на чем ' +
-        '(проставьте статус EVENT_ASSIGNMENT или EVENT_ASSIGNMENT_GROUP)',
+        '(участие в ОМ ставится сидом: manage.py seed_smoke_fixtures — статус IN_EVENT)',
     )
 
     await signIn(page)

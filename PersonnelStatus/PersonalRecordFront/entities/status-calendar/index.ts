@@ -126,6 +126,10 @@ export const STATUS_LETTERS: Record<string, string> = {
   DUTY: "Д",
   GEV: "Д",
   REST_AFTER_DUTY: "П",
+  // Слияние статусов (Plane №486): рабочий код один — `IN_EVENT`. Старые два
+  // оставлены ЧИТАТЕЛЯМИ ради строк, не прошедших миграцию: буква у них та же,
+  // и потерять её значило бы оставить в календаре пустую клетку вместо «ОМ».
+  IN_EVENT: "ОМ",
   EVENT_ASSIGNMENT: "ОМ",
   EVENT_ASSIGNMENT_GROUP: "ОМ",
   VACATION: "О",

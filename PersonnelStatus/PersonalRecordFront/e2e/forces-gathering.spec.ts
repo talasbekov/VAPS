@@ -29,9 +29,20 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 // сбора сил не отрисовался бы вовсе.
 const SCREEN = '/employees?view=forces'
 
+/**
+ * 🔴 ПИН ИЗМЕНЁН ОСОЗНАННО (Plane №486, решение заказчика 04.09.2026).
+ * Обоих «Привлечён на мероприятие» больше нет: они слиты в единственный
+ * `IN_EVENT`, а различие «наряд / боевая группа» переехало в
+ * `participations[].kind_code`. Старые два кода оставлены здесь ЧИТАТЕЛЯМИ —
+ * ради строк, не прошедших миграцию на чужом стенде: считать их надо
+ * по-прежнему, иначе проба зеленела бы по пустоте.
+ */
+const IN_EVENT = 'IN_EVENT'
 const EVENT_ASSIGNMENT = 'EVENT_ASSIGNMENT'
 /** Второй вид участия: специфическая группа (Plane №274, Ш-2/Ш-4). */
 const EVENT_ASSIGNMENT_GROUP = 'EVENT_ASSIGNMENT_GROUP'
+/** Вид участия боевой группой — теперь он и есть признак «группы». */
+const SCREENING_GROUP_KIND = 'SCREENING_GROUP'
 const IN_SERVICE_COLUMN = 'IN_SERVICE'
 
 interface StrengthReport {
@@ -49,6 +60,8 @@ interface StatusRow {
   id: number
   employee_id: number
   status_type_code: string
+  /** Виды участия строки (Plane №486): «наряд» или «боевая группа». */
+  participations?: { event_id: number; kind_code: string }[]
 }
 
 async function apiToken(): Promise<string> {
@@ -103,7 +116,7 @@ async function assignedCount(
   // штатного слота), плитка не считает и считать не должна. Раньше помощник
   // складывал все статусы подряд и расходился с плиткой на единицу.
   let total = 0
-  for (const code of [EVENT_ASSIGNMENT, EVENT_ASSIGNMENT_GROUP]) {
+  for (const code of [IN_EVENT, EVENT_ASSIGNMENT, EVENT_ASSIGNMENT_GROUP]) {
     const page = await get<{ results: StatusRow[] }>(
       token,
       `/api/operations/statuses/?business_date=${businessDate}&status_type_code=${code}&limit=500`,
@@ -364,10 +377,17 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     const groupRows = await get<{ results: StatusRow[] }>(
       token,
       `/api/operations/statuses/?business_date=${report.business_date}` +
-        `&status_type_code=${EVENT_ASSIGNMENT_GROUP}&limit=500`,
+        `&status_type_code=${IN_EVENT}&limit=500`,
     )
     let free: { id: number } | undefined
     for (const row of groupRows.results) {
+      // 🔴 ГРУППУ ТЕПЕРЬ ОПОЗНАЁТ ВИД УЧАСТИЯ, А НЕ КОД СТАТУСА (Plane №486):
+      // после слияния код у наряда и у группы один, и брать первую попавшуюся
+      // строку значило бы проверять наряд под именем группы.
+      const isGroup = (row.participations ?? []).some(
+        (item) => item.kind_code === SCREENING_GROUP_KIND,
+      )
+      if (!isGroup) continue
       const employee = await get<{ division: number | null }>(token, `/api/core/employees/${row.employee_id}/`)
       if (employee.division !== null && inScope.has(String(employee.division))) {
         free = { id: Number(row.employee_id) }
@@ -376,8 +396,8 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     }
     if (free === undefined) {
       throw new Error(
-        'на стенде нет фикстуры: статус «Привлечён на мероприятие (боевая группа)» на деловую дату у сотрудника из расхода. ' +
-          'Вручную он не ставится (Plane №427) — заводится сидом: manage.py seed_smoke_fixtures',
+        'на стенде нет фикстуры: участие вида «боевая группа» (SCREENING_GROUP) на деловую дату у сотрудника из расхода. ' +
+          'Вручную оно не ставится (Plane №427) — заводится сидом: manage.py seed_smoke_fixtures',
       )
     }
 
@@ -395,7 +415,10 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
       headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         employee_id: Number(someone.id),
-        status_type_code: EVENT_ASSIGNMENT_GROUP,
+        // Слитый код (Plane №486): отказ на ручную постановку стережётся
+        // именно на нём — старый тип погашен и отбился бы раньше, другой
+        // ошибкой, и проба перестала бы отвечать на свой вопрос.
+        status_type_code: IN_EVENT,
         date_start: report.business_date,
         date_end: nextDay.toISOString().slice(0, 10),
       }),
@@ -646,7 +669,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // статусу, и запись без него для остальной системы ничего не значит.
     const statuses = await get<{ results: { employee_id: number }[] }>(
       token,
-      `/api/operations/statuses/?business_date=2027-06-01&status_type_code=${EVENT_ASSIGNMENT}&limit=200`,
+      `/api/operations/statuses/?business_date=2027-06-01&status_type_code=${IN_EVENT}&limit=200`,
     )
     expect(statuses.results.length, 'статуса привлечения на дату ОМ нет').toBeGreaterThan(0)
 

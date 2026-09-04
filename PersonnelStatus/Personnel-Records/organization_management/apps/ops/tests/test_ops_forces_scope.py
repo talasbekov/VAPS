@@ -506,7 +506,7 @@ def test_a_status_member_is_named_by_division(manager):  # noqa: F811
     with clock.override(dt.date(2026, 8, 10)):
         status_service.create_status(
             employee_id=employee.pk,
-            status_type_code="EVENT_ASSIGNMENT",
+            status_type_code="IN_EVENT",  # слияние статусов, Plane №486
             date_start=dt.date(2026, 8, 10),
             date_end=dt.date(2026, 8, 11),
             actor="user:chief",

@@ -357,14 +357,20 @@ def test_notify_unknown_allocation_is_404(manager):  # noqa: F811
 
 
 def make_assignment_status_type():
-    """Тип статуса привлечения: без него выделение отбивается справочником."""
+    """Тип статуса привлечения: без него выделение отбивается справочником.
+
+    Код `IN_EVENT`, а не `EVENT_ASSIGNMENT`: с Plane №486 оба «Привлечён на
+    мероприятие» слиты в «Участие в ОМ», и цепочка пишет именно его. Пин
+    правится ОСОЗНАННО — фикстура изображает справочник живого стенда, а там
+    старых кодов больше нет в выдаче.
+    """
     from organization_management.apps.operations.models import StatusType
 
     return StatusType.objects.get_or_create(
-        code="EVENT_ASSIGNMENT",
+        code="IN_EVENT",
         defaults={
-            "name": "Привлечён на мероприятие",
-            "priority": 80,
+            "name": "Участие в ОМ",
+            "priority": 75,
             "report_column_code": "IN_SERVICE",
             "is_hard_block": False,
         },
@@ -392,7 +398,7 @@ def test_selected_employee_gets_the_assignment_status(manager):  # noqa: F811
     assert [m["employeeId"] for m in members] == [str(employee.pk)]
     status = OpsEmployeeStatus.objects.get(pk=members[0]["statusId"])
     assert status.employee_id == employee.pk
-    assert status.status_type_code == "EVENT_ASSIGNMENT"
+    assert status.status_type_code == "IN_EVENT"  # слияние, Plane №486
     # Полуинтервал: день мероприятия закрывается СЛЕДУЮЩИМ днём — иначе
     # строка пуста и статуса нет ни одного дня.
     assert status.date_end > status.date_start
@@ -936,7 +942,7 @@ def test_a_status_set_outside_the_chain_reaches_the_department(manager):  # noqa
     with clock.override(dt.date(2026, 8, 10)):
         status_service.create_status(
             employee_id=employee.pk,
-            status_type_code="EVENT_ASSIGNMENT",
+            status_type_code="IN_EVENT",  # слияние статусов, Plane №486
             # Путь начальника — ЧЕКБОКСЫ запроса (Ш-11, Plane №427): ручной
             # ввод участия закрыт, статус ставит система.
             system_participations=True,
@@ -976,7 +982,7 @@ def test_a_status_of_another_department_does_not_leak(manager):  # noqa: F811
     with clock.override(dt.date(2026, 8, 10)):
         status_service.create_status(
             employee_id=stranger.pk,
-            status_type_code="EVENT_ASSIGNMENT",
+            status_type_code="IN_EVENT",  # слияние статусов, Plane №486
             date_start=dt.date(2026, 8, 10),
             date_end=dt.date(2026, 8, 11),
             actor="user:other-chief",

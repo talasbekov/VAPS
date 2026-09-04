@@ -82,7 +82,9 @@ def test_the_status_types_carry_the_codes_the_section_asks_for(seeded):
     прошёл бы проверку «не пуст», а расход дня остался бы без «в строю».
     """
     codes = set(StatusType.objects.values_list("code", flat=True))
-    assert {"IN_SERVICE", "VACATION", "EVENT_ASSIGNMENT"} <= codes, sorted(codes)
+    # `IN_EVENT` вместо `EVENT_ASSIGNMENT` (Plane №486): оба «Привлечён на
+    # мероприятие» слиты в «Участие в ОМ», и сид заводит именно его.
+    assert {"IN_SERVICE", "VACATION", "IN_EVENT"} <= codes, sorted(codes)
 
 
 def test_placement_roles_carry_the_labels_of_the_blank(seeded):

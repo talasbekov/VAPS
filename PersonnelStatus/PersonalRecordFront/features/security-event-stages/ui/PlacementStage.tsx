@@ -1723,6 +1723,10 @@ const AWAY_CODES = new Set([
 const DUTY_CODES = new Set([
   "ON_DUTY",
   "AFTER_DUTY",
+  // Слияние статусов (Plane №486): цепочка пишет `IN_EVENT`. Старый код
+  // оставлен читателем ради строк, не прошедших миграцию, — иначе
+  // привлечённый человек показался бы свободным.
+  "IN_EVENT",
   "EVENT_ASSIGNMENT",
   "IN_SERVICE",
   "SECONDED_FROM",

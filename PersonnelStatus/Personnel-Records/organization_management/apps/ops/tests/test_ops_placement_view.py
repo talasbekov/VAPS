@@ -203,7 +203,7 @@ def test_roster_carries_day_status(manager):  # noqa: F811
     assert member["employeeId"] == str(employee.pk)
     # Человека привлекли на это же мероприятие — статус привлечения и есть его
     # статус дня; null здесь означал бы, что состав про статусы молчит.
-    assert member["statusCode"] == "EVENT_ASSIGNMENT"
+    assert member["statusCode"] == "IN_EVENT"  # слияние статусов, Plane №486
     assert member["statusLabel"] != ""
 
 
