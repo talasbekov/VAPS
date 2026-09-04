@@ -87,7 +87,7 @@ async function signIn(page: Page): Promise<void> {
 test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и итоги (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('готовность считается по итогам, отказ приходит от сервера', async ({ page }) => {
+  test('итог одной строкой, инциденты и один необязательный комментарий', async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(String(e)))
     page.on('console', (m) => {
@@ -99,8 +99,9 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       (await events(token, 'CONDUCT'))[0],
       'мероприятие на стадии «Проведение»',
     )
-    const directions = [...new Set(target.reconSectorPosts.map((p) => p.sector))]
-    expect(directions.length, 'фикстуре нужно ≥2 направления').toBeGreaterThan(1)
+    const detail = (await eventDetail(token, target.id)) as EventRow & {
+      closureSummary: { posts: number; need: number; assigned: number; incidents: number }
+    }
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
@@ -109,174 +110,77 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     })
     await expect(panel).toBeVisible({ timeout: 15_000 })
 
-    // Сводка — из живых данных карточки, а не из воздуха
-    const need = target.reconSectorPosts.reduce((sum, p) => sum + p.need, 0)
-    await expect(panel).toContainText(
-      `${target.placementAssignments.length} / ${need}`,
+    // `[ЗАК-01]` (Plane №448): итог одной строкой — из сводки сервера.
+    const line = panel.locator('[data-slot="closure-summary-line"]')
+    await expect(line).toContainText(`Постов ${detail.closureSummary.posts}`)
+    await expect(line).toContainText(
+      `назначено ${detail.closureSummary.assigned} из ${detail.closureSummary.need}`,
     )
-    const incidents = target.journalEntries.filter((e) => e.type === 'INCIDENT').length
-    await expect(panel.getByText('инцидентов')).toBeVisible()
-    expect(await panel.innerText()).toContain(String(incidents))
+    await expect(line).toContainText(`инцидентов ${detail.closureSummary.incidents}`)
 
-    // Готовность стартует с нуля и растёт от РЕАЛЬНО введённого итога
-    await expect(panel).toContainText(`0 из ${directions.length} готовы`)
-    await expect(panel.getByText('Ожидается').first()).toBeVisible()
-    await panel
-      .getByLabel(`${directions[0]} *`)
-      .fill('Итог направления: замечаний нет.')
-    await expect(panel).toContainText(`1 из ${directions.length} готовы`)
-    await expect(panel.getByText('Готово').first()).toBeVisible()
+    // `[ЗАК-04]`: комментарий один и необязательный; обязательных итогов по
+    // направлениям больше нет (🔴 мутация: вернуть поля «<направление> *»).
+    await expect(panel.getByLabel('Итоговый комментарий (необязательно)')).toBeVisible()
+    await expect(panel.getByText(/готовы$/)).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Закрыть мероприятие' })).toBeEnabled()
 
-    // Владелец правила — сервер: кнопка активна, отказ приходит с бэка.
-    // Ассертим ИМЕННО тот канал, который срабатывает: пустой итог ловит
-    // валидация поля (400 «Обязательное поле.») ДО проверки полноты
-    // направлений (422 CLOSURE_DIRECTIONS_INCOMPLETE) — вторая с этого экрана
-    // недостижима, потому что клиент всегда шлёт все направления.
-    // Название направления в ассерт не берём: подпись «КПП *» на панели есть
-    // и без ошибки, такой ассерт был бы вакуумным.
-    const refusal = panel.getByText('Проверьте заполнение формы.')
-    await expect(refusal).toBeHidden()
-    const closeButton = panel.getByRole('button', { name: 'Закрыть мероприятие' })
-    await expect(closeButton).toBeEnabled()
-    await closeButton.click()
-    await expect(refusal).toBeVisible({ timeout: 15_000 })
-    // Ошибка сервера названа по-человечески, а не машинным путём: ключ
-    // `directionSummaries.1.summary` переводится в «Строка 2 · Итог» (номер
-    // строки человек считает с единицы). Ассерт держит ОБА конца: и что
-    // сообщение про вторую строку, и что машинного пути на экране больше нет.
-    await expect(panel).toContainText('Строка 2 · Итог')
-    await expect(panel).not.toContainText('directionSummaries')
+    // `[ЗАК-03]`: панель инцидентов — список или «Инцидентов не было»,
+    // «+ Добавить» открывает форму с временем, постом, описанием и мерами.
+    const incidents = page.locator('[data-slot="incidents-panel"]')
+    await expect(incidents).toBeVisible()
+    if (detail.closureSummary.incidents === 0) {
+      await expect(incidents.locator('[data-slot="incidents-empty"]')).toHaveText('Инцидентов не было')
+    } else {
+      await expect(incidents.locator('[data-slot="incident-row"]')).toHaveCount(
+        detail.closureSummary.incidents,
+      )
+    }
+    await incidents.getByRole('button', { name: '+ Добавить' }).click()
+    for (const label of ['Время', 'Пост', 'Описание *', 'Подробности', 'Принятые меры']) {
+      await expect(incidents.getByLabel(label)).toBeVisible()
+    }
+    await incidents.getByRole('button', { name: 'Отмена' }).click()
 
-    // Отказ не сдвинул стадию
+    // Закрытие проба НЕ выполняет — необратимо; стадия не сдвинулась.
     const after = await eventDetail(token, target.id)
     expect(after.stage).toBe('CONDUCT')
-
-    // 400 в консоли — ЭТОТ отказ и есть предмет пробы, он ожидаем;
-    // CLIENT_FETCH_ERROR — обрыв навигации NextAuth, не дефект экрана.
-    expect(
-      errors.filter(
-        (e) => !e.includes('CLIENT_FETCH_ERROR') && !e.includes('400 (Bad Request)'),
-      ),
-    ).toEqual([])
+    expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })
 
-  test('архив дела собирает разделы закрытого ОМ', async ({ page }) => {
+  test('архив дела — одна страница с якорями, без лишних карточек', async ({ page }) => {
     const token = await apiToken()
     const target = requireFixture(
-      (await events(token, 'CLOSED')).find(
-        (e) => e.closureDirectionSummaries.length > 0,
-      ),
-      'закрытое мероприятие с итогами направлений',
+      (await events(token, 'CLOSED')).find((e) => e.reconSectorPosts.length > 0),
+      'закрытое мероприятие с постами расчёта',
     )
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
-    const card = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Итоги направлений' }),
-    })
-    await expect(card).toBeVisible({ timeout: 15_000 })
-    // «Скачать дело» (`[ЗАК-11]`, Plane №437): один PDF со всеми вложениями
-    // приходит из ручки документов и сохраняется по нажатию.
+    // `[ЗАК-10]` (Plane №448): якоря «Итог · Оценки · Инциденты · Документы · История».
+    const anchors = page.locator('[data-slot="archive-anchors"]')
+    await expect(anchors).toBeVisible({ timeout: 15_000 })
+    for (const label of ['Итог', 'Оценки', 'Инциденты', 'Документы', 'История']) {
+      await expect(anchors.getByRole('link', { name: label, exact: true })).toBeVisible()
+    }
+    await expect(page.locator('#archive-summary [data-slot="closure-summary-line"]')).toContainText(/Постов \d+ · назначено \d+ из \d+/)
+    await expect(page.locator('#archive-incidents')).toBeVisible()
+    await expect(page.locator('#archive-documents [data-slot="archive-documents"]')).toContainText('Рекогносцировка')
+    await expect(page.locator('#archive-history')).toBeVisible()
+
+    // `[ЗАК-13]`: лишних карточек и надписей нет (🔴 мутация: вернуть любую).
+    for (const gone of ['Итоги направлений', 'Карточка, бюллетень, программа', 'Расчёты и заявки']) {
+      await expect(page.locator('[data-slot="card-title"]', { hasText: gone })).toHaveCount(0)
+    }
+    await expect(page.getByText('read-only')).toHaveCount(0)
+    await expect(page.getByText('Дело закрыто')).toHaveCount(0)
+
+    // «Скачать дело» (`[ЗАК-11]`, Plane №437) — в шапке архива.
     const caseBlock = page.locator('[data-slot="case-download"]')
-    await expect(caseBlock).toBeVisible({ timeout: 15_000 })
+    await expect(caseBlock).toBeVisible()
     const download = page.waitForEvent('download', { timeout: 60_000 })
     await caseBlock.getByRole('button', { name: /Скачать дело/ }).click()
     const file = await download
     expect(file.suggestedFilename()).toMatch(/^delo-.*\.pdf$/)
-    await expect(caseBlock.locator('[role="status"]')).toContainText('сохранено')
-
-    const need = target.reconSectorPosts.reduce((sum, p) => sum + p.need, 0)
-    await expect(card).toContainText(
-      `${target.placementAssignments.length} / ${need}`,
-    )
-    for (const item of target.closureDirectionSummaries) {
-      await expect(card).toContainText(item.direction)
-      await expect(card).toContainText(item.summary)
-    }
-
-    // Разделы архива — по экрану прототипа «Архив дела». Каждый ассертит
-    // ЖИВОЕ значение дела, а не наличие заголовка: заголовок отрисуется и на
-    // пустых данных.
-    // Шапка архива из прототипа
-    // Замок теперь иконка (lucide Lock), а не эмодзи в тексте: ассерт пинит
-    // сам заголовок архива, а не способ нарисовать замок.
-    await expect(
-      page.getByRole('heading', { name: `Архив · ${target.code}` }),
-    ).toBeVisible()
-    await expect(page.getByText('read-only')).toBeVisible()
-
-    const bulletin = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', {
-        hasText: 'Карточка, бюллетень, программа',
-      }),
-    })
-    // Дата в архиве печатается по-русски, а не сырым ISO с сервера: ассерт
-    // собирает ожидаемое из ТОГО ЖЕ ответа, а не пинит литерал — иначе он
-    // сторожил бы формат вместо содержимого.
-    const [year, month, day] = target.businessDate.split('-')
-    await expect(bulletin).toContainText(`${day}.${month}.${year}`)
-    await expect(bulletin).toContainText(target.objectName)
-    if (target.passportBinding !== null) {
-      await expect(
-        bulletin.getByRole('link', {
-          name: `версия ${target.passportBinding.versionNumber}`,
-        }),
-      ).toBeVisible()
-    }
-
-    const demand = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Расчёты и заявки' }),
-    })
-    if (target.demandRows.length === 0) {
-      await expect(demand).toContainText('Потребность не заводилась')
-    } else {
-      await expect(demand).toContainText(target.demandRows[0].sector)
-    }
-
-    const replacements = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Изменения и замены' }),
-    })
-    const replacementEntries = target.journalEntries.filter(
-      (e) => e.type === 'REPLACEMENT',
-    )
-    if (replacementEntries.length === 0) {
-      await expect(replacements).toContainText('Замен по ходу мероприятия не было')
-    } else {
-      await expect(replacements).toContainText(replacementEntries[0].title)
-    }
-
-    // Ссылка на реестр оценок несёт фильтр по ЭТОМУ делу, и реестр его читает
-    const evaluations = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Оценки участников' }),
-    })
-    const link = evaluations.getByRole('link', {
-      name: 'Итоговые оценки участников ОМ →',
-    })
-    // trailingSlash: true в next.config.js — Next нормализует адрес, поэтому
-    // сверяем по образцу, а не по литералу без слэша.
-    await expect(link).toHaveAttribute(
-      'href',
-      new RegExp(
-        `/security-ops/ratings/evaluations/?\\?event=${encodeURIComponent(target.code)}$`,
-      ),
-    )
-    // Ассертим ЗАПРОС, а не значение <select>: список мероприятий в фильтре
-    // строит сервер (§19.15), и дела без единой оценки в нём нет — контрол
-    // остался бы пустым даже при работающем фильтре. Уходящий запрос — то
-    // место, где фильтр либо есть, либо его нет.
-    //
-    // Переходим ПОЛНОЙ навигацией, а не кликом: карточка архива уже спросила
-    // реестр с теми же фильтрами, и по клику React Query отдал бы ответ из
-    // кэша — запрос бы не ушёл, и ожидание его повисло бы на ровном месте.
-    const href = await link.getAttribute('href')
-    const [registryRequest] = await Promise.all([
-      page.waitForRequest((request) => request.url().includes('/api/ops/evaluation-registry'), {
-        timeout: 15_000,
-      }),
-      page.goto(`${APP}${href}`),
-    ])
-    expect(decodeURIComponent(registryRequest.url())).toContain(`event=${target.code}`)
-    await expect(page).toHaveURL(/\/security-ops\/ratings\/evaluations/)
   })
 
   // 🔴 Воркер MSW блокируется ТОЛЬКО здесь: `page.route` в пробе недобора иначе

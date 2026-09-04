@@ -25,8 +25,6 @@ import type { SecurityEvent } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
 import { EMPTY_FILTERS } from "@/entities/operational-rating";
-import { JournalList } from "./JournalList";
-import { closureFacts } from "./ConductStage";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 import { Button } from "@/components/ui/button";
 import { useRenderEventDocument } from "@/hooks/use-ops-reports";
@@ -51,169 +49,98 @@ function eventPeriod(event: SecurityEvent): string {
 }
 
 export function ClosedView({ event }: { event: SecurityEvent }) {
-  const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
-  // Та же сводка, что видел закрывающий, — снимком: закрытое дело смотрят,
-  // чтобы понять, чем мероприятие кончилось, а не только что в нём написали.
-  const facts = closureFacts(event);
+  // `[ЗАК-10]`/`[ЗАК-13]` (Plane №448): ОДНА страница с якорями «Итог ·
+  // Оценки · Инциденты · Документы · История». Отдельных карточек «Итоги
+  // направлений», «Карточка, бюллетень, программа», «Расчёты и заявки» и
+  // надписей «read-only»/«Архив» больше нет — бюллетень и паспорт
+  // живут в «Документах», старые итоги направлений — в «Истории».
+  const summary = event.closureSummary;
+  const incidents = event.journalEntries.filter((entry) => entry.type === "INCIDENT");
+  const postById = new Map(event.reconSectorPosts.map((post) => [post.id, post]));
+  const anchors: [string, string][] = [
+    ["archive-summary", "Итог"],
+    ["archive-evaluations", "Оценки"],
+    ["archive-incidents", "Инциденты"],
+    ["archive-documents", "Документы"],
+    ["archive-history", "История"],
+  ];
   return (
     <div className="flex flex-col gap-4">
-      {/* Шапка архива из прототипа: замок и пометка read-only — дело закрыто,
-          править нечего. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-            После закрытия
-          </p>
           <h2 className="flex items-center gap-2 text-lg font-bold">
             <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
             Архив · {event.code}
           </h2>
           <p className="text-xs text-muted-foreground">
             {event.title} · {eventPeriod(event)} · {objectLabel(event)}
+            {event.closedAt !== null ? ` · закрыто ${formatIsoDateTime(event.closedAt)}` : ""}
+            {event.ownerName ? ` · ${event.ownerName}` : ""}
           </p>
         </div>
-        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
-          read-only
-        </span>
+        <CaseDownload event={event} />
       </div>
-      {/* «Скачать дело» — про архив целиком, поэтому в шапке, а не в карточке
-          оценок (та рисуется только с правом на рейтинг). */}
-      <CaseDownload event={event} />
+      <nav aria-label="Разделы архива" className="flex flex-wrap gap-2 text-xs" data-slot="archive-anchors">
+        {anchors.map(([id, label]) => (
+          <a key={id} href={`#${id}`} className="rounded-full border px-2.5 py-1 font-semibold hover:bg-muted">
+            {label}
+          </a>
+        ))}
+      </nav>
 
-      <Card>
+      <Card id="archive-summary">
         <CardHeader>
-          <CardTitle>Итоги направлений</CardTitle>
+          <CardTitle>Итог</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-sm tabular-nums" data-slot="closure-summary-line">
+            Постов <b>{summary.posts}</b> · назначено <b>{summary.assigned} из {summary.need}</b> · замен{" "}
+            <b>{summary.replacements}</b> · отказов <b>{summary.declines}</b> · инцидентов{" "}
+            <b>{summary.incidents}</b>
+          </p>
+          {event.closingComment !== "" && (
+            <p className="text-sm" data-slot="closing-comment">
+              <span className="text-muted-foreground">Итоговый комментарий:</span> {event.closingComment}
+            </p>
+          )}
+          {event.visitObjects.map((visit) => (
+            <p key={visit.id} className="text-xs text-muted-foreground tabular-nums">
+              «{visit.objectName}»: постов {visit.closureSummary.posts} · назначено{" "}
+              {visit.closureSummary.assigned} из {visit.closureSummary.need}
+              {visit.closingComment !== "" ? ` · ${visit.closingComment}` : ""}
+            </p>
+          ))}
+        </CardContent>
+      </Card>
+
+      <div id="archive-evaluations">
+        <EvaluationsSection event={event} />
+      </div>
+
+      <Card id="archive-incidents">
+        <CardHeader>
+          <CardTitle>Инциденты</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="mb-3 flex flex-wrap gap-4 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-            <span className="flex items-baseline gap-1">
-              <b className="text-sm tabular-nums">
-                {facts.assigned} / {facts.need}
-              </b>
-              <span className="text-muted-foreground">назначено / потребность</span>
-            </span>
-            <span className="flex items-baseline gap-1">
-              <b className="text-sm tabular-nums">{facts.replacements}</b>
-              <span className="text-muted-foreground">замен</span>
-            </span>
-            <span className="flex items-baseline gap-1">
-              <b
-                className={`text-sm tabular-nums ${facts.incidents > 0 ? "text-amber-700" : ""}`}
-              >
-                {facts.incidents}
-              </b>
-              <span className="text-muted-foreground">инцидентов</span>
-            </span>
-          </div>
-          {event.closureDirectionSummaries.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Итогов нет.</p>
+          {incidents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Инцидентов не было</p>
           ) : (
             <ul className="flex flex-col gap-1.5">
-              {event.closureDirectionSummaries.map((item) => (
-                <li key={item.direction} className="rounded-md border p-2.5 text-sm">
-                  <span className="font-semibold">{item.direction}</span> —{" "}
-                  <span className="text-muted-foreground">{item.summary}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {event.closedAt !== null && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Закрыто: {formatIsoDateTime(event.closedAt ?? "")}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Карточка, бюллетень, программа</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <Fact label="Дата проведения" value={eventPeriod(event)} />
-          <Fact label="Объект" value={objectLabel(event)} />
-          <Fact
-            label="Краткое описание"
-            value={event.briefDescription === "" ? "—" : event.briefDescription}
-          />
-          <Fact
-            label="Первичные задачи"
-            value={event.initialTasks === "" ? "—" : event.initialTasks}
-          />
-          {event.passportBinding === null ? (
-            <p className="text-xs text-muted-foreground">
-              Паспорт объекта к делу не привязан.
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Паспорт объекта сохранён на момент мероприятия —{" "}
-              <Link
-                href={`/security-ops/objects/${event.passportBinding.objectId}/passports/${event.passportBinding.versionId}`}
-                className="font-semibold text-primary-ink"
-              >
-                версия {event.passportBinding.versionNumber}
-              </Link>{" "}
-              (действует с {formatIsoDate(event.passportBinding.effectiveFrom)}). Публикация
-              новой редакции этот снимок не переписывает.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Расчёты и заявки</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {event.demandRows.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Потребность не заводилась.</p>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {event.demandRows.map((row) => (
-                <li key={row.id} className="rounded-md border p-2.5 text-sm">
-                  <span className="font-semibold">
-                    {row.sector} · {row.task}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {" "}
-                    — {row.need} чел., смена {row.shift}, группа «{row.group}»
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {event.forceRequests.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {event.forceRequests.map((request) => (
-                <li key={request.id} className="text-sm">
-                  <span className="font-semibold">{request.group}</span>{" "}
-                  <span className="tabular-nums text-muted-foreground">
-                    — выделено {request.allocatedCount} из {request.requestedCount}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Расстановка (снимок)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {event.placementAssignments.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Назначений не было.</p>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {event.placementAssignments.map((assignment) => {
-                const post = postById.get(assignment.postId);
+              {incidents.map((entry) => {
+                const post = entry.postId ? postById.get(entry.postId) : undefined;
                 return (
-                  <li key={assignment.id} className="text-sm">
-                    <span className="font-semibold">{assignment.employeeName}</span>{" "}
-                    <span className="text-muted-foreground">
-                      — {post ? `${post.sector} · ${post.post}` : assignment.postId}
-                    </span>
+                  <li key={entry.id} className="rounded-md border p-2.5 text-sm">
+                    <span className="text-muted-foreground tabular-nums">
+                      {formatIsoDateTime(entry.occurredAt ?? entry.createdAt)}
+                    </span>{" "}
+                    · {post ? `${post.sector} · ${post.post}` : "пост не указан"} ·{" "}
+                    <span className="font-semibold">{entry.title}</span>
+                    {entry.description !== "" && (
+                      <span className="text-muted-foreground"> — {entry.description}</span>
+                    )}
+                    {(entry.measures ?? "") !== "" && (
+                      <p className="text-xs">Принятые меры: {entry.measures}</p>
+                    )}
                   </li>
                 );
               })}
@@ -222,49 +149,103 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="archive-documents">
         <CardHeader>
-          <CardTitle>Изменения и замены</CardTitle>
+          <CardTitle>Документы</CardTitle>
         </CardHeader>
         <CardContent>
-          {(() => {
-            const replacements = event.journalEntries.filter(
-              (entry) => entry.type === "REPLACEMENT"
-            );
-            if (replacements.length === 0) {
+          <ul className="flex flex-col gap-1.5 text-sm" data-slot="archive-documents">
+            {event.visitObjects.map((visit) => {
+              const current = visit.documentVersions[visit.documentVersions.length - 1];
               return (
-                <p className="text-xs text-muted-foreground">
-                  Замен по ходу мероприятия не было.
-                </p>
+                <li key={visit.id}>
+                  Расстановка сил · «{visit.objectName}»
+                  {current ? ` · версия ${current.number}` : " · не отправлялась"}
+                  {" · лист ознакомления в приложении"} — в деле (PDF выше)
+                </li>
               );
-            }
-            return (
-              <ul className="flex flex-col gap-1.5">
-                {replacements.map((entry) => (
-                  <li key={entry.id} className="rounded-md border p-2.5 text-sm">
-                    <span className="font-semibold">{entry.title}</span>
-                    <span className="text-muted-foreground"> — {entry.description}</span>
-                    <span className="ml-1 text-xs text-muted-foreground">
-                      ({JOURNAL_TYPE_LABEL[entry.type]}, {formatIsoDateTime(entry.createdAt)})
-                    </span>
+            })}
+            <li>
+              <Link
+                href={`/security-ops/events/${event.id}/?stage=RECON`}
+                className="font-semibold text-primary-ink"
+              >
+                Рекогносцировка (чек-лист, посты) →
+              </Link>
+            </li>
+            <li>
+              <Link
+                href={`/security-ops/events/${event.id}/?stage=BULLETIN`}
+                className="font-semibold text-primary-ink"
+              >
+                Бюллетень →
+              </Link>
+              {event.passportBinding !== null && (
+                <>
+                  {" · "}
+                  <Link
+                    href={`/security-ops/objects/${event.passportBinding.objectId}/passports/${event.passportBinding.versionId}`}
+                    className="font-semibold text-primary-ink"
+                  >
+                    Паспорт объекта вер. {event.passportBinding.versionNumber} (снимок) →
+                  </Link>
+                </>
+              )}
+            </li>
+          </ul>
+        </CardContent>
+      </Card>
+
+      <Card id="archive-history">
+        <CardHeader>
+          <CardTitle>История</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ul className="flex flex-col gap-1 text-sm" data-slot="archive-history">
+            {event.visitObjects.flatMap((visit) =>
+              visit.documentVersions.map((version) => (
+                <li key={`${visit.id}-${version.number}`} className="text-muted-foreground">
+                  «{visit.objectName}» · версия {version.number}{" "}
+                  {version.status === "APPROVED"
+                    ? "согласована"
+                    : version.status === "RETURNED"
+                      ? "возвращена"
+                      : version.status === "SUBMITTED"
+                        ? "на согласовании"
+                        : "черновик"}
+                  {version.decidedAt ? ` ${formatIsoDateTime(version.decidedAt)}` : version.sentAt ? ` ${formatIsoDateTime(version.sentAt)}` : ""}
+                </li>
+              ))
+            )}
+            {event.journalEntries
+              .filter((entry) => entry.type !== "INCIDENT")
+              .map((entry) => (
+                <li key={entry.id} className="text-muted-foreground">
+                  {formatIsoDateTime(entry.createdAt)} · {JOURNAL_TYPE_LABEL[entry.type]} · {entry.title}
+                  {entry.description !== "" ? ` — ${entry.description}` : ""}
+                </li>
+              ))}
+            {event.closedAt !== null && (
+              <li className="font-semibold">закрыто {formatIsoDateTime(event.closedAt)}</li>
+            )}
+          </ul>
+          {event.closureDirectionSummaries.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Итоги направлений (до Plane №448)
+              </p>
+              <ul className="mt-1 flex flex-col gap-1 text-sm">
+                {event.closureDirectionSummaries.map((item) => (
+                  <li key={item.direction}>
+                    <span className="font-semibold">{item.direction}</span> —{" "}
+                    <span className="text-muted-foreground">{item.summary}</span>
                   </li>
                 ))}
               </ul>
-            );
-          })()}
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Журнал штаба</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <JournalList entries={event.journalEntries} />
-        </CardContent>
-      </Card>
-
-      <EvaluationsSection event={event} />
     </div>
   );
 }

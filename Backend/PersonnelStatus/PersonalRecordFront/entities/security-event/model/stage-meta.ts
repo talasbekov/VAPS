@@ -136,5 +136,5 @@ export const STAGE_WITHIN_STEP: Record<SecurityEventStage, string> = {
   APPROVAL: "",
   ACKNOWLEDGEMENT: "",
   CONDUCT: "Проведение и закрытие",
-  CLOSED: "Дело закрыто",
+  CLOSED: "Архив", // `[ЗАК-13]` (Plane №448): «Дело закрыто» текстом снято — замка и статуса достаточно.
 };

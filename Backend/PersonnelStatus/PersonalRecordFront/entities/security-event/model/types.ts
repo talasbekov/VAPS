@@ -451,9 +451,22 @@ export interface JournalEntry {
   title: string;
   description: string;
   createdAt: string;
+  /** Инцидент (`[ЗАК-03]`, Plane №448): время, пост, принятые меры. */
+  occurredAt?: string | null;
+  postId?: string | null;
+  measures?: string;
 }
 
 /** Итог направления при закрытии (итоги всех направлений обязательны). */
+export interface ClosureSummary {
+  posts: number;
+  need: number;
+  assigned: number;
+  replacements: number;
+  declines: number;
+  incidents: number;
+}
+
 export interface ClosureDirectionSummary {
   direction: string;
   summary: string;
@@ -524,6 +537,8 @@ export interface VisitObject {
   closedAt: string | null;
   /** Итоговый комментарий по объекту при закрытии (`[ЗАК-04]`, Plane №404). */
   closingComment: string;
+  /** `[ЗАК-01]`: постов · назначено · замен · отказов · инцидентов. */
+  closureSummary: ClosureSummary;
   /** Статус объекта словами (`[РЕЕ-08]`/`[РЕК-08]`, Plane №423) — считает сервер. */
   statusLabel: string;
   /**
@@ -667,6 +682,8 @@ export interface SecurityEvent {
   approvalStale: boolean;
   journalEntries: JournalEntry[];
   closureDirectionSummaries: ClosureDirectionSummary[];
+  closingComment: string;
+  closureSummary: ClosureSummary;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -921,10 +938,15 @@ export interface AddJournalEntryRequest extends Record<string, unknown> {
   type: JournalEntryType;
   title: string;
   description: string;
+  occurredAt?: string | null;
+  postId?: string | null;
+  measures?: string;
 }
 
 export interface CloseSecurityEventRequest extends Record<string, unknown> {
-  directionSummaries: ClosureDirectionSummary[];
+  /** Итоги по направлениям больше не обязательны (`[ЗАК-04]`, Plane №448). */
+  directionSummaries?: ClosureDirectionSummary[];
+  comment?: string;
 }
 
 /** Замена выбывшего: без авто-подбора кандидата — только ручной выбор,

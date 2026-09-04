@@ -1791,6 +1791,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 entry_type=data.get("type"),
                 title=data.get("title"),
                 description=data.get("description"),
+                # Инцидент (`[ЗАК-03]`, Plane №448): время, пост, принятые меры.
+                occurred_at=data.get("occurredAt"),
+                post_id=data.get("postId"),
+                measures=data.get("measures") or "",
             )
         )
 
@@ -1824,6 +1828,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             event_service.close_event(
                 pk,
                 direction_summaries=data.get("directionSummaries"),
+                # Один необязательный комментарий (`[ЗАК-04]`, Plane №448).
+                comment=data.get("comment") or "",
                 actor=resolve_actor_id(request),
             )
         )
