@@ -289,7 +289,7 @@ PARTICIPATION_STATUS_CODES = frozenset(
 
 
 def _assert_manual_participation(
-    status_type_code, participations, *, system, scope_division_ids
+    status_type_code, participations, *, system, scope_division_ids, where=""
 ):
     """Ручное «Участие в ОМ»: можно, но только на ЗАПРОШЕННОЕ мероприятие.
 
@@ -319,6 +319,13 @@ def _assert_manual_participation(
     как и раньше: там мероприятие и даты берутся из самой заявки. Строки
     участия у ПРОЧИХ статусов (Ш-3, «привлечён группой» на дежурстве) правило
     не трогает — они не «Участие в ОМ».
+
+    `where` — ХВОСТ СООБЩЕНИЯ ДЛЯ ПУТЕЙ, КОТОРЫЕ МЕРОПРИЯТИЕ НАЗВАТЬ НЕ УМЕЮТ
+    (Plane №663, №664). Массовая простановка и разрешение заглушки участий не
+    принимают вовсе, и общий текст «назовите мероприятие» отправил бы человека
+    искать поле, которого в этой форме нет. Код отказа при этом ОДИН и тот же:
+    клиент ветвится по коду, и заводить второй ради формулировки значило бы
+    развести договор ради текста.
     """
     if system or status_type_code not in PARTICIPATION_STATUS_CODES:
         return
@@ -331,6 +338,7 @@ def _assert_manual_participation(
             message=(
                 "У статуса «Участие в ОМ» назовите мероприятие: без него "
                 "расход считает человека привлечённым, не говоря куда."
+                + (f" {where}" if where else "")
             ),
         )
     from organization_management.apps.ops.forces_requests import requested_event_ids
@@ -1137,6 +1145,20 @@ def resolve_placeholder(
             detail={"status_type_code": locked.status_type_code},
             message="Ретро-заменой разрешается только строка-заглушка.",
         )
+    # 🔴 РАЗРЕШЕНИЕ ЗАГЛУШКИ — ТОЖЕ РУЧНОЙ ПУТЬ (Plane №664). Оно пишет строку
+    # с ПРИСЛАННЫМ кодом и участий не принимает вовсе: без этой проверки
+    # правило №737 обходилось в два вызова — завести «уточняется», а затем
+    # разрешить его в «Участие в ОМ» без единого мероприятия.
+    _assert_manual_participation(
+        resolved_type_code,
+        None,
+        system=False,
+        scope_division_ids=None,
+        where=(
+            "Разрешением заглушки мероприятие не назвать — закройте её и "
+            "поставьте участие отдельной строкой."
+        ),
+    )
     resolved_type = _resolve_status_type(resolved_type_code)
     if resolved_type.is_placeholder:
         raise DomainError(
