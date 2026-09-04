@@ -24,7 +24,6 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
-const EVENT_ASSIGNMENT = 'EVENT_ASSIGNMENT'
 
 async function tokenFor(username: string, password: string): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {

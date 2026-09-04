@@ -477,11 +477,16 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     /**
      * 🔴 Фикстура — ПЕРЕХВАТ, не мутация стенда: `EmployeeStatus.StatusType`
      * на бэке `staff_unit/staff-units/directorate/` вообще не знает кода
-     * `EVENT_ASSIGNMENT` — это код каталога `operations` (раздел «Сбор сил на
+     * `IN_EVENT` — это код каталога `operations` (раздел «Сбор сил на
      * ОМ», см. `seed_status_types.py`), другая модель. На живом стенде такой
      * строки быть не может в принципе — только перехватом.
      */
-    const EVENT_ASSIGNMENT = 'EVENT_ASSIGNMENT'
+    // 🔴 КОД СЛИТ (Plane №486, починка №754). Здесь стоял `EVENT_ASSIGNMENT` —
+    // тип, который миграция 0091 погасила (`is_active=False`), а
+    // `/api/statuses/types/` отдаёт только активные. Проба искала его подпись
+    // в справочнике, не находила и краснела на КАЖДОМ прогоне смоука — не на
+    // своём предмете, а на чужой миграции. Наследник обоих кодов — `IN_EVENT`.
+    const IN_EVENT = 'IN_EVENT'
     // 🔴 ПИН ПОДПИСИ ИЗМЕНЁН ОСОЗНАННО ВТОРОЙ РАЗ (Plane №281; первый — №274,
     // Ш-5). Прежний текст — «Мероприятия участия видны в разрезе „Сбор сил“» —
     // описывал состояние, когда мероприятие СИСТЕМЕ ИЗВЕСТНО, а экрану нет:
@@ -517,7 +522,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
 
         // Только ПЕРВОМУ — «Участие в ОМ»: остальные остаются как есть, иначе
         // гвард «ссылка не у всех» вырождается в «ни у кого».
-        withStatus[0].employee!.current_status!.status_type = EVENT_ASSIGNMENT
+        withStatus[0].employee!.current_status!.status_type = IN_EVENT
         await route.fulfill({ response, json: body })
       },
     )
@@ -605,13 +610,18 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
         headers: { Authorization: `Bearer ${token}` },
       })
     ).json()) as Array<{ code: string; label: string }>
-    const assignmentLabel = catalog.find((item) => item.code === EVENT_ASSIGNMENT)?.label
+    const assignmentLabel = catalog.find((item) => item.code === IN_EVENT)?.label
     expect(
       assignmentLabel,
-      `в справочнике нет кода ${EVENT_ASSIGNMENT} — сверять подпись не с чем`,
+      `в справочнике нет кода ${IN_EVENT} — сверять подпись не с чем`,
     ).toBeTruthy()
+    // `.first()` — не послабление, а следствие слияния №486: подпись «Участие
+    // в ОМ» стоит в строке ДВАЖДЫ (бейдж статуса и колонка «По разделу ОМ»),
+    // и до слияния они различались («…(наряд)» против общей). Предмет
+    // проверки прежний: подпись пришла ИЗ СПРАВОЧНИКА, а не напечатана
+    // клиентом своим литералом.
     await expect(
-      row.getByText(assignmentLabel!, { exact: true }),
+      row.getByText(assignmentLabel!, { exact: true }).first(),
       'подпись статуса разошлась со справочником — вывод снова печатает свой литерал',
     ).toBeVisible()
   })
