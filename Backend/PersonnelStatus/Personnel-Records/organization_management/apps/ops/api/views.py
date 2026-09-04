@@ -1057,10 +1057,33 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         actor_id = resolve_actor_id(request)
         allowed = PermissionService.visible_division_ids(actor_id, _STATUS_MANAGE_PERMISSION)
         data = request.data or {}
+        # 🔴 ФОРМА ТЕЛА ПРОВЕРЯЕТСЯ ДО РАБОТЫ (Plane №544). `employeeIds` уходил
+        # в цикл как есть: строка `"18"` — это последовательность, и цикл шёл
+        # ПО СИМВОЛАМ, выделяя сотрудников 1 и 8; словарь — по ключам. Если
+        # получившиеся идентификаторы попадали в область актора (или он
+        # администратор и область не сужена), сервер РЕАЛЬНО заводил статусы
+        # участия не тем людям — молча и без единого отказа.
+        #
+        # Отбивается всё, что не список скаляров: 400 — это ошибка НАГРУЗКИ, а
+        # не состояния. Вложенные списки и словари внутри отбиваются тоже —
+        # `str({...})` дал бы идентификатор из фигурных скобок, который потом
+        # честно «не нашёлся».
+        raw_ids = data.get("employeeIds", [])
+        if raw_ids in (None, ""):
+            raw_ids = []
+        if not isinstance(raw_ids, (list, tuple)) or any(
+            isinstance(item, (list, tuple, dict, set)) for item in raw_ids
+        ):
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"field": "employeeIds"},
+                message="employeeIds — список идентификаторов сотрудников.",
+            )
         return Response(
             select_for_request(
                 allocation_id,
-                data.get("employeeIds") or [],
+                list(raw_ids),
                 allowed,
                 actor=actor_id,
             )
