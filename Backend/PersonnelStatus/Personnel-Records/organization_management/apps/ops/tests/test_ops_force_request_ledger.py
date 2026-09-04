@@ -96,6 +96,49 @@ def test_more_people_is_a_new_row_not_an_edit(event_with_json):
     assert OpsForceRequestMember.objects.filter(event=event).count() == 2
 
 
+def test_live_composition_is_readable_from_the_current_request_row(event_with_json):
+    """Живой состав читается с ЛЮБОЙ серии запроса департаменту (Plane №672).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Строка запроса департаменту живёт сериями: департамент
+    ответил «выделяем 6» — появилась новая серия. Состав и разбивка по
+    управлениям к серии не относятся и заново не переписываются (соседний пин
+    «состав не задвоился» это прямо запрещает), поэтому у ТЕКУЩЕЙ серии
+    `related_name` пуст: `dep.members` и `dep.unit_requests` отвечают на вопрос
+    «что записано под этой серией», а не «кто в составе сейчас».
+
+    Пока правило не было названо, читатель, идущий по объявленной в шапке
+    модуля цепочке «заявка → департамент → управление → сотрудник», видел у
+    текущей строки пустой состав и пустую разбивку — и никак не мог узнать,
+    что смотрит не туда.
+    """
+    event, e1, e2 = event_with_json
+    row = event.force_allocation[0]
+    # Департамент отвечает: меняется ТОЛЬКО департаментская строка.
+    row["allocating"] = 6
+    row["status"] = "ANSWERED"
+    event.save(update_fields=["force_allocation", "updated_at"])
+
+    current = OpsDepartmentRequest.objects.filter(event=event).order_by("-sequence").first()
+    assert current.sequence == 2, "новая серия запроса не появилась — фикстура не про то"
+
+    # Провенанс текущей серии пуст, и это ВЕРНО: под ней ничего не записывали.
+    assert current.members.count() == 0
+    assert current.unit_requests.count() == 0
+
+    # А живое состояние читается — с той же самой строки.
+    assert {m.employee_id for m in current.live_members} == {e1.pk, e2.pk}
+    assert sorted(u.requested_count for u in current.live_unit_requests) == [2, 3]
+
+    # И с ПЕРВОЙ серии — тоже: живое состояние одно на заявку, а не на серию.
+    first = OpsDepartmentRequest.objects.filter(event=event).order_by("sequence").first()
+    assert {m.employee_id for m in first.live_members} == {e1.pk, e2.pk}
+
+    # Исключённый из состава в живом чтении не остаётся.
+    row["members"] = [m for m in row["members"] if m["employeeId"] != str(e2.pk)]
+    event.save(update_fields=["force_allocation", "updated_at"])
+    assert {m.employee_id for m in current.live_members} == {e1.pk}
+
+
 def test_removing_a_member_stamps_removed_at(event_with_json):
     event, e1, e2 = event_with_json
     event.force_allocation[0]["members"] = [

@@ -6,6 +6,23 @@
 меняются. Единственное изменяемое поле — `removed_at` у строки состава:
 исключение из состава — факт с датой, а не стирание факта включения.
 
+🔴 ЧЕМ ДЕРЖИТСЯ ИЕРАРХИЯ — КЛЮЧОМ, А НЕ ВНЕШНИМ КЛЮЧОМ (Plane №672). Строка
+запроса департаменту живёт СЕРИЯМИ (`sequence`), а состав и разбивка по
+управлениям к серии не относятся: департамент ответил «выделяем 6» — появилась
+новая строка запроса, но люди в составе те же самые. Поэтому:
+
+* `allocation_key` (у состава) и `directorate_key` (у запроса управлению) —
+  НАСТОЯЩИЙ адрес строки: по ним читается живое состояние;
+* `department_request` — ПРОВЕНАНС: под какой серией запроса строка была
+  записана. У текущей серии он пуст, если с её появления состав не менялся, и
+  это верно, а не потеряно: задваивать людей на каждую серию значило бы
+  соврать историей («приняли дважды»), и от этого стережёт пин
+  `test_more_people_is_a_new_row_not_an_edit` («состав не задвоился»).
+
+Читателю живого состояния предназначены `live_members` и
+`live_unit_requests` у `OpsDepartmentRequest`: они отвечают на вопрос «кто в
+составе СЕЙЧАС» с любой серии, и владелец этого правила — один.
+
 JSON `force_requests`/`force_allocation` мероприятия ОСТАЁТСЯ источником для
 экранов, пока их читают (снимается отдельным шагом после Ш-10, №426); эти
 таблицы — его проекция (`ops/forces_ledger.py`) и история, которой у JSON
@@ -88,6 +105,44 @@ class OpsDepartmentRequest(_AppendOnly):
     due_at = models.DateTimeField(null=True, blank=True)
     sequence = models.PositiveIntegerField()
 
+    @property
+    def live_members(self):
+        """Состав заявки СЕЙЧАС — с любой серии запроса (Plane №672).
+
+        Адрес состава — `(event, allocation_key)`, а не серия: люди не
+        переписываются заново оттого, что департамент назвал другое число.
+        `related_name="members"` отвечает на ДРУГОЙ вопрос — «что записано под
+        этой серией», и у текущей серии он законно пуст.
+        """
+        return OpsForceRequestMember.objects.filter(
+            event_id=self.event_id,
+            allocation_key=self.allocation_key,
+            removed_at__isnull=True,
+        )
+
+    @property
+    def live_unit_requests(self):
+        """Разбивка по управлениям СЕЙЧАС: последняя серия каждого управления.
+
+        Запрос управлению тоже живёт сериями и меняется независимо от
+        департаментской строки, поэтому «последняя по департаменту» и
+        «последняя по управлению» — разные вещи.
+        """
+        # Отбор идёт по ПРОВЕНАНСУ (`department_request__allocation_key`), а не
+        # по форме ключа управления: `directorate_key` берётся из JSON как есть
+        # (`id` строки управления), и совпадение с префиксом заявки —
+        # случайность фикстуры, а не правило. Запасной ключ проекции строится
+        # через двоеточие, а не через дефис, — совпадения по префиксу хватило
+        # бы ровно до первой такой строки.
+        rows = OpsUnitRequest.objects.filter(
+            event_id=self.event_id,
+            department_request__allocation_key=self.allocation_key,
+        ).order_by("directorate_key", "-sequence")
+        latest = {}
+        for row in rows:
+            latest.setdefault(row.directorate_key, row)
+        return list(latest.values())
+
     class Meta:
         db_table = "ops_department_requests"
         verbose_name = "Запрос департаменту"
@@ -103,6 +158,9 @@ class OpsUnitRequest(_AppendOnly):
         "operations.OpsSecurityEvent", on_delete=models.CASCADE,
         related_name="unit_request_rows",
     )
+    #: ПРОВЕНАНС, а не адрес (см. шапку модуля, Plane №672): серия запроса
+    #: департаменту, под которой строка записана. Живую разбивку читают через
+    #: `OpsDepartmentRequest.live_unit_requests`.
     department_request = models.ForeignKey(
         OpsDepartmentRequest, on_delete=models.CASCADE, related_name="unit_requests",
     )
@@ -131,6 +189,9 @@ class OpsForceRequestMember(_AppendOnly):
         "operations.OpsSecurityEvent", on_delete=models.CASCADE,
         related_name="force_member_rows",
     )
+    #: ПРОВЕНАНС, а не адрес (см. шапку модуля, Plane №672): серия запроса
+    #: департаменту, под которой человек записан в состав. Живой состав читают
+    #: через `OpsDepartmentRequest.live_members`.
     department_request = models.ForeignKey(
         OpsDepartmentRequest, on_delete=models.CASCADE, related_name="members",
     )
