@@ -39,6 +39,35 @@ from organization_management.apps.operations.models_submission import (
 from organization_management.apps.staff_unit.models import StaffUnit
 
 
+
+def _with_participations(rows):
+    """Дописать каждой строке её виды участия ОДНИМ запросом (Plane №486).
+
+    Не `prefetch_related`: проекция идёт через `.values()`, и связь в неё не
+    попадает вовсе. Не запрос на строку: расход зовёт селектор на весь
+    департамент, и построчный запрос вернул бы ровно тот N+1, ради ухода от
+    которого проекция и сделана плоской.
+
+    Пустой список у строки — законный ответ «занят, а чем именно неизвестно»:
+    расход посчитает такого человека в «всего» и ни в одну из двух цифр.
+    """
+    from organization_management.apps.operations.models_status import (
+        OpsStatusParticipation,
+    )
+
+    ids = [row["id"] for row in rows]
+    by_status = {}
+    if ids:
+        for status_id, kind_code, event_id in OpsStatusParticipation.objects.filter(
+            status_id__in=ids
+        ).values_list("status_id", "kind_code", "event_id"):
+            by_status.setdefault(status_id, []).append(
+                {"event_id": event_id, "kind_code": kind_code}
+            )
+    for row in rows:
+        row["participations"] = by_status.get(row["id"], [])
+    return rows
+
 class OpsUserRoleSelector:
     """Read-only доступ к назначениям ролей."""
 
@@ -257,12 +286,20 @@ class EmployeeStatusSelector:
 
     @classmethod
     def overlapping_on(cls, on_date, employee_ids=None):
-        """Проекция для расхода: кто и с каким типом, ОДИН запрос."""
-        return list(
+        """Проекция для расхода: кто, с каким типом и чем занят, ОДИН запрос.
+
+        `participations` в проекции с Plane №486: после слияния статусов
+        «Привлечён на мероприятие» в один `IN_EVENT` вид занятости («наряд»
+        или «боевая группа») выводится ТОЛЬКО отсюда — по коду его больше не
+        восстановить. Без этого поля расход печатал бы «2 (0/2)» вместо
+        «2 (1/1)», и разбивка врала бы молча.
+        """
+        rows = list(
             cls._live_overlapping(on_date, employee_ids).values(
-                "employee_id", "status_type_code", "date_start", "date_end"
+                "id", "employee_id", "status_type_code", "date_start", "date_end"
             )
         )
+        return _with_participations(rows)
 
     @classmethod
     def overlapping_range(cls, start, end, employee_ids=None):

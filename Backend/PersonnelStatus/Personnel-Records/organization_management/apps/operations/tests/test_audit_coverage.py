@@ -852,9 +852,9 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # Тип статуса привлечения — свой: выделение ставит именно его, и без
     # строки справочника оно отбивается раньше, чем дойдёт до журнала.
     StatusType.objects.get_or_create(
-        code="EVENT_ASSIGNMENT",
+        code="IN_EVENT",  # слияние статусов, Plane №486
         defaults={
-            "name": "Привлечён на мероприятие",
+            "name": "Участие в ОМ",
             "priority": 80,
             "report_column_code": "IN_SERVICE",
         },

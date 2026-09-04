@@ -65,10 +65,16 @@ from organization_management.apps.ops import security_events as event_service
 from organization_management.apps.staff_unit.models import StaffUnit
 
 ACTOR = "stand-seed"
-ASSIGNMENT_CODE = "EVENT_ASSIGNMENT"
+# Код слит в единственный «Участие в ОМ» (Plane №486): фикстура обязана
+# заводить то же, что пишет цепочка, иначе смоук проверял бы мёртвый код.
+ASSIGNMENT_CODE = "IN_EVENT"
 #: Вид участия для фикстуры: физический наряд. Роли внутри у него нет вовсе,
 #: поэтому `role_code` остаётся пустым — см. комментарий у модели участия.
 PARTICIPATION_KIND = "PHYSICAL_SQUAD"
+#: Второй вид участия: боевая группа. Стенду он нужен ЖИВЫМ — на нём стоит
+#: проба «привлечённый ГРУППОЙ считается выделенным, а не оставшимся в строю»
+#: (Plane №274, Ш-5), а с Plane №486 отличить группу можно только по нему.
+GROUP_PARTICIPATION_KIND = "SCREENING_GROUP"
 #: Отсутствие для РАЗВЕДЕНИЯ «в строю» и «по списку». Отпуск, а не болезнь:
 #: болезнь — сведение о здоровье, и держать её выдумкой на стенде незачем,
 #: когда любой отпуск даёт ровно тот же эффект в отчёте.
@@ -227,14 +233,66 @@ class Command(BaseCommand):
             date_start=day,
         )
         attached = 0
+        rows = []
         for status in statuses:
-            _row, created = OpsStatusParticipation.objects.get_or_create(
+            row, created = OpsStatusParticipation.objects.get_or_create(
                 status=status,
                 event_id=event.id,
                 defaults={"kind_code": PARTICIPATION_KIND, "role_code": ""},
             )
+            rows.append(row)
             attached += int(created)
+        # 🔴 ОДНА СТРОКА — БОЕВОЙ ГРУППОЙ (Plane №486). До слияния статусов
+        # «группа» отличалась КОДОМ, и проба «привлечённый ГРУППОЙ считается
+        # выделенным» находила такую строку среди легаси-данных стенда. Теперь
+        # код один, различает вид участия, и легаси-строк не осталось: без
+        # явной фикстуры проба падала бы «на стенде нет фикстуры» — что она и
+        # сделала при первом прогоне после слияния. Сообщение самой пробы уже
+        # отсылало сюда («заводится сидом»), так что место верное.
+        #
+        # ЧЕЛОВЕК ВЫБИРАЕТСЯ НЕ ПЕРВЫЙ ПОПАВШИЙСЯ, А ИЗ ДЕПАРТАМЕНТА ЗАЯВКИ:
+        # экран «Сбор сил» показывает вкладки по департаменту раскладки, и
+        # строка человека из чужого поддерева на него не попадает вовсе.
+        # Проверено прогоном: с сотрудником из отдела вне заявки проба падала
+        # «привлечённый группой обязан стоять в „Участии в ОМ“», с сотрудником
+        # департамента заявки — зелёная.
+        if rows and not any(
+            row.kind_code == GROUP_PARTICIPATION_KIND for row in rows
+        ):
+            group_row = self._row_in_allocation_department(event, rows)
+            group_row.kind_code = GROUP_PARTICIPATION_KIND
+            group_row.save(update_fields=["kind_code"])
         return attached
+
+    def _row_in_allocation_department(self, event, rows):
+        """Строка участия человека из департамента раскладки; иначе первая."""
+        from organization_management.apps.divisions.models import Division
+        from organization_management.apps.staff_unit.models import StaffUnit
+
+        department_ids = {
+            str(item.get("departmentId"))
+            for item in (event.force_allocation or [])
+            if item.get("departmentId")
+        }
+        if not department_ids:
+            return rows[0]
+        allowed = set()
+        for department in Division.objects.filter(pk__in=department_ids):
+            allowed.update(
+                department.get_descendants(include_self=True).values_list(
+                    "pk", flat=True
+                )
+            )
+        by_employee = {
+            unit.employee_id: unit.division_id
+            for unit in StaffUnit.objects.filter(
+                employee_id__in=[row.status.employee_id for row in rows]
+            )
+        }
+        for row in rows:
+            if by_employee.get(row.status.employee_id) in allowed:
+                return row
+        return rows[0]
 
 
     def _assignments(self, day, count):

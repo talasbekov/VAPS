@@ -55,10 +55,48 @@ DERIVED_IN_SERVICE = "IN_SERVICE"
 #: другой вопрос — «сколько из тех, кто в строю, занято мероприятиями и чем
 #: именно». Сценарий заказчика требует свести именно эту цифру за
 #: департамент и отправить её штабу.
-EVENT_INVOLVEMENT_KINDS = {
+#: Коды статусов, означающих занятость мероприятием. После слияния (Plane
+#: №486, решение заказчика 04.09.2026) рабочий код ОДИН — `IN_EVENT`; два
+#: старых оставлены ЧИТАТЕЛЯМИ, а не писателями: строки, не прошедшие
+#: миграцию (чужая ветка, восстановленный дамп, отложенный `migrate`), обязаны
+#: считаться так же, иначе расход разойдётся с базой молча.
+EVENT_INVOLVEMENT_CODES = frozenset(
+    {"IN_EVENT", "EVENT_ASSIGNMENT", "EVENT_ASSIGNMENT_GROUP"}
+)
+
+#: Вид участия → корзина расхода. Живёт в `participations[].kind_code`, а не в
+#: коде статуса: после слияния код у наряда и у боевой группы ОДИН, и вывод по
+#: коду дал бы «2 (0/2)» вместо «2 (1/1)» — цифру, на которую смотрит
+#: начальник департамента, причём соврал бы молча.
+EVENT_INVOLVEMENT_BUCKETS = {
+    "PHYSICAL_SQUAD": "squad",
+    "SCREENING_GROUP": "group",
+}
+
+#: Запасной путь для строк БЕЗ участия: у исторических фактов его может не
+#: быть вовсе (бэкфилл Ш-3 перенёс лишь то, что было на момент миграции).
+#: Тогда вид берётся из старого кода — но только из старого: у `IN_EVENT`
+#: выводить его неоткуда, и выдумывать нельзя.
+LEGACY_INVOLVEMENT_KINDS = {
     "EVENT_ASSIGNMENT": "squad",
     "EVENT_ASSIGNMENT_GROUP": "group",
 }
+
+
+def involvement_bucket(row):
+    """Корзина «наряд/группа» для победившей строки или `None`.
+
+    `None` — «занят мероприятием, а чем именно неизвестно»: такой человек
+    попадает в «всего», но ни в одну из двух цифр. Приписать его наряду
+    значило бы завысить её на ровном месте.
+    """
+    if row is None:
+        return None
+    for participation in row.get("participations") or ():
+        bucket = EVENT_INVOLVEMENT_BUCKETS.get(participation.get("kind_code"))
+        if bucket is not None:
+            return bucket
+    return LEGACY_INVOLVEMENT_KINDS.get(row.get("status_type_code"))
 
 
 @dataclass(frozen=True)
@@ -118,6 +156,19 @@ def resolve_status(rows, on_date, catalog):
     Неизвестный справочнику код — ошибка программиста (сервис пишет только
     коды каталога), и молчаливое «иное» её бы замаскировало.
     """
+    winner = resolve_status_row(rows, on_date, catalog)
+    return DERIVED_IN_SERVICE if winner is None else winner["status_type_code"]
+
+
+def resolve_status_row(rows, on_date, catalog):
+    """Победившая СТРОКА дня или `None`, если действующих фактов нет.
+
+    Тот же отбор, что и у `resolve_status`, — она через эту функцию и
+    работает: два одинаковых правила победителя разошлись бы при первой
+    правке. Строка, а не код, нужна расходу с Plane №486: вид участия
+    («наряд» или «боевая группа») после слияния статусов живёт внутри строки,
+    в `participations`, и по коду больше не выводится.
+    """
     active = []
     for row in rows:
         code = row["status_type_code"]
@@ -126,8 +177,8 @@ def resolve_status(rows, on_date, catalog):
         if row["date_start"] <= on_date < row["date_end"]:
             active.append(row)
     if not active:
-        return DERIVED_IN_SERVICE
-    winner = min(
+        return None
+    return min(
         active,
         key=lambda r: (
             catalog.priority[r["status_type_code"]],
@@ -135,7 +186,6 @@ def resolve_status(rows, on_date, catalog):
             r["date_start"],
         ),
     )
-    return winner["status_type_code"]
 
 
 @dataclass(frozen=True)
@@ -274,16 +324,25 @@ def derive_report(
             if employee_id is None:
                 vacancies += 1
                 continue
-            winner = resolve_status(
+            winner_row = resolve_status_row(
                 rows_by_employee.get(employee_id, ()), on_date, catalog
+            )
+            winner = (
+                DERIVED_IN_SERVICE
+                if winner_row is None
+                else winner_row["status_type_code"]
             )
             if not catalog.counts_in_staff.get(winner, True):
                 off_list += 1
                 continue
-            kind = EVENT_INVOLVEMENT_KINDS.get(winner)
-            if kind is not None:
+            if winner in EVENT_INVOLVEMENT_CODES:
+                # «Всего» считается по КОДУ, а разбивка — по виду участия:
+                # человек занят мероприятием независимо от того, знаем ли мы
+                # чем именно (Plane №486).
                 event["total"] += 1
-                event[kind] += 1
+                kind = involvement_bucket(winner_row)
+                if kind is not None:
+                    event[kind] += 1
             column = catalog.column[winner]
             if column not in columns:
                 # Колонка типа, которого нет в порядке колонок: такое возможно

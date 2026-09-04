@@ -2716,7 +2716,15 @@ def notify_directorates(event_id, allocation_id, *, actor):
 
 # Статус привлечения на мероприятие. Код справочника, а не своя строка: расход
 # дня и «Сбор сил» считают привлечённых именно по нему.
-ASSIGNMENT_STATUS_CODE = "EVENT_ASSIGNMENT"
+#
+# 🔴 ОДИН КОД НА ВСЮ ЗАНЯТОСТЬ (Plane №486, решение заказчика 04.09.2026:
+# «убери статусы Привлечён на мероприятие, обе»). Было два —
+# `EVENT_ASSIGNMENT` (наряд) и `EVENT_ASSIGNMENT_GROUP` (боевая группа), — и
+# различие между ними жило В КОДЕ СТАТУСА. Теперь код один, а различие живёт
+# там, где ему и место: в `participations[].kind_code`. Старые коды остались
+# только у ЧИТАТЕЛЕЙ (`strength_report.EVENT_INVOLVEMENT_CODES`) — ради строк,
+# не прошедших миграцию.
+ASSIGNMENT_STATUS_CODE = "IN_EVENT"
 
 # Вид участия выводится ИЗ КОДА СТАТУСА — тем же соответствием, что и бэкфилл
 # Ш-3 (`operations/migrations/0062_status_participation.py`). Держать его в
@@ -2724,6 +2732,11 @@ ASSIGNMENT_STATUS_CODE = "EVENT_ASSIGNMENT"
 # рабочий код — жить. Поэтому соответствие продублировано ОСОЗНАННО, и
 # расхождение стережёт проба `test_allocation_kind_matches_backfill`.
 _PARTICIPATION_KIND_BY_STATUS = {
+    # Цепочка выделяет людей физическим нарядом — это её вид участия.
+    "IN_EVENT": "PHYSICAL_SQUAD",
+    # Старые коды оставлены ради строк, не прошедших миграцию №486: сюда
+    # смотрит проба `test_allocation_kind_matches_backfill`, сверяющая
+    # соответствие с замороженным бэкфиллом Ш-3.
     "EVENT_ASSIGNMENT": "PHYSICAL_SQUAD",
     "EVENT_ASSIGNMENT_GROUP": "SCREENING_GROUP",
 }
@@ -5414,14 +5427,14 @@ def add_journal_entry(event_id, *, entry_type, title, description, occurred_at=N
         event, "CONDUCT", "Журнал штаба доступен только на этапе «Проведение»."
     )
     entry = {
-        # Инцидент (`[ЗАК-03]`, Plane №448): время, пост, принятые меры.
-        "occurredAt": str(occurred_at or "").strip() or None,
-        "postId": str(post_id or "").strip() or None,
-        "measures": str(measures or "").strip(),
         "id": f"journal-{len(event.journal_entries) + 1}-{_now_iso()}",
         "type": entry_type,
         "title": title,
         "description": str(description or "").strip(),
+        # Инцидент (`[ЗАК-03]`, Plane №448): время, пост, принятые меры.
+        "occurredAt": str(occurred_at or "").strip() or None,
+        "postId": str(post_id or "").strip() or None,
+        "measures": str(measures or "").strip(),
         "createdAt": _now_iso(),
     }
     event.journal_entries = [entry, *event.journal_entries]

@@ -22,7 +22,7 @@ from organization_management.apps.operations.selectors import (
 )
 from organization_management.apps.operations.strength_report import (
     DERIVED_IN_SERVICE,
-    EVENT_INVOLVEMENT_KINDS,
+    EVENT_INVOLVEMENT_CODES,
     StatusCatalog,
     resolve_status,
 )
@@ -222,7 +222,7 @@ def _group_of(code, catalog):
     мероприятии попал бы в «в строю» и вторая группа эталона всегда была бы
     пустой.
     """
-    if code in EVENT_INVOLVEMENT_KINDS:
+    if code in EVENT_INVOLVEMENT_CODES:
         return "on_event"
     if catalog.column.get(code) == _ON_DUTY_COLUMN:
         return "on_duty"

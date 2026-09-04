@@ -28,7 +28,8 @@ from datetime import date
 
 from organization_management.apps.operations.roster_order import order_roster
 from organization_management.apps.operations.strength_report import (
-    EVENT_INVOLVEMENT_KINDS,
+    EVENT_INVOLVEMENT_CODES,
+    involvement_bucket,
     DERIVED_IN_SERVICE,
     attached_of,
     catalog_of,
@@ -36,6 +37,7 @@ from organization_management.apps.operations.strength_report import (
     expense_from_snapshot,
     title_of,
     resolve_status,
+    resolve_status_row,
 )
 
 
@@ -119,6 +121,12 @@ def _parsed_facts(snapshot):
                 "status_type_code": row["status_type_code"],
                 "date_start": date.fromisoformat(row["date_start"]),
                 "date_end": date.fromisoformat(row["date_end"]),
+                # Участия ПЕРЕНОСЯТСЯ В ФАКТ (Plane №486): после слияния
+                # статусов вид занятости («наряд» или «боевая группа») живёт
+                # только здесь, и, потеряв его тут, расход напечатал бы
+                # «2 (0/2)» вместо «2 (1/1)». У снимков, снятых до слияния,
+                # ключа нет — пустой список, вид возьмётся из старого кода.
+                "participations": row.get("participations") or [],
             }
         )
     return facts
@@ -212,13 +220,24 @@ def build_expense_document(
     # строю» — считать его там значило бы потерять ровно то, что считаем.
     event = {"total": 0, "group": 0, "squad": 0}
     for member in snapshot.get("roster", []):
-        winner = resolve_status(
+        winner_row = resolve_status_row(
             facts_by_employee.get(member["employee_id"], ()), business_date, catalog
         )
-        kind = EVENT_INVOLVEMENT_KINDS.get(winner)
-        if kind is not None and catalog.counts_in_staff.get(winner, True):
+        winner = (
+            DERIVED_IN_SERVICE
+            if winner_row is None
+            else winner_row["status_type_code"]
+        )
+        if winner in EVENT_INVOLVEMENT_CODES and catalog.counts_in_staff.get(
+            winner, True
+        ):
+            # «Всего» по коду, разбивка — по виду участия из самой строки
+            # (Plane №486): после слияния статусов код у наряда и у боевой
+            # группы один, и по нему разбивку не вывести.
             event["total"] += 1
-            event[kind] += 1
+            kind = involvement_bucket(winner_row)
+            if kind is not None:
+                event[kind] += 1
 
     in_service_column = catalog.column[DERIVED_IN_SERVICE]
     for column in columns_order:

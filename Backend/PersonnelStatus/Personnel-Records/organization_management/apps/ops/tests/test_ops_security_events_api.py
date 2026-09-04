@@ -2019,7 +2019,7 @@ def test_event_delete_takes_its_participations_with_it(manager):
     employee = make_employee()
     status = OpsEmployeeStatus.objects.create(
         employee_id=employee.pk,
-        status_type_code="EVENT_ASSIGNMENT",
+        status_type_code="IN_EVENT",  # слияние статусов, Plane №486
         date_start=date(2026, 9, 5),
         date_end=date(2026, 9, 6),
         created_by="test",
@@ -2059,7 +2059,7 @@ def test_event_delete_keeps_a_status_that_has_another_participation(manager):
     employee = make_employee()
     status = OpsEmployeeStatus.objects.create(
         employee_id=employee.pk,
-        status_type_code="EVENT_ASSIGNMENT",
+        status_type_code="IN_EVENT",  # слияние статусов, Plane №486
         date_start=date(2026, 9, 5),
         date_end=date(2026, 9, 6),
         created_by="test",
