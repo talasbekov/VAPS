@@ -111,13 +111,28 @@ test.describe(
       })
       await page.reload()
 
+      // Согласующий — ручкой мока, а не кнопкой: с №429/№446 маршрут задаётся
+      // в настройках, и «+ Добавить согласующего» на объекте нет. Сначала
+      // дождаться экрана: сразу после перезагрузки страница ещё не включила
+      // MSW, service worker пропускает запрос в сеть — и ручка отвечает 403
+      // живого бэка вместо мока (замерено 04.09.2026).
+      await expect(
+        page.locator('section', { hasText: 'Маршрут согласования' }).first()
+      ).toBeVisible({ timeout: 30_000 })
+      const added = await page.evaluate(async () => {
+        const res = await fetch('/api/ops/security-events/se-1/approval/route/', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: 'Проба мока', unit: '', position: '' }),
+        })
+        return { status: res.status, body: (await res.text()).slice(0, 200) }
+      })
+      expect(added.status, added.body).toBe(200)
+      await page.reload()
       const route = page
         .locator('section', { hasText: 'Маршрут согласования' })
         .first()
       await expect(route).toBeVisible({ timeout: 20_000 })
-      await route.getByRole('button', { name: '+ Добавить согласующего' }).click()
-      await route.getByLabel('ФИО согласующего').fill('Проба мока')
-      await route.getByRole('button', { name: 'Добавить', exact: true }).click()
 
       const row = route.locator('tr', { hasText: 'Проба мока' }).first()
       await expect(row).toContainText('Не отправлено', { timeout: 20_000 })
