@@ -62,7 +62,12 @@ test.describe('расход: каталог статусов окна — из �
         headers: { Authorization: `Bearer ${token}` },
       })
     ).json()) as { results: StatusTypeRow[] }
-    const expected = catalog.results.filter((row) => row.is_active).map((row) => row.name)
+    // Статусы участия в ОМ (Plane №427, `[СТС-…]`): вручную не ставятся — окно
+    // их не предлагает, и справочник сверяется БЕЗ них.
+    const PARTICIPATION = new Set(['EVENT_ASSIGNMENT', 'EVENT_ASSIGNMENT_GROUP', 'IN_EVENT'])
+    const expected = catalog.results
+      .filter((row) => row.is_active && !PARTICIPATION.has(row.code))
+      .map((row) => row.name)
     expect(expected.length, 'справочник на стенде не пуст — иначе проба вакуумна').toBeGreaterThan(0)
 
     await signIn(page)

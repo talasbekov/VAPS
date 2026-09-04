@@ -151,8 +151,10 @@ test.describe('заявки департаменту: срок сдачи', () =
     // `getByRole('columnheader')` находит ноль элементов на любом составе
     // колонок (та же яма, что у дней недели календаря в №258).
     const head = section.locator('thead tr').first()
-    await expect(head).toContainText('Срок сдачи')
-    await expect(head).toContainText('Дата ОМ')
+    await expect(head).toContainText('Срок')
+    // Дата ОМ своей колонки больше не имеет (`[СБС-20]`, Plane №444): она
+    // стоит строкой под названием мероприятия, столбец канона — срок.
+    await expect(head).not.toContainText('Дата ОМ')
 
     // (2) СТРОКА ЗАЯВКИ НАЗЫВАЕТ ПРОСРОЧКУ СЛОВОМ.
     // 🔴 КОД СВЕРЯЕТСЯ ЦЕЛИКОМ, а не подстрокой. `hasText` ищет вхождение, и

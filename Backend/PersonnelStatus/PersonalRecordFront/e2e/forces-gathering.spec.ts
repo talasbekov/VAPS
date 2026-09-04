@@ -37,7 +37,12 @@ const IN_SERVICE_COLUMN = 'IN_SERVICE'
 interface StrengthReport {
   business_date: string
   rows: { division_id: number; name: string; list_total: number; columns: Record<string, number> }[]
-  totals: { staff_total: number; list_total: number; columns: Record<string, number> }
+  totals: {
+    staff_total: number
+    list_total: number
+    columns: Record<string, number>
+    event: { total: number; group: number; squad: number }
+  }
 }
 
 interface StatusRow {
@@ -87,16 +92,31 @@ async function send<T>(
  * что групповое участие доезжает до вкладки, живёт ниже отдельно и САМА
  * сажает такого человека, а не надеется найти его на стенде.
  */
-async function assignedCount(token: string, businessDate: string): Promise<number> {
+async function assignedCount(
+  token: string,
+  businessDate: string,
+  reportDivisionIds: Set<string>,
+): Promise<number> {
+  // 🔴 СЧИТАЕМ В ОБЛАСТИ РАСХОДА, а не по всем статусам стенда: расход
+  // строится из штатных слотов подразделений, и участие сотрудника, чьё
+  // подразделение в расходе не стоит (на стенде — служебная запись без
+  // штатного слота), плитка не считает и считать не должна. Раньше помощник
+  // складывал все статусы подряд и расходился с плиткой на единицу.
   let total = 0
   for (const code of [EVENT_ASSIGNMENT, EVENT_ASSIGNMENT_GROUP]) {
     const page = await get<{ results: StatusRow[] }>(
       token,
       `/api/operations/statuses/?business_date=${businessDate}&status_type_code=${code}&limit=500`,
     )
-    total += page.results.length
+    for (const row of page.results) {
+      const employee = await get<{ division: number | null }>(token, `/api/core/employees/${row.employee_id}/`)
+      if (employee.division !== null && reportDivisionIds.has(String(employee.division))) total += 1
+    }
   }
   return total
+}
+function reportDivisions(report: StrengthReport): Set<string> {
+  return new Set(report.rows.map((row) => String(row.division_id)))
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -188,7 +208,16 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
   test('знаменатели взяты у расхода, привлечённые посчитаны по статусам', async ({ page }) => {
     const token = await apiToken()
     const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
-    const assigned = await assignedCount(token, report.business_date)
+    // Плитка и вкладка «Участие в ОМ» — это `totals.event.total` РАСХОДА: у
+    // человека с двумя действующими статусами (болен И привлечён) расход
+    // отдаёт одну колонку, и голый счёт статусов участия расходился с ним на
+    // единицу. Сторож ниже держит, что статусов участия не МЕНЬШЕ, чем
+    // насчитал расход, — иначе плитка выдумывала бы людей.
+    const assigned = report.totals.event.total
+    expect(
+      await assignedCount(token, report.business_date, reportDivisions(report)),
+      'статусов участия меньше, чем насчитал расход',
+    ).toBeGreaterThanOrEqual(assigned)
     const inServiceColumn = report.totals.columns[IN_SERVICE_COLUMN] ?? 0
 
     expect(report.totals.list_total, 'расход пуст — проба вакуумна').toBeGreaterThan(0)
@@ -217,7 +246,16 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
   test('люди разложены по управлениям, вкладки не пересекаются', async ({ page }) => {
     const token = await apiToken()
     const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
-    const assigned = await assignedCount(token, report.business_date)
+    // Плитка и вкладка «Участие в ОМ» — это `totals.event.total` РАСХОДА: у
+    // человека с двумя действующими статусами (болен И привлечён) расход
+    // отдаёт одну колонку, и голый счёт статусов участия расходился с ним на
+    // единицу. Сторож ниже держит, что статусов участия не МЕНЬШЕ, чем
+    // насчитал расход, — иначе плитка выдумывала бы людей.
+    const assigned = report.totals.event.total
+    expect(
+      await assignedCount(token, report.business_date, reportDivisions(report)),
+      'статусов участия меньше, чем насчитал расход',
+    ).toBeGreaterThanOrEqual(assigned)
     expect(assigned, 'на стенде нет привлечённых — вкладка пуста, проба вакуумна').toBeGreaterThan(0)
 
     await signIn(page)
@@ -317,53 +355,53 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     const divisions = report.rows.filter((row) => row.list_total > 0)
     expect(divisions.length, 'в расходе нет ни одного непустого управления').toBeGreaterThan(0)
 
-    let free: { id: number; full_name: string } | undefined
-    for (const division of divisions) {
-      // 🔴 `id` У ДВУХ РУЧЕК РАЗНОГО ТИПА: расход отдаёт строку, статусы —
-      // число. Сравнение без приведения не совпадало НИ РАЗУ, «свободным»
-      // объявлялся первый попавшийся, и проба падала 409 по чужому статусу.
-      // Похоже на расхождение областей видимости — но поштучная сверка
-      // показала, что выдачи согласованы, а расходились типы.
-      const people = await get<{ results: { id: number | string; full_name: string }[] }>(
-        token,
-        `/api/ops/daily/employees/?division_id=${division.division_id}&page_size=200`,
-      )
-      // Занят — это ЛЮБОЙ действующий статус, а не только участие: сервер
-      // отбивает пересечение с дежурством и отпуском ровно так же (409/422), и
-      // отбор «нет участия» приводил пробу к отказу по чужому статусу.
-      // Спрашиваем ПО ТОМУ ЖЕ управлению, что и список людей: без сужения ручка
-      // отдаёт статусы всей организации, страница обрезается по потолку сервера,
-      // и «свободным» объявляется тот, чья строка не поместилась.
-      const busyRows = await get<{ results: StatusRow[]; next: string | null }>(
-        token,
-        `/api/operations/statuses/?business_date=${report.business_date}` +
-          `&division_id=${division.division_id}&page_size=500`,
-      )
-      expect(busyRows.next, 'статусы управления не поместились на страницу').toBeFalsy()
-      const busy = new Set(busyRows.results.map((row) => row.employee_id))
-      free = people.results
-        .map((person) => ({ ...person, id: Number(person.id) }))
-        .find((person) => !busy.has(person.id))
-      if (free !== undefined) break
+    // 🔴 ГРУППОВОЕ УЧАСТИЕ ВРУЧНУЮ БОЛЬШЕ НЕ СТАВИТСЯ (Plane №427,
+    // `[СТС-…]`): статусы участия заводит только система из запроса на сбор
+    // сил, а системный путь знает лишь «наряд». Поэтому проба берёт
+    // СУЩЕСТВУЮЩИЙ групповой статус на дату (его заводит сид стенда) и
+    // отдельно стережёт сам отказ на ручную постановку — это и есть правило.
+    const inScope = reportDivisions(report)
+    const groupRows = await get<{ results: StatusRow[] }>(
+      token,
+      `/api/operations/statuses/?business_date=${report.business_date}` +
+        `&status_type_code=${EVENT_ASSIGNMENT_GROUP}&limit=500`,
+    )
+    let free: { id: number } | undefined
+    for (const row of groupRows.results) {
+      const employee = await get<{ division: number | null }>(token, `/api/core/employees/${row.employee_id}/`)
+      if (employee.division !== null && inScope.has(String(employee.division))) {
+        free = { id: Number(row.employee_id) }
+        break
+      }
     }
-    expect(
-      free,
-      'во ВСЕЙ организации не осталось человека без статуса на дату — сажать некого',
-    ).toBeDefined()
+    if (free === undefined) {
+      throw new Error(
+        'на стенде нет фикстуры: статус «Привлечён на мероприятие (боевая группа)» на деловую дату у сотрудника из расхода. ' +
+          'Вручную он не ставится (Plane №427) — заводится сидом: manage.py seed_smoke_fixtures',
+      )
+    }
 
+    const anyone = divisions[0]!
+    const someone = (
+      await get<{ results: { id: number | string }[] }>(
+        token,
+        `/api/ops/daily/employees/?division_id=${anyone.division_id}&page_size=1`,
+      )
+    ).results[0]!
     const nextDay = new Date(`${report.business_date}T00:00:00Z`)
     nextDay.setUTCDate(nextDay.getUTCDate() + 1)
-    const created = await fetch(`${API}/api/operations/statuses/`, {
+    const refused = await fetch(`${API}/api/operations/statuses/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        employee_id: free!.id,
+        employee_id: Number(someone.id),
         status_type_code: EVENT_ASSIGNMENT_GROUP,
         date_start: report.business_date,
         date_end: nextDay.toISOString().slice(0, 10),
       }),
     })
-    expect(created.status, await created.text()).toBe(201)
+    expect(refused.status, 'ручная постановка участия должна отбиваться (Plane №427)').toBe(422)
+    expect((await refused.json()).error_code).toBe('PARTICIPATION_MANUAL_FORBIDDEN')
 
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
