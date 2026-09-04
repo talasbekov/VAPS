@@ -341,11 +341,12 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const removeStaffed = page.getByRole('button', {
       name: `Снять пост ${keptName}`,
     })
+    // `[РАС-02]` (Plane №445): у занятого поста корзины НЕТ вовсе — не
+    // выключенная, а не отрисованная.
     await expect(
       removeStaffed,
       'занятый пост предлагается снять — правило заказчика нарушено',
-    ).toBeDisabled()
-    await expect(removeStaffed).toHaveAttribute('title', /стоит \d+ чел/)
+    ).toHaveCount(0)
 
     // Уборка: человек снимается с поста, пост — с расчёта. Стенд общий, и
     // проба, оставляющая за собой мусор, ломает соседние.
@@ -437,7 +438,11 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       const mine = mineOf(await assignmentsOf())
       if (mine === null) throw new Error('назначение не появилось — искать строку негде')
 
-      await rowOf(mine.id).getByRole('combobox', { name: /^Секция бланка: / }).selectOption(section!.code)
+      // Селектов в строке больше нет (`[РАС-03]`, Plane №445): роль и секция
+      // ставятся в окне «Роль и секция…» строки.
+      await rowOf(mine.id).getByRole('button', { name: /^Роль и секция: / }).click()
+      await page.getByRole('dialog').getByRole('combobox', { name: 'Секция бланка' }).selectOption(section!.code)
+      await page.getByRole('dialog').getByRole('button', { name: 'Сохранить' }).click()
 
       await expect
         .poll(async () => mineOf(await assignmentsOf())?.sectionCode ?? null, {
@@ -449,7 +454,9 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       // назначение сектора её уже пересоздало.
       const afterSection = mineOf(await assignmentsOf())
       if (afterSection === null) throw new Error('строка пропала после смены секции')
-      await rowOf(afterSection.id).getByRole('combobox', { name: /^Роль наряда: / }).selectOption(role!.code)
+      await rowOf(afterSection.id).getByRole('button', { name: /^Роль и секция: / }).click()
+      await page.getByRole('dialog').getByRole('combobox', { name: 'Роль наряда' }).selectOption(role!.code)
+      await page.getByRole('dialog').getByRole('button', { name: 'Сохранить' }).click()
 
       await expect
         .poll(async () => mineOf(await assignmentsOf())?.roleCode ?? null, { timeout: 20_000 })
@@ -531,8 +538,10 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       // Роль ставится ИЗ СТРОКИ, как это делает человек.
       await page
         .getByTestId(`placement-assignment-${created.id}`)
-        .getByRole('combobox', { name: /^Роль наряда: / })
-        .selectOption(role!.code)
+        .getByRole('button', { name: /^Роль и секция: / })
+        .click()
+      await page.getByRole('dialog').getByRole('combobox', { name: 'Роль наряда' }).selectOption(role!.code)
+      await page.getByRole('dialog').getByRole('button', { name: 'Сохранить' }).click()
 
       // 🔴 СМЕНА РОЛИ ПЕРЕСОЗДАЁТ НАЗНАЧЕНИЕ (снятие + назначение заново —
       // своей операции «сменить роль» у бэка нет, см. `PlacementStage`), а
@@ -551,12 +560,8 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         )
         .toBe(role!.code)
 
-      // Подпись роли видна в СВОЕЙ строке, а не только в выпадающем списке —
-      // и не в чужой строке с тем же текстом где-то ещё на экране. `.first()`
-      // здесь безопасен (в отличие от `.first()` по всей странице до
-      // правки): выбор уже сужен до ОДНОЙ строки, и внутри нее совпадений
-      // ровно два — бейдж роли и спрятанный `<option>` того же текста в
-      // `<select>` — бейдж в разметке строки идёт ПЕРВЫМ. Таймаут больше
+      // Подпись роли видна в СВОЕЙ строке — и не в чужой строке с тем же
+      // текстом где-то ещё на экране: выбор сужен до ОДНОЙ строки. Таймаут больше
       // стандартного: строка на экране обновляется инвалидацией react-query
       // ПОСЛЕ того, как сервер уже ответил (что мы и дождались выше
       // поллингом по API) — эти два момента не совпадают.
@@ -790,7 +795,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     await expect(card).toBeVisible({ timeout: 15_000 })
 
     // Ни один пост не занят — «Завершить» обязана спросить подтверждение.
-    await card.getByRole('button', { name: 'Завершить этап и перейти далее' }).click()
+    await card.getByRole('button', { name: 'Завершить расстановку' }).click()
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible({ timeout: 15_000 })
@@ -834,6 +839,53 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
    * Там над деревом обязана появиться панель, клик по замечанию — подсветить
    * именно этот пост (aria-current) и показать замечание в карточке поста.
    */
+  test('кандидат перетаскивается из пула на пост в дереве и садится на него', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * `[РАС-03]` (Plane №445): перетаскивание — единственная новая механика
+     * шага. Проба тянет первого кандидата пула на первый пост дерева и ждёт
+     * назначение НА СЕРВЕРЕ, а не подсветку: иначе drop, который ничего не
+     * шлёт, прошёл бы зелёным. Красная проверка — снять `onDrop` у поста.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const target = await placementEventWithRoster(request, auth, token)
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
+    const eventId = target!.id
+    type Row = { id: string; postId: string }
+    const assignmentsOf = async (): Promise<Row[]> =>
+      ((await (
+        await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+      ).json()) as { placementAssignments: Row[] }).placementAssignments
+    const before = new Set((await assignmentsOf()).map((row) => row.id))
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${eventId}/`)
+      const tree = page.getByRole('complementary', { name: 'Дерево постов' })
+      const post = tree.locator('li[data-drop-post]').first()
+      await expect(post).toBeVisible()
+      const postId = await post.getAttribute('data-drop-post')
+      const candidate = page.locator('aside button', { hasText: 'Совпадение' }).first()
+      await expect(candidate).toBeVisible({ timeout: 25_000 })
+      await candidate.dragTo(post)
+      await expect
+        .poll(async () => (await assignmentsOf()).filter((row) => !before.has(row.id)).map((row) => row.postId), {
+          timeout: 15_000,
+        })
+        .toEqual([postId])
+    } finally {
+      for (const row of await assignmentsOf()) {
+        if (before.has(row.id)) continue
+        await request.delete(
+          `${API}/api/ops/security-events/${eventId}/placement/${encodeURIComponent(row.id)}/`,
+          { headers: auth },
+        )
+      }
+    }
+  })
+
   test('после возврата замечания стоят над деревом, клик подсвечивает пост', async ({
     page,
   }) => {

@@ -64,7 +64,8 @@ test.describe(LIVE ? 'правило доступа' : 'правило дост�
 
     await signIn(page, 'acc_employee_d2', PASSWORD)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
-    const button = page.getByRole('button', { name: 'Завершить этап и перейти далее' })
+    // На расстановке кнопка зовётся «Завершить расстановку» (`[РАС-01]`, Plane №445).
+    const button = page.getByRole('button', { name: /^Завершить (этап и перейти далее|расстановку)$/ })
     await expect(button).toBeVisible()
     await expect(button).toBeDisabled()
     await expect(button).toHaveAttribute('title', /ведущий ОМ или штаб/)

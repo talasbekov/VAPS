@@ -4144,15 +4144,14 @@ def _post_of_assignment(event, assignment):
 
 @transaction.atomic
 def set_sector_senior(event_id, assignment_id, *, senior, actor):
-    """Старший сектора на расстановке (Plane №65, шаг «Р-4»).
+    """Старший поста на расстановке (Plane №65 «Р-4» → `[РАС-03]`, Plane №445).
 
-    Старший — ОДИН на сектор: назначение снимает признак у остальных
-    назначений того же сектора. Двое старших означали бы, что доклад с сектора
-    спрашивать не с кого конкретно, — а ради этого признак и заводится.
-
-    Сектор берётся у ПОСТА назначения: своего поля сектора у назначения нет и
-    быть не должно — пост уже знает свой сектор, и вторая копия разошлась бы
-    с ним при переносе поста.
+    Старший — ОДИН на ПОСТ: назначение снимает признак у остальных назначений
+    того же поста. До №445 признак был один на сектор (прототип); канон
+    требований называет чип «Старший поста», и у сектора с несколькими постами
+    старшие теперь у каждого поста свои. Имя поля `isSectorSenior` и ручка
+    `…/senior/` сохранены: их читают карточка, мок и пробы, переименование —
+    отдельный шаг после переезда читателей.
     """
     event = lock_event(event_id)
     target = next(
@@ -4169,14 +4168,13 @@ def set_sector_senior(event_id, assignment_id, *, senior, actor):
             422,
             message="Пост назначения не найден — сектор определить нечем.",
         )
+    post_id = str(post.get("id"))
     sector = str(post.get("sector") or "")
     previous = next(
         (
             a
             for a in event.placement_assignments
-            if bool(a.get("isSectorSenior"))
-            and str((_post_of_assignment(event, a) or {}).get("sector") or "")
-            == sector
+            if bool(a.get("isSectorSenior")) and str(a.get("postId")) == post_id
         ),
         None,
     )
@@ -4185,10 +4183,8 @@ def set_sector_senior(event_id, assignment_id, *, senior, actor):
         if row.get("id") == assignment_id:
             rows.append({**row, "isSectorSenior": bool(senior)})
             continue
-        same_sector = (
-            str((_post_of_assignment(event, row) or {}).get("sector") or "") == sector
-        )
-        rows.append({**row, "isSectorSenior": False} if same_sector else row)
+        same_post = str(row.get("postId")) == post_id
+        rows.append({**row, "isSectorSenior": False} if same_post else row)
     event.placement_assignments = rows
     event.save(update_fields=["placement_assignments", "updated_at"])
     audit_service.record(
