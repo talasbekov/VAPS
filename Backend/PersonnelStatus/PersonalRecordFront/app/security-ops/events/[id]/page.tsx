@@ -11,7 +11,6 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
 import { InDevelopmentBadge } from "@/components/in-development-badge";
 import { inDevelopmentOfStage } from "@/shared/config/in-development";
-import { GvoSummaryPanel } from "@/widgets/gvo-summary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -70,15 +69,6 @@ function SecurityEventScreen() {
   // рекогносцировку» — в области этапа, и без этого сигнала переход стирал бы
   // набранный текст (после смены стадии сервер правку бюллетеня не примет).
   const [bulletinDirty, setBulletinDirty] = useState(false);
-  // Панель ГВО закрыта по умолчанию: сводка — это четыре сотни строк разметки
-  // и свой запрос, и раскрытая всегда она отодвинула бы этапы за сгиб.
-  //
-  // Исключение — приход ИЗ вкладки «Визиты иностранных ОЛ» (`?gvo=1`, «Реестр
-  // ОМ-35.8»): там человек нажал именно на сводку, и карточка со свёрнутой
-  // панелью заставила бы его нажать второй раз на то же самое.
-  const [gvoOpen, setGvoOpen] = useState(
-    searchParams.get("gvo") === "1"
-  );
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   // Объекты посещения и выбранный из них считаются ДО ранних веток: ниже
@@ -202,11 +192,10 @@ function SecurityEventScreen() {
 
       <Card className="mb-4">
         <CardContent className="p-4">
-          {/* Шапка в две колонки: сведения слева, кнопка «Информация по ГВО»
-              справа — так её просил заказчик («с правой стороны должна
-              появляться кнопка»). Обёртка нужна именно здесь: содержимое
-              карточки было вертикальным стеком, и кнопка встала бы под
-              паспортом, а не рядом с названием. */}
+          {/* Шапка в две колонки: сведения слева, действия справа. Обёртка
+              нужна именно здесь: содержимое карточки было вертикальным
+              стеком, и действие встало бы под паспортом, а не рядом с
+              названием. */}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-64 flex-1">
           <div className="mb-1 flex items-center gap-2">
@@ -239,9 +228,9 @@ function SecurityEventScreen() {
           />
           {/* Карточка ОМ — хаб: объект кликабелен отсюда на любом этапе.
               Ссылки «Сводка ГВО →» здесь БОЛЬШЕ НЕТ (Plane «Реестр ОМ-35.8»):
-              отдельного экрана сводки не существует, а её панель раскрывает
-              кнопка «Информация по ГВО» в этой же шапке — вторая ссылка на то
-              же место рядом с кнопкой только сбивала бы. */}
+              в сводку ведёт ссылка «Карточка визита →» в шапке бюллетеня
+              (`[ГВО-03]`, Plane №441) — вторая ссылка на то же место рядом
+              только сбивала бы. */}
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs">
             {event.objectId !== null ? (
               <Link
@@ -301,24 +290,10 @@ function SecurityEventScreen() {
         key={`bulletin-${objectStage}`}
         event={event}
         onDirtyChange={setBulletinDirty}
-        gvoOpen={gvoOpen}
-        onToggleGvo={
-          event.kind === "INTERNAL"
-            ? undefined
-            : () => setGvoOpen((open) => !open)
-        }
       />
-
-      {/* Панель «Информация по ГВО» — СРАЗУ ПОД БЮЛЛЕТЕНЕМ, из которого её
-          и открыли (Plane №193), и по-прежнему ДО этапов: это сведения о
-          самом визите (кто едет, чем прибывает, какие объекты), и читаются
-          они раньше, чем ход подготовки. Раскрытие рядом с кнопкой — иначе
-          нажатие в одном месте меняет экран в другом. */}
-      {gvoOpen && (
-        <div id="gvo-summary-panel" className="mb-4">
-          <GvoSummaryPanel event={event} variant="embedded" />
-        </div>
-      )}
+      {/* Панели «Информация по ГВО» в карточке БОЛЬШЕ НЕТ (`[ГВО-03]`, Plane
+          №441): сводка визита живёт своей страницей, на этапах — только
+          ссылка «Карточка визита →» в шапке бюллетеня. */}
 
       <StageHeading stage={viewedStage} />
 

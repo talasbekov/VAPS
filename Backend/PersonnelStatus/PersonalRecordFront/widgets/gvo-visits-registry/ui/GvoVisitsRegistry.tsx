@@ -191,6 +191,23 @@ function RegistryTable({
             const summary = row?.summary;
             const filled = row?.filled ?? false;
             const staff = summary === undefined ? 0 : gvoStaffCount(summary);
+            // Реальный статус визита и прогресс обязательных (`[РЕЕ-07]`,
+            // Plane №441): «Черновик · заполнено K из N» / «Утверждено» —
+            // по сущности визита (№435) и счёту обязательных (№436), а не по
+            // факту непустого патча.
+            const visitStatus = row?.visit?.status ?? (filled ? "READY" : "DRAFT");
+            const requiredTotal = row?.requiredTotal ?? 0;
+            const requiredFilled = row?.requiredFilled ?? 0;
+            // До утверждения строка — «Черновик · заполнено K из N» по букве
+            // `[РЕЕ-07]`: промежуточного «Заполнен» в каноне нет, а серверный
+            // READY остаётся и после «Вернуть исходные» — как статус строки он
+            // врал бы.
+            const statusLabel =
+              visitStatus === "APPROVED"
+                ? "Утверждено"
+                : `Черновик${
+                    requiredTotal > 0 ? ` · заполнено ${requiredFilled} из ${requiredTotal}` : ""
+                  }`;
             // Ведём в КАРТОЧКУ мероприятия с раскрытой панелью, а не на свой
             // экран сводки: модуля больше нет, сводка живёт в карточке
             // («Реестр ОМ-35.4»), и `?gvo=1` открывает панель сразу — человек
@@ -249,18 +266,23 @@ function RegistryTable({
                 </TableCell>
                 <TableCell>
                   <span
-                    className={
-                      filled
-                        ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
-                        : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
-                    }
+                    data-slot="visit-status"
+                    className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      visitStatus === "APPROVED"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
                   >
-                    {filled ? "Заполнена" : "Черновик"}
+                    {statusLabel}
                   </span>
                 </TableCell>
-                <TableCell className="text-center text-muted-foreground">
-                  <Link href={href} aria-label={`Сводные данные ${event.code}`}>
-                    ›
+                <TableCell className="whitespace-nowrap text-right">
+                  <Link
+                    href={href}
+                    className="text-xs font-semibold text-primary-ink"
+                    aria-label={`Сводные данные ${event.code} →`}
+                  >
+                    Сводные данные →
                   </Link>
                 </TableCell>
               </TableRow>

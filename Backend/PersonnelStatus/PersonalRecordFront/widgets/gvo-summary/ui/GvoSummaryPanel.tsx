@@ -22,7 +22,8 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useGvoSummary } from "@/hooks/use-gvo-summaries";
 import { StageBadge } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
-import { GvoSectionDialog, GvoVisitsDialog } from "@/features/gvo-section-edit";
+import { GvoVisitsDialog } from "@/features/gvo-section-edit";
+import { GvoEditForm } from "./GvoEditForm";
 import { AllocateVehicleDialog, releaseVehicle } from "@/features/event-vehicles";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -39,7 +40,7 @@ import {
   gvoStaffCount,
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
-import type { GvoFlight, GvoSection } from "@/entities/gvo-summary";
+import type { GvoFlight } from "@/entities/gvo-summary";
 
 // Однострочная константа, а не текст прямо в JSX: e2e пинит её ДОСЛОВНО
 // (см. e2e/gvo-sections.spec.ts), а JSX схлопывает переносы строк по своим
@@ -71,7 +72,9 @@ export function GvoSummaryPanel({
     myEmployeeId: me.data?.id ?? null,
     event,
   });
-  const [section, setSection] = useState<GvoSection | null>(null);
+  // Единый режим правки (`[ГВО-05]`, Plane №441): одна кнопка «Редактировать»
+  // на страницу, окон и кнопок «Изменить» по блокам больше нет.
+  const [editing, setEditing] = useState(false);
   // Объекты посещения правятся своим окном, а не разделом патча («Реестр
   // ОМ-35.1»): список объектов принадлежит мероприятию.
   const [visitsOpen, setVisitsOpen] = useState(false);
@@ -124,7 +127,6 @@ export function GvoSummaryPanel({
   const summary = summaryQuery.data.summary;
   const filled = summaryQuery.data.filled;
   const staff = gvoStaffCount(summary);
-  const edit = canEdit ? (next: GvoSection) => () => setSection(next) : null;
 
   return (
     <>
@@ -203,38 +205,32 @@ export function GvoSummaryPanel({
               <p className="text-[18px] font-bold tabular-nums">
                 {staff > 0 ? `${staff} чел.` : UNSPECIFIED}
               </p>
-              {edit !== null && (
+              {canEdit && !editing && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="mt-1 h-9"
-                  onClick={edit("head")}
+                  onClick={() => setEditing(true)}
                 >
                   <Pencil className="mr-1 h-[13px] w-[13px]" aria-hidden />
-                  Страна
+                  Редактировать
                 </Button>
               )}
             </div>
           </CardContent>
         </Card>
 
+        {editing ? (
+          <GvoEditForm
+            omCode={event.code}
+            summary={summary}
+            unspecified={summaryQuery.data.unspecified ?? []}
+            onDone={() => setEditing(false)}
+          />
+        ) : (
+        <>
         {/* Охраняемые лица */}
-        <Section
-          title="Охраняемые лица"
-          action={
-            edit !== null && (
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Правка раздела целиком нужна не только для массовой вставки:
-                    удалив последнее лицо, вернуть раздел к исходным данным
-                    было бы больше нечем — кнопки на карточке лица не осталось. */}
-                <EditButton onClick={edit("persons")} label="Изменить список охраняемых лиц" />
-                <Button variant="outline" size="sm" className="h-[30px]" onClick={edit("person:new")}>
-                  ＋ Добавить лицо
-                </Button>
-              </div>
-            )
-          }
-        >
+        <Section title="Охраняемые лица">
           {summary.persons.length === 0 ? (
             <EmptyBox text="Охраняемые лица не указаны в бюллетене" />
           ) : (
@@ -263,12 +259,6 @@ export function GvoSummaryPanel({
                           {person.role}
                         </p>
                       </div>
-                      {edit !== null && (
-                        <EditButton
-                          onClick={edit(`person:${index}` as GvoSection)}
-                          label={`Изменить данные лица ${index + 1}`}
-                        />
-                      )}
                     </div>
                     <div className="mt-3 grid gap-px bg-[hsl(210_40%_94%)] [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
                       {person.facts.map((fact) => (
@@ -303,22 +293,19 @@ export function GvoSummaryPanel({
             flight={summary.arrival}
             listTitle="Встречают"
             list={summary.meet}
-            onEdit={edit === null ? null : edit("arrival")}
+            onEdit={null}
           />
           <FlightCard
             title="Убытие / тип борта"
             flight={summary.departure}
             listTitle="Провожают"
             list={summary.farewell}
-            onEdit={edit === null ? null : edit("departure")}
+            onEdit={null}
           />
         </div>
 
         {/* Организация */}
-        <Section
-          title="Организация"
-          action={edit !== null && <EditButton onClick={edit("org")} label="Изменить организацию" />}
-        >
+        <Section title="Организация">
           <div className="grid gap-[10px] [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
             {(
               [
@@ -375,20 +362,6 @@ export function GvoSummaryPanel({
                     : `${summary.responsible.name} · позывной ${summary.responsible.callsign} — ${summary.responsible.role}`}
                 </span>
               </span>
-              {edit !== null && (
-                <>
-                  {/* Тот же довод, что и у охраняемых лиц: после удаления
-                      последней группы вернуть раздел к исходным можно только
-                      отсюда. */}
-                  <EditButton onClick={edit("groups")} label="Изменить состав ГВО" />
-                  <Button variant="outline" size="sm" className="h-[30px]" onClick={edit("resp")}>
-                    Ответственный
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-[30px]" onClick={edit("group:new")}>
-                    ＋ Группа
-                  </Button>
-                </>
-              )}
             </div>
           }
         >
@@ -405,15 +378,6 @@ export function GvoSummaryPanel({
                       ? `${group.members.length} чел.`
                       : UNSPECIFIED}
                   </span>
-                  {edit !== null && (
-                    <span className="ml-auto">
-                      <EditButton
-                        small
-                        onClick={edit(`group:${index}` as GvoSection)}
-                        label={`Изменить группу ${group.name}`}
-                      />
-                    </span>
-                  )}
                 </div>
                 {group.members.length === 0 ? (
                   <p className="px-3 py-3 text-[12px] text-muted-foreground">
@@ -464,9 +428,6 @@ export function GvoSummaryPanel({
                 >
                   + Машина из реестра
                 </Button>
-              )}
-              {edit !== null && (
-                <EditButton onClick={edit("transport")} label="Изменить транспорт" />
               )}
             </div>
           }
@@ -590,18 +551,9 @@ export function GvoSummaryPanel({
           </div>
           )}
         </Section>
+        </>
+        )}
       </div>
-
-      {section !== null && (
-        <GvoSectionDialog
-          omCode={event.code}
-          omTitle={event.title}
-          section={section}
-          summary={summary}
-          unspecified={summaryQuery.data.unspecified ?? []}
-          onClose={() => setSection(null)}
-        />
-      )}
 
       {visitsOpen && (
         <GvoVisitsDialog event={event} onClose={() => setVisitsOpen(false)} />
