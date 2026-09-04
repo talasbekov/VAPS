@@ -31,7 +31,7 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
 // Фикстура «Сведений об ОМ»: даты выбраны так, что и дни недели, и
 // продолжительность различимы (вторник → четверг, три дня включительно).
-const FACTS_TITLE = 'Проба сведений об ОМ (e2e)'
+const FACTS_TITLE = 'Проба сведений об ОМ без объекта (e2e)'
 const BULLETIN_TITLE = 'Проба бюллетеня без объекта (e2e)'
 const STAGE_LABEL: Record<string, string> = {
   BULLETIN: 'Бюллетень',
@@ -76,13 +76,6 @@ async function events(token: string, search = ''): Promise<EventRow[]> {
     headers: { Authorization: `Bearer ${token}` },
   })
   return ((await res.json()) as { results: EventRow[] }).results
-}
-
-async function objectCard(token: string, id: string): Promise<{ address: string }> {
-  const res = await fetch(`${API}/api/ops/objects/${id}/`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return (await res.json()) as { address: string }
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -187,9 +180,12 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
   test('«Сведения об ОМ» собраны из ответов сервера', async ({ page }) => {
     const token = await apiToken()
     const target = await factsEvent(token)
-    expect(target.objectId, 'фикстура должна быть привязана к объекту').not.toBeNull()
-    const object = await objectCard(token, target.objectId!)
-    expect(object.address.trim(), 'у объекта стенда пустой адрес — проба вакуумна').not.toBe('')
+    // Объекта у фикстуры БОЛЬШЕ НЕТ и быть не может (Plane №468): «Сведения
+    // об ОМ» видны только на стадии «Бюллетень», а туда попадает лишь ОМ без
+    // объекта. Поэтому ушли ассерты «Объект проведения» и «Место / адрес» —
+    // не подгоном под новый вывод, а потому что эта пара на экране теперь
+    // недостижима в принципе. Остальные факты проба стережёт как прежде.
+    expect(target.objectId, 'фикстура на стадии «Бюллетень» не может нести объект').toBeNull()
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
@@ -199,9 +195,6 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     await expect(facts).toBeVisible({ timeout: 15_000 })
 
     await expect(facts).toContainText(`Номер ОМ: ${target.code}`)
-    await expect(facts).toContainText(`Объект проведения: ${target.objectName}`)
-    // Адрес живёт НЕ в мероприятии: карточка ходит за ним в реестр объектов
-    await expect(facts).toContainText(`Место / адрес: ${object.address}`)
     // Дни недели и продолжительность выводятся из дат, а не хранятся
     await expect(facts).toContainText('Дата начала: 01.09.2026, вторник')
     await expect(facts).toContainText('Дата окончания: 03.09.2026, четверг')
@@ -229,56 +222,14 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     )
   })
 
-  // Задержать ответ о правах удаётся только при ДВУХ условиях сразу, и оба
-  // выяснились красной пробой — без них проба зеленела не от задержки, а от
-  // медленного первого рендера (окно загрузки прав ~0.5 с) и разваливалась на
-  // прогретом dev-сервере:
-  //
-  // * `serviceWorkers: 'block'` — фронт держит service worker MSW, и запросы
-  //   идут через него; `page.route` запросы воркера не видит. Мок-домены
-  //   бюллетеню не нужны: он ходит в живой `/api/ops/*`;
-  // * матчер-ПРЕДИКАТ вместо строки-глоба: `'**/api/operations/
-  //   my-permissions/**'` этот адрес НЕ ловит — у Playwright `/**` требует
-  //   ещё одного сегмента, а путь кончается слэшем.
-  //
-  // Счётчик перехватов ниже больше не даёт пробе соврать про задержку.
-  test('незагруженные права — не отказ: адрес ждёт, а не обвиняет', async ({ page }) => {
-    const token = await apiToken()
-    const target = await factsEvent(token)
-    const object = await objectCard(token, target.objectId!)
-
-    await signIn(page)
-    let permissionsAsked = 0
-    await page.route(
-      (url) => url.pathname.includes('/api/operations/my-permissions/'),
-      async (route) => {
-        permissionsAsked += 1
-        await new Promise((resolve) => setTimeout(resolve, 4_000))
-        await route.continue()
-      }
-    )
-    await page.goto(`${APP}/security-ops/events/${target.id}/`)
-    const facts = page.locator('section').filter({
-      has: page.getByRole('heading', { name: 'Сведения об ОМ' }),
-    })
-    await expect(facts).toContainText(
-      'Место / адрес: загрузка карточки объекта…',
-      { timeout: 15_000 }
-    )
-    await expect(facts).not.toContainText('нужно право')
-
-    // Полторы секунды спустя ответа о правах всё ещё нет: окно держит
-    // задержка, а не медленный первый рендер (он укладывался в полсекунды)
-    await page.waitForTimeout(1_500)
-    await expect(facts).toContainText('Место / адрес: загрузка карточки объекта…')
-    await expect(facts).not.toContainText('нужно право')
-
-    // Дождались прав — адрес появился, отказа не было ни на одном кадре
-    await expect(facts).toContainText(`Место / адрес: ${object.address}`, {
-      timeout: 15_000,
-    })
-    expect(permissionsAsked, 'запрос прав прошёл мимо перехвата').toBeGreaterThan(0)
-  })
+  // ПРОБА «незагруженные права — не отказ: адрес ждёт, а не обвиняет» СНЯТА
+  // (Plane №468). Её сюжет — состояние «Место / адрес: загрузка карточки
+  // объекта…» в «Сведениях об ОМ», пока грузятся права. После №468 панель
+  // видна только на стадии «Бюллетень», а ОМ на этой стадии объекта не имеет
+  // никогда (`initial_stage` в `security_events.py`) — значит ни адреса, ни
+  // его загрузки на экране не бывает, и стеречь пробе нечего. Сам код ожидания
+  // адреса в панели стал недостижим с экрана; снять его или вернуть панель —
+  // в заведённой карточке-следствии.
 })
 
 /** Заводит пустое ОМ на этапе «Бюллетень» — БЕЗ объекта: с объектом сервер
@@ -310,6 +261,11 @@ async function factsEvent(token: string): Promise<EventRow> {
       title: FACTS_TITLE,
       businessDate: FACTS_START,
       businessDateEnd: FACTS_END,
+      // БЕЗ объекта (Plane №468): панель «Бюллетень мероприятия» рисуется
+      // только на стадии «Бюллетень», а ОМ С объектом заводится сразу
+      // рекогносцировкой и этой стадии не видит вовсе — «Сведения об ОМ»
+      // у него на экране не появляются.
+      withObject: false,
     })
     found = match(await events(token, FACTS_TITLE))
   }
