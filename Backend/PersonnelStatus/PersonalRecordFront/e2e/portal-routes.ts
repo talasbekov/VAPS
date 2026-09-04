@@ -52,6 +52,7 @@ export const ROUTES: readonly RouteSpec[] = [
   // «Мой профиль» открывается любому вошедшему: кадровой записи у персоны
   // может не быть, и тогда экран показывает причину — это не отказ.
   { template: '/security-ops/profile' },
+  { template: '/security-ops/profile/{employeeId}', needs: ['employeeId'] },
   { template: '/security-ops/command-center' },
   // Маршруты «Сбор сил на ОМ», «Календарь смен», «Боевые группы» и «Расход
   // дня (ОМ)» удалены 21.08.2026 вместе с экранами — обходить нечего.
