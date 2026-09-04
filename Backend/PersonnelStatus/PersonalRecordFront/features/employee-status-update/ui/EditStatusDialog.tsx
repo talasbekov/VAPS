@@ -51,6 +51,15 @@ import { useDutyAssignment } from "@/hooks/use-duty-assignments";
 import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { DutyAssignmentFields } from "./DutyAssignmentFields";
 import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
+import {
+  EMPTY_PARTICIPATION_ROW,
+  EventParticipationFields,
+  participationsToPayload,
+  validateParticipations,
+  type ParticipationDraft,
+} from "@/features/event-participation/ui/EventParticipationFields";
+import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
+import { useDirectorateForcesRequests } from "@/hooks/use-forces-request-banner";
 import { useCreateOpsStatus } from "@/hooks/use-ops-status-write";
 import {
   EMPTY_DUTY_DRAFT,
@@ -262,11 +271,11 @@ export function EditStatusDialog({
   // СНИМАЮТСЯ ДВА КОДА, А НЕ ВЕСЬ НАБОР УЧАСТИЯ, и это осознанно. Общий
   // `EVENT_PARTICIPATION_STATUS_CODES` несёт третий код — `IN_EVENT`
   // («Участие в ОМ»), — а его заказчик убрать не просил («обе» сказано про
-  // «Привлечён на мероприятие»). Он и должен остаться видимым: сервер отбивает
-  // его ручной ввод СЛОВАМИ, куда идти (чекбоксы запроса на сбор сил на этом
-  // же экране, №427/№487), и на этом отказе стоит проба
-  // `status-portal-participation`. Убрав его из списка, я снял бы подсказку и
-  // сломал бы стерегущую её пробу — ради задачи, которая про другие два типа.
+  // «Привлечён на мероприятие»). С №737 он не просто остаётся видимым, а
+  // становится РАБОЧИМ выбором: начальник управления ставит им своего
+  // сотрудника, назвав мероприятие из заявок на сбор сил (ветка ниже).
+  // Два снятых кода погашены слиянием №486 и в справочнике неактивны —
+  // фильтр здесь стережёт базы, пересеянные до миграции 0091.
   const MANUAL_HIDDEN_STATUS_CODES: ReadonlySet<string> = new Set([
     "EVENT_ASSIGNMENT",
     "EVENT_ASSIGNMENT_GROUP",
@@ -295,16 +304,61 @@ export function EditStatusDialog({
   // свободен — так уже было (№274, Ш-5).
   const selectedCode =
     codeByLabel.get(status) ?? EMPLOYEE_STATUS_CODE_BY_LABEL[status] ?? "";
-  // «Участие в ОМ» вручную не ставится (Plane №427, `[СТА-04]`): статус
-  // заводится только из запроса на сбор сил — чекбоксами на «Статусах
-  // сотрудников» — и всегда с мероприятием и датами объекта.
+  // 🔴 «УЧАСТИЕ В ОМ» СНОВА СТАВИТСЯ РУКАМИ (Plane №737, решение заказчика
+  // 04.09.2026, отменившее запрет №427).
   //
-  // С №486 «Привлечён на мероприятие» из списка убран, но `IN_EVENT`
-  // («Участие в ОМ») в нём остался — значит признак ниже по-прежнему может
-  // стать истинным, и ветка «Привлечение на ОМ» (Plane №367) вместе с отказом
-  // сервера продолжает работать ровно как раньше.
+  // Заказчик: «пользователь с доступом к редактированию модуля „Статусы
+  // сотрудников“ должен иметь возможность давать своим сотрудникам статус
+  // „На участие ОМ“; этим занимается начальник управления, а не ответственный
+  // за сбор сил». До этой задачи окно при выборе типа показывало красный
+  // отказ и запирало «Сохранить» — на него заказчик и указал.
+  //
+  // МЕРОПРИЯТИЕ ВЫБИРАЕТСЯ ИЗ ЗАЯВОК СВОЕГО УПРАВЛЕНИЯ, а не из реестра ОМ
+  // (вариант 2 из трёх, выбран заказчиком). Реестр закрыт правом
+  // `event.view`, которого у роли `HEAD_DIRECTORATE_LINE` нет: тот же список,
+  // что показывает баннер запросов, — единственный, который этой роли ВИДЕН,
+  // и он же служит проверкой на сервере (`requested_event_ids`).
   const isEventParticipation = EVENT_PARTICIPATION_STATUS_CODES.has(selectedCode);
+  const [participations, setParticipations] = useState<ParticipationDraft[]>([]);
+  // Каталог видов нужен окну и после отрисовки блока — по нему проверяется
+  // черновик перед отправкой (запрос общий, из кэша).
+  const participationCatalog = useParticipationCatalog(open && isEventParticipation);
+  const forcesRequests = useDirectorateForcesRequests({
+    enabled: open && isEventParticipation,
+  });
+  // Заявок на одно ОМ бывает несколько (департамент просит в два захода) —
+  // в списке мероприятие обязано быть ОДНО: повтор строки читался бы как два
+  // разных ОМ с одинаковым названием.
+  const participationEvents = useMemo(() => {
+    const seen = new Map<string, { id: string; label: string }>();
+    for (const row of forcesRequests.data?.results ?? []) {
+      if (seen.has(row.eventId)) continue;
+      const day = row.businessDate
+        ? format(new Date(row.businessDate), "dd.MM.yyyy")
+        : "";
+      seen.set(row.eventId, {
+        id: row.eventId,
+        label: [row.code, row.title, day].filter(Boolean).join(" · "),
+      });
+    }
+    return [...seen.values()];
+  }, [forcesRequests.data]);
   const createOpsStatus = useCreateOpsStatus();
+
+  // Уход с ОМ-типа снимает выбранные мероприятия: держать их у отпуска значит
+  // отправить на сервер заведомо бессмысленное тело. Приход на него, наоборот,
+  // сразу открывает ПУСТУЮ СТРОКУ: мероприятие у этого статуса обязательно, и
+  // прятать обязательное поле за кнопкой «+ Мероприятие» значит показать
+  // человеку форму, которую нельзя сохранить, не догадавшись нажать.
+  useEffect(() => {
+    setParticipations((rows) =>
+      isEventParticipation
+        ? rows.length === 0
+          ? [{ ...EMPTY_PARTICIPATION_ROW }]
+          : rows
+        : []
+    );
+  }, [isEventParticipation]);
 
   /** Кадровый снимок для наряда: звание из справочника, должность и
    * подразделение — от вызывающей таблицы, с запасным поиском по штатке. */
@@ -364,10 +418,51 @@ export function EditStatusDialog({
     // здесь нельзя по тому же правилу: заглушка на клиенте вместо серверного
     // факта — долг, а не выполнение.
     if (isEventParticipation) {
-      setError("root", {
-        message:
-          "«Участие в ОМ» ставится только из запроса на сбор сил — отметьте сотрудника чекбоксом в баннере запроса на «Статусах сотрудников».",
-      });
+      if (participations.length === 0) {
+        // Статус участия без единого мероприятия — «привлечён неизвестно
+        // куда»: расход посчитает человека занятым, а департамент не увидит,
+        // на какое ОМ он отдан. Сервер отвечает тем же
+        // (`PARTICIPATION_EVENT_REQUIRED`), окно лишь говорит это раньше.
+        setError("root", { message: "Укажите хотя бы одно мероприятие." });
+        return;
+      }
+      const invalid = validateParticipations(
+        participations,
+        participationCatalog.data ?? []
+      );
+      if (invalid !== null) {
+        setError("root", { message: invalid });
+        return;
+      }
+      // Ручка расхода требует ОБЕ даты: у привлечения есть начало и конец —
+      // мероприятие кончается, и бессрочного участия не бывает.
+      if (!values.startDate || !values.endDate) {
+        setError("root", {
+          message: "У привлечения на мероприятие укажите начало и окончание.",
+        });
+        return;
+      }
+      try {
+        await createOpsStatus.mutateAsync({
+          employee_id: employeeIdNum,
+          status_type_code: apiStatusType,
+          date_start: formatDate(values.startDate),
+          date_end: formatDate(values.endDate),
+          participations: participationsToPayload(participations),
+        });
+        // Наряд снимается, как и при любом другом статусе: человек ушёл на
+        // мероприятие и в «Дежурных силах» объекта его быть не должно.
+        removeDutyAssignment(employeeId);
+        onOpenChange(false);
+        if (onSuccess) onSuccess();
+      } catch (error) {
+        setError("root", {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Не удалось записать привлечение на мероприятие",
+        });
+      }
       return;
     }
     const valueIsInService = values.status === IN_SERVICE_LABEL;
@@ -548,17 +643,24 @@ export function EditStatusDialog({
             )}
           </Field>
 
-          {/* «Участие в ОМ» ставится только из запроса (Plane №427,
-              `[СТА-04]`): тип в списке остаётся (им подписан текущий статус
-              привлечённых), но заводить его отсюда нельзя — причина видна
-              сразу при выборе, кнопка сохранения заперта. */}
+          {/* Привлечение на ОМ: мероприятие из заявок СВОЕГО управления, вид
+              участия (физнаряд либо группа) и роль в группе (Plane №737).
+              Список мероприятий даёт окно — блок про право `event.view` не
+              знает и знать не должен. */}
           {isEventParticipation && (
-            <Alert variant="destructive" data-testid="participation-refusal">
-              <AlertDescription>
-                «Участие в ОМ» ставится только из запроса на сбор сил — отметьте
-                сотрудника чекбоксом в баннере запроса на «Статусах сотрудников».
-              </AlertDescription>
-            </Alert>
+            <div data-testid="participation-fields">
+              <EventParticipationFields
+                rows={participations}
+                onChange={setParticipations}
+                enabled={open && isEventParticipation}
+                hint="Мероприятия — те, по которым вашему управлению разослан запрос сил. Статус запишется в учёт раздела ОМ: там его видят расход и сводки департамента."
+                events={participationEvents}
+                eventsPending={forcesRequests.isPending}
+                eventsError={forcesRequests.isError}
+                eventsEmptyText="Запросов сил вашему управлению нет — привлекать не на что"
+                eventsErrorText="Запросы на сбор сил не загрузились — обновите страницу."
+              />
+            </div>
           )}
           {/* Наряд: только у «На дежурстве» */}
           {isOnDuty && (
@@ -701,7 +803,7 @@ export function EditStatusDialog({
             </Button>
             <Button
               type="submit"
-              disabled={isEventParticipation || isSubmitting}
+              disabled={isSubmitting}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {isSubmitting ? (

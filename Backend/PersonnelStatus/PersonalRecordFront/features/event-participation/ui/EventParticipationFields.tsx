@@ -29,7 +29,12 @@ import {
 } from "@/components/ui/select";
 import { Trash2 } from "lucide-react";
 import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
-import { useSecurityEvents } from "@/hooks/use-security-events";
+
+/** Мероприятие в списке выбора: подпись собирает вызывающий. */
+export interface ParticipationEventOption {
+  id: string;
+  label: string;
+}
 
 /** Строка черновика: мероприятие, вид участия и роль (у групп). */
 export interface ParticipationDraft {
@@ -99,6 +104,22 @@ interface EventParticipationFieldsProps {
   /** Подпись блока — окна называют одно и то же по-своему. */
   title?: string;
   hint?: string;
+  /** 🔴 СПИСОК МЕРОПРИЯТИЙ ДАЁТ ОКНО, А НЕ БЛОК (Plane №737).
+   *
+   * Раньше блок сам ходил в реестр ОМ (`useSecurityEvents`). Это связывало
+   * его с правом `event.view`, которого у начальника управления нет и не
+   * будет (Реестр ОМ закрыт этой роли решением заказчика №348) — то есть
+   * список у того, кому блок и предназначен, был бы пуст или 403. Откуда
+   * брать мероприятия, знает окно: портальное — из заявок на сбор сил своего
+   * управления (решение заказчика по №737), любое будущее — из своего
+   * источника. Докстринг модуля обещает ровно это: блок отвечает на вопрос
+   * «на какие ОМ и кем именно», а не «где их взять». */
+  events: ParticipationEventOption[];
+  eventsPending?: boolean;
+  eventsError?: boolean;
+  /** Пустота и отказ — РАЗНЫЕ состояния, и оба называются словами. */
+  eventsEmptyText?: string;
+  eventsErrorText?: string;
 }
 
 export function EventParticipationFields({
@@ -107,18 +128,14 @@ export function EventParticipationFields({
   enabled,
   title = "Мероприятия",
   hint = "Человек может быть причастен к нескольким ОМ, и на каждом идти по-своему.",
+  events,
+  eventsPending = false,
+  eventsError = false,
+  eventsEmptyText = "Мероприятий нет — привлекать не на что",
+  eventsErrorText = "Список мероприятий не ответил — выбирать не из чего.",
 }: EventParticipationFieldsProps) {
   const catalog = useParticipationCatalog(enabled);
-  // Мероприятия нужны ТОЛЬКО когда их выбирают: реестр ОМ закрыт своим правом,
-  // и запрашивать его у всех подряд значило бы ловить 403 на каждом открытии.
-  const events = useSecurityEvents(
-    // Отбор пустой намеренно: человека привлекают и на новое ОМ, и на идущее,
-    // и сузить список стадией значило бы спрятать половину мероприятий от
-    // того, кто ставит статус.
-    { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: 100 },
-    { enabled }
-  );
-  const eventList = events.data?.results ?? [];
+  const eventList = events;
   const kinds = catalog.data ?? [];
   const kindOf = (code: string) => kinds.find((kind) => kind.code === code) ?? null;
 
@@ -143,9 +160,9 @@ export function EventParticipationFields({
         </Button>
       </div>
 
-      {events.isError && (
+      {eventsError && (
         <p className="text-sm text-destructive-ink" role="alert">
-          Реестр мероприятий не ответил — выбирать не из чего.
+          {eventsErrorText}
         </p>
       )}
 
@@ -183,19 +200,19 @@ export function EventParticipationFields({
                     тогда, когда запрос ещё идёт. Поймано пробой в полном
                     прогоне — под нагрузкой реестр отвечал не сразу, и окно
                     показывало пустоту как факт. */}
-                {events.isPending && (
+                {eventsPending && (
                   <div className="px-2 py-1.5 text-sm text-muted-foreground">
                     Загружаем мероприятия…
                   </div>
                 )}
-                {!events.isPending && eventList.length === 0 && (
+                {!eventsPending && eventList.length === 0 && (
                   <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                    Мероприятий нет — привлекать не на что
+                    {eventsEmptyText}
                   </div>
                 )}
                 {eventList.map((event) => (
                   <SelectItem key={event.id} value={String(event.id)}>
-                    {event.code} · {event.title}
+                    {event.label}
                   </SelectItem>
                 ))}
               </SelectContent>

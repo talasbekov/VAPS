@@ -1149,6 +1149,19 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 message="Сотрудник вне области видимости оператора.",
             )
 
+    def _participation_scope(self, request):
+        """Управления актора под `status.manage` — область ручного привлечения.
+
+        Право то же, что у самой записи статуса: кому можно ставить статусы
+        этим людям, тому и решать, на какое из ЗАПРОШЕННЫХ его управлению
+        мероприятий их привлечь (Plane №737). `None` — грант без области
+        (администратор): сервис поймёт это как «все запросы», и сужать здесь
+        нечего.
+        """
+        return PermissionService.visible_division_ids(
+            resolve_actor_id(request), _BULK_STATUS_PERMISSION
+        )
+
     @extend_schema(
         parameters=[
             OpenApiParameter(
@@ -1293,6 +1306,9 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             status_row,
             # Актор — из контракта аутентификации, НИКОГДА из тела запроса.
             actor=resolve_actor_id(request),
+            # Правка участий проверяется тем же правилом, что и создание
+            # (Plane №737) — иначе оно обходится в два вызова.
+            participation_scope_division_ids=self._participation_scope(request),
             **form.validated_data,
         )
         return Response(OpsEmployeeStatusSerializer(updated).data)
@@ -1344,8 +1360,11 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "400 — форма тела либо обход без причины; 403 — нет права "
             "status.manage либо сотрудник вне области; 409 — мягкое "
             "пересечение (обходится); 422 — жёсткое пересечение, интервал, "
-            "границы найма, предел длительности типа или задет сданный день "
-            "без причины."
+            "границы найма, предел длительности типа, задет сданный день "
+            "без причины, а у статуса «Участие в ОМ» — не назван participations "
+            "(PARTICIPATION_EVENT_REQUIRED) либо названо мероприятие, по "
+            "которому управлениям оператора не рассылали запрос сил "
+            "(PARTICIPATION_EVENT_NOT_REQUESTED, Plane №737)."
         ),
     )
     def create(self, request, *args, **kwargs):
@@ -1371,6 +1390,11 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             # было», и сервис по нему отличает «не присылали» от «пусто»
             # (Plane №274).
             participations=data.get("participations"),
+            # Область под `status.manage` — ею сервис отбирает мероприятия,
+            # на которые можно привлечь руками (Plane №737): только те, по
+            # которым управлениям актора разослан запрос сил. `None` —
+            # безскоуповый грант, все запросы.
+            participation_scope_division_ids=self._participation_scope(request),
         )
         return Response(
             OpsEmployeeStatusSerializer(created).data,

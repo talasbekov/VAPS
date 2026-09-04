@@ -106,8 +106,12 @@ CODES = {
     # Напоминания этапа «Ознакомление» (Plane №432, [ОЗН-03]/[ОЗН-04]).
     "ALREADY_ACKNOWLEDGED": frozenset({422}),
     "NOTHING_TO_REMIND": frozenset({422}),
-    # «Участие в ОМ» только из запроса (Plane №427, [СТА-04]).
-    "PARTICIPATION_MANUAL_FORBIDDEN": frozenset({422}),
+    # Ручное «Участие в ОМ» — по запросу сил своего управления (Plane №737,
+    # решение заказчика, отменившее запрет №427). Прежний код
+    # PARTICIPATION_MANUAL_FORBIDDEN снят вместе со своим raise-сайтом: без
+    # него он стал бы сиротой, а сирот ловит test_error_codes_coverage.
+    "PARTICIPATION_EVENT_REQUIRED": frozenset({422}),
+    "PARTICIPATION_EVENT_NOT_REQUESTED": frozenset({422}),
     # Визит иностранного ОЛ только у FOREIGN (Plane №435, [МД-05]).
     "VISIT_FOREIGN_ONLY": frozenset({422}),
     # Передача собранных на расстановку (Plane №390, [СБС-13]).

@@ -280,31 +280,74 @@ def _assert_no_conflict(
     return report.soft
 
 
-#: Статусы «Участие в ОМ» (Plane №427, `[СТА-04]`): ставятся ТОЛЬКО из
-#: запроса на сбор сил (`system_participations=True` — чекбоксы начальника
-#: управления и штабное выделение); ручной ввод человеком отбивается — у
-#: такого статуса всегда есть мероприятие и даты объекта, и выбирать их
-#: вручную значило бы завести второй источник правды о привлечении. Набор
-#: кодов — тот же, что у клиента (`EVENT_PARTICIPATION_STATUS_CODES`).
+#: Статусы «Участие в ОМ». Набор кодов — тот же, что у клиента
+#: (`EVENT_PARTICIPATION_STATUS_CODES`); два из трёх погашены слиянием №486,
+#: но код остаётся кодом, и старые строки им подписаны.
 PARTICIPATION_STATUS_CODES = frozenset(
     {"EVENT_ASSIGNMENT", "EVENT_ASSIGNMENT_GROUP", "IN_EVENT"}
 )
 
 
-def _refuse_manual_participation(status_type_code, system):
-    """Ручной СТАТУС участия — отказ; системный путь (`system=True`) проходит.
-    Строки участия у прочих статусов (Ш-3, «привлечён группой» на дежурстве)
-    правило не трогает — они не «Участие в ОМ»."""
+def _assert_manual_participation(
+    status_type_code, participations, *, system, scope_division_ids
+):
+    """Ручное «Участие в ОМ»: можно, но только на ЗАПРОШЕННОЕ мероприятие.
+
+    🔴 ЧТО ЗДЕСЬ ПРОИЗОШЛО (Plane №737, решение заказчика 04.09.2026). До
+    этой задачи ручной ввод отбивался всегда (`PARTICIPATION_MANUAL_FORBIDDEN`,
+    решение №427): статус ставили только чекбоксы запроса. Заказчик отменил
+    ЗАПРЕТ: «пользователь с доступом к редактированию модуля „Статусы
+    сотрудников“ должен иметь возможность давать своим сотрудникам статус
+    „На участие ОМ“; этим занимается начальник управления, а не ответственный
+    за сбор сил». Всё остальное из №427 (системный путь, колонка «По разделу
+    ОМ», напоминание за час) осталось как было.
+
+    ОТМЕНЁН ЗАПРЕТ, А НЕ ПРИЧИНА, ПО КОТОРОЙ ОН ПОЯВИЛСЯ. Причина была одна:
+    статус привлечения без мероприятия — это «привлечён неизвестно куда»,
+    расход посчитает человека занятым, а департамент не увидит, куда он отдан
+    (после №486 вид «наряд/группа» тоже живёт в строке участия, и без неё
+    колонка «На ОМ (гр./нар.)» теряет разбивку). Поэтому мероприятие
+    обязательно — и обязано быть тем, о котором управление просили.
+
+    ОТБОР МЕРОПРИЯТИЙ — ЗАЯВКИ СВОЕГО УПРАВЛЕНИЯ (вариант 2 из трёх, выбран
+    заказчиком). Отвергнуты им же: «весь реестр ОМ через новую узкую ручку» —
+    открыл бы список мероприятий роли `HEAD_DIRECTORATE_LINE`, которой Реестр
+    ОМ закрыт решением №348; «статус и даты без мероприятия» — вернул бы
+    «привлечён неизвестно куда».
+
+    `system=True` (чекбоксы запроса, штабное выделение) проходит без проверок,
+    как и раньше: там мероприятие и даты берутся из самой заявки. Строки
+    участия у ПРОЧИХ статусов (Ш-3, «привлечён группой» на дежурстве) правило
+    не трогает — они не «Участие в ОМ».
+    """
     if system or status_type_code not in PARTICIPATION_STATUS_CODES:
         return
-    raise DomainError(
-        "PARTICIPATION_MANUAL_FORBIDDEN",
-        422,
-        message=(
-            "Статус «Участие в ОМ» ставится только из запроса на сбор сил — "
-            "чекбоксами на «Статусах сотрудников»; вручную он не заводится."
-        ),
-    )
+    rows = list(participations or [])
+    if not rows:
+        raise DomainError(
+            "PARTICIPATION_EVENT_REQUIRED",
+            422,
+            detail={"field": "participations"},
+            message=(
+                "У статуса «Участие в ОМ» назовите мероприятие: без него "
+                "расход считает человека привлечённым, не говоря куда."
+            ),
+        )
+    from organization_management.apps.ops.forces_requests import requested_event_ids
+
+    allowed = requested_event_ids(scope_division_ids)
+    named = [str(row.get("event_id") or "").strip() for row in rows]
+    unknown = sorted({value for value in named if value not in allowed})
+    if unknown:
+        raise DomainError(
+            "PARTICIPATION_EVENT_NOT_REQUESTED",
+            422,
+            detail={"event_ids": unknown},
+            message=(
+                "Мероприятие недоступно: вручную «Участие в ОМ» ставится "
+                "только по запросу сил, разосланному вашему управлению."
+            ),
+        )
 
 
 @transaction.atomic
@@ -323,6 +366,7 @@ def create_status(
     amendment_reason="",
     participations=None,
     system_participations=False,
+    participation_scope_division_ids=None,
 ):
     """Создать статус, принадлежащий оператору, со всеми валидациями.
 
@@ -335,7 +379,15 @@ def create_status(
     обязано быть вытеснено поправкой (см. amendment_enforcement). Без
     причины такая правка — 422, обычная правка причины не требует.
     """
-    _refuse_manual_participation(status_type_code, system_participations)
+    # Ручное «Участие в ОМ» — по запросу сил своего управления (Plane №737).
+    # Область под `status.manage` резолвит вызывающий (как у пачки), сервис
+    # лишь обеспечивает отказ; `None` — область не сужена.
+    _assert_manual_participation(
+        status_type_code,
+        participations,
+        system=system_participations,
+        scope_division_ids=participation_scope_division_ids,
+    )
     _require_actor(actor)
     employee = _lock_employee(employee_id)
     assert_employee_is_employed(employee)
@@ -590,6 +642,7 @@ def update_status(
     document_basis=None,
     amendment_reason="",
     participations=None,
+    participation_scope_division_ids=None,
 ):
     """Правка оператором своей строки: интервал, метаданные и участие в ОМ.
 
@@ -688,6 +741,15 @@ def update_status(
     # трактовка «нет ключа = пусто» стирала бы выбранные мероприятия при
     # каждом чужом сохранении.
     if participations is not None:
+        # ТА ЖЕ ПРОВЕРКА, ЧТО У СОЗДАНИЯ (Plane №737): иначе правило обходится
+        # в два вызова — завести строку с запрошенным ОМ, а потом переписать
+        # участия на любое другое или стереть их вовсе.
+        _assert_manual_participation(
+            locked.status_type_code,
+            participations,
+            system=False,
+            scope_division_ids=participation_scope_division_ids,
+        )
         with transaction.atomic():
             _save_participations(locked, participations, actor=actor)
 
