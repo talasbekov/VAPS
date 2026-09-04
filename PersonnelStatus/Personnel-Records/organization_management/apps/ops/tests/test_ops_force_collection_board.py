@@ -132,6 +132,71 @@ def test_top_up_is_a_new_row_and_draft_is_refused(manager):  # noqa: F811
     assert OpsDepartmentRequest.objects.filter(event_id=_event_id(base), allocation_key=allocation_id, requested_count=original["need"]).exists()
 
 
+def test_editing_the_split_keeps_the_top_up_and_the_original(manager):  # noqa: F811
+    """Правка раскладки не уничтожает ни довыделенную строку, ни исходную
+    (Plane №675).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Довыделение (`[СБС-12]`) дописывает департаменту
+    ВТОРУЮ строку, а редактор раскладки знает про одну на департамент — его
+    собственная проверка запрещает прислать две. Пока строки ключились по
+    департаменту, в словаре оставалась ПОСЛЕДНЯЯ (довыделенная), и
+    пересохранение раскладки ради ЧУЖОГО департамента уничтожало обе:
+    довыделенная исчезала, исходная пересобиралась из чужого `kept` и теряла
+    id, состав, ответ департамента, момент оповещения и пометку опоздания.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    other = make_department("Департамент связи")
+    make_directorate(other, "Управление связи")
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    # Ответ департамента — факт, который правка раскладки обязана сохранить.
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/respond/",
+        {"allocating": 3, "comment": "выделяем троих"},
+        format="json",
+    )
+    topped = manager.post(
+        f"{base}forces/allocation/{allocation_id}/top-up/", {"count": 2}, format="json"
+    )
+    assert topped.status_code == 200, topped.content
+    extra_id = next(
+        r["id"] for r in topped.json()["forceAllocation"] if r["id"] != allocation_id
+    )
+    before = next(
+        r for r in topped.json()["forceAllocation"] if r["id"] == allocation_id
+    )
+
+    # Штаб пересохраняет раскладку, отдав одного человека ДРУГОМУ департаменту.
+    # Своей строки он не касается — меняется только число, а состав, ответ и
+    # оповещение обязаны пережить это без единой правки.
+    #
+    # Единицу приходится ОТНЯТЬ у первого: `allocated_event` раскладывает всю
+    # потребность на него, и лишний человек упёрся бы в ALLOCATION_OVER_DEMAND
+    # — проба падала бы на чужом правиле, не дойдя до своего предмета.
+    saved = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(department.pk), "need": before["need"] - 1},
+                {"departmentId": str(other.pk), "need": 1},
+            ]
+        },
+        format="json",
+    )
+    assert saved.status_code == 200, saved.content
+    rows = {r["id"]: r for r in saved.json()["forceAllocation"]}
+
+    assert extra_id in rows, "довыделенная строка исчезла при правке раскладки"
+    assert rows[extra_id]["topUpOf"] == allocation_id
+    assert allocation_id in rows, "исходная строка потеряла свой id"
+    kept = rows[allocation_id]
+    assert kept["need"] == before["need"] - 1, "правка числа не сохранилась"
+    assert kept["allocating"] == 3, "ответ департамента стёрт правкой чужой строки"
+    assert kept["answerComment"] == "выделяем троих"
+    assert kept["notifiedAt"] is not None, "момент оповещения стёрт"
+
+
 def test_headquarters_is_notified_on_every_answer(manager, hq):  # noqa: F811
     hq_user = hq.user
     department = make_department()

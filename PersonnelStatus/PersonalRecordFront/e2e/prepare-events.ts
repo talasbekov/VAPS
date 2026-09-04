@@ -18,7 +18,10 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 export async function prepareDemandEvent(
   token: string,
   businessDate = '2026-08-26',
-): Promise<{ code: string; total: number }> {
+  // `id` дописан к возврату (Plane №675): пробам нужен адрес ручек самого
+  // мероприятия (оповещение, довыделение), и искать его по коду через реестр
+  // значило бы завести второй способ узнать то, что здесь уже известно.
+): Promise<{ id: string; code: string; total: number }> {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
   const call = async (method: string, path: string, body?: unknown): Promise<any> => {
     const res = await fetch(`${API}${path}`, {
@@ -62,5 +65,5 @@ export async function prepareDemandEvent(
     sectorPosts: posts,
   })
   const demand = await call('POST', `${base}/recon/complete/`)
-  return { code: demand.code, total: demand.forceDemandTotal }
+  return { id: String(created.id), code: demand.code, total: demand.forceDemandTotal }
 }
