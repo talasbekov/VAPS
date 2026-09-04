@@ -47,6 +47,7 @@ from organization_management.apps.operations.models import StatusType
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.selectors import StaffUnitSelector
 from organization_management.apps.operations.status_service import (
+    _assert_manual_participation,
     _conflict_details,
     _require_actor,
     _validate_interval,
@@ -223,6 +224,26 @@ def bulk_create_statuses(
             # построчная: пачка может задеть и работающих, и уволенного, и
             # отказывать должна ровно по нему.
             assert_employee_is_employed(locked[row["employee_id"]])
+            # 🔴 «УЧАСТИЕ В ОМ» ПАЧКОЙ НЕ СТАВИТСЯ (Plane №663). Ручной статус
+            # участия обязан называть мероприятие (правило №737), а массовый
+            # путь участий не принимает вовсе — строит строки сам и про
+            # `participations` не знает. Пока гарда здесь не было, запрет
+            # снимался одним переключением на массовую ручку: тем же правом
+            # `status.manage`, которым одиночная отвечает 422.
+            #
+            # Проверка ПОСТРОЧНАЯ, как и остальные: пачка может задеть и
+            # обычные статусы, и участие, и отказывать должна ровно по своей
+            # строке — иначе одна ошибка отменяла бы весь список.
+            _assert_manual_participation(
+                row["status_type_code"],
+                None,
+                system=False,
+                scope_division_ids=None,
+                where=(
+                    "Массовой простановкой мероприятие не назвать — ставьте "
+                    "такой статус по одному."
+                ),
+            )
             status_type = types.get(row["status_type_code"])
             if status_type is None:
                 raise DomainError(

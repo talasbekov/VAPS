@@ -279,6 +279,104 @@ def test_participations_cannot_be_repointed_by_a_second_call(types, participatio
     assert emptied.value.code == "PARTICIPATION_EVENT_REQUIRED"
 
 
+def test_bulk_path_cannot_set_participation_either(types):  # noqa: F811
+    """Пачка — второй ручной путь, и правило на нём то же (Plane №663).
+
+    Гард жил только в `create_status`, а `bulk_create_statuses` строит строки
+    сам: запрет снимался одним переключением на массовую ручку, тем же правом
+    `status.manage`. Участий массовый путь не принимает вовсе — значит статус
+    участия им не поставить никак.
+    """
+    from organization_management.apps.operations.bulk_status_service import (
+        bulk_create_statuses,
+    )
+    from organization_management.apps.operations.selectors import DivisionTreeSelector
+    from organization_management.apps.staff_unit.models import StaffUnit
+
+    _status_type("IN_EVENT")
+    _department, directorate = _department_with_directorate()
+    employee = make_employee()
+    StaffUnit.objects.create(division=directorate, employee=employee, index=63)
+    allowed = set(DivisionTreeSelector.all_ids())
+
+    def _bulk(code):
+        return bulk_create_statuses(
+            [
+                {
+                    "employee_id": employee.id,
+                    "status_type_code": code,
+                    "date_start": TODAY,
+                    "date_end": TODAY + dt.timedelta(days=1),
+                }
+            ],
+            actor="head",
+            business_date=TODAY,
+            allowed_division_ids=allowed,
+        )
+
+    with pytest.raises(DomainError) as refused:
+        _bulk("IN_EVENT")
+    assert refused.value.code == "PARTICIPATION_EVENT_REQUIRED"
+    # Отказ ПОСТРОЧНЫЙ: код строки виден в detail.rows, а не только в конверте.
+    assert refused.value.detail["rows"][0]["code"] == "PARTICIPATION_EVENT_REQUIRED"
+    # Обычный статус той же пачкой проходит — гард не запирает массовый путь
+    # целиком, иначе проба зеленела бы от любой поломки bulk.
+    assert len(_bulk("DUTY")) == 1
+
+
+def test_placeholder_cannot_be_resolved_into_participation(types):  # noqa: F811
+    """Разрешение заглушки — третий ручной путь (Plane №664).
+
+    Он пишет строку с ПРИСЛАННЫМ кодом и участий не принимает: без гарда
+    правило обходилось в два вызова — завести «уточняется», затем разрешить
+    его в «Участие в ОМ» без единого мероприятия.
+    """
+    from organization_management.apps.operations.models import StatusType
+    from organization_management.apps.operations.status_service import (
+        resolve_placeholder,
+    )
+
+    _status_type("IN_EVENT")
+    StatusType.objects.update_or_create(
+        code="UNCLEAR",
+        defaults={
+            "name": "Уточняется",
+            "priority": 40,
+            "report_column_code": "IN_SERVICE",
+            "is_placeholder": True,
+        },
+    )
+    employee = make_employee()
+    placeholder = create_status(
+        employee_id=employee.id, status_type_code="UNCLEAR",
+        date_start=TODAY, date_end=TODAY + dt.timedelta(days=1), actor="head",
+    )
+
+    with pytest.raises(DomainError) as refused:
+        resolve_placeholder(
+            placeholder,
+            resolved_type_code="IN_EVENT",
+            date_start=TODAY,
+            date_end=TODAY + dt.timedelta(days=1),
+            actor="head",
+            reason="выяснилось",
+        )
+    assert refused.value.code == "PARTICIPATION_EVENT_REQUIRED"
+    # Заглушка осталась живой: отказ ничего не закрыл на полпути.
+    placeholder.refresh_from_db()
+    assert placeholder.cancelled_at is None
+    # Обычным статусом заглушка разрешается — гард не запер саму операцию.
+    resolved = resolve_placeholder(
+        placeholder,
+        resolved_type_code="DUTY",
+        date_start=TODAY,
+        date_end=TODAY + dt.timedelta(days=1),
+        actor="head",
+        reason="выяснилось",
+    )
+    assert resolved.status_type_code == "DUTY"
+
+
 def test_section_column_carries_object_post_and_acknowledgement(types, event_with_people):  # noqa: F811
     _status_type("EVENT_ASSIGNMENT")
     event, _account, _boss, unlinked = event_with_people

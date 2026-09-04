@@ -1496,8 +1496,10 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "override без причины; 403 — нет права status.manage либо "
             "сотрудник вне области; 404 — строки нет; 409 — мягкое "
             "пересечение (обходится override); 422 — строка не заглушка, "
-            "разрешение снова в заглушку, строка уже закрыта, интервал или "
-            "жёсткое пересечение."
+            "разрешение снова в заглушку, строка уже закрыта, интервал, "
+            "жёсткое пересечение, а также разрешение в «Участие в ОМ» "
+            "(PARTICIPATION_EVENT_REQUIRED, Plane №664): мероприятие этой "
+            "формой не назвать, а участие без него не заводится."
         ),
     )
     @action(detail=True, methods=["post"], url_path="resolve", url_name="resolve")
@@ -1530,7 +1532,9 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "оператора; 400 — структурная ошибка payload (пустой/дубль/"
             "пропуск ключа/превышение предела строк); 409 — мягкое "
             "пересечение (details.rows[]); 422 — жёсткое пересечение, "
-            "интервал или границы найма (details.rows[]). Успех — {created}."
+            "интервал, границы найма, а также строка со статусом «Участие в "
+            "ОМ» (PARTICIPATION_EVENT_REQUIRED, Plane №663): мероприятие "
+            "массовым путём не назвать (details.rows[]). Успех — {created}."
         ),
     )
     @action(detail=False, methods=["post"], url_path="bulk", url_name="bulk")

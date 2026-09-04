@@ -44,38 +44,22 @@ SUMMARIES = "/api/operations/daily-summaries/"
 TOMORROW = Clock.today_local() + dt.timedelta(days=1)
 DAY_AFTER = TOMORROW + dt.timedelta(days=1)
 
-# Коды участия в ОМ: заказчик описал статус «Участие на ОМ» как делящийся
-# «на группы и физически наряд» (Plane №243, миграция 0057).
-SQUAD = "EVENT_ASSIGNMENT"
-GROUP = "EVENT_ASSIGNMENT_GROUP"
-
-
-@pytest.fixture
-def participation_codes(seeded_catalog):  # noqa: F811
-    """Оба вида участия в ОМ в справочнике видов статусов.
-
-    Общая фикстура каталога их не несёт — она собрана под строевую записку и
-    знает четыре вида. Заводить их ЗДЕСЬ честнее, чем расширять общую: там
-    появление двух лишних колонок сдвинуло бы ожидания соседних проб.
-    Приоритеты и подписи — как в миграции 0057 и сиде `seed_status_types`.
-    """
-    from organization_management.apps.operations.status_types import StatusType
-
-    for code, name, priority in (
-        (SQUAD, "Привлечён на мероприятие (наряд)", 80),
-        (GROUP, "Привлечён на мероприятие (боевая группа)", 81),
-    ):
-        StatusType.objects.get_or_create(
-            code=code,
-            defaults={
-                "name": name,
-                "priority": priority,
-                # Участие в ОМ человека из строя не выводит (решение Plane
-                # №169): колонка расхода у него та же, что у «в строю».
-                "report_column_code": "IN_SERVICE",
-                "counts_in_staff": True,
-            },
-        )
+#: Чем начальник управления наполняет день в этой пробе. ДВА ОБЫЧНЫХ КОДА, а
+#: не виды участия в ОМ, и это правка по существу, а не подгон под новый вывод
+#: (Plane №663).
+#:
+#: Раньше здесь стояли `EVENT_ASSIGNMENT` и `EVENT_ASSIGNMENT_GROUP` — оба
+#: погашены слиянием №486 (миграция 0091, `is_active=False`), и проба заводила
+#: их себе сама: цепочка проверялась на статусах, которых в живой системе
+#: больше нет. С №663 их наследник `IN_EVENT` пачкой не ставится вовсе —
+#: ручное участие обязано называть мероприятие (№737), а массовый путь участий
+#: не принимает. Предмет пробы — ЧЕТЫРЕ РОЛИ И ЭШЕЛОН СВОДОК, а не вид статуса:
+#: чем наполнен день, ей безразлично. Сам запрет закреплён отдельной пробой
+#: ниже — он не потерян, а назван вслух.
+FIRST_CODE = "DUTY"
+SECOND_CODE = "VACATION"
+#: Слитый код участия (№486) — им проверяется отказ массового пути.
+IN_EVENT = "IN_EVENT"
 
 
 @pytest.fixture
@@ -133,12 +117,12 @@ def _row(employee, code):
 
 
 def test_the_expense_travels_from_a_directorate_to_the_organization(
-    participation_codes, org
+    seeded_catalog, org  # noqa: F811
 ):
     """Четыре шага заказчика, четыре роли, одна цепочка."""
     organization, department, first, second = org
-    in_squad = make_employee(first, last_name="Токтаров")
-    in_group = make_employee(first, last_name="Абенов")
+    on_duty = make_employee(first, last_name="Токтаров")
+    on_leave = make_employee(first, last_name="Абенов")
     neighbour = make_employee(second, last_name="Оспанова")
 
     # ── Шаг 1. Начальник управления ставит статусы на завтра ─────────────
@@ -152,13 +136,13 @@ def test_the_expense_travels_from_a_directorate_to_the_organization(
         BULK,
         {
             "business_date": TOMORROW.isoformat(),
-            "rows": [_row(in_squad, SQUAD), _row(in_group, GROUP)],
+            "rows": [_row(on_duty, FIRST_CODE), _row(on_leave, SECOND_CODE)],
         },
         format="json",
     )
     assert filled.status_code == 201, filled.data
-    # Оба вида участия заводятся ОДНИМ действием: заказчик описывает их как
-    # один статус с делением, а не как два разных дела.
+    # Обе строки заводятся ОДНИМ действием: начальник управления наполняет день
+    # пачкой, а не по человеку.
     assert filled.data["created"] == 2, filled.data
 
     # ── Шаг 2. Управление сдаёт день ────────────────────────────────────
@@ -235,6 +219,65 @@ def test_the_expense_travels_from_a_directorate_to_the_organization(
     assert any(
         pin["submission_id"] == dep_summary.data["id"] for pin in org_sources
     ), "сводка организации ссылается на другую версию сводки департамента"
+
+
+def test_bulk_path_refuses_participation_status(seeded_catalog, org):  # noqa: F811
+    """«Участие в ОМ» массовой ручкой не ставится (Plane №663).
+
+    Ровно тот вызов, которым находка ревью обходила правило: POST на
+    `/api/ops/daily/statuses-bulk/` с кодом участия, ТЕМ ЖЕ правом
+    `status.manage`, которым одиночная ручка отвечает 422. Проба стоит на
+    HTTP-границе намеренно: в карточке названа именно она, а сервисный уровень
+    закреплён своей пробой в `apps/operations`.
+    """
+    from organization_management.apps.operations.status_types import StatusType
+
+    _organization, _department, first, _second = org
+    StatusType.objects.get_or_create(
+        code=IN_EVENT,
+        defaults={
+            "code": IN_EVENT,
+            "name": "Участие в ОМ",
+            "priority": 80,
+            # Участие человека из строя не выводит (решение Plane №169).
+            "report_column_code": "IN_SERVICE",
+            "counts_in_staff": True,
+        },
+    )
+    employee = make_employee(first, last_name="Сериков")
+    head, _ = client_for(
+        "chain-head-bulk",
+        "DIVISION_OPERATOR_BULK",
+        perms=("status.view", "status.manage"),
+        scope_division_id=first.pk,
+    )
+
+    refused = head.post(
+        BULK,
+        {
+            "business_date": TOMORROW.isoformat(),
+            "rows": [_row(employee, IN_EVENT)],
+        },
+        format="json",
+    )
+
+    assert refused.status_code == 422, refused.data
+    assert refused.data["error_code"] == "PARTICIPATION_EVENT_REQUIRED"
+    # Отказ ПОСТРОЧНЫЙ и называет своего сотрудника: в пачке из десяти строк
+    # человеку нужно знать, какая именно не прошла.
+    row = refused.data["details"]["rows"][0]
+    assert row["employee_id"] == str(employee.pk)
+    assert row["code"] == "PARTICIPATION_EVENT_REQUIRED"
+    # Обычный статус той же ручкой проходит — запрет не запер массовый путь.
+    ok = head.post(
+        BULK,
+        {
+            "business_date": TOMORROW.isoformat(),
+            "rows": [_row(employee, FIRST_CODE)],
+        },
+        format="json",
+    )
+    assert ok.status_code == 201, ok.data
 
 
 def test_the_department_summary_waits_for_every_directorate(seeded_catalog, org):
