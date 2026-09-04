@@ -28,6 +28,14 @@ import { AssignChiefDialog } from "@/features/event-visit-objects/ui/AssignChief
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -90,6 +98,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string[]>([]);
   const [chiefDialogOpen, setChiefDialogOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
   );
@@ -317,6 +326,19 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     update.mutate({ checklist, sectorPosts: rows });
   }
 
+  // `[РЕК-07]`: почему «Завершить» недоступна — одна причина, первая по порядку.
+  const completeBlocked: string | null = !access.can(EVENT_MANAGE)
+    ? access.reason(EVENT_MANAGE) || "Нет права вести мероприятие."
+    : dirty
+      ? "Сохраните расчёт перед завершением этапа."
+      : activeVisitObject !== null && activeVisitObject.chiefEmployeeId === null
+        ? "Не назначен старший объекта."
+        : (activeVisitObject !== null ? visibleRows : rows).length === 0
+          ? "Нет постов расчёта."
+          : checklist.some((item) => (item.required ?? true) && item.state === "UNCHECKED")
+            ? "Обязательные пункты чек-листа остались в «Не проверено»."
+            : null;
+
   // `[РЕК-02]` (Plane №424): без старшего объекта рекогносцировка закрыта —
   // сервер отвечает 422 `VISIT_CHIEF_REQUIRED` на импорт, сохранение и
   // завершение, а экран не рисует форму, которую нельзя отправить. Хуки
@@ -373,77 +395,71 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
       <CardContent className="space-y-5">
         <ObjectFacts event={event} />
 
-        <section>
-          {/* Счётчик выполненного — из эталона («Выполнено: N»). Без него
-              длину осмотра приходилось оценивать глазом по галочкам, а
-              «сколько осталось» — единственное, что от чек-листа нужно на
-              бегу. Считается по ЧЕРНОВИКУ формы, а не по сохранённому ОМ:
-              галочка ставится до сохранения, и отставший счётчик читался бы
-              как «не засчиталось». Живым регионом НЕ объявлен: счёт меняет
-              сам человек своей же галочкой, и объявлять ему его действие —
-              шум. */}
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <section data-slot="recon-checklist">
+          <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Чек-лист рекогносцировки</h3>
-            <span className="text-xs text-muted-foreground">
-              Выполнено: {checklist.filter((item) => item.done).length} из{" "}
+            {/* `[РЕК-04]` (Plane №443): «Проверено X из Y» — проверенным считается
+                и «Норма», и «Замечание»; «Не проверено» не засчитывается. */}
+            <span className="text-xs text-muted-foreground" data-slot="recon-checked-counter">
+              Проверено: {checklist.filter((item) => item.state !== "UNCHECKED").length} из{" "}
               {checklist.length}
             </span>
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="space-y-2">
             {checklist.map((item) => {
-              // Та же проверка, что и на сервере, — но названная СРАЗУ, у
-              // поля: иначе про обязательный комментарий человек узнаёт
-              // отказом сохранения, уже уйдя с пункта.
-              const needsComment =
-                item.result === "NEEDS_CHANGES" && item.comment.trim() === "";
+              const needsComment = item.state === "REMARK" && item.comment.trim() === "";
               return (
                 <div
                   key={item.id}
-                  className="grid grid-cols-1 items-start gap-2 border-b pb-2 last:border-0 md:grid-cols-[auto_1fr_170px_1fr]"
+                  className="grid gap-2 rounded-md border px-3 py-2 md:grid-cols-[1fr_auto_1fr] md:items-center"
+                  data-slot="recon-check-item"
+                  data-state={item.state}
                 >
-                  <Checkbox
-                    className="mt-1"
-                    aria-label={`Выполнено: ${item.label}`}
-                    checked={item.done}
-                    onCheckedChange={(checked) =>
-                      patchItem(item.id, { done: checked === true })
-                    }
-                  />
                   <span className="text-sm">
-                    {item.label} <span aria-hidden="true">*</span>
+                    {item.label}
+                    {(item.required ?? true) && <span aria-hidden="true"> *</span>}
                   </span>
-                  <select
-                    aria-label={`Результат: ${item.label}`}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                    value={item.result ?? ""}
-                    onChange={(e) =>
-                      patchItem(item.id, {
-                        result:
-                          e.target.value === ""
-                            ? null
-                            : (e.target.value as "MATCHES" | "NEEDS_CHANGES"),
-                      })
-                    }
-                  >
-                    <option value="">— не проверено —</option>
-                    <option value="MATCHES">Соответствует</option>
-                    <option value="NEEDS_CHANGES">Требует изменений</option>
-                  </select>
+                  {/* Один переключатель вместо чекбокса и select: три кнопки,
+                      выбранная — aria-pressed. */}
+                  <div className="flex gap-1" role="group" aria-label={`Состояние: ${item.label}`}>
+                    {(
+                      [
+                        ["NORMAL", "Норма"],
+                        ["REMARK", "Замечание"],
+                        ["UNCHECKED", "Не проверено"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        aria-pressed={item.state === value}
+                        className={
+                          "h-8 rounded-md border px-2.5 text-xs transition-colors " +
+                          (item.state === value
+                            ? value === "REMARK"
+                              ? "border-amber-600 bg-amber-100 font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                              : value === "NORMAL"
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-foreground/40 bg-muted font-semibold"
+                            : "bg-background hover:bg-muted")
+                        }
+                        onClick={() => patchItem(item.id, { state: value })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <div className="space-y-1">
                     <Input
                       className="h-8 text-xs"
-                      placeholder="Комментарий"
+                      placeholder={item.state === "REMARK" ? "Комментарий (обязателен)" : "Комментарий"}
                       aria-label={`Комментарий: ${item.label}`}
                       aria-invalid={needsComment || undefined}
                       value={item.comment}
-                      onChange={(e) =>
-                        patchItem(item.id, { comment: e.target.value })
-                      }
+                      onChange={(e) => patchItem(item.id, { comment: e.target.value })}
                     />
                     {needsComment && (
-                      <p className="text-xs text-destructive">
-                        Укажите комментарий
-                      </p>
+                      <p className="text-xs text-destructive">Укажите комментарий</p>
                     )}
                   </div>
                 </div>
@@ -845,12 +861,6 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               </p>
             </div>
           )}
-          {/* Названо вслух, а не нарисовано: «Материалы рекогносцировки» из
-              эталона класть некуда — файлового хранилища у системы нет. */}
-          <p className="mt-2 text-xs text-muted-foreground">
-            Материалы рекогносцировки (фотографии, схемы, документы) система не
-            хранит — файлового хранилища нет.
-          </p>
         </section>
 
         <FieldErrors errors={fieldErrors} />
@@ -858,43 +868,73 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         <StageError error={importPosts.error} />
         <StageError error={complete.error} />
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-            {activeVisitObject !== null && (
-              <>
-                Потребность объекта «{activeVisitObject.objectName}»:{" "}
-                <span className="font-semibold text-foreground">
-                  {needOfVisit}
-                </span>
-                {" · "}
-              </>
-            )}
-            Расчёт по постам всего: {needFromPosts}
-            {needFromPosts === 0 && " (постов пока нет)"}. Завершение этапа
-            направит это число штабу 2-го департамента — он разложит его по
-            департаментам в разделе{" "}
-            <Link href="/employees" className="font-semibold text-primary-ink">
-              «Сбор сил на ОМ»
-            </Link>
-            .
+        {/* Подвал `[РЕК-07]` (Plane №443): липкая панель «Потребность по объекту:
+            N → уйдёт в „Сбор сил на ОМ“ [Сохранить] [Завершить рекогносцировку →]».
+            «Завершить» недоступна, пока нет постов, обязательные пункты в
+            «Не проверено», не назначен старший или есть несохранённое;
+            причина — в подсказке. Подтверждение — диалог с числом. */}
+        <div
+          className="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t bg-background/95 px-6 py-3 backdrop-blur"
+          data-slot="recon-footer"
+        >
+          <p className="text-sm">
+            Потребность по объекту{activeVisitObject !== null ? ` «${activeVisitObject.objectName}»` : ""}:{" "}
+            <b className="tabular-nums" data-slot="recon-need">{activeVisitObject !== null ? needOfVisit : needFromPosts}</b>{" "}
+            <span className="text-muted-foreground">
+              → уйдёт в{" "}
+              <Link href="/employees?view=forces" className="font-semibold text-primary-ink">
+                «Сбор сил на ОМ»
+              </Link>
+            </span>
           </p>
-          <Button
-            type="button"
-            disabled={complete.isPending || dirty || !access.can(EVENT_MANAGE)}
-            title={
-              !access.can(EVENT_MANAGE)
-                ? access.reason(EVENT_MANAGE)
-                : dirty
-                  ? "Сохраните расчёт перед завершением этапа."
-                  : undefined
-            }
-            onClick={() => complete.mutate({})}
-          >
-            {complete.isPending
-              ? "Завершение…"
-              : "Завершить этап и перейти далее"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!dirty || update.isPending}
+              onClick={save}
+            >
+              {update.isPending ? "Сохранение…" : "Сохранить"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={completeBlocked !== null || complete.isPending}
+              title={completeBlocked ?? undefined}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {complete.isPending ? "Завершение…" : "Завершить рекогносцировку →"}
+            </Button>
+          </div>
         </div>
+        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Отправить потребность {activeVisitObject !== null ? needOfVisit : needFromPosts} сотрудников штабу 2-го департамента?
+              </DialogTitle>
+              <DialogDescription>
+                Потребность зафиксируется, объект перейдёт к расстановке, штаб получит заявку.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)}>
+                Отмена
+              </Button>
+              <Button
+                type="button"
+                disabled={complete.isPending}
+                onClick={() => {
+                  complete.mutate({});
+                  setConfirmOpen(false);
+                }}
+              >
+                Отправить
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
