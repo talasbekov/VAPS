@@ -4,7 +4,7 @@
 // 400/409/5xx), после успеха кладут свежий ОМ в кэш детали и инвалидируют
 // список. Один фабричный хелпер — девять операций не должны девять раз
 // повторять onSuccess.
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
 import { useOpsMutation } from "@/hooks/use-ops-mutation";
 import type { UseOpsMutationResult } from "@/hooks/use-ops-mutation";
