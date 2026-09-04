@@ -35,9 +35,15 @@ export type SecurityEventStage = (typeof SECURITY_EVENT_STAGES)[number];
 /** Результат проверки пункта чек-листа/поста рекогносцировки. */
 export type ReconCheckResult = "MATCHES" | "NEEDS_CHANGES" | null;
 
+/** Состояние пункта чек-листа (`[РЕК-04]`, Plane №443): один переключатель. */
+export type ReconCheckState = "NORMAL" | "REMARK" | "UNCHECKED";
+
 export interface ReconChecklistItem {
   id: string;
   label: string;
+  /** Источник правды с №443; `done`/`result` выводятся сервером для прежних читателей. */
+  state: ReconCheckState;
+  required?: boolean;
   done: boolean;
   result: ReconCheckResult;
   comment: string;

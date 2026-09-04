@@ -192,10 +192,26 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     const panel = page.getByTestId('bulletin-panel')
     await expect(panel.getByLabel('Краткое описание *')).toBeVisible()
 
-    // Счётчик чек-листа из эталона считает по черновику формы.
-    await expect(stage).toContainText('Выполнено: 0 из')
-    await stage.getByLabel(/^Выполнено: /).first().check()
-    await expect(stage).toContainText('Выполнено: 1 из')
+    // `[РЕК-04]` (Plane №443): один переключатель «Норма / Замечание / Не
+    // проверено», счётчик «Проверено X из Y» считает по черновику формы;
+    // «Замечание» без комментария подсвечивается, «Не проверено» не засчитывается.
+    const counter = stage.locator('[data-slot="recon-checked-counter"]')
+    await expect(counter).toContainText('Проверено: 0 из')
+    const firstItem = stage.locator('[data-slot="recon-check-item"]').first()
+    await firstItem.getByRole('button', { name: 'Норма', exact: true }).click()
+    await expect(firstItem).toHaveAttribute('data-state', 'NORMAL')
+    await expect(counter).toContainText('Проверено: 1 из')
+    await firstItem.getByRole('button', { name: 'Замечание', exact: true }).click()
+    await expect(firstItem.getByText('Укажите комментарий')).toBeVisible()
+    await expect(counter).toContainText('Проверено: 1 из')
+    await firstItem.getByRole('button', { name: 'Не проверено', exact: true }).click()
+    await expect(counter).toContainText('Проверено: 0 из')
+    // `[РЕК-07]`: подвал с потребностью и «Завершить рекогносцировку →»,
+    // недоступной с причиной; `[РЕК-09]`: строки про материалы нет.
+    const footer = stage.locator('[data-slot="recon-footer"]')
+    await expect(footer).toContainText('Потребность по объекту')
+    await expect(footer.getByRole('button', { name: 'Завершить рекогносцировку →' })).toBeDisabled()
+    await expect(stage.getByText('система не хранит')).toHaveCount(0)
 
     // Проба УБИРАЕТ за собой: предмет проверки — состояние ЗАВЕДЕНИЯ, значит
     // строку приходится заводить каждый прогон, и без уборки реестр копил бы

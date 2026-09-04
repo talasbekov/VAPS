@@ -51,6 +51,7 @@ import {
   visitObjectClosePath,
   visitObjectEvaluationsAllPath,
   visitObjectEvaluationsPath,
+  type ReconCheckState,
   type VisitEvaluationRow,
   type VisitEvaluationSummary,
 } from "@/entities/security-event";
@@ -381,6 +382,23 @@ function evaluationSummary(event: SecurityEvent, visitObjectId: string): VisitEv
   };
 }
 
+// Чек-лист одним состоянием (Plane №443) — зеркало `normalize_check_item`.
+function normalizeCheckItem(item: ReconChecklistItem): ReconChecklistItem {
+  const derived: ReconCheckState =
+    item.result === "NEEDS_CHANGES" ? "REMARK" : item.done || item.result === "MATCHES" ? "NORMAL" : "UNCHECKED";
+  const explicit = item.state as ReconCheckState | undefined;
+  const state =
+    explicit === undefined || (explicit === "UNCHECKED" && derived !== "UNCHECKED") ? derived : explicit;
+  return {
+    ...item,
+    state,
+    required: item.required ?? true,
+    done: state !== "UNCHECKED",
+    result: state === "NORMAL" ? "MATCHES" : state === "REMARK" ? "NEEDS_CHANGES" : null,
+    comment: (item.comment ?? "").trim(),
+  };
+}
+
 function mirrorApproval(event: SecurityEvent): SecurityEvent {
   return {
     ...event,
@@ -497,6 +515,8 @@ function emptyEvent(
     reconChecklist: RECON_CHECKLIST_TEMPLATE.map((label, index) => ({
       id: `${id}-checklist-${index}`,
       label,
+      state: "UNCHECKED" as const,
+      required: true,
       done: false,
       result: null,
       comment: "",
@@ -1133,8 +1153,10 @@ export const securityEventsHandlers = [
     if (event === null) return response;
     const body = (await request.json()) as UpdateReconRequest;
     const fieldErrors: Record<string, string[]> = {};
-    body.checklist.forEach((item, index) => {
-      if (item.result === "NEEDS_CHANGES" && item.comment.trim() === "") {
+    // `[РЕК-04]` (Plane №443): состояние одно; done/result — производные.
+    const normalizedChecklist = body.checklist.map((item) => normalizeCheckItem(item));
+    normalizedChecklist.forEach((item, index) => {
+      if (item.state === "REMARK" && item.comment.trim() === "") {
         fieldErrors[`checklist.${index}.comment`] = ["Укажите комментарий."];
       }
     });
@@ -1176,7 +1198,7 @@ export const securityEventsHandlers = [
     return HttpResponse.json(
       saveEvent({
         ...event,
-        reconChecklist: checklist,
+        reconChecklist: normalizedChecklist,
         reconSectorPosts: sectorPosts,
         // «Нет ключа» — не «ноль»: без этого правка расчёта постов стирала бы
         // запрос штабу (порт правила бэка, Plane «Реестр ОМ-23»).
@@ -1308,10 +1330,10 @@ export const securityEventsHandlers = [
         "Рекогносцировку можно завершить только на этапе «Рекогносцировка»."
       );
     }
-    if (!event.reconChecklist.every((item) => item.done)) {
+    if (event.reconChecklist.some((item) => (item.required ?? true) && normalizeCheckItem(item).state === "UNCHECKED")) {
       return businessRuleError(
         "RECON_CHECKLIST_INCOMPLETE",
-        "Не все пункты чек-листа отмечены выполненными."
+        "Обязательные пункты чек-листа остались в «Не проверено»."
       );
     }
     if (event.reconSectorPosts.length === 0) {

@@ -45,6 +45,36 @@ RECON_CHECKLIST_TEMPLATE = [
     "Связь и электропитание",
 ]
 
+# Состояние пункта чек-листа (`[РЕК-04]`, Plane №443): ОДИН переключатель
+# «Норма / Замечание / Не проверено» вместо чекбокса и select. Старые ключи
+# `done`/`result` ВЫВОДЯТСЯ из состояния и остаются для прежних читателей
+# (документы, сид, пробы) — снимаются отдельным шагом.
+CHECK_STATES = ("NORMAL", "REMARK", "UNCHECKED")
+
+
+def normalize_check_item(item):
+    """Пункт чек-листа с согласованными `state`, `done`, `result`."""
+    if item.get("result") == "NEEDS_CHANGES":
+        derived = "REMARK"
+    elif item.get("done") or item.get("result") == "MATCHES":
+        derived = "NORMAL"
+    else:
+        derived = "UNCHECKED"
+    state = item.get("state")
+    # Явное состояние побеждает, кроме случая, когда старый клиент прислал
+    # `done: True` поверх «Не проверено» — тогда верим старым ключам.
+    if state not in CHECK_STATES or (state == "UNCHECKED" and derived != "UNCHECKED"):
+        state = derived
+    return {
+        **item,
+        "state": state,
+        "required": bool(item.get("required", True)),
+        "done": state != "UNCHECKED",
+        "result": {"NORMAL": "MATCHES", "REMARK": "NEEDS_CHANGES"}.get(state),
+        "comment": str(item.get("comment", "")).strip(),
+    }
+
+
 NO_PUBLISHED_VERSION_TEXT = (
     "На дату мероприятия нет опубликованной версии паспорта объекта — "
     "расчёт постов ведётся вручную."
@@ -307,6 +337,8 @@ def create_event(
             {
                 "id": f"checklist-{index}",
                 "label": label,
+                "state": "UNCHECKED",
+                "required": True,
                 "done": False,
                 "result": None,
                 "comment": "",
@@ -1515,10 +1547,10 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
             field_errors["forceRequest"] = ["Укажите целое число не меньше нуля."]
     else:
         parsed_request = None
+    checklist = [normalize_check_item(item) for item in checklist]
     for index, item in enumerate(checklist):
-        if item.get("result") == "NEEDS_CHANGES" and not str(
-            item.get("comment", "")
-        ).strip():
+        # Комментарий обязателен при «Замечание» (`[РЕК-04]`).
+        if item["state"] == "REMARK" and not item["comment"]:
             field_errors[f"checklist.{index}.comment"] = ["Укажите комментарий."]
     # Объекты посещения ЭТОГО мероприятия: пост может принадлежать только им.
     # Чужой (или выдуманный) идентификатор молча превращал бы потребность
@@ -1787,9 +1819,14 @@ def complete_recon(event_id):
     for visit in event.visit_objects.all():
         if visit.stage == "RECON":
             _require_visit_chief(visit)
-    if not all(item.get("done") for item in event.recon_checklist):
+    # `[РЕК-04]`/`[РЕК-07]` (Plane №443): обязательные пункты не могут остаться
+    # в «Не проверено»; «Замечание» — проверено, и завершать не мешает.
+    if any(
+        normalize_check_item(item)["required"] and normalize_check_item(item)["state"] == "UNCHECKED"
+        for item in event.recon_checklist
+    ):
         raise DomainError("RECON_CHECKLIST_INCOMPLETE", 422, message=
-            "Не все пункты чек-листа отмечены выполненными.",
+            "Обязательные пункты чек-листа остались в «Не проверено».",
         )
     if not event.recon_sector_posts:
         raise DomainError("RECON_SECTOR_POSTS_EMPTY", 422, message=

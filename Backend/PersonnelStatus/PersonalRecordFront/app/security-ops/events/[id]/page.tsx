@@ -245,13 +245,8 @@ function SecurityEventScreen() {
               </span>
             )}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {event.passportBinding !== null
-              ? `Паспорт: версия ${event.passportBinding.versionNumber} (действует с ${formatIsoDate(event.passportBinding.effectiveFrom)})`
-              : event.objectId !== null
-                ? NO_PUBLISHED_VERSION_TEXT
-                : NO_OBJECT_TEXT}
-          </p>
+          {/* Строка «Паспорт: версия …» снята (`[РЕК-09]`, Plane №443): объект
+              и версия паспорта уже названы полосой объекта посещения ниже. */}
             </div>
             {/* Кнопка «Информация по ГВО» ОТСЮДА УБРАНА (Plane №193):
                 заказчик просил её на бюллетене, а не на первом этапе. Стоя в
