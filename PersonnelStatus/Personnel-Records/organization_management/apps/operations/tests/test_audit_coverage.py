@@ -1145,6 +1145,10 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # не оставляет.
     from organization_management.apps.ops import gvo as gvo_service
 
+    # Сводка ГВО и визит — только у FOREIGN (Plane №435): переводим ОМ до
+    # первого патча, иначе `apply_patch` отвечает VISIT_FOREIGN_ONLY.
+    om.kind = "FOREIGN"
+    om.save(update_fields=["kind"])
     gvo_service.apply_patch(
         om.code,
         {"section": "head", "values": {"country": "Покрытие"}},
@@ -1152,6 +1156,16 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         actor=ACTOR,
     )
     gvo_service.reset_patch(om.code, {"section": "head"}, actor=ACTOR)
+    # Утверждение визита (`[ГВО-07]`, Plane №436): визит есть только у
+    # FOREIGN, обязательные поля закрываются флагом «уточняется», чтобы
+    # событие записалось.
+    gvo_service.apply_patch(
+        om.code,
+        {"section": "head", "values": {"country": "Черногория"},
+         "unspecified": ["persons", "arrival.date", "departure.date", "responsible"]},
+        None, actor=ACTOR,
+    )
+    gvo_service.approve_visit(om.code, actor=ACTOR)
 
     # Справочник прав (Plane №36, «П-2»): заведение и правка — одно действие,
     # поэтому и запись здесь одна.

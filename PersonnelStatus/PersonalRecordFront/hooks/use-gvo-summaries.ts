@@ -129,3 +129,18 @@ export function useResetGvoSection(options: { onReset?: () => void } = {}) {
     },
   });
 }
+
+/** «Утвердить» визит (`[ГВО-07]`/`[ГВО-09]`, Plane №436) — штаб. */
+export function useApproveVisit(options: { onApproved?: () => void } = {}) {
+  const queryClient = useQueryClient();
+  return useOpsMutation<GvoSummaryRow, { omCode: string }>({
+    mutationFn: ({ omCode }) =>
+      opsApiClient.post<GvoSummaryRow>(`${gvoSummaryPath(omCode)}approve/`, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-gvo-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["ops-gvo-summaries"] });
+      void queryClient.invalidateQueries({ queryKey: ["ops-audit-logs"] });
+      options.onApproved?.();
+    },
+  });
+}

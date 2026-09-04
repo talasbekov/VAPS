@@ -158,6 +158,15 @@ export function BulletinPanel({
               мероприятия выездной охраны не бывает, и кнопка обещала бы
               пустоту. */}
           {onToggleGvo !== undefined && (
+            /* Карточка визита — своя страница (`[ГВО-01]`, Plane №436). */
+            <Link
+              href={`/security-ops/visits/${event.id}`}
+              className="shrink-0 text-xs font-semibold text-primary-ink"
+            >
+              Карточка визита →
+            </Link>
+          )}
+          {onToggleGvo !== undefined && (
             <Button
               type="button"
               variant={gvoOpen === true ? "default" : "outline"}

@@ -64,6 +64,9 @@ export const MODULE_PERMISSION = {
   "/security-ops/analytics": "analytics.view",
   "/security-ops/objects": "object.view",
   "/security-ops/events": "event.view",
+  // Страница визита иностранного ОЛ (`[ГВО-01]`, Plane №436) — та же мерка,
+  // что у реестра: визит показывает то же, что карточка ОМ.
+  "/security-ops/visits": "event.view",
   "/security-ops/persons": "catalog.view",
   "/security-ops/laws": "catalog.view",
   "/security-ops/vehicles": "event.view",

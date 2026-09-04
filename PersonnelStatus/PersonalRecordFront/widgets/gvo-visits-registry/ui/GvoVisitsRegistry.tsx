@@ -196,7 +196,9 @@ function RegistryTable({
             // («Реестр ОМ-35.4»), и `?gvo=1` открывает панель сразу — человек
             // нажал именно на сводку, второе нажатие было бы платой за
             // переезд.
-            const href = `/security-ops/events/${event.id}?gvo=1`;
+            // Отдельная страница визита (`[ГВО-01]`, Plane №436): у визита
+            // своя карточка, панель в карточке ОМ остаётся до №441.
+            const href = `/security-ops/visits/${event.id}`;
             const eventCell = (
               <TableCell>
                 <Link href={href} className="block">
