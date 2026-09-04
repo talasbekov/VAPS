@@ -59,7 +59,9 @@ export function EventStepper({
                 : index < currentIndex
                   ? "done"
                   : "future";
-          const label = `${index + 1}. ${step.label}`;
+          // Пройденные — с галочкой (`[РЕК-01]`, Plane №442): состояние
+          // читается и без цвета плитки.
+          const label = `${state === "done" ? "✓ " : ""}${index + 1}. ${step.label}`;
           return (
             <li key={step.key} className="flex items-center gap-1.5">
               {onSelect === undefined ? (

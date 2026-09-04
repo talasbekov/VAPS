@@ -12,6 +12,14 @@ import { PageHeader } from "@/components/page-header";
 import { InDevelopmentBadge } from "@/components/in-development-badge";
 import { inDevelopmentOfStage } from "@/shared/config/in-development";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvent } from "@/hooks/use-security-events";
@@ -183,12 +191,31 @@ function SecurityEventScreen() {
 
   return (
     <DashboardLayout>
-      <Link
-        href={backTo}
-        className="mb-3 inline-block text-xs font-semibold text-primary-ink"
-      >
-        ← Назад к реестру
-      </Link>
+      {/* Хлебные крошки (`[РЕК-01]`, Plane №442): «Реестр ОМ / ОМ-код
+          «Название» / Объект: … (паспорт вер. X)» вместо «← Назад к реестру». */}
+      <nav aria-label="Хлебные крошки" className="mb-3 text-xs" data-slot="breadcrumbs">
+        <ol className="flex flex-wrap items-center gap-1 text-muted-foreground">
+          <li>
+            <Link href={backTo} className="font-semibold text-primary-ink">
+              Реестр ОМ
+            </Link>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li className="text-foreground">
+            {event.code} «{event.title}»
+          </li>
+          {selectedVisit !== null && (
+            <>
+              <li aria-hidden="true">/</li>
+              <li>
+                Объект: {selectedVisit.objectName}
+                {selectedVisit.passportBinding !== null &&
+                  ` (паспорт вер. ${selectedVisit.passportBinding.versionNumber})`}
+              </li>
+            </>
+          )}
+        </ol>
+      </nav>
 
       <Card className="mb-4">
         <CardContent className="p-4">
@@ -445,41 +472,61 @@ function StageViewNotice({
   viewedStepIndex: number;
   onLeaveView: () => void;
 }) {
-  const override = useOverrideStage(eventId);
+  const override = useOverrideStage(eventId, { onEvent: () => setConfirmOpen(false) });
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const currentStepIndex = stepIndexOfStage(currentStage);
+  const passed = viewedStepIndex < currentStepIndex;
   return (
     <div
       className="border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 mb-3 rounded-md border px-3 py-2"
       data-slot="stage-view-notice"
       role="status"
     >
+      {/* Баннер ОДНОЙ строкой (`[РЕК-03]`, Plane №442): что за шаг показан и
+          что форма только для чтения; «Перевести ОМ сюда» — с подтверждением,
+          штабу и админу (право `event.stage_override`). */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[12.5px]">
-          <p className="font-semibold text-amber-900 dark:text-amber-100">
-            Просмотр шага {viewedStepIndex + 1} из {EVENT_STEPS.length} —
-            мероприятие стоит на шаге {currentStepIndex + 1}
-            {" «"}
-            {EVENT_STEPS[currentStepIndex].label}
-            {"»"}
-          </p>
-          <p className="text-amber-800 dark:text-amber-200/90">
-            Форма ниже показана целиком, но выключена: на этой стадии сервер
-            правки не примет.
-          </p>
-        </div>
+        <p className="text-[12.5px] text-amber-900 dark:text-amber-100">
+          <span className="font-semibold">
+            {passed ? "Этап пройден" : "Этап ещё не открыт"} · мероприятие на шаге{" "}
+            {currentStepIndex + 1} «{EVENT_STEPS[currentStepIndex].label}».
+          </span>{" "}
+          Форма только для чтения.
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={onLeaveView}>
             К текущему шагу
           </Button>
-          <Button
-            size="sm"
-            disabled={override.isPending}
-            onClick={() => override.mutate({ stage: viewedStage })}
-          >
-            {override.isPending ? "Перевод…" : "Перевести ОМ сюда"}
+          <Button size="sm" disabled={override.isPending} onClick={() => setConfirmOpen(true)}>
+            Перевести ОМ сюда
           </Button>
         </div>
       </div>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent data-slot="stage-override-confirm">
+          <DialogHeader>
+            <DialogTitle>
+              Перевести мероприятие на шаг {viewedStepIndex + 1} «{EVENT_STEPS[viewedStepIndex].label}»?
+            </DialogTitle>
+            <DialogDescription>
+              Стадия сменится на сервере, форма шага откроется для правки, переход попадёт в
+              журнал переходов и в аудит. Обычный путь — довести этап до конца, а не переводить.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              disabled={override.isPending}
+              aria-busy={override.isPending}
+              onClick={() => override.mutate({ stage: viewedStage })}
+            >
+              {override.isPending ? "Перевод…" : "Перевести"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {override.error !== null && (
         <p className="text-destructive-ink mt-1.5 text-xs">
           {override.error.message}
@@ -595,6 +642,20 @@ function VisitObjectContext({
           >
             карточка объекта →
           </Link>
+        )}
+        {selected !== null && (
+          /* Старший объекта и замещающие — в строке объекта (`[РЕК-01]`,
+             Plane №442): кто отвечает за объект, видно на любом этапе. */
+          <span className="text-xs text-muted-foreground" data-slot="visit-chief-line">
+            · Старший объекта:{" "}
+            <span className="font-semibold text-foreground">
+              {selected.chiefName === "" ? "не назначен" : selected.chiefName}
+            </span>
+            {" · Замещающие: "}
+            {selected.deputies.length === 0
+              ? "нет"
+              : selected.deputies.map((d) => d.employeeName).join(", ")}
+          </span>
         )}
       </div>
       {selected === null ? (
