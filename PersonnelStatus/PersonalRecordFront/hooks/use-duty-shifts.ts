@@ -35,11 +35,14 @@ import type {
  *  «статусы и смены дежурств», а сотруднику показывала одни статусы. Заодно
  *  снимается лишний вес: раньше тянулись все смены организации, чтобы
  *  оставить на экране свои. */
-export function useMyDutyShifts() {
+export function useMyDutyShifts(options: { enabled?: boolean } = {}) {
   return useQuery<ListMyDutyShiftsResponse, OpsApiFailure>({
     queryKey: ["ops-duty-shifts", "mine"],
     queryFn: () =>
       opsApiClient.get<ListMyDutyShiftsResponse>(DUTY_SHIFTS_MINE_PATH),
+    // Чужой профиль (Plane №449) «мои смены» не спрашивает: ручка отдаёт
+    // только свои.
+    enabled: options.enabled ?? true,
   });
 }
 

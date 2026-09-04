@@ -268,6 +268,42 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       await card.getByRole('button', { name: 'Ознакомлен, заступлю' }).click()
       await expect(card.getByText(/^Ознакомлен: /)).toBeVisible({ timeout: 15_000 })
       await expect(card.getByText('Не могу заступить: Командировка по приказу')).toHaveCount(0)
+
+      // `[ПРФ-05]` (Plane №449): в календаре день ОМ несёт ПОЛОСКУ
+      // «ОМ-код · Пост», а не безымянную точку. ОМ пробы стоит в июне 2028 —
+      // листаем месяцы стрелкой до него.
+      await page.getByRole('button', { name: 'Календарь' }).click()
+      const monthTitle = page.getByText(/^Мой календарь · /)
+      await expect(monthTitle).toBeVisible({ timeout: 15_000 })
+      for (let i = 0; i < 60 && !(await monthTitle.textContent())?.includes('Июнь 2028'); i += 1) {
+        await page.getByRole('button', { name: 'Следующий месяц' }).click()
+      }
+      await expect(monthTitle).toContainText('Июнь 2028')
+      // В ячейке — полоски с подписью «ОМ-код · Пост» (до двух, остальное
+      // «+N»: стенд копит назначения соседних проб, и своё может оказаться
+      // за счётчиком) — ищем СВОЁ в панели дня, куда попадают все.
+      await expect(
+        page.locator('[data-slot="day-bars"]').getByText(/· Пост/).first(),
+        'полосок «ОМ-код · Пост» в ячейках нет',
+      ).toBeVisible()
+      await page.getByRole('button', { name: /^6 июня 2028 — / }).click()
+      await expect(
+        page.locator('[data-slot="day-list"]').getByText(`${created.code} · ${target.post}`),
+        'назначение пробы не названо «ОМ-код · Пост» в панели дня',
+      ).toBeVisible()
+
+      // `[ПРФ-08]` (Plane №449): администратор открывает профиль ЭТОГО
+      // сотрудника только на чтение — те же назначения, без кнопок ответа.
+      await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+      await page.goto(`${APP}${SCREEN}/${employeeId}`)
+      await expect(page.getByRole('heading', { name: me.employee!.full_name })).toBeVisible({
+        timeout: 20_000,
+      })
+      await expect(page.locator('[data-slot="read-only"]')).toHaveText('Только чтение')
+      const adminCard = page.getByTestId(`my-assignment-${assignmentId}`)
+      await expect(adminCard).toBeVisible({ timeout: 15_000 })
+      await expect(adminCard.getByRole('button', { name: 'Ознакомлен, заступлю' })).toHaveCount(0)
+      await expect(adminCard.getByRole('button', { name: 'Не могу заступить' })).toHaveCount(0)
     } finally {
       // ОМ с расстановкой не удаляется (422) — сначала снять назначения.
       const current = await get<{ placementAssignments: { id: string }[] }>(admin, base)
@@ -395,7 +431,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     // нечитаемым, и список стал разрезом ПОКАЗАННОГО месяца. Сравнивать его с
     // полным ответом ручки больше нельзя: сравнение считалось бы верным
     // только в месяце, в который попали все статусы стенда.
-    const periods = page.locator('[data-slot="card"]', { hasText: 'Периоды за' }).first()
+    const periods = page.locator('[data-slot="card"]', { hasText: 'Ближайшие 30 дней' }).first()
     // 🔴 `limit`, А НЕ `page_size` (в запросе выше). Списки раздела ОМ
     // пагинируются LimitOffsetPagination: `page_size` она игнорирует и молча
     // отдаёт 50 строк. Проба сравнивала «50 из ручки» с полным списком на
@@ -411,11 +447,32 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       otherToken,
       '/api/ops/duty-shifts/mine/',
     )
-    const shown = monthOfToday()
+    // Список — «Ближайшие 30 дней» (`[ПРФ-05]`, Plane №449): статусы, смены
+    // и назначения на посты от сегодня вперёд. Статус привлечения на то же
+    // ОМ, что и назначение, строкой не дублируется — считаем как экран.
+    const todayIso = new Date().toISOString().slice(0, 10)
+    const horizon = new Date()
+    horizon.setDate(horizon.getDate() + 30)
+    const horizonIso = `${horizon.getFullYear()}-${String(horizon.getMonth() + 1).padStart(2, '0')}-${String(horizon.getDate()).padStart(2, '0')}`
+    const inWindow = (from: string, to: string | null) => (to ?? from) >= todayIso && from <= horizonIso
+    const mineAssignments = await get<{
+      results: { eventCode: string; businessDate: string; businessDateEnd: string | null }[]
+    }>(otherToken, '/api/ops/security-events/my-assignments/')
+    const assignedCodes = new Set(mineAssignments.results.map((row) => row.eventCode))
     const expected =
-      statuses.results.filter((row) => touchesMonth(row.date_start, row.date_end, shown))
-        .length + mineShifts.results.filter((row) => row.businessDate.startsWith(shown)).length
-    await expect(periods.getByRole('listitem')).toHaveCount(expected)
+      (statuses.results as (StatusRow & { date_start: string; date_end: string; participations?: { event_code: string }[] })[])
+        .filter((row) => inWindow(row.date_start, row.date_end))
+        .filter((row) => {
+          const event = row.participations?.[0]
+          return event === undefined || !assignedCodes.has(event.event_code)
+        }).length +
+      mineShifts.results.filter((row) => inWindow(row.businessDate, row.businessDate)).length +
+      mineAssignments.results.filter((row) => inWindow(row.businessDate, row.businessDateEnd)).length
+    if (expected === 0) {
+      await expect(periods.getByText('В ближайшие 30 дней ни назначений, ни статусов, ни смен нет.')).toBeVisible()
+    } else {
+      await expect(periods.getByRole('listitem')).toHaveCount(expected)
+    }
   })
 
   test('день календаря открывает свой состав, а список привязан к месяцу', async ({ page }) => {
@@ -447,7 +504,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await page.goto(`${APP}${SCREEN}`)
     await page.getByRole('button', { name: 'Календарь' }).click()
 
-    const periods = page.locator('[data-slot="card"]', { hasText: 'Периоды за' }).first()
+    const periods = page.locator('[data-slot="card"]', { hasText: 'Ближайшие 30 дней' }).first()
     await expect(periods).toBeVisible({ timeout: 20_000 })
 
     // Клик по дню: панель перестаёт быть списком месяца и называет день.
@@ -459,7 +516,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
 
     // Возврат к месяцу — той же кнопкой, что предложена на экране.
     await page.getByRole('button', { name: 'Весь месяц' }).click()
-    await expect(page.locator('[data-slot="card"]', { hasText: 'Периоды за' })).toBeVisible()
+    await expect(page.locator('[data-slot="card"]', { hasText: 'Ближайшие 30 дней' })).toBeVisible()
   })
 
   test('учётка без кадровой записи получает причину, а не пустой профиль', async ({ page }) => {

@@ -707,6 +707,7 @@ async function resolveIds(token: string): Promise<Record<string, string>> {
     put('passportVersionId', detail?.passportVersions?.[0]?.id)
   }
   put('ratingEmployeeId', (await get('/api/ops/evaluation-registry/'))?.results?.[0]?.employeeId)
+  put('employeeId', (await get('/api/core/employees/?page_size=1'))?.results?.[0]?.id)
   put('reportJobId', (await get('/api/ops/service-report-jobs/'))?.results?.[0]?.reportJobId)
   put('dictionaryCode', (await get('/api/ops/dictionaries/'))?.results?.[0]?.code)
   // КОНСТАНТА, а не выборка из API, и это не срез угла: набор видов справочника
