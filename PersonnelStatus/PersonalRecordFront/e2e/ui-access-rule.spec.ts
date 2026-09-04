@@ -59,13 +59,25 @@ test.describe(LIVE ? 'правило доступа' : 'правило дост�
 
   test('читатель раздела видит кнопку перехода этапа выключенной, с причиной', async ({ page }) => {
     const rows = await adminEvents()
-    const target = rows.find((e) => ['RECON', 'PLACEMENT', 'ACKNOWLEDGEMENT'].includes(e.stage))
+    // На «Рекогносцировке» без старшего объекта формы нет вовсе — пустое
+    // состояние `[РЕК-02]` (Plane №424), кнопки перехода там нет; берём этап
+    // 2/4, а этап 1 — только с назначенным старшим.
+    const target =
+      rows.find((e) => e.stage === 'PLACEMENT') ??
+      rows.find(
+        (e) =>
+          e.stage === 'RECON' &&
+          ((e as { visitObjects?: { chiefEmployeeId: string | null }[] }).visitObjects ?? []).some(
+            (v) => v.chiefEmployeeId !== null,
+          ),
+      ) ??
+      rows.find((e) => e.stage === 'ACKNOWLEDGEMENT')
     test.skip(target === undefined, 'на стенде нет ОМ на этапах 1, 2 или 4')
 
     await signIn(page, 'acc_employee_d2', PASSWORD)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
     // На расстановке кнопка зовётся «Завершить расстановку» (`[РАС-01]`, Plane №445).
-    const button = page.getByRole('button', { name: /^Завершить (этап и перейти далее|расстановку)$/ })
+    const button = page.getByRole('button', { name: /^Завершить (этап и перейти далее|расстановку|рекогносцировку →|ознакомление)$/ })
     await expect(button).toBeVisible()
     await expect(button).toBeDisabled()
     await expect(button).toHaveAttribute('title', /ведущий ОМ или штаб/)
