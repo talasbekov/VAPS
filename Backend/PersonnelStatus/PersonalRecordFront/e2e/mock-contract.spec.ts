@@ -434,6 +434,59 @@ test.describe(
       expect(placed.outsider.body.error_code).toBe('NOT_IN_ROSTER')
       expect(placed.member.status).toBe(200)
 
+      // Усиление сверх расчёта (Plane №414): пока расчёт поста НЕ исчерпан,
+      // назначение проходит молча; как только мест не осталось — мок обязан
+      // встретить его тем же мягким конфликтом, что и сервер. Обе половины
+      // обязательны: без первой проба доказывала бы, что расстановка сломана
+      // вообще, а не что гард считает расчёт.
+      const overNeed = await page.evaluate(
+        async ([postId, employeeId]: [string, string]) => {
+          const assign = async (withReason: boolean) => {
+            const res = await fetch('/api/ops/security-events/se-1/placement/assign/', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(
+                withReason
+                  ? { postId, employeeId, override: true, override_reason: 'добор до расчёта' }
+                  : { postId, employeeId },
+              ),
+            })
+            return { status: res.status, body: await res.json() }
+          }
+          const state = async () => {
+            const fresh = await (await fetch('/api/ops/security-events/se-1/')).json()
+            const post = fresh.reconSectorPosts.find((p: any) => p.id === postId)
+            return {
+              need: Number(post?.need ?? 0),
+              taken: fresh.placementAssignments.filter((a: any) => a.postId === postId).length,
+            }
+          }
+          const before = await state()
+          // Внутри расчёта — тихо: место в запасе ещё есть.
+          const within = before.taken < before.need ? await assign(false) : null
+          // Добираем пост до расчёта, чтобы упереться в границу.
+          for (let guard = 0; guard < 20; guard += 1) {
+            const now = await state()
+            if (now.taken >= now.need) break
+            await assign(true)
+          }
+          const filled = await state()
+          return { within, filled, over: await assign(false) }
+        },
+        [placed.postId, members.employeeId] as [string, string],
+      )
+
+      expect(overNeed.within?.status, 'место в расчёте есть — гард молчать обязан').toBe(200)
+      expect(overNeed.filled.taken).toBeGreaterThanOrEqual(overNeed.filled.need)
+      expect(overNeed.over.status).toBe(409)
+      expect(overNeed.over.body.error_code).toBe('SOFT_CONFLICT_DETECTED')
+      // `overridable` в конверте мока НЕТ и не было: клиент решает по КОДУ
+      // (`OVERRIDABLE_CODES` в `lib/ops-errors.ts`), а не по флагу. Расхождение
+      // конверта с сервером — отдельная находка, здесь не проверяется.
+      expect(
+        overNeed.over.body.details.conflicts.map((c: any) => c.conflict_code),
+      ).toContain('OVER_NEED')
+
       // Р-1: строка назначения несёт подразделение и статус дня. Тип
       // проверяется строго — `not.toBe('')` прошёл бы на `undefined`, то есть
       // ровно на моке, который этих полей не отдаёт.
