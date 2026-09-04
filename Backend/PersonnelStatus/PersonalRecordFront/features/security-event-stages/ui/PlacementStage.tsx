@@ -1301,10 +1301,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     variant="outline"
                     size="sm"
                     disabled={comment === null || updateRecon.isPending}
+                    /* 🔴 ТЕЛО СТРОИТСЯ ИЗ `allPosts`, А НЕ ИЗ `posts`
+                       (Plane №471). `posts` — строки ТОЛЬКО показанного
+                       объекта посещения, а `update_recon` на сервере не
+                       сливает списки, а ЗАМЕЩАЕТ `recon_sector_posts`
+                       присланным целиком. Пока здесь стоял разрез, сохранение
+                       комментария на объекте A удаляло все посты объекта B:
+                       его потребность падала в ноль, назначения оставались
+                       ссылаться на несуществующие id, и восстановить было
+                       нечем — прежних строк нет ни в одной версии.
+                       Разрез нужен ПОКАЗУ, а не отправке; соседний
+                       `ReconStage` шлёт полный список ровно поэтому. */
                     onClick={() =>
                       updateRecon.mutate({
                         checklist: event.reconChecklist,
-                        sectorPosts: posts.map((p) =>
+                        sectorPosts: allPosts.map((p) =>
                           p.id === selected.id ? { ...p, comment: comment ?? "" } : p
                         ),
                       })
