@@ -100,7 +100,6 @@ const BY_STAGE: Partial<Record<SecurityEventStage, InDevelopmentNote>> = {
   },
   APPROVAL: {
     pending: [
-      "Статусы документа с версией, счётчик возвратов, снятие лишнего (№446)",
     ],
   },
   ACKNOWLEDGEMENT: {

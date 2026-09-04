@@ -118,13 +118,9 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     await expect(card).toContainText(
       `${target.placementAssignments.length} / ${totalNeed}`,
     )
-    // Число и подпись — соседние элементы без пробела между ними, поэтому
-    // сверяем образцом, а не литералом со пробелом.
-    await expect(card).toContainText(
-      new RegExp(
-        `${target.placementAssignments.filter((a) => a.ratingOverrideReason !== null).length}\\s*обходов предупреждений`,
-      ),
-    )
+    // Плитки «обходов предупреждений» на согласовании больше НЕТ (`[СОГ-11]`,
+    // Plane №446): обходы — предмет аудита. Пин перевёрнут осознанно.
+    await expect(card).not.toContainText('обходов предупреждений')
 
     // Блока «Обходы предупреждений» на согласовании НЕТ (`[СОГ-11]`, Plane
     // №399) — его место в аудите; число обходов остаётся плиткой сводки выше.
@@ -332,7 +328,7 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     // текущую версию тем же номером, что и подпись у маршрута.
     const history = card.getByRole('region', { name: 'История версий документа' })
     await expect(history).toBeVisible({ timeout: 15_000 })
-    await expect(history).toContainText(`текущая — v${expectedAfterSend}`)
+    await expect(history).toContainText(`Версия ${expectedAfterSend}`)
     await expect(history).toContainText(`v${expectedAfterSend}`)
 
     // Отзыв номер НЕ откатывает: состав уже уходил людям.

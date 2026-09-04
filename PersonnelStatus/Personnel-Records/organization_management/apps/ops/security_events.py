@@ -4941,6 +4941,13 @@ def withdraw_from_approval(event_id, *, visit_object_id=None):
         "Отозвать с согласования можно только на этапе «Согласование».",
     )
     route = list(visit.approval_route or [])
+    # «Отозвать» доступна, пока никто не подписал (`[СОГ-07]`, Plane №446):
+    # подпись — факт под составом, и отзыв после неё был бы переписыванием.
+    if any(item.get("status") == "APPROVED" for item in route):
+        raise DomainError("APPROVAL_WITHDRAW_AFTER_SIGN", 422, message=
+            "Отозвать нельзя — расстановку уже подписали; дальше только "
+            "возврат согласующим.",
+        )
     for item in route:
         if item.get("status") == "PENDING":
             item["status"] = "NOT_SENT"

@@ -228,9 +228,10 @@ function DocumentVersionHistory({ view }: { view: ApprovalView }) {
     <section className="rounded-md border" aria-label="История версий документа">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-3 py-2">
         <p className="text-xs font-semibold">История версий документа «Расстановка сил»</p>
-        <p className="text-[11px] text-muted-foreground">
-          текущая — v{current.number}
-          {versions.length > 1 ? ` · возвратов ${versions.length - 1}` : ""}
+        <p className="text-[11px] text-muted-foreground" data-slot="version-counter">
+          {/* Счётчик по `[ВОЗ-08]` (Plane №446): «Версия N · возврат K-й». */}
+          Версия {current.number}
+          {versions.length > 1 ? ` · возврат ${versions.length - 1}-й` : ""}
         </p>
       </div>
       <ul className="divide-y">
@@ -423,9 +424,6 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
     (post) =>
       scopedAssignments.filter((a) => a.postId === post.id).length < post.need
   ).length;
-  const overrides = scopedAssignments.filter(
-    (a) => a.ratingOverrideReason !== null
-  );
 
   return (
     // Область с именем вместо снятого заголовка — см. ReconStage (Plane №70).
@@ -469,11 +467,8 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
             label="не укомплектовано"
             alarming={understaffed > 0}
           />
-          <Kpi
-            value={String(overrides.length)}
-            label="обходов предупреждений"
-            alarming={overrides.length > 0}
-          />
+          {/* Плитки «обходов предупреждений» здесь НЕТ (`[СОГ-11]`, Plane
+              №446): обходы — предмет аудита, не согласования. */}
           <Kpi value={formatIsoDateTime(event.updatedAt)} label="обновлено" />
         </div>
 
@@ -615,11 +610,21 @@ function ApprovalRoute({
   const route = view.route;
   const visitObjectId = view.visitObjectId;
   const sent = route.some((approver) => approver.status !== "NOT_SENT");
+  const signed = route.some((approver) => approver.status === "APPROVED");
+  // Статус документа словами по `[СОГ-01]` (Plane №446): «Черновик → На
+  // согласовании → Согласовано (версия N от ДД.ММ ЧЧ:ММ) → Возвращено».
+  const lastVersion = view.documentVersions[view.documentVersions.length - 1] ?? null;
   const subtitle = view.stale
     ? "Согласование сброшено: расстановка изменена"
-    : sent
-      ? "Отправлено на согласование"
-      : "Не отправлено";
+    : view.status === "APPROVED"
+      ? `Согласовано (версия ${view.documentVersion ?? lastVersion?.number ?? "—"}${
+          lastVersion?.decidedAt ? ` от ${formatIsoDateTime(lastVersion.decidedAt)}` : ""
+        })`
+      : view.status === "RETURNED" && !sent
+        ? "Возвращено"
+        : sent
+          ? "На согласовании"
+          : "Черновик";
   // Номер версии стоит РЯДОМ С КНОПКОЙ ОТПРАВКИ, потому что растит его именно
   // она: увидев «документ v2», человек знает, что следующая отправка сделает
   // третью. Отдельной плиткой в сводке версия отвечала бы на вопрос, которого
@@ -652,13 +657,15 @@ function ApprovalRoute({
             type="button"
             variant="outline"
             size="sm"
-            disabled={withdraw.isPending || !sent || !rights.send}
+            disabled={withdraw.isPending || !sent || signed || !rights.send}
             title={
               !rights.send
                 ? RIGHT_REASON.send
-                : sent
-                  ? undefined
-                  : "Расстановка ещё не отправлена."
+                : !sent
+                  ? "Расстановка ещё не отправлена."
+                  : signed
+                    ? "Отозвать можно, пока никто не подписал (`[СОГ-07]`)."
+                    : undefined
             }
             onClick={() => withdraw.mutate({ visitObjectId })}
           >
@@ -1036,6 +1043,9 @@ function ApprovalRemarks({
   const remarks = view.remarks;
   const open = remarks.filter((remark) => remark.status === "OPEN").length;
   const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
+  // Блок «Замечания» — только если они есть (`[СОГ-06]`, Plane №446):
+  // пустая лента «возвратов не было» занимала место, не сообщая ничего.
+  if (remarks.length === 0) return null;
   const postLabel = (postId: string | null): string => {
     if (postId === null) return "общее";
     const post = postById.get(postId);
