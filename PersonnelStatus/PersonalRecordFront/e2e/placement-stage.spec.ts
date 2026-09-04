@@ -722,6 +722,55 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     // (у первого объекта постов из паспорта больше).
     await expect(tree).toContainText('назначено 0 из 2')
 
+    // 🔴 КОММЕНТАРИЙ ПОСТА НЕ ДОЛЖЕН СНОСИТЬ ЧУЖОЙ ОБЪЕКТ (Plane №471).
+    //
+    // Окно правки шлёт `sectorPosts` ЦЕЛИКОМ, а сервер (`update_recon`) не
+    // сливает, а ЗАМЕЩАЕТ список. Пока окно собирало тело из постов ПОКАЗАННОГО
+    // объекта, сохранение комментария на объекте A удаляло все посты объекта B:
+    // его потребность падала в ноль, а назначения оставались ссылаться на
+    // несуществующие id. Восстановить было нечем — прежних строк нет ни в одной
+    // версии.
+    //
+    // Проверяется и экраном, и ручкой: экран показывает, что человек этого не
+    // заметит, ручка — что данные на месте.
+    await picker.selectOption(firstVisit.id)
+    await expect(tree).not.toContainText(ownPost)
+    const before = await call('get', `${base}/`)
+    const mine = (before.reconSectorPosts as { id: string; post: string; visitObjectId: string | null }[])
+      .filter((row) => String(row.visitObjectId) === String(firstVisit.id))
+    requireFixture(mine[0], 'пост первого объекта посещения')
+    const totalBefore = (before.reconSectorPosts as unknown[]).length
+
+    await tree.getByRole('button').filter({ hasText: mine[0]!.post }).first().click()
+    const note = `комментарий №471 ${Date.now()}`
+    await page.locator('#post-comment').fill(note)
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).first().click()
+    // Ждём ответа ручки, а не таймера: сохранение асинхронно, и чтение сразу
+    // после клика застало бы прежнее состояние и зеленело бы на поломке.
+    await page.waitForResponse(
+      (r) => r.url().includes('/recon/') && r.request().method() === 'PATCH',
+      { timeout: 20_000 },
+    )
+
+    const after = await call('get', `${base}/`)
+    const rows = after.reconSectorPosts as { id: string; post: string; comment: string }[]
+    expect(
+      rows.length,
+      'после сохранения комментария постов стало меньше — снесён чужой объект',
+    ).toBe(totalBefore)
+    expect(
+      rows.some((row) => row.post === ownPost),
+      'пост второго объекта посещения исчез после правки комментария на первом',
+    ).toBe(true)
+    expect(
+      rows.find((row) => row.id === mine[0]!.id)?.comment,
+      'комментарий не сохранился — проба проверяла бы отсутствие вреда от действия, которого не было',
+    ).toBe(note)
+    // И на экране: переключение на второй объект показывает его пост, а не
+    // пустое дерево.
+    await picker.selectOption(secondVisit.id)
+    await expect(tree).toContainText(ownPost)
+
     // Уборка: своё мероприятие проба уносит за собой. Отказ её не роняет —
     // это уборка, а не предмет проверки; не удалённое подберёт
     // `manage.py purge_probe_events`.
