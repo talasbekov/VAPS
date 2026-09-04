@@ -25,7 +25,32 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
  * НАШЕ лицо, которого нет ни в одной собранной сводке, и говорит вслух, если
  * такого не нашлось, — а не падает ассертом про пустое состояние.
  */
+/** Роль, с которой проба вписывает лицо в сводку, — по ней хвосты и узнаются. */
+const PROBE_ROLE = 'Куратор визитов'
+
+/**
+ * Снимает со сводок ГВО лиц, вписанных этой пробой (роль `PROBE_ROLE`):
+ * упавший прогон оставлял лицо в сводке, и каждый следующий заход съедал ещё
+ * одно свободное «наше» лицо каталога — на четвёртом фикстуры не оставалось
+ * (прогон 04.09.2026, три лица из четырёх были «названы»).
+ */
+async function unlinkProbePersons(): Promise<void> {
+  const token = await apiToken()
+  const rows = await apiGet<{ results: GvoSummaryRow[] }>('/api/ops/gvo-summaries/assembled/', token)
+  for (const row of rows.results) {
+    const persons = row.summary.persons ?? []
+    const kept = persons.filter((person) => person.role !== PROBE_ROLE)
+    if (kept.length === persons.length) continue
+    await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ section: 'persons', values: { persons: kept } }),
+    })
+  }
+}
+
 async function cleanDomesticPerson(): Promise<string> {
+  await unlinkProbePersons()
   const { matches, catalog } = await findNameIntersections()
   const busy = new Set(matches.map((m) => m.person.name.trim().toLowerCase()))
   return requireFixture(
@@ -119,9 +144,18 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
     )
     await page.goto(`${APP}/security-ops/events/?view=gvo`)
     await page.locator('tbody tr', { hasText: omCode }).locator('a').first().click()
-    await page.getByRole('button', { name: '＋ Добавить лицо' }).click()
+    // Единый режим правки (`[ГВО-05]`, Plane №441): поля открывает одна
+    // кнопка «Редактировать», «＋ Добавить лицо» живёт внутри формы.
+    // Клик повторяется, пока форма не откроется: на свежем dev-стенде первый
+    // клик попадает до гидратации и уходит в никуда.
+    const addPerson = page.getByRole('button', { name: '＋ Добавить лицо' })
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Редактировать' }).click()
+      await expect(addPerson).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 30_000 })
+    await addPerson.click()
     await page.getByRole('textbox', { name: 'ФИО' }).fill(PERSON)
-    await page.getByRole('textbox', { name: 'Должность' }).fill('Куратор визитов')
+    await page.getByRole('textbox', { name: 'Должность' }).fill(PROBE_ROLE)
     await page.getByRole('button', { name: 'Сохранить' }).click()
     // `.first()`: сводка теперь панель в КАРТОЧКЕ ОМ (Plane «Реестр ОМ-35.8»),
     // и то же имя выводится ещё и в «Сведениях об ОМ» бюллетеня — строгий
@@ -141,18 +175,12 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
     await expect(linked.getByRole('link', { name: omCode })).toBeHidden()
     await expect(linked.locator('li')).toHaveCount(1)
 
-    // Гигиена стенда: сбрасываем патч, который сами создали, — иначе PERSON
-    // остаётся приклеен к этому ОМ и следующий прогон спеки стартует не с
-    // чистого состояния (тот же класс дефекта уже нашёлся у ОМ-2026-80 /
-    // 'Оспанов Бахыт Дюсенбаевич'). Тот же приём, что в
-    // e2e/gvo-sections.spec.ts — «Вернуть исходные» по разделу «persons».
-    await page.goto(`${APP}/security-ops/events/?view=gvo`)
-    await page.locator('tbody tr', { hasText: omCode }).locator('a').first().click()
-    await page.getByRole('button', { name: 'Изменить список охраняемых лиц' }).click()
-    await page.getByRole('button', { name: 'Вернуть исходные' }).click()
-    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 10_000 })
-
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
+    // Гигиена стенда: снимаем лицо, которое сами вписали, — иначе PERSON
+    // остаётся приклеен к этому ОМ и следующий прогон стартует не с чистого
+    // состояния. Ручкой, а не окном: окна «Изменить список охраняемых лиц»
+    // с единым режимом правки (№441) больше нет.
+    await unlinkProbePersons()
   })
 
   test('без catalog.view каталог закрыт', async ({ page }) => {
