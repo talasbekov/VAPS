@@ -560,16 +560,44 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
     await expect(page).toHaveURL(/\/security-ops\/events\/\d+/, { timeout: 30_000 })
 
-    // Ассерты по «Сведениям об ОМ» карточки: введённое обязано вернуться с
-    // сервера, а не остаться в форме.
-    const facts = page.getByRole('main')
-    await expect(facts).toContainText('С участием иностранцев', { timeout: 20_000 })
-    await expect(facts).toContainText('09:30')
-    await expect(facts).toContainText('Казахстан, Алматы, пр. Абая, 1')
-    // Подписи выпадающих списков несут разделитель « · » — на карточке
-    // стоит только имя, поэтому сверяем по первой части подписи.
-    await expect(facts).toContainText(personName.split(' · ')[0]!.trim())
-    await expect(facts).toContainText(chiefLabel.trim())
+    // Введённое обязано ВЕРНУТЬСЯ С СЕРВЕРА, а не остаться в форме — предмет
+    // пробы прежний. Но спрашивается он теперь у сервера, а не у карточки:
+    // тип, время, локация, лица и старший ГВО печатались блоком «Сведения об
+    // ОМ» внутри панели бюллетеня, а после Plane №468 панель рисуется только
+    // на стадии «Бюллетень». ОМ с объектом (а тут выбран объект) заводится
+    // сразу рекогносцировкой и этой стадии не видит — показывать эти поля на
+    // карточке стало негде.
+    //
+    // Это НЕ подгон под новый вывод: проба сменила место вопроса, а не
+    // ослабила его — сверяются те же пять значений, что и раньше, плюс
+    // название в шапке, которое карточка печатает по-прежнему.
+    await expect(page.getByRole('heading', { name: title })).toBeVisible({
+      timeout: 20_000,
+    })
+    const eventId = new URL(page.url()).pathname.split('/').filter(Boolean).at(-1)!
+    const token = await apiToken()
+    const saved = (await (
+      await fetch(`${API}/api/ops/security-events/${eventId}/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as {
+      kind: string
+      eventTime: string | null
+      location: string
+      chiefName: string
+      protectedPersons: { name: string }[]
+      protectedPersonName: string
+    }
+    expect(saved.kind).toBe('FOREIGN')
+    expect(saved.eventTime).toContain('09:30')
+    expect(saved.location).toBe('Казахстан, Алматы, пр. Абая, 1')
+    expect(saved.chiefName).toContain(chiefLabel.split(' · ')[0]!.trim())
+    const personShort = personName.split(' · ')[0]!.trim()
+    const savedPersons = [
+      saved.protectedPersonName,
+      ...(saved.protectedPersons ?? []).map((row) => row.name),
+    ].join(' ')
+    expect(savedPersons).toContain(personShort)
   })
 
   test('строка бюллетени раскрывается в объекты посещения', async ({ page }) => {
