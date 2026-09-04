@@ -76,6 +76,8 @@ CODES = {
     "APPROVAL_NOT_YOUR_TURN": frozenset({403}),
     # Визит иностранного ОЛ (`[ГВО-07]`, Plane №436).
     "VISIT_REQUIRED_MISSING": frozenset({422}),
+    # Отзыв после подписи (`[СОГ-07]`, Plane №446).
+    "APPROVAL_WITHDRAW_AFTER_SIGN": frozenset({422}),
     "VISIT_ALREADY_APPROVED": frozenset({422}),
     "APPROVAL_STALE": frozenset({422}),
     "APPROVAL_RETURNED": frozenset({422}),

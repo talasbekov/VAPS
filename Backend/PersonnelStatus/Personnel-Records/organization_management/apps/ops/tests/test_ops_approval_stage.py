@@ -224,9 +224,11 @@ def test_sending_requires_a_route_and_a_placement(manager):  # noqa: F811
     assert resp.json()["error_code"] == "APPROVAL_ROUTE_EMPTY"
 
 
-def test_withdrawing_keeps_decisions_already_taken(manager, approver):  # noqa: F811
-    """Согласовавший согласовал: стирать чужое решение отзывом значило бы
-    переписывать историю. Отзыв снимает только НЕРЕШЁННОЕ."""
+def test_withdrawing_after_a_signature_is_refused(manager, approver):  # noqa: F811
+    """`[СОГ-07]` (Plane №446): «Отозвать» доступна, пока никто не подписал.
+    До этого отзыв снимал только нерешённое и оставлял подписи — теперь после
+    первой подписи он отказывает целиком: подпись под составом не стирается,
+    дальше только возврат согласующим. Пин переписан осознанно."""
     base, _, _ = event_on_approval(manager)
     route = add_approver(manager, base)
     route = add_approver(manager, base, name="А. Жанибеков")
@@ -237,11 +239,12 @@ def test_withdrawing_keeps_decisions_already_taken(manager, approver):  # noqa: 
         format="json",
     )
 
-    data = manager.post(f"{base}approval/withdraw/").json()
-
-    by_id = {item["id"]: item for item in data["approvalRoute"]}
+    refused = manager.post(f"{base}approval/withdraw/")
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "APPROVAL_WITHDRAW_AFTER_SIGN"
+    by_id = {item["id"]: item for item in manager.get(base).json()["approvalRoute"]}
     assert by_id[route[0]["id"]]["status"] == "APPROVED"
-    assert by_id[route[1]["id"]]["status"] == "NOT_SENT"
+    assert by_id[route[1]["id"]]["status"] == "PENDING"
 
 
 def test_resending_keeps_the_return_reason_and_clears_the_rest(manager, approver):  # noqa: F811
