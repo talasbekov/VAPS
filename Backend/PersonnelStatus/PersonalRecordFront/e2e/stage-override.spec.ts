@@ -112,8 +112,10 @@ test.describe(LIVE ? 'проход по этапам (админ)' : 'прохо
     await expect(page.getByRole('heading', { name: 'Согласование расстановки' })).toBeVisible()
     // …режим просмотра назван словами, а не одним оттенком…
     const notice = page.locator('[data-slot="stage-view-notice"]')
-    await expect(notice).toContainText('Просмотр шага 3 из 5')
-    await expect(notice).toContainText('мероприятие стоит на шаге 1')
+    // Баннер одной строкой (`[РЕК-03]`, Plane №442): шаг не открыт, ОМ на шаге 1.
+    await expect(notice).toContainText('Этап ещё не открыт')
+    await expect(notice).toContainText('мероприятие на шаге 1')
+    await page.screenshot({ path: require('node:path').join(__dirname, '..', '..', '..', '..', 'docs', 'audit', 'om-2026-09-03', 'stage-header-banner.png') })
     // …и адрес несёт шаг: такую ссылку пересылают на разборе.
     await expect(page).toHaveURL(/[?&]step=3/)
 
@@ -177,6 +179,10 @@ test.describe(LIVE ? 'проход по этапам (админ)' : 'прохо
     await expect(notice).toBeVisible({ timeout: 20_000 })
 
     await notice.getByRole('button', { name: 'Перевести ОМ сюда' }).click()
+    // Перевод — с подтверждением (`[РЕК-03]`, Plane №442).
+    const confirm = page.locator('[data-slot="stage-override-confirm"]')
+    await expect(confirm).toBeVisible()
+    await confirm.getByRole('button', { name: 'Перевести', exact: true }).click()
 
     // Режим просмотра снялся сам — шаг стал текущим, а не «разблокирован».
     await expect(notice).toBeHidden({ timeout: 15_000 })
