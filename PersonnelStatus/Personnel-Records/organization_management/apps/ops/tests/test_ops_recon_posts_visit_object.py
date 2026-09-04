@@ -320,9 +320,17 @@ def test_adding_a_second_object_refreshes_the_need_snapshot(manager, event_on_re
         "при двух объектах не принадлежат никому"
     )
 
+    # 🔴 ПИН ПОДНЯТ С НУЛЯ ДО 12 ОСОЗНАННО (Plane №476, следом за №414).
+    #
+    # Здесь стояло `== 0`: снимки объектов честно обнулились, а потребность
+    # мероприятия складывалась из них одних. Ноль и был дефектом — расчёт на
+    # 12 человек цел, а штабу показывали, что людей не нужно. С №476
+    # `recompute_event_stage` прибавляет к сумме объектов посты, не отнесённые
+    # ни к одному из них. Предмет ЭТОЙ пробы — снимки объектов выше, и они
+    # по-прежнему (0, 0).
     event = service.recompute_event_stage(service.lock_event(event_id))
-    assert event.force_need == 0, (
-        "потребность мероприятия сложена из устаревших снимков"
+    assert event.force_need == 12, (
+        "потребность мероприятия потеряла неразмеченные посты (Plane №476)"
     )
 
 
@@ -408,4 +416,100 @@ def test_migration_0090_brings_stale_snapshots_back_to_the_calculation(
     visit.refresh_from_db()
     assert (visit.force_need, visit.force_assigned) == (0, 0), (
         "миграция не привела снимок к расчёту"
+    )
+
+
+# ── Потребность МЕРОПРИЯТИЯ при неразмеченном расчёте (Plane №476) ──────────
+
+
+def test_event_need_survives_unmarked_posts_at_two_objects(manager, event_on_recon):
+    """Потребность мероприятия не обнуляется от того, что посты ничьи.
+
+    Разрез `visit_object_posts` отдаёт неразмеченный пост ЕДИНСТВЕННОМУ
+    объекту и НИКОМУ, как только объектов стало двое. Для потребности ОБЪЕКТА
+    это правильно — приписать чужое значило бы выдумать факт. Но потребность
+    МЕРОПРИЯТИЯ складывалась из одних объектных снимков, и у ОМ с двумя
+    объектами и неразмеченным расчётом она молча падала в ноль: штаб собирал
+    людей по числу, которого нет, без отказа и без записи в журнал.
+
+    Красная проба к `recompute_event_stage`: до правки — 0 вместо 12.
+    """
+    event_id, _ = event_on_recon
+    visit = OpsSecurityEventVisitObject.objects.get(event_id=event_id)
+    second_object = make_object(code="OBJ-SECOND", name="Второй объект")
+    added = manager.post(
+        f"/api/ops/security-events/{event_id}/visit-objects/",
+        {"objectId": str(second_object.pk)},
+        format="json",
+    )
+    assert added.status_code in (200, 201), added.content
+    give_chief(manager, event_id)
+    _save_unmarked_posts(manager, event_id, [4, 8])
+
+    event = service.lock_event(event_id)
+    assert [int(v.force_need or 0) for v in event.visit_objects.all()] == [0, 0], (
+        "неразмеченные посты при двух объектах не принадлежат никому — "
+        "проба вакуумна, если объектам что-то насчиталось"
+    )
+
+    service.recompute_event_stage(event)
+    event.refresh_from_db()
+    assert event.force_need == 12, (
+        "потребность мероприятия обнулилась молча: расчёт на 12 человек цел, "
+        "а штабу показывают ноль"
+    )
+    assert visit.pk is not None
+
+
+def test_event_need_counts_unmarked_posts_beside_marked_ones(manager, event_on_recon):
+    """Размечена ЧАСТЬ постов — мероприятию считаются и они, и остальные.
+
+    Половинчатая разметка не должна прятать людей: пост, не отнесённый к
+    объекту, всё равно требует наряда, и мероприятие просит на него людей.
+    Двойного счёта при этом нет — у единственного объекта неразмеченные посты
+    уже сидят в его снимке, и складывать их второй раз нельзя.
+    """
+    event_id, _ = event_on_recon
+    visit = OpsSecurityEventVisitObject.objects.get(event_id=event_id)
+    second_object = make_object(code="OBJ-SECOND", name="Второй объект")
+    manager.post(
+        f"/api/ops/security-events/{event_id}/visit-objects/",
+        {"objectId": str(second_object.pk)},
+        format="json",
+    )
+    give_chief(manager, event_id)
+    resp = manager.patch(
+        f"/api/ops/security-events/{event_id}/recon/",
+        {
+            "checklist": [],
+            "sectorPosts": [
+                {
+                    "sector": "Сектор 1",
+                    "post": "Мой пост",
+                    "task": "",
+                    "need": 5,
+                    "shift": "",
+                    "requirements": "",
+                    "comment": "",
+                    "visitObjectId": str(visit.pk),
+                },
+                {
+                    "sector": "Сектор 2",
+                    "post": "Ничей пост",
+                    "task": "",
+                    "need": 7,
+                    "shift": "",
+                    "requirements": "",
+                    "comment": "",
+                },
+            ],
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+
+    event = service.recompute_event_stage(service.lock_event(event_id))
+    event.refresh_from_db()
+    assert event.force_need == 12, (
+        "мероприятие просит только за размеченный пост — ничей потерялся"
     )
