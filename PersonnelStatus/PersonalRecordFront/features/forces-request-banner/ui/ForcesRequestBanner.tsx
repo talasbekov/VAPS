@@ -11,15 +11,31 @@
  * человек искал бы глазами, что от него хотят.
  *
  * Адрес запроса — `?forcesRequest=<allocationId>`: его кладёт ссылка
- * уведомления (`notifications-api.ts`). Без параметра баннера нет — экран
- * статусов живёт своей жизнью и не должен показывать чужие заявки.
+ * уведомления (`notifications-api.ts`).
+ *
+ * 🔴 БЕЗ ПАРАМЕТРА БАННЕР ТОЖЕ РАБОТАЕТ (Plane №487). Раньше здесь стояло
+ * «нет параметра — нет баннера», и это оказалось дырой во всю цепочку:
+ * статус «Участие в ОМ» вручную запрещён (№427, сервер отвечает 422 и шлёт
+ * сюда), а сюда можно было попасть ТОЛЬКО по ссылке из уведомления. Человек,
+ * открывший «Статусы сотрудников» из меню, не мог поставить статус ничем —
+ * это и есть жалоба заказчика «с модуля не ставятся статус Участие на ОМ».
+ * Уведомление к тому же доставляется не всегда (идемпотентность рассылки по
+ * дню, получатели без фильтра прав — отдельные карточки), поэтому опираться
+ * на него одно нельзя. Теперь баннер сам спрашивает «что просят у моего
+ * управления».
  *
  * ЧТО ПОКАЗЫВАЕТ. Только СВОЮ строку управления: цифру раскладки
  * департамента и сколько уже проставлено «Участие в ОМ» (считает сервер по
- * статусам — `_with_directorate_progress`). Чекбоксы и создание статуса из
- * запроса — соседний шаг `[СБС-31]` (Plane №395); здесь баннер называет
- * задачу, отмечать людей пока приходится обычным диалогом статуса.
+ * статусам — `_with_directorate_progress`), плюс чекбоксы таблицы ниже →
+ * «Участие в ОМ» (`[СБС-31]`, Plane №395).
+ *
+ * НЕСКОЛЬКО ЗАПРОСОВ — ВЫБОР ЧИПАМИ В ТОМ ЖЕ БАННЕРЕ, а не отдельный экран:
+ * выделение всегда идёт в ОДИН запрос, и вопрос «в какой» — часть этого же
+ * действия. Пока не выбран — активного нет и кнопки выделения нет: молча
+ * подставить первый значило бы отправить людей не на то мероприятие. Когда
+ * запрос ровно один, выбирать нечего, и он подставляется сам.
  */
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Megaphone } from "lucide-react";
@@ -27,6 +43,7 @@ import { Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   useDirectorateForcesRequest,
+  useDirectorateForcesRequests,
   useSelectForRequest,
 } from "@/hooks/use-forces-request-banner";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
@@ -43,7 +60,18 @@ export function ForcesRequestBanner({
   onSelected?: () => void;
 }) {
   const searchParams = useSearchParams();
-  const allocationId = searchParams.get("forcesRequest");
+  const linkedId = searchParams.get("forcesRequest");
+  // Список нужен, только когда человек пришёл БЕЗ ссылки: по ссылке предмет
+  // разговора уже назван, и лишний запрос за соседними заявками ничего к
+  // нему не добавит.
+  const mine = useDirectorateForcesRequests({ enabled: linkedId === null });
+  const rows = mine.data?.results ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  // Порядок значим: ссылка из уведомления сильнее выбора и списка — человек
+  // пришёл по конкретному адресу. Дальше — его собственный выбор. И только
+  // когда запрос ровно один, он подставляется сам.
+  const allocationId =
+    linkedId ?? picked ?? (rows.length === 1 ? rows[0].allocationId : null);
   const request = useDirectorateForcesRequest(allocationId);
   const select = useSelectForRequest(allocationId);
   // 🔴 СТРОКА ТАБЛИЦЫ СТАТУСОВ АДРЕСУЕТ СОТРУДНИКА СОСТАВНЫМ КЛЮЧОМ
@@ -55,7 +83,64 @@ export function ForcesRequestBanner({
     .map((key) => key.split("-")[1])
     .filter((id): id is string => id !== undefined && !id.startsWith("vacant") && /^\d+$/.test(id));
 
-  if (allocationId === null) return null;
+  // Пока список едет — НЕ рисуем скелет: на «Статусах сотрудников» запроса
+  // чаще всего нет вовсе, и полоса-заглушка обещала бы содержимое, которого
+  // не будет. По ссылке скелет ниже уместен: там содержимое обещано адресом.
+  if (linkedId === null && (mine.isPending || rows.length === 0)) return null;
+
+  // 🔴 ВЫБОР ЗАПРОСА (Plane №487). Показывается, только когда запросов
+  // БОЛЬШЕ ОДНОГО: у одного выбирать нечего. Активный виден, а не угадывается
+  // (правило «Active State»), и до выбора кнопки выделения нет вовсе.
+  const chooser =
+    linkedId === null && rows.length > 1 ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground text-xs">
+          Запрос, по которому отмечаете людей:
+        </span>
+        {rows.map((row) => {
+          const active = row.allocationId === allocationId;
+          const need = row.directorates.reduce((sum, item) => sum + item.need, 0);
+          const assigned = row.directorates.reduce((sum, item) => sum + item.assigned, 0);
+          return (
+            <button
+              key={row.allocationId}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setPicked(row.allocationId)}
+              className={
+                "rounded-full border px-3 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+                (active
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "bg-background hover:bg-muted")
+              }
+            >
+              {row.code} · {assigned} из {need}
+            </button>
+          );
+        })}
+      </div>
+    ) : null;
+
+  if (allocationId === null) {
+    // Запросов несколько, ни один не выбран: баннер называет задачу и ждёт
+    // выбора — но НЕ подставляет первый сам.
+    return (
+      <section
+        role="status"
+        aria-label="Запросы на сбор сил"
+        data-slot="forces-request-chooser"
+        className="border-primary/40 bg-primary/5 space-y-2 rounded-lg border px-4 py-3"
+      >
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Megaphone className="text-primary-ink h-4 w-4" aria-hidden="true" />
+          <span className="font-semibold">
+            Вашему управлению адресованы запросы на сбор сил: {rows.length}
+          </span>
+        </div>
+        {chooser}
+      </section>
+    );
+  }
   if (request.isPending) {
     return (
       <div className="bg-muted h-14 w-full animate-pulse rounded-lg" aria-hidden />
@@ -90,6 +175,7 @@ export function ForcesRequestBanner({
           {data.dueAt ? ` · срок ${formatIsoDateTime(data.dueAt)}` : ""}
         </span>
       </div>
+      {chooser}
       <ul className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
         {data.directorates.map((row) => {
           const done = row.need > 0 && row.assigned >= row.need;

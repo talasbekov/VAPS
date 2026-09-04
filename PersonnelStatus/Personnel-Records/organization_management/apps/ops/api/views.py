@@ -304,6 +304,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_top_up": _FORCES_COMMAND_PERMISSION,
         "forces_department_requests": _FORCES_ALLOCATE_PERMISSION,
         "forces_department_request": _FORCES_ALLOCATE_PERMISSION,
+        "forces_directorate_requests": _STATUS_MANAGE_PERMISSION,
         "forces_directorate_request": _STATUS_MANAGE_PERMISSION,
         "forces_directorate_select": _STATUS_MANAGE_PERMISSION,
         "forces_directorate_split": _FORCES_ALLOCATE_PERMISSION,
@@ -977,6 +978,35 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             event_service.department_request_detail(allocation_id, allowed)
         )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="forces/directorate-requests",
+    )
+    def forces_directorate_requests(self, request):
+        """Список запросов, адресованных управлениям актора (Plane №487).
+
+        🔴 Имя пути РАЗВЕДЕНО с `forces/requests/…`: путь вида
+        `forces/requests/directorate/` попадает в маршрут ОДНОЙ заявки
+        (`allocation_id = "directorate"`) и отвечает 403 чужим правом
+        `forces.allocate`. Поймано первым же прогоном пробы — не рассуждением.
+
+        Гейт и область те же, что у одиночной ручки управления
+        (`status.manage`): список — тот же предмет, только без
+        идентификатора из письма.
+        """
+        from organization_management.apps.operations.services import (
+            PermissionService,
+        )
+        from organization_management.apps.ops.forces_requests import (
+            directorate_requests_view,
+        )
+
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _STATUS_MANAGE_PERMISSION
+        )
+        return Response({"results": directorate_requests_view(allowed)})
 
     @action(
         detail=False,
