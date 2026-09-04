@@ -2030,26 +2030,54 @@ export const securityEventsHandlers = [
           `${employee.name} уже назначен(а) на другой пост этого мероприятия.`
         );
       }
-      // мягкое предупреждение по требованию рейтинга — ПОСЛЕ жёстких правил:
-      // обходить обоснованием можно только назначение, которое иначе
-      // состоялось бы. Данных рейтинга в мок-слое нет — предупреждение
-      // «данных нет», не молчаливое «соответствует».
+      // мягкие предупреждения — ПОСЛЕ жёстких правил: обходить обоснованием
+      // можно только назначение, которое иначе состоялось бы. Собираются в
+      // ОДИН список и поднимаются ОДНИМ 409 — как на сервере.
       const overrideReason =
         body.override === true ? (body.override_reason ?? "").trim() : "";
+      const conflicts: {
+        conflict_code: string;
+        severity: string;
+        employee_id: string;
+        message: string;
+      }[] = [];
+      // Данных рейтинга в мок-слое нет — предупреждение «данных нет», не
+      // молчаливое «соответствует».
       let ratingConflictMessage: string | null = null;
       if (post.minRating !== null) {
         ratingConflictMessage =
           "Данных рейтинга для проверки требования поста нет.";
-        if (overrideReason === "") {
-          return softConflict(ratingConflictMessage, [
-            {
-              conflict_code: "RATING_DATA_MISSING",
-              severity: "WARNING",
-              employee_id: body.employeeId,
-              message: ratingConflictMessage,
-            },
-          ]);
-        }
+        conflicts.push({
+          conflict_code: "RATING_DATA_MISSING",
+          severity: "WARNING",
+          employee_id: body.employeeId,
+          message: ratingConflictMessage,
+        });
+      }
+      // Усиление поста сверх расчёта (Plane №414) — мягкий конфликт, как на
+      // сервере: мок, молчащий об этом, зеленил бы экран, у которого на живом
+      // стенде открывается диалог обоснования.
+      const need = Math.max(post.need ?? 0, 0);
+      const taken = event.placementAssignments.filter(
+        (a) => a.postId === body.postId
+      ).length;
+      let needConflictMessage: string | null = null;
+      if (taken >= need) {
+        needConflictMessage = `Расчёт поста — ${need}, уже назначено ${taken}. Укажите обоснование усиления.`;
+        conflicts.push({
+          conflict_code: "OVER_NEED",
+          severity: "WARNING",
+          employee_id: body.employeeId,
+          message: needConflictMessage,
+        });
+      }
+      if (conflicts.length > 0 && overrideReason === "") {
+        return softConflict(
+          conflicts.length === 1
+            ? conflicts[0].message
+            : "Назначение требует обоснования.",
+          conflicts
+        );
       }
       const assignment: PlacementAssignment = {
         id: `${event.id}-assignment-${event.placementAssignments.length + 1}`,
@@ -2076,6 +2104,9 @@ export const securityEventsHandlers = [
         // обоснование сохраняется только при реально возникшем предупреждении
         ratingOverrideReason:
           ratingConflictMessage === null ? null : overrideReason,
+        // Обоснование усиления — своё поле (Plane №414), не общее с рейтингом.
+        needOverrideReason:
+          needConflictMessage === null ? null : overrideReason,
       };
       return HttpResponse.json(
         saveEvent({
@@ -2879,6 +2910,7 @@ export const securityEventsHandlers = [
         acknowledgedAt: null,
         // замена в ходе проведения — не расстановка: обхода не было
         ratingOverrideReason: null,
+        needOverrideReason: null,
       };
       const journalEntry: JournalEntry = {
         id: `${event.id}-journal-${event.journalEntries.length + 1}`,

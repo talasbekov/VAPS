@@ -226,9 +226,18 @@ def test_a_returned_placement_is_editable_again(manager, approver, staffed_event
     manager.post(f"{base}placement/complete/")
     _send_and_return(manager, approver, base)
 
+    # Пост расписан фикстурой полностью, и добавка сверх расчёта — усиление
+    # (Plane №414). Пробу интересует РАЗМОРОЗКА правки после возврата, а не
+    # правило усиления, поэтому обоснование даётся сразу: иначе проба
+    # проверяла бы 409 вместо того, ради чего написана.
     resp = manager.post(
         f"{base}placement/assign/",
-        {"postId": posts[0]["id"], "employeeId": str(make_employee().pk)},
+        {
+            "postId": posts[0]["id"],
+            "employeeId": str(make_employee().pk),
+            "override": True,
+            "override_reason": "Усиление поста: проба правит расстановку после возврата",
+        },
         format="json",
     )
 

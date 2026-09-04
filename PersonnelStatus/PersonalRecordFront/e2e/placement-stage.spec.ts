@@ -886,6 +886,102 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     }
   })
 
+  test('пост, набранный по расчёту, просит обоснование усиления', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * `OVER_NEED` (Plane №414, решение заказчика 04.09.2026): поставить на пост
+     * больше людей, чем в расчёте, МОЖНО, но сервер спрашивает почему. До
+     * правки пост с потребностью 1 принимал пятерых молча, и «назначено» в
+     * реестре нельзя было читать как факт.
+     *
+     * Проба ведёт путь ЧЕЛОВЕКОМ, а не ручкой: набирает пост до расчёта через
+     * API (это подготовка, а не предмет), тянет лишнего кандидата мышью и
+     * ждёт ДИАЛОГ обоснования. Красная проверка — снять гард `taken >= need`
+     * в `assign_placement`: тогда назначение проходит молча и диалога нет.
+     *
+     * Берётся пост с НАИМЕНЬШИМ расчётом: состав стенда невелик, и на посту
+     * «на четверых» пробе не хватило бы людей — она скипалась бы, а скип
+     * читается как зелень.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const target = await placementEventWithRoster(request, auth, token)
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
+    const eventId = target!.id
+    type Row = { id: string; postId: string; employeeId: string }
+    const fresh = async () =>
+      (await (
+        await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+      ).json()) as {
+        placementAssignments: Row[]
+        reconSectorPosts: { id: string; need: number }[]
+        forceRoster: { employeeId: string }[]
+      }
+    const before = new Set((await fresh()).placementAssignments.map((row) => row.id))
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${eventId}/`)
+      const tree = page.getByRole('complementary', { name: 'Дерево постов' })
+      await expect(tree.locator('li[data-drop-post]').first()).toBeVisible()
+      const shown = await tree.locator('li[data-drop-post]').evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-drop-post')),
+      )
+
+      const state = await fresh()
+      const cheapest = state.reconSectorPosts
+        .filter((row) => shown.includes(row.id))
+        .sort((a, b) => Number(a.need ?? 0) - Number(b.need ?? 0))[0]
+      requireFixture(cheapest, 'пост расчёта в дереве')
+      const postId = cheapest!.id
+      const need = Number(cheapest!.need ?? 0)
+
+      // Подготовка: добираем ИМЕННО ЭТОТ пост до расчёта.
+      const spare = state.forceRoster
+        .map((member) => member.employeeId)
+        .filter((id) => !state.placementAssignments.some((row) => row.employeeId === id))
+      let taken = state.placementAssignments.filter((row) => row.postId === postId).length
+      for (const employeeId of spare) {
+        if (taken >= need) break
+        const res = await request.post(
+          `${API}/api/ops/security-events/${eventId}/placement/assign/`,
+          {
+            headers: auth,
+            data: {
+              postId,
+              employeeId,
+              override: true,
+              override_reason: 'Добор поста до расчёта пробой №414',
+            },
+          },
+        )
+        if (res.ok()) taken += 1
+      }
+      expect(taken, 'пост не набран до расчёта — проверять усиление не на чем').toBeGreaterThanOrEqual(need)
+
+      await page.reload()
+      const candidate = page.locator('aside button', { hasText: 'Совпадение' }).first()
+      await expect(candidate).toBeVisible({ timeout: 25_000 })
+      await candidate.dragTo(tree.locator(`li[data-drop-post="${postId}"]`))
+
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible({ timeout: 15_000 })
+      await expect(dialog).toContainText('Расчёт поста')
+      await expect(dialog).toContainText('обоснование усиления')
+      await page.screenshot({ path: '414-over-need-dialog.png' })
+    } finally {
+      for (const row of (await fresh()).placementAssignments) {
+        if (before.has(row.id)) continue
+        await request.delete(
+          `${API}/api/ops/security-events/${eventId}/placement/${encodeURIComponent(row.id)}/`,
+          { headers: auth },
+        )
+      }
+    }
+  })
+
   test('после возврата замечания стоят над деревом, клик подсвечивает пост', async ({
     page,
   }) => {

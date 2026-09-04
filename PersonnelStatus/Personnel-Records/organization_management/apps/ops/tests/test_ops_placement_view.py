@@ -262,9 +262,18 @@ def test_post_has_exactly_one_senior(manager):  # noqa: F811
     posts = manager.get(base).json()["placementAssignments"]
     post_id = next(a["postId"] for a in posts if a["id"] == ids[0])
     third = make_employee(last_name="Третий")
+    # Пост уже занят, а расчёт у него — один человек: с Plane №414 второй на
+    # посту это УСИЛЕНИЕ, и сервер спрашивает обоснование. Проба ставит его
+    # осознанно (правило «один старший на пост» проверять нечем, если на посту
+    # один человек), поэтому идёт сразу с обоснованием, а не подгоняет расчёт.
     resp = manager.post(
         f"{base}placement/assign/",
-        {"postId": post_id, "employeeId": str(third.pk)},
+        {
+            "postId": post_id,
+            "employeeId": str(third.pk),
+            "override": True,
+            "override_reason": "Усиление поста: проба ставит второго на пост",
+        },
         format="json",
     )
     assert resp.status_code == 200, resp.json()
@@ -329,9 +338,16 @@ def test_sector_senior_is_written_to_the_audit_log(manager):  # noqa: F811
         if a["id"] == ids[0]
     )
     third = make_employee(last_name="Третий")
+    # Второй на том же посту — усиление сверх расчёта (Plane №414): с
+    # обоснованием, как и в пробе про единственность старшего.
     third_id = manager.post(
         f"{base}placement/assign/",
-        {"postId": post_id, "employeeId": str(third.pk)},
+        {
+            "postId": post_id,
+            "employeeId": str(third.pk),
+            "override": True,
+            "override_reason": "Усиление поста: проба ставит второго на пост",
+        },
         format="json",
     ).json()["placementAssignments"][-1]["id"]
     manager.post(f"{base}placement/{ids[0]}/senior/", {}, format="json")

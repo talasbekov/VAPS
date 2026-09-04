@@ -4014,31 +4014,70 @@ def assign_placement(
             f"{personnel_display_name(employee)} уже назначен(а) на другой "
             "пост этого мероприятия.",
         )
-    # мягкое предупреждение по требованию рейтинга — ПОСЛЕ жёстких правил:
-    # обходить обоснованием можно только назначение, которое иначе состоялось
-    # бы. Данных рейтинга у бэка нет — предупреждение «данных нет», не
-    # молчаливое «соответствует».
+    # мягкие предупреждения — ПОСЛЕ жёстких правил: обходить обоснованием
+    # можно только назначение, которое иначе состоялось бы. Собираются В ОДИН
+    # список и поднимаются ОДНИМ 409: два подряд отказа заставили бы человека
+    # обосновываться дважды за одно действие, а диалог у экрана один.
     reason = str(override_reason or "").strip() if override is True else ""
+    conflicts = []
+
+    # Данных рейтинга у бэка нет — предупреждение «данных нет», не молчаливое
+    # «соответствует».
     rating_conflict = None
     if post.get("minRating") is not None:
         rating_conflict = "Данных рейтинга для проверки требования поста нет."
-        if reason == "":
-            raise DomainError(
-                "SOFT_CONFLICT_DETECTED",
-                409,
-                detail={
-                    "conflicts": [
-                        {
-                            "conflict_code": "RATING_DATA_MISSING",
-                            "severity": "WARNING",
-                            "employee_id": employee_key,
-                            "message": rating_conflict,
-                        }
-                    ]
-                },
-                overridable=True,
-                message=rating_conflict,
-            )
+        conflicts.append(
+            {
+                "conflict_code": "RATING_DATA_MISSING",
+                "severity": "WARNING",
+                "employee_id": employee_key,
+                "message": rating_conflict,
+            }
+        )
+
+    # УСИЛЕНИЕ ПОСТА СВЕРХ РАСЧЁТА (Plane №414). Решение заказчика 04.09.2026
+    # из трёх вариантов: не жёсткий запрет и не молчание, а вопрос «почему».
+    # Ставить на пост больше людей, чем в расчёте, командир может осознанно —
+    # запрет запер бы расстановку и заставил бы править расчёт задним числом,
+    # чтобы обойти систему. Молчание же делало число «назначено» в реестре
+    # нечитаемым: до этой правки пост с потребностью 1 принимал пятерых, и
+    # реестр честно печатал «потребность 1, назначено 5», не объясняя, ошибка
+    # это или норма.
+    need = max(int(post.get("need") or 0), 0)
+    taken = sum(
+        1
+        for a in event.placement_assignments
+        if str(a.get("postId")) == str(post_id)
+    )
+    need_conflict = None
+    if taken >= need:
+        need_conflict = (
+            f"Расчёт поста — {need}, уже назначено {taken}. "
+            "Укажите обоснование усиления."
+        )
+        conflicts.append(
+            {
+                "conflict_code": "OVER_NEED",
+                "severity": "WARNING",
+                "employee_id": employee_key,
+                "message": need_conflict,
+            }
+        )
+
+    if conflicts and reason == "":
+        raise DomainError(
+            "SOFT_CONFLICT_DETECTED",
+            409,
+            detail={"conflicts": conflicts},
+            overridable=True,
+            # Заголовок диалога — сообщение единственного конфликта; при двух
+            # сразу общее, а сами конфликты экран печатает списком ниже.
+            message=(
+                conflicts[0]["message"]
+                if len(conflicts) == 1
+                else "Назначение требует обоснования."
+            ),
+        )
     assignment = {
         "id": f"assignment-{len(event.placement_assignments) + 1}-{_now_iso()}",
         "postId": post_id,
@@ -4055,6 +4094,11 @@ def assign_placement(
         "acknowledgedAt": None,
         # обоснование сохраняется только при реально возникшем предупреждении
         "ratingOverrideReason": None if rating_conflict is None else reason,
+        # Обоснование усиления — СВОЁ поле, а не общее с рейтингом (Plane
+        # №414): у сводки расстановки уже есть счётчик «назначений с обходом
+        # предупреждения по рейтингу», и сложить в него усиления значило бы
+        # смешать два разных факта в одном числе.
+        "needOverrideReason": None if need_conflict is None else reason,
     }
     event.placement_assignments = [*event.placement_assignments, assignment]
     event.save(update_fields=["placement_assignments", "updated_at"])
@@ -5421,8 +5465,10 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
         # ровно тогда, когда замену и делают: в день мероприятия.
         "sectionCode": outgoing.get("sectionCode"),
         "acknowledgedAt": None,
-        # замена в ходе проведения — не расстановка: обхода не было
+        # замена в ходе проведения — не расстановка: обхода не было. Усиления
+        # тоже: замена меняет человека, а не число людей на посту (Plane №414).
         "ratingOverrideReason": None,
+        "needOverrideReason": None,
     }
     journal_entry = {
         "id": f"journal-{len(event.journal_entries) + 1}-{_now_iso()}",

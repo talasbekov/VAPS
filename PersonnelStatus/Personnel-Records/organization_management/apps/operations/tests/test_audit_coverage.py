@@ -919,12 +919,16 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         actor=ACTOR,
     )
     om.refresh_from_db()
+    # Пост уже занят выше по пробе, и расчёт у него исчерпан: второй человек —
+    # усиление сверх расчёта (Plane №414). Пробе нужен ФАКТ операции
+    # замещающего ради записи в журнал, а не спор о расчёте, поэтому
+    # обоснование даётся сразу.
     event_service.assign_placement(
         om.pk,
         post_id=om.recon_sector_posts[0]["id"],
         employee_id=str(deputy_employee.pk),
-        override=None,
-        override_reason=None,
+        override=True,
+        override_reason="Усиление поста: операция замещающего в пробе аудита",
         deputy=deputy_employee,
     )
     om.refresh_from_db()
