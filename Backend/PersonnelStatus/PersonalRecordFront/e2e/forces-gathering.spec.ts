@@ -784,12 +784,13 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // До нажатия сектор старшего НЕ имеет — иначе ассерт ниже вечнозелёный.
     await expect(main).toContainText('Старший: не назначен')
 
-    await main.getByRole('button', { name: 'Старший сектора' }).click()
+    // Чип «Старший поста» (`[РАС-03]`, Plane №445): состояние — aria-pressed.
+    await main.getByRole('button', { name: /^Старший поста: / }).first().click()
 
     await expect(main).toContainText(`Старший: ${name}`, { timeout: 15_000 })
-    await expect(main.getByRole('button', { name: 'Снять старшего' })).toBeVisible()
+    await expect(main.getByRole('button', { name: /^Старший поста: / }).first()).toHaveAttribute('aria-pressed', 'true')
 
-    await main.getByRole('button', { name: 'Снять старшего' }).click()
+    await main.getByRole('button', { name: /^Старший поста: / }).first().click()
     await expect(main).toContainText('Старший: не назначен', { timeout: 15_000 })
   })
 
@@ -895,7 +896,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // Объяснения автоподбора ДО нажатия нет — иначе ассерт ниже вечнозелёный.
     await expect(main).not.toContainText('Рекомендация автоподбора')
 
-    await main.getByRole('button', { name: 'Сформировать автоматически' }).click()
+    await main.getByRole('button', { name: 'Распределить автоматически' }).click()
 
     await expect(main).toContainText('Рекомендация автоподбора', { timeout: 20_000 })
     await expect(main).toContainText('совпадение')

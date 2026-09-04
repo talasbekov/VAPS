@@ -2097,15 +2097,14 @@ export const securityEventsHandlers = [
         senior?: boolean;
       };
       const senior = body.senior ?? true;
-      const sectorOf = (assignmentPostId: string) =>
-        event.reconSectorPosts.find((p) => p.id === assignmentPostId)?.sector ?? "";
       return HttpResponse.json(
         saveEvent({
           ...event,
           placementAssignments: event.placementAssignments.map((a) =>
             a.id === assignmentId
               ? { ...a, isSectorSenior: senior }
-              : sectorOf(a.postId) === post.sector
+              : // Старший — на ПОСТ, как у сервера (`[РАС-03]`, Plane №445).
+                a.postId === post.id
                 ? { ...a, isSectorSenior: false }
                 : a
           ),

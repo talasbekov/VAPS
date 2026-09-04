@@ -255,9 +255,20 @@ def two_assignments_in_one_sector(manager):  # noqa: F811
     return base, ids, sector
 
 
-def test_sector_has_exactly_one_senior(manager):  # noqa: F811
-    """Назначение старшим снимает прежнего: старший на сектор ОДИН."""
+def test_post_has_exactly_one_senior(manager):  # noqa: F811
+    """Назначение старшим снимает прежнего НА ТОМ ЖЕ ПОСТУ: старший на пост
+    ОДИН (`[РАС-03]`, Plane №445)."""
     base, ids, _ = two_assignments_in_one_sector(manager)
+    posts = manager.get(base).json()["placementAssignments"]
+    post_id = next(a["postId"] for a in posts if a["id"] == ids[0])
+    third = make_employee(last_name="Третий")
+    resp = manager.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(third.pk)},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.json()
+    third_id = resp.json()["placementAssignments"][-1]["id"]
 
     first = manager.post(f"{base}placement/{ids[0]}/senior/", {}, format="json")
     assert first.status_code == 200, first.json()
@@ -265,14 +276,28 @@ def test_sector_has_exactly_one_senior(manager):  # noqa: F811
         a["id"]: a["isSectorSenior"] for a in first.json()["placementAssignments"]
     }
     assert seniors[ids[0]] is True
-    assert seniors[ids[1]] is False
+    assert seniors[third_id] is False
 
+    second = manager.post(f"{base}placement/{third_id}/senior/", {}, format="json")
+
+    seniors = {
+        a["id"]: a["isSectorSenior"] for a in second.json()["placementAssignments"]
+    }
+    assert seniors[ids[0]] is False, "на посту оказалось два старших"
+    assert seniors[third_id] is True
+
+
+def test_sector_keeps_a_senior_per_post(manager):  # noqa: F811
+    """Старшие РАЗНЫХ постов одного сектора друг друга не снимают: до №445
+    признак был один на сектор, и второй старший сносил первого."""
+    base, ids, _ = two_assignments_in_one_sector(manager)
+    manager.post(f"{base}placement/{ids[0]}/senior/", {}, format="json")
     second = manager.post(f"{base}placement/{ids[1]}/senior/", {}, format="json")
 
     seniors = {
         a["id"]: a["isSectorSenior"] for a in second.json()["placementAssignments"]
     }
-    assert seniors[ids[0]] is False, "в секторе оказалось два старших"
+    assert seniors[ids[0]] is True, "старший соседнего поста снят — правило снова «на сектор»"
     assert seniors[ids[1]] is True
 
 
@@ -296,8 +321,21 @@ def test_sector_senior_is_written_to_the_audit_log(manager):  # noqa: F811
     from organization_management.apps.operations.models_audit import OpsAuditLog
 
     base, ids, sector = two_assignments_in_one_sector(manager)
+    # Подмена — на ТОМ ЖЕ ПОСТУ (`[РАС-03]`, Plane №445): старший соседнего
+    # поста прежнего не снимает, и следа подмены не оставил бы.
+    post_id = next(
+        a["postId"]
+        for a in manager.get(base).json()["placementAssignments"]
+        if a["id"] == ids[0]
+    )
+    third = make_employee(last_name="Третий")
+    third_id = manager.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(third.pk)},
+        format="json",
+    ).json()["placementAssignments"][-1]["id"]
     manager.post(f"{base}placement/{ids[0]}/senior/", {}, format="json")
-    manager.post(f"{base}placement/{ids[1]}/senior/", {}, format="json")
+    manager.post(f"{base}placement/{third_id}/senior/", {}, format="json")
 
     rows = list(
         OpsAuditLog.objects.filter(action="PLACEMENT_SECTOR_SENIOR_SET").order_by("id")

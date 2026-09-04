@@ -44,7 +44,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Trash2 } from "lucide-react";
+import { GripVertical, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
 import { RatingBriefDialog } from "./RatingBriefDialog";
@@ -106,6 +106,30 @@ const RATE_OPTIONS = [
 
 type SortOption = (typeof SORT_OPTIONS)[number];
 type RateOption = (typeof RATE_OPTIONS)[number];
+
+/** Что везёт перетаскивание (`[РАС-03]`, Plane №445): кандидат из пула — только
+ * сотрудник; строка с поста — ещё и её id, пост, роль и секция, чтобы на новом
+ * посту назначение пересоздалось без потерь. */
+type DragPayload = {
+  employeeId: string;
+  assignmentId?: string;
+  fromPostId?: string;
+  roleCode?: string | null;
+  sectionCode?: string | null;
+};
+const DRAG_MIME = "application/x-placement";
+
+function readDragPayload(e: React.DragEvent): DragPayload | null {
+  try {
+    const raw =
+      e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData("text/plain");
+    if (raw === "") return null;
+    const parsed = JSON.parse(raw) as Partial<DragPayload>;
+    return typeof parsed.employeeId === "string" ? (parsed as DragPayload) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function PlacementStage({ event }: { event: SecurityEvent }) {
   // Шаг всегда открывается ДОСКОЙ подбора (задача заказчика Plane №110: «убери
@@ -594,6 +618,83 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     assignedIds.size,
   ]);
 
+  // ── Перетаскивание и окно «Роль и секция…» (`[РАС-03]`, Plane №445) ──────
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [editing, setEditing] = useState<PlacementAssignment | null>(null);
+
+  function payloadOfAssignment(assignment: PlacementAssignment): DragPayload {
+    return {
+      employeeId: assignment.employeeId,
+      assignmentId: assignment.id,
+      fromPostId: assignment.postId,
+      roleCode: assignment.roleCode,
+      sectionCode: assignment.sectionCode,
+    };
+  }
+  function startDrag(e: React.DragEvent, payload: DragPayload): void {
+    const raw = JSON.stringify(payload);
+    e.dataTransfer.setData(DRAG_MIME, raw);
+    // Второй тип — для браузеров, которые свой MIME при переносе теряют.
+    e.dataTransfer.setData("text/plain", raw);
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function dragOverPost(e: React.DragEvent, postId: string): void {
+    if (!access.can(PLACEMENT_MANAGE)) return;
+    const types = Array.from(e.dataTransfer.types);
+    if (!types.includes(DRAG_MIME) && !types.includes("text/plain")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dropTarget !== postId) setDropTarget(postId);
+  }
+  function leaveDrop(postId: string): void {
+    setDropTarget((current) => (current === postId ? null : current));
+  }
+  async function onDropPost(e: React.DragEvent, postId: string): Promise<void> {
+    e.preventDefault();
+    setDropTarget(null);
+    const payload = readDragPayload(e);
+    if (payload === null || !access.can(PLACEMENT_MANAGE)) return;
+    await placePayload(postId, payload);
+  }
+  /** Кандидат из пула — назначение; строка с другого поста — снятие и
+   * назначение заново ПО ОЧЕРЕДИ, с ролью и секцией (Plane №242: всё, что не
+   * передано, теряется молча). */
+  async function placePayload(postId: string, payload: DragPayload): Promise<void> {
+    if (payload.assignmentId === undefined) {
+      assign.mutate({ postId, employeeId: payload.employeeId });
+      return;
+    }
+    if (payload.fromPostId === postId) return;
+    await unassign.mutateAsync({ assignmentId: payload.assignmentId });
+    await assign.mutateAsync({
+      postId,
+      employeeId: payload.employeeId,
+      ...(payload.roleCode ? { roleCode: payload.roleCode } : {}),
+      ...(payload.sectionCode ? { sectionCode: payload.sectionCode } : {}),
+    });
+  }
+  async function saveEdit(next: {
+    roleCode: string;
+    sectionCode: string;
+    postId: string;
+  }): Promise<void> {
+    if (editing === null) return;
+    const changed =
+      next.roleCode !== (editing.roleCode ?? "") ||
+      next.sectionCode !== (editing.sectionCode ?? "") ||
+      next.postId !== editing.postId;
+    if (changed) {
+      await unassign.mutateAsync({ assignmentId: editing.id });
+      await assign.mutateAsync({
+        postId: next.postId,
+        employeeId: editing.employeeId,
+        ...(next.roleCode === "" ? {} : { roleCode: next.roleCode }),
+        ...(next.sectionCode === "" ? {} : { sectionCode: next.sectionCode }),
+      });
+    }
+    setEditing(null);
+  }
+
   /** Автоподбор: реальные назначения свободных кандидатов на недобранные посты. */
   function autoFill(): void {
     const taken = new Set(assignedIds);
@@ -694,7 +795,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
               title={access.reason(PLACEMENT_MANAGE)}
               onClick={autoFill}
             >
-              Сформировать автоматически
+              Распределить автоматически
             </Button>
             <Button
               type="button"
@@ -705,14 +806,10 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 complete.mutate({ visitObjectId: scope.visit?.id })
               }
             >
-              {complete.isPending ? "Завершение…" : "Завершить этап и перейти далее"}
+              {complete.isPending ? "Завершение…" : "Завершить расстановку"}
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Назначения уходят на сервер сразу — отдельного сохранения и версий
-          расстановки у мероприятия нет.
-        </p>
 
         {/* Предупреждение этапа из прототипа: одной строкой то, что мешает
             завершить расстановку. Считается по тем же числам, что и сводка
@@ -768,9 +865,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     0
                   );
                   const sectorFull = sectorAssigned >= sectorNeed;
-                  const sectorSenior = sector.posts
+                  // Старший — на ПОСТ (`[РАС-03]`, Plane №445): в секторе их
+                  // столько, сколько постов со старшим, и строка перечисляет
+                  // всех.
+                  const sectorSeniors = sector.posts
                     .flatMap((post) => assignmentsOf(post.id))
-                    .find((a) => a.isSectorSenior);
+                    .filter((a) => a.isSectorSenior);
                   return (
                   <div key={sector.name} className="mb-2">
                     <p className="flex items-center justify-between gap-2 px-1 py-1 text-xs font-semibold">
@@ -790,9 +890,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         открыт конкретный пост. */}
                     <p className="px-1 pb-1 text-[10px] text-muted-foreground">
                       Старший:{" "}
-                      {sectorSenior === undefined
+                      {sectorSeniors.length === 0
                         ? "не назначен"
-                        : sectorSenior.employeeName}
+                        : sectorSeniors.map((a) => a.employeeName).join(", ")}
                     </p>
                     <ul className="flex flex-col gap-1">
                       {sector.posts.map((post) => {
@@ -800,7 +900,18 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         const count = placed.length;
                         const full = count >= post.need;
                         return (
-                          <li key={post.id} className="flex items-start gap-1">
+                          <li
+                            key={post.id}
+                            data-drop-post={post.id}
+                            // Пост в дереве — цель перетаскивания (`[РАС-03]`):
+                            // кандидата из пула или строку с другого поста.
+                            onDragOver={(e) => dragOverPost(e, post.id)}
+                            onDragLeave={() => leaveDrop(post.id)}
+                            onDrop={(e) => void onDropPost(e, post.id)}
+                            className={`flex items-start gap-1 rounded-md ${
+                              dropTarget === post.id ? "bg-accent ring-2 ring-primary" : ""
+                            }`}
+                          >
                             <button
                               type="button"
                               id={`placement-post-${post.id}`}
@@ -859,21 +970,18 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                             </button>
                             {/* СНЯТИЕ ЛИШНЕГО ПОСТА (Plane №259). Кнопка
                                 показывается только тем, кто ведёт расстановку,
-                                и только у ПУСТОГО поста: занятый снимать
-                                нельзя — правило заказчика, и disabled с
-                                причиной честнее, чем отказ сервера после
-                                клика. Сервер это правило всё равно проверяет:
-                                кнопка — подсказка, а не защита. */}
-                            {access.can(PLACEMENT_MANAGE) && (
+                                и только у ПУСТОГО поста: у занятого корзина НЕ
+                                РЕНДЕРИТСЯ вовсе (`[РАС-02]`, Plane №445) — до
+                                этого она стояла выключенной с подсказкой, и
+                                занятый пост выглядел «почти удаляемым». Сервер
+                                правило всё равно проверяет: кнопка — подсказка,
+                                а не защита. */}
+                            {access.can(PLACEMENT_MANAGE) && count === 0 && (
                               <button
                                 type="button"
                                 aria-label={`Снять пост ${post.post}`}
-                                title={
-                                  count > 0
-                                    ? `На посту стоит ${count} чел. — сначала снимите их`
-                                    : "Снять пост с расстановки"
-                                }
-                                disabled={count > 0 || removePost.isPending}
+                                title="Снять пост с расстановки"
+                                disabled={removePost.isPending}
                                 onClick={() => setPostToRemove(post)}
                                 className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
                               >
@@ -964,19 +1072,31 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   </div>
                 )}
 
-                <ul className="mb-2 flex flex-col gap-1.5">
+                {/* СЛОТЫ ПОСТА по `[РАС-03]` (Plane №445): строка на каждого
+                    назначенного и пустой слот «+ Назначить» на каждое свободное
+                    место. Селектов «Роль / Секция / Переместить» в строке
+                    больше нет: перемещение — перетаскиванием строки на пост в
+                    дереве, роль и секция — в окне «Роль и секция…», где есть и
+                    смена поста с клавиатуры (WCAG 2.2: у перетаскивания обязана
+                    быть альтернатива одним указателем). Смена роли, секции и
+                    поста по-прежнему = снятие и назначение заново, по очереди
+                    (Plane №239/№242): своей операции «сменить» у бэка нет. */}
+                <ul className="mb-2 flex flex-col gap-1.5" aria-label="Слоты поста">
                   {assignmentsOf(selected.id).map((assignment) => (
                     <li
                       key={assignment.id}
-                      // Строка строго ОДНОГО назначения (Plane №415): пост без
-                      // предела численности может нести десятки одноимённых
-                      // сотрудников (тот же дефект, что и в №414), и
-                      // `aria-label` вида «Роль наряда: Иванов И.» на такой
-                      // странице не единственен. Пробам нужен якорь, который
-                      // не путает строки, — id назначения, а не имя.
+                      // Строка строго ОДНОГО назначения (Plane №415): якорь для
+                      // проб — id назначения, а не имя (оно не единственно).
                       data-testid={`placement-assignment-${assignment.id}`}
+                      draggable={access.can(PLACEMENT_MANAGE)}
+                      onDragStart={(e) => startDrag(e, payloadOfAssignment(assignment))}
+                      onDragEnd={() => setDropTarget(null)}
                       className="flex flex-wrap items-start gap-2 rounded-md border p-2 text-sm"
                     >
+                      <GripVertical
+                        aria-hidden="true"
+                        className="mt-2 h-4 w-4 shrink-0 cursor-grab text-muted-foreground"
+                      />
                       <Initials
                         name={assignment.employeeName}
                         tone={statusTone(assignment.statusCode)}
@@ -1086,186 +1206,84 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           </span>
                         )}
                       </span>
-                      {/* Действия — колонкой справа, как в прототипе: в ряд
-                          они съедают ширину у имени с подразделением, и то
-                          обрезалось на «Отдел охраны объек…». */}
-                      <span className="flex shrink-0 flex-col gap-1">
-                      {/* Старший сектора — ОДИН: сервер снимает прежнего сам,
-                          и кнопка не спрашивает «а кто сейчас старший». */}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-2 text-xs"
-                        disabled={setSenior.isPending || !access.can(PLACEMENT_MANAGE)}
-                        aria-disabled={!access.can(PLACEMENT_MANAGE)}
-                        title={access.reason(PLACEMENT_MANAGE)}
-                        onClick={() =>
-                          setSenior.mutate({
-                            assignmentId: assignment.id,
-                            senior: !assignment.isSectorSenior,
-                          })
-                        }
-                      >
-                        {assignment.isSectorSenior
-                          ? "Снять старшего"
-                          : "Старший сектора"}
-                      </Button>
-                      {/* Роль наряда: чем человек идёт в наряде, а не что
-                          делает на посту (Plane №239). Смена роли = снятие и
-                          назначение заново — своей операции «сменить роль» у
-                          бэка нет, как и у «переместить» рядом; ознакомление
-                          при этом сбрасывается, и это видно по строке. */}
-                      {placementRoles.data && placementRoles.data.length > 0 && (
-                        <select
-                          aria-label={`Роль наряда: ${assignment.employeeName}`}
-                          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                          value={assignment.roleCode ?? ""}
-                          disabled={
-                            assign.isPending ||
-                            unassign.isPending ||
-                            !access.can(PLACEMENT_MANAGE)
+                      {/* Действия — СВОЕЙ строкой под содержимым (снимок №445):
+                          колонкой справа они делили ширину с бейджами статуса,
+                          и «Привлечён на мероприятие (наряд)» налезал на
+                          кнопки. */}
+                      <span className="flex w-full flex-wrap items-center justify-end gap-1">
+                        {/* Чип-переключатель «Старший поста» (`[РАС-03]`): старший
+                            на пост ОДИН, сервер снимает прежнего сам. Состояние
+                            — `aria-pressed`, а не второй текст кнопки. */}
+                        <button
+                          type="button"
+                          aria-pressed={assignment.isSectorSenior}
+                          aria-label={`Старший поста: ${assignment.employeeName}`}
+                          disabled={setSenior.isPending || !access.can(PLACEMENT_MANAGE)}
+                          title={access.reason(PLACEMENT_MANAGE) || undefined}
+                          onClick={() =>
+                            setSenior.mutate({
+                              assignmentId: assignment.id,
+                              senior: !assignment.isSectorSenior,
+                            })
                           }
-                          aria-disabled={!access.can(PLACEMENT_MANAGE)}
-                          title={access.reason(PLACEMENT_MANAGE)}
-                          onChange={async (e) => {
-                            const nextRole = e.target.value;
-                            if (nextRole === (assignment.roleCode ?? "")) return;
-                            // 🔴 ПО ОЧЕРЕДИ, а не двумя `mutate` подряд:
-                            // назначение и снятие идут в одну и ту же строку
-                            // расстановки, и запущенные разом они гонятся —
-                            // снятие успевает удалить только что созданное
-                            // назначение, а роль на сервер не доезжает вовсе
-                            // (поймано живой пробой, а не типами).
-                            await unassign.mutateAsync({ assignmentId: assignment.id });
-                            await assign.mutateAsync({
-                              postId: assignment.postId,
-                              employeeId: assignment.employeeId,
-                              ...(nextRole === "" ? {} : { roleCode: nextRole }),
-                              // 🔴 СЕКЦИЯ ПЕРЕЕЗЖАЕТ ВМЕСТЕ (Plane №242).
-                              // Смена роли — это снятие и назначение заново, и
-                              // всё, что не передано, теряется. Человек менял
-                              // бы роль и молча лишался секции: место в бланке
-                              // опустело бы, а причина не была бы видна нигде.
-                              ...(assignment.sectionCode === null
-                                ? {}
-                                : { sectionCode: assignment.sectionCode }),
-                            });
-                          }}
+                          className={`inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                            assignment.isSectorSenior
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-input bg-background text-foreground hover:bg-muted"
+                          }`}
                         >
-                          <option value="">Роль не назначена</option>
-                          {placementRoles.data.map((role) => (
-                            <option key={role.code} value={role.code}>
-                              {role.label}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      {/* Секция бланка: ГДЕ человек стоит — у какого кортежа,
-                          на каком объекте (Plane №242). Смена секции устроена
-                          так же, как смена роли: своей операции у бэка нет,
-                          поэтому снятие и назначение заново, ПО ОЧЕРЕДИ (два
-                          `mutate` разом гонятся — снятие успевает удалить
-                          только что созданное назначение). */}
-                      {placementSections.data && placementSections.data.length > 0 && (
-                        <select
-                          aria-label={`Секция бланка: ${assignment.employeeName}`}
-                          /* Ширина — как у соседних селектов колонки: свой
-                             предел делал столбик действий рваным, а нативный
-                             селект длинную подпись обрезает сам. */
-                          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                          value={assignment.sectionCode ?? ""}
-                          disabled={
-                            assign.isPending ||
-                            unassign.isPending ||
-                            !access.can(PLACEMENT_MANAGE)
-                          }
-                          aria-disabled={!access.can(PLACEMENT_MANAGE)}
-                          title={access.reason(PLACEMENT_MANAGE)}
-                          onChange={async (e) => {
-                            const nextSection = e.target.value;
-                            if (nextSection === (assignment.sectionCode ?? "")) return;
-                            await unassign.mutateAsync({ assignmentId: assignment.id });
-                            await assign.mutateAsync({
-                              postId: assignment.postId,
-                              employeeId: assignment.employeeId,
-                              // Роль переезжает вместе — тот же довод, что и у
-                              // секции при смене роли.
-                              ...(assignment.roleCode === null
-                                ? {}
-                                : { roleCode: assignment.roleCode }),
-                              ...(nextSection === "" ? {} : { sectionCode: nextSection }),
-                            });
-                          }}
-                        >
-                          <option value="">Секция не назначена</option>
-                          {placementSections.data.map((section) => (
-                            <option key={section.code} value={section.code}>
-                              {section.label}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <select
-                        aria-label={`Переместить: ${assignment.employeeName}`}
-                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                        value=""
-                        onChange={(e) => {
-                          const target = e.target.value;
-                          if (target === "") return;
-                          // Перемещение = снятие с поста и назначение на другой:
-                          // своей операции «переместить» у бэка нет.
-                          // 🔴 РОЛЬ И СЕКЦИЯ ПЕРЕЕЗЖАЮТ С ЧЕЛОВЕКОМ. До №242
-                          // перемещение на другой пост молча теряло роль
-                          // наряда: назначение пересоздавалось без неё, и
-                          // место в бланке пустело. Секция добавлена рядом,
-                          // и обе передаются явно.
-                          unassign.mutate({ assignmentId: assignment.id });
-                          assign.mutate({
-                            postId: target,
-                            employeeId: assignment.employeeId,
-                            ...(assignment.roleCode === null
-                              ? {}
-                              : { roleCode: assignment.roleCode }),
-                            ...(assignment.sectionCode === null
-                              ? {}
-                              : { sectionCode: assignment.sectionCode }),
-                          });
-                        }}
-                      >
-                        <option value="">Переместить…</option>
-                        {posts
-                          .filter((p) => p.id !== selected.id)
-                          .map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.sector} · {p.post}
-                            </option>
-                          ))}
-                      </select>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-2 text-xs"
-                        disabled={!access.can(PLACEMENT_MANAGE)}
-                        aria-disabled={!access.can(PLACEMENT_MANAGE)}
-                        title={access.reason(PLACEMENT_MANAGE)}
-                        onClick={() => unassign.mutate({ assignmentId: assignment.id })}
-                      >
-                        Удалить с поста
-                      </Button>
+                          {assignment.isSectorSenior ? "✓ " : ""}Старший поста
+                        </button>
+                        <span className="flex gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2 text-xs"
+                            aria-label={`Роль и секция: ${assignment.employeeName}`}
+                            disabled={!access.can(PLACEMENT_MANAGE)}
+                            title={access.reason(PLACEMENT_MANAGE) || undefined}
+                            onClick={() => setEditing(assignment)}
+                          >
+                            Роль и секция…
+                          </Button>
+                          <button
+                            type="button"
+                            aria-label={`Удалить с поста: ${assignment.employeeName}`}
+                            title="Удалить с поста"
+                            disabled={unassign.isPending || !access.can(PLACEMENT_MANAGE)}
+                            onClick={() => unassign.mutate({ assignmentId: assignment.id })}
+                            className="flex h-8 w-8 items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                          >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </span>
                       </span>
                     </li>
                   ))}
+                  {Array.from(
+                    { length: Math.max(0, selected.need - assignmentsOf(selected.id).length) },
+                    (_, index) => (
+                      <li
+                        key={`slot-${index}`}
+                        data-slot="placement-empty-slot"
+                        onDragOver={(e) => dragOverPost(e, selected.id)}
+                        onDragLeave={() => leaveDrop(selected.id)}
+                        onDrop={(e) => void onDropPost(e, selected.id)}
+                        className={`flex flex-wrap items-center gap-2 rounded-md border border-dashed px-2 py-2 text-xs ${
+                          dropTarget === selected.id
+                            ? "border-primary bg-accent"
+                            : "border-muted-foreground/40"
+                        }`}
+                      >
+                        <span className="font-semibold">+ Назначить</span>
+                        <span className="text-muted-foreground">
+                          выберите сотрудника справа или перетащите его сюда
+                        </span>
+                      </li>
+                    )
+                  )}
                 </ul>
-
-                {assignmentsOf(selected.id).length < selected.need && (
-                  <p className="mb-2 text-xs text-muted-foreground">
-                    Свободно мест:{" "}
-                    {selected.need - assignmentsOf(selected.id).length} — выберите
-                    сотрудника из списка справа
-                  </p>
-                )}
 
                 <label className="text-xs font-semibold" htmlFor="post-comment">
                   Комментарий к посту
@@ -1490,18 +1508,25 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       <button
                         key={person.id}
                         type="button"
-                        disabled={
-                          selected === null ||
-                          assign.isPending ||
-                          !access.can(PLACEMENT_MANAGE)
-                        }
+                        // Выключенная кнопка не тянется (drag на disabled не
+                        // стартует), поэтому без выбранного поста кнопка живая:
+                        // клик молчит, а перетащить на пост в дереве можно.
+                        disabled={assign.isPending || !access.can(PLACEMENT_MANAGE)}
                         aria-disabled={!access.can(PLACEMENT_MANAGE)}
-                        title={access.reason(PLACEMENT_MANAGE)}
+                        title={
+                          access.reason(PLACEMENT_MANAGE) ||
+                          (selected === null
+                            ? "Выберите пост слева или перетащите сотрудника на пост"
+                            : "Назначить на выбранный пост (или перетащите на пост)")
+                        }
+                        draggable={access.can(PLACEMENT_MANAGE)}
+                        onDragStart={(e) => startDrag(e, { employeeId: person.id })}
+                        onDragEnd={() => setDropTarget(null)}
                         onClick={() =>
                           selected !== null &&
                           assign.mutate({ postId: selected.id, employeeId: person.id })
                         }
-                        className="flex w-full items-start gap-2 rounded-md border p-2 text-left text-xs hover:bg-muted disabled:opacity-50"
+                        className="flex w-full cursor-grab items-start gap-2 rounded-md border p-2 text-left text-xs hover:bg-muted disabled:opacity-50"
                       >
                         <Initials
                           name={person.name}
@@ -1618,6 +1643,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AssignmentEditDialog
+          assignment={editing}
+          posts={posts}
+          roles={placementRoles.data ?? []}
+          sections={placementSections.data ?? []}
+          pending={assign.isPending || unassign.isPending}
+          onClose={() => setEditing(null)}
+          onSave={saveEdit}
+        />
 
         <RatingBriefDialog
           employeeId={ratingBriefFor?.id ?? null}
@@ -1761,5 +1796,118 @@ function Chip({
     >
       {children}
     </span>
+  );
+}
+
+/** Окно «Роль и секция…» строки назначения (`[РАС-03]`, Plane №445). Сюда же
+ * ушла смена поста: это клавиатурная альтернатива перетаскиванию, без которой
+ * перенос был бы доступен только мышью. Сохранение — снятие и назначение
+ * заново на стороне доски. */
+function AssignmentEditDialog({
+  assignment,
+  posts,
+  roles,
+  sections,
+  pending,
+  onClose,
+  onSave,
+}: {
+  assignment: PlacementAssignment | null;
+  posts: ReconSectorPost[];
+  roles: { code: string; label: string }[];
+  sections: { code: string; label: string }[];
+  pending: boolean;
+  onClose: () => void;
+  onSave: (next: { roleCode: string; sectionCode: string; postId: string }) => Promise<void>;
+}) {
+  const [roleCode, setRoleCode] = useState("");
+  const [sectionCode, setSectionCode] = useState("");
+  const [postId, setPostId] = useState("");
+  useEffect(() => {
+    if (assignment === null) return;
+    setRoleCode(assignment.roleCode ?? "");
+    setSectionCode(assignment.sectionCode ?? "");
+    setPostId(assignment.postId);
+  }, [assignment]);
+  const field =
+    "mt-1 block h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
+  return (
+    <Dialog
+      open={assignment !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Роль и секция: {assignment?.employeeName}</DialogTitle>
+          <DialogDescription>
+            Роль — кем человек идёт в наряде, секция — где стоит в бланке. Пост
+            можно сменить здесь же, без перетаскивания.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <label className="block text-xs font-semibold">
+            Роль наряда
+            <select
+              aria-label="Роль наряда"
+              className={field}
+              value={roleCode}
+              onChange={(e) => setRoleCode(e.target.value)}
+            >
+              <option value="">Роль не назначена</option>
+              {roles.map((role) => (
+                <option key={role.code} value={role.code}>
+                  {role.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs font-semibold">
+            Секция бланка
+            <select
+              aria-label="Секция бланка"
+              className={field}
+              value={sectionCode}
+              onChange={(e) => setSectionCode(e.target.value)}
+            >
+              <option value="">Секция не назначена</option>
+              {sections.map((section) => (
+                <option key={section.code} value={section.code}>
+                  {section.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs font-semibold">
+            Пост
+            <select
+              aria-label="Пост"
+              className={field}
+              value={postId}
+              onChange={(e) => setPostId(e.target.value)}
+            >
+              {posts.map((post) => (
+                <option key={post.id} value={post.id}>
+                  {post.sector} · {post.post}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button
+            type="button"
+            disabled={pending || assignment === null}
+            onClick={() => void onSave({ roleCode, sectionCode, postId })}
+          >
+            {pending ? "Сохранение…" : "Сохранить"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
