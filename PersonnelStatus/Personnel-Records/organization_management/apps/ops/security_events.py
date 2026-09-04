@@ -813,6 +813,13 @@ def add_visit_object(event_id, *, object_id, protected_person_id=None):
         stage=event.stage,
     )
     event.refresh_from_db()
+    # ПРИНАДЛЕЖНОСТЬ ПОСТОВ ИЗМЕНИЛАСЬ, а расчёт не тронут (Plane №414):
+    # неразмеченная строка принадлежит ЕДИНСТВЕННОМУ объекту и НИКОМУ, как
+    # только объектов стало двое (`visit_object_posts`). Снимок потребности
+    # без пересчёта остаётся от прежнего разреза, и `recompute_event_stage`
+    # складывает из таких снимков потребность мероприятия — в реестре
+    # печаталось число, которого в расчёте уже нет.
+    recompute_visit_needs(event)
     return event
 
 
@@ -895,6 +902,9 @@ def remove_visit_object(event_id, visit_object_id):
         )
     visit.delete()
     event.refresh_from_db()
+    # Обратная сторона той же правки (Plane №414): объект мог снова стать
+    # единственным, и неразмеченные посты вернулись к нему.
+    recompute_visit_needs(event)
     return event
 
 
