@@ -75,6 +75,47 @@ def _mine_of(allocation, allowed_division_ids):
     ]
 
 
+def _notified_mine(allocation, allowed_division_ids):
+    """Строки СВОИХ управлений заявки, по которым запрос УЖЕ РАЗОСЛАН.
+
+    Владелец правила один на двух читателей: список запросов для баннера и
+    проверка «на это ли ОМ вообще просили людей» при ручной простановке
+    «Участия в ОМ» (Plane №737). Разойдись они — баннер показывал бы запрос,
+    по которому статус поставить нельзя, либо наоборот.
+    """
+    return [
+        row
+        for row in _mine_of(allocation, allowed_division_ids)
+        if row.get("notifiedAt")
+    ]
+
+
+def requested_event_ids(allowed_division_ids):
+    """Идентификаторы ОМ, по которым управлениям актора разослан запрос сил.
+
+    🔴 ЗАЧЕМ. Решением заказчика по №737 начальник управления снова ставит
+    «Участие в ОМ» руками — но мероприятие выбирает НЕ из реестра ОМ (тот
+    закрыт правом `event.view`, которого у роли нет и не будет), а ровно из
+    заявок, адресованных его управлению. Проверка обязана стоять на сервере,
+    а не только в окне: список в окне — удобство, а второй источник правды о
+    привлечении — то, ради чего запрет №427 и вводили.
+
+    Множество, а не список строк: у проверки один вопрос — «названное ОМ
+    среди запрошенных?». Собирать ради него полный вид заявки (`_
+    directorate_row_view`) значило бы платить за поля, которые никто не
+    прочитает.
+    """
+    if allowed_division_ids is not None and not allowed_division_ids:
+        return set()
+    found = set()
+    for event in OpsSecurityEvent.objects.exclude(force_allocation=[]):
+        for allocation in allocation_members_view(event):
+            if _notified_mine(allocation, allowed_division_ids):
+                found.add(str(event.pk))
+                break
+    return found
+
+
 def directorate_requests_view(allowed_division_ids):
     """Все ОПОВЕЩЁННЫЕ запросы, адресованные управлениям актора (Plane №487).
 
@@ -102,11 +143,7 @@ def directorate_requests_view(allowed_division_ids):
     rows = []
     for event in OpsSecurityEvent.objects.exclude(force_allocation=[]):
         for allocation in allocation_members_view(event):
-            mine = [
-                row
-                for row in _mine_of(allocation, allowed_division_ids)
-                if row.get("notifiedAt")
-            ]
+            mine = _notified_mine(allocation, allowed_division_ids)
             if not mine:
                 continue
             rows.append(

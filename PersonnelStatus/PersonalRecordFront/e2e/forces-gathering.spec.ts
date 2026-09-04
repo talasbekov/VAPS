@@ -415,16 +415,21 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
       headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         employee_id: Number(someone.id),
-        // Слитый код (Plane №486): отказ на ручную постановку стережётся
-        // именно на нём — старый тип погашен и отбился бы раньше, другой
-        // ошибкой, и проба перестала бы отвечать на свой вопрос.
+        // Слитый код (Plane №486): отказ стережётся именно на нём — старый
+        // тип погашен и отбился бы раньше, другой ошибкой, и проба перестала
+        // бы отвечать на свой вопрос.
         status_type_code: IN_EVENT,
         date_start: report.business_date,
         date_end: nextDay.toISOString().slice(0, 10),
       }),
     })
-    expect(refused.status, 'ручная постановка участия должна отбиваться (Plane №427)').toBe(422)
-    expect((await refused.json()).error_code).toBe('PARTICIPATION_MANUAL_FORBIDDEN')
+    // 🔴 ЗАПРЕТ СМЕНИЛСЯ ТРЕБОВАНИЕМ (Plane №737, решение заказчика). Ручная
+    // постановка участия РАЗРЕШЕНА начальнику управления, но мероприятие
+    // назвать обязан: тело без `participations` — по-прежнему 422, только
+    // другим кодом. Пин поднят осознанно, а не подогнан: старый код снят
+    // вместе со своим raise-сайтом.
+    expect(refused.status, 'участие без мероприятия должно отбиваться (Plane №737)').toBe(422)
+    expect((await refused.json()).error_code).toBe('PARTICIPATION_EVENT_REQUIRED')
 
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)

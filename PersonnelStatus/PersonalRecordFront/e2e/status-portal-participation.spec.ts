@@ -1,24 +1,33 @@
 /**
  * Привлечение на ОМ из ПОРТАЛЬНОГО окна статуса — ЖИВОЙ стенд
- * (Plane №367, Ш-2 задачи №365).
+ * (Plane №367 Ш-2 задачи №365; правило ручного ввода переписано решением
+ * заказчика по №737).
  *
- * ЗАКАЗЧИК ДОСЛОВНО: «Участие на ОМ должно быть как статус На дежурстве,
- * должен выбираться группы (какие-то группы с возможностью) и Физнаряд».
+ * ЗАКАЗЧИК ДОСЛОВНО (№737): «Пользователь с ролью у кого есть доступ к
+ * редактированию модуля Статусы сотрудников должен иметь возможность давать
+ * своим сотрудникам статус На участие ОМ, сейчас это невозможно. Этим
+ * занимается начальник управления, а не ответственный за сбор сил на ОМ».
+ * До правки окно при выборе типа показывало красный отказ и запирало
+ * «Сохранить» (решение №427) — на него заказчик и указал.
  *
  * 🔴 ГЛАВНОЕ, ЧТО СТЕРЕЖЁТ ЭТА ПРОБА, — КУДА УХОДИТ ЗАПИСЬ. Портальное окно
  * пишет в КАДРОВУЮ модель (`/api/statuses/statuses/`), где полей мероприятия,
  * вида участия и роли нет вовсе. Привлечение обязано уйти в модель РАСХОДА
  * (`/api/operations/statuses/`) — только там живёт `OpsStatusParticipation`, и
  * только по ней считаются расход и сводки департамента (решение заказчика
- * 31.08.2026). Если ветка отправки once again упадёт в кадровую ручку, статус
- * сохранится «успешно», а привлечения не увидит никто, кроме поставившего, —
- * и ассерт на адрес ручки станет единственным, что об этом скажет.
+ * 31.08.2026). Упади ветка отправки в кадровую ручку — статус сохранится
+ * «успешно», а привлечения не увидит никто, кроме поставившего.
  *
- * Стережёт ещё три вещи, у каждой своя мутация:
+ * Стережёт ещё четыре вещи, у каждой своя мутация:
  *   1) блока мероприятий нет у статуса, который не про ОМ (иначе он вылезет у
  *      отпуска);
- *   2) у физнаряда роли не спрашиваются вовсе — ролей внутри у него нет;
- *   3) мероприятие и вид участия доезжают до сервера и возвращаются из него.
+ *   2) в списке мероприятий — ЗАЯВКИ СВОЕГО УПРАВЛЕНИЯ, а не реестр ОМ: на
+ *      реестр у начальника управления нет права `event.view` (№348), и проба
+ *      сверяет список окна с ручкой `forces/directorate-requests/`;
+ *   3) мероприятие и вид участия доезжают до сервера и возвращаются из него;
+ *   4) сервер держит своё правило сам: тело без `participations` — 422
+ *      `PARTICIPATION_EVENT_REQUIRED`, чужое мероприятие — 422
+ *      `PARTICIPATION_EVENT_NOT_REQUESTED`.
  *
  * 🔴 ПРОБА ОСТАВЛЯЕТ СТАТУС РАСХОДА И НЕ УБИРАЕТ ЕГО — как и соседняя
  * `status-set-dialog.spec.ts`, и по той же причине: статус расхода в этой
@@ -33,8 +42,11 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
-/** Код наряда — тот, что система понимает как «привлечён физическим нарядом». */
-const SQUAD_STATUS_CODE = 'EVENT_ASSIGNMENT'
+/** Код участия. После слияния №486 он ОДИН на наряд и на группу — вид живёт
+ *  в строке участия, а не в коде статуса. */
+const IN_EVENT_STATUS_CODE = 'IN_EVENT'
+/** Физнаряд: у него ролей внутри нет — на этом стоит третий ассерт окна. */
+const SQUAD_KIND = 'PHYSICAL_SQUAD'
 
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
@@ -90,17 +102,25 @@ async function pickNextMonthDay(page: Page, day: string): Promise<void> {
 test.describe('статусы: привлечение на ОМ из портального окна', () => {
   test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
 
-  test('«Участие в ОМ» вручную не ставится: окно отбивает словами, API — 422 (Plane №427)', async ({
+  test('«Участие в ОМ» ставится с модуля: мероприятие берётся из заявок своего управления (Plane №737)', async ({
     page,
   }) => {
-    /**
-     * `[СТА-04]`: такой статус заводится только из запроса на сбор сил
-     * (чекбоксы начальника управления, №395). Тип в портальном списке
-     * остаётся видимым (им подписан текущий статус привлечённых), но
-     * отправка отбивается с указанием, куда идти; сервер держит то же
-     * правило кодом PARTICIPATION_MANUAL_FORBIDDEN.
-     */
-    const label = await labelOfStatus('IN_EVENT')
+    const label = await labelOfStatus(IN_EVENT_STATUS_CODE)
+    const token = await tokenFor()
+    // Список, который окно ОБЯЗАНО показать. Пусто — фикстуры стенда нет, и
+    // проба говорит об этом прямо, а не молча зеленеет на пустом выборе.
+    const requests = (await (
+      await fetch(`${API}/api/ops/security-events/forces/directorate-requests/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { results: { eventId: string; code: string }[] }
+    expect(
+      requests.results.length,
+      'на стенде нет ни одного разосланного запроса сил — привлекать не на что: ' +
+        'manage.py seed_smoke_fixtures',
+    ).toBeGreaterThan(0)
+    const expectedCodes = [...new Set(requests.results.map((row) => row.code))]
+
     await signIn(page)
     await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
@@ -109,39 +129,128 @@ test.describe('статусы: привлечение на ОМ из порта�
     await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Статусы сотрудника')).toBeVisible({ timeout: 20_000 })
+
+    // До выбора ОМ-статуса блока мероприятий быть не должно.
+    await expect(dialog.getByTestId('participation-fields')).toHaveCount(0)
+
     await dialog.locator('#status').click()
     await expect(page.getByRole('listbox')).toBeVisible()
     const option = page.getByRole('option', { name: label, exact: true })
     await option.scrollIntoViewIfNeeded()
     await option.click()
-    // Блока мероприятий больше нет: выбирать ОМ вручную негде; причина видна
-    // сразу, кнопка сохранения заперта.
-    await expect(dialog.getByText('Мероприятия', { exact: true })).toHaveCount(0)
-    await expect(dialog.getByTestId('participation-refusal')).toContainText(
-      'только из запроса на сбор сил',
-    )
-    await expect(dialog.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
 
-    // Тот же запрет на сервере — прямым вызовом.
+    // Красный отказ №427 снят, блок на его месте, «Сохранить» не заперта.
+    await expect(dialog.getByTestId('participation-refusal')).toHaveCount(0)
+    await expect(dialog.getByTestId('participation-fields')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
+
+    // Список мероприятий — РОВНО заявки своего управления, без повторов:
+    // на одно ОМ заявок бывает несколько, и дубль читался бы как второе ОМ.
+    //
+    // Строка открыта сразу: мероприятие обязательно, и прятать его за кнопкой
+    // «+ Мероприятие» значило бы показать форму, которую нельзя сохранить, не
+    // догадавшись нажать.
+    await dialog.getByLabel('Мероприятие 1', { exact: true }).click()
+    await expect(
+      page.getByText('Загружаем мероприятия…'),
+      'состояние загрузки списка заявок сменяется списком',
+    ).toHaveCount(0, { timeout: 30_000 })
+    await expect(
+      page.getByText('Запросов сил вашему управлению нет — привлекать не на что'),
+      'ручка отдала заявки, а окно показало пустоту — списки разошлись',
+    ).toHaveCount(0)
+    await expect(page.getByRole('listbox')).toBeVisible()
+    const shown = await page.getByRole('option').allInnerTexts()
+    expect(shown.length, 'мероприятие обязано быть по одному на ОМ').toBe(expectedCodes.length)
+    for (const code of expectedCodes) {
+      expect(shown.some((text) => text.includes(code)), `в списке нет ${code}`).toBe(true)
+    }
+    // Выбор С КЛАВИАТУРЫ, а не кликом в «первый по DOM»: Radix открывает
+    // список прокрученным к подсвеченному варианту (разобрано в
+    // `status-set-dialog.spec.ts`).
+    await page.keyboard.press('Enter')
+    await expect(
+      dialog.getByLabel('Мероприятие 1', { exact: true }),
+      'мероприятие выбрано — в поле стоит код ОМ',
+    ).toContainText(/ОМ-[\d-]+/)
+
+    await dialog.getByLabel('Вид участия 1', { exact: true }).click()
+    await page.getByRole('option', { name: 'Физический наряд' }).click()
+    // У физнаряда ролей внутри нет — третьего списка быть не должно.
+    await expect(
+      dialog.getByLabel('Роль в группе 1', { exact: true }),
+      'физнаряду предложена роль, которой у него не бывает',
+    ).toHaveCount(0)
+
+    // Период: у привлечения есть начало и конец, бессрочным оно не бывает.
+    // Даты — в СЛЕДУЮЩЕМ месяце: у взятого человека там статуса нет.
+    await dialog.locator('#startDate').click()
+    await pickNextMonthDay(page, '10')
+    await dialog.locator('#endDate').click()
+    await pickNextMonthDay(page, '20')
+
+    // 🔴 АДРЕС РУЧКИ — ГЛАВНЫЙ АССЕРТ ПРОБЫ (см. шапку файла). Попади запись
+    // в кадровую ручку — ответ пришёл бы с другого адреса и ожидание истекло.
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes('/api/operations/statuses/') && r.request().method() === 'POST',
+        { timeout: 20_000 },
+      ),
+      dialog.getByRole('button', { name: 'Сохранить' }).click(),
+    ])
+    expect(response.status(), await response.text()).toBe(201)
+    const saved = (await response.json()) as {
+      status_type_code: string
+      participations: { event_id: number; kind_code: string }[]
+    }
+    expect(saved.status_type_code).toBe(IN_EVENT_STATUS_CODE)
+    expect(saved.participations, 'мероприятие доехало до сервера и вернулось').toHaveLength(1)
+    expect(saved.participations[0]!.kind_code).toBe(SQUAD_KIND)
+  })
+
+  test('сервер держит правило сам: без мероприятия и на чужое ОМ — 422 (Plane №737)', async () => {
     const token = await tokenFor()
     const employees = (await (
       await fetch(`${API}/api/core/employees/?page_size=1`, {
         headers: { Authorization: `Bearer ${token}` },
       })
     ).json()) as { results: { id: number }[] }
-    const refused = await fetch(`${API}/api/operations/statuses/`, {
+    const employeeId = employees.results[0]!.id
+
+    // Без мероприятия — «привлечён неизвестно куда».
+    const bare = await fetch(`${API}/api/operations/statuses/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        employee_id: employees.results[0]!.id,
-        status_type_code: SQUAD_STATUS_CODE,
+        employee_id: employeeId,
+        status_type_code: IN_EVENT_STATUS_CODE,
         date_start: '2030-01-10',
         date_end: '2030-01-11',
       }),
     })
-    expect(refused.status).toBe(422)
-    expect(((await refused.json()) as { error_code: string }).error_code).toBe(
-      'PARTICIPATION_MANUAL_FORBIDDEN',
+    expect(bare.status).toBe(422)
+    expect(((await bare.json()) as { error_code: string }).error_code).toBe(
+      'PARTICIPATION_EVENT_REQUIRED',
+    )
+
+    // Мероприятие, по которому запроса управлению не было. Несуществующий
+    // идентификатор — заведомо не запрошенный, и заводить лишнее ОМ ради
+    // этого ассерта не нужно (проба своего на стенде не оставляет).
+    const stranger = await fetch(`${API}/api/operations/statuses/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        employee_id: employeeId,
+        status_type_code: IN_EVENT_STATUS_CODE,
+        date_start: '2030-01-12',
+        date_end: '2030-01-13',
+        participations: [{ event_id: 999999999, kind_code: SQUAD_KIND }],
+      }),
+    })
+    expect(stranger.status).toBe(422)
+    expect(((await stranger.json()) as { error_code: string }).error_code).toBe(
+      'PARTICIPATION_EVENT_NOT_REQUESTED',
     )
   })
 })
