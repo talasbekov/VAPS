@@ -161,46 +161,57 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     })
     const eventRow = page.locator('tbody tr', { hasText: omCode })
     await expect(eventRow).toContainText('Черновик', { timeout: 15_000 })
-    // Строка вкладки ведёт в карточку с РАСКРЫТОЙ панелью (`?gvo=1`).
-    await eventRow.locator('a').first().click()
-    await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
+    // Строка вкладки ведёт на СТРАНИЦУ ВИЗИТА (`[ГВО-01]`, Plane №436):
+    // «Сводные данные →» — ссылка строки (`[РЕЕ-07]`, №441).
+    await eventRow.getByRole('link', { name: /^Сводные данные / }).click()
+    await expect(page.getByRole('tab', { name: 'Сводные данные ГВО' })).toBeVisible({
       timeout: 15_000,
     })
-
-    // Охраняемое лицо: «параметр = значение» построчно
-    await page.getByRole('button', { name: '＋ Добавить лицо' }).click()
-    await page.getByRole('textbox', { name: 'ФИО' }).fill('Яков Милатович')
-    await page.getByRole('textbox', { name: 'Должность' }).fill('Президент Черногории')
-    await page
-      .getByRole('textbox', { name: 'Данные' })
-      .fill('Группа крови = А (II) Rh +\nРост = 185 см')
-    await page.getByRole('button', { name: 'Сохранить' }).click()
     const main = page.locator('main')
-    // `.first()`: панель стоит в карточке ОМ, и то же имя выводится ещё и в
-    // «Сведениях об ОМ» бюллетеня (факты ГВО) — строгий режим ловил обе.
+
+    // ЕДИНЫЙ РЕЖИМ ПРАВКИ (`[ГВО-05]`, Plane №441): одна кнопка
+    // «Редактировать», все блоки инпутами, одно «Сохранить». Окон по
+    // разделам и кнопок «Изменить» у блоков больше нет.
+    await main.getByRole('button', { name: 'Редактировать' }).click()
+    const form = page.locator('[data-slot="gvo-edit-form"]')
+    await expect(form).toBeVisible()
+
+    // Охраняемое лицо: «параметр = значение» построчно. `.last()` — база
+    // сводки может нести лицо из бюллетеня, и новое лицо встаёт последним.
+    await form.getByRole('button', { name: '＋ Добавить лицо' }).click()
+    await form.getByRole('textbox', { name: 'ФИО' }).last().fill('Яков Милатович')
+    await form.getByRole('textbox', { name: 'Должность' }).last().fill('Президент Черногории')
+    await form
+      .getByRole('textbox', { name: 'Данные' })
+      .last()
+      .fill('Группа крови = А (II) Rh +\nРост = 185 см')
+
+    // Группа ГВО: «Фамилия | позывной | роль»; счётчик состава пересчитывается
+    await form.getByRole('button', { name: '＋ Группа' }).click()
+    await form.getByRole('textbox', { name: 'Название группы' }).last().fill('ГВО «Черногория»')
+    await form
+      .getByRole('textbox', { name: 'Состав группы' })
+      .last()
+      .fill('Булатаев | 2-27 | старший ГВО\nБайболов | 7-41 | прикреплённый')
+
+    // Транспорт: «код | марка | примечание»
+    await form
+      .getByRole('textbox', { name: 'Транспорт' })
+      .fill('VIP | Mercedes-Benz Pullman S600 W222, 2019 г.в. | бронь, гостевой парк')
+
+    // Одно «Сохранить» на всё: разделы уезжают по очереди, форма закрывается
+    // после последнего ответа.
+    await form.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(form).toBeHidden({ timeout: 20_000 })
+
     await expect(main.getByText('Яков Милатович').first()).toBeVisible({
       timeout: 10_000,
     })
     await expect(main.getByText('А (II) Rh +').first()).toBeVisible()
     await expect(main.getByText('185 см').first()).toBeVisible()
-
-    // Группа ГВО: «Фамилия | позывной | роль»; счётчик состава пересчитывается
-    await page.getByRole('button', { name: '＋ Группа' }).click()
-    await page.getByRole('textbox', { name: 'Название группы' }).fill('ГВО «Черногория»')
-    await page
-      .getByRole('textbox', { name: 'Состав группы' })
-      .fill('Булатаев | 2-27 | старший ГВО\nБайболов | 7-41 | прикреплённый')
-    await page.getByRole('button', { name: 'Сохранить' }).click()
     await expect(main.getByText('2-27').first()).toBeVisible({ timeout: 10_000 })
     await expect(main.getByText('старший ГВО').first()).toBeVisible()
     await expect(main.getByText('2 чел.').first()).toBeVisible()
-
-    // Транспорт: «код | марка | примечание»
-    await page.getByRole('button', { name: 'Изменить транспорт' }).click()
-    await page
-      .getByRole('textbox', { name: 'Транспорт' })
-      .fill('VIP | Mercedes-Benz Pullman S600 W222, 2019 г.в. | бронь, гостевой парк')
-    await page.getByRole('button', { name: 'Сохранить' }).click()
     await expect(
       main.getByText('Mercedes-Benz Pullman S600 W222, 2019 г.в.'),
     ).toBeVisible({ timeout: 10_000 })
@@ -247,7 +258,12 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // экран снят вместе с модулем.
     await page.goto(`${APP}/security-ops/events/?view=gvo`)
     const row = page.locator('tbody tr', { hasText: omCode })
-    await expect(row).toContainText('Заполнена', { timeout: 10_000 })
+    // `[РЕЕ-07]` (Plane №441): статус — «Черновик · заполнено K из N» по
+    // сущности визита и счёту обязательных (или «Утверждено»), а не
+    // «Заполнена» по факту непустого патча.
+    await expect(row).toContainText(/Черновик · заполнено \d+ из \d+|Утверждено/, {
+      timeout: 10_000,
+    })
     await expect(row).toContainText('Булатаев · 2-27')
     await expect(row).toContainText('Яков Милатович')
 
@@ -258,45 +274,29 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // первое и ждать пустоту» держалось лишь на том, что у выбранного ОМ лица
     // не было. Цикл «удалять, пока есть» здесь не годится: панель после
     // каждого ответа пересобирается, и клик по едущей карточке не доходит.
-    await row.locator('a').first().click()
-    await expect(
-      page.getByRole('button', { name: 'Изменить список охраняемых лиц' }),
-    ).toBeVisible({ timeout: 15_000 })
-    await page
-      .getByRole('button', { name: 'Изменить список охраняемых лиц' })
-      .click()
-    await page
-      .getByRole('textbox', { name: 'Список охраняемых лиц' })
-      .fill('Яков Милатович | Президент Черногории')
-    await page.getByRole('button', { name: 'Сохранить' }).click()
-    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 10_000 })
-    await expect(
-      page.getByRole('button', { name: 'Изменить данные лица 2' }),
-    ).toHaveCount(0, { timeout: 10_000 })
-
-    await page.getByRole('button', { name: 'Изменить данные лица 1' }).click()
-    await page.getByRole('button', { name: 'Удалить лицо' }).click()
+    await row.getByRole('link', { name: /^Сводные данные / }).click()
+    await expect(main.getByRole('button', { name: 'Редактировать' })).toBeVisible({
+      timeout: 15_000,
+    })
+    await main.getByRole('button', { name: 'Редактировать' }).click()
+    // Снимаются ВСЕ лица: «Удалить лицо N» у каждого, пока список не пуст.
+    while ((await form.getByRole('button', { name: /^Удалить лицо \d+$/ }).count()) > 0) {
+      await form.getByRole('button', { name: /^Удалить лицо \d+$/ }).first().click()
+    }
+    await form.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(form).toBeHidden({ timeout: 20_000 })
     await expect(
       main.getByText('Охраняемые лица не указаны в бюллетене'),
     ).toBeVisible({ timeout: 10_000 })
 
-    // «Вернуть исходные» по КАЖДОМУ правленому разделу возвращает сводку в
-    // черновик: пустой патч не хранится. Удаление элемента списка сюда не
-    // считается — пустой список это тоже ручная правка, и статус остаётся
-    // «Заполнена», пока раздел не сброшен явно.
+    // «Вернуть исходные» возвращает сводку в черновик: пустой патч не
+    // хранится. Удаление элемента списка сюда не считается — пустой список
+    // это тоже ручная правка, и статус остаётся «заполнена», пока разделы не
+    // сброшены явно. С №441 кнопка одна на всю сводку — в режиме правки.
     await expect(main.getByText('Сводка заполнена')).toBeVisible()
-    // «Изменить объекты посещения» из этого списка ВЫНУТ: объекты живут
-    // таблицей мероприятия, их день и примечание патчем сводки не считаются, и
-    // статус «Заполнена» от них не зависит («Реестр ОМ-35.1»).
-    for (const button of [
-      'Изменить транспорт',
-      'Изменить список охраняемых лиц',
-      'Изменить состав ГВО',
-    ]) {
-      await page.getByRole('button', { name: button }).click()
-      await page.getByRole('button', { name: 'Вернуть исходные' }).click()
-      await expect(page.getByRole('dialog')).toBeHidden({ timeout: 10_000 })
-    }
+    await main.getByRole('button', { name: 'Редактировать' }).click()
+    await form.getByRole('button', { name: 'Вернуть исходные' }).click()
+    await expect(form).toBeHidden({ timeout: 20_000 })
     await expect(main.getByText('Черновик сводки')).toBeVisible({ timeout: 10_000 })
 
     // День и примечание объектов патчем не считаются, поэтому в цикле сброса
@@ -310,56 +310,38 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })
 
-  test('сводка ГВО раскрывается панелью в карточке мероприятия', async ({
+  test('сводка ГВО на карточке ОМ — только ссылкой на страницу визита', async ({
     page,
   }) => {
-    // Задача заказчика «Реестр ОМ-35.4»: функционал модуля «Реестр ГВО»
-    // переходит мероприятию — кнопка справа в шапке карточки, панель
-    // раскрывается НА МЕСТЕ. Проба ведёт именно кнопку: уход на другой экран
-    // вернул бы разрыв контекста, из-за которого модуль и убирают.
-    // Тип НЕ внутренний: у внутреннего ОМ кнопки нет по правилу «ОМ-35.5», и
-    // «первое в реестре» упиралось бы в её отсутствие.
+    // `[ГВО-03]` (Plane №441): на этапах сводка НЕ разворачивается — в шапке
+    // бюллетеня стоит ссылка «Карточка визита →», кнопки «Информация по
+    // ГВО» и панели на месте больше нет. Прежде (Plane «Реестр ОМ-35.4»)
+    // панель раскрывалась на карточке; канон визита увёл её на свою страницу
+    // (`[ГВО-01]`, №436).
     const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
     expect(
       target,
-      'в реестре нет ОМ с иностранным ОЛ — панель не на чем открыть',
+      'в реестре нет ОМ с иностранным ОЛ — ссылку не на чем проверить',
     ).toBeTruthy()
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target!.id}`)
-    const open = page.getByRole('button', { name: 'Информация по ГВО' })
-    await expect(open).toBeVisible({ timeout: 20_000 })
-
-    // Панели нет, пока не нажали: разделы сводки не должны висеть на карточке
-    // всегда — они отодвинули бы этапы за сгиб.
+    const link = page.getByRole('main').getByRole('link', { name: 'Карточка визита →' })
+    await expect(link).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('button', { name: 'Информация по ГВО' })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Состав ГВО СГО РК' })).toHaveCount(0)
-    await expect(page.getByText('Сводные данные ГВО')).toHaveCount(0)
 
-    const codesBeforeOpen = await page
-      .getByText(target!.code, { exact: true })
-      .count()
-
-    await open.click()
-    // Адрес НЕ сменился — панель раскрылась на месте, а не увела на экран.
-    expect(page.url()).toContain(`/security-ops/events/${target!.id}`)
-    await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
+    await link.click()
+    await expect(page).toHaveURL(new RegExp(`/security-ops/visits/${target!.id}/?$`))
+    await expect(page.getByRole('tab', { name: 'Сводные данные ГВО' })).toBeVisible({
       timeout: 15_000,
     })
+    await expect(page.getByRole('tab', { name: /Объекты посещения/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Бюллетень' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Транспорт' })).toBeVisible()
     // Разделы приехали целиком, а не одна шапка.
     await expect(page.getByRole('heading', { name: 'Охраняемые лица' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Объекты посещения' })).toBeVisible()
-    const codesAfterOpen = await page
-      .getByText(target!.code, { exact: true })
-      .count()
-    // Код ОМ панель НЕ добавляет: он уже стоит в шапке карточки, и второй раз
-    // тем же текстом ловил бы substring-пробы других экранов в
-    // неоднозначность. Сравниваем с числом ДО раскрытия, а не с единицей: на
-    // карточке код встречается и в шапке, и в подписи выбранного объекта.
-    expect(codesAfterOpen).toEqual(codesBeforeOpen)
-
-    // Повторное нажатие закрывает — кнопка меняет и подпись, и состояние.
-    await page.getByRole('button', { name: 'Скрыть информацию по ГВО' }).click()
-    await expect(page.getByText('Сводные данные ГВО')).toHaveCount(0)
   })
 
   test('«уточняется» — флаг поля, не значение; визит хранит его и версию (Plane №435)', async ({
@@ -380,14 +362,13 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     expect(before.visit, 'у мероприятия с иностранцами обязан быть визит').not.toBeNull()
 
     await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${target!.id}?gvo=1`)
-    await expect(page.getByText('Сводные данные ГВО')).toBeVisible({ timeout: 20_000 })
-    await page.getByRole('button', { name: 'Изменить организацию' }).click()
-    const dialog = page.getByRole('dialog')
-    await dialog.getByRole('textbox', { name: 'Канал р/связи' }).fill('')
-    await dialog.getByRole('checkbox', { name: 'Уточняется: Канал р/связи' }).check()
-    await dialog.getByRole('button', { name: 'Сохранить' }).click()
-    await expect(dialog).toBeHidden({ timeout: 15_000 })
+    await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
+    await page.getByRole('main').getByRole('button', { name: 'Редактировать' }).click()
+    const form = page.locator('[data-slot="gvo-edit-form"]')
+    await form.getByRole('textbox', { name: 'Канал р/связи' }).fill('')
+    await form.getByRole('checkbox', { name: 'Уточняется: Канал р/связи' }).check()
+    await form.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(form).toBeHidden({ timeout: 15_000 })
 
     const after = await apiGet<{
       visit: { version: number; status: string } | null
@@ -419,11 +400,12 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     })
   })
 
-  test('у внутреннего мероприятия кнопки «Информация по ГВО» нет', async ({
+  test('у внутреннего мероприятия ссылки «Карточка визита →» нет', async ({
     page,
   }) => {
     // Задача заказчика «Реестр ОМ-35.5»: сводка ГВО — про выездную охрану
-    // иностранного ОЛ. У внутреннего ОМ её нет, и кнопка обещала бы пустоту.
+    // иностранного ОЛ. У внутреннего ОМ её нет, и ссылка обещала бы пустоту
+    // (с №441 в шапке бюллетеня ссылка, а не кнопка-разворот).
     //
     // Мероприятие заводится ПРОБОЙ и снимается в конце: искать внутреннее ОМ в
     // реестре значит зависеть от того, что кто-то его там оставил, — молчаливый
@@ -454,11 +436,11 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
         page.getByText(created.code, { exact: true }).first(),
       ).toBeVisible({ timeout: 20_000 })
       await expect(
-        page.getByRole('button', { name: 'Информация по ГВО' }),
+        page.getByRole('main').getByRole('link', { name: 'Карточка визита →' }),
       ).toHaveCount(0)
 
-      // Контроль: у мероприятия НЕ внутреннего типа кнопка на месте — иначе
-      // проба выше зеленела бы и от того, что кнопку сняли совсем. Тип берём
+      // Контроль: у мероприятия НЕ внутреннего типа ссылка на месте — иначе
+      // проба выше зеленела бы и от того, что ссылку сняли совсем. Тип берём
       // из ответа сервера: на стенде внутренних ОМ больше половины, и «второе
       // в списке» оказалось бы таким же внутренним.
       const foreign = (await registryEvents()).find(
@@ -470,7 +452,7 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
       ).toBeTruthy()
       await page.goto(`${APP}/security-ops/events/${foreign!.id}`)
       await expect(
-        page.getByRole('button', { name: 'Информация по ГВО' }),
+        page.getByRole('main').getByRole('link', { name: 'Карточка визита →' }),
       ).toBeVisible({ timeout: 20_000 })
     } finally {
       await fetch(`${API}/api/ops/security-events/${created.id}/`, {
@@ -526,7 +508,7 @@ test.describe(
       expect(other, 'на стенде одно ОМ — подмену не с чем спутать').toBeDefined()
 
       await signIn(page)
-      await page.goto(`${APP}/security-ops/events/${target!.id}?gvo=1`)
+      await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
       await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
         timeout: 15_000,
       })
@@ -540,11 +522,13 @@ test.describe(
 
     test('сводка честно называет отсутствие связи с реестром лиц', async ({ page }) => {
       const rows = await registryEvents()
-      const target = rows[0]
-      expect(target, 'на стенде нет ни одного ОМ').toBeDefined()
+      // Страница визита есть только у ОМ с иностранным ОЛ (`[ГВО-01]`):
+      // «первое в реестре» упиралось бы во внутреннее.
+      const target = rows.find((r) => r.kind !== 'INTERNAL')
+      expect(target, 'на стенде нет ОМ с иностранным ОЛ').toBeDefined()
 
       await signIn(page)
-      await page.goto(`${APP}/security-ops/events/${target!.id}?gvo=1`)
+      await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
       await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
         timeout: 15_000,
       })
@@ -600,11 +584,13 @@ test.describe(
 
     test('фон и текст плашки различимы в тёмной теме', async ({ page }) => {
       const rows = await registryEvents()
-      const target = rows[0]
-      expect(target, 'на стенде нет ни одного ОМ').toBeDefined()
+      // Страница визита есть только у ОМ с иностранным ОЛ (`[ГВО-01]`):
+      // «первое в реестре» упиралось бы во внутреннее.
+      const target = rows.find((r) => r.kind !== 'INTERNAL')
+      expect(target, 'на стенде нет ОМ с иностранным ОЛ').toBeDefined()
 
       await signIn(page)
-      await page.goto(`${APP}/security-ops/events/${target!.id}?gvo=1`)
+      await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
       await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
         timeout: 15_000,
       })

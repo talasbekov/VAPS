@@ -262,9 +262,10 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
   }) => {
     // Модуль «Реестр ГВО» снят (Plane «Реестр ОМ-35.8»). Раньше эта проба
     // стерегла ссылку «Сводка ГВО →» из шапки карточки; теперь она стережёт
-    // ОБРАТНОЕ: ссылки нет, а её работу делает кнопка «Информация по ГВО»
-    // рядом. Ссылка на удалённый маршрут — 404 в лицо человеку, и молча её
-    // возвращать нельзя.
+    // ОБРАТНОЕ: ссылки на снятый модуль нет, а в сводку ведёт ссылка
+    // «Карточка визита →» в шапке бюллетеня (`[ГВО-03]`, Plane №441 —
+    // кнопки-разворота «Информация по ГВО» больше нет). Ссылка на удалённый
+    // маршрут — 404 в лицо человеку, и молча её возвращать нельзя.
     const token = await apiToken()
     const rows = await events(token)
     const target = rows.find((r) => r.stage !== 'BULLETIN' && r.kind !== 'INTERNAL')
@@ -276,9 +277,12 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
     const main = page.getByRole('main')
-    await expect(
-      main.getByRole('button', { name: 'Информация по ГВО' }),
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(main.getByRole('link', { name: 'Карточка визита →' })).toHaveAttribute(
+      'href',
+      /^\/security-ops\/visits\/[^/]+\/?$/,
+      { timeout: 15_000 },
+    )
+    await expect(main.getByRole('button', { name: 'Информация по ГВО' })).toHaveCount(0)
     await expect(main.getByRole('link', { name: 'Сводка ГВО →' })).toHaveCount(0)
     // Ни одна ссылка карточки не ведёт на снятый маршрут — проверяем адреса,
     // а не подписи: подпись могли и переименовать.

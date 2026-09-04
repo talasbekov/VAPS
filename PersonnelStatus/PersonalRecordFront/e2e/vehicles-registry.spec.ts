@@ -159,8 +159,9 @@ test.describe(LIVE ? 'транспорт ГОН' : 'транспорт ГОН (�
     }
 
     await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${event.id}/`)
-    await page.getByRole('button', { name: 'Информация по ГВО' }).click()
+    // Сводка — на странице визита (`[ГВО-03]`, Plane №441): панели в карточке
+    // ОМ больше нет.
+    await page.goto(`${APP}/security-ops/visits/${event.id}/`)
     // Раздел ищется по СВОЕЙ карточке: `Section` рисует `[data-slot="card"]`
     // с заголовком внутри, отдельного `<section>` у него нет.
     const section = page
