@@ -57,6 +57,8 @@ class OpsForceRequest(_AppendOnly):
 
     class Meta:
         db_table = "ops_force_requests"
+        verbose_name = "Заявка на сбор сил"
+        verbose_name_plural = "Заявки на сбор сил"
         unique_together = [("event", "source_key", "sequence")]
         ordering = ["event_id", "source_key", "sequence"]
 
@@ -88,6 +90,8 @@ class OpsDepartmentRequest(_AppendOnly):
 
     class Meta:
         db_table = "ops_department_requests"
+        verbose_name = "Запрос департаменту"
+        verbose_name_plural = "Запросы департаментам"
         unique_together = [("event", "allocation_key", "sequence")]
         ordering = ["event_id", "allocation_key", "sequence"]
 
@@ -112,6 +116,8 @@ class OpsUnitRequest(_AppendOnly):
 
     class Meta:
         db_table = "ops_unit_requests"
+        verbose_name = "Запрос управлению"
+        verbose_name_plural = "Запросы управлениям"
         unique_together = [("event", "directorate_key", "sequence")]
         ordering = ["event_id", "directorate_key", "sequence"]
 
@@ -145,4 +151,6 @@ class OpsForceRequestMember(_AppendOnly):
 
     class Meta:
         db_table = "ops_force_request_members"
+        verbose_name = "Сотрудник в составе по запросу"
+        verbose_name_plural = "Состав по запросам"
         ordering = ["event_id", "allocation_key", "added_at", "pk"]

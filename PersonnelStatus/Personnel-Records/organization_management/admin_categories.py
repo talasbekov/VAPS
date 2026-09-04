@@ -23,6 +23,7 @@ CATEGORIES = (
     "Структура и штат",
     "Сотрудники и статусы",
     "Охранные мероприятия",
+    "Сбор сил на ОМ",
     "Документы и отчёты",
     "Доступ и журналы",
     "Настройки раздела",
@@ -96,6 +97,13 @@ MODEL_CATEGORY: dict[str, str] = {
         "OpsNotification", "OpsRatingNotification",
     ),
     # Состояния людей: они про сотрудника, а не про мероприятие.
+    **_spread(
+        # Реестр заявки на сбор сил (`[МД-06]`, Plane №425) — своя категория:
+        # четыре таблицы иерархии в «Охранных мероприятиях» перевесили бы треть.
+        "Сбор сил на ОМ", "operations",
+        "OpsForceRequest", "OpsDepartmentRequest", "OpsUnitRequest",
+        "OpsForceRequestMember",
+    ),
     **_spread(
         "Сотрудники и статусы", "operations",
         "OpsEmployeeStatus", "Secondment", "StatusOverride", "OpsProtectedPerson",
