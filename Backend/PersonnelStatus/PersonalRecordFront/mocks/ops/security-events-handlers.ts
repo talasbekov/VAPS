@@ -540,6 +540,7 @@ function emptyEvent(
     closureDirectionSummaries: [],
     closingComment: "",
     closureSummary: { posts: 0, need: 0, assigned: 0, replacements: 0, declines: 0, incidents: 0 },
+    acknowledgementDeadline: null,
     closedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -2751,7 +2752,9 @@ export const securityEventsHandlers = [
         saveEvent({
           ...event,
           placementAssignments: event.placementAssignments.map((a) =>
-            a.id === assignmentId ? { ...a, acknowledgedAt: nowIso() } : a
+            a.id === assignmentId
+              ? { ...a, acknowledgedAt: nowIso(), acknowledgedVia: "personal" as const, acknowledgedBy: "Старший (мок)" }
+              : a
           ),
           updatedAt: nowIso(),
         })

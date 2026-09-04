@@ -174,13 +174,21 @@ def _patch_assignment(event, assignment_id, **fields):
 
 
 @transaction.atomic
-def acknowledge(event_id, assignment_id):
-    """«Ознакомлен, заступлю»: подтверждение ставится, отказ снимается."""
+def acknowledge(event_id, assignment_id, *, personal=False, actor=None, actor_name=""):
+    """«Ознакомлен, заступлю»: подтверждение ставится, отказ снимается.
+
+    Способ (`[ОЗН-05]`, Plane №447): `self` — сотрудник подтвердил сам,
+    `personal` — старший отметил «Ознакомлен лично» (доведено устно); кто
+    отметил — `acknowledgedBy`. Пишется в строку назначения — это и есть
+    история ознакомления, которую читают лист ознакомления и дело.
+    """
     event = lock_event(event_id)
     _find_assignment(event, assignment_id)
     return _patch_assignment(
         event, assignment_id,
         acknowledgedAt=_now_iso(), declinedAt=None, declineReason=None,
+        acknowledgedVia="personal" if personal else "self",
+        acknowledgedBy=(actor_name or str(actor or "")) if personal else "",
     )
 
 

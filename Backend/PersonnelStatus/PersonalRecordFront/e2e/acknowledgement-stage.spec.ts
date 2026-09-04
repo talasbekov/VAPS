@@ -110,6 +110,11 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
       has: page.locator('[data-slot="card-title"]', { hasText: 'Ознакомление' }),
     })
     await expect(card).toBeVisible({ timeout: 15_000 })
+    // `[ОЗН-02]` (№447): «не открыли · отказов · срок подтверждения», легенда полосы.
+    await expect(card.getByTestId('ack-summary')).toContainText(`не открыли ${pending.length}`)
+    await expect(card.getByTestId('ack-summary')).toContainText('отказов')
+    await expect(card.getByTestId('ack-summary')).toContainText('срок подтверждения')
+    await expect(card.getByTestId('ack-legend')).toContainText('не открывал')
     await expect(card.getByTestId('ack-summary')).toContainText(
       `Ознакомились ${confirmed.length} из ${total}`,
     )
@@ -166,8 +171,8 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
 
-    // «Отметить ознакомление» (доведено лично) — счётчик растёт.
-    await card.getByRole('button', { name: 'Отметить ознакомление' }).first().click()
+    // «Ознакомлен лично» (`[ОЗН-05]`, №447) — счётчик растёт, в строке — способ и кто отметил.
+    await card.getByRole('button', { name: 'Ознакомлен лично' }).first().click()
     await expect(card.getByTestId('ack-summary')).toContainText(
       `Ознакомились ${confirmed.length + 1} из ${total}`,
       { timeout: 15_000 },

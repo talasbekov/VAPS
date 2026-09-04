@@ -34,6 +34,14 @@ def _start_of(event):
     )
 
 
+def acknowledgement_deadline(event):
+    """Срок подтверждения (`[ОЗН-02]`, Plane №447) — за час до начала: тот же
+    порог, по которому уходит напоминание руководителям (`WINDOW`)."""
+    if event.business_date is None:
+        return None
+    return _start_of(event) - WINDOW
+
+
 def _unconfirmed(event):
     return [
         a

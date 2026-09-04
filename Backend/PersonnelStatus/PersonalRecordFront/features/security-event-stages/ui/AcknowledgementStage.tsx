@@ -108,9 +108,15 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
             <CardTitle>Ознакомление</CardTitle>
             {/* Шапка одной строкой (`[ОЗН-02]`) — без дублирующего «(K/N)». */}
             <p className="mt-1 text-sm text-muted-foreground" data-testid="ack-summary">
-              Ознакомились <b className="text-foreground">{confirmed.length} из {total}</b>
-              {" · "}не подтвердили {pending.length}
-              {" · "}отказов {declined.length}
+              {/* `[ОЗН-02]` (Plane №447): «Ознакомились K из N · не открыли M ·
+                  отказов D · срок подтверждения ДД.ММ ЧЧ:ММ». «Открыл и не
+                  нажал» система не различает (карточка №452) — считаем как
+                  «не открыли». */}
+              Ознакомились {confirmed.length} из {total} · не открыли {pending.length} · отказов{" "}
+              {declined.length}
+              {event.acknowledgementDeadline
+                ? ` · срок подтверждения ${formatIsoDateTime(event.acknowledgementDeadline)}`
+                : ""}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -152,9 +158,15 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           aria-valuemax={100}
           aria-label="Готовность ознакомления"
         >
-          <div className="h-full bg-green-500" style={{ width: `${pct(confirmed.length)}%` }} />
-          <div className="h-full bg-red-500" style={{ width: `${pct(declined.length)}%` }} />
+          <div className="h-full bg-green-500" style={{ width: `${pct(confirmed.length)}%` }} data-segment="confirmed" />
+          <div className="h-full bg-red-500" style={{ width: `${pct(declined.length)}%` }} data-segment="declined" />
+          <div className="h-full bg-muted-foreground/30" style={{ width: `${pct(pending.length)}%` }} data-segment="pending" />
         </div>
+        <p className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground" data-testid="ack-legend">
+          <span><span className="inline-block h-2 w-2 rounded-full bg-green-500" /> подтвердил</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/30" /> не открывал</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-red-500" /> отказ</span>
+        </p>
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -330,7 +342,11 @@ function AssignmentRow({
       )}
       {state === "confirmed" && (
         <span className="ml-auto inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
-          Ознакомлен {formatIsoDateTime(assignment.acknowledgedAt ?? "")}
+          Ознакомлен{assignment.acknowledgedVia === "personal" ? " лично" : ""}{" "}
+          {formatIsoDateTime(assignment.acknowledgedAt ?? "")}
+          {assignment.acknowledgedVia === "personal" && (assignment.acknowledgedBy ?? "") !== ""
+            ? ` · ${assignment.acknowledgedBy}`
+            : ""}
         </span>
       )}
       {state === "declined" && (
@@ -376,7 +392,7 @@ function AssignmentRow({
             onClick={onAcknowledge}
           >
             <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-            Отметить ознакомление
+            Ознакомлен лично
           </Button>
         </>
       )}

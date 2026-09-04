@@ -1734,9 +1734,34 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     )
     def acknowledge(self, request, pk=None, assignment_id=None):
         # Через `my_assignments`: подтверждение снимает отказ (Plane №405).
+        # Способ (`[ОЗН-05]`, №447): своё назначение — «сам», чужое — «лично»
+        # старшим, с его именем.
         from organization_management.apps.ops import my_assignments as mine
+        from organization_management.apps.operations.models_event import (
+            OpsSecurityEvent,
+        )
 
-        return self._event_response(mine.acknowledge(pk, assignment_id))
+        employee = getattr(self.request.user, "employee", None)
+        event = OpsSecurityEvent.objects.filter(pk=pk).first()
+        row = next(
+            (a for a in ((event.placement_assignments if event else None) or []) if a.get("id") == assignment_id),
+            None,
+        )
+        own = (
+            employee is not None and row is not None
+            and str(row.get("employeeId")) == str(employee.pk)
+        )
+        actor_name = ""
+        if employee is not None:
+            from organization_management.apps.ops.security_events import personnel_display_name
+
+            actor_name = personnel_display_name(employee)
+        return self._event_response(
+            mine.acknowledge(
+                pk, assignment_id, personal=not own,
+                actor=resolve_actor_id(request), actor_name=actor_name or request.user.get_username(),
+            )
+        )
 
     @action(
         detail=True,

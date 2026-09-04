@@ -290,6 +290,9 @@ export interface PlacementAssignment {
   declineReason?: string | null;
   /** Последнее напоминание (Plane №432); нет ключа — не напоминали. */
   remindedAt?: string | null;
+  /** Способ подтверждения (`[ОЗН-05]`, Plane №447): сам / лично старшим; кто отметил. */
+  acknowledgedVia?: "self" | "personal" | null;
+  acknowledgedBy?: string;
   /** Обоснование обхода предупреждения по рейтингу; заполнено только если предупреждение было. */
   ratingOverrideReason: string | null;
   /** Роль наряда из справочника `PLACEMENT_ROLES` (Plane №238). `null` —
@@ -690,6 +693,8 @@ export interface SecurityEvent {
   closureDirectionSummaries: ClosureDirectionSummary[];
   closingComment: string;
   closureSummary: ClosureSummary;
+  /** Срок подтверждения ознакомления (`[ОЗН-02]`, Plane №447): за час до начала. */
+  acknowledgementDeadline: string | null;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;

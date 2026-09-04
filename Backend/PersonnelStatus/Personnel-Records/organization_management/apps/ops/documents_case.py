@@ -47,7 +47,7 @@ def acknowledgement_sheet_rows(event, visit=None):
         if str(a.get("postId")) not in names:
             continue
         at = a.get("acknowledgedAt")
-        manual = bool(a.get("acknowledgedManually") or a.get("acknowledgedBy") or a.get("acknowledgedInPerson"))
+        manual = a.get("acknowledgedVia") == "personal" or bool(a.get("acknowledgedBy"))
         rows.append([
             a.get("employeeName") or "",
             names.get(str(a.get("postId")), ""),
