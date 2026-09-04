@@ -162,6 +162,14 @@ test.describe('заявки департаменту', () => {
       { timeout: 20_000 },
     )
 
+    // Колонки — по `[СБС-20]` (Plane №444): «запрошено · выделяем · собрано ·
+    // срок · статус · [Открыть]»; прежняя одна «Выделено» смешивала ответ
+    // департамента и собранных людей.
+    for (const header of ['Запрошено', 'Выделяем', 'Собрано', 'Срок', 'Статус']) {
+      await expect(section.getByRole('columnheader', { name: header })).toBeVisible()
+    }
+    await expect(section.getByRole('columnheader', { name: 'Выделено' })).toHaveCount(0)
+
     // Департамент назван — иначе две заявки одного ОМ неотличимы.
     for (const row of server.results) {
       await expect(
@@ -516,6 +524,21 @@ test.describe('заявки департаменту', () => {
       await answer.getByRole('button', { name: 'Сохранить ответ' }).click()
       await expect.poll(async () => (await rowOf()).allocating, { timeout: 15_000 }).toBe(less)
       expect((await rowOf()).answerComment).toBe('Двое в отпуске')
+
+      // Цифра ответа видна В СТРОКЕ ТАБЛИЦЫ заявок — колонка «выделяем»
+      // (`[СБС-20]`, Plane №444), отдельно от «собрано».
+      await page.getByRole('button', { name: /Назад к заявкам/ }).click()
+      const tableRow = page
+        .locator('section[aria-labelledby="department-requests-heading"] tbody tr')
+        .filter({ hasText: event.code })
+        .first()
+      await expect(tableRow.locator('[data-slot="allocating"]')).toHaveText(String(less), {
+        timeout: 15_000,
+      })
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+      await expect(answer).toBeVisible({ timeout: 20_000 })
 
       // 2. Ноль — отказ: статус на карточке и в таблице.
       await answer.getByLabel('Выделяем').fill('0')

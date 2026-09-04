@@ -13,9 +13,14 @@
  * «Дата ОМ» и оговорка: у эталона заказчика третья колонка — «Срок», а такого
  * поля в модели не было вовсе, и выдать дату мероприятия за срок значило бы
  * нарисовать правило, которого нет. Теперь правило есть: срок хранится у
- * заявки, по умолчанию — за сутки до начала ОМ, и колонки ДВЕ. Дата ОМ
- * осталась: «когда мероприятие» и «когда сдавать список» — разные вопросы, и
- * департамент задаёт оба.
+ * заявки, по умолчанию — за сутки до начала ОМ.
+ *
+ * КОЛОНКИ — ПО `[СБС-20]` (Plane №444): «Код · запрошено · выделяем ·
+ * собрано · срок · статус · [Открыть]». «Выделяем» — ответ департамента
+ * (№391), «собрано» — сколько людей уже стоит в списке; прежняя одна колонка
+ * «Выделено» смешивала эти два числа. Дата ОМ своей колонки больше не имеет —
+ * она в строке мероприятия под названием: «когда мероприятие» и «когда сдавать
+ * список» по-прежнему разные вопросы, но столбец у канона один — срок.
  *
  * Прогресс — И ЧИСЛОМ, И ПОЛОСОЙ. Полоса сама по себе не читается
  * вспомогательными технологиями и не отвечает на вопрос «сколько именно»;
@@ -82,8 +87,8 @@ function Progress({ assigned, need }: { assigned: number; need: number }) {
         aria-valuemax={need}
         aria-label={
           over
-            ? `Выделено ${assigned} из ${need} — перебор на ${assigned - need}`
-            : `Выделено ${assigned} из ${need}`
+            ? `Собрано ${assigned} из ${need} — перебор на ${assigned - need}`
+            : `Собрано ${assigned} из ${need}`
         }
       >
         <div
@@ -129,12 +134,14 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
           <TableHeader>
             <TableRow>
               <TableHead>Мероприятие</TableHead>
-              <TableHead className="text-right">Требуется</TableHead>
-              <TableHead>Дата ОМ</TableHead>
-              <TableHead>Срок сдачи</TableHead>
-              <TableHead>Выделено</TableHead>
+              <TableHead className="text-right">Запрошено</TableHead>
+              <TableHead className="text-right">Выделяем</TableHead>
+              <TableHead>Собрано</TableHead>
+              <TableHead>Срок</TableHead>
               <TableHead>Статус</TableHead>
-              <TableHead className="w-10" />
+              <TableHead>
+                <span className="sr-only">Открыть</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody aria-busy={requests.isPending}>
@@ -198,14 +205,32 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                           и лишним имя не станет; администратору без области
                           видны все, и без имени таблица врёт. */}
                       {row.departmentName} · {row.location}
+                    </p>
+                    {/* Дата ОМ — строкой мероприятия (`[СБС-20]`): своей
+                        колонки у неё нет, столбец канона — срок сдачи. */}
+                    <p className="text-muted-foreground text-xs tabular-nums">
+                      {formatIsoDate(row.businessDate)}
                       {row.eventTime !== null ? ` · ${row.eventTime}` : ""}
                     </p>
                   </TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">
                     {row.need}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap tabular-nums">
-                    {formatIsoDate(row.businessDate)}
+                  {/* «Выделяем» — ответ департамента (№391): отказ нулём
+                      назван словом, пустой ответ — прочерком, а не нулём: ноль
+                      здесь значит «отказ», и молчание за отказ выдавать
+                      нельзя. */}
+                  <TableCell className="text-right tabular-nums" data-slot="allocating">
+                    {row.allocating === null ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : row.allocating === 0 ? (
+                      <span className="text-destructive-ink font-medium">0 · отказ</span>
+                    ) : (
+                      <span className="font-semibold">{row.allocating}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Progress assigned={row.assigned} need={row.need} />
                   </TableCell>
                   {/* СРОК И ОПОЗДАНИЕ — В ОДНОЙ ЯЧЕЙКЕ, словом и цветом.
                       Цвет в одиночку не отвечает на вопрос «что не так» и не
@@ -229,18 +254,18 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
                     )}
                   </TableCell>
                   <TableCell>
-                    <Progress assigned={row.assigned} need={row.need} />
-                  </TableCell>
-                  <TableCell>
                     <Badge variant="outline">{STATUS_LABEL[row.status]}</Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {/* «[Открыть]» — словом, как в каноне: одна шевронная
+                        кнопка без подписи читалась только по aria-label. */}
                     <button
                       type="button"
                       onClick={() => setOpened(row.allocationId)}
                       aria-label={`Открыть заявку ${row.code} для «${row.departmentName}»`}
-                      className="text-muted-foreground hover:text-foreground inline-flex size-11 items-center justify-center rounded-md"
+                      className="text-primary-ink hover:bg-muted inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs font-semibold"
                     >
+                      Открыть
                       <ChevronRight className="size-4" aria-hidden="true" />
                     </button>
                   </TableCell>
