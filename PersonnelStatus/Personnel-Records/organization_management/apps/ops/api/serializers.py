@@ -94,6 +94,15 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+def _acknowledgement_deadline(event):
+    from organization_management.apps.ops.acknowledgement_reminders import (
+        acknowledgement_deadline,
+    )
+
+    deadline = acknowledgement_deadline(event)
+    return deadline.isoformat() if deadline is not None else None
+
+
 def _closure_summary(event, visit):
     """`[ЗАК-01]`: «Постов N · назначено K из N · замен N · отказов N ·
     инцидентов N» — считается на чтении по постам объекта (или всем)."""
@@ -378,6 +387,8 @@ def serialize_security_event(event):
         # `[ЗАК-01]`/`[ЗАК-04]` (Plane №448): итог одной строкой и комментарий.
         "closingComment": event.closing_comment,
         "closureSummary": _closure_summary(event, None),
+        # Срок подтверждения ознакомления (`[ОЗН-02]`, Plane №447): за час до начала.
+        "acknowledgementDeadline": _acknowledgement_deadline(event),
         "closedAt": (
             event.closed_at.isoformat() if event.closed_at is not None else None
         ),
