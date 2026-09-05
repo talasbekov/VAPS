@@ -217,5 +217,13 @@ export interface UpdateGvoSummaryRequest extends Record<string, unknown> {
 }
 
 export interface ResetGvoSummaryRequest extends Record<string, unknown> {
-  section: GvoSection;
+  /**
+   * Раздел сброса; `null` — «вернуть исходной ВСЮ сводку» (Plane №765).
+   *
+   * По образцу правки (№694). Пока раздел был обязателен, «Вернуть исходные»
+   * слало цикл из POST по одному на раздел: падение середины оставляло часть
+   * разделов сброшенной, часть — прежней, и человек читал «Не удалось вернуть
+   * исходные данные» над сводкой, половина которой уже вернулась.
+   */
+  section: GvoSection | null;
 }

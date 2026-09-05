@@ -394,7 +394,10 @@ export const gvoHandlers = [
     const omCode = decodeCode(params.omCode);
     const body = (await request.json()) as ResetGvoSummaryRequest;
     const next: GvoSummaryPatch = { ...currentPatch(omCode) };
-    const keys = gvoSectionPatchKeys(body.section);
+    // Раздел необязателен (Plane №765): его отсутствие — «вернуть исходной всю
+    // сводку», как на сервере. Мок, который требует раздел, был бы зелен
+    // ровно там, где живое «Вернуть исходные» отбивалось бы 400.
+    const keys = gvoSectionPatchKeys(body.section ?? null);
     for (const key of keys) {
       delete next[key];
     }

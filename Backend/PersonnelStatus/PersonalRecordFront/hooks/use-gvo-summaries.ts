@@ -113,7 +113,8 @@ export function useSaveGvoSection(options: { onSaved?: () => void } = {}) {
 
 interface ResetSectionVariables extends Record<string, unknown> {
   omCode: string;
-  section: GvoSection;
+  /** `null` — вся сводка одним запросом (Plane №765). */
+  section: GvoSection | null;
 }
 
 export function useResetGvoSection(options: { onReset?: () => void } = {}) {
