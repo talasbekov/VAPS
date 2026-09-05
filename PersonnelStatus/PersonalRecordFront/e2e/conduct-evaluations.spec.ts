@@ -194,4 +194,76 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     await expect(panel.getByRole('button', { name: 'Всем 10' })).toBeDisabled()
     expect(asked, 'сводка оценок запрошена у того, кому она закрыта').toBe(0)
   })
+
+  /**
+   * Причина отказа у кнопок закрытия — ВИДИМАЯ строка, а не `title`
+   * (Plane №777; решение принято в №714, применено в №644).
+   *
+   * Браузер подавляет на ВЫКЛЮЧЕННОЙ кнопке указательные события, а с ними и
+   * всплывающую подсказку: `title` показывался бы ровно тогда, когда
+   * показаться не может, — то есть никогда. Читатель видел серую кнопку
+   * «Закрыть объект» без единого слова о том, чьё это действие, и шёл
+   * спрашивать.
+   *
+   * 🔴 ПРОВЕРЯЮТСЯ ТРИ ВЕЩИ, И ТРЕТЬЯ ГЛАВНАЯ: строка видна, кнопка связана
+   * с ней `aria-describedby` (фокуса выключенная кнопка не получает, но
+   * виртуальный курсор читалки до подписи доходит) и `title` НЕ ВЕРНУЛСЯ.
+   * Без последней проверки правку откатили бы обратно одной строкой, и
+   * проба осталась бы зелёной: видимая подпись и мёртвая подсказка
+   * уживаются рядом.
+   *
+   * Красная до правки: строки нет вовсе, у кнопки стоит `title`.
+   */
+  test('причина отказа у «Закрыть объект» видна, а не спрятана в title (Plane №777)', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const registry = (await (
+      await fetch(`${API}/api/ops/security-events/?page_size=50&stage=CONDUCT`, { headers })
+    ).json()) as {
+      results: { id: string; placementAssignments: unknown[]; visitObjects: { stage: string }[] }[]
+    }
+    const target = requireFixture(
+      registry.results.find(
+        (e) => e.placementAssignments.length > 0 && e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+      ),
+      'ОМ на «Проведении» с назначениями и незакрытым объектом',
+    )
+
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-permissions/'),
+      async (route) =>
+        route.fulfill({
+          json: {
+            permissions: ['event.view', 'status.view', 'personnel.view'],
+            roles: [],
+          },
+        }),
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+
+    const button = page.getByRole('button', { name: 'Закрыть объект' })
+    await expect(button).toBeVisible({ timeout: 15_000 })
+    await expect(button, 'кнопка закрытия открыта тому, у кого нет права').toBeDisabled()
+
+    const hint = page.locator('[data-slot="close-visit-locked"]')
+    await expect(
+      hint,
+      'выключенная кнопка не объясняет, чьё это действие',
+    ).toHaveText('Переводит этапы и закрывает мероприятие ведущий ОМ или штаб')
+
+    // Связь кнопки с подписью — не украшение: у читалки другого пути к ней нет.
+    const describedBy = await button.getAttribute('aria-describedby')
+    expect(describedBy, 'кнопка не связана с подписью через aria-describedby').not.toBeNull()
+    await expect(page.locator(`#${describedBy}`)).toHaveText(
+      'Переводит этапы и закрывает мероприятие ведущий ОМ или штаб',
+    )
+
+    expect(
+      await button.getAttribute('title'),
+      'title вернулся на выключенную кнопку — подсказка снова мертва',
+    ).toBeNull()
+  })
 })
