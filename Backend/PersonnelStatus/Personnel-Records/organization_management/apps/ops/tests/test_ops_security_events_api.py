@@ -1096,6 +1096,79 @@ def test_second_visit_object_without_post_mapping_reports_unknown(manager):
     assert (visits[1]["placementNeed"], visits[1]["placementAssigned"]) == (1, 0)
 
 
+def test_the_closure_summary_says_unknown_where_the_placement_does(manager):
+    """Сводка закрытия молчит там же, где молчит готовность (Plane №726).
+
+    🔴 ЧТО БЫЛО НЕ ТАК. `_visit_placement` отдаёт `(None, None)` у второго и
+    последующих объектов, пока в расчёте есть неразмеченные строки, — решение
+    №409 «None честнее числа». У `_closure_summary` такой ветки не было:
+    `visit_object_posts` возвращает только размеченные посты, и объект получал
+    `posts=0 · need=0 · assigned=0`. Архив печатал «постов 0 · назначено 0 из
+    0» РЯДОМ с `placementNeed: null` у того же объекта — выдуманный факт там,
+    где остальной модуль от утверждения отказывается.
+
+    Проба держит оба состояния одного объекта: неизвестно, пока разметки нет,
+    и число, когда она появилась. Одного состояния не хватило бы — «всегда
+    None» прошло бы первую половину.
+    """
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    base = f"{URL}{event_id}/"
+    manager.patch(
+        f"{base}bulletin/",
+        {"briefDescription": "x", "initialTasks": "y"},
+        format="json",
+    )
+    manager.post(f"{base}bulletin/complete/")
+    data = manager.post(f"{base}recon/import-from-passport/").json()
+    manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": data["reconChecklist"],
+            "sectorPosts": data["reconSectorPosts"],
+        },
+        format="json",
+    )
+    second_object = make_object(code="OBJ-2", name="Концертный зал")
+    second = OpsSecurityEventVisitObject.objects.create(
+        event_id=event_id,
+        security_object=second_object,
+        object_name=second_object.name,
+        passport_binding=None,
+        position=1,
+    )
+    # Разметка снимается намеренно — тот же приём, что у соседней пробы №408.
+    stored = OpsSecurityEvent.objects.get(pk=event_id)
+    stored.recon_sector_posts = [
+        {**row, "visitObjectId": None} for row in stored.recon_sector_posts
+    ]
+    stored.save(update_fields=["recon_sector_posts"])
+
+    visits = manager.get(f"{base}").json()["visitObjects"]
+
+    for visit in visits:
+        summary = visit["closureSummary"]
+        assert visit["placementNeed"] is None
+        assert (summary["posts"], summary["need"], summary["assigned"]) == (
+            None, None, None,
+        ), "сводка закрытия обязана молчать там же, где молчит готовность"
+        assert summary["declines"] is None, (
+            "отказы считаются по назначениям объекта — их тоже нечем считать"
+        )
+        # Замены и инциденты — про МЕРОПРИЯТИЕ, они известны всегда.
+        assert summary["replacements"] == 0 and summary["incidents"] == 0
+
+    # Разметили — сводка называет числа, а не продолжает молчать.
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.recon_sector_posts[0]["visitObjectId"] = str(second.pk)
+    event.save(update_fields=["recon_sector_posts"])
+
+    visits = manager.get(f"{base}").json()["visitObjects"]
+    assert visits[0]["closureSummary"]["posts"] == 0
+    assert visits[1]["closureSummary"]["posts"] == 1
+    assert visits[1]["closureSummary"]["need"] == 1
+
+
 def test_same_object_not_added_to_event_twice(manager):
     """Один объект реестра — одна строка посещения в мероприятии."""
     obj = make_object(with_passport=True)

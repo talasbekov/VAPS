@@ -103,12 +103,40 @@ def _acknowledgement_deadline(event):
     return deadline.isoformat() if deadline is not None else None
 
 
-def _closure_summary(event, visit):
+def _closure_summary(event, visit, *, single=True):
     """`[ЗАК-01]`: «Постов N · назначено K из N · замен N · отказов N ·
-    инцидентов N» — считается на чтении по постам объекта (или всем)."""
+    инцидентов N» — считается на чтении по постам объекта (или всем).
+
+    🔴 «НЕИЗВЕСТНО» ВМЕСТО НУЛЯ (Plane №726). У второго и последующих объектов
+    мероприятия, когда в расчёте остались неразмеченные строки,
+    принадлежность постов объекту НЕ ОПРЕДЕЛЕНА — и это уже записано решением
+    №409 (`_visit_placement` отдаёт там `(None, None)`, «None честнее числа»).
+    Здесь такой ветки не было: `visit_object_posts` возвращает только
+    размеченные посты, объект получал `posts=0 · need=0 · assigned=0`, и архив
+    печатал «постов 0 · назначено 0 из 0» рядом с `placementNeed: null` У ТОГО
+    ЖЕ ОБЪЕКТА — выдуманный факт там, где остальной модуль от утверждения
+    отказывается.
+
+    Правило берётся у `_visit_placement`, а не пишется заново: два ответа на
+    вопрос «известна ли расстановка этого объекта» разошлись бы при первой
+    правке — именно так этот дефект и появился.
+    """
     if visit is None:
         posts = event.recon_sector_posts or []
     else:
+        need, _assigned = _visit_placement(event, visit, single=single)
+        if need is None:
+            journal = event.journal_entries or []
+            return {
+                "posts": None,
+                "need": None,
+                "assigned": None,
+                "declines": None,
+                "replacements": sum(
+                    1 for e in journal if e.get("type") == "REPLACEMENT"
+                ),
+                "incidents": sum(1 for e in journal if e.get("type") == "INCIDENT"),
+            }
         posts = security_events.visit_object_posts(event, visit)
     post_ids = {str(p.get("id")) for p in posts}
     assignments = [
@@ -216,7 +244,7 @@ def serialize_visit_object(event, visit, *, single):
         # Итоговый комментарий по объекту при закрытии (`[ЗАК-04]`, №404).
         "closingComment": visit.closing_comment,
         # Итог по объекту одной строкой (`[ЗАК-01]`, Plane №448).
-        "closureSummary": _closure_summary(event, visit),
+        "closureSummary": _closure_summary(event, visit, single=single),
         # ── Согласование ОБЪЕКТА (Plane №411, Ш-5 плана №385) ──────────────
         # Требование `[МД-04]`: «У объекта свои этапы 1–5 и свой документ
         # „Расстановка сил“ с версиями». Одноимённые поля мероприятия ниже

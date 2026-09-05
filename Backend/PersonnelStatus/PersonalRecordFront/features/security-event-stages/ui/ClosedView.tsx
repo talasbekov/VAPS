@@ -103,13 +103,30 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
               <span className="text-muted-foreground">Итоговый комментарий:</span> {event.closingComment}
             </p>
           )}
-          {event.visitObjects.map((visit) => (
-            <p key={visit.id} className="text-xs text-muted-foreground tabular-nums">
-              «{visit.objectName}»: постов {visit.closureSummary.posts} · назначено{" "}
-              {visit.closureSummary.assigned} из {visit.closureSummary.need}
-              {visit.closingComment !== "" ? ` · ${visit.closingComment}` : ""}
-            </p>
-          ))}
+          {event.visitObjects.map((visit) => {
+            // ЧИСЛА ПО ПОСТАМ МОГУТ БЫТЬ НЕИЗВЕСТНЫ (Plane №726): у второго и
+            // последующих объектов, пока в расчёте есть неразмеченные строки,
+            // сервер отдаёт null — то же «неизвестно», что и у placementNeed
+            // в реестре. Печатать вместо него ноль значило бы утверждать
+            // «постов нет», чего система не знает; подпись причины взята
+            // ОДНА В ОДНУ у реестра ОМ — два разных текста про одно и то же
+            // читались бы как два разных состояния.
+            const known = visit.closureSummary.posts !== null;
+            return (
+              <p key={visit.id} className="text-xs text-muted-foreground tabular-nums">
+                «{visit.objectName}»:{" "}
+                {known ? (
+                  <>
+                    постов {visit.closureSummary.posts} · назначено{" "}
+                    {visit.closureSummary.assigned} из {visit.closureSummary.need}
+                  </>
+                ) : (
+                  "расчёт постов не размечен по объектам"
+                )}
+                {visit.closingComment !== "" ? ` · ${visit.closingComment}` : ""}
+              </p>
+            );
+          })}
         </CardContent>
       </Card>
 
