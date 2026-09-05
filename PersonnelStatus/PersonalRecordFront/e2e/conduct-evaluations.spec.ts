@@ -120,4 +120,78 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     const cleaned = (await call('GET', base)) as Summary
     expect(cleaned.evaluated).toBe(0)
   })
+
+  /**
+   * Панель закрыта правом `event.manage` (Plane №644).
+   *
+   * До правки читателю ОМ панель показывала «Оценки не загрузились — обновите
+   * страницу» (это был 403, а не сбой сети), десять включённых кнопок шкалы в
+   * каждой строке и работающую «Всем 10» — все они отвечали 403 на нажатие.
+   *
+   * 🔴 ПРАВА ПОДМЕНЯЮТСЯ ОТВЕТОМ РУЧКИ, а не поиском подходящей учётки на
+   * стенде (тот же приём, что в `department-requests`): нужен ТОТ, КОМУ
+   * КАРТОЧКА ОТКРЫТА, но кто не ведёт мероприятие. Ходить под `observer`
+   * значило бы стеречь не свой предмет — ему закрыт весь раздел, и «панель
+   * недоступна» выполнялось бы само собой.
+   *
+   * Стережёт две мутации: снять гард с кнопок и вернуть безусловный запрос
+   * сводки.
+   */
+  test('читателю ОМ панель оценок закрыта правом, а не сломана', async ({ page }) => {
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const registry = (await (
+      await fetch(`${API}/api/ops/security-events/?page_size=50&stage=CONDUCT`, { headers })
+    ).json()) as {
+      results: { id: string; placementAssignments: unknown[]; visitObjects: { stage: string }[] }[]
+    }
+    const target = requireFixture(
+      registry.results.find(
+        (e) => e.placementAssignments.length > 0 && e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+      ),
+      'ОМ на «Проведении» с назначениями и незакрытым объектом',
+    )
+
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-permissions/'),
+      async (route) =>
+        route.fulfill({
+          json: {
+            permissions: ['event.view', 'status.view', 'personnel.view'],
+            roles: [],
+          },
+        }),
+    )
+    // Сводку оценок читателю не запрашивают вовсе: React Query перезапрашивает
+    // при возврате фокуса, и вкладка стучалась бы в закрытую дверь снова и
+    // снова. Счётчик, а не заглушка: подменить ответ значило бы спрятать
+    // именно то, что проверяется.
+    let asked = 0
+    await page.route(
+      (url) => url.pathname.includes('/evaluations/'),
+      async (route) => {
+        asked += 1
+        await route.continue()
+      },
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+
+    const panel = page.locator('[data-slot="evaluation-panel"]')
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    // Панель НЕ спрятана — конвенция раздела: недоступное выключается, а не
+    // исчезает, иначе человек не знает, что этот блок вообще существует.
+    await expect(panel.locator('[data-slot="evaluation-locked"]')).toContainText(
+      'Оценки ставит ведущий мероприятие',
+    )
+    await expect(panel.locator('[data-slot="evaluation-progress"]')).toHaveText(
+      'Сводка закрыта правом',
+    )
+    await expect(
+      panel.getByText('Оценки не загрузились'),
+      'закрытая дверь названа сбоем загрузки',
+    ).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Всем 10' })).toBeDisabled()
+    expect(asked, 'сводка оценок запрошена у того, кому она закрыта').toBe(0)
+  })
 })

@@ -398,7 +398,15 @@ const SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 function EvaluationPanel({ event }: { event: SecurityEvent }) {
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
   const visit = scope.visit;
-  const query = useVisitEvaluations(event.id, visit?.id ?? null);
+  // 🔴 ПАНЕЛЬ ЗАКРЫТА ТЕМ ЖЕ ПРАВОМ, ЧТО И ОСТАЛЬНЫЕ ДЕЙСТВИЯ ЭТАПА (Plane
+  // №644). Обе ручки оценок требуют `event.manage`, а гард стоял только у
+  // «Завершить этап» и «Закрыть объект»: читатель ОМ получал 403 на сводку,
+  // видел «Оценки не загрузились — обновите страницу» и десять включённых
+  // кнопок шкалы в каждой строке, каждая из которых отвечала 403.
+  const access = useChainAccess();
+  const canManage = access.can(EVENT_MANAGE);
+  const query = useVisitEvaluations(event.id, visit?.id ?? null, canManage);
+  const lockedHintId = `evaluation-locked-${event.id}`;
   const setScore = useSetEvaluation(event.id, visit?.id ?? "");
   const scoreAll = useScoreAll(event.id, visit?.id ?? "");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -419,7 +427,11 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
         <div>
           <CardTitle>Оценка сотрудников · «{visit.objectName}»</CardTitle>
           <p className="text-xs text-muted-foreground" data-slot="evaluation-progress">
-            {summary ? `Оценено ${summary.evaluated} из ${summary.total}` : "Загрузка…"}
+            {summary
+              ? `Оценено ${summary.evaluated} из ${summary.total}`
+              : canManage
+                ? "Загрузка…"
+                : "Сводка закрыта правом"}
           </p>
         </div>
         {!closed && (
@@ -427,7 +439,14 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
             type="button"
             variant="outline"
             size="sm"
-            disabled={busy || !summary || summary.evaluated === summary.total}
+            disabled={busy || !canManage || !summary || summary.evaluated === summary.total}
+            // 🔴 БЕЗ `title` (Plane №714): на выключенной кнопке браузер
+            // подавляет указательные события, а с ними и подсказку — она
+            // показалась бы ровно тогда, когда показаться не может. Причина
+            // стоит ВИДИМОЙ строкой ниже, а связь с кнопкой держит
+            // `aria-describedby`: фокуса выключенная кнопка не получает, но
+            // виртуальный курсор читалки до неё доходит.
+            aria-describedby={canManage ? undefined : lockedHintId}
             onClick={() => scoreAll.mutate({ score: 10 })}
           >
             Всем 10
@@ -437,8 +456,21 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
       <CardContent className="space-y-4">
         <StageError error={setScore.error} />
         <StageError error={scoreAll.error} />
-        {query.isError && (
-          <p className="text-sm text-destructive">Оценки не загрузились — обновите страницу.</p>
+        {!canManage ? (
+          // Не ошибка и не пустота, а закрытая дверь: «обновите страницу»
+          // здесь было бы советом, который не может помочь.
+          <p
+            id={lockedHintId}
+            className="text-sm text-muted-foreground"
+            data-slot="evaluation-locked"
+          >
+            Оценки ставит ведущий мероприятие или штаб — тот же, кто переводит этапы
+            и закрывает ОМ. Сводка закрыта тем же правом, поэтому строк здесь нет.
+          </p>
+        ) : (
+          query.isError && (
+            <p className="text-sm text-destructive">Оценки не загрузились — обновите страницу.</p>
+          )
         )}
         {summary && summary.rows.length === 0 && (
           <p className="text-sm text-muted-foreground">
@@ -490,7 +522,7 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
                               aria-pressed={row.score === value}
                               disabled={closed || busy}
                               className={
-                                "h-8 min-w-8 rounded-md border px-2 text-xs tabular-nums transition-colors disabled:opacity-60 " +
+                                "h-8 min-w-8 rounded-md border px-2 text-xs tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-60 " +
                                 (row.score === value
                                   ? "border-primary bg-primary text-primary-foreground"
                                   : "bg-background hover:bg-muted")
@@ -560,8 +592,15 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
   const access = useChainAccess();
   const visit = scope.visit;
   // Сводка оценок — для подтверждения «Оценено K из N, инцидентов N»
-  // (`[ЗАК-05]`, Plane №433); неоценённые закрытию не мешают.
-  const evaluations = useVisitEvaluations(event.id, visit?.id ?? null);
+  // (`[ЗАК-05]`, Plane №433); неоценённые закрытию не мешают. Ручка закрыта
+  // тем же `event.manage`, что и сама кнопка «Закрыть объект» ниже, поэтому
+  // без права запрос не отправляется (Plane №644): диалога закрытия читателю
+  // всё равно не открыть, а 403 при каждом возврате фокуса — чистый шум.
+  const evaluations = useVisitEvaluations(
+    event.id,
+    visit?.id ?? null,
+    access.can(EVENT_MANAGE)
+  );
   if (visit === null) return null;
   const evaluated = evaluations.data?.evaluated ?? 0;
   const totalRated = evaluations.data?.total ?? 0;
