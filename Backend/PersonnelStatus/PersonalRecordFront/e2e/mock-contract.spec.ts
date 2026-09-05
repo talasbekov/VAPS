@@ -1187,6 +1187,162 @@ test.describe(
       expect(result.declinedBy, 'у собственного отказа появился автор').toEqual('')
     })
 
+    /**
+     * Мок-слой ПАНЕЛИ ОЦЕНОК (`[ЗАК-05]`, Plane №775; правила — №433).
+     *
+     * Слов «оценк» и «evaluation» в этом файле не было вовсе: обработчики
+     * `.../evaluations/` и `.../evaluations/all/` не проверялись ничем, и весь
+     * этап «Проведение» мог разойтись с сервером молча. Так и жила зашитая
+     * пустая строка `divisionName` (№643): клиент прячет подпись «· управление»
+     * при пустой строке, и ни одна проба по моку не могла поймать, что живая
+     * ручка не отдаёт её никогда.
+     *
+     * 🔴 ПРОВЕРЯЮТСЯ ПРАВИЛА, А НЕ КОДЫ ОТВЕТА. Мок ценен ровно тем, чем
+     * повторяет сервер: состав строки, счёт «оценено K из N», шкала 1-10,
+     * снятие оценки, и главное — «Всем 10» НЕ ТРОГАЕТ поставленное вручную
+     * (`conduct_evaluations.score_all`). Последнее и есть то, ради чего кнопка
+     * существует: она добивает неоценённых, а не переписывает чужую работу.
+     */
+    test('мок панели оценок живёт по правилам сервера (Plane №775)', async ({
+      page,
+    }) => {
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const result = await page.evaluate(async () => {
+        const post = (url: string, body?: unknown) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+        const read = async () =>
+          (await (await fetch('/api/ops/security-events/se-1/')).json()) as {
+            visitObjects: { id: string }[]
+            reconSectorPosts: { id: string }[]
+            placementAssignments: { id: string; postId: string }[]
+          }
+
+        // Посты в мок-сиде не заведены — импортируем той же ручкой, что и
+        // экран, и назначаем людей: без назначений сводка пуста, и проба
+        // сравнивала бы ноль с нулём.
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'RECON' })
+        await post('/api/ops/security-events/se-1/recon/import-from-passport/', {})
+        const withPosts = await read()
+        const roster = (await (
+          await fetch('/api/ops/personnel/?page_size=50')
+        ).json()) as { results: { id: string }[] }
+        for (const [index, p0] of withPosts.reconSectorPosts.entries()) {
+          if (withPosts.placementAssignments.some((a) => a.postId === p0.id)) continue
+          await post('/api/ops/security-events/se-1/placement/assign/', {
+            postId: p0.id,
+            employeeId: roster.results[index].id,
+          })
+        }
+
+        const staged = await read()
+        const visitObjectId = staged.visitObjects[0]?.id ?? ''
+        const url = `/api/ops/security-events/se-1/visit-objects/${visitObjectId}/evaluations/`
+
+        // Правило этапа — раньше «Проведения» оценок нет.
+        const tooEarly = await post(url, { assignmentId: staged.placementAssignments[0].id, score: 5 })
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'CONDUCT' })
+
+        const summary = async () => (await (await fetch(url)).json())
+        const fresh = await summary()
+        const first = fresh.rows[0]
+
+        // Шкала 1-10 — правило сервера, а не «лишь бы число».
+        const outOfScale = await post(url, { assignmentId: first.assignmentId, score: 11 })
+
+        const scored = await (
+          await post(url, { assignmentId: first.assignmentId, score: 3, comment: 'своей рукой' })
+        ).json()
+        // «Всем 10» добивает НЕОЦЕНЁННЫХ и не трогает поставленное вручную.
+        const afterAll = await (
+          await post(`${url}all/`, { score: 10 })
+        ).json()
+        const kept = afterAll.rows.find(
+          (r: { assignmentId: string }) => r.assignmentId === first.assignmentId,
+        )
+        // Снятие оценки возвращает строку в неоценённые.
+        const cleared = await (
+          await post(url, { assignmentId: first.assignmentId, score: null })
+        ).json()
+
+        return {
+          tooEarlyStatus: tooEarly.status,
+          outOfScaleStatus: outOfScale.status,
+          // Ключ конверта — `error_code`, как у сервера (`errorEnvelope`).
+          outOfScaleCode: ((await outOfScale.json()) as { error_code?: string }).error_code,
+          rowKeys: Object.keys(first ?? {}).sort(),
+          divisionName: first?.divisionName as string | undefined,
+          replaced: first?.replaced as boolean | undefined,
+          freshEvaluated: fresh.evaluated as number,
+          total: fresh.total as number,
+          rows: fresh.rows.length as number,
+          scoredEvaluated: scored.evaluated as number,
+          keptScore: kept?.score as number | undefined,
+          keptComment: kept?.comment as string | undefined,
+          allEvaluated: afterAll.evaluated as number,
+          clearedEvaluated: cleared.evaluated as number,
+        }
+      })
+
+      // Состав строки — тот же, что у сервера: без `divisionName` и
+      // `replaced` экран рисует другую строку, а мок этого не заметит.
+      expect(result.rowKeys, 'состав строки сводки разошёлся с сервером').toEqual([
+        'acknowledgedAt',
+        'assignmentId',
+        'comment',
+        'divisionName',
+        'employeeId',
+        'employeeName',
+        'post',
+        'postId',
+        'replaced',
+        'score',
+        'sector',
+      ])
+      expect(
+        result.divisionName,
+        'подразделение снова зашито пустой строкой — мок слеп к дефекту №643',
+      ).not.toEqual('')
+      expect(result.replaced, 'признак замены не булев').toBe(false)
+
+      // Этап и шкала — правила сервера, а не «лишь бы 200».
+      expect(result.tooEarlyStatus, 'оценка принята раньше «Проведения»').toBe(422)
+      expect(result.outOfScaleStatus, 'оценка 11 принята').toBe(422)
+      expect(result.outOfScaleCode).toEqual('SCORE_OUT_OF_SCALE')
+
+      // «Оценено K из N» считается, а не лежит нулями.
+      expect(result.rows, 'строк в сводке нет — проверять нечего').toBeGreaterThan(1)
+      expect(result.total).toEqual(result.rows)
+      expect(result.freshEvaluated).toBe(0)
+      expect(result.scoredEvaluated, 'поставленная оценка не попала в счёт').toBe(1)
+
+      // 🔴 ГЛАВНОЕ ПРАВИЛО: «Всем 10» ДОБИВАЕТ, а не переписывает.
+      expect(result.keptScore, '«Всем 10» переписала оценку, поставленную вручную').toBe(3)
+      expect(result.keptComment, '«Всем 10» стёрла комментарий оценщика').toBe('своей рукой')
+      expect(result.allEvaluated, 'после «Всем 10» оценены не все').toEqual(result.total)
+
+      // Снятие возвращает строку в неоценённые — иначе оценку нельзя было бы
+      // переменить, а сервер это позволяет.
+      expect(result.clearedEvaluated).toEqual(result.total - 1)
+    })
+
     test('возврат обнуляет маршрут, ответ на последнее замечание завершает этап (Plane №569, №570)', async ({
       page,
     }) => {
