@@ -230,6 +230,36 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
   // его загрузки на экране не бывает, и стеречь пробе нечего. Сам код ожидания
   // адреса в панели стал недостижим с экрана; снять его или вернуть панель —
   // в заведённой карточке-следствии.
+
+  test('описание и задачи правятся у ОМ, заведённого сразу с рекогносцировки', async ({
+    page,
+  }) => {
+    // Панель бюллетеня — ЕДИНСТВЕННЫЙ редактор `briefDescription` и
+    // `initialTasks`, а ОМ с объектом заводится сразу на «Рекогносцировке».
+    // Пока панель рисовалась только при `stage === 'BULLETIN'`, этим полям
+    // не было входа НИКОГДА (Plane №748) — при том что сервер PATCH принимает
+    // на любой стадии, а сама панель это в своей шапке и объявляет.
+    const token = await apiToken()
+    const target = (await events(token)).find(
+      (e) => e.stage !== 'BULLETIN' && e.stage !== 'CLOSED',
+    )
+    test.skip(target === undefined, 'нужен ОМ дальше «Бюллетеня» и не закрытый')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+    const panel = page.getByTestId('bulletin-panel')
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+
+    // Свёрнута: №468 убирал панель именно за то, что она отжимала работу вниз.
+    const toggle = panel.getByRole('button', { expanded: false }).first()
+    await expect(toggle).toBeVisible()
+    await toggle.click()
+
+    // Раскрыв — можно править: поля на месте и не выключены.
+    const brief = panel.getByLabel(/Краткое описание/i)
+    await expect(brief).toBeVisible({ timeout: 10_000 })
+    await expect(brief).toBeEditable()
+  })
 })
 
 /** Заводит пустое ОМ на этапе «Бюллетень» — БЕЗ объекта: с объектом сервер
