@@ -35,7 +35,7 @@
  * подставить первый значило бы отправить людей не на то мероприятие. Когда
  * запрос ровно один, выбирать нечего, и он подставляется сам.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Megaphone } from "lucide-react";
@@ -85,6 +85,22 @@ export function ForcesRequestBanner({
     linkedId ?? pickedAlive ?? (rows.length === 1 ? rows[0].allocationId : null);
   const request = useDirectorateForcesRequest(allocationId);
   const select = useSelectForRequest(allocationId);
+  // 🔴 ОТЧЁТ ПРИНАДЛЕЖИТ ЗАПРОСУ, А НЕ ЭКРАНУ (Plane №546). Состояние
+  // мутации не ключится по `allocationId` и не сбрасывается при его смене, а
+  // баннер печатал `select.data` безусловно. Человек выделял двоих по
+  // запросу A, открывал уведомление запроса B — адрес менялся, страница НЕ
+  // перемонтировалась, — и под свежей шапкой запроса B висело «Выделено: 2 ·
+  // не выделены: …» от запроса A. Та же строка переживала и обновление
+  // данных, выдавая себя за итог по новой таблице; `select.isError`
+  // переживал смену так же.
+  //
+  // Сброс на СМЕНУ ЗАПРОСА, а не на каждый показ: отчёт об удавшемся
+  // выделении обязан остаться на экране — это итог действия человека, и он
+  // читает его после того, как таблица уже перечиталась.
+  const { reset: resetReport } = select;
+  useEffect(() => {
+    resetReport();
+  }, [allocationId, resetReport]);
   // 🔴 СТРОКА ТАБЛИЦЫ СТАТУСОВ АДРЕСУЕТ СОТРУДНИКА СОСТАВНЫМ КЛЮЧОМ
   // `${staffUnitId}-${employeeId}` (см. `status-table.tsx`, `employeeIdOf`),
   // а вакансии — `${unitId}-vacant…`. Серверу нужен ГОЛЫЙ employeeId: первая

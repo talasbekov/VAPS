@@ -282,6 +282,83 @@ test.describe(
       const counted = Number(label.replace(/\D+/g, '').slice(-2))
       expect(Number.isFinite(counted)).toBe(true)
     })
+    /**
+     * Отчёт о выделении НЕ переезжает на соседний запрос (Plane №546).
+     *
+     * Состояние выделения не ключилось по запросу и не сбрасывалось при его
+     * смене. Человек выделял людей по запросу A, открывал уведомление запроса
+     * B — адрес менялся, страница НЕ перемонтировалась, — и под свежей шапкой
+     * запроса B висело «Выделено: N» от запроса A. Числа выглядели как итог
+     * по новой заявке, и проверить их было нечем.
+     *
+     * Проба выделяет по первому запросу, затем переключает чип на второй и
+     * требует, чтобы отчёт исчез. Красная до правки: строка отчёта остаётся.
+     */
+    test('отчёт о выделении не переезжает на соседний запрос', async ({ page }) => {
+      const rows = [1, 2].map((n) => ({
+        eventId: `90001${n}`,
+        code: `ОМ-СИНТ-О${n}`,
+        title: `Синтетическое мероприятие О${n}`,
+        businessDate: `2026-09-1${n}`,
+        allocationId: `synthetic-report-${n}`,
+        departmentName: 'Синт. департамент',
+        status: 'NOTIFIED',
+        dueAt: null,
+        directorates: [
+          {
+            divisionId: '9101',
+            name: 'Синт. управление',
+            need: 3,
+            assigned: 0,
+            notifiedAt: '2026-09-05T06:00:00Z',
+          },
+        ],
+      }))
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) => route.fulfill({ json: { results: rows } }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/') && !url.pathname.endsWith('/select/'),
+        (route) => {
+          const picked = rows.find((row) => route.request().url().includes(row.allocationId))
+          return route.fulfill({ json: picked ?? rows[0] })
+        },
+      )
+      // Выделение отвечает УСПЕХОМ по первому запросу: предмет пробы — судьба
+      // отчёта при переключении, а не правила выделения.
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/') && url.pathname.endsWith('/select/'),
+        (route) =>
+          route.fulfill({
+            json: { selected: ['1', '2'], refused: [], request: rows[0] },
+          }),
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+      await page.getByRole('button', { name: 'ОМ-СИНТ-О1', exact: false }).click()
+      const banner = page.locator('[data-slot="forces-request-banner"]')
+      await expect(banner).toBeVisible({ timeout: 20_000 })
+
+      // Кому-нибудь надо быть отмеченным, иначе кнопка выделения выключена.
+      const boxes = page.locator('table').getByRole('checkbox')
+      await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
+      await boxes.nth(1).check({ force: true })
+      await banner.getByRole('button', { name: /Выделить на / }).click()
+
+      const report = page.locator('[data-slot="select-report"]')
+      await expect(report, 'отчёт о выделении обязан появиться').toBeVisible({
+        timeout: 15_000,
+      })
+
+      await page.getByRole('button', { name: 'ОМ-СИНТ-О2', exact: false }).click()
+
+      await expect(
+        report,
+        'отчёт по прежнему запросу висит под шапкой нового и выдаёт себя за его итог',
+      ).toBeHidden({ timeout: 15_000 })
+    })
   }
 )
 
