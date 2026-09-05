@@ -320,12 +320,36 @@ def _field_value(summary, path):
     return node
 
 
+#: Поля, которые СВОДКА ЗАПОЛНЯЕТ САМА, и потому «не пусто» о них ничего не
+#: говорит (Plane №521). `derive_summary` кладёт в обе даты день мероприятия —
+#: разумное умолчание для ДОКУМЕНТА (визит идёт в этот день), но для проверки
+#: «человек заполнил» оно смертельно: `_field_value` по этим путям пуст не
+#: бывает НИКОГДА, и в `missingRequired` они не попадали ни при каких данных.
+#: Прогресс показывал «4 из 5», когда не введено ничего, а утверждение визита
+#: по этим двум полям не блокировалось вовсе.
+#:
+#: Умолчание не снято намеренно: снять его значило бы печатать в документе
+#: пустую дату там, где раньше стояла верная. Изменилось другое — «заполнено»
+#: для этих путей означает «человек ВВЁЛ», то есть значение пришло правкой.
+DERIVED_DEFAULT_PATHS = frozenset({"arrival.date", "departure.date"})
+
+
+def _entered_by_hand(visit, path):
+    """Значение по пути пришло ПРАВКОЙ человека, а не умолчанием сводки."""
+    data = (visit.data or {}) if visit is not None else {}
+    value = _field_value(data, path)
+    return not (value is None or value == "")
+
+
 def missing_required(summary, visit):
     """Незаполненные обязательные поля визита — подписями, по порядку."""
     flagged = set((visit.unspecified or []) if visit is not None else [])
     missing = []
     for path, label in REQUIRED_VISIT_FIELDS:
         if path in flagged:
+            continue
+        if path in DERIVED_DEFAULT_PATHS and not _entered_by_hand(visit, path):
+            missing.append(label)
             continue
         value = _field_value(summary or {}, path)
         empty = (

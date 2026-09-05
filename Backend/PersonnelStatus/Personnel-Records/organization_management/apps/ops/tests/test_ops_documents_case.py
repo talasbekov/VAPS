@@ -71,10 +71,45 @@ def test_placement_gets_the_sheet_only_after_acknowledgement(manager, two_object
     after = _text(render_placement(event.code, fmt="docx", visit_object_id=str(first.pk)))
     assert "Приложение. Лист ознакомления" in after
     # До «Проведения» приложения нет (🔴 мутация: порог стадии).
-    event.stage = "PLACEMENT"
-    event.save(update_fields=["stage", "updated_at"])
+    #
+    # Отодвигается стадия ОБЪЕКТА, а не мероприятия (Plane №520): документ
+    # печатается по объекту, и порог спрашивается у него. Раньше здесь
+    # двигался `event.stage` — и проба проходила ровно потому, что порог
+    # спрашивали не у того, у кого документ.
+    first.stage = "PLACEMENT"
+    first.save(update_fields=["stage", "updated_at"])
     before = _text(render_placement(event.code, fmt="docx", visit_object_id=str(first.pk)))
     assert "Приложение. Лист ознакомления" not in before
+
+
+def test_a_finished_object_keeps_its_sheet_while_the_neighbour_lags(manager, two_objects_on_conduct):  # noqa: F811
+    """🔴 Plane №520: приложение следует стадии ОБЪЕКТА, а не наименьшей.
+
+    Объект А закончил ознакомление и идёт на «Проведении», объект Б отстал —
+    `event.stage` падает до стадии отстающего (с №412 это НАИМЕНЬШАЯ стадия
+    среди объектов). Документ объекта А приложение терять не должен: лист
+    подписан именно им.
+
+    Мутация, которую стережёт проба: вернуть в `acknowledgement_completed`
+    сравнение по `event.stage` — документ первого объекта останется без
+    строки «Приложение. Лист ознакомления», и проба покраснеет.
+    """
+    _, event_id, first, second = two_objects_on_conduct
+    from organization_management.apps.ops import security_events as service
+
+    second.stage = "ACKNOWLEDGEMENT"
+    second.save(update_fields=["stage", "updated_at"])
+    event = service.lock_event(event_id)
+    service.recompute_event_stage(event)
+    event.refresh_from_db()
+    assert event.stage == "ACKNOWLEDGEMENT", "мероприятие не опустилось до отстающего — проба ничего не стережёт"
+
+    ahead = _text(render_placement(event.code, fmt="docx", visit_object_id=str(first.pk)))
+    assert "Приложение. Лист ознакомления" in ahead
+
+    # А у отстающего объекта приложения нет — порог работает в обе стороны.
+    behind = _text(render_placement(event.code, fmt="docx", visit_object_id=str(second.pk)))
+    assert "Приложение. Лист ознакомления" not in behind
 
 
 def test_registry_knows_the_case_and_the_endpoint_serves_it(manager, two_objects_on_conduct):  # noqa: F811

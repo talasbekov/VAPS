@@ -188,6 +188,16 @@ function OpenDialog({
                     className="resize-y text-[12.5px] leading-relaxed"
                     {...register(field.key)}
                   />
+                ) : !field.flaggable ? (
+                  // Поле без флага — только ввод (Plane №518). Галочка стоит
+                  // ровно там, где флаг кто-то читает; см. `flaggable` в спеке
+                  // раздела.
+                  <Input
+                    {...control}
+                    className="h-[38px] text-[13px]"
+                    placeholder={field.placeholder}
+                    {...register(field.key)}
+                  />
                 ) : (
                   <div className="flex items-center gap-2">
                     <Input
@@ -200,8 +210,28 @@ function OpenDialog({
                       <input
                         type="checkbox"
                         className="h-3.5 w-3.5"
-                        checked={flags.has(field.key)}
-                        onChange={(e) => toggleFlag(field.key, e.target.checked)}
+                        // 🔴 ФЛАГ ХРАНИТСЯ ПО ПУТИ, А НЕ ПО ИМЕНИ ПОЛЯ ФОРМЫ
+                        // (Plane №517). `key` — имя поля В ФОРМЕ РАЗДЕЛА, и оно
+                        // не единственное на весь документ: «Прибытие» и
+                        // «Убытие» оба зовут своё поле `time`, `resp` есть и у
+                        // «Состава ГВО», и у «Ответственного». Отсюда две беды
+                        // сразу.
+                        //
+                        // Первая — та, что видел человек: поставил «уточняется»
+                        // на «Время прибытия», открыл «Убытие» — галочка уже
+                        // стоит; снял её там — снял и у прибытия.
+                        //
+                        // Вторая тише и хуже: флаги читает СЕРВЕР как ПУТИ
+                        // (`documents_summary.document_values`, `missing_
+                        // required`), а сюда уходило короткое имя. Значит у
+                        // всех полей, чей путь длиннее имени (`arrival.*`,
+                        // `departure.*`, `stay.place`, `responsible`), флаг не
+                        // совпадал НИ С ЧЕМ: слово «уточняется» в документ не
+                        // попадало вовсе, и обязательное поле не переставало
+                        // считаться незаполненным. Галочка стояла, а не делала
+                        // ничего.
+                        checked={flags.has(field.path)}
+                        onChange={(e) => toggleFlag(field.path, e.target.checked)}
                         aria-label={`Уточняется: ${field.label}`}
                       />
                       уточняется

@@ -154,7 +154,122 @@ def test_a_filled_field_prints_its_value_even_when_flagged(staff):
 
     values = documents_summary.document_values(event)
 
-    assert values["accommodation_1"] == "отель Hilton Astana № 1827"
+    # Пин правлен ОСОЗНАННО (Plane №518): у шаблона «Место проживания» и
+    # «Номер проживания» — две разные строки, и номер печатается во второй.
+    # Прежняя склейка «место номер» в одном месте была следствием того, что
+    # `accommodation_2` не заполнялся вовсе; теперь номер печатался бы дважды.
+    assert values["accommodation_1"] == "отель Hilton Astana"
+    assert values["accommodation_2"] == "№ 1827"
+
+
+# ── Места шаблона, которые не заполнялись вовсе (Plane №518) ───────────────
+
+
+def test_route_flight_duration_and_room_reach_the_document(staff):
+    """Маршрут, рейс, время в полёте и номер проживания печатаются.
+
+    🔴 Plane №518. У шаблона под них СВОИ места — `arrival_2/3/4`,
+    `departure_2/3/4`, `accommodation_2`, — но `document_values` их не
+    заполнял ни разу: `fill_all_keys` честно ставил туда пустоту. Оператор
+    набирал маршрут и рейс, а документ уходил с пустой графой.
+
+    Мутация, которую стережёт проба: убрать цикл заполнения `arrival_2/3/4`
+    и строку `accommodation_2` — значения станут пустыми строками.
+    """
+    from organization_management.apps.ops import documents_summary
+
+    event = make_event("ОМ-Т-53")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-53/",
+        {
+            "section": "arrival",
+            "values": {
+                "arrival": {
+                    "date": "18.06.2026",
+                    "time": "19:55 ч.",
+                    "route": "гг. Подгорица — Астана",
+                    "flight": "а/к «Air Astana» KC 638",
+                    "dur": "время в полёте 5:40 часа",
+                },
+            },
+        },
+        format="json",
+    )
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-53/",
+        {
+            "section": "org",
+            "values": {"stay": {"place": "отель Hilton Astana", "room": "№ 1827"}},
+        },
+        format="json",
+    )
+
+    values = documents_summary.document_values(event)
+
+    assert values["arrival_2"] == "гг. Подгорица — Астана"
+    assert values["arrival_3"] == "а/к «Air Astana» KC 638"
+    assert values["arrival_4"] == "время в полёте 5:40 часа"
+    assert values["accommodation_2"] == "№ 1827"
+
+
+def test_the_word_reaches_the_slots_that_used_to_stay_empty(staff):
+    """И галочка «уточняется» на них наконец действует (Plane №518).
+
+    Карточка называется именно этим: галочка нарисована у КАЖДОГО текстового
+    поля, а слово печаталось у шести. Пустая графа читается как «забыли
+    заполнить» — а это другое.
+
+    Мутация: заполнять новые места сырым значением в обход `field()` —
+    вместо слова снова окажется пустота.
+    """
+    from organization_management.apps.ops import documents_summary
+
+    event = make_event("ОМ-Т-54")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-54/",
+        {
+            "section": "departure",
+            "values": {"departure": {"route": "", "flight": "", "dur": ""}},
+            "unspecified": ["departure.route", "departure.flight", "stay.room"],
+        },
+        format="json",
+    )
+
+    values = documents_summary.document_values(event)
+
+    assert values["departure_2"] == "уточняется"
+    assert values["departure_3"] == "уточняется"
+    assert values["accommodation_2"] == "уточняется"
+    # Непомеченное и незаполненное остаётся пустым — слово не выдумывается.
+    assert values["departure_4"] == ""
+
+
+def test_the_time_carries_its_own_flag_next_to_a_filled_date(staff):
+    """«Дата есть, времени пока нет» печатается словом (Plane №518).
+
+    Экран рисует галочку «уточняется» у «Времени прибытия» наравне с датой, а
+    склейка спрашивала флаг ТОЛЬКО у главного ключа `arrival.date`. Галочка у
+    времени стояла и не делала ничего.
+
+    Мутация: вернуть склейке один флаг на главный ключ — вместо
+    «18.06.2026 уточняется» останется голая дата.
+    """
+    from organization_management.apps.ops import documents_summary
+
+    event = make_event("ОМ-Т-55")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-55/",
+        {
+            "section": "arrival",
+            "values": {"arrival": {"date": "18.06.2026", "time": ""}},
+            "unspecified": ["arrival.time"],
+        },
+        format="json",
+    )
+
+    values = documents_summary.document_values(event)
+
+    assert values["arrival_1"] == "18.06.2026 г. уточняется"
 
 
 # ── Правка утверждённого визита (Plane №685) ────────────────────────────────

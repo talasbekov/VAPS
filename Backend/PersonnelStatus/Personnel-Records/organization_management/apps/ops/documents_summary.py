@@ -359,23 +359,28 @@ def document_values(event):
         text = value.strip() if isinstance(value, str) else (value or "")
         return UNSPECIFIED if (not text and path in flagged) else text
 
-    def joined(path, *parts):
+    def joined(*pairs):
         """Склейка нескольких значений ОДНОГО поля документа (Plane №688).
 
-        «Прибытие» печатается как «дата время», «Место проживания» — как
-        «отель номер»: у поля документа одна строка, а в сводке под ней два
-        ключа. Флаг у такого поля один — на ГЛАВНЫЙ ключ (дату, место): им
-        помечают «времени пока нет», а не «нет ни даты, ни времени».
+        «Прибытие» печатается как «дата время»: у поля документа одна строка,
+        а в сводке под ней два ключа.
 
-        🔴 ЭТИХ ТРЁХ ПОЛЕЙ ПОМОЩНИК НЕ КАСАЛСЯ ВОВСЕ (Plane №688): `field()`
-        был применён только к шести ключам раздела «Организация», а
-        `arrival_1`, `departure_1` и `accommodation_1` собирались склейкой в
-        обход него. Помеченные «уточняется» время, маршрут, рейс и место
-        проживания уходили в документ ПУСТЫМИ — читатель не отличал
-        «неизвестно» от «не заполнили», ради чего флаг и заведён.
+        🔴 ЭТИХ ПОЛЕЙ ПОМОЩНИК НЕ КАСАЛСЯ ВОВСЕ (Plane №688): `field()` был
+        применён только к шести ключам раздела «Организация», а `arrival_1`,
+        `departure_1` и `accommodation_1` собирались склейкой в обход него.
+        Помеченные «уточняется» уходили в документ ПУСТЫМИ — читатель не
+        отличал «неизвестно» от «не заполнили», ради чего флаг и заведён.
+
+        🔴 ФЛАГ У КАЖДОЙ ЧАСТИ СВОЙ (Plane №518). Раньше он был один — на
+        ГЛАВНЫЙ ключ (дату), — и галочка «уточняется» у «Времени прибытия»,
+        которую экран рисует наравне с остальными, не делала НИЧЕГО: путь
+        `arrival.time` не спрашивал никто. Теперь «дата есть, времени пока
+        нет» печатается как «18.06.2026 уточняется» — ровно то, что человек
+        и хотел сказать галочкой.
         """
-        text = " ".join(part for part in parts if part)
-        return UNSPECIFIED if (not text and path in flagged) else text
+        return " ".join(
+            part for part in (field(path, value) for path, value in pairs) if part
+        )
 
     persons = summary.get("persons") or []
     values = {}
@@ -391,18 +396,36 @@ def document_values(event):
     arrival = summary.get("arrival") or {}
     departure = summary.get("departure") or {}
     values["arrival_1"] = joined(
-        "arrival.date", _document_date(arrival.get("date")), arrival.get("time")
+        ("arrival.date", _document_date(arrival.get("date"))),
+        ("arrival.time", arrival.get("time")),
     )
     values["departure_1"] = joined(
-        "departure.date",
-        _document_date(departure.get("date")),
-        departure.get("time"),
+        ("departure.date", _document_date(departure.get("date"))),
+        ("departure.time", departure.get("time")),
     )
 
+    # 🔴 МАРШРУТ, РЕЙС И ВРЕМЯ В ПОЛЁТЕ У ШАБЛОНА СВОИ МЕСТА (Plane №518).
+    # `arrival_2/3/4` и `departure_2/3/4` стоят в шаблоне под подписями
+    # «маршрут:», «Рейс:» и строкой времени в полёте, но `document_values` их
+    # не заполнял ВОВСЕ — `fill_all_keys` честно ставил туда пустоту. То есть
+    # набранные оператором маршрут и рейс в документ не попадали никогда, а
+    # галочка «уточняется» на них не могла подействовать тем более: слову
+    # некуда было печататься. Именно это и видел человек — «галочка есть, а в
+    # документе пустое место».
+    for prefix, source in (("arrival", arrival), ("departure", departure)):
+        for slot, key in ((2, "route"), (3, "flight"), (4, "dur")):
+            values[f"{prefix}_{slot}"] = field(
+                f"{prefix}.{key}", source.get(key)
+            )
+
     stay = summary.get("stay") or {}
-    values["accommodation_1"] = joined(
-        "stay.place", stay.get("place"), stay.get("room")
-    )
+    # Номер проживания — СВОЯ строка шаблона («Номер проживания:»), и она тоже
+    # не заполнялась (Plane №518). Поэтому склейка «место номер» в
+    # `accommodation_1` снята: №688 склеивал их в одно место, не зная, что у
+    # номера есть собственное, и после заполнения `accommodation_2` номер
+    # печатался бы в документе ДВАЖДЫ. Флаг остался у каждого свой.
+    values["accommodation_1"] = field("stay.place", stay.get("place"))
+    values["accommodation_2"] = field("stay.room", stay.get("room"))
     values["security_chief_1"] = field("sbChief", summary.get("sbChief"))
     values["armament_1"] = field("weapons", summary.get("weapons"))
     values["wishes_1"] = field("wishes", summary.get("wishes"))
