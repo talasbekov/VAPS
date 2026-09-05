@@ -52,7 +52,7 @@ import {
   useTopUpAllocation,
   type ForceCollectionWithObjects,
 } from "@/hooks/use-force-collections";
-import { formatIsoDate } from "@/shared/lib/date";
+import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 
 const ALLOCATION_STATUS: Record<string, string> = {
@@ -504,7 +504,14 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
           </h3>
           <p className="text-muted-foreground text-sm">
             {handedOver
-              ? `Передано на расстановку ${formatIsoDate((data.handover.at ?? "").slice(0, 10))}${
+              ? // 🔴 МОМЕНТ, А НЕ СРЕЗ UTC-МЕТКИ (Plane №581). `handover.at` —
+                // метка времени сервера в UTC (`force_collection._now_iso()`),
+                // и `.slice(0, 10)` брал из неё календарный день ПО ГРИНВИЧУ.
+                // Передача после 19:00 по местному (+05) лежит в базе
+                // вчерашним днём, и карточка печатала «Передано на расстановку
+                // <вчера>» о том, что сделали вечером. Ровно тот же дефект и
+                // та же правка, что в №560 у даты рассылки запроса.
+                `Передано на расстановку ${formatIsoDateTime(data.handover.at ?? "")}${
                   data.handover.comment ? ` · ${data.handover.comment}` : ""
                 }`
               : `Прислано ${data.gathered} из ${data.need}${
