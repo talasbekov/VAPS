@@ -20,6 +20,7 @@ import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { acceptRosterFor } from './stand-roster'
 import { prepareDemandEvent } from './prepare-events'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -628,6 +629,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
     const call = async (method: 'get' | 'post' | 'patch', path: string, data?: unknown) => {
       const res = await request[method](`${API}${path}`, { headers: auth, data: data as never })
+      await assertStep(res, method, path)
       return (await res.json().catch(() => ({}))) as any
     }
 
@@ -650,7 +652,12 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     })
     const base = `/api/ops/security-events/${created.id}`
     await call('patch', `${base}/bulletin/`, { briefDescription: 'x', initialTasks: '—' })
-    await call('post', `${base}/bulletin/complete/`)
+    // 🔴 ЗАВЕРШАТЬ БЮЛЛЕТЕНЬ НЕ НУЖНО И НЕЛЬЗЯ (Plane №812, найдено проверкой
+    // шагов). ОМ с объектом заводится сразу на рекогносцировке («Реестр ОМ-5»),
+    // и `bulletin/complete/` отвечал `INVALID_STAGE_TRANSITION` — «бюллетень
+    // можно завершить только на этапе „Бюллетень“». Шаг был мёртв с самого
+    // начала: ответ не смотрели, и отказ молчал. Тот же разбор уже стоял в
+    // `recon-stage.spec.ts` — здесь его просто никто не повторил.
     await call('post', `${base}/recon/import-from-passport/`)
     const withSecond = await call('post', `${base}/visit-objects/`, { objectId: other!.id })
     const secondVisit = (withSecond.visitObjects as { id: string; objectName: string }[]).find(
@@ -804,6 +811,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         headers: auth,
         body: body === undefined ? undefined : JSON.stringify(body),
       })
+      await assertStep(res, method, path)
       return res.json().catch(() => ({}))
     }
 
@@ -1051,6 +1059,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         headers: { Authorization: `Bearer ${who}`, 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       })
+      await assertStep(res, method, path)
       return res.json().catch(() => ({}))
     }
     const objects = (await call('GET', '/api/ops/security-events/bindable-objects/')) as {

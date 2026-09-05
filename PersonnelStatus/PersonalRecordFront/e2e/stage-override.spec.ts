@@ -18,6 +18,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -84,11 +85,15 @@ async function serverStage(token: string, id: string): Promise<string> {
 }
 
 async function setStage(token: string, id: string, stage: string): Promise<void> {
-  await fetch(`${API}/api/ops/security-events/${id}/stage/`, {
+  const path = `/api/ops/security-events/${id}/stage/`
+  const res = await fetch(`${API}${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ stage }),
   })
+  // Перевод этапа руками — шаг подготовки: если он отбит, всё, что проба
+  // проверяет дальше, относится к ДРУГОМУ этапу (Plane №812).
+  await assertStep(res, 'POST', path)
 }
 
 test.describe(LIVE ? 'проход по этапам (админ)' : 'проход по этапам (скип: нет SMOKE_LIVE=1)', () => {

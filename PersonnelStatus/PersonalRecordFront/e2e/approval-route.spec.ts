@@ -20,6 +20,7 @@
 import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -40,6 +41,7 @@ function caller(token: string) {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
   return async (method: string, path: string, body?: unknown): Promise<any> => {
     const res = await fetch(`${API}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+    await assertStep(res, method, path)
     const json = await res.json().catch(() => ({}))
     return { status: res.status, ...json }
   }
@@ -68,7 +70,12 @@ async function prepareOnApproval(call: ReturnType<typeof caller>): Promise<{ id:
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, { briefDescription: 'Проба маршрута.', initialTasks: '—' })
-  await call('POST', `${base}/bulletin/complete/`)
+  // 🔴 ЗАВЕРШАТЬ БЮЛЛЕТЕНЬ НЕ НУЖНО И НЕЛЬЗЯ (Plane №812, найдено проверкой
+  // шагов). ОМ с объектом заводится сразу на рекогносцировке («Реестр ОМ-5»),
+  // и `bulletin/complete/` отвечал `INVALID_STAGE_TRANSITION` — «бюллетень
+  // можно завершить только на этапе „Бюллетень“». Шаг был мёртв с самого
+  // начала: ответ не смотрели, и отказ молчал. Тот же разбор уже стоял в
+  // `recon-stage.spec.ts` — здесь его просто никто не повторил.
   await call('POST', `${base}/recon/import-from-passport/`)
   const after = await call('GET', `${base}/`)
   await call('PATCH', `${base}/recon/`, {
@@ -92,7 +99,8 @@ test.describe(LIVE ? 'маршрут согласования' : 'маршрут
   test.skip(MATRIX_PASSWORD === '', 'нужен ACCESS_MATRIX_PASSWORD — тот же, которым заведены учётки')
 
   test('маршрут из настроек, очередь подписей, реквизиты и подвал PDF', async ({ page }) => {
-    const admin = caller(await tokenFor(STAND_USERNAME, STAND_PASSWORD))
+    const adminToken = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const admin = caller(adminToken)
     const before = (await admin('GET', '/api/ops/approval-route/')).results as {
       roleLabel: string; unit: string; username: string; fullName: string
     }[]
@@ -126,10 +134,23 @@ test.describe(LIVE ? 'маршрут согласования' : 'маршрут
       expect(route[0].username).toBe('acc_dept_head_d2')
 
       // Второй шаг раньше первого — сервер отказывает по очереди.
-      const early = await admin('POST', `/api/ops/security-events/${target.id}/approval/route/${route[1].id}/decide/`, {
-        decision: 'APPROVED', visitObjectId: target.visitId,
-      })
-      expect(early.status).toBe(422)
+      //
+      // 🔴 МИМО ПРОВЕРЯЮЩЕГО ПОМОЩНИКА, И НАМЕРЕННО (Plane №813). Здесь отказ
+      // — ПРЕДМЕТ пробы, а не сбой подготовки: `caller` роняет шаг-переход,
+      // ответивший не 2xx, и на этой строке уронил бы правильный ответ
+      // сервера. Ровно тот случай, о котором №813 предупреждает: сторож,
+      // требующий успеха от КАЖДОГО вызова, глушится исключениями и перестаёт
+      // ловить что-либо. Поэтому проверка формулируется здесь и целиком.
+      const earlyResponse = await fetch(
+        `${API}/api/ops/security-events/${target.id}/approval/route/${route[1].id}/decide/`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ decision: 'APPROVED', visitObjectId: target.visitId }),
+        },
+      )
+      const early = (await earlyResponse.json()) as { error_code?: string }
+      expect(earlyResponse.status).toBe(422)
       expect(early.error_code).toBe('APPROVAL_OUT_OF_ORDER')
 
       // 3. Начальник второго департамента подписывает свою строку с экрана.

@@ -18,6 +18,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -56,10 +57,15 @@ async function signIn(page: Page): Promise<void> {
 
 async function prepareOnApproval(tok: string): Promise<void> {
   const headers = { Authorization: `Bearer ${tok}`, 'content-type': 'application/json' }
-  const call = async (method: string, p: string, body?: unknown): Promise<any> =>
-    (await fetch(`${API}${p}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }))
-      .json()
-      .catch(() => ({}))
+  const call = async (method: string, p: string, body?: unknown): Promise<any> => {
+    const res = await fetch(`${API}${p}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    await assertStep(res, method, p)
+    return res.json().catch(() => ({}))
+  }
   const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
   const object = objects.results.find((o: { publishedVersionCount: number }) => o.publishedVersionCount > 0)
   if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
@@ -73,7 +79,12 @@ async function prepareOnApproval(tok: string): Promise<void> {
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, { briefDescription: 'Проба печати.', initialTasks: '—' })
-  await call('POST', `${base}/bulletin/complete/`)
+  // 🔴 ЗАВЕРШАТЬ БЮЛЛЕТЕНЬ НЕ НУЖНО И НЕЛЬЗЯ (Plane №812, найдено проверкой
+  // шагов). ОМ с объектом заводится сразу на рекогносцировке («Реестр ОМ-5»),
+  // и `bulletin/complete/` отвечал `INVALID_STAGE_TRANSITION` — «бюллетень
+  // можно завершить только на этапе „Бюллетень“». Шаг был мёртв с самого
+  // начала: ответ не смотрели, и отказ молчал. Тот же разбор уже стоял в
+  // `recon-stage.spec.ts` — здесь его просто никто не повторил.
   await call('POST', `${base}/recon/import-from-passport/`)
   const after = await call('GET', `${base}/`)
   await call('PATCH', `${base}/recon/`, {

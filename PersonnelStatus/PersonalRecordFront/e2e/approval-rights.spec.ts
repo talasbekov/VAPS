@@ -23,6 +23,7 @@ import path from 'node:path'
 import { anyChiefId } from './stand-chief'
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -69,6 +70,7 @@ async function prepareSentEvent(token: string): Promise<void> {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+    await assertStep(res, method, path)
     return res.json().catch(() => ({}))
   }
   const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
@@ -85,7 +87,12 @@ async function prepareSentEvent(token: string): Promise<void> {
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, { briefDescription: 'Проба прав.', initialTasks: '—' })
-  await call('POST', `${base}/bulletin/complete/`)
+  // 🔴 ЗАВЕРШАТЬ БЮЛЛЕТЕНЬ НЕ НУЖНО И НЕЛЬЗЯ (Plane №812, найдено проверкой
+  // шагов). ОМ с объектом заводится сразу на рекогносцировке («Реестр ОМ-5»),
+  // и `bulletin/complete/` отвечал `INVALID_STAGE_TRANSITION` — «бюллетень
+  // можно завершить только на этапе „Бюллетень“». Шаг был мёртв с самого
+  // начала: ответ не смотрели, и отказ молчал. Тот же разбор уже стоял в
+  // `recon-stage.spec.ts` — здесь его просто никто не повторил.
   await call('POST', `${base}/recon/import-from-passport/`)
   const afterImport = await call('GET', `${base}/`)
   await call('PATCH', `${base}/recon/`, {
