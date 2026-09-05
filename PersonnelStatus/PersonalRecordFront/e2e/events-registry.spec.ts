@@ -537,6 +537,14 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await dialog.getByLabel('Время').fill('09:30')
     // Локация — каскадом (Plane №418): страна → город → адрес; строку
     // «Казахстан, Алматы, …» собирает сервер, и карточка печатает её.
+    //
+    // ⚠️ В ПРЕВЬЮ ЭТОЙ СТРОКИ НЕ БУДЕТ, и пин ниже поправлен ОСОЗНАННО
+    // (Plane №629). Проба выбирает и ОБЪЕКТ посещения, а бюллетень при наличии
+    // объектов печатает в колонке «Локация» ТОЛЬКО их названия
+    // (`documents_bulletin._location`); «страна, город, адрес» идут туда лишь
+    // когда объекта нет. Раньше превью склеивало всё подряд и обещало строку,
+    // которой документ не производит НИКОГДА, — а блок озаглавлен «Так строка
+    // ляжет в бюллетень». Пин стерёг эту ложь; теперь он стережёт правило.
     await dialog.getByLabel('Страна').selectOption({ label: 'Казахстан' })
     await dialog.getByLabel('Город').selectOption({ label: 'Алматы' })
     await dialog.getByLabel('Адрес / место').fill('пр. Абая, 1')
@@ -551,8 +559,13 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const preview = dialog.getByTestId('bulletin-row-preview')
     await expect(preview).toContainText(title)
     await expect(preview).toContainText(personName)
-    await expect(preview).toContainText('Казахстан, Алматы')
+    // Объект выбран — в «Локации» стоит он один, без страны, города и адреса.
+    await expect(preview.getByTestId('preview-Локация')).not.toContainText('Казахстан')
+    await expect(preview.getByTestId('preview-Локация')).not.toContainText('пр. Абая')
     await expect(preview).toContainText(chiefLabel)
+    // А СЕРВЕР структуру принял и сложил свою строку: карточка ниже сверяет
+    // «Казахстан, Алматы, пр. Абая, 1» — то есть правка превью ничего не
+    // сломала в данных, она поправила ОБЕЩАНИЕ.
     // Период в превью — как в бюллетене (`[МД-10]`, Plane №438): без года,
     // с днём недели; 14.09.2026 — понедельник.
     await expect(preview.getByTestId('preview-Дата')).toHaveText('14 сентября (пн.)')

@@ -19,6 +19,8 @@
 import datetime as dt
 import os
 
+from django.utils import timezone
+
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops.document_tables import fill_table_rows
@@ -132,17 +134,35 @@ def _persons(event):
     return ", ".join(name for name in [main, *rest] if name != "")
 
 
-def render_bulletin(as_of=None, fmt="pdf"):
+def render_bulletin(as_of=None, fmt="pdf", rows=None):
     """Байты бюллетеня на момент среза (по умолчанию — сейчас).
 
     `fmt` — «docx» либо «pdf». DOCX это то, что просил заказчик: бюллетень
     дозаполняют руками после выгрузки.
+
+    🔴 СРЕЗ ПРИВОДИТСЯ К МЕСТНОМУ ВРЕМЕНИ ЗДЕСЬ, В ОДНОМ МЕСТЕ (Plane №624).
+    Раньше каждый вызывающий решал это сам: выпуск (`issue_bulletin`) переводил
+    момент в `localtime` до отрисовки, а ручка отрисовки на лету отдавала
+    разобранный aware-datetime как есть. Один и тот же `asOf` давал ДВА разных
+    документа: `2026-09-15T00:30+00:00` через отрисовку — шапку «00:30 ч.
+    15.09.2026» и срез по 15.09, а через выпуск — «05:30 ч. 15.09.2026»
+    (Asia/Almaty) и около полуночи ДРУГОЙ набор мероприятий. Два документа с
+    одним и тем же срезом в реквизитах — спор «что было отправлено» такой
+    бюллетень не решает, а создаёт.
+
+    🔴 `rows` — УЖЕ СОБРАННЫЕ СТРОКИ (Plane №623). Выпуск сохраняет снимок строк
+    и PDF, и собирать их дважды значит собирать их в РАЗНЫЕ моменты: при READ
+    COMMITTED коммит, пришедший между двумя вызовами, разводит сохранённый
+    снимок и замороженный PDF. Ровно та гарантия, которую объявляет докстринг
+    модуля выпусков, и рушилась. Не передали — собираются здесь, как и прежде.
     """
     from docx import Document
 
     moment = as_of or Clock.now()
     if isinstance(moment, dt.date) and not isinstance(moment, dt.datetime):
         moment = dt.datetime.combine(moment, dt.time(8, 0))
+    elif timezone.is_aware(moment):
+        moment = timezone.localtime(moment)
     as_of_text = (
         f"{moment.strftime('%H:%M')} ч. "
         f"{moment.day:02d}.{moment.month:02d}.{moment.year} года"
@@ -150,7 +170,10 @@ def render_bulletin(as_of=None, fmt="pdf"):
     filled_path, left = fill_template(TEMPLATE, {"as_of": as_of_text})
     try:
         document = Document(filled_path)
-        fill_table_rows(document.tables[0], bulletin_rows(moment.date()))
+        fill_table_rows(
+            document.tables[0],
+            bulletin_rows(moment.date()) if rows is None else rows,
+        )
         document.save(filled_path)
         return emit(filled_path, fmt)
     finally:

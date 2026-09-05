@@ -128,7 +128,7 @@ const formSchema = z
     }
   );
 
-type FormValues = z.infer<typeof formSchema>;
+export type FormValues = z.infer<typeof formSchema>;
 
 const EMPTY_FORM: FormValues = {
   kind: "",
@@ -253,12 +253,20 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
     );
     return personIds.map((id) => byId.get(id) ?? `лицо №${id}`);
   }, [personIds, personsQuery.data]);
+  // 🔴 ПРЕВЬЮ ПОВТОРЯЕТ ПРАВИЛО ДОКУМЕНТА, А НЕ СВОЁ (Plane №629). Блок
+  // озаглавлен «Так строка ляжет в бюллетень», а собирал «страна, город,
+  // объект, адрес» — строку, которой документ не производит НИКОГДА: при
+  // наличии объектов посещения он печатает ТОЛЬКО их названия
+  // (`documents_bulletin._location`), иначе `location` мероприятия, собранную
+  // как «страна, город, адрес» (`compose_location`). Обещание «так и ляжет» —
+  // единственное, ради чего блок существует; неверное, оно хуже отсутствия.
   const previewLocation = useMemo(() => {
-    const country = countries.data?.results.find((c) => c.id === countryId)?.name ?? "";
-    const city = cities.data?.results.find((c) => c.id === cityId)?.name ?? "";
     const object =
       objectsQuery.data?.results.find((o) => o.id === objectId)?.name ?? "";
-    return [country, city, object, address.trim()].filter((p) => p !== "").join(", ");
+    if (object !== "") return object;
+    const country = countries.data?.results.find((c) => c.id === countryId)?.name ?? "";
+    const city = cities.data?.results.find((c) => c.id === cityId)?.name ?? "";
+    return [country, city, address.trim()].filter((p) => p !== "").join(", ");
   }, [address, cities.data, cityId, countries.data, countryId, objectId, objectsQuery.data]);
 
   // Кнопка ПО-НАСТОЯЩЕМУ `disabled`, пока обязательное не заполнено
@@ -503,10 +511,26 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
                   options={personsQuery.data?.results ?? []}
                   loading={personsQuery.isPending}
                 />
+                {/* 🔴 ТЕКСТ ОБЕЩАЛ ТО, ЧЕГО БОЛЬШЕ НЕ БЫВАЕТ (Plane №632). Он
+                    написан, когда лицо было НЕОБЯЗАТЕЛЬНЫМ. С `[БЛН-12]` (№439)
+                    «хотя бы одно ОЛ» стало обязательным, и при отказе каталога
+                    список вариантов пуст, комбобокс выключен, кнопка отправки
+                    выключена — «указать позже правкой» нельзя, потому что
+                    бюллетеня не будет вовсе. Успокоительная неправда хуже
+                    отказа: человек ждёт, что всё получится, и не зовёт того,
+                    кто чинит справочник. */}
                 {personsQuery.isError && (
                   <p className="text-xs text-destructive-ink" role="alert">
-                    Справочник охраняемых лиц недоступен — лица можно указать
-                    позже правкой бюллетеня.
+                    Справочник охраняемых лиц недоступен, а без лица бюллетень не
+                    завести.{" "}
+                    <button
+                      type="button"
+                      className="underline underline-offset-2"
+                      onClick={() => void personsQuery.refetch()}
+                      disabled={personsQuery.isFetching}
+                    >
+                      {personsQuery.isFetching ? "Повторяем…" : "Повторить"}
+                    </button>
                   </p>
                 )}
               </>
@@ -710,16 +734,39 @@ function missingHint(missing: string[]): string {
 /**
  * Пометка «вылет / прилёт» и борт — атрибуты визита ГЛАВНОГО лица (№418):
  * час относится к его прилёту или вылету, и своего поля у мероприятия для
- * этого нет намеренно. Без пометки или без времени детали не шлются.
+ * этого нет намеренно.
+ *
+ * 🔴 БОРТ ЖИВЁТ БЕЗ ВРЕМЕНИ (Plane №630). Выход стоял на `eventTime === ""`,
+ * тогда как «Время» НЕОБЯЗАТЕЛЬНО, а поле «Борт» включается одной лишь
+ * пометкой вылет/прилёт. Человек заполнял борт, сохранял — и борта нигде не
+ * было, без единого сообщения. Теперь без времени уходит только борт, а момент
+ * не выдумывается: пустая ячейка — честный ответ «сведений нет».
+ *
+ * 🔴 ВЫЛЕТ — В ДЕНЬ ОКОНЧАНИЯ, А НЕ НАЧАЛА (Plane №631). `departureAt`
+ * собирался из `businessDate`, то есть у ОМ 10.09-12.09 вылет записывался на
+ * 10.09, каким бы он ни был на самом деле. Прилёт остаётся днём начала: это
+ * два разных края периода, и брать для обоих один значило бы утверждать, что
+ * лицо улетело в день приезда.
+ *
+ * ЭКСПОРТИРОВАНА РАДИ ПРОБЫ. Обе потери были ТИХИМИ — ни отказа, ни
+ * сообщения, — и заметить их можно только сверив сохранённое с введённым.
+ * Функция чистая, живой стенд ей не нужен.
  */
-function personDetailsOf(values: FormValues): EventProtectedPersonDetails[] {
+export function personDetailsOf(values: FormValues): EventProtectedPersonDetails[] {
   const main = values.protectedPersonIds[0];
-  if (main === undefined || values.timeMark === "" || values.eventTime === "") {
+  if (main === undefined || values.timeMark === "") {
     return [];
   }
-  const when = `${values.businessDate}T${values.eventTime}`;
+  const arrival = values.timeMark === "arrival";
+  // Вылет — днём окончания, если он назван; не назван — днём начала, другого
+  // дня у мероприятия просто нет.
+  const day = arrival
+    ? values.businessDate
+    : values.businessDateEnd || values.businessDate;
+  const when = values.eventTime === "" ? undefined : `${day}T${values.eventTime}`;
   const flight = values.flight.trim();
-  return values.timeMark === "arrival"
+  if (when === undefined && flight === "") return [];
+  return arrival
     ? [{ id: main, arrivalAt: when, flightArrival: flight }]
     : [{ id: main, departureAt: when, flightDeparture: flight }];
 }

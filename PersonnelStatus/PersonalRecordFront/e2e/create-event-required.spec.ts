@@ -12,7 +12,6 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
-
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -60,4 +59,76 @@ test.describe(LIVE ? 'окно создания ОМ: обязательные �
     await expect(submit).toBeEnabled()
     await expect(hint).toHaveCount(0)
   })
+
+  test('превью локации повторяет правило документа: объект вытесняет адрес (Plane №629)', async ({
+    page,
+  }) => {
+    /**
+     * Блок озаглавлен «Так строка ляжет в бюллетень», а собирал «страна, город,
+     * объект, адрес» — строку, которой документ не производит НИКОГДА: при
+     * наличии объектов посещения он печатает ТОЛЬКО их названия, иначе
+     * «страна, город, адрес». Обещание «так и ляжет» — единственное, ради чего
+     * блок существует; неверное, оно хуже отсутствия.
+     *
+     * Мутация, на которой проба обязана краснеть: вернуть склейку всех четырёх
+     * значений — в превью появится «Казахстан, Астана, …».
+     */
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    const dialog = page.getByRole('dialog')
+
+    await dialog.getByLabel('Адрес / место').fill('Акорда')
+    const preview = dialog.getByTestId('bulletin-row-preview')
+    // Объекта нет — «страна, город, адрес», как собирает сервер.
+    await expect(preview).toContainText('Акорда', { timeout: 15_000 })
+    await expect(preview).toContainText('Казахстан')
+
+    // Объект назван — документ печатает ТОЛЬКО его: ни страны, ни адреса.
+    // Выбор объекта — combobox с поиском, а не <select> (реестр растёт).
+    const trigger = dialog.getByRole('combobox', { name: 'Объект' })
+    await trigger.click()
+    // Поповер живёт в ПОРТАЛЕ — вне узла окна, поэтому ищем от страницы;
+    // первый пункт списка «объект не выбран», берём следующий (тот же приём,
+    // что у `pickFirstObject` в `events-registry.spec.ts`).
+    const options = page.locator('[data-slot="popover-content"] li button')
+    await expect(options.nth(1)).toBeVisible({ timeout: 20_000 })
+    await options.nth(1).click()
+    // Триггер печатает «КОД · Название», превью — только название.
+    const chosen = (await trigger.innerText()).trim()
+    const objectName = chosen.split('·').slice(1).join('·').trim()
+    expect(objectName, 'объект не выбрался').not.toBe('')
+    await expect(preview).toContainText(objectName, { timeout: 15_000 })
+    await expect(preview).not.toContainText('Акорда')
+    await expect(preview).not.toContainText('Казахстан')
+  })
+
+  test('отказ справочника лиц назван честно и предлагает повтор (Plane №632)', async ({ page }) => {
+    /**
+     * Текст «лица можно указать позже правкой бюллетеня» написан, когда лицо
+     * было НЕОБЯЗАТЕЛЬНЫМ. С `[БЛН-12]` (№439) «хотя бы одно ОЛ» обязательно, и
+     * при отказе каталога список вариантов пуст, комбобокс выключен, кнопка
+     * отправки выключена — «указать позже» нельзя, потому что бюллетеня не
+     * будет вовсе. Успокоительная неправда хуже отказа: человек ждёт, что всё
+     * получится, и не зовёт того, кто чинит справочник.
+     *
+     * Мутация, на которой проба обязана краснеть: вернуть прежний текст.
+     */
+    await page.route('**/api/ops/protected-persons/**', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"boom"}' })
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    const dialog = page.getByRole('dialog')
+
+    const alert = dialog.getByRole('alert').filter({ hasText: 'Справочник охраняемых лиц' })
+    await expect(alert).toBeVisible({ timeout: 20_000 })
+    await expect(alert).toContainText('бюллетень не завести')
+    await expect(alert).not.toContainText('позже правкой')
+    await expect(alert.getByRole('button', { name: 'Повторить' })).toBeVisible()
+    // И кнопка отправки честно выключена — обещать обратное было нечем.
+    await expect(dialog.getByRole('button', { name: 'Создать бюллетень' })).toBeDisabled()
+  })
+
 })
