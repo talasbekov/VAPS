@@ -154,8 +154,22 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
       await expect(addPerson).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 30_000 })
     await addPerson.click()
-    await page.getByRole('textbox', { name: 'ФИО' }).fill(PERSON)
-    await page.getByRole('textbox', { name: 'Должность' }).fill(PROBE_ROLE)
+    // 🔴 ПОЛЯ СУЖЕНЫ К СВОЕМУ БЛОКУ (Plane №736). С единым режимом правки
+    // (№441) форма рисует по `fieldset` на КАЖДОЕ лицо сводки, и в каждом своя
+    // подпись «ФИО»: собранная сводка уже несёт лицо, выведенное из бюллетеня,
+    // поэтому после «＋ Добавить лицо» таких полей минимум два, и несужённый
+    // локатор бросает strict mode. У автора прошло случайно — выбранный ОМ
+    // оказался без названного лица; первый же иностранный ОМ с лицом красил
+    // пробу по причине, к проверяемому поведению отношения не имеющей.
+    //
+    // Берётся ПОСЛЕДНИЙ блок: «＋ Добавить лицо» дописывает свой в конец.
+    const personBlock = page.locator('form fieldset', { has: page.getByText(/^Лицо \d+$/) }).last()
+    // Сужение проверяется, а не подразумевается: в СВОЁМ блоке поле ровно
+    // одно, сколько бы лиц ни было в сводке. Без этой строки починка
+    // держалась бы на удаче выбранного ОМ — ровно так дефект и прожил.
+    await expect(personBlock.getByRole('textbox', { name: 'ФИО' })).toHaveCount(1)
+    await personBlock.getByRole('textbox', { name: 'ФИО' }).fill(PERSON)
+    await personBlock.getByRole('textbox', { name: 'Должность' }).fill(PROBE_ROLE)
     await page.getByRole('button', { name: 'Сохранить' }).click()
     // `.first()`: сводка теперь панель в КАРТОЧКЕ ОМ (Plane «Реестр ОМ-35.8»),
     // и то же имя выводится ещё и в «Сведениях об ОМ» бюллетеня — строгий
