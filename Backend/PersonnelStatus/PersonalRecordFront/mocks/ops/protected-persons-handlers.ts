@@ -67,7 +67,10 @@ export const protectedPersonsHandlers = [
   //
   // Мок собирает её из своего же стора мероприятий по тем же правилам, что
   // сервер: только ЗАКРЫТЫЕ ОМ, и объекты — только те, где названо ЭТО лицо.
-  http.get(`*${protectedPersonHistoryPath(":id")}`, ({ params }) => {
+  // Шаблон написан руками, а не собран помощником (Plane №795): у
+  // `protectedPersonHistoryPath` внутри `encodeURIComponent`, и на `":id"`
+  // выходит `%3Aid` — литерал вместо параметра, обработчик недостижим.
+  http.get(`*${PROTECTED_PERSONS_PATH}:id/history/`, ({ params }) => {
     const id = params.id as string;
     const rows = readEventsStore()
       .filter((event) => event.stage === "CLOSED")
