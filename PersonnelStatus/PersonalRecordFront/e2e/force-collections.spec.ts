@@ -232,6 +232,59 @@ test.describe('сборы сил (вид штаба)', () => {
     }
   })
 
+  /**
+   * У доски сбора сил есть АДРЕС: вкладка и открытый сбор переживают
+   * перезагрузку и пересылаются ссылкой (Plane №779).
+   *
+   * Оба состояния жили в `useState`, и уведомление штабу («Первый департамент
+   * выделяет 2 из 3») вести было некуда — ссылку у него выставили `null`
+   * осознанно. Теперь `?tab=collections&collection=<id>` открывает карточку
+   * сразу, как `?forcesRequest=` у запроса управлению с №392.
+   *
+   * 🔴 ПРОБА ХОДИТ ПО АДРЕСУ, А НЕ КЛИКАЕТ. Клик проверил бы, что кнопка
+   * работает (это уже стережёт соседняя проба); предмет здесь — что состояние
+   * ДОЕХАЛО ДО URL и читается обратно. Поэтому карточка открывается
+   * переходом по ссылке, а «Назад к списку сборов» проверяется тем, что
+   * параметр из адреса ушёл.
+   */
+  test('адрес открывает вкладку сборов и сам сбор (Plane №779)', async ({ page }) => {
+    const token = await apiToken()
+    const server = (await (
+      await fetch(`${API}/api/ops/security-events/forces/collections/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { results: (CollectionRow & { eventId: string })[] }
+    const target = server.results[0]
+    expect(target, 'на стенде нет ни одного сбора — открывать нечего').toBeDefined()
+
+    await signIn(page)
+    await page.goto(
+      `${APP}/employees?view=forces&tab=collections&collection=${encodeURIComponent(
+        target!.eventId,
+      )}`,
+    )
+
+    // Карточка сбора открыта СРАЗУ: ни вкладку, ни строку выбирать не нужно.
+    await expect(
+      page.getByRole('button', { name: 'Назад к списку сборов' }),
+      'адрес не открыл карточку сбора — уведомлению штаба вести некуда',
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText(target!.code, { exact: false }).first()).toBeVisible()
+
+    // Возврат к списку убирает сбор из адреса — иначе ссылка «на список»
+    // снова открывала бы карточку.
+    await page.getByRole('button', { name: 'Назад к списку сборов' }).click()
+    await expect(page.locator('section[aria-labelledby="force-collections-heading"]')).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('collection'), { timeout: 10_000 })
+      .toBeNull()
+    // А вкладка в адресе осталась: человек вернулся к списку СБОРОВ, а не на
+    // первую вкладку экрана.
+    expect(new URL(page.url()).searchParams.get('tab')).toBe('collections')
+  })
+
   test('на вкладке сборов нет чужих управлений — поиска по людям и выгрузки', async ({
     page,
   }) => {

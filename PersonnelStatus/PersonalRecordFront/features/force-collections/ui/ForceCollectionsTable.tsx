@@ -17,7 +17,8 @@
  * Прогресс — И ЧИСЛОМ, И ПОЛОСОЙ, и с объявлением для тех, кто читает экран
  * не глазами: полоса сама по себе не отвечает на вопрос «сколько именно».
  */
-import { useState } from "react";
+import { useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -68,9 +69,36 @@ function Progress({ done, need }: { done: number; need: number }) {
 export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean }) {
   const collections = useForceCollections({ enabled });
   const rows = collections.data?.results ?? [];
-  // Карточка открывается НА МЕСТЕ списка, как у департамента (№272) и как на
-  // эталоне («← Назад к списку сборов»).
-  const [opened, setOpened] = useState<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  /**
+   * Карточка открывается НА МЕСТЕ списка, как у департамента (№272) и как на
+   * эталоне («← Назад к списку сборов»).
+   *
+   * 🔴 ОТКРЫТЫЙ СБОР ЖИВЁТ В АДРЕСЕ (`?collection=`, Plane №779). Он стоял в
+   * `useState`, и адреса у доски не было вовсе: уведомление штабу «Первый
+   * департамент выделяет 2 из 3» вести было НЕКУДА, ссылку у него выставили
+   * `null` осознанно. Теперь ссылка ведёт прямо в дело — как у запроса
+   * управлению с №392.
+   *
+   * `replace`, а не `push`: открытие карточки — не шаг навигации, и «назад»
+   * после трёх сборов обязано вернуть туда, откуда пришли, а не пройти их в
+   * обратном порядке. То же решение, что у выбора объекта посещения (№388).
+   */
+  const opened = searchParams.get("collection");
+  const setOpened = useCallback(
+    (value: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (value === null) next.delete("collection");
+      else next.set("collection", value);
+      const query = next.toString();
+      router.replace(query === "" ? pathname : `${pathname}?${query}`, {
+        scroll: false,
+      });
+    },
+    [router, pathname, searchParams]
+  );
 
   if (opened !== null) {
     return <ForceCollectionCard eventId={opened} onBack={() => setOpened(null)} />;
