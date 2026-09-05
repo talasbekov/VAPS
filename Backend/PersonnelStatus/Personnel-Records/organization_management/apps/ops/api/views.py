@@ -1580,10 +1580,18 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             # У ОМ без объектов посещения объектных старших не бывает вовсе:
             # сюда доходит только старший мероприятия, а он обработан выше.
             return False
-        return (
+        if (
             owner.chief_employee_id is not None
             and int(owner.chief_employee_id) == int(employee.pk)
-        )
+        ):
+            return True
+        # Замещающий, который ВЕДЁТ этот объект, — тоже свой (Plane №453):
+        # `[ОЗН-09]` даёт ему работу по этапу, кроме завершения. Наблюдатель
+        # (без `can_edit_placement`) сюда не проходит — тем же флагом, что и
+        # у расстановки (Plane №572).
+        return owner.deputies.filter(
+            employee_id=employee.pk, can_edit_placement=True
+        ).exists()
 
     def _my_assignments_override(self, request):
         """Сотрудник — своя карточка, старший — своё, начальник — чтение

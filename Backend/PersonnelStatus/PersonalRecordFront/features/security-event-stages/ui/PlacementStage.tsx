@@ -34,6 +34,7 @@ import {
 } from "./useVisitObjectScope";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { RightGate } from "@/shared/ui/right-gate";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -953,30 +954,38 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={
-                assign.isPending || unfilled === 0 || !access.can(PLACEMENT_MANAGE)
-              }
-              aria-disabled={!access.can(PLACEMENT_MANAGE)}
-              title={access.reason(PLACEMENT_MANAGE)}
-              onClick={autoFill}
-            >
-              Распределить автоматически
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={complete.isPending || !access.can(EVENT_MANAGE)}
-              title={access.reason(EVENT_MANAGE) || undefined}
-              onClick={() =>
-                complete.mutate({ visitObjectId: scope.visit?.id })
-              }
-            >
-              {complete.isPending ? "Завершение…" : "Завершить расстановку"}
-            </Button>
+            <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+              {(describedBy) => (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    assign.isPending || unfilled === 0 || !access.can(PLACEMENT_MANAGE)
+                  }
+                  aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                  aria-describedby={describedBy}
+                  onClick={autoFill}
+                >
+                  Распределить автоматически
+                </Button>
+              )}
+            </RightGate>
+            <RightGate reason={access.reason(EVENT_MANAGE)}>
+              {(describedBy) => (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={complete.isPending || !access.can(EVENT_MANAGE)}
+                  aria-describedby={describedBy}
+                  onClick={() =>
+                    complete.mutate({ visitObjectId: scope.visit?.id })
+                  }
+                >
+                  {complete.isPending ? "Завершение…" : "Завершить расстановку"}
+                </Button>
+              )}
+            </RightGate>
           </div>
         </div>
 
@@ -1409,39 +1418,47 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         {/* Чип-переключатель «Старший поста» (`[РАС-03]`): старший
                             на пост ОДИН, сервер снимает прежнего сам. Состояние
                             — `aria-pressed`, а не второй текст кнопки. */}
-                        <button
-                          type="button"
-                          aria-pressed={assignment.isSectorSenior}
-                          aria-label={`Старший поста: ${assignment.employeeName}`}
-                          disabled={setSenior.isPending || !access.can(PLACEMENT_MANAGE)}
-                          title={access.reason(PLACEMENT_MANAGE) || undefined}
-                          onClick={() =>
-                            setSenior.mutate({
-                              assignmentId: assignment.id,
-                              senior: !assignment.isSectorSenior,
-                            })
-                          }
-                          className={`inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
-                            assignment.isSectorSenior
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-input bg-background text-foreground hover:bg-muted"
-                          }`}
-                        >
-                          {assignment.isSectorSenior ? "✓ " : ""}Старший поста
-                        </button>
+                        <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+                          {(describedBy) => (
+                            <button
+                              type="button"
+                              aria-pressed={assignment.isSectorSenior}
+                              aria-label={`Старший поста: ${assignment.employeeName}`}
+                              disabled={setSenior.isPending || !access.can(PLACEMENT_MANAGE)}
+                              aria-describedby={describedBy}
+                              onClick={() =>
+                                setSenior.mutate({
+                                  assignmentId: assignment.id,
+                                  senior: !assignment.isSectorSenior,
+                                })
+                              }
+                              className={`inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                                assignment.isSectorSenior
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-input bg-background text-foreground hover:bg-muted"
+                              }`}
+                            >
+                              {assignment.isSectorSenior ? "✓ " : ""}Старший поста
+                            </button>
+                          )}
+                        </RightGate>
                         <span className="flex gap-1">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2 text-xs"
-                            aria-label={`Роль и секция: ${assignment.employeeName}`}
-                            disabled={!access.can(PLACEMENT_MANAGE)}
-                            title={access.reason(PLACEMENT_MANAGE) || undefined}
-                            onClick={() => setEditing(assignment)}
-                          >
-                            Роль и секция…
-                          </Button>
+                          <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+                            {(describedBy) => (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2 text-xs"
+                                aria-label={`Роль и секция: ${assignment.employeeName}`}
+                                disabled={!access.can(PLACEMENT_MANAGE)}
+                                aria-describedby={describedBy}
+                                onClick={() => setEditing(assignment)}
+                              >
+                                Роль и секция…
+                              </Button>
+                            )}
+                          </RightGate>
                           <button
                             type="button"
                             aria-label={`Удалить с поста: ${assignment.employeeName}`}

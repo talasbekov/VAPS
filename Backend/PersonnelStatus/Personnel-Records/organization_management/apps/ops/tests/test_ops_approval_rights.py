@@ -507,3 +507,84 @@ def test_the_event_chief_still_finishes_the_stage(
     )
 
     assert done.status_code == 200, done.content
+
+
+def test_the_object_deputy_leads_the_stage_but_does_not_finish_it(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 Plane №453: замещающий объекта ведёт «Ознакомление», кроме завершения.
+
+    Спецификация `[ОЗН-09]` даёт замещающему ту же работу по этапу, что и
+    старшему, КРОМЕ «Завершить»: он видит отказ сотрудника заступить и обязан
+    успеть заменить его или напомнить, а не ждать старшего, которого может не
+    быть на месте. Правило же знало только старших, и замещающий на этапе был
+    зрителем: видел отказ и не мог сделать ничего.
+
+    Мутация: вернуть `may_manage_stage` без ветки замещающего — напоминание и
+    замена отобьются 403.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    base, event_id, first, _second, assigned = _on_acknowledgement(
+        manager, two_objects_on_approval
+    )
+    deputy_employee = make_employee(last_name="Замещаев")
+    added = manager.post(
+        f"{base}visit-objects/{first.pk}/deputies/",
+        {"employeeId": str(deputy_employee.pk), "canEditPlacement": True},
+        format="json",
+    )
+    assert added.status_code in (200, 201), added.content
+    deputy = _persona(deputy_employee, "ev-deputy-stage")
+
+    # Напоминание — его работа.
+    reminded = deputy.post(f"{base}acknowledgement/remind-all/")
+    assert reminded.status_code == 200, reminded.content
+
+    # Замена на посту СВОЕГО объекта — тоже.
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    of_post = {a["postId"]: a["id"] for a in event.placement_assignments}
+    replaced = deputy.post(
+        f"{base}conduct/replace/",
+        {
+            "assignmentId": of_post[assigned[str(first.pk)]],
+            "incomingEmployeeId": str(make_employee(last_name="Пришедшев").pk),
+            "reasonCode": "SICK",
+        },
+        format="json",
+    )
+    assert replaced.status_code == 200, replaced.content
+
+    # А завершение этапа — нет: оно переводит ВСЁ мероприятие (Plane №613).
+    refused = deputy.post(
+        f"{base}acknowledgement/complete/",
+        {"force": True, "comment": "Проба"},
+        format="json",
+    )
+    assert refused.status_code == 403, refused.content
+
+
+def test_an_observer_deputy_does_not_lead_the_stage(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """Замещающий-НАБЛЮДАТЕЛЬ (без правки расстановки) этап не ведёт.
+
+    Флаг `can_edit_placement` заведён ровно затем, чтобы отличать того, кто
+    ВЕДЁТ объект, от внесённого «в список» (Plane №572). Без этой пробы №453
+    можно было бы «починить» любым замещающим, и наблюдатель получил бы замену
+    людей на постах.
+    """
+    base, _event_id, first, _second, _ = _on_acknowledgement(
+        manager, two_objects_on_approval
+    )
+    watcher_employee = make_employee(last_name="Наблюдаев")
+    manager.post(
+        f"{base}visit-objects/{first.pk}/deputies/",
+        {"employeeId": str(watcher_employee.pk), "canEditPlacement": False},
+        format="json",
+    )
+    watcher = _persona(watcher_employee, "ev-deputy-watch")
+
+    refused = watcher.post(f"{base}acknowledgement/remind-all/")
+
+    assert refused.status_code == 403, refused.content
