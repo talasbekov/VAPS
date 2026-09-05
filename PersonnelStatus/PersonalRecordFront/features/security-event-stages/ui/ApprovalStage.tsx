@@ -597,14 +597,30 @@ function ApprovalRoute({
   const [decideErrors, setDecideErrors] = useState<Record<string, unknown> | null>(
     null
   );
+  /**
+   * Закрыть окно возврата и ЗАБЫТЬ набранное (Plane №667).
+   *
+   * 🔴 ОДИН ПУТЬ ЗАКРЫТИЯ НА ВСЕ СПОСОБЫ. «Отмена», Esc и клик по подложке
+   * чистили только `returnFor` — само окно; причина, список замечаний и
+   * ошибки полей сбрасывались лишь в `onEvent`, то есть ТОЛЬКО после
+   * успешного возврата. Брошенные черновики всплывали при следующем открытии
+   * окна — и уезжали против ДРУГОЙ строки согласующего: окно одно на весь
+   * маршрут, а кого возвращаем, помнит `returnFor`.
+   *
+   * Набранное теряется осознанно: замечание, приписанное не тому
+   * согласующему, хуже, чем замечание, которое придётся набрать заново.
+   * Обычное поведение диалога — закрытие отменяет ввод, и человек его ждёт.
+   */
+  const closeReturnDialog = () => {
+    setReturnFor(null);
+    setReason("");
+    setReturnRemarks([]);
+    setDecideErrors(null);
+  };
+
   const decide = useDecideApprover(event.id, {
     onFormError: (details) => setDecideErrors(details),
-    onEvent: () => {
-      setReturnFor(null);
-      setReason("");
-      setReturnRemarks([]);
-      setDecideErrors(null);
-    },
+    onEvent: closeReturnDialog,
   });
 
   const route = view.route;
@@ -867,7 +883,7 @@ function ApprovalRoute({
       <Dialog
         open={returnFor !== null}
         onOpenChange={(open) => {
-          if (!open) setReturnFor(null);
+          if (!open) closeReturnDialog();
         }}
       >
         <DialogContent className="max-w-2xl" data-slot="return-dialog">
@@ -971,7 +987,7 @@ function ApprovalRoute({
             <FieldErrors errors={decideErrors} />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setReturnFor(null)}>
+            <Button type="button" variant="outline" onClick={closeReturnDialog}>
               Отмена
             </Button>
             <Button
