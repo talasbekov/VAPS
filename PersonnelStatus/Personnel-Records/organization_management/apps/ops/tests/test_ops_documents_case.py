@@ -187,3 +187,58 @@ def test_the_case_without_permissions_keeps_the_old_behaviour(
     )
 
     assert "Оценено" in text
+
+# ── Приложение у ОМ БЕЗ объектов посещения (Plane №697) ─────────────────
+
+
+def test_placement_of_an_event_without_visit_objects_still_gets_the_sheet(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """Лист ознакомления печатается и там, где объектов посещения нет.
+
+    🔴 ЧТО БЫЛО НЕ ТАК. Приложение `[ОЗН-07]` стояло под условием
+    `visit is not None`, а мероприятия без объектов посещения достижимы —
+    `_document_target` для них СОЗНАТЕЛЬНО возвращает `None` и собирает весь
+    расчёт мероприятия («сохранение живых данных: у таких ОМ расчёт лежит в
+    мероприятии»). В итоге `render_case` печатал лист, а `render_placement`
+    для того же ОМ — нет: два документа об одном мероприятии расходились.
+
+    Сборщик строк листа `visit=None` умеет с самого начала (берёт все посты
+    расчёта) — не хватало ровно снятия условия.
+    """
+    _, event_id, _first, _second = two_objects_on_conduct
+    from organization_management.apps.ops import security_events as service
+
+    event = service.lock_event(event_id)
+    # Объекты СНИМАЮТСЯ намеренно: предмет пробы — ОМ, у которого их нет
+    # вовсе. Заводить такой цепочкой с нуля значило бы проверять путь
+    # создания, а не сборку документа.
+    event.visit_objects.all().delete()
+
+    text = _text(render_placement(event.code, fmt="docx"))
+
+    assert "Приложение. Лист ознакомления" in text
+    # Лист не пустой: посты берутся из расчёта мероприятия.
+    assigned = [a for a in event.placement_assignments if a.get("employeeName")]
+    assert assigned and assigned[0]["employeeName"] in text
+
+
+def test_the_sheet_is_still_absent_before_acknowledgement_without_objects(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """Порог стадии не отменён: без объектов он тот же самый.
+
+    Мутация «печатать приложение всегда» краснеет здесь — иначе починка №697
+    заодно снесла бы правило `[ОЗН-07]` «после завершения ознакомления».
+    """
+    _, event_id, _first, _second = two_objects_on_conduct
+    from organization_management.apps.ops import security_events as service
+
+    event = service.lock_event(event_id)
+    event.visit_objects.all().delete()
+    event.stage = "PLACEMENT"
+    event.save(update_fields=["stage", "updated_at"])
+
+    text = _text(render_placement(event.code, fmt="docx"))
+
+    assert "Приложение. Лист ознакомления" not in text

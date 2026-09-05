@@ -186,9 +186,20 @@ def render_placement(event_code, as_of=None, fmt="pdf", visit_object_id=None):
             document.add_paragraph(line)
         # `[ОЗН-07]` (Plane №437): после завершения ознакомления документ
         # получает приложение «Лист ознакомления».
+        #
+        # 🔴 УСЛОВИЯ «есть объект посещения» ЗДЕСЬ БОЛЬШЕ НЕТ (Plane №697).
+        # Мероприятия без объектов достижимы, и `_document_target` возвращает
+        # для них `None` СОЗНАТЕЛЬНО — собирается весь расчёт мероприятия.
+        # Приложение же под это условие не попадало, и `render_case` печатал
+        # лист, а `render_placement` для того же ОМ — нет: два документа об
+        # одном мероприятии расходились. Сборщик строк листа `visit=None`
+        # умеет с самого начала — берёт все посты расчёта.
+        #
+        # Порог стадии остался на месте: приложение появляется ПОСЛЕ
+        # завершения ознакомления, и без объектов это правило то же.
         from organization_management.apps.ops import documents_case
 
-        if visit is not None and documents_case.acknowledgement_completed(event):
+        if documents_case.acknowledgement_completed(event):
             documents_case.append_acknowledgement_sheet(document, event, visit)
         document.save(filled_path)
         payload = emit(filled_path, fmt)
