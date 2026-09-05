@@ -1105,6 +1105,13 @@ export const securityEventsHandlers = [
           acknowledgedBy: a.acknowledgedBy ?? "",
           declinedAt: a.declinedAt ?? null,
           declineReason: a.declineReason ?? null,
+          // Автор и способ отказа (Plane №588/№796) — как у сервера
+          // (`my_assignments.py`): пустая строка, а не `null`, у строк без
+          // разрешимой подписи. Без них мок-режим показывал бы отказ старшего
+          // как собственную запись сотрудника, то есть ровно тот дефект,
+          // ради которого поля и заведены.
+          declinedVia: a.declinedVia ?? "",
+          declinedBy: a.declinedBy ?? "",
         };
       })
     );
@@ -3417,6 +3424,17 @@ export const securityEventsHandlers = [
                   ...a,
                   declinedAt: nowIso(),
                   declineReason: reason,
+                  // 🔴 «САМ», А НЕ «ЛИЧНО» — тем же правилом, что у
+                  // подтверждения выше (Plane №542, показ автора — №796).
+                  // Сервер выводит способ из того, ЧЬЯ это строка
+                  // (`views.py`: `someone_elses`); у мока учётных записей
+                  // нет вовсе, доказать чужую строку нечем — значит «сам»,
+                  // без автора. Полей не было совсем, и `declinedVia`
+                  // приезжал пустым: карточка профиля в мок-режиме не могла
+                  // показать «записал: …» НИКОГДА, то есть новая ветка была
+                  // бы мертва ровно там, где её проверяют.
+                  declinedVia: "self" as const,
+                  declinedBy: "",
                   // Отказ снимает подтверждение — та же взаимоисключаемость.
                   acknowledgedAt: null,
                   acknowledgedVia: null,

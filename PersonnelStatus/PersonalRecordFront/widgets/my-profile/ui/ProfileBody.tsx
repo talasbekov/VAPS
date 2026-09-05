@@ -574,6 +574,12 @@ interface MyAssignment {
   /** «Не могу заступить» (Plane №405): отказ и подтверждение взаимоисключающи. */
   declinedAt: string | null;
   declineReason: string | null;
+  /** Способ и автор ОТКАЗА (Plane №588, показ — №796): `personal` — старший
+   * записал отказ с его слов, позвонившего. Без них отказ, вписанный
+   * старшим, в карточке самого сотрудника выглядел его собственной записью,
+   * и отличить одно от другого было нечем. */
+  declinedVia: string;
+  declinedBy: string;
 }
 
 /**
@@ -651,6 +657,8 @@ function toMyAssignment(row: MyAssignmentRow): MyAssignment {
     acknowledgedBy: row.acknowledgedBy ?? "",
     declinedAt: row.declinedAt ?? null,
     declineReason: row.declineReason ?? null,
+    declinedVia: row.declinedVia ?? "",
+    declinedBy: row.declinedBy ?? "",
   };
 }
 
@@ -980,24 +988,49 @@ function AckBadge({
   acknowledgedBy = "",
   declinedAt = null,
   declineReason = null,
+  declinedVia = "",
+  declinedBy = "",
 }: {
   acknowledgedAt: string | null;
   acknowledgedVia?: string;
   acknowledgedBy?: string;
   declinedAt?: string | null;
   declineReason?: string | null;
+  declinedVia?: string;
+  declinedBy?: string;
 }) {
   // Отказ — отдельное состояние, а не «не подтверждено» (Plane №405): старший
   // читает причину здесь же, а карточка не зовёт подтвердить то, от чего
   // человек отказался.
   if (declinedAt !== null) {
     return (
-      <span
-        className="inline-flex w-fit max-w-[260px] rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
-        title={declineReason ?? undefined}
-      >
-        Не могу заступить{declineReason ? `: ${declineReason}` : ""}
-      </span>
+      <>
+        <span
+          className="inline-flex w-fit max-w-[260px] rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
+          title={declineReason ?? undefined}
+        >
+          Не могу заступить{declineReason ? `: ${declineReason}` : ""}
+        </span>
+        {/* 🔴 ЧЬИ ЭТО СЛОВА (Plane №588, этот экран — №796). Отказ читается
+            как сказанное САМИМ сотрудником, а вписать его может и старший:
+            человек звонит, старший записывает. В карточке самого сотрудника
+            чужая формулировка выдавалась за его собственную, и опровергнуть
+            её было нечем. На «Ознакомлении» это уже названо теми же словами.
+
+            ОТДЕЛЬНОЙ СТРОКОЙ, А НЕ В ПОДСКАЗКЕ БЕЙДЖА: подсказку занимает
+            полная причина (бейдж режется по `max-w-[260px]`), и вторая мысль
+            там потерялась бы. Внутрь бейджа тоже нельзя — длинная причина
+            обрезала бы ровно то, ради чего подпись добавлена.
+
+            Способ берётся полем `declinedVia`, а не сравнением подписи с
+            фамилией: подписи приходят из разных источников и совпадают не
+            всегда. */}
+        {declinedVia === "personal" && declinedBy !== "" && (
+          <span className="text-muted-foreground text-[11px]">
+            записал: {declinedBy}
+          </span>
+        )}
+      </>
     );
   }
   return acknowledgedAt === null ? (
@@ -1131,6 +1164,8 @@ function AssignmentRow({
             acknowledgedBy={item.acknowledgedBy}
             declinedAt={item.declinedAt}
             declineReason={item.declineReason}
+            declinedVia={item.declinedVia}
+            declinedBy={item.declinedBy}
           />
         )}
         {/* Ответ сотрудника (Plane №405, `[ПРФ-04]`): «Ознакомлен, заступлю»

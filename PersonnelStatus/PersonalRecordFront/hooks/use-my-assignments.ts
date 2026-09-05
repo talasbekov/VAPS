@@ -50,6 +50,11 @@ export interface MyAssignmentRow {
   acknowledgedBy: string;
   declinedAt: string | null;
   declineReason: string | null;
+  /** Кто вписал отказ и каким способом (Plane №588): `self` — сам сотрудник,
+   * `personal` — старший записал с его слов, позвонившего. Ручка отдаёт оба
+   * поля с №588; пусто у строк, заведённых до правки. */
+  declinedVia: string;
+  declinedBy: string;
 }
 
 export interface MyAssignmentsResponse {

@@ -1155,6 +1155,10 @@ test.describe(
           mineStatus: mineRes.status,
           mineHead: mineText.slice(0, 160),
           mineCount: (JSON.parse(mineText).results ?? []).length as number,
+          // Способ и автор ОТКАЗА (Plane №588, показ — №796): сервер пишет
+          // их той же мутацией, что и причину (`my_assignments.decline`).
+          declinedVia: declinedRow.declinedVia as string | undefined,
+          declinedBy: declinedRow.declinedBy as string | undefined,
         }
       })
 
@@ -1171,6 +1175,16 @@ test.describe(
         `«мои назначения» в моке недостижимы: ${result.mineHead}`,
       ).toEqual(200)
       expect(result.mineCount, 'список «моих назначений» пуст').toBeGreaterThan(0)
+      // 🔴 СПОСОБ ОТКАЗА ЕСТЬ И ОН «САМ» (Plane №796). Полей не было вовсе, и
+      // `declinedVia` приезжал пустым: карточка профиля в мок-режиме не могла
+      // показать «записал: …» НИКОГДА. Ожидается именно `self`: у мока
+      // учётных записей нет, доказать чужую строку нечем — то же правило, по
+      // которому подтверждение в моке пишется «сам» (№542).
+      expect(
+        result.declinedVia,
+        'мок не пишет способ отказа — «записал: …» в мок-режиме недостижимо',
+      ).toEqual('self')
+      expect(result.declinedBy, 'у собственного отказа появился автор').toEqual('')
     })
 
     test('возврат обнуляет маршрут, ответ на последнее замечание завершает этап (Plane №569, №570)', async ({

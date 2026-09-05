@@ -1141,6 +1141,93 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
         'название ОМ обещает карточку, закрытую правом',
       ).toHaveCount(0)
     })
+
+    /**
+     * Отказ, записанный СТАРШИМ, назван его именем (Plane №796; правило и
+     * данные — №588).
+     *
+     * «Не могу заступить: …» печаталось без автора. Вписать отказ может не
+     * только сам сотрудник: он звонит, старший записывает — гейт ручки
+     * пускает старшего и ведущего ОМ намеренно. В карточке САМОГО
+     * СОТРУДНИКА чужая формулировка выглядела его собственной записью, и
+     * отличить одно от другого было нечем. На этапе «Ознакомление» это уже
+     * названо теми же словами.
+     *
+     * 🔴 ПРОБА НА ОБА КОНЦА. Одной строки «есть подпись» мало: показать
+     * автора у СОБСТВЕННОГО отказа значило бы завести новую неправду —
+     * «записал: Иванов» под словами Иванова читается как чужая рука.
+     * Поэтому строк две, и вторая требует, чтобы подписи НЕ БЫЛО.
+     *
+     * Красная до правки: подписи нет ни у одной строки.
+     */
+    test('отказ, записанный старшим, назван его именем (Plane №796)', async ({ page }) => {
+      const admin = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+      const mine = await get<MyEmployee>(admin, '/api/operations/my-employee/')
+      const row = (
+        assignmentId: string,
+        declinedVia: string,
+        declinedBy: string,
+      ) => ({
+        assignmentId,
+        eventId: '424796',
+        eventCode: 'ОМ-ПРОБА-796',
+        eventTitle: 'Мероприятие пробы 796',
+        eventStage: 'ACKNOWLEDGEMENT',
+        businessDate: '2028-08-08',
+        businessDateEnd: null,
+        objectName: 'Объект пробы',
+        visitObjectId: null,
+        visitObjectName: null,
+        postId: `post-${assignmentId}`,
+        postFound: true,
+        sector: 'Сектор 1',
+        post: 'Пост 1',
+        task: '',
+        requirements: '',
+        uniform: '',
+        weapon: '',
+        roleCode: null,
+        sectionCode: null,
+        acknowledgedAt: null,
+        acknowledgedVia: '',
+        acknowledgedBy: '',
+        declinedAt: '2028-08-01T10:00:00+00:00',
+        declineReason: 'болею',
+        declinedVia,
+        declinedBy,
+      })
+      await page.route(
+        (url) => url.pathname.endsWith('/api/ops/security-events/my-assignments/'),
+        async (route) =>
+          route.fulfill({
+            json: {
+              results: [
+                row('assignment-чужой-рукой', 'personal', 'Абаев А.'),
+                row('assignment-своей-рукой', 'self', ''),
+              ],
+              employeeId: String(mine.employee!.id),
+              unlinkedReason: null,
+            },
+          }),
+      )
+
+      await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+      await page.goto(`${APP}${SCREEN}`)
+
+      const byOther = page.getByTestId('my-assignment-assignment-чужой-рукой')
+      await expect(byOther).toBeVisible({ timeout: 20_000 })
+      await expect(
+        byOther,
+        'отказ, записанный старшим, выдаётся за собственную запись сотрудника',
+      ).toContainText('записал: Абаев А.')
+
+      const bySelf = page.getByTestId('my-assignment-assignment-своей-рукой')
+      await expect(bySelf).toContainText('Не могу заступить: болею')
+      await expect(
+        bySelf.getByText('записал:', { exact: false }),
+        'у собственного отказа приписана чужая рука',
+      ).toHaveCount(0)
+    })
   })
 
   test('«до …» в шапке — последний день статуса, а не граница полуинтервала (Plane №657)', async ({
