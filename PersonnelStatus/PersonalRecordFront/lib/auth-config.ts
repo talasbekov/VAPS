@@ -1,7 +1,7 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
-import { REFRESH_RETRY_MS, isTokenRejected } from "@/lib/refresh-policy";
+import { REFRESH_RETRY_MS, isTokenRejected, makeOnce } from "@/lib/refresh-policy";
 
 // Для серверных запросов NextAuth нужно использовать прямой URL к бэкенду
 // Прокси rewrites работают только для клиентских запросов
@@ -84,18 +84,36 @@ function isExpiring(expires: unknown): boolean {
  * помечается `retryAfter`: повтор будет, но не чаще раза в
  * `REFRESH_RETRY_MS`.
  */
-async function refreshed(token: JWT): Promise<JWT> {
-  const refreshToken = token.refreshToken;
-  if (typeof refreshToken !== "string" || refreshToken === "") {
-    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
-  }
-  /** Временный отказ: токен НЕ жжём, но и не долбим сервер без паузы. */
-  const retryLater = (why: string): JWT => {
-    console.warn("Token refresh postponed:", why);
-    const next: JWT = { ...token, accessTokenExpires: Date.now() + REFRESH_RETRY_MS };
-    delete next.error;
-    return next;
-  };
+/** Чем кончилось ОДНО обращение к `/api/token/refresh/`. */
+type RefreshOutcome =
+  | { kind: "ok"; access: string }
+  | { kind: "rejected" }
+  | { kind: "retry"; why: string };
+
+/**
+ * Идущие продления, по одному на refresh-токен (Plane №465, №474).
+ *
+ * 🔴 ЗАЧЕМ. Колбэк `jwt` отрабатывает на КАЖДЫЙ запрос `/api/auth/session`, а
+ * таких за один обход портала около полутора сотен (замер записан в шапке
+ * `lib/access-token.ts`). Как только токен вошёл в окно продления, каждый
+ * такой запрос независимо слал свой POST и писал свою cookie — побеждал
+ * последний ответ. Если один из них отказал (5xx, троттлинг, обрыв) и пришёл
+ * последним, его cookie затирала только что записанную удачным соседом, и
+ * человека выкидывало на вход при полностью здоровом бэке.
+ *
+ * Вторая, отложенная беда: `BLACKLIST_AFTER_ROTATION=True` в настройках уже
+ * стоит. В день, когда включат `ROTATE_REFRESH_TOKENS`, второй параллельный
+ * запрос принесёт уже отозванный refresh — и выкинет человека на ровном
+ * месте. Связь между двумя настройками и этим кодом не была записана нигде,
+ * поэтому включили бы её не глядя. Теперь она записана здесь, и продление
+ * одно на токен.
+ *
+ * Кэшируется ИСХОД, а не готовый JWT: у каждого вызывающего свой объект
+ * токена, и раздать им один чужой значило бы перепутать поля сессий.
+ */
+const onlyOneRefresh = makeOnce<RefreshOutcome>();
+
+async function askBackend(refreshToken: string): Promise<RefreshOutcome> {
   try {
     const response = await fetch(`${getBackendUrl()}/api/token/refresh/`, {
       method: "POST",
@@ -103,29 +121,50 @@ async function refreshed(token: JWT): Promise<JWT> {
       body: JSON.stringify({ refresh: refreshToken }),
     });
     if (!response.ok) {
-      if (!isTokenRejected(response.status)) return retryLater(`HTTP ${response.status}`);
+      if (!isTokenRejected(response.status)) {
+        return { kind: "retry", why: `HTTP ${response.status}` };
+      }
       console.error("Token refresh failed:", response.status);
-      return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+      return { kind: "rejected" };
     }
     const data = (await response.json()) as { access?: string };
     if (typeof data.access !== "string" || data.access === "") {
       // Сервер ответил 200, но без токена — это его беда, а не мёртвый
       // refresh: жечь сессию не за что.
-      return retryLater("200 без поля access");
+      return { kind: "retry", why: "200 без поля access" };
     }
-    const next: JWT = {
-      ...token,
-      accessToken: data.access,
-      accessTokenExpires: jwtExpiryMs(data.access),
-    };
-    delete next.error;
-    return next;
+    return { kind: "ok", access: data.access };
   } catch (error) {
     // Сюда попадают сетевые беды: сервер не ответил вовсе. Прежний код и
     // здесь говорил «войдите заново» — это и есть дефект №459.
     console.error("Token refresh error:", error);
-    return retryLater("сеть недоступна");
+    return { kind: "retry", why: "сеть недоступна" };
   }
+}
+
+async function refreshed(token: JWT): Promise<JWT> {
+  const refreshToken = token.refreshToken;
+  if (typeof refreshToken !== "string" || refreshToken === "") {
+    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+  }
+  const outcome = await onlyOneRefresh(refreshToken, () => askBackend(refreshToken));
+  if (outcome.kind === "ok") {
+    const next: JWT = {
+      ...token,
+      accessToken: outcome.access,
+      accessTokenExpires: jwtExpiryMs(outcome.access),
+    };
+    delete next.error;
+    return next;
+  }
+  if (outcome.kind === "rejected") {
+    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+  }
+  // Временный отказ: токен НЕ жжём, но и не долбим сервер без паузы.
+  console.warn("Token refresh postponed:", outcome.why);
+  const next: JWT = { ...token, accessTokenExpires: Date.now() + REFRESH_RETRY_MS };
+  delete next.error;
+  return next;
 }
 
 export const authOptions: NextAuthOptions = {
