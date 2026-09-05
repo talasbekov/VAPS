@@ -588,6 +588,10 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
     },
   });
   const access = useChainAccess();
+  /** Цель `aria-describedby` у выключенной кнопки «Закрыть объект»
+   * (Plane №777). Ключится мероприятием: карточек этапа на странице бывает
+   * несколько, а `id` в документе обязан быть один. */
+  const closeVisitHintId = `close-visit-locked-${event.id}`;
   const visit = scope.visit;
   // Сводка оценок — для подтверждения «Оценено K из N, инцидентов N»
   // (`[ЗАК-05]`, Plane №433); неоценённые закрытию не мешают. Ручка закрыта
@@ -658,12 +662,32 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                 : `Ещё не закрыто объектов: ${openOthers}. Мероприятие закроется само, когда будут закрыты все.`}
             </p>
             <StageError error={close.error} />
-            <div className="flex justify-end">
+            {/* 🔴 ПРИЧИНА ВИДИМОЙ СТРОКОЙ, А НЕ В `title` (Plane №777,
+                решение — №714). Браузер подавляет на ВЫКЛЮЧЕННОЙ кнопке
+                указательные события, а с ними и всплывающую подсказку:
+                `title` показался бы ровно тогда, когда показаться не может, —
+                то есть никогда. Человек видел серую кнопку без объяснения.
+                Строка стоит рядом с кнопкой и связана с ней
+                `aria-describedby`: фокуса выключенная кнопка не получает, но
+                виртуальный курсор читалки до подписи доходит. Тем же приёмом
+                закрыта панель оценок выше (№644). */}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!access.can(EVENT_MANAGE) && (
+                <p
+                  id={closeVisitHintId}
+                  className="text-sm text-muted-foreground"
+                  data-slot="close-visit-locked"
+                >
+                  {access.reason(EVENT_MANAGE)}
+                </p>
+              )}
               <Button
                 type="button"
                 variant="outline"
                 disabled={!access.can(EVENT_MANAGE)}
-                title={access.reason(EVENT_MANAGE) || undefined}
+                aria-describedby={
+                  access.can(EVENT_MANAGE) ? undefined : closeVisitHintId
+                }
                 onClick={() => setOpen(true)}
               >
                 Закрыть объект
@@ -740,6 +764,9 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
 
 function ClosurePanel({ event }: { event: SecurityEvent }) {
   const closeAccess = useChainAccess();
+  /** Цель `aria-describedby` у выключенной кнопки «Закрыть мероприятие»
+   * (Plane №777) — тем же правилом уникальности, что и у объекта выше. */
+  const closeEventHintId = `close-event-locked-${event.id}`;
   const [comment, setComment] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
@@ -781,11 +808,24 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
         )}
         <FieldErrors errors={fieldErrors} />
         <StageError error={close.error} />
-        <div className="flex justify-end">
+        {/* Та же правка, что у «Закрыть объект» выше (Plane №777): подсказка
+            на выключенной кнопке не показывается никогда. */}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {!closeAccess.can(EVENT_MANAGE) && (
+            <p
+              id={closeEventHintId}
+              className="text-sm text-muted-foreground"
+              data-slot="close-event-locked"
+            >
+              {closeAccess.reason(EVENT_MANAGE)}
+            </p>
+          )}
           <Button
             type="button"
             disabled={close.isPending || !closeAccess.can(EVENT_MANAGE)}
-            title={closeAccess.reason(EVENT_MANAGE) || undefined}
+            aria-describedby={
+              closeAccess.can(EVENT_MANAGE) ? undefined : closeEventHintId
+            }
             onClick={() => {
               setFieldErrors(null);
               close.mutate({ comment });
