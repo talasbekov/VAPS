@@ -1103,7 +1103,9 @@ export function opsPersonnelPagePath(params: {
   return `${OPS_PERSONNEL_PATH}?${query.toString()}`;
 }
 
-/** Старший сектора: назначить или снять (Plane №65, «Р-4»). */
+/** Старший ПОСТА: назначить или снять (Plane №65 «Р-4» → `[РАС-03]`, №445).
+ * Сегмент пути `senior` и имя `isSectorSenior` сохранены: их читают карточка,
+ * мок и пробы (Plane №780). */
 /** Перенос назначения на другой пост (Plane №762) — одна транзакция сервера
  * вместо пары «снять + назначить». */
 export function securityEventPlacementMovePath(

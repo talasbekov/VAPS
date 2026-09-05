@@ -510,6 +510,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
                   }}
                   options={personsQuery.data?.results ?? []}
                   loading={personsQuery.isPending}
+                  failed={personsQuery.isError}
                 />
                 {/* 🔴 ТЕКСТ ОБЕЩАЛ ТО, ЧЕГО БОЛЬШЕ НЕ БЫВАЕТ (Plane №632). Он
                     написан, когда лицо было НЕОБЯЗАТЕЛЬНЫМ. С `[БЛН-12]` (№439)
