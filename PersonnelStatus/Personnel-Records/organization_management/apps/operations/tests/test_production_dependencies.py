@@ -31,28 +31,16 @@ from importlib.metadata import packages_distributions
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 APPS = ROOT / "organization_management" / "apps"
 
-# 🔴 ХРАПОВИК, А НЕ РАЗРЕШЕНИЕ. Список — НАКОПЛЕННЫЙ ДОЛГ на 05.09.2026,
-# найденный этой же пробой в момент её написания. Он существует ровно затем,
-# чтобы проба была зелёной СЕГОДНЯ и краснела на ЗАВТРАШНЕЙ ошибке: новая
-# строка сюда не дописывается, она чинится. Каждая из этих зависимостей
-# приезжает транзитивно (`lxml` с `python-docx`, `asgiref` с Django, `PIL` с
-# чем-то ещё, `django_filters` не объявлен вовсе) — то есть работает по
-# случайности чужой поставки, а не по объявленному контракту.
+# 🔴 ХРАПОВИК, А НЕ РАЗРЕШЕНИЕ. Список — НАКОПЛЕННЫЙ ДОЛГ, найденный этой же
+# пробой в момент её написания (05.09.2026). Он существует ровно затем, чтобы
+# проба была зелёной СЕГОДНЯ и краснела на ЗАВТРАШНЕЙ ошибке: новая строка сюда
+# не дописывается, она чинится.
 #
-# Разбор и починка — своя карточка; чинить чужой долг внутри задачи про pypdf
-# значило бы подменить предмет и заодно уронить гейт четырём сессиям.
-KNOWN_UNDECLARED = frozenset({
-    "organization_management/apps/audit/filters.py → django_filters",
-    "organization_management/apps/audit/views.py → django_filters",
-    "organization_management/apps/employees/management/commands/seed_employee_photos.py → PIL",
-    "organization_management/apps/notifications/services/websocket_service.py → asgiref",
-    "organization_management/apps/notifications/signals.py → asgiref",
-    "organization_management/apps/operations/docx_fingerprint.py → lxml",
-    "organization_management/apps/operations/notify_service.py → asgiref",
-    "organization_management/apps/ops/document_templates/build_placement_template.py → PIL",
-    "organization_management/apps/statuses/api/filters.py → django_filters",
-    "organization_management/apps/statuses/api/views.py → django_filters",
-})
+# 05.09.2026 долг ПОГАШЕН (Plane №794): `asgiref`, `django-filter`, `lxml` и
+# `pillow` объявлены в `base.txt`, и список опустел. Пустым он и обязан
+# остаться — `test_the_known_debt_list_does_not_rot` краснеет на строке,
+# которая больше не нарушение, поэтому вернуть сюда починенное молча нельзя.
+KNOWN_UNDECLARED = frozenset()
 
 
 def _declared(path):
@@ -82,7 +70,14 @@ def _imported_modules(source_path):
     return found
 
 
-def test_production_code_imports_only_what_base_requirements_declare():
+def _undeclared_imports():
+    """Все пары «боевой файл → незаявленный модуль», без вычитания храповика.
+
+    Помощник общий у двух проб НАРОЧНО: одна спрашивает «есть ли нарушение вне
+    списка», вторая — «осталась ли в списке строка, которая уже не нарушение».
+    Считай их порознь — и второй пришлось бы гадать о починке по существованию
+    файла, то есть не замечать самую частую починку: объявленную зависимость.
+    """
     base = _declared(ROOT / "requirements" / "base.txt")
     assert "django" in base, "предусловие: base.txt разобран"
 
@@ -101,7 +96,7 @@ def test_production_code_imports_only_what_base_requirements_declare():
             return False
         return bool(owners & base)
 
-    offenders = []
+    found = set()
     for source in sorted(APPS.rglob("*.py")):
         parts = set(source.parts)
         # Пробы и миграции — не боевой путь. Имя файла проверяется НАРЯДУ с
@@ -113,11 +108,13 @@ def test_production_code_imports_only_what_base_requirements_declare():
         if source.name.startswith(("test_", "tests_")) or source.name.endswith("_test.py"):
             continue
         for module in sorted(_imported_modules(source)):
-            if is_declared(module):
-                continue
-            found = f"{source.relative_to(ROOT)} → {module}"
-            if found not in KNOWN_UNDECLARED:
-                offenders.append(found)
+            if not is_declared(module):
+                found.add(f"{source.relative_to(ROOT)} → {module}")
+    return found
+
+
+def test_production_code_imports_only_what_base_requirements_declare():
+    offenders = sorted(_undeclared_imports() - KNOWN_UNDECLARED)
 
     assert offenders == [], (
         "боевой код импортирует пакеты, не объявленные в requirements/base.txt "
@@ -131,16 +128,17 @@ def test_the_known_debt_list_does_not_rot():
     """Храповик не должен переживать починку долга.
 
     Список известных нарушений обязан УМЕНЬШАТЬСЯ. Строка, оставшаяся в нём
-    после того, как импорт исправлен или файл удалён, тихо ослабляет пробу:
-    завтра тот же путь снова начнёт импортировать незаявленное, и проба
-    промолчит. Поэтому мёртвая строка — тоже отказ.
+    после того, как зависимость объявлена, импорт исправлен или файл удалён,
+    тихо ослабляет пробу: завтра тот же путь снова начнёт импортировать
+    незаявленное, и проба промолчит. Поэтому мёртвая строка — тоже отказ.
+
+    Сверка идёт с ФАКТИЧЕСКИМ списком нарушений, а не с существованием файлов:
+    самая частая починка — объявить пакет в `base.txt`, и файл при ней никуда
+    не девается. Прежняя проверка её не видела вовсе.
     """
-    stale = sorted(
-        entry
-        for entry in KNOWN_UNDECLARED
-        if not (ROOT / entry.split(" → ", 1)[0]).exists()
-    )
+    stale = sorted(KNOWN_UNDECLARED - _undeclared_imports())
     assert stale == [], (
-        "в списке известного долга остались строки о несуществующих файлах — "
-        "уберите их, иначе проба ослаблена молча:\n  " + "\n  ".join(stale)
+        "в списке известного долга остались строки, которые больше не "
+        "нарушения (зависимость объявлена или файл удалён) — уберите их, "
+        "иначе проба ослаблена молча:\n  " + "\n  ".join(stale)
     )
