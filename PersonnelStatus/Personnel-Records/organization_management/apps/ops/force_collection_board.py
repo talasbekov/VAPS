@@ -8,6 +8,7 @@ Plane №426, Ш-10 плана P2).
 истории нет; текущее состояние по-прежнему из JSON, пока его читают экраны.
 """
 import datetime as dt
+from uuid import uuid4
 
 from django.db import transaction
 
@@ -290,7 +291,14 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
             parsed_due = dt.datetime.fromisoformat(str(due_at).replace("Z", "+00:00"))
         except ValueError:
             raise events._validation({"dueAt": ["Неверный формат даты."]})
-    key = f"force-allocation-{source.get('departmentId')}-topup-{now.isoformat()}"
+    # 🔴 ИДЕНТИФИКАТОР — СЛУЧАЙНЫЙ, А НЕ ПО ЧАСАМ (Plane №522, п. 6). Здесь
+    # стояло `now.isoformat()`, а `Clock` уважает заморозку времени
+    # (`operations/clock.py`): под фиксированными часами — в пробах и на
+    # сеяных стендах — ДВА добора по одной заявке получали ОДИН И ТОТ ЖЕ id.
+    # `_find_allocation` всегда находил первый, и второй становился
+    # недостижим через API: ни ответить, ни отправить, ни принять. Тем же
+    # приёмом, что у постов расчёта (`security_events._new_post_id`).
+    key = f"force-allocation-{source.get('departmentId')}-topup-{uuid4().hex[:12]}"
     row = {
         "id": key,
         "departmentId": source.get("departmentId"),

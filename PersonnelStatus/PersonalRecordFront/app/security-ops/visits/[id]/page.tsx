@@ -145,14 +145,23 @@ function VisitCard({ event }: { event: SecurityEvent }) {
   const total = row?.requiredTotal ?? 0;
   const filled = row?.requiredFilled ?? 0;
   const canApprove = hasPermission("gvo.manage");
+  // 🔴 СВОДКА ЕЩЁ НЕ ПРИШЛА — УТВЕРЖДАТЬ НЕЧЕГО (Plane №522, п. 2). Расчёт
+  // читает `row`, и пока запрос идёт (или отказал), `missing` пуст просто
+  // потому, что данных нет: кнопка выглядела рабочей, человек жал и получал
+  // голый 422 вместо погашенной кнопки с причиной. Отказ назван отдельно от
+  // загрузки: «подождите» после 500 — совет, который не может помочь.
   const approveBlocker =
-    status === "APPROVED"
-      ? "Визит уже утверждён"
-      : missing.length > 0
-        ? `Заполните обязательные поля: ${missing.join(", ")}`
-        : !canApprove
-          ? "Утверждает штаб (право на сводку ГВО)"
-          : null;
+    summary.isPending
+      ? "Сводка ещё загружается"
+      : summary.isError
+        ? "Сводка не загрузилась — обновите страницу"
+        : status === "APPROVED"
+          ? "Визит уже утверждён"
+          : missing.length > 0
+            ? `Заполните обязательные поля: ${missing.join(", ")}`
+            : !canApprove
+              ? "Утверждает штаб (право на сводку ГВО)"
+              : null;
 
   return (
     <>

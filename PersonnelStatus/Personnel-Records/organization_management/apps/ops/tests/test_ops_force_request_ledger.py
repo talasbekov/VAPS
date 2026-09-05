@@ -56,6 +56,40 @@ def event_with_json(manager):  # noqa: F811
     return event, e1, e2
 
 
+def test_empty_json_does_not_touch_the_ledger_at_all(manager, django_assert_num_queries):  # noqa: F811
+    """Пока заявок и раскладки нет, проекция не делает НИ ОДНОГО запроса
+    (Plane №522, п. 5).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Ранний выход сигнала срабатывал ТОЛЬКО когда
+    `event.save()` передал `update_fields`. А сохранений без него в цепочке
+    большинство — писателей в `security_events` около дюжины, — и всякое
+    СОЗДАНИЕ мероприятия тоже: проекция проходила в четыре таблицы ради
+    заведомо пустого результата.
+
+    Проверяется ЧИСЛОМ ЗАПРОСОВ, а не флагом: флаг сказал бы «функция не
+    звалась», а вопрос был в цене. Одно ожидаемое обращение — само
+    `UPDATE` мероприятия; всё сверх него делала бы проекция.
+    """
+    event_id = create_event(manager, make_object(with_passport=True)).json()["id"]
+    event = service.lock_event(event_id)
+    assert not event.force_requests and not event.force_allocation
+
+    # Сохранение БЕЗ `update_fields` — тот самый путь, который проекция
+    # проходила целиком.
+    with django_assert_num_queries(1):
+        event.save()
+
+    assert OpsForceRequest.objects.filter(event=event).count() == 0
+    assert OpsDepartmentRequest.objects.filter(event=event).count() == 0
+
+    # А появилась первая строка — проекция снова работает: ранний выход
+    # смотрит на СОДЕРЖИМОЕ, а не выключает сигнал навсегда.
+    event.force_requests = [{"id": "force-request-1", "group": "По расчёту", "status": "SENT",
+                             "comment": "", "allocatedCount": 0, "requestedCount": 5}]
+    event.save()
+    assert OpsForceRequest.objects.filter(event=event).count() == 1
+
+
 def test_saving_json_projects_the_hierarchy(event_with_json):
     event, e1, e2 = event_with_json
     assert OpsForceRequest.objects.filter(event=event).count() == 1
