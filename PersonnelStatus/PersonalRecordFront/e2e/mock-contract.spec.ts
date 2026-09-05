@@ -481,9 +481,17 @@ test.describe(
       expect(overNeed.filled.taken).toBeGreaterThanOrEqual(overNeed.filled.need)
       expect(overNeed.over.status).toBe(409)
       expect(overNeed.over.body.error_code).toBe('SOFT_CONFLICT_DETECTED')
-      // `overridable` в конверте мока НЕТ и не было: клиент решает по КОДУ
-      // (`OVERRIDABLE_CODES` в `lib/ops-errors.ts`), а не по флагу. Расхождение
-      // конверта с сервером — отдельная находка, здесь не проверяется.
+      // 🔴 АССЕРТ ВЕРНУЛСЯ (Plane №523). Здесь стояло «`overridable` в конверте
+      // мока НЕТ и не было … здесь не проверяется» — то самое место, где
+      // расхождение конверта с сервером пришлось обойти комментарием. Сервер
+      // кладёт этот флаг в мягкий 409, потому что признак «можно повторить с
+      // причиной» несёт САМ ОТВЕТ, а не код: клиент сегодня решает по коду,
+      // но как только начнёт читать флаг — мок-режим молча перестал бы
+      // открывать окно обоснования.
+      expect(
+        overNeed.over.body.overridable,
+        'мягкий конфликт мока не помечен обходимым — конверт разошёлся с сервером',
+      ).toBe(true)
       expect(
         overNeed.over.body.details.conflicts.map((c: any) => c.conflict_code),
       ).toContain('OVER_NEED')

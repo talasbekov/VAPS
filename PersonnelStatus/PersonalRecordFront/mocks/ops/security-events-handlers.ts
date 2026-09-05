@@ -810,11 +810,27 @@ export function readSecurityEventsStore(): SecurityEvent[] {
   return getEvents();
 }
 
+/**
+ * Конверт отказа — зеркало серверного `_envelope` (Plane №523).
+ *
+ * 🔴 `overridable` НЕ ЗАБЫТ, А ДОБАВЛЕН: сервер кладёт это поле в мягкий 409,
+ * и признак «можно повторить с причиной» несёт САМ ОТВЕТ — «клиент не должен
+ * угадывать обходимость по коду». Мок поля не знал вовсе. Сегодня это ничего
+ * не ломает: клиент решает по КОДУ (`OVERRIDABLE_CODES`), и диалог обхода в
+ * мок-режиме открывается. Но контрактная проба не могла проверить флаг (в
+ * пробе `OVER_NEED` его пришлось пропустить с комментарием), а как только
+ * клиент начнёт читать `overridable` — естественный способ, — мок-режим
+ * молча перестанет открывать диалог, и найдётся это уже на живом стенде.
+ *
+ * Поле ставится ТОЛЬКО когда оно истинно, как на сервере: `overridable: false`
+ * в конверте — лишний шум, и его отсутствие и есть «нельзя обойти».
+ */
 function errorEnvelope(
   errorCode: string,
   message: string,
   details: Record<string, unknown>,
-  status: number
+  status: number,
+  overridable = false
 ) {
   return HttpResponse.json(
     {
@@ -823,6 +839,7 @@ function errorEnvelope(
       details,
       request_id: null,
       timestamp: nowIso(),
+      ...(overridable ? { overridable: true } : {}),
     },
     { status }
   );
@@ -873,7 +890,9 @@ function businessRuleError(code: string, message: string) {
 
 /** 409 — мягкий конфликт: SOFT_CONFLICT_DETECTED включает путь ConflictDialog. */
 function softConflict(message: string, conflicts: Record<string, unknown>[]) {
-  return errorEnvelope("SOFT_CONFLICT_DETECTED", message, { conflicts }, 409);
+  // Мягкий конфликт обходим по определению — отсюда `overridable` (Plane
+  // №523): ровно так его помечает сервер.
+  return errorEnvelope("SOFT_CONFLICT_DETECTED", message, { conflicts }, 409, true);
 }
 
 /**
@@ -2653,11 +2672,14 @@ export const securityEventsHandlers = [
         const reason = (body.override_reason ?? "").trim();
         if (!(body.override === true && reason !== "")) {
           const noun = unstaffed.length === 1 ? "пост" : "постов";
+          // Недобор обходим обоснованием — сервер помечает этот отказ
+          // `overridable=True` (Plane №523), и мок обязан говорить то же.
           return errorEnvelope(
             "PLACEMENT_UNDERSTAFFED",
             `${unstaffed.length} ${noun} без людей. Завершить с недобором?`,
             { unfilledCount: unstaffed.length },
-            409
+            409,
+            true
           );
         }
       }
