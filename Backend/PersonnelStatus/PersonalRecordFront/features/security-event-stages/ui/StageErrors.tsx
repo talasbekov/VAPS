@@ -40,6 +40,19 @@ const FIELD_LABEL: Record<string, string> = {
   reason: "Причина",
   title: "Заголовок",
   description: "Описание",
+  // Ключи окна заведения и правки бюллетеня (Plane №618). Своей поверхности
+  // у них нет: страну и город рисует `LocationFields`, атрибуты визита —
+  // `PersonDetailsFields`, и ни один из них в форме не зарегистрирован.
+  countryId: "Страна",
+  cityId: "Город",
+  address: "Адрес",
+  protectedPersonDetails: "Данные визита охраняемого лица",
+  protectedPersonIds: "Охраняемые лица",
+  objectId: "Объект",
+  businessDate: "Дата",
+  businessDateEnd: "Дата окончания",
+  eventTime: "Время",
+  chiefEmployeeId: "Старший",
 };
 
 /** «rows.0.group» → «Строка 1 · Группа»; неизвестный ключ отдаётся как есть. */

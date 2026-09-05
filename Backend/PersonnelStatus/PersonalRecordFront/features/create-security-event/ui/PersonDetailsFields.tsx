@@ -81,6 +81,11 @@ export function PersonDetailsFields({
                   <td className="px-2 py-1.5">
                     <Input
                       aria-label={`Борт прибытия: ${nameOf.get(id) ?? id}`}
+                      // Столько же, сколько принимает сервер
+                      // (`event_location.py`): 101-й символ он отбивает 400-м,
+                      // и без ограничения человек узнавал об этом только по
+                      // тому, что окно не закрылось (Plane №618).
+                      maxLength={100}
                       className={`${controlClassName} w-[84px] text-xs`}
                       placeholder="KC 871"
                       value={row.flightArrival ?? ""}
@@ -99,6 +104,11 @@ export function PersonDetailsFields({
                   <td className="px-2 py-1.5">
                     <Input
                       aria-label={`Борт убытия: ${nameOf.get(id) ?? id}`}
+                      // Столько же, сколько принимает сервер
+                      // (`event_location.py`): 101-й символ он отбивает 400-м,
+                      // и без ограничения человек узнавал об этом только по
+                      // тому, что окно не закрылось (Plane №618).
+                      maxLength={100}
                       className={`${controlClassName} w-[84px] text-xs`}
                       placeholder="KC 872"
                       value={row.flightDeparture ?? ""}
