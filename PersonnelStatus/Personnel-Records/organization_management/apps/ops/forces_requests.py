@@ -289,25 +289,65 @@ def select_for_request(
     выделить нельзя, и это отказ по конкретному человеку, а не по запросу.
     """
     from organization_management.apps.operations.exceptions import DomainError
+    from organization_management.apps.operations.selectors import (
+        DivisionTreeSelector,
+    )
     from organization_management.apps.ops.security_events import (
         add_allocation_member,
         employee_scope_division,
         personnel_display_name,
+        _as_division_id,
         _find_personnel,
     )
 
     # Полный вид заявки собирается ОДИН раз — в ответе (Plane №548): здесь
     # нужны только мероприятие и проверка области, а состав к концу выделения
     # всё равно станет другим.
-    event_id = str(_event_of_request(allocation_id, allowed_division_ids).pk)
+    event = _event_of_request(allocation_id, allowed_division_ids)
+    event_id = str(event.pk)
+    # 🔴 ВЫДЕЛЯЮТ ПО УПРАВЛЕНИЯМ, КОТОРЫМ АДРЕСОВАНА ЗАЯВКА (Plane №550).
+    # Проверка области отвечает на вопрос «мой ли это сотрудник», и у
+    # действующего с областью на ДЕПАРТАМЕНТ она молчит про всех его людей —
+    # включая управления, которым эту заявку не адресовали. Статус «Участие в
+    # ОМ» заводился настоящий, а `_with_directorate_progress` такого человека
+    # не считает никогда: он не лежит ни под одним управлением заявки. Отчёт
+    # говорил «Выделено: 1», а строкой выше оставалось «выделено 0 из 2».
+    #
+    # Приписать его какому-нибудь управлению заявки нельзя — это записало бы
+    # человека чужой квоте (тот же довод, которым `_with_directorate_progress`
+    # отказывается его считать). Значит неправильным было само выделение.
+    #
+    # ПОДДЕРЕВО, А НЕ СОВПАДЕНИЕ: человек числится в отделе, а квота адресована
+    # управлению — той же меркой, что считает прогресс.
+    #
+    # Строк управлений НЕТ ВОВСЕ — проверять не с чем, и гард молчит: у такой
+    # заявки `_with_directorate_progress` прогресса не считает тоже, значит и
+    # расхождения, ради которого гард заведён, не возникает.
+    addressed = None
+    for allocation in _raw_allocations(event):
+        if allocation.get("id") != allocation_id:
+            continue
+        rows = allocation.get("directorates") or []
+        if rows:
+            children_map = DivisionTreeSelector.children_map()
+            addressed = set()
+            for item in rows:
+                addressed |= DivisionTreeSelector.subtree_ids(
+                    _as_division_id(item.get("divisionId")), children_map=children_map
+                )
+        break
     selected, refused = [], []
     for raw in employee_ids or []:
         employee_id = str(raw).strip()
         if not employee_id:
             continue
         division = employee_scope_division(employee_id)
-        if allowed_division_ids is not None and (
-            division is None or division not in allowed_division_ids
+        outside_request = addressed is not None and (
+            division is None or division not in addressed
+        )
+        if outside_request or (
+            allowed_division_ids is not None
+            and (division is None or division not in allowed_division_ids)
         ):
             # 🔴 ФАМИЛИЮ ЧУЖОГО НЕ НАЗЫВАЕМ (Plane №543). Здесь стояло
             # `personnel_display_name(_find_personnel(employee_id))` — ровно
@@ -327,7 +367,18 @@ def select_for_request(
                     "employeeId": employee_id,
                     "name": employee_id,
                     "code": "PERMISSION_DENIED",
-                    "message": "Сотрудник не вашего управления.",
+                    # Причина названа РАЗНАЯ (Plane №550): «не вашего
+                    # управления» и «управлению не адресовали эту заявку» —
+                    # разные вещи, и второе человек чинит не тем же способом.
+                    # Фамилия не называется ни в том, ни в другом случае
+                    # (Plane №543).
+                    "message": (
+                        "Заявка не адресована управлению этого сотрудника."
+                        if outside_request
+                        else "Сотрудник не вашего управления."
+                    ),
+                    # Обходом это не лечится: заявка адресована другим.
+                    "overridable": False,
                 }
             )
             continue

@@ -1281,6 +1281,104 @@ def test_hard_conflict_at_selection_is_not_offered_an_override(manager):  # noqa
     assert row["overridable"] is False, row
 
 
+def test_selection_refuses_a_person_no_directorate_row_will_ever_count(
+    manager,  # noqa: F811
+):
+    """Выделять можно только тех, кого посчитает управление заявки (№550).
+
+    🔴 ЧТО БЫЛО. Проверка области смотрела поддерево `status.manage`
+    действующего и не сверялась со строками разнарядки. Действующий с областью
+    на ДЕПАРТАМЕНТ проходил её на любом своём сотруднике — включая тех, кто
+    не лежит НИ ПОД ОДНИМ управлением. Статус «Участие в ОМ» заводился
+    настоящий, а `_with_directorate_progress` такого человека не считает
+    никогда, и сам это оговаривает: «выдумывать ему управление значило бы
+    записать его чужой квоте». Отчёт говорил «Выделено: 1», а прогресс
+    управлений не двигался — и объяснить расхождение было нечем.
+
+    🔴 ПОЧЕМУ ФИКСТУРА ИМЕННО ТАКАЯ (стоило одного прогона). Первая редакция
+    брала СОСЕДНЕЕ управление того же департамента и была вакуумной: `split`
+    заводит строку КАЖДОМУ действующему управлению департамента, в том числе с
+    нулевой квотой, — такой человек как раз посчитается, просто в своей
+    строке. По-настоящему невидим тот, кто числится в отделе, подчинённом
+    департаменту НАПРЯМУЮ, минуя управления. Он и взят.
+
+    Красная на снятии сверки: `selected` станет непустым, а прогресс
+    управления останется нулевым.
+    """
+    from organization_management.apps.divisions.models import Division
+
+    own = make_department("Департамент А")
+    asked = make_directorate(own, "Управление А-1")
+    # Отдел ПОД ДЕПАРТАМЕНТОМ, минуя управления: строки разнарядки ему не
+    # достанется никогда — `split` заводит их только управлениям.
+    aside = Division.objects.create(
+        name="Отдел при департаменте",
+        division_type=Division.DivisionType.DIVISION,
+        parent=own,
+    )
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, asked)
+    outsider = employee_of(aside, "Мимокадров")
+    make_assignment_status_type()
+    # Область действующего — ДЕПАРТАМЕНТ: он видит и этот отдел, и старая
+    # проверка на нём молчала.
+    api, _ = client_for(
+        "dept-head-select",
+        "DEPT_HEAD_SEL",
+        perms=("status.view", "status.manage"),
+        scope_division_id=own.pk,
+    )
+
+    resp = api.post(
+        f"{URL}forces/requests/{allocation_id}/directorate/select/",
+        {"employeeIds": [str(outsider.pk)]},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.data
+    body = resp.json()
+    assert body["selected"] == [], "выделен человек, которого прогресс не посчитает"
+    assert len(body["refused"]) == 1, body
+    assert body["refused"][0]["code"] == "PERMISSION_DENIED", body["refused"][0]
+    # Обходом такое не лечится: заявка адресована управлениям, а он не под ними.
+    assert body["refused"][0]["overridable"] is False, body["refused"][0]
+    # Прогресс управления не сдвинулся — ровно то, ради чего гард и заведён.
+    assert body["request"]["directorates"][0]["assigned"] == 0, body["request"]
+
+
+def test_selection_still_passes_for_a_person_of_the_requested_directorate(
+    manager,  # noqa: F811
+):
+    """Человек управления заявки по-прежнему выделяется — гард не запер работу.
+
+    Без этой половины предыдущая проба доказывала бы лишь, что выделение
+    сломано вообще, а не что сверка различает видимых прогрессу и невидимых.
+    """
+    own = make_department("Департамент А")
+    asked = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, asked)
+    insider = employee_of(asked, "Своев")
+    make_assignment_status_type()
+    api, _ = client_for(
+        "dept-head-select-ok",
+        "DEPT_HEAD_SEL_OK",
+        perms=("status.view", "status.manage"),
+        scope_division_id=own.pk,
+    )
+
+    resp = api.post(
+        f"{URL}forces/requests/{allocation_id}/directorate/select/",
+        {"employeeIds": [str(insider.pk)]},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.data
+    body = resp.json()
+    assert body["selected"] == [str(insider.pk)], body
+    assert body["request"]["directorates"][0]["assigned"] == 1, body["request"]
+
+
 def test_a_stranger_in_the_list_is_refused_without_naming_him(manager):  # noqa: F811
     """Чужой сотрудник — отказ по строке, БЕЗ его фамилии; свои выделяются.
 
