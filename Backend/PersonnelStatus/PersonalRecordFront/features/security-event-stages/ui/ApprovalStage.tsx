@@ -104,15 +104,29 @@ function useApprovalRights(
   event: SecurityEvent,
   visit: VisitObject | null | undefined
 ): ApprovalRights {
-  const { hasPermission, permissions } = useOpsPermissions();
+  const { hasPermission, isLoading } = useOpsPermissions();
   const me = useMyEmployee();
   // Пока права не пришли, кнопки НЕ выключаются с ложной причиной: серверный
   // отказ всё равно стоит за ними, а мигание «нельзя → можно» вводит в
   // заблуждение сильнее, чем секунда доступной кнопки.
-  const loading = permissions === undefined;
+  //
+  // 🔴 «ИДЁТ ЗАГРУЗКА», А НЕ «ДАННЫХ НЕТ» (Plane №573). Здесь стояло
+  // `permissions === undefined` — это истинно и ПОСЛЕ отказа: после 403 или
+  // 500 значение остаётся `undefined` навсегда. Задуманное окно в секунду
+  // превращалось в вечность: «Согласовать», «Вернуть» и «Отправить» стояли
+  // включёнными постоянно, человек жал и получал голый отказ сервера.
+  // Отказ — не загрузка: когда прав нет, кнопки обязаны быть выключены с
+  // причиной, а не приглашать к действию, которое не состоится.
+  const loading = isLoading;
   const myId = me.data?.employee ? String(me.data.employee.id) : null;
   const manage = loading || hasPermission("event.manage");
-  const chiefId = visit ? visit.chiefEmployeeId : event.chiefEmployeeId;
+  // 🔴 СТАРШИЙ БЕРЁТСЯ ТОЛЬКО У ОБЪЕКТА (Plane №575). Здесь стоял запасной
+  // путь на `event.chiefEmployeeId`, когда объект не показан, — а сервер
+  // (`_object_lead_override`) принимает ИСКЛЮЧИТЕЛЬНО `visit.chief_employee_id`
+  // и при отсутствии объекта отказывает прямо: «гадать, чей это объект, гейт
+  // не имеет права». Старший мероприятия без `event.manage` получал включённые
+  // кнопки, отвечающие голым 403.
+  const chiefId = visit ? visit.chiefEmployeeId : null;
   const isChief = myId !== null && chiefId !== null && chiefId === myId;
   const isDeputy =
     myId !== null &&
@@ -122,7 +136,15 @@ function useApprovalRights(
     send: manage || isChief,
     answerRemarks: manage || isChief || isDeputy,
     approve: loading || hasPermission("assignment.approve"),
-    returnBack: loading || hasPermission("assignment.return"),
+    // 🔴 ТЕМ ЖЕ ПРАВОМ, ЧТО И «СОГЛАСОВАТЬ» (Plane №574). «Вернуть» и
+    // «Подтвердить возврат» зовут решение согласующего
+    // (`approval/route/<id>/decide/`), а его сервер гейтит `assignment.approve`
+    // — это ОДНА ручка на два решения. Право `assignment.return` закрывает
+    // ДРУГУЮ ручку (`approval/return/`), которую экран не зовёт вовсе. Коды
+    // расходились в обе стороны: у кого есть `return` и нет `approve` — кнопка
+    // включена и отбивается сервером; у кого есть `approve` и нет `return` —
+    // спрятана зря.
+    returnBack: loading || hasPermission("assignment.approve"),
   };
 }
 
