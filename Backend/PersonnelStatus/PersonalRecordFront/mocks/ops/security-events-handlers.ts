@@ -48,12 +48,14 @@ import {
   securityEventReplaceAssignmentPath,
   NO_PUBLISHED_VERSION_TEXT,
   visitObjectClosePath,
+  visitObjectsPath,
   visitObjectEvaluationsAllPath,
   visitObjectEvaluationsPath,
   type ReconCheckState,
   type VisitEvaluationRow,
   type VisitEvaluationSummary,
 } from "@/entities/security-event";
+import { SECURITY_EVENT_STAGES } from "@/entities/security-event";
 import type {
   AddApproverRequest,
   AddJournalEntryRequest,
@@ -153,7 +155,7 @@ function syncAutoForceRequest(
  * Старый ключ при этом просто перестаёт читаться: чинить его содержимое
  * миграцией — заводить вторую модель данных ради мок-стенда.
  */
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 const STORE_KEY = `ops-mock-security-events:v${STORE_VERSION}`;
 /** Ключи прежних версий — их надо УБИРАТЬ, а не копить: `sessionStorage`
  *  ограничен квотой, и брошенный снимок держит её до закрытия вкладки. */
@@ -529,39 +531,164 @@ function routeAfterReturn(
   );
 }
 
-function mirrorApproval(event: SecurityEvent): SecurityEvent {
-  // 🔴 ЗЕРКАЛО РАБОТАЕТ ТОЛЬКО ПРИ ОДНОМ ОБЪЕКТЕ (Plane №500). Оно — упрощение
-  // для мира мока, где объект у ОМ ровно один: тогда «наименьшая стадия среди
-  // объектов» это стадия самого объекта, и переписать её стадией мероприятия
-  // безвредно. При ДВУХ объектах то же действие становится ложью и стирает
-  // работу: закрытие одного объекта не закрывает мероприятие, а зеркало
-  // немедленно откатывало объекту `stage` и `closedAt` обратно по стадии ОМ.
-  //
-  // Условие здесь — не «пока не дошли руки», а граница применимости. Как
-  // только у мока появятся ОМ с двумя объектами (ветка №385 ровно про это),
-  // правила согласования и закрытия придётся портировать по-настоящему; до
-  // тех пор честнее НЕ ТРОГАТЬ объекты, чем трогать их неверно.
-  if (event.visitObjects.length > 1) return event;
+/** Порядок стадий — для правила «стадия ОМ = НАИМЕНЬШАЯ среди объектов». */
+const STAGE_RANK = new Map<SecurityEventStage, number>(
+  SECURITY_EVENT_STAGES.map((stage, index) => [stage, index])
+);
+
+function stageRank(stage: SecurityEventStage): number {
+  return STAGE_RANK.get(stage) ?? 0;
+}
+
+/** Наименьшая стадия среди объектов посещения (`[МД-04]`, Plane №412). */
+function lowestVisitStage(
+  visits: SecurityEvent["visitObjects"],
+  fallback: SecurityEventStage
+): SecurityEventStage {
+  if (visits.length === 0) return fallback;
+  return visits.reduce<SecurityEventStage>(
+    (low, visit) => (stageRank(visit.stage) < stageRank(low) ? visit.stage : low),
+    visits[0]!.stage
+  );
+}
+
+/**
+ * Перевести объект(ы) посещения на стадию и пересчитать стадию МЕРОПРИЯТИЯ.
+ *
+ * 🔴 ЭТАП ЖИВЁТ У ОБЪЕКТА, А У МЕРОПРИЯТИЯ ОН ВЫВОДИТСЯ (Plane №792, правило
+ * сервера из `[МД-04]`/№412). До этого мок знал только `event.stage`, а
+ * объектам переписывал его зеркалом — и потому не мог воспроизвести НИ ОДИН
+ * случай, ради которых заведены №475 и №477: возврат одного объекта,
+ * роняющий этап ОМ; гвард отправки, спрашивающий стадию не того. Фронт-пробы
+ * при этом были зелены на поведении, которого на живом сервере нет.
+ *
+ * `visitObjectId` — кого переводим. Не назван — переводим ВСЕ объекты: так
+ * ведут себя действия мероприятия целиком (закрытие ОМ, обход стадии), и так
+ * же выглядит обычный ОМ с одним объектом.
+ *
+ * Назад стадия НЕ откатывается: `advanceVisits` двигает только вперёд, а
+ * возврат делается ЯВНО (`retreatVisits`) — иначе «согласование вернуло
+ * объект на расстановку» и «объект дошёл до согласования» стали бы одним
+ * вызовом, и первый молча отменял бы второй.
+ */
+function advanceVisits(
+  event: SecurityEvent,
+  stage: SecurityEventStage,
+  visitObjectId?: string | null
+): SecurityEvent {
+  const target = (visitObjectId ?? "").trim();
+  const visitObjects = event.visitObjects.map((visit) =>
+    (target === "" || visit.id === target) && stageRank(visit.stage) < stageRank(stage)
+      ? { ...visit, stage, ...closureStamp(event, visit, stage) }
+      : visit
+  );
+  return { ...event, visitObjects, stage: lowestVisitStage(visitObjects, stage) };
+}
+
+/** Момент закрытия объекта. Стадия `CLOSED` без него — полузакрытый объект:
+ *  чип говорит «Закрыто», а когда это случилось, сказать нечем. Раньше
+ *  штамп приезжал объекту зеркалом от мероприятия; теперь ставится там же,
+ *  где ставится стадия (Plane №792). */
+function closureStamp(
+  event: SecurityEvent,
+  visit: SecurityEvent["visitObjects"][number],
+  stage: SecurityEventStage
+): { closedAt?: string } {
+  if (stage !== "CLOSED" || visit.closedAt !== null) return {};
+  return { closedAt: event.closedAt ?? nowIso() };
+}
+
+/** Поставить ВСЕМ объектам одну стадию — только для обхода цепочки. */
+function setAllVisitStages(event: SecurityEvent, stage: SecurityEventStage): SecurityEvent {
   return {
     ...event,
+    stage,
     visitObjects: event.visitObjects.map((visit) => ({
       ...visit,
-      // Этап объекта в мире мока равен этапу мероприятия: объект у ОМ ровно
-      // один, и наименьшая стадия среди одного — она сама (Plane №412).
-      stage: event.stage,
-      closedAt: event.closedAt,
-      // 🔴 «НАЗНАЧЕНО» СЧИТАЕТСЯ, А НЕ ЧИТАЕТСЯ ИЗ ПОЛЯ (Plane №606). Поле
-      // `placementAssigned` получало ноль однажды, при заведении объекта, и
-      // не обновлял его НИ ОДИН обработчик: ветка «PLACEMENT + назначено 0»
-      // срабатывала всегда, и после назначения людей на все посты чип
-      // продолжал говорить «Рекогносцировка завершена» вместо «Расстановка».
-      statusLabel: visitStatusLabel(event.stage, assignedOnVisit(event, visit.id)),
-      approvalStatus: event.approvalStatus,
-      approvalComment: event.approvalComment,
-      approvalRoute: event.approvalRoute,
-      approvalRemarks: event.approvalRemarks,
-      approvalStale: event.approvalStale,
+      stage,
+      ...closureStamp(event, visit, stage),
+      // Выход ИЗ закрытия снимает штамп — как на сервере и как это делает
+      // обход стадии для самого мероприятия.
+      ...(stage === "CLOSED" ? {} : { closedAt: null }),
     })),
+  };
+}
+
+/** Вернуть объект(ы) на более раннюю стадию — возврат с согласования. */
+function retreatVisits(
+  event: SecurityEvent,
+  stage: SecurityEventStage,
+  visitObjectId?: string | null
+): SecurityEvent {
+  const target = (visitObjectId ?? "").trim();
+  const visitObjects = event.visitObjects.map((visit) =>
+    (target === "" || visit.id === target) && stageRank(visit.stage) > stageRank(stage)
+      ? { ...visit, stage }
+      : visit
+  );
+  return { ...event, visitObjects, stage: lowestVisitStage(visitObjects, stage) };
+}
+
+/**
+ * Стадия объекта, к которому обращён запрос (Plane №792).
+ *
+ * 🔴 ГВАРД СПРАШИВАЕТ СТАДИЮ ОБЪЕКТА, А НЕ МЕРОПРИЯТИЯ. Именно эта формула —
+ * `event.stage !== "APPROVAL"` — на сервере чинилась как дефект (№475):
+ * согласование одного объекта запиралось стадией соседнего. Мок отвечал по
+ * старой формуле, и фронт-проба по нему была зелена на поведении, которого
+ * на живом стеке нет.
+ *
+ * Объект не назван — отвечаем стадией МЕРОПРИЯТИЯ: это обычный ОМ с одним
+ * объектом (тогда они равны) и действия «целиком», у которых адресата нет.
+ */
+function stageOf(event: SecurityEvent, visitObjectId?: string | null): SecurityEventStage {
+  const target = (visitObjectId ?? "").trim();
+  if (target === "") return event.stage;
+  return event.visitObjects.find((visit) => visit.id === target)?.stage ?? event.stage;
+}
+
+function mirrorApproval(event: SecurityEvent): SecurityEvent {
+  // 🔴 ЧТО ЗЕРКАЛО ДЕЛАЕТ И ЧЕГО НЕ ДЕЛАЕТ БОЛЬШЕ (Plane №500 → №792).
+  // Раньше оно переписывало объекту `stage` и `closedAt` стадией
+  // МЕРОПРИЯТИЯ — и при двух объектах это была ложь, стиравшая работу
+  // (закрыли один объект, зеркало откатило его обратно). Поэтому у ОМ с
+  // двумя объектами зеркало вообще отключалось, а вместе с ним отключался и
+  // расчёт подписи чипа.
+  //
+  // Теперь стадию объекта двигают ЯВНО (`advanceVisits`/`retreatVisits`), а
+  // здесь она только ЧИТАЕТСЯ. Стадия мероприятия — вывод: наименьшая среди
+  // объектов, как на сервере.
+  //
+  // СОГЛАСОВАНИЕ ПОКА ОСТАЁТСЯ ПОЛЕМ МЕРОПРИЯТИЯ, и это сказано вслух: у
+  // сервера маршрут, замечания и версии живут в ОБЪЕКТЕ, у мока — в ОМ.
+  // Зеркалить их в объекты при ДВУХ объектах значило бы выдавать общий
+  // маршрут за маршрут каждого — то есть ровно ту ложь, от которой уходим.
+  // Поэтому при двух и более объектах поля согласования у объектов остаются
+  // своими (пустыми), а не копией мероприятия; перенос маршрута в объект —
+  // отдельная задача.
+  const single = event.visitObjects.length <= 1;
+  const visitObjects = event.visitObjects.map((visit) => ({
+    ...visit,
+    // 🔴 «НАЗНАЧЕНО» СЧИТАЕТСЯ, А НЕ ЧИТАЕТСЯ ИЗ ПОЛЯ (Plane №606). Поле
+    // `placementAssigned` получало ноль однажды, при заведении объекта, и
+    // не обновлял его НИ ОДИН обработчик: ветка «PLACEMENT + назначено 0»
+    // срабатывала всегда, и после назначения людей на все посты чип
+    // продолжал говорить «Рекогносцировка завершена» вместо «Расстановка».
+    statusLabel: visitStatusLabel(visit.stage, assignedOnVisit(event, visit.id)),
+    ...(single
+      ? {
+          approvalStatus: event.approvalStatus,
+          approvalComment: event.approvalComment,
+          approvalRoute: event.approvalRoute,
+          approvalRemarks: event.approvalRemarks,
+          approvalStale: event.approvalStale,
+        }
+      : {}),
+  }));
+  return {
+    ...event,
+    stage: lowestVisitStage(visitObjects, event.stage),
+    visitObjects,
   };
 }
 
@@ -728,7 +855,10 @@ function buildSeed(): SecurityEvent[] {
     if (applicable !== null) {
       e1.passportBinding = bindPassportVersion(withPassport, applicable, now);
     }
-    e1.stage = "PLACEMENT";
+    // 🔴 Стадия ставится И ОБЪЕКТУ (Plane №792): с этой карточки стадия
+    // мероприятия — ВЫВОД (наименьшая среди объектов), и сид, поднявший
+    // только `event.stage`, немедленно откатывался бы объектом назад.
+    Object.assign(e1, setAllVisitStages(e1, "PLACEMENT"));
     e1.readinessPercent = 65;
     e1.forceNeed = 24;
     e1.conflictsCount = 1;
@@ -747,7 +877,7 @@ function buildSeed(): SecurityEvent[] {
       date,
       now
     );
-    e2.stage = "BULLETIN";
+    Object.assign(e2, setAllVisitStages(e2, "BULLETIN"));
     e2.readinessPercent = 10;
     e2.forceNeed = 12;
     events.push(e2);
@@ -763,7 +893,7 @@ function buildSeed(): SecurityEvent[] {
       "2026-07-15",
       now
     );
-    e3.stage = "CLOSED";
+    Object.assign(e3, setAllVisitStages(e3, "CLOSED"));
     e3.readinessPercent = 100;
     e3.forceNeed = 40;
     e3.closedAt = "2026-07-16T18:00:00.000Z";
@@ -1393,7 +1523,7 @@ export const securityEventsHandlers = [
     // ОМ С ОБЪЕКТОМ открывается СРАЗУ рекогносцировкой (порт правила бэка,
     // Plane «Реестр ОМ-5»): в эталоне это первый шаг цепочки. Без объекта
     // осматривать нечего — ОМ остаётся на бюллетене.
-    created.stage = object === null ? "BULLETIN" : "RECON";
+    Object.assign(created, setAllVisitStages(created, object === null ? "BULLETIN" : "RECON"));
     created.readinessPercent = object === null ? 0 : 15;
     addEvent(created);
     appendAudit({
@@ -1526,7 +1656,7 @@ export const securityEventsHandlers = [
       );
     }
     return HttpResponse.json(
-      saveEvent({ ...event, stage: "RECON", readinessPercent: 15, updatedAt: nowIso() })
+      saveEvent({ ...advanceVisits(event, "RECON"), readinessPercent: 15, updatedAt: nowIso() })
     );
   }),
 
@@ -1744,8 +1874,7 @@ export const securityEventsHandlers = [
     const forceNeed = demandRows.reduce((sum, row) => sum + row.need, 0);
     return HttpResponse.json(
       saveEvent({
-        ...event,
-        stage: "PLACEMENT",
+        ...advanceVisits(event, "PLACEMENT"),
         readinessPercent: 60,
         demandRows,
         demandApproved: true,
@@ -2687,7 +2816,10 @@ export const securityEventsHandlers = [
     async ({ params, request }) => {
       const { event, response } = findEvent(params.id as string);
       if (event === null) return response;
-      if (event.stage !== "PLACEMENT") {
+      const completeBody = (await request.clone().json().catch(() => ({}))) as {
+        visitObjectId?: string;
+      };
+      if (stageOf(event, completeBody.visitObjectId) !== "PLACEMENT") {
         return businessRuleError(
           "INVALID_STAGE_TRANSITION",
           "Расстановку можно завершить только на этапе «Расстановка»."
@@ -2696,6 +2828,9 @@ export const securityEventsHandlers = [
       const body = (await request.json().catch(() => ({}))) as {
         override?: boolean;
         override_reason?: string;
+        // Кого завершаем (Plane №792): клиент называет объект, если их
+        // несколько. Не назван — ОМ с одним объектом, адресат очевиден.
+        visitObjectId?: string;
       };
       // пост укомплектован при хотя бы одном назначении (упрощённое правило)
       const assignedPostIds = new Set(event.placementAssignments.map((a) => a.postId));
@@ -2724,8 +2859,7 @@ export const securityEventsHandlers = [
         saveEvent(
           withVersions(
             {
-              ...event,
-              stage: "APPROVAL",
+              ...advanceVisits(event, "APPROVAL", body.visitObjectId),
               readinessPercent: 75,
               updatedAt: nowIso(),
             },
@@ -2829,13 +2963,17 @@ export const securityEventsHandlers = [
     }
   ),
 
-  http.post(`*${securityEventApprovalSendPath(":id")}`, ({ params }) => {
+  http.post(`*${securityEventApprovalSendPath(":id")}`, async ({ params, request }) => {
     const { event, response } = findEvent(params.id as string);
+    // Кого адресуем (Plane №792): тело может назвать объект посещения.
+    const addressed = (await request.json().catch(() => ({}))) as {
+      visitObjectId?: string;
+    };
     if (event === null) return response;
     // Снимок фиксируется ИМЕННО отправкой: до неё согласовывать нечего, и
     // сравнивать состав не с чем.
     approvalSnapshots.set(event.id, placementSignature(event));
-    if (event.stage !== "APPROVAL") {
+    if (stageOf(event, addressed.visitObjectId) !== "APPROVAL") {
       return businessRuleError(
         "INVALID_STAGE_TRANSITION",
         "Отправить на согласование можно только на этапе «Согласование»."
@@ -2877,10 +3015,14 @@ export const securityEventsHandlers = [
     );
   }),
 
-  http.post(`*${securityEventApprovalWithdrawPath(":id")}`, ({ params }) => {
+  http.post(`*${securityEventApprovalWithdrawPath(":id")}`, async ({ params, request }) => {
     const { event, response } = findEvent(params.id as string);
+    // Кого адресуем (Plane №792): тело может назвать объект посещения.
+    const addressed = (await request.json().catch(() => ({}))) as {
+      visitObjectId?: string;
+    };
     if (event === null) return response;
-    if (event.stage !== "APPROVAL") {
+    if (stageOf(event, addressed.visitObjectId) !== "APPROVAL") {
       return businessRuleError(
         "INVALID_STAGE_TRANSITION",
         "Отозвать с согласования можно только на этапе «Согласование»."
@@ -2999,8 +3141,7 @@ export const securityEventsHandlers = [
           saveEvent(
             withVersions(
               {
-                ...answered,
-                stage: "ACKNOWLEDGEMENT",
+                ...advanceVisits(answered, "ACKNOWLEDGEMENT", body.visitObjectId),
                 approvalStatus: "APPROVED",
                 approvalComment: "",
                 readinessPercent: 85,
@@ -3124,10 +3265,9 @@ export const securityEventsHandlers = [
           saveEvent(
             withVersions(
               {
-                ...decided,
+                ...retreatVisits(decided, "PLACEMENT", body.visitObjectId),
                 // Маршрут обнуляется (`[ВОЗ-03]`, Plane №570).
                 approvalRoute: routeAfterReturn(route),
-                stage: "PLACEMENT",
                 approvalStatus: "RETURNED",
                 approvalComment: comment,
                 readinessPercent: 60,
@@ -3144,8 +3284,7 @@ export const securityEventsHandlers = [
           saveEvent(
             withVersions(
               {
-                ...decided,
-                stage: "ACKNOWLEDGEMENT",
+                ...advanceVisits(decided, "ACKNOWLEDGEMENT", body.visitObjectId),
                 approvalStatus: "APPROVED",
                 approvalComment: "",
                 readinessPercent: 85,
@@ -3181,10 +3320,14 @@ export const securityEventsHandlers = [
     }
   ),
 
-  http.post(`*${securityEventApprovalApprovePath(":id")}`, ({ params }) => {
+  http.post(`*${securityEventApprovalApprovePath(":id")}`, async ({ params, request }) => {
     const { event, response } = findEvent(params.id as string);
+    // Кого адресуем (Plane №792): тело может назвать объект посещения.
+    const addressed = (await request.json().catch(() => ({}))) as {
+      visitObjectId?: string;
+    };
     if (event === null) return response;
-    if (event.stage !== "APPROVAL") {
+    if (stageOf(event, addressed.visitObjectId) !== "APPROVAL") {
       return businessRuleError(
         "INVALID_STAGE_TRANSITION",
         "Согласовать расстановку можно только на этапе «Согласование»."
@@ -3253,7 +3396,7 @@ export const securityEventsHandlers = [
       if (body.comment.trim() === "") {
         return validationError({ comment: ["Укажите причину возврата."] });
       }
-      if (event.stage !== "APPROVAL") {
+      if (stageOf(event, body.visitObjectId) !== "APPROVAL") {
         return businessRuleError(
           "INVALID_STAGE_TRANSITION",
           "Вернуть на доработку можно только на этапе «Согласование»."
@@ -3263,11 +3406,14 @@ export const securityEventsHandlers = [
         saveEvent(
           withVersions(
             {
-              ...event,
+              // Возврат адресован ОБЪЕКТУ (Plane №792): на «Расстановку»
+              // уезжает он один, а этап мероприятия падает следом сам —
+              // потому что он наименьший среди объектов, а не потому что его
+              // кто-то переписал.
+              ...retreatVisits(event, "PLACEMENT", body.visitObjectId),
               // Та же дорога, что у решения согласующего (Plane №570): у
               // возврата два входа и одно правило.
               approvalRoute: routeAfterReturn(event.approvalRoute),
-              stage: "PLACEMENT",
               approvalStatus: "RETURNED",
               approvalComment: body.comment.trim(),
               readinessPercent: 60,
@@ -3326,6 +3472,76 @@ export const securityEventsHandlers = [
 
   // Закрытие ОБЪЕКТА (`[ЗАК-05]`/`[ЗАК-12]`, Plane №404): в мире мока объект
   // один — его закрытие закрывает мероприятие, как и на сервере.
+  /**
+   * Добавить объект посещения (`[МД-02]`, Plane №792).
+   *
+   * 🔴 ЭТОЙ РУЧКИ В МОКЕ НЕ БЫЛО ВОВСЕ, и потому ОМ с ДВУМЯ объектами в нём
+   * не существовало в принципе: `emptyEvent` заводит ровно один. А значит ни
+   * один случай, ради которых заведены №475 и №477 — возврат одного объекта,
+   * гвард, спрашивающий стадию не того, — воспроизвести на моке было НЕЧЕМ,
+   * и фронт-пробы по нему оставались зелены на поведении, которого на живом
+   * сервере нет.
+   *
+   * Новый объект встаёт на стадию МЕРОПРИЯТИЯ: он входит в уже идущую работу,
+   * и делать вид, что он начинает с бюллетеня, значило бы уронить стадию ОМ
+   * (она наименьшая среди объектов) и откатить всё, что уже сделано.
+   */
+  http.post(`*${visitObjectsPath(":id")}`, async ({ params, request }) => {
+    const { event, response } = findEvent(params.id as string);
+    if (event === null) return response;
+    const body = (await request.json().catch(() => ({}))) as { objectId?: string };
+    const objectId = (body.objectId ?? "").trim();
+    const object = readObjectsStore().find((row) => row.id === objectId);
+    if (object === undefined) {
+      return validationError({ objectId: ["Объект не найден."] });
+    }
+    if (event.visitObjects.some((visit) => visit.objectId === objectId)) {
+      return businessRuleError(
+        "VISIT_OBJECT_DUPLICATE",
+        "Этот объект уже в списке посещения."
+      );
+    }
+    const position = event.visitObjects.length;
+    return HttpResponse.json(
+      saveEvent({
+        ...event,
+        visitObjects: [
+          ...event.visitObjects,
+          {
+            id: `${event.id}-visit-${position + 1}`,
+            objectId,
+            objectName: object.name,
+            passportBinding: null,
+            protectedPersonId: null,
+            protectedPersonName: "",
+            position,
+            visitDay: null,
+            note: "",
+            chiefEmployeeId: null,
+            chiefName: "",
+            placementNeed: 0,
+            placementAssigned: 0,
+            deputies: [],
+            closingComment: "",
+            closureSummary: { posts: 0, need: 0, assigned: 0, replacements: 0, declines: 0, incidents: 0 },
+            statusLabel: "",
+            stage: event.stage,
+            closedAt: null,
+            approvalStatus: "PENDING",
+            approvalComment: "",
+            approvalRoute: [],
+            approvalRemarks: [],
+            approvalStale: false,
+            documentVersion: 0,
+            documentStatus: null,
+            documentVersions: [],
+          },
+        ],
+        updatedAt: nowIso(),
+      })
+    );
+  }),
+
   http.post(
     `*${visitObjectClosePath(":id", ":visitObjectId")}`,
     async ({ params, request }) => {
@@ -3688,8 +3904,10 @@ export const securityEventsHandlers = [
     });
     return HttpResponse.json(
       saveEvent({
-        ...event,
-        stage: target as typeof event.stage,
+        // Обход стадии — действие МЕРОПРИЯТИЯ целиком (Plane №792): адресата
+        // у него нет, и объекты переводятся все. Двигать может в обе стороны,
+        // потому и не `advanceVisits`: это обход, а не ход цепочки.
+        ...setAllVisitStages(event, target as SecurityEventStage),
         readinessPercent: readiness[target],
         // Выход из закрытия снимает штамп закрытия — как на сервере.
         closedAt: event.stage === "CLOSED" ? null : event.closedAt,
@@ -3735,8 +3953,8 @@ export const securityEventsHandlers = [
       });
       return HttpResponse.json(
         saveEvent({
-          ...event,
-          stage: "CLOSED",
+          // Закрытие МЕРОПРИЯТИЯ закрывает и его объекты (Plane №792).
+          ...advanceVisits(event, "CLOSED"),
           readinessPercent: 100,
           closingComment: (body.comment ?? "").trim(),
           closureDirectionSummaries: summaries.map((d) => ({
