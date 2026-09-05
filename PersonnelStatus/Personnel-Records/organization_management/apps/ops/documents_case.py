@@ -129,6 +129,24 @@ def _versions(document, event, visit):
         )
 
 
+def _remark_attachment(remark):
+    """Привязка замечания для колонки «Привязка» дела.
+
+    🔴 СНЯТЫЙ ПОСТ НАЗЫВАЕТСЯ, А НЕ ПРЕВРАЩАЕТСЯ В «ОБЩЕЕ» (Plane №510). При
+    снятии поста замечание отвязывается от него (иначе оно ссылалось бы на
+    несуществующий пост и невидимо держало бы согласование), но согласующий
+    писал про КОНКРЕТНЫЙ пост — и в деле, которое читают потом, «общее»
+    сказало бы неправду.
+    """
+    detached = str(remark.get("detachedPost") or "")
+    named = remark.get("postName") or remark.get("postId")
+    if named:
+        return str(named)
+    if detached:
+        return f"{detached} (пост снят с расчёта)"
+    return "общее"
+
+
 def _remarks(document, visit):
     rows = []
     for r in visit.approval_remarks or []:
@@ -137,7 +155,7 @@ def _remarks(document, visit):
             r.get("text") or "",
             r.get("authorName") or r.get("author") or "",
             _fmt_dt(r.get("createdAt")),
-            (r.get("postName") or r.get("postId") or "общее"),
+            _remark_attachment(r),
             ("срочно, " if r.get("urgent") else "") + status,
             (r.get("response") or "") + (f" ({_fmt_dt(r.get('respondedAt'))})" if r.get("respondedAt") else ""),
             # Замечания, поставленные до версий документа (№398), номера не несут.

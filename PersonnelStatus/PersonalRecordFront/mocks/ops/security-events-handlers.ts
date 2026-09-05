@@ -3091,6 +3091,12 @@ export const securityEventsHandlers = [
                 createdAt: now,
                 text: row.text.trim(),
                 postId: row.postId ?? null,
+                // Привязка к СНЯТОМУ посту (Plane №510) в моке всегда пуста:
+                // снятия поста мок не умеет вовсе, и живой ветки для неё
+                // здесь нет. Поле заведено, чтобы форма строки совпадала с
+                // серверной — мёртвая ветка была бы хуже, но расходящаяся
+                // форма врала бы про контракт.
+                detachedPost: "",
                 urgent:
                   row.urgent === true ||
                   (daysToEvent >= 0 && daysToEvent <= urgentDays),

@@ -648,8 +648,16 @@ async function prepareEvent(token: string): Promise<void> {
       index === 0 ? { ...post, minRating: 8 } : post,
   )
   await call('PATCH', `${base}/recon/`, {
+    // 🔴 `state`, А НЕ ОДИН `done` (Plane №538). Сервер теперь верит ЯВНОМУ
+    // состоянию всегда, а фикстура раскладывает пункт целиком — вместе с
+    // унаследованным `state: 'UNCHECKED'`. Прежняя форма (`done: true` без
+    // `state`) стала пустой правкой: пункты оставались непроверенными,
+    // `recon/complete` отвечал RECON_CHECKLIST_INCOMPLETE, и подготовка
+    // фикстуры молча не доводила ОМ до «Согласования» — проба падала
+    // «не удалось подготовить фикстуру», не назвав настоящей причины.
     checklist: afterImport.reconChecklist.map((item: Record<string, unknown>) => ({
       ...item,
+      state: 'NORMAL',
       done: true,
       result: 'MATCHES',
     })),
