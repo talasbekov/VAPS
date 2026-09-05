@@ -18,7 +18,7 @@
  * департамент уже отдал; без этого «5 из 46» остаётся числом, за которым
  * нельзя проверить, тех ли людей прислали.
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 
 import { Checkbox } from "@/components/ui/checkbox";
@@ -538,8 +538,19 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
             </TableHeader>
             <TableBody>
               {[...byDepartment.entries()].map(([department, members]) => (
-                <>
-                  <TableRow key={`dep-${department}`}>
+                /* 🔴 `Fragment` С КЛЮЧОМ, А НЕ СОКРАЩЁННЫЙ `<>` (Plane №485).
+                   Ключ нужен САМОМУ элементу списка; ключи на внутренних
+                   строках его не заменяют — сокращённая запись фрагмента
+                   атрибутов не принимает вовсе. React ругался «Each child in
+                   a list should have a unique key», а при смене состава
+                   департаментов группы перерисовывались лишний раз.
+
+                   Предупреждение в консоли здесь дороже, чем кажется: полный
+                   прогон требует смотреть на консоль браузера, и постоянное
+                   жёлтое обесценивает эту проверку — туда перестают
+                   смотреть. */
+                <Fragment key={`dep-${department}`}>
+                  <TableRow>
                     <TableCell colSpan={4} className="text-muted-foreground bg-muted/30 text-xs font-semibold uppercase tracking-wide">
                       {department}
                     </TableCell>
@@ -563,7 +574,7 @@ function RosterToObjects({ data }: { data: ForceCollectionWithObjects }) {
                       </TableCell>
                     </TableRow>
                   ))}
-                </>
+                </Fragment>
               ))}
             </TableBody>
           </Table>
