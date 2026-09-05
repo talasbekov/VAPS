@@ -146,6 +146,17 @@ SECURITY_EVENT_DEPUTY_REVOKED = "SECURITY_EVENT_DEPUTY_REVOKED"
 # этапа админом: действие совершено в обход общего права, по роли в данных, и
 # его след обязан быть в журнале мутаций, а не только в самом агрегате.
 SECURITY_EVENT_PLACEMENT_BY_DEPUTY = "SECURITY_EVENT_PLACEMENT_BY_DEPUTY"
+# Согласование, ВЕДЁННОЕ СТАРШИМ ОБЪЕКТА (или его замещающим) — по роли в
+# данных, без кода права `event.manage` (`[СОГ-12]`, Plane №401, №576).
+#
+# 🔴 ЗАЧЕМ КОД, ЕСЛИ ФЛАГ УЖЕ БЫЛ. Вьюха запоминала признак
+# `_acting_as_object_lead` и НИКОГДА его не читала: требование её же
+# докстринга («действие в обход общего права обязано быть названным») не
+# выполнялось, и отправка, отзыв и ответ на замечание, сделанные старшим
+# объекта, в журнале были неотличимы от тех же действий правообладателя.
+# Соседний обход расстановки замещающим свой след пишет — асимметрия и была
+# дырой.
+SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD = "SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD"
 #: Подпись согласующего с реквизитами (`[СОГ-10]`, Plane №429): ФИО,
 #: должность, логин, время сервера, номер и хэш версии, IP.
 SECURITY_EVENT_APPROVAL_SIGNED = "SECURITY_EVENT_APPROVAL_SIGNED"
@@ -311,6 +322,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_DEPUTY_ASSIGNED,
         SECURITY_EVENT_DEPUTY_REVOKED,
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
+        SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD,
         SECURITY_EVENT_APPROVAL_SIGNED,
         APPROVAL_ROUTE_REPLACED,
         GVO_VISIT_APPROVED,

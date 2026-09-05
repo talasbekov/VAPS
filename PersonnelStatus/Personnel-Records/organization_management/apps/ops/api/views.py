@@ -1467,6 +1467,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
+        self._object_lead_employee = None
         if self.action in ("my_assignments", "acknowledge", "decline"):
             return self._my_assignments_override(request)
         if self.action in self._STAGE_LEAD_ACTIONS:
@@ -1504,17 +1505,85 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     # Старший мероприятия/объекта ведёт «Ознакомление» по данным (Plane №432,
     # `[ОЗН-09]`): напоминает, заменяет, завершает.
+    #
+    # 🔴 «ЗАМЕНЯЕТ» — И НА «ПРОВЕДЕНИИ» ТОЖЕ, и это не расширение обхода, а
+    # правило самой замены: `replace_assignment` допускает оба этапа с №432
+    # («отказавшийся заменяется там, где отказ виден»). Прежний комментарий
+    # обещал только «Ознакомление» и расходился с кодом — расхождение снято
+    # здесь, а не сужением поведения (Plane №613, находка «а»).
     _STAGE_LEAD_ACTIONS = frozenset(
         {"acknowledgement_remind", "acknowledgement_remind_all",
          "acknowledgement_complete", "conduct_replace"}
     )
+
+    #: Действия, которые ведут ВЕСЬ этап мероприятия, а не работу по объекту.
+    #:
+    #: 🔴 СТАРШИЙ ОДНОГО ОБЪЕКТА НЕ ЗАВЕРШАЕТ ЭТАП ВСЕГО ОМ (Plane №613,
+    #: находка «б»). `complete` переводит на «Проведение» МЕРОПРИЯТИЕ целиком,
+    #: со всеми его объектами; отдать это старшему одного из них значило бы
+    #: разрешить ему закрыть чужую работу. У ведущего мероприятие право есть
+    #: по коду (`event.manage`), у старшего МЕРОПРИЯТИЯ — по данным, и обоих
+    #: этот список пропускает; старший объекта остаётся с напоминаниями и
+    #: заменой на своих постах.
+    #:
+    #: Отдельного «завершить ознакомление по объекту» в разделе нет вовсе —
+    #: заведена карточка: это решение о зернистости этапа, а не строка кода.
+    _EVENT_LEAD_ONLY_ACTIONS = frozenset({"acknowledgement_complete"})
 
     def _stage_lead_override(self, request):
         from organization_management.apps.ops import my_assignments as mine
 
         employee = mine.employee_of_user(resolve_actor_id(request))
         event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
-        return event is not None and mine.may_manage_stage(event, employee)
+        if event is None or not mine.may_manage_stage(event, employee):
+            return False
+        is_event_chief = (
+            event.chief_employee_id is not None
+            and int(event.chief_employee_id) == int(employee.pk)
+        )
+        if is_event_chief:
+            self._acting_as_object_lead = True
+            self._object_lead_employee = employee
+            return True
+        if self.action in self._EVENT_LEAD_ONLY_ACTIONS:
+            return False
+        # 🔴 СТАРШИЙ ОБЪЕКТА РАБОТАЕТ ТОЛЬКО СО СВОИМИ ПОСТАМИ (Plane №613).
+        # Обход возвращал «да» любому из старших ЛЮБОГО объекта, не сверяя,
+        # чей пост правят: старший объекта А заменял назначения на постах
+        # объекта Б. Соседний `_object_lead_override` такую сверку делает —
+        # асимметрия и была дырой.
+        if self.action == "conduct_replace" and not self._replaces_own_post(
+            event, employee
+        ):
+            return False
+        self._acting_as_object_lead = True
+        self._object_lead_employee = employee
+        return True
+
+    def _replaces_own_post(self, event, employee):
+        """Пост заменяемого назначения принадлежит объекту этого старшего."""
+        assignment_id = str((self.request.data or {}).get("assignmentId") or "")
+        assignment = next(
+            (
+                a
+                for a in (event.placement_assignments or [])
+                if str(a.get("id")) == assignment_id
+            ),
+            None,
+        )
+        if assignment is None:
+            # Назначения нет — отказ обхода, а не «разрешим, сервис разберётся»:
+            # гейт не имеет права пропускать то, чей адресат неизвестен.
+            return False
+        owner = event_service._visit_of_post(event, assignment.get("postId"))
+        if owner is None:
+            # У ОМ без объектов посещения объектных старших не бывает вовсе:
+            # сюда доходит только старший мероприятия, а он обработан выше.
+            return False
+        return (
+            owner.chief_employee_id is not None
+            and int(owner.chief_employee_id) == int(employee.pk)
+        )
 
     def _my_assignments_override(self, request):
         """Сотрудник — своя карточка, старший — своё, начальник — чтение
@@ -1627,11 +1696,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return False
         if visit.chief_employee_id == employee.pk:
             self._acting_as_object_lead = True
+            self._object_lead_employee = employee
             return True
-        if self.action in self._OBJECT_DEPUTY_ACTIONS and visit.deputies.filter(
-            employee_id=employee.pk
-        ).exists():
+        # 🔴 ЗАМЕЩАЮЩИЙ-НАБЛЮДАТЕЛЬ НЕ РАБОТАЕТ С ЗАМЕЧАНИЯМИ (Plane №572).
+        # Флаг `can_edit_placement` заведён ровно затем, чтобы отличать
+        # замещающего, который ВЕДЁТ объект, от того, кто внесён «в список» и
+        # расстановку не трогает. Здесь его не спрашивали вовсе, и наблюдатель
+        # закрывал и отвечал на замечания согласования без права `event.manage`
+        # — то есть распоряжался чужим документом. Соседний обход расстановки
+        # по этому же флагу фильтрует; асимметрия и была дырой.
+        if (
+            self.action in self._OBJECT_DEPUTY_ACTIONS
+            and visit.deputies.filter(
+                employee_id=employee.pk, can_edit_placement=True
+            ).exists()
+        ):
             self._acting_as_object_lead = True
+            self._object_lead_employee = employee
             return True
         return False
 
@@ -1672,6 +1753,20 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if not getattr(self, "_acting_as_deputy", False):
             return None
         return getattr(self, "_deputy_employee", None)
+
+    def _object_lead_actor(self):
+        """Сотрудник, действующий СТАРШИМ ОБЪЕКТА, либо `None` (Plane №576).
+
+        🔴 ЗДЕСЬ ФЛАГ НАКОНЕЦ ЧИТАЕТСЯ. `_acting_as_object_lead` выставлялся в
+        двух ветках обхода и не читался нигде: требование докстринга
+        `permission_override` («действие в обход общего права обязано быть
+        названным») не выполнялось, и согласование, ведомое старшим объекта,
+        в журнале было неотличимо от действия правообладателя. Соседний
+        `_deputy_actor` до сервиса доходил — асимметрия и была дырой.
+        """
+        if not getattr(self, "_acting_as_object_lead", False):
+            return None
+        return getattr(self, "_object_lead_employee", None)
 
     def _deputy_target_post(self, event):
         """Строка расчёта, которой касается операция.
@@ -1911,7 +2006,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def approval_send(self, request, pk=None):
         return self._event_response(
             event_service.send_for_approval(
-                pk, visit_object_id=self._visit_object_of(request)
+                pk,
+                visit_object_id=self._visit_object_of(request),
+                # Кто действует ролью в данных, а не правом (Plane №576):
+                # журнал мутаций пишет СЕРВИС — у него транзакция операции, и
+                # запись «вёл старший объекта» не может разъехаться с самим
+                # действием. Тот же приём, что у замещающего на расстановке.
+                object_lead=self._object_lead_actor(),
             )
         )
 
@@ -1919,7 +2020,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def approval_withdraw(self, request, pk=None):
         return self._event_response(
             event_service.withdraw_from_approval(
-                pk, visit_object_id=self._visit_object_of(request)
+                pk,
+                visit_object_id=self._visit_object_of(request),
+                object_lead=self._object_lead_actor(),
             )
         )
 
@@ -1953,6 +2056,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 decision=data.get("decision"),
                 response=data.get("response"),
                 visit_object_id=self._visit_object_of(request),
+                object_lead=self._object_lead_actor(),
             )
         )
 

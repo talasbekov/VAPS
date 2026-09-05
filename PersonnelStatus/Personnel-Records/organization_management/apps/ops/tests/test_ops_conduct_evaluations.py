@@ -532,3 +532,44 @@ def test_entering_conduct_addresses_the_work_items_to_the_actor(  # noqa: F811
     assert all(item.evaluator_user_id != "" for item in items), (
         "задание заведено ничьим — очередь оценщика не отдаст его никому"
     )
+
+
+# ── Ревью 2b6c12c1: оценивание видит НОВОЕ состояние ОМ (Plane №700) ────────
+
+
+def test_reviving_a_closed_event_does_not_leave_the_task_marked_finished(
+    manager, two_objects_on_conduct, actor  # noqa: F811
+):
+    """🔴 Plane №700: админский перевод CLOSED→CONDUCT не метит задание
+    «Завершено».
+
+    `open_evaluation_for_event` читает `event.stage` и `event.closed_at` и по
+    ним пишет метку задания и время начала. Звали её ДО сохранения
+    мероприятия — то есть на СТАРОМ состоянии: при оживлении закрытого ОМ
+    задание получало `state_label="Завершено"` и `actual_starts_at`, равное
+    моменту ЗАКРЫТИЯ. А это `update_or_create`, поэтому неверная метка
+    ЗАТИРАЛА верную. Администратор оживлял мероприятие и оставлял оценщику
+    завершённое задание — ровно то, чего этим переводом избегал.
+
+    Мутация: вернуть вызов `open_evaluation_for_event` ДО `event.save(...)` —
+    метка снова станет «Завершено», а время начала — временем закрытия.
+    """
+    from organization_management.apps.operations.models_rating import (
+        OpsEvaluationEvent,
+    )
+
+    _base, event_id, first, second = two_objects_on_conduct
+    manager.post(f"{URL}{event_id}/visit-objects/{first.pk}/close/", {}, format="json")
+    manager.post(f"{URL}{event_id}/visit-objects/{second.pk}/close/", {}, format="json")
+    closed = service.lock_event(event_id)
+    assert closed.stage == "CLOSED" and closed.closed_at is not None
+    code = f"security-event-{event_id}"
+    assert OpsEvaluationEvent.objects.get(event_code=code).state_label == "Завершено"
+
+    service.override_stage(event_id, stage="CONDUCT", actor=actor)
+
+    row = OpsEvaluationEvent.objects.get(event_code=code)
+    assert row.state_label == "Проведение", (
+        "оживлённое мероприятие оставило оценщику задание с меткой «Завершено»"
+    )
+    assert service.lock_event(event_id).closed_at is None

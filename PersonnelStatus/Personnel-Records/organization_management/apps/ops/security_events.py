@@ -1321,6 +1321,34 @@ def _record_deputy_placement(event, deputy, payload):
     )
 
 
+def record_object_lead_action(event, visit, lead, action_name):
+    """Журнал мутаций для согласования, ведомого СТАРШИМ ОБЪЕКТА (Plane №576).
+
+    То же основание, что у `_record_deputy_placement`: действие совершено в
+    обход общего права `event.manage`, по роли в данных, и обязано быть
+    именным. Обычная отправка на согласование следа в журнале мутаций не
+    оставляет — её след живёт в версии документа и в маршруте.
+
+    `lead is None` — действовал правообладатель, писать нечего.
+    """
+    if lead is None:
+        return
+    audit_service.record(
+        actor=lead.user if getattr(lead, "user", None) is not None else lead,
+        action=audit_service.SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "action": action_name,
+            "leadId": str(lead.pk),
+            "leadName": personnel_display_name(lead),
+            "visitObjectId": str(visit.pk) if visit is not None else None,
+            "objectName": visit.object_name if visit is not None else "",
+        },
+    )
+
+
 @transaction.atomic
 def add_visit_object_deputy(
     event_id, visit_object_id, *, employee_id, can_edit_placement, actor
@@ -6226,7 +6254,7 @@ def _refuse_empty_placement(event, visit):
 
 
 @transaction.atomic
-def send_for_approval(event_id, *, visit_object_id=None):
+def send_for_approval(event_id, *, visit_object_id=None, object_lead=None):
     """Отправить расстановку объекта согласующим.
 
     До отправки маршрут — это список людей, а не процесс: решать им нечего.
@@ -6301,6 +6329,7 @@ def send_for_approval(event_id, *, visit_object_id=None):
     # объектами «Возвращено» снимается только когда его снял последний.
     _sync_event_approval(event)
     _submit_document_version(event, visit)
+    record_object_lead_action(event, visit, object_lead, "approval_send")
     return event
 
 
@@ -6322,7 +6351,7 @@ def _unsend_document_version(visit):
 
 
 @transaction.atomic
-def withdraw_from_approval(event_id, *, visit_object_id=None):
+def withdraw_from_approval(event_id, *, visit_object_id=None, object_lead=None):
     """Отозвать с согласования.
 
     Уже принятые решения не отменяются: согласовавший согласовал, вернувший
@@ -6366,6 +6395,7 @@ def withdraw_from_approval(event_id, *, visit_object_id=None):
     visit.approval_snapshot = ""
     visit.save(update_fields=["approval_route", "approval_snapshot", "updated_at"])
     _unsend_document_version(visit)
+    record_object_lead_action(event, visit, object_lead, "approval_withdraw")
     return event
 
 
@@ -6394,7 +6424,13 @@ def move_approver(event_id, approver_id, *, direction, visit_object_id=None):
 
 @transaction.atomic
 def resolve_remark(
-    event_id, remark_id, *, decision, response=None, visit_object_id=None
+    event_id,
+    remark_id,
+    *,
+    decision,
+    response=None,
+    visit_object_id=None,
+    object_lead=None,
 ):
     """Решить замечание (`[ВОЗ-04]`): «Устранено» — ответ необязателен;
     «Не согласен» — ОБЯЗАТЕЛЕН, иначе замечание превращается в отказ без
@@ -6431,6 +6467,7 @@ def resolve_remark(
         raise _not_found("Замечание не найдено.", remark_id)
     visit.approval_remarks = remarks
     visit.save(update_fields=["approval_remarks", "updated_at"])
+    record_object_lead_action(event, visit, object_lead, "approval_remark_resolve")
     # Ответ на последнее открытое замечание — тоже «последняя подпись»
     # (`[СОГ-09]`): если все уже согласовали и держало только оно, этап
     # завершается сам.
@@ -6681,37 +6718,18 @@ def return_placement(event_id, *, comment, visit_object_id=None):
 # ── Ознакомление ────────────────────────────────────────────────────────────
 
 
-@transaction.atomic
-def acknowledge_assignment(event_id, assignment_id):
-    event = lock_event(event_id)
-    if not any(
-        a.get("id") == assignment_id for a in event.placement_assignments
-    ):
-        raise _not_found("Назначение не найдено.", assignment_id)
-    now = _now_iso()
-    event.placement_assignments = [
-        {**a, "acknowledgedAt": now} if a.get("id") == assignment_id else a
-        for a in event.placement_assignments
-    ]
-    event.save(update_fields=["placement_assignments", "updated_at"])
-    return event
-
-
-@transaction.atomic
-def complete_acknowledgement(event_id, *, actor=None):
-    event = lock_event(event_id)
-    _require_stage(
-        event,
-        "ACKNOWLEDGEMENT",
-        "Ознакомление можно завершить только на этапе «Ознакомление».",
-    )
-    if not all(
-        a.get("acknowledgedAt") is not None for a in event.placement_assignments
-    ):
-        raise DomainError("ACKNOWLEDGEMENT_INCOMPLETE", 422, message=
-            "Не все назначенные сотрудники подтвердили ознакомление.",
-        )
-    return _advance(event, "CONDUCT", actor=actor)
+# 🔴 `acknowledge_assignment` И `complete_acknowledgement` СНЯТЫ (Plane №593).
+# Обе логики переехали в `ops/acknowledgement_stage.py` (№405 и №432), и здесь
+# у них не осталось ни одного вызывающего — грепом находились только
+# определения. Мёртвыми они были не безобидны: `acknowledge_assignment` ставил
+# `acknowledgedAt`, НЕ СНИМАЯ полей отказа, то есть при повторном
+# использовании вернул бы состояние «ознакомлен И отказался одновременно» —
+# ровно то, ради устранения чего новый модуль и писался. Мёртвый код с
+# известным дефектом внутри — приглашение позвать его снова.
+#
+# Живые адреса: `my_assignments.acknowledge` (подтверждение с очисткой
+# отказа) и `acknowledgement_stage.complete` (завершение этапа, в том числе
+# принудительное, с записью в журнал мутаций).
 
 
 # ── Проведение ──────────────────────────────────────────────────────────────
@@ -6952,11 +6970,6 @@ def override_stage(event_id, *, stage, actor):
         # было бы всегда истинным, то есть враньём о наличии выбора.
         visit.closed_at = None
         visit.save(update_fields=["stage", "closed_at", "updated_at"])
-    if stage == "CONDUCT":
-        # Обход админа тоже открывает этап 5 — оценивание заводится и здесь
-        # (Plane №433), иначе на этапе оценивать нечего.
-        from organization_management.apps.ops import ratings as ratings_service
-        ratings_service.open_evaluation_for_event(event, actor=actor)
     event.stage = stage
     event.readiness_percent = STAGE_READINESS[stage]
     fields = ["stage", "readiness_percent", "updated_at"]
@@ -6967,6 +6980,21 @@ def override_stage(event_id, *, stage, actor):
         event.closed_at = None
         fields.append("closed_at")
     event.save(update_fields=fields)
+    if stage == "CONDUCT":
+        # Обход админа тоже открывает этап 5 — оценивание заводится и здесь
+        # (Plane №433), иначе на этапе оценивать нечего.
+        #
+        # 🔴 ПОСЛЕ СОХРАНЕНИЯ МЕРОПРИЯТИЯ, А НЕ ДО (Plane №700). Оценивание
+        # читает `event.stage` и `event.closed_at` и пишет по ним метку
+        # задания: при вызове ДО сохранения оно видело ещё СТАРОЕ состояние —
+        # при переводе `CLOSED → CONDUCT` заводило задание с меткой
+        # «Завершено» и временем начала, равным моменту ЗАКРЫТИЯ. А это
+        # `update_or_create`: неверная метка ЗАТИРАЛА верную, если задание уже
+        # было. Админский перевод «оживить мероприятие» оставлял оценщику
+        # завершённое задание — ровно то, чего он этим переводом добивался
+        # избежать.
+        from organization_management.apps.ops import ratings as ratings_service
+        ratings_service.open_evaluation_for_event(event, actor=actor)
     # Переход из этапа в него же в журнал НЕ пишем: сюда мы попадаем, когда
     # этап мероприятия не менялся, а выравнивались объекты, и запись
     # «Расстановка → Расстановка» посчиталась бы воронке прогрессом (у неё

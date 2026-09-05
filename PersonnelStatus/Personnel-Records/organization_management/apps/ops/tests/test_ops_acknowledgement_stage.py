@@ -213,3 +213,42 @@ def test_reminder_refuses_the_one_who_declined(manager, acknowledgement_event): 
     # отказавшемуся звонили.
     marked = {a["id"]: a.get("remindedAt") for a in _event(base).placement_assignments}
     assert marked[declined] is None
+
+
+# ── Ревью 0ef25314: мёртвых близнецов этапа больше нет (Plane №593) ────────
+
+
+def test_the_old_acknowledgement_twins_are_gone_from_the_service():
+    """🔴 Plane №593: `acknowledge_assignment` и `complete_acknowledgement`
+    сняты, и вернуться не должны.
+
+    После №405 и №432 логика этапа живёт в `ops/acknowledgement_stage.py`, а в
+    `security_events.py` у этих двух функций не осталось ни одного
+    вызывающего — грепом находились только определения. Мёртвыми они были не
+    безобидны: `acknowledge_assignment` ставил `acknowledgedAt`, НЕ СНИМАЯ
+    полей отказа, то есть при повторном использовании вернул бы состояние
+    «ознакомлен И отказался одновременно» — ровно то, ради устранения чего
+    новый модуль и писался. Мёртвый код с известным дефектом внутри —
+    приглашение позвать его снова, и следующий заход позвал бы.
+
+    🔴 ПОЧЕМУ ПРОБА, А НЕ ПРОСТО УДАЛЕНИЕ. Удаление держится ровно до тех пор,
+    пока кто-нибудь не «восстановит недостающую функцию» по имени из старого
+    комментария. Сторож называет причину прямо здесь: живые адреса — рядом.
+
+    Мутация: вернуть любую из двух функций в `security_events` — проба
+    краснеет и печатает, куда идти вместо неё.
+    """
+    from organization_management.apps.ops import acknowledgement_stage as stage
+    from organization_management.apps.ops import my_assignments as mine
+    from organization_management.apps.ops import security_events as service
+
+    for name, replacement in (
+        ("acknowledge_assignment", "my_assignments.acknowledge"),
+        ("complete_acknowledgement", "acknowledgement_stage.complete"),
+    ):
+        assert not hasattr(service, name), (
+            f"`security_events.{name}` вернулся; живой адрес — `{replacement}`"
+        )
+    # Живые адреса на месте — иначе сторож стерёг бы пустоту.
+    assert callable(mine.acknowledge)
+    assert callable(stage.complete)
