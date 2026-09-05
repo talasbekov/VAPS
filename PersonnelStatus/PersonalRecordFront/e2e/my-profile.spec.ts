@@ -1011,6 +1011,112 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       ).toContain('assignment-%D0%B2%D1%82%D0%BE%D1%80%D0%BE%D0%B5')
     })
 
+    test('«Отмена» чистит причину, а протухшая ошибка не переживает ответ (Plane №590, №591)', async ({
+      page,
+    }) => {
+      /**
+       * №591: «Отмена», Esc и клик вне окна закрывали окно, не трогая текст —
+       * при повторном открытии той же строки отменённая причина УЖЕ вписана,
+       * а «Отправить отказ» уже включена: брошенный текст уходит на сервер
+       * одним нажатием.
+       *
+       * №590: React Query чистит `error` только при повторе ТОЙ ЖЕ мутации. У
+       * строки их две, и красная строка от неудавшегося отказа висела рядом с
+       * УДАЧНЫМ подтверждением.
+       *
+       * Строки и оба ответа подменяются ручками: предмет — поведение
+       * карточки, а не путь к назначению на стенде.
+       */
+      const admin = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+      const mine = await get<MyEmployee>(admin, '/api/operations/my-employee/')
+      await page.route(
+        (url) => url.pathname.endsWith('/api/ops/security-events/my-assignments/'),
+        async (route) =>
+          route.fulfill({
+            json: {
+              results: [
+                {
+                  assignmentId: 'assignment-проба-590',
+                  eventId: '424242',
+                  eventCode: 'ОМ-ПРОБА-590',
+                  eventTitle: 'Мероприятие пробы 590',
+                  eventStage: 'ACKNOWLEDGEMENT',
+                  businessDate: '2028-07-07',
+                  businessDateEnd: null,
+                  objectName: 'Объект пробы',
+                  visitObjectId: null,
+                  visitObjectName: null,
+                  postId: 'post-1',
+                  postFound: true,
+                  sector: 'Сектор A',
+                  post: 'Пост 1',
+                  task: '',
+                  requirements: '',
+                  uniform: '',
+                  weapon: '',
+                  roleCode: null,
+                  sectionCode: null,
+                  acknowledgedAt: null,
+                  acknowledgedVia: '',
+                  acknowledgedBy: '',
+                  declinedAt: null,
+                  declineReason: null,
+                },
+              ],
+              employeeId: String(mine.employee!.id),
+              unlinkedReason: null,
+            },
+          }),
+      )
+      // Отказ ВСЕГДА не проходит — так и получается протухшая ошибка.
+      await page.route(
+        (url) => url.pathname.includes('/decline/'),
+        async (route) =>
+          route.fulfill({
+            status: 422,
+            json: { error_code: 'INVALID_STAGE_TRANSITION', message: 'Отказ не принят (проба).' },
+          }),
+      )
+      // Подтверждение всегда проходит.
+      await page.route(
+        (url) => url.pathname.includes('/acknowledge/'),
+        async (route) => route.fulfill({ status: 200, json: {} }),
+      )
+
+      await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+      await page.goto(`${APP}${SCREEN}`)
+      const card = page.getByTestId('my-assignment-assignment-проба-590')
+      await expect(card).toBeVisible({ timeout: 20_000 })
+
+      // 1. Пишем причину и ОТМЕНЯЕМ.
+      await card.getByRole('button', { name: 'Не могу заступить' }).click()
+      const dialog = page.getByRole('dialog')
+      await dialog.getByLabel('Причина').fill('Брошенный текст')
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await expect(dialog).toBeHidden()
+
+      // 2. Открываем снова — поле пусто, кнопка отправки заперта.
+      await card.getByRole('button', { name: 'Не могу заступить' }).click()
+      await expect(
+        dialog.getByLabel('Причина'),
+        'отменённая причина осталась в поле — уйдёт на сервер одним нажатием',
+      ).toHaveValue('')
+      await expect(dialog.getByRole('button', { name: 'Отправить отказ' })).toBeDisabled()
+
+      // 3. Отправляем — сервер отказывает, ошибка видна.
+      await dialog.getByLabel('Причина').fill('Причина пробы')
+      await dialog.getByRole('button', { name: 'Отправить отказ' }).click()
+      await expect(page.getByText('Отказ не принят (проба).')).toBeVisible({ timeout: 15_000 })
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+
+      // 4. Подтверждаем — ответ удачный, и ПРОТУХШЕЙ ошибки рядом нет.
+      await card.getByRole('button', { name: 'Ознакомлен, заступлю' }).click()
+      await expect(
+        page.getByText('Отказ не принят (проба).'),
+        'ошибка прошлого отказа висит рядом с удачным подтверждением',
+      ).toHaveCount(0)
+    })
+
     test('сотруднику без права на реестр название ОМ не ссылка (Plane №595)', async ({ page }) => {
       // Права подменяются ответом ручки — тем же приёмом, что в
       // `department-requests`: нужен тот, кому профиль открыт, а карточка ОМ

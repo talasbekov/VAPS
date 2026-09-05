@@ -986,6 +986,65 @@ function isOverdue(status: string, dueAt: string | null | undefined): boolean {
 }
 
 export const securityEventsHandlers = [
+  /**
+   * «Мои назначения» (`[ПРФ-04]`, Plane №403) — обработчика НЕ БЫЛО ВОВСЕ
+   * (Plane №592). Путь `security-events/my-assignments/` съедал обработчик
+   * ДЕТАЛИ `security-events/:id/` с `id = "my-assignments"` и отвечал 404,
+   * поэтому на мок-стенде вкладки профиля «Охранные мероприятия» и «История»
+   * всегда рисовали карточку отказа.
+   *
+   * Стоит ПЕРВЫМ по той же причине, что и `bindable-objects`: MSW берёт
+   * первый подошедший обработчик, и после детали этот путь недостижим.
+   *
+   * Строки собираются из назначений ВСЕХ мероприятий мока — как сервер их
+   * собирает по кадровой привязке. Отбор по человеку (`?employee=`) мок не
+   * делает: своей учётки у него нет вовсе, и «мои» здесь значит «все» —
+   * сказано вслух, чтобы это не приняли за фильтр.
+   */
+  http.get(`*${SECURITY_EVENTS_PATH}my-assignments/`, () => {
+    const results = getEvents().flatMap((event) =>
+      event.placementAssignments.map((a) => {
+        const post = event.reconSectorPosts.find((p) => p.id === a.postId);
+        return {
+          assignmentId: a.id,
+          eventId: event.id,
+          eventCode: event.code,
+          eventTitle: event.title,
+          eventStage: event.stage,
+          businessDate: event.businessDate,
+          businessDateEnd: event.businessDateEnd ?? null,
+          objectName: event.objectName,
+          visitObjectId: post?.visitObjectId ?? null,
+          visitObjectName:
+            event.visitObjects.find((v) => v.id === (post?.visitObjectId ?? ""))
+              ?.objectName ?? null,
+          postId: a.postId,
+          // Пост могли снять с расчёта после назначения — строка остаётся, и
+          // это состояние читает экран (`postFound`), а не догадывается о нём.
+          postFound: post !== undefined,
+          sector: post?.sector ?? "",
+          post: post?.post ?? "",
+          task: post?.task ?? "",
+          requirements: post?.requirements ?? "",
+          uniform: post?.uniform ?? "",
+          weapon: post?.weapon ?? "",
+          roleCode: a.roleCode ?? null,
+          sectionCode: a.sectionCode ?? null,
+          acknowledgedAt: a.acknowledgedAt,
+          acknowledgedVia: a.acknowledgedVia ?? "",
+          acknowledgedBy: a.acknowledgedBy ?? "",
+          declinedAt: a.declinedAt ?? null,
+          declineReason: a.declineReason ?? null,
+        };
+      })
+    );
+    return HttpResponse.json({
+      results,
+      employeeId: "1",
+      unlinkedReason: null,
+    });
+  }),
+
   // bindable-objects раньше детали: паттерн :id/ иначе съедает этот путь
   http.get(`*${BINDABLE_OBJECTS_PATH}`, () => {
     const results: BindableObject[] = readObjectsStore().map((object) => ({
@@ -3157,7 +3216,78 @@ export const securityEventsHandlers = [
           ...event,
           placementAssignments: event.placementAssignments.map((a) =>
             a.id === assignmentId
-              ? { ...a, acknowledgedAt: nowIso(), acknowledgedVia: "personal" as const, acknowledgedBy: "Старший (мок)" }
+              ? {
+                  ...a,
+                  acknowledgedAt: nowIso(),
+                  acknowledgedVia: "personal" as const,
+                  acknowledgedBy: "Старший (мок)",
+                  // 🔴 ПОДТВЕРЖДЕНИЕ СНИМАЕТ ОТКАЗ (Plane №592, зеркало
+                  // `my_assignments.acknowledge`): «подтвердил» и «не могу
+                  // заступить» взаимоисключающи, и мок оставлял обе отметки
+                  // разом — карточка показывала зелёный бейдж и красную
+                  // причину отказа одновременно.
+                  declinedAt: null,
+                  declineReason: null,
+                }
+              : a
+          ),
+          updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
+  /**
+   * «Не могу заступить» (`[ПРФ-04]`, Plane №405) — обработчика НЕ БЫЛО ВОВСЕ
+   * (Plane №592): запрос в мок-режиме проваливался мимо всех обработчиков.
+   *
+   * Порядок проверок — порт серверного (`my_assignments.decline`, Plane
+   * №589): сперва состояние мероприятия, потом форма. Пустая причина,
+   * проверенная первой, отвечала бы «Проверьте заполнение формы» на закрытом
+   * ОМ — человек правил бы текст и упирался в другой отказ.
+   */
+  http.post(
+    `*${SECURITY_EVENTS_PATH}:id/decline/:assignmentId/`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const assignmentId = params.assignmentId as string;
+      const target = event.placementAssignments.find((a) => a.id === assignmentId);
+      if (target === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Назначение не найдено.",
+          { id: assignmentId },
+          404
+        );
+      }
+      if (event.stage === "CLOSED") {
+        return businessRuleError(
+          "INVALID_STAGE_TRANSITION",
+          "Мероприятие закрыто — отказаться от назначения уже нельзя."
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as { reason?: string };
+      const reason = (body.reason ?? "").trim();
+      if (reason === "") {
+        return validationError({
+          reason: ["Укажите причину, по которой не можете заступить."],
+        });
+      }
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          placementAssignments: event.placementAssignments.map((a) =>
+            a.id === assignmentId
+              ? {
+                  ...a,
+                  declinedAt: nowIso(),
+                  declineReason: reason,
+                  // Отказ снимает подтверждение — та же взаимоисключаемость.
+                  acknowledgedAt: null,
+                  acknowledgedVia: null,
+                  acknowledgedBy: "",
+                }
               : a
           ),
           updatedAt: nowIso(),

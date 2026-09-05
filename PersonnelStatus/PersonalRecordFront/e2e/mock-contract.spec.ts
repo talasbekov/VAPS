@@ -1073,6 +1073,98 @@ test.describe(
       ).toBe(true)
     })
 
+    test('мок знает про отказ заступить и «мои назначения» (Plane №592)', async ({
+      page,
+    }) => {
+      // Обработчиков не было ВОВСЕ: `decline/` проваливался мимо мока, а
+      // `my-assignments/` съедал обработчик детали `security-events/:id/` с
+      // `id = "my-assignments"` — вкладки профиля «Охранные мероприятия» и
+      // «История» на мок-стенде всегда рисовали карточку отказа.
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const result = await page.evaluate(async () => {
+        const post = (url: string, body?: unknown) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'RECON' })
+        await post('/api/ops/security-events/se-1/recon/import-from-passport/', {})
+        const withPosts = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const roster = await (await fetch('/api/ops/personnel/?page_size=50')).json()
+        for (const [index, p0] of withPosts.reconSectorPosts.entries()) {
+          if (
+            withPosts.placementAssignments.some(
+              (a: { postId: string }) => a.postId === p0.id,
+            )
+          )
+            continue
+          await post('/api/ops/security-events/se-1/placement/assign/', {
+            postId: p0.id,
+            employeeId: roster.results[index].id,
+          })
+        }
+        const staged = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const assignment = staged.placementAssignments[0]
+        const path = `/api/ops/security-events/se-1/decline/${assignment.id}/`
+
+        // Пустая причина отбивается — правило сервера, а не «лишь бы 200».
+        const empty = await post(path, { reason: '   ' })
+        const declined = await post(path, { reason: 'Командировка по приказу' })
+        const afterDecline = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const declinedRow = afterDecline.placementAssignments.find(
+          (a: { id: string }) => a.id === assignment.id,
+        )
+        // Подтверждение СНИМАЕТ отказ — обе отметки взаимоисключающи.
+        await post(`/api/ops/security-events/se-1/acknowledge/${assignment.id}/`, {})
+        const afterAck = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const ackRow = afterAck.placementAssignments.find(
+          (a: { id: string }) => a.id === assignment.id,
+        )
+
+        const mineRes = await fetch('/api/ops/security-events/my-assignments/')
+        const mineText = await mineRes.text()
+        return {
+          emptyStatus: empty.status,
+          declineStatus: declined.status,
+          declinedAt: declinedRow.declinedAt as string | null,
+          declineReason: declinedRow.declineReason as string | null,
+          ackClearedDecline: ackRow.declinedAt === null && ackRow.declineReason === null,
+          mineStatus: mineRes.status,
+          mineHead: mineText.slice(0, 160),
+          mineCount: (JSON.parse(mineText).results ?? []).length as number,
+        }
+      })
+
+      expect(result.emptyStatus, 'пустая причина принята').toEqual(400)
+      expect(result.declineStatus, 'отказ не прошёл').toEqual(200)
+      expect(result.declinedAt).not.toBeNull()
+      expect(result.declineReason).toEqual('Командировка по приказу')
+      expect(
+        result.ackClearedDecline,
+        'подтверждение оставило отказ — карточка показала бы обе отметки разом',
+      ).toBe(true)
+      expect(
+        result.mineStatus,
+        `«мои назначения» в моке недостижимы: ${result.mineHead}`,
+      ).toEqual(200)
+      expect(result.mineCount, 'список «моих назначений» пуст').toBeGreaterThan(0)
+    })
+
     test('стор мока не поднимает события прежней формы', async ({ page }) => {
       // Стор лежит в `sessionStorage` и восстанавливался ДОСЛОВНО, а ключ не
       // был версионирован (Plane №733): вкладка, открытая ДО выката новой

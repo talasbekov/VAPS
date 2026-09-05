@@ -1040,6 +1040,34 @@ function AssignmentRow({
   const decline = useDeclineMyAssignment();
   const [declineOpen, setDeclineOpen] = useState(false);
   const [reason, setReason] = useState("");
+  /**
+   * Начать ответ заново: снять ПРОТУХШУЮ ошибку соседней мутации (Plane
+   * №590).
+   *
+   * 🔴 React Query чистит `error` только при повторе ТОЙ ЖЕ мутации. У строки
+   * их две — подтверждение и отказ, — и красная строка от неудавшегося отказа
+   * оставалась висеть на всю жизнь строки: человек нажимал «Ознакомлен,
+   * заступлю», ответ проходил, бейдж зеленел, а рядом продолжала стоять
+   * ошибка про отказ. `useOpsMutation` отдаёт `reset` ровно для этого, и его
+   * не звал никто.
+   */
+  const clearAnswerErrors = () => {
+    acknowledge.reset();
+    decline.reset();
+  };
+  /**
+   * ЕДИНСТВЕННАЯ дорога закрытия окна отказа (Plane №591).
+   *
+   * Способов закрыть три — кнопка «Отмена», Esc и клик вне окна, — и они
+   * ходят РАЗНЫМИ путями: кнопка звала `setDeclineOpen(false)` напрямую, мимо
+   * `onOpenChange`. Поэтому очистка, повешенная на один из них, не работала
+   * для остальных; теперь путь один.
+   */
+  const closeDecline = () => {
+    setDeclineOpen(false);
+    setReason("");
+    clearAnswerErrors();
+  };
   // Ответить можно, пока мероприятие живо: закрытому ОМ ответ уже никому не
   // нужен, и сервер его не примет.
   const preparing = isPreparing(item);
@@ -1116,12 +1144,15 @@ function AssignmentRow({
                 size="sm"
                 className="h-[31px] text-[11px]"
                 disabled={busy}
-                onClick={() =>
+                onClick={() => {
+                  // Новый ответ — чистый лист: ошибка ПРЕДЫДУЩЕГО ответа
+                  // (в том числе соседней мутации) снимается до отправки.
+                  clearAnswerErrors();
                   acknowledge.mutate({
                     eventId: item.event.id,
                     assignmentId: item.id,
-                  })
-                }
+                  });
+                }}
               >
                 <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
                 Ознакомлен, заступлю
@@ -1134,7 +1165,10 @@ function AssignmentRow({
                 variant="outline"
                 className="h-[31px] text-[11px]"
                 disabled={busy}
-                onClick={() => setDeclineOpen(true)}
+                onClick={() => {
+                  clearAnswerErrors();
+                  setDeclineOpen(true);
+                }}
               >
                 <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
                 Не могу заступить
@@ -1161,7 +1195,17 @@ function AssignmentRow({
         </EventLink>
       </div>
 
-      <Dialog open={declineOpen} onOpenChange={setDeclineOpen}>
+      {/* 🔴 ЗАКРЫТИЕ ОКНА ЧИСТИТ ПРИЧИНУ (Plane №591). Здесь стоял голый
+          `setDeclineOpen`: «Отмена», Esc и клик вне окна закрывали его, не
+          трогая текст, а чистила его только удачная отправка. При повторном
+          открытии той же строки отменённая причина УЖЕ была вписана, и
+          «Отправить отказ» уже включена — брошенный текст уходил на сервер
+          одним нажатием. Заодно снимается протухшая ошибка (Plane №590):
+          закрытое окно и красная строка про него рядом — разные утверждения. */}
+      <Dialog
+        open={declineOpen}
+        onOpenChange={(open) => (open ? setDeclineOpen(true) : closeDecline())}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Не могу заступить — {item.event.code}</DialogTitle>
@@ -1181,7 +1225,10 @@ function AssignmentRow({
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeclineOpen(false)}>
+            {/* Одна дорога закрытия на все три способа (кнопка, Esc, клик
+                вне окна): кнопка ходила мимо `onOpenChange`, и очистка,
+                повешенная туда, для неё не срабатывала. */}
+            <Button variant="outline" onClick={closeDecline}>
               Отмена
             </Button>
             <Button
@@ -1197,8 +1244,8 @@ function AssignmentRow({
                     reason: reason.trim(),
                   })
                   .then(() => {
-                    setDeclineOpen(false);
-                    setReason("");
+                    // Окно закрывается своей дорогой — она же и чистит текст.
+                    closeDecline();
                   })
                   .catch(() => undefined);
               }}
