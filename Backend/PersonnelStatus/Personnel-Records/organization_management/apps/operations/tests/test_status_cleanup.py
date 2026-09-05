@@ -202,3 +202,57 @@ def test_an_empty_cleanup_writes_nothing(
     purge_orphan_participations()
 
     assert not OpsAuditLog.objects.filter(action="STATUS_PARTICIPATIONS_PURGED").exists()
+
+
+def test_the_unknown_event_marker_is_not_an_orphan(
+    types, division, participation_catalog  # noqa: F811
+):
+    """`event_id = 0` — «мероприятие неизвестно», а не «мероприятие снесено».
+
+    Такие строки заводит слияние снятых кодов (Plane №486, `status_merge`) там,
+    где участия не было вовсе: вид наряда жил В КОДЕ СТАТУСА, и другого места
+    для него нет. По букве определения сироты («ОМ с таким id не существует»)
+    они под уборку подпадают — и уносят с собой ровно те исторические строки,
+    ради сохранения которых слияние и писалось (Plane №753).
+    """
+    employee = make_employee(division)
+    status = seed_status(employee, [])
+    OpsStatusParticipation.objects.create(
+        status=status, event_id=0, kind_code="PHYSICAL_SQUAD", role_code=""
+    )
+
+    found = list(find_orphan_participations())
+    result = purge_orphan_participations()
+
+    assert found == []
+    assert (result.participations, result.statuses) == (0, 0)
+    assert OpsEmployeeStatus.objects.filter(id=status.id).exists()
+    assert OpsStatusParticipation.objects.filter(status_id=status.id).exists()
+
+
+def test_the_unknown_event_marker_survives_a_scoped_cleanup_too(
+    types, division, participation_catalog  # noqa: F811
+):
+    """Сужение области уборки не должно быть единственной защитой маркера.
+
+    `purge_probe_events` зовёт уборку и БЕЗ области (`--orphans-only`), и
+    именно тот вызов уничтожал исторические строки. Проба держит оба пути:
+    маркер переживает и точечную уборку, если 0 попал в список.
+    """
+    employee = make_employee(division)
+    doomed = make_event("ОМ-2026-48", "Снесённое")
+    status = seed_status(employee, [doomed])
+    OpsStatusParticipation.objects.create(
+        status=status, event_id=0, kind_code="SCREENING_GROUP", role_code=""
+    )
+    doomed_id = doomed.id
+    doomed.delete()
+
+    result = purge_orphan_participations([doomed_id, 0])
+
+    assert (result.participations, result.statuses) == (1, 0)
+    assert OpsEmployeeStatus.objects.filter(id=status.id).exists()
+    assert [
+        row.event_id
+        for row in OpsStatusParticipation.objects.filter(status_id=status.id)
+    ] == [0]

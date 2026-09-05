@@ -17,6 +17,8 @@
 не имеет права. Прецедент в разделе есть: 0057 так же заводит тип статуса.
 """
 
+from organization_management.apps.operations.models_status import UNKNOWN_EVENT_ID
+
 TARGET = "IN_EVENT"
 TARGET_NAME = "Участие в ОМ"
 #: Те же значения, что кладёт `seed_status_types`: справочник обязан выглядеть
@@ -92,10 +94,15 @@ def merge_legacy_participation_types(StatusType, Status, Participation):
                     report["kinds"] += 1
             if not rows:
                 # Участия нет вовсе — исторический факт из-под бэкфилла Ш-3.
-                # `event_id = 0` — «мероприятие неизвестно»: ссылка плоская,
-                # внешнего ключа нет.
+                # `UNKNOWN_EVENT_ID` — «мероприятие неизвестно»: ссылка
+                # плоская, внешнего ключа нет. Уборка сирот этот маркер
+                # пропускает (Plane №753) — иначе она уносила бы ровно те
+                # строки, ради которых слияние и писалось.
                 Participation.objects.create(
-                    status=status, event_id=0, kind_code=kind, role_code=""
+                    status=status,
+                    event_id=UNKNOWN_EVENT_ID,
+                    kind_code=kind,
+                    role_code="",
                 )
                 report["kinds"] += 1
             status.status_type_code = TARGET

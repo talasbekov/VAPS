@@ -20,6 +20,14 @@
 строка: `seed_smoke_fixtures._assignments` заводит `EVENT_ASSIGNMENT` без
 единого участия, и снос «статусов без участий» уничтожил бы фикстуру,
 которую сам же смоук и проверяет.
+
+ВТОРАЯ ГРАНИЦА — МАРКЕР `UNKNOWN_EVENT_ID` (Plane №753). Строка участия с
+`event_id = 0` говорит «мероприятие неизвестно», а не «мероприятие снесено»:
+её завело слияние снятых кодов (`status_merge`, Plane №486) там, где вид
+наряда жил В КОДЕ СТАТУСА и переносить его больше некуда. По букве
+определения сироты она под уборку подпадала — и `purge_probe_events
+--orphans-only` уничтожал ровно те исторические строки, ради сохранения
+которых слияние и писалось.
 """
 from __future__ import annotations
 
@@ -30,6 +38,7 @@ from django.db import transaction
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_status import (
+    UNKNOWN_EVENT_ID,
     OpsEmployeeStatus,
     OpsStatusParticipation,
 )
@@ -53,7 +62,12 @@ def find_orphan_participations(event_ids: list[int] | None = None):
     `event_ids` сужает выборку до конкретных мероприятий — так уборка после
     удаления не трогает чужие строки. Без него — весь накопленный мусор.
     """
-    rows = OpsStatusParticipation.objects.all()
+    # 🔴 МАРКЕР «мероприятие неизвестно» ИСКЛЮЧАЕТСЯ ПЕРВЫМ, до всех прочих
+    # отборов (Plane №753). Он не сирота: у сироты мероприятие было и его
+    # снесли, у маркера его не было никогда. Отбрасывать его здесь, а не в
+    # `purge_*`, обязательно — `purge_probe_events --dry-run` печатает
+    # найденное этой же функцией, и иначе он обещал бы снести историю.
+    rows = OpsStatusParticipation.objects.exclude(event_id=UNKNOWN_EVENT_ID)
     if event_ids is not None:
         rows = rows.filter(event_id__in=event_ids)
     alive = set(
