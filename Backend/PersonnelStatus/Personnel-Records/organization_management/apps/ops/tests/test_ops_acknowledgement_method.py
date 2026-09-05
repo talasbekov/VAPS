@@ -113,3 +113,51 @@ def test_account_without_a_personnel_link_does_not_claim_personally(
         "без кадровой привязки чья это строка неизвестно — «лично» утверждать нечем"
     )
     assert marked["acknowledgedBy"] == ""
+
+
+def test_my_assignments_carries_the_method_and_the_author(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """Способ и автор отметки доезжают до читателя (Plane №722).
+
+    Без них карточка сотрудника и этап «Проведение» показывали отметку,
+    поставленную старшим «лично», ровно так же, как подтверждение самого
+    человека, — а это разные факты: одно «я прочитал», другое «мне довели
+    устно».
+    """
+    from organization_management.apps.ops import my_assignments
+
+    _, event_id, _, _ = two_objects_on_conduct
+    event = service.lock_event(event_id)
+    row = event.placement_assignments[0]
+    my_assignments.acknowledge(
+        event_id, row["id"], personal=True, actor="1", actor_name="Ахметова С."
+    )
+
+    rows = my_assignments.assignments_of(row["employeeId"])
+
+    mine_row = next(r for r in rows if r["assignmentId"] == row["id"])
+    assert mine_row["acknowledgedVia"] == "personal"
+    assert mine_row["acknowledgedBy"] == "Ахметова С."
+
+
+def test_my_assignments_keeps_the_keys_on_old_rows(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """У строк, отмеченных до появления способа, ключи есть и пусты.
+
+    Пустая строка, а не отсутствие ключа: читатель отличает «подтвердил сам»
+    от «способ неизвестен» только по значению, и пропавший ключ заставил бы
+    каждого читателя проверять его наличие.
+    """
+    from organization_management.apps.ops import my_assignments
+
+    _, event_id, _, _ = two_objects_on_conduct
+    event = service.lock_event(event_id)
+    row = event.placement_assignments[0]
+
+    rows = my_assignments.assignments_of(row["employeeId"])
+
+    mine_row = next(r for r in rows if r["assignmentId"] == row["id"])
+    assert mine_row["acknowledgedVia"] == ""
+    assert mine_row["acknowledgedBy"] == ""

@@ -519,6 +519,11 @@ interface MyAssignment {
   post: MyAssignmentPost | null;
   postLabel: string;
   acknowledgedAt: string | null;
+  /** Способ и автор отметки (`[ОЗН-05]`, Plane №722): «лично» — старший довёл
+   * устно, и это ДРУГОЙ факт, чем «я прочитал в системе». Без них карточка
+   * показывала оба одинаково. */
+  acknowledgedVia: string;
+  acknowledgedBy: string;
   /** «Не могу заступить» (Plane №405): отказ и подтверждение взаимоисключающи. */
   declinedAt: string | null;
   declineReason: string | null;
@@ -553,6 +558,8 @@ function toMyAssignment(row: MyAssignmentRow): MyAssignment {
       ? `${row.sector} · ${row.post}`
       : "пост не найден в расчёте",
     acknowledgedAt: row.acknowledgedAt,
+    acknowledgedVia: row.acknowledgedVia ?? "",
+    acknowledgedBy: row.acknowledgedBy ?? "",
     declinedAt: row.declinedAt ?? null,
     declineReason: row.declineReason ?? null,
   };
@@ -869,10 +876,14 @@ function DateTile({ iso }: { iso: string }) {
 
 function AckBadge({
   acknowledgedAt,
+  acknowledgedVia = "",
+  acknowledgedBy = "",
   declinedAt = null,
   declineReason = null,
 }: {
   acknowledgedAt: string | null;
+  acknowledgedVia?: string;
+  acknowledgedBy?: string;
   declinedAt?: string | null;
   declineReason?: string | null;
 }) {
@@ -894,8 +905,20 @@ function AckBadge({
       Ознакомление не подтверждено
     </span>
   ) : (
-    <span className="inline-flex w-fit rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800 dark:bg-green-950/60 dark:text-green-200">
-      Ознакомлен: {formatIsoDate(acknowledgedAt.slice(0, 10))}
+    <span
+      className="inline-flex w-fit rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800 dark:bg-green-950/60 dark:text-green-200"
+      data-slot="ack-badge"
+      /* СПОСОБ НАЗВАН (Plane №722): «лично» значит, что довели устно, и это
+         другой факт, чем собственное подтверждение в системе. Автор отметки —
+         в подсказке: в строке он занял бы место, а спрашивают его редко. */
+      title={
+        acknowledgedVia === "personal" && acknowledgedBy !== ""
+          ? `Отметил лично: ${acknowledgedBy}`
+          : undefined
+      }
+    >
+      Ознакомлен{acknowledgedVia === "personal" ? " лично" : ""}:{" "}
+      {formatIsoDate(acknowledgedAt.slice(0, 10))}
     </span>
   );
 }
@@ -976,6 +999,8 @@ function AssignmentRow({
         ) : (
           <AckBadge
             acknowledgedAt={item.acknowledgedAt}
+            acknowledgedVia={item.acknowledgedVia}
+            acknowledgedBy={item.acknowledgedBy}
             declinedAt={item.declinedAt}
             declineReason={item.declineReason}
           />

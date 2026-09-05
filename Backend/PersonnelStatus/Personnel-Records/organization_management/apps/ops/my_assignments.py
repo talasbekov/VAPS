@@ -137,6 +137,15 @@ def assignments_of(employee_id):
                     "roleCode": a.get("roleCode"),
                     "sectionCode": a.get("sectionCode"),
                     "acknowledgedAt": a.get("acknowledgedAt"),
+                    # СПОСОБ И АВТОР ОТМЕТКИ ЕДУТ К ЧИТАТЕЛЮ (Plane №722).
+                    # Без них карточка сотрудника и этап «Проведение»
+                    # показывали отметку, поставленную старшим «лично», ровно
+                    # так же, как подтверждение самого человека, — а это
+                    # разные факты: одно «я прочитал», другое «мне довели
+                    # устно». Ключи те же, что в строке назначения, и пустые
+                    # значения по умолчанию: у старых строк способа нет.
+                    "acknowledgedVia": a.get("acknowledgedVia") or "",
+                    "acknowledgedBy": a.get("acknowledgedBy") or "",
                     "declinedAt": a.get("declinedAt"),
                     "declineReason": a.get("declineReason"),
                 }

@@ -42,6 +42,12 @@ export interface MyAssignmentRow {
   roleCode: string | null;
   sectionCode: string | null;
   acknowledgedAt: string | null;
+  /** Способ отметки (`[ОЗН-05]`, Plane №722): `self` — человек подтвердил
+   * сам, `personal` — старший отметил «лично» (довёл устно). Пусто у строк,
+   * отмеченных до появления способа. */
+  acknowledgedVia: string;
+  /** Кто отметил «лично»; пусто у собственного подтверждения. */
+  acknowledgedBy: string;
   declinedAt: string | null;
   declineReason: string | null;
 }
