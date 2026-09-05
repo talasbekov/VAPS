@@ -133,3 +133,118 @@ test.describe(LIVE ? 'закрытие объекта посещения' : 'з�
     expect(after.visitObjects[0].stage).toBe(target.visitObjects[0].stage)
   })
 })
+
+/**
+ * Отказ и черновик комментария в окне закрытия (Plane №609, №610).
+ *
+ * 🔴 СВОЁ ОПИСАНИЕ С `serviceWorkers: 'block'`: без него `page.route` не
+ * перехватывает запросы, ушедшие через service worker MSW, — отказ сервера
+ * подделать нельзя, и проба была бы зелёной на живых данных, ничего не
+ * проверив.
+ *
+ * Отказ подделывается ПЕРЕХВАТОМ, а не настоящим закрытием: закрытие
+ * необратимо и сделало бы фикстуру одноразовой (тот же принцип, что у пробы
+ * выше).
+ */
+test.describe(LIVE ? 'закрытие объекта: отказ и черновик' : 'закрытие объекта: отказ (скип)', () => {
+  test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+  test.use({ serviceWorkers: 'block' })
+
+  test('отказ виден ВНУТРИ окна, а не под ним (Plane №609)', async ({ page }) => {
+    /**
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. `StageError` стоял в теле карточки, а окно живёт в
+     * ПОРТАЛЕ поверх неё. При отказе (двое закрывают один объект — 422
+     * `VISIT_OBJECT_ALREADY_CLOSED`) окно оставалось открытым, кнопка
+     * включалась обратно, а сообщение сервера красилось ЗА оверлеем. Нажатие
+     * читалось как ничего: ни ошибки, ни закрытия, ни объяснения — и человек
+     * жал снова.
+     *
+     * Мутация, на которой проба обязана краснеть: вернуть `StageError` в тело
+     * карточки.
+     */
+    const token = await apiToken()
+    const target = requireFixture(
+      (await events(token, 'CONDUCT')).find((e) =>
+        e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+      ),
+      'мероприятие на «Проведении» с незакрытым объектом',
+    )
+
+    await page.route('**/visit-objects/*/close/', (route) =>
+      route.fulfill({
+        status: 422,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error_code: 'VISIT_OBJECT_ALREADY_CLOSED',
+          message: 'Объект уже закрыт другим пользователем.',
+          details: {},
+        }),
+      }),
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    const panel = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Закрытие объекта' }),
+    })
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    await panel.getByRole('button', { name: 'Закрыть объект' }).click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Подтвердить закрытие' }).click()
+
+    // Окно осталось открытым — и отказ написан ЗДЕСЬ ЖЕ, а не за оверлеем.
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('alert')).toBeVisible({ timeout: 15_000 })
+    await expect(dialog).toContainText('уже закрыт', { ignoreCase: true })
+  })
+
+  test('черновик комментария не живёт дольше окна (Plane №610)', async ({ page }) => {
+    /**
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Поле не чистилось НИ на успешном закрытии, НИ на
+     * отмене, НИ при смене объекта в шапке: у компонента нет `key`, и
+     * переключение `?visit=` переиспользует ТОТ ЖЕ экземпляр. Человек закрывал
+     * объект A с итогом «Пост 3 снят досрочно», переключался на объект B,
+     * открывал окно — и там уже стоял итог A. Одно нажатие писало формулировку
+     * A в комментарий закрытия объекта B и в его аудит.
+     *
+     * Проверяется путь, доступный на ЛЮБОМ стенде: отмена и повторное
+     * открытие того же объекта. Он ловит ту же причину — состояние переживает
+     * закрытие окна; второй объект для этого не нужен, а требовать его значило
+     * бы поставить пробу в зависимость от того, что кто-то завёл фикстуру.
+     *
+     * Мутация, на которой проба обязана краснеть: снять сброс `comment` из
+     * эффекта и из `onEvent`.
+     */
+    const token = await apiToken()
+    const target = requireFixture(
+      (await events(token, 'CONDUCT')).find((e) =>
+        e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+      ),
+      'мероприятие на «Проведении» с незакрытым объектом',
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    const panel = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Закрытие объекта' }),
+    })
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+
+    const label = 'Итоговый комментарий по объекту (необязательно)'
+    await panel.getByRole('button', { name: 'Закрыть объект' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByLabel(label).fill('Пост 3 снят досрочно')
+    await dialog.getByRole('button', { name: 'Отмена' }).click()
+    await expect(dialog).toBeHidden()
+
+    // Второе открытие того же объекта — поле чистое: отменённая формулировка
+    // не должна уходить на сервер одним нажатием.
+    await panel.getByRole('button', { name: 'Закрыть объект' }).click()
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByLabel(label)).toHaveValue('')
+    await dialog.getByRole('button', { name: 'Отмена' }).click()
+  })
+})
