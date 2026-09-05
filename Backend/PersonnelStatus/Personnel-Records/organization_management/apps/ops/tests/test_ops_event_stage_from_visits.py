@@ -20,6 +20,8 @@ Plane №412, Ш-6 плана №385. Требование `[МД-04]`: «у о�
 5. обход админа двигает все объекты разом;
 6. ОМ БЕЗ объектов посещения стадию не теряет — считать не из чего.
 """
+from django.utils import timezone
+
 import pytest
 
 from organization_management.apps.operations.models_event import (
@@ -277,3 +279,85 @@ def test_the_override_still_does_nothing_when_everyone_is_already_there(
     event = service.lock_event(event_id)
     assert event.updated_at == stamp, "повтор обхода тронул карточку"
     assert OpsSecurityEventTransition.objects.filter(event=event).count() == before
+
+
+def test_the_override_clears_a_closed_stamp_of_a_single_object(
+    manager, actor, two_objects_on_approval  # noqa: F811
+):
+    """Перевод на живой этап снимает штамп закрытия ОБЪЕКТА (Plane №527).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Условие стояло `old_stage == "CLOSED"`, то есть штамп
+    снимался, только если было закрыто ВСЁ мероприятие. Но `close_visit_object`
+    умеет закрыть ОТДЕЛЬНЫЙ объект при мероприятии на «Проведении» — и после
+    обхода на живой этап получался объект со стадией `PLACEMENT` и непустым
+    `closed_at`: «закрыт и одновременно в работе». Экраны и отчёты читают эти
+    два поля НЕЗАВИСИМО, и каждый верит своему.
+
+    Мутация, на которой проба обязана краснеть: вернуть `old_stage == "CLOSED"`.
+    """
+    _, event_id, first, _, _ = two_objects_on_approval
+    # Закрыт ОДИН объект, мероприятие при этом живо — ровно тот случай, что
+    # условие по `old_stage` не покрывало.
+    OpsSecurityEventVisitObject.objects.filter(pk=first.pk).update(
+        stage="CLOSED", closed_at=timezone.now()
+    )
+    event = service.lock_event(event_id)
+    assert event.stage != "CLOSED", "предусловие: мероприятие не закрыто"
+
+    service.override_stage(event_id, stage="PLACEMENT", actor=actor)
+
+    first.refresh_from_db()
+    assert first.stage == "PLACEMENT"
+    assert first.closed_at is None, "объект «закрыт и одновременно в работе»"
+
+
+def test_closing_is_not_an_override_target_at_all():
+    """Обходом карточку НЕ закрывают (инвариант, на который опирается №527).
+
+    Штамп закрытия снимается безусловно ровно потому, что все цели обхода —
+    живые этапы. Если завтра `CLOSED` окажется среди них, снятие штампа станет
+    неверным, и эта проба покраснеет раньше, чем кто-нибудь закроет карточку
+    обходом без сводки и комментария.
+    """
+    assert "CLOSED" not in service.STAGE_OVERRIDE_TARGETS
+
+
+def test_removing_an_object_recomputes_the_event_stage(
+    manager, actor, two_objects_on_approval  # noqa: F811
+):
+    """Снятие объекта пересчитывает этап мероприятия (Plane №525).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. С №412 `event.stage` — МИНИМУМ по объектам, а снятие
+    объекта минимум меняет: ушёл тот, кто один и держал мероприятие на раннем
+    этапе. Без пересчёта `event.stage` остаётся НИЖЕ нового минимума, и дальше
+    `complete_acknowledgement` отбивает единственный оставшийся объект, который
+    уже стоит на «Ознакомлении», — мероприятие запирается снятием ЧУЖОГО
+    объекта.
+
+    Мутация, на которой проба обязана краснеть: убрать вызов
+    `recompute_event_stage` из `remove_visit_object`.
+    """
+    base, event_id, first, second, _ = two_objects_on_approval
+    # Второй объект уводится ВПЕРЁД, первый остаётся позади и держит минимум.
+    OpsSecurityEventVisitObject.objects.filter(pk=second.pk).update(
+        stage="ACKNOWLEDGEMENT"
+    )
+    OpsSecurityEventVisitObject.objects.filter(pk=first.pk).update(stage="PLACEMENT")
+    service.recompute_event_stage(service.lock_event(event_id))
+    assert service.lock_event(event_id).stage == "PLACEMENT", "предусловие: минимум"
+
+    # Посты первого объекта мешают снятию — снимаем их разметку, как это
+    # делает человек перед удалением объекта.
+    event = service.lock_event(event_id)
+    event.recon_sector_posts = [
+        {**post, "visitObjectId": None}
+        for post in (event.recon_sector_posts or [])
+        if str(post.get("visitObjectId") or "") != str(first.pk)
+    ]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+
+    service.remove_visit_object(event_id, first.pk)
+
+    assert service.lock_event(event_id).stage == "ACKNOWLEDGEMENT", (
+        "этап мероприятия остался ниже нового минимума — карточка заперта"
+    )
