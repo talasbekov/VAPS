@@ -41,6 +41,28 @@ export interface OpsSectionStatus {
   name: string;
 }
 
+/**
+ * Ключ участия ПО ТОМУ, ЧТО ВИДНО В СТРОКЕ (Plane №819).
+ *
+ * Им же сводятся повторы в `byEmployee` и адресуются узлы списка в
+ * `SectionAccountCell`: ключ, собранный из чего-то другого (например из одного
+ * `event_id`), либо склеил бы РАЗНЫЕ строки одного мероприятия, либо оставил
+ * бы React два узла с одним ключом.
+ */
+export function participationLabelKey(participation: {
+  event_id: number;
+  visit_object_name?: string;
+  post_label?: string;
+  acknowledged_at?: string | null;
+}): string {
+  return [
+    participation.event_id,
+    participation.visit_object_name ?? "",
+    participation.post_label ?? "",
+    participation.acknowledged_at ? "1" : "0",
+  ].join("|");
+}
+
 export function useOpsSectionStatuses(enabled = true) {
   const report = useQuery<StrengthReport>({
     // Ключ ТОТ ЖЕ, что у разреза «Сбор сил»: расход за день один, и второй
@@ -69,11 +91,32 @@ export function useOpsSectionStatuses(enabled = true) {
     enabled: enabled && businessDate !== null,
   });
 
+  // 🔴 ОДНО УЧАСТИЕ — ОДНА СТРОКА В ЯЧЕЙКЕ (Plane №819). Строк статуса у
+  // сотрудника на день бывает НЕСКОЛЬКО, и одно и то же участие приезжает на
+  // каждой из них: на стенде у сотрудника 1 две действующие строки `IN_EVENT`,
+  // обе несут `ОМ-2026-11#3264`. Склейка без сведения печатала эту ссылку
+  // дважды — ячейка утверждала «привлечён на ОМ дважды», факт о расстановке,
+  // которого нет, — и заодно давала React два узла с одним ключом (тот же
+  // класс, что №482).
+  //
+  // Сводим ПО ВИДИМОЙ ПОДПИСИ, а не по `event_id`: у одного мероприятия
+  // законно бывает несколько участий — разные объект посещения и пост, и они
+  // обязаны остаться видимыми каждое своей строкой. Одинаково выглядящие
+  // строки не несут ничего, кроме повтора.
   const byEmployee = new Map<number, OpsStatusParticipation[]>();
+  const seenByEmployee = new Map<number, Set<string>>();
   for (const row of statuses.data ?? []) {
     if (row.participations.length === 0) continue;
-    const already = byEmployee.get(row.employee_id) ?? [];
-    byEmployee.set(row.employee_id, [...already, ...row.participations]);
+    const kept = byEmployee.get(row.employee_id) ?? [];
+    const seen = seenByEmployee.get(row.employee_id) ?? new Set<string>();
+    for (const participation of row.participations) {
+      const key = participationLabelKey(participation);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      kept.push(participation);
+    }
+    byEmployee.set(row.employee_id, kept);
+    seenByEmployee.set(row.employee_id, seen);
   }
 
   // Имена кодов — ИЗ СПРАВОЧНИКА раздела, а не своим словарём на клиенте
