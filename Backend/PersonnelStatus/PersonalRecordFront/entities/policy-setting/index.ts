@@ -170,8 +170,16 @@ export function settingPath(settingCode: string): string {
 
 export interface ListSettingsResponse {
   results: PolicySetting[];
-  /** Действующая версия каждого раздела. */
-  sectionVersions: Record<SettingSectionCode, string>;
+  /** Действующая версия раздела — ТОЛЬКО у тех, у кого она заведена.
+   *
+   *  🔴 `Partial`, а не полный `Record` (Plane №670). Сервер строит эту карту
+   *  перебором строк `OpsPolicySectionVersion` (`settings_service.py:111`), то
+   *  есть раздел без строки в неё просто не попадает. Прежний полный `Record`
+   *  это отрицал, и потому экран верил, что версия есть всегда: на базе,
+   *  накатанной миграциями без `seed_operations`, бейдж показывал «версия:» и
+   *  дальше ничего. Тип теперь заставляет каждого читателя разобрать случай
+   *  отсутствия — это единственная защита, которая срабатывает до запуска. */
+  sectionVersions: Partial<Record<SettingSectionCode, string>>;
 }
 
 export interface ListSettingChangeLogResponse {
@@ -185,7 +193,8 @@ export interface UpdateSettingRequest extends Record<string, unknown> {
 
 export interface UpdateSettingResponse {
   setting: PolicySetting;
-  sectionVersions: Record<SettingSectionCode, string>;
+  /** Та же карта и та же неполнота, что у списка (Plane №670). */
+  sectionVersions: Partial<Record<SettingSectionCode, string>>;
   event: SettingChangeEvent;
 }
 

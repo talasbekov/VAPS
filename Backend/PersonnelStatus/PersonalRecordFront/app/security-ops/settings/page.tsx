@@ -73,19 +73,50 @@ export default function OpsSettingsPage() {
         )}
 
         {query.data !== undefined &&
-          sections.map((sectionCode) => (
+          sections.map((sectionCode) => {
+            const version = query.data!.sectionVersions[sectionCode];
+            const rows = query.data!.results.filter(
+              (setting) => setting.sectionCode === sectionCode
+            );
+            return (
             <Card key={sectionCode}>
               <CardHeader>
                 <CardTitle className="flex flex-wrap items-center gap-2">
                   {SECTION_LABEL[sectionCode]}
-                  <Badge variant="outline">
-                    версия: {query.data!.sectionVersions[sectionCode]}
-                  </Badge>
+                  {/* 🔴 Версии может НЕ БЫТЬ (Plane №670): сервер отдаёт только
+                      заведённые строки, и на базе без `seed_operations` карта
+                      пуста. Прежде здесь стояло `версия: {значение}` — бейдж
+                      показывал «версия:» и обрывался, что читается как
+                      поломка экрана, а не как незаполненная база. Бейдж
+                      называет отсутствие словами и гасится по цвету, чтобы не
+                      выглядеть значением. */}
+                  {version !== undefined ? (
+                    <Badge variant="outline">версия: {version}</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      версия не задана
+                    </Badge>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {query.data!.results
-                  .filter((setting) => setting.sectionCode === sectionCode)
+                {/* Пустой раздел ОБЪЯСНЯЕТСЯ, а не остаётся белым местом
+                    (Plane №670). Настройки раздела приходят из справочника, а
+                    он наполняется отдельной командой — на базе, накатанной
+                    одними миграциями, карточка пуста, и без этой строки
+                    администратор не может отличить «нечего настраивать» от
+                    «экран сломан». */}
+                {rows.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Настройки этого раздела не заведены в базе. Так бывает,
+                    когда база накатана миграциями без наполнения справочников:
+                    их заводит команда{" "}
+                    <code className="rounded bg-muted px-1 py-0.5">
+                      manage.py seed_operations
+                    </code>{"."}
+                  </p>
+                )}
+                {rows
                   .map((setting) => (
                     <div
                       key={setting.settingCode}
@@ -125,7 +156,8 @@ export default function OpsSettingsPage() {
                   ))}
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
 
         {/* Маршрут согласования расстановки (`[СОГ-05]`, Plane №429) — своя
             карточка, а не политика-число: список подписантов. */}
