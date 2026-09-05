@@ -448,6 +448,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsSecurityEvent.objects.select_related("country", "city")
             .prefetch_related(
                 "visit_objects__deputies",
+                # История версий документа объекта тоже читается КАЖДОЙ
+                # строкой (`documentVersions`, `[СОГ-04]`): без неё
+                # `_serialize_visit_objects` добирал её сам, по запросу на
+                # мероприятие (Plane №480).
+                "visit_objects__document_versions",
                 Prefetch(
                     "person_links",
                     queryset=OpsSecurityEventPerson.objects.select_related("person"),
@@ -1388,6 +1393,20 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     # ── Исключение гейта: замещающий правит расстановку своего объекта ──
 
+    #: Права, которые действие НЕ ЗАКРЫВАЮТ, а открывают шире (Plane №602).
+    #: `placement.command` не гейтит расстановку — её гейтит `placement.manage`;
+    #: он снимает проверку «своё ли мероприятие» (`_require_placement_lead`,
+    #: `[РАС-08]`). Проверяется членством в наборе прав, а не гвардом, поэтому
+    #: каталог прав его не видел вовсе, и экран «Права» говорил администратору,
+    #: что право не стоит ни на одной ручке. Перечень — ровно те действия, где
+    #: `_require_placement_lead` действительно зовётся.
+    permission_bypass_map = {
+        "placement_assign": _PLACEMENT_COMMAND_PERMISSION,
+        "placement_unassign": _PLACEMENT_COMMAND_PERMISSION,
+        "placement_post_remove": _PLACEMENT_COMMAND_PERMISSION,
+        "placement_move": _PLACEMENT_COMMAND_PERMISSION,
+    }
+
     _DEPUTY_ACTIONS = frozenset(
         {
             "placement_assign",
@@ -1528,6 +1547,21 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 return Response(
                     {"results": [], "employeeId": None,
                      "unlinkedReason": mine.UNLINKED_REASON}
+                )
+            # 🔴 УВОЛЕННЫЙ НЕ ЧИТАЕТ ДАЖЕ СВОЁ (Plane №596). Учётка живёт
+            # дольше кадровой записи, и без этой проверки уволенный продолжал
+            # видеть задачу поста, требования, форму одежды и вооружение.
+            # `may_read` прикрывает путь «по параметру `?employee=`», сюда же
+            # он не заходит вовсе: без параметра право отдаётся раньше. Значит
+            # проверок нужно ДВЕ — по одной на каждый путь.
+            #
+            # Ответ 200 с причиной, а не 403: у человека законная учётка и
+            # законный экран, и отказ по праву читался бы как поломка доступа.
+            # Причина СВОЯ, отличная от «нет привязки»: это разные положения.
+            if not employee.is_active:
+                return Response(
+                    {"results": [], "employeeId": None,
+                     "unlinkedReason": mine.DISMISSED_REASON}
                 )
             target = str(employee.pk)
         return Response(

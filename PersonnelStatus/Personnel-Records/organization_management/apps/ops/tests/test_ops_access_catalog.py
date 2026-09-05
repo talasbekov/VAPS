@@ -67,6 +67,34 @@ def test_catalog_sees_routes_closed_by_an_inline_check():
     assert ("POST", "/api/operations/accounts/<pk>/reset-password/") in paths
 
 
+def test_catalog_sees_a_permission_that_widens_instead_of_closing():
+    """Право-ОБХОД тоже попадает в каталог (Plane №602).
+
+    🔴 ЧТО СТЕРЕЖЁТСЯ. `placement.command` действие не закрывает — расстановку
+    гейтит `placement.manage`; он снимает проверку «своё ли мероприятие»
+    (`[РАС-08]`: расставлять на любом объекте может штаб). Проверяется он
+    членством в наборе прав, а не вызовом-гвардом, поэтому ни карта прав
+    вьюсета, ни разбор построчных гвардов его не видели: экран «Права» говорил
+    администратору, что право НЕ СТОИТ НИ НА ОДНОЙ ручке — про право, которое
+    открывает командование расстановкой по всей организации.
+
+    Это тот же регресс, что стережёт проба про построчные гейты выше, только с
+    другой стороны: там гейт был не в карте, здесь — не гейт вовсе.
+    """
+    rows = catalog()["placement.command"]
+    paths = {(row["method"], row["path"]) for row in rows}
+
+    assert ("POST", "/api/ops/security-events/<pk>/placement/assign/") in paths
+    assert ("POST", "/api/ops/security-events/<pk>/placement/<assignment_id>/move/") in paths
+    # Действие, где проверки «своё ли» нет, обходом НЕ помечается: каталог
+    # обязан называть настоящую область права, а не все соседние ручки.
+    assert not any("senior" in path for _method, path in paths)
+    # И основной гейт этих же ручек остался на месте — обход его не заменяет.
+    assert ("POST", "/api/ops/security-events/<pk>/placement/assign/") in {
+        (row["method"], row["path"]) for row in catalog()["placement.manage"]
+    }
+
+
 def test_catalog_resolves_a_permission_code_given_by_a_constant():
     """Код права в построчной проверке бывает КОНСТАНТОЙ, а не строкой.
 
