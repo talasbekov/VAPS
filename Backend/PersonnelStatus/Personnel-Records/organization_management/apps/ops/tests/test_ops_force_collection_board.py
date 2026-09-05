@@ -209,6 +209,70 @@ def test_headquarters_is_notified_on_every_answer(manager, hq):  # noqa: F811
     assert note.payload["allocating"] == 2 and note.payload["allocationId"] == allocation_id
 
 
+def test_every_department_answer_reaches_headquarters(manager, hq):  # noqa: F811
+    """КАЖДЫЙ ответ — своё уведомление, а не только первый за день (Plane №677).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. `notify_service.notify` идемпотентен по
+    (получатель, вид, деловая дата), и до правки штаб на ОМ с двумя
+    департаментами получал ОДНО уведомление — с именем ответившего первым.
+    Второй ответ и все последующие правки «Выделяют» проглатывались без следа,
+    хотя докстринг `notify_headquarters_response` обещал обратное, а прежняя
+    проба гоняла ровно один ответ и потому молчала.
+
+    Мутация, на которой проба обязана краснеть: убрать `dedupe_key=None` из
+    `notify_headquarters_response` — уведомление останется одно, про первый
+    департамент.
+    """
+    hq_user = hq.user
+    first_department = make_department()
+    make_directorate(first_department, "Управление охраны")
+    base, first_id = allocated_event(manager, first_department)
+
+    # Второй департамент в ТОЙ ЖЕ раскладке того же мероприятия: два ответа за
+    # один деловой день — ровно тот случай, что схлопывался.
+    second_department = make_department("Департамент связи")
+    make_directorate(second_department, "Управление связи")
+    event_id = _event_id(base)
+    # Разложено не больше потребности: первая строка отдаёт часть второй —
+    # редактор отбивает сумму сверх расчёта (`ALLOCATION_OVER_DEMAND`).
+    need = int(service.lock_event(event_id).force_allocation[0]["need"])
+    assert need >= 2, "потребность меньше двух — делить между департаментами нечего"
+    split = manager.post(
+        f"{base}forces/allocation/",
+        {
+            "rows": [
+                {"departmentId": str(first_department.pk), "need": need - 1},
+                {"departmentId": str(second_department.pk), "need": 1},
+            ]
+        },
+        format="json",
+    )
+    assert split.status_code == 200, split.content
+    second_id = next(
+        row["id"]
+        for row in service.lock_event(event_id).force_allocation
+        if str(row["departmentId"]) == str(second_department.pk)
+    )
+
+    service.respond_allocation(event_id, first_id, allocating=2, comment="", actor="user:dep-1")
+    service.respond_allocation(event_id, second_id, allocating=1, comment="", actor="user:dep-2")
+    # И правка собственного ответа — тоже ответ: «уведомление при КАЖДОМ
+    # изменении «Выделяют»» из докстринга ручки.
+    service.respond_allocation(event_id, first_id, allocating=3, comment="", actor="user:dep-1")
+
+    notes = list(
+        OpsNotification.objects.filter(
+            kind="FORCES_RESPONSE", recipient=str(hq_user.pk)
+        ).order_by("id")
+    )
+    assert len(notes) == 3, [n.payload for n in notes]
+    assert [n.payload["allocating"] for n in notes] == [2, 1, 3]
+    assert {n.payload["departmentName"] for n in notes} == {
+        first_department.name,
+        second_department.name,
+    }
+
+
 def test_a_database_failure_in_the_notification_does_not_lose_the_answer(
     manager, hq, monkeypatch  # noqa: F811
 ):

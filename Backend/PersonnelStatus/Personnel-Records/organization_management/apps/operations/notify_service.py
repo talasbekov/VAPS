@@ -156,13 +156,27 @@ def _publish(notification):
         )
 
 
-def notify(recipient, kind, business_date, payload=None):
+def notify(recipient, kind, business_date, payload=None, *, dedupe_key=""):
     """Идемпотентно сообщить `recipient` о факте `kind` за `business_date`.
 
     «Одно на день»: первый вызов создаёт строку с `payload`, последующие —
     холостые, и побеждает ПЕРВЫЙ payload. Так и надо: повторный вызов приходит
     из догона, который переспрашивает уже пройденные дни, — переписав payload,
     он затёр бы то, что человек уже прочитал.
+
+    🔴 `dedupe_key=None` — «СОБЫТИЕ, А НЕ СОСТОЯНИЕ ДНЯ» (Plane №677). Часть
+    фактов за день случается много раз: три департамента отвечают штабу на
+    запрос сил — это три разных ответа, а не три пересказа одного. Под общим
+    ключом второй и третий проглатывались без следа, и штаб узнавал только про
+    первый. С `None` каждый вызов заводит СВОЮ строку: NULL в уникальном
+    ограничении Postgres считает различными, и `get_or_create` тут не годится
+    — фильтр по `None` читается как `IS NULL` и нашёл бы прежнюю строку.
+    Идемпотентности такому вызову и не нужно: он приходит из действия
+    человека внутри транзакции, а не из догона, и откат уносит его вместе с
+    делом.
+
+    Непустая строка — «одно на такой ключ в день»: договор тот же, что у
+    «одного на день», но с более узким ключом.
 
     Получатель обрезается по краям: «7» и «7 » — один человек, а для ключа
     «одно на день» это две разные строки, и пробел породил бы дубликат.
@@ -180,12 +194,23 @@ def notify(recipient, kind, business_date, payload=None):
     payload = payload or {}
 
     try:
-        notification, created = OpsNotification.objects.get_or_create(
-            recipient=recipient,
-            kind=kind,
-            business_date=business_date,
-            defaults={"payload": payload},
-        )
+        if dedupe_key is None:
+            notification = OpsNotification.objects.create(
+                recipient=recipient,
+                kind=kind,
+                business_date=business_date,
+                dedupe_key=None,
+                payload=payload,
+            )
+            created = True
+        else:
+            notification, created = OpsNotification.objects.get_or_create(
+                recipient=recipient,
+                kind=kind,
+                business_date=business_date,
+                dedupe_key=dedupe_key,
+                defaults={"payload": payload},
+            )
         if created:
             # Откладывается ТОЛЬКО знак, никогда не запись: синхронная запись
             # и есть ПЕРВОЕ из докстринга модуля.

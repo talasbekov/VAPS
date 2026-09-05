@@ -53,6 +53,52 @@ def test_the_first_payload_wins_on_a_repeat():
     }
 
 
+def test_an_event_key_of_none_never_collapses():
+    """`dedupe_key=None` — «событие», и каждый вызов заводит свою строку.
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №677). «Одно на день» заведено ради догона, но
+    часть фактов за день случается много раз: три департамента отвечают штабу
+    на запрос сил — это три разных ответа. Под общим ключом второй и третий
+    проглатывались без следа, и штаб узнавал только про первый.
+
+    Мутация, на которой проба обязана краснеть: убрать `dedupe_key=None` из
+    вызова (или вернуть `get_or_create` для этой ветки) — строк станет 1.
+    """
+    first = notify("7", KIND, DAY, payload={"n": 1}, dedupe_key=None)
+    second = notify("7", KIND, DAY, payload={"n": 2}, dedupe_key=None)
+
+    assert first.pk != second.pk
+    assert OpsNotification.objects.filter(recipient="7").count() == 2
+    # Каждая строка несёт СВОЙ payload: у «одного на день» побеждает первый,
+    # и это правило к событиям неприменимо — второй ответ отличается от
+    # первого именно тем, что в нём написано.
+    assert {row.payload["n"] for row in OpsNotification.objects.filter(recipient="7")} == {1, 2}
+
+
+def test_a_named_key_collapses_within_its_own_key_only():
+    """Непустой ключ — «одно на такой ключ в день», не одно на день вообще."""
+    notify("7", KIND, DAY, dedupe_key="allocation-1")
+    notify("7", KIND, DAY, dedupe_key="allocation-1")
+    notify("7", KIND, DAY, dedupe_key="allocation-2")
+
+    assert OpsNotification.objects.filter(recipient="7").count() == 2
+
+
+def test_the_default_key_keeps_one_per_day_for_the_rows_that_had_it():
+    """Умолчание не изменилось: без ключа строка по-прежнему одна на день.
+
+    Проба стоит рядом с новыми ветками нарочно: правка ключа «одно на день»
+    легко превращается в снятие «одного на день» для всех, а догон
+    (`SUBMISSION_LAGGING`) на этом обещании и построен.
+    """
+    notify("7", KIND, DAY)
+    notify("7", KIND, DAY)
+
+    rows = list(OpsNotification.objects.filter(recipient="7"))
+    assert len(rows) == 1
+    assert rows[0].dedupe_key == ""
+
+
 def test_the_same_day_reaches_different_recipients_separately():
     notify("7", KIND, DAY)
     notify("8", KIND, DAY)

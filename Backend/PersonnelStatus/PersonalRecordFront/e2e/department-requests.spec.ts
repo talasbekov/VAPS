@@ -821,4 +821,137 @@ test.describe('заявки департаменту', () => {
       await dropEvent(token, fixture.eventId)
     }
   })
+
+  test('штаб видит КАЖДЫЙ ответ департамента в колокольчике, а не только первый (Plane №677)', async ({
+    page,
+  }) => {
+    /**
+     * `[СБС-12]`: «штаб получает уведомление при каждом ответе департамента».
+     *
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ, ДВЕ ВЕЩИ СРАЗУ.
+     *
+     * 1. СЕРВЕР. `notify` идемпотентен по (получатель, вид, деловая дата), и
+     *    под этим ключом второй ответ за день проглатывался без следа: штаб
+     *    узнавал только про первый. Проба отвечает ДВАЖДЫ разными цифрами и
+     *    требует две строки в ленте.
+     * 2. ЭКРАН. Вида `FORCES_RESPONSE` фронт не знал вовсе, и строка падала в
+     *    ветку по умолчанию — колокольчик печатал «Отставание по сдаче ·
+     *    Подразделений без сдачи: 0» про ответ департамента. Проба читает
+     *    ИМЕННО ТЕКСТ пункта меню, а не факт его наличия: наличие было и до
+     *    правки, врал текст.
+     */
+    const bossPassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+    test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
+
+    const token = await apiToken()
+
+    // Учётка штаба второго департамента — роль `HEAD_OPS_UNIT`, адресат
+    // `FORCES_RESPONSE`.
+    const hqToken = (
+      (await (
+        await fetch(`${API}/api/token/`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username: 'acc_dept_head_d2', password: bossPassword }),
+        })
+      ).json()) as { access: string }
+    ).access
+    const feedOf = async () =>
+      (await (
+        await fetch(`${API}/api/operations/notifications/?unread=true`, {
+          headers: { Authorization: `Bearer ${hqToken}` },
+        })
+      ).json()) as {
+        results: { id: number; kind: string; payload: { allocationId?: string; allocating?: number } }[]
+      }
+    const markRead = async (rows: { id: number }[]) => {
+      for (const row of rows) {
+        await fetch(`${API}/api/operations/notifications/${row.id}/read/`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${hqToken}` },
+        })
+      }
+    }
+
+    // 🔴 ЛЕНТА ЧИСТИТСЯ ДО ПРОБЫ, А НЕ ТОЛЬКО ПОСЛЕ. Коды мероприятий на
+    // стенде ПЕРЕИСПОЛЬЗУЮТСЯ: удалённый `ОМ-2026-21` возвращается следующему
+    // заведённому, а уведомления переживают удаление того, о чём сообщали
+    // (payload несёт код строкой). Непрочитанный ответ прошлого прогона давал
+    // ровно тот же текст «выделяет 2 из 3» под тем же кодом, и проба падала
+    // на strict mode, показывая два элемента вместо одного, — то есть врала
+    // про сегодняшний прогон.
+    await markRead((await feedOf()).results.filter((r) => r.kind === 'FORCES_RESPONSE'))
+
+    const fixture = await createDepartmentAllocationFixture(token)
+
+    try {
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      const need: number = event.forceNeed
+      expect(need, 'потребность меньше двух — двух разных ответов не дать').toBeGreaterThanOrEqual(2)
+
+      // Два РАЗНЫХ ответа за один деловой день — ровно тот случай, что
+      // схлопывался. Через API, а не через экран: предмет пробы — лента
+      // штаба, а форму ответа стережёт своя проба выше (№391).
+      //
+      // 🔴 `encodeURIComponent` ОБЯЗАТЕЛЕН: идентификатор строки раскладки —
+      // это `force-allocation-<id>-<ISO-момент>`, то есть в нём есть `+` из
+      // смещения `+00:00`. В сыром пути `+` читается как пробел, адрес не
+      // совпадает ни с одной строкой, и ручка отвечает 404 — молча, потому
+      // что `apiCall` тело ошибки не поднимает.
+      const respond = async (allocating: number) => {
+        const res = await fetch(
+          `${API}/api/ops/security-events/${fixture.eventId}/forces/allocation/${encodeURIComponent(fixture.allocationId)}/respond/`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ allocating, comment: '' }),
+          },
+        )
+        expect(res.status, `ответ департамента не принят: ${await res.text()}`).toBe(200)
+      }
+      await respond(need - 1)
+      await respond(need)
+
+      const mine = async () =>
+        (await feedOf()).results.filter(
+          (r) => r.kind === 'FORCES_RESPONSE' && r.payload.allocationId === fixture.allocationId,
+        )
+      await expect.poll(async () => (await mine()).length, { timeout: 15_000 }).toBe(2)
+      expect((await mine()).map((r) => r.payload.allocating).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([
+        need - 1,
+        need,
+      ])
+
+      // Экран штаба: колокольчик называет департамент и обе цифры — а не
+      // «Отставание по сдаче».
+      const ctx = await page.context().browser()!.newContext()
+      const hq = await ctx.newPage()
+      const csrf = (await (await ctx.request.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
+      await ctx.request.post(`${APP}/api/auth/callback/credentials/`, {
+        form: { csrfToken: csrf.csrfToken, username: 'acc_dept_head_d2', password: bossPassword, json: 'true' },
+      })
+      await hq.goto(`${APP}/dashboard`)
+      await hq.getByRole('button', { name: 'Уведомления' }).click()
+      // Пункты ЭТОГО мероприятия, а не все подряд: лента штаба живая, и
+      // непрочитанные ответы по чужим ОМ дают тот же текст «выделяет 2 из 3».
+      // Отбор по коду ОМ — он печатается второй строкой пункта.
+      const items = hq.getByRole('menuitem').filter({ hasText: event.code })
+      await expect(items.filter({ hasText: `выделяет ${need} из ${need}` })).toHaveCount(1, {
+        timeout: 15_000,
+      })
+      await expect(items.filter({ hasText: `выделяет ${need - 1} из ${need}` })).toHaveCount(1, {
+        timeout: 15_000,
+      })
+      // Чужой подписи на этих строках нет: до правки обе читались как отчёт
+      // о сдаче дня («Отставание по сдаче · Подразделений без сдачи: 0»).
+      await expect(items.filter({ hasText: 'Подразделений без сдачи' })).toHaveCount(0)
+
+      await ctx.close()
+    } finally {
+      // Уборка ленты — В `finally`: падение середины иначе оставляло бы
+      // непрочитанные строки следующему прогону, и он падал бы по чужой вине.
+      await markRead((await feedOf()).results.filter((r) => r.kind === 'FORCES_RESPONSE'))
+      await dropEvent(token, fixture.eventId)
+    }
+  })
 })

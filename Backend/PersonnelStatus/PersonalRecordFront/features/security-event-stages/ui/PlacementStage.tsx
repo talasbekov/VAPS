@@ -477,6 +477,17 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const conflicts = event.placementAssignments.filter(
     (a) => a.ratingOverrideReason !== null && visiblePostIds.has(a.postId)
   ).length;
+  // 🔴 ВТОРОЙ ОБХОД СЧИТАЕТСЯ ТАК ЖЕ, КАК ПЕРВЫЙ (Plane №746). Сервер требует
+  // обоснование усиления поста сверх расчёта (`needOverrideReason`) и хранит
+  // его — а показывал его НИКТО: грепом по фронту поле встречалось только в
+  // типах и в моке. Оператор набирал объяснение, и оно исчезало; заявленная
+  // цель правки №414 — «чтобы усиление осталось объяснимым в реестре» — не
+  // выполнялась вовсе. У соседнего обхода (по рейтингу) есть и бейдж в
+  // строке, и счёт в предупреждении; у этого теперь тоже.
+  const overNeed = event.placementAssignments.filter(
+    (a) =>
+      (a.needOverrideReason ?? null) !== null && visiblePostIds.has(a.postId)
+  ).length;
   // «Свободно» — про МЕРОПРИЯТИЕ: люди выделены ему, а не объекту, и вычитать
   // из общего состава назначения одного объекта значило бы показать человека
   // свободным на одном экране и занятым на другом.
@@ -498,6 +509,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
       );
     if (conflicts > 0)
       parts.push(`назначений с обходом предупреждения по рейтингу: ${conflicts}`);
+    if (overNeed > 0)
+      parts.push(`постов усилено сверх расчёта: ${overNeed}`);
     return parts.length === 0 ? null : parts.join("; ");
   })();
 
@@ -983,6 +996,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             <Kpi label="свободно" value={free} />
             <Kpi label="незаполнено" value={unfilled} tone={unfilled > 0 ? "warn" : undefined} />
             <Kpi label="конфликтов" value={conflicts} tone={conflicts > 0 ? "bad" : undefined} />
+            {/* Плитка появляется, ТОЛЬКО когда усиление есть (Plane №746):
+                вечный ноль в ряду из шести чисел читается как шум, а не как
+                факт, и ряд у этого экрана и без того плотный. */}
+            {overNeed > 0 && (
+              <Kpi label="сверх расчёта" value={overNeed} tone="warn" />
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -1347,6 +1366,20 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           {assignment.ratingOverrideReason !== null && (
                             <span className="text-xs text-amber-700">
                               обход: {assignment.ratingOverrideReason}
+                            </span>
+                          )}
+                          {/* Усиление поста сверх расчёта (Plane №746): та же
+                              форма, что у обхода рейтинга рядом, — обоснование
+                              стоит В СТРОКЕ, где видно, к кому оно относится.
+                              Слово другое, потому что и обход другой: «сверх
+                              расчёта» — про число людей на посту, «обход» —
+                              про требование к рейтингу. */}
+                          {(assignment.needOverrideReason ?? null) !== null && (
+                            <span
+                              className="text-xs text-amber-700"
+                              data-slot="need-override-reason"
+                            >
+                              сверх расчёта: {assignment.needOverrideReason}
                             </span>
                           )}
                         </span>
