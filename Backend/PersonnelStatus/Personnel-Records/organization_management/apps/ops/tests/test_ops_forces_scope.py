@@ -1106,6 +1106,56 @@ def test_the_head_selects_people_and_the_status_is_created_from_the_request(mana
     assert OpsEmployeeStatus.objects.filter(employee_id=person.pk).exists()
 
 
+def test_selecting_builds_the_full_request_view_exactly_once(manager, monkeypatch):  # noqa: F811
+    """Полный вид заявки собирается ОДИН раз на выделение (Plane №548).
+
+    🔴 ЧТО СТЕРЕЖЁТСЯ. `select_for_request` звала `directorate_request_view`
+    дважды: в начале — ради `eventId` и проверки области, в конце — ради
+    свежей строки в ответе. Первый вызов собирал полный вид заявки (сведение
+    людей из статусов и участий, живые подразделения через `StaffUnit` и
+    `Division`, счёт «выделено N из M» по поддеревьям) ради ОДНОГО поля — и
+    выбрасывал собранное: к моменту второго вызова состав уже другой, и
+    сохранять первый ответ было бы нельзя даже при желании.
+
+    Считается не время и не число запросов, а вызовы САМОЙ ДОРОГОЙ функции —
+    `allocation_members_view`. Число запросов зависит от кэшей и состава
+    стенда, а этот счётчик отвечает ровно на вопрос карточки: сколько раз мы
+    собрали то, что нужно один раз.
+
+    Красная на мутации «вернуть `directorate_request_view` в начало функции»:
+    счётчик станет 2.
+    """
+    from organization_management.apps.ops import forces_requests, security_events
+
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    person = employee_of(first, "Считаемов")
+    make_assignment_status_type()
+    head = _status_head("dir-head-cost", "DIR_HEAD_COST", first)
+
+    calls = []
+    original = security_events.allocation_members_view
+    monkeypatch.setattr(
+        forces_requests,
+        "allocation_members_view",
+        lambda event: (calls.append(event.pk), original(event))[1],
+    )
+
+    resp = head.post(
+        f"{URL}forces/requests/{allocation_id}/directorate/select/",
+        {"employeeIds": [str(person.pk)]},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.data
+    assert resp.json()["selected"] == [str(person.pk)]
+    assert len(calls) == 1, (
+        "полный вид заявки собран %d раз(а) вместо одного" % len(calls)
+    )
+
+
 def test_a_stranger_in_the_list_is_refused_without_naming_him(manager):  # noqa: F811
     """Чужой сотрудник — отказ по строке, БЕЗ его фамилии; свои выделяются.
 

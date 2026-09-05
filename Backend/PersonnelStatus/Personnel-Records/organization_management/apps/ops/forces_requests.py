@@ -217,6 +217,34 @@ def directorate_request_view(allocation_id, allowed_division_ids):
     raise _not_found("Запрос управлению не найден.", allocation_id)
 
 
+def _event_of_request(allocation_id, allowed_division_ids):
+    """Мероприятие заявки плюс проверка области — БЕЗ сборки полного вида.
+
+    🔴 ЗАЧЕМ (Plane №548). `select_for_request` звала
+    `directorate_request_view` ДВАЖДЫ на один POST: в начале — чтобы узнать
+    `eventId` и убедиться, что заявка адресована управлению актора, и в конце
+    — чтобы вернуть свежую строку. Первый вызов собирал полный вид заявки —
+    сведение людей из статусов и участий, живые подразделения, счёт «выделено
+    N из M» — ради ОДНОГО поля и одной проверки, и всё собранное выбрасывал:
+    к моменту второго вызова состав уже изменился, и первый ответ был бы
+    неверным, даже если бы его сохранили.
+
+    Оба вопроса — «чья это заявка» и «какого она мероприятия» — решаются по
+    сырому JSON: `divisionId` строки управления сведение со статусами не
+    меняет. Отказ ТОТ ЖЕ и по той же причине: чужая заявка — 404, а не 403,
+    чтобы существование чужой строки не подтверждалось перебором
+    идентификаторов.
+    """
+    for event in _events_with_allocations():
+        for allocation in _raw_allocations(event):
+            if allocation.get("id") != allocation_id:
+                continue
+            if not _mine_of(allocation, allowed_division_ids):
+                raise _not_found("Запрос управлению не найден.", allocation_id)
+            return event
+    raise _not_found("Запрос управлению не найден.", allocation_id)
+
+
 def select_for_request(allocation_id, employee_ids, allowed_division_ids, *, actor):
     """Начальник управления выделяет людей ПО ЗАПРОСУ (Plane №395, `[СБС-31]`).
 
@@ -246,8 +274,10 @@ def select_for_request(allocation_id, employee_ids, allowed_division_ids, *, act
         _find_personnel,
     )
 
-    request = directorate_request_view(allocation_id, allowed_division_ids)
-    event_id = request["eventId"]
+    # Полный вид заявки собирается ОДИН раз — в ответе (Plane №548): здесь
+    # нужны только мероприятие и проверка области, а состав к концу выделения
+    # всё равно станет другим.
+    event_id = str(_event_of_request(allocation_id, allowed_division_ids).pk)
     selected, refused = [], []
     for raw in employee_ids or []:
         employee_id = str(raw).strip()
