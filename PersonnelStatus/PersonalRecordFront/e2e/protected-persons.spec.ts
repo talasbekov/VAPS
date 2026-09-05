@@ -142,74 +142,85 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
       'незакрытый визит иностранного ОЛ со сводкой ГВО — только такие строки ' +
         'показывает реестр ГВО, а в архив дела лицо не внести',
     )
-    await page.goto(`${APP}/security-ops/events/?view=gvo`)
-    await page.locator('tbody tr', { hasText: omCode }).locator('a').first().click()
-    // Единый режим правки (`[ГВО-05]`, Plane №441): поля открывает одна
-    // кнопка «Редактировать», «＋ Добавить лицо» живёт внутри формы.
-    //
-    // 🔴 КЛИК ПОВТОРЯЕТСЯ, ТОЛЬКО ПОКА КНОПКА ЕЩЁ ЕСТЬ (Plane №738). Панель
-    // рисует «Редактировать» при `canEdit && !editing`, поэтому первый удачный
-    // клик её РАЗМОНТИРУЕТ. Прежний цикл кликал по ней вслепую: если форма
-    // появлялась дольше внутренних 3 с — ровно тот медленный стенд, ради
-    // которого повтор и добавлен, — следующий заход ждал исчезнувшую кнопку
-    // весь `actionTimeout` (10 с), и бюджет 30 с уходил на два-три таких
-    // ожидания. Проба падала «Редактировать not found», хотя режим правки уже
-    // был открыт: медленный УСПЕХ превращался в отказ.
-    //
-    // Поэтому: клик один раз, потом длинное ожидание формы, а повтор — только
-    // если кнопка всё ещё в DOM (значит первый клик действительно ушёл в
-    // никуда, как бывает до гидратации на свежем dev-стенде).
-    const addPerson = page.getByRole('button', { name: '＋ Добавить лицо' })
-    const editButton = page.getByRole('button', { name: 'Редактировать' })
-    await editButton.click()
-    await expect(async () => {
-      if ((await editButton.count()) > 0) {
-        await editButton.click({ timeout: 5_000 })
-      }
-      await expect(addPerson).toBeVisible({ timeout: 10_000 })
-    }).toPass({ timeout: 60_000 })
-    await addPerson.click()
-    // 🔴 ПОЛЯ СУЖЕНЫ К СВОЕМУ БЛОКУ (Plane №736). С единым режимом правки
-    // (№441) форма рисует по `fieldset` на КАЖДОЕ лицо сводки, и в каждом своя
-    // подпись «ФИО»: собранная сводка уже несёт лицо, выведенное из бюллетеня,
-    // поэтому после «＋ Добавить лицо» таких полей минимум два, и несужённый
-    // локатор бросает strict mode. У автора прошло случайно — выбранный ОМ
-    // оказался без названного лица; первый же иностранный ОМ с лицом красил
-    // пробу по причине, к проверяемому поведению отношения не имеющей.
-    //
-    // Берётся ПОСЛЕДНИЙ блок: «＋ Добавить лицо» дописывает свой в конец.
-    const personBlock = page.locator('form fieldset', { has: page.getByText(/^Лицо \d+$/) }).last()
-    // Сужение проверяется, а не подразумевается: в СВОЁМ блоке поле ровно
-    // одно, сколько бы лиц ни было в сводке. Без этой строки починка
-    // держалась бы на удаче выбранного ОМ — ровно так дефект и прожил.
-    await expect(personBlock.getByRole('textbox', { name: 'ФИО' })).toHaveCount(1)
-    await personBlock.getByRole('textbox', { name: 'ФИО' }).fill(PERSON)
-    await personBlock.getByRole('textbox', { name: 'Должность' }).fill(PROBE_ROLE)
-    await page.getByRole('button', { name: 'Сохранить' }).click()
-    // `.first()`: сводка теперь панель в КАРТОЧКЕ ОМ (Plane «Реестр ОМ-35.8»),
-    // и то же имя выводится ещё и в «Сведениях об ОМ» бюллетеня — строгий
-    // режим ловил оба вхождения.
-    await expect(page.locator('main').getByText(PERSON).first()).toBeVisible({
-      timeout: 10_000,
-    })
+    // 🔴 УБОРКА В `finally`, А ПРОВЕРКА КОНСОЛИ ПОСЛЕ НЕЁ (Plane №742).
+    // Проверка `errors` стояла ПЕРЕД уборкой, и случайная ошибка в консоли
+    // оставляла пробное лицо привязанным к чужой сводке: стартовый
+    // `unlinkProbePersons()` подбирал это лишь на СЛЕДУЮЩЕМ прогоне, а до
+    // тех пор стенд стоял грязным. Уборке место в `finally` — она обязана
+    // случиться и при упавшем ассерте, и при брошенном локаторе.
+    try {
+      await page.goto(`${APP}/security-ops/events/?view=gvo`)
+      await page.locator('tbody tr', { hasText: omCode }).locator('a').first().click()
+      // Единый режим правки (`[ГВО-05]`, Plane №441): поля открывает одна
+      // кнопка «Редактировать», «＋ Добавить лицо» живёт внутри формы.
+      //
+      // 🔴 КЛИК ПОВТОРЯЕТСЯ, ТОЛЬКО ПОКА КНОПКА ЕЩЁ ЕСТЬ (Plane №738). Панель
+      // рисует «Редактировать» при `canEdit && !editing`, поэтому первый удачный
+      // клик её РАЗМОНТИРУЕТ. Прежний цикл кликал по ней вслепую: если форма
+      // появлялась дольше внутренних 3 с — ровно тот медленный стенд, ради
+      // которого повтор и добавлен, — следующий заход ждал исчезнувшую кнопку
+      // весь `actionTimeout` (10 с), и бюджет 30 с уходил на два-три таких
+      // ожидания. Проба падала «Редактировать not found», хотя режим правки уже
+      // был открыт: медленный УСПЕХ превращался в отказ.
+      //
+      // Поэтому: клик один раз, потом длинное ожидание формы, а повтор — только
+      // если кнопка всё ещё в DOM (значит первый клик действительно ушёл в
+      // никуда, как бывает до гидратации на свежем dev-стенде).
+      const addPerson = page.getByRole('button', { name: '＋ Добавить лицо' })
+      const editButton = page.getByRole('button', { name: 'Редактировать' })
+      await editButton.click()
+      await expect(async () => {
+        if ((await editButton.count()) > 0) {
+          await editButton.click({ timeout: 5_000 })
+        }
+        await expect(addPerson).toBeVisible({ timeout: 10_000 })
+      }).toPass({ timeout: 60_000 })
+      await addPerson.click()
+      // 🔴 ПОЛЯ СУЖЕНЫ К СВОЕМУ БЛОКУ (Plane №736). С единым режимом правки
+      // (№441) форма рисует по `fieldset` на КАЖДОЕ лицо сводки, и в каждом своя
+      // подпись «ФИО»: собранная сводка уже несёт лицо, выведенное из бюллетеня,
+      // поэтому после «＋ Добавить лицо» таких полей минимум два, и несужённый
+      // локатор бросает strict mode. У автора прошло случайно — выбранный ОМ
+      // оказался без названного лица; первый же иностранный ОМ с лицом красил
+      // пробу по причине, к проверяемому поведению отношения не имеющей.
+      //
+      // Берётся ПОСЛЕДНИЙ блок: «＋ Добавить лицо» дописывает свой в конец.
+      const personBlock = page.locator('form fieldset', { has: page.getByText(/^Лицо \d+$/) }).last()
+      // Сужение проверяется, а не подразумевается: в СВОЁМ блоке поле ровно
+      // одно, сколько бы лиц ни было в сводке. Без этой строки починка
+      // держалась бы на удаче выбранного ОМ — ровно так дефект и прожил.
+      await expect(personBlock.getByRole('textbox', { name: 'ФИО' })).toHaveCount(1)
+      await personBlock.getByRole('textbox', { name: 'ФИО' }).fill(PERSON)
+      await personBlock.getByRole('textbox', { name: 'Должность' }).fill(PROBE_ROLE)
+      await page.getByRole('button', { name: 'Сохранить' }).click()
+      // `.first()`: сводка теперь панель в КАРТОЧКЕ ОМ (Plane «Реестр ОМ-35.8»),
+      // и то же имя выводится ещё и в «Сведениях об ОМ» бюллетеня — строгий
+      // режим ловил оба вхождения.
+      await expect(page.locator('main').getByText(PERSON).first()).toBeVisible({
+        timeout: 10_000,
+      })
 
-    // Связь появилась: карточка лица ведёт на ту самую сводку и её объект
-    await page.goto(`${APP}/security-ops/persons/`)
-    const linked = page.locator('article', { hasText: PERSON })
-    await linked.getByRole('button', { name: 'Все мероприятия с ОЛ' }).click()
-    await expect(linked.getByRole('link', { name: omCode })).toBeVisible({
-      timeout: 10_000,
-    })
-    await linked.getByRole('button', { name: 'Объекты ОЛ' }).click()
-    await expect(linked.getByRole('link', { name: omCode })).toBeHidden()
-    await expect(linked.locator('li')).toHaveCount(1)
+      // Связь появилась: карточка лица ведёт на ту самую сводку и её объект
+      await page.goto(`${APP}/security-ops/persons/`)
+      const linked = page.locator('article', { hasText: PERSON })
+      await linked.getByRole('button', { name: 'Все мероприятия с ОЛ' }).click()
+      await expect(linked.getByRole('link', { name: omCode })).toBeVisible({
+        timeout: 10_000,
+      })
+      await linked.getByRole('button', { name: 'Объекты ОЛ' }).click()
+      await expect(linked.getByRole('link', { name: omCode })).toBeHidden()
+      await expect(linked.locator('li')).toHaveCount(1)
 
+    } finally {
+      // Гигиена стенда: снимаем лицо, которое сами вписали, — иначе PERSON
+      // остаётся приклеен к этому ОМ и следующий прогон стартует не с чистого
+      // состояния. Ручкой, а не окном: окна «Изменить список охраняемых лиц»
+      // с единым режимом правки (№441) больше нет.
+      await unlinkProbePersons()
+    }
+
+    // Консоль проверяется ПОСЛЕ уборки: её падение не должно оставлять след.
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
-    // Гигиена стенда: снимаем лицо, которое сами вписали, — иначе PERSON
-    // остаётся приклеен к этому ОМ и следующий прогон стартует не с чистого
-    // состояния. Ручкой, а не окном: окна «Изменить список охраняемых лиц»
-    // с единым режимом правки (№441) больше нет.
-    await unlinkProbePersons()
   })
 
   test('без catalog.view каталог закрыт', async ({ page }) => {
