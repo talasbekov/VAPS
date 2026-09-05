@@ -134,7 +134,26 @@ function syncAutoForceRequest(
 }
 
 
-const STORE_KEY = "ops-mock-security-events";
+/**
+ * Ключ стора мероприятий — С ВЕРСИЕЙ (Plane №733).
+ *
+ * 🔴 ЗАЧЕМ ВЕРСИЯ. Стор лежит в `sessionStorage` и восстанавливается
+ * ДОСЛОВНО: `events = loadPersisted() ?? buildSeed()`. Стоило форме
+ * мероприятия вырасти (например появлением `closureSummary`, №448/№728) — и
+ * вкладка, открытая ДО выката, поднимала старые события без нового поля;
+ * экран сразу шёл читать `summary.posts` у `undefined` и падал TypeError, а
+ * этап оказывался пустым. Чинилось это только ручной очисткой хранилища —
+ * то есть знанием, которого у человека нет.
+ *
+ * Версия поднимается КАЖДЫЙ РАЗ, когда меняется форма события в моке.
+ * Старый ключ при этом просто перестаёт читаться: чинить его содержимое
+ * миграцией — заводить вторую модель данных ради мок-стенда.
+ */
+const STORE_VERSION = 2;
+const STORE_KEY = `ops-mock-security-events:v${STORE_VERSION}`;
+/** Ключи прежних версий — их надо УБИРАТЬ, а не копить: `sessionStorage`
+ *  ограничен квотой, и брошенный снимок держит её до закрытия вкладки. */
+const LEGACY_STORE_KEYS = ["ops-mock-security-events"];
 
 /** Шаблон чек-листа рекогносцировки нового ОМ. */
 const RECON_CHECKLIST_TEMPLATE = [
@@ -633,6 +652,7 @@ let events: SecurityEvent[] | null = null;
 
 function loadPersisted(): SecurityEvent[] | null {
   try {
+    for (const stale of LEGACY_STORE_KEYS) sessionStorage.removeItem(stale);
     const raw = sessionStorage.getItem(STORE_KEY);
     return raw === null ? null : (JSON.parse(raw) as SecurityEvent[]);
   } catch {
