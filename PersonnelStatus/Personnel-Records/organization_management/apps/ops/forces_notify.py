@@ -114,6 +114,18 @@ def notify_headquarters_response(event, allocation, *, allocating):
     }
     notified = 0
     for user_id in _headquarters_users():
-        notify_service.notify(user_id, RESPONSE_KIND, event.business_date, payload)
+        # 🔴 СОБЫТИЕ, А НЕ СОСТОЯНИЕ ДНЯ (Plane №677). «Одно на день» —
+        # умолчание `notify`, и под ним штаб на ОМ с тремя департаментами
+        # получал ОДНО уведомление с именем ответившего первым: второй и
+        # третий ответы и все последующие правки «Выделяют» проглатывались
+        # без следа, ровно вопреки строке докстринга выше. `dedupe_key=None`
+        # снимает схлопывание для этих строк и только для них.
+        notify_service.notify(
+            user_id,
+            RESPONSE_KIND,
+            event.business_date,
+            payload,
+            dedupe_key=None,
+        )
         notified += 1
     return {"notified": notified}

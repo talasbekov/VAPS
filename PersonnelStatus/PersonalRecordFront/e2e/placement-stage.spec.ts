@@ -1494,4 +1494,94 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       }
     }
   })
+
+  // Воркер MSW блокируется ТОЛЬКО здесь: без этого `page.route` не
+  // перехватывает запрос карточки, подмена молча не применяется, и проба
+  // ищет элемент, которого нет (проверено запуском). Тот же приём и тот же
+  // довод, что в `closure-stage.spec.ts` и `approval-stage.spec.ts`.
+  test.describe('усиление сверх расчёта', () => {
+    test.use({ serviceWorkers: 'block' })
+
+    test('усиление поста сверх расчёта названо в строке и в предупреждении', async ({
+      page,
+      request,
+    }) => {
+      // Сервер требует обоснование усиления поста сверх расчёта
+      // (`needOverrideReason`) и хранит его, а показывал его НИКТО (Plane №746):
+      // грепом по фронту поле встречалось только в типах и в моке. Оператор
+      // набирал объяснение, и оно исчезало — заявленная цель правки №414
+      // («чтобы усиление осталось объяснимым в реестре») не выполнялась вовсе.
+      //
+      // Состояние подставляется перехватом: ставить второго человека на
+      // укомплектованный пост ради одной строки текста значит мутировать стенд.
+      const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+      const auth = { Authorization: `Bearer ${token}` }
+      const target = await placementEventWithRoster(request, auth, token)
+      requireFixture(target, 'мероприятие на стадии «Расстановка»')
+
+      const REASON = 'Усиление: два входа на объекте'
+      // 🔴 ПРИГОДНОСТЬ ФИКСТУРЫ ПРОВЕРЯЕТСЯ ДО ПЕРЕХВАТА. `test.skip()` внутри
+      // обработчика `page.route` БРОСАЕТ — `route.fulfill` тогда не
+      // выполняется, запрос карточки виснет, и экран навсегда остаётся на
+      // «Загрузка мероприятия…». Проба падала «элемент не найден», хотя
+      // причина была в ней самой (проверено выводом текста экрана).
+      const card = (await (
+        await request.get(`${API}/api/ops/security-events/${target!.id}/`, {
+          headers: auth,
+        })
+      ).json()) as {
+        placementAssignments: { postId: string }[]
+        reconSectorPosts: { id: string; post: string }[]
+      }
+      test.skip(
+        (card.placementAssignments ?? []).length === 0,
+        'у ОМ нет ни одного назначения',
+      )
+
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (route) => {
+          const response = await route.fetch()
+          const body = await response.json()
+          // Обоснование ставится ВСЕМ назначениям, а не первому: экран
+          // показывает посты ОДНОГО объекта посещения, и первое назначение
+          // легко оказывается на посту соседнего — тогда бейдж не рисуется
+          // вовсе, и проба падает не на своём предмете (так и вышло на первом
+          // прогоне).
+          body.placementAssignments = (body.placementAssignments ?? []).map(
+            (row: Record<string, unknown>) => ({
+              ...row,
+              needOverrideReason: REASON,
+            }),
+          )
+          await route.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+      const main = page.getByRole('main')
+      await expect(main).toBeVisible({ timeout: 15_000 })
+
+      // 🔴 БЕЙДЖ ЖИВЁТ В ПАНЕЛИ ВЫБРАННОГО ПОСТА, а по умолчанию выбран
+      // первый — а он часто пуст. Открываем ТОТ пост, на котором есть
+      // назначение: без этого проба искала строку на экране, где её и не
+      // должно быть (проверено выводом текста экрана).
+      const busyPost = card.reconSectorPosts.find((post) =>
+        card.placementAssignments.some((a) => String(a.postId) === String(post.id)),
+      )
+      test.skip(busyPost === undefined, 'ни на одном посту нет назначения')
+      await main.getByText(busyPost!.post, { exact: true }).first().click()
+
+      // Обоснование стоит В СТРОКЕ — там видно, к кому оно относится.
+      await expect(main.locator('[data-slot="need-override-reason"]')).toContainText(
+        REASON,
+        { timeout: 15_000 },
+      )
+      // И оно посчитано ОТДЕЛЬНО от обхода по рейтингу: два разных факта не
+      // сложены в одно число. Числа не пиним — оно зависит от того, сколько
+      // назначений у показанного объекта; предмет в том, что счёт есть.
+      await expect(main).toContainText('постов усилено сверх расчёта:')
+    })
+  })
 })
