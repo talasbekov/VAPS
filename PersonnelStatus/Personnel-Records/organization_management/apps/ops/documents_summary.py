@@ -336,10 +336,33 @@ def document_values(event):
     summary = summary_for_event(event, visit)
     flagged = set((visit.unspecified or []) if visit is not None else [])
 
-    def field(key, value):
-        """Пустое и помеченное «уточняется» — печатается словом (`[ГВО-06]`)."""
+    def field(path, value):
+        """Пустое и помеченное «уточняется» — печатается словом (`[ГВО-06]`).
+
+        `path` — ПУТЬ ПОЛЯ В СВОДКЕ, тот же ключ, которым флаг ставит экран и
+        которым его читает `missing_required` (Plane №687). Плоских имён вроде
+        `place` здесь быть не может: под ними флаг никто не пишет.
+        """
         text = value.strip() if isinstance(value, str) else (value or "")
-        return UNSPECIFIED if (not text and key in flagged) else text
+        return UNSPECIFIED if (not text and path in flagged) else text
+
+    def joined(path, *parts):
+        """Склейка нескольких значений ОДНОГО поля документа (Plane №688).
+
+        «Прибытие» печатается как «дата время», «Место проживания» — как
+        «отель номер»: у поля документа одна строка, а в сводке под ней два
+        ключа. Флаг у такого поля один — на ГЛАВНЫЙ ключ (дату, место): им
+        помечают «времени пока нет», а не «нет ни даты, ни времени».
+
+        🔴 ЭТИХ ТРЁХ ПОЛЕЙ ПОМОЩНИК НЕ КАСАЛСЯ ВОВСЕ (Plane №688): `field()`
+        был применён только к шести ключам раздела «Организация», а
+        `arrival_1`, `departure_1` и `accommodation_1` собирались склейкой в
+        обход него. Помеченные «уточняется» время, маршрут, рейс и место
+        проживания уходили в документ ПУСТЫМИ — читатель не отличал
+        «неизвестно» от «не заполнили», ради чего флаг и заведён.
+        """
+        text = " ".join(part for part in parts if part)
+        return UNSPECIFIED if (not text and path in flagged) else text
 
     persons = summary.get("persons") or []
     values = {}
@@ -354,20 +377,18 @@ def document_values(event):
 
     arrival = summary.get("arrival") or {}
     departure = summary.get("departure") or {}
-    values["arrival_1"] = " ".join(
-        part
-        for part in (_document_date(arrival.get("date")), arrival.get("time"))
-        if part
+    values["arrival_1"] = joined(
+        "arrival.date", _document_date(arrival.get("date")), arrival.get("time")
     )
-    values["departure_1"] = " ".join(
-        part
-        for part in (_document_date(departure.get("date")), departure.get("time"))
-        if part
+    values["departure_1"] = joined(
+        "departure.date",
+        _document_date(departure.get("date")),
+        departure.get("time"),
     )
 
     stay = summary.get("stay") or {}
-    values["accommodation_1"] = " ".join(
-        part for part in (stay.get("place"), stay.get("room")) if part
+    values["accommodation_1"] = joined(
+        "stay.place", stay.get("place"), stay.get("room")
     )
     values["security_chief_1"] = field("sbChief", summary.get("sbChief"))
     values["armament_1"] = field("weapons", summary.get("weapons"))

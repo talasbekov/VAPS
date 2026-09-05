@@ -90,3 +90,68 @@ def test_an_internal_event_has_nothing_to_approve(staff):
     resp = staff.post(f"{GVO_URL}ОМ-Т-43/approve/", {}, format="json")
     assert resp.status_code == 422, resp.content
     assert resp.json()["error_code"] == "VISIT_FOREIGN_ONLY"
+
+
+# ── Флаг «уточняется» и документ (Plane №688) ───────────────────────────────
+
+
+def test_flagged_fields_print_the_word_in_the_document(staff):
+    """Помеченное «уточняется» печатается СЛОВОМ, а не пустотой.
+
+    До правки помощник `field()` был применён только к шести ключам раздела
+    «Организация», а «Прибытие», «Убытие» и «Место проживания» собирались
+    склейкой В ОБХОД него: помеченные поля уходили в документ пустыми, и
+    читатель не отличал «неизвестно» от «не заполнили» — ровно то различие,
+    ради которого флаг и заведён.
+
+    Красная проверка — вернуть склейку без `joined()`: три значения ниже
+    станут пустыми строками.
+    """
+    from organization_management.apps.ops import documents_summary
+
+    event = make_event("ОМ-Т-51")
+    # Дата прибытия/убытия приходит из бюллетеня, поэтому её надо ОЧИСТИТЬ:
+    # проверяется печать ПУСТОГО помеченного поля, а не заполненного.
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-51/",
+        {
+            "section": "arrival",
+            "values": {
+                "arrival": {"date": "", "time": ""},
+                "departure": {"date": "", "time": ""},
+                "stay": {"place": "", "room": ""},
+            },
+            "unspecified": ["arrival.date", "departure.date", "stay.place"],
+        },
+        format="json",
+    )
+    values = documents_summary.document_values(event)
+
+    assert values["arrival_1"] == "уточняется"
+    assert values["departure_1"] == "уточняется"
+    assert values["accommodation_1"] == "уточняется"
+
+
+def test_a_filled_field_prints_its_value_even_when_flagged(staff):
+    """Флаг НЕ подменяет данные: заполненное печатается как есть.
+
+    Мутация «печатать „уточняется“ всегда, когда стоит флаг» краснит здесь:
+    человек мог пометить поле, а потом заполнить его — и документ обязан
+    показать факт, а не прежнюю пометку.
+    """
+    from organization_management.apps.ops import documents_summary
+
+    event = make_event("ОМ-Т-52")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-52/",
+        {
+            "section": "org",
+            "values": {"stay": {"place": "отель Hilton Astana", "room": "№ 1827"}},
+            "unspecified": ["stay.place"],
+        },
+        format="json",
+    )
+
+    values = documents_summary.document_values(event)
+
+    assert values["accommodation_1"] == "отель Hilton Astana № 1827"

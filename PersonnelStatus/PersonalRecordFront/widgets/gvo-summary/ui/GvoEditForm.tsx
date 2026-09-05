@@ -259,9 +259,24 @@ export function GvoEditForm({ omCode, summary, unspecified, onDone }: GvoEditFor
       <Block
         title="Охраняемые лица"
         action={
-          <Button type="button" variant="outline" size="sm" className="h-[30px]" onClick={() => addListItem("persons")}>
-            ＋ Добавить лицо
-          </Button>
+          <>
+            {/* ФЛАГ НА БЛОК, А НЕ НА ПОЛЕ (Plane №687). «Охраняемые лица» —
+                обязательное поле сводки (`REQUIRED_VISIT_FIELDS`), но правится
+                оно СПИСКОМ карточек, и своего однострочного поля, к которому
+                можно приткнуть галочку, у него нет. У FOREIGN ОМ без названного
+                лица список приходит пустым, экран говорит «Обязательные поля
+                без данных: Охраняемые лица» и обещает «пустое поле можно
+                пометить „уточняется“» — а галочки, дающей этот флаг, не было
+                нигде. */}
+            <FlagBox
+              label="Охраняемые лица"
+              checked={draft.flags.includes("persons")}
+              onChange={(on) => setFlag("persons", on)}
+            />
+            <Button type="button" variant="outline" size="sm" className="h-[30px]" onClick={() => addListItem("persons")}>
+              ＋ Добавить лицо
+            </Button>
+          </>
         }
       >
         {draft.persons.length === 0 ? (
@@ -330,13 +345,18 @@ export function GvoEditForm({ omCode, summary, unspecified, onDone }: GvoEditFor
           </Button>
         }
       >
+        {/* `noFlags` СНЯТ (Plane №687): «Ответственный» — обычное однострочное
+            поле, а не элемент списка, и он ОБЯЗАТЕЛЕН для утверждения
+            (`REQUIRED_VISIT_FIELDS`). Без галочки пометить его «уточняется»
+            было нечем, и «Утвердить» не разблокировался ничем, кроме ручного
+            PATCH по API. Ниже, у групп, `noFlags` остаётся: там ключи полей
+            повторяются на каждом элементе списка. */}
         <Fields
           fields={spec("resp").fields}
           values={draft.whole.resp}
           onChange={(key, value) => setWhole("resp", key, value)}
           flags={draft.flags}
           onFlag={setFlag}
-          noFlags
         />
         {draft.groups.length > 0 && (
           <div className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(330px,1fr))]">
@@ -379,6 +399,33 @@ export function GvoEditForm({ omCode, summary, unspecified, onDone }: GvoEditFor
         />
       </Block>
     </form>
+  );
+}
+
+/** Галочка «уточняется» для того, у чего своего поля нет: список правится
+ * карточками, а флаг у него ОДИН на весь блок (Plane №687). Подпись поля идёт
+ * в `aria-label` — рядом с галочкой стоит только слово «уточняется», и без
+ * привязки читалка объявила бы её безымянной. */
+function FlagBox({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <label className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+      <input
+        type="checkbox"
+        className="h-3.5 w-3.5"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        aria-label={`Уточняется: ${label}`}
+      />
+      уточняется
+    </label>
   );
 }
 
@@ -429,8 +476,13 @@ function Fields({
           field={field}
           value={values[field.key] ?? ""}
           onChange={(value) => onChange(field.key, value)}
-          flagged={noFlags ? null : flags.includes(field.key)}
-          onFlag={(on) => onFlag(field.key, on)}
+          // ФЛАГ ПО ПУТЮ, А НЕ ПО ИМЕНИ В ФОРМЕ (Plane №686/№687). Имя поля
+          // не единственно на весь документ: «Прибытие» и «Убытие» оба зовут
+          // своё поле `date`, и по имени галочка ставилась сразу в обоих.
+          // Сервер же читает флаги как ПУТИ в сводке — по имени он не узнавал
+          // ни одного, кроме `country`.
+          flagged={noFlags ? null : flags.includes(field.path)}
+          onFlag={(on) => onFlag(field.path, on)}
         />
       ))}
     </div>

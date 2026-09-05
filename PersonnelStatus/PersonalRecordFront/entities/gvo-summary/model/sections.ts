@@ -18,6 +18,49 @@ import type {
   GvoTransportRow,
 } from "./types";
 
+/**
+ * Обязательные поля визита (`[ГВО-07]`) — ПУТЯМИ в сводке, тем же списком, что
+ * держит сервер (`gvo.py`, `REQUIRED_VISIT_FIELDS`).
+ *
+ * 🔴 ЗАЧЕМ КОПИЯ НА КЛИЕНТЕ, если считает сервер. Живой экран берёт
+ * `missingRequired` из ответа и ничего не считает сам — копия нужна МОКУ
+ * (Plane №691): пока он не отдавал ни `missingRequired`, ни счётчиков,
+ * прогресс на мок-стенде был скрыт, «Утвердить» рисовалась включённой, а
+ * нажатие уходило в необработанный маршрут и MSW пропускал его в сеть.
+ * Правило `[ГВО-06]`/`[ГВО-07]` на моке не воспроизводилось вовсе.
+ *
+ * Список здесь и в `gvo.py` обязаны совпадать; расходятся — это дефект, а не
+ * «мок отстал».
+ */
+export const REQUIRED_VISIT_FIELDS: { path: string; label: string }[] = [
+  { path: "country", label: "Страна" },
+  { path: "persons", label: "Охраняемые лица" },
+  { path: "arrival.date", label: "Дата прибытия" },
+  { path: "departure.date", label: "Дата убытия" },
+  { path: "responsible", label: "Старший ГВО" },
+];
+
+/** Незаполненные обязательные поля — подписями, по порядку списка. */
+export function missingRequiredFields(
+  summary: GvoSummary,
+  unspecified: string[]
+): string[] {
+  const flagged = new Set(unspecified);
+  const at = (path: string): unknown =>
+    path.split(".").reduce<unknown>((node, part) => {
+      if (node === null || typeof node !== "object") return undefined;
+      return (node as Record<string, unknown>)[part];
+    }, summary as unknown);
+  return REQUIRED_VISIT_FIELDS.filter(({ path }) => {
+    if (flagged.has(path)) return false;
+    const value = at(path);
+    if (value === null || value === undefined || value === "") return true;
+    if (Array.isArray(value)) return value.length === 0;
+    if (typeof value === "object") return Object.keys(value).length === 0;
+    return false;
+  }).map(({ label }) => label);
+}
+
 export interface GvoFieldSpec {
   key: string;
   label: string;
@@ -26,6 +69,21 @@ export interface GvoFieldSpec {
   hint: string;
   multiline: boolean;
   rows: number;
+  /**
+   * ПУТЬ ПОЛЯ В СВОДКЕ — и он же единственный ключ флага «уточняется»
+   * (Plane №686/№687/№688).
+   *
+   * 🔴 ЗАЧЕМ ОТДЕЛЬНО ОТ `key`. `key` — имя поля В ФОРМЕ раздела, и он не
+   * единственный на весь документ: «Прибытие» и «Убытие» оба зовут своё поле
+   * `date`, а «Место проживания» в форме зовётся `place`, тогда как в сводке
+   * лежит по `stay.place`. Флаги же хранятся ОДНИМ списком у визита
+   * (`visit.unspecified`) и читаются сервером как ПУТИ (`gvo.py`,
+   * `REQUIRED_VISIT_FIELDS`) и документом (`documents_summary.py`). Пока
+   * флаг писался голым `key`, «уточняется» у даты прибытия ставилось заодно
+   * и у убытия (ключ один), а сервер не узнавал ни одного флага, кроме
+   * `country`, — «Утвердить» не разблокировался ничем, кроме ручного PATCH.
+   */
+  path: string;
 }
 
 export interface GvoSectionSpec {
@@ -35,17 +93,23 @@ export interface GvoSectionSpec {
 
 export type GvoSectionForm = Record<string, string>;
 
-function text(key: string, label: string, placeholder = ""): GvoFieldSpec {
-  return { key, label, placeholder, hint: "", multiline: false, rows: 1 };
+function text(
+  key: string,
+  label: string,
+  placeholder = "",
+  path = key
+): GvoFieldSpec {
+  return { key, label, placeholder, hint: "", multiline: false, rows: 1, path };
 }
 
 function area(
   key: string,
   label: string,
   hint: string,
-  rows: number
+  rows: number,
+  path = key
 ): GvoFieldSpec {
-  return { key, label, placeholder: "", hint, multiline: true, rows };
+  return { key, label, placeholder: "", hint, multiline: true, rows, path };
 }
 
 export function isPersonSection(section: GvoSection): boolean {
@@ -80,30 +144,30 @@ const WHOLE_SECTION_SPECS: Record<string, GvoSectionSpec> = {
   arrival: {
     title: "Прибытие / тип борта",
     fields: [
-      text("date", "Дата", "18.06.2026"),
-      text("time", "Время", "19:55 ч."),
-      text("route", "Маршрут", "гг. Подгорица — Астана"),
-      text("flight", "Рейс", "а/к «Air Astana» KC 638"),
-      text("dur", "Время в полёте", "время в полёте 5:40 часа"),
-      area("meet", "Встречают", "Один человек — одна строка", 6),
+      text("date", "Дата", "18.06.2026", "arrival.date"),
+      text("time", "Время", "19:55 ч.", "arrival.time"),
+      text("route", "Маршрут", "гг. Подгорица — Астана", "arrival.route"),
+      text("flight", "Рейс", "а/к «Air Astana» KC 638", "arrival.flight"),
+      text("dur", "Время в полёте", "время в полёте 5:40 часа", "arrival.dur"),
+      area("meet", "Встречают", "Один человек — одна строка", 6, "meet"),
     ],
   },
   departure: {
     title: "Убытие / тип борта",
     fields: [
-      text("date", "Дата", "21.06.2026"),
-      text("time", "Время", "06:00 ч."),
-      text("route", "Маршрут", "гг. Астана — Подгорица"),
-      text("flight", "Рейс", "а/к «Air Astana» KC 637"),
-      text("dur", "Время в полёте", "время в полёте 6:30 часа"),
-      area("farewell", "Провожают", "Один человек — одна строка", 6),
+      text("date", "Дата", "21.06.2026", "departure.date"),
+      text("time", "Время", "06:00 ч.", "departure.time"),
+      text("route", "Маршрут", "гг. Астана — Подгорица", "departure.route"),
+      text("flight", "Рейс", "а/к «Air Astana» KC 637", "departure.flight"),
+      text("dur", "Время в полёте", "время в полёте 6:30 часа", "departure.dur"),
+      area("farewell", "Провожают", "Один человек — одна строка", 6, "farewell"),
     ],
   },
   org: {
     title: "Организация",
     fields: [
-      text("place", "Место проживания", "отель Hilton Astana, объект «Мейрам»"),
-      text("room", "Номер проживания", "№ 1827"),
+      text("place", "Место проживания", "отель Hilton Astana, объект «Мейрам»", "stay.place"),
+      text("room", "Номер проживания", "№ 1827", "stay.room"),
       text("sbChief", "Руководитель СБ"),
       text("weapons", "Вооружение"),
       text("obVariant", "Вариант ОБ", "трасса № 2, объекты № 1"),
@@ -115,7 +179,7 @@ const WHOLE_SECTION_SPECS: Record<string, GvoSectionSpec> = {
   groups: {
     title: "Состав ГВО СГО РК",
     fields: [
-      text("resp", "Ответственный", "Шитов | 2-9 | ответственный"),
+      text("resp", "Ответственный", "Шитов | 2-9 | ответственный", "responsible"),
       area(
         "groups",
         "Группы ГВО",
@@ -126,7 +190,7 @@ const WHOLE_SECTION_SPECS: Record<string, GvoSectionSpec> = {
   },
   resp: {
     title: "Ответственный за ГВО",
-    fields: [text("resp", "Ответственный", "Шитов | 2-9 | ответственный")],
+    fields: [text("resp", "Ответственный", "Шитов | 2-9 | ответственный", "responsible")],
   },
   transport: {
     title: "Выделяемый транспорт",
