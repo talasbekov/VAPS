@@ -59,6 +59,15 @@ def _readable(path):
     return "/" + cleaned.lstrip("/")
 
 
+def _as_codes(value):
+    """Значение карты обходов — код или их список; наружу всегда список."""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    return tuple(value)
+
+
 def _inline_codes(view_class):
     """{действие: код права} — из построчных проверок в теле методов.
 
@@ -134,12 +143,14 @@ def _rows():
             continue
         permission_map = getattr(view_class, "permission_map", None) or {}
         inline_map = _inline_codes(view_class)
+        # Права, которые действие не закрывают, а открывают шире (Plane №602).
+        bypass_map = getattr(view_class, "permission_bypass_map", None) or {}
         # Пусто И там, и там — вьюха не гейтится вовсе, показывать нечего.
         # Раньше здесь стоял выход по пустой КАРТЕ, и вьюсеты, закрытые только
         # построчными вызовами, отсекались до разбора: весь админ-API раздела
         # доступа не попадал в каталог, хотя закрыт правом `admin.roles`
         # (Plane №108).
-        if not permission_map and not inline_map:
+        if not permission_map and not inline_map and not bypass_map:
             continue
         # DRF кладёт карту «метод → действие» атрибутом `actions` на саму
         # view-функцию (не в `initkwargs` роутера — там только suffix и
@@ -164,6 +175,29 @@ def _rows():
             # права, хотя это тот же самый вход (поймано на экране «Права»).
             if method.lower() in ("head", "options"):
                 continue
+            # 🔴 ПРАВО-ОБХОД ПОКАЗЫВАЕТСЯ ОТДЕЛЬНОЙ СТРОКОЙ (Plane №602).
+            # Бывает право, которое действие не ЗАКРЫВАЕТ, а ОТКРЫВАЕТ шире:
+            # `placement.command` не гейтит расстановку (её гейтит
+            # `placement.manage`), он снимает проверку «своё ли мероприятие».
+            # Проверяется он членством в наборе прав, а не вызовом-гвардом,
+            # поэтому ни карта, ни разбор построчных гвардов его не видели — и
+            # экран «Права» говорил администратору, что право не стоит НИ НА
+            # ОДНОЙ ручке. Ровно тот регресс, ради которого написана проба
+            # `test_catalog_sees_routes_closed_by_an_inline_check`, только с
+            # другой стороны: там гейт был не в карте, здесь — не гейт вовсе.
+            #
+            # Объявляется вьюсетом явно (`permission_bypass_map`), а не
+            # выводится разбором: «право снимает проверку» — решение автора
+            # вьюхи, и угадывать его по коду значило бы завести второй, неявный
+            # источник правды о правах.
+            for extra in _as_codes(bypass_map.get(action)):
+                yield {
+                    "permission": extra,
+                    "method": method.upper(),
+                    "path": _readable(path),
+                    "action": action,
+                    "view": view_class.__name__,
+                }
             code = permission_map.get(action)
             if code is None:
                 # Карта молчит — смотрим построчный гейт в теле метода

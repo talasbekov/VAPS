@@ -265,3 +265,40 @@ def test_decline_records_who_wrote_it(manager):  # noqa: F811
     # Автор доезжает и до читателя карточки, а не только до журнала.
     mine = linked_client("emp-decline-author", me).get(MINE).json()["results"][0]
     assert mine["declinedBy"] != ""
+
+
+def test_dismissed_employee_stops_reading_his_own_assignments(manager):  # noqa: F811
+    """Уволенный не читает даже СВОИ назначения (Plane №596).
+
+    🔴 ЧТО СТЕРЕЖЁТСЯ. Учётка живёт дольше кадровой записи. В ветке «сам себе»
+    проверки `is_active` не было, а начальники прикрыты ею через
+    `_find_personnel` (он фильтрует активных) — то есть правило держалось для
+    чужих и не держалось для своих. Уволенный продолжал видеть задачу поста,
+    требования, форму одежды и вооружение: сведения о наряде, к которому он
+    больше не имеет отношения.
+
+    ПУТЕЙ ДВА, и проверок тоже две: без параметра право отдаётся раньше
+    `may_read`, поэтому гард стоит и во вьюхе; с параметром `?employee=` —
+    в `may_read`. Проба идёт обоими.
+
+    Ответ 200 с причиной, а не 403: учётка законная и экран законный, отказ
+    по праву читался бы как поломка доступа.
+    """
+    me = make_employee("Уволенный", "У")
+    base, _assignment = placed(manager, me)
+    api = linked_client("emp-dismissed", me)
+    assert len(api.get(MINE).json()["results"]) == 1, "до увольнения назначение видно"
+
+    me.is_active = False
+    me.save(update_fields=["is_active"])
+
+    own = api.get(MINE)
+    assert own.status_code == 200, own.data
+    body = own.json()
+    assert body["results"] == [], "уволенный видит свои назначения"
+    assert "уволен" in (body["unlinkedReason"] or "").lower(), body
+    # Причина СВОЯ, а не общая с «нет кадровой привязки»: это разные положения.
+    assert "не связана" not in (body["unlinkedReason"] or "")
+
+    # Второй путь — по параметру: тот же отказ, но уже правом.
+    assert api.get(f"{MINE}?employee={me.pk}").status_code == 403

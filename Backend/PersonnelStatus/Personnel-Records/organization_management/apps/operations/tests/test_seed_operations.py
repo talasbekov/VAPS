@@ -290,7 +290,12 @@ def test_the_second_department_employee_reads_everything_and_writes_a_bulletin(s
     # прав вернуло бы их с другой стороны.
     assert not codes & {
         "event.manage", "event.delete", "event.stage_override", "gvo.manage",
-        "placement.manage", "assignment.approve", "assignment.return",
+        # `placement.command` рядом с `placement.manage` (Plane №603): пин был
+        # поимённым, а более СИЛЬНОЕ право (расстановка на любом объекте, а не
+        # только на своём) в перечне отсутствовало. Выдача его этой персоне
+        # оставила бы весь набор зелёным — сторож на месте, но стережёт не то.
+        "placement.manage", "placement.command",
+        "assignment.approve", "assignment.return",
         "status.manage", "object.manage", "orgstructure.manage",
         "forces.command", "forces.allocate", "forces.select",
     }
