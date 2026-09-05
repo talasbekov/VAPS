@@ -321,6 +321,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "force_allocation": _MANAGE_EVENT_PERMISSION,
         "placement_assign": _PLACEMENT_PERMISSION,
         "placement_unassign": _PLACEMENT_PERMISSION,
+        # Перенос (Plane №762) — то же право, что у пары «снять + назначить»,
+        # которой он заменяет: новая ручка не должна открывать действие тому,
+        # кому оно было закрыто.
+        "placement_move": _PLACEMENT_PERMISSION,
         # Снятие ЛИШНЕГО поста при недоборе — работа расстановки, а не правка
         # расчёта: её делают те же, кто расставляет людей (Plane №259).
         "placement_post_remove": _PLACEMENT_PERMISSION,
@@ -1330,7 +1334,15 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # ── Исключение гейта: замещающий правит расстановку своего объекта ──
 
     _DEPUTY_ACTIONS = frozenset(
-        {"placement_assign", "placement_unassign", "placement_post_remove"}
+        {
+            "placement_assign",
+            "placement_unassign",
+            "placement_post_remove",
+            # Перенос (Plane №762) — то же действие, что «снять и назначить»,
+            # которым замещающий пользовался до сих пор; закрыть его для него
+            # значило бы отнять уже разрешённое, оформив это как починку.
+            "placement_move",
+        }
     )
 
     # ── Исключение гейта: старший объекта ведёт согласование своего объекта ──
@@ -1374,11 +1386,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
         if event is None:
             return False
-        post = self._deputy_target_post(event)
-        if post is None:
+        # 🔴 У ПЕРЕНОСА ДВА АДРЕСАТА (Plane №762): пост-исток и пост-приёмник,
+        # и они могут принадлежать РАЗНЫМ объектам посещения. Замещающий
+        # привязан к объекту, поэтому право спрашивается по каждому: иначе
+        # замещающий одного объекта уводил бы людей на чужой — одним запросом
+        # то, чего двумя ему не давали (снятие проверялось по посту-истоку,
+        # назначение — по посту-приёмнику).
+        targets = (
+            self._deputy_move_posts(event)
+            if self.action == "placement_move"
+            else [self._deputy_target_post(event)]
+        )
+        if not targets or any(post is None for post in targets):
             return False
-        allowed = event_service.deputy_can_edit_placement(
-            event, employee.pk, post
+        allowed = all(
+            event_service.deputy_can_edit_placement(event, employee.pk, post)
+            for post in targets
         )
         self._acting_as_deputy = allowed
         self._deputy_employee = employee if allowed else None
@@ -1555,6 +1578,28 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return None
         return posts.get(str(assignment.get("postId")))
 
+    def _deputy_move_posts(self, event):
+        """Пост-исток и пост-приёмник переноса (Plane №762).
+
+        Исток восстанавливается по назначению из пути, приёмник приходит
+        телом — ровно те два поста, которые до №762 проверялись двумя
+        отдельными запросами.
+        """
+        posts = {str(p.get("id")): p for p in (event.recon_sector_posts or [])}
+        assignment = next(
+            (
+                a
+                for a in (event.placement_assignments or [])
+                if str(a.get("id")) == str(self.kwargs.get("assignment_id"))
+            ),
+            None,
+        )
+        source = None if assignment is None else posts.get(
+            str(assignment.get("postId"))
+        )
+        target = posts.get(str((self.request.data or {}).get("postId")))
+        return [source, target]
+
     @action(detail=True, methods=["post"], url_path="placement/assign")
     def placement_assign(self, request, pk=None):
         data = request.data or {}
@@ -1609,6 +1654,34 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.unassign_placement(
                 pk, assignment_id, deputy=self._deputy_actor()
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"placement/(?P<assignment_id>[^/]+)/move",
+    )
+    def placement_move(self, request, pk=None, assignment_id=None):
+        """Перенести человека на другой пост ОДНОЙ операцией (Plane №762).
+
+        До этого перенос выражался двумя запросами — снять и назначить, — и
+        между ними человек не был назначен никуда. Клиентский возврат (№744)
+        закрывал только отказ сервера: обрыв связи или закрытую вкладку
+        восстанавливать некому.
+        """
+        data = request.data or {}
+        self._require_placement_lead(pk)
+        return self._event_response(
+            event_service.move_placement(
+                pk,
+                assignment_id,
+                post_id=data.get("postId"),
+                override=data.get("override"),
+                override_reason=data.get("override_reason"),
+                role_code=data.get("roleCode"),
+                section_code=data.get("sectionCode"),
+                deputy=self._deputy_actor(),
             )
         )
 

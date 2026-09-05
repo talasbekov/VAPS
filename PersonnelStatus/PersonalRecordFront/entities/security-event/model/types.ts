@@ -962,6 +962,27 @@ export interface AssignPlacementRequest extends Record<string, unknown> {
 }
 
 /**
+ * Перенос человека на другой пост ОДНОЙ операцией (Plane №762).
+ *
+ * До этой ручки перенос выражался парой «снять + назначить», и между двумя
+ * запросами сотрудник не был назначен никуда. Возврат при отказе делал клиент
+ * (Plane №744) — и не мог сделать ничего, если вкладку закрыли или связь
+ * оборвалась ровно в этот миг.
+ *
+ * Тело адресует НАЗНАЧЕНИЕ (оно в пути) и пост-приёмник; роль и секция
+ * необязательны и работают так же, как у назначения. `postId`, равный
+ * текущему посту, — законный случай: смена роли или секции на своём посту это
+ * тот же перенос (Plane №239, №242), и «усилением» он не считается.
+ */
+export interface MovePlacementRequest extends Record<string, unknown> {
+  postId: string;
+  roleCode?: string;
+  sectionCode?: string;
+  override?: boolean;
+  override_reason?: string;
+}
+
+/**
  * Завершение расстановки (`[РАС-06]`, Plane №396). Полная укомплектованность —
  * пустое тело; недобор — `override`/`override_reason` протоколом мягкого
  * конфликта (тем же, что у обхода предупреждения по рейтингу при назначении).
@@ -1072,6 +1093,15 @@ export function opsPersonnelPagePath(params: {
 }
 
 /** Старший сектора: назначить или снять (Plane №65, «Р-4»). */
+/** Перенос назначения на другой пост (Plane №762) — одна транзакция сервера
+ * вместо пары «снять + назначить». */
+export function securityEventPlacementMovePath(
+  id: string,
+  assignmentId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/${encodeURIComponent(assignmentId)}/move/`;
+}
+
 export function securityEventPlacementSeniorPath(
   id: string,
   assignmentId: string

@@ -57,6 +57,7 @@ import {
 } from "@/features/forces-split/ui/chain-access";
 import {
   useAssignPlacement,
+  useMovePlacement,
   useCompletePlacement,
   usePersonnelPage,
   useRemovePlacementPost,
@@ -119,34 +120,28 @@ type DragPayload = {
   roleCode?: string | null;
   sectionCode?: string | null;
 };
-/** Перенос, застрявший на вопросе «почему усиление» (Plane №744): человек уже
- * снят с прежнего поста, а на `toPostId` его ещё не пустили.
+/**
+ * Перенос, ожидающий обоснования (Plane №762).
  *
- * 🔴 ЦЕЛЬ И ИСТОК ОПИСАНЫ ПОРОЗНЬ (Plane №703). У перетаскивания роль и секция
- * едут неизменными, и разница незаметна. Но окно «Роль и секция…» меняет их
- * ЗАОДНО со сменой поста — и возврат, собранный из целевых значений, поставил
- * бы человека на прежний пост с НОВОЙ ролью: половина отклонённой правки
- * применилась бы молча, вместо того чтобы не примениться вовсе. `origin`
- * помнит, как он стоял ДО правки, и возврат идёт по нему. */
+ * 🔴 ЗДЕСЬ БЫЛ `origin` — «откуда сняли и как он там стоял», — и он был нужен
+ * ради ВОЗВРАТА: перенос выражался парой «снять + назначить», между которыми
+ * человек не стоял нигде, и клиент возвращал его сам, если назначение не
+ * состоялось (Plane №744, №703). Возвращать больше нечего: сервер переносит
+ * одной транзакцией, и отказ не меняет НИЧЕГО. Вместе с `origin` ушли
+ * `restoreMove` и его обоснование `RESTORE_REASON` — они стали вторым ответом
+ * на вопрос, у которого теперь есть первый.
+ *
+ * Тип остался, потому что окно обоснования по-прежнему спрашивает «почему
+ * усиление»: сервер отвечает 409 `OVER_NEED` и на перенос тоже.
+ */
 type PendingMove = {
-  employeeId: string;
   assignmentId: string;
   /** Куда ведём и с чем — то, что человек попросил. */
   toPostId: string;
   roleCode?: string;
   sectionCode?: string;
-  /** Откуда сняли и как он там стоял — этим и возвращаем. */
-  origin: { postId: string; roleCode?: string; sectionCode?: string };
 };
 const DRAG_MIME = "application/x-placement";
-
-/** Обоснование, с которым уходит ВОЗВРАТ на прежний пост после несостоявшегося
- * переноса (Plane №744). Своё, а не пустое: сервер требует обоснование на
- * усиление сверх расчёта, и без него возврат получил бы тот же 409 — второе
- * окно обоснования поверх первого. Текст попадает в `needOverrideReason`
- * назначения и в журнал: читающий должен понять, что усиление никто не решал,
- * система вернула как было. */
-const RESTORE_REASON = "Возврат на прежний пост: перенос не состоялся";
 
 /**
  * Довести до конца действие, запущенное из обработчика разметки (Plane №745).
@@ -294,6 +289,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const access = useChainAccess();
   const assign = useAssignPlacement(event.id);
   const unassign = useUnassignPlacement(event.id);
+  // Перенос — ОДНА операция сервера (Plane №762), а не пара «снять + назначить».
+  const move = useMovePlacement(event.id);
   const complete = useCompletePlacement(event.id);
   // Снятие ЛИШНЕГО поста при недоборе (Plane №259). Заказчик: «если на этапе
   // расстановки к посту привязан человек то нельзя удалять пост, а если он
@@ -694,7 +691,6 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   /** Перенос, чьё назначение ждёт ответа в окне обоснования (Plane №744).
    * Человек уже снят с `fromPostId` — здесь лежит всё, чем его вернуть, И
    * куда его вести, если обоснование дадут. */
-  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
 
   function payloadOfAssignment(assignment: PlacementAssignment): DragPayload {
     return {
@@ -753,130 +749,43 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
       return;
     }
     await movePerson({
-      employeeId: payload.employeeId,
       assignmentId,
       toPostId: postId,
-      // Перетаскивание роль и секцию не меняет — цель и исток совпадают.
+      // Перетаскивание роль и секцию не меняет — они едут неизменными.
       ...(payload.roleCode ? { roleCode: payload.roleCode } : {}),
       ...(payload.sectionCode ? { sectionCode: payload.sectionCode } : {}),
-      origin: {
-        postId: fromPostId,
-        ...(payload.roleCode ? { roleCode: payload.roleCode } : {}),
-        ...(payload.sectionCode ? { sectionCode: payload.sectionCode } : {}),
-      },
     });
   }
 
   /**
-   * ПЕРЕНОС ОБРАТИМ (Plane №744). Снять и назначить заново — два запроса, и
-   * между ними человек не стоит нигде. Пока второй запрос отвечал отказом
-   * только на `RATING_DATA_MISSING` (а `post.minRating` не ставят ни сид, ни
-   * мок), эта щель спала. С `OVER_NEED` (Plane №414) она стала будничной:
-   * сервер спрашивает обоснование на ЛЮБОМ укомплектованном посту, то есть в
-   * нормальном его состоянии, — а «Отмена» в окне обоснования оставляла
-   * человека снятым с исходного поста и не назначенным никуда, МОЛЧА.
+   * ПЕРЕНОС — ОДИН ЗАПРОС (Plane №762).
    *
-   * 🔴 «НАЗНАЧИТЬ ПЕРВЫМ» НЕВОЗМОЖНО, и это проверено в коде сервера:
-   * `DOUBLE_ASSIGNMENT` (422) — жёсткое правило «сотрудник не может занимать
-   * два поста одного ОМ». Поэтому починка — не перестановка запросов, а
-   * ВОЗВРАТ: исходное место запоминается до снятия и восстанавливается, если
-   * назначение не состоялось.
+   * 🔴 ЗДЕСЬ БЫЛА ПАРА «снять + назначить» и весь механизм возврата вокруг
+   * неё. Между двумя запросами человек не был назначен никуда; №744 научила
+   * клиент возвращать его на прежний пост, если назначение не состоялось, —
+   * но возврат делал КЛИЕНТ, и щель оставалась открытой на закрытую вкладку,
+   * перезагрузку и обрыв связи. Восстанавливать в этих случаях некому, а
+   * заметить потерю можно было только по несходящемуся числу «назначено» в
+   * реестре — на этапе, после которого расстановку подписывают и печатают.
    *
-   * Возврат идёт с `override`: пост, с которого человека только что сняли,
-   * мог быть усилен сверх расчёта и до переноса — тогда обычный возврат
-   * получил бы тот же 409 и открыл бы второе окно обоснования поверх первого.
-   * Обосновывать возврат человеку нечего: он ничего не решал, он отменил.
+   * Сервер переносит одной транзакцией, поэтому отказ не меняет ничего:
+   * возвращать нечего, и `restoreMove` снят вместе с `origin` в `PendingMove`.
+   *
+   * Обоснование усиления никуда не делось: сервер отвечает 409 `OVER_NEED` и
+   * на перенос. Повтор с обоснованием делает `move.confirmOverride` — он
+   * повторяет ТО ЖЕ тело, и для переноса это ровно то, что нужно: тело
+   * самодостаточно (назначение в пути, пост и роль с секцией в теле), в
+   * отличие от прежней пары, где повторять пришлось бы только вторую половину.
    */
-  async function movePerson(move: PendingMove, reason?: string): Promise<void> {
-    // Снятие идёт один раз: при подтверждении обоснования человек УЖЕ снят, и
-    // второе снятие удалило бы чужую строку.
-    if (reason === undefined) {
-      await unassign.mutateAsync({ assignmentId: move.assignmentId });
-    }
-    try {
-      await assign.mutateAsync({
-        postId: move.toPostId,
-        employeeId: move.employeeId,
-        ...(move.roleCode ? { roleCode: move.roleCode } : {}),
-        ...(move.sectionCode ? { sectionCode: move.sectionCode } : {}),
-        ...(reason === undefined
-          ? {}
-          : { override: true, override_reason: reason }),
-      });
-      setPendingMove(null);
-    } catch (error) {
-      // Обходимый конфликт — окно обоснования ОТКРЫТО, и решение ещё не
-      // принято: «Обосновать» доведёт перенос, «Отмена» вернёт на место.
-      // Возвращать здесь значило бы отменить за человека прежде, чем он
-      // ответил, — и подтверждение поставило бы его на ДВА поста.
-      if (error instanceof OpsConflictError && error.overridable) {
-        setPendingMove(move);
-        return;
-      }
-      setPendingMove(null);
-      await restoreMove(move);
-    }
+  async function movePerson(pending: PendingMove): Promise<void> {
+    await move.mutateAsync({
+      assignmentId: pending.assignmentId,
+      postId: pending.toPostId,
+      ...(pending.roleCode ? { roleCode: pending.roleCode } : {}),
+      ...(pending.sectionCode ? { sectionCode: pending.sectionCode } : {}),
+    });
   }
 
-  /**
-   * «Обосновать» в окне: доводим ИМЕННО ЭТОТ перенос и ждём ответа.
-   *
-   * 🔴 НЕ `assign.confirmOverride` (Plane №744). Тот повторяет тело обычным
-   * `mutate`, ответа не ждёт и о переносе не знает — а значит не может ни
-   * очистить `pendingMove` при удаче, ни вернуть человека при новой неудаче.
-   * Забытый `pendingMove` хуже исходного дефекта: следующая «Отмена» на
-   * ЧУЖОМ конфликте вернула бы на пост человека, который и так на месте.
-   * Обычное назначение из пула переносом не является — там `confirmOverride`
-   * и остаётся.
-   */
-  function confirmAssignConflict(reason: string): void {
-    const move = pendingMove;
-    if (move === null) {
-      assign.confirmOverride(reason);
-      return;
-    }
-    setPendingMove(null);
-    runPlacementAction(movePerson(move, reason));
-  }
-
-  /** Вернуть человека на пост, с которого его сняли ради несостоявшегося
-   * переноса. Молчать здесь нельзя в обе стороны: удавшийся возврат человек
-   * обязан прочитать как «ничего не произошло», а неудавшийся — как беду,
-   * потому что тогда сотрудник действительно нигде не стоит. */
-  async function restoreMove(move: PendingMove): Promise<void> {
-    try {
-      await assign.mutateAsync({
-        // ИСТОК, а не цель: роль и секция берутся те, с которыми человек стоял
-        // ДО правки (Plane №703) — иначе отклонённая смена роли применилась бы
-        // наполовину.
-        postId: move.origin.postId,
-        employeeId: move.employeeId,
-        ...(move.origin.roleCode ? { roleCode: move.origin.roleCode } : {}),
-        ...(move.origin.sectionCode
-          ? { sectionCode: move.origin.sectionCode }
-          : {}),
-        override: true,
-        override_reason: RESTORE_REASON,
-      });
-      toast({ description: "Перенос не состоялся — человек остался на прежнем посту." });
-    } catch {
-      toast({
-        variant: "destructive",
-        description:
-          "Перенос не состоялся, и вернуть человека на прежний пост не удалось: " +
-          "он сейчас не назначен никуда. Назначьте его заново.",
-      });
-    }
-  }
-
-  /** «Отмена» в окне обоснования: снимаем окно И возвращаем человека. */
-  function cancelAssignConflict(): void {
-    assign.dismissConflict();
-    const move = pendingMove;
-    if (move === null) return;
-    setPendingMove(null);
-    runPlacementAction(restoreMove(move));
-  }
   async function saveEdit(next: {
     roleCode: string;
     sectionCode: string;
@@ -888,22 +797,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
       next.sectionCode !== (editing.sectionCode ?? "") ||
       next.postId !== editing.postId;
     if (changed) {
-      // Тот же перенос и та же щель, что у перетаскивания (Plane №744): окно
-      // правки умеет менять ПОСТ, и отказ на новом посту оставлял бы человека
-      // снятым с прежнего. Здесь же и разница (Plane №703): роль с секцией
-      // меняются ЗАОДНО, поэтому исток описан отдельно от цели — возврат
-      // обязан вернуть человека таким, каким он был ДО правки.
+      // Тот же перенос, что у перетаскивания, и с №762 — та же одна операция.
+      // Окно правки меняет пост, роль и секцию ЗАОДНО, и раньше это требовало
+      // описывать исток отдельно от цели (Plane №703): возврат обязан был
+      // вернуть человека таким, каким он был ДО правки, иначе половина
+      // отклонённой правки применялась бы молча. Возврата больше нет —
+      // отклонённая правка не применяется вовсе, целиком, на сервере.
+      //
+      // ПОСТ, РАВНЫЙ ТЕКУЩЕМУ, — законный случай: смена одной роли или секции
+      // это тот же перенос, и сервер не считает его усилением, потому что
+      // исключает переносимого из счёта поста-приёмника.
       await movePerson({
-        employeeId: editing.employeeId,
         assignmentId: editing.id,
         toPostId: next.postId,
         ...(next.roleCode === "" ? {} : { roleCode: next.roleCode }),
         ...(next.sectionCode === "" ? {} : { sectionCode: next.sectionCode }),
-        origin: {
-          postId: editing.postId,
-          ...(editing.roleCode ? { roleCode: editing.roleCode } : {}),
-          ...(editing.sectionCode ? { sectionCode: editing.sectionCode } : {}),
-        },
       });
     }
     setEditing(null);
@@ -1856,6 +1764,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
 
         <StageError error={assign.error} />
         <StageError error={unassign.error} />
+        <StageError error={move.error} />
         <StageError error={updateRecon.error} />
         <StageError error={setSenior.error} />
         <StageError error={complete.error} />
@@ -1906,7 +1815,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           posts={posts}
           roles={placementRoles.data ?? []}
           sections={placementSections.data ?? []}
-          pending={assign.isPending || unassign.isPending}
+          pending={assign.isPending || unassign.isPending || move.isPending}
           onClose={() => setEditing(null)}
           onSave={(next) => runPlacementAction(saveEdit(next))}
         />
@@ -1923,8 +1832,18 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
 
         <ConflictDialog
           conflict={assign.conflict}
-          onOverride={confirmAssignConflict}
-          onCancel={cancelAssignConflict}
+          onOverride={(reason) => assign.confirmOverride(reason)}
+          onCancel={() => assign.dismissConflict()}
+        />
+        {/* Перенос спрашивает обоснование СВОИМ окном (Plane №762): у него своя
+            ручка и своё тело, и повтор с обоснованием — обычный
+            `confirmOverride`. Прежде окно было одно на обе операции, и его
+            «Обосновать» приходилось учить отличать перенос от назначения из
+            пула, а «Отмена» — возвращать человека на прежний пост. */}
+        <ConflictDialog
+          conflict={move.conflict}
+          onOverride={(reason) => move.confirmOverride(reason)}
+          onCancel={() => move.dismissConflict()}
         />
         <ConflictDialog
           conflict={complete.conflict}

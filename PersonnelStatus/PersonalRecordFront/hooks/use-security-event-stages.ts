@@ -40,6 +40,7 @@ import {
   securityEventForcesWithdrawPath,
   securityEventJournalPath,
   securityEventPlacementAssignPath,
+  securityEventPlacementMovePath,
   securityEventPlacementCompletePath,
   securityEventPlacementPostPath,
   securityEventPlacementSeniorPath,
@@ -59,6 +60,7 @@ import type {
   CompleteAcknowledgementRequest,
   AddJournalEntryRequest,
   AssignPlacementRequest,
+  MovePlacementRequest,
   CloseSecurityEventRequest,
   PersonnelPageResponse,
   OverrideStageRequest,
@@ -335,6 +337,25 @@ export function useUnassignPlacement(id: string) {
     opsApiClient.del<SecurityEvent>(
       securityEventPlacementUnassignPath(id, assignmentId)
     )
+  );
+}
+
+/**
+ * Перенести человека на другой пост ОДНИМ запросом (Plane №762).
+ *
+ * Заменяет пару «снять + назначить», между которыми сотрудник не был назначен
+ * никуда. Отказ теперь не меняет на сервере ничего — отменять нечего, и
+ * клиентский возврат из №744 вместе с этим снят: он стал бы вторым ответом на
+ * тот же вопрос.
+ */
+export function useMovePlacement(id: string) {
+  return useEventMutation<MovePlacementRequest & { assignmentId: string }>(
+    id,
+    ({ assignmentId, ...body }) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventPlacementMovePath(id, assignmentId),
+        body
+      )
   );
 }
 
