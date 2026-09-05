@@ -482,6 +482,28 @@ export interface ClosureSummary {
   incidents: number;
 }
 
+/**
+ * Сводка закрытия ОБЪЕКТА посещения (Plane №726).
+ *
+ * Отличается от `ClosureSummary` мероприятия ровно одним: числа по постам
+ * могут быть `null`. Это не «ноль» и не «нет данных с сервера» — это
+ * «расчёт постов не размечен по объектам», то самое «неизвестно», которое
+ * уже отдаёт `placementNeed` у той же строки (решение №409, «None честнее
+ * числа»). До этой правки сервер присылал здесь нули, и архив печатал
+ * «постов 0 · назначено 0 из 0» рядом с `placementNeed: null` у ТОГО ЖЕ
+ * объекта — два разных ответа на один вопрос.
+ *
+ * Замены и инциденты считаются по мероприятию и известны всегда.
+ */
+export interface VisitClosureSummary {
+  posts: number | null;
+  need: number | null;
+  assigned: number | null;
+  declines: number | null;
+  replacements: number;
+  incidents: number;
+}
+
 export interface ClosureDirectionSummary {
   direction: string;
   summary: string;
@@ -552,8 +574,10 @@ export interface VisitObject {
   closedAt: string | null;
   /** Итоговый комментарий по объекту при закрытии (`[ЗАК-04]`, Plane №404). */
   closingComment: string;
-  /** `[ЗАК-01]`: постов · назначено · замен · отказов · инцидентов. */
-  closureSummary: ClosureSummary;
+  /** `[ЗАК-01]`: постов · назначено · замен · отказов · инцидентов.
+   * Числа по постам могут быть `null` — «расчёт не размечен по объектам»
+   * (Plane №726), то же «неизвестно», что и у `placementNeed` выше. */
+  closureSummary: VisitClosureSummary;
   /** Статус объекта словами (`[РЕЕ-08]`/`[РЕК-08]`, Plane №423) — считает сервер. */
   statusLabel: string;
   /**
