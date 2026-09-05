@@ -5753,6 +5753,43 @@ def _signature_of(visit, target, *, actor, ip, at):
     }
 
 
+def _require_own_posts(event, visit, rows):
+    """Замечание привязывается только к посту СВОЕГО объекта (Plane №506).
+
+    🔴 ПРОВЕРКА НА СЕРВЕРЕ, А НЕ ТОЛЬКО В ОКНЕ. `post_id` приходил прямо из
+    тела запроса и превращался в строку чем угодно: принадлежность посту
+    объекта не проверял никто. Замечание к посту ЧУЖОГО объекта уезжало в
+    список первого, и дальше его показывали как «пост <сырой id>» — и на
+    экране, и в деле, которое подписывают.
+
+    Проверяется по тому же разрезу, что и всё остальное
+    (`visit_object_posts`): второй ответ на вопрос «чей это пост» разошёлся бы
+    с первым. Пустая привязка — законное «общее» (`[МД-07]`) и проверки не
+    требует.
+
+    Отказ 400: беда в НАГРУЗКЕ, а не в состоянии — тот же разряд, что
+    неверный тип `remarks` (№668). Поле названо, чтобы окно подсветило
+    строку, а не показало общее «проверьте заполнение формы».
+    """
+    own = {str(p.get("id")) for p in visit_object_posts(event, visit)}
+    wrong = sorted(
+        {
+            str(row.get("postId"))
+            for row in rows
+            if row.get("postId") not in (None, "")
+            and str(row.get("postId")) not in own
+        }
+    )
+    if wrong:
+        raise _validation(
+            {"remarks": [f"Пост не принадлежит объекту: {', '.join(wrong)}."]},
+            message=(
+                "Замечание можно привязать только к посту согласуемого "
+                "объекта."
+            ),
+        )
+
+
 def _incoming_remarks(remarks, *, comment, post_id, urgent):
     """Список замечаний модалки возврата (`[ВОЗ-01]`) — разобранный и
     ПРОВЕРЕННЫЙ (Plane №668).
@@ -5872,6 +5909,7 @@ def decide_approver(
         # списка даёт одно замечание из причины — контракт не ломается.
         existing = list(visit.approval_remarks or [])
         incoming = _incoming_remarks(remarks, comment=clean_comment, post_id=post_id, urgent=urgent)
+        _require_own_posts(event, visit, incoming)
         for row in incoming:
             existing.append(
                 new_remark(

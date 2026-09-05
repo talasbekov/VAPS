@@ -1234,3 +1234,88 @@ def test_adding_a_second_object_does_not_lock_the_first_one_forever(
     assert all(
         str(p.get("visitObjectId") or "") != "" for p in event.recon_sector_posts
     ), "остались неразмеченные посты — они снова ничьи"
+
+
+def test_a_remark_cannot_be_pinned_to_a_post_of_another_object(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ЗАМЕЧАНИЕ К ЧУЖОМУ ПОСТУ ПРИНИМАЛОСЬ БЕЗ ПРОВЕРКИ (Plane №506).
+
+    `postId` приходил прямо из тела запроса и превращался в строку чем угодно:
+    принадлежность посту объекта не проверял никто. Замечание к посту ЧУЖОГО
+    объекта уезжало в список первого, и дальше его показывали как «пост <сырой
+    id>» — и на экране, и в деле, которое подписывают.
+
+    Проверка обязана стоять на СЕРВЕРЕ: окно с выбором постов — удобство, а
+    второй источник правды о принадлежности поста завёл бы расхождение ровно
+    там, где его труднее всего заметить.
+    """
+    base, event_id, first, second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+
+    event = service.lock_event(event_id)
+    theirs = service.visit_object_posts(event, second)
+    assert theirs, "у соседнего объекта нет постов — проба вакуумна"
+
+    refused = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {
+            "decision": "RETURNED",
+            "comment": "переделать",
+            "visitObjectId": str(first.pk),
+            "remarks": [
+                {"text": "Чужой пост", "postId": str(theirs[0]["id"]), "urgent": False}
+            ],
+        },
+        format="json",
+    )
+
+    assert refused.status_code == 400, refused.content
+    body = refused.json()
+    assert body["error_code"] == "VALIDATION_ERROR", body
+    assert "remarks" in body["details"], body
+    first.refresh_from_db()
+    assert not (first.approval_remarks or []), "замечание к чужому посту всё же завелось"
+    # Возврат НЕ состоялся: отказ по нагрузке не должен наполовину применить
+    # решение согласующего.
+    assert first.approval_status != "RETURNED"
+
+
+def test_a_general_remark_and_an_own_post_are_still_accepted(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Обратная сторона №506: проверка не должна запретить законное.
+
+    Без этой пробы мутация «отбивать любую привязку» осталась бы зелёной.
+    """
+    base, event_id, first, _second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    event = service.lock_event(event_id)
+    mine = service.visit_object_posts(event, first)
+    assert mine
+
+    accepted = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {
+            "decision": "RETURNED",
+            "comment": "переделать",
+            "visitObjectId": str(first.pk),
+            "remarks": [
+                {"text": "Свой пост", "postId": str(mine[0]["id"]), "urgent": False},
+                {"text": "Общее замечание", "postId": None, "urgent": False},
+            ],
+        },
+        format="json",
+    )
+
+    assert accepted.status_code == 200, accepted.content
+    first.refresh_from_db()
+    pinned = {r["text"]: r["postId"] for r in first.approval_remarks}
+    assert pinned["Свой пост"] == str(mine[0]["id"])
+    assert pinned["Общее замечание"] is None
