@@ -1019,7 +1019,11 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       await expect(dialog).toBeVisible({ timeout: 15_000 })
       await expect(dialog).toContainText('Расчёт поста')
       await expect(dialog).toContainText('обоснование усиления')
-      await page.screenshot({ path: '414-over-need-dialog.png' })
+      // Снимок — в `smoke-results/` (Plane №747): каталог закрыт `.gitignore`,
+      // как и у всех прочих спек. Голый относительный путь писал PNG в КОРЕНЬ
+      // фронта, и каждый прогон смоука оставлял в репозитории неотслеживаемый
+      // файл — ровно тот мусор, из-за которого здесь запрещён `git add -A`.
+      await page.screenshot({ path: 'smoke-results/414-over-need-dialog.png' })
     } finally {
       for (const row of (await fresh()).placementAssignments) {
         if (before.has(row.id)) continue

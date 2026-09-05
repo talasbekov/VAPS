@@ -8,12 +8,13 @@
     "dev:webpack": "next dev",
     "lint": "next lint",
     "build:check": "NEXT_DIST_DIR=.next-build next build",
-    "gate:front": "tsc --noEmit && npm run check:rewrites && npm run build:check",
+    "gate:front": "tsc --noEmit && npm run check:rewrites && npm run check:shots && npm run build:check",
     "start": "next start",
     "dev:guard": "bash scripts/dev-guard.sh",
     "stand:prod": "bash scripts/prod-stand.sh",
     "smoke:prod": "SMOKE_LIVE=1 SMOKE_BASE_URL=http://localhost:3108 SMOKE_APP=http://localhost:3108 playwright test --config playwright.smoke.config.ts",
-    "check:rewrites": "node scripts/check-rewrites.mjs"
+    "check:rewrites": "node scripts/check-rewrites.mjs",
+    "check:shots": "node scripts/check-shot-paths.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
