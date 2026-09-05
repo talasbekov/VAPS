@@ -278,6 +278,13 @@ export function ForceCollectionCard({
     );
   }
 
+  // Сумма СТРОК, напечатанных рядом (Plane №678) — она и есть «Итого» блока
+  // «Потребность». `data.need` рядом с ними — другой факт: число, которое штаб
+  // получил на завершении рекогносцировки и раскладывает; оно заморожено и
+  // после правки расчёта расходится с живой суммой.
+  const shownNeed = data.needByObject.reduce((sum, item) => sum + item.need, 0);
+  const needDiffers = data.needByObject.length > 0 && shownNeed !== data.need;
+
   return (
     <div className="space-y-6">
       <div>
@@ -308,7 +315,18 @@ export function ForceCollectionCard({
       </div>
 
       {/* Блок 1 «Потребность» (`[СБС-11]`, Plane №426): по объектам посещения
-          «„Мейрам“ — 8 (рекогносцировка завершена, Тлесов)» → Итого N. */}
+          «„Мейрам“ — 8 (рекогносцировка завершена, Тлесов)» → Итого N.
+
+          🔴 «ИТОГО» СЧИТАЕТСЯ ИЗ СТРОК, КОТОРЫЕ НАПЕЧАТАНЫ РЯДОМ (Plane №678).
+          Здесь стояло `data.need` — число, замороженное на завершении
+          рекогносцировки и с тех пор не пересчитываемое, тогда как строки
+          объектов считаются живьём. Поправили `need` поста после
+          рекогносцировки — строки изменились, «Итого» нет; оставили пост без
+          объекта на ОМ с двумя объектами — он выпадал из строк, но сидел в
+          «Итого». Человек читал «„Мейрам“ — 8 · „Рахат“ — 3 · Итого 12» и не
+          мог свести. Теперь сумма верна по построению, а расхождение с тем,
+          что получил штаб, названо отдельной строкой — это РАЗНЫЕ факты, и
+          прятать второй ради первого нельзя. */}
       <section aria-labelledby="collection-need-heading" className="space-y-2" data-slot="collection-need">
         <h3 id="collection-need-heading" className="font-semibold">
           Потребность
@@ -318,8 +336,15 @@ export function ForceCollectionCard({
         ) : (
           <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             {data.needByObject.map((item) => (
-              <li key={item.visitObjectId} data-slot="need-by-object">
-                «{item.objectName}» — <b className="tabular-nums">{item.need}</b>
+              <li key={item.visitObjectId || "unassigned"} data-slot="need-by-object">
+                {/* Строка «без объекта посещения» — не объект, и кавычек ей не
+                    полагается: она про посты, которые объекту не отнесены. */}
+                {item.visitObjectId === "" ? (
+                  <span>{item.objectName} — </span>
+                ) : (
+                  <span>«{item.objectName}» — </span>
+                )}
+                <b className="tabular-nums">{item.need}</b>
                 <span className="text-muted-foreground">
                   {" "}
                   ({[item.statusLabel.toLowerCase(), item.chiefName].filter((p) => p !== "").join(", ")})
@@ -327,9 +352,19 @@ export function ForceCollectionCard({
               </li>
             ))}
             <li className="font-semibold" data-slot="need-total">
-              Итого {data.need}
+              Итого {shownNeed}
             </li>
           </ul>
+        )}
+        {/* Расхождение НАЗЫВАЕТСЯ, а не сглаживается (Plane №678). Штаб делит
+            число, полученное на завершении рекогносцировки; расчёт постов
+            после этого могли поправить. Оба числа — факты, и молчаливое
+            выравнивание одного по другому спрятало бы то, что расчёт
+            изменился уже после запроса. */}
+        {needDiffers && (
+          <p className="text-xs text-amber-800" data-slot="need-mismatch">
+            Штабу передано {data.need} — расчёт постов изменился после запроса.
+          </p>
         )}
       </section>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
