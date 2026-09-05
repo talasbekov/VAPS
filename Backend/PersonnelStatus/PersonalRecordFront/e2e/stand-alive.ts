@@ -18,18 +18,70 @@
  * маршрут.
  */
 
-/** Адрес фронт-стенда — тот же, что берёт `baseURL` конфигов. */
-export function standUrl(): string {
-  return process.env.SMOKE_BASE_URL ?? process.env.SMOKE_APP ?? 'http://localhost:3106'
+/**
+ * 🔴 АДРЕСОВ У ПРОГОНА ДВА, И ПРОВЕРЯТЬ НАДО ОБА (ревью №823).
+ *
+ * `SMOKE_APP` читают 85 целевых спек (они ходят абсолютными адресами),
+ * `SMOKE_BASE_URL` — обход и `baseURL` обоих конфигов (относительные `goto`).
+ * `npm run smoke:prod` задаёт обе, и там они совпадают. Но задать руками одну
+ * — обычное дело, и тогда проверка одного адреса объявляла бы «жив» про
+ * сервер, по которому прогон НЕ пойдёт: ложная зелень ровно в том месте, ради
+ * которого проверка и заведена.
+ */
+export function standUrls(): string[] {
+  const named = [process.env.SMOKE_BASE_URL, process.env.SMOKE_APP].filter(
+    (value): value is string => typeof value === 'string' && value !== '',
+  )
+  const urls = named.length > 0 ? named : ['http://localhost:3106']
+  return [...new Set(urls)]
 }
 
-/** Отвечает ли стенд. `false` — соединение не установилось вовсе. */
-export async function standAlive(url = standUrl()): Promise<boolean> {
-  try {
-    const stop = AbortSignal.timeout(5_000)
-    await fetch(url, { method: 'HEAD', signal: stop })
-    return true
-  } catch {
-    return false
+/** Один адрес — для сообщений, когда их всё равно один. */
+export function standUrl(): string {
+  return standUrls()[0]
+}
+
+/** Почему стенд признан мёртвым — это РАЗНЫЕ ответы, и путать их нельзя. */
+export type StandVerdict =
+  | { alive: true }
+  | { alive: false; url: string; why: 'соединение отклонено' | 'нет ответа за 20 с' }
+
+/**
+ * Отвечают ли все адреса прогона.
+ *
+ * Проверяем ГОЛОВОЙ (`HEAD`) и без разбора кода ответа: любой ответ, включая
+ * 401 и 404, означает «сервер на порту есть». Предмет проверки — процесс, а не
+ * маршрут.
+ *
+ * 🔴 ТРИ ПОПЫТКИ И 20 СЕКУНД, А НЕ ОДНА И ПЯТЬ (ревью №823). `next dev`
+ * компилирует маршрут на ПЕРВОМ запросе и легко перебирает пять секунд — а
+ * прежняя редакция возвращала на таймаут то же `false`, что и на отказ
+ * соединения, и обрывала совершенно исправный прогон уверенной строкой.
+ * Симметрично в конце часового обхода загруженный сервер получал ярлык «умер»,
+ * после чего инструкция велит не заводить карточки — то есть настоящая находка
+ * списывалась бы на стенд.
+ */
+export async function standVerdict(urls = standUrls()): Promise<StandVerdict> {
+  for (const url of urls) {
+    let why: 'соединение отклонено' | 'нет ответа за 20 с' = 'соединение отклонено'
+    let alive = false
+    for (let attempt = 0; attempt < 3 && !alive; attempt += 1) {
+      try {
+        await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(20_000) })
+        alive = true
+      } catch (error) {
+        why = error instanceof Error && error.name === 'TimeoutError'
+          ? 'нет ответа за 20 с'
+          : 'соединение отклонено'
+        if (attempt < 2) await new Promise((done) => setTimeout(done, 1_000))
+      }
+    }
+    if (!alive) return { alive: false, url, why }
   }
+  return { alive: true }
+}
+
+/** Короткий ответ для мест, где причина не нужна. */
+export async function standAlive(urls = standUrls()): Promise<boolean> {
+  return (await standVerdict(urls)).alive
 }

@@ -30,7 +30,8 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { dropProbeEvents, probeToken } from './probe-events'
-import { standAlive, standUrl } from './stand-alive'
+import { PREFLIGHT_FAILED } from './global-setup'
+import { standVerdict } from './stand-alive'
 
 /** Адрес бэкенда — тот же, что у остальных шагов уборки. */
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
@@ -125,14 +126,18 @@ export default async function globalTeardown(): Promise<void> {
   // прод-стенд :3108 исчез внутри блока `observer`, и следующий блок дал 50
   // падений подряд по `0 ms` с именами маршрутов. Здесь это называется вслух —
   // строкой, которую видно в конце любого прогона.
-  const url = standUrl()
-  if (!(await standAlive(url))) {
-    console.log(
-      `\n🔴 ФРОНТ-СТЕНД ${url} НЕ ОТВЕЧАЕТ В КОНЦЕ ПРОГОНА.\n` +
-        '   Падения этого прогона — про стенд, а не про код: сперва поднимите стенд\n' +
-        '   заново и перегоните упавшее, и только потом заводите карточки.\n' +
-        '   Смерть стенда пишется в его лог (/tmp/next-prod-<порт>.log, Plane №823).\n',
-    )
+  // Предполётная уже отказала — проб не было, и говорить про их падения не о
+  // чем (ревью №823): Playwright зовёт уборку и после отказа `globalSetup`.
+  if (process.env[PREFLIGHT_FAILED] !== '1') {
+    const verdict = await standVerdict()
+    if (!verdict.alive) {
+      console.log(
+        `\n🔴 ФРОНТ-СТЕНД ${verdict.url} НЕ ОТВЕЧАЕТ В КОНЦЕ ПРОГОНА (${verdict.why}).\n` +
+          '   Падения этого прогона — про стенд, а не про код: сперва поднимите стенд\n' +
+          '   заново и перегоните упавшее, и только потом заводите карточки.\n' +
+          '   Смерть стенда пишется в его лог (/tmp/next-prod-<порт>.log, Plane №823).\n',
+      )
+    }
   }
 
   const token = await probeToken(STAND_USERNAME, STAND_PASSWORD)
