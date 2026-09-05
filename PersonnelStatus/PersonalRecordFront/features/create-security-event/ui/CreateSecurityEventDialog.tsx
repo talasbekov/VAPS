@@ -16,9 +16,11 @@
 //      440 строк и страниц «Назад / Дальше» (`[БЛН-13]`);
 //   7. живое превью строки бюллетеня — как форма ляжет в бланк.
 //
-// Кнопка «Создать бюллетень» гаснет видом, пока обязательное не заполнено
-// (`[БЛН-12]`), но нажать её можно: тогда форма скажет, чего не хватает.
-import { useEffect, useMemo, useRef, useState } from "react";
+// Кнопка «Создать бюллетень» ВЫКЛЮЧЕНА, пока обязательное не заполнено
+// (`[БЛН-12]`), а под ней стоит подпись, чего именно не хватает. Прежде она
+// лишь гасла видом и нажималась — это поведение снято коммитом e40e98d9
+// (Plane №439); шапка обещала его ещё три коммита спустя (Plane №715).
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import {
@@ -173,6 +175,9 @@ export function CreateSecurityEventDialog({
 function OpenDialog({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const contentRef = useRef<HTMLDivElement>(null);
+  /** Id подписи «чего не хватает»: через него выключенная кнопка объявляет
+   * причину, по которой она выключена (Plane №714). */
+  const missingHintId = useId();
   const objectsQuery = useBindableObjects();
   const personsQuery = useProtectedPersons();
   const countries = useCountries();
@@ -663,16 +668,29 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
               Отмена
             </Button>
             <div className="flex flex-col items-end gap-1">
+              {/* 🔴 `title` СНЯТ, А НЕ ЗАБЫТ (Plane №714). Он стоял под тем же
+                  условием, что и `disabled`, — то есть показывался бы ровно
+                  тогда, когда показаться не может: браузеры подавляют на
+                  выключенных элементах указательные события, а с ними и
+                  всплывающую подсказку. Рядом с живой подписью снизу стояла
+                  вторая, мёртвая. Связь с кнопкой — `aria-describedby`: сама
+                  она фокуса не получает (выключена), но виртуальный курсор
+                  читалки до неё доходит, и тогда причина звучит вместе с
+                  именем, а не остаётся отдельным текстом неизвестно о чём. */}
               <Button
                 type="submit"
                 className="h-[38px] rounded-lg text-[13px] font-semibold"
                 disabled={incomplete || mutation.isPending}
-                title={incomplete ? missingHint(missing) : undefined}
+                aria-describedby={incomplete ? missingHintId : undefined}
               >
                 {mutation.isPending ? "Создание…" : "Создать бюллетень"}
               </Button>
               {incomplete && (
-                <p className="text-[11px] text-muted-foreground" data-testid="missing-required">
+                <p
+                  id={missingHintId}
+                  className="text-[11px] text-muted-foreground"
+                  data-testid="missing-required"
+                >
                   {missingHint(missing)}
                 </p>
               )}

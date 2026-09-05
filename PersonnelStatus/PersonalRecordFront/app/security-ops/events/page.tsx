@@ -79,8 +79,22 @@ const MONTH_NAME = [
 ] as const;
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
 
+/** Этапы, которые ВЫБИРАЮТСЯ в фильтре реестра (`[РЕЕ-01]`, Plane №440).
+ *
+ * «Потребность» и «Запрос сил» проходит сервер сам (Plane №110) — человек их
+ * не выбирает. Список ОДИН на оба места: и на `<option>`, и на разбор адреса
+ * (Plane №713). Пока разбор принимал ВСЕ этапы, ссылка `?stage=DEMAND` (из
+ * закладки или из `backSuffix` старой карточки) отбирала реестр по этапу,
+ * которого в поле «Этап» нет: управляемый `<select>` без подходящего
+ * `<option>` рисуется пустым, и человек видел короткий список без единой
+ * подсказки почему. Выйти можно было только сбросом фильтров.
+ */
+const FILTERABLE_STAGES = SECURITY_EVENT_STAGES.filter(
+  (stage) => stage !== "DEMAND" && stage !== "FORCES"
+);
+
 function isStage(value: string | null): value is SecurityEventStage {
-  return (SECURITY_EVENT_STAGES as readonly string[]).includes(value ?? "");
+  return (FILTERABLE_STAGES as readonly string[]).includes(value ?? "");
 }
 
 /** «1 замечание · 2 замечания · 5 замечаний» — бейдж читают глазами, и
@@ -261,9 +275,9 @@ export default function SecurityEventsPage() {
             }
           >
             <option value="ALL">Все этапы</option>
-            {/* «Потребность» и «Запрос сил» — стадии, которые проходит сервер
-                сам (Plane №110); в фильтре их нет (`[РЕЕ-01]`, Plane №440). */}
-            {SECURITY_EVENT_STAGES.filter((stage) => stage !== "DEMAND" && stage !== "FORCES").map((stage) => (
+            {/* Тот же список, что разбирает адрес (`FILTERABLE_STAGES`): два
+                ответа на «какие этапы выбираются» и были дефектом №713. */}
+            {FILTERABLE_STAGES.map((stage) => (
               <option key={stage} value={stage}>
                 {STAGE_LABEL[stage]}
               </option>
@@ -654,9 +668,14 @@ function EventRow({
                     {event.location === "" ? null : event.location}
                   </span>
                   <span className="mt-[3px] block max-w-[210px] whitespace-normal text-[11px] text-muted-foreground/80">
-                    {/* Пустое имя — «объект не выбран», а не пустая подпись:
-                        ОМ заводят до согласования маршрута, и объекты
-                        дописывают позже кнопкой в первой колонке. */}
+                    {/* Пустое имя — ПУСТАЯ ЯЧЕЙКА (Plane №715). Здесь стояло
+                        обещание подписи «объект не выбран» и кнопки «+» в
+                        первой колонке — ни того, ни другого в коде нет: строка
+                        ниже рисует `null`, а добавление объектов переехало в
+                        меню «⋯» (Plane №440). Подпись «объект не выбран» жива
+                        в списке дня ниже, где строка одна и место есть; в
+                        таблице на девять колонок она была бы шумом в каждой
+                        строке нового ОМ. */}
                     {event.objectName === ""
                       ? null
                       : `${event.objectName} · ${
@@ -768,7 +787,23 @@ function EventRow({
                   <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent
+                align="end"
+                // 🔴 ВСПЛЫТИЕ ГАСИТСЯ ЗДЕСЬ, А НЕ У КАЖДОГО ПУНКТА (Plane №712).
+                // Содержимое меню рисуется ЧЕРЕЗ ПОРТАЛ, но синтетические
+                // события React всплывают по дереву REACT, а не DOM: клик по
+                // пункту доходил до `onClick` строки. Гард строки его не
+                // накрывал — он спрашивает `target.closest("button")`, а Radix
+                // рисует пункт как `div`, и предки этого `div` в DOM — контейнер
+                // портала в `body`, не строка. Сам Radix `stopPropagation` не
+                // зовёт. До №440 действия были настоящими кнопками ВНУТРИ
+                // строки, и гард их накрывал — дыру открыл переезд в меню.
+                //
+                // На контейнере, а не на пунктах: пункт, дописанный завтра,
+                // получит защиту сам, а забытый `stopPropagation` у одного из
+                // четырёх воспроизвёл бы дефект в трудноуловимом виде.
+                onClick={(clickEvent) => clickEvent.stopPropagation()}
+              >
                 {canEditObjects && (
                   <DropdownMenuItem
                     onSelect={() => {
@@ -845,13 +880,13 @@ function EventRow({
         <AddVisitObjectsDialog
           event={event}
           open={addOpen}
-          onClose={() => {
-            setAddOpen(false);
-            // Добавленное видно В РАСКРЫТИИ строки — раскрываем явно: пункт
-            // меню «⋯» (Plane №440) закрывается раньше, чем открывается диалог,
-            // и на состояние строки полагаться нельзя.
-            setExpanded(true);
-          }}
+          // Строку раскрывает САМ пункт меню (`setExpanded(true)` в `onSelect`),
+          // и с №712 это наконец работает: раньше всплытие клика тут же
+          // схлопывало её обратно, поэтому раскрытие пришлось повторять при
+          // ЗАКРЫТИИ диалога. Обход снят вместе с причиной — иначе «Отмена»
+          // в диалоге продолжала бы раскрывать строку, которую человек не
+          // просил раскрывать.
+          onClose={() => setAddOpen(false)}
         />
       )}
 

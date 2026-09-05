@@ -1437,6 +1437,67 @@ async function createEvent(
     expect(rows.some((row) => row.code === doomed.code)).toBe(false)
   })
 
+  test('пункт меню «⋯» не схлопывает строку: клик не доходит до обработчика ряда', async ({
+    page,
+  }) => {
+    /**
+     * ВСПЛЫТИЕ ЧЕРЕЗ ПОРТАЛ (Plane №712). Содержимое меню «⋯» рисуется через
+     * портал в `body`, но синтетические события React всплывают по дереву
+     * REACT, а не DOM: клик по пункту доходил до `onClick` строки и переключал
+     * раскрытие. У «Добавить объект» это давало ровно обратное заявленному —
+     * пункт ставил `expanded = true`, а всплывший клик тут же возвращал `false`,
+     * и строка ЗАКРЫВАЛАСЬ. Гард строки (`target.closest("button")`) пункт не
+     * накрывает: Radix рисует его как `div`, и предки этого `div` в DOM —
+     * контейнер портала, а не строка.
+     *
+     * Прежняя проба («объекты посещения добавляются…») этого не ловила: там
+     * стоял обход `onClose → setExpanded(true)`, раскрывавший строку ПОСЛЕ
+     * закрытия диалога. Он и держал её зелёной, пряча дефект, — и заодно
+     * раскрывал строку при «Отмене», которой человек раскрывать не просил.
+     *
+     * Проба смотрит на `aria-expanded` раскрывателя в двух точках: пока диалог
+     * ЕЩЁ ОТКРЫТ (сюда обход не успевал) и после «Отмены». Красная проверка —
+     * снять `onClick={stopPropagation}` у `DropdownMenuContent`: первое
+     * ожидание падает на `false`.
+     */
+    const token = await apiToken()
+    const target = await createDoomedEvent(token)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/?search=${encodeURIComponent(DOOMED_TITLE)}`)
+    await expect(page.getByText(target.code, { exact: true }).first()).toBeVisible({
+      timeout: 20_000,
+    })
+    // ЛОКАТОР CSS, А НЕ ПО РОЛИ, И ЭТО НЕ ПРИДИРКА: пока открыт модальный
+    // диалог, Radix прячет фон из дерева доступности, и `getByRole` кнопки
+    // строки не находит вовсе («element(s) not found»). CSS смотрит DOM и
+    // потому отвечает на вопрос «раскрыта ли строка» и при открытом окне.
+    const toggle = page.locator(
+      `button[aria-label$="объекты посещения ${target.code}"]`,
+    )
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    await (await rowAction(page, target.code, `Добавить объекты посещения ${target.code}`)).click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await expect(
+      toggle,
+      'пункт меню раскрыл строку, а всплывший клик схлопнул её обратно',
+    ).toHaveAttribute('aria-expanded', 'true')
+
+    // «Отмена» ничего не добавляет — и раскрытием строки распоряжаться не
+    // должна: раскрыл её пункт меню, а не отказ от диалога.
+    await dialog.getByRole('button', { name: 'Отмена' }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    // Строка по-прежнему слушается собственного раскрывателя: гашение всплытия
+    // у меню не должно было задеть её обычное поведение.
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
 })
 
 const DOOMED_TITLE = 'Проба удаления (e2e)'
