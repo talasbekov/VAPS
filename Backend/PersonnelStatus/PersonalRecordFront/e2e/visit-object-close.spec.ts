@@ -200,6 +200,94 @@ test.describe(LIVE ? 'закрытие объекта: отказ и черно�
     await expect(dialog).toContainText('уже закрыт', { ignoreCase: true })
   })
 
+  /**
+   * У ОМ с ДВУМЯ объектами на «Проведении» доступен не только первый
+   * (Plane №496).
+   *
+   * Выборщика объекта на этом этапе не было вовсе: обе панели —
+   * оценки и закрытие — зовут `useVisitObjectScope`, а тот при пустом
+   * `?visit=` падает на `visitObjects[0]`. Значит второй объект нечем было
+   * закрыть и некому оценить, а главное требование `[ЗАК-12]` («последний
+   * закрытый объект закрывает мероприятие») с экрана недостижимо — до
+   * «последнего» не дойти. Соседние этапы, рекогносцировка и расстановка,
+   * выборщик рисуют; здесь его просто забыли.
+   *
+   * 🔴 ОТВЕТ РУЧКИ ПОДМЕНЯЕТСЯ ЦЕЛИКОМ, А НЕ ЗАВОДИТСЯ ФИКСТУРА. ОМ с двумя
+   * объектами на «Проведении» на стенде может не быть вовсе, а завести его
+   * пробой значило бы протащить мероприятие через пять стадий и оставить его
+   * в реестре у соседей. Предмет пробы — что показывает ЭКРАН по данным, а
+   * данные тут и подменяются.
+   *
+   * Проверяется не наличие выборщика, а ДОСТИЖИМОСТЬ второго объекта:
+   * заголовок панели закрытия обязан назвать именно его, а запрос закрытия —
+   * уйти с ЕГО идентификатором. Пин на «выборщик есть» зеленел бы и на
+   * выборщике, который ничего не переключает.
+   */
+  test('у ОМ с двумя объектами закрывается не только первый (Plane №496)', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const target = requireFixture(
+      (await events(token, 'CONDUCT')).find((e) => e.visitObjects.length > 0),
+      'мероприятие на «Проведении» с объектом',
+    )
+    const detail = await eventDetail(token, target.id)
+    const first = detail.visitObjects[0]
+
+    // Второй объект — копия первого с другим id и именем: остальные поля
+    // карточки трогать незачем, а разное имя и есть то, что проба читает.
+    const second = { ...first, id: `${first.id}-второй`, objectName: 'Синт. объект 496' }
+    const twoObjects = {
+      ...detail,
+      stage: 'CONDUCT',
+      visitObjects: [{ ...first, stage: 'CONDUCT', closedAt: null }, { ...second, stage: 'CONDUCT', closedAt: null }],
+    }
+    await page.route(
+      (url) => url.pathname.endsWith(`/api/ops/security-events/${target.id}/`),
+      (route) => route.fulfill({ json: twoObjects }),
+    )
+    // Закрытие перехватывается: предмет — КАКОЙ объект уходит на сервер, а не
+    // что сервер ответит. Настоящее закрытие вдобавок необратимо.
+    const closed: string[] = []
+    await page.route('**/visit-objects/*/close/', (route) => {
+      closed.push(route.request().url())
+      return route.fulfill({ json: twoObjects })
+    })
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+
+    const picker = page.locator('#conduct-visit-object-scope')
+    await expect(
+      picker,
+      'на «Проведении» нет выбора объекта — второй объект недостижим',
+    ).toBeVisible({ timeout: 15_000 })
+
+    const panel = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Закрытие объекта' }),
+    })
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    // По умолчанию показан первый — так было и до правки.
+    await expect(panel.locator('[data-slot="card-title"]')).toContainText(first.objectName)
+
+    await picker.selectOption(second.id)
+    await expect(
+      panel.locator('[data-slot="card-title"]'),
+      'переключение объекта не сменило панель закрытия',
+    ).toContainText('Синт. объект 496', { timeout: 15_000 })
+
+    await panel.getByRole('button', { name: 'Закрыть объект' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Подтвердить закрытие' }).click()
+
+    await expect.poll(() => closed.length, { timeout: 15_000 }).toBeGreaterThan(0)
+    expect(
+      closed[0],
+      'закрытие ушло с идентификатором ПЕРВОГО объекта, а не показанного',
+    ).toContain(encodeURIComponent(second.id))
+  })
+
   test('черновик комментария не живёт дольше окна (Plane №610)', async ({ page }) => {
     /**
      * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Поле не чистилось НИ на успешном закрытии, НИ на

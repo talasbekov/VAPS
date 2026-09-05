@@ -28,7 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatIsoDayTime } from "@/shared/lib/date";
-import { useVisitObjectScope } from "./useVisitObjectScope";
+import { useVisitObjectScope, VisitObjectPicker } from "./useVisitObjectScope";
 import type { VisitEvaluationRow } from "@/entities/security-event";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -42,6 +42,26 @@ import { FieldErrors, StageError } from "./StageErrors";
 import { JournalList } from "./JournalList";
 
 export function ConductStage({ event }: { event: SecurityEvent }) {
+  /**
+   * 🔴 ВЫБОР ОБЪЕКТА — ОДИН НА ВЕСЬ ЭТАП (Plane №496).
+   *
+   * Выборщика здесь не было ВОВСЕ, хотя обе панели этапа живут в области
+   * объекта: и оценки, и закрытие зовут `useVisitObjectScope`, а тот при
+   * пустом `?visit=` падает на `visitObjects[0]`. У ОМ с двумя объектами это
+   * значило, что доступен ТОЛЬКО ПЕРВЫЙ: второй нечем закрыть и некому
+   * оценить, а главное требование `[ЗАК-12]` («последний закрытый объект
+   * закрывает мероприятие») с экрана недостижимо — до «последнего» не дойти.
+   * Соседние этапы, рекогносцировка и расстановка, выборщик рисуют.
+   *
+   * ОДИН выборщик на этап, а не по одному в каждой панели: обе читают ОДИН
+   * адрес (`?visit=`), два управления с одним значением спорили бы на вид и
+   * заставляли бы человека гадать, какое из них главное. Стоит первым —
+   * он задаёт область всему, что ниже.
+   *
+   * Строки расчёта нужны выборщику для счётчика постов у каждого объекта; на
+   * этом этапе они те же, что читают панели (`event.reconSectorPosts`).
+   */
+  const scope = useVisitObjectScope(event, event.reconSectorPosts);
   // Порядок панелей — по шестому шагу прототипа: «Закрытие и итоги» первым,
   // потому что шаг называется закрытием и ради него сюда и приходят. «Контроль
   // постов» идёт вторым — он даёт разрез той же сводки и объясняет, кого
@@ -50,6 +70,12 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
   // аудитом, поэтому они сохранены здесь, а не выброшены вслед за макетом.
   return (
     <div className="flex flex-col gap-4">
+      <VisitObjectPicker
+        event={event}
+        scope={scope}
+        allRows={event.reconSectorPosts}
+        id="conduct-visit-object-scope"
+      />
       <EvaluationPanel event={event} />
       <IncidentsPanel event={event} />
       <VisitObjectClosurePanel event={event} />
