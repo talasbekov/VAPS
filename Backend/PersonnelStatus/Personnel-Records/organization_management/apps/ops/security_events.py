@@ -1410,6 +1410,53 @@ def _stage_index(stage):
     return _STAGE_ORDER.index(stage) if stage in _STAGE_ORDER else 0
 
 
+def event_force_need(event, visits=None):
+    """Сколько людей просит МЕРОПРИЯТИЕ — единственный ответ на этот вопрос.
+
+    СУММА потребностей объектов ПЛЮС посты, не отнесённые ни к одному из них:
+    людей просят на все места сразу, и штаб делит одно число.
+
+    НЕРАЗМЕЧЕННЫЕ ПОСТЫ СЧИТАЮТСЯ ЗДЕСЬ, И БЕЗ НИХ ЧИСЛО ПАДАЛО (Plane №476).
+    Разрез `visit_object_posts` отдаёт неразмеченный пост ЕДИНСТВЕННОМУ
+    объекту и НИКОМУ, как только объектов стало двое. Для потребности ОБЪЕКТА
+    это правильно — приписать чужое значило бы выдумать факт. Но мероприятию
+    такой пост нужен всё равно: наряд на него просят.
+
+    ДВОЙНОГО СЧЁТА НЕТ: у ЕДИНСТВЕННОГО объекта неразмеченные посты уже сидят
+    в его снимке, поэтому добавка включается только начиная со второго.
+
+    🔴 ФУНКЦИЯ ОБЩАЯ, И ЭТО ГЛАВНОЕ В НЕЙ (Plane №743). Тот же вопрос задают
+    ДВА пути: переход стадии (`recompute_event_stage`) и завершение
+    рекогносцировки (`_autopass_demand_and_forces`). Формулы у них разошлись:
+    №476 починил первый, а второй остался на `sum(объекты) or sum(строки)` —
+    запасная ветка через `or` спасала только ПОЛНОСТЬЮ неразмеченный случай
+    (`0 or 12` → 12), а при ЧАСТИЧНОЙ разметке коротила на частичной сумме.
+    Автопроход отрабатывает ПЕРВЫМ, поэтому реестр показывал 5 до первого
+    перехода стадии и сам менялся на 12 после — без действия человека и без
+    строки в журнале. Двум ответам на один вопрос здесь взяться неоткуда.
+
+    `visits` передаётся, когда список уже прочитан: лишний запрос на каждом
+    переходе стадии — та же цена, что и у N+1, ради ухода от которого снимки
+    вообще появились.
+
+    ОБЪЕКТОВ НЕТ ВОВСЕ — складывать нечего, и число берётся прямо из расчёта
+    постов: у такого ОМ снимков не существует, а люди на посты всё равно нужны.
+    """
+    if visits is None:
+        visits = list(event.visit_objects.all())
+    posts = event.recon_sector_posts or []
+    if not visits:
+        return sum(max(int(post.get("need") or 0), 0) for post in posts)
+    need = sum(int(visit.force_need or 0) for visit in visits)
+    if len(visits) > 1:
+        need += sum(
+            int(post.get("need") or 0)
+            for post in posts
+            if not str(post.get("visitObjectId") or "").strip()
+        )
+    return need
+
+
 def recompute_event_stage(event):
     """Свести стадию, готовность и потребность мероприятия по его объектам.
 
@@ -1441,13 +1488,7 @@ def recompute_event_stage(event):
     if not visits:
         return event
     stage = min((v.stage for v in visits), key=_stage_index)
-    need = sum(int(v.force_need or 0) for v in visits)
-    if len(visits) > 1:
-        need += sum(
-            int(post.get("need") or 0)
-            for post in (event.recon_sector_posts or [])
-            if not str(post.get("visitObjectId") or "").strip()
-        )
+    need = event_force_need(event, visits)
     fields = []
     if event.stage != stage:
         event.stage = stage
@@ -2026,12 +2067,14 @@ def _autopass_demand_and_forces(event):
     # число мероприятия — вывод, и считать его отдельно значило бы завести
     # второй ответ на «сколько людей просим».
     recompute_visit_needs(event)
-    event.force_need = sum(
-        int(v.force_need or 0) for v in event.visit_objects.all()
-    ) or sum(int(row["need"]) for row in rows)
+    # 🔴 ЧИТАЕТСЯ ОБЩЕЙ ФОРМУЛОЙ, А НЕ СВОЕЙ (Plane №743). Здесь стояло
+    # `sum(объекты) or sum(строки)`, и запасная ветка через `or` спасала
+    # только ПОЛНОСТЬЮ неразмеченный расчёт: при частичной разметке она
+    # коротила на частичной сумме, и неразмеченные посты выпадали.
+    event.force_need = event_force_need(event)
     # Заявка на силы — ОДНА на мероприятие, а не по группам: групп больше
     # никто не вводит. Число в ней то же, что штаб видит во входящих, и
-    # расходиться с `force_need` оно не может — считается из тех же строк.
+    # расходиться с `force_need` оно не может — считается той же формулой.
     event.force_requests = (
         [
             {
