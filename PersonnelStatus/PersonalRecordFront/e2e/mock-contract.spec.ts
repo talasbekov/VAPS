@@ -619,5 +619,88 @@ test.describe(
       expect(rules.sameAssignment).toBe(true)
       expect(rules.observerRows).toEqual(1)
     })
+
+    test('сводка закрытия в моке считается, а не лежит нулями', async ({
+      page,
+    }) => {
+      // Правило сервера (`serializers._closure_summary`): «Постов N ·
+      // назначено K из N · замен · отказов · инцидентов» СЧИТАЕТСЯ на выдаче.
+      // В моке оба вхождения поля были литералами внутри `emptyEvent`, и
+      // больше его не писало ничто (Plane №728): заголовок задачи на
+      // мок-стенде всегда читался нулями — даже после импорта постов,
+      // назначения людей и записи инцидентов собственными обработчиками мока.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const measured = await page.evaluate(async () => {
+        const read = async () =>
+          (await (await fetch('/api/ops/security-events/se-1/')).json()) as {
+            reconSectorPosts: { id: string; need: number }[]
+            placementAssignments: { postId: string }[]
+            journalEntries: { type: string }[]
+            closureSummary: { posts: number; need: number; assigned: number; incidents: number }
+          }
+        // Посты в мок-сиде не заведены — импортируем их из паспорта той же
+        // ручкой мока, которой пользуется экран. Без постов проба сравнивала
+        // бы ноль с нулём и зеленела бы при живом дефекте.
+        //
+        // Этап сначала переводится на «Рекогносцировку»: мок отбивает импорт
+        // вне этого этапа (`RECON_STAGE_REQUIRED`) — то же правило, что у
+        // сервера, и обходить его пробе незачем.
+        const setStage = async (stage: string) =>
+          fetch('/api/ops/security-events/se-1/stage/', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ stage }),
+          })
+        await setStage('RECON')
+        await fetch('/api/ops/security-events/se-1/recon/import-from-passport/', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        })
+        const before = await read()
+        // Инцидент пишется РУЧКОЙ мока: предмет пробы — что сводка считается,
+        // а не как выглядит форма.
+        await setStage('CONDUCT')
+        await fetch('/api/ops/security-events/se-1/journal/', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            type: 'INCIDENT',
+            title: 'Проба сводки',
+            description: '',
+          }),
+        })
+        const after = await read()
+        return {
+          posts: after.reconSectorPosts.length,
+          need: after.reconSectorPosts.reduce((s, p) => s + (p.need ?? 0), 0),
+          assigned: after.placementAssignments.length,
+          incidentsBefore: before.closureSummary.incidents,
+          summary: after.closureSummary,
+        }
+      })
+
+      // Сводка равна тому, что лежит в самом ОМ, — а не нулям.
+      expect(measured.posts).toBeGreaterThan(0)
+      expect(measured.summary.posts).toEqual(measured.posts)
+      expect(measured.summary.need).toEqual(measured.need)
+      expect(measured.summary.assigned).toEqual(measured.assigned)
+      // И она ЖИВАЯ: записанный инцидент в неё попал.
+      expect(measured.summary.incidents).toEqual(measured.incidentsBefore + 1)
+    })
   },
 )
