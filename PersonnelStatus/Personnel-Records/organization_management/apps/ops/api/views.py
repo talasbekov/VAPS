@@ -1948,8 +1948,48 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """«Не могу заступить» с причиной (Plane №405, `[ПРФ-04]`)."""
         from organization_management.apps.ops import my_assignments as mine
 
+        from organization_management.apps.ops.security_events import (
+            actor_display_name,
+        )
+
+        # Автор отказа записывается (Plane №588): вписать его может не только
+        # сам сотрудник — гейт пускает старшего и ведущего ОМ. Подпись берётся
+        # ОБЩЕЙ функцией (Plane №723), а не собирается здесь второй раз.
+        #
+        # Способ — той же меркой, что у подтверждения (Plane №721): чужая
+        # строка должна быть ДОКАЗАНА, иначе способ «свой». Учётка без
+        # кадровой привязки — штатный исход, и неизвестность читается как
+        # «сказал сам»: преуменьшение вместо ложного утверждения о чужих
+        # словах.
+        from organization_management.apps.operations.models_event import (
+            OpsSecurityEvent,
+        )
+
+        employee = getattr(self.request.user, "employee", None)
+        event = OpsSecurityEvent.objects.filter(pk=pk).first()
+        row = next(
+            (
+                a
+                for a in ((event.placement_assignments if event else None) or [])
+                if a.get("id") == assignment_id
+            ),
+            None,
+        )
+        someone_elses = (
+            employee is not None
+            and row is not None
+            and str(row.get("employeeId")) != str(employee.pk)
+        )
+        actor_id = resolve_actor_id(request)
         return self._event_response(
-            mine.decline(pk, assignment_id, (request.data or {}).get("reason"))
+            mine.decline(
+                pk,
+                assignment_id,
+                (request.data or {}).get("reason"),
+                actor=actor_id,
+                actor_name=actor_display_name(actor_id) or request.user.get_username(),
+                personal=someone_elses,
+            )
         )
 
     @action(detail=True, methods=["post"], url_path="acknowledgement/complete")

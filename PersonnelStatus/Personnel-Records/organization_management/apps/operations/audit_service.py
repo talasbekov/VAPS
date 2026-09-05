@@ -125,6 +125,15 @@ SECURITY_EVENT_STAGE_OVERRIDDEN = "SECURITY_EVENT_STAGE_OVERRIDDEN"
 # «Ознакомление» завершено при неподтвердивших — решение старшего с
 # комментарием (Plane №432, `[ОЗН-04]`); число неподтвердивших — в old_value.
 SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED = "SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED"
+# Отказ заступить на назначение (Plane №588, `[ПРФ-04]`). Записывается ИМЕННО
+# потому, что отказ читается как СЛОВА САМОГО СОТРУДНИКА: «Не могу заступить:
+# …» стоит в его карточке и в листе «Ознакомление». А вписать эти слова может
+# не только он — гейт ручки пускает старшего и ведущего мероприятие, и это
+# сделано намеренно (человек может позвонить). Без записи автора чужая
+# формулировка выдаётся за его собственную, и опровергнуть её нечем. Все
+# соседние смены состояния авторство пишут: подтверждение кладёт
+# `acknowledgedBy`, завершение этапа — свою запись, замена — строку журнала.
+ASSIGNMENT_DECLINED = "ASSIGNMENT_DECLINED"
 # Замещающий на объекте посещения: выдача и отзыв права (Plane «Реестр
 # ОМ-24»). Это раздача ПРАВА в данных — человек получает возможность править
 # расстановку своего объекта, не имея общего `event.manage`. Такое решение
@@ -296,6 +305,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_CLOSED,
         SECURITY_EVENT_DELETED,
         SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED,
+        ASSIGNMENT_DECLINED,
         STATUS_PARTICIPATIONS_PURGED,
         SECURITY_EVENT_STAGE_OVERRIDDEN,
         SECURITY_EVENT_DEPUTY_ASSIGNED,

@@ -1001,6 +1001,21 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # `approve_placement` здесь больше не зовётся: последняя подпись выше
     # завершила этап сама (`[СОГ-09]`, Plane №399); журнал у перехода тот же.
     om.refresh_from_db()
+    # Отказ заступить (Plane №588) — ИМЕННОЕ решение: вписать его может не
+    # только сам сотрудник, гейт ручки пускает старшего и ведущего ОМ, и без
+    # автора чужая формулировка выдавалась бы за его собственную. Зовётся ДО
+    # завершения «Ознакомления» и до закрытия: закрытое мероприятие ответов
+    # уже не принимает (Plane №587).
+    from organization_management.apps.ops import my_assignments as mine
+
+    mine.decline(
+        om.pk,
+        om.placement_assignments[-1]["id"],
+        "Наряд по части",
+        actor=ACTOR,
+        actor_name="Коврижных К.",
+    )
+    om.refresh_from_db()
     # Подтверждений нет НАРОЧНО: «Ознакомление» завершается С НЕПОДТВЕРДИВШИМИ — силой и с комментарием
     # (Plane №432): так пишется SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED.
     from organization_management.apps.ops import acknowledgement_stage
