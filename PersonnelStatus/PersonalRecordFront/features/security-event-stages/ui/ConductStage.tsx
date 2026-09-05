@@ -208,7 +208,15 @@ function JournalPanel({ event }: { event: SecurityEvent }) {
               value={type}
               onChange={(e) => setType(e.target.value as JournalEntryType)}
             >
-              {(["INSTRUCTION", "ORDER", "INCIDENT"] as const).map((value) => (
+              {/* 🔴 ИНЦИДЕНТА ЗДЕСЬ БОЛЬШЕ НЕТ (Plane №729). Эта форма шлёт
+                  только {type, title, description} — без времени, поста и
+                  принятых мер, которых требует `[ЗАК-03]`. Записанный отсюда
+                  инцидент выходил неполным: панель инцидентов рисовала его
+                  без времени и поста, архив — «пост не указан». Инциденты
+                  пишет своя панель на этом же экране, и вторая, урезанная
+                  дорога к тому же факту — не удобство, а способ обойти
+                  требование. */}
+              {(["INSTRUCTION", "ORDER"] as const).map((value) => (
                 <option key={value} value={value}>
                   {JOURNAL_TYPE_LABEL[value]}
                 </option>
@@ -246,7 +254,12 @@ function JournalPanel({ event }: { event: SecurityEvent }) {
         </div>
         <FieldErrors errors={fieldErrors} />
         <StageError error={add.error} />
-        <JournalList entries={event.journalEntries} />
+        {/* ИНЦИДЕНТЫ ОТФИЛЬТРОВАНЫ (Plane №729): их панель стоит на ЭТОМ ЖЕ
+            экране, и общий список показывал каждый инцидент вторым разом.
+            Ничего не теряется — теряется только двоение. */}
+        <JournalList
+          entries={event.journalEntries.filter((entry) => entry.type !== "INCIDENT")}
+        />
       </CardContent>
     </Card>
   );
