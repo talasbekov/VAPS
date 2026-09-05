@@ -1931,6 +1931,24 @@ def evaluation_registry(filters):
                 # закрытой записи её можно было бы спрашивать поимённо.
                 "rowId": f"row-{evaluation.evaluation_code}",
                 "employeeId": evaluation.participant_code,
+                # 🔴 КАДРОВАЯ ССЫЛКА ДОБАВЛЕНА РЯДОМ (Plane №655) — тем же
+                # приёмом и по тому же доводу, что и в сводке участника
+                # (`build_summary`, Plane №96): `employeeId` здесь это КОД
+                # УЧАСТНИКА рейтинга (`employee-<id>`), и всякий, у кого на
+                # руках кадровый id, реестр по нему не находил НИКОГДА.
+                # Профиль сотрудника ровно так и терял свой рейтинг.
+                #
+                # Расширяем, а не подменяем: `employeeId` читают три экрана
+                # раздела и фильтры, переименование — отдельный шаг. `null`
+                # значит «участник не связан с кадрами»: у сеяных
+                # исторических участников кадровой записи нет вовсе, и
+                # подставлять туда код участника значило бы отдать читателю
+                # строку, которая совпадёт с чужим человеком.
+                "personnelId": (
+                    str(participant.employee_id)
+                    if participant is not None and participant.employee_id is not None
+                    else None
+                ),
                 "employeeSafeLabel": (
                     participant.safe_label if participant is not None else "—"
                 ),
@@ -2022,7 +2040,13 @@ def _matches_filters(row, filters):
         return False
     if filters.get("unit") and row["unitSafeLabel"] != filters["unit"]:
         return False
-    if filters.get("employee") and row["employeeId"] != filters["employee"]:
+    # Отбор по человеку принимает ОБА идентификатора (Plane №655): код
+    # участника рейтинга и кадровый id. У раздела рейтинга на руках первый, у
+    # профиля сотрудника и расстановки — второй, и требовать от них знания
+    # формы кода `employee-<id>` значило бы описать связь во втором месте.
+    if filters.get("employee") and filters["employee"] not in (
+        row["employeeId"], row["personnelId"]
+    ):
         return False
     if (
         filters.get("direction")

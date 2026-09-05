@@ -1717,6 +1717,10 @@ export const ratingsHandlers = [
             // Идентификатор СТРОКИ, а не оценки.
             rowId: `row-${evaluation.id}`,
             employeeId: evaluation.employeeId,
+            // Кадровая ссылка рядом с кодом участника (Plane №655) — зеркало
+            // сервера. У мок-участника кадрового id может не быть вовсе, и
+            // `null` здесь означает ровно это.
+            personnelId: employee?.personnelId ?? null,
             employeeSafeLabel: employee?.safeLabel ?? "—",
             unitSafeLabel: group?.safeLabel ?? "—",
             eventNumber: event?.number ?? "—",

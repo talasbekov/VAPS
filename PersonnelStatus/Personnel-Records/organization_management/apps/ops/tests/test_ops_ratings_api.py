@@ -760,6 +760,39 @@ def test_registry_paginates_and_filters_by_employee(viewer_api, world):
     assert scoped["results"][0]["employeeId"] == "employee-3"
 
 
+def test_registry_row_carries_the_personnel_link_and_filters_by_it(viewer_api, world):
+    """Реестр находится по КАДРОВОМУ id, а не только по коду участника (Plane №655).
+
+    `employeeId` строки реестра — код участника рейтинга (`employee-<id>`).
+    Профиль сотрудника держит на руках кадровый id, и совпадений у него не
+    бывало никогда: чип рейтинга в шапке не показывался, а в колонке «Балл»
+    истории у всех стояло «не оценивалось».
+
+    Тот же приём и тот же довод, что в №96 у сводки участника: кадровая ссылка
+    добавлена РЯДОМ, а не вместо — `employeeId` читают три экрана раздела.
+    """
+    linked = OpsRatedParticipant.objects.get(participant_code="employee-3")
+    linked.employee_id = 4242
+    linked.save(update_fields=["employee_id"])
+
+    by_code = viewer_api.get(REGISTRY, {"employee": "employee-3"}).json()
+    by_personnel = viewer_api.get(REGISTRY, {"employee": "4242"}).json()
+
+    assert by_personnel["total"] == by_code["total"] == 1
+    row = by_personnel["results"][0]
+    assert row["employeeId"] == "employee-3", "код участника подменён кадровым id"
+    assert row["personnelId"] == "4242"
+    # Несвязанный участник кадровым не притворяется: `null` значит «не знаем,
+    # чей это рейтинг», и подстановка кода отдала бы читателю строку, которая
+    # совпадёт с чужим человеком.
+    orphan = next(
+        r
+        for r in viewer_api.get(REGISTRY).json()["results"]
+        if r["employeeId"] != "employee-3"
+    )
+    assert orphan["personnelId"] is None
+
+
 # ── Журнал (§19.27) и уведомления (§19.28) ──────────────────────────────────
 
 

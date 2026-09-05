@@ -834,7 +834,12 @@ export const CLOSED_DETAILS_LABEL = "Детали оценки закрыты";
 /** Строка реестра: ни score, ни комментария, ни основания, ни оценщика. */
 export interface EvaluationRegistryRow {
   rowId: string;
+  /** КОД УЧАСТНИКА рейтинга (`employee-<id>`), а не кадровый id. */
   employeeId: string;
+  /** Кадровый id того же человека (Plane №655); `null` — участник не связан
+   *  с кадрами. Отдан рядом, чтобы читателю с кадровым id на руках (профиль
+   *  сотрудника, расстановка) не пришлось знать форму кода участника. */
+  personnelId: string | null;
   employeeSafeLabel: string;
   unitSafeLabel: string;
   eventNumber: string;
@@ -888,7 +893,14 @@ export function matchesFilters(
   if (filters.event !== null && `${row.eventNumber}` !== filters.event)
     return false;
   if (filters.unit !== null && row.unitSafeLabel !== filters.unit) return false;
-  if (filters.employee !== null && row.employeeId !== filters.employee)
+  // Отбор по человеку принимает ОБА идентификатора (Plane №655) — зеркало
+  // `_matches_filters` сервера: у раздела рейтинга на руках код участника, у
+  // профиля сотрудника и расстановки — кадровый id.
+  if (
+    filters.employee !== null &&
+    row.employeeId !== filters.employee &&
+    row.personnelId !== filters.employee
+  )
     return false;
   if (filters.direction !== null && row.evaluationDirection !== filters.direction)
     return false;
