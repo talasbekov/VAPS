@@ -955,4 +955,113 @@ test.describe('заявки департаменту', () => {
       await dropEvent(token, fixture.eventId)
     }
   })
+
+  /**
+   * Отказ справочника и архивные управления (Plane №531, №530).
+   *
+   * Воркер MSW блокируется ТОЛЬКО здесь: без этого `page.route` не
+   * перехватывает запросы приложения — они идут через воркер, и подмена молча
+   * не применяется (тот же приём и тот же довод, что в `command-center.spec.ts`).
+   */
+  test.describe('справочник подразделений', () => {
+    test.use({ serviceWorkers: 'block' })
+
+    async function openOwnRequest(page: Page, token: string, eventId: string): Promise<void> {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${eventId}/`)
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+    }
+
+    test('отказ справочника назван отказом, а не «нет управлений» (Plane №531)', async ({
+      page,
+    }) => {
+      const token = await apiToken()
+      const fixture = await createDepartmentAllocationFixture(token)
+      try {
+        // Справочник отказывает ПОСЛЕ того, как карточка уже открыта её
+        // собственной ручкой: предмет пробы — как экран читает молчание
+        // справочника, а не как он открывается вообще.
+        await page.route(/\/api\/core\/divisions\//, (route) =>
+          route.fulfill({ status: 500, json: { detail: 'Справочник недоступен' } }),
+        )
+        await openOwnRequest(page, token, fixture.eventId)
+
+        const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+        await expect(splitSection).toBeVisible({ timeout: 30_000 })
+        await expect(
+          splitSection.getByText('Справочник подразделений не ответил', { exact: false }),
+          'отказ связи обязан быть назван отказом',
+        ).toBeVisible({ timeout: 20_000 })
+        await expect(
+          splitSection.getByText('нет действующих управлений', { exact: false }),
+          'поломка связи выдана за факт об оргструктуре',
+        ).toBeHidden()
+      } finally {
+        await dropEvent(token, fixture.eventId)
+      }
+    })
+
+    test('архивное управление не получает поля ввода и не ломает сохранение (Plane №530)', async ({
+      page,
+    }) => {
+      const token = await apiToken()
+      const fixture = await createDepartmentAllocationFixture(token)
+      try {
+        // Архивное управление ДОБАВЛЯЕТСЯ в живой ответ справочника, а не
+        // заводится на стенде: архивировать чужое подразделение ради одной
+        // пробы значило бы испортить общий стенд. Форма ответа при этом
+        // остаётся серверной.
+        await page.route(/\/api\/core\/divisions\//, async (route) => {
+          const response = await route.fetch()
+          const body = (await response.json()) as {
+            results?: Record<string, unknown>[]
+          }
+          body.results = [
+            ...(body.results ?? []),
+            {
+              id: 999001,
+              organization: 1,
+              parent: Number(fixture.departmentId),
+              type_code: 'directorate',
+              name: 'Синт. управление (архив)',
+              code: 'ARCH-001',
+              is_active: false,
+            },
+          ]
+          await route.fulfill({ response, json: body })
+        })
+        await openOwnRequest(page, token, fixture.eventId)
+
+        const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+        const quotaInputs = splitSection.locator('input[id^="quota-"]')
+        await expect(quotaInputs.first()).toBeVisible({ timeout: 30_000 })
+
+        // Архивное управление не показывается вовсе — сервер о нём не знает.
+        await expect(
+          splitSection.getByText('Синт. управление (архив)', { exact: false }),
+          'архивное управление получило строку и уедет в запрос, который сервер отобьёт целиком',
+        ).toBeHidden()
+        await expect(page.locator('input[id="quota-999001"]')).toHaveCount(0)
+
+        // И сохранение проходит: до правки сервер отбивал ВСЁ тело.
+        const need: number = (
+          await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+        ).forceNeed
+        await quotaInputs.first().fill(String(need))
+        await splitSection.getByRole('button', { name: 'Сохранить раскладку' }).click()
+        await expect(
+          splitSection.getByText(`Набрано ${need} из ${need}`, { exact: false }),
+          'раскладка не сохранилась при архивном управлении в департаменте',
+        ).toBeVisible({ timeout: 20_000 })
+      } finally {
+        await dropEvent(token, fixture.eventId)
+      }
+    })
+  })
 })
