@@ -238,14 +238,21 @@ def list_patches():
 # Раздел модалки → ключи патча, которые он кладёт/снимает. Дословно
 # gvoSectionPatchKeys фронта (entities/gvo-summary/model/sections.ts);
 # person:<i>/person:new правят persons, group:<i>/group:new — groups.
+# 🔴 СПИСОК ОБЯЗАН ПОКРЫВАТЬ ВЕСЬ `ALLOWED_PATCH_KEYS` (Plane №689). Ключ,
+# который РАЗРЕШЕНО записать, но которого нет ни в одном разделе, снять
+# «Вернуть исходные» уже не может — он остаётся в сводке навсегда. Так и
+# случилось со ссылками на справочники (`*EmployeeIds`, `[ГВО-08]`): их
+# добавили в разрешённые, а по разделам не разложили, и идентификаторы
+# снятых встречающих переживали любой сброс. Проба
+# `test_every_allowed_key_belongs_to_a_section` держит это соответствие.
 SECTION_PATCH_KEYS = {
     "head": ("country",),
     "persons": ("persons",),
-    "arrival": ("arrival", "meet"),
-    "departure": ("departure", "farewell"),
+    "arrival": ("arrival", "meet", "meetEmployeeIds"),
+    "departure": ("departure", "farewell", "farewellEmployeeIds"),
     "org": (
         "stay", "sbChief", "weapons", "obVariant", "radio", "wishes",
-        "delegation",
+        "delegation", "delegationEmployeeIds",
     ),
     "groups": ("responsible", "groups"),
     "resp": ("responsible",),
@@ -393,7 +400,16 @@ def apply_patch(om_code, body, user, actor=None):
         return None
     if not isinstance(body, dict) or "values" not in body:
         raise ValidationError({"values": "Ожидается тело {section, values}."})
-    _section_keys(body.get("section"))  # валидация раздела
+    # РАЗДЕЛ НЕОБЯЗАТЕЛЕН (Plane №694). Он и раньше только ПРОВЕРЯЛСЯ —
+    # результат `_section_keys` здесь не используется, а состав тела бьётся по
+    # `ALLOWED_PATCH_KEYS` строкой ниже. Пока раздел был обязателен, клиент
+    # сохранял правку ЦИКЛОМ из PATCH по одному на изменённый раздел: падение
+    # середины оставляло половину сохранённой, а флаги «уточняется», ехавшие с
+    # последним вызовом, — нет. Отсутствие раздела означает «правка нескольких
+    # разделов разом»; присланный — проверяется, как и прежде, чтобы опечатка
+    # в имени не проходила молча.
+    if body.get("section") is not None:
+        _section_keys(body["section"])
     values = body["values"]
     if not isinstance(values, dict):
         raise ValidationError({"values": "values должен быть объектом."})
@@ -417,9 +433,31 @@ def apply_patch(om_code, body, user, actor=None):
     if unspecified is not None:
         visit.unspecified = unspecified
     visit.version += 1
-    if visit.status == "DRAFT":
+    # 🔴 ПРАВКА СНИМАЕТ УТВЕРЖДЕНИЕ (Plane №685). Отказ `approve_visit` уже
+    # обещал это словами — «Визит уже утверждён — правки заведут новую
+    # версию», — но код обещания не выполнял: статус поднимался только
+    # DRAFT→READY и APPROVED не снимался никогда. Штаб утверждал визит, затем
+    # любой с `gvo.manage` переписывал страну, группы и транспорт, а шапка и
+    # реестр по-прежнему показывали «Утверждён» с ПРЕЖНЕЙ отметкой времени —
+    # утверждение относилось к содержимому, которого больше нет. Переутвердить
+    # при этом было нельзя: `approve_visit` отбивал VISIT_ALREADY_APPROVED, и
+    # выхода из этого состояния не существовало вовсе.
+    #
+    # Отметка утверждения СНИМАЕТСЯ, а не остаётся рядом со статусом READY:
+    # `approvedAt` уезжает в шапку визита и в реестр, и оставленный там час
+    # утверждения версии, которой больше нет, — та же ложь, только тише.
+    # История не теряется: кто и когда утверждал, записано в журнале
+    # (`GVO_VISIT_APPROVED` с номером версии), а снятие пишется туда же.
+    if visit.status == "APPROVED":
+        _revoke_approval(visit, event, actor)
+    elif visit.status == "DRAFT":
         visit.status = "READY"
-    visit.save(update_fields=["data", "unspecified", "version", "status", "updated_at"])
+    visit.save(
+        update_fields=[
+            "data", "unspecified", "version", "status",
+            "approved_at", "approved_by", "updated_at",
+        ]
+    )
     audit_service.record(
         actor=actor,
         action=audit_service.GVO_SUMMARY_PATCHED,
@@ -434,6 +472,27 @@ def apply_patch(om_code, body, user, actor=None):
     }
 
 
+def _revoke_approval(visit, event, actor):
+    """Снять утверждение с визита, чей состав изменился (Plane №685).
+
+    Не сохраняет — вызывающий пишет визит одним `save` вместе со своими
+    полями: два `save` подряд дали бы две записи `updated_at` на одно
+    действие человека.
+    """
+    visit.status = "READY"
+    visit.approved_at = None
+    visit.approved_by = ""
+    audit_service.record(
+        actor=str(actor or "system"),
+        action=audit_service.GVO_VISIT_APPROVAL_REVOKED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=str(event.pk),
+        # Номер НОВОЙ версии: по нему в журнале видно, какая правка сняла
+        # утверждение, — рядом с записью `GVO_VISIT_APPROVED` о прежней.
+        new_value={"omCode": event.code, "version": visit.version},
+    )
+
+
 def reset_patch(om_code, body, actor=None):
     """Тело — {section} (ResetGvoSummaryRequest): снимаются только ключи
     раздела; пустой остаток удаляет запись целиком. None — нет такого ОМ."""
@@ -445,8 +504,32 @@ def reset_patch(om_code, body, actor=None):
     visit = visit_for_event(event)
     if visit is not None:
         visit.data = {k: v for k, v in (visit.data or {}).items() if k not in keys}
+        # ФЛАГИ РАЗДЕЛА СНИМАЮТСЯ ВМЕСТЕ С ЕГО ДАННЫМИ (Plane №689). «Вернуть
+        # исходные» их не трогало, и документ продолжал печатать «уточняется»
+        # у поля, которого человек уже вернул к исходному, — пометка пережила
+        # то, что поясняла.
+        #
+        # Принадлежность считается ПЕРВЫМ СЕГМЕНТОМ пути, а не отдельной
+        # картой: путь флага и есть адрес значения в сводке (`arrival.date`,
+        # `stay.place`), поэтому его верхний ключ — тот же, что в
+        # `SECTION_PATCH_KEYS`. Вторая карта разошлась бы с первой при первой
+        # же новой секции.
+        visit.unspecified = [
+            path
+            for path in (visit.unspecified or [])
+            if str(path).split(".")[0] not in keys
+        ]
         visit.version += 1
-        visit.save(update_fields=["data", "version", "updated_at"])
+        # Сброс — тоже правка (Plane №685): утверждение относилось к прежнему
+        # содержимому и после возврата к исходному больше не действует.
+        if visit.status == "APPROVED":
+            _revoke_approval(visit, event, actor)
+        visit.save(
+            update_fields=[
+                "data", "unspecified", "version", "status",
+                "approved_at", "approved_by", "updated_at",
+            ]
+        )
     rec = OpsGvoSummaryPatch.objects.filter(event=event).first()
     remaining = {}
     if rec is not None:

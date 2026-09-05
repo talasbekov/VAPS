@@ -476,6 +476,47 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     })
   })
 
+  test('черновик правки переживает переключение вкладок, а ярлык говорит о нём', async ({
+    page,
+  }) => {
+    /**
+     * ЧЕРНОВИК НЕ ГИБНЕТ ОТ ВКЛАДКИ (Plane №693). Форма правки жила внутри
+     * `TabsContent`, а Radix размонтирует неактивную вкладку: человек жал
+     * «Редактировать», заполнял поля, уходил на «Объекты посещения»
+     * свериться — и, вернувшись, находил пустоту. Без предупреждения, без
+     * следа. Ровно тот класс потери, ради которого на карточке ОМ заведён
+     * `bulletinDirty`.
+     *
+     * Красная проверка — убрать `forceMount` у вкладки «Сводные данные»:
+     * набранное «Черногория-проба» после возврата исчезнет.
+     */
+    const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
+    expect(target, 'в реестре нет ОМ с иностранным ОЛ').toBeTruthy()
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
+    await page.getByRole('main').getByRole('button', { name: 'Редактировать' }).click()
+    const form = page.locator('[data-slot="gvo-edit-form"]')
+    const country = form.getByRole('textbox', { name: 'Страна' })
+    await country.fill('Черногория-проба')
+
+    // Ярлык вкладки говорит о несохранённом — иначе черновик, переживший
+    // переключение, остался бы незаметным.
+    const summaryTab = page.getByRole('tab', { name: /Сводные данные ГВО/ })
+    await expect(summaryTab).toContainText('есть несохранённые правки')
+
+    await page.getByRole('tab', { name: /Объекты посещения/ }).click()
+    await page.getByRole('tab', { name: /Сводные данные ГВО/ }).click()
+
+    await expect(
+      country,
+      'черновик правки исчез при переключении вкладки — набранное потеряно молча',
+    ).toHaveValue('Черногория-проба')
+
+    // Уходим без сохранения: проба ничего не меняет на стенде.
+    await form.getByRole('button', { name: 'Отмена' }).click()
+  })
+
   test('у внутреннего мероприятия ссылки «Карточка визита →» нет', async ({
     page,
   }) => {

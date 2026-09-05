@@ -200,7 +200,16 @@ export const GVO_SUMMARIES_ASSEMBLED_PATH = `${GVO_SUMMARIES_PATH}assembled/`;
 export const gvoSummaryPath = gvoSummaryPatchPath;
 
 export interface UpdateGvoSummaryRequest extends Record<string, unknown> {
-  section: GvoSection;
+  /**
+   * Раздел правки; `null` — «несколько разделов разом» (Plane №694).
+   *
+   * Сервер раздел только ПРОВЕРЯЕТ, а состав тела бьёт по списку разрешённых
+   * ключей, поэтому одна правка нескольких разделов уезжает ОДНИМ запросом.
+   * Пока раздел был обязателен, форма слала цикл из PATCH по одному на
+   * раздел: падение середины оставляло половину сохранённой, а флаги
+   * «уточняется», ехавшие с последним вызовом, — нет.
+   */
+  section: GvoSection | null;
   /** Разобранные значения формы — разбор текста живёт на клиенте. */
   values: GvoSummaryPatch;
   /** Полный список полей с флагом «уточняется» после правки (Plane №435). */

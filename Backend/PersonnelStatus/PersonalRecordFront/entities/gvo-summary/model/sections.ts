@@ -531,12 +531,20 @@ export function gvoSectionPatchKeys(
       return ["country"];
     case "persons":
       return ["persons"];
+    // Ссылки на справочники (`*EmployeeIds`, `[ГВО-08]`) принадлежат тем же
+    // разделам, что и их текстовые списки (Plane №689). Без них «Вернуть
+    // исходные» снимало имена встречающих, а идентификаторы оставляло — и
+    // сводка помнила снятых людей навсегда. Тот же список держит сервер
+    // (`SECTION_PATCH_KEYS` в gvo.py), и там за соответствие отвечает проба.
     case "arrival":
-      return ["arrival", "meet"];
+      return ["arrival", "meet", "meetEmployeeIds"];
     case "departure":
-      return ["departure", "farewell"];
+      return ["departure", "farewell", "farewellEmployeeIds"];
     case "org":
-      return ["stay", "sbChief", "weapons", "obVariant", "radio", "wishes", "delegation"];
+      return [
+        "stay", "sbChief", "weapons", "obVariant", "radio", "wishes",
+        "delegation", "delegationEmployeeIds",
+      ];
     case "groups":
       return ["responsible", "groups"];
     case "resp":

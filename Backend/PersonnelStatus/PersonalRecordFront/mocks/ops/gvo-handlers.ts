@@ -342,13 +342,16 @@ export const gvoHandlers = [
     const omCode = decodeCode(params.omCode);
     const body = (await request.json()) as UpdateGvoSummaryRequest;
     const merged: GvoSummaryPatch = { ...currentPatch(omCode), ...body.values };
-    // Флаги приходят тем же PATCH, что и значения (последним вызовом формы).
+    // Флаги приходят ТЕМ ЖЕ запросом, что и значения: правка нескольких
+    // разделов уезжает одним PATCH (Plane №694).
     return HttpResponse.json(
-      saveRecord(
-        omCode,
-        merged,
-        body.unspecified === undefined ? {} : { unspecified: body.unspecified }
-      )
+      saveRecord(omCode, merged, {
+        ...(body.unspecified === undefined ? {} : { unspecified: body.unspecified }),
+        // Правка снимает утверждение (Plane №685): оно относилось к прежнему
+        // составу, и оставить его — значит показывать «Утверждён» рядом с
+        // другим содержимым.
+        approvedAt: null,
+      })
     );
   }),
 
@@ -391,9 +394,18 @@ export const gvoHandlers = [
     const omCode = decodeCode(params.omCode);
     const body = (await request.json()) as ResetGvoSummaryRequest;
     const next: GvoSummaryPatch = { ...currentPatch(omCode) };
-    for (const key of gvoSectionPatchKeys(body.section)) {
+    const keys = gvoSectionPatchKeys(body.section);
+    for (const key of keys) {
       delete next[key];
     }
-    return HttpResponse.json(saveRecord(omCode, next));
+    // Флаги раздела снимаются вместе с его данными (Plane №689): пометка не
+    // должна переживать поле, которое поясняла. Принадлежность — по ПЕРВОМУ
+    // сегменту пути, как и на сервере.
+    const kept = (
+      getRecords().find((item) => item.omCode === omCode)?.unspecified ?? []
+    ).filter((path) => !keys.includes(path.split(".")[0] as never));
+    return HttpResponse.json(
+      saveRecord(omCode, next, { unspecified: kept, approvedAt: null })
+    );
   }),
 ];

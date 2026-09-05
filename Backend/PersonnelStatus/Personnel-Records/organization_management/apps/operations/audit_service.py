@@ -144,6 +144,11 @@ SECURITY_EVENT_APPROVAL_SIGNED = "SECURITY_EVENT_APPROVAL_SIGNED"
 APPROVAL_ROUTE_REPLACED = "APPROVAL_ROUTE_REPLACED"
 #: Визит иностранного ОЛ утверждён штабом (`[ГВО-07]`/`[ГВО-09]`, Plane №436).
 GVO_VISIT_APPROVED = "GVO_VISIT_APPROVED"
+#: Утверждение визита СНЯТО правкой его состава (Plane №685). Отдельное
+#: действие, а не молчание: утверждение относилось к конкретной версии, и
+#: «кто и чем его отменил» — первый вопрос к визиту, который вчера был
+#: утверждён, а сегодня снова «Заполнен».
+GVO_VISIT_APPROVAL_REVOKED = "GVO_VISIT_APPROVAL_REVOKED"
 # Завершение расстановки С НЕДОБОРОМ (`[РАС-06]`, Plane №396): решение
 # человека обойти проверку укомплектованности, с обязательным комментарием —
 # «почему отправили ОМ на согласование, недорасставив K постов» обязано иметь
@@ -299,6 +304,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_APPROVAL_SIGNED,
         APPROVAL_ROUTE_REPLACED,
         GVO_VISIT_APPROVED,
+        GVO_VISIT_APPROVAL_REVOKED,
         PLACEMENT_COMPLETED_WITH_SHORTAGE,
         VISIT_OBJECT_CLOSED,
         VISIT_OBJECT_CHIEF_ASSIGNED,

@@ -56,11 +56,16 @@ export interface GvoSummaryPanelProps {
    * стоят выше, а H1 страницы занят названием мероприятия.
    */
   variant?: "page" | "embedded";
+  /** Сообщить наружу, что в форме правки есть несохранённое (Plane №693).
+   * Вкладка визита держится в DOM и при переключении, поэтому черновик жив,
+   * — но со стороны его не видно, и метку на ярлыке рисует страница. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export function GvoSummaryPanel({
   event,
   variant = "page",
+  onDirtyChange,
 }: GvoSummaryPanelProps) {
   const { hasPermission } = useOpsPermissions();
   // Правка сводки — своё право (Plane «Реестр ОМ-35.6»): `gvo.manage` либо
@@ -225,7 +230,11 @@ export function GvoSummaryPanel({
             omCode={event.code}
             summary={summary}
             unspecified={summaryQuery.data.unspecified ?? []}
-            onDone={() => setEditing(false)}
+            onDirtyChange={onDirtyChange}
+            onDone={() => {
+              setEditing(false);
+              onDirtyChange?.(false);
+            }}
           />
         ) : (
         <>
