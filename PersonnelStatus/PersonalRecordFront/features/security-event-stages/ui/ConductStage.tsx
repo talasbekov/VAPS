@@ -3,7 +3,7 @@
 // Этап 8 «Проведение»: журнал штаба (инструктаж/распоряжение/инцидент),
 // замена выбывшего (атомарно: снять + назначить + запись в журнал) и
 // закрытие с обязательными итогами ВСЕХ направлений.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -575,7 +575,18 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
-  const close = useCloseVisitObject(event.id, { onEvent: () => setOpen(false) });
+  const close = useCloseVisitObject(event.id, {
+    onEvent: () => {
+      setOpen(false);
+      // 🔴 ЧЕРНОВИК ГАСНЕТ ВМЕСТЕ С ОКНОМ (Plane №610). Поле не чистилось ни
+      // на успехе, ни на отмене, ни при смене объекта в шапке: у компонента
+      // нет `key`, и переключение `?visit=` переиспользует ТОТ ЖЕ экземпляр.
+      // Человек закрывал объект A с итогом «Пост 3 снят досрочно», переключался
+      // на объект B, открывал окно — а там уже стоял итог A, и одно нажатие
+      // писало формулировку A в комментарий закрытия объекта B и в его аудит.
+      setComment("");
+    },
+  });
   const access = useChainAccess();
   const visit = scope.visit;
   // Сводка оценок — для подтверждения «Оценено K из N, инцидентов N»
@@ -588,6 +599,30 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
     visit?.id ?? null,
     access.can(EVENT_MANAGE)
   );
+  // Смена объекта в шапке — это ДРУГОЙ объект и другой черновик (Plane №610).
+  // Эффект, а не `key` на компоненте: `key` пересоздал бы и запрос сводки
+  // оценок, а он к объекту привязан своим аргументом и переспрашивается сам.
+  // 🔴 ОДИН ПУТЬ ЗАКРЫТИЯ (Plane №610). Окно закрывается ЧЕТЫРЬМЯ способами —
+  // «Отмена», Esc, клик вне окна и успешная отправка, — и `setOpen(false)`
+  // напрямую МИМО `onOpenChange`: кнопка «Отмена» вызывает сеттер, а не
+  // обработчик Radix. Чистка, повешенная на один из путей, чинит один из
+  // четырёх; поэтому она здесь, в общем закрывателе, и его зовут все.
+  const closeDialog = () => {
+    setOpen(false);
+    setComment("");
+    // Отказ принадлежал ЗАКРЫТОМУ окну: оставить его — значит показать старую
+    // красную строку при следующем открытии.
+    close.reset();
+  };
+  const visitId = visit?.id ?? null;
+  useEffect(() => {
+    setComment("");
+    setOpen(false);
+    close.reset();
+    // `close` пересоздаётся каждый рендер — зависимость от него зациклила бы
+    // эффект; предмет здесь один: сменился объект.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visitId]);
   if (visit === null) return null;
   // Числа берутся ТОЛЬКО из сводки объекта (Plane №645). Пока её нет, диалог
   // не называет чисел вовсе: подставить сюда общее по мероприятию значило бы
@@ -634,7 +669,16 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                 Закрыть объект
               </Button>
             </div>
-            <Dialog open={open} onOpenChange={setOpen}>
+            {/* 🔴 ЧЕРНОВИК ЖИВЁТ РОВНО СТОЛЬКО, СКОЛЬКО ОКНО (Plane №610).
+                Закрытие идёт ТРЕМЯ путями — «Отмена», Esc и клик вне окна, — и
+                все три приходят сюда, в `onOpenChange`. Чистить только в
+                обработчике кнопки значило бы починить один путь из трёх:
+                брошенная по Esc формулировка так же ждала бы следующего
+                открытия и уходила на сервер одним нажатием. */}
+            <Dialog
+              open={open}
+              onOpenChange={(next) => (next ? setOpen(true) : closeDialog())}
+            >
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Закрыть объект «{visit.objectName}»?</DialogTitle>
@@ -665,8 +709,16 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                     onChange={(e) => setComment(e.target.value)}
                   />
                 </div>
+                {/* 🔴 ОТКАЗ ПОКАЗЫВАЕТСЯ ВНУТРИ ОКНА (Plane №609). `StageError`
+                    стоял в теле карточки, а окно живёт в ПОРТАЛЕ поверх неё:
+                    при отказе (двое закрывают один объект — 422
+                    `VISIT_OBJECT_ALREADY_CLOSED`) окно оставалось открытым,
+                    кнопка включалась обратно, а сообщение сервера красилось за
+                    оверлеем. Нажатие читалось как ничего: ни ошибки, ни
+                    закрытия, ни объяснения. */}
+                <StageError error={close.error} />
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                  <Button type="button" variant="outline" onClick={closeDialog}>
                     Отмена
                   </Button>
                   <Button

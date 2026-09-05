@@ -55,6 +55,18 @@ const BY_ROUTE: Record<string, InDevelopmentNote> = {
       "Три вкладки, календарь с полосками постов, без заглушек (№449)",
     ],
   },
+  // 🔴 ЭТА ЗАПИСЬ — ПРО «СБОР СИЛ», А НЕ ПРО ВЕСЬ АДРЕС (Plane №598). По
+  // `/employees` живут ДВА модуля, и выбирает между ними `?view=`: без него —
+  // «Ежедневный расход организации», с `?view=forces` — «Сбор сил на ОМ». Все
+  // три пункта ниже — недоделки сбора сил, а реестр сопоставляет только
+  // `pathname`, поэтому метка объявлялась и на расходе, у которого открытых
+  // карточек нет вовсе: читателю сообщали неправду о готовности.
+  //
+  // Разделять реестр по строке запроса не стали: `PageHeader` пришлось бы
+  // читать `useSearchParams`, а он стоит на десятках экранов, и хук требует
+  // границы `<Suspense>` в прод-сборке (Plane №112 — так три экрана уехали в
+  // main со сломанной сборкой). Вместо этого САМ экран говорит заголовку,
+  // показывать ли метку: `inDevelopment={view === "forces"}` — проп уже был.
   "/employees": {
     pending: [
       "Заявки и запросы таблицами, довыделение новой строкой (№425)",
@@ -98,10 +110,6 @@ const BY_STAGE: Partial<Record<SecurityEventStage, InDevelopmentNote>> = {
       "Подписи по спецификации, перетаскивание, пустое состояние без списка (№445)",
     ],
   },
-  APPROVAL: {
-    pending: [
-    ],
-  },
   ACKNOWLEDGEMENT: {
     pending: [
       "Список по секторам, «Напомнить всем», отказ с «Заменить →» (№432)",
@@ -122,17 +130,35 @@ const BY_STAGE: Partial<Record<SecurityEventStage, InDevelopmentNote>> = {
   },
 };
 
+/**
+ * 🔴 ПУСТОЙ СПИСОК — ЭТО «ЗАПИСИ НЕТ» (Plane №540/№597).
+ *
+ * Запись этапа `APPROVAL` при закрытии №446 не удалили, а ОПУСТОШИЛИ:
+ * `{ pending: [] }`. Объект истинный, поэтому бейдж рисовался, а подпись
+ * собиралась голой — «В разработке: » без единого пункта, и в `title`, и в
+ * `aria-label`. На согласованном по спецификации этапе висела метка «сюда не
+ * смотри, ещё не готово», а объяснения при наведении не было вовсе — ровно то
+ * выворачивание наизнанку, о котором предупреждает шапка этого файла.
+ *
+ * Пустую запись снял этот же коммит, но одной чистки мало: следующий, кто
+ * закроет последнюю карточку, опустошит список тем же движением. Поэтому
+ * правило живёт ЗДЕСЬ — в чтении, а не в дисциплине пишущего.
+ */
+function _noteOrNull(note: InDevelopmentNote | undefined): InDevelopmentNote | null {
+  return note !== undefined && note.pending.length > 0 ? note : null;
+}
+
 /** Запись по адресу экрана либо `null` — работа по нему закрыта. */
 export function inDevelopmentOfRoute(pathname: string | null): InDevelopmentNote | null {
   if (pathname === null) return null;
   const match = Object.keys(BY_ROUTE)
     .filter((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
     .sort((a, b) => b.length - a.length)[0];
-  return match === undefined ? null : BY_ROUTE[match];
+  return match === undefined ? null : _noteOrNull(BY_ROUTE[match]);
 }
 
 export function inDevelopmentOfStage(stage: SecurityEventStage): InDevelopmentNote | null {
-  return BY_STAGE[stage] ?? null;
+  return _noteOrNull(BY_STAGE[stage]);
 }
 
 /** Одной фразой для подсказки и скринридера: «В разработке: a; b; c». */
