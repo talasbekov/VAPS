@@ -492,14 +492,27 @@ export function visitEvaluationsKey(id: string, visitObjectId: string) {
   return ["ops-visit-evaluations", id, visitObjectId] as const;
 }
 
-export function useVisitEvaluations(id: string, visitObjectId: string | null) {
+/**
+ * Сводка оценок объекта. `allowed` — есть ли право читать её (Plane №644).
+ *
+ * Ручка закрыта тем же правом, что и постановка оценки, поэтому читателю без
+ * него она отвечает 403. Запрос, который заведомо отобьётся, не отправляется
+ * вовсе: React Query перезапрашивает при возврате фокуса в окно, и открытая
+ * вкладка стучалась бы в закрытую дверь снова и снова, а экран печатал бы
+ * «не загрузились — обновите страницу» — совет, который не может помочь.
+ */
+export function useVisitEvaluations(
+  id: string,
+  visitObjectId: string | null,
+  allowed = true
+) {
   return useQuery({
     queryKey: visitEvaluationsKey(id, visitObjectId ?? ""),
     queryFn: () =>
       opsApiClient.get<VisitEvaluationSummary>(
         visitObjectEvaluationsPath(id, visitObjectId ?? "")
       ),
-    enabled: visitObjectId !== null,
+    enabled: visitObjectId !== null && allowed,
   });
 }
 
