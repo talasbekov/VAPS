@@ -392,5 +392,69 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
         panel.locator('[data-slot="incident-form"]').getByLabel('Пост'),
       ).toHaveValue('')
     })
+
+    test('инцидент записывается одной дорогой и показывается один раз', async ({
+      page,
+    }) => {
+      // `[ЗАК-03]` требует у инцидента время, пост и принятые меры. «Журнал
+      // штаба» на том же экране предлагал тип «Инцидент» в своём списке и слал
+      // {type, title, description} — без всего этого (Plane №729): записанный
+      // оттуда инцидент выходил неполным, а панель инцидентов рисовала его
+      // «— · —». Хуже: общий список журнала показывал ВСЕ записи, поэтому
+      // каждый инцидент был на экране дважды.
+      const token = await apiToken()
+      const target = requireFixture(
+        (await events(token, 'CONDUCT'))[0],
+        'мероприятие на стадии «Проведение»',
+      )
+
+      await page.route(`**/api/ops/security-events/${target.id}/`, async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        body.journalEntries = [
+          {
+            id: 'probe-one-incident',
+            type: 'INCIDENT',
+            title: 'Проба единственного показа',
+            description: '',
+            createdAt: '2026-09-05T07:00:00.000Z',
+            occurredAt: '2026-09-05T07:00:00.000Z',
+            postId: null,
+            measures: '',
+          },
+          {
+            id: 'probe-instruction',
+            type: 'INSTRUCTION',
+            title: 'Проба указания',
+            description: '',
+            createdAt: '2026-09-05T07:05:00.000Z',
+          },
+          ...body.journalEntries,
+        ]
+        await route.fulfill({ response, json: body })
+      })
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target.id}/`)
+      const main = page.getByRole('main')
+      await expect(main).toBeVisible({ timeout: 15_000 })
+
+      // Инцидент виден РОВНО ОДИН раз на всём экране — в своей панели.
+      await expect(main.getByText('Проба единственного показа')).toHaveCount(1)
+      await expect(
+        page
+          .locator('[data-slot="incidents-panel"] [data-slot="incident-row"]')
+          .filter({ hasText: 'Проба единственного показа' }),
+      ).toHaveCount(1)
+      // Прочие записи журнала своего списка не потеряли.
+      await expect(main.getByText('Проба указания')).toHaveCount(1)
+
+      // Второй дороги к инциденту на экране нет: в списке типов журнала
+      // остались только указание и приказ.
+      const journalType = page.locator('#journal-type')
+      await expect(journalType).toBeVisible()
+      await expect(journalType.locator('option')).toHaveCount(2)
+      await expect(journalType).not.toContainText('Инцидент')
+    })
   })
 })
