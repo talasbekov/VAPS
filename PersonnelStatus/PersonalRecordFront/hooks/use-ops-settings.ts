@@ -77,7 +77,15 @@ export function useReplaceApprovalRoute(
   const queryClient = useQueryClient();
   return useOpsMutation<{ results: ApprovalRouteStep[] }, { steps: ApprovalRouteStepInput[] }>({
     mutationFn: (body) => opsApiClient.put<{ results: ApprovalRouteStep[] }>(APPROVAL_ROUTE_PATH, body),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // 🔴 ОТВЕТ РУЧКИ КЛАДЁТСЯ В КЭШ ДО ИНВАЛИДАЦИИ (Plane №701). Ручка
+      // возвращает сам маршрут, а читатель на `onSaved` снимает `dirty` — и
+      // до прихода перезапроса его эффект перерисовывал СТАРЫЙ список под
+      // надписью «Маршрут сохранён.»: несохранённое выглядело сохранённым, а
+      // при отказе перезапроса — выглядело так постоянно. Тот же приём, что у
+      // мутаций мероприятия (`useEventMutation`): сначала известный ответ,
+      // потом фоновое обновление.
+      queryClient.setQueryData(["ops-approval-route"], data);
       void queryClient.invalidateQueries({ queryKey: ["ops-approval-route"] });
       void queryClient.invalidateQueries({ queryKey: ["ops-audit-logs"] });
       options?.onSaved?.();
