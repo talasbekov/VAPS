@@ -24,6 +24,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -560,6 +561,7 @@ async function prepareEvent(
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+    await assertStep(res, method, path)
     return (await res.json().catch(() => ({}))) as Record<string, never> &
       Record<string, unknown>
   }
@@ -587,7 +589,12 @@ async function prepareEvent(
     briefDescription: 'Проба ознакомления.',
     initialTasks: '—',
   })
-  await call('POST', `${base}/bulletin/complete/`)
+  // 🔴 ЗАВЕРШАТЬ БЮЛЛЕТЕНЬ НЕ НУЖНО И НЕЛЬЗЯ (Plane №812, найдено проверкой
+  // шагов). ОМ с объектом заводится сразу на рекогносцировке («Реестр ОМ-5»),
+  // и `bulletin/complete/` отвечал `INVALID_STAGE_TRANSITION` — «бюллетень
+  // можно завершить только на этапе „Бюллетень“». Шаг был мёртв с самого
+  // начала: ответ не смотрели, и отказ молчал. Тот же разбор уже стоял в
+  // `recon-stage.spec.ts` — здесь его просто никто не повторил.
   await call('POST', `${base}/recon/import-from-passport/`)
   const afterImport = (await call('GET', `${base}/`)) as unknown as {
     reconChecklist: Record<string, unknown>[]
@@ -643,7 +650,10 @@ async function prepareEvent(
     `${base}/approval/route/${withRoute.approvalRoute[0]!.id}/decide/`,
     { decision: 'APPROVED', comment: '' },
   )
-  await call('POST', `${base}/approval/approve/`)
+  // 🔴 `approval/approve/` ЗДЕСЬ ЛИШНИЙ И ОТБИВАЕТСЯ 422 (Plane №812, найдено
+  // проверкой шагов). Этап согласования закрывает ПОСЛЕДНЯЯ ПОДПИСЬ сама
+  // (`[СОГ-09]`): строкой выше объект уже уехал дальше, и согласовывать
+  // нечего. Шаг был мёртв с самого начала — ответ не смотрели, отказ молчал.
   return created.code
 }
 

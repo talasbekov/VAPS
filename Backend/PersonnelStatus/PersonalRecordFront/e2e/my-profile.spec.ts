@@ -20,6 +20,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { probeTitle } from './probe-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -155,12 +156,15 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
 
     // Своё назначение — руками admin, тем же путём, что и человек: ОМ →
     // импорт постов → рекогносцировка закрыта → расстановка.
-    const post = async (path: string, body?: unknown) =>
-      fetch(`${API}${path}`, {
+    const post = async (path: string, body?: unknown) => {
+      const res = await fetch(`${API}${path}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       })
+      await assertStep(res, 'POST', path)
+      return res
+    }
     const objects = await get<{ results: { id: string; publishedVersionCount: number }[] }>(
       admin,
       '/api/ops/security-events/bindable-objects/',
@@ -224,7 +228,13 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       await post(`${base}approval/route/${route.approvalRoute[0]!.id}/decide/`, {
         decision: 'APPROVED', comment: '',
       })
-      await post(`${base}approval/approve/`)
+      // 🔴 `approval/approve/` ЗДЕСЬ БЫЛ ЛИШНИМ И ОТБИВАЛСЯ 422 ВСЕГДА
+      // (Plane №812, найдено проверкой шагов). Этап согласования закрывает
+      // ПОСЛЕДНЯЯ ПОДПИСЬ сама (`[СОГ-09]`): строкой выше объект уже уехал на
+      // «Ознакомление», и согласовывать нечего. Пока ответ не смотрели, отказ
+      // молчал и шаг выглядел работающим — ровно тот случай, ради которого
+      // проверка и заведена, только здесь она нашла не поломку правила, а
+      // лишний шаг, живший в фикстуре с самого начала.
 
       // Сервер: своя ручка отдаёт строку, реестр не нужен.
       const mine = await get<{ results: { eventCode: string; assignmentId: string }[] }>(

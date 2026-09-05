@@ -16,6 +16,7 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 // две реализации одной подготовки разошлись бы при первой правке цепочки
 // стадий (см. шапку `prepare-events.ts`).
 import { prepareDemandEvent } from './prepare-events'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -324,8 +325,15 @@ test.describe('сборы сил (вид штаба)', () => {
      */
     const token = await apiToken()
     const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-    const call = async (method: string, path: string, body?: unknown): Promise<any> =>
-      (await fetch(`${API}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })).json().catch(() => ({}))
+    const call = async (method: string, path: string, body?: unknown): Promise<any> => {
+      const res = await fetch(`${API}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+      await assertStep(res, method, path)
+      return res.json().catch(() => ({}))
+    }
     const day = new Date(Date.UTC(2027, 7, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
     const own = await prepareDemandEvent(token, day.toISOString().slice(0, 10))
     const list = (await call('GET', '/api/ops/security-events/forces/collections/')) as {

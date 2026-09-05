@@ -20,6 +20,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -73,6 +74,7 @@ async function seed(token: string): Promise<Fixture> {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+    await assertStep(res, method, path)
     const payload = await res.json().catch(() => ({}))
     return { status: res.status, payload }
   }

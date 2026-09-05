@@ -20,6 +20,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { prepareDemandEvent } from './prepare-events'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -171,6 +172,7 @@ async function prepareEventOnPlacement(
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+    await assertStep(res, method, path)
     return res.json().catch(() => ({}))
   }
   const { code, total } = await prepareDemandEvent(token, '2027-06-01')
