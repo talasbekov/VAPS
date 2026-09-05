@@ -144,6 +144,14 @@ class OpsEventEvaluation(TimeStampedModel):
     basis_note = models.TextField(null=True)
     evaluated_at = models.DateField()
     superseded_by_code = models.CharField(max_length=100, null=True)
+    # 🔴 ОТЗЫВ — НЕ ИСПРАВЛЕНИЕ (Plane №646). Повторный клик по цифре на этапе
+    # «Проведение» снимает оценку: преемника у неё нет и не будет. Раньше это
+    # писали в `superseded_by_code` строкой `'withdrawn'`, которая кодом
+    # оценки не является: `_build_chain` разрешал её через `by_code` и получал
+    # `None`, а реестр объявлял запись «исправленной» без преемника и без
+    # строки `OpsEvaluationCorrection`. Своё поле разводит два разных факта —
+    # «замещена вот этой записью» и «снята вовсе».
+    withdrawn_at = models.DateTimeField(null=True)
 
     class Meta:
         db_table = "ops_event_evaluations"
@@ -162,6 +170,14 @@ class OpsEventEvaluation(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(method__in=_METHODS),
                 name="chk_ops_evaluation_method",
+            ),
+            # `superseded_by_code` — КОД ОЦЕНКИ и только он (Plane №646).
+            # Ограничение стережёт возврат прежнего приёма: снятие оценки
+            # писалось сюда словом `'withdrawn'`, и цепочка исправлений вела
+            # в никуда.
+            models.CheckConstraint(
+                condition=~models.Q(superseded_by_code="withdrawn"),
+                name="chk_ops_evaluation_superseded_is_a_code",
             ),
         ]
 

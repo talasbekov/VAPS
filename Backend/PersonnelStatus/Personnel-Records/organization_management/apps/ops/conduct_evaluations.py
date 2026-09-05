@@ -36,9 +36,17 @@ def _event_code(event):
 
 
 def _current_evaluations(event):
-    """Действующие оценки ОМ по коду участника."""
+    """Действующие оценки ОМ по коду участника.
+
+    Отозванная (снятая повторным кликом) действующей не считается: преемника
+    у неё нет, но и оценкой она больше не является — `withdrawn_at` (Plane
+    №646) разводит эти два факта, которые прежде оба лежали в
+    `superseded_by_code`.
+    """
     rows = OpsEventEvaluation.objects.filter(
-        event_code=_event_code(event), superseded_by_code__isnull=True
+        event_code=_event_code(event),
+        superseded_by_code__isnull=True,
+        withdrawn_at__isnull=True,
     ).order_by("pk")
     return {row.participant_code: row for row in rows}
 
@@ -187,15 +195,22 @@ def _write(event, assignment, *, score, comment, actor):
         OpsEventEvaluation.objects.filter(
             event_code=event_code, participant_code=code,
             superseded_by_code__isnull=True,
+            withdrawn_at__isnull=True,
         )
     )
     work_item = OpsEvaluationWorkItem.objects.filter(
         work_item_code=f"{event_code}-{code}"
     ).first()
     if score is None:
+        # 🔴 ОТЗЫВ — НЕ ИСПРАВЛЕНИЕ (Plane №646). Прежде сюда писали
+        # `superseded_by_code = "withdrawn"` — строку, которая кодом оценки не
+        # является: цепочка исправлений разрешала её в `None`, и реестр
+        # объявлял запись «исправленной» без преемника. Своё поле говорит ровно
+        # то, что произошло: оценку сняли, замены ей нет.
+        withdrawn_at = Clock.now()
         for row in previous:
-            row.superseded_by_code = "withdrawn"
-            row.save(update_fields=["superseded_by_code", "updated_at"])
+            row.withdrawn_at = withdrawn_at
+            row.save(update_fields=["withdrawn_at", "updated_at"])
         if work_item is not None:
             work_item.status = "PENDING"
             work_item.submitted_evaluation_code = None
@@ -222,6 +237,21 @@ def _write(event, assignment, *, score, comment, actor):
     for row in previous:
         row.superseded_by_code = evaluation.evaluation_code
         row.save(update_fields=["superseded_by_code", "updated_at"])
+        # 🔴 ЗАМЕЩЕНИЕ БЕЗ СТРОКИ ИСПРАВЛЕНИЯ — ДЫРА В §19.18 (Plane №646).
+        # Порядок исправлений требует, чтобы у каждого замещения были причина
+        # и автор; этот путь замещал молча, в том числе записи, заведённые
+        # формальным `submit_evaluation` (с основанием, комментарием и
+        # причиной). В цепочке такое замещение выглядело как исправление
+        # «неизвестно кем и почему».
+        #
+        # Причина здесь МАШИННАЯ и честная: на этапе её никто не вводит —
+        # переоценка выражается кликом по другой цифре, и требовать текст
+        # значило бы менять сам способ работы. Отвергнут вариант «запретить
+        # этапу переписывать формально отправленную оценку»: он меняет
+        # поведение экрана и это решение заказчика, а не следствие ревью.
+        ratings.record_stage_correction(
+            original=row, replacement=evaluation, actor=actor
+        )
     if work_item is not None:
         work_item.status = "SUBMITTED"
         work_item.submitted_evaluation_code = evaluation.evaluation_code

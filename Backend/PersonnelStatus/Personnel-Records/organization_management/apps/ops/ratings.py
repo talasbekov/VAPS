@@ -554,11 +554,18 @@ def period_start(business_date, period_days):
 
 
 def included_evaluations(evaluations, participant_code, starts_at, ends_at):
-    """Учтённые в агрегате: в периоде и НЕ вытесненные исправлением."""
+    """Учтённые в агрегате: в периоде, НЕ вытесненные исправлением и НЕ снятые.
+
+    Снятая оценка (`withdrawn_at`, Plane №646) в средний балл не входит — то
+    же поведение, что и раньше; изменился только способ его записать. Пока
+    отзыв писали словом в `superseded_by_code`, отбор «не вытеснена» отсекал
+    и снятые заодно, и разница была не видна.
+    """
     return [
         item for item in evaluations
         if item.participant_code == participant_code
         and item.superseded_by_code is None
+        and getattr(item, "withdrawn_at", None) is None
         and starts_at <= item.evaluated_at <= ends_at
     ]
 
@@ -1592,6 +1599,44 @@ def _build_chain(evaluations, corrections, current_code):
             else None
         )
     return links
+
+
+# Причина, которой подписывается замещение оценки, сделанное КЛИКОМ на этапе
+# «Проведение» (Plane №646). Текст машинный намеренно: на этапе причину никто
+# не вводит, и выдумывать за человека слова нельзя — но и оставлять замещение
+# без причины §19.18 не позволяет.
+STAGE_CORRECTION_REASON = (
+    "Переоценка на этапе «Проведение»: оценщик выставил другое значение шкалы."
+)
+
+
+def record_stage_correction(*, original, replacement, actor):
+    """Строка исправления для замещения, сделанного на этапе (Plane №646).
+
+    §19.18 требует, чтобы у КАЖДОГО замещения были причина и автор. Путь
+    этапа замещал молча — в том числе записи, заведённые формальным
+    `submit_evaluation`, — и в цепочке такое выглядело как исправление
+    неизвестно кем и почему.
+
+    Редакция берётся у задания оценщика, если оно есть: строка исправления
+    называет ту редакцию, в которой правка произошла, и по ней формальный путь
+    (`submit_correction`) отличает свои конфликты. Задания может не быть вовсе
+    — тогда ноль, и это честнее выдуманной единицы.
+    """
+    item = OpsEvaluationWorkItem.objects.filter(
+        work_item_code=f"{original.event_code}-{original.participant_code}"
+    ).first()
+    correction = OpsEvaluationCorrection.objects.create(
+        correction_code=_tmp_code(),
+        original_evaluation_code=original.evaluation_code,
+        replacement_evaluation_code=replacement.evaluation_code,
+        reason=STAGE_CORRECTION_REASON,
+        corrected_by=str(actor or ""),
+        corrected_at=Clock.now(),
+        revision=item.revision if item is not None else 0,
+    )
+    _stamp_code(correction, "correction_code", "correction")
+    return correction
 
 
 def submitted_evaluation_detail(actor, perms, work_item_code):

@@ -77,8 +77,15 @@ def test_click_sets_and_second_click_withdraws(manager, two_objects_on_conduct):
         format="json",
     )
     assert resp.status_code == 200
+    # 🔴 ОТБОР «ДЕЙСТВУЮЩАЯ» ПРАВЛЕН ОСОЗНАННО (Plane №646). Прежде отзыв
+    # писали в `superseded_by_code` словом `'withdrawn'`, и одного условия
+    # «не замещена» хватало, чтобы отсечь и снятые. Теперь отзыв — своё поле,
+    # и условий два. Смысл пробы тот же: после повторного клика действующей
+    # оценки не остаётся.
     live = OpsEventEvaluation.objects.filter(
-        event_code=f"security-event-{event_id}", superseded_by_code__isnull=True
+        event_code=f"security-event-{event_id}",
+        superseded_by_code__isnull=True,
+        withdrawn_at__isnull=True,
     )
     assert live.count() == 1 and live.get().score == 9
     assert OpsEventEvaluation.objects.filter(event_code=f"security-event-{event_id}").count() == 2
@@ -327,3 +334,79 @@ def test_replacement_of_the_neighbour_is_not_listed(manager, two_objects_on_cond
     assert [r["employeeName"] for r in b["rows"] if r["replaced"]] != [], (
         "своя замена потерялась вместе с чужой"
     )
+
+
+def test_withdrawn_score_is_not_a_correction(manager, two_objects_on_conduct):  # noqa: F811
+    """Снятая оценка не объявляется исправленной (Plane №646).
+
+    Отзыв писали в `superseded_by_code` словом `'withdrawn'` — строкой, которая
+    кодом оценки не является: цепочка исправлений разрешала её в `None`, и
+    реестр показывал запись «исправленной» без преемника и без строки
+    `OpsEvaluationCorrection`.
+    """
+    from organization_management.apps.operations.models_rating import (
+        OpsEvaluationCorrection,
+    )
+
+    _, event_id, first, _ = two_objects_on_conduct
+    row = manager.get(_url(event_id, first)).json()["rows"][0]
+    url = _url(event_id, first)
+    manager.post(url, {"assignmentId": row["assignmentId"], "score": 7}, format="json")
+    manager.post(url, {"assignmentId": row["assignmentId"], "score": None}, format="json")
+
+    code = ratings._participant_code_for(int(row["employeeId"]))
+    evaluation = OpsEventEvaluation.objects.get(
+        event_code=f"security-event-{event_id}", participant_code=code
+    )
+    assert evaluation.withdrawn_at is not None, "отзыв не записан"
+    assert evaluation.superseded_by_code is None, (
+        "снятая оценка объявлена замещённой — преемника у неё нет"
+    )
+    # Исправлением отзыв не является: строки §19.18 у него быть не должно.
+    assert not OpsEvaluationCorrection.objects.filter(
+        original_evaluation_code=evaluation.evaluation_code
+    ).exists()
+    # В средний балл снятая по-прежнему не входит — поведение то же, изменился
+    # только способ его записать.
+    from organization_management.apps.operations.clock import Clock
+
+    today = Clock.today_local()
+    assert ratings.included_evaluations([evaluation], code, today, today) == []
+    assert manager.get(url).json()["evaluated"] == 0
+
+
+def test_restaging_a_score_leaves_a_correction_with_a_reason(  # noqa: F811
+    manager, two_objects_on_conduct
+):
+    """Замещение на этапе подписано причиной и автором (Plane №646, §19.18).
+
+    Порядок исправлений требует, чтобы у КАЖДОГО замещения были причина и
+    автор. Путь этапа замещал молча — в том числе записи формального
+    `submit_evaluation`, — и в цепочке это выглядело как исправление
+    неизвестно кем и почему.
+    """
+    from organization_management.apps.operations.models_rating import (
+        OpsEvaluationCorrection,
+    )
+
+    _, event_id, first, _ = two_objects_on_conduct
+    row = manager.get(_url(event_id, first)).json()["rows"][0]
+    url = _url(event_id, first)
+    manager.post(url, {"assignmentId": row["assignmentId"], "score": 4}, format="json")
+    manager.post(url, {"assignmentId": row["assignmentId"], "score": 9}, format="json")
+
+    code = ratings._participant_code_for(int(row["employeeId"]))
+    rows = list(
+        OpsEventEvaluation.objects.filter(
+            event_code=f"security-event-{event_id}", participant_code=code
+        ).order_by("pk")
+    )
+    assert [r.score for r in rows] == [4, 9]
+    assert rows[0].superseded_by_code == rows[1].evaluation_code
+
+    correction = OpsEvaluationCorrection.objects.get(
+        original_evaluation_code=rows[0].evaluation_code
+    )
+    assert correction.replacement_evaluation_code == rows[1].evaluation_code
+    assert correction.reason.strip() != "", "замещение без причины — обход §19.18"
+    assert correction.corrected_by != "", "замещение без автора"
