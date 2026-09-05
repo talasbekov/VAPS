@@ -166,7 +166,9 @@ def _closure_summary(event, visit, *, single=True):
             # общим числом мероприятия ровно там, где про остальное молчит.
             marked = {
                 str(p.get("id"))
-                for p in security_events.visit_object_posts(event, visit)
+                for p in security_events.visit_object_posts(
+                    event, visit, single=single
+                )
             }
             journal = _journal_of(event, visit, marked, single=single)
             return {
@@ -179,7 +181,7 @@ def _closure_summary(event, visit, *, single=True):
                 ),
                 "incidents": sum(1 for e in journal if e.get("type") == "INCIDENT"),
             }
-        posts = security_events.visit_object_posts(event, visit)
+        posts = security_events.visit_object_posts(event, visit, single=single)
     post_ids = {str(p.get("id")) for p in posts}
     assignments = [
         a for a in (event.placement_assignments or []) if str(a.get("postId")) in post_ids
@@ -210,7 +212,7 @@ def _visit_placement(event, visit, *, single):
     # Разрез — один на весь раздел (`security_events.visit_object_posts`):
     # так же считает согласование объекта (Plane №411) и экран этапа. Вторая
     # копия правила разошлась бы с первой при первой же правке.
-    scoped = security_events.visit_object_posts(event, visit)
+    scoped = security_events.visit_object_posts(event, visit, single=single)
     unmarked = [p for p in posts if not str(p.get("visitObjectId") or "")]
     if unmarked:
         # НЕРАЗМЕЧЕННЫЕ строки и делают ответ неизвестным (Plane №409). У
@@ -297,7 +299,7 @@ def serialize_visit_object(event, visit, *, single):
         "approvalRoute": visit.approval_route or [],
         "approvalRemarks": visit.approval_remarks or [],
         # ВЫВОД, а не поле: «расстановка объекта изменилась после отправки».
-        "approvalStale": security_events.approval_is_stale(event, visit),
+        "approvalStale": security_events.approval_is_stale(event, visit, single=single),
         # Номер ТЕКУЩЕЙ версии документа «Расстановка сил» (№396/№411): 0 —
         # расстановка ещё не завершалась ни разу.
         "documentVersion": visit.document_version,
@@ -387,6 +389,16 @@ def _serialize_visit_objects(event):
     `single` считается ОДИН раз по всему списку: от него зависит, можно ли
     отнести нерасписанный расчёт постов к объекту (см. `_visit_placement`).
     """
+    # 🔴 КЭШ PREFETCH ИСПОЛЬЗУЕТСЯ, А НЕ ОБХОДИТСЯ (Plane №786). Здесь стоял
+    # `event.visit_objects.prefetch_related(...)` — это НОВЫЙ queryset, и он
+    # игнорирует то, что список уже подтянут набором реестра: на каждую строку
+    # уходили свои запросы за объектами, замещающими и версиями документа.
+    # Замерено: страница реестра росла на восемь запросов на строку, и четыре
+    # из восьми приходились сюда.
+    #
+    # `.all()` на подтянутой связи запросов не делает вовсе. Когда связь НЕ
+    # подтянута (одиночная карточка), сохраняется прежний путь с вложенным
+    # prefetch — иначе внутри одного мероприятия вернулся бы свой N+1.
     visits = list(
         event.visit_objects.prefetch_related("deputies", "document_versions")
     )

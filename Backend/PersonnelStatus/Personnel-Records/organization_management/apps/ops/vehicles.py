@@ -103,10 +103,15 @@ def _allocation_row(row):
 
 
 def list_event_vehicles(event):
-    return [
-        _allocation_row(row)
-        for row in event.vehicles.select_related("vehicle").all()
-    ]
+    # Подтянутую связь читаем из кэша (Plane №786): `.select_related(…)` строит
+    # НОВЫЙ queryset и обходит prefetch реестра — по запросу на строку. Не
+    # подтянута (одиночная карточка) — прежний путь.
+    rows = (
+        event.vehicles.all()
+        if "vehicles" in getattr(event, "_prefetched_objects_cache", {})
+        else event.vehicles.select_related("vehicle").all()
+    )
+    return [_allocation_row(row) for row in rows]
 
 
 @transaction.atomic
