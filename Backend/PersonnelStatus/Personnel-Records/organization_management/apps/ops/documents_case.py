@@ -37,13 +37,21 @@ _STAGE_ORDER = [
 
 
 def _fmt_dt(value):
+    """Отметка времени в зоне РАЗДЕЛА (Plane №696).
+
+    Голый `.astimezone()` брал зону ОПЕРАЦИОННОЙ СИСТЕМЫ, а не `TIME_ZONE`
+    проекта: на сервере в UTC каждое время в деле и в приложении к
+    расстановке было смещено на пять часов. Локально это невидимо — машина
+    разработки уже +05, — поэтому зону берёт `Clock.to_local`, как и весь
+    остальной раздел.
+    """
     if not value:
         return "—"
     try:
         parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return str(value)
-    return parsed.astimezone().strftime("%d.%m.%Y %H:%M")
+    return Clock.to_local(parsed).strftime("%d.%m.%Y %H:%M")
 
 
 def acknowledgement_sheet_rows(event, visit=None):
@@ -205,7 +213,7 @@ def render_case(event_code, *, visit_object_id=None, fmt="pdf", permissions=None
     document = Document()
     document.add_heading(f"Дело · {event.code} — {event.title}", level=0)
     document.add_paragraph(
-        f"Дата мероприятия {event.business_date.strftime('%d.%m.%Y')} · собрано {Clock.now().astimezone().strftime('%d.%m.%Y %H:%M')}"
+        f"Дата мероприятия {event.business_date.strftime('%d.%m.%Y')} · собрано {Clock.local_now().strftime('%d.%m.%Y %H:%M')}"
         + (f" · мероприятие закрыто {_fmt_dt(event.closed_at.isoformat())}" if event.closed_at else "")
     )
     for index, visit in enumerate(visits):
