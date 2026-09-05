@@ -1033,3 +1033,59 @@ def test_the_event_carries_the_latest_return_reason_not_the_lowest_object(
         "мероприятие несёт причину нижнего объекта, а не последнего по времени"
     )
 
+
+def test_completing_placement_twice_does_not_drag_an_approved_object_back(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ПОВТОР «ЗАВЕРШИТЬ РАССТАНОВКУ» ОТКАТЫВАЛ СОГЛАСОВАННЫЙ ОБЪЕКТ (№508).
+
+    Завершение расстановки МЕНЯЕТ этап объекта, а сторожило только этап ОМ — а
+    он держится минимумом по объектам. У ОМ, где объект А уже согласован и ушёл
+    на «Ознакомление», а объект Б ещё расставляется, `event.stage` остаётся
+    «Расстановкой», и повтор по объекту А проходил гвард: его этап писался
+    безусловно. Согласованный объект откатывался назад, а его статус
+    согласования оставался «Согласовано» — состояние, из которого система себя
+    не выведет.
+
+    Достижимо не только по API: выборщик объекта на экране перечисляет ВСЕ
+    объекты независимо от их этапа.
+    """
+    base, event_id, first, second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    decided = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert decided.status_code == 200, decided.content
+    first.refresh_from_db()
+    assert first.stage == "ACKNOWLEDGEMENT", "фикстура не довела объект до согласования"
+
+    # Второй объект возвращаем на расстановку — он и держит этап мероприятия
+    # внизу, ради чего проба и заведена.
+    _add_approver(manager, base, second, name="Согласующий второго")
+    back = approver.post(
+        f"{base}approval/return/",
+        {"comment": "переделать", "visitObjectId": str(second.pk)},
+        format="json",
+    )
+    assert back.status_code == 200, back.content
+    event = service.lock_event(event_id)
+    assert event.stage == "PLACEMENT", "минимум по объектам — иначе проба не о том"
+
+    repeated = manager.post(
+        f"{base}placement/complete/",
+        {"visitObjectId": str(first.pk)},
+        format="json",
+    )
+
+    assert repeated.status_code == 422, repeated.content
+    body = repeated.json()
+    assert body["error_code"] == "INVALID_STAGE_TRANSITION", body
+    assert body["details"]["visitObjectId"] == str(first.pk), body
+    first.refresh_from_db()
+    assert first.stage == "ACKNOWLEDGEMENT", "согласованный объект откатили назад"
+    assert first.approval_status == "APPROVED"
