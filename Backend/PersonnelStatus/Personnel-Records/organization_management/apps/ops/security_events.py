@@ -14,6 +14,7 @@ handlers.ts) ДОСЛОВНО — он был первой реализацие�
 import datetime as dt
 import hashlib
 import logging
+import re
 from uuid import uuid4
 
 from django.db import transaction
@@ -2408,6 +2409,17 @@ _ALLOCATION_STAGES = ("DEMAND", "FORCES", "PLACEMENT")
 # оповещали: у остальных внутри уже живут управления и выделенные люди.
 _ALLOCATION_DRAFT = "DRAFT"
 
+#: Статусы, при которых строка не считается просроченной (Plane №287, №553).
+#: Список — здесь, а не литералом внутри `allocation_is_overdue`: его читает и
+#: клиент через ответ ручки, и рассуждение о каждом члене живёт в докстринге
+#: функции.
+_ALLOCATION_NOT_OVERDUE = ("SUBMITTED", "ACCEPTED", "RETURNED", "DECLINED")
+
+#: Статусы, при которых разбивка по управлениям уже не правится (Plane №554).
+#: Не «всё, что не DRAFT»: отказ (`DECLINED`) — тоже не DRAFT, а управлений
+#: при нём никто не запрашивал.
+_QUOTAS_LOCKED_STATUSES = ("SUBMITTED", "ACCEPTED", "RETURNED")
+
 
 def force_demand_total(event):
     """Сколько всего людей делит штаб.
@@ -2474,6 +2486,36 @@ def _parse_due_at(raw):
     return parsed.isoformat()
 
 
+def _whole_number(value, field, *, message="Укажите целое число."):
+    """Целое из тела запроса — или ошибка поля (Plane №556).
+
+    🔴 ГОЛЫЙ `int()` НЕ ПРОВЕРЯЕТ ЦЕЛОСТЬ, А ПРИВОДИТ К НЕЙ. `int(2.9)` даёт 2,
+    `int(True)` даёт 1, и оба молча становились официальным ответом
+    департамента: текст ошибки обещал «целое число», а сервер вместо отказа
+    округлял вниз. Département слал 2.9 (описка в форме, кривой клиент) и
+    получал 2 — цифру, которой не называл, и узнать об этом было неоткуда.
+
+    Принимается: `int` (кроме `bool`) и строка из одних цифр со знаком.
+    Отвергается всё остальное — `True`, `2.9`, `"2.9"`, `"2 "`, `None`,
+    списки. `bool` отвергается ОТДЕЛЬНОЙ веткой, потому что в Python он
+    подкласс `int` и проверка `isinstance(value, int)` пропустила бы его.
+    """
+    if isinstance(value, bool):
+        raise _validation({field: [message]})
+    if isinstance(value, int):
+        return value
+    text = value if isinstance(value, str) else None
+    if text is not None and _WHOLE_NUMBER_RE.fullmatch(text.strip()):
+        return int(text.strip())
+    raise _validation({field: [message]})
+
+
+#: Целое число в тексте: знак и цифры, ничего больше. `"2.0"` не проходит
+#: сознательно — это запись дробного, и принимать её значило бы гадать, что
+#: имел в виду отправитель.
+_WHOLE_NUMBER_RE = re.compile(r"[+-]?\d+")
+
+
 def allocation_is_overdue(row, now=None):
     """Срок вышел, а список не отправлен.
 
@@ -2490,8 +2532,15 @@ def allocation_is_overdue(row, now=None):
     ветки строка краснела бы «Просрочено» и добавляла +1 к `overdueCount` за
     задержку, которой департамент не совершал. Обещание docstring и поведение
     кода разошлись в первой редакции — код догнал (найдено ревью).
+
+    🔴 `DECLINED` ТОЖЕ ОСВОБОЖДЁН (Plane №553). «0 закрывает запрос»
+    (`[СБС-21]`) — это ОКОНЧАТЕЛЬНЫЙ ответ департамента, а не молчание: слать
+    ему больше нечего и ждать от него нечего. Без этой ветки отказавшаяся
+    строка после `dueAt` краснела «Просрочено» в таблице департамента и вечно
+    прибавляла +1 к `overdueCount` штабу — то есть замысел «отказ закрывает
+    запрос» отменялся счётчиком, который его не знал.
     """
-    if row.get("status") in ("SUBMITTED", "ACCEPTED", "RETURNED"):
+    if row.get("status") in _ALLOCATION_NOT_OVERDUE:
         return False
     due_at = row.get("dueAt")
     if not due_at:
@@ -2523,12 +2572,18 @@ def split_force_demand(event_id, *, rows):
     for index, row in enumerate(rows):
         if not str(row.get("departmentId", "")).strip():
             field_errors[f"rows.{index}.departmentId"] = ["Выберите департамент."]
+        # Целость проверяется, а не достигается округлением (Plane №556):
+        # `int(2.9)` дал бы 2 и сохранил бы департаменту число, которого штаб
+        # не называл.
         try:
-            need = int(row.get("need", 0))
-        except (TypeError, ValueError):
-            need = 0
-        if need < 1:
-            field_errors[f"rows.{index}.need"] = ["Должно быть не меньше 1."]
+            need = _whole_number(row.get("need", 0), "need")
+        except DomainError:
+            # Не `continue`: срок этой же строки проверяется ниже, и человеку
+            # надо показать ВСЕ ошибки формы разом, а не по одной за заход.
+            field_errors[f"rows.{index}.need"] = ["Укажите целое число."]
+        else:
+            if need < 1:
+                field_errors[f"rows.{index}.need"] = ["Должно быть не меньше 1."]
         # Срок НЕОБЯЗАТЕЛЕН в теле: не задан — берётся умолчание «за сутки до
         # ОМ». Заданный, но неразбираемый — ошибка формы, а не молчаливое
         # умолчание: иначе опечатка в дате выглядела бы как принятое решение.
@@ -2561,7 +2616,7 @@ def split_force_demand(event_id, *, rows):
         raise _validation(field_errors)
 
     total = force_demand_total(event)
-    requested = sum(int(row.get("need", 0)) for row in rows)
+    requested = sum(_whole_number(row.get("need", 0), "need") for row in rows)
     if total and requested > total:
         raise DomainError(
             "ALLOCATION_OVER_DEMAND",
@@ -2664,6 +2719,13 @@ def split_force_demand(event_id, *, rows):
                 "allocating": kept.get("allocating"),
                 "answerComment": kept.get("answerComment", ""),
                 "declinedAt": kept.get("declinedAt"),
+                # Статус, который был у строки ДО отказа (Plane №552),
+                # переносится по тому же правилу, что и всё выше: строка
+                # пересобирается явным перечнем ключей, и забытый ключ —
+                # стёртый факт. Без него отзыв отказа терял «Возвращено
+                # штабом» всякий раз, когда штаб между делом пересохранил
+                # раскладку.
+                "statusBeforeDecline": kept.get("statusBeforeDecline"),
             }
         )
     # Довыделенные строки дописываются В КОНЕЦ и в прежнем виде: редактор их
@@ -2730,7 +2792,20 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
             ),
         )
     target = _find_allocation(event, allocation_id)
-    if target.get("status") != _ALLOCATION_DRAFT:
+    # 🔴 ЗАПИРАЕТ ФАКТ ЗАПРОСА, А НЕ «СТАТУС НЕ DRAFT» (Plane №554). Прежнее
+    # условие `status != DRAFT` ловило заодно ОТКАЗ: департамент, ответивший
+    # «0» ещё до рассылки, терял разбивку целиком — все поля квот гасли,
+    # кнопка «Отправить в управления» пропадала, а объяснение на экране и в
+    # ответе сервера называло причиной «управления уже запрошены», хотя ни
+    # одного не запрашивали. Чтобы вернуть себе форму, департамент должен был
+    # догадаться отозвать собственный отказ — а текст вёл его в другую
+    # сторону.
+    #
+    # Настоящее правило эталона одно: «квоты редактируются ДО запроса
+    # управлений». Факт запроса — это `notifiedAt` строки, его ставит
+    # `notify_directorates`. Отправленный и принятый список запирается
+    # отдельно: там решение принимает уже штаб.
+    if target.get("notifiedAt") or target.get("status") in _QUOTAS_LOCKED_STATUSES:
         raise DomainError(
             "DIRECTORATE_QUOTAS_LOCKED",
             422,
@@ -2750,7 +2825,6 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
     }
     incoming = list(rows or [])
     seen = set()
-    total = 0
     prepared = []
     for index, row in enumerate(incoming):
         key = str(row.get("divisionId") or "").strip()
@@ -2763,13 +2837,11 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
                 {f"rows.{index}.divisionId": ["Управление указано дважды."]}
             )
         seen.add(key)
-        try:
-            need = int(row.get("need", 0))
-        except (TypeError, ValueError):
-            raise _validation({f"rows.{index}.need": ["Укажите число."]})
+        # Целость, а не округление (Plane №556): `int(2.9)` тихо дал бы
+        # управлению 2 человека вместо отказа по кривому полю.
+        need = _whole_number(row.get("need", 0), f"rows.{index}.need")
         if need < 0:
             raise _validation({f"rows.{index}.need": ["Число не может быть меньше нуля."]})
-        total += need
         prepared.append((key, need))
 
     # ПРЕДЕЛ — ОТ «ВЫДЕЛЯЕМ» (Plane №392, `[СБС-22]`: «разбивка по
@@ -2777,6 +2849,29 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
     # запрос штаба, как и раньше: раскладывать больше, чем сам решил дать,
     # нельзя; больше, чем просили, — тоже (ответ это разрешает, раскладка нет:
     # она делит именно ответ).
+    # 🔴 СУММА СЧИТАЕТСЯ ПО СОХРАНЯЕМОМУ, А НЕ ПО ПРИСЛАННОМУ (Plane №559).
+    # Строке, которую запрос не назвал, квота НЕ обнуляется (правило ниже, и
+    # оно верное), — а предел проверялся только по присланным строкам. Значит
+    # защита, ради которой правку и делали, обходилась двумя запросами: квота
+    # 2, управления A и B; `{rows:[{A,2}]}` принято, затем `{rows:[{B,2}]}`
+    # тоже принято — и сохранено A=2 И B=2 при квоте 2. Докстринг выше прямо
+    # утверждает, что этого быть не может.
+    need_of = dict(prepared)
+    kept_rows = {
+        str(row.get("divisionId")): row for row in target.get("directorates", [])
+    }
+    resulting = {
+        key: need_of.get(key, int(kept_rows.get(key, {}).get("need") or 0))
+        for key in known
+    }
+    # Выбывшее из департамента управление считается тоже: его люди никуда не
+    # делись, и не считать их значило бы разрешить перебор через перевод
+    # управления.
+    for key, kept in kept_rows.items():
+        if key not in resulting:
+            resulting[key] = int(kept.get("need") or 0)
+    total = sum(resulting.values())
+
     answered = target.get("allocating")
     quota = int(answered if answered is not None else (target.get("need") or 0))
     if total > quota:
@@ -2792,10 +2887,6 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
             detail={"quota": str(quota), "split": str(total)},
         )
 
-    need_of = dict(prepared)
-    kept_rows = {
-        str(row.get("divisionId")): row for row in target.get("directorates", [])
-    }
     saved = []
     for key, name in known.items():
         kept = kept_rows.get(key, {})
@@ -2806,8 +2897,9 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
                 "name": name,
                 # Не названному в запросе квота НЕ обнуляется молча: запрос
                 # описывает то, что человек правил, а строка, которой он не
-                # касался, остаётся как была.
-                "need": need_of.get(key, int(kept.get("need") or 0)),
+                # касался, остаётся как была. Именно поэтому предел выше
+                # считается по `resulting`, а не по `prepared`.
+                "need": resulting[key],
                 "notifiedAt": kept.get("notifiedAt"),
             }
         )
@@ -2815,7 +2907,7 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
     # правилом, что и у оповещения: его след это факт.
     for key, kept in kept_rows.items():
         if key not in known:
-            saved.append({**kept, "need": int(kept.get("need") or 0)})
+            saved.append({**kept, "need": resulting[key]})
 
     event.force_allocation = [
         {**item, "directorates": saved} if item.get("id") == allocation_id else item
@@ -4214,6 +4306,18 @@ def actor_display_name(actor):
     в «Ответственном», и в значениях фильтра по ответственному. Привязки
     `Employee.user` у части учёток нет (сид её не заполняет), поэтому
     username — не запасной вариант «на всякий случай», а штатный исход.
+
+    🔴 ПРИНИМАЕТ И ОБЪЕКТ УЧЁТКИ, И ЕЁ ИДЕНТИФИКАТОР (Plane №484). Докстрока
+    обещала идентификатор, а вьюхи передают `actor=request.user` — это ОБЩАЯ
+    их конвенция, больше десятка мест. `str(User)` даёт username, `.isdigit()`
+    ложь, и функция возвращала username как есть: в поле «кем создана версия»
+    документа «Расстановка сил» — того самого, который подписывают и
+    рассылают, — стояло `admin` вместо фамилии. Ровно та болезнь, от которой
+    докстрока и защищает, только с другого конца.
+
+    Чинится ЗДЕСЬ, а не в двенадцати вызовах: с конвенцией вьюх разошлась
+    функция, а не они. Одна ветка `isinstance` дешевле дюжины правок и не
+    оставляет тринадцатому вызову шанса разойтись снова.
     """
     if actor is None:
         return ""
@@ -4221,8 +4325,11 @@ def actor_display_name(actor):
 
     from organization_management.apps.employees.models import Employee
 
-    actor = str(actor)
-    user = User.objects.filter(pk=actor).first() if actor.isdigit() else None
+    if isinstance(actor, User):
+        user = actor
+    else:
+        actor = str(actor)
+        user = User.objects.filter(pk=actor).first() if actor.isdigit() else None
     if user is None:
         return actor
     employee = Employee.objects.filter(user=user).first()
