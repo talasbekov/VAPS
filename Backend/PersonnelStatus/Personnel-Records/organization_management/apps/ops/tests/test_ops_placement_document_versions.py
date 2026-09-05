@@ -196,10 +196,49 @@ def test_approving_marks_the_current_version(manager, approver, staffed_event): 
 
 
 def test_a_submitted_placement_cannot_be_changed(manager, staffed_event):  # noqa: F811
-    """После завершения расстановки объект на «Согласовании» — состав, под
-    которым подписываются, менять молча нельзя."""
+    """ОТПРАВЛЕННЫЙ документ менять нельзя: под ним подписываются.
+
+    🔴 ПРОБА ПЕРЕВЁРНУТА В ПЕРВОЙ ПОЛОВИНЕ ОСОЗНАННО (Plane №533). Здесь
+    заморозка проверялась СРАЗУ после `placement/complete/`, то есть когда
+    документ ещё ЧЕРНОВИК и никому не отправлен. Это и был дефект: оператор не
+    мог поправить собственную расстановку, а единственный путь разморозки
+    требовал, чтобы согласующий вернул документ, которого он не получал.
+    Спецификация `[СОГ-04]` говорит о ДОКУМЕНТЕ, а не об этапе: черновик
+    правится, отправленный и согласованный — нет.
+
+    Поэтому проба теперь проверяет ОБЕ границы: до отправки правка проходит,
+    после отправки — отбивается. Одной второй половины мало: мутация
+    «замораживать всегда» оставила бы её зелёной.
+    """
     base, event_id, posts = staffed_event
     manager.post(f"{base}placement/complete/")
+
+    # Предпосылка пробы названа ЯВНО: объект уже на «Согласовании», а документ
+    # ещё черновик — именно это сочетание и запирало оператора.
+    shown = manager.get(base).json()["visitObjects"][0]
+    assert shown["documentStatus"] == "DRAFT", shown
+    assert shown["stage"] == "APPROVAL", shown
+
+    # Документ — черновик: правка своей же расстановки идёт.
+    draft_edit = manager.post(
+        f"{base}placement/assign/",
+        {
+            "postId": posts[0]["id"],
+            "employeeId": str(make_employee().pk),
+            "override": True,
+            "override_reason": "усиление поста на время проверки",
+        },
+        format="json",
+    )
+    assert draft_edit.status_code == 200, draft_edit.content
+
+    manager.post(
+        f"{base}approval/route/",
+        {"name": "К. Оразов", "unit": "Департамент охраны", "position": "Зам."},
+        format="json",
+    )
+    sent = manager.post(f"{base}approval/send/")
+    assert sent.status_code == 200, sent.content
     assignment = manager.get(base).json()["placementAssignments"][0]
 
     assign = manager.post(
