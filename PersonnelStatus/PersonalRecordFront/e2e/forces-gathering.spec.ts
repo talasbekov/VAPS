@@ -402,12 +402,18 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     }
 
     const anyone = divisions[0]!
-    const someone = (
-      await get<{ results: { id: number | string }[] }>(
-        token,
-        `/api/ops/daily/employees/?division_id=${anyone.division_id}&page_size=1`,
-      )
-    ).results[0]!
+    // Пустая страница сотрудников даёт голый TypeError вместо разбираемого
+    // отказа (Plane №725): `!` глушит проверку, а не делает её. Отказ обязан
+    // называть, ЧЕГО не хватает на стенде.
+    const candidates = await get<{ results: { id: number | string }[] }>(
+      token,
+      `/api/ops/daily/employees/?division_id=${anyone.division_id}&page_size=1`,
+    )
+    expect(
+      candidates.results.length,
+      `в управлении ${anyone.division_id} нет ни одного сотрудника — фикстуры стенда не хватает`,
+    ).toBeGreaterThan(0)
+    const someone = candidates.results[0]!
     const nextDay = new Date(`${report.business_date}T00:00:00Z`)
     nextDay.setUTCDate(nextDay.getUTCDate() + 1)
     const refused = await fetch(`${API}/api/operations/statuses/`, {
