@@ -705,3 +705,70 @@ def test_an_object_that_has_not_reached_approval_is_still_refused(
         # на этапе …» без адреса не говорит, о котором из них речь.
         assert body["details"]["visitObjectId"] == str(second.pk), (path, body)
         assert body["details"]["stage"] == "PLACEMENT", (path, body)
+
+
+def test_unattributed_posts_are_named_instead_of_calling_placement_empty(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ОТКАЗ НАЗЫВАЕТ НАСТОЯЩУЮ БЕДУ (Plane №477).
+
+    У ОМ с несколькими объектами, посты которых не размечены `visitObjectId`,
+    подпись расстановки пуста при ПОЛНОСТЬЮ УКОМПЛЕКТОВАННОЙ расстановке:
+    неразмеченная строка не принадлежит никому. Сервер отвечал «Расстановка
+    пуста — согласовывать нечего» и уводил разбор в расстановку, где всё на
+    месте. При этом на «Согласование» такое ОМ провёл он же сам.
+
+    Состояние не выдумано: неразмеченные посты остаются после миграции 0069 —
+    единственному объекту она посты приписала, а у нескольких приписывать было
+    не к чему. Здесь оно воспроизводится тем же способом: разметка снимается.
+    """
+    base, event_id, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first)
+
+    event = service.lock_event(event_id)
+    posts = [dict(p) for p in event.recon_sector_posts]
+    assert any(p.get("visitObjectId") for p in posts), "разметки не было — проба вакуумна"
+    for post in posts:
+        post["visitObjectId"] = ""
+    event.recon_sector_posts = posts
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+    # Расстановка при этом УКОМПЛЕКТОВАНА — люди на постах остались.
+    assert event.placement_assignments, "назначений нет — проба стерегла бы не то"
+
+    refused = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert refused.status_code == 422, refused.content
+    body = refused.json()
+    assert body["error_code"] == "RECON_POSTS_UNASSIGNED", body
+    assert body["details"]["unattributedPosts"] == len(posts)
+    # Сообщение обязано вести туда, где чинят: на рекогносцировку, а не в
+    # расстановку.
+    assert "рекогносцировк" in body["message"], body["message"]
+
+
+def test_placement_empty_still_means_placement_empty(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """Обратная сторона №477: разметка на месте, людей нет — прежний отказ.
+
+    Без этой пробы правку нельзя отличить от «всегда отвечать новым кодом»:
+    мутация, отдающая `RECON_POSTS_UNASSIGNED` безусловно, осталась бы зелёной.
+    """
+    base, event_id, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first)
+
+    # Назначения снимаются ПРЯМО В МОДЕЛИ, а не ручкой: на «Согласовании»
+    # расстановка заморожена (`PLACEMENT_FROZEN`), и ручка ответила бы 422
+    # раньше, чем проба дошла бы до своего вопроса. Разметка постов при этом
+    # НЕ трогается — в ней и разница с соседней пробой.
+    event = service.lock_event(event_id)
+    assert all(p.get("visitObjectId") for p in event.recon_sector_posts)
+    event.placement_assignments = []
+    event.save(update_fields=["placement_assignments", "updated_at"])
+
+    refused = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "PLACEMENT_EMPTY", refused.json()
