@@ -180,12 +180,18 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
   test('«Сведения об ОМ» собраны из ответов сервера', async ({ page }) => {
     const token = await apiToken()
     const target = await factsEvent(token)
-    // Объекта у фикстуры БОЛЬШЕ НЕТ и быть не может (Plane №468): «Сведения
-    // об ОМ» видны только на стадии «Бюллетень», а туда попадает лишь ОМ без
-    // объекта. Поэтому ушли ассерты «Объект проведения» и «Место / адрес» —
-    // не подгоном под новый вывод, а потому что эта пара на экране теперь
-    // недостижима в принципе. Остальные факты проба стережёт как прежде.
-    expect(target.objectId, 'фикстура на стадии «Бюллетень» не может нести объект').toBeNull()
+    // 🔴 ИНВАРИАНТ ИСПРАВЛЕН (Plane №750). Здесь стояло «ОМ на стадии
+    // „Бюллетень" объекта не имеет НИКОГДА» — это неправда с двух сторон:
+    // `STAGE_OVERRIDE_TARGETS` содержит `BULLETIN`, то есть администратор
+    // может вернуть туда ОМ С объектом; а с №748 панель видна на всех
+    // незакрытых стадиях, и «Сведения об ОМ» больше не привязаны к
+    // «Бюллетеню» вовсе.
+    //
+    // Фикстура этой пробы заводится БЕЗ объекта НАМЕРЕННО — предмет здесь
+    // остальные факты, — и потому ассертов «Объект проведения» и «Место /
+    // адрес» тут нет. Их состояние стережёт соседняя проба ниже, на своей
+    // фикстуре С объектом.
+    expect(target.objectId, 'фикстура этой пробы заводится без объекта').toBeNull()
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
@@ -222,14 +228,50 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     )
   })
 
-  // ПРОБА «незагруженные права — не отказ: адрес ждёт, а не обвиняет» СНЯТА
-  // (Plane №468). Её сюжет — состояние «Место / адрес: загрузка карточки
-  // объекта…» в «Сведениях об ОМ», пока грузятся права. После №468 панель
-  // видна только на стадии «Бюллетень», а ОМ на этой стадии объекта не имеет
-  // никогда (`initial_stage` в `security_events.py`) — значит ни адреса, ни
-  // его загрузки на экране не бывает, и стеречь пробе нечего. Сам код ожидания
-  // адреса в панели стал недостижим с экрана; снять его или вернуть панель —
-  // в заведённой карточке-следствии.
+  test('незагруженные права — не отказ: адрес ждёт, а не обвиняет', async ({
+    page,
+  }) => {
+    // 🔴 ПРОБА ВЕРНУЛАСЬ (Plane №750). Её сняли в №468 с обоснованием «ОМ на
+    // стадии „Бюллетень" объекта не имеет никогда» — неверным дважды:
+    // администратор может ВЕРНУТЬ на «Бюллетень» мероприятие с объектом
+    // (`STAGE_OVERRIDE_TARGETS`), а с №748 панель видна на всех незакрытых
+    // стадиях. Лестница адреса и прав в «Сведениях об ОМ» всё это время
+    // оставалась достижимой и не стереглась ничем.
+    //
+    // Сюжет: пока грузятся права, `hasPermission` отвечает false, хотя право
+    // у администратора есть. Экран обязан сказать «загрузка», а не «нужно
+    // право»: обвинить человека в отсутствии права, которого он не лишён, —
+    // хуже, чем подождать.
+    const token = await apiToken()
+    const withObject = (await events(token)).find(
+      (e) => e.objectId !== null && e.stage !== 'CLOSED',
+    )
+    test.skip(withObject === undefined, 'нужен незакрытый ОМ с объектом')
+    const object = await objectCard(token, withObject!.objectId!)
+
+    await signIn(page)
+    await page.route('**/api/operations/my-permissions/**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 4_000))
+      await route.continue()
+    })
+    await page.goto(`${APP}/security-ops/events/${withObject!.id}/`)
+    const panel = page.getByTestId('bulletin-panel')
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    // Панель вне «Бюллетеня» свёрнута (№748) — раскрываем, сведения внутри.
+    const toggle = panel.getByRole('button', { expanded: false }).first()
+    if (await toggle.count()) await toggle.click()
+
+    await expect(panel).toContainText('Место / адрес: загрузка карточки объекта…', {
+      timeout: 15_000,
+    })
+    await expect(panel).not.toContainText('нужно право')
+
+    // Дождались прав — адрес появился, отказа не было ни на одном кадре.
+    await expect(panel).toContainText(`Место / адрес: ${object.address}`, {
+      timeout: 15_000,
+    })
+  })
+
 
   test('описание и задачи правятся у ОМ, заведённого сразу с рекогносцировки', async ({
     page,
@@ -316,6 +358,22 @@ async function prepareEvent(token: string): Promise<void> {
 
 /** ОМ с обеими датами для «Сведений об ОМ» — заводится один раз и потом
  * находится по названию: каждый прогон новое мероприятие засорял бы реестр. */
+/** Карточка объекта реестра — адрес берётся оттуда, а не из полей ОМ. */
+async function objectCard(
+  token: string,
+  id: string,
+): Promise<{ code: string; name: string; type: string; address: string }> {
+  const res = await fetch(`${API}/api/ops/objects/${id}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return (await res.json()) as {
+    code: string
+    name: string
+    type: string
+    address: string
+  }
+}
+
 async function factsEvent(token: string): Promise<EventRow> {
   const match = (rows: EventRow[]): EventRow | undefined =>
     rows.find(
