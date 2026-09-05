@@ -260,6 +260,48 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     await expect(brief).toBeVisible({ timeout: 10_000 })
     await expect(brief).toBeEditable()
   })
+
+  test('у внутреннего ОМ без объектов посещения реквизиты видны и после «Бюллетеня»', async ({
+    page,
+  }) => {
+    // Тип, локация, охраняемые лица и старший живут в панели бюллетеня, а
+    // «смягчение», на которое опирался №468 — ссылка «Карточка визита →» в
+    // шапке, — само спрятано у внутренних ОМ: страницы визита у них нет
+    // (Plane №749). Пока панель рисовалась только на стадии «Бюллетень», у
+    // внутреннего мероприятия без объектов посещения дальше по цепочке эти
+    // сведения не показывались НИГДЕ.
+    //
+    // Состояние подставляется перехватом: заводить внутренний ОМ и снимать у
+    // него объекты — мутация стенда ради одного экрана.
+    const token = await apiToken()
+    const target = (await events(token)).find(
+      (e) => e.stage !== 'BULLETIN' && e.stage !== 'CLOSED',
+    )
+    test.skip(target === undefined, 'нужен ОМ дальше «Бюллетеня» и не закрытый')
+
+    await page.route(
+      new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+      async (r) => {
+        const response = await r.fetch()
+        const body = await response.json()
+        body.kind = 'INTERNAL'
+        body.visitObjects = []
+        await r.fulfill({ response, json: body })
+      },
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+    const panel = page.getByTestId('bulletin-panel')
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    await panel.getByRole('button', { expanded: false }).first().click()
+
+    // Реквизиты на месте — им больше неоткуда взяться на этом экране.
+    await expect(panel).toContainText('Тип мероприятия')
+    await expect(panel).toContainText('Локация')
+    await expect(panel).toContainText('Охраняемые лица')
+    await expect(panel).toContainText('Старший наряда')
+  })
 })
 
 /** Заводит пустое ОМ на этапе «Бюллетень» — БЕЗ объекта: с объектом сервер
