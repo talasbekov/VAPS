@@ -460,6 +460,61 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await dropEvent(call, fixture.id)
   })
 
+
+  // Воркер MSW блокируется ТОЛЬКО здесь: обе пробы ниже подменяют карточку
+  // `page.route`, а с живым воркером подмена не применяется и проба зеленеет
+  // на неподменённых данных (та же яма, что в `approval-stage.spec.ts`).
+  test.describe('подвал на ОМ с двумя объектами', () => {
+    test.use({ serviceWorkers: 'block' })
+
+
+    test('на объекте без постов кнопка не жалуется на пустой расчёт', async ({
+      page,
+    }) => {
+      // `completeBlocked` считал пустоту по ПОКАЗАННОМУ объекту, а сервер
+      // требует непустой расчёт по мероприятию целиком (Plane №710): стоя на
+      // объекте без постов, человек видел выключенную кнопку с неверной
+      // причиной, хотя завершение прошло бы.
+      const token = await apiToken()
+      const suitable = (rows: EventRow[]): EventRow | undefined =>
+        rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
+      let found = suitable(await events(token))
+      if (found === undefined) {
+        await prepareEvent(token)
+        found = suitable(await events(token))
+      }
+      expect(found, 'не удалось подготовить ОМ на «Рекогносцировке»').toBeDefined()
+      const target = found
+
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (r) => {
+          const response = await r.fetch()
+          const body = await response.json()
+          const visit = { ...(body.visitObjects[0] ?? {}), id: 'probe-a', objectName: 'Объект А' }
+          const second = { ...visit, id: 'probe-b', objectName: 'Объект Б' }
+          body.visitObjects = [visit, second]
+          // ВСЕ посты у второго объекта: у показанного пусто, у мероприятия
+          // расчёт есть — то самое состояние, где кнопка врала.
+          body.reconSectorPosts = body.reconSectorPosts.map(
+            (post: Record<string, unknown>) => ({ ...post, visitObjectId: 'probe-b' }),
+          )
+          await r.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=probe-a`)
+      const footer = page.locator('[data-slot="recon-footer"]')
+      await expect(footer).toBeVisible({ timeout: 15_000 })
+
+      const complete = footer.getByRole('button', { name: /Завершить рекогносцировку/ })
+      // Причина отказа может быть ДРУГОЙ (чек-лист, старший объекта) — это не
+      // предмет пробы. Предмет: она не «Нет постов расчёта», потому что по
+      // мероприятию расчёт есть.
+      await expect(complete).not.toHaveAttribute('title', 'Нет постов расчёта.')
+    })
+  })
 })
 
 /** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта. */
