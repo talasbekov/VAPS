@@ -7,8 +7,9 @@
 `notify_directorates`). С ролями и областями (Plane №74) она есть: начальник
 управления — учётка с ролью, чья область — ЭТО управление.
 
-КТО ПОЛУЧАЕТ. Учётки с активной ролью, у которой `scope_division_id` равен
-управлению — РОВНО ему, а не предкам: запрос адресован управлению, и
+КТО ПОЛУЧАЕТ. Учётки, которые МОГУТ выделить людей (право `status.manage`,
+см. `SELECT_PERMISSION` — Plane №481), с активной ролью, у которой
+`scope_division_id` равен управлению — РОВНО ему, а не предкам: запрос адресован управлению, и
 ответственный за департамент (область выше) его и отправляет — слать ему же
 его собственный запрос было бы шумом. Это осознанное отличие от
 `acknowledgement_notify._supervisor_users`, где берутся все предки:
@@ -31,15 +32,61 @@ from organization_management.apps.operations import notify_service
 KIND = "FORCES_REQUEST"
 
 
+#: Право, под которым управление ВЫДЕЛЯЕТ людей по запросу (`[СБС-31]`).
+#:
+#: 🔴 ИМЕННО `status.manage`, А НЕ `forces.select` (Plane №481, №487). Ручек,
+#: похожих на «выделение», две: `forces/allocation/<id>/members` департамента
+#: гейтится `forces.select`, а та, КУДА ВЕДЁТ ЭТО УВЕДОМЛЕНИЕ, —
+#: `forces/requests/<id>/directorate/select` со своим гейтом `status.manage`.
+#: У профилей заказчика `forces.select` начальнику управления не выдан вовсе,
+#: и фильтр по нему не оставил бы получателей ни одного.
+SELECT_PERMISSION = "status.manage"
+
+#: Грант ADMIN. Роль с «*» может всё, значит и выделить людей.
+_WILDCARD = "*"
+
+
+def _roles_that_may_select():
+    """Коды ролей, под которыми выделение вообще возможно."""
+    from organization_management.apps.operations.models import RolePermission
+
+    return list(
+        RolePermission.objects.filter(
+            permission_code_id__in=[SELECT_PERMISSION, _WILDCARD]
+        ).values_list("role_code_id", flat=True)
+    )
+
+
 def _directorate_heads(division_ids):
-    """Учётки с областью РОВНО на управление: {division_id → {user_id, …}}."""
+    """Учётки, которые МОГУТ выделить людей, с областью РОВНО на управление:
+    {division_id → {user_id, …}}.
+
+    🔴 ПРАВО, А НЕ ОДНА ЛИШЬ ОБЛАСТЬ (Plane №481). Докстрока обещала «учётки
+    с областью ровно на управление», и фильтр по области был, а по праву —
+    нет: под рассылку попадала ЛЮБАЯ активная роль с этой областью — и
+    наблюдатель, и оператор подразделения, и кто угодно ещё.
+
+    Чем это било. Человек получал требование «Выделите N сотрудников», которое
+    физически не может выполнить: экран ему закрыт. И второе, менее видное:
+    поле `notifiedHeads` в аудите переставало отвечать на вопрос «кого на
+    самом деле попросили» — разбор «почему не выделили» шёл по ложному следу.
+
+    ВРЕМЕННЫЕ ДЕЖУРСТВА здесь НЕ учитываются, и это осознанно: гранты приходят
+    из двух источников (`UserRole` и `TemporaryDutyPermission`), а этот
+    фильтр читает первый. Дежурный по управлению выделить людей может, а
+    уведомления не получит — расхождение записано карточкой, потому что
+    решать его надо вместе с ключом «одно уведомление на день»: окно дежурства
+    короче суток, и правило «кого просили» перестанет быть однозначным.
+    """
     from organization_management.apps.operations.models import UserRole
 
     heads = {str(pk): set() for pk in division_ids}
     if not division_ids:
         return heads
     rows = UserRole.objects.filter(
-        is_active=True, scope_division_id__in=list(division_ids)
+        is_active=True,
+        scope_division_id__in=list(division_ids),
+        role_code_id__in=_roles_that_may_select(),
     ).values_list("scope_division_id", "user_id")
     for division_id, user_id in rows:
         heads.setdefault(str(division_id), set()).add(str(user_id))
