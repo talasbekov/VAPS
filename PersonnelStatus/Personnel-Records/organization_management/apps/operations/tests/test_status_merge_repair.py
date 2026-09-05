@@ -13,9 +13,11 @@
 import datetime as dt
 
 import pytest
+from django.apps import apps as django_apps
 
 from organization_management.apps.operations.models import StatusType
 from organization_management.apps.operations.models_status import (
+    UNKNOWN_EVENT_ID,
     OpsEmployeeStatus,
     OpsStatusParticipation,
 )
@@ -126,3 +128,63 @@ def test_merge_is_idempotent_on_an_already_merged_base():
     assert OpsStatusParticipation.objects.count() == rows_before
     status.refresh_from_db()
     assert status.status_type_code == TARGET
+
+
+def _backwards():
+    """Обратный ход 0091 — тем же интерфейсом, каким его зовёт Django.
+
+    `backwards` берёт `apps` и достаёт модели через `get_model`; настоящий
+    реестр отвечает на тот же вызов, поэтому шима не нужно. Проверять откат
+    прогоном `migrate operations 0090` нельзя: тестовая база одна на все
+    приложения, и откат раздела снёс бы её для соседних проб.
+    """
+    from importlib import import_module
+
+    module = import_module(
+        "organization_management.apps.operations.migrations"
+        ".0091_merge_event_assignment_into_in_event"
+    )
+    return module.backwards(django_apps, None)
+
+
+def test_backwards_removes_the_synthetic_unknown_event_row():
+    """Что завёл прямой ход — снимает обратный (Plane №753).
+
+    Строку «мероприятие неизвестно» прямой ход заводит ровно там, где вид
+    наряда жил В КОДЕ СТАТУСА. Обратный ход возвращает вид в код — и, оставляя
+    строку, записывал бы тот же факт дважды. Хуже того, повторный прямой ход
+    спотыкался бы об ограничение уникальности пары (статус, мероприятие).
+    """
+    _legacy_types()
+    man = make_employee()
+    status = _status(man, TARGET)
+    OpsStatusParticipation.objects.create(
+        status=status, event_id=UNKNOWN_EVENT_ID, kind_code="PHYSICAL_SQUAD",
+        role_code="",
+    )
+
+    _backwards()
+
+    status.refresh_from_db()
+    assert status.status_type_code == SQUAD
+    assert not status.participations.exists()
+
+
+def test_backwards_keeps_a_real_participation():
+    """Снимается ТОЛЬКО маркер: живое участие обратный ход не трогает.
+
+    Мутация «сносить все участия статуса при откате» краснеет здесь — это
+    была бы вторая, куда более крупная потеря данных, чем та, что чинилась.
+    """
+    _legacy_types()
+    man = make_employee()
+    status = _status(man, TARGET)
+    OpsStatusParticipation.objects.create(
+        status=status, event_id=4242, kind_code="SCREENING_GROUP", role_code=""
+    )
+
+    _backwards()
+
+    status.refresh_from_db()
+    assert status.status_type_code == GROUP
+    assert [row.event_id for row in status.participations.all()] == [4242]
