@@ -41,11 +41,26 @@ async function unlinkProbePersons(): Promise<void> {
     const persons = row.summary.persons ?? []
     const kept = persons.filter((person) => person.role !== PROBE_ROLE)
     if (kept.length === persons.length) continue
-    await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/`, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ section: 'persons', values: { persons: kept } }),
-    })
+    const res = await fetch(
+      `${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ section: 'persons', values: { persons: kept } }),
+      },
+    )
+    // 🔴 КОД ОТВЕТА ПРОВЕРЯЕТСЯ (Plane №739). Ответ не читался вовсе, а 4xx
+    // здесь достижим буднично: `apply_patch` отвечает 400 на кривое тело, а
+    // `_require_foreign` отбивает ВНУТРЕННИЙ ОМ — тогда как
+    // `assembled_summaries()` отдаёт строку на КАЖДОЕ мероприятие, внутренние
+    // включительно. Неудачная уборка оставляла пробное лицо приклеенным к
+    // сводке, а проба объявляла стенд убранным — ровно та беда, ради
+    // устранения которой уборку и переписывали.
+    if (!res.ok) {
+      throw new Error(
+        `уборка сводки ${row.omCode} не прошла: ${res.status} ${await res.text()}`,
+      )
+    }
   }
 }
 
