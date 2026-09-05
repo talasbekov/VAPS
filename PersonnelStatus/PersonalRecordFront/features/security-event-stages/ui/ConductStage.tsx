@@ -725,6 +725,11 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
       setDescription("");
       setMeasures("");
       setOccurredAt("");
+      // ПОСТ СБРАСЫВАЕТСЯ ВМЕСТЕ СО ВСЕМ ОСТАЛЬНЫМ (Plane №731). Оставаясь,
+      // он превращал форму в ловушку: открыв «+ Добавить» второй раз, человек
+      // видел уже выбранным пост ПЕРВОГО инцидента и, заполнив только время и
+      // описание, приписывал запись не тому посту.
+      setPostId("");
     },
   });
   const incidents = event.journalEntries.filter((e) => e.type === "INCIDENT");
