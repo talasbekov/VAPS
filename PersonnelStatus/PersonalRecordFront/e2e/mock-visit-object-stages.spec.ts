@@ -100,7 +100,21 @@ test.describe(
         const sendNeighbour = await call('POST', `${base}/approval/send/`, {
           visitObjectId: visits[0]!.id,
         })
+
+        // 🔴 ВТОРАЯ ПОЛОВИНА ПРАВИЛА (дописано ревью №792): стадию двигают
+        // ОБЪЕКТЫ, а поле мероприятия — вывод. Ручки, писавшие `event.stage`
+        // напрямую, этот вывод немедленно затирал обратно, и цепочка мока не
+        // шла дальше «Ознакомления» ВООБЩЕ: `CONDUCT` — единственный вход в
+        // журнал штаба, закрытие объекта и закрытие ОМ.
+        // Берём именно завершение ознакомления: у него нет адресата, и потому
+        // он проверяет ровно эту болезнь, не требуя расстановки и маршрута
+        // (у согласования свои правила — `PLACEMENT_EMPTY`, `APPROVAL_*`, — и
+        // обходить их подменой значило бы проверять не то).
+        await call('POST', `${base}/stage/`, { stage: 'ACKNOWLEDGEMENT' })
+        const conducted = await call('POST', `${base}/acknowledgement/complete/`, {})
         return {
+          conductedStatus: conducted.status,
+          conductedEvent: conducted.payload as EventShape,
           addedStatus: added.status,
           addedCount: (added.payload as EventShape).visitObjects.length,
           onApprovalStages: visits.map((visit) => visit.stage),
@@ -141,6 +155,24 @@ test.describe(
       expect(result.sendNeighbourCode, JSON.stringify(result)).not.toBe(
         'INVALID_STAGE_TRANSITION',
       )
+
+      // 🔴 МЕРОПРИЯТИЕ ЖДЁТ ПОСЛЕДНЕГО. Согласован один объект из двух: он
+      // ушёл на «Ознакомление», сосед остался на «Расстановке» (его вернули),
+      // и этап ОМ обязан остаться наименьшим — «Расстановкой». Мутация,
+      // которую это стережёт: писать `stage: "ACKNOWLEDGEMENT"` полем
+      // мероприятия вместо `advanceVisits` — тогда ответ уходит со стадией,
+      // которой не бывает, а на следующей ручке цепочка встаёт совсем.
+      expect(result.conductedStatus, JSON.stringify(result.conductedEvent)).toBe(200)
+      const afterConduct = result.conductedEvent.visitObjects.map((visit) => visit.stage)
+      expect(afterConduct, JSON.stringify(result.conductedEvent)).toEqual([
+        'CONDUCT',
+        'CONDUCT',
+      ])
+      // Мутация, которую это стережёт: писать `stage: "CONDUCT"` полем
+      // мероприятия вместо `advanceVisits` — объекты останутся на
+      // «Ознакомлении», вывод вернёт мероприятие туда же, и ответ уйдёт со
+      // стадией `ACKNOWLEDGEMENT`.
+      expect(result.conductedEvent.stage).toBe('CONDUCT')
     })
   },
 )

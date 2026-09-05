@@ -159,7 +159,13 @@ const STORE_VERSION = 3;
 const STORE_KEY = `ops-mock-security-events:v${STORE_VERSION}`;
 /** Ключи прежних версий — их надо УБИРАТЬ, а не копить: `sessionStorage`
  *  ограничен квотой, и брошенный снимок держит её до закрытия вкладки. */
-const LEGACY_STORE_KEYS = ["ops-mock-security-events"];
+const LEGACY_STORE_KEYS = [
+  "ops-mock-security-events",
+  // Ключ v2 снят при бампе до v3 (ревью №792): правило «убирать, а не копить»
+  // нарушилось при первой же возможности — снимок v2 висел бы в хранилище до
+  // закрытия вкладки, занимая квоту.
+  "ops-mock-security-events:v2",
+];
 
 /** Шаблон чек-листа рекогносцировки нового ОМ. */
 const RECON_CHECKLIST_TEMPLATE = [
@@ -893,10 +899,14 @@ function buildSeed(): SecurityEvent[] {
       "2026-07-15",
       now
     );
+    // 🔴 СНАЧАЛА ДАТА ЗАКРЫТИЯ, ПОТОМ СТАДИЯ (ревью №792): `closureStamp`
+    // читает `event.closedAt`, и при обратном порядке объект закрытого
+    // 16.07.2026 мероприятия получал СЕГОДНЯШНЮЮ дату. Раньше согласованность
+    // держало зеркало (`closedAt: event.closedAt`), теперь не держит ничто.
+    e3.closedAt = "2026-07-16T18:00:00.000Z";
     Object.assign(e3, setAllVisitStages(e3, "CLOSED"));
     e3.readinessPercent = 100;
     e3.forceNeed = 40;
-    e3.closedAt = "2026-07-16T18:00:00.000Z";
     events.push(e3);
   }
 
@@ -2973,7 +2983,14 @@ export const securityEventsHandlers = [
     // Снимок фиксируется ИМЕННО отправкой: до неё согласовывать нечего, и
     // сравнивать состав не с чем.
     approvalSnapshots.set(event.id, placementSignature(event));
-    if (stageOf(event, addressed.visitObjectId) !== "APPROVAL") {
+    // 🔴 ДВА ЭТАПА, А НЕ ОДИН (ревью №792; сервер — `send_for_approval`,
+    // `_require_visit_stage(visit, ("APPROVAL", "ACKNOWLEDGEMENT"), …)`).
+    // Согласованный объект уже стоит на «Ознакомлении», а `[СОГ-04]` требует,
+    // чтобы НОВАЯ версия уходила на повторное согласование (Plane №534). Мок
+    // отбивал это 422-м, которого на живом стеке нет, — то есть ровно
+    // половина формулы, ради которой заведена №792, оставалась чужой.
+    const sendStage = stageOf(event, addressed.visitObjectId);
+    if (sendStage !== "APPROVAL" && sendStage !== "ACKNOWLEDGEMENT") {
       return businessRuleError(
         "INVALID_STAGE_TRANSITION",
         "Отправить на согласование можно только на этапе «Согласование»."
@@ -3374,8 +3391,12 @@ export const securityEventsHandlers = [
       saveEvent(
         withVersions(
           {
-            ...event,
-            stage: "ACKNOWLEDGEMENT",
+            // 🔴 ДВИГАЕМ ОБЪЕКТ, А НЕ ПОЛЕ МЕРОПРИЯТИЯ (ревью №792). Здесь
+            // стояло `stage: "ACKNOWLEDGEMENT"` напрямую — и вывод стадии,
+            // заведённый этой же карточкой, немедленно затирал его обратно на
+            // `APPROVAL`: ручка отвечала 200 и состоянием, которого не бывает
+            // («согласовано, готовность 85 %, этап Согласование»).
+            ...advanceVisits(event, "ACKNOWLEDGEMENT", addressed.visitObjectId),
             approvalStatus: "APPROVED",
             approvalComment: "",
             readinessPercent: 85,
@@ -3495,16 +3516,43 @@ export const securityEventsHandlers = [
     if (object === undefined) {
       return validationError({ objectId: ["Объект не найден."] });
     }
+    // Дубль — 400 `VALIDATION_ERROR` с полем, как на сервере (ревью №792):
+    // экран рисует такую ошибку ПОД ПОЛЕМ «Объект», а 422 показал бы её
+    // общим сообщением — то есть мок и живой стек развели бы вид формы.
     if (event.visitObjects.some((visit) => visit.objectId === objectId)) {
+      return validationError({
+        objectId: ["Этот объект уже добавлен в мероприятие."],
+      });
+    }
+    // Закрытое ОМ объектов не принимает — тот же отказ, что у сервера.
+    if (event.stage === "CLOSED" || event.closedAt !== null) {
       return businessRuleError(
-        "VISIT_OBJECT_DUPLICATE",
-        "Этот объект уже в списке посещения."
+        "INVALID_STAGE_TRANSITION",
+        "Мероприятие закрыто — объекты посещения не меняются."
       );
     }
     const position = event.visitObjects.length;
+    // 🔴 НЕРАЗМЕЧЕННЫЕ ПОСТЫ ЗАКРЕПЛЯЮТСЯ ЗА ПЕРВЫМ ОБЪЕКТОМ ДО ПОЯВЛЕНИЯ
+    // ВТОРОГО (ревью №792; сервер — `_pin_unmarked_posts_to_the_only_visit`,
+    // Plane №490). Пока объект один, ему принадлежат ВСЕ посты, включая
+    // неразмеченные (`visitPostsOf`). Как только объектов становится двое,
+    // неразмеченный пост не принадлежит НИКОМУ: у первого объекта пустеет
+    // расстановка, `closureSummary` уходит в ноль, и объект нельзя ни
+    // согласовать, ни переотправить. Без этой строки новая ручка ВНОСИЛА бы в
+    // мок дефект, уже починенный на сервере.
+    const firstVisitId = event.visitObjects[0]?.id ?? null;
+    const pinnedPosts =
+      event.visitObjects.length === 1 && firstVisitId !== null
+        ? event.reconSectorPosts.map((post) =>
+            (post.visitObjectId ?? null) === null
+              ? { ...post, visitObjectId: firstVisitId }
+              : post
+          )
+        : event.reconSectorPosts;
     return HttpResponse.json(
       saveEvent({
         ...event,
+        reconSectorPosts: pinnedPosts,
         visitObjects: [
           ...event.visitObjects,
           {
@@ -3676,17 +3724,25 @@ export const securityEventsHandlers = [
                   ...a,
                   declinedAt: nowIso(),
                   declineReason: reason,
-                  // 🔴 «САМ», А НЕ «ЛИЧНО» — тем же правилом, что у
-                  // подтверждения выше (Plane №542, показ автора — №796).
-                  // Сервер выводит способ из того, ЧЬЯ это строка
-                  // (`views.py`: `someone_elses`); у мока учётных записей
-                  // нет вовсе, доказать чужую строку нечем — значит «сам»,
-                  // без автора. Полей не было совсем, и `declinedVia`
-                  // приезжал пустым: карточка профиля в мок-режиме не могла
-                  // показать «записал: …» НИКОГДА, то есть новая ветка была
-                  // бы мертва ровно там, где её проверяют.
+                  // 🔴 «САМ» — тем же правилом, что у подтверждения выше
+                  // (Plane №542): сервер выводит способ из того, ЧЬЯ это
+                  // строка (`views.py`: `someone_elses`), а у мока учётных
+                  // записей нет вовсе, доказать чужую строку нечем.
+                  //
+                  // 🔴 НО АВТОР ЗДЕСЬ НЕ ПУСТ, И ЭТО ИСПРАВЛЕНИЕ РАСХОЖДЕНИЯ
+                  //    С СЕРВЕРОМ (найдено ревью коммита e6b8fd98, №825).
+                  //    Раньше здесь стояла пустая строка «по образцу
+                  //    подтверждения» — но подтверждение как раз и есть та
+                  //    ветка, что ведёт себя ИНАЧЕ: `acknowledgedBy`
+                  //    обнуляется при собственном подтверждении, а
+                  //    `declinedBy` сервер пишет ВСЕГДА
+                  //    (`my_assignments.py`, `decline`: `declinedBy=author`).
+                  //    То есть у собственного отказа на сервере стоит имя
+                  //    самого сотрудника, и мок обязан отдавать ту же форму:
+                  //    иначе любое правило, читающее одного лишь автора,
+                  //    зелено в моке и ломается в бою.
                   declinedVia: "self" as const,
-                  declinedBy: "",
+                  declinedBy: target.employeeName ?? "",
                   // Отказ снимает подтверждение — та же взаимоисключаемость.
                   acknowledgedAt: null,
                   acknowledgedVia: null,
@@ -3717,8 +3773,17 @@ export const securityEventsHandlers = [
           "Не все назначенные сотрудники подтвердили ознакомление."
         );
       }
+      // Та же болезнь, что у согласования (ревью №792), и цена выше: `CONDUCT`
+      // — единственный вход в журнал штаба, закрытие объекта и закрытие ОМ,
+      // все они сторожатся `stage !== "CONDUCT"`. Пока стадия писалась полем
+      // мероприятия и затиралась выводом, дойти до «Проведения» на мок-стенде
+      // можно было ТОЛЬКО обходом этапа.
       return HttpResponse.json(
-        saveEvent({ ...event, stage: "CONDUCT", readinessPercent: 95, updatedAt: nowIso() })
+        saveEvent({
+          ...advanceVisits(event, "CONDUCT"),
+          readinessPercent: 95,
+          updatedAt: nowIso(),
+        })
       );
     }
   ),
@@ -3894,7 +3959,18 @@ export const securityEventsHandlers = [
     if (!(target in readiness)) {
       return validationError({ stage: ["Недопустимый этап для перевода."] });
     }
-    if (event.stage === target) return HttpResponse.json(event);
+    // 🔴 «УЖЕ ТАМ» СЧИТАЕТСЯ ПО ОБЪЕКТАМ, А НЕ ПО ПОЛЮ МЕРОПРИЯТИЯ (ревью
+    // №792; сервер: `old_stage == stage and all(visit.stage == stage …)`).
+    // Прежняя формула била так: А на «Согласовании», Б на «Расстановке»,
+    // стадия ОМ — «Расстановка», обход на «Расстановку» отвечает успехом, не
+    // делая ничего. До этой карточки ОМ с двумя объектами в моке не
+    // существовало и шорткат был безобиден; теперь он достижим.
+    if (
+      event.stage === target &&
+      event.visitObjects.every((visit) => visit.stage === target)
+    ) {
+      return HttpResponse.json(event);
+    }
     appendAudit({
       action: "security_event.stage_override",
       entityType: "SecurityEvent",
