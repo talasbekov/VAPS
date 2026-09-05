@@ -38,7 +38,22 @@ export function Providers({ children }: { children: ReactNode }) {
           медиа-правилом в globals.css не гасится — это его выключатель. */}
       <MotionConfig reducedMotion="user">
         <QueryClientProvider client={queryClient}>
-          <SessionProvider>
+          {/* 🔴 СЕССИЯ ПЕРЕЧИТЫВАЕТСЯ ПО ЧАСАМ, А НЕ ТОЛЬКО ПО ФОКУСУ
+              (Plane №460). Увод на форму входа висит на эффекте, зависящем
+              от `session` из `useSession()`, а тот обновляется лишь при
+              монтировании и при возврате фокуса в окно. Человек, который
+              восемь часов работает в ОДНОЙ вкладке и никуда не переключается,
+              получал исходный симптом №383: меню на месте, на каждом экране
+              «не удалось загрузить», на вход не уводит. Разбудить `useSession`
+              своей же вкладке нечем — next-auth рассылает событие через
+              `localStorage`, а storage-событие в породившей его вкладке не
+              срабатывает.
+
+              Минута выбрана по цене: чтение сессии — локальный запрос к
+              своему же Next, а окно продления токена и так минутное
+              (`EXPIRY_SKEW_MS`), так что реже значило бы узнавать об отказе
+              позже, чем он случился. */}
+          <SessionProvider refetchInterval={60}>
             <AuthProvider>{children}</AuthProvider>
           </SessionProvider>
         </QueryClientProvider>
