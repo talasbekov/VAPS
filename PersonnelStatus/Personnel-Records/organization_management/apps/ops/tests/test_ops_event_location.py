@@ -89,6 +89,149 @@ def test_details_patch_recomposes_location(manager):  # noqa: F811
     assert resp.json()["cityName"] == "Астана"
 
 
+def test_hiding_a_city_does_not_lock_editing_events_that_already_use_it(manager):  # noqa: F811
+    """Скрытый город не запирает правку бюллетеня (Plane №617/№495).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Окно правки шлёт `countryId`/`cityId` ВСЕГДА, а
+    `resolve_location` требовал `is_active` от всего, что пришло, — включая
+    уже сохранённые координаты. Администратор снимал галочку у города, и после
+    этого НИ ОДНО поле НИ ОДНОГО мероприятия в этом городе больше не
+    сохранялось: переименование, время, лица — всё отвечало 400 «Город не
+    найден в справочнике», про поле, которого человек не касался.
+
+    Это прямо противоречит замыслу, записанному на модели: у ссылки стоит
+    `SET_NULL` с доводом «скрытие города из справочника не вправе стирать
+    историю мероприятий». Скрытие — обычная операция ведения справочника, а
+    последствие наступало не сразу и не у того, кто скрывал.
+
+    Мутация, на которой проба обязана краснеть: убрать `unchanged` из вызова
+    `resolve_location` в `update_bulletin_details` — переименование ответит 400.
+    """
+    country, city = kz()
+    event_id = create_event(
+        manager, make_object(), countryId=str(country.pk), cityId=str(city.pk),
+        address="Акорда",
+    ).json()["id"]
+
+    OpsCity.objects.filter(pk=city.pk).update(is_active=False)
+
+    # Окно правки шлёт координаты всегда — воспроизводим его буквально.
+    resp = manager.patch(
+        f"{URL}{event_id}/details/",
+        {
+            "title": "Переименовано после скрытия города",
+            "countryId": str(country.pk),
+            "cityId": str(city.pk),
+            "address": "Акорда",
+        },
+        format="json",
+    )
+    assert resp.status_code == 200, resp.data
+    assert resp.json()["title"] == "Переименовано после скрытия города"
+    assert resp.json()["cityName"] == "Астана", "город потерян вместе с правкой"
+
+    # И правка ОДНОГО адреса, где координаты подставляет сам сервер.
+    resp = manager.patch(f"{URL}{event_id}/details/", {"address": "Резиденция"}, format="json")
+    assert resp.status_code == 200, resp.data
+    assert resp.json()["location"] == "Казахстан, Астана, Резиденция"
+
+
+def test_a_hidden_city_still_cannot_be_chosen_anew(manager):  # noqa: F811
+    """Скрытый город можно СОХРАНИТЬ прежним, но не ВЫБРАТЬ (Plane №617).
+
+    Половина правки без этой пробы бессмысленна: если ослабить проверку для
+    всего подряд, скрытая строка справочника снова станет выбираемой, и
+    скрытие перестанет что-либо значить. Проверяются оба входа — заведение
+    нового ОМ и перевод существующего в скрытый город.
+    """
+    country, city = kz()
+    hidden = OpsCity.objects.create(country=country, name="Скрытый", is_active=False)
+
+    resp = create_event(
+        manager, make_object(), countryId=str(country.pk), cityId=str(hidden.pk)
+    )
+    assert resp.status_code == 400, resp.data
+    assert "cityId" in resp.json()["details"], resp.json()
+
+    event_id = create_event(
+        # Свой код объекта: код уникален, и второй `make_object()` в одной
+        # пробе столкнулся бы на нём (та же оговорка, что у пробы про город
+        # чужой страны выше).
+        manager, make_object(code="OBJ-HIDDEN"),
+        countryId=str(country.pk), cityId=str(city.pk),
+    ).json()["id"]
+    resp = manager.patch(
+        f"{URL}{event_id}/details/",
+        {"countryId": str(country.pk), "cityId": str(hidden.pk)},
+        format="json",
+    )
+    assert resp.status_code == 400, resp.data
+    assert "cityId" in resp.json()["details"], resp.json()
+
+
+def test_the_registry_does_not_pay_two_queries_per_row_for_the_location(manager):  # noqa: F811
+    """Число запросов реестра НЕ растёт вместе с числом строк (Plane №619).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. С №418 подпись строки несёт локацию, а `location_view`
+    разыменовывает `event.country.name` и `event.city.name`. Queryset списка
+    остался прежним — и на каждую строку приходилось ДВА лишних round-trip:
+    страница календаря берёт 200 строк, то есть около 400 запросов на один
+    заход. Ровно этот регресс уже описан в соседнем комментарии применительно к
+    объектам посещения — и был воспроизведён заново.
+
+    Проба считает ТОЛЬКО запросы к справочникам страны и города, а не все
+    подряд. Причина не в аккуратности: в реестре есть и ДРУГИЕ построчные
+    запросы (замерено — около восьми на строку), они заведены своими
+    карточками, и общий счётчик краснел бы от них, а не от этого дефекта.
+    Смешав всё в одно число, проба сообщала бы «реестр дорогой» — утверждение
+    верное и бесполезное.
+
+    Сравниваются ДВА замера, а не пин на числе: абсолютное число зависит от
+    прав, сессии и соседних правок и краснело бы от чужой работы.
+
+    Мутация, на которой проба обязана краснеть: снять
+    `select_related("country", "city")` — обращений к справочникам станет по
+    два на строку вместо нуля.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    country, city = kz()
+    for number in range(3):
+        create_event(
+            manager, make_object(code=f"OBJ-N{number}"),
+            countryId=str(country.pk), cityId=str(city.pk),
+        )
+
+    def geo_queries(captured):
+        return [
+            q["sql"]
+            for q in captured
+            if "operations_opscountry" in q["sql"] or "operations_opscity" in q["sql"]
+        ]
+
+    with CaptureQueriesContext(connection) as queries:
+        assert manager.get(f"{URL}?page_size=50").status_code == 200
+    few = len(geo_queries(queries.captured_queries))
+
+    for number in range(3, 9):
+        create_event(
+            manager, make_object(code=f"OBJ-N{number}"),
+            countryId=str(country.pk), cityId=str(city.pk),
+        )
+
+    with CaptureQueriesContext(connection) as queries:
+        resp = manager.get(f"{URL}?page_size=50")
+    assert resp.status_code == 200
+    assert len(resp.json()["results"]) >= 9, "строк меньше, чем заведено"
+
+    many = len(geo_queries(queries.captured_queries))
+    assert many == few, (
+        f"обращений к справочникам локации стало {many} против {few} — реестр "
+        "добирает страну и город построчно"
+    )
+
+
 def test_person_details_live_on_the_link_and_survive_reset(manager):  # noqa: F811
     first = OpsProtectedPerson.objects.create(name="Абаев", category="OURS")
     second = OpsProtectedPerson.objects.create(name="Бекова", category="OURS")

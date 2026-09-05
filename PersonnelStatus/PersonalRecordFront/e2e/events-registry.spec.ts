@@ -930,6 +930,103 @@ async function createEvent(
     await expect(page.getByRole('dialog')).toBeHidden()
   })
 
+  /**
+   * Скрытая из справочника локация в правке бюллетеня (Plane №617).
+   *
+   * 🔴 СВОЁ ОПИСАНИЕ С `serviceWorkers: 'block'`. Без него `page.route` не
+   * перехватывает запросы, ушедшие через service worker MSW, — справочник
+   * подделать нельзя, и проба была бы зелёной на живых данных, ничего не
+   * проверив. Та же оговорка, что у индикатора связи в `prototype-skin`.
+   *
+   * Справочник гасится ПЕРЕХВАТОМ, а не правкой стенда: скрыть настоящую
+   * «Астану» значило бы сломать соседние пробы, которые выбирают её по названию,
+   * — на общем стенде это ударило бы по другим сессиям.
+   */
+  test.describe('реестр ОМ · скрытая локация', () => {
+    test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
+    test.use({ serviceWorkers: 'block' })
+
+    test('скрытый из справочника город показан в правке, а не потерян (Plane №617)', async ({
+      page,
+    }) => {
+      /**
+       * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Ручка городов отдаёт только активные строки, и у
+       * мероприятия в СКРЫТОМ городе `value` селекта не совпадал ни с одним
+       * `<option>` — браузер рисует такое поле пустым. Человек открывал правку и
+       * видел «— не указан —» там, где город есть. Поверив глазам и тронув
+       * страну, он терял город по-настоящему: смена страны сбрасывает город.
+       *
+       * Справочник ГАСИТСЯ ПЕРЕХВАТОМ, а не правкой стенда: скрыть настоящую
+       * «Астану» значило бы сломать соседние пробы, которые выбирают её по
+       * названию, — и на общем стенде это ударило бы по другим сессиям.
+       *
+       * Мутация, на которой проба обязана краснеть: убрать ветку `hiddenCity` из
+       * `LocationFields` — поле снова станет пустым.
+       */
+      const token = await apiToken()
+      const created = await createEvent(token, 'Проба скрытого города')
+
+      // Заводим город структурой, чтобы у мероприятия он был сохранён.
+      const countries = (await (
+        await fetch(`${API}/api/ops/countries/`, { headers: { Authorization: `Bearer ${token}` } })
+      ).json()) as { results: { id: string; name: string }[] }
+      const kz = countries.results.find((c) => c.name === 'Казахстан')
+      expect(kz, 'в справочнике нет Казахстана').toBeTruthy()
+      const cities = (await (
+        await fetch(`${API}/api/ops/countries/${kz!.id}/cities/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).json()) as { results: { id: string; name: string }[] }
+      const astana = cities.results.find((c) => c.name === 'Астана')
+      expect(astana, 'в справочнике нет Астаны').toBeTruthy()
+      await fetch(`${API}/api/ops/security-events/${created.id}/details/`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ countryId: kz!.id, cityId: astana!.id, address: 'Акорда' }),
+      })
+
+      // С этого момента справочник «не знает» Астану — ровно как после снятия
+      // галочки `is_active` администратором.
+      await page.route(`**/api/ops/countries/${kz!.id}/cities/`, async (route) => {
+        const response = await route.fetch()
+        const body = (await response.json()) as { results: { id: string; name: string }[] }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ results: body.results.filter((c) => c.id !== astana!.id) }),
+        })
+      })
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/`)
+      await expect(page.getByText(created.code, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+      await (await rowAction(page, created.code, `Редактировать бюллетень ${created.code}`)).click()
+
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toContainText('Правка бюллетеня')
+      const city = dialog.getByLabel('Город')
+      // Город НАЗВАН и помечен скрытым — а не пустое «— не указан —».
+      await expect(city).toHaveValue(astana!.id, { timeout: 15_000 })
+      await expect(city.locator(`option[value="${astana!.id}"]`)).toHaveText(
+        /Астана \(скрыт в справочнике\)/
+      )
+
+      // И правка ДРУГОГО поля проходит: сервер принимает уже сохранённый город
+      // (вторая половина №617, серверная).
+      const renamed = probeTitle('Правка при скрытом городе')
+      await dialog.getByLabel('Название мероприятия').fill(renamed)
+      await dialog.getByRole('button', { name: 'Сохранить' }).click()
+      await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15_000 })
+      const saved = (await (
+        await fetch(`${API}/api/ops/security-events/${created.id}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).json()) as { title: string; cityName: string }
+      expect([saved.title, saved.cityName]).toEqual([renamed, 'Астана'])
+    })
+
+  })
+
   test('пустое название в правке бюллетеня отбивается полем', async ({ page }) => {
     // Обратная сторона №192: ручка частичная, и «пустая строка» для названия
     // означала бы «сотри обязательное поле». Проба стережёт, что отказ
@@ -1536,4 +1633,3 @@ async function createDoomedEvent(
   expect(created.code, 'фикстура удаления не завелась').toBeTruthy()
   return created
 }
-

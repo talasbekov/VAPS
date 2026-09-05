@@ -55,13 +55,34 @@ class OpsProtectedPerson(TimeStampedModel):
         return self.code or self.code_for(self.pk)
 
     def save(self, *args, **kwargs):
-        # Код зависит от pk, а pk появляется только после INSERT — поэтому
-        # две записи на создании; на правке — одна, код уже есть.
-        if self.code or self.pk is None:
-            super().save(*args, **kwargs)
+        # Код зависит от pk, а pk появляется только после INSERT — поэтому на
+        # СОЗДАНИИ записей две; на правке одна, код уже есть.
+        #
+        # 🔴 СОХРАНЯЕМ ВСЕГДА (Plane №599/№498). Условие было
+        # `if self.code or self.pk is None`, и строка, у которой pk ЕСТЬ, а
+        # code ПУСТ, настоящего `save` не получала вовсе: управление уходило
+        # сразу на дозапись кода, и в базу летел один `code`. Такие строки не
+        # редкость — их заводит `bulk_create` (он назван поддержанным прямо в
+        # комментарии к полю выше и используется в сидах и пробах). Правка
+        # такой записи в админке или через `update_or_create` отчитывалась
+        # успехом, а имя, позывной и категория МОЛЧА оставались прежними.
+        # Тихая потеря правки хуже отказа: человек видит «сохранено» и уходит.
+        #
+        # Вторым исходом того же условия был `DatabaseError: Save with
+        # update_fields did not affect any rows` — объект с заранее назначенным
+        # pk (фикстура, сид) пропускал INSERT и получал UPDATE несуществующей
+        # строки.
+        super().save(*args, **kwargs)
         if not self.code:
             self.code = self.code_for(self.pk)
-            super().save(update_fields=["code"])
+            # База — ТА ЖЕ, что у основной записи: `using` приходит и ключевым
+            # словом, и третьим позиционным (сигнатура Django:
+            # force_insert, force_update, using, update_fields). Потеряв его,
+            # дозапись кода ушла бы в базу по умолчанию — то есть в другую.
+            using = kwargs.get("using")
+            if using is None and len(args) >= 3:
+                using = args[2]
+            super().save(using=using, update_fields=["code"])
 
     def __str__(self):
         return f"{self.display_code} {self.name}"

@@ -555,11 +555,26 @@ def update_bulletin_details(
     # Структура (Plane №418): любой из трёх ключей — правка локации, строка
     # `location` пересобирается из структуры. Ключа нет — поле не трогается.
     if country_id is not None or city_id is not None or address is not None:
+        next_country = country_id if country_id is not None else event.country_id
+        next_city = city_id if city_id is not None else event.city_id
+        # 🔴 СКРЫТЫЙ ГОРОД НЕ ЗАПИРАЕТ МЕРОПРИЯТИЕ (Plane №617/№495). Строгую
+        # проверку `is_active` проходят ТОЛЬКО ИЗМЕНЁННЫЕ координаты: id,
+        # совпадающий с уже сохранённым, — не новый ввод, а то, что было
+        # выбрано раньше. Окно правки шлёт `countryId`/`cityId` всегда, поэтому
+        # «не прислали» здесь не годится как признак: после скрытия города
+        # ЛЮБАЯ правка бюллетеня — переименование, время, лица — отвечала 400
+        # про поле, которого человек не касался.
+        unchanged = []
+        if str(next_country or "") == str(event.country_id or ""):
+            unchanged.append("countryId")
+        if str(next_city or "") == str(event.city_id or ""):
+            unchanged.append("cityId")
         country, city, new_address = loc.resolve_location(
-            country_id=country_id if country_id is not None else event.country_id,
-            city_id=city_id if city_id is not None else event.city_id,
+            country_id=next_country,
+            city_id=next_city,
             address=address if address is not None else event.address,
             field_errors=field_errors,
+            unchanged=unchanged,
         )
         if not field_errors:
             event.country = country

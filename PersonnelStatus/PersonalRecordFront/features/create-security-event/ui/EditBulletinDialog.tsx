@@ -313,6 +313,10 @@ export function EditBulletinDialog({
             <LocationFields
               countryId={watch("countryId")}
               cityId={watch("cityId")}
+              // Подписи сохранённых координат: если строку скрыли из
+              // справочника, показать её всё равно (Plane №617).
+              currentCountryName={event.countryName ?? ""}
+              currentCityName={event.cityName ?? ""}
               onCountry={(next) => {
                 setValue("countryId", next, { shouldDirty: true });
                 setValue("cityId", "", { shouldDirty: true });

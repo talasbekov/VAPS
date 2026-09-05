@@ -4,6 +4,15 @@
 // Каскад: смена страны сбрасывает город (родитель задаёт список), города
 // грузятся по выбранной стране. Нативные <select>, как у остальных полей
 // эталона; combobox с поиском — Ш-3 (№419).
+//
+// 🔴 ВЫБРАННОЕ ЗНАЧЕНИЕ ПОКАЗЫВАЕТСЯ, ДАЖЕ ЕСЛИ ЕГО СКРЫЛИ ИЗ СПРАВОЧНИКА
+// (Plane №617). Ручки отдают только активные строки, поэтому у мероприятия в
+// скрытом городе `value` селекта не совпадал ни с одним `<option>` — браузер
+// рисует такое поле ПУСТЫМ. Человек открывал правку бюллетеня и видел «— не
+// указан —» там, где город есть; поверив глазам и тронув страну, он терял его
+// по-настоящему (смена страны сбрасывает город). Скрытая строка дописывается
+// отдельным `<option>` и НАЗВАНА скрытой: выбрать её заново нельзя нигде, но
+// сохранённая она обязана быть видимой.
 import type { ReactNode } from "react";
 import { useCities, useCountries } from "@/hooks/use-geo";
 
@@ -15,6 +24,8 @@ export function LocationFields({
   addressField,
   labelClassName,
   selectClassName,
+  currentCountryName = "",
+  currentCityName = "",
 }: {
   countryId: string;
   cityId: string;
@@ -23,9 +34,25 @@ export function LocationFields({
   addressField: ReactNode;
   labelClassName: string;
   selectClassName: string;
+  /** Подписи УЖЕ СОХРАНЁННЫХ страны и города — на случай, если их скрыли из
+   *  справочника и в списке вариантов их больше нет (Plane №617). У формы
+   *  заведения нового ОМ их не бывает, поэтому по умолчанию пусто. */
+  currentCountryName?: string;
+  currentCityName?: string;
 }) {
   const countries = useCountries();
   const cities = useCities(countryId === "" ? null : countryId);
+  const countryRows = countries.data?.results ?? [];
+  const cityRows = cities.data?.results ?? [];
+  // Дописывается ТОЛЬКО когда справочник уже ответил: пока он грузится,
+  // отсутствие строки означает «ещё не знаем», а не «скрыта», и подпись
+  // «скрыта в справочнике» была бы враньём на полсекунды каждой загрузки.
+  const hiddenCountry =
+    countryId !== "" &&
+    countries.isSuccess &&
+    !countryRows.some((c) => c.id === countryId);
+  const hiddenCity =
+    cityId !== "" && cities.isSuccess && !cityRows.some((c) => c.id === cityId);
   return (
     <>
       <div className="space-y-1.5">
@@ -40,7 +67,12 @@ export function LocationFields({
           disabled={countries.isPending}
         >
           <option value="">— не указана —</option>
-          {(countries.data?.results ?? []).map((c) => (
+          {hiddenCountry && (
+            <option value={countryId}>
+              {currentCountryName || "Выбранная страна"} (скрыта в справочнике)
+            </option>
+          )}
+          {countryRows.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
             </option>
@@ -66,7 +98,12 @@ export function LocationFields({
           <option value="">
             {countryId === "" ? "— сначала страна —" : "— не указан —"}
           </option>
-          {(cities.data?.results ?? []).map((c) => (
+          {hiddenCity && (
+            <option value={cityId}>
+              {currentCityName || "Выбранный город"} (скрыт в справочнике)
+            </option>
+          )}
+          {cityRows.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
             </option>
