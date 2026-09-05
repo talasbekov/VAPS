@@ -171,6 +171,53 @@ export function useEvaluationRegistry(filters: RegistryFilters) {
   });
 }
 
+/**
+ * ВСЕ оценки одного сотрудника — страницами до конца (`[ПРФ-06]`, Plane №660).
+ *
+ * 🔴 ОДНОЙ СТРАНИЦЫ НЕ ХВАТАЕТ, И ОБРЕЗКА БЫЛА НЕВИДИМА. Профиль звал
+ * `useEvaluationRegistry` и читал только `results` первой страницы, а реестр
+ * отдаёт по десять строк (`REGISTRY_PAGE_SIZE`) и `pageCount` в ответе,
+ * который никто не смотрел. У сотрудника с одиннадцатью и более оценёнными
+ * мероприятиями старшие получали в истории «не оценивалось», а «из N
+ * мероприятий» в шапке было занижено — и признака обрезки на экране не было
+ * ни одного.
+ *
+ * Ручка страницу по размеру не настраивает (`page_size` она не принимает),
+ * поэтому страницы забираются подряд. Их немного: список уже сужен ОДНИМ
+ * сотрудником, и десятки строк — это единицы запросов, один раз на открытие
+ * профиля.
+ *
+ * Потолок в `MAX_PAGES` — не оптимизация, а предохранитель: сервер, который
+ * почему-либо всегда отвечает `pageCount` больше текущего, не должен
+ * превращать открытие профиля в бесконечный цикл запросов.
+ */
+const MAX_EVALUATION_PAGES = 50;
+
+export function useAllEvaluationsOf(employeeId: string) {
+  return useQuery<EvaluationRegistryResponse, OpsApiFailure>({
+    queryKey: ["ops-ratings", "registry", "all-of", employeeId],
+    queryFn: async () => {
+      const pageOf = (page: number) =>
+        opsApiClient.get<EvaluationRegistryResponse>(
+          `${EVALUATION_REGISTRY_PATH}?employee=${encodeURIComponent(employeeId)}` +
+            (page === 1 ? "" : `&page=${page}`)
+        );
+      const first = await pageOf(1);
+      const results = [...first.results];
+      const pages = Math.min(first.pageCount, MAX_EVALUATION_PAGES);
+      for (let page = 2; page <= pages; page += 1) {
+        const next = await pageOf(page);
+        results.push(...next.results);
+      }
+      // Ответ отдаётся в форме страницы, чтобы читателям не заводить второй
+      // тип: `results` полон, `page`/`pageCount` говорят «одна страница»,
+      // потому что для читателя она и есть одна.
+      return { ...first, results, page: 1, pageCount: 1 };
+    },
+    enabled: employeeId !== "",
+  });
+}
+
 export function useRatingEmployeeDetail(employeeId: string | null) {
   return useQuery<RatingEmployeeDetailResponse, OpsApiFailure>({
     queryKey: ["ops-ratings", "employee-detail", employeeId],

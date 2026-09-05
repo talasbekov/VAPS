@@ -304,6 +304,25 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       await expect(adminCard).toBeVisible({ timeout: 15_000 })
       await expect(adminCard.getByRole('button', { name: 'Ознакомлен, заступлю' })).toHaveCount(0)
       await expect(adminCard.getByRole('button', { name: 'Не могу заступить' })).toHaveCount(0)
+
+      // 🔴 ПОДПИСИ ЧУЖОГО ПРОФИЛЯ — НЕ ОТ ПЕРВОГО ЛИЦА (`[ПРФ-08]`, Plane
+      // №662). Соседние подписи переписали ещё в №449, а «Календарь» и
+      // «История» остались с «моими»: их вкладки не получали `readOnly`.
+      await page.getByRole('button', { name: 'Календарь' }).click()
+      await expect(page.getByText(/^Календарь · /)).toBeVisible({ timeout: 15_000 })
+      await expect(
+        page.getByText(/^Мой календарь · /),
+        'чужой профиль называет календарь «моим»',
+      ).toHaveCount(0)
+      await expect(page.getByText('статусов и смен сотрудника', { exact: false })).toBeVisible()
+      await expect(page.getByText('моих статусов и смен', { exact: false })).toHaveCount(0)
+
+      await page.getByRole('button', { name: 'История' }).click()
+      await expect(page.getByText('История заступлений на ОМ')).toBeVisible({ timeout: 15_000 })
+      await expect(
+        page.getByText('с вашим участием', { exact: false }),
+        'пустая история чужого профиля обращается к читателю на «вы»',
+      ).toHaveCount(0)
     } finally {
       // ОМ с расстановкой не удаляется (422) — сначала снять назначения.
       const current = await get<{ placementAssignments: { id: string }[] }>(admin, base)
@@ -392,6 +411,69 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     ])
     // Статус — словами, не «действующих статусов нет».
     await expect(page.getByTestId('profile-status')).not.toHaveText(/действующих статусов нет/)
+
+    // 🔴 ОТКАЗ ЗАПРОСА СТАТУСОВ — НЕ ФАКТ О ЧЕЛОВЕКЕ (Plane №659). До правки
+    // `statuses.data ?? []` при 403 или обрыве давал пустой список, а пустой
+    // список — законное «В строю»: сотрудник в отпуске становился неотличим
+    // от сотрудника в строю, и ошибка связи печаталась зелёным чипом как
+    // утверждение. Ломаем ровно запрос статусов и смотрим на чип.
+    await page.route('**/api/operations/statuses/?*', (route) =>
+      route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }),
+    )
+    await page.goto(`${APP}${SCREEN}`)
+    const brokenChip = page.getByTestId('profile-status')
+    await expect(brokenChip).toBeVisible({ timeout: 20_000 })
+    await expect(brokenChip, 'отказ запроса статусов выдан за «В строю»').toHaveText(
+      'статус не получен',
+    )
+    await page.unroute('**/api/operations/statuses/?*')
+
+    // 🔴 ИСТОРИЯ ОЦЕНОК БЕРЁТ ВСЕ СТРАНИЦЫ РЕЕСТРА (Plane №660). Реестр
+    // отдаёт по десять строк и `pageCount` в ответе, который никто не читал:
+    // у сотрудника с одиннадцатью оценёнными ОМ старшие получали «не
+    // оценивалось», а «из N мероприятий» было занижено — молча, без признака
+    // обрезки. На стенде такого сотрудника нет, поэтому ответ реестра
+    // подменяется: две страницы, на второй — своё мероприятие.
+    const registryRow = (eventNumber: string) => ({
+      id: `row-${eventNumber}`,
+      employeeId: employee.id,
+      eventNumber,
+      aggregateRating: 7.5,
+    })
+    await page.route('**/api/ops/evaluation-registry/**', (route) => {
+      const url = new URL(route.request().url())
+      const page2 = url.searchParams.get('page') === '2'
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          results: [registryRow(page2 ? 'ОМ-ПРОБА-СТР2' : 'ОМ-ПРОБА-СТР1')],
+          total: 2,
+          page: page2 ? 2 : 1,
+          pageCount: 2,
+          options: { events: [], units: [], employees: [] },
+          policy: null,
+          capabilities: { operationalRatings: true },
+          columns: { sensitiveDetails: false },
+          unavailableViews: [],
+        }),
+      })
+    })
+    await page.goto(`${APP}${SCREEN}`)
+    await expect(page.getByRole('heading', { name: employee.full_name })).toBeVisible({
+      timeout: 25_000,
+    })
+    // Доказательство — ЧИСЛО МЕРОПРИЯТИЙ в шапке: страницы несут РАЗНЫЕ коды
+    // ОМ, и «из 2 мероприятий» получается только если забраны обе. Балл тут
+    // не годится в доказательство вовсе: агрегат участника одинаков во всех
+    // строках реестра (Plane №658), и по одной странице он тот же.
+    const ratingChip = page.getByTestId('profile-rating')
+    await expect(ratingChip).toBeVisible({ timeout: 20_000 })
+    await expect(
+      ratingChip,
+      'счёт оценённых мероприятий взят по ПЕРВОЙ странице реестра',
+    ).toContainText('из 2 мероприятий')
+    await page.unroute('**/api/ops/evaluation-registry/**')
   })
 
   test('другая учётка получает ДРУГУЮ запись и свои статусы', async ({ page }) => {
@@ -519,6 +601,86 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(page.locator('[data-slot="card"]', { hasText: 'Ближайшие 30 дней' })).toBeVisible()
   })
 
+  test('строка «Ближайших 30 дней» из следующего месяца перелистывает сетку (Plane №661)', async ({
+    page,
+  }) => {
+    /**
+     * «Ближайшие 30 дней» смотрят на месяц ВПЕРЁД и в конце месяца заведомо
+     * содержат строки следующего. Клик по такой строке зажимался только
+     * снизу — панель открывалась про день следующего месяца, а сетка
+     * оставалась прежней, и подсветки в ней не было: экран рассказывал про
+     * день, которого не показывает.
+     *
+     * Статус на нужную дату подставляется ПЕРЕХВАТОМ: заводить его на стенде
+     * значило бы менять данные, которые читают соседние пробы, а нужен ровно
+     * один день в будущем месяце.
+     */
+    const today = new Date()
+    const firstOfNext = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1)
+    )
+    const daysAhead = Math.round(
+      (firstOfNext.getTime() - Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())) /
+        86_400_000
+    )
+    test.skip(
+      daysAhead > 30,
+      'первое число следующего месяца дальше горизонта в 30 дней — сегодня 1-е длинного месяца',
+    )
+    const iso = firstOfNext.toISOString().slice(0, 10)
+    const MONTHS = [
+      'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+      'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+    ]
+    const nextMonthTitle = `${MONTHS[firstOfNext.getUTCMonth()]} ${firstOfNext.getUTCFullYear()}`
+
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const me = await get<MyEmployee>(token, '/api/operations/my-employee/')
+    const employee = me.employee as CoreEmployee
+
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.route('**/api/operations/statuses/?*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          count: 1,
+          results: [
+            {
+              id: 900001,
+              employee: employee.id,
+              employee_name: employee.full_name,
+              status_type_code: 'VACATION',
+              state: 'PLANNED',
+              date_start: iso,
+              date_end: iso,
+              participations: [],
+            },
+          ],
+        }),
+      }),
+    )
+    await page.goto(`${APP}${SCREEN}`)
+    await page.getByRole('button', { name: 'Календарь' }).click()
+    const monthTitle = page.getByText(/^Мой календарь · /)
+    await expect(monthTitle).toBeVisible({ timeout: 20_000 })
+    const shownBefore = (await monthTitle.textContent()) ?? ''
+    expect(
+      shownBefore,
+      'сетка уже показывает следующий месяц — проверять перелистывание нечем',
+    ).not.toContain(nextMonthTitle)
+
+    const upcoming = page.locator('[data-slot="upcoming-30"]')
+    await expect(upcoming).toBeVisible()
+    await upcoming.getByRole('button').first().click()
+
+    await expect(
+      monthTitle,
+      'панель открыла день следующего месяца, а сетка осталась прежней',
+    ).toContainText(nextMonthTitle)
+    await page.unroute('**/api/operations/statuses/?*')
+  })
+
   test('учётка без кадровой записи получает причину, а не пустой профиль', async ({ page }) => {
     const token = await tokenFor('observer', 'observer123')
     const me = await get<MyEmployee>(token, '/api/operations/my-employee/')
@@ -572,6 +734,22 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     }
     if (closedMine.length > 0) {
       await expect(card).toContainText(closedMine[0]!.code)
+      // 🔴 КОЛОНКА «БАЛЛ» НЕ ПЕЧАТАЕТ ЧИСЛО (Plane №658). Здесь стоял
+      // `aggregateRating` строки реестра — АГРЕГАТ УЧАСТНИКА за период
+      // методики, одинаковый во всех его строках: история показывала одно и
+      // то же число напротив каждого мероприятия, а «средний балл» выходил
+      // средним из копий этого числа. Балла за отдельное ОМ клиент не знает
+      // и знать не должен — `score` закрытых записей наружу не
+      // сериализуется (§19.16, §19.21).
+      const scoreCells = card.locator('[data-slot="history-score"]')
+      const cells = await scoreCells.allInnerTexts()
+      expect(cells.length, 'колонка «Балл» не размечена — проверять нечего').toBeGreaterThan(0)
+      for (const text of cells) {
+        expect(
+          ['оценён', 'не оценивалось', 'нет доступа', '…'].some((word) => text.includes(word)),
+          `в колонке «Балл» стоит «${text}» — похоже на число за отдельное мероприятие`,
+        ).toBe(true)
+      }
     } else {
       await expect(card).toContainText('Закрытых мероприятий с вашим участием нет.')
     }
