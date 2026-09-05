@@ -128,7 +128,13 @@ export const objectsHandlers = [
   // История ОМ на объекте (Plane №38): закрытые мероприятия и лица, посещавшие
   // ИМЕННО его. Стоит ПЕРЕД деталью объекта — иначе `/{id}/history/` съел бы
   // более ранний путь детали.
-  http.get(`*${objectHistoryPath(":id")}`, ({ params }) => {
+  // 🔴 ШАБЛОН НАПИСАН РУКАМИ, А НЕ СОБРАН ПОМОЩНИКОМ (Plane №795). У
+  // `objectHistoryPath` внутри `encodeURIComponent`, и `objectHistoryPath(":id")`
+  // даёт `…/objects/%3Aid/history/` — ЛИТЕРАЛ вместо параметра MSW.
+  // Обработчик после этого не совпадает ни с одним запросом и ведёт себя как
+  // отсутствующий: история объекта в мок-режиме уходила в живой бэкенд.
+  // Найдено сторожем `mock-route-templates.spec.ts` в первом же прогоне.
+  http.get(`*${OPS_OBJECTS_PATH}:id/history/`, ({ params }) => {
     const id = params.id as string;
     const rows = readEventsStore()
       .filter((event) => event.stage === "CLOSED")
