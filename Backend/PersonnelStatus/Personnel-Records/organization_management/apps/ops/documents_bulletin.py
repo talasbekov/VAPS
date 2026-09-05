@@ -62,7 +62,19 @@ def format_period(start, end):
 
 
 def _chief_name(event):
-    """Фамилия и инициал старшего мероприятия; пусто — если не назначен."""
+    """Старший мероприятия для бюллетеня: «Фамилия / позывной» (`[МД-10]`).
+
+    🔴 ФОРМАТ ЗАДАН СПЕЦИФИКАЦИЕЙ, А НЕ УДОБСТВОМ (Plane №456). Позывной —
+    то, чем старшего зовут в эфире, и в бюллетене он стоит рядом с фамилией
+    именно поэтому: документ читают те, кто будет выходить на связь.
+
+    Позывного нет — печатается прежнее «Фамилия И.». Это не запасной вариант
+    «на случай пустоты», а честный ответ: инициал различает однофамильцев, а
+    выдуманного позывного у человека нет. У всех записей, заведённых до
+    миграции 0003, поле пусто, и документ для них не меняется ни на символ.
+
+    Пусто целиком — старший не назначен.
+    """
     if event.chief_employee_id is None:
         return ""
     from organization_management.apps.employees.models import Employee
@@ -70,6 +82,9 @@ def _chief_name(event):
     employee = Employee.objects.filter(pk=event.chief_employee_id).first()
     if employee is None:
         return ""
+    callsign = (employee.callsign or "").strip()
+    if callsign:
+        return f"{employee.last_name} / {callsign}"
     initial = f" {employee.first_name[0]}." if employee.first_name else ""
     return f"{employee.last_name}{initial}"
 

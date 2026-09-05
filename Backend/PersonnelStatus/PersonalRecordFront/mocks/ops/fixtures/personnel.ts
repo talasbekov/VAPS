@@ -6,6 +6,9 @@ interface PersonnelSeed {
   id: string;
   name: string;
   rankLabel: string;
+  /** Позывной (`[МД-10]`, Plane №456). У большинства пуст — так же, как в
+   *  живой базе: поле новое, и заполняют его по мере надобности. */
+  callsign?: string;
   unit: string;
 }
 
@@ -18,7 +21,7 @@ const SEED: PersonnelSeed[] = [
   { id: "emp-6", name: "Байжанов Е.", rankLabel: "Майор", unit: "Отдел пропускного режима" },
   { id: "emp-7", name: "Кусаинова Д.", rankLabel: "Капитан", unit: "Отдел пропускного режима" },
   { id: "emp-8", name: "Мукашев А.", rankLabel: "Лейтенант", unit: "Отдел пропускного режима" },
-  { id: "emp-9", name: "Ахметова С.", rankLabel: "Ст. лейтенант", unit: "Отдел пропускного режима" },
+  { id: "emp-9", name: "Ахметова С.", rankLabel: "Ст. лейтенант", callsign: "Беркут", unit: "Отдел пропускного режима" },
   { id: "emp-10", name: "Есимов Б.", rankLabel: "Прапорщик", unit: "Отдел пропускного режима" },
 ];
 

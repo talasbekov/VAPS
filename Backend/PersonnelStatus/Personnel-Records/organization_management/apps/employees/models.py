@@ -24,6 +24,15 @@ class Employee(models.Model):
     photo = models.ImageField(upload_to='employees/photos/', null=True, blank=True)
 
     # Служебная информация
+    #: Позывной сотрудника (`[МД-10]`, Plane №456). Бюллетень печатает
+    #: старшего как «Фамилия / позывной», и до этого поля позывного у кадровой
+    #: записи не было вовсе — он был только у охраняемых лиц и у транспорта.
+    #:
+    #: `blank`, а не `null`: пустая строка и «не заполнено» здесь одно и то же,
+    #: а два способа сказать «нет позывного» пришлось бы различать в каждом
+    #: читателе. Длина — как у позывного транспорта (`models_vehicle`), чтобы
+    #: одно понятие не мерилось в проекте двумя мерками.
+    callsign = models.CharField(max_length=64, blank=True, default='')
     rank = models.ForeignKey('dictionaries.Rank', on_delete=models.SET_NULL, null=True, blank=True)
     user = models.OneToOneField('auth.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='employee')
     hire_date = models.DateField(default='1970-01-01')

@@ -135,6 +135,62 @@ def test_a_missing_chief_is_an_empty_cell_and_not_a_guess():
     assert bulletin.bulletin_rows(dt.date(2026, 4, 20))[0]["chief"] == ""
 
 
+def test_the_chief_is_printed_as_surname_and_callsign(django_user_model):
+    """Старший печатается «Фамилия / позывной» (`[МД-10]`, Plane №456).
+
+    🔴 ПОЧЕМУ ЭТО НЕ УКРАШЕНИЕ. Бюллетень читают те, кто выйдет на связь, и
+    позывной для них — рабочее имя старшего. До этой правки позывного у
+    кадровой записи не было вовсе, и документ печатал «Фамилия И.» — формат
+    другого документа.
+
+    Проверяются ОБА случая: позывной вписан — «Фамилия / позывной»; не вписан
+    — прежнее «Фамилия И.». Второе важнее первого: у всех записей, заведённых
+    до миграции 0003, поле пусто, и документ для них не имеет права
+    измениться ни на символ.
+    """
+    from organization_management.apps.employees.models import Employee
+
+    with_callsign = Employee.objects.create(
+        personnel_number="К-001", last_name="Абаев", first_name="Асхат",
+        callsign="Беркут",
+    )
+    without = Employee.objects.create(
+        personnel_number="К-002", last_name="Беков", first_name="Бауыржан",
+    )
+
+    named = make_event("С позывным", dt.date(2026, 4, 25))
+    named.chief_employee_id = with_callsign.pk
+    named.save(update_fields=["chief_employee_id"])
+    plain = make_event("Без позывного", dt.date(2026, 4, 26))
+    plain.chief_employee_id = without.pk
+    plain.save(update_fields=["chief_employee_id"])
+
+    # Ключ строки — `event` (название), а не `title`: строка бюллетеня
+    # повторяет КОЛОНКИ бланка, а не поля модели.
+    rows = {row["event"]: row["chief"] for row in bulletin.bulletin_rows(dt.date(2026, 4, 20))}
+    assert rows["С позывным"] == "Абаев / Беркут"
+    assert rows["Без позывного"] == "Беков Б."
+
+
+def test_a_blank_callsign_does_not_print_an_empty_tail(django_user_model):
+    """Пробелы в позывном — это «не вписан», а не позывной из пробелов.
+
+    Поле текстовое и правится руками в админке: строка из пробелов туда
+    попадает легко, а «Абаев / » читается как сбой документа.
+    """
+    from organization_management.apps.employees.models import Employee
+
+    employee = Employee.objects.create(
+        personnel_number="К-003", last_name="Валиев", first_name="Вадим",
+        callsign="   ",
+    )
+    event = make_event("Позывной из пробелов", dt.date(2026, 4, 27))
+    event.chief_employee_id = employee.pk
+    event.save(update_fields=["chief_employee_id"])
+
+    assert bulletin.bulletin_rows(dt.date(2026, 4, 20))[0]["chief"] == "Валиев В."
+
+
 # ── Готовый документ ────────────────────────────────────────────────────────
 
 
