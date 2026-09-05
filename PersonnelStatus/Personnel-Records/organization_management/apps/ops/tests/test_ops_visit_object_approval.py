@@ -1319,3 +1319,49 @@ def test_a_general_remark_and_an_own_post_are_still_accepted(
     pinned = {r["text"]: r["postId"] for r in first.approval_remarks}
     assert pinned["Свой пост"] == str(mine[0]["id"])
     assert pinned["Общее замечание"] is None
+
+
+def test_a_repeated_return_after_the_stage_closed_is_refused(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ПОВТОРНЫЙ ВОЗВРАТ ОТКАТЫВАЛ ОМ С «ОЗНАКОМЛЕНИЯ» (Plane №568).
+
+    У решения согласующего не было гварда этапа вовсе, и это АСИММЕТРИЯ:
+    соседи (`return_placement`, `approve_placement`, `withdraw_from_approval`)
+    этап спрашивают. Ветка «Согласовано» защищена случайно — автозавершение
+    выходит само; ветка «Вернуть» не защищена ничем.
+
+    Повтор — не редкость: двойной клик, ретрай сети, вторая вкладка. И он
+    откатывал объект с «Ознакомления» назад на «Расстановку», а с ним и
+    мероприятие: его стадия наименьшая. Люди уже получили уведомления о
+    заступлении, документ согласован — а карточка снова просит расставлять.
+    """
+    base, event_id, first, _second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    approved = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert approved.status_code == 200, approved.content
+    first.refresh_from_db()
+    assert first.stage == "ACKNOWLEDGEMENT", "фикстура не закрыла этап — проба вакуумна"
+
+    late = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {
+            "decision": "RETURNED",
+            "comment": "передумал",
+            "visitObjectId": str(first.pk),
+        },
+        format="json",
+    )
+
+    assert late.status_code == 422, late.content
+    assert late.json()["error_code"] == "INVALID_STAGE_TRANSITION", late.json()
+    first.refresh_from_db()
+    assert first.stage == "ACKNOWLEDGEMENT", "объект укатился назад с «Ознакомления»"
+    assert first.approval_status == "APPROVED"
