@@ -339,5 +339,58 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       await expect(row).toContainText('—')
     })
 
+    test('пост не остаётся выбранным после записи инцидента', async ({ page }) => {
+      // Форма чистила заголовок, описание, меры и время, а ПОСТ оставляла
+      // (Plane №731): открыв «+ Добавить» второй раз, человек видел уже
+      // выбранным пост ПЕРВОГО инцидента и, заполнив только время и описание,
+      // приписывал запись не тому посту.
+      //
+      // Запись в журнал стенда НЕ делается: ручка перехватывается и отвечает
+      // той же карточкой, что вернул бы успех. Предмет пробы — состояние формы
+      // ПОСЛЕ успеха, то есть чистая работа клиента; настоящая запись сделала
+      // бы пробу одноразовой и оставила бы след на общем стенде.
+      const token = await apiToken()
+      const target = requireFixture(
+        (await events(token, 'CONDUCT'))[0],
+        'мероприятие на стадии «Проведение»',
+      )
+      const post = requireFixture(
+        target.reconSectorPosts[0],
+        'пост расчёта у мероприятия «Проведения»',
+      )
+
+      let journalCalls = 0
+      await page.route(
+        `**/api/ops/security-events/${target.id}/journal/`,
+        async (route) => {
+          journalCalls += 1
+          const card = await route.fetch({
+            url: `${APP}/api/ops/security-events/${target.id}/`,
+            method: 'GET',
+          })
+          await route.fulfill({ response: card })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target.id}/`)
+      const panel = page.locator('[data-slot="incidents-panel"]')
+      await expect(panel).toBeVisible({ timeout: 15_000 })
+
+      await panel.getByRole('button', { name: '+ Добавить' }).click()
+      const form = panel.locator('[data-slot="incident-form"]')
+      await form.getByLabel('Пост').selectOption(post.id)
+      await form.getByLabel('Описание *').fill('Проба сброса поста')
+      await form.getByRole('button', { name: 'Записать инцидент' }).click()
+
+      // Форма закрылась — успешный путь пройден, а не отвалился молча.
+      await expect(form).toBeHidden({ timeout: 15_000 })
+      expect(journalCalls, 'ручка журнала обязана была быть вызвана').toBeGreaterThan(0)
+
+      await panel.getByRole('button', { name: '+ Добавить' }).click()
+      await expect(
+        panel.locator('[data-slot="incident-form"]').getByLabel('Пост'),
+      ).toHaveValue('')
+    })
   })
 })
