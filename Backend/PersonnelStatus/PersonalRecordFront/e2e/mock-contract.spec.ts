@@ -488,6 +488,58 @@ test.describe(
         overNeed.over.body.details.conflicts.map((c: any) => c.conflict_code),
       ).toContain('OVER_NEED')
 
+      // ПЕРЕНОС — ОДНА ОПЕРАЦИЯ (Plane №762). Мок обязан повторить ровно три
+      // отличия ручки переноса от ручки назначения, иначе экран в мок-режиме
+      // зелен там, где на живом стенде открывается окно обоснования:
+      // 1) счёт поста-приёмника ИСКЛЮЧАЕТ переносимого — поэтому смена роли
+      //    на СВОЁМ посту не считается усилением и проходит молча;
+      // 2) укомплектованный чужой пост встречает переносящего тем же 409
+      //    `OVER_NEED`;
+      // 3) идентификатор назначения СОХРАНЯЕТСЯ: это перенос, а не «удалили и
+      //    завели заново».
+      const movedRow = await page.evaluate(
+        async ([filledPostId, employeeId]: [string, string]) => {
+          const fresh = await (await fetch('/api/ops/security-events/se-1/')).json()
+          const mine = fresh.placementAssignments.find(
+            (a: any) => a.employeeId === employeeId,
+          )
+          const move = async (postId: string, body: Record<string, unknown> = {}) => {
+            const res = await fetch(
+              `/api/ops/security-events/se-1/placement/${encodeURIComponent(mine.id)}/move/`,
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ postId, ...body }),
+              },
+            )
+            return { status: res.status, body: await res.json() }
+          }
+          const other = fresh.reconSectorPosts.find((p: any) => p.id !== mine.postId)
+          return {
+            assignmentId: mine.id,
+            samePost: await move(mine.postId, { roleCode: 'SENIOR' }),
+            ontoFilled: other === undefined ? null : await move(filledPostId),
+            hasOther: other !== undefined,
+          }
+        },
+        [placed.postId, members.employeeId] as [string, string],
+      )
+
+      // Смена роли на своём посту усилением не является — счёт исключает
+      // самого переносимого.
+      expect(
+        movedRow.samePost.status,
+        'перенос на СВОЙ пост считает переносимого дважды и просит обоснование',
+      ).toBe(200)
+      const afterMove = movedRow.samePost.body.placementAssignments.find(
+        (a: any) => a.id === movedRow.assignmentId,
+      )
+      expect(afterMove, 'идентификатор назначения переносом менять нельзя').toBeTruthy()
+      expect(afterMove.roleCode).toBe('SENIOR')
+      // Отметка ознакомления и старшинство относились к покинутому посту.
+      expect(afterMove.acknowledgedAt).toBeNull()
+      expect(afterMove.isSectorSenior).toBe(false)
+
       // Р-1: строка назначения несёт подразделение и статус дня. Тип
       // проверяется строго — `not.toBe('')` прошёл бы на `undefined`, то есть
       // ровно на моке, который этих полей не отдаёт.

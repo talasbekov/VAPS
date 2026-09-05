@@ -4329,6 +4329,162 @@ def assign_placement(
 
 
 @transaction.atomic
+def move_placement(
+    event_id,
+    assignment_id,
+    *,
+    post_id,
+    override=False,
+    override_reason=None,
+    role_code=None,
+    section_code=None,
+    deputy=None,
+):
+    """Перенести человека на другой пост ОДНОЙ операцией (Plane №762).
+
+    🔴 ЗАЧЕМ ОНА ЕСТЬ. Переноса у сервера не было вовсе: клиент выражал его
+    двумя запросами — снять (`DELETE /placement/<id>/`) и назначить
+    (`POST /placement/assign/`). Между ними человек не назначен НИКУДА. №744
+    научила клиент возвращать его на прежний пост, если назначение не
+    состоялось, — но возврат делает КЛИЕНТ: закройте вкладку, перезагрузите
+    страницу или потеряйте связь ровно в этот миг, и восстанавливать станет
+    некому. Сотрудник останется снятым с обоих постов молча, а заметить это
+    можно только по несходящемуся числу «назначено» в реестре — на этапе,
+    после которого расстановку подписывают и печатают документом. Ни один
+    клиентский приём эту щель не закрывает; закрыть её может только
+    транзакция, и вот она.
+
+    ПОЧЕМУ НЕЛЬЗЯ БЫЛО ПРОСТО ПЕРЕСТАВИТЬ ЗАПРОСЫ («назначить, потом снять»).
+    `DOUBLE_ASSIGNMENT` — жёсткое правило «сотрудник не занимает два поста
+    одного ОМ», и порядок «сначала назначить» упирается в него всегда.
+
+    КОНФЛИКТЫ СЧИТАЮТСЯ НА ПОСТУ-ПРИЁМНИКЕ, ИСКЛЮЧАЯ ПЕРЕНОСИМОГО. Иначе
+    смена роли или секции В ПРЕДЕЛАХ ОДНОГО ПОСТА (тот же перенос, Plane №239
+    и №242) всегда требовала бы обоснования усиления: человек считался бы
+    занимающим место сам у себя.
+
+    ИДЕНТИФИКАТОР НАЗНАЧЕНИЯ СОХРАНЯЕТСЯ. Это перенос, а не «удалили и завели
+    заново»: ссылка «мои назначения» у самого сотрудника переживает перенос,
+    а не отвечает 404. Отметка ознакомления при этом СНИМАЕТСЯ — человек
+    знакомился с прежним постом, и переносить её на новый значило бы
+    расписаться за него. По той же причине не переезжает и признак старшего
+    поста: старшинство относилось к покинутому посту.
+
+    ОТКАЗ НЕ МЕНЯЕТ НИЧЕГО — отменять нечего, и клиентский возврат после этой
+    ручки лишний.
+    """
+    event = lock_event(event_id)
+    current = next(
+        (a for a in event.placement_assignments if a.get("id") == assignment_id),
+        None,
+    )
+    if current is None:
+        raise _not_found("Назначение не найдено.", assignment_id)
+    # Заморозка проверяется по ОБОИМ объектам: пост-исток и пост-приёмник
+    # могут принадлежать разным объектам посещения, и один из них уже мог
+    # уехать на согласование (`[СОГ-04]`, Plane №398).
+    _require_placement_editable(event, current.get("postId"))
+    _require_placement_editable(event, post_id)
+    post = next(
+        (p for p in event.recon_sector_posts if p.get("id") == post_id), None
+    )
+    if post is None:
+        raise _not_found("Пост не найден.", post_id)
+    employee_key = str(current.get("employeeId"))
+    display = current.get("employeeName") or employee_key
+    # Жёсткое правило — но ИСКЛЮЧАЯ саму переносимую строку: иначе перенос
+    # запрещал бы сам себя.
+    if any(
+        str(a.get("employeeId")) == employee_key
+        and a.get("id") != assignment_id
+        and str(a.get("postId")) != str(post_id)
+        for a in event.placement_assignments
+    ):
+        raise DomainError(
+            "DOUBLE_ASSIGNMENT",
+            422,
+            message=(
+                f"{display} уже назначен(а) на другой пост этого мероприятия."
+            ),
+        )
+    reason = str(override_reason or "").strip() if override is True else ""
+    conflicts = []
+    rating_conflict = None
+    if post.get("minRating") is not None:
+        rating_conflict = "Данных рейтинга для проверки требования поста нет."
+        conflicts.append(
+            {
+                "conflict_code": "RATING_DATA_MISSING",
+                "severity": "WARNING",
+                "employee_id": employee_key,
+                "message": rating_conflict,
+            }
+        )
+    need = max(int(post.get("need") or 0), 0)
+    taken = sum(
+        1
+        for a in event.placement_assignments
+        if str(a.get("postId")) == str(post_id) and a.get("id") != assignment_id
+    )
+    need_conflict = None
+    if taken >= need:
+        need_conflict = (
+            f"Расчёт поста — {need}, уже назначено {taken}. "
+            "Укажите обоснование усиления."
+        )
+        conflicts.append(
+            {
+                "conflict_code": "OVER_NEED",
+                "severity": "WARNING",
+                "employee_id": employee_key,
+                "message": need_conflict,
+            }
+        )
+    if conflicts and reason == "":
+        raise DomainError(
+            "SOFT_CONFLICT_DETECTED",
+            409,
+            detail={"conflicts": conflicts},
+            overridable=True,
+            message=(
+                conflicts[0]["message"]
+                if len(conflicts) == 1
+                else "Перенос требует обоснования."
+            ),
+        )
+    from_post_id = str(current.get("postId"))
+    moved = {
+        **current,
+        "postId": post_id,
+        "roleCode": _validated_placement_role(role_code),
+        "sectionCode": _validated_placement_section(section_code),
+        "acknowledgedAt": None,
+        "isSectorSenior": False,
+        "ratingOverrideReason": None if rating_conflict is None else reason,
+        "needOverrideReason": None if need_conflict is None else reason,
+    }
+    event.placement_assignments = [
+        moved if a.get("id") == assignment_id else a
+        for a in event.placement_assignments
+    ]
+    event.save(update_fields=["placement_assignments", "updated_at"])
+    # Числа объекта — снимки, и правка расстановки их двигает (Plane №412).
+    recompute_visit_needs(event)
+    _record_deputy_placement(
+        event,
+        deputy,
+        {
+            "operation": "MOVE",
+            "assignmentId": str(assignment_id),
+            "fromPostId": from_post_id,
+            "postId": str(post_id),
+            "employeeId": employee_key,
+        },
+    )
+    return event
+
+
+@transaction.atomic
 def unassign_placement(event_id, assignment_id, *, deputy=None):
     event = lock_event(event_id)
     victim = next(

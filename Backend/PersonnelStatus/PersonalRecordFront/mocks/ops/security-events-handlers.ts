@@ -65,6 +65,7 @@ import type {
   CreateSecurityEventRequest,
   DecideApproverRequest,
   MoveApproverRequest,
+  MovePlacementRequest,
   ResolveRemarkRequest,
   ForceAllocationRow,
   ForceRequest,
@@ -2280,6 +2281,129 @@ export const securityEventsHandlers = [
           ...withStaleFlag({
             ...event,
             placementAssignments: [...event.placementAssignments, assignment],
+          }),
+          updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
+  /**
+   * Перенос человека на другой пост — ОДНА операция (Plane №762).
+   *
+   * Зеркало серверного правила, а не удобный упрощённый вариант: мок, который
+   * переносит молча, зеленил бы экран, у которого на живом стенде открывается
+   * окно обоснования усиления. Отличия от назначения ровно два, и оба
+   * существенные:
+   *
+   * 1. `DOUBLE_ASSIGNMENT` и счёт поста-приёмника считаются ИСКЛЮЧАЯ саму
+   *    переносимую строку — иначе перенос запрещал бы сам себя, а смена роли
+   *    или секции на СВОЁМ посту (Plane №239, №242) всегда требовала бы
+   *    обоснования усиления;
+   * 2. идентификатор назначения СОХРАНЯЕТСЯ: это перенос, а не «удалили и
+   *    завели заново». Отметка ознакомления и признак старшего при этом
+   *    снимаются — они относились к покинутому посту.
+   */
+  http.post(
+    // Шаблон собирается вручную по той же причине, что у ручки старшего ниже:
+    // построитель пути кодирует `:assignmentId`.
+    `*${SECURITY_EVENTS_PATH}:id/placement/:assignmentId/move/`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const assignmentId = decodeURIComponent(params.assignmentId as string);
+      const body = (await request.json()) as MovePlacementRequest;
+      const current = event.placementAssignments.find((a) => a.id === assignmentId);
+      if (current === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Назначение не найдено.",
+          { id: assignmentId },
+          404
+        );
+      }
+      const post = event.reconSectorPosts.find((p) => p.id === body.postId);
+      if (post === undefined) {
+        return errorEnvelope(
+          "ENTITY_NOT_FOUND",
+          "Пост не найден.",
+          { id: body.postId },
+          404
+        );
+      }
+      if (
+        event.placementAssignments.some(
+          (a) =>
+            a.employeeId === current.employeeId &&
+            a.id !== assignmentId &&
+            a.postId !== body.postId
+        )
+      ) {
+        return businessRuleError(
+          "DOUBLE_ASSIGNMENT",
+          `${current.employeeName} уже назначен(а) на другой пост этого мероприятия.`
+        );
+      }
+      const overrideReason =
+        body.override === true ? (body.override_reason ?? "").trim() : "";
+      const conflicts: {
+        conflict_code: string;
+        severity: string;
+        employee_id: string;
+        message: string;
+      }[] = [];
+      let ratingConflictMessage: string | null = null;
+      if (post.minRating !== null) {
+        ratingConflictMessage =
+          "Данных рейтинга для проверки требования поста нет.";
+        conflicts.push({
+          conflict_code: "RATING_DATA_MISSING",
+          severity: "WARNING",
+          employee_id: current.employeeId,
+          message: ratingConflictMessage,
+        });
+      }
+      const need = Math.max(post.need ?? 0, 0);
+      const taken = event.placementAssignments.filter(
+        (a) => a.postId === body.postId && a.id !== assignmentId
+      ).length;
+      let needConflictMessage: string | null = null;
+      if (taken >= need) {
+        needConflictMessage = `Расчёт поста — ${need}, уже назначено ${taken}. Укажите обоснование усиления.`;
+        conflicts.push({
+          conflict_code: "OVER_NEED",
+          severity: "WARNING",
+          employee_id: current.employeeId,
+          message: needConflictMessage,
+        });
+      }
+      if (conflicts.length > 0 && overrideReason === "") {
+        return softConflict(
+          conflicts.length === 1
+            ? conflicts[0].message
+            : "Перенос требует обоснования.",
+          conflicts
+        );
+      }
+      const moved: PlacementAssignment = {
+        ...current,
+        postId: body.postId,
+        roleCode: body.roleCode ?? null,
+        sectionCode: body.sectionCode ?? null,
+        acknowledgedAt: null,
+        isSectorSenior: false,
+        ratingOverrideReason:
+          ratingConflictMessage === null ? null : overrideReason,
+        needOverrideReason:
+          needConflictMessage === null ? null : overrideReason,
+      };
+      return HttpResponse.json(
+        saveEvent({
+          ...withStaleFlag({
+            ...event,
+            placementAssignments: event.placementAssignments.map((a) =>
+              a.id === assignmentId ? moved : a
+            ),
           }),
           updatedAt: nowIso(),
         })
