@@ -252,4 +252,48 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
     expect(await page.evaluate(() => document.activeElement?.id)).toBe('startDate')
     expect(posted, 'форма не должна была дойти до сети').toBe(0)
   })
+
+  test('«Участие в ОМ» в массовой простановке не предлагается (Plane №757)', async ({
+    page,
+  }) => {
+    // 🔴 Статус привлечения живёт по своим правилам раздела ОМ: мероприятие
+    // обязательно и обязано быть тем, о котором управление просили. Это окно
+    // мероприятия не спрашивает ВООБЩЕ и шлёт статус кадровой ручкой — мимо
+    // всех правил разом, и человек получал «привлечён неизвестно куда».
+    //
+    // Красная проверка — вернуть в список все типы справочника: пункт
+    // «Участие в ОМ» снова появится, и `toHaveCount(0)` упадёт.
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto('/statuses')
+    await hydrated(page)
+    await page.getByRole('row').nth(1).getByRole('checkbox').click()
+    await page.getByRole('tab', { name: 'Массовое обновление' }).click()
+
+    const form = page.locator('form').filter({ has: page.locator('#status') })
+    await expect(form.locator('#status')).toBeVisible()
+
+    // Подпись берётся ИЗ СПРАВОЧНИКА, а не пинится словом: тип переименуют в
+    // админке — проба должна проверять тот же код, а не вчерашнее слово.
+    const token = await tokenFor()
+    const catalog = (await (
+      await fetch(`${API}/api/statuses/types/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as Array<{ code: string; label: string }>
+    const participation = catalog.find((item) =>
+      ['IN_EVENT', 'EVENT_ASSIGNMENT', 'EVENT_ASSIGNMENT_GROUP'].includes(item.code),
+    )
+    expect(
+      participation,
+      'в справочнике нет типа «Участие в ОМ» — проверять нечего',
+    ).toBeTruthy()
+
+    await form.locator('#status').click()
+    await expect(
+      page.getByRole('option', { name: participation!.label, exact: true }),
+      'массовая простановка предлагает «Участие в ОМ» — статус уйдёт мимо правил раздела ОМ',
+    ).toHaveCount(0)
+    // Список при этом не пуст: отбор убрал один тип, а не все.
+    expect(await page.getByRole('option').count()).toBeGreaterThan(1)
+  })
 })

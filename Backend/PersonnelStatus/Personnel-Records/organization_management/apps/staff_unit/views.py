@@ -54,6 +54,39 @@ _OPS_READ_STATUS_PERMISSION = 'status.view'
 _OPS_READ_ORGSTRUCTURE_PERMISSION = 'orgstructure.view'
 
 
+def _refuse_participation_status(status_type):
+    """«Участие в ОМ» кадровой ручкой не ставится (Plane №757).
+
+    🔴 ВТОРАЯ ДВЕРЬ В ТОТ ЖЕ ФАКТ. Правила статуса привлечения живут в разделе
+    ОМ (`status_service._assert_manual_participation`, №737/№663/№664):
+    мероприятие обязательно и обязано быть тем, о котором управление просили,
+    а вид наряда пишется в строку участия. Эта ручка кадровая и создаёт
+    `EmployeeStatus` НАПРЯМУЮ — то есть мимо всех правил разом. Массовая
+    простановка на экране «Статусы сотрудников» шла именно сюда, и человек
+    получал «привлечён неизвестно куда»: расход считает его занятым, а
+    департамент не видит, куда он отдан.
+
+    Отбивается ЗДЕСЬ, а не только на экране: проверка, которую можно обойти
+    другим клиентом, проверкой не является (тот же довод, что у обязательности
+    пункта рекогносцировки, №541).
+    """
+    from organization_management.apps.operations.status_service import (
+        PARTICIPATION_STATUS_CODES,
+    )
+
+    code = str(status_type or "").strip()
+    if code.upper() in {c.upper() for c in PARTICIPATION_STATUS_CODES}:
+        raise ValidationError(
+            {
+                "employee_statuses": [
+                    "«Участие в ОМ» ставится в разделе «Сбор сил на ОМ» — по "
+                    "запросу мероприятия, а не кадровой ручкой: иначе человек "
+                    "числится привлечённым неизвестно куда."
+                ]
+            }
+        )
+
+
 def _as_date(value):
     """Дата из JSON-строки. None — значения нет или оно не разбирается."""
     if value is None or value == '':
@@ -389,6 +422,21 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         if 'employee_statuses' in data:
             for status_data in data['employee_statuses']:
                 employee_id = status_data['employee_id']
+                # 🔴 «УЧАСТИЕ В ОМ» ЭТОЙ ДВЕРЬЮ НЕ СТАВИТСЯ (Plane №757).
+                # Правила статуса привлечения живут в разделе ОМ
+                # (`status_service._assert_manual_participation`, №737/№663):
+                # мероприятие обязательно и обязано быть тем, о котором
+                # управление просили, а вид наряда пишется в строку участия.
+                # Эта ручка кадровая: она создаёт `EmployeeStatus` НАПРЯМУЮ,
+                # мимо службы статусов, — то есть мимо всех правил разом.
+                # Массовая простановка на экране «Статусы сотрудников» шла
+                # именно сюда, и человек получал «привлечён неизвестно куда»:
+                # расход считает его занятым, а департамент не видит, куда он
+                # отдан.
+                #
+                # Отказ, а не тихий пропуск: пропуск выглядел бы как успех, и
+                # человек ушёл бы, считая статус проставленным.
+                _refuse_participation_status(status_data.get('status_type'))
 
                 try:
                     employee = Employee.objects.get(id=employee_id)
@@ -1301,6 +1349,11 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # 3. Обновление/создание статусов сотрудников
         if 'employee_statuses' in data:
             for status_data in data['employee_statuses']:
+                # «Участие в ОМ» этой дверью не ставится — см.
+                # `_refuse_participation_status` (Plane №757). Проверка стоит и
+                # здесь: путей записи статуса у этой ручки ДВА, и закрытый
+                # один оставил бы обход открытым.
+                _refuse_participation_status(status_data.get('status_type'))
                 try:
                     employee_id = status_data.get('employee')
                     if not employee_id:

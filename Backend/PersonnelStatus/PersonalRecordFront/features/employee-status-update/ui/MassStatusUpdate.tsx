@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -116,11 +117,27 @@ export function MassStatusUpdate({
     isLoading: statusTypesLoading,
     error: statusTypesError,
   } = useEmployeeStatusTypes();
-  const statusTypes = catalogTypes.map((item) => ({
-    value: item.label,
-    label: item.label,
-    color: item.color || getEmployeeStatusColor(item.code as never),
-  }));
+  // 🔴 «УЧАСТИЕ В ОМ» В МАССОВОЙ ПРОСТАНОВКЕ НЕ ПРЕДЛАГАЕТСЯ (Plane №757).
+  // Правила этого статуса живут в разделе ОМ: мероприятие обязательно и
+  // обязано быть тем, о котором управление просили, а вид наряда пишется в
+  // строку участия (№737/№663/№664). Это окно мероприятия не спрашивает
+  // ВООБЩЕ и отправляет статус кадровой ручкой
+  // (`staff-units/directorate/`) — мимо всех правил разом. Человек получал
+  // «привлечён неизвестно куда»: расход считает его занятым, а департамент не
+  // видит, куда он отдан.
+  //
+  // Сервер эту дверь теперь закрывает сам (`_refuse_participation_status`),
+  // здесь же — чтобы не предлагать того, что всё равно отобьётся: список,
+  // обещающий невозможное, хуже короткого. Ставится «Участие в ОМ» там, где
+  // есть мероприятие, — чекбоксами запроса на «Статусах» и в окне одного
+  // сотрудника.
+  const statusTypes = catalogTypes
+    .filter((item) => !EVENT_PARTICIPATION_STATUS_CODES.has(item.code))
+    .map((item) => ({
+      value: item.label,
+      label: item.label,
+      color: item.color || getEmployeeStatusColor(item.code as never),
+    }));
   // Обратный перевод «подпись → код» строится ИЗ ТОГО ЖЕ ответа: статический
   // словарь знает только тринадцать старых подписей и на заведённом в админке
   // типе вернул бы undefined — форма отказала бы «Неверный тип статуса».

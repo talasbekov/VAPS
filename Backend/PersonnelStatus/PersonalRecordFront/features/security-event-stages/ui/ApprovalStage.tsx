@@ -521,11 +521,11 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
   const nothingToApprove =
     scope.shown === UNASSIGNED_VISIT && event.visitObjects.length > 0;
 
-  const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
-  const postLabel = (postId: string): string => {
-    const post = postById.get(postId);
-    return post ? `${post.sector} · ${post.post}` : postId;
-  };
+  // 🔴 `postLabel` И КАРТА ПОСТОВ ПОД НЕЙ СНЯТЫ (Plane №767). Помощник
+  // «сектор · пост» не читал никто с тех пор, как замечания стали печатать
+  // привязку сами, а карта строилась только ради него. `noUnusedLocals` был
+  // выключен, и оба хвоста находились лишь глазами. Своя карта постов ниже, в
+  // списке замечаний, — она живая и осталась.
 
   // СЧИТАЕМ ПО ПОСТАМ ОБЪЕКТА, а не мероприятия: сводка над маршрутом должна
   // отвечать про то, что согласуют. Ровно тот же разрез держит сервер, когда
