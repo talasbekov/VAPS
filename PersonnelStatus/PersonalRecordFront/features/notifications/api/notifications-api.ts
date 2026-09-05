@@ -107,6 +107,27 @@ export function describeOpsNotification(row: OpsNotificationRow): {
             : null,
     };
   }
+  if (row.kind === "ASSIGNMENT_DECLINED") {
+    // Отказ сотрудника заступить (Plane №451, `[ПРФ-04]`): «Иванов И. не
+    // может заступить: <причина>». Имя и причина стоят В ЗАГОЛОВКЕ, а не в
+    // подписи: старший решает по ним, кем заменять, и решает он в ленте, не
+    // открывая карточку — ради этого уведомление и заведено.
+    const p = row.payload;
+    const who = p.employeeName ? p.employeeName : "Сотрудник";
+    const object = p.objectName ? ` · объект «${p.objectName}»` : "";
+    return {
+      title: `${who} не может заступить: ${p.reason ?? "причина не указана"}`,
+      message: `${p.eventCode ?? ""} ${p.eventTitle ?? ""} · ${p.businessDate ?? ""}${object}`.trim(),
+      // Ссылка ведёт на объект, если он известен: старший двух объектов иначе
+      // открыл бы не тот (тот же довод, что у возврата расстановки, №586).
+      link:
+        p.eventId && p.visitObjectId
+          ? `/security-ops/events/${p.eventId}/?visit=${encodeURIComponent(p.visitObjectId)}`
+          : p.eventId
+            ? `/security-ops/events/${p.eventId}/`
+            : null,
+    };
+  }
   if (row.kind === "EVENT_ACKNOWLEDGEMENT") {
     const p = row.payload;
     const event = `${p.eventCode ?? ""} ${p.eventTitle ?? ""}`.trim();

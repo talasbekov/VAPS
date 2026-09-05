@@ -567,7 +567,8 @@ export interface OpsNotification {
     | "FORCES_REQUEST"
     | "PLACEMENT_RETURNED"
     | "ACKNOWLEDGEMENT_DUE_SOON"
-    | "FORCES_RESPONSE";
+    | "FORCES_RESPONSE"
+    | "ASSIGNMENT_DECLINED";
   business_date: string;
   /** `laggard_division_ids` — только у `SUBMISSION_LAGGING`; остальные поля —
    *  у `EVENT_ACKNOWLEDGEMENT` (Plane №402, `acknowledgement_notify.py`).
@@ -599,6 +600,12 @@ export interface OpsNotification {
     remarksOpen?: number;
     urgent?: boolean;
     documentVersion?: number;
+    /** `ASSIGNMENT_DECLINED` (Plane №451, `[ПРФ-04]`): сотрудник ответил
+     *  «Не могу заступить». Старшему нужно ИМЯ и ПРИЧИНА — по ним он решает,
+     *  кем заменять; идентификатор назначения ведёт в лист ознакомления. */
+    assignmentId?: string;
+    employeeName?: string;
+    reason?: string;
     /** `ACKNOWLEDGEMENT_DUE_SOON` (Plane №427, `[ОЗН-06]`): за час до
      *  заступления — ПОИМЁННО те, кто ещё не подтвердил. Список, а не число:
      *  руководителю нужно знать, кому звонить, а не сколько их. */

@@ -67,6 +67,12 @@ class OpsNotification(TimeStampedModel):
         ACKNOWLEDGEMENT_DUE_SOON = "ACKNOWLEDGEMENT_DUE_SOON", "Не подтвердили заступление — час до начала"
         # Департамент ответил «Выделяем: X» — штабу (`[СБС-12]`, Plane №426).
         FORCES_RESPONSE = "FORCES_RESPONSE", "Ответ департамента на запрос сил"
+        # Сотрудник ответил «Не могу заступить» (`[ПРФ-04]`, Plane №451).
+        # Получатели — старший объекта, его замещающие и старший мероприятия:
+        # заменять человека им, и узнать об отказе они должны сразу. До этого
+        # отказ был виден, только если старший сам откроет этап
+        # «Ознакомление» в карточке ОМ, — а замену ищут в день мероприятия.
+        ASSIGNMENT_DECLINED = "ASSIGNMENT_DECLINED", "Отказ сотрудника заступить"
 
     # Получатель строкой: str(User.pk) для человека, метка — для роли/службы.
     recipient = models.CharField(max_length=100)
@@ -131,6 +137,7 @@ class OpsNotification(TimeStampedModel):
                         "PLACEMENT_RETURNED",
                         "ACKNOWLEDGEMENT_DUE_SOON",
                         "FORCES_RESPONSE",
+                        "ASSIGNMENT_DECLINED",
                     ]
                 ),
                 name="chk_ops_notif_kind",

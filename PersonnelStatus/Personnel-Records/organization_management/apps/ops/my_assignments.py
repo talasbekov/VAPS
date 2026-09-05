@@ -391,4 +391,24 @@ def decline(
             "via": "personal" if personal else "self",
         },
     )
+    # 🔴 ОБ ОТКАЗЕ УЗНАЮТ СРАЗУ, А НЕ ЗАГЛЯНУВ В КАРТОЧКУ (Plane №451). До
+    # этого отказ был виден только тому, кто сам откроет этап «Ознакомление»
+    # в карточке ОМ, — и замену искали в день мероприятия. Рассылка идёт
+    # старшему объекта, его замещающим и старшему мероприятия: заменять
+    # человека им.
+    #
+    # Рассылка ПОСЛЕ записи в журнал и не роняет отказ: `notify_service`
+    # глотает свои беды сам, а отчёт здесь никто не читает — ответ ручки
+    # принадлежит сотруднику, и он не должен зависеть от того, дошло ли
+    # письмо старшему.
+    from organization_management.apps.ops.assignment_decline_notify import (
+        notify_assignment_declined,
+    )
+
+    row = next(
+        a
+        for a in (patched.placement_assignments or [])
+        if str(a.get("id")) == str(assignment_id)
+    )
+    notify_assignment_declined(patched, row, reason=text)
     return patched

@@ -63,6 +63,48 @@ test.describe('склонение по числу', () => {
     expect(describeOpsNotification(row(2)).title).toContain('возвращена: 2 замечания')
   })
 
+  test('отказ заступить называет человека и причину в заголовке (Plane №451)', () => {
+    // 🔴 ЗАГОЛОВОК НЕСЁТ ИМЯ И ПРИЧИНУ, а не «есть отказ». Уведомление
+    // заведено ради того, чтобы старший принял решение ПРЯМО В ЛЕНТЕ — кем
+    // заменять, — не открывая карточку. Заголовок без имени сделал бы его
+    // уведомлением «сходи посмотри», то есть тем же опозданием, от которого
+    // карточка №451 и появилась.
+    const row: OpsNotification = {
+      id: 2,
+      recipient: '7',
+      kind: 'ASSIGNMENT_DECLINED',
+      business_date: '2026-09-06',
+      payload: {
+        employeeName: 'Иванов И.',
+        reason: 'Болен',
+        objectName: 'Мейрам',
+        eventCode: 'ОМ-2026-1',
+        eventTitle: 'Проба',
+        businessDate: '2026-09-06',
+        eventId: '1',
+        visitObjectId: '2',
+        assignmentId: 'assignment-1',
+      },
+      read_at: null,
+      created_at: '2026-09-06T00:00:00Z',
+    }
+
+    const shown = describeOpsNotification(row)
+    expect(shown.title).toBe('Иванов И. не может заступить: Болен')
+    expect(shown.message).toContain('объект «Мейрам»')
+    // Ссылка ведёт НА ОБЪЕКТ: старший двух объектов иначе открыл бы не тот.
+    expect(shown.link).toBe('/security-ops/events/1/?visit=2')
+
+    // Имя и причина могут не дойти (старая строка, чужой источник) — пустого
+    // заголовка быть не должно.
+    const bare = describeOpsNotification({
+      ...row,
+      payload: { eventId: '1', eventCode: 'ОМ-2026-1' },
+    })
+    expect(bare.title).toBe('Сотрудник не может заступить: причина не указана')
+    expect(bare.link).toBe('/security-ops/events/1/')
+  })
+
   test('запрос сил называет число сотрудников по-русски (Plane №562)', () => {
     const row = (need: number): OpsNotification => ({
       id: 1,
