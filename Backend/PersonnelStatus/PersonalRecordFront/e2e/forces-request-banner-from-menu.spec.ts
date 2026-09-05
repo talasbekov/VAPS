@@ -472,6 +472,244 @@ test.describe(
       ).toContainText('Выделено: 1', { timeout: 15_000 })
       await expect(override).toBeHidden()
     })
+    /**
+     * Зона нажатия каждого органа управления баннера — не меньше 44 px
+     * (Plane №782).
+     *
+     * Чипы рисовались `px-3 py-1` (около 24 px), кнопки — `size="sm"`
+     * (32 px), поле обоснования — `h-8`. Правило проекта на 44 px уже
+     * применено в соседнем месте (№684 поднял единственный орган управления
+     * строки таблицы сборов до `size-11`), а здесь не выполнял его НИ ОДИН.
+     * Цена промаха тут выше: чип — это ВЫБОР МЕРОПРИЯТИЯ, на которое уедут
+     * люди, а «Статусы сотрудников» открывают и с планшета.
+     *
+     * 🔴 МЕРЯЕТСЯ ВЫСОТА НА ЭКРАНЕ, А НЕ КЛАСС. Пин на строку классов
+     * («есть ли `min-h-11`») зеленел бы при любой перекраске, которая эти
+     * классы сохранила и высоту всё равно съела — вложенным `leading`,
+     * `overflow`, чужим `line-height`. `boundingBox()` отвечает на тот
+     * вопрос, который задаёт правило: сколько пикселей под пальцем.
+     *
+     * Красная до правки: чип отдаёт около 24 px, кнопка выделения — 32.
+     */
+    test('зона нажатия чипов, кнопок и поля обоснования — не меньше 44 px', async ({
+      page,
+    }) => {
+      const rows = [1, 2].map((n) => ({
+        eventId: `90003${n}`,
+        code: `ОМ-СИНТ-Т${n}`,
+        title: `Синтетическое мероприятие Т${n}`,
+        businessDate: `2026-09-1${n}`,
+        allocationId: `synthetic-touch-${n}`,
+        departmentName: 'Синт. департамент',
+        status: 'NOTIFIED',
+        dueAt: null,
+        directorates: [
+          {
+            divisionId: '9101',
+            name: 'Синт. управление',
+            need: 3,
+            assigned: 0,
+            notifiedAt: '2026-09-05T06:00:00Z',
+          },
+        ],
+      }))
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) => route.fulfill({ json: { results: rows } }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/') && !url.pathname.endsWith('/select/'),
+        (route) => {
+          const picked = rows.find((row) => route.request().url().includes(row.allocationId))
+          return route.fulfill({ json: picked ?? rows[0] })
+        },
+      )
+      // Выделение отбивает человека МЯГКО — так на экране появляется блок
+      // обоснования, третий и последний орган управления баннера.
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/') && url.pathname.endsWith('/select/'),
+        (route) =>
+          route.fulfill({
+            json: {
+              selected: [],
+              refused: [
+                {
+                  employeeId: '101',
+                  name: 'Занятов З.',
+                  code: 'STATUS_OVERLAP_WARNING',
+                  message: 'Статус пересекает soft-статус (возможен override).',
+                  overridable: true,
+                },
+              ],
+              request: rows[0],
+            },
+          }),
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+
+      /** Высота органа управления на экране, округлённая вниз до пикселя. */
+      async function tapHeight(locator: import('@playwright/test').Locator): Promise<number> {
+        await expect(locator).toBeVisible({ timeout: 20_000 })
+        const box = await locator.boundingBox()
+        expect(box, 'орган управления не на экране — мерить нечего').not.toBeNull()
+        return Math.floor((box as { height: number }).height)
+      }
+
+      // Чипы: оба, а не первый. Одинаковый класс не гарантирует одинаковой
+      // высоты — у второго чипа код длиннее и он мог бы перенестись.
+      for (const row of rows) {
+        const chip = page.getByRole('button', { name: new RegExp(`^${row.code} `) })
+        expect(
+          await tapHeight(chip),
+          `чип «${row.code}» меньше 44 px: промах отправит людей не на то ОМ`,
+        ).toBeGreaterThanOrEqual(44)
+      }
+
+      await page.getByRole('button', { name: new RegExp(`^${rows[0].code} `) }).click()
+      const banner = page.locator('[data-slot="forces-request-banner"]')
+      await expect(banner).toBeVisible({ timeout: 20_000 })
+
+      const boxes = page.locator('table').getByRole('checkbox')
+      await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
+      await boxes.nth(1).check({ force: true })
+
+      const select = banner.getByRole('button', { name: /Выделить на / })
+      expect(
+        await tapHeight(select),
+        'кнопка «Выделить на ОМ» меньше 44 px',
+      ).toBeGreaterThanOrEqual(44)
+      await select.click()
+
+      const override = banner.locator('[data-slot="select-override"]')
+      await expect(override).toBeVisible({ timeout: 15_000 })
+      expect(
+        await tapHeight(override.getByLabel(/Обоснование/)),
+        'поле обоснования меньше 44 px',
+      ).toBeGreaterThanOrEqual(44)
+      expect(
+        await tapHeight(override.getByRole('button', { name: /Выделить с обоснованием/ })),
+        'кнопка обхода меньше 44 px',
+      ).toBeGreaterThanOrEqual(44)
+    })
+    /**
+     * Тот же порог у кнопки «Обновить список запросов» (Plane №782).
+     *
+     * Она живёт в ДРУГОЙ ветке баннера — запрос был ровно один и ОТВЕТИЛ
+     * ОТКАЗОМ (штаб снял его, пока страница была открыта), — и проба выше до
+     * неё не доходит: там запросов два, а значит есть чипы и кнопки нет. А
+     * это единственный орган управления ветки, из которой без него нет
+     * выхода (Plane №755).
+     */
+    test('зона нажатия кнопки обновления списка — не меньше 44 px', async ({ page }) => {
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) =>
+          route.fulfill({
+            json: {
+              results: [
+                {
+                  eventId: '900040',
+                  code: 'ОМ-СИНТ-Т0',
+                  title: 'Синтетическое мероприятие Т0',
+                  businessDate: '2026-09-16',
+                  allocationId: 'synthetic-touch-0',
+                  departmentName: 'Синт. департамент',
+                  status: 'NOTIFIED',
+                  dueAt: null,
+                  directorates: [
+                    {
+                      divisionId: '9101',
+                      name: 'Синт. управление',
+                      need: 3,
+                      assigned: 0,
+                      notifiedAt: '2026-09-05T06:00:00Z',
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+      )
+      // Единственный запрос снят штабом — так на экране появляется ветка
+      // отказа, и в ней кнопка обновления.
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/'),
+        (route) => route.fulfill({ status: 404, json: { detail: 'not found' } }),
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+      const refresh = page.getByRole('button', { name: 'Обновить список запросов' })
+      await expect(refresh).toBeVisible({ timeout: 20_000 })
+      const box = await refresh.boundingBox()
+      expect(box).not.toBeNull()
+      expect(
+        Math.floor((box as { height: number }).height),
+        'кнопка «Обновить список запросов» меньше 44 px',
+      ).toBeGreaterThanOrEqual(44)
+    })
+    /**
+     * Баннер не тянет горизонтальную прокрутку на узком экране (Plane №782).
+     *
+     * У кнопки shadcn в основе `whitespace-nowrap`, а подпись пустого выбора
+     * длинная: «Отметьте сотрудников в таблице — и выделите на ОМ» — 399 px в
+     * одну строку. На 420 px она вылезала за баннер (388 px) и тянула
+     * прокрутку ВСЕЙ СТРАНИЦЫ. Замерено до правки: `scrollWidth` 432 при
+     * `clientWidth` 420 — беда была своя, а 44 px добавляли к ней 8 px.
+     *
+     * 🔴 МЕРЯЕТСЯ ДОКУМЕНТ, А НЕ БАННЕР. Ширина самого баннера оставалась
+     * правильной и тогда: за край вылезал ребёнок, и проба по баннеру этого
+     * не увидела бы.
+     *
+     * Красная до правки: 432 против 420.
+     */
+    test('на узком экране баннер не тянет горизонтальную прокрутку', async ({ page }) => {
+      const row = {
+        eventId: '900050',
+        code: 'ОМ-СИНТ-У1',
+        title: 'Синтетическое мероприятие У1',
+        businessDate: '2026-09-17',
+        allocationId: 'synthetic-narrow-1',
+        departmentName: 'Синт. департамент',
+        status: 'NOTIFIED',
+        dueAt: null,
+        directorates: [
+          {
+            divisionId: '9101',
+            name: 'Синт. управление',
+            need: 3,
+            assigned: 0,
+            notifiedAt: '2026-09-05T06:00:00Z',
+          },
+        ],
+      }
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) => route.fulfill({ json: { results: [row] } }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/') && !url.pathname.endsWith('/select/'),
+        (route) => route.fulfill({ json: row }),
+      )
+
+      await page.setViewportSize({ width: 420, height: 1000 })
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+      await expect(page.locator('[data-slot="forces-request-banner"]')).toBeVisible({
+        timeout: 20_000,
+      })
+
+      const size = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }))
+      expect(
+        size.scroll,
+        `страница шире экрана на ${size.scroll - size.client} px — баннер вылез за край`,
+      ).toBeLessThanOrEqual(size.client)
+    })
   }
 )
 

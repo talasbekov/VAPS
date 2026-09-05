@@ -161,8 +161,16 @@ export function ForcesRequestBanner({
               type="button"
               aria-pressed={active}
               onClick={() => setPicked(row.allocationId)}
+              // ЗОНА НАЖАТИЯ 44 px (Plane №782, образец — №684). Было
+              // `px-3 py-1`: около 24 px в высоту, вдвое меньше минимума.
+              // Чип — это ВЫБОР МЕРОПРИЯТИЯ, на которое уедут люди, а
+              // «Статусы сотрудников» открывают и с планшета: промах пальцем
+              // по соседнему чипу отправляет выделение не на то ОМ. Высота
+              // задана КОНТЕЙНЕРУ (`min-h-11` + `inline-flex items-center`),
+              // шрифт остался `text-xs` — раздутый шрифт разнёс бы строку и
+              // сделал чипы шире экрана.
               className={
-                "rounded-full border px-3 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+                "inline-flex min-h-11 items-center rounded-full border px-4 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
                 (active
                   ? "border-primary bg-primary text-primary-foreground"
                   : "bg-background hover:bg-muted")
@@ -235,8 +243,11 @@ export function ForcesRequestBanner({
         {linkedId === null && rows.length <= 1 ? (
           <Button
             type="button"
-            size="sm"
             variant="outline"
+            // 44 px, как и всё остальное в баннере (Plane №782): `size="sm"`
+            // даёт h-8. Единственный орган управления этой ветки — промах по
+            // нему читается как «баннер не отвечает».
+            className="h-11"
             disabled={mine.isFetching}
             onClick={() => void mine.refetch()}
           >
@@ -298,7 +309,18 @@ export function ForcesRequestBanner({
       <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
-          size="sm"
+          // 44 px (Plane №782): главное действие баннера и самое дорогое —
+          // оно ставит людям статус участия в мероприятии.
+          //
+          // 🔴 ВЫСОТА МИНИМАЛЬНАЯ, А ПОДПИСЬ ПЕРЕНОСИТСЯ. У кнопки shadcn в
+          // основе `whitespace-nowrap`, а подпись пустого выбора длинная
+          // («Отметьте сотрудников в таблице — и выделите на ОМ», 399 px).
+          // На узком экране она вылезала за баннер и тянула ГОРИЗОНТАЛЬНУЮ
+          // ПРОКРУТКУ всей страницы: замерено на 420 px — `scrollWidth` 432
+          // при `clientWidth` 420, и это ДО правки (44 px добавляли к беде 8
+          // px, а не создавали её). «Статусы» открывают с планшета, ради
+          // этого вся карточка и правится, — чинится здесь же.
+          className="h-auto min-h-11 max-w-full py-2 text-left whitespace-normal"
           disabled={employeeIds.length === 0 || select.isPending}
           onClick={() =>
             select.mutate({ employeeIds }, { onSuccess: () => onSelected?.() })
@@ -357,13 +379,17 @@ export function ForcesRequestBanner({
               id="forces-override-reason"
               value={overrideReason}
               onChange={(e) => setOverrideReason(e.target.value)}
-              className="h-8 w-72 text-sm"
+              // 44 px (Plane №782): поле и кнопка обхода стоят в одну
+              // строку, и разная высота у соседей читается как сбитая
+              // вёрстка — а зона нажатия у поля ввода нужна не меньше, чем
+              // у кнопки.
+              className="h-11 w-72 text-sm"
             />
           </div>
           <Button
             type="button"
-            size="sm"
             variant="outline"
+            className="h-11"
             disabled={overrideReason.trim() === "" || select.isPending}
             onClick={() =>
               select.mutate(
