@@ -167,9 +167,6 @@ async function divisionLabels(token: string): Promise<Map<string, string>> {
   return labels
 }
 
-function nameRegExp(name: string): RegExp {
-  return new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-}
 
 // Тот же алгоритм, что `formatIsoDate` в `shared/lib/date.ts` («ГГГГ-ММ-ДД» →
 // «ДД.ММ.ГГГГ»), но БЕЗ `toLocaleDateString`: движок теста (Node) и движок

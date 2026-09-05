@@ -7,7 +7,6 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { modulePermissionsOf } from "@/entities/portal-access";
 import { PageHeader } from "@/components/page-header";
 import { StatsCards } from "@/components/dashboard/stats-cards";
-import { StatusOverview } from "@/widgets/status-overview";
 import OrgBoard from "@/features/organization-structure/ui/OrgBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,9 +29,6 @@ export default function DashboardPage() {
   );
 
 
-  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(
-    null
-  );
 
   // Часы «последнее обновление» рендерятся ТОЛЬКО после маунта: new Date()
   // прямо в JSX давал hydration mismatch — сервер и клиент попадали на

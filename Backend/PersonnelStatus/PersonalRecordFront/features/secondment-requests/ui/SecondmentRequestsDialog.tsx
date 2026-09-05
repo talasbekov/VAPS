@@ -23,7 +23,7 @@ export function SecondmentRequestsDialog() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["incoming-secondments"],
     queryFn: fetchIncomingSecondmentRequests,
     enabled: open,

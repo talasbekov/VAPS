@@ -44,7 +44,6 @@ export function OrgNode({
   const containerRef = useRef<HTMLDivElement>(null);
   const [childPositions, setChildPositions] = useState<number[]>([]);
 
-  const allEmployees = [unit.head, ...unit.employees].filter(Boolean);
   const isFocused = focusedUnitId === unit.id;
   const isInFocusPath =
     focusedUnitId !== rootId &&

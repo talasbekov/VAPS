@@ -49,10 +49,8 @@ import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import {
   EMPLOYEE_STATUS_ITEMS,
   EMPLOYEE_STATUS_LABELS,
-  getEmployeeStatusColor,
 } from "@/lib/status";
 import { useStatusNaming, type StatusNaming } from "@/entities/status";
-import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { formatIsoDate } from "@/shared/lib/date";
@@ -276,8 +274,6 @@ function EmployeesScreen() {
   // `user` остаётся ради подразделения человека (подпись и отбор «своё»);
   // ПРАВА теперь спрашиваются у раздела (Plane №352, Ш-1).
   const { user } = useAuth();
-  // Каталог типов статусов для фильтра — с сервера (Plane №354).
-  const { types: catalogStatusTypes } = useEmployeeStatusTypes(false);
   const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
     useOpsPermissions();
   const allowedCodes = modulePermissionsOf("/employees");

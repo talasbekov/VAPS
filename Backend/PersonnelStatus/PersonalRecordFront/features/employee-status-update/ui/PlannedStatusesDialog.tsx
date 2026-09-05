@@ -40,9 +40,6 @@ import {
   Plus,
   Shield,
 } from "lucide-react";
-import {
-  getEmployeeStatusColor,
-} from "@/lib/status";
 import { useStatusNaming } from "@/entities/status";
 import { useEmployeeStatuses } from "@/hooks/use-my-employee";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";

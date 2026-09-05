@@ -1,5 +1,4 @@
 import { getSession } from "next-auth/react"
-import { authOptions } from "@/lib/auth-config"
 
 /**
  * Получает токен доступа из NextAuth сессии

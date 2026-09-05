@@ -28,7 +28,6 @@ import { addDaysIso } from "@/entities/daily-grid";
 import {
   useCoreDirectories,
   useEmployeeStatuses,
-  useMyEmployee,
 } from "@/hooks/use-my-employee";
 import {
   useAcknowledgeMyAssignment,
@@ -699,7 +698,6 @@ function EventsTab({
   const upcoming = assignments
     .filter((item) => item.event.stage !== "CLOSED")
     .sort((a, b) => rank(a) - rank(b) || a.event.businessDate.localeCompare(b.event.businessDate));
-  const past = assignments.filter((item) => item.event.stage === "CLOSED");
 
   return (
     <div className="space-y-4">

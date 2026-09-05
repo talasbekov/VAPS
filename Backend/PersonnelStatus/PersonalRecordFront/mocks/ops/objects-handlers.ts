@@ -6,7 +6,6 @@ import {
   buildObjectsKpi,
   resolveFreshness,
   OPS_OBJECTS_PATH,
-  objectHistoryPath,
   objectDetailPath,
   objectPassportPath,
   objectPassportVersionsPath,
