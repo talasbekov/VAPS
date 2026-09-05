@@ -86,3 +86,87 @@ test.describe(LIVE ? 'выпуски бюллетеня' : 'выпуски бю�
     expect(Buffer.from(body.contentBase64, 'base64').subarray(0, 4).toString()).toBe('%PDF')
   })
 })
+
+/**
+ * Отказы в блоке выпусков (Plane №626, №627).
+ *
+ * 🔴 СВОЁ ОПИСАНИЕ С `serviceWorkers: 'block'`: без него `page.route` не
+ * перехватывает запросы, ушедшие через service worker MSW, и подделать отказ
+ * нельзя — проба была бы зелёной на живых данных, ничего не проверив.
+ */
+test.describe(LIVE ? 'выпуски бюллетеня: отказы' : 'выпуски бюллетеня: отказы (скип)', () => {
+  test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+  test.use({ serviceWorkers: 'block' })
+
+  test('отказ списка выпусков назван отказом, а не «выпусков не было» (Plane №626)', async ({
+    page,
+  }) => {
+    /**
+     * Ветка ошибки не проверялась вовсе: при 500, истёкшей сессии или обрыве
+     * сети `isPending` уже false, `data` пуст, и человеку говорили «Выпусков ещё
+     * не было» — утверждение о МИРЕ вместо факта о ЗАПРОСЕ. Соседние блоки того
+     * же экрана ошибку рисуют, то есть правило в файле есть и было пропущено.
+     *
+     * Мутация, на которой проба обязана краснеть: снять ветку
+     * `bulletinIssues.error` — вернётся «Выпусков ещё не было».
+     */
+    await page.route('**/api/ops/bulletin-issues/', (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"boom"}' })
+        : route.fallback()
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/service-reports`)
+    const group = page.getByRole('group', { name: 'Выгрузка документов ОМ' })
+    await group.getByLabel('Вид документа').selectOption('bulletin')
+
+    const issues = page.getByRole('group', { name: 'Выпуски бюллетеня' })
+    const alert = issues.getByRole('alert').filter({ hasText: 'Список выпусков не загрузился' })
+    await expect(alert).toBeVisible({ timeout: 20_000 })
+    await expect(alert.getByRole('button', { name: 'Повторить' })).toBeVisible()
+    await expect(issues.getByText('Выпусков ещё не было')).toHaveCount(0)
+  })
+
+  test('отказ «Скачать PDF» назван, и гаснет только нажатая строка (Plane №627)', async ({
+    page,
+  }) => {
+    /**
+     * Отказ выдачи не рисовался нигде: при 403, 404 или порче хранилища мутация
+     * завершалась, кнопка включалась обратно, и не появлялось НИЧЕГО — нажатие
+     * читалось как пустое, и человек жал снова. Вторая половина: `disabled` был
+     * привязан к общему `isPending`, поэтому гасли кнопки ВСЕХ строк, и какая
+     * занята — не видно.
+     *
+     * Мутация, на которой проба обязана краснеть: снять ветку
+     * `issueFile.error` — после нажатия не появится ничего.
+     */
+    await page.route('**/api/ops/bulletin-issues/*/file/', (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: '{"error_code":"DOCUMENT_INTEGRITY_FAILED","detail":{}}',
+      })
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/service-reports`)
+    const group = page.getByRole('group', { name: 'Выгрузка документов ОМ' })
+    await group.getByLabel('Вид документа').selectOption('bulletin')
+
+    const issues = page.getByRole('group', { name: 'Выпуски бюллетеня' })
+    const rows = issues.getByRole('listitem')
+    await expect(rows.first()).toBeVisible({ timeout: 20_000 })
+    const count = await rows.count()
+    test.skip(count === 0, 'на стенде нет ни одного выпуска — нечего скачивать')
+
+    await rows.first().getByRole('button', { name: 'Скачать PDF' }).click()
+
+    await expect(
+      issues.getByRole('alert').filter({ hasText: 'Выпуск не скачался' })
+    ).toBeVisible({ timeout: 20_000 })
+    // Соседние строки остаются рабочими: гаснет ТОЛЬКО нажатая, и то на время
+    // запроса. К моменту проверки запрос уже завершился отказом.
+    if (count > 1) {
+      await expect(rows.nth(1).getByRole('button', { name: 'Скачать PDF' })).toBeEnabled()
+    }
+  })
+})

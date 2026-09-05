@@ -78,9 +78,23 @@ export function LocationFields({
             </option>
           ))}
         </select>
+        {/* 🔴 ТО ЖЕ, ЧТО У ЛИЦ (Plane №632): текст написан, когда география
+            была необязательной. С `[БЛН-12]` страна и город обязательны, и при
+            отказе справочника создать бюллетень нельзя вовсе — «указать адрес
+            текстом» не спасает. В ПРАВКЕ бюллетеня отказ не запирает ничего:
+            там координаты уже сохранены, и правка проходит (Plane №617). */}
         {countries.isError && (
           <p className="text-xs text-destructive-ink" role="alert">
-            Справочник стран недоступен — адрес можно указать текстом.
+            Справочник стран недоступен, а без страны и города бюллетень не
+            завести.{" "}
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={() => void countries.refetch()}
+              disabled={countries.isFetching}
+            >
+              {countries.isFetching ? "Повторяем…" : "Повторить"}
+            </button>
           </p>
         )}
       </div>

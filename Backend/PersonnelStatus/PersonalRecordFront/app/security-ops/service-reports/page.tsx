@@ -84,10 +84,16 @@ export default function ServiceReportsPage() {
   const bulletinIssues = useBulletinIssues(needsAsOf);
   const [issued, setIssued] = useState<string | null>(null);
   const issueBulletin = useIssueBulletin((issue) => setIssued(issue.fileName));
+  // Какую СТРОКУ скачиваем (Plane №627): `isPending` у мутации один на весь
+  // список, и по нему гасить кнопки нельзя — гаснут все сразу, и какая строка
+  // занята, не видно. Хук про свои переменные наружу не рассказывает, поэтому
+  // строку помнит экран.
+  const [downloadingIssueId, setDownloadingIssueId] = useState<string | null>(null);
   const issueFile = useBulletinIssueFile((file) => {
     saveBinaryFile(file.fileName, file.contentBase64, file.contentType);
     setDocumentSaved(file.fileName);
   });
+  const busyIssueId = issueFile.isPending ? downloadingIssueId : null;
   // Кнопка выключается ровно тогда, когда собрать НЕЛЬЗЯ, и причина
   // называется словами рядом — выключенная кнопка без объяснения оставляет
   // человека гадать, что он сделал не так.
@@ -437,8 +443,25 @@ export default function ServiceReportsPage() {
                   Выпущен «{issued}».
                 </p>
               )}
+              {/* 🔴 ОТКАЗ ЗАПРОСА — НЕ «ВЫПУСКОВ НЕТ» (Plane №626). Ветка ошибки
+                  не проверялась вовсе: при 500, истёкшей сессии или обрыве сети
+                  `isPending` уже false, `data` пуст, и человеку говорили
+                  «Выпусков ещё не было» — утверждение о МИРЕ вместо факта о
+                  запросе. Соседние блоки этого же экрана ошибку рисуют. */}
               {bulletinIssues.isPending ? (
                 <p className="mt-2 text-xs text-muted-foreground">Загрузка выпусков…</p>
+              ) : bulletinIssues.error !== null ? (
+                <p className="mt-2 text-xs text-red-700" role="alert">
+                  Список выпусков не загрузился: {bulletinIssues.error.message}{" "}
+                  <button
+                    type="button"
+                    className="underline underline-offset-2"
+                    onClick={() => void bulletinIssues.refetch()}
+                    disabled={bulletinIssues.isFetching}
+                  >
+                    {bulletinIssues.isFetching ? "Повторяем…" : "Повторить"}
+                  </button>
+                </p>
               ) : (bulletinIssues.data?.results ?? []).length === 0 ? (
                 <p className="mt-2 text-xs text-muted-foreground">
                   Выпусков ещё не было.
@@ -461,15 +484,32 @@ export default function ServiceReportsPage() {
                       </span>
                       <button
                         type="button"
-                        className="rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted"
-                        disabled={issueFile.isPending}
-                        onClick={() => issueFile.mutate({ id: issue.id })}
+                        className="rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                        // Гаснет ТОЛЬКО нажатая строка (Plane №627): конвертация
+                        // идёт секунды, и погашенный целиком список читается как
+                        // замёрзший экран.
+                        disabled={busyIssueId === issue.id}
+                        aria-busy={busyIssueId === issue.id}
+                        onClick={() => {
+                          setDocumentSaved(null);
+                          setDownloadingIssueId(issue.id);
+                          issueFile.mutate({ id: issue.id });
+                        }}
                       >
-                        Скачать PDF
+                        {busyIssueId === issue.id ? "Готовим…" : "Скачать PDF"}
                       </button>
                     </li>
                   ))}
                 </ul>
+              )}
+              {/* 🔴 ОТКАЗ СКАЧИВАНИЯ БЫЛ НЕВИДИМ (Plane №627). При 403, 404 или
+                  порче хранилища мутация завершалась, кнопка включалась обратно,
+                  и не появлялось НИЧЕГО — нажатие читалось как пустое, и человек
+                  жал снова. */}
+              {issueFile.error !== null && (
+                <p className="mt-2 text-xs text-red-700" role="alert">
+                  Выпуск не скачался: {issueFile.error.message}
+                </p>
               )}
             </div>
           )}
