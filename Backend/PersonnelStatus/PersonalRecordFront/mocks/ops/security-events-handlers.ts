@@ -348,6 +348,23 @@ const VISIT_STATUS_LABELS: Record<string, string> = {
   CLOSED: "Закрыто",
 };
 
+/**
+ * Сколько людей назначено на посты ОБЪЕКТА — ВЫВОД по живым данным (Plane
+ * №606), а не поле события.
+ *
+ * Единственному объекту принадлежат все посты, включая неразмеченные (то же
+ * правило, что у `visitPostsOf` и у `visit_object_posts` сервера).
+ */
+function assignedOnVisit(event: SecurityEvent, visitId: string): number {
+  const single = event.visitObjects.length <= 1;
+  const posts = new Set(
+    event.reconSectorPosts
+      .filter((post) => single || (post.visitObjectId ?? null) === visitId)
+      .map((post) => post.id)
+  );
+  return event.placementAssignments.filter((a) => posts.has(a.postId)).length;
+}
+
 function visitStatusLabel(stage: string, assigned: number | null): string {
   if (stage === "PLACEMENT" && assigned === 0) return VISIT_STATUS_LABELS.DEMAND;
   return VISIT_STATUS_LABELS[stage] ?? stage;
@@ -484,6 +501,35 @@ function decidedVisitVersion(
   return visits.find((v) => v.id === visitObjectId)?.documentVersion ?? 0;
 }
 
+/**
+ * Маршрут после ВОЗВРАТА (`[ВОЗ-03]`, Plane №570) — порт `_return_visit`.
+ *
+ * 🔴 ПОДПИСИ СНИМАЮТСЯ ВСЕ. Подпись под возвращённым составом ничего не
+ * говорит о следующем: при повторной отправке маршрут проходится заново с
+ * первого подписанта (`[ВОЗ-07]`). Мок оставлял прочие строки в
+ * `APPROVED`/`PENDING` на ОБЕИХ дорогах возврата — и в решении согласующего,
+ * и в ручке `approval/return/`, — то есть таблица согласования показывала
+ * «Согласовано» под составом, который уже вернули.
+ *
+ * Строка ВЕРНУВШЕГО остаётся `RETURNED` с причиной: возврат — не подпись, а
+ * решение, из-за которого всё и обнулилось. Автоподпись «Без замечаний»
+ * стирается вместе со статусом — она была следом снятой подписи.
+ */
+function routeAfterReturn(
+  route: SecurityEvent["approvalRoute"]
+): SecurityEvent["approvalRoute"] {
+  return route.map((approver) =>
+    approver.status === "APPROVED" || approver.status === "PENDING"
+      ? {
+          ...approver,
+          status: "NOT_SENT" as const,
+          decidedAt: null,
+          comment: approver.comment === "Без замечаний" ? "" : approver.comment,
+        }
+      : approver
+  );
+}
+
 function mirrorApproval(event: SecurityEvent): SecurityEvent {
   // 🔴 ЗЕРКАЛО РАБОТАЕТ ТОЛЬКО ПРИ ОДНОМ ОБЪЕКТЕ (Plane №500). Оно — упрощение
   // для мира мока, где объект у ОМ ровно один: тогда «наименьшая стадия среди
@@ -505,7 +551,12 @@ function mirrorApproval(event: SecurityEvent): SecurityEvent {
       // один, и наименьшая стадия среди одного — она сама (Plane №412).
       stage: event.stage,
       closedAt: event.closedAt,
-      statusLabel: visitStatusLabel(event.stage, visit.placementAssigned),
+      // 🔴 «НАЗНАЧЕНО» СЧИТАЕТСЯ, А НЕ ЧИТАЕТСЯ ИЗ ПОЛЯ (Plane №606). Поле
+      // `placementAssigned` получало ноль однажды, при заведении объекта, и
+      // не обновлял его НИ ОДИН обработчик: ветка «PLACEMENT + назначено 0»
+      // срабатывала всегда, и после назначения людей на все посты чип
+      // продолжал говорить «Рекогносцировка завершена» вместо «Расстановка».
+      statusLabel: visitStatusLabel(event.stage, assignedOnVisit(event, visit.id)),
       approvalStatus: event.approvalStatus,
       approvalComment: event.approvalComment,
       approvalRoute: event.approvalRoute,
@@ -2800,8 +2851,25 @@ export const securityEventsHandlers = [
     );
   }),
 
+  /**
+   * 🔴 ШАБЛОН СОБИРАЕТСЯ РУКАМИ, А НЕ ПОМОЩНИКОМ ПУТИ (Plane №569, находка
+   * при починке автозавершения).
+   *
+   * `securityEventRemarkResolvePath` пропускает `remarkId` через
+   * `encodeURIComponent` — и на подстановке `":remarkId"` выдаёт
+   * `…/remarks/%3AremarkId/resolve/`, то есть ЛИТЕРАЛ вместо параметра.
+   * Обработчик не совпадал НИ С ОДНИМ запросом: ответ на замечание в
+   * мок-режиме уходил мимо мока в живой бэкенд и получал оттуда
+   * `PERMISSION_DENIED`. Вместе с ним были недостижимы и правила, живущие
+   * внутри, — автозавершение этапа (№569) и версия документа решаемого
+   * объекта (№505).
+   *
+   * Помощник прав: в БОЕВОМ вызове идентификатор кодировать надо (в нём
+   * двоеточия и плюс из метки времени). Неправ был вызов помощника в роли
+   * шаблона маршрута — здесь нужен сырой `:remarkId`.
+   */
   http.post(
-    `*${securityEventRemarkResolvePath(":id", ":remarkId")}`,
+    `*${SECURITY_EVENTS_PATH}:id/approval/remarks/:remarkId/resolve/`,
     async ({ params, request }) => {
       const { event, response } = findEvent(params.id as string);
       if (event === null) return response;
@@ -2829,8 +2897,7 @@ export const securityEventsHandlers = [
       // запроса адресата несёт (`VisitObjectAddressed`), и сервер берёт
       // версию решаемого объекта (`_approval_target` в `resolve_remark`).
       const version = decidedVisitVersion(event, body.visitObjectId);
-      return HttpResponse.json(
-        saveEvent({
+      const answered: SecurityEvent = {
           ...event,
           approvalRemarks: event.approvalRemarks.map((remark) =>
             remark.id === params.remarkId
@@ -2852,8 +2919,37 @@ export const securityEventsHandlers = [
               : remark
           ),
           updatedAt: nowIso(),
-        })
+        };
+      // 🔴 ОТВЕТ НА ПОСЛЕДНЕЕ ОТКРЫТОЕ ЗАМЕЧАНИЕ — ТОЖЕ «ПОСЛЕДНЯЯ ПОДПИСЬ»
+      // (`[СОГ-09]`, Plane №569). Сервер завершает этап сам, если все уже
+      // согласовали и держало только это замечание (`resolve_remark` →
+      // `_autocomplete_approval`); в мок перенесли лишь обработчик решения
+      // согласующего, и правило жило на одном конце. Условие то же, что в
+      // ветке `decide`: все подписи, ни одного открытого замечания, состав
+      // не менялся после отправки.
+      const allSigned = answered.approvalRoute.every(
+        (approver) => approver.status === "APPROVED"
       );
+      const noOpen = answered.approvalRemarks.every(
+        (remark) => remark.status !== "OPEN"
+      );
+      if (allSigned && noOpen && !answered.approvalStale) {
+        return HttpResponse.json(
+          saveEvent(
+            withVersions(
+              {
+                ...answered,
+                stage: "ACKNOWLEDGEMENT",
+                approvalStatus: "APPROVED",
+                approvalComment: "",
+                readinessPercent: 85,
+              },
+              versionsDecide("APPROVED")
+            )
+          )
+        );
+      }
+      return HttpResponse.json(saveEvent(answered));
     }
   ),
 
@@ -2962,6 +3058,8 @@ export const securityEventsHandlers = [
             withVersions(
               {
                 ...decided,
+                // Маршрут обнуляется (`[ВОЗ-03]`, Plane №570).
+                approvalRoute: routeAfterReturn(route),
                 stage: "PLACEMENT",
                 approvalStatus: "RETURNED",
                 approvalComment: comment,
@@ -3099,6 +3197,9 @@ export const securityEventsHandlers = [
           withVersions(
             {
               ...event,
+              // Та же дорога, что у решения согласующего (Plane №570): у
+              // возврата два входа и одно правило.
+              approvalRoute: routeAfterReturn(event.approvalRoute),
               stage: "PLACEMENT",
               approvalStatus: "RETURNED",
               approvalComment: body.comment.trim(),
@@ -3219,8 +3320,17 @@ export const securityEventsHandlers = [
               ? {
                   ...a,
                   acknowledgedAt: nowIso(),
-                  acknowledgedVia: "personal" as const,
-                  acknowledgedBy: "Старший (мок)",
+                  // 🔴 «САМ», А НЕ «ЛИЧНО» (Plane №542). Мок безусловно писал
+                  // `personal` и автора «Старший (мок)», и КАЖДОЕ
+                  // самоподтверждение рисовалось как «Ознакомлен лично ·
+                  // Старший (мок)» — вид, которого живой стенд не выдаёт
+                  // никогда. Правило сервера (Plane №721): «лично» ставится,
+                  // только когда ЧУЖАЯ строка ДОКАЗАНА, а неизвестность
+                  // читается как «в системе». У мока учётных записей нет
+                  // вовсе, доказать чужую строку нечем — значит по тому же
+                  // правилу это «сам», без автора.
+                  acknowledgedVia: "self" as const,
+                  acknowledgedBy: "",
                   // 🔴 ПОДТВЕРЖДЕНИЕ СНИМАЕТ ОТКАЗ (Plane №592, зеркало
                   // `my_assignments.acknowledge`): «подтвердил» и «не могу
                   // заступить» взаимоисключающи, и мок оставлял обе отметки
