@@ -80,10 +80,30 @@ function useDepartmentDirectorates(departmentId: string | undefined) {
     if (departmentId === undefined) return [];
     const parent = Number(departmentId);
     return (divisions.data ?? []).filter(
-      (division) => division.type_code === "directorate" && division.parent === parent
+      (division) =>
+        division.type_code === "directorate" &&
+        division.parent === parent &&
+        // 🔴 АРХИВНЫЕ УПРАВЛЕНИЯ СЮДА НЕ ПОПАДАЮТ (Plane №530). Сервер
+        // (`split_directorate_quotas`) знает только `is_active=True` и
+        // отбивает ВСЁ тело «Управление не найдено в департаменте» — то есть
+        // одно архивное управление в департаменте делало сохранение
+        // раскладки невозможным вообще, а пустое состояние карточки при этом
+        // обещало «действующих управлений».
+        division.is_active !== false
     );
   }, [divisions.data, departmentId]);
-  return { directorates, isLoading: divisions.isPending };
+  // 🔴 ОТКАЗ СПРАВОЧНИКА — НЕ ФАКТ ОБ ОРГСТРУКТУРЕ (Plane №531). `isLoading`
+  // деструктурировался и выбрасывался, а `isError` не возвращался вовсе:
+  // пока справочник грузился или если он отказал, экран УТВЕРЖДАЛ, что у
+  // департамента нет управлений, и молча прятал блок сохранения с кнопкой
+  // рассылки. Человек читал поломку связи как решённый вопрос про структуру.
+  return {
+    directorates,
+    isLoading: divisions.isPending,
+    isError: divisions.isError,
+    error: divisions.error,
+    refetch: divisions.refetch,
+  };
 }
 
 export function DepartmentRequestCard({
@@ -128,9 +148,13 @@ export function DepartmentRequestCard({
   }, [allocation]);
   const [draft, setDraft] = useState<Record<string, string>>({});
 
-  const { directorates: orgDirectorates } = useDepartmentDirectorates(
-    allocation?.departmentId
-  );
+  const {
+    directorates: orgDirectorates,
+    isLoading: orgLoading,
+    isError: orgFailed,
+    error: orgError,
+    refetch: refetchOrg,
+  } = useDepartmentDirectorates(allocation?.departmentId);
   /** Строки таблицы = дерево оргструктуры, дополненное тем, что уже известно
    *  заявке (квота, выделено, оповещено). Управление, выбывшее из дерева, но
    *  ещё живущее в заявке (см. `split_directorate_quotas`), не теряется —
@@ -213,15 +237,26 @@ export function DepartmentRequestCard({
   // цифры — набранное молча исчезает. Разница считается по СТРОКАМ таблицы,
   // а не по сумме: две правки, гасящие друг друга (+2 одному, −2 другому),
   // дают ту же сумму и тоже пропадут.
+  // Строки, которые ПРАВЯТСЯ: только действующие управления дерева. Выбывшие
+  // остаются в таблице (их след — факт), но без поля ввода и мимо запроса.
+  const orgIds = new Set(orgDirectorates.map((division) => String(division.id)));
+  const editableRows = directorateRows.filter((row) => orgIds.has(row.divisionId));
   const splitDirty = directorateRows.some(
     (row) => (Number(draft[row.divisionId]) || 0) !== (row.need ?? 0)
   );
 
   async function save() {
     await split.mutateAsync({
-      rows: Object.entries(draft).map(([divisionId, value]) => ({
-        divisionId,
-        need: Number(value) || 0,
+      // 🔴 УЕЗЖАЮТ ТОЛЬКО СТРОКИ ДЕРЕВА (Plane №530). Таблица показывает и
+      // управления, ВЫБЫВШИЕ из оргструктуры, но ещё живущие в заявке — их
+      // след это факт, и стирать его нельзя (сервер их тоже сохраняет). Но
+      // отправлять их в запрос нельзя тем более: сервер сверяет каждую строку
+      // с действующими управлениями департамента и отбивает ВСЁ тело целиком.
+      // Раскладка не сохранялась вовсе, а убрать выбывшую строку из формы
+      // человеку было нечем.
+      rows: editableRows.map((row) => ({
+        divisionId: row.divisionId,
+        need: Number(draft[row.divisionId]) || 0,
       })),
     });
   }
@@ -452,14 +487,51 @@ export function DepartmentRequestCard({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {directorateRows.length === 0 && (
+              {directorateRows.length === 0 && orgLoading && (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    {/* Справочник ещё едет — сказать это, а не выдать ожидание
+                        за ответ (Plane №531). */}
+                    <div
+                      className="bg-muted h-5 w-64 animate-pulse rounded"
+                      aria-label="Управления департамента загружаются"
+                    />
+                  </TableCell>
+                </TableRow>
+              )}
+              {directorateRows.length === 0 && orgFailed && (
+                <TableRow>
+                  <TableCell colSpan={4} className="whitespace-normal">
+                    {/* 🔴 ОТКАЗ НАЗВАН ОТКАЗОМ (Plane №531). Здесь стояло
+                        «нет действующих управлений» — утверждение об
+                        оргструктуре, сделанное по молчанию сети. Причина
+                        сервера остаётся на экране: без неё поддержке нечего
+                        спросить. */}
+                    <p role="alert" className="text-destructive-ink text-sm">
+                      Справочник подразделений не ответил — список управлений
+                      департамента неизвестен.
+                      {orgError?.message ? ` ${orgError.message}` : ""}{" "}
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 align-baseline"
+                        onClick={() => void refetchOrg()}
+                      >
+                        Повторить
+                      </Button>
+                    </p>
+                  </TableCell>
+                </TableRow>
+              )}
+              {directorateRows.length === 0 && !orgLoading && !orgFailed && (
                 <TableRow>
                   <TableCell colSpan={4} className="whitespace-normal">
                     <p className="text-muted-foreground text-sm">
-                      {/* Пусто теперь означает РОВНО ОДНО: в дереве
-                          оргструктуры у департамента нет ни одного
-                          действующего управления — а не «раскладка ещё не
-                          начата» (та причина закрыта самим бутстрапом выше). */}
+                      {/* Пусто означает РОВНО ОДНО: справочник ответил, и в
+                          дереве оргструктуры у департамента нет ни одного
+                          действующего управления — а не «не загрузилось» и не
+                          «раскладка ещё не начата». */}
                       У департамента «{allocation.departmentName}» нет
                       действующих управлений — раскладывать некуда.
                     </p>
@@ -470,24 +542,36 @@ export function DepartmentRequestCard({
                 <TableRow key={row.divisionId}>
                   <TableCell className="font-medium">{row.name}</TableCell>
                   <TableCell>
-                    <Label className="sr-only" htmlFor={`quota-${row.divisionId}`}>
-                      Квота управления «{row.name}»
-                    </Label>
-                    <Input
-                      id={`quota-${row.divisionId}`}
-                      type="number"
-                      min={0}
-                      inputMode="numeric"
-                      className="w-24 tabular-nums"
-                      disabled={locked || split.isPending}
-                      value={draft[row.divisionId] ?? ""}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          [row.divisionId]: event.target.value,
-                        }))
-                      }
-                    />
+                    {orgIds.has(row.divisionId) ? (
+                      <>
+                        <Label className="sr-only" htmlFor={`quota-${row.divisionId}`}>
+                          Квота управления «{row.name}»
+                        </Label>
+                        <Input
+                          id={`quota-${row.divisionId}`}
+                          type="number"
+                          min={0}
+                          inputMode="numeric"
+                          className="w-24 tabular-nums"
+                          disabled={locked || split.isPending}
+                          value={draft[row.divisionId] ?? ""}
+                          onChange={(event) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              [row.divisionId]: event.target.value,
+                            }))
+                          }
+                        />
+                      </>
+                    ) : (
+                      // Управление выбыло из оргструктуры: квота остаётся
+                      // видимой как факт, но править её нечем — сервер такую
+                      // строку не примет и отобьёт вместе с ней всю раскладку
+                      // (Plane №530).
+                      <span className="text-muted-foreground tabular-nums text-sm">
+                        {row.need ?? 0} · не в оргструктуре
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {row.assigned ?? 0} из {row.need ?? 0}
@@ -505,7 +589,10 @@ export function DepartmentRequestCard({
           </Table>
         </div>
 
-        {!locked && directorateRows.length > 0 && (
+        {/* Кнопка живёт при наличии ПРАВИМЫХ строк, а не любых (Plane №530):
+            у заявки, где все управления выбыли из оргструктуры, сохранять
+            нечего — запрос ушёл бы пустым и ничего не менял. */}
+        {!locked && editableRows.length > 0 && (
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={() => void save()} disabled={split.isPending}>
               {split.isPending ? "Сохраняем…" : "Сохранить раскладку"}
