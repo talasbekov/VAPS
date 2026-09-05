@@ -899,12 +899,15 @@ test.describe(
         // 🔴 ПОРЯДОК: сначала ГРАНИЦА, потом предмет. Мок (как и сервер) не
         // пускает этап назад, и проверить «на „Расстановке“ замены нет»
         // после перехода на «Ознакомление» нельзя вовсе.
-        // Границу проверяем на «Рекогносцировке» — том этапе, на котором ОМ
-        // уже стоит. «Расстановка» подошла бы не хуже, но у мока её нет в
-        // карте этапов ручки `stage/` (`readiness`), а `recon/complete/`
-        // требует старшего у объекта: ни то ни другое к предмету пробы
-        // отношения не имеет. Правило одно: замена разрешена ТОЛЬКО на
-        // «Ознакомлении» и «Проведении».
+        //
+        // Граница проверяется НА «РАССТАНОВКЕ» — том этапе, откуда человек и
+        // жмёт «Заменить →» раньше времени. Раньше здесь стояла
+        // «Рекогносцировка» в обход: у мока не было `PLACEMENT` в карте
+        // этапов ручки `stage/`, и перевести туда напрямую было нельзя
+        // (Plane №791). Теперь карта — зеркало `STAGE_OVERRIDE_TARGETS`
+        // сервера, и обход не нужен. Правило одно: замена разрешена ТОЛЬКО
+        // на «Ознакомлении» и «Проведении».
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'PLACEMENT' })
         const onPlacement = await (await fetch('/api/ops/security-events/se-1/')).json()
         const spare0 = (await (
           await fetch('/api/ops/personnel/?page_size=50')
@@ -952,14 +955,14 @@ test.describe(
         result.replaceStatus,
         `замена на «Ознакомлении» отбита моком: ${result.replaceBody}`,
       ).toEqual(200)
-      // На «Рекогносцировке» замены нет и у сервера — граница осталась
-      // границей: правило не снято, а выправлено.
+      // На «Расстановке» замены нет и у сервера — граница осталась границей:
+      // правило не снято, а выправлено.
       // Гвард: если этап не встал, проверять границу нечем, и «отказа не
       // было» означало бы не то.
       expect(
         result.borderStage,
-        'ОМ не на «Рекогносцировке» — граница не проверена',
-      ).toEqual('RECON')
+        'ОМ не на «Расстановке» — граница не проверена',
+      ).toEqual('PLACEMENT')
       expect(result.refusedStatus).toEqual(422)
       expect(result.refusedBody).toContain('INVALID_STAGE_TRANSITION')
     })
@@ -1423,6 +1426,87 @@ test.describe(
         seeded.closed.visitObjects[0]?.closedAt,
         'объект закрытого ОМ не получил момента закрытия',
       ).not.toBeNull()
+    })
+
+    /**
+     * Карта этапов ручки `stage/` — зеркало `STAGE_OVERRIDE_TARGETS` сервера
+     * (Plane №791).
+     *
+     * Она расходилась с сервером в ОБЕ стороны: не было `PLACEMENT` — этапа,
+     * на который выводит завершение рекогносцировки в самом же моке, — и был
+     * `DEMAND`, которого сервер не принимает вовсе. То есть мок УМЕЛ быть на
+     * «Расстановке», но перевести его туда напрямую было нельзя, а на
+     * «Потребность» — можно, хотя живая ручка отвечает отказом. Мок-пробы
+     * из-за первого строили обходные пути.
+     *
+     * 🔴 ПРОВЕРЯЮТСЯ ОБА КРАЯ. Проба «PLACEMENT принимается» одна закрыла бы
+     * ровно ту половину, о которой знала карточка, и оставила бы лишний
+     * `DEMAND` жить дальше: расхождение мока с сервером «в плюс» так же
+     * опасно — на нём зеленеет проба над действием, которого в бою нет.
+     *
+     * Список сервера: BULLETIN, RECON, PLACEMENT, APPROVAL, ACKNOWLEDGEMENT,
+     * CONDUCT (`STAGE_OVERRIDE_TARGETS` в `apps/ops/security_events.py`);
+     * `CLOSED` в нём нет намеренно — закрывают по итогам направлений.
+     */
+    test('карта этапов ручки stage/ совпадает со списком сервера (Plane №791)', async ({
+      page,
+    }) => {
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-2/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const answers = await page.evaluate(async () => {
+        const stages = [
+          'BULLETIN',
+          'RECON',
+          'DEMAND',
+          'FORCES',
+          'PLACEMENT',
+          'APPROVAL',
+          'ACKNOWLEDGEMENT',
+          'CONDUCT',
+          'CLOSED',
+        ]
+        const out: Record<string, number> = {}
+        for (const stage of stages) {
+          const res = await fetch('/api/ops/security-events/se-2/stage/', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ stage }),
+          })
+          out[stage] = res.status
+        }
+        // Готовность после последнего принятого перевода — она приезжает
+        // клиенту и показывается в шапке карточки.
+        const after = (await (await fetch('/api/ops/security-events/se-2/')).json()) as {
+          stage: string
+          readinessPercent: number
+        }
+        return { out, stage: after.stage, readinessPercent: after.readinessPercent }
+      })
+
+      // Принимаются ровно шесть — те же, что у сервера.
+      for (const stage of ['BULLETIN', 'RECON', 'PLACEMENT', 'APPROVAL', 'ACKNOWLEDGEMENT', 'CONDUCT']) {
+        expect(answers.out[stage], `мок не пускает на «${stage}», а сервер пускает`).toBe(200)
+      }
+      // И ровно три отбиваются — иначе мок разрешает то, чего сервер не даст.
+      for (const stage of ['DEMAND', 'FORCES', 'CLOSED']) {
+        expect(answers.out[stage], `мок пускает на «${stage}», а сервер отбивает`).toBe(400)
+      }
+      // Проценты — из `STAGE_READINESS` сервера, теми же числами.
+      expect(answers.stage).toBe('CONDUCT')
+      expect(answers.readinessPercent, 'готовность разошлась с STAGE_READINESS').toBe(95)
     })
 
     test('возврат обнуляет маршрут, ответ на последнее замечание завершает этап (Plane №569, №570)', async ({
