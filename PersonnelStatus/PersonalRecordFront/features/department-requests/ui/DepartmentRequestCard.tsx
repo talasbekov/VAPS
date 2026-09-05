@@ -56,6 +56,16 @@ import { apiClient, type CoreDivision } from "@/lib/api";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 /**
+ * Статусы, при которых разбивка по управлениям уже не правится: решение
+ * перешло к штабу (Plane №554). Зеркало серверного `_QUOTAS_LOCKED_STATUSES`.
+ *
+ * ОТКАЗА (`DECLINED`) здесь НЕТ, и это главное в списке: «0» — ответ
+ * департамента, а не действие штаба, и передумать после него можно, пока
+ * управления не запрошены.
+ */
+const QUOTAS_LOCKED_STATUSES: string[] = ["SUBMITTED", "ACCEPTED", "RETURNED"];
+
+/**
  * Управления ДЕПАРТАМЕНТА заявки — из общего справочника оргструктуры, а не
  * из `allocation.directorates` (Plane №389).
  *
@@ -116,7 +126,20 @@ export function DepartmentRequestCard({
   const request = useDepartmentRequest(allocationId);
   const detail = request.data;
   const allocation = detail?.allocation;
-  const locked = allocation !== undefined && allocation.status !== "DRAFT";
+  // 🔴 РАЗБИВКУ ЗАПИРАЕТ ФАКТ ЗАПРОСА УПРАВЛЕНИЙ, А НЕ «СТАТУС НЕ DRAFT»
+  // (Plane №554). Прежнее условие ловило заодно ОТКАЗ: департамент, ответивший
+  // «0» ещё до рассылки, получал погашенные поля квот, спрятанную кнопку
+  // «Отправить в управления» и подпись «Управления уже запрошены» — хотя ни
+  // одного управления не запрашивали. Чтобы вернуть себе форму, он должен был
+  // сам догадаться отозвать свой отказ, а текст вёл его в другую сторону.
+  //
+  // Зеркалит сервер (`split_directorate_quotas`): момент оповещения плюс
+  // статусы, где решение уже у штаба. Расхождение здесь означало бы, что экран
+  // разрешает то, что ручка отобьёт, — или наоборот прячет разрешённое.
+  const locked =
+    allocation !== undefined &&
+    (allocation.notifiedAt !== null ||
+      QUOTAS_LOCKED_STATUSES.includes(allocation.status));
 
   const split = useSplitDirectorateQuotas(detail?.eventId ?? "", allocationId);
   const notify = useNotifyDepartmentDirectorates(detail?.eventId ?? "", allocationId);

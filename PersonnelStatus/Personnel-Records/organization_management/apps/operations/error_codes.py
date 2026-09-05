@@ -109,11 +109,6 @@ CODES = {
     "ALLOCATION_OVER_DEMAND": frozenset({422}),
     "ALLOCATION_LOCKED": frozenset({422}),
     "ALLOCATION_NO_DIRECTORATES": frozenset({422}),
-    # Квота департамента не разложена по управлениям — звать некого и незачем
-    # (Plane №557). Отдельный код, а не `ALLOCATION_NO_DIRECTORATES`:
-    # «управлений нет вовсе» и «управления есть, но им ничего не назначено» —
-    # разные положения, и чинятся они по-разному.
-    "ALLOCATION_NO_QUOTA_SPLIT": frozenset({422}),
     # Третий уровень раскладки — департамент делит свою квоту между
     # управлениями (Plane №272, Ш-1).
     "DIRECTORATE_QUOTA_OVERFLOW": frozenset({422}),

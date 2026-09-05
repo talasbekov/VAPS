@@ -2980,10 +2980,38 @@ def notify_directorates(event_id, allocation_id, *, actor):
     known = {
         str(row.get("divisionId")): row for row in target.get("directorates", [])
     }
+    # 🔴 РАССЫЛКА НЕ УХОДИТ ШИРЕ ОБЕЩАННОГО (Plane №558). Разбивка ограничена
+    # цифрой «Выделяем» в момент сохранения, но сама цифра правится, пока
+    # список не ушёл, — значит предел обходился порядком действий: разложить 3,
+    # пока «Выделяем» не задан (потолок падает на запрос штаба), затем ответить
+    # «1». Разбивка не пересчитывается, и начальникам уходило суммарно 3
+    # против обещанного одного. Карточка департамента писала «Больше
+    # „Выделяем“ на 2», а состояние жило и рассылалось.
+    #
+    # Проверка стоит ЗДЕСЬ, а не в `respond_allocation`: ответ департамента —
+    # его решение, и запрещать «0 закрывает запрос» из-за сохранённой разбивки
+    # значило бы отменить правило `[СБС-21]`. Вред же наступает ровно в момент
+    # рассылки, и отбивается он тоже здесь — с указанием, что поправить.
+    planned = sum(
+        int((known.get(str(pk)) or {}).get("need") or 0) for pk, _name in directorates
+    )
+    answered = target.get("allocating")
+    promised = int(answered if answered is not None else (target.get("need") or 0))
+    if planned > promised:
+        raise DomainError(
+            "DIRECTORATE_QUOTA_OVERFLOW",
+            422,
+            message=(
+                f"По управлениям разложено {planned}, а обещано {promised} — "
+                f"лишних {planned - promised}. Поправьте разбивку и повторите."
+            ),
+            detail={"quota": str(promised), "split": str(planned)},
+        )
     rows = []
     for pk, name in directorates:
         key = str(pk)
         kept = known.get(key)
+        need = int((kept or {}).get("need") or 0)
         rows.append(
             {
                 "id": (kept or {}).get("id") or f"force-directorate-{key}",
@@ -2994,11 +3022,12 @@ def notify_directorates(event_id, allocation_id, *, actor):
                 # только рассылает. Пересборка строки без этого поля стирала
                 # бы раскладку в момент рассылки — то есть ровно тогда, когда
                 # число впервые становится нужным.
-                "need": int((kept or {}).get("need") or 0),
+                "need": need,
                 # Уже оповещённому момент НЕ переписывается: повторное нажатие
                 # добирает тех, кому не сказали, а не объявляет всех
                 # оповещёнными заново — иначе «когда сказали» стало бы
                 # временем последнего нажатия у всех сразу.
+                #
                 "notifiedAt": (kept or {}).get("notifiedAt") or now,
             }
         )
@@ -3041,6 +3070,12 @@ def notify_directorates(event_id, allocation_id, *, actor):
             "directorates": [row["name"] for row in rows],
             "notifiedHeads": delivery["notified"],
             "headlessDirectorates": delivery["headlessDirectorates"],
+            # Кому не отправляли (нет квоты) и кому не дошло (Plane №557,
+            # №561). Оба списка поимённые: разбор «почему у нас никого не
+            # запросили» идёт по журналу, и число вместо имён на этот вопрос
+            # не отвечает.
+            "directoratesWithoutQuota": delivery["withoutQuota"],
+            "undeliveredHeads": delivery["undelivered"],
         },
     )
     return event
@@ -3620,12 +3655,21 @@ def _collection_status(allocations, gathered):
 
     Порядок проверок обратный порядку жизни: «люди пошли» перекрывает
     «разослана», потому что описывает более позднее состояние.
+
+    🔴 «РАЗОСЛАНА» — ЭТО `notifiedAt`, А НЕ «СТАТУС НЕ DRAFT» (Plane №551).
+    Прежняя проверка считала разосланной ЛЮБУЮ строку не в черновике — в том
+    числе отказ. Департамент видит в своём списке и черновые строки
+    (`department_requests_view` фильтрует по области, а не по статусу), и,
+    ответив «0» на нерассылавшуюся строку, переводил её в `DECLINED`; доска
+    штаба после этого рапортовала «разнарядка разослана всем» о мероприятии,
+    где рассылки не было вовсе. Момент оповещения такой ошибки не допускает:
+    его ставит только рассылка.
     """
     if not allocations:
         return "NEW"
     if gathered > 0:
         return "IN_PROGRESS"
-    if all(row.get("status") != _ALLOCATION_DRAFT for row in allocations):
+    if all(row.get("notifiedAt") for row in allocations):
         return "NOTIFIED"
     return "NEW"
 
@@ -3937,12 +3981,14 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
                 "Чтобы изменить её, отзовите список."
             ),
         )
-    try:
-        count = int(allocating)
-    except (TypeError, ValueError):
-        raise _validation({"allocating": ["Укажите целое число."]})
+    # Целость проверяется, а не достигается округлением (Plane №556): голый
+    # `int()` превращал 2.9 в 2, а `True` — в 1, и оба молча становились
+    # официальным ответом департамента при тексте ошибки «Укажите целое
+    # число».
+    count = _whole_number(allocating, "allocating")
     if count < 0:
         raise _validation({"allocating": ["Число не может быть меньше нуля."]})
+
 
     # СВОЙ ключ, а не `comment`: тот — комментарий ШТАБА к строке раскладки
     # (приходит с `forces/allocation/` и пересохраняется им же). Пиши ответ
@@ -3953,12 +3999,33 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
         "answerComment": str(comment or "").strip(),
     }
     if count == 0:
+        # Статус ДО отказа запоминается (Plane №552). Повторный «0» его не
+        # перетирает: иначе первое же повторное нажатие превратило бы память
+        # в `DECLINED` и обесценило её.
+        if target.get("status") != _ALLOCATION_DECLINED:
+            patch["statusBeforeDecline"] = target.get("status")
         patch["status"] = _ALLOCATION_DECLINED
         patch["declinedAt"] = _now_iso()
     elif target.get("status") == _ALLOCATION_DECLINED:
-        # Отказ снят: статус — по факту оповещения, а не «как было до отказа»
-        # (этого сервер не помнит, и помнить не должен).
-        patch["status"] = "NOTIFIED" if target.get("notifiedAt") else _ALLOCATION_DRAFT
+        # 🔴 ОТКАЗ СНЯТ — ВОЗВРАЩАЕТСЯ ТО, ЧТО БЫЛО (Plane №552). Прежняя
+        # ветка восстанавливала статус «по факту оповещения», то есть теряла
+        # `RETURNED` навсегда: штаб вернул сданный список с причиной →
+        # департамент ответил «0» → передумал и ответил «2» — и возврат
+        # исчезал. Баннер «Возвращено штабом: …» пропадал (хотя причина
+        # хранилась), реестр штаба переподписывал строку «Управления
+        # оповещены», а главное — строка теряла освобождение от просрочки и
+        # начинала копить `overdueCount` за задержку, которой департамент не
+        # делал.
+        #
+        # Помнить это сервер обязан: «передумал» — обычное действие, и вернуть
+        # человека в состояние ДО его решения можно, только зная это
+        # состояние. Памяти нет (строки старых форм) — работает прежнее
+        # правило по факту оповещения.
+        remembered = target.get("statusBeforeDecline")
+        patch["status"] = remembered or (
+            "NOTIFIED" if target.get("notifiedAt") else _ALLOCATION_DRAFT
+        )
+        patch["statusBeforeDecline"] = None
         patch["declinedAt"] = None
     event = _update_allocation(event, allocation_id, patch)
     # Штаб узнаёт о каждом изменении «Выделяют» (`[СБС-12]`, Plane №426).

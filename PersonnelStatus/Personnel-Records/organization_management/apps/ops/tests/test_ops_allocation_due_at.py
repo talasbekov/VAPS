@@ -253,3 +253,46 @@ def test_a_timely_submission_is_not_marked_late(manager):  # noqa: F811
         ).status_code == 200
 
     assert allocation_of(manager, base)["submittedLate"] is False
+
+
+def test_a_declined_allocation_is_not_overdue(manager):  # noqa: F811
+    """🔴 Plane №553: отказ закрывает запрос — краснеть ему нечем.
+
+    «0 закрывает запрос» (`[СБС-21]`) — ОКОНЧАТЕЛЬНЫЙ ответ департамента:
+    слать ему больше нечего и ждать от него нечего. А `allocation_is_overdue`
+    освобождала только `SUBMITTED`/`ACCEPTED`/`RETURNED`, и после `dueAt`
+    отказавшаяся строка вечно краснела «Просрочено» в таблице департамента и
+    вечно прибавляла +1 к `overdueCount` штабу. Замысел «отказ закрывает
+    запрос» отменялся счётчиком, который его не знал.
+
+    Мутация: убрать `DECLINED` из `_ALLOCATION_NOT_OVERDUE` — проба
+    покраснеет на `overdue is False`.
+    """
+    base, _total = event_on_demand(manager, business_date=EVENT_DATE)
+    department = department_with_directorate()
+    split(manager, base, department, dueAt="2027-05-20T18:30")
+    allocation_id = allocation_of(manager, base)["id"]
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    # Контроль ДО ответа: та же строка в тот же момент ПРОСРОЧЕНА. Без него
+    # проба не отличала бы «отказ освобождает» от «просрочка здесь не
+    # считается вовсе».
+    after_due = dt.datetime(2027, 5, 21, 10, 0, tzinfo=dt.timezone.utc)
+    with clock.override(after_due):
+        assert allocation_of(manager, base)["overdue"] is True
+
+    declined = manager.post(
+        f"{base}forces/allocation/{allocation_id}/respond/",
+        {"allocating": 0, "comment": "Все на объекте"},
+        format="json",
+    )
+    assert declined.status_code == 200, declined.content
+
+    with clock.override(after_due):
+        row = allocation_of(manager, base)
+
+    assert row["status"] == "DECLINED"
+    assert row["overdue"] is False, (
+        "отказавшаяся заявка помечена просроченной — департамент ждут после "
+        "того, как он дал окончательный ответ"
+    )

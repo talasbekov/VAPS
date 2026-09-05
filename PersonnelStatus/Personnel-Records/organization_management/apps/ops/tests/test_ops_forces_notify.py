@@ -153,3 +153,76 @@ def test_only_those_who_can_select_are_asked_to_select(chain):
     # Счёт уведомлённых — тоже про тех, кто может: он идёт в аудит, и лишние
     # получатели раздували бы его молча.
     assert report["notified"] == 1
+
+
+# ── Ревью 911ebfae: кому НЕ шлём и что записываем (Plane №557, №561) ────────
+
+
+def test_a_directorate_without_a_quota_is_not_asked_for_zero(chain):
+    """🔴 Plane №557: «Выделите 0 сотрудников» не рассылается.
+
+    Рассылка шла по ВСЕМ действующим управлениям департамента, а `need` по
+    умолчанию ноль — начальники управлений, которым ничего не назначили,
+    получали требование, которое нечем выполнить. Хуже, чем шум: ключ
+    уведомления — «получатель, вид, деловая дата», поэтому пустышка
+    ПЕРЕКРЫВАЛА настоящий запрос, если департамент в тот же день раскладывал
+    квоту и рассылал заново. Одно ошибочное нажатие глушило рассылку до
+    завтра.
+
+    Мутация: убрать проверку `need <= 0` — начальник получит строку с
+    `need == 0`, и проба покраснеет на обоих ассертах.
+    """
+    event, allocation, directorates, head, _officer, _watcher = chain
+    zeroed = [{**row, "need": 0} for row in directorates]
+
+    report = notify_directorate_heads(event, allocation, zeroed)
+
+    assert not OpsNotification.objects.filter(recipient=str(head.pk), kind=KIND).exists()
+    assert report["notified"] == 0
+    # Не «без начальника»: начальник есть, просто звать его не с чем — и
+    # разбор «почему нам не сказали» должен видеть настоящую причину.
+    assert report["withoutQuota"] == ["Первое управление", "Второе управление"]
+    assert report["headlessDirectorates"] == []
+
+
+def test_the_zero_row_does_not_shadow_the_real_request_of_the_same_day(chain):
+    """Та же беда с другого конца (Plane №557): пустышка и настоящий запрос.
+
+    «Одно уведомление на (получателя, вид, деловую дату)» означает, что
+    ПЕРВАЯ полезная нагрузка побеждает. Значит нажатие до раскладки и нажатие
+    после неё в один день давали начальнику ноль навсегда.
+
+    Мутация та же: убрать проверку `need <= 0` — в базе останется `need == 0`.
+    """
+    event, allocation, directorates, head, _officer, _watcher = chain
+
+    notify_directorate_heads(event, allocation, [{**row, "need": 0} for row in directorates])
+    notify_directorate_heads(event, allocation, directorates)
+
+    row = OpsNotification.objects.get(recipient=str(head.pk), kind=KIND)
+    assert row.payload["need"] == 2
+
+
+def test_a_swallowed_failure_is_not_counted_as_delivered(chain, monkeypatch):
+    """🔴 Plane №561: считается доставленное, а не попытки.
+
+    `notify_service.notify` по замыслу глотает любое исключение и возвращает
+    `None`, а счётчик рос безусловно: при отказе вставки для всех получателей
+    журнал аудита писал `notifiedHeads: N` и пустой список недоставленного —
+    то есть утверждал доставку, которой не было. Модуль заведён ровно против
+    этого («рассылка, которая молчит о недоставленном»).
+
+    Мутация: вернуть безусловное `notified += 1` — `notified` станет 1, а
+    `undelivered` пустым.
+    """
+    from organization_management.apps.ops import forces_notify
+
+    event, allocation, directorates, head, _officer, _watcher = chain
+    monkeypatch.setattr(
+        forces_notify.notify_service, "notify", lambda *a, **kw: None
+    )
+
+    report = notify_directorate_heads(event, allocation, directorates)
+
+    assert report["notified"] == 0
+    assert report["undelivered"] == [f"Первое управление · {head.pk}"]
