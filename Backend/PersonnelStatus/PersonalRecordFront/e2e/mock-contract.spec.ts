@@ -1343,6 +1343,88 @@ test.describe(
       expect(result.clearedEvaluated).toEqual(result.total - 1)
     })
 
+    /**
+     * Сидовые ОМ приезжают с ПОСЧИТАННЫМИ полями, а не полусырыми
+     * (Plane №605).
+     *
+     * Вывод (стадия объекта, подпись статуса, сводка закрытия, итог
+     * потребности) жил внутри `saveEvent`, то есть на пути ЗАПИСИ. А сид
+     * кладёт события в стор напрямую: `emptyEvent()` заводит их на
+     * «Бюллетене», потом им присваивается настоящая стадия — и никто не
+     * пересчитывает то, что от стадии зависит. Под моком ОМ-…-1 стоял на
+     * «Расстановке», а чип объекта печатал «Бюллетень»; закрытый ОМ-…-3 —
+     * тот же чип. GET-ручки отдают стор как есть, поэтому расхождение
+     * доживало до экрана, и значение чипа не сверяла ни одна проба.
+     *
+     * 🔴 ПРОВЕРЯЕТСЯ СИД, А НЕ РЕЗУЛЬТАТ ДЕЙСТВИЙ. Ни одной мутации до
+     * чтения: любая из них прошла бы через `saveEvent` и вылечила бы стор,
+     * скрыв ровно тот дефект, ради которого проба написана.
+     */
+    test('сидовые ОМ мока приезжают с посчитанной стадией объекта (Plane №605)', async ({
+      page,
+    }) => {
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      // Заходим на СПИСОК, а не в карточку: карточка тоже только читает, но
+      // список — самый ранний экран, на котором чип виден.
+      await page.goto(`${MOCK_APP}/security-ops/events/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const seeded = await page.evaluate(async () => {
+        const read = async (id: string) =>
+          (await (await fetch(`/api/ops/security-events/${id}/`)).json()) as {
+            stage: string
+            forceNeed: number
+            forceDemandTotal: number
+            visitObjects: { stage: string; statusLabel: string; closedAt: string | null }[]
+          }
+        return {
+          placement: await read('se-1'),
+          bulletin: await read('se-2'),
+          closed: await read('se-3'),
+        }
+      })
+
+      // ОМ на «Расстановке»: стадия объекта и подпись — его собственные.
+      expect(seeded.placement.stage).toBe('PLACEMENT')
+      expect(
+        seeded.placement.visitObjects[0]?.stage,
+        'стадия объекта осталась от emptyEvent(), а не от стадии ОМ',
+      ).toBe('PLACEMENT')
+      // Людей на постах у сида нет — по правилу мока это «Рекогносцировка
+      // завершена», а НЕ «Бюллетень»: чип отвечает на «что дальше делать».
+      expect(
+        seeded.placement.visitObjects[0]?.statusLabel,
+        'чип объекта печатает чужую стадию',
+      ).toBe('Рекогносцировка завершена')
+      // Итог потребности — тоже вывод, и он тоже считался только при записи.
+      expect(seeded.placement.forceDemandTotal).toBe(seeded.placement.forceNeed)
+
+      // ОМ на «Бюллетене» — тот же вывод, просто совпал с исходным.
+      expect(seeded.bulletin.visitObjects[0]?.statusLabel).toBe('Бюллетень')
+
+      // Закрытый ОМ: и стадия объекта, и момент закрытия — от мероприятия.
+      expect(seeded.closed.stage).toBe('CLOSED')
+      expect(seeded.closed.visitObjects[0]?.stage).toBe('CLOSED')
+      expect(seeded.closed.visitObjects[0]?.statusLabel, 'закрытый ОМ с чужим чипом').toBe(
+        'Закрыто',
+      )
+      expect(
+        seeded.closed.visitObjects[0]?.closedAt,
+        'объект закрытого ОМ не получил момента закрытия',
+      ).not.toBeNull()
+    })
+
     test('возврат обнуляет маршрут, ответ на последнее замечание завершает этап (Plane №569, №570)', async ({
       page,
     }) => {

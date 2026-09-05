@@ -794,14 +794,21 @@ export function readEventsStore(): SecurityEvent[] {
 
 function getEvents(): SecurityEvent[] {
   if (events === null) {
-    events = loadPersisted() ?? buildSeed();
+    // 🔴 ВЫВОД СЧИТАЕТСЯ И ПРИ РОЖДЕНИИ СТОРА, А НЕ ТОЛЬКО ПРИ ЗАПИСИ
+    // (Plane №605). Сид кладёт события напрямую, минуя `saveEvent`, и стадия
+    // объекта с чипом оставались от `emptyEvent()` — «Бюллетень» у ОМ на
+    // «Расстановке» и у закрытого. Сохранённый стор прогоняется тем же
+    // правилом: он мог быть записан прежней версией мока.
+    events = (loadPersisted() ?? buildSeed()).map(derive);
     persist(events);
   }
   return events;
 }
 
 function addEvent(created: SecurityEvent): void {
-  events = [...getEvents(), created];
+  // Заведение — тот же путь рождения, что и сид: без вывода новый ОМ приезжал
+  // бы клиенту с полями, посчитанными «наполовину».
+  events = [...getEvents(), derive(created)];
   persist(events);
 }
 
@@ -979,22 +986,41 @@ function closureSummaryOf(
   };
 }
 
-function saveEvent(updated: SecurityEvent): SecurityEvent {
+/**
+ * ВЫВОДИМЫЕ поля мероприятия: то, что сервер считает при каждой выдаче, а не
+ * хранит. Одно правило на ВСЕ пути появления события в сторе.
+ *
+ * 🔴 ПОЧЕМУ ЭТО ОТДЕЛЬНАЯ ФУНКЦИЯ (Plane №605). Раньше вывод жил внутри
+ * `saveEvent`, то есть на пути ЗАПИСИ. А сид (`buildSeed`) кладёт события в
+ * стор напрямую: `emptyEvent()` заводит их на «Бюллетене», потом им
+ * присваивается настоящая стадия — и никто не пересчитывает то, что от
+ * стадии зависит. Под моком ОМ-2026-1 стоял на «Расстановке», а чип объекта
+ * печатал «Бюллетень»; закрытый ОМ-2026-3 — тот же чип. GET-ручки отдают
+ * стор как есть, поэтому расхождение доживало до экрана.
+ *
+ * Вывод — не «дополнительная аккуратность», а единственный способ не
+ * заводить второе место, где считается то же самое: путь записи и путь
+ * рождения обязаны давать один результат, иначе мок расходится сам с собой.
+ */
+function derive(event: SecurityEvent): SecurityEvent {
   // `forceDemandTotal` — ВЫВОД, а не поле: сервер считает его при каждой
-  // выдаче. В моке он пересчитывается здесь, на общем пути сохранения, иначе
-  // каждая ручка обязана была бы помнить про него — и первая же забывшая
-  // отдала бы клиенту раскладку с нулевой потребностью.
-  const withTotal: SecurityEvent = mirrorApproval({
-    ...updated,
-    forceDemandTotal: updated.reconForceRequest || updated.forceNeed,
-    // Сводка закрытия — такой же ВЫВОД (Plane №728): пересчитывается здесь,
-    // на общем пути, а не пишется каждой ручкой по отдельности.
-    closureSummary: closureSummaryOf(updated, null),
-    visitObjects: updated.visitObjects.map((visit) => ({
+  // выдаче. Иначе каждая ручка обязана была бы помнить про него — и первая
+  // же забывшая отдала бы клиенту раскладку с нулевой потребностью.
+  return mirrorApproval({
+    ...event,
+    forceDemandTotal: event.reconForceRequest || event.forceNeed,
+    // Сводка закрытия — такой же ВЫВОД (Plane №728): считается здесь, на
+    // общем пути, а не пишется каждой ручкой по отдельности.
+    closureSummary: closureSummaryOf(event, null),
+    visitObjects: event.visitObjects.map((visit) => ({
       ...visit,
-      closureSummary: closureSummaryOf(updated, visit.id),
+      closureSummary: closureSummaryOf(event, visit.id),
     })),
   });
+}
+
+function saveEvent(updated: SecurityEvent): SecurityEvent {
+  const withTotal = derive(updated);
   events = getEvents().map((e) => (e.id === withTotal.id ? withTotal : e));
   persist(events);
   return withTotal;
