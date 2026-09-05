@@ -138,8 +138,12 @@ def test_the_schema_version_was_raised(types, division):  # noqa: F811
     отличают одну раскладку от другой."""
     in_slot(division)
 
-    assert build_division_snapshot(division.id, TODAY)["schema_version"] == 7
-    assert SCHEMA_VERSION == 7
+    # Пин правится ОСОЗНАННО и вместе с расширением: 7 → 8, потому что версия 8
+    # добавила строкам `participations` (Plane №751). Подогнать его под новый
+    # вывод «чтобы позеленело» значило бы снять с проекта единственный признак,
+    # по которому читатель отличает раскладки.
+    assert build_division_snapshot(division.id, TODAY)["schema_version"] == 8
+    assert SCHEMA_VERSION == 8
 
 
 def test_the_reader_still_understands_the_previous_layout():
