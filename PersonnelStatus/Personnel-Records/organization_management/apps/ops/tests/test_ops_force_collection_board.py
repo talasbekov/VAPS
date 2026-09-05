@@ -326,3 +326,71 @@ def test_a_past_event_with_an_overdue_request_is_still_urgent(manager, hq):  # n
     row = _row(hq, base)
 
     assert row["urgent"] is True, "просроченная заявка перестала быть срочной"
+
+
+# ── Ответственный за сбор сил департамента (Plane №680) ─────────────────────
+
+
+def test_responsible_is_the_account_that_can_answer_the_request(manager, hq):  # noqa: F811
+    """Колонка «Ответственный» называет того, кто МОЖЕТ ответить по заявке.
+
+    Отбор шёл только по `is_active` и области, поэтому победить могла любая
+    активная роль на этом департаменте — читатель, оператор, кто угодно.
+    Колонка называла человека, к заявке отношения не имеющего.
+
+    Красная проверка — снять фильтр `role_code_id__in=allowed_roles`: имя
+    станет «Наблюдатель» либо «Ответственный» через раз, потому что без
+    `order_by` порядок строк не определён.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    # Наблюдатель заводится ПЕРВЫМ: без фильтра по праву он и побеждал бы —
+    # `setdefault` берёт первую строку, а вставленная раньше обычно и идёт
+    # первой. Проба, где он второй, была бы вечнозелёной.
+    client_for("dep-watcher", "OPS_READER", perms=("event.view",), scope_division_id=department.pk)
+    _, answering = client_for(
+        "dep-officer",
+        "DEPARTMENT_EXPENSE_OFFICER",
+        perms=("forces.allocate",),
+        scope_division_id=department.pk,
+    )
+
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    row = hq.get(f"{base}force-collection/").json()["allocations"][0]
+
+    assert row["responsibleName"] == answering.get_username(), (
+        "ответственным назван не тот, кто отвечает по заявке"
+    )
+
+
+def test_the_responsible_name_does_not_change_between_identical_requests(manager, hq):  # noqa: F811
+    """Одинаковые запросы дают ОДНО И ТО ЖЕ имя.
+
+    Без `order_by` Postgres вправе отдать строки в любом порядке, а
+    `setdefault` берёт первую, — имя в колонке могло меняться между двумя
+    одинаковыми запросами. Такое не находят по жалобе: человек видит разное
+    и считает, что ответственного переназначили.
+
+    Красная проверка — снять `.order_by("id")`: проба перестаёт быть
+    доказательством (на маленькой таблице порядок может совпасть), поэтому
+    рядом с ней стоит проба по праву выше — вдвоём они держат оба конца.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    for index in range(3):
+        client_for(
+            f"dep-officer-{index}",
+            "DEPARTMENT_EXPENSE_OFFICER",
+            perms=("forces.allocate",),
+            scope_division_id=department.pk,
+        )
+
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    names = {
+        hq.get(f"{base}force-collection/").json()["allocations"][0]["responsibleName"]
+        for _ in range(5)
+    }
+
+    assert len(names) == 1, f"имя ответственного меняется между запросами: {names}"

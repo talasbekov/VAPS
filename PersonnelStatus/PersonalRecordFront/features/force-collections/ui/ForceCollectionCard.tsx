@@ -79,7 +79,23 @@ function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: str
   const need = row.need ?? 0;
   const sent = row.sent ?? members.length;
   const allocating = row.allocating ?? null;
-  const shortage = Math.max(0, need - sent);
+  /**
+   * НЕДОБОР, ОПРАВДЫВАЮЩИЙ ДОВЫДЕЛЕНИЕ, — это `need − allocating`, а не
+   * `need − sent` (Plane №679).
+   *
+   * 🔴 `sent` — сколько людей ФИЗИЧЕСКИ попало в список; `allocating` — сколько
+   * департамент ПООБЕЩАЛ в ответ на запрос. Пока считалось по `sent`, кнопка
+   * «Довыделить недобор» вылезала сразу после отправки запроса — до того, как
+   * департамент вообще успел ответить, — с подставленным ПОЛНЫМ `need`.
+   * Департамент, ответивший «выделяем 5 из 5», но ещё не сдавший список,
+   * всё равно показывал недобор 5, и одно нажатие слало второй запрос ещё на
+   * пять, удваивая запрошенное.
+   *
+   * Департамент ещё не ответил (`allocating === null`) — недобора НЕТ:
+   * «сколько не хватит» неизвестно, пока не сказано «сколько дадим».
+   * Довыделять нечего, и кнопки нет.
+   */
+  const shortage = allocating === null ? 0 : Math.max(0, need - allocating);
   const canTopUp = row.status !== "DRAFT" && shortage > 0;
   return (
     <>

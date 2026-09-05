@@ -176,18 +176,28 @@ test.describe('сборы сил (вид штаба)', () => {
       await tab.click()
 
       await page.getByRole('button', { name: `Открыть сбор ${target!.code}` }).click()
-    // `[СБС-11]`/`[СБС-12]` (Plane №426): потребность по объектам с «Итого»,
-    // итог «потребность · выделяют · прислано · недобор», колонки департаментов.
-    await expect(page.locator('[data-slot="collection-need"]')).toBeVisible()
-    await expect(page.locator('[data-slot="need-total"]')).toContainText('Итого')
-    await expect(page.locator('[data-slot="collection-totals"]')).toContainText(/потребность \d+ · выделяют \d+ · прислано \d+ · недобор \d+/)
-    for (const header of ['Запрошено', 'Выделяют', 'Прислано', 'Комментарий', 'Статус', 'Ответственный']) {
-      await expect(page.getByRole('columnheader', { name: header, exact: true }).first()).toBeVisible()
-    }
+
+      // 🔴 ЖДЁМ КАРТОЧКУ ПЕРВОЙ (Plane №683). Проверки состава стояли ВЫШЕ
+      // этого ожидания и шли с таймаутом по умолчанию (5 с), тогда как само
+      // ожидание получило 20 с намеренно: на живом стенде карточка
+      // открывается медленно. На нагруженном стенде проба краснела на
+      // `[data-slot="collection-need"]` — то есть жаловалась на состав
+      // карточки, которой ещё нет, вместо того, что стережёт. Отступ у тех
+      // строк вдобавок выпадал из окружающего `try`, и порядок не читался
+      // глазами.
       await expect(
         page.getByRole('button', { name: 'Назад к списку сборов' }),
         'карточка открылась на месте списка',
       ).toBeVisible({ timeout: 20_000 })
+
+      // `[СБС-11]`/`[СБС-12]` (Plane №426): потребность по объектам с «Итого»,
+      // итог «потребность · выделяют · прислано · недобор», колонки департаментов.
+      await expect(page.locator('[data-slot="collection-need"]')).toBeVisible()
+      await expect(page.locator('[data-slot="need-total"]')).toContainText('Итого')
+      await expect(page.locator('[data-slot="collection-totals"]')).toContainText(/потребность \d+ · выделяют \d+ · прислано \d+ · недобор \d+/)
+      for (const header of ['Запрошено', 'Выделяют', 'Прислано', 'Комментарий', 'Статус', 'Ответственный']) {
+        await expect(page.getByRole('columnheader', { name: header, exact: true }).first()).toBeVisible()
+      }
 
       // Четыре плитки эталона.
       for (const label of [
