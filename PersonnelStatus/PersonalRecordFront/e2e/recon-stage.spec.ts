@@ -467,6 +467,55 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
   test.describe('подвал на ОМ с двумя объектами', () => {
     test.use({ serviceWorkers: 'block' })
 
+    test('подвал называет и число объекта, и то, что уйдёт штабу', async ({
+      page,
+    }) => {
+      // Подвал печатал потребность ПОКАЗАННОГО объекта, а `complete_recon`
+      // отправляет штабу сумму по ВСЕМ постам мероприятия (Plane №708): на ОМ
+      // с двумя объектами человек подтверждал «5 сотрудников», а уходило 12.
+      const token = await apiToken()
+      // ОМ обязан СТОЯТЬ на «Рекогносцировке»: стадию отдаёт и серверный
+      // рендер, подменой в ответе её не сдвинуть (проверено — панель не
+      // появлялась). Фикстура готовится тем же помощником, что и у соседней
+      // пробы, если готовой нет.
+      const suitable = (rows: EventRow[]): EventRow | undefined =>
+        rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
+      let found = suitable(await events(token))
+      if (found === undefined) {
+        await prepareEvent(token)
+        found = suitable(await events(token))
+      }
+      expect(found, 'не удалось подготовить ОМ на «Рекогносцировке»').toBeDefined()
+      const target = found
+
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (r) => {
+          const response = await r.fetch()
+          const body = await response.json()
+          const visit = { ...(body.visitObjects[0] ?? {}), id: 'probe-a', objectName: 'Объект А' }
+          const second = { ...visit, id: 'probe-b', objectName: 'Объект Б' }
+          body.visitObjects = [visit, second]
+          // Посты РАЗМЕЧЕНЫ по объектам, и суммы разные: у показанного 2, у
+          // мероприятия 5. Без разницы проба не отличила бы починку от
+          // прежнего поведения.
+          body.reconSectorPosts = [
+            { ...body.reconSectorPosts[0], id: 'p1', need: 2, visitObjectId: 'probe-a' },
+            { ...body.reconSectorPosts[0], id: 'p2', need: 3, visitObjectId: 'probe-b' },
+          ]
+          await r.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=probe-a`)
+      const footer = page.locator('[data-slot="recon-footer"]')
+      await expect(footer).toBeVisible({ timeout: 15_000 })
+
+      await expect(footer.locator('[data-slot="recon-need"]')).toHaveText('2')
+      // И число, которое ДЕЙСТВИТЕЛЬНО уйдёт штабу, названо рядом.
+      await expect(footer.locator('[data-slot="recon-need-event"]')).toHaveText('5')
+    })
 
     test('на объекте без постов кнопка не жалуется на пустой расчёт', async ({
       page,

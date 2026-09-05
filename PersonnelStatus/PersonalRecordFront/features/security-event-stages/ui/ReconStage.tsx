@@ -883,11 +883,30 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
           className="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t bg-background/95 px-6 py-3 backdrop-blur"
           data-slot="recon-footer"
         >
+          {/* 🔴 ЧИСЛО ОБЪЕКТА И ЧИСЛО, КОТОРОЕ УЙДЁТ ШТАБУ, — РАЗНЫЕ (Plane
+              №708). Подвал печатал потребность ПОКАЗАННОГО объекта, а
+              `complete_recon` отправляет штабу сумму по ВСЕМ постам
+              мероприятия: на ОМ с двумя объектами человек подтверждал «5
+              сотрудников», а уходило 12. Оба числа названы, и второе — только
+              когда оно отличается: лишняя цифра там, где объект один,
+              заставляла бы искать разницу, которой нет. */}
           <p className="text-sm">
             Потребность по объекту{activeVisitObject !== null ? ` «${activeVisitObject.objectName}»` : ""}:{" "}
             <b className="tabular-nums" data-slot="recon-need">{activeVisitObject !== null ? needOfVisit : needFromPosts}</b>{" "}
             <span className="text-muted-foreground">
-              → уйдёт в{" "}
+              →{" "}
+              {needOfVisit !== needFromPosts && activeVisitObject !== null && (
+                <>
+                  штабу уйдёт по мероприятию{" "}
+                  <b className="tabular-nums text-foreground" data-slot="recon-need-event">
+                    {needFromPosts}
+                  </b>{" "}
+                  в{" "}
+                </>
+              )}
+              {needOfVisit === needFromPosts || activeVisitObject === null
+                ? "уйдёт в "
+                : ""}
               <Link href="/employees?view=forces" className="font-semibold text-primary-ink">
                 «Сбор сил на ОМ»
               </Link>
@@ -917,11 +936,23 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <DialogContent>
             <DialogHeader>
+              {/* В заголовке — ЧИСЛО, КОТОРОЕ ДЕЙСТВИТЕЛЬНО УЙДЁТ (Plane
+                  №708): подтверждают отправку, а отправляется сумма по
+                  мероприятию. Потребность показанного объекта названа ниже,
+                  когда она отличается, — чтобы разница не выглядела опечаткой. */}
               <DialogTitle>
-                Отправить потребность {activeVisitObject !== null ? needOfVisit : needFromPosts} сотрудников штабу 2-го департамента?
+                Отправить потребность {needFromPosts} сотрудников штабу 2-го департамента?
               </DialogTitle>
               <DialogDescription>
                 Потребность зафиксируется, объект перейдёт к расстановке, штаб получит заявку.
+                {activeVisitObject !== null && needOfVisit !== needFromPosts && (
+                  <>
+                    {" "}
+                    По объекту «{activeVisitObject.objectName}» рассчитано{" "}
+                    {needOfVisit}; штабу уходит сумма по всем объектам
+                    мероприятия.
+                  </>
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
