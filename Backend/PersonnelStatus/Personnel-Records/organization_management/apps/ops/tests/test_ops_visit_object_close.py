@@ -141,3 +141,93 @@ def test_manual_close_still_closes_every_object(manager, actor, two_objects_on_c
 
     assert {v.stage for v in _visits(event_id)} == {"CLOSED"}
     assert service.lock_event(event_id).stage == "CLOSED"
+
+
+# ── Правки ПОСЛЕ закрытия объекта (`[ЗАК-12]`, Plane №607) ──────────────────
+#
+# 🔴 ПОЧЕМУ ЭТОГО НЕ ЛОВИЛИ ПРЕЖНИЕ ПРОБЫ. Все шесть операций сторожил только
+# `event.stage == "CLOSED"`, а этап мероприятия — НАИМЕНЬШИЙ среди объектов:
+# пока жив хоть один незакрытый, мероприятие стоит на «Проведении». На ОМ с
+# ОДНИМ объектом дефекта не видно вовсе — закрытие единственного объекта
+# закрывает и мероприятие, и старый гард срабатывает за компанию. Нужна
+# фикстура ровно с двумя, где закрыт ПЕРВЫЙ, а мероприятие живо вторым.
+
+
+@pytest.fixture
+def first_object_closed(manager, two_objects_on_conduct):  # noqa: F811
+    """Первый объект закрыт, мероприятие держится на «Проведении» вторым."""
+    base, event_id, first, second = two_objects_on_conduct
+    closed = manager.post(f"{base}visit-objects/{first.pk}/close/", {}, format="json")
+    assert closed.status_code == 200, closed.content
+    assert closed.json()["stage"] == "CONDUCT", (
+        "мероприятие закрылось вместе с первым объектом — проба проверяла бы "
+        "гард мероприятия, а не объекта"
+    )
+    first.refresh_from_db()
+    assert first.stage == "CLOSED"
+    return base, event_id, first, second
+
+
+def test_a_closed_visit_object_refuses_every_edit(
+    manager, first_object_closed, actor  # noqa: F811
+):
+    """Шесть операций объекта отбиваются его СОБСТВЕННЫМ этапом.
+
+    До правки каждая отвечала 200 и меняла закрытый объект: старший
+    заменялся и уходил в аудит, день посещения и примечание переписывались,
+    замещающие назначались и снимались — вопреки тексту диалога закрытия и
+    записи `VISIT_OBJECT_CLOSED` в журнале.
+    """
+    base, _, first, _ = first_object_closed
+    employee = make_employee(last_name="Послезакрытов")
+
+    attempts = {
+        "правка дня и примечания": manager.patch(
+            f"{base}visit-objects/{first.pk}/",
+            {"visitDay": "2026-12-30", "note": "после закрытия"},
+            format="json",
+        ),
+        "снятие объекта": manager.delete(f"{base}visit-objects/{first.pk}/"),
+        "назначение старшего": manager.post(
+            f"{base}visit-objects/{first.pk}/chief/",
+            {"employeeId": str(employee.pk)},
+            format="json",
+        ),
+        "снятие старшего": manager.delete(f"{base}visit-objects/{first.pk}/chief/"),
+        "назначение замещающего": manager.post(
+            f"{base}visit-objects/{first.pk}/deputies/",
+            {"employeeId": str(employee.pk), "canEditPlacement": True},
+            format="json",
+        ),
+    }
+    for what, resp in attempts.items():
+        assert resp.status_code == 422, f"{what}: {resp.status_code} {resp.content}"
+        assert resp.json()["error_code"] == "VISIT_OBJECT_ALREADY_CLOSED", what
+
+    # Снятие замещающего — шестая операция; своего замещающего у закрытого
+    # объекта нет (назначение только что отбито), поэтому берётся живой у
+    # ВТОРОГО объекта: адрес операции — объект, и гард обязан сработать
+    # раньше поиска строки.
+    _, _, _, second = first_object_closed
+    added = manager.post(
+        f"{base}visit-objects/{second.pk}/deputies/",
+        {"employeeId": str(employee.pk), "canEditPlacement": True},
+        format="json",
+    )
+    assert added.status_code == 201, added.content
+    deputy_id = added.json()["visitObjects"][1]["deputies"][0]["id"]
+    removed = manager.delete(
+        f"{base}visit-objects/{first.pk}/deputies/{deputy_id}/"
+    )
+    assert removed.status_code == 422, removed.content
+    assert removed.json()["error_code"] == "VISIT_OBJECT_ALREADY_CLOSED"
+
+    # И главное: закрытый объект остался таким, каким его закрыли.
+    first.refresh_from_db()
+    assert first.stage == "CLOSED"
+    assert first.visit_day is None
+    assert first.note == ""
+    assert first.deputies.count() == 0
+    assert OpsSecurityEventVisitObject.objects.filter(pk=first.pk).exists(), (
+        "закрытый объект снят с мероприятия"
+    )

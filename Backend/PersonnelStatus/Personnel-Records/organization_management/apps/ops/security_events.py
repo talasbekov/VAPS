@@ -845,6 +845,7 @@ def update_visit_object(event_id, visit_object_id, *, visit_day, note):
             message="Мероприятие закрыто — объекты посещения не меняются.",
         )
     visit = _visit_object_or_404(event, visit_object_id)
+    _require_visit_open(visit, "день посещения и примечание не меняются")
 
     raw_day = str(visit_day or "").strip()
     day = None
@@ -884,6 +885,7 @@ def remove_visit_object(event_id, visit_object_id):
     )
     if visit is None:
         raise _not_found("Объект посещения не найден.", visit_object_id)
+    _require_visit_open(visit, "снять его с мероприятия уже нельзя")
     # Посты, размеченные за этим объектом, остались бы сиротами — расчёт
     # считает их «ничьими», и готовность объекта исчезла бы молча.
     scoped_posts = [
@@ -1026,6 +1028,35 @@ def _visit_object_or_404(event, visit_object_id):
     return visit
 
 
+def _require_visit_open(visit, what):
+    """Закрытый объект посещения не правится (`[ЗАК-12]`, Plane №607).
+
+    🔴 ГАРД ПО ОБЪЕКТУ, А НЕ ПО МЕРОПРИЯТИЮ. Правки объекта сторожил только
+    `event.stage == "CLOSED"`, а этап мероприятия — НАИМЕНЬШИЙ среди его
+    объектов: пока жив хоть один незакрытый, мероприятие стоит на
+    «Проведении», и закрытый объект оставался открытым для правки. День
+    посещения, примечание, старший и замещающие менялись у закрытого объекта
+    молча, вопреки записи `VISIT_OBJECT_CLOSED` в журнале и тексту диалога
+    закрытия. На ОМ с ОДНИМ объектом дефекта не видно вовсе — закрытие
+    единственного объекта закрывает и мероприятие, и старый гард срабатывает
+    за компанию.
+
+    Правило и код ошибки — те же, что у соседей, которые считали по объекту с
+    самого начала: `conduct_evaluations._require_open` и `close_visit_object`.
+    Гард мероприятия при этом ОСТАЁТСЯ на месте: он отвечает на другой вопрос
+    («мероприятие закрыто целиком») и даёт свой текст.
+
+    `what` — хвост сообщения о том, что именно не изменится: человеку нужен
+    не код, а причина отказа именно этого действия.
+    """
+    if visit.stage == "CLOSED":
+        raise DomainError(
+            "VISIT_OBJECT_ALREADY_CLOSED",
+            422,
+            message=f"Объект «{visit.object_name}» закрыт — {what}.",
+        )
+
+
 def deputy_can_edit_placement(event, employee_id, post):
     """Может ли этот сотрудник править расстановку ЭТОГО поста как замещающий.
 
@@ -1103,6 +1134,7 @@ def add_visit_object_deputy(
             message="Мероприятие закрыто — замещающие не назначаются.",
         )
     visit = _visit_object_or_404(event, visit_object_id)
+    _require_visit_open(visit, "замещающие не назначаются")
 
     employee = _find_personnel(employee_id)
     if employee is None:
@@ -1149,6 +1181,7 @@ def remove_visit_object_deputy(event_id, visit_object_id, deputy_id, *, actor):
             message="Мероприятие закрыто — замещающие не меняются.",
         )
     visit = _visit_object_or_404(event, visit_object_id)
+    _require_visit_open(visit, "замещающие не меняются")
     deputy = (
         visit.deputies.filter(pk=deputy_id).first()
         if str(deputy_id).isdigit()
@@ -1216,6 +1249,7 @@ def assign_visit_object_chief(event_id, visit_object_id, *, employee_id, actor):
             message="Мероприятие закрыто — старший объекта не меняется.",
         )
     visit = _visit_object_or_404(event, visit_object_id)
+    _require_visit_open(visit, "старший объекта не меняется")
 
     employee = _find_personnel(employee_id)
     if employee is None:
@@ -1262,6 +1296,7 @@ def remove_visit_object_chief(event_id, visit_object_id, *, actor):
             message="Мероприятие закрыто — старший объекта не меняется.",
         )
     visit = _visit_object_or_404(event, visit_object_id)
+    _require_visit_open(visit, "старший объекта не меняется")
     if visit.chief_employee_id is None:
         raise _not_found("У объекта не назначен старший.", visit_object_id)
 
