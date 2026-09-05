@@ -226,3 +226,124 @@ def test_a_swallowed_failure_is_not_counted_as_delivered(chain, monkeypatch):
 
     assert report["notified"] == 0
     assert report["undelivered"] == [f"Первое управление · {head.pk}"]
+
+
+# ─── Дежурный по управлению тоже получает запрос (Plane №800) ────────────────
+
+
+@pytest.fixture
+def duty_role():
+    """Роль дежурства с тем же правом, под которым управление выделяет людей.
+
+    Код взят из `DUTY_ROLE_CHOICES` — `duty_role_code` их и хранит, — а право
+    выдано через `RolePermission`: именно так `PermissionService._active_grants`
+    и превращает дежурство в набор прав, никакой отдельной таблицы у дежурств
+    нет.
+    """
+    role = Role.objects.create(code="HQ_DUTY", name="Дежурный по штабу (проба)")
+    Permission.objects.get_or_create(
+        code=SELECT_PERMISSION, defaults={"name": "Статусы: управление"}
+    )
+    RolePermission.objects.create(role_code=role, permission_code_id=SELECT_PERMISSION)
+    return role
+
+
+def _duty(user, division_id, role_code, moment, *, offset_hours=1):
+    from organization_management.apps.operations.models import TemporaryDutyPermission
+
+    return TemporaryDutyPermission.objects.create(
+        user_id=str(user.pk),
+        duty_role_code=role_code,
+        scope_division_id=int(division_id),
+        starts_at=moment - dt.timedelta(hours=offset_hours),
+        ends_at=moment + dt.timedelta(hours=offset_hours),
+        created_by="test",
+    )
+
+
+def test_the_duty_officer_is_notified_alongside_the_permanent_head(
+    chain, duty_role, django_user_model
+):
+    """🔴 Plane №800: получатели берутся из ОБОИХ источников грантов.
+
+    Права в разделе приходят из двух таблиц — постоянных ролей (`UserRole`) и
+    временных дежурств (`TemporaryDutyPermission`), и `_active_grants`
+    перечисляет обе. Рассылка читала только первую: заступивший дежурным по
+    управлению ВЫДЕЛИТЬ людей мог (гейт ручки пропускал его по дежурному
+    гранту), а требования «Выделите N сотрудников» не получал — запрос уходил
+    постоянному начальнику, которого в этот момент может не быть на месте.
+
+    Заказчик 06.09.2026 выбрал «слать ОБОИМ», поэтому проверяется именно пара,
+    а не подмена: постоянный начальник уведомление не теряет.
+
+    Красная мутация: убрать ветку `TemporaryDutyPermission` из
+    `_directorate_heads` — `notified` станет 1, а строки дежурного не будет.
+    """
+    from organization_management.apps.operations import clock
+
+    event, allocation, directorates, head, _officer, _watcher = chain
+    duty = django_user_model.objects.create_user(username="fr-duty", password="x")
+    moment = dt.datetime(2026, 9, 19, 10, 0, tzinfo=dt.timezone.utc)
+    _duty(duty, directorates[0]["divisionId"], duty_role.code, moment)
+
+    with clock.override(moment):
+        report = notify_directorate_heads(event, allocation, directorates)
+
+    assert report["notified"] == 2
+    assert OpsNotification.objects.filter(recipient=str(head.pk), kind=KIND).exists()
+    assert OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
+
+
+def test_a_duty_outside_its_window_is_not_notified(chain, duty_role, django_user_model):
+    """Окно дежурства короче суток, и рассылка спрашивает «кто может СЕЙЧАС».
+
+    Тот же вопрос, что задаёт гейт ручки в тот же момент: дежурство, которое
+    ещё не началось или уже кончилось, прав не даёт — значит и требования
+    выделить людей получать не должно. Иначе `notifiedHeads` в аудите снова
+    перестал бы отвечать на вопрос «кого на самом деле попросили».
+
+    Красная мутация: убрать `starts_at__lte` / `ends_at__gte` из фильтра —
+    `notified` станет 2.
+    """
+    from organization_management.apps.operations import clock
+
+    event, allocation, directorates, head, _officer, _watcher = chain
+    duty = django_user_model.objects.create_user(username="fr-duty-past", password="x")
+    moment = dt.datetime(2026, 9, 19, 10, 0, tzinfo=dt.timezone.utc)
+    _duty(duty, directorates[0]["divisionId"], duty_role.code, moment)
+
+    # Дежурство кончилось два часа назад: окно ±1 час вокруг `moment`.
+    with clock.override(moment + dt.timedelta(hours=2)):
+        report = notify_directorate_heads(event, allocation, directorates)
+
+    assert report["notified"] == 1
+    assert OpsNotification.objects.filter(recipient=str(head.pk), kind=KIND).exists()
+    assert not OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
+
+
+def test_a_duty_without_the_select_permission_is_not_notified(
+    chain, django_user_model
+):
+    """Фильтр по ПРАВУ (Plane №481) распространяется и на дежурства.
+
+    Дежурство — такой же источник грантов, как роль, и слабее её быть не
+    обязано: дежурный без права выделять людей получил бы требование, которое
+    физически не может выполнить, — ровно та беда, что чинилась в №481, только
+    зашедшая со второго входа.
+
+    Красная мутация: убрать `duty_role_code__in=roles` из фильтра дежурств —
+    `notified` станет 2.
+    """
+    from organization_management.apps.operations import clock
+
+    event, allocation, directorates, _head, _officer, _watcher = chain
+    idle = Role.objects.create(code="OMD", name="ОМД без права (проба)")
+    duty = django_user_model.objects.create_user(username="fr-duty-idle", password="x")
+    moment = dt.datetime(2026, 9, 19, 10, 0, tzinfo=dt.timezone.utc)
+    _duty(duty, directorates[0]["divisionId"], idle.code, moment)
+
+    with clock.override(moment):
+        report = notify_directorate_heads(event, allocation, directorates)
+
+    assert report["notified"] == 1
+    assert not OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
