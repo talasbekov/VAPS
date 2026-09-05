@@ -183,3 +183,50 @@ def test_the_document_does_not_stamp_g_on_the_word_unspecified():
 
     assert summary.document_values(event)["arrival_1"].startswith("уточняется")
     assert "уточняется г." not in summary.document_values(event)["arrival_1"]
+
+
+# ── Сводка собирается ОДИН раз на строку (Plane №690) ───────────────────
+
+
+def test_the_row_assembles_the_summary_once(django_assert_num_queries):
+    """`summary_row` и `_required_progress` собирали сводку ДВАЖДЫ.
+
+    🔴 ЧТО ЭТО СТОИЛО. `_with_refs` ходит в `Employee` ПО ОДНОМУ ЗАПРОСУ НА
+    ИДЕНТИФИКАТОР (`_employee_refs`), а `assembled_summaries` зовёт
+    `summary_row` на КАЖДОЕ мероприятие и написан ровно затем, чтобы не
+    платить запросом за строку («реестр из сорока строк стоил бы сорок
+    запросов»). Двойная сборка удваивала именно эту цену — и делала это
+    молча: ответ был верный, дороже был только путь.
+
+    Проба считает ЗАПРОСЫ, а не вызовы: подмена функции проверяла бы, как
+    написан код, а число запросов — во что он обходится. Трёх встречающих
+    хватает: 12 запросов против 7, и разницу не спутать с погрешностью.
+    """
+    from organization_management.apps.operations.models_gvo import OpsForeignVisit
+    from organization_management.apps.ops.tests.test_ops_security_events_api import (
+        make_employee,
+    )
+
+    event = make_event()
+    people = [make_employee(last_name=f"Встречающий{i}") for i in range(3)]
+    OpsForeignVisit.objects.create(
+        event=event,
+        data={"meetEmployeeIds": [str(p.pk) for p in people]},
+    )
+
+    # 🔴 ЧИСЛО ПОСЧИТАНО ЗАПУСКОМ, А НЕ ВЫВЕДЕНО ИЗ ГОЛОВЫ. До правки на этой
+    # же фикстуре было 12, после — 7: три встречающих переставали стоить
+    # вдвое. Разбирать семёрку по слагаемым проба не берётся — состав запросов
+    # `_find_personnel` не её предмет; предмет — что сборка ОДНА. Мутация
+    # «вернуть повторную сборку в `_required_progress`» даёт 12 и краснит
+    # здесь (проверено запуском).
+    with django_assert_num_queries(7):
+        row = summary.summary_row(event)
+
+    assert [ref["id"] for ref in row["summary"]["meetRefs"]] == [
+        str(p.pk) for p in people
+    ]
+    # Прогресс обязательных полей считается по ТОЙ ЖЕ сводке — иначе экономия
+    # обернулась бы вторым, расходящимся ответом.
+    assert row["requiredTotal"] > 0
+    assert isinstance(row["missingRequired"], list)
