@@ -139,13 +139,47 @@ def build_raw_id_fields(model):
     )
 
 
+def build_readonly_fields(model):
+    """Все правимые поля модели — в `readonly_fields`.
+
+    Именно правимые: автополя (`id`, `created_at` с `auto_now_add`) Admin в
+    `readonly_fields` не принимает и падает на них `FieldError` при отрисовке
+    формы.
+    """
+    return tuple(
+        field.name
+        for field in model._meta.get_fields()
+        if getattr(field, "editable", False) and field.concrete
+    )
+
+
 def build_model_admin(model):
-    """Собрать класс `ModelAdmin` под конкретную модель."""
+    """Собрать класс `ModelAdmin` под конкретную модель.
+
+    Модель, объявившая `admin_readonly = True` (append-only реестры, Plane
+    №671), получает страницу БЕЗ правки, добавления и удаления. Обычный
+    сгенерированный `ModelAdmin` для такой модели не просто бесполезен, а
+    вреден: «Сохранить» роняет страницу пятисоткой (модель поднимает свой
+    `RuntimeError` из `save`, и его никто не ловит), а добавление с удалением
+    не прикрыты вовсе — то есть история, ради которой реестр и заведён,
+    переписывается и стирается мимо всех его правил.
+
+    Страница при этом ОСТАЁТСЯ открытой на чтение: реестр выведен в меню
+    затем, чтобы историю можно было посмотреть. Спрятать его целиком значило
+    бы отменить это решение вместо того, чтобы починить дефект.
+    """
     attrs = {
         "list_display": build_list_display(model),
         "list_select_related": True,
         "save_on_top": True,
     }
+    if getattr(model, "admin_readonly", False):
+        attrs["readonly_fields"] = build_readonly_fields(model)
+        attrs["has_add_permission"] = lambda self, request=None: False
+        attrs["has_change_permission"] = lambda self, request=None, obj=None: False
+        attrs["has_delete_permission"] = lambda self, request=None, obj=None: False
+        # `save_on_top` у страницы без сохранения — кнопка, которой не будет.
+        attrs["save_on_top"] = False
     search_fields = build_search_fields(model)
     if search_fields:
         attrs["search_fields"] = search_fields
