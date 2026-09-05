@@ -43,12 +43,43 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
  *  не примет собранную cookie и проба проверяла бы отказ разбора, а не
  *  продление. Из окружения или из `.env.local` стенда — в репозиторий
  *  секрет не попадает. */
+/**
+ * Значение переменной из текста `.env.local`.
+ *
+ * 🔴 КАВЫЧКИ СНИМАЮТСЯ (Plane №466). Формат `.env` допускает и `A=б`, и
+ * `A="б"`, и `A='б'`; раньше значение бралось голым `slice`, и записанный в
+ * кавычках секрет приезжал сюда вместе с ними. Cookie подписывалась НЕ ТЕМ
+ * секретом, `/api/auth/session` отвечал пустотой, а проба падала с текстом
+ * «сессия не отдала токена вовсе» — то есть показывала пальцем на продление,
+ * хотя виновата запись в `.env.local`. Разбор уходил в здоровый код, а это
+ * ровно та потеря времени, из-за которой №383 и появилась.
+ */
+function envValue(raw: string, name: string): string | null {
+  const prefix = `${name}=`
+  const line = raw.split('\n').find((l) => l.startsWith(prefix))
+  if (line === undefined) return null
+  const value = line.slice(prefix.length).trim()
+  const quoted = /^(["'])(.*)\1$/.exec(value)
+  return quoted === null ? value : quoted[2]
+}
+
+/**
+ * Имя cookie сессии зависит от СХЕМЫ адреса стенда (Plane №466): под HTTPS
+ * next-auth добавляет к имени префикс `__Secure-`. Зашитое имя ломало бы
+ * пробу на любом стенде за TLS — с тем же вводящим в заблуждение текстом про
+ * продление.
+ */
+function sessionCookieName(appUrl: string): string {
+  const secure = new URL(appUrl).protocol === 'https:'
+  return secure ? '__Secure-next-auth.session-token' : 'next-auth.session-token'
+}
+
+const SESSION_COOKIE = sessionCookieName(APP)
+
 function sessionSecret(): string | null {
   if (process.env.NEXTAUTH_SECRET !== undefined) return process.env.NEXTAUTH_SECRET
   try {
-    const raw = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8')
-    const line = raw.split('\n').find((l) => l.startsWith('NEXTAUTH_SECRET='))
-    return line === undefined ? null : line.slice('NEXTAUTH_SECRET='.length).trim()
+    return envValue(fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8'), 'NEXTAUTH_SECRET')
   } catch {
     return null
   }
@@ -89,9 +120,21 @@ async function sessionWith(cookie: string): Promise<{
   user?: { accessToken?: string }
 }> {
   const res = await fetch(`${APP}/api/auth/session/`, {
-    headers: { cookie: `next-auth.session-token=${cookie}` },
+    headers: { cookie: `${SESSION_COOKIE}=${cookie}` },
   })
-  return (await res.json()) as { error?: string; user?: { accessToken?: string } }
+  const body = (await res.json()) as { error?: string; user?: { accessToken?: string } }
+  // 🔴 ПУСТОЙ ОТВЕТ — ЭТО ПРО COOKIE, А НЕ ПРО ПРОДЛЕНИЕ (Plane №466).
+  // `{}` означает, что приложение куку не приняло вовсе: не тот секрет
+  // подписи или не то имя. Без этой проверки дальше падал `expect(токен)
+  // .toBeDefined()` с текстом «сессия не отдала токена вовсе», и разбор
+  // уходил в здоровую логику продления.
+  if (Object.keys(body).length === 0) {
+    throw new Error(
+      `сессия пуста: приложение не приняло cookie «${SESSION_COOKIE}» — ` +
+        'проверь NEXTAUTH_SECRET стенда и схему адреса SMOKE_APP, а не продление',
+    )
+  }
+  return body
 }
 
 test.describe(LIVE ? 'продление сессии' : 'продление сессии (скип: нет SMOKE_LIVE=1)', () => {
@@ -305,11 +348,11 @@ test.describe(LIVE ? 'продление сессии' : 'продление с�
     /** Срок годности перевыпущенной cookie сессии, мс. */
     async function reissuedAt(): Promise<number> {
       const res = await fetch(`${APP}/api/auth/session/`, {
-        headers: { cookie: `next-auth.session-token=${cookie}` },
+        headers: { cookie: `${SESSION_COOKIE}=${cookie}` },
       })
       const set = res.headers
         .getSetCookie()
-        .find((c) => c.startsWith('next-auth.session-token='))
+        .find((c) => c.startsWith(`${SESSION_COOKIE}=`))
       expect(set, 'cookie сессии не перевыпущена вовсе').toBeDefined()
       const expires = /Expires=([^;]+)/.exec(set!)
       expect(expires, 'у перевыпущенной cookie нет срока').not.toBeNull()
@@ -323,6 +366,26 @@ test.describe(LIVE ? 'продление сессии' : 'продление с�
     // Уехал — значит окно отсчитывается от последнего обращения, а не от
     // входа. Пауза две секунды, разрешаем секунду на округление до секунд.
     expect(second - first, 'срок cookie стоит на месте — сессия НЕ скользящая').toBeGreaterThanOrEqual(1000)
+  })
+
+  test('чтение окружения не делает допущений про кавычки и схему', async () => {
+    // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №466). Обе ямы на текущем стенде не
+    // стреляют — в `.env.local` кавычек нет, стенд без TLS, — и именно
+    // поэтому их надо стеречь пробой: выстрелят они у того, кто заведёт стенд
+    // иначе, и красная проба покажет пальцем на продление вместо окружения.
+    expect(envValue('NEXTAUTH_SECRET=секрет\n', 'NEXTAUTH_SECRET')).toBe('секрет')
+    expect(envValue('NEXTAUTH_SECRET="секрет"\n', 'NEXTAUTH_SECRET')).toBe('секрет')
+    expect(envValue("NEXTAUTH_SECRET='секрет'\n", 'NEXTAUTH_SECRET')).toBe('секрет')
+    // Кавычка ВНУТРИ значения — часть секрета, а не обрамление.
+    expect(envValue('NEXTAUTH_SECRET=се"крет\n', 'NEXTAUTH_SECRET')).toBe('се"крет')
+    // Непарные кавычки не снимаем: гадать, какая из них лишняя, хуже, чем
+    // отдать как есть и упасть понятно.
+    expect(envValue('NEXTAUTH_SECRET="секрет\n', 'NEXTAUTH_SECRET')).toBe('"секрет')
+    expect(envValue('ДРУГОЕ=1\n', 'NEXTAUTH_SECRET')).toBeNull()
+
+    // Имя cookie — по схеме адреса, а не зашитое.
+    expect(sessionCookieName('http://localhost:3106')).toBe('next-auth.session-token')
+    expect(sessionCookieName('https://stand.example')).toBe('__Secure-next-auth.session-token')
   })
 
   test('форма входа называет причину, по которой человек на ней оказался', async ({ page }) => {
