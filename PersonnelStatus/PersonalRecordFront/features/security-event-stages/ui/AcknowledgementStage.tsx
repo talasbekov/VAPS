@@ -21,6 +21,10 @@
 // старшего. Отметка «Отметить ознакомление» за сотрудника осталась —
 // «доведено лично» (`[ОЗН-05]`) старший подтверждает сам.
 import { useMemo, useState } from "react";
+// Роль старшего читается по данным мероприятия — так же, как это делает
+// согласование (`useApprovalRights`): право этапа «Ознакомление» у сервера
+// шире кода `event.manage` (Plane №612).
+import { useMyEmployee } from "@/hooks/use-my-employee";
 import { Bell, Check, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -125,7 +129,44 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
         ? remindOne.data
         : undefined;
 
-  const canManage = access.can(EVENT_MANAGE);
+  /**
+   * Кто ведёт этап «Ознакомление» (Plane №612/№494, `[ОЗН-09]`).
+   *
+   * 🔴 ЭКРАН СЧИТАЛ ПРАВО НЕ ТАК, КАК СЕРВЕР. Здесь стояло
+   * `access.can(EVENT_MANAGE)`, и этим гасились ВСЕ действия этапа:
+   * «Напомнить», «Напомнить всем», «Завершить», замена, кнопки строки. А
+   * сервер СПЕЦИАЛЬНО пускает сюда старшего без `event.manage`
+   * (`_STAGE_LEAD_ACTIONS` → `my_assignments.may_manage_stage`), и это не
+   * послабление, а сама суть `[ОЗН-09]`. У той персоны, ради которой обход
+   * написан, все кнопки этапа были серыми с подсказкой «это дело ведущего
+   * ОМ»: путь, описанный в спецификации и реализованный на сервере, был мёртв
+   * со стороны экрана.
+   *
+   * Правило берётся С СЕРВЕРА ДОСЛОВНО (`_placement_chiefs`): старший
+   * МЕРОПРИЯТИЯ либо старший ЛЮБОГО его объекта посещения — не только
+   * показанного. Роль читается по данным, как это уже делает согласование
+   * (`useApprovalRights`); `useChainAccess` роли по данным моделировать
+   * отказывается намеренно, и заводить их там значило бы завести вторую
+   * правду об авторизации.
+   *
+   * ЗАМЕЩАЮЩЕГО здесь НЕТ, и это не забывчивость: `may_manage_stage` его пока
+   * не пускает (расширение — отдельная карточка №453), и дать ему кнопки на
+   * экране значило бы обещать действие, которое сервер отобьёт.
+   *
+   * Пока права и кадровая запись едут, действие считается доступным — та же
+   * договорённость, что в `useChainAccess`: мигание «нельзя → можно» вводит в
+   * заблуждение сильнее, чем секунда доступной кнопки, а сервер всё равно
+   * стоит за ней.
+   */
+  const me = useMyEmployee();
+  const myEmployeeId =
+    me.data?.employee != null ? String(me.data.employee.id) : null;
+  const isStageLead =
+    myEmployeeId !== null &&
+    [event.chiefEmployeeId, ...event.visitObjects.map((v) => v.chiefEmployeeId)].some(
+      (chief) => chief !== null && String(chief) === myEmployeeId
+    );
+  const canManage = access.can(EVENT_MANAGE) || isStageLead;
   const allConfirmed = total > 0 && confirmed.length === total;
 
   return (

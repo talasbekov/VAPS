@@ -220,6 +220,109 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     )
   })
 
+  test.describe(() => {
+    test.use({ serviceWorkers: 'block' })
+
+    test('старший объекта ведёт этап без event.manage (Plane №612, №494)', async ({ page }) => {
+      /**
+       * `[ОЗН-09]`: сервер СПЕЦИАЛЬНО пускает старшего мероприятия/объекта в
+       * действия этапа без `event.manage` (`_STAGE_LEAD_ACTIONS` →
+       * `may_manage_stage`). Экран же считал право одним кодом и гасил ВСЁ:
+       * у той персоны, ради которой обход написан, кнопки были серыми с
+       * подсказкой «это дело ведущего ОМ».
+       *
+       * 🔴 ПОДМЕНЯЮТСЯ ДВА ОТВЕТА, И ОБА НУЖНЫ: права (без `event.manage`,
+       * но с доступом к карточке) и кадровая запись — «я тот самый старший».
+       * Учётки, которая была бы старшим ЭТОГО ОМ на стенде, может не быть
+       * вовсе, а заводить её пробой значило бы менять состав стенда ради
+       * проверки экрана.
+       */
+      const token = await apiToken()
+      const suitable = (rows: EventRow[]) =>
+        rows.find(
+          (e) => e.stage === 'ACKNOWLEDGEMENT' && e.placementAssignments.length > 0,
+        )
+      let event = suitable(await events(token))
+      if (event === undefined) {
+        // Фикстура готовится САМА, как и в соседних пробах этого файла: ОМ на
+        // «Ознакомлении» на стенде может не быть вовсе, и проба иначе
+        // выродилась бы в отказ «нечего проверять».
+        const prepared = await prepareEvent(token)
+        event = suitable(await events(token))
+        expect(event, `не удалось подготовить фикстуру (${prepared})`).toBeDefined()
+      }
+      const full = (await (
+        await fetch(`${API}/api/ops/security-events/${event!.id}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).json()) as {
+        chiefEmployeeId: string | null
+        visitObjects: { chiefEmployeeId: string | null }[]
+      }
+      const chief =
+        full.chiefEmployeeId ??
+        full.visitObjects.map((v) => v.chiefEmployeeId).find((id) => id !== null) ??
+        null
+      expect(chief, 'у ОМ нет старшего ни на мероприятии, ни на объекте').not.toBeNull()
+
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-permissions/'),
+        async (route) =>
+          route.fulfill({
+            json: { permissions: ['event.view', 'status.view', 'personnel.view'], roles: [] },
+          }),
+      )
+      const asEmployee = (id: string | null) =>
+        page.route(
+          (url) => url.pathname.includes('/api/operations/my-employee/'),
+          async (route) =>
+            route.fulfill({
+              json: {
+                employee:
+                  id === null
+                    ? null
+                    : {
+                        id: Number(id),
+                        full_name: 'Старший (проба №612)',
+                        rank_code: null,
+                        position_code: null,
+                        division: null,
+                        personnel_number: null,
+                        hire_date: null,
+                      },
+                unlinked_reason: null,
+              },
+            }),
+        )
+
+      // 1. Я — СТАРШИЙ: действия этапа доступны, хотя `event.manage` нет.
+      await asEmployee(chief)
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+      // Карточка ищется так же, как в соседних пробах файла: у неё нет роли
+      // региона, только заголовок.
+      const card = page.locator('[data-slot="card"]', {
+        has: page.locator('[data-slot="card-title"]', { hasText: 'Ознакомление' }),
+      })
+      await expect(card).toBeVisible({ timeout: 20_000 })
+      await expect(
+        card.getByRole('button', { name: /Напомнить всем, кто не подтвердил/ }),
+        'у старшего объекта кнопки этапа выключены — путь [ОЗН-09] мёртв со стороны экрана',
+      ).toBeEnabled()
+
+      // 2. Я — НЕ старший: гейт на месте, иначе проба доказывала бы «включили
+      //    всем».
+      await page.unroute((url) => url.pathname.includes('/api/operations/my-employee/'))
+      await asEmployee('999999')
+      await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+      await expect(card).toBeVisible({ timeout: 20_000 })
+      await expect(
+        card.getByRole('button', { name: /Напомнить всем, кто не подтвердил/ }),
+        'действия этапа открыты тому, кто ни старший, ни ведущий ОМ',
+      ).toBeDisabled()
+    })
+  })
+
   test('отказ показан красным и заменяется прямо на этапе; завершение с комментарием уходит в журнал (Plane №432)', async ({
     page,
   }) => {
