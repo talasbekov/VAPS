@@ -7,7 +7,7 @@
     "dev": "next dev --turbo",
     "dev:webpack": "next dev",
     "lint": "next lint",
-    "build:check": "NEXT_DIST_DIR=.next-build next build",
+    "build:check": "NEXT_DIST_DIR=.next-build bash scripts/build-lock.sh next build",
     "gate:front": "tsc --noEmit && npm run check:rewrites && npm run check:shots && npm run build:check",
     "start": "next start",
     "dev:guard": "bash scripts/dev-guard.sh",
