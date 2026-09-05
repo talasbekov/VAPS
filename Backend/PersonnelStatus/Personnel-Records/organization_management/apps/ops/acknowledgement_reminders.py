@@ -15,7 +15,7 @@ from organization_management.apps.operations import notify_service
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops.acknowledgement_notify import (
     _division_of,
-    _supervisor_users,
+    supervisors_by_division,
 )
 
 #: Свой вид уведомления (не EVENT_ACKNOWLEDGEMENT): ключ «одно на день»
@@ -69,8 +69,29 @@ def remind_supervisors_before_start(now=None):
             continue
         employee_ids = [str(a.get("employeeId")) for a in rows if a.get("employeeId") is not None]
         divisions = _division_of(employee_ids)
-        supervisors = _supervisor_users(set(divisions.values()))
-        payload = {
+        supervisors_of = supervisors_by_division(set(divisions.values()))
+
+        # 🔴 КАЖДОМУ — ТОЛЬКО ЕГО ЛЮДИ (Plane №665). Полезная нагрузка здесь
+        # СПИСОЧНАЯ, и одна на всех означала, что начальник управления А
+        # получает фамилии и идентификаторы личного состава управления Б.
+        # Комментарии этого модуля и модели обещали «список СВОИХ» — код
+        # обещание не выполнял. Список собирается по разрезу «подразделение →
+        # его начальники»: строка неподтвердившего попадает ровно тем, кто за
+        # его подразделение отвечает.
+        rows_of_supervisor = {}
+        for assignment in rows:
+            employee_id = str(assignment.get("employeeId"))
+            division_id = divisions.get(employee_id)
+            if division_id is None:
+                # Человек без штатного слота: чьим подчинённым его считать,
+                # неизвестно, и раздать его «на всякий случай» значило бы
+                # вернуть ту же утечку. Он остаётся в отчёте числом
+                # неподтвердивших, но ни в чей список не попадает.
+                continue
+            for user_id in supervisors_of.get(division_id, set()):
+                rows_of_supervisor.setdefault(user_id, []).append(assignment)
+
+        base = {
             "eventId": str(event.pk),
             "eventCode": event.code,
             "eventTitle": event.title,
@@ -78,15 +99,38 @@ def remind_supervisors_before_start(now=None):
             "objectName": event.object_name,
             "asSupervisor": True,
             "oneHourBefore": True,
-            "unconfirmed": [
-                {"employeeId": str(a.get("employeeId")), "employeeName": a.get("employeeName", "")}
-                for a in rows
-            ],
         }
-        for user_id in supervisors:
-            notify_service.notify(user_id, KIND, event.business_date, payload)
+        notified = 0
+        for user_id, own_rows in rows_of_supervisor.items():
+            payload = {
+                **base,
+                "unconfirmed": [
+                    {
+                        "employeeId": str(a.get("employeeId")),
+                        "employeeName": a.get("employeeName", ""),
+                    }
+                    for a in own_rows
+                ],
+            }
+            # 🔴 КЛЮЧ — МЕРОПРИЯТИЕ, А НЕ ТОЛЬКО ДЕНЬ (Plane №666). Умолчание
+            # `notify` — «одно на (получателя, вид, деловую дату)», и два ОМ на
+            # одну дату давали начальнику ОДНО напоминание: о втором ему не
+            # говорили вовсе, а отчёт всё равно считал его уведомлённым.
+            # Своим ключом строки разных мероприятий перестают сталкиваться, а
+            # идемпотентность повторного прогона в то же окно сохраняется —
+            # ключ у одного и того же ОМ один и тот же.
+            if notify_service.notify(
+                user_id,
+                KIND,
+                event.business_date,
+                payload,
+                dedupe_key=str(event.pk),
+            ) is not None:
+                notified += 1
         report["events"] += 1
         report["unconfirmed"] += len(rows)
-        report["supervisors"] += len(supervisors)
+        # Считается ДОШЕДШЕЕ, а не намерение: `notify` глотает свои отказы и
+        # возвращает `None` (то же правило, что у рассылки запроса сил, №561).
+        report["supervisors"] += notified
         report["eventCodes"].append(event.code)
     return report

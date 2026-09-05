@@ -66,22 +66,47 @@ def _supervisor_users(division_ids):
     Область роли задаётся узлом, а отвечает он и за его потомков — поэтому
     берутся предки подразделения ВМЕСТЕ с ним самим.
     """
+    return set().union(*supervisors_by_division(division_ids).values()) if division_ids else set()
+
+
+def supervisors_by_division(division_ids):
+    """{подразделение → учётки, отвечающие за него}: КТО за КОГО (Plane №665).
+
+    🔴 ЗАЧЕМ РАЗРЕЗ, ЕСЛИ ЕСТЬ ПЛОСКИЙ НАБОР. Плоский отвечает на вопрос «кому
+    вообще слать» и потому годится там, где полезная нагрузка одна на всех —
+    например, «подчинённый заступает» с именем ОДНОГО человека. Но у
+    напоминания за час нагрузка СПИСОЧНАЯ, и плоский набор превращал её в
+    рассылку списка личного состава управления А начальнику управления Б: имена
+    и идентификаторы чужих людей. Разрез позволяет собрать каждому его
+    собственный список.
+
+    Область роли задаётся узлом, а отвечает он и за его потомков — поэтому у
+    подразделения берутся предки ВМЕСТЕ с ним самим, как и в плоском наборе.
+    Один начальник может отвечать за несколько подразделений сразу; он
+    появится в нескольких строках разреза, и его личный список склеится из
+    них — это и есть «свои».
+    """
     from organization_management.apps.divisions.models import Division
     from organization_management.apps.operations.models import UserRole
 
     if not division_ids:
-        return set()
-    scopes = set()
+        return {}
+    scopes_of = {}
+    all_scopes = set()
     for division in Division.objects.filter(id__in=division_ids):
-        scopes.add(division.pk)
-        scopes.update(
-            division.get_ancestors().values_list("id", flat=True)
-        )
+        scopes = {division.pk, *division.get_ancestors().values_list("id", flat=True)}
+        scopes_of[division.pk] = scopes
+        all_scopes |= scopes
+    users_of_scope = {}
+    for scope_id, user_id in UserRole.objects.filter(
+        is_active=True, scope_division_id__in=all_scopes
+    ).values_list("scope_division_id", "user_id"):
+        users_of_scope.setdefault(scope_id, set()).add(str(user_id))
     return {
-        str(user_id)
-        for user_id in UserRole.objects.filter(
-            is_active=True, scope_division_id__in=scopes
-        ).values_list("user_id", flat=True)
+        division_id: set().union(
+            *(users_of_scope.get(scope, set()) for scope in scopes), set()
+        )
+        for division_id, scopes in scopes_of.items()
     }
 
 
