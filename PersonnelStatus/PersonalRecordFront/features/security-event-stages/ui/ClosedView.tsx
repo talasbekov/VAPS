@@ -362,7 +362,16 @@ function CaseDownload({ event }: { event: SecurityEvent }) {
         variant="outline"
         size="sm"
         disabled={render.isPending}
-        onClick={() => render.mutate({ kind: "case", eventCode: event.code, format: "pdf" })}
+        aria-busy={render.isPending}
+        onClick={() => {
+          // ПРЕЖНЕЕ «сохранено» СНИМАЕТСЯ ПЕРЕД ПОВТОРОМ (Plane №698). Без
+          // этого неудачная вторая попытка показывала одновременно
+          // «сохранено: delo-….pdf» от первой и сообщение об ошибке — два
+          // взаимоисключающих итога одного действия рядом. Соседний экран
+          // (`ApprovalStage`) так и делает; здесь строку просто забыли.
+          setSaved(null);
+          render.mutate({ kind: "case", eventCode: event.code, format: "pdf" });
+        }}
       >
         {render.isPending ? "Сборка дела…" : "Скачать дело (PDF)"}
       </Button>
