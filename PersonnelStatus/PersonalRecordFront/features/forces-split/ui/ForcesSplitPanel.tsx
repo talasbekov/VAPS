@@ -12,6 +12,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
+import { RightGate } from "@/shared/ui/right-gate";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -304,40 +305,44 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
               Раскладка сохранена
             </span>
           )}
-          <Button
-            type="button"
-            size="sm"
-            disabled={split.isPending || !access.can(FORCES_COMMAND)}
-            aria-disabled={!access.can(FORCES_COMMAND)}
-            title={access.reason(FORCES_COMMAND)}
-            onClick={() => {
-              setSaved(false);
-              split.mutate({
-                rows: rows.map((row) => ({
-                  departmentId: row.departmentId,
-                  need: toCount(row.need),
-                  // Пустое поле НЕ отправляется: сервер отличает «срок не
-                  // задан» (поставит умолчание либо сохранит прежний) от
-                  // «задан пустым», которого не бывает.
-                  //
-                  // 🔴 УХОДИТ МОМЕНТ СО СМЕЩЕНИЕМ, А НЕ НАИВНАЯ СТРОКА. Поле
-                  // `datetime-local` отдаёт «ГГГГ-ММ-ДДTЧЧ:ММ» без зоны, а
-                  // сервер наивную строку клеймит зоной РАЗДЕЛА. Пока обе
-                  // зоны совпадают, это незаметно; штаб из другой зоны
-                  // открывал панель, правил чужое число людей, сохранял — и
-                  // сроки ВСЕХ строк уезжали на разницу зон, причём каждое
-                  // сохранение сдвигало снова (найдено ревью). `toISOString`
-                  // превращает набранное время в момент по часам того, кто
-                  // набирал, и сервер сохраняет ровно его.
-                  ...(row.dueAt === ""
-                    ? {}
-                    : { dueAt: new Date(row.dueAt).toISOString() }),
-                })),
-              });
-            }}
-          >
-            {split.isPending ? "Сохраняю…" : "Сохранить раскладку"}
-          </Button>
+          <RightGate reason={access.reason(FORCES_COMMAND)}>
+            {(describedBy) => (
+              <Button
+                type="button"
+                size="sm"
+                disabled={split.isPending || !access.can(FORCES_COMMAND)}
+                aria-disabled={!access.can(FORCES_COMMAND)}
+                aria-describedby={describedBy}
+                onClick={() => {
+                  setSaved(false);
+                  split.mutate({
+                    rows: rows.map((row) => ({
+                      departmentId: row.departmentId,
+                      need: toCount(row.need),
+                      // Пустое поле НЕ отправляется: сервер отличает «срок не
+                      // задан» (поставит умолчание либо сохранит прежний) от
+                      // «задан пустым», которого не бывает.
+                      //
+                      // 🔴 УХОДИТ МОМЕНТ СО СМЕЩЕНИЕМ, А НЕ НАИВНАЯ СТРОКА. Поле
+                      // `datetime-local` отдаёт «ГГГГ-ММ-ДДTЧЧ:ММ» без зоны, а
+                      // сервер наивную строку клеймит зоной РАЗДЕЛА. Пока обе
+                      // зоны совпадают, это незаметно; штаб из другой зоны
+                      // открывал панель, правил чужое число людей, сохранял — и
+                      // сроки ВСЕХ строк уезжали на разницу зон, причём каждое
+                      // сохранение сдвигало снова (найдено ревью). `toISOString`
+                      // превращает набранное время в момент по часам того, кто
+                      // набирал, и сервер сохраняет ровно его.
+                      ...(row.dueAt === ""
+                        ? {}
+                        : { dueAt: new Date(row.dueAt).toISOString() }),
+                    })),
+                  });
+                }}
+              >
+                {split.isPending ? "Сохраняю…" : "Сохранить раскладку"}
+              </Button>
+            )}
+          </RightGate>
         </div>
       </div>
 
@@ -415,22 +420,26 @@ function AllocationState({
         <span className="text-xs font-semibold text-muted-foreground">
           {STATUS_LABEL[row.status]}
         </span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={notify.isPending || !access.can(FORCES_ALLOCATE)}
-          aria-disabled={!access.can(FORCES_ALLOCATE)}
-          title={access.reason(FORCES_ALLOCATE)}
-          onClick={() => notify.mutate({})}
-        >
-          {notify.isPending
-            ? "Оповещаю…"
-            : row.directorates.length === 0
-              ? "Оповестить управления"
-              : "Оповестить ещё раз"}
-        </Button>
+        <RightGate reason={access.reason(FORCES_ALLOCATE)}>
+          {(describedBy) => (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={notify.isPending || !access.can(FORCES_ALLOCATE)}
+              aria-disabled={!access.can(FORCES_ALLOCATE)}
+              aria-describedby={describedBy}
+              onClick={() => notify.mutate({})}
+            >
+              {notify.isPending
+                ? "Оповещаю…"
+                : row.directorates.length === 0
+                  ? "Оповестить управления"
+                  : "Оповестить ещё раз"}
+            </Button>
+          )}
+        </RightGate>
       </div>
       {row.directorates.length > 0 && (
         <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
@@ -442,20 +451,24 @@ function AllocationState({
                   <> · оповещено {formatIsoDateTime(directorate.notifiedAt)}</>
                 )}
               </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                disabled={!access.can(FORCES_SELECT)}
-                aria-disabled={!access.can(FORCES_SELECT)}
-                title={access.reason(FORCES_SELECT)}
-                onClick={() =>
-                  setPicking(picking === directorate.id ? null : directorate.id)
-                }
-              >
-                {picking === directorate.id ? "Свернуть" : "Выделить людей"}
-              </Button>
+              <RightGate reason={access.reason(FORCES_SELECT)}>
+                {(describedBy) => (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    disabled={!access.can(FORCES_SELECT)}
+                    aria-disabled={!access.can(FORCES_SELECT)}
+                    aria-describedby={describedBy}
+                    onClick={() =>
+                      setPicking(picking === directorate.id ? null : directorate.id)
+                    }
+                  >
+                    {picking === directorate.id ? "Свернуть" : "Выделить людей"}
+                  </Button>
+                )}
+              </RightGate>
             </li>
           ))}
         </ul>
@@ -498,23 +511,27 @@ function AllocationState({
                   {member.divisionName}
                 </span>
               )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                disabled={remove.isPending || !access.can(FORCES_SELECT)}
-                aria-disabled={!access.can(FORCES_SELECT)}
-                title={access.reason(FORCES_SELECT)}
-                // Снять можно только до начала привлечения — отказ приходит
-                // с сервера словами, кнопка его не предугадывает: состояние
-                // статуса живёт там же, где сам статус. Право — ТО ЖЕ, что у
-                // выделения: своего человека выделяет и снимает своё
-                // управление (Plane №74).
-                onClick={() => remove.mutate({ employeeId: member.employeeId })}
-              >
-                Снять
-              </Button>
+              <RightGate reason={access.reason(FORCES_SELECT)}>
+                {(describedBy) => (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    disabled={remove.isPending || !access.can(FORCES_SELECT)}
+                    aria-disabled={!access.can(FORCES_SELECT)}
+                    aria-describedby={describedBy}
+                    // Снять можно только до начала привлечения — отказ приходит
+                    // с сервера словами, кнопка его не предугадывает: состояние
+                    // статуса живёт там же, где сам статус. Право — ТО ЖЕ, что у
+                    // выделения: своего человека выделяет и снимает своё
+                    // управление (Plane №74).
+                    onClick={() => remove.mutate({ employeeId: member.employeeId })}
+                  >
+                    Снять
+                  </Button>
+                )}
+              </RightGate>
             </li>
           ))}
         </ul>
@@ -525,17 +542,21 @@ function AllocationState({
             отвечает словами, если состояние другое. */}
         {(row.status === "NOTIFIED" || row.status === "RETURNED") && (
           <div className="mt-2">
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 text-xs"
-              disabled={submit.isPending || !access.can(FORCES_ALLOCATE)}
-              aria-disabled={!access.can(FORCES_ALLOCATE)}
-              title={access.reason(FORCES_ALLOCATE)}
-              onClick={() => submit.mutate({})}
-            >
-              {submit.isPending ? "Отправляю…" : "Отправить список в штаб"}
-            </Button>
+            <RightGate reason={access.reason(FORCES_ALLOCATE)}>
+              {(describedBy) => (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={submit.isPending || !access.can(FORCES_ALLOCATE)}
+                  aria-disabled={!access.can(FORCES_ALLOCATE)}
+                  aria-describedby={describedBy}
+                  onClick={() => submit.mutate({})}
+                >
+                  {submit.isPending ? "Отправляю…" : "Отправить список в штаб"}
+                </Button>
+              )}
+            </RightGate>
             <AccessNote reason={access.reason(FORCES_ALLOCATE)} />
             <StageError error={submit.error} />
           </div>
@@ -547,18 +568,22 @@ function AllocationState({
                 Отправлено {formatIsoDateTime(row.submittedAt ?? "")} — ждёт
                 решения штаба
               </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                disabled={withdraw.isPending || !access.can(FORCES_ALLOCATE)}
-                aria-disabled={!access.can(FORCES_ALLOCATE)}
-                title={access.reason(FORCES_ALLOCATE)}
-                onClick={() => withdraw.mutate({})}
-              >
-                {withdraw.isPending ? "Отзываю…" : "Отозвать список"}
-              </Button>
+              <RightGate reason={access.reason(FORCES_ALLOCATE)}>
+                {(describedBy) => (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={withdraw.isPending || !access.can(FORCES_ALLOCATE)}
+                    aria-disabled={!access.can(FORCES_ALLOCATE)}
+                    aria-describedby={describedBy}
+                    onClick={() => withdraw.mutate({})}
+                  >
+                    {withdraw.isPending ? "Отзываю…" : "Отозвать список"}
+                  </Button>
+                )}
+              </RightGate>
               <StageError error={withdraw.error} />
             </div>
             {/* Решение штаба — здесь же: пришедший список и решение по нему
@@ -566,17 +591,21 @@ function AllocationState({
                 заставить штаб искать то, что он только что прочитал. */}
             <AccessNote reason={access.reason(FORCES_COMMAND)} />
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                className="h-7 text-xs"
-                disabled={accept.isPending || !access.can(FORCES_COMMAND)}
-                aria-disabled={!access.can(FORCES_COMMAND)}
-                title={access.reason(FORCES_COMMAND)}
-                onClick={() => accept.mutate({})}
-              >
-                {accept.isPending ? "Принимаю…" : "Принять в мероприятие"}
-              </Button>
+              <RightGate reason={access.reason(FORCES_COMMAND)}>
+                {(describedBy) => (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={accept.isPending || !access.can(FORCES_COMMAND)}
+                    aria-disabled={!access.can(FORCES_COMMAND)}
+                    aria-describedby={describedBy}
+                    onClick={() => accept.mutate({})}
+                  >
+                    {accept.isPending ? "Принимаю…" : "Принять в мероприятие"}
+                  </Button>
+                )}
+              </RightGate>
               <Input
                 aria-label="Причина возврата списка"
                 placeholder="Причина возврата"
@@ -584,18 +613,22 @@ function AllocationState({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                disabled={back.isPending || !access.can(FORCES_COMMAND)}
-                aria-disabled={!access.can(FORCES_COMMAND)}
-                title={access.reason(FORCES_COMMAND)}
-                onClick={() => back.mutate({ reason })}
-              >
-                {back.isPending ? "Возвращаю…" : "Вернуть департаменту"}
-              </Button>
+              <RightGate reason={access.reason(FORCES_COMMAND)}>
+                {(describedBy) => (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={back.isPending || !access.can(FORCES_COMMAND)}
+                    aria-disabled={!access.can(FORCES_COMMAND)}
+                    aria-describedby={describedBy}
+                    onClick={() => back.mutate({ reason })}
+                  >
+                    {back.isPending ? "Возвращаю…" : "Вернуть департаменту"}
+                  </Button>
+                )}
+              </RightGate>
             </div>
             <StageError error={accept.error} />
             <StageError error={back.error} />

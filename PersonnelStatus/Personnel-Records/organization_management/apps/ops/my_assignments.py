@@ -73,10 +73,43 @@ def may_acknowledge(event, assignment_id, employee):
 def may_manage_stage(event, employee):
     """Старший мероприятия/объекта ведёт «Ознакомление» по данным
     (Plane №432, `[ОЗН-09]`): напоминает, заменяет, завершает — без
-    `event.manage`."""
+    `event.manage`.
+
+    🔴 ЗАМЕЩАЮЩИЙ ОБЪЕКТА — ТОЖЕ (Plane №453). Спецификация `[ОЗН-09]` даёт
+    ему ту же работу по этапу, КРОМЕ «Завершить»: он видит отказ сотрудника
+    заступить и обязан успеть заменить его или напомнить, а не ждать
+    старшего, которого может не быть на месте. Прежнее правило знало только
+    старших, и замещающий на этапе был зрителем.
+
+    «Кроме завершить» держится НЕ здесь, а списком действий во вьюхе
+    (`_EVENT_LEAD_ONLY_ACTIONS`, Plane №613): завершение переводит на
+    «Проведение» мероприятие целиком, и его не отдают ни замещающему, ни даже
+    старшему отдельного объекта. Разделять правило по двум местам — не
+    красиво, но честно: здесь ответ на вопрос «его ли это этап», там — «какое
+    действие ведёт весь ОМ».
+
+    Замещающий-НАБЛЮДАТЕЛЬ (без `can_edit_placement`) сюда не попадает: флаг
+    заведён ровно затем, чтобы отличать того, кто ВЕДЁТ объект, от внесённого
+    «в список» (Plane №572).
+    """
     if employee is None or not employee.is_active:
         return False
-    return int(employee.pk) in _placement_chiefs(event)
+    if int(employee.pk) in _placement_chiefs(event):
+        return True
+    return _leads_as_deputy(event, employee)
+
+
+def _leads_as_deputy(event, employee):
+    """Ведёт ли этот сотрудник хоть один объект мероприятия замещающим."""
+    from organization_management.apps.operations.models_event import (
+        OpsVisitObjectDeputy,
+    )
+
+    return OpsVisitObjectDeputy.objects.filter(
+        visit_object__event_id=event.pk,
+        employee_id=employee.pk,
+        can_edit_placement=True,
+    ).exists()
 
 
 def may_read(target_employee_id, actor_employee, allowed_division_ids):

@@ -160,6 +160,16 @@ SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD = "SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD
 #: Подпись согласующего с реквизитами (`[СОГ-10]`, Plane №429): ФИО,
 #: должность, логин, время сервера, номер и хэш версии, IP.
 SECURITY_EVENT_APPROVAL_SIGNED = "SECURITY_EVENT_APPROVAL_SIGNED"
+#: Возврат расстановки объекта на доработку (`[ВОЗ-03]`, Plane №814).
+#:
+#: 🔴 ЗАЧЕМ КОД. У решения «Согласовано» запись есть
+#: (`SECURITY_EVENT_APPROVAL_SIGNED`), у решения «Вернуть» — не было НИКАКОЙ,
+#: и отчёт рассылки старшему объекта отбрасывался целиком: ни `notified`, ни
+#: `unlinked`, ни `undelivered` не доходили никуда. Разбор «старший не узнал о
+#: возврате» упирался в пустоту, хотя сама рассылка (после №809) считает
+#: доставленное честно. У соседней рассылки запроса сил отчёт лежит в аудите
+#: полем `notifiedHeads` — здесь то же место и то же основание.
+SECURITY_EVENT_PLACEMENT_RETURNED = "SECURITY_EVENT_PLACEMENT_RETURNED"
 #: Маршрут согласования в настройках заменён (`[СОГ-05]`, Plane №429).
 APPROVAL_ROUTE_REPLACED = "APPROVAL_ROUTE_REPLACED"
 #: Визит иностранного ОЛ утверждён штабом (`[ГВО-07]`/`[ГВО-09]`, Plane №436).
@@ -324,6 +334,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_PLACEMENT_BY_DEPUTY,
         SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD,
         SECURITY_EVENT_APPROVAL_SIGNED,
+        SECURITY_EVENT_PLACEMENT_RETURNED,
         APPROVAL_ROUTE_REPLACED,
         GVO_VISIT_APPROVED,
         GVO_VISIT_APPROVAL_REVOKED,

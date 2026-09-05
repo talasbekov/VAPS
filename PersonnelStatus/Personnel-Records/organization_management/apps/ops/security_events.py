@@ -6675,12 +6675,20 @@ def _return_visit(event, visit, comment):
     # возврата, и его сбой не откатывает сам возврат: рассылка «не дошла»
     # — состояние адресатов (нет учётки), а не ошибка решения.
     open_remarks = [r for r in (visit.approval_remarks or []) if remark_is_open(r)]
+    # 🔴 ОТЧЁТ РАССЫЛКИ ДОХОДИТ ДО ЖУРНАЛА (Plane №814). Раньше он
+    # отбрасывался целиком: `notified`, `unlinked` и заведённое №809
+    # `undelivered` не попадали ни в аудит, ни в ответ ручки, ни в лог. То
+    # есть рассылка научилась ЧЕСТНО считать доставленное, а узнать эту
+    # честную цифру было негде, и разбор «старший не узнал о возврате»
+    # упирался в пустоту. У соседней рассылки запроса сил отчёт лежит в
+    # аудите — здесь то же место.
+    delivery = {"notified": 0, "unlinked": [], "undelivered": [], "nobody": True}
     try:
         from organization_management.apps.ops.placement_return_notify import (
             notify_placement_returned,
         )
 
-        notify_placement_returned(
+        delivery = notify_placement_returned(
             event,
             visit,
             comment=comment,
@@ -6688,7 +6696,27 @@ def _return_visit(event, visit, comment):
             urgent=any(bool(r.get("urgent")) for r in open_remarks),
         )
     except (DomainError, ValueError):
+        # Сбой рассылки не откатывает возврат (см. выше), но и не остаётся
+        # без следа: отчёт уходит в журнал таким, каким собрался.
         pass
+    audit_service.record(
+        actor="system:approval-return",
+        action=audit_service.SECURITY_EVENT_PLACEMENT_RETURNED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "visitObjectId": str(visit.pk),
+            "objectName": visit.object_name,
+            "comment": str(comment or "").strip(),
+            "remarksOpen": len(open_remarks),
+            # Кому дошло, у кого нет учётки и кому не дошло — поимённо. Число
+            # без имён не отвечает на вопрос «кому звонить».
+            "notified": delivery.get("notified", 0),
+            "unlinked": delivery.get("unlinked", []),
+            "undelivered": delivery.get("undelivered", []),
+        },
+    )
     # ВОЗВРАТ ОДНОГО ОБЪЕКТА ВОЗВРАЩАЕТ МЕРОПРИЯТИЕ. Здесь правило обратное
     # утверждению, и намеренно: согласование ждёт всех, а работа находится по
     # одному. Отдельного «вернуть мероприятие» не нужно — наименьшая стадия

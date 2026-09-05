@@ -368,3 +368,55 @@ def test_the_report_always_carries_the_undelivered_key(manager):  # noqa: F811
     assert report["nobody"] is True
     assert report["notified"] == 0
     assert report["undelivered"] == []
+
+
+def test_the_delivery_report_reaches_the_audit(manager, approver, django_user_model, monkeypatch):  # noqa: F811
+    """🔴 Plane №814: отчёт рассылки о возврате доходит до журнала мутаций.
+
+    Вызывающий отбрасывал возвращённый отчёт ЦЕЛИКОМ: `notified`, `unlinked` и
+    заведённое №809 `undelivered` не попадали ни в аудит, ни в ответ ручки, ни
+    в лог. То есть рассылка научилась честно считать доставленное, а узнать
+    эту честную цифру было негде — разбор «старший не узнал о возврате»
+    упирался в пустоту. У соседней рассылки запроса сил отчёт лежит в аудите
+    полем `notifiedHeads`; здесь то же место и то же основание.
+
+    Мутация: снова отбросить отчёт (или снять запись аудита) — `undelivered`
+    в журнале не появится.
+    """
+    from organization_management.apps.operations import audit_service
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+    from organization_management.apps.ops import placement_return_notify
+
+    base, event_id, visit = _event_sent(manager)
+    chief = make_employee(last_name="Недошедшев")
+    _link(django_user_model, chief, "chief-report")
+    manager.post(
+        f"{base}visit-objects/{visit.pk}/chief/",
+        {"employeeId": str(chief.pk)},
+        format="json",
+    )
+    # Вставка уведомления отказывает — ровно тот случай, ради которого №809
+    # научился считать доставленное.
+    monkeypatch.setattr(
+        placement_return_notify.notify_service, "notify", lambda *a, **kw: None
+    )
+
+    returned = approver.post(
+        f"{base}approval/return/",
+        {"comment": "Перепишите расчёт", "visitObjectId": str(visit.pk)},
+        format="json",
+    )
+
+    assert returned.status_code == 200, returned.content
+    rows = list(
+        OpsAuditLog.objects.filter(
+            action=audit_service.SECURITY_EVENT_PLACEMENT_RETURNED,
+            entity_id=event_id,
+        )
+    )
+    assert len(rows) == 1, "возврат не оставил записи в журнале мутаций"
+    payload = rows[0].new_value
+    assert payload["notified"] == 0
+    assert payload["undelivered"], "недоставленное не названо — чинить некому"
+    assert payload["visitObjectId"] == str(visit.pk)
+    assert payload["comment"] == "Перепишите расчёт"

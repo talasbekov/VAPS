@@ -960,6 +960,15 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.record_object_lead_action(
         om, visit, deputy_employee, "approval_send"
     )
+    # Возврат расстановки объекта на доработку (Plane №814): у решения
+    # «Согласовано» запись есть, у «Вернуть» не было никакой, и отчёт рассылки
+    # старшему объекта отбрасывался целиком. Сервис зовётся напрямую по той же
+    # причине, что и строкой выше.
+    om.refresh_from_db()
+    visit.refresh_from_db()
+    event_service._return_visit(om, visit, "Проба журнала: вернули на доработку")
+    om.refresh_from_db()
+    visit.refresh_from_db()
     event_service.remove_visit_object_chief(om.pk, visit.pk, actor=ACTOR)
 
     # Старший НАРЯДА мероприятия (Plane №190) — отдельное действие от старшего

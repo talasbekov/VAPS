@@ -70,6 +70,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   SECURITY_EVENT_PLACEMENT_BY_DEPUTY: "Расстановка изменена замещающим",
   SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD:
     "Согласование ведёт старший объекта",
+  SECURITY_EVENT_PLACEMENT_RETURNED: "Расстановка возвращена на доработку",
   SECURITY_EVENT_APPROVAL_SIGNED: "Подпись согласующего с реквизитами",
   APPROVAL_ROUTE_REPLACED: "Маршрут согласования в настройках заменён",
   PLACEMENT_COMPLETED_WITH_SHORTAGE: "Расстановка завершена с недобором",
