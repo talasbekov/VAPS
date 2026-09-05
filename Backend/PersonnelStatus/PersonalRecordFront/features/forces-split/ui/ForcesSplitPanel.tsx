@@ -12,7 +12,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
-import { RightGate } from "@/shared/ui/right-gate";
+import { AccessHints, RightGate } from "@/shared/ui/right-gate";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,6 +150,7 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
   );
 
   return (
+    <AccessHints reasons={[access.reason(FORCES_COMMAND)]} className="mb-1">
     <div className="mt-3 border-t pt-3" data-slot="forces-split">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
@@ -350,25 +351,14 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
         {/* Причина — СЛОВАМИ и рядом с действием. Подсказки `title` мало:
             её не видит ни скринридер, ни человек с сенсорного экрана, а
             выключенная кнопка без объяснения читается как поломка. */}
-        <AccessNote reason={access.reason(FORCES_COMMAND)} />
         <StageError error={split.error} />
         <FieldErrors errors={fieldErrors} />
       </div>
     </div>
+    </AccessHints>
   );
 }
 
-/** Строка «почему кнопка выключена». Пусто — действие доступно, и молчание
- * здесь честнее, чем «у вас есть права»: сообщение появляется только тогда,
- * когда человеку нужно объяснение. */
-function AccessNote({ reason }: { reason: string }) {
-  if (reason === "") return null;
-  return (
-    <p className="text-[11px] text-muted-foreground" data-slot="access-note">
-      {reason}
-    </p>
-  );
-}
 
 const STATUS_LABEL: Record<ForceAllocationStatus, string> = {
   DRAFT: "В департамент не отправлено",
@@ -415,6 +405,14 @@ function AllocationState({
     );
   }
   return (
+    <AccessHints
+      reasons={[
+        access.reason(FORCES_ALLOCATE),
+        access.reason(FORCES_SELECT),
+        access.reason(FORCES_COMMAND),
+      ]}
+      className="mb-1"
+    >
     <div className="basis-full" data-slot="allocation-state">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold text-muted-foreground">
@@ -535,7 +533,6 @@ function AllocationState({
             </li>
           ))}
         </ul>
-        <AccessNote reason={access.reason(FORCES_SELECT)} />
         <StageError error={remove.error} />
         {/* Отправка списка штабу: доступна оповещённому и возвращённому, а
             отзыв — пока штаб не решил. Кнопки не гадают за сервер: он и
@@ -557,7 +554,6 @@ function AllocationState({
                 </Button>
               )}
             </RightGate>
-            <AccessNote reason={access.reason(FORCES_ALLOCATE)} />
             <StageError error={submit.error} />
           </div>
         )}
@@ -589,7 +585,6 @@ function AllocationState({
             {/* Решение штаба — здесь же: пришедший список и решение по нему
                 это один разговор, и разводить их по двум экранам значило бы
                 заставить штаб искать то, что он только что прочитал. */}
-            <AccessNote reason={access.reason(FORCES_COMMAND)} />
             <div className="flex flex-wrap items-center gap-2">
               <RightGate reason={access.reason(FORCES_COMMAND)}>
                 {(describedBy) => (
@@ -648,6 +643,7 @@ function AllocationState({
       </div>
       <StageError error={notify.error} />
     </div>
+    </AccessHints>
   );
 }
 

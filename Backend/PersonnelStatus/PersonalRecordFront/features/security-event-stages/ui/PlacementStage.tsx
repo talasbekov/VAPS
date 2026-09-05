@@ -34,7 +34,7 @@ import {
 } from "./useVisitObjectScope";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { RightGate } from "@/shared/ui/right-gate";
+import { AccessHints, RightGate } from "@/shared/ui/right-gate";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -903,19 +903,22 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           содержимого. Подзаголовки внутри карточки остаются — они называют
           блоки, а не этап. */}
       <CardContent className="space-y-4">
-        {/* Причина недоступности — СЛОВАМИ и один раз на шаг: у доски действий
-            много (автоподбор, назначение, снятие, старший сектора), и повтор
-            одной строки у каждого превратил бы экран в частокол. Подсказка
-            `title` остаётся у каждой кнопки — для тех, кто пришёл к ней
-            напрямую с клавиатуры. */}
-        {access.reason(PLACEMENT_MANAGE) !== "" && (
-          <p
-            className="text-[11px] text-muted-foreground"
-            data-slot="access-note"
-          >
-            {access.reason(PLACEMENT_MANAGE)}
-          </p>
-        )}
+        {/* Причина недоступности — СЛОВАМИ и ОДИН РАЗ НА ШАГ (Plane №801).
+            Действий у доски много (автоподбор, назначение, снятие, старший
+            поста, роль и секция), и повтор одной строки у каждого превращает
+            экран в частокол — именно это и вышло, когда обёртки `RightGate`
+            стали печатать причину каждая: две из них стоят ВНУТРИ цикла по
+            назначенным, то есть на шести назначенных строк было двенадцать.
+            Теперь блок причин один, а кнопки ссылаются на него
+            `aria-describedby`. Подсказки `title` с причиной здесь нет вовсе:
+            на выключенной кнопке она не показывается НИ ПРИ КАКОМ поведении
+            браузера. */}
+        <AccessHints
+          reasons={[
+            access.reason(PLACEMENT_MANAGE),
+            access.reason(EVENT_MANAGE),
+          ]}
+        >
         {/* 🔴 ПРИЧИНА ВОЗВРАТА — ПОКАЗАННОГО ОБЪЕКТА, А НЕ МЕРОПРИЯТИЯ
             (Plane №491). Баннер читал поля уровня ОМ, а с №411 у объекта
             посещения свои `approvalStatus`/`approvalComment` — и сам экран
@@ -1745,19 +1748,30 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     </p>
                   ) : (
                     candidates.map(({ person, fit, rating, busy, warn }) => (
-                      <button
+                      <RightGate
                         key={person.id}
+                        reason={access.reason(PLACEMENT_MANAGE)}
+                        className="w-full"
+                      >
+                        {(describedBy) => (
+                      <button
                         type="button"
                         // Выключенная кнопка не тянется (drag на disabled не
                         // стартует), поэтому без выбранного поста кнопка живая:
                         // клик молчит, а перетащить на пост в дереве можно.
                         disabled={assign.isPending || !access.can(PLACEMENT_MANAGE)}
                         aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                        aria-describedby={describedBy}
+                        // 🔴 Причины отказа по праву здесь НЕТ (Plane №801):
+                        //    на выключенной кнопке `title` не показывается
+                        //    вовсе. Причина сказана блоком шага, связь с
+                        //    кнопкой держит `aria-describedby`. В подсказке
+                        //    остаётся только рабочее объяснение — оно нужно
+                        //    тому, у кого право ЕСТЬ.
                         title={
-                          access.reason(PLACEMENT_MANAGE) ||
-                          (selected === null
+                          selected === null
                             ? "Выберите пост слева или перетащите сотрудника на пост"
-                            : "Назначить на выбранный пост (или перетащите на пост)")
+                            : "Назначить на выбранный пост (или перетащите на пост)"
                         }
                         draggable={access.can(PLACEMENT_MANAGE)}
                         onDragStart={(e) => startDrag(e, { employeeId: person.id })}
@@ -1826,6 +1840,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         </span>
                         <b className="tabular-nums">{fit}</b>
                       </button>
+                        )}
+                      </RightGate>
                     ))
                   )}
                 </div>
@@ -1923,6 +1939,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           onOverride={(reason) => complete.confirmOverride(reason)}
           onCancel={() => complete.dismissConflict()}
         />
+        </AccessHints>
       </CardContent>
     </Card>
   );
