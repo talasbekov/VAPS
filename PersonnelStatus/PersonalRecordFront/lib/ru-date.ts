@@ -2,6 +2,8 @@
 // локальный Date: в отрицательных зонах `new Date("2026-08-25")` даёт 24
 // августа, и «дата начала» в карточке уехала бы на сутки.
 
+import { DAYS, ruCount } from "./ru-plural";
+
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 function utcOf(isoDate: string): Date | null {
@@ -42,12 +44,12 @@ export function daySpanInclusive(
   return days < 1 ? null : days;
 }
 
-/** «1 день» · «2 дня» · «5 дней» (11–14 — исключение из правила хвоста). */
+/** «1 день» · «2 дня» · «5 дней».
+ *
+ * Имя и подпись оставлены, заменено ТЕЛО (Plane №783): правило склонения
+ * живёт в `lib/ru-plural.ts` одно на портал, а здесь у функции своя работа —
+ * она про дни и её зовут по имени из четырёх мест. Собственная копия правила
+ * была верной, но копия верна ровно до первой правки оригинала. */
 export function ruDaysLabel(days: number): string {
-  const tail = days % 10;
-  const teen = days % 100;
-  if (teen >= 11 && teen <= 14) return `${days} дней`;
-  if (tail === 1) return `${days} день`;
-  if (tail >= 2 && tail <= 4) return `${days} дня`;
-  return `${days} дней`;
+  return ruCount(days, DAYS);
 }

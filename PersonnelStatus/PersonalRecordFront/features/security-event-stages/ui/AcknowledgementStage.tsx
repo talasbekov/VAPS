@@ -51,6 +51,7 @@ import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-a
 import type { PlacementAssignment, SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
 import { formatIsoDateTime } from "@/shared/lib/date";
+import { PEOPLE, ruPlural } from "@/lib/ru-plural";
 
 type Scope = "all" | "pending";
 
@@ -596,10 +597,7 @@ function ReplaceInline({
   );
 }
 
+/** Правило склонения — общее (Plane №783, `lib/ru-plural.ts`). */
 function peopleWord(n: number): string {
-  const tens = n % 100;
-  const ones = n % 10;
-  if (ones === 1 && tens !== 11) return "сотрудник";
-  if (ones >= 2 && ones <= 4 && (tens < 12 || tens > 14)) return "сотрудника";
-  return "сотрудников";
+  return ruPlural(n, PEOPLE);
 }

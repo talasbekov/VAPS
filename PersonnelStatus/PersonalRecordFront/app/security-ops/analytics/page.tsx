@@ -63,6 +63,7 @@ import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
+import { DIVISIONS, ruPlural } from "@/lib/ru-plural";
 import {
   Table,
   TableBody,
@@ -1607,12 +1608,7 @@ function assertNeverTrafficStatus(value: never): never {
  * `Intl.PluralRules`: правило здесь короче собственного вызова, а результат
  * пинится e2e-пробой дословно. */
 function divisionsPlural(count: number): string {
-  const mod100 = count % 100;
-  if (mod100 >= 11 && mod100 <= 14) return "подразделений";
-  const mod10 = count % 10;
-  if (mod10 === 1) return "подразделение";
-  if (mod10 >= 2 && mod10 <= 4) return "подразделения";
-  return "подразделений";
+  return ruPlural(count, DIVISIONS);
 }
 
 /** Число узлов ПОД веткой (не считая её саму) — для сводки свёрнутой
