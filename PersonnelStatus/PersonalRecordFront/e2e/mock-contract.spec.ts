@@ -798,5 +798,74 @@ test.describe(
       expect(result.withdrawStatus).toEqual(422)
       expect(result.withdrawBody).toContain('APPROVAL_WITHDRAW_AFTER_SIGN')
     })
+
+    test('стор мока не поднимает события прежней формы', async ({ page }) => {
+      // Стор лежит в `sessionStorage` и восстанавливался ДОСЛОВНО, а ключ не
+      // был версионирован (Plane №733): вкладка, открытая ДО выката новой
+      // формы события, поднимала старые записи без нового поля, и экран
+      // падал TypeError на первом же обращении к нему. Чинилось только
+      // ручной очисткой хранилища — знанием, которого у человека нет.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/`)
+      await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible({
+        timeout: 30_000,
+      })
+
+      // Кладём в хранилище снимок ПРЕЖНЕЙ формы — под старым ключом и без
+      // `closureSummary`, ровно как его оставила бы вкладка до выката.
+      const outcome = await page.evaluate(async () => {
+        const fresh = await (
+          await fetch('/api/ops/security-events/se-1/')
+        ).json()
+        const stale = { ...fresh }
+        delete stale.closureSummary
+        stale.visitObjects = (stale.visitObjects ?? []).map(
+          (v: Record<string, unknown>) => {
+            const copy = { ...v }
+            delete copy.closureSummary
+            return copy
+          },
+        )
+        sessionStorage.setItem(
+          'ops-mock-security-events',
+          JSON.stringify([stale]),
+        )
+        return {
+          legacyWritten: sessionStorage.getItem('ops-mock-security-events') !== null,
+        }
+      })
+      expect(outcome.legacyWritten).toBe(true)
+
+      await page.reload()
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      const main = page.getByRole('main')
+      await expect(main).toBeVisible({ timeout: 30_000 })
+
+      const after = await page.evaluate(async () => {
+        const event = await (
+          await fetch('/api/ops/security-events/se-1/')
+        ).json()
+        return {
+          hasSummary: event.closureSummary !== undefined,
+          legacyLeft: sessionStorage.getItem('ops-mock-security-events') !== null,
+        }
+      })
+
+      // Снимок прежней формы не поднялся: поле на месте, а брошенный ключ
+      // убран — иначе он держал бы квоту хранилища до закрытия вкладки.
+      expect(after.hasSummary).toBe(true)
+      expect(after.legacyLeft).toBe(false)
+    })
   },
 )
