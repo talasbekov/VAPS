@@ -133,6 +133,46 @@ test.describe(LIVE ? 'модалка возврата' : 'модалка воз�
       await expect(history).toContainText('v2')
       await expect(history.locator('[data-slot="version-diff"]').first()).toContainText(/Изменений против предыдущей версии нет|→|пост/)
 
+      // 🔴 «ОТМЕНА» ЗАБЫВАЕТ НАБРАННОЕ (Plane №667). Окно возврата ОДНО на
+      // весь маршрут, а кого возвращаем, помнит `returnFor`. До правки
+      // «Отмена» и Esc чистили только его: причина и список замечаний
+      // сбрасывались лишь после УСПЕШНОГО возврата, и брошенный черновик
+      // всплывал при следующем открытии — уже против другой строки
+      // согласующего. Проверяем оба способа закрытия: кнопкой и клавишей.
+      await page.goto(`${APP}/security-ops/events/${target.id}/`)
+      await expect(stage).toBeVisible()
+      const returnAgain = stage.getByRole('button', { name: 'Вернуть', exact: true }).first()
+      await returnAgain.click()
+      await expect(dialog).toBeVisible()
+      await dialog.getByLabel('Общая причина *').fill('Брошенный черновик')
+      await dialog.getByRole('button', { name: '+ Замечание' }).click()
+      await dialog.getByLabel('Текст замечания 1').fill('Замечание, которое не должно всплыть')
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await expect(dialog).toBeHidden()
+
+      await returnAgain.click()
+      await expect(dialog).toBeVisible()
+      await expect(
+        dialog.getByLabel('Общая причина *'),
+        'причина прошлого, отменённого возврата всплыла в новом окне',
+      ).toHaveValue('')
+      await expect(
+        dialog.getByLabel('Текст замечания 1'),
+        'брошенное замечание всплыло и уехало бы против другой строки маршрута',
+      ).toHaveCount(0)
+
+      // Esc — тот же путь закрытия, и забывать обязан так же.
+      await dialog.getByLabel('Общая причина *').fill('Второй брошенный черновик')
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await returnAgain.click()
+      await expect(dialog).toBeVisible()
+      await expect(
+        dialog.getByLabel('Общая причина *'),
+        'Esc закрыл окно, но набранное осталось',
+      ).toHaveValue('')
+      await page.keyboard.press('Escape')
+
       // Порог срочности — в «Администрировании».
       await page.goto(`${APP}/security-ops/settings`)
       await expect(page.getByText('Политика согласования')).toBeVisible()
