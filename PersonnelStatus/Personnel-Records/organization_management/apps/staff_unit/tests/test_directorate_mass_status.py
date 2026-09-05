@@ -124,3 +124,76 @@ def test_mass_update_reports_failures(actor, scene):
         ).status_type
         == _ST.ON_DUTY
     )
+
+
+@pytest.mark.django_db
+def test_participation_status_is_refused_by_the_personnel_handle(actor, scene):
+    """🔴 Plane №757: «Участие в ОМ» кадровой ручкой не ставится.
+
+    Правила статуса привлечения живут в разделе ОМ
+    (`status_service._assert_manual_participation`, №737/№663/№664):
+    мероприятие обязательно и обязано быть тем, о котором управление просили,
+    а вид наряда пишется в строку участия. Эта ручка кадровая и создаёт
+    `EmployeeStatus` НАПРЯМУЮ — мимо всех правил разом. Массовая простановка
+    на экране «Статусы сотрудников» шла именно сюда, и человек получал
+    «привлечён неизвестно куда»: расход считает его занятым, а департамент не
+    видит, куда он отдан.
+
+    Отбивается на СЕРВЕРЕ, а не только фильтром списка на экране: проверка,
+    которую можно обойти другим клиентом, проверкой не является.
+
+    Мутация: убрать `_refuse_participation_status` из ветки — статус
+    запишется, и `EmployeeStatus` с кодом `IN_EVENT` появится в базе.
+    """
+    today = scene["today"]
+    person = scene["people"][0]
+
+    response = _patch(
+        actor,
+        {
+            "employee_statuses": [
+                {
+                    "employee": person.id,
+                    "status_type": "IN_EVENT",
+                    "start_date": str(today),
+                    "end_date": str(today + timedelta(days=1)),
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 400, response.data
+    assert "Сбор сил на ОМ" in str(response.data), response.data
+    assert not EmployeeStatus.objects.filter(
+        employee=person, status_type="IN_EVENT"
+    ).exists(), "статус привлечения записан кадровой ручкой"
+
+
+@pytest.mark.django_db
+def test_an_ordinary_status_still_passes_the_same_handle(actor, scene):
+    """А обычный статус этой же ручкой ставится — правило не запрещает всё.
+
+    Без этой пробы №757 можно было бы «починить», закрыв ручку целиком, и
+    массовая простановка перестала бы работать вовсе.
+    """
+    today = scene["today"]
+    person = scene["people"][0]
+
+    response = _patch(
+        actor,
+        {
+            "employee_statuses": [
+                {
+                    "employee": person.id,
+                    "status_type": _ST.VACATION,
+                    "start_date": str(today),
+                    "end_date": str(today + timedelta(days=1)),
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200, response.data
+    assert EmployeeStatus.objects.filter(
+        employee=person, status_type=_ST.VACATION, state=_STATE.ACTIVE
+    ).exists()

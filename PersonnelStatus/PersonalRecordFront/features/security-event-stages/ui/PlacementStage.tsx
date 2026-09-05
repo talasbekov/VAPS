@@ -48,7 +48,9 @@ import {
 import { GripVertical, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
-import { OpsApiError, OpsConflictError, OpsNetworkError } from "@/lib/ops-errors";
+// `OpsConflictError` СНЯТ из импорта (Plane №767): им перестали пользоваться,
+// когда разбор конфликта переехал в `ConflictDialog`.
+import { OpsApiError, OpsNetworkError } from "@/lib/ops-errors";
 import { useToast } from "@/shared/hooks/use-toast";
 import { RatingBriefDialog } from "./RatingBriefDialog";
 import {
