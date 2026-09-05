@@ -275,6 +275,56 @@ test.describe(LIVE ? 'продление сессии' : 'продление с�
     expect(isExpiring(undefined, now)).toBe(true)
   })
 
+  test('сессия скользящая: срок cookie уезжает на каждом чтении', async () => {
+    // 🔴 ЧТО ЭТО ЗАКРЕПЛЯЕТ (Plane №463). Над `maxAge` в `auth-config` стоял
+    // комментарий «сессия не живёт дольше refresh-токена». Для JWT-стратегии
+    // это неверно: маршрут сессии пересчитывает срок и перевыпускает cookie
+    // при КАЖДОМ чтении, поэтому `maxAge` ограничивает только ПРОСТОЙ. Врущий
+    // комментарий здесь опаснее обычного — комментарии в этом файле и есть
+    // защита от повторения №383, и следующий читатель поверил бы им.
+    //
+    // Проба не проверяет наш код, а закрепляет ФАКТ, на котором держится
+    // исправленный комментарий: перестанет next-auth перевыпускать cookie —
+    // комментарий снова разойдётся с делом, и узнать об этом надо здесь, а не
+    // из жалобы на выход из системы.
+    const secret = sessionSecret()
+    expect(secret, 'NEXTAUTH_SECRET не найден — подписать cookie нечем').not.toBeNull()
+    const pair = await tokenPair()
+    const cookie = await encode({
+      secret: secret!,
+      token: {
+        id: '1',
+        name: STAND_USERNAME,
+        accessToken: pair.access,
+        refreshToken: pair.refresh,
+        // Срок ЖИВОЙ: продление здесь ни при чём, речь про саму cookie.
+        accessTokenExpires: Date.now() + 3_600_000,
+      },
+    })
+
+    /** Срок годности перевыпущенной cookie сессии, мс. */
+    async function reissuedAt(): Promise<number> {
+      const res = await fetch(`${APP}/api/auth/session/`, {
+        headers: { cookie: `next-auth.session-token=${cookie}` },
+      })
+      const set = res.headers
+        .getSetCookie()
+        .find((c) => c.startsWith('next-auth.session-token='))
+      expect(set, 'cookie сессии не перевыпущена вовсе').toBeDefined()
+      const expires = /Expires=([^;]+)/.exec(set!)
+      expect(expires, 'у перевыпущенной cookie нет срока').not.toBeNull()
+      return Date.parse(expires![1])
+    }
+
+    const first = await reissuedAt()
+    await new Promise((done) => setTimeout(done, 2000))
+    const second = await reissuedAt()
+
+    // Уехал — значит окно отсчитывается от последнего обращения, а не от
+    // входа. Пауза две секунды, разрешаем секунду на округление до секунд.
+    expect(second - first, 'срок cookie стоит на месте — сессия НЕ скользящая').toBeGreaterThanOrEqual(1000)
+  })
+
   test('форма входа называет причину, по которой человек на ней оказался', async ({ page }) => {
     await page.goto(`${APP}/?reason=expired`)
     await expect(page.getByText('Сессия истекла — войдите заново.')).toBeVisible({
