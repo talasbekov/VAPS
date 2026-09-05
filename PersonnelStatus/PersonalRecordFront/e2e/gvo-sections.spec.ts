@@ -60,32 +60,36 @@ async function registryEvents(): Promise<EventRow[]> {
  * Сброс сводки ОМ к черновику ЧЕРЕЗ API — предусловие пробы, а не проверка.
  *
  * Прерванный прогон (упавший на любом шаге) оставляет патч, и следующий
- * стартует не с «Черновика»: проба была бы красной по чужой причине. Разделы
- * перечислены все, а не только правимые ниже: остаток любого из них держит
- * статус «Заполнена».
+ * стартует не с «Черновика»: проба была бы красной по чужой причине. Сбрасывать
+ * надо ВСЮ сводку, а не только правимые ниже разделы: остаток любого из них
+ * держит статус «Заполнена». Сервер это и делает сам по запросу без раздела —
+ * перечислять их здесь больше не нужно (Plane №774).
  */
 async function resetSummary(omCode: string): Promise<void> {
   const token = await apiToken()
-  for (const section of [
-    'head',
-    'persons',
-    'arrival',
-    'departure',
-    'org',
-    'groups',
-    'resp',
-    'transport',
-  ]) {
-    await fetch(
-      `${API}/api/ops/gvo-summaries/${encodeURIComponent(omCode)}/reset/`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ section }),
+  // ОДИН запрос без раздела, а не цикл по восьми (Plane №774). С №765 ручка
+  // `/reset/` принимает тело БЕЗ `section` и возвращает исходной ВСЮ сводку;
+  // список разделов в помощнике был вторым ответом на тот же вопрос и
+  // расходился бы с сервером МОЛЧА: появись девятый раздел — предусловие
+  // перестало бы его сбрасывать, а проба осталась бы зелёной по неверной
+  // причине (то же семейство, что №689).
+  const reset = await fetch(
+    `${API}/api/ops/gvo-summaries/${encodeURIComponent(omCode)}/reset/`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({}),
+    },
+  )
+  // Ответ ПРОВЕРЯЕТСЯ, а прежний цикл его не смотрел вовсе. Предусловие,
+  // которое молча не выполнилось, — самый дорогой вид зелени: проба проверяет
+  // не то состояние, о котором говорит её название.
+  if (!reset.ok) {
+    throw new Error(
+      `предусловие не выполнено: сброс сводки ${omCode} ответил ${reset.status} ${await reset.text()}`,
     )
   }
 }
