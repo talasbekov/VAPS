@@ -25,18 +25,37 @@ def compose_location(country, city, address):
     return ", ".join(p for p in parts if p)[:255]
 
 
-def resolve_location(*, country_id, city_id, address, field_errors):
+def resolve_location(*, country_id, city_id, address, field_errors, unchanged=()):
     """Страна и город из справочника; город обязан принадлежать стране.
 
     Возвращает `(country, city, address)`. Неизвестный или скрытый
     идентификатор — ошибка поля, не пропуск: молча выброшенную страну
     человек заметил бы только по бюллетеню, в котором её нет.
+
+    🔴 `unchanged` — ПОЛЯ, ЧЕЙ ID У МЕРОПРИЯТИЯ УЖЕ СТОИТ (Plane №617/№495).
+    Для них скрытая строка справочника принимается: она не новый ввод, а то,
+    что было выбрано раньше и уже сохранено. Требовать `is_active` от неё —
+    значит запирать мероприятие целиком: окно правки шлёт `countryId`/`cityId`
+    ВСЕГДА, поэтому после скрытия города любая правка бюллетеня (переименование,
+    время, лица) отвечала 400 «Город не найден в справочнике» — про поле,
+    которого человек не касался.
+
+    Это прямо противоречило замыслу, записанному на самой модели: у ссылки
+    стоит `SET_NULL` с доводом «скрытие города из справочника не вправе стирать
+    историю мероприятий». Скрытие — обычная операция ведения справочника, а
+    последствие наступало не сразу и не у того, кто скрывал.
+
+    НОВЫЙ выбор по-прежнему строгий: скрытый город нельзя ВЫБРАТЬ, его можно
+    только СОХРАНИТЬ ТАКИМ, КАКИМ ОН БЫЛ.
     """
     country = None
     raw_country = str(country_id or "").strip()
     if raw_country:
+        country_filter = {"pk": raw_country}
+        if "countryId" not in unchanged:
+            country_filter["is_active"] = True
         country = (
-            OpsCountry.objects.filter(pk=raw_country, is_active=True).first()
+            OpsCountry.objects.filter(**country_filter).first()
             if raw_country.isdigit()
             else None
         )
@@ -45,8 +64,11 @@ def resolve_location(*, country_id, city_id, address, field_errors):
     city = None
     raw_city = str(city_id or "").strip()
     if raw_city:
+        city_filter = {"pk": raw_city}
+        if "cityId" not in unchanged:
+            city_filter["is_active"] = True
         city = (
-            OpsCity.objects.filter(pk=raw_city, is_active=True)
+            OpsCity.objects.filter(**city_filter)
             .select_related("country")
             .first()
             if raw_city.isdigit()
