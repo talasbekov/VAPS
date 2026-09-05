@@ -388,6 +388,27 @@ export function readConflictPolicy(): ConflictPolicy {
   };
 }
 
+/**
+ * Порог автосрочности возврата в днях (`APPROVAL.RETURN_URGENT_DAYS`,
+ * Plane №504).
+ *
+ * 🔴 ЧИТАЕТСЯ ИЗ НАСТРОЕК, А НЕ ЗАШИТ ЧИСЛОМ. Сервер берёт его тем же кодом
+ * (`return_urgent_days`), и мок с зашитой единицей расходился с боем ровно
+ * там, где заказчик порог менял: поднял в «Администрировании» — боевое
+ * поведение изменилось, мок остался прежним, а мок-проба зелёной над
+ * разошедшимся правилом.
+ *
+ * Неразобранное значение — сутки, как и на сервере: настройки может не быть
+ * вовсе, и это не повод считать срочным всё подряд.
+ */
+export function readReturnUrgentDays(): number {
+  const row = getState().settings.find(
+    (item) => item.settingCode === "APPROVAL.RETURN_URGENT_DAYS"
+  );
+  const value = Number(row?.value);
+  return Number.isFinite(value) ? value : 1;
+}
+
 export function readFreshnessPolicy(): PassportFreshnessPolicy {
   const s = getState();
   const interval = s.settings.find(

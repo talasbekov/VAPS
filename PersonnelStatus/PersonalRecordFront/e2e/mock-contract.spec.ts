@@ -851,6 +851,228 @@ test.describe(
       expect(result.withdrawBody).toContain('APPROVAL_WITHDRAW_AFTER_SIGN')
     })
 
+    test('мок разрешает замену и на «Ознакомлении» (Plane №500)', async ({ page }) => {
+      // Правило сервера с №432 `[ОЗН-03]`: «отказавшийся заменяется там, где
+      // отказ виден, а не после перехода на „Проведение“». Кнопка «Заменить
+      // →» на экране ознакомления уже есть, а мок отбивал её этапом — то есть
+      // мок-проба была зелена над поведением, которого в бою нет.
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const result = await page.evaluate(async () => {
+        const post = (url: string, body?: unknown) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'RECON' })
+        await post('/api/ops/security-events/se-1/recon/import-from-passport/', {})
+        const withPosts = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const roster = await (await fetch('/api/ops/personnel/?page_size=50')).json()
+        for (const [index, p0] of withPosts.reconSectorPosts.entries()) {
+          await post('/api/ops/security-events/se-1/placement/assign/', {
+            postId: p0.id,
+            employeeId: roster.results[index].id,
+          })
+        }
+        // 🔴 ПОРЯДОК: сначала ГРАНИЦА, потом предмет. Мок (как и сервер) не
+        // пускает этап назад, и проверить «на „Расстановке“ замены нет»
+        // после перехода на «Ознакомление» нельзя вовсе.
+        // Границу проверяем на «Рекогносцировке» — том этапе, на котором ОМ
+        // уже стоит. «Расстановка» подошла бы не хуже, но у мока её нет в
+        // карте этапов ручки `stage/` (`readiness`), а `recon/complete/`
+        // требует старшего у объекта: ни то ни другое к предмету пробы
+        // отношения не имеет. Правило одно: замена разрешена ТОЛЬКО на
+        // «Ознакомлении» и «Проведении».
+        const onPlacement = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const spare0 = (await (
+          await fetch('/api/ops/personnel/?page_size=50')
+        ).json()).results.find(
+          (person: { id: string }) =>
+            !onPlacement.placementAssignments.some(
+              (a: { employeeId: string }) => a.employeeId === person.id,
+            ),
+        )
+        const refused = await post('/api/ops/security-events/se-1/conduct/replace/', {
+          assignmentId: onPlacement.placementAssignments[0].id,
+          incomingEmployeeId: spare0.id,
+          reasonCode: 'ILLNESS',
+        })
+
+        // Этап ставится прямо: предмет пробы — правило замены, а не путь.
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'ACKNOWLEDGEMENT' })
+        const staged = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const outgoing = staged.placementAssignments[0]
+        const incoming = roster.results.find(
+          (person: { id: string }) =>
+            !staged.placementAssignments.some(
+              (a: { employeeId: string }) => a.employeeId === person.id,
+            ),
+        )
+        const replaced = await post('/api/ops/security-events/se-1/conduct/replace/', {
+          assignmentId: outgoing.id,
+          incomingEmployeeId: incoming.id,
+          reasonCode: 'ILLNESS',
+        })
+        return {
+          stage: staged.stage,
+          replaceStatus: replaced.status,
+          replaceBody: (await replaced.text()).slice(0, 200),
+          borderStage: onPlacement.stage,
+          refusedStatus: refused.status,
+          refusedBody: (await refused.text()).slice(0, 200),
+        }
+      })
+
+      expect(result.stage, 'этап не встал на «Ознакомление» — проба вакуумна').toEqual(
+        'ACKNOWLEDGEMENT',
+      )
+      expect(
+        result.replaceStatus,
+        `замена на «Ознакомлении» отбита моком: ${result.replaceBody}`,
+      ).toEqual(200)
+      // На «Рекогносцировке» замены нет и у сервера — граница осталась
+      // границей: правило не снято, а выправлено.
+      // Гвард: если этап не встал, проверять границу нечем, и «отказа не
+      // было» означало бы не то.
+      expect(
+        result.borderStage,
+        'ОМ не на «Рекогносцировке» — граница не проверена',
+      ).toEqual('RECON')
+      expect(result.refusedStatus).toEqual(422)
+      expect(result.refusedBody).toContain('INVALID_STAGE_TRANSITION')
+    })
+
+    test('срочность замечания в моке считается по календарю и по настройке (Plane №504)', async ({
+      page,
+    }) => {
+      // Сервер сравнивает КАЛЕНДАРНЫЕ ДАТЫ (`(business_date −
+      // Clock.today_local()).days`) и читает порог из настроек
+      // (`APPROVAL.RETURN_URGENT_DAYS`). Мок вычитал «сейчас» из полуночи UTC
+      // и округлял, а порог держал числом 1: у ОМ ЧЕРЕЗ ДВА КАЛЕНДАРНЫХ ДНЯ
+      // после полудня выходила единица — мок ставил «Срочно», сервер нет.
+      //
+      // 🔴 ДАТА ЗАДАЁТСЯ ПРИ СОЗДАНИИ, а не правится: менять `businessDate`
+      // мок не умеет ни одной ручкой, а на дате `se-1` (сегодня) обе формулы
+      // дают ноль и проба была бы вакуумной.
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const result = await page.evaluate(async () => {
+        const post = (url: string, body?: unknown) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+        const plusDays = (days: number) => {
+          const d = new Date()
+          d.setDate(d.getDate() + days)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+            d.getDate(),
+          ).padStart(2, '0')}`
+        }
+        const objectsRes = await fetch('/api/ops/security-events/bindable-objects/')
+        const objectsText = await objectsRes.text()
+        const objects = JSON.parse(objectsText) as {
+          results?: { id: string; publishedVersionCount: number }[]
+        }
+        const object = (objects.results ?? []).find((o) => o.publishedVersionCount > 0)
+        const rosterRes = await fetch('/api/ops/personnel/?page_size=50')
+        const rosterText = await rosterRes.text()
+        const roster = JSON.parse(rosterText) as { results?: { id: string }[] }
+        if (object === undefined || (roster.results ?? []).length === 0) {
+          return {
+            broken: `объекты ${objectsRes.status} ${objectsText.slice(0, 120)}; ` +
+              `состав ${rosterRes.status} ${rosterText.slice(0, 120)}`,
+          }
+        }
+
+        const urgencyFor = async (businessDate: string) => {
+          const created = await (
+            await post('/api/ops/security-events/', {
+              title: `Срочность (проба №504) ${businessDate}`,
+              objectId: object.id,
+              businessDate,
+              businessDateEnd: businessDate,
+              kind: 'INTERNAL',
+            })
+          ).json()
+          const id = created.id
+          const base = `/api/ops/security-events/${id}`
+          await post(`${base}/recon/import-from-passport/`, {})
+          const withPosts = await (await fetch(`${base}/`)).json()
+          for (const [index, p0] of withPosts.reconSectorPosts.entries()) {
+            await post(`${base}/placement/assign/`, {
+              postId: p0.id,
+              employeeId: roster.results![index].id,
+            })
+          }
+          await post(`${base}/stage/`, { stage: 'APPROVAL' })
+          await post(`${base}/approval/route/`, {
+            name: 'Согласующий (проба №504)',
+            employeeId: '1',
+            position: 'Начальник',
+          })
+          await post(`${base}/approval/send/`)
+          const sent = await (await fetch(`${base}/`)).json()
+          const approver = sent.approvalRoute[sent.approvalRoute.length - 1]
+          await post(`${base}/approval/route/${approver.id}/decide/`, {
+            decision: 'RETURNED',
+            comment: `Замечание на ${businessDate}`,
+          })
+          const after = await (await fetch(`${base}/`)).json()
+          const last = after.approvalRemarks[after.approvalRemarks.length - 1]
+          return {
+            urgent: last?.urgent as boolean | undefined,
+            businessDate: after.businessDate as string,
+            remarks: after.approvalRemarks.length as number,
+          }
+        }
+        return {
+          broken: null as string | null,
+          far: await urgencyFor(plusDays(2)),
+          near: await urgencyFor(plusDays(1)),
+        }
+      })
+
+      expect(result.broken ?? null, `фикстура мока не собралась: ${result.broken}`).toBeNull()
+      expect(result.far!.remarks, 'замечание не завелось — проверять нечего').toBeGreaterThan(0)
+      expect(
+        result.far!.urgent,
+        `ОМ через два календарных дня объявлен срочным (дата ${result.far!.businessDate})`,
+      ).toBe(false)
+      expect(
+        result.near!.urgent,
+        `ОМ на завтра не объявлен срочным при пороге «сутки» (дата ${result.near!.businessDate})`,
+      ).toBe(true)
+    })
+
     test('стор мока не поднимает события прежней формы', async ({ page }) => {
       // Стор лежит в `sessionStorage` и восстанавливался ДОСЛОВНО, а ключ не
       // был версионирован (Plane №733): вкладка, открытая ДО выката новой
