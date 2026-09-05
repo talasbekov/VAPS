@@ -232,6 +232,66 @@ def test_the_registry_does_not_pay_two_queries_per_row_for_the_location(manager)
     )
 
 
+def test_registry_does_not_fetch_persons_and_vehicles_per_row(manager):  # noqa: F811
+    """Лица бюллетеня и машины не добираются построчно (Plane №499, №786).
+
+    🔴 ЗАМЕР, А НЕ ВПЕЧАТЛЕНИЕ. `person_links_view` и `list_event_vehicles`
+    строили СВОИ queryset поверх строки реестра, и набор запроса их не
+    подтягивал: страница добирала по запросу на каждое мероприятие за лицами и
+    ещё по одному за машинами. Календарь берёт `page_size=200` — то есть по
+    400 лишних round-trip на один заход.
+
+    Считаются обращения К ЭТИМ ДВУМ таблицам, а не все запросы страницы: общее
+    число зависит от соседних полей, которые эта карточка не трогает, и
+    привязка к нему сделала бы пробу ложно-красной при любой чужой правке.
+
+    Красная на мутации: убрать `Prefetch` из набора запроса реестра либо
+    вернуть помощникам собственный queryset — обращений станет по одному на
+    строку вместо нуля.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    country, city = kz()
+    person = OpsProtectedPerson.objects.create(name="Ахметов", category="OURS")
+    for number in range(3):
+        create_event(
+            manager, make_object(code=f"OBJ-P{number}"),
+            countryId=str(country.pk), cityId=str(city.pk),
+            protectedPersonIds=[str(person.pk)],
+        )
+
+    def linked(captured):
+        return [
+            q["sql"]
+            for q in captured
+            if "ops_security_events_protected_persons" in q["sql"]
+            or "ops_event_vehicles" in q["sql"]
+        ]
+
+    with CaptureQueriesContext(connection) as queries:
+        assert manager.get(f"{URL}?page_size=50").status_code == 200
+    few = len(linked(queries.captured_queries))
+
+    for number in range(3, 9):
+        create_event(
+            manager, make_object(code=f"OBJ-P{number}"),
+            countryId=str(country.pk), cityId=str(city.pk),
+            protectedPersonIds=[str(person.pk)],
+        )
+
+    with CaptureQueriesContext(connection) as queries:
+        resp = manager.get(f"{URL}?page_size=50")
+    assert resp.status_code == 200
+    assert len(resp.json()["results"]) >= 9, "строк меньше, чем заведено"
+
+    many = len(linked(queries.captured_queries))
+    assert many == few, (
+        f"обращений за лицами и машинами стало {many} против {few} — реестр "
+        "добирает их построчно"
+    )
+
+
 def test_person_details_live_on_the_link_and_survive_reset(manager):  # noqa: F811
     first = OpsProtectedPerson.objects.create(name="Абаев", category="OURS")
     second = OpsProtectedPerson.objects.create(name="Бекова", category="OURS")

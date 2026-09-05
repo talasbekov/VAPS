@@ -5,7 +5,7 @@ documents: заводить второй механизм прав ради но
 защищать одни и те же сведения по-разному в зависимости от того, каким адресом
 их спросили.
 """
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Prefetch
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied
@@ -18,6 +18,11 @@ from organization_management.apps.operations.api.permissions import (
 )
 from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
+    OpsSecurityEventPerson,
+    OpsSecurityEventVisitObject,
+)
+from organization_management.apps.operations.models_vehicle import (
+    OpsEventVehicle,
 )
 from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
@@ -424,9 +429,34 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # что описан абзацем выше про объекты посещения, воспроизвёлся заново
         # ДВУМЯ ссылками: около 400 лишних round-trip на календарной странице в
         # 200 строк.
+        # 🔴 НАБОР ЗАПРОСА ДОГОНЯЕТ СЕРИАЛИЗАЦИЮ (Plane №499, №786). Замерено
+        # `CaptureQueriesContext` вокруг этой ручки: 3 строки — 31 запрос,
+        # 9 строк — 79, то есть ВОСЕМЬ лишних обращений на каждую строку. Рост
+        # разложен по таблицам и закрыт поимённо, а не «на глаз»:
+        #   объекты посещения      +4 на строку — `_serialize_visit_objects`
+        #                          строил свой queryset поверх подтянутого;
+        #   замещающие и версии    +1 и +1 — тем же обходом кэша;
+        #   лица бюллетеня         +1 — `person_links` не подтягивались вовсе;
+        #   машины мероприятия     +1 — `vehicles` не подтягивались вовсе.
+        # Календарь берёт `page_size=200`, то есть цена была порядка 1600
+        # лишних round-trip на один заход.
+        #
+        # Вложенные `select_related` перечислены ЗДЕСЬ, а не оставлены
+        # помощникам: помощник, строящий свой queryset, кэш обходит — ровно
+        # так этот N+1 и возвращался дважды (№418, №619).
         rows = list(
             OpsSecurityEvent.objects.select_related("country", "city")
-            .prefetch_related("visit_objects__deputies")
+            .prefetch_related(
+                "visit_objects__deputies",
+                Prefetch(
+                    "person_links",
+                    queryset=OpsSecurityEventPerson.objects.select_related("person"),
+                ),
+                Prefetch(
+                    "vehicles",
+                    queryset=OpsEventVehicle.objects.select_related("vehicle"),
+                ),
+            )
         )
         if stage:
             # Список стадий через запятую, а не одна: ленты «Сбора сил на ОМ»

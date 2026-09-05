@@ -197,7 +197,16 @@ def person_links_view(event):
     """Лица бюллетеня с атрибутами визита — отсортированы по имени, как и
     прежний список: у связи своего порядка нет."""
     rows = []
-    for link in event.person_links.select_related("person").all():
+    # Подтянутую связь читаем из кэша (Plane №499, №786): `.select_related(…)`
+    # строит НОВЫЙ queryset и обходит prefetch реестра — по запросу на строку.
+    # Не подтянута (одиночная карточка) — прежний путь: без `select_related`
+    # каждая ссылка сама пошла бы за лицом.
+    links = (
+        event.person_links.all()
+        if "person_links" in getattr(event, "_prefetched_objects_cache", {})
+        else event.person_links.select_related("person").all()
+    )
+    for link in links:
         p = link.person
         rows.append(
             {
