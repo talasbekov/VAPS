@@ -105,3 +105,42 @@ def test_assert_known_names_the_offending_code():
 
     assert "SOMETHING_ELSE" in str(exc.value)
     assert "CODES" in str(exc.value)
+
+
+def test_no_code_is_declared_twice():
+    """Ни один код не объявлен в словаре дважды (Plane №793).
+
+    🔴 ЗАЧЕМ СТОРОЖ, ЕСЛИ ПОВЕДЕНИЕ НЕ СТРАДАЛО. `PLACEMENT_EMPTY` стоял ДВА
+    раза — в блоке уведомлений о заступлении и в блоке согласования, — с
+    одинаковым значением, поэтому второе объявление молча перекрывало первое и
+    всё работало. Но словарь это закрытый договор с клиентом, и его читают
+    ГЛАЗАМИ: правка одного из двух объявлений останется перекрытой вторым, и
+    узнать об этом будет неоткуда. Ровно тот класс ошибки, который словарь и
+    заведён предотвращать.
+
+    Проверяется ИСХОДНИК, а не сам словарь: в словаре дубля уже нет по
+    построению — Python оставляет последнее значение, и через `dict` эту
+    ошибку не увидеть вовсе. Поэтому читается файл.
+    """
+    import ast
+    import inspect
+
+    from organization_management.apps.operations import error_codes
+
+    source = inspect.getsource(error_codes)
+    tree = ast.parse(source)
+    seen, duplicated = set(), []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key in node.keys:
+            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                if key.value in seen:
+                    duplicated.append(key.value)
+                seen.add(key.value)
+
+    assert duplicated == [], (
+        "коды объявлены дважды: %s — второе объявление молча перекрывает "
+        "первое, и правка одного из них потеряется беззвучно"
+        % ", ".join(sorted(set(duplicated)))
+    )
