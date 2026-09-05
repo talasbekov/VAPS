@@ -30,16 +30,51 @@ export async function acceptRosterFor(
   options: { count?: number; department?: string } = {},
 ): Promise<AcceptedRoster> {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-  const call = async (method: string, path: string, body?: unknown): Promise<any> =>
-    (
-      await fetch(`${API}${path}`, {
-        method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-      })
-    )
-      .json()
-      .catch(() => ({}))
+  /**
+   * Запрос к стенду, который СМОТРИТ НА КОД ОТВЕТА (Plane №653).
+   *
+   * 🔴 Здесь стояло `res.json().catch(() => ({}))` без единой проверки
+   * статуса. Любой не-JSON отказ — 403 в HTML, страница трассировки 500,
+   * ошибка прокси — превращался в `{}`: `added.error_code` оставался
+   * `undefined`, и помощник записывал сотрудника как ВЫДЕЛЕННОГО, хотя
+   * сервер его не принял. Ровно так же молча проглатывались `submit/` и
+   * `accept/`.
+   *
+   * Чем это стоило: если ручка приёмки начнёт отвечать 500,
+   * `acceptRosterFor` вернёт правдоподобный `AcceptedRoster`, а зависящие
+   * пробы упадут ПОЗЖЕ и НЕ ТАМ — с «region not visible» вместо имени
+   * сломанного звена. Подготовка обязана падать на себе.
+   *
+   * Отказ с разобранным `error_code` — НЕ ошибка помощника: цепочка сбора
+   * сил отвечает такими штатно (`STATUS_OVERLAP_WARNING`), и решает по ним
+   * вызывающий. Поэтому тело возвращается как есть, а поднимается только то,
+   * что телом объяснить нельзя.
+   */
+  const call = async (method: string, path: string, body?: unknown): Promise<any> => {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    const text = await res.text()
+    let parsed: any = undefined
+    try {
+      parsed = text === '' ? {} : JSON.parse(text)
+    } catch {
+      parsed = undefined
+    }
+    if (parsed === undefined) {
+      throw new Error(
+        `${method} ${path} → ${res.status}, ответ не JSON: ${text.slice(0, 200)}`,
+      )
+    }
+    if (!res.ok && parsed.error_code === undefined) {
+      throw new Error(
+        `${method} ${path} → ${res.status}: ${JSON.stringify(parsed).slice(0, 200)}`,
+      )
+    }
+    return parsed
+  }
 
   const event = await call('GET', `/api/ops/security-events/${eventId}/`)
   const need = Math.max(
@@ -85,11 +120,28 @@ export async function acceptRosterFor(
     employeeIds.push(String(person.id))
   }
   if (employeeIds.length === 0) throw new Error('не нашлось ни одного свободного на дату ОМ')
-  await call('POST', `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/submit/`)
+  // Отправка проверяется, а не выполняется «на удачу» (Plane №653): её
+  // результат здесь не читался вовсе, и провалившаяся отправка выглядела как
+  // успешная подготовка.
+  const submitted = await call(
+    'POST',
+    `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/submit/`,
+  )
+  if (submitted.error_code !== undefined) {
+    throw new Error(`отправка списка не прошла: ${submitted.error_code}`)
+  }
   const accepted = await call(
     'POST',
     `/api/ops/security-events/${eventId}/forces/allocation/${allocationId}/accept/`,
   )
   if (accepted.error_code !== undefined) throw new Error(`приём не прошёл: ${accepted.error_code}`)
+  // Состав ПРОВЕРЯЕТСЯ по мероприятию, а не выводится из того, что ручки не
+  // отказали (Plane №653): «приём вернул 200» и «люди в составе» — разные
+  // утверждения, и подготовка обязана отвечать за второе.
+  const after = await call('GET', `/api/ops/security-events/${eventId}/`)
+  const roster = (after.forceRoster ?? []) as { employeeId: string }[]
+  if (roster.length === 0) {
+    throw new Error('приём прошёл, но состав мероприятия пуст — подготовка не состоялась')
+  }
   return { allocationId, employeeIds }
 }
