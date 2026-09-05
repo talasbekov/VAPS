@@ -75,7 +75,7 @@ import { formatIsoDate } from "@/shared/lib/date";
  * другому для этого не нужен общий `event.manage`. Область права клиент не
  * считает — её проверяет сервер, и его отказ человек читает словами там же.
  */
-interface ApprovalRights {
+export interface ApprovalRights {
   /** Маршрут (добавить / снять / переставить) — настройка процесса, ведущий. */
   manageRoute: boolean;
   /** Отправить и отозвать — ведущий мероприятие или старший объекта. */
@@ -100,12 +100,53 @@ function reasonUnless(allowed: boolean, key: keyof typeof RIGHT_REASON) {
   return allowed ? undefined : RIGHT_REASON[key];
 }
 
-function useApprovalRights(
-  event: SecurityEvent,
-  visit: VisitObject | null | undefined
-): ApprovalRights {
-  const { hasPermission, isLoading } = useOpsPermissions();
-  const me = useMyEmployee();
+/**
+ * Что нужно расчёту прав согласования — и ничего больше (Plane №802).
+ *
+ * Ни события, ни хуков, ни сети: три флага, свой кадровый id и показанный
+ * объект. См. `approvalRightsOf` ниже.
+ */
+export interface ApprovalRightsInput {
+  /** Права ещё едут. Отказ — НЕ загрузка, см. правило в `approvalRightsOf`. */
+  loading: boolean;
+  /** `event.manage` — ведущий мероприятие или штаб. */
+  canManage: boolean;
+  /** `assignment.approve` — согласующий. */
+  canApprove: boolean;
+  /** Кадровый id смотрящего; `null` — учётка без кадровой записи. */
+  myId: string | null;
+  /** ПОКАЗАННЫЙ объект посещения; `null`/`undefined` — объекта нет.
+   *
+   * Тип описан ПОЛЯМИ, которые правило читает, а не `Pick<VisitObject, …>`:
+   * так видно, что расчёт смотрит ровно на старшего и на список замещающих —
+   * и так пробе не приходится сочинять целого замещающего с датами и правами
+   * ради одного `employeeId`. `VisitObject` этому описанию отвечает. */
+  visit:
+    | {
+        chiefEmployeeId: string | null;
+        deputies?: readonly { employeeId: string }[];
+      }
+    | null
+    | undefined;
+}
+
+/**
+ * Расчёт прав экрана согласования — ЧИСТАЯ функция (Plane №802).
+ *
+ * 🔴 ЗАЧЕМ ВЫНЕСЕНО ИЗ ХУКА. Три правки этих правил (№573, №574, №575) уехали
+ * БЕЗ пробы, и не по небрежности: живая проба через `toBeDisabled()` ничего
+ * не различает — кнопка «Отправить» выключается ещё и по пустому маршруту, и
+ * на фикстуре стенда выключена всегда, так что ОБЕ мутации проходили
+ * зелёными. А подмена ответа `/api/operations/my-permissions/` до расчёта не
+ * доходила: права приезжали настоящие.
+ *
+ * Предмет здесь чисто вычислительный — сети в нём нет вовсе. Значит и
+ * проверять его надо вычислением, а не браузером: `approval-rights-rules`
+ * задаёт входы прямо и читает выходы, и каждая из трёх правок краснеет на
+ * своей мутации. Хук остался тонкой обёрткой: он только собирает вход.
+ */
+export function approvalRightsOf(input: ApprovalRightsInput): ApprovalRights {
+  const { loading, canManage, canApprove, myId, visit } = input;
   // Пока права не пришли, кнопки НЕ выключаются с ложной причиной: серверный
   // отказ всё равно стоит за ними, а мигание «нельзя → можно» вводит в
   // заблуждение сильнее, чем секунда доступной кнопки.
@@ -117,9 +158,7 @@ function useApprovalRights(
   // включёнными постоянно, человек жал и получал голый отказ сервера.
   // Отказ — не загрузка: когда прав нет, кнопки обязаны быть выключены с
   // причиной, а не приглашать к действию, которое не состоится.
-  const loading = isLoading;
-  const myId = me.data?.employee ? String(me.data.employee.id) : null;
-  const manage = loading || hasPermission("event.manage");
+  const manage = loading || canManage;
   // 🔴 СТАРШИЙ БЕРЁТСЯ ТОЛЬКО У ОБЪЕКТА (Plane №575). Здесь стоял запасной
   // путь на `event.chiefEmployeeId`, когда объект не показан, — а сервер
   // (`_object_lead_override`) принимает ИСКЛЮЧИТЕЛЬНО `visit.chief_employee_id`
@@ -135,7 +174,7 @@ function useApprovalRights(
     manageRoute: manage,
     send: manage || isChief,
     answerRemarks: manage || isChief || isDeputy,
-    approve: loading || hasPermission("assignment.approve"),
+    approve: loading || canApprove,
     // 🔴 ТЕМ ЖЕ ПРАВОМ, ЧТО И «СОГЛАСОВАТЬ» (Plane №574). «Вернуть» и
     // «Подтвердить возврат» зовут решение согласующего
     // (`approval/route/<id>/decide/`), а его сервер гейтит `assignment.approve`
@@ -144,8 +183,25 @@ function useApprovalRights(
     // расходились в обе стороны: у кого есть `return` и нет `approve` — кнопка
     // включена и отбивается сервером; у кого есть `approve` и нет `return` —
     // спрятана зря.
-    returnBack: loading || hasPermission("assignment.approve"),
+    returnBack: loading || canApprove,
   };
+}
+
+/** Тонкая обёртка: собирает вход из хуков и зовёт чистый расчёт.
+ *
+ * `event` сюда больше не передаётся: после №575 старший берётся только у
+ * объекта, и параметр остался бы мёртвым (`noUnusedLocals` выключен — №767,
+ * — и такие хвосты находятся только глазами). */
+function useApprovalRights(visit: VisitObject | null | undefined): ApprovalRights {
+  const { hasPermission, isLoading } = useOpsPermissions();
+  const me = useMyEmployee();
+  return approvalRightsOf({
+    loading: isLoading,
+    canManage: hasPermission("event.manage"),
+    canApprove: hasPermission("assignment.approve"),
+    myId: me.data?.employee ? String(me.data.employee.id) : null,
+    visit,
+  });
 }
 
 /**
@@ -447,7 +503,7 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
   // первом же переходе по ссылке из реестра.
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
   const view = approvalViewOf(event, scope.visit);
-  const rights = useApprovalRights(event, scope.visit);
+  const rights = useApprovalRights(scope.visit);
   // 🔴 «СТРОКИ БЕЗ ОБЪЕКТА» — НЕ ОБЪЕКТ, И СОГЛАСОВЫВАТЬ ТАМ НЕЧЕГО (Plane
   // №479). Разрез отдаёт `visit === null` и для ОМ БЕЗ объектов посещения, и
   // для псевдо-выбора «строки без объекта»; первому отвечает мероприятие — у
