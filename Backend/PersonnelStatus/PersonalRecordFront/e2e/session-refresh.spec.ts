@@ -26,6 +26,7 @@ import { encode } from 'next-auth/jwt'
 import fs from 'node:fs'
 import path from 'node:path'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { expiredLoginUrl } from '../lib/expired-redirect'
 import {
   EXPIRY_SKEW_MS,
   UNKNOWN_EXPIRY_MS,
@@ -386,6 +387,40 @@ test.describe(LIVE ? 'продление сессии' : 'продление с�
     // Имя cookie — по схеме адреса, а не зашитое.
     expect(sessionCookieName('http://localhost:3106')).toBe('next-auth.session-token')
     expect(sessionCookieName('https://stand.example')).toBe('__Secure-next-auth.session-token')
+  })
+
+  test('увод по истечении сессии несёт с собой адрес, где человек работал', async ({ page }) => {
+    // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №467). Увод шёл голым `/?reason=expired`, и
+    // после повторного входа человек оказывался на дашборде — расстановку сил
+    // или согласование он искал руками. Обычный путь через middleware адрес
+    // сохранял, то есть это было расхождение с соседним поведением.
+
+    // Отправляющая половина — правило, по которому строится адрес.
+    expect(
+      expiredLoginUrl({ pathname: '/security-ops/events/7', search: '?visit=3', hash: '#силы' }),
+    ).toBe('/?reason=expired&callbackUrl=%2Fsecurity-ops%2Fevents%2F7%3Fvisit%3D3%23%D1%81%D0%B8%D0%BB%D1%8B')
+    // Параметры и якорь несут СОСТОЯНИЕ экрана: без них человек вернётся на
+    // тот же экран, но не на своё место.
+    expect(expiredLoginUrl({ pathname: '/statuses', search: '', hash: '' })).toBe(
+      '/?reason=expired&callbackUrl=%2Fstatuses',
+    )
+    // С самой формы входа возвращать некуда — параметр только замусорил бы адрес.
+    expect(expiredLoginUrl({ pathname: '/', search: '', hash: '' })).toBe('/?reason=expired')
+
+    // Принимающая половина — по-настоящему, через стенд: форма входа обязана
+    // этот адрес прочитать и вернуть человека туда.
+    const api = page.context().request
+    const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
+    await api.post(`${APP}/api/auth/callback/credentials/`, {
+      form: {
+        csrfToken: csrf.csrfToken,
+        username: STAND_USERNAME,
+        password: STAND_PASSWORD,
+        json: 'true',
+      },
+    })
+    await page.goto(`${APP}${expiredLoginUrl({ pathname: '/statuses', search: '', hash: '' })}`)
+    await expect(page).toHaveURL(new RegExp(`^${APP}/statuses`), { timeout: 20_000 })
   })
 
   test('форма входа называет причину, по которой человек на ней оказался', async ({ page }) => {

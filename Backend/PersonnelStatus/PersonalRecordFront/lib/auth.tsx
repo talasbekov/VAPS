@@ -11,6 +11,7 @@ import {
 import { useSession, signIn, signOut } from "next-auth/react";
 import { resetAccessToken } from "@/lib/access-token";
 import { apiClient } from "@/lib/api";
+import { expiredLoginUrl } from "@/lib/expired-redirect";
 
 /**
  * 🔴 ПОРТАЛЬНОЙ РОЛИ БОЛЬШЕ НЕТ (Plane №352, Ш-4; карточка №361).
@@ -88,9 +89,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Отказ выхода не молчит: он пишется в консоль и оставляет человека на
     // месте. Это хуже, чем уйти на вход, но лучше, чем зациклить вкладку, —
     // а `signingOut` не даст эффекту начать всё заново на том же сеансе.
+    const back = expiredLoginUrl(window.location);
     void signOut({ redirect: false })
       .then(() => {
-        window.location.href = "/?reason=expired";
+        window.location.href = back;
       })
       .catch((error) => {
         console.error("Не удалось завершить сессию:", error);
