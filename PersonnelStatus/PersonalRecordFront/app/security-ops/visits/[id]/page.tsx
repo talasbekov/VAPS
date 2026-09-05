@@ -13,7 +13,7 @@
 // подсказке), и открыта штабу (`gvo.manage`). Вкладки «Сводные данные ГВО /
 // Объекты посещения / Бюллетень / Транспорт» — каркас `[ГВО-02]`; единый
 // режим редактирования (`[ГВО-05]`) и порядок блоков — P3 №441.
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -73,11 +73,19 @@ function VisitScreen() {
         {query.isError && (
           <LoadFailure what="визит" onRetry={() => void query.refetch()} isRetrying={query.isFetching} />
         )}
+        {/* 🔴 ОТБИВАЕТСЯ ВНУТРЕННИЙ, А НЕ «НЕ-ИНОСТРАННЫЙ» (Plane №692). Ветка
+            шла по `kind === "FOREIGN"`, и мероприятие БЕЗ ТИПА (`kind: null`
+            — записи до появления типа; ограничение БД такие допускает)
+            попадало в «визита нет». Ссылка «Карточка визита →» рисуется по
+            прямо обратному правилу — `kind !== "INTERNAL"` с записанным
+            доводом «скрывать по незнанию нельзя», — то есть ссылка вела на
+            страницу, которая тут же объявляла ОМ внутренним. Правило теперь
+            одно на оба места. */}
         {query.data !== undefined &&
-          (query.data.kind === "FOREIGN" ? (
-            <VisitCard event={query.data} />
-          ) : (
+          (query.data.kind === "INTERNAL" ? (
             <NoVisit event={query.data} />
+          ) : (
+            <VisitCard event={query.data} />
           ))}
       </div>
     </DashboardLayout>
@@ -96,9 +104,17 @@ function NoVisit({ event }: { event: SecurityEvent }) {
       />
       <Card>
         <CardContent className="p-6 text-sm" data-slot="visit-none">
+          {/* Тип НАЗЫВАЕТСЯ ТОЛЬКО КОГДА ОН ЕСТЬ (Plane №692). Подстановка
+              `event.kind ?? "INTERNAL"` утверждала про запись тип, которого у
+              неё нет. Сюда теперь доходят только настоящие внутренние ОМ, но
+              подстановку всё равно снимаем: она была вторым местом, где
+              незнание выдавалось за факт. */}
           <p>
-            «{event.title}» — {SECURITY_EVENT_KIND_LABEL[event.kind ?? "INTERNAL"].toLowerCase()}: визита у
-            него нет.
+            «{event.title}» —{" "}
+            {event.kind === null
+              ? "мероприятие без указанного типа"
+              : SECURITY_EVENT_KIND_LABEL[event.kind].toLowerCase()}
+            : визита у него нет.
           </p>
           <Link
             href={`/security-ops/events/${event.id}/`}
@@ -114,6 +130,10 @@ function NoVisit({ event }: { event: SecurityEvent }) {
 
 function VisitCard({ event }: { event: SecurityEvent }) {
   const { hasPermission } = useOpsPermissions();
+  /** В форме правки сводки есть несохранённое (Plane №693): вкладка остаётся
+   * в DOM, но не видна, и метка на её ярлыке — единственное, что об этом
+   * говорит. */
+  const [summaryDirty, setSummaryDirty] = useState(false);
   const summary = useGvoSummary(event.code);
   const approve = useApproveVisit();
   const render = useRenderEventDocument((file) =>
@@ -202,13 +222,39 @@ function VisitCard({ event }: { event: SecurityEvent }) {
 
       <Tabs defaultValue="summary">
         <TabsList aria-label="Разделы визита">
-          <TabsTrigger value="summary">Сводные данные ГВО</TabsTrigger>
+          <TabsTrigger value="summary">
+            Сводные данные ГВО
+            {/* Метка несохранённого черновика (Plane №693). Сам черновик от
+                переключения больше не гибнет, но вкладка неактивна и не видна
+                — без метки человек может уйти со страницы, считая правку
+                сохранённой. Тот же довод, что у `bulletinDirty` на карточке
+                ОМ; здесь достаточно метки, а не предупреждения: терять больше
+                нечего. */}
+            {summaryDirty && (
+              <span className="ml-1 text-amber-700" title="Есть несохранённые правки">
+                •<span className="sr-only"> есть несохранённые правки</span>
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="objects">Объекты посещения ({event.visitObjects.length})</TabsTrigger>
           <TabsTrigger value="bulletin">Бюллетень</TabsTrigger>
           <TabsTrigger value="transport">Транспорт</TabsTrigger>
         </TabsList>
-        <TabsContent value="summary">
-          <GvoSummaryPanel event={event} variant="page" />
+        {/* 🔴 `forceMount` — ЧЕРНОВИК ПЕРЕЖИВАЕТ ПЕРЕКЛЮЧЕНИЕ (Plane №693).
+            Radix размонтирует неактивную вкладку, и вместе с ней исчезала
+            форма правки со всем набранным: человек жал «Редактировать»,
+            заполнял десяток полей, переходил на «Объекты посещения»
+            свериться — и, вернувшись, находил пустоту, без предупреждения.
+            Ровно тот класс потери, ради которого на карточке ОМ заведён
+            `bulletinDirty`. Держится в DOM ТОЛЬКО эта вкладка: у остальных
+            терять нечего, а ранняя загрузка их данных обошлась бы лишними
+            запросами на каждом открытии визита. */}
+        <TabsContent value="summary" forceMount>
+          <GvoSummaryPanel
+            event={event}
+            variant="page"
+            onDirtyChange={setSummaryDirty}
+          />
         </TabsContent>
         <TabsContent value="objects">
           <Card>

@@ -83,7 +83,8 @@ export function patchesByCode(
 
 interface SaveSectionVariables extends Record<string, unknown> {
   omCode: string;
-  section: GvoSection;
+  /** `null` — правка нескольких разделов одним запросом (Plane №694). */
+  section: GvoSection | null;
   values: GvoSummaryPatch;
   unspecified?: string[];
 }

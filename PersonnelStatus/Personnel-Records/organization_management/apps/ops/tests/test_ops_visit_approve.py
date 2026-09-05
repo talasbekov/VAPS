@@ -155,3 +155,156 @@ def test_a_filled_field_prints_its_value_even_when_flagged(staff):
     values = documents_summary.document_values(event)
 
     assert values["accommodation_1"] == "отель Hilton Astana № 1827"
+
+
+# ── Правка утверждённого визита (Plane №685) ────────────────────────────────
+
+
+def _approve(staff, code):
+    """Довести визит до утверждения: страна плюс «уточняется» на остальное."""
+    staff.patch(
+        f"{GVO_URL}{code}/",
+        {
+            "section": "head",
+            "values": {"country": "Черногория"},
+            "unspecified": ["persons", "arrival.date", "departure.date", "responsible"],
+        },
+        format="json",
+    )
+    approved = staff.post(f"{GVO_URL}{code}/approve/", {}, format="json")
+    assert approved.status_code == 200, approved.content
+    return approved.json()
+
+
+def test_editing_an_approved_visit_takes_the_approval_off(staff):
+    """Правка утверждённого визита снимает утверждение, а не молчит.
+
+    Это обещал сам отказ повторного утверждения — «Визит уже утверждён —
+    правки заведут новую версию», — но код обещания не выполнял: статус
+    поднимался только DRAFT→READY. Шапка и реестр показывали «Утверждён» с
+    ПРЕЖНЕЙ отметкой времени рядом с другим содержимым, а выхода не было
+    вовсе: переутвердить мешал VISIT_ALREADY_APPROVED.
+
+    Красная проверка — убрать ветку `if visit.status == "APPROVED"` в
+    `apply_patch`: статус останется APPROVED, а `approvedAt` — прежним.
+    """
+    make_event("ОМ-Т-61")
+    before = _approve(staff, "ОМ-Т-61")
+    assert before["visit"]["status"] == "APPROVED"
+
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-61/",
+        {"section": "head", "values": {"country": "Сербия"}},
+        format="json",
+    )
+
+    row = staff.get(f"{GVO_URL}ОМ-Т-61/").json()
+    assert row["visit"]["status"] == "READY", "утверждение пережило правку состава"
+    assert row["visit"]["approvedAt"] is None, (
+        "отметка утверждения осталась при снятом статусе — час утверждения "
+        "версии, которой больше нет"
+    )
+    assert row["summary"]["country"] == "Сербия"
+
+
+def test_a_revoked_visit_can_be_approved_again(staff):
+    """Из «правка сняла утверждение» есть выход — переутвердить.
+
+    Без этой пробы починка №685 могла бы запереть визит в другом углу: снять
+    утверждение и не дать поставить заново.
+    """
+    make_event("ОМ-Т-62")
+    _approve(staff, "ОМ-Т-62")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-62/",
+        {"section": "head", "values": {"country": "Сербия"}},
+        format="json",
+    )
+
+    again = staff.post(f"{GVO_URL}ОМ-Т-62/approve/", {}, format="json")
+
+    assert again.status_code == 200, again.content
+    assert again.json()["visit"]["status"] == "APPROVED"
+    assert again.json()["visit"]["approvedAt"] is not None
+
+
+def test_the_revocation_is_named_in_the_journal(staff):
+    """Визит, вчера утверждённый, а сегодня «Заполнен», обязан объясняться.
+
+    Молчаливое снятие статуса — то же, за что заведена №356 про уборку: минус
+    один факт и ни одного ответа на «кто».
+    """
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    make_event("ОМ-Т-63")
+    _approve(staff, "ОМ-Т-63")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-63/",
+        {"section": "head", "values": {"country": "Сербия"}},
+        format="json",
+    )
+
+    entry = OpsAuditLog.objects.filter(action="GVO_VISIT_APPROVAL_REVOKED").get()
+    assert entry.new_value["omCode"] == "ОМ-Т-63"
+
+
+# ── «Вернуть исходные» (Plane №689) ─────────────────────────────────────────
+
+
+def test_every_allowed_patch_key_belongs_to_some_section(staff):
+    """Разрешённый к записи ключ обязан сниматься «Вернуть исходные».
+
+    Ключ, который писать можно, а снять нельзя, остаётся в сводке НАВСЕГДА —
+    так и вышло со ссылками на справочники (`*EmployeeIds`): их добавили в
+    разрешённые, а по разделам не разложили. Проба стережёт не список, а
+    соответствие двух списков: следующая секция, добавленная в один и
+    забытая в другом, покраснеет здесь.
+    """
+    from organization_management.apps.ops.gvo import (
+        ALLOWED_PATCH_KEYS,
+        SECTION_PATCH_KEYS,
+    )
+
+    covered = {key for keys in SECTION_PATCH_KEYS.values() for key in keys}
+
+    assert sorted(set(ALLOWED_PATCH_KEYS) - covered) == []
+
+
+def test_reset_clears_the_flags_and_the_reference_ids_of_its_section(staff):
+    """Сброс раздела снимает и данные, и пометки «уточняется», и ссылки.
+
+    До правки документ продолжал печатать «уточняется» у поля, возвращённого
+    к исходному, а идентификаторы снятых встречающих оставались в сводке
+    навсегда: `meetEmployeeIds` не было ни в одном разделе.
+
+    Красная проверка — вернуть `SECTION_PATCH_KEYS["arrival"]` без
+    `meetEmployeeIds` либо убрать фильтр `visit.unspecified` в `reset_patch`.
+    """
+    from organization_management.apps.operations.models_gvo import OpsForeignVisit
+
+    event = make_event("ОМ-Т-64")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-64/",
+        {
+            "section": "arrival",
+            "values": {
+                "arrival": {"date": "", "time": "19:55 ч."},
+                "meet": ["Иванов"],
+                "meetEmployeeIds": ["17"],
+            },
+            "unspecified": ["arrival.date", "radio"],
+        },
+        format="json",
+    )
+
+    reset = staff.post(f"{GVO_URL}ОМ-Т-64/reset/", {"section": "arrival"}, format="json")
+    assert reset.status_code == 200, reset.content
+
+    visit = OpsForeignVisit.objects.get(event=event)
+    assert "meetEmployeeIds" not in visit.data, "ссылки на снятых встречающих остались"
+    assert "meet" not in visit.data
+    assert "arrival.date" not in visit.unspecified, (
+        "пометка пережила поле, которое поясняла"
+    )
+    # Чужой раздел сброс не трогает: «Вернуть исходные» — про ОДНУ секцию.
+    assert "radio" in visit.unspecified

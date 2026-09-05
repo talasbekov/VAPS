@@ -1170,6 +1170,14 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         None, actor=ACTOR,
     )
     gvo_service.approve_visit(om.code, actor=ACTOR)
+    # Снятие утверждения правкой (Plane №685): утверждённый визит правят —
+    # утверждение уходит, и это отдельное событие журнала. Без него визит,
+    # вчера утверждённый, а сегодня «Заполнен», не объяснялся бы ничем.
+    gvo_service.apply_patch(
+        om.code,
+        {"section": "head", "values": {"country": "Сербия"}},
+        None, actor=ACTOR,
+    )
 
     # Справочник прав (Plane №36, «П-2»): заведение и правка — одно действие,
     # поэтому и запись здесь одна.

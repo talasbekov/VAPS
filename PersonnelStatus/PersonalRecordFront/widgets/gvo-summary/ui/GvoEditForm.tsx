@@ -13,7 +13,7 @@
 // Списки лиц и групп правятся ПОЭЛЕМЕНТНО (ФИО / должность / данные у
 // каждого лица; название и состав у каждой группы) — так их правили окна
 // «person:N» / «group:N», и проба разделов идёт по тем же подписям.
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -81,16 +81,37 @@ export interface GvoEditFormProps {
   omCode: string;
   summary: GvoSummary;
   unspecified: string[];
+  /** Сообщить наружу, что набранное ещё не сохранено (Plane №693). */
+  onDirtyChange?: (dirty: boolean) => void;
   onDone: () => void;
 }
 
-export function GvoEditForm({ omCode, summary, unspecified, onDone }: GvoEditFormProps) {
+export function GvoEditForm({
+  omCode,
+  summary,
+  unspecified,
+  onDirtyChange,
+  onDone,
+}: GvoEditFormProps) {
   const { toast } = useToast();
   const [initial] = useState(() => draftOf(summary, unspecified));
   const [draft, setDraft] = useState<Draft>(initial);
   const save = useSaveGvoSection();
   const reset = useResetGvoSection();
   const [busy, setBusy] = useState<"save" | "reset" | null>(null);
+  // Несохранённое — ВЫВОД из черновика, а не отдельный флаг: отдельный
+  // пришлось бы ставить в каждом из шести обработчиков правки, и первый же
+  // забытый врал бы про сохранённость (Plane №693).
+  const dirty =
+    !same(draft.whole, initial.whole) ||
+    !same(draft.persons, initial.persons) ||
+    !same(draft.groups, initial.groups) ||
+    !same(draft.flags, initial.flags);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    // Форма уходит с экрана — метка обязана погаснуть вместе с ней.
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
   const [failure, setFailure] = useState<string | null>(null);
   const pending = busy !== null;
 
@@ -156,6 +177,21 @@ export function GvoEditForm({ omCode, summary, unspecified, onDone }: GvoEditFor
     return calls;
   }
 
+  /**
+   * Сохранить правку ОДНИМ запросом (Plane №694).
+   *
+   * 🔴 ЗДЕСЬ БЫЛ ЦИКЛ, и он делил сохранение на части. По одному PATCH на
+   * изменённый раздел: патч «шапки» прошёл, патч «групп» ответил 422 — и
+   * человек видел «Не удалось сохранить, попробуйте ещё раз», хотя смена
+   * страны УЖЕ сохранена, а флаги «уточняется», ехавшие с последним вызовом,
+   * — нет. Снимок `initial` при этом не обновлялся: то, что на экране,
+   * серверу больше не соответствовало, и повтор слал бы «шапку» второй раз.
+   *
+   * Раздельные вызовы были не нужны изначально: сервер раздел только
+   * проверяет, а тело бьёт по списку разрешённых ключей — значит все
+   * изменённые ключи уезжают вместе и ложатся одним `save`. «Ещё раз» после
+   * отказа теперь значит ровно то, что написано: не сохранилось НИЧЕГО.
+   */
   async function submit(): Promise<void> {
     const calls = changedPatches();
     const flagsChanged = !same(draft.flags, initial.flags);
@@ -163,21 +199,18 @@ export function GvoEditForm({ omCode, summary, unspecified, onDone }: GvoEditFor
       onDone();
       return;
     }
-    // Изменились только флаги — везём их с патчем «шапки» без изменений.
-    if (calls.length === 0) {
-      calls.push({ section: "head", values: gvoPatchFromForm("head", draft.whole.head, summary) });
-    }
+    const values: GvoSummaryPatch = {};
+    for (const call of calls) Object.assign(values, call.values);
     setBusy("save");
     setFailure(null);
     try {
-      for (const [index, call] of calls.entries()) {
-        await save.mutateAsync({
-          omCode,
-          section: call.section,
-          values: call.values,
-          ...(index === calls.length - 1 ? { unspecified: draft.flags } : {}),
-        });
-      }
+      await save.mutateAsync({
+        omCode,
+        // Раздел не называется: их несколько, и сервер об этом знает.
+        section: null,
+        values,
+        unspecified: draft.flags,
+      });
       toast({ description: "Сводные данные обновлены" });
       onDone();
     } catch {
