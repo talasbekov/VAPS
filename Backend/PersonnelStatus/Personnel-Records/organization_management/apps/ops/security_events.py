@@ -4467,6 +4467,17 @@ def set_sector_senior(event_id, assignment_id, *, senior, actor):
         new_value={
             "code": event.code,
             "sector": sector,
+            # 🔴 ПОСТ НАЗВАН, А НЕ ТОЛЬКО СЕКТОР (Plane №706). Старший теперь
+            # назначается ПОСТУ (`[РАС-03]`, №445), а запись журнала несла
+            # один сектор — две записи о разных постах одного сектора в
+            # журнале было не отличить друг от друга, и разбирательство
+            # «кого и куда поставили» упиралось в две одинаковые строки.
+            #
+            # Пишется и идентификатор, и подпись: id опознаёт строку расчёта,
+            # подпись читает человек — по одному id в журнале пост не узнать,
+            # а по одной подписи не найти, если её переименовали.
+            "postId": post_id,
+            "post": str(post.get("post") or ""),
             "employeeId": str(target.get("employeeId")) if senior else None,
             "employeeName": target.get("employeeName") if senior else None,
         },
