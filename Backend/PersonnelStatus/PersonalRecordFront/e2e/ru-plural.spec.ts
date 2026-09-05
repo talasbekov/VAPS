@@ -90,6 +90,60 @@ test.describe('склонение по числу', () => {
   })
 
   /**
+   * Ответ департамента ведёт штаб В САМ СБОР (Plane №779).
+   *
+   * Ссылки у этого уведомления не было ОСОЗНАННО: вкладка «Сборы» и открытая
+   * карточка сбора жили в состоянии компонента, адреса у них не
+   * существовало, и увести человека на `/employees/` значило бы высадить его
+   * на первой вкладке искать сбор руками. У соседнего уведомления (запрос
+   * управлению) адрес есть с №392 — разница была не в замысле, а в том, что
+   * состояние не доехало до URL.
+   *
+   * 🔴 ПРОВЕРЯЕТСЯ И ВЕТКА БЕЗ `eventId`: уведомления старой формы (до №677)
+   * его не несут, и ссылка на них обязана вести хотя бы на вкладку сборов, а
+   * не собираться в `…&collection=undefined`.
+   */
+  test('ответ департамента ведёт в сам сбор, а не на первую вкладку (Plane №779)', () => {
+    const row = (payload: Record<string, unknown>): OpsNotification => ({
+      id: 1,
+      recipient: '7',
+      kind: 'FORCES_RESPONSE',
+      business_date: '2026-09-05',
+      payload,
+      read_at: null,
+      created_at: '2026-09-05T00:00:00Z',
+    })
+
+    const full = describeOpsNotification(
+      row({
+        eventId: '5541',
+        eventCode: 'ОМ-2026-26',
+        eventTitle: 'Проба ответа',
+        businessDate: '2026-09-05',
+        departmentName: 'Первый департамент',
+        requested: 3,
+        allocating: 2,
+      }),
+    )
+    expect(full.title).toBe('Первый департамент выделяет 2 из 3')
+    expect(full.link).toBe('/employees/?view=forces&tab=collections&collection=5541')
+
+    // Ноль — это ОТКАЗ, а не «выделяет нисколько»; ссылка при этом та же.
+    const refused = describeOpsNotification(
+      row({ eventId: '5541', departmentName: 'Первый департамент', requested: 3, allocating: 0 }),
+    )
+    expect(refused.title).toBe('Первый департамент: отказ по запросу сил')
+    expect(refused.link).toBe('/employees/?view=forces&tab=collections&collection=5541')
+
+    // Старая форма без `eventId` — вкладка сборов, а не «collection=undefined».
+    const legacy = describeOpsNotification(
+      row({ departmentName: 'Первый департамент', requested: 3, allocating: 1 }),
+    )
+    expect(legacy.link).toBe('/employees/?view=forces&tab=collections')
+    expect(legacy.link).not.toContain('undefined')
+  })
+
+  /**
    * Напоминание за час до заступления называет СВОИМИ словами и ведёт в
    * карточку ОМ (Plane №564; правило — №427, `[ОЗН-06]`).
    *
