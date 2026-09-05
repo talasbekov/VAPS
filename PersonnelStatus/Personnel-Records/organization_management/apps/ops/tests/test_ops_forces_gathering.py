@@ -961,6 +961,73 @@ def test_a_status_set_outside_the_chain_reaches_the_department(manager):  # noqa
     assert mine[0]["kindCode"] == "PHYSICAL_SQUAD"
 
 
+def test_a_status_lands_in_exactly_one_row_of_the_department(manager):  # noqa: F811
+    """Человек со статусом попадает в ОДНУ строку департамента (Plane №676).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. У департамента бывает больше одной строки:
+    довыделение недобора (`[СБС-12]`, Plane №426) дописывает вторую, с
+    `topUpOf`. Добавка людей по статусам ключилась по департаменту и
+    дописывалась КАЖДОЙ его строке — один и тот же человек стоял в `members`
+    обеих. `totals` считает «Прислано» суммой `len(members)` по строкам,
+    поэтому число удваивалось, `shortage = max(0, need - sent)` схлопывался в
+    ноль, и штаб видел укомплектованный сбор там, где людей не хватало.
+
+    Мутация, на которой проба обязана краснеть: вернуть ключ по департаменту
+    (`extra_by_department.get(str(row["departmentId"]))`) — тогда человек
+    встанет в обе строки и `sent` станет 2.
+    """
+    from organization_management.apps.operations import status_service
+    from organization_management.apps.operations import clock
+
+    make_assignment_status_type()
+    _seed_participation_kinds()
+    department = make_department()
+    directorate = make_directorate(department)
+    employee = _seat(make_employee("Двойников"), directorate)
+    base, allocation_id = allocated_event(manager, department)
+
+    # Вторая строка ТОГО ЖЕ департамента — довыделение недобора. Довыделять
+    # можно только отправленный запрос, поэтому сначала оповещение.
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    top_up = manager.post(
+        f"{base}forces/allocation/{allocation_id}/top-up/",
+        {"count": 2},
+        format="json",
+    )
+    assert top_up.status_code == 200, top_up.content
+    rows = top_up.json()["forceAllocation"]
+    assert len({r["id"] for r in rows}) == 2, "довыделения нет — сравнивать нечего"
+    assert {str(r["departmentId"]) for r in rows} == {str(department.pk)}
+
+    with clock.override(dt.date(2026, 8, 10)):
+        status_service.create_status(
+            employee_id=employee.pk,
+            status_type_code="IN_EVENT",  # слияние статусов, Plane №486
+            system_participations=True,
+            date_start=dt.date(2026, 8, 10),
+            date_end=dt.date(2026, 8, 11),
+            actor="user:directorate-chief",
+            participations=[
+                {"event_id": int(event_pk(base)), "kind_code": "PHYSICAL_SQUAD"}
+            ],
+        )
+
+    allocation = manager.get(base).json()["forceAllocation"]
+    hits = [
+        row["id"]
+        for row in allocation
+        for member in row["members"]
+        if member["employeeId"] == str(employee.pk)
+    ]
+    assert len(hits) == 1, f"человек стоит в {len(hits)} строках департамента"
+    # Приёмник — БАЗОВАЯ строка, а не довыделение: её правит редактор
+    # раскладки, и участие, поставленное статусом, не знает, по какому запросу
+    # человека дали.
+    assert hits[0] == allocation_id
+    # То самое число, ради которого всё: «Прислано» на карточке штаба.
+    assert sum(len(row["members"]) for row in allocation) == 1
+
+
 def test_a_status_of_another_department_does_not_leak(manager):  # noqa: F811
     """Человек ЧУЖОГО департамента в строку не попадает.
 
