@@ -249,9 +249,16 @@ def summary_row(event, record=None, *, fetch=True):
     visit = _visit_of(event) if fetch else getattr(event, "_visit_cache", None)
     patch = (record.patch if record else None) or {}
     data = (visit.data or {}) if visit is not None else patch
+    # СОБИРАЕТСЯ ОДИН РАЗ и передаётся дальше (Plane №690). `_with_refs`
+    # ходит в `Employee` по одному запросу на идентификатор, а
+    # `assembled_summaries` зовёт эту функцию на КАЖДОЕ мероприятие и написан
+    # ровно затем, чтобы не платить запросом за строку. Пока
+    # `_required_progress` пересобирал то же выражение заново, эта цена
+    # удваивалась — молча: ответ был верный, дороже был только путь.
+    summary = _with_refs(_deep_merge(derive_summary(event), data))
     return {
         "omCode": event.code,
-        "summary": _with_refs(_deep_merge(derive_summary(event), data)),
+        "summary": summary,
         "filled": bool(data),
         "updatedAt": (
             visit.updated_at.isoformat()
@@ -264,14 +271,20 @@ def summary_row(event, record=None, *, fetch=True):
         "unspecified": list(visit.unspecified or []) if visit is not None else [],
         # Обязательные поля (`[ГВО-07]`, Plane №436): чего не хватает до
         # «Утвердить» и прогресс «заполнено K из N» для шапки визита.
-        **_required_progress(event, visit, data),
+        **_required_progress(summary, visit),
     }
 
 
-def _required_progress(event, visit, data):
+def _required_progress(summary, visit):
+    """Прогресс обязательных полей ПО УЖЕ СОБРАННОЙ сводке (Plane №690).
+
+    Раньше функция собирала её заново из `event` и `data`. Кроме двойной цены
+    это был и второй ответ на тот же вопрос: разойдись сборка с той, что уже
+    лежит в строке, — «заполнено K из N» считалось бы не по тому, что человек
+    видит.
+    """
     from organization_management.apps.ops import gvo as gvo_service
 
-    summary = _with_refs(_deep_merge(derive_summary(event), data))
     missing = gvo_service.missing_required(summary, visit)
     total = len(gvo_service.REQUIRED_VISIT_FIELDS)
     return {
