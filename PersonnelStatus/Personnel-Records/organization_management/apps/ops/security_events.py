@@ -5285,19 +5285,69 @@ def _visit_of_post(event, post_id):
     return next((v for v in visits if str(v.pk) == owner), None)
 
 
-_FROZEN_FROM = _STAGE_ORDER.index("APPROVAL")
+
+
+#: Статусы документа, при которых состав правит только новая версия
+#: (`[СОГ-04]`): он у людей на подписи либо уже подписан.
+_FROZEN_DOCUMENT_STATUSES = ("SUBMITTED", "APPROVED")
+
+
+def document_status_of(visit):
+    """Статус ТЕКУЩЕЙ версии документа объекта.
+
+    Строки версий есть не у всех объектов: таблица появилась в №396/№411, и
+    бэкфилла у неё нет НАМЕРЕННО (см. `_ensure_document_version`) — история
+    начинается честно, «с этого момента». Поэтому у объекта без строки статус
+    выводится из его же полей ровно теми правилами, которыми `_ensure_
+    document_version` завёл бы строку: второй ответ на тот же вопрос
+    разошёлся бы с первым.
+    """
+    current = _current_document_version(visit)
+    if current is not None:
+        return current.status
+    if visit.approval_status == "APPROVED":
+        return "APPROVED"
+    if visit.approval_status == "RETURNED":
+        return "RETURNED"
+    return "SUBMITTED" if visit.approval_snapshot else "DRAFT"
+
+
+def placement_frozen(visit):
+    """Заморожена ли расстановка объекта — по СТАТУСУ ДОКУМЕНТА.
+
+    🔴 НЕ ПО ЭТАПУ ОБЪЕКТА (Plane №533, №536). Заморозка ключилась на этап
+    `APPROVAL` и дальше, а на этот этап объект попадает уже завершением
+    расстановки — то есть КОГДА ДОКУМЕНТ ЕЩЁ ЧЕРНОВИК И НИКОМУ НЕ ОТПРАВЛЕН.
+    Оператор не мог поправить собственную расстановку: `placement/assign/`
+    отвечал `PLACEMENT_FROZEN` при `documentStatus: DRAFT`, а единственный
+    путь разморозки требовал, чтобы согласующий вернул документ, которого он
+    не получал.
+
+    Спецификация `[СОГ-04]` говорит именно о ДОКУМЕНТЕ: «После согласования
+    версия замораживается: правка невозможна; любое изменение = новая версия
+    → повторное согласование». Черновик и возвращённый документ правятся —
+    в этом и смысл возврата; отправленный и согласованный — нет: под ними
+    подписываются или уже подписались.
+
+    Отсюда же чинится и отзыв (№536): он возвращает документ в черновик, и
+    расстановка размораживается сама, без отдельного правила.
+    """
+    return document_status_of(visit) in _FROZEN_DOCUMENT_STATUSES
 
 
 def _require_placement_editable(event, post_id):
-    """Отказ, если расстановка объекта этого поста заморожена — объект на
-    «Согласовании» или дальше."""
+    """Отказ, если расстановка объекта этого поста заморожена."""
     visit = _visit_of_post(event, post_id)
-    if visit is None or _stage_index(visit.stage) < _FROZEN_FROM:
+    if visit is None or not placement_frozen(visit):
         return
     raise DomainError(
         "PLACEMENT_FROZEN",
         422,
-        detail={"visitObjectId": str(visit.pk), "stage": visit.stage},
+        detail={
+            "visitObjectId": str(visit.pk),
+            "stage": visit.stage,
+            "documentStatus": document_status_of(visit),
+        },
         message=(
             "Расстановка объекта заморожена: документ на согласовании или "
             "согласован. Изменение состава — через возврат на доработку, "
