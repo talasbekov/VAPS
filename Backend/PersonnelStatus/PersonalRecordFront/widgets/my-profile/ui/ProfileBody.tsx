@@ -49,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Check, X } from "lucide-react";
 import type { MyAssignmentRow } from "@/hooks/use-my-assignments";
 import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { STAGE_LABEL } from "@/entities/security-event";
 import { useAllEvaluationsOf } from "@/hooks/use-ops-ratings";
@@ -575,6 +576,48 @@ interface MyAssignment {
   declineReason: string | null;
 }
 
+/**
+ * Название мероприятия — ССЫЛКОЙ ТОЛЬКО ТОМУ, КОМУ КАРТОЧКА ОТКРЫТА
+ * (Plane №595).
+ *
+ * 🔴 Карточка ОМ закрыта правом `event.view`, а ручка «мои назначения»
+ * написана ровно для того, у кого его НЕТ: рядовой сотрудник видит свои
+ * заступления, не видя реестра. Ссылка вела его на экран «Доступ закрыт» —
+ * обещала то, чего не даёт.
+ *
+ * Без права ссылки нет ВОВСЕ, а не выключенной: у ссылки нет действия,
+ * которое можно выключить, и «серая ссылка» читалась бы как неполадка. Для
+ * этого человека карточки ОМ не существует, и текст без ссылки — честное
+ * описание его мира. (Конвенция раздела «недоступное выключается, а не
+ * прячется» — про ДЕЙСТВИЯ: там выключенная кнопка отвечает на вопрос
+ * «почему я не могу», здесь вопроса не возникает.)
+ */
+function EventLink({
+  eventId,
+  className,
+  children,
+  hideWithoutAccess = false,
+}: {
+  eventId: string;
+  className: string;
+  children: React.ReactNode;
+  /** Кнопка-ссылка, у которой нет смысла без перехода: без права её нет
+   *  вовсе. Для НАЗВАНИЯ мероприятия остаётся текст — оно называет строку. */
+  hideWithoutAccess?: boolean;
+}) {
+  const { hasPermission, isLoading } = useOpsPermissions();
+  // Пока права грузятся — ссылка есть: мигать интерфейсом хуже, а переход
+  // всё равно упрётся в тот же гейт страницы, что и раньше.
+  if (!isLoading && !hasPermission("event.view")) {
+    return hideWithoutAccess ? null : <span className={className}>{children}</span>;
+  }
+  return (
+    <Link href={`/security-ops/events/${eventId}`} className={className}>
+      {children}
+    </Link>
+  );
+}
+
 /** Плоская строка сервера → форма, которую читают вкладки. Мероприятие
  * здесь — срез полей, а не карточка ОМ: сотруднику без `event.view` карточка
  * и не положена. */
@@ -677,7 +720,15 @@ function EventsTab({
               <ul className="divide-y">
                 {upcoming.map((item) => (
                   <AssignmentRow
-                    key={`${item.event.id}:${item.postLabel}`}
+                    // 🔴 КЛЮЧ — ID НАЗНАЧЕНИЯ (Plane №594). Пара «мероприятие
+                    // + подпись поста» уникальной НЕ является: у двух строк
+                    // одного ОМ пост мог уйти из расчёта (обе подписи пусты),
+                    // а гард `DOUBLE_ASSIGNMENT` ловит только ДРУГОЙ пост.
+                    // `AssignmentRow` держит своё состояние (окно отказа и
+                    // причина), и React при совпавших ключах переиспользует
+                    // чужой экземпляр: окно отказа и уходящий на сервер
+                    // `assignmentId` относились бы к соседней строке.
+                    key={item.id}
                     item={item}
                     readOnly={readOnly}
                   />
@@ -799,18 +850,21 @@ function HistoryTab({
               </div>
               {past.map((item) => (
                 <div
-                  key={`${item.event.id}:${item.postLabel}`}
+                  // Ключ — id назначения, а не пара «ОМ + подпись поста»
+                  // (Plane №594): подписи двух строк одного ОМ совпадают,
+                  // если пост ушёл из расчёта у обеих.
+                  key={item.id}
                   className="grid grid-cols-[96px_1.6fr_1.1fr_1.1fr_150px_84px] items-baseline gap-2 border-b px-3 py-2.5 last:border-0"
                 >
                   <span className="text-xs tabular-nums">
                     {formatIsoDate(item.event.businessDate)}
                   </span>
-                  <Link
-                    href={`/security-ops/events/${item.event.id}`}
+                  <EventLink
+                    eventId={item.event.id}
                     className="truncate text-sm font-semibold hover:underline"
                   >
                     {item.event.code} — {item.event.title}
-                  </Link>
+                  </EventLink>
                   <span className="truncate text-xs text-muted-foreground">
                     {item.event.objectName || "—"}
                   </span>
@@ -1010,12 +1064,12 @@ function AssignmentRow({
           <span className="bg-secondary text-secondary-foreground inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold tabular-nums">
             {item.event.code}
           </span>
-          <Link
-            href={`/security-ops/events/${item.event.id}`}
+          <EventLink
+            eventId={item.event.id}
             className="truncate text-xs font-bold hover:underline"
           >
             {item.event.title}
-          </Link>
+          </EventLink>
         </div>
 
         <h3 className="mt-2 mb-[3px] text-[13px] font-semibold">
@@ -1094,12 +1148,17 @@ function AssignmentRow({
               "Ответ не сохранён — попробуйте ещё раз."}
           </p>
         )}
-        <Link
-          href={`/security-ops/events/${item.event.id}`}
+        {/* «Инструкция по посту» ведёт в ту же закрытую карточку (Plane
+            №595). Здесь это КНОПКА-ссылка, то есть действие: тому, у кого
+            права нет, она не показывается вовсе — краткая инструкция и так
+            стоит выше в строке, а нажатие приводило на «Доступ закрыт». */}
+        <EventLink
+          eventId={item.event.id}
           className="hover:bg-muted inline-flex h-[31px] shrink-0 items-center rounded-lg border bg-background px-3 text-[11px] font-medium whitespace-nowrap transition-colors"
+          hideWithoutAccess
         >
           Инструкция по посту
-        </Link>
+        </EventLink>
       </div>
 
       <Dialog open={declineOpen} onOpenChange={setDeclineOpen}>

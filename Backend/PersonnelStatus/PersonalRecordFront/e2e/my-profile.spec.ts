@@ -860,6 +860,155 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(page.getByText('смены дежурств другого сотрудника здесь не показываются')).toBeVisible()
   })
 
+  test.describe(() => {
+    test.use({ serviceWorkers: 'block' })
+
+    test('две строки одного ОМ отвечают каждая за себя (Plane №594, №595)', async ({ page }) => {
+      /**
+       * 🔴 ДВЕ ЗАДАЧИ В ОДНОЙ ПРОБЕ, потому что состояние у них одно.
+       *
+       * №594: ключ строки собирался из пары «мероприятие + подпись поста»,
+       * а уникальной она не является — у двух строк одного ОМ пост мог уйти
+       * из расчёта, и обе подписи пусты.
+       *
+       * 🔴 ЧЕСТНО ПРО ГРАНИЦУ ЭТОЙ ПРОБЫ: она проверяет, что две такие
+       * строки РАЗЛИЧИМЫ и каждая отвечает своим `assignmentId`, но на
+       * возврате прежнего ключа НЕ КРАСНЕЕТ — проверено запуском. React
+       * рисует детей с одинаковыми ключами обоих, и `assignmentId` берётся
+       * из свойств, а не из состояния. Вред от совпавших ключей проявляется
+       * при ПЕРЕСТАНОВКЕ строк с открытым окном отказа, а в этот момент
+       * модальное окно блокирует единственное действие экрана, которым можно
+       * вызвать перезапрос списка; синтетические `focus`/`visibilitychange`
+       * перезапроса не вызывают (тоже проверено). Пробы на это нет, и
+       * записано это вслух, а не выдано за покрытие.
+       *
+       * №595: карточка ОМ закрыта правом `event.view`, а ручка «мои
+       * назначения» написана ровно для того, у кого его нет.
+       *
+       * Состояние подменяется ОТВЕТОМ РУЧКИ: через интерфейс двух назначений
+       * одного человека в одном ОМ не создать (сервер отбивает
+       * `DOUBLE_ASSIGNMENT`), а данные такие приезжают — гард ловит только
+       * ДРУГОЙ пост, и две строки на ОДНОМ посту он пропускает.
+       */
+      const admin = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+      const mine = await get<MyEmployee>(admin, '/api/operations/my-employee/')
+      const row = (assignmentId: string) => ({
+        assignmentId,
+        eventId: '424242',
+        eventCode: 'ОМ-ПРОБА-594',
+        eventTitle: 'Мероприятие пробы 594',
+        eventStage: 'ACKNOWLEDGEMENT',
+        businessDate: '2028-07-07',
+        businessDateEnd: null,
+        objectName: 'Объект пробы',
+        visitObjectId: null,
+        visitObjectName: null,
+        postId: 'post-1',
+        // Пост снят с расчёта у ОБЕИХ строк: ровно тот случай, в котором
+        // подписи совпадают и прежний ключ схлопывал строки.
+        postFound: false,
+        sector: '',
+        post: '',
+        task: '',
+        requirements: '',
+        uniform: '',
+        weapon: '',
+        roleCode: null,
+        sectionCode: null,
+        acknowledgedAt: null,
+        acknowledgedVia: '',
+        acknowledgedBy: '',
+        declinedAt: null,
+        declineReason: null,
+      })
+      await page.route(
+        (url) => url.pathname.endsWith('/api/ops/security-events/my-assignments/'),
+        async (route) =>
+          route.fulfill({
+            json: {
+              results: [row('assignment-первое'), row('assignment-второе')],
+              employeeId: String(mine.employee!.id),
+              unlinkedReason: null,
+            },
+          }),
+      )
+      // Отказ перехватывается: предмет — КАКОЙ идентификатор уходит на
+      // сервер, а не что сервер на него ответит.
+      const declined: string[] = []
+      await page.route(
+        (url) => url.pathname.includes('/decline/'),
+        async (route) => {
+          declined.push(route.request().url())
+          await route.fulfill({ status: 200, json: {} })
+        },
+      )
+      await page.route(
+        (url) => url.pathname.includes('/acknowledge/'),
+        async (route) => route.fulfill({ status: 200, json: {} }),
+      )
+
+      await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+      await page.goto(`${APP}${SCREEN}`)
+      const second = page.getByTestId('my-assignment-assignment-второе')
+      await expect(second).toBeVisible({ timeout: 20_000 })
+      await expect(
+        page.getByTestId('my-assignment-assignment-первое'),
+        'две строки схлопнулись в одну — ключ не уникален',
+      ).toBeVisible()
+
+      // №595 проверяется ДО отказа: у админа право `event.view` есть, ссылка
+      // на карточку ОМ должна быть — иначе проба ниже проверяла бы «спрятали
+      // у всех», а не «спрятали у того, кому закрыто».
+      // Ссылка ищется НА СТРАНИЦЕ, а не внутри `second`: `data-testid`
+      // висит на столбце действий, а не на строке целиком, и название ОМ в
+      // него не входит. Две ссылки — по одной на строку: заодно доказывает,
+      // что строки не схлопнулись.
+      await expect(
+        page.getByRole('link', { name: 'Мероприятие пробы 594' }),
+        'ссылка на карточку ОМ спрятана у того, кому карточка открыта',
+      ).toHaveCount(2)
+
+      await second.getByRole('button', { name: 'Не могу заступить' }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible()
+      await dialog.getByLabel('Причина').fill('Проба ключей строк')
+      await dialog.getByRole('button', { name: 'Отправить отказ' }).click()
+
+      await expect
+        .poll(() => declined.length, { timeout: 15_000 })
+        .toBeGreaterThan(0)
+      expect(
+        declined[0],
+        'отказ ушёл с идентификатором СОСЕДНЕЙ строки',
+      ).toContain('assignment-%D0%B2%D1%82%D0%BE%D1%80%D0%BE%D0%B5')
+    })
+
+    test('сотруднику без права на реестр название ОМ не ссылка (Plane №595)', async ({ page }) => {
+      // Права подменяются ответом ручки — тем же приёмом, что в
+      // `department-requests`: нужен тот, кому профиль открыт, а карточка ОМ
+      // нет. Реальный `acc_employee` для этого требует пароля матрицы
+      // доступа, и без него проба молча скипалась бы.
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-permissions/'),
+        async (route) =>
+          route.fulfill({ json: { permissions: ['status.view', 'personnel.view'], roles: [] } }),
+      )
+      await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+      await page.goto(`${APP}${SCREEN}`)
+      await expect(page.getByRole('navigation', { name: 'Разделы профиля' })).toBeVisible({
+        timeout: 20_000,
+      })
+      await expect(
+        page.getByRole('link', { name: 'Инструкция по посту' }),
+        'кнопка ведёт на «Доступ закрыт» тому, у кого нет права на реестр',
+      ).toHaveCount(0)
+      await expect(
+        page.locator('a[href^="/security-ops/events/"]'),
+        'название ОМ обещает карточку, закрытую правом',
+      ).toHaveCount(0)
+    })
+  })
+
   test('«до …» в шапке — последний день статуса, а не граница полуинтервала (Plane №657)', async ({
     page,
   }) => {
