@@ -84,6 +84,22 @@ export interface GvoFieldSpec {
    * `country`, — «Утвердить» не разблокировался ничем, кроме ручного PATCH.
    */
   path: string;
+  /**
+   * Показывать ли галочку «уточняется» у этого поля (Plane №518).
+   *
+   * 🔴 ГАЛОЧКА СТОИТ ТАМ, ГДЕ ФЛАГ ДЕЙСТВУЕТ. Флаг читают ровно два места:
+   * документ (`documents_summary.document_values` — по пути поля) и проверка
+   * обязательных полей (`REQUIRED_VISIT_FIELDS`). У ФИО охраняемого лица, его
+   * должности и названия группы ГВО пути в этих списках нет — галочка там
+   * стояла и не делала НИЧЕГО: слово в документ не печаталось, «Утвердить» не
+   * разблокировалось. Хуже того, путь у них голый (`name`, `role`) и общий у
+   * всех лиц и всех групп сразу — пометив первое лицо, человек видел галочку
+   * и у второго (та же болезнь, что №517 вылечил у «Прибытия»/«Убытия»).
+   *
+   * Заблокированная галочка вместо снятой была бы хуже: «нельзя сейчас»
+   * читается как «можно потом», а тут нельзя никогда.
+   */
+  flaggable: boolean;
 }
 
 export interface GvoSectionSpec {
@@ -99,7 +115,21 @@ function text(
   placeholder = "",
   path = key
 ): GvoFieldSpec {
-  return { key, label, placeholder, hint: "", multiline: false, rows: 1, path };
+  return {
+    key,
+    label,
+    placeholder,
+    hint: "",
+    multiline: false,
+    rows: 1,
+    path,
+    flaggable: true,
+  };
+}
+
+/** Поле списка (лицо, группа): своего пути у него нет — флага тоже. */
+function plain(key: string, label: string, placeholder = ""): GvoFieldSpec {
+  return { ...text(key, label, placeholder), flaggable: false };
 }
 
 function area(
@@ -109,7 +139,18 @@ function area(
   rows: number,
   path = key
 ): GvoFieldSpec {
-  return { key, label, placeholder: "", hint, multiline: true, rows, path };
+  // Многострочные поля галочки не носили и раньше: окно рисует её только
+  // рядом с однострочным вводом.
+  return {
+    key,
+    label,
+    placeholder: "",
+    hint,
+    multiline: true,
+    rows,
+    path,
+    flaggable: false,
+  };
 }
 
 export function isPersonSection(section: GvoSection): boolean {
@@ -215,7 +256,7 @@ export function gvoSectionSpec(section: GvoSection): GvoSectionSpec {
     return {
       title: section === "group:new" ? "Новая группа ГВО" : "Группа ГВО",
       fields: [
-        text("name", "Название группы", "ГВО «Черногория»"),
+        plain("name", "Название группы", "ГВО «Черногория»"),
         area(
           "members",
           "Состав группы",
@@ -229,8 +270,8 @@ export function gvoSectionSpec(section: GvoSection): GvoSectionSpec {
     return {
       title: section === "person:new" ? "Новое охраняемое лицо" : "Охраняемое лицо",
       fields: [
-        text("name", "ФИО", "Яков Милатович"),
-        text("role", "Должность", "Президент Черногории"),
+        plain("name", "ФИО", "Яков Милатович"),
+        plain("role", "Должность", "Президент Черногории"),
         area(
           "facts",
           "Данные",

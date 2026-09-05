@@ -272,5 +272,26 @@ def append_acknowledgement_sheet(document, event, visit):
     _table(document, ["ФИО", "Пост", "Дата-время", "Способ"], acknowledgement_sheet_rows(event, visit), empty="Назначений не было.")
 
 
-def acknowledgement_completed(event):
-    return event.stage in _STAGE_ORDER and _STAGE_ORDER.index(event.stage) >= _STAGE_ORDER.index("CONDUCT")
+def acknowledgement_completed(event, visit=None):
+    """Ознакомление пройдено — можно прикладывать лист (`[МД-08]`).
+
+    🔴 СПРАШИВАЕТСЯ ЭТАП ОБЪЕКТА, КОГДА ОБЪЕКТ НАЗВАН (Plane №520). Функция
+    сравнивала только `event.stage`, а он — НАИМЕНЬШАЯ стадия среди объектов.
+    Документ же печатается ПО ОБЪЕКТУ: объект А ознакомление закончил, объект Б
+    отстаёт — и в документе объекта А приложения не было, потому что
+    мероприятие целиком ещё на «Ознакомлении». Человек скачивал дело
+    закончившего объекта и не находил в нём листа, который этот объект как раз
+    и подписал.
+
+    Это третий по счёту случай одной и той же ошибки — «спросили мероприятие
+    там, где отвечает объект» (см. №475 и №528). Общее у них одно: с №412
+    `event.stage` перестал быть ответом на вопрос «где этот объект».
+
+    Объект НЕ НАЗВАН (ОМ без объектов посещения, сборка по всему мероприятию) —
+    отвечает мероприятие, как и раньше: другой сущности у такого ОМ нет.
+    """
+    stage = visit.stage if visit is not None else event.stage
+    return (
+        stage in _STAGE_ORDER
+        and _STAGE_ORDER.index(stage) >= _STAGE_ORDER.index("CONDUCT")
+    )

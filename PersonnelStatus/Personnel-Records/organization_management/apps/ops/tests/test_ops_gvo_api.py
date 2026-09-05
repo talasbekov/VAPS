@@ -555,3 +555,71 @@ def test_gvo_assembled_is_closed_to_nobody():
     make_event(code="ОМ-СБ-8")
 
     assert nobody("ops-gvo-sum-8").get(f"{GVO_URL}assembled/").status_code == 403
+
+
+# ── Обязательные поля визита (Plane №521) ───────────────────────────────────
+
+
+def test_the_dates_the_summary_fills_itself_do_not_count_as_entered():
+    """Даты прибытия и убытия обязательны ПО-НАСТОЯЩЕМУ (Plane №521).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. `derive_summary` ВСЕГДА кладёт в обе даты день
+    мероприятия — разумное умолчание для документа (визит идёт в этот день), но
+    для проверки «человек заполнил» оно смертельно: значение по этим путям
+    пусто не бывает НИКОГДА, и в `missingRequired` они не попадали ни при каких
+    данных. Прогресс показывал «4 из 5», когда не введено ничего, а утверждение
+    визита по этим двум полям не блокировалось вовсе.
+
+    Умолчание НЕ снято намеренно: снять его значило бы печатать в документе
+    пустую дату там, где раньше стояла верная. Изменилось другое — «заполнено»
+    для этих путей означает «человек ВВЁЛ».
+
+    Мутация, на которой проба обязана краснеть: убрать ветку
+    `DERIVED_DEFAULT_PATHS` из `missing_required`.
+    """
+    from organization_management.apps.operations.models_gvo import OpsForeignVisit
+    from organization_management.apps.ops import documents_summary, gvo
+
+    event = make_event("ОМ-Т-521")
+    visit = OpsForeignVisit.objects.create(event=event, data={}, unspecified=[])
+    summary = documents_summary.summary_for_event(event, visit)
+
+    # Предусловие: сводка сама подставила день мероприятия — иначе проба
+    # проверяла бы не тот механизм.
+    assert summary["arrival"]["date"], "умолчание сводки исчезло — проба вакуумна"
+
+    missing = gvo.missing_required(summary, visit)
+    assert "Дата прибытия" in missing, "подставленная сводкой дата сошла за введённую"
+    assert "Дата убытия" in missing
+
+    # Человек ввёл дату прибытия — она перестала быть недостающей, а убытие
+    # осталось: поля независимы.
+    visit.data = {"arrival": {"date": "2026-08-25"}}
+    visit.save(update_fields=["data"])
+    missing = gvo.missing_required(
+        documents_summary.summary_for_event(event, visit), visit
+    )
+    assert "Дата прибытия" not in missing
+    assert "Дата убытия" in missing
+
+
+def test_a_date_marked_unspecified_is_not_missing_either():
+    """«Уточняется» закрывает обязательность — как и у прочих полей.
+
+    Иначе правка №521 запретила бы утверждать визит, у которого дата честно
+    помечена неизвестной, а это ровно то, ради чего флаг заведён.
+    """
+    from organization_management.apps.operations.models_gvo import OpsForeignVisit
+    from organization_management.apps.ops import documents_summary, gvo
+
+    event = make_event("ОМ-Т-521Б")
+    visit = OpsForeignVisit.objects.create(
+        event=event, data={}, unspecified=["arrival.date", "departure.date"]
+    )
+
+    missing = gvo.missing_required(
+        documents_summary.summary_for_event(event, visit), visit
+    )
+
+    assert "Дата прибытия" not in missing
+    assert "Дата убытия" not in missing

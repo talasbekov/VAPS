@@ -497,8 +497,15 @@ function Fields({
   onChange: (key: string, value: string) => void;
   flags: string[];
   onFlag: (key: string, on: boolean) => void;
-  /** Списки лиц и групп флагов не несут: флаг хранится по ключу поля, а у
-   * элементов списка ключи повторяются. */
+  /**
+   * Списки лиц и групп флагов не несут: флаг хранится по ПУТИ поля, а у
+   * элементов списка своего пути нет — голые `name`/`role` общие у всех лиц
+   * и всех групп сразу.
+   *
+   * Ставится ли галочка, решает теперь и само поле — `field.flaggable`
+   * (Plane №518): галочка стоит там, где флаг кто-то читает. `noFlags`
+   * остаётся как выключатель на весь блок, но правило поля сильнее.
+   */
   noFlags?: boolean;
   grid?: boolean;
 }) {
@@ -515,7 +522,9 @@ function Fields({
           // своё поле `date`, и по имени галочка ставилась сразу в обоих.
           // Сервер же читает флаги как ПУТИ в сводке — по имени он не узнавал
           // ни одного, кроме `country`.
-          flagged={noFlags ? null : flags.includes(field.path)}
+          flagged={
+            noFlags || !field.flaggable ? null : flags.includes(field.path)
+          }
           onFlag={(on) => onFlag(field.path, on)}
         />
       ))}
