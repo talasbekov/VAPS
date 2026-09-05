@@ -19,6 +19,7 @@ import {
   fetchUnreadNotifications,
   markAllRead,
   markNotificationRead,
+  notificationKey,
   Notification,
 } from "../api/notifications-api";
 import { toast } from "@/shared/hooks/use-toast";
@@ -202,7 +203,7 @@ export function NotificationsDropdown() {
             <AnimatePresence mode="popLayout">
               {notifications.map((n: Notification, index: number) => (
                 <motion.div
-                  key={n.id}
+                  key={notificationKey(n)}
                   variants={itemVariants}
                   exit="exit"
                   layout
