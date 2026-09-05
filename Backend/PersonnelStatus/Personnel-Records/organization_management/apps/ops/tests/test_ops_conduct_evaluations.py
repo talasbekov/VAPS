@@ -144,3 +144,90 @@ def test_stage_score_feeds_the_average(manager, two_objects_on_conduct):  # noqa
     included = ratings.included_evaluations(evaluations, code, today, today)
     assert [e.score for e in included] == [4]
     assert included[0].method == conduct_evaluations.STAGE_METHOD
+
+
+def _second_person_on_the_same_post(event_id, visit):
+    """Второй человек на посту объекта: без него проба про число вызовов
+    вакуумна — при одной строке «на каждую запись» и «раз на ручку» дают
+    одно и то же число.
+
+    Строка дописывается прямо в расстановку, а не ручкой `placement/assign/`:
+    на «Проведении» расстановка уже закрыта для правки, а предмет пробы —
+    не правила назначения, а работа ручки оценок с УЖЕ стоящим составом.
+    """
+    event = service.lock_event(event_id)
+    posts = {str(p.get("id")) for p in service.visit_object_posts(event, visit)}
+    origin = next(
+        a for a in event.placement_assignments if str(a.get("postId")) in posts
+    )
+    employee = make_employee(last_name="Второйнапосту")
+    event.placement_assignments = [
+        *event.placement_assignments,
+        {
+            **origin,
+            "id": f"{origin['id']}-double",
+            "employeeId": str(employee.pk),
+            "employeeName": "Второйнапосту В.",
+        },
+    ]
+    event.save(update_fields=["placement_assignments", "updated_at"])
+    return employee
+
+
+def test_evaluation_is_opened_once_per_request(manager, two_objects_on_conduct, monkeypatch):  # noqa: F811
+    """Оценивание открывается на входе в ручку, а не на каждую оценку (Plane №640).
+
+    `open_evaluation_for_event` проходит по ВСЕМ назначениям мероприятия и
+    делает по два `update_or_create` на каждое. Вызов сидел внутри `_write`,
+    то есть повторялся на каждой оцениваемой строке: «Всем 10» по сотне
+    человек — двадцать тысяч записей в одной транзакции, при том что второй и
+    следующие вызовы не меняют ничего (`create_defaults`, Plane №641).
+    """
+    _, event_id, first, _ = two_objects_on_conduct
+    _second_person_on_the_same_post(event_id, first)
+
+    calls = []
+    real = ratings.open_evaluation_for_event
+
+    def counted(event, *, actor):
+        calls.append(actor)
+        return real(event, actor=actor)
+
+    monkeypatch.setattr(ratings, "open_evaluation_for_event", counted)
+
+    resp = manager.post(_url(event_id, first) + "all/", {}, format="json")
+
+    assert resp.status_code == 200, resp.content
+    scored = [r for r in resp.json()["rows"] if not r["replaced"] and r["score"] == 10]
+    assert len(scored) >= 2, "проба вакуумна: оценена одна строка"
+    assert len(calls) == 1, (
+        f"оценивание открыто {len(calls)} раз на {len(scored)} оценок — "
+        "вызов вернулся внутрь записи"
+    )
+
+
+def test_single_score_opens_the_evaluation_when_the_stage_did_not(
+    manager, two_objects_on_conduct, monkeypatch  # noqa: F811
+):
+    """Открытие не потерялось при переносе из записи в ручку (Plane №640).
+
+    Вызов в `_write` был ещё и страховкой: у мероприятия, доведённого до
+    «Проведения» ДО Plane №433, заданий оценщика нет вовсе, и без открытия
+    оценка легла бы в пустоту. Страховка сохранена — но на входе в ручку.
+    """
+    _, event_id, first, _ = two_objects_on_conduct
+    event_code = f"security-event-{event_id}"
+    OpsEvaluationWorkItem.objects.filter(event_code=event_code).delete()
+    assert not OpsEvaluationWorkItem.objects.filter(event_code=event_code).exists()
+
+    row = manager.get(_url(event_id, first)).json()["rows"][0]
+    resp = manager.post(
+        _url(event_id, first),
+        {"assignmentId": row["assignmentId"], "score": 8},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.content
+    code = ratings._participant_code_for(int(row["employeeId"]))
+    work_item = OpsEvaluationWorkItem.objects.get(work_item_code=f"{event_code}-{code}")
+    assert work_item.status == "SUBMITTED", "задание не заведено — оценка легла в пустоту"

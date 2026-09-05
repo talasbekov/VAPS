@@ -143,7 +143,6 @@ def _write(event, assignment, *, score, comment, actor):
             "EVALUATION_TARGET_UNKNOWN", 422,
             message="У назначения нет сотрудника — оценивать некого.",
         )
-    ratings.open_evaluation_for_event(event, actor=actor)
     code = ratings._participant_code_for(int(employee_id))
     event_code = _event_code(event)
     previous = list(
@@ -195,6 +194,27 @@ def _write(event, assignment, *, score, comment, actor):
     return evaluation
 
 
+def _open_evaluation_once(event, *, actor):
+    """Открыть оценивание ОДИН РАЗ на запрос (Plane №640).
+
+    `ratings.open_evaluation_for_event` проходит по ВСЕМ назначениям
+    мероприятия и делает по два `update_or_create` на каждое. Вызов сидел
+    внутри `_write`, то есть повторялся на каждой оцениваемой строке: «Всем
+    10» по сотне человек давало двадцать тысяч записей в одной транзакции
+    вместо двухсот, и росло квадратом от состава.
+
+    Убрать вызов совсем нельзя: он не только заводит задания входом объекта в
+    «Проведение» (`security_events.advance_visits`), но и страхует
+    мероприятия, доведённые до этого этапа ДО Plane №433 — у них заданий нет
+    вовсе, и оценка легла бы в пустоту. Поэтому вызов не снят, а поднят на
+    вход в ручку: страховка та же, работа линейная.
+
+    Повторный вызов ничего не сбрасывает (ход оценивания живёт в
+    `create_defaults`, Plane №641) — но и ничего не даёт, кроме нагрузки.
+    """
+    ratings.open_evaluation_for_event(event, actor=actor)
+
+
 def _assignment_of(event, visit, assignment_id):
     posts = {str(p.get("id")) for p in events.visit_object_posts(event, visit)}
     for a in event.placement_assignments or []:
@@ -212,6 +232,7 @@ def set_score(event_id, visit_object_id, *, assignment_id, score, comment, actor
     visit = events._visit_object_or_404(event, visit_object_id)
     _require_open(event, visit)
     assignment = _assignment_of(event, visit, assignment_id)
+    _open_evaluation_once(event, actor=actor)
     _write(event, assignment, score=_validate_score(score), comment=comment, actor=actor)
     return visit_evaluations(event, visit)
 
@@ -231,6 +252,7 @@ def score_all(event_id, visit_object_id, *, score, actor):
         )
     summary = visit_evaluations(event, visit)
     unscored = {r["assignmentId"] for r in summary["rows"] if not r["replaced"] and r["score"] is None}
+    _open_evaluation_once(event, actor=actor)
     for a in event.placement_assignments or []:
         if a.get("id") in unscored:
             _write(event, a, score=value, comment="", actor=actor)
