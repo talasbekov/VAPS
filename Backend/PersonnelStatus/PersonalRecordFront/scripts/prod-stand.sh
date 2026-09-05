@@ -54,15 +54,56 @@ if [ -z "$SECRET" ]; then
 fi
 
 cd "$DIST/standalone" || exit 1
-PORT="$PORT" HOSTNAME=127.0.0.1 \
-  NEXTAUTH_URL="http://localhost:$PORT" \
-  NEXTAUTH_SECRET="$SECRET" \
-  BACKEND_URL="${BACKEND_URL:-http://localhost:8100}" \
-  node server.js >> "$LOG" 2>&1 &
-PID=$!
-sleep 4
-if kill -0 "$PID" 2>/dev/null; then
+
+# 🔴 СЕРВЕР ЗАПУСКАЕТСЯ ПОД НАДЗИРАТЕЛЕМ, А НЕ НАПРЯМУЮ (Plane №823).
+#
+# ЗАЧЕМ. 06.09.2026 этот стенд ИСЧЕЗ посреди часового обхода портала: замер RSS
+# перед блоком показывает 317 016 КБ, замер перед следующим — уже ничего. В
+# логе последняя строка — обычный вывод авторизации; в `kern.log` единственная
+# запись OOM за сутки была по ЧУЖОМУ pid. То есть о смерти собственного стенда
+# не осталось ни следа, а прогон прочитался как 50 красных проб с именами
+# маршрутов, и час ушёл на разбор портала, к которому претензий нет.
+#
+# Надзиратель — `setsid`-шелл, который держит сервер СВОИМ ребёнком и потому
+# может его `wait`: код возврата выше 128 означает сигнал (137 — SIGKILL, 143 —
+# SIGTERM), и это ровно тот бит, которого не хватало, чтобы отличить «упал сам»
+# от «его сняли». Строка уходит в тот же лог; pid сервера возвращается через
+# файл — он ребёнок надзирателя, а не этого скрипта.
+PIDFILE="${PIDFILE:-/tmp/next-prod-$PORT.pid}"
+rm -f "$PIDFILE"
+setsid bash -c '
+  log="$1"; pidfile="$2"; port="$3"; secret="$4"; backend="$5"
+  PORT="$port" HOSTNAME=127.0.0.1 \
+    NEXTAUTH_URL="http://localhost:$port" \
+    NEXTAUTH_SECRET="$secret" \
+    BACKEND_URL="$backend" \
+    node server.js >> "$log" 2>&1 &
+  child=$!
+  echo "$child" > "$pidfile"
+  wait "$child"
+  code=$?
+  if [ "$code" -gt 128 ]; then
+    why="СНЯТ СИГНАЛОМ $((code - 128))"
+  else
+    why="вышел сам, код возврата $code"
+  fi
+  printf "[prod-stand] СЕРВЕР ОСТАНОВЛЕН %s: pid=%s, %s\n" \
+    "$(date "+%Y-%m-%d %H:%M:%S")" "$child" "$why" >> "$log"
+  rm -f "$pidfile"
+' _ "$LOG" "$PIDFILE" "$PORT" "$SECRET" "${BACKEND_URL:-http://localhost:8100}" \
+  >/dev/null 2>&1 &
+
+# Ждём, пока надзиратель объявит pid ребёнка: без файла нечего печатать и
+# нечего гасить.
+PID=""
+for _ in 1 2 3 4 5 6 7 8; do
+  sleep 1
+  [ -s "$PIDFILE" ] && PID="$(cat "$PIDFILE")" && break
+done
+
+if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
   echo "[prod-stand] поднят: pid=$PID, порт=$PORT, лог=$LOG"
+  echo "[prod-stand] смерть сервера будет записана в тот же лог строкой «СЕРВЕР ОСТАНОВЛЕН»."
 else
   echo "[prod-stand] сервер не поднялся, смотрите $LOG"
   exit 1

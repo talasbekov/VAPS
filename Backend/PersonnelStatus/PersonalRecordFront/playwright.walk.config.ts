@@ -37,6 +37,9 @@ if (process.env.SMOKE_PASSWORD === undefined) {
 export default defineConfig({
   testDir: path.join(__dirname, 'e2e'),
   // Уборка та же, что у целевых проб: обход тоже заводит пробные ОМ.
+  // Предполётная проверка стенда (Plane №823): прогон по погашенному стенду
+  // обрывается ОДНОЙ строкой, а не полусотней падений с именами маршрутов.
+  globalSetup: path.join(__dirname, 'e2e', 'global-setup.ts'),
   globalTeardown: path.join(__dirname, 'e2e', 'global-teardown.ts'),
   testMatch: ['smoke-buttons.spec.ts'],
   // Один воркер: обход меняет состояние живого стенда, и параллельные персоны
