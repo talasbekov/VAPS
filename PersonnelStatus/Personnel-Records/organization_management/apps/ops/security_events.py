@@ -121,12 +121,37 @@ def _require_stage(event, stage, message):
 
 
 def lock_event(event_id):
-    """Событие под замком агрегата; незнакомый id — 404 с конвертом."""
+    """Событие под замком агрегата; незнакомый id — 404 с конвертом.
+
+    Только для ПРАВКИ. Чистое чтение берёт `read_event` ниже: замок строки
+    держится до конца транзакции и выстраивает в очередь все параллельные
+    переходы этапа (Plane №647).
+    """
     if not str(event_id).isdigit():
         raise _not_found("Мероприятие не найдено.", event_id)
     event = (
         OpsSecurityEvent.objects.select_for_update().filter(pk=event_id).first()
     )
+    if event is None:
+        raise _not_found("Мероприятие не найдено.", event_id)
+    return event
+
+
+def read_event(event_id):
+    """Событие ДЛЯ ЧТЕНИЯ — без `SELECT … FOR UPDATE` (Plane №647).
+
+    Отличается от `lock_event` ровно замком, и отказы у них одинаковые: 404 с
+    тем же конвертом на незнакомом и на нечисловом id — читатель не должен
+    угадывать по коду ответа, какой из двух путей его обслужил.
+
+    Зачем отдельная функция, а не «просто `.first()`» на месте вызова: правило
+    «читаем без замка» должно быть названо один раз и одним именем, иначе
+    следующий читатель снова возьмёт `lock_event` — он ближе и выглядит
+    привычнее.
+    """
+    if not str(event_id).isdigit():
+        raise _not_found("Мероприятие не найдено.", event_id)
+    event = OpsSecurityEvent.objects.filter(pk=event_id).first()
     if event is None:
         raise _not_found("Мероприятие не найдено.", event_id)
     return event
@@ -1574,12 +1599,19 @@ def recompute_event_stage(event):
     return event
 
 
-def advance_visits(event, stage, visits=None):
+def advance_visits(event, stage, visits=None, *, actor=None):
     """Перевести объекты на стадию и пересчитать по ним мероприятие.
 
     `visits=None` — ВСЕ объекты: так работают переходы, которые человек делает
     для мероприятия целиком (бюллетень, ознакомление, закрытие). Переходы,
     у которых адресат — объект (согласование, возврат), передают его явно.
+
+    `actor` доезжает до открытия оценивания (Plane №642): задания оценщика
+    адресуются учётной записи, и без адресата очередь оценщика не отдаёт их
+    НИКОМУ — заявленная цель «задания заводятся входом в этап 5» не
+    достигалась вовсе. `None` остаётся законным значением: переходы бывают и
+    без человека (пересчёт, обслуживание), и тогда адресата добирает первый
+    же вызов с актором (`open_evaluation_for_event`, Plane №641).
     """
     rows = visits if visits is not None else list(event.visit_objects.all())
     for visit in rows:
@@ -1592,11 +1624,11 @@ def advance_visits(event, stage, visits=None):
         # задания оценщика заводятся здесь, а не закрытием ОМ — иначе на
         # этапе оценивать было бы нечего. Вызов идемпотентен.
         from organization_management.apps.ops import ratings as ratings_service
-        ratings_service.open_evaluation_for_event(event, actor=None)
+        ratings_service.open_evaluation_for_event(event, actor=actor)
     return recompute_event_stage(event)
 
 
-def _advance(event, stage):
+def _advance(event, stage, *, actor=None):
     """Стадия мероприятия целиком: объектам ставится та же, событие — вывод.
 
     Переход в журнал (`record_transition`) пишется по ФАКТУ смены стадии
@@ -1606,7 +1638,7 @@ def _advance(event, stage):
     """
     old_stage = event.stage
     if event.visit_objects.exists():
-        advance_visits(event, stage)
+        advance_visits(event, stage, actor=actor)
     else:
         # ОМ без объектов посещения: считать не из чего, стадия своя.
         event.stage = stage
@@ -5831,7 +5863,7 @@ def acknowledge_assignment(event_id, assignment_id):
 
 
 @transaction.atomic
-def complete_acknowledgement(event_id):
+def complete_acknowledgement(event_id, *, actor=None):
     event = lock_event(event_id)
     _require_stage(
         event,
@@ -5844,7 +5876,7 @@ def complete_acknowledgement(event_id):
         raise DomainError("ACKNOWLEDGEMENT_INCOMPLETE", 422, message=
             "Не все назначенные сотрудники подтвердили ознакомление.",
         )
-    return _advance(event, "CONDUCT")
+    return _advance(event, "CONDUCT", actor=actor)
 
 
 # ── Проведение ──────────────────────────────────────────────────────────────

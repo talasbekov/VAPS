@@ -410,3 +410,81 @@ def test_restaging_a_score_leaves_a_correction_with_a_reason(  # noqa: F811
     assert correction.replacement_evaluation_code == rows[1].evaluation_code
     assert correction.reason.strip() != "", "замещение без причины — обход §19.18"
     assert correction.corrected_by != "", "замещение без автора"
+
+
+def test_reading_the_summary_takes_no_row_lock(manager, two_objects_on_conduct):  # noqa: F811
+    """Чтение сводки не берёт `SELECT … FOR UPDATE` (Plane №647).
+
+    Ручка читалась через `lock_event` внутри явной транзакции. React Query
+    перезапрашивает её при каждом возврате фокуса в окно, и открытый экран
+    проведения держал замок строки мероприятия, выстраивая в очередь любые
+    параллельные переходы этапа.
+
+    Замок виден в САМОМ ЗАПРОСЕ: `FOR UPDATE` — часть SQL, и проверять его
+    надёжнее по тексту запроса, чем по поведению двух соединений (второе
+    соединение в тестовой транзакции pytest-django просто не увидит строки).
+    """
+    from django.test.utils import CaptureQueriesContext
+    from django.db import connection
+
+    _, event_id, first, _ = two_objects_on_conduct
+    url = _url(event_id, first)
+
+    with CaptureQueriesContext(connection) as captured:
+        assert manager.get(url).status_code == 200
+    locking = [
+        query["sql"]
+        for query in captured.captured_queries
+        if "FOR UPDATE" in query["sql"].upper()
+        and "ops_security_events" in query["sql"]
+    ]
+
+    assert locking == [], f"чтение сводки взяло замок строки: {locking[:1]}"
+
+
+def test_unknown_event_on_read_is_the_same_404(manager, two_objects_on_conduct):  # noqa: F811
+    """Отказы чтения и правки одинаковы (Plane №647).
+
+    У чтения свой путь получения мероприятия, и разойтись с правкой по коду
+    ответа он не имеет права: по коду читатель узнавал бы, каким из двух
+    путей его обслужили.
+    """
+    _, event_id, first, _ = two_objects_on_conduct
+    assert manager.get(f"{URL}999999/visit-objects/{first.pk}/evaluations/").status_code == 404
+    assert manager.get(f"{URL}nope/visit-objects/{first.pk}/evaluations/").status_code == 404
+
+
+def test_entering_conduct_addresses_the_work_items_to_the_actor(  # noqa: F811
+    manager, two_objects_on_approval, actor  # noqa: F811
+):
+    """Задания оценщика заводятся НЕ ничьими (Plane №642).
+
+    `advance_visits` открывала оценивание с `actor=None`, и каждое задание
+    получало пустого адресата. Очередь оценщика фильтруется ровно по этому
+    полю (`filter(evaluator_user_id=actor)`), поэтому заявленная цель «задания
+    заводятся входом в этап 5» не достигалась вовсе: заведённые задания не
+    попадали в очередь НИ К КОМУ.
+    """
+    base, event_id, _, _, _ = two_objects_on_approval
+    # До «Ознакомления» доводим обходом админа — предмет пробы не согласование.
+    # ДАЛЬШЕ обхода нет намеренно: `override_stage` и так передаёт актора, и
+    # пройти им же в «Проведение» значило бы проверить не тот путь. Штатная
+    # цепочка идёт ручкой завершения ознакомления, и ровно она была без актора.
+    service.override_stage(event_id, stage="ACKNOWLEDGEMENT", actor=actor)
+    event = service.lock_event(event_id)
+    assert event.placement_assignments, "расстановка пуста — оценивать некого"
+    done = manager.post(
+        f"{base}acknowledgement/complete/",
+        {"force": True, "comment": "Проба: подтвердили не все."},
+        format="json",
+    )
+    assert done.status_code == 200, done.content
+    assert service.lock_event(event_id).stage == "CONDUCT"
+
+    items = list(
+        OpsEvaluationWorkItem.objects.filter(event_code=f"security-event-{event_id}")
+    )
+    assert items, "задания не заведены входом в «Проведение»"
+    assert all(item.evaluator_user_id != "" for item in items), (
+        "задание заведено ничьим — очередь оценщика не отдаст его никому"
+    )

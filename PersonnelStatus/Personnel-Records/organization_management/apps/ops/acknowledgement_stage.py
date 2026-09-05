@@ -137,7 +137,10 @@ def complete(event_id, *, force=False, comment="", actor=None):
             detail={"comment": ["Укажите, почему этап завершается без подтверждения всех."]},
             message="Проверьте заполнение формы.",
         )
-    event = _advance(event, "CONDUCT")
+    # Актор доезжает до открытия оценивания (Plane №642): задания оценщика
+    # адресуются учётной записи, и заведённые «ничьими» не попадали в очередь
+    # ни к кому — а заводятся они ровно здесь, входом в этап 5.
+    event = _advance(event, "CONDUCT", actor=actor)
     if unconfirmed:
         audit_service.record(
             actor=actor,

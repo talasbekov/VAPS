@@ -684,12 +684,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         from organization_management.apps.ops import conduct_evaluations
 
         if request.method == "GET":
-            from django.db import transaction as _tx
-
-            with _tx.atomic():
-                event = event_service.lock_event(pk)
-                visit = event_service._visit_object_or_404(event, visit_object_id)
-                return Response(conduct_evaluations.visit_evaluations(event, visit))
+            # 🔴 ЧТЕНИЕ БЕЗ ЗАМКА СТРОКИ (Plane №647). Здесь стоял
+            # `lock_event` внутри явной транзакции — то есть `SELECT … FOR
+            # UPDATE` ради чистого чтения. React Query перезапрашивает сводку
+            # при каждом возврате фокуса в окно, и открытый экран проведения
+            # держал замок мероприятия, выстраивая в очередь любые
+            # параллельные переходы этапа. Читать нечего блокировать: сводка
+            # собирается из одной строки и её объектов.
+            event = event_service.read_event(pk)
+            visit = event_service._visit_object_or_404(event, visit_object_id)
+            return Response(conduct_evaluations.visit_evaluations(event, visit))
         data = request.data or {}
         return Response(
             conduct_evaluations.set_score(
