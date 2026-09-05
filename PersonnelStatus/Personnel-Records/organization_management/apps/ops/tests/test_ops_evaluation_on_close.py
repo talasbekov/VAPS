@@ -135,3 +135,74 @@ def test_running_it_twice_does_not_duplicate():
     assert OpsEvaluationEvent.objects.count() == 1
     assert OpsRatedParticipant.objects.count() == 1
     assert OpsEvaluationWorkItem.objects.count() == 1
+
+
+def test_running_it_twice_does_not_reset_the_evaluation_progress():
+    """Второй вызов НЕ сбрасывает ход оценивания (Plane №641).
+
+    До правки поля хода (`status`, `submitted_at`, `submitted_evaluation_code`,
+    `revision`, `evaluator_user_id`) лежали в общем `defaults`, и КАЖДЫЙ
+    повторный вызов сбрасывал их у всех заданий разом. Пока оценивание
+    заводилось только закрытием, второго вызова в жизни задания не случалось.
+    С Plane №433 задания открываются входом объекта в «Проведение» — значит к
+    моменту закрытия ОМ они уже бывают отправлены, и закрытие стирало отметку
+    об отправке у каждого. Хуже, чем потеря: `submit_evaluation` отказывает по
+    закрытому мероприятию (`EVALUATION_ARCHIVE_LOCKED`), и сброшенные задания
+    оставались PENDING навсегда — без единого способа их отправить.
+
+    Описание задания при этом обязано обновляться: подпись поста меняется, и
+    задание должно называть пост так, как он выглядит сейчас.
+    """
+    event = make_event("ОМ-О-6", assignments=[assignment(41, "Серикова Г.")])
+    ratings_service.open_evaluation_for_event(event, actor="user-7")
+    item = OpsEvaluationWorkItem.objects.get()
+    item.status = "SUBMITTED"
+    item.submitted_evaluation_code = "eval-1"
+    item.submitted_at = dt.datetime(2026, 6, 19, 10, 0, tzinfo=dt.timezone.utc)
+    item.revision = 2
+    item.save()
+
+    # Второй вызов — ровно тот, что делает закрытие ОМ, и другим актором:
+    # закрывает мероприятие не обязательно тот, кто вёл его на «Проведении».
+    event.recon_sector_posts = [
+        {"id": "post-1", "sector": "Периметр", "post": "Пост 1 (север)", "need": 1}
+    ]
+    ratings_service.open_evaluation_for_event(event, actor="user-9")
+
+    item.refresh_from_db()
+    assert item.status == "SUBMITTED", "закрытие сбросило выставленную оценку"
+    assert item.submitted_evaluation_code == "eval-1"
+    assert item.submitted_at is not None
+    assert item.revision == 2
+    assert item.evaluator_user_id == "user-7", (
+        "адресат отправленного задания переписан на того, кто закрыл ОМ"
+    )
+    # А описание — обновилось: подпись поста взята свежая.
+    assert item.post_label == "Пост 1 (север)"
+
+
+def test_the_evaluator_is_filled_in_later_when_the_stage_opened_it_anonymously():
+    """Пустой адресат ДОБИРАЕТСЯ, пока задание не отправлено (Plane №641).
+
+    Вход объекта в «Проведение» (Plane №433) зовёт эту ручку БЕЗ актора, и
+    задание заводится с пустым `evaluator_user_id`. Очередь оценщика
+    фильтруется ровно по этому полю — без добора такое задание не попало бы
+    ни в чью очередь. Закрытие ОМ идёт с актором и адресата проставляет; это
+    поведение было до правки №641, и снять его вместе с защитой отправленных
+    заданий значило бы починить одно, сломав другое.
+    """
+    event = make_event("ОМ-О-7", assignments=[assignment(51, "Оспанов Т.")])
+
+    # Так зовёт вход в «Проведение».
+    ratings_service.open_evaluation_for_event(event, actor=None)
+    item = OpsEvaluationWorkItem.objects.get()
+    assert item.evaluator_user_id == "", "адресат взялся из ниоткуда"
+
+    # Так зовёт закрытие ОМ.
+    ratings_service.open_evaluation_for_event(event, actor="user-9")
+
+    item.refresh_from_db()
+    assert item.evaluator_user_id == "user-9", (
+        "задание осталось без адресата — в очередь оценщика оно не попадёт"
+    )
+    assert item.status == "PENDING"
