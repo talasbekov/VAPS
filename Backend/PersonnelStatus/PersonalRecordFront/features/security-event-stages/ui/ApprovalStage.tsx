@@ -124,7 +124,11 @@ export interface ApprovalRightsInput {
   visit:
     | {
         chiefEmployeeId: string | null;
-        deputies?: readonly { employeeId: string }[];
+        deputies?: readonly {
+          employeeId: string;
+          /** Ведёт объект, а не просто внесён в список (Plane №572). */
+          canEditPlacement?: boolean;
+        }[];
       }
     | null
     | undefined;
@@ -169,7 +173,15 @@ export function approvalRightsOf(input: ApprovalRightsInput): ApprovalRights {
   const isChief = myId !== null && chiefId !== null && chiefId === myId;
   const isDeputy =
     myId !== null &&
-    (visit?.deputies ?? []).some((deputy) => deputy.employeeId === myId);
+    (visit?.deputies ?? []).some(
+      // 🔴 НАБЛЮДАТЕЛЬ — НЕ ЗАМЕЩАЮЩИЙ (Plane №572). Флаг `canEditPlacement`
+      // отличает того, кто ВЕДЁТ объект, от внесённого «в список». Сервер
+      // теперь спрашивает его же; экран, показывающий кнопки тому, кому
+      // сервер откажет, приглашает к действию, которого не будет.
+      // `!== false` — у старых строк ключа может не быть вовсе, и отсутствие
+      // флага значит «ведёт» (умолчание модели), а не «наблюдает».
+      (deputy) => deputy.employeeId === myId && deputy.canEditPlacement !== false,
+    );
   return {
     manageRoute: manage,
     send: manage || isChief,
