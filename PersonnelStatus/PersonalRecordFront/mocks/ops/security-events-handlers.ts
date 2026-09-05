@@ -3642,16 +3642,29 @@ export const securityEventsHandlers = [
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;
     const body = (await request.json()) as { stage?: string };
+    // 🔴 СПИСОК — ЗЕРКАЛО `STAGE_OVERRIDE_TARGETS` СЕРВЕРА, А НЕ СВОЙ
+    // (Plane №791). Он расходился с сервером в ОБЕ стороны: в нём не было
+    // `PLACEMENT` — этап, на который выводит завершение рекогносцировки в
+    // самом же моке (`recon/complete/`), — и был `DEMAND`, которого сервер не
+    // принимает вовсе. То есть мок УМЕЛ быть на «Расстановке», но перевести
+    // его туда напрямую было нельзя, а на «Потребность» — можно, хотя живая
+    // ручка отвечает отказом. Мок-пробы из-за первого строили обходные пути:
+    // проба границы правила в №500 проверяет «Рекогносцировку» вместо
+    // «Расстановки».
+    //
+    // Проценты — из `STAGE_READINESS` сервера, теми же числами: готовность
+    // приезжает клиенту и показывается в шапке карточки.
     const readiness: Record<string, number> = {
       BULLETIN: 0,
       RECON: 15,
-      DEMAND: 30,
+      PLACEMENT: 60,
       APPROVAL: 75,
       ACKNOWLEDGEMENT: 85,
       CONDUCT: 95,
     };
     const target = body.stage ?? "";
     // CLOSED сюда не входит намеренно — закрывают по итогам направлений.
+    // Так же считает и сервер: `CLOSED` в `STAGE_OVERRIDE_TARGETS` нет.
     if (!(target in readiness)) {
       return validationError({ stage: ["Недопустимый этап для перевода."] });
     }
