@@ -2998,7 +2998,32 @@ def _merge_status_members(event, rows):
         for employee_id, row in EmployeeSelector.denorm_for(extra_ids).items()
     }
 
-    extra_by_department = {}
+    # 🔴 ЧЕЛОВЕК ПОПАДАЕТ РОВНО В ОДНУ СТРОКУ ДЕПАРТАМЕНТА (Plane №676).
+    # У департамента БЫВАЕТ БОЛЬШЕ ОДНОЙ строки: довыделение недобора
+    # (`[СБС-12]`, Plane №426) дописывает вторую, с `topUpOf`. Добавка же
+    # ключилась по департаменту и дописывалась КАЖДОЙ его строке — один и тот
+    # же человек оказывался в `members` обеих. `totals` считает
+    # `sent = sum(len(members))` (`force_collection_board.py`), поэтому
+    # «Прислано» удваивалось, `shortage = max(0, need - sent)` схлопывался в
+    # ноль, а карточка печатала одних и тех же людей дважды. Прогресс по
+    # управлениям (`_with_directorate_progress`) считал их дважды тем же
+    # способом.
+    #
+    # Приёмник — БАЗОВАЯ строка департамента (без `topUpOf`): участие,
+    # поставленное статусом, не знает, по какому запросу человека дали, а
+    # базовая строка у департамента одна — её же правит редактор раскладки.
+    # Базовой нет (осталось одно довыделение) — берётся первая строка
+    # департамента: пусть человек стоит не в той строке, чем не стоит нигде.
+    host_of_department = {}
+    for index, row in enumerate(rows):
+        key = str(row.get("departmentId"))
+        if key not in host_of_department:
+            host_of_department[key] = index
+            continue
+        if not row.get("topUpOf") and rows[host_of_department[key]].get("topUpOf"):
+            host_of_department[key] = index
+
+    extra_by_row = {}
     for employee_id in extra_ids:
         division_id = division_of.get(employee_id)
         if division_id is None:
@@ -3006,7 +3031,9 @@ def _merge_status_members(event, rows):
         for department_key, subtree in subtree_of.items():
             if division_id in subtree:
                 participation = by_employee[employee_id]
-                extra_by_department.setdefault(department_key, []).append(
+                extra_by_row.setdefault(
+                    host_of_department[department_key], []
+                ).append(
                     {
                         "employeeId": str(employee_id),
                         "name": names.get(employee_id, ""),
@@ -3024,17 +3051,17 @@ def _merge_status_members(event, rows):
                 )
                 break
 
-    if not extra_by_department:
+    if not extra_by_row:
         return rows
     return [
         {
             **row,
             "members": [
                 *row.get("members", []),
-                *extra_by_department.get(str(row.get("departmentId")), []),
+                *extra_by_row.get(index, []),
             ],
         }
-        for row in rows
+        for index, row in enumerate(rows)
     ]
 
 
