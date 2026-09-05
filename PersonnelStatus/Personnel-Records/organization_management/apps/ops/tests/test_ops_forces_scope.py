@@ -954,17 +954,33 @@ def test_notifying_directorates_sends_the_request_to_their_heads(manager, django
     Красная на мутации: убери вызов `notify_directorate_heads` из
     `notify_directorates` — строки не будет.
     """
-    from organization_management.apps.operations.models import Role, UserRole
+    from organization_management.apps.operations.models import (
+        Permission,
+        Role,
+        RolePermission,
+        UserRole,
+    )
     from organization_management.apps.operations.models_notification import OpsNotification
+    from organization_management.apps.ops.forces_notify import SELECT_PERMISSION
 
     own = make_department("Департамент А")
     directorate = make_directorate(own, "Управление А-1")
     base, allocation_id = allocated_event(manager, own)
     dept_lead = scoped_client("forces-notify-heads", "DEPT_LEAD_N1", own.pk)
     head = django_user_model.objects.create_user(username="dir-head-n1", password="x")
+    # 🔴 РОЛЬ НЕСЁТ ПРАВО ВЫДЕЛЯТЬ (Plane №481): рассылка идёт тем, кто МОЖЕТ
+    # выполнить просьбу, а не всем с областью на управление. Раньше роли
+    # хватало имени — и проба зеленела бы на дефекте, который №481 чинит.
+    head_role = Role.objects.create(code="DIR_HEAD_N1", name="Начальник")
+    Permission.objects.get_or_create(
+        code=SELECT_PERMISSION, defaults={"name": "Статусы: управление"}
+    )
+    RolePermission.objects.create(
+        role_code=head_role, permission_code_id=SELECT_PERMISSION
+    )
     UserRole.objects.create(
         user_id=str(head.pk),
-        role_code=Role.objects.create(code="DIR_HEAD_N1", name="Начальник"),
+        role_code=head_role,
         scope_division_id=directorate.pk,
     )
     manager.post(
