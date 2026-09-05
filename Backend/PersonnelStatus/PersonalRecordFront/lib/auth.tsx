@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -70,13 +71,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * человек здесь. Молчаливый возврат на вход после восьми часов работы
    * читается как «система выкинула ни с того ни с сего».
    */
+  /** Выход уже начат — второй раз не начинаем (Plane №462). */
+  const signingOut = useRef(false);
   useEffect(() => {
     if (status === "loading") return;
     if ((session as { error?: string } | null)?.error === undefined) return;
+    if (signingOut.current) return;
+    signingOut.current = true;
     resetAccessToken();
-    void signOut({ redirect: false }).finally(() => {
-      window.location.href = "/?reason=expired";
-    });
+    // 🔴 УВОДИМ В `then`, А НЕ В `finally` (Plane №462). `finally` уводил и
+    // при ОТКАЗЕ `signOut`: cookie сессии тогда не стёрта, браузер грузит
+    // `/?reason=expired`, провайдер монтируется, читает всё ту же ошибочную
+    // сессию, снова зовёт `signOut`, снова падает — плотный цикл полных
+    // перезагрузок, из которого человек не может даже открыть форму входа.
+    //
+    // Отказ выхода не молчит: он пишется в консоль и оставляет человека на
+    // месте. Это хуже, чем уйти на вход, но лучше, чем зациклить вкладку, —
+    // а `signingOut` не даст эффекту начать всё заново на том же сеансе.
+    void signOut({ redirect: false })
+      .then(() => {
+        window.location.href = "/?reason=expired";
+      })
+      .catch((error) => {
+        console.error("Не удалось завершить сессию:", error);
+        signingOut.current = false;
+      });
   }, [session, status]);
 
   // Загружаем информацию о пользователе из бэкенда при наличии сессии
