@@ -853,22 +853,3 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
     </Card>
   );
 }
-
-function Fact({
-  value,
-  label,
-  alarming = false,
-}: {
-  value: string;
-  label: string;
-  alarming?: boolean;
-}) {
-  return (
-    <span className="flex items-baseline gap-1">
-      <b className={`text-sm tabular-nums ${alarming ? "text-amber-700" : ""}`}>
-        {value}
-      </b>
-      <span className="text-muted-foreground">{label}</span>
-    </span>
-  );
-}

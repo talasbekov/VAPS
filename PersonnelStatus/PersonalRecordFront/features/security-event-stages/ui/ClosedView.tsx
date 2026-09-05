@@ -276,15 +276,6 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <p>
-      <span className="text-xs font-semibold text-muted-foreground">{label}: </span>
-      <span>{value}</span>
-    </p>
-  );
-}
-
 /**
  * Сводка оценивания по делу. Считается по строкам реестра оценок этого ОМ —
  * тем, что контракт действительно отдаёт: сколько участников оценено, чем

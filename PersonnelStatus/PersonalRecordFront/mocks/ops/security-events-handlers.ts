@@ -3107,9 +3107,11 @@ export const securityEventsHandlers = [
           "Закрыть ОМ можно только на этапе «Проведение»."
         );
       }
-      // итоги ВСЕХ направлений обязательны — не частичное закрытие
-      const directions = new Set(event.reconSectorPosts.map((p) => p.sector));
-      // `[ЗАК-04]` (Plane №448): итоги по направлениям не обязательны — отказа нет.
+      // `[ЗАК-04]` (Plane №448): итоги по направлениям НЕ обязательны — отказа
+      // нет. Прежний комментарий утверждал обратное («итоги ВСЕХ направлений
+      // обязательны») и стоял прямо над кодом, который его не выполняет, а
+      // рядом лежал `const directions`, который после снятия ветки
+      // `CLOSURE_DIRECTIONS_INCOMPLETE` никто не читал (Plane №735).
       appendAudit({
         action: "security_event.close",
         entityType: "SecurityEvent",
