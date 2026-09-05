@@ -5013,6 +5013,43 @@ def _signature_of(visit, target, *, actor, ip, at):
     }
 
 
+def _incoming_remarks(remarks, *, comment, post_id, urgent):
+    """Список замечаний модалки возврата (`[ВОЗ-01]`) — разобранный и
+    ПРОВЕРЕННЫЙ (Plane №668).
+
+    🔴 ТИП ПРОВЕРЯЕТСЯ, А НЕ ПОДРАЗУМЕВАЕТСЯ. Поле приходит прямо из тела
+    запроса, и до этой проверки его перебирали как есть:
+
+    - `"remarks": 5` — `5 or []` даёт `5`, перебор целого поднимает
+      необработанный `TypeError` и отдаёт 500 вместо конверта с именем поля;
+    - `"remarks": {…}` — перебор объекта JSON даёт КЛЮЧИ, каждый из них не
+      `dict`, все отсеивались, и возврат уходил БЕЗ присланных замечаний с
+      ответом 200. Тихая потеря хуже отказа: возвращающий уверен, что
+      замечания ушли.
+
+    Пустой текст по-прежнему отсеивается молча, и это осознанно: модалка
+    держит незаполненные строки-заготовки, и отбивать форму за них значило бы
+    требовать чистить черновик перед отправкой. Ни одного замечания с текстом
+    не осталось — причина возврата становится единственным замечанием, как и
+    было до появления списка.
+    """
+    if remarks is None:
+        rows = []
+    elif isinstance(remarks, list):
+        rows = remarks
+    else:
+        raise _validation({"remarks": ["Ожидается список замечаний."]})
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise _validation(
+                {f"remarks.{index}": ["Замечание описывается объектом."]}
+            )
+    incoming = [row for row in rows if str(row.get("text") or "").strip()]
+    if not incoming:
+        return [{"text": comment, "postId": post_id, "urgent": urgent}]
+    return incoming
+
+
 @transaction.atomic
 def decide_approver(
     event_id, *, approver_id, decision, comment, visit_object_id=None,
@@ -5094,12 +5131,7 @@ def decide_approver(
         # СПИСОК замечаний, каждое с привязкой и срочностью; старый вызов без
         # списка даёт одно замечание из причины — контракт не ломается.
         existing = list(visit.approval_remarks or [])
-        incoming = [
-            row for row in (remarks or [])
-            if isinstance(row, dict) and str(row.get("text") or "").strip()
-        ]
-        if not incoming:
-            incoming = [{"text": clean_comment, "postId": post_id, "urgent": urgent}]
+        incoming = _incoming_remarks(remarks, comment=clean_comment, post_id=post_id, urgent=urgent)
         for row in incoming:
             existing.append(
                 new_remark(

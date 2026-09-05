@@ -168,3 +168,53 @@ def test_the_next_version_carries_a_diff_with_the_previous_one(
     change = diff["replacedPeople"][0]
     assert any("Новиков" in name for name in change["now"])
     assert change["was"] != change["now"]
+
+
+@pytest.mark.parametrize(
+    "sent, where",
+    [
+        # Целое: `5 or []` даёт `5`, перебор поднимал необработанный TypeError
+        # и отдавал 500 вместо конверта с именем поля.
+        (5, "remarks"),
+        ("Пост без старшего", "remarks"),
+        # Объект JSON: перебор давал КЛЮЧИ, каждый не `dict`, все отсеивались,
+        # и возврат уходил БЕЗ присланных замечаний с ответом 200 — тихая
+        # потеря, которая хуже отказа.
+        ({"text": "Пост без старшего"}, "remarks"),
+        # Список не из объектов: адрес ошибки называет строку.
+        ([5], "remarks.0"),
+        (["Пост без старшего"], "remarks.0"),
+    ],
+)
+def test_a_malformed_remarks_field_is_refused_by_field_and_not_by_500(
+    manager, approver, two_objects_on_approval, sent, where  # noqa: F811
+):
+    """`remarks` проверяется по типу (Plane №668).
+
+    Поле приходит прямо из тела запроса. До проверки его перебирали как есть,
+    и оба неверных вида давали НЕ отказ: целое — 500 необработанным
+    TypeError, объект JSON — 200 с потерянными замечаниями. Возвращающий при
+    этом уверен, что замечания ушли.
+    """
+    base, _event_id, first, _second, _ = two_objects_on_approval
+    approver_id = _send(manager, base, first)
+
+    resp = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {
+            "decision": "RETURNED",
+            "comment": "Состав не соответствует расчёту",
+            "visitObjectId": str(first.pk),
+            "remarks": sent,
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 400, resp.content
+    body = resp.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert where in body["details"], body
+    # И главное: ничего не записалось — ни замечаний, ни возврата.
+    first.refresh_from_db()
+    assert (first.approval_remarks or []) == []
+    assert first.stage == "APPROVAL"
