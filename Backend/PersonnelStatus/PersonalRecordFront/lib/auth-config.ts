@@ -1,7 +1,13 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
-import { REFRESH_RETRY_MS, isTokenRejected, makeOnce } from "@/lib/refresh-policy";
+import {
+  REFRESH_RETRY_MS,
+  accessExpiryMs,
+  isExpiring,
+  isTokenRejected,
+  makeOnce,
+} from "@/lib/refresh-policy";
 
 // Для серверных запросов NextAuth нужно использовать прямой URL к бэкенду
 // Прокси rewrites работают только для клиентских запросов
@@ -26,38 +32,6 @@ const getBackendUrl = () => {
  *  ниоткуда; разойдётся — вернётся дефект №383, поэтому число названо один раз
  *  и с указанием, где лежит первоисточник. */
 const REFRESH_TOKEN_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
-
-/** За сколько до истечения токен считается протухшим. Минута — запас на
- *  дорогу запроса и на расхождение часов клиента и сервера: токен, истекающий
- *  через две секунды, до бэкенда уже не доедет. */
-const EXPIRY_SKEW_MS = 60_000;
-
-/** Момент истечения access-токена (мс), прочитанный из самого токена.
- *
- *  Читаем `exp` ИЗ ТОКЕНА, а не считаем «сейчас + 8 часов»: срок задан
- *  настройкой сервера, и локальная копия этого числа разошлась бы с ним при
- *  первой же правке `ACCESS_TOKEN_LIFETIME`. `null` — прочитать не удалось;
- *  тогда токен считается протухшим (см. `isExpiring`), и его продлят. Лучше
- *  лишнее продление, чем 401 на каждом экране.
- */
-function jwtExpiryMs(raw: unknown): number | null {
-  if (typeof raw !== "string") return null;
-  const payload = raw.split(".")[1];
-  if (payload === undefined) return null;
-  try {
-    const json = JSON.parse(
-      Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")
-    ) as { exp?: unknown };
-    return typeof json.exp === "number" ? json.exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
-function isExpiring(expires: unknown): boolean {
-  if (typeof expires !== "number") return true;
-  return Date.now() >= expires - EXPIRY_SKEW_MS;
-}
 
 /**
  * Продлить access-токен по refresh-токену.
@@ -152,7 +126,7 @@ async function refreshed(token: JWT): Promise<JWT> {
     const next: JWT = {
       ...token,
       accessToken: outcome.access,
-      accessTokenExpires: jwtExpiryMs(outcome.access),
+      accessTokenExpires: accessExpiryMs(outcome.access),
     };
     delete next.error;
     return next;
@@ -298,7 +272,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.accessToken = (user as any).accessToken;
         token.refreshToken = (user as any).refreshToken;
-        token.accessTokenExpires = jwtExpiryMs((user as any).accessToken);
+        token.accessTokenExpires = accessExpiryMs((user as any).accessToken);
         token.id = user.id;
         token.role = (user as any).role;
         token.userData = (user as any).userData;
