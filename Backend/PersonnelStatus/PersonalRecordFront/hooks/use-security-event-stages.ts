@@ -368,7 +368,12 @@ export function useRemovePlacementPost(id: string) {
   );
 }
 
-/** Старший сектора: назначить (`senior: true`) или снять. */
+/** Старший ПОСТА: назначить (`senior: true`) или снять (`[РАС-03]`, №445).
+ *
+ * Имя хука и поле `isSectorSenior` остались от прежнего правила «один на
+ * сектор» — переименование это отдельный шаг после переезда читателей
+ * (карточка, мок, пробы). Подпись же обязана говорить правду сегодня
+ * (Plane №780). */
 export function useSetSectorSenior(id: string) {
   return useEventMutation<{ assignmentId: string; senior: boolean }>(
     id,

@@ -131,4 +131,44 @@ test.describe(LIVE ? 'окно создания ОМ: обязательные �
     await expect(dialog.getByRole('button', { name: 'Создать бюллетень' })).toBeDisabled()
   })
 
+  test('само поле ОЛ при отказе не обещает загрузку и не врёт про пустоту (Plane №788)', async ({
+    page,
+  }) => {
+    /**
+     * №632 добавил ЧЕСТНУЮ СТРОКУ рядом с полем, но само поле осталось лгать
+     * двумя способами подряд. Сначала оно держит подпись «Загрузка
+     * справочника…» — react-query по умолчанию переспрашивает трижды с
+     * задержкой, и всё это время статус запроса «идёт». Человек читает «идёт
+     * загрузка» и ЖДЁТ, хотя ждать нечего. Когда повторы кончаются, подпись
+     * меняется на «Справочник охраняемых лиц пуст» — а он не пуст, он не
+     * ответил; это уже прямое утверждение о данных, сделанное по молчанию
+     * сети.
+     *
+     * Проба ждёт КОНЕЧНОГО состояния (строка отказа уже на экране, значит
+     * повторы кончились) и проверяет подпись самого поля.
+     *
+     * Красная до правки: подпись — «Справочник охраняемых лиц пуст».
+     */
+    await page.route('**/api/ops/protected-persons/**', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"boom"}' })
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    const dialog = page.getByRole('dialog')
+    // Отказ уже назван — значит запрос отработал вместе с повторами.
+    await expect(
+      dialog.getByRole('alert').filter({ hasText: 'Справочник охраняемых лиц' })
+    ).toBeVisible({ timeout: 30_000 })
+
+    const combobox = dialog.getByRole('combobox', { name: 'Охраняемые лица *' })
+    await expect(combobox).toHaveAttribute('placeholder', /не ответил/i)
+    await expect(
+      combobox,
+      'поле обещает загрузку, которой уже нет, либо утверждает пустоту справочника',
+    ).not.toHaveAttribute('placeholder', /Загрузка|пуст/i)
+    // Поле по-прежнему выключено: выбирать не из чего — это правда, а не ложь.
+    await expect(combobox).toBeDisabled()
+  })
+
 })
