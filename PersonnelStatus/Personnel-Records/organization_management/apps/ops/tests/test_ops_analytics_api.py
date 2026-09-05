@@ -27,6 +27,7 @@ from organization_management.apps.operations.models_duty import (
 from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
     OpsSecurityEventTransition,
+    OpsSecurityEventVisitObject,
 )
 from organization_management.apps.operations.models_settings import (
     OpsPolicySectionVersion,
@@ -472,6 +473,13 @@ def test_funnel_built_from_transition_journal(analyst_api, ops_world):
         kind="FORWARD", occurred_at=Clock.now(),
     )
     OpsSecurityEvent.objects.filter(pk=ops_world.pk).update(stage="APPROVAL")
+    # Этап ОБЪЕКТА двигаем тоже (Plane №475): возврат — операция над объектом,
+    # и сторожит её теперь стадия объекта, а не мероприятия. Раньше хватало
+    # строки выше, потому что гвард спрашивал ОМ; проба от этого не о том — ей
+    # нужен факт возврата в журнале, а не то, чем он охраняется.
+    OpsSecurityEventVisitObject.objects.filter(event=ops_world).update(
+        stage="APPROVAL"
+    )
     event_service.return_placement(ops_world.pk, comment="Доработать")
     data = analyst_api.get(OPERATIONS).json()["data"]
     funnel = data["funnel"]

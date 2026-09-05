@@ -332,11 +332,14 @@ def test_resending_an_approved_object_supersedes_it_instead_of_overwriting(
     то есть запись о согласовании УНИЧТОЖАЛАСЬ — ровно противоположное тому,
     что обещает `[СОГ-04]`: «Все версии хранятся… отменённые помечены».
 
-    🔴 ПОЧЕМУ ДВА ОБЪЕКТА, А НЕ ОДИН. Отправку сторожит `_require_stage` по
-    этапу МЕРОПРИЯТИЯ, и на одном объекте согласование уводит мероприятие с
-    «Согласования» — ручка отбивается раньше, чем доходит до версии. Второй
-    объект держит мероприятие на этапе, и путь открывается. Это же и есть
-    боевой случай: у ОМ с несколькими объектами каждый согласуется отдельно.
+    🔴 ПОЧЕМУ ДВА ОБЪЕКТА, А НЕ ОДИН. Проба писалась, когда отправку сторожил
+    этап МЕРОПРИЯТИЯ: на одном объекте согласование уводило мероприятие с
+    «Согласования» и ручка отбивалась раньше, чем доходила до версии, а второй
+    объект держал этап и открывал путь. С №475 гвард спрашивает этап ОБЪЕКТА и
+    пропускает согласованный сам (`[СОГ-04]`: новая версия уходит на повторное
+    согласование), так что подпорка больше не нужна — но два объекта оставлены
+    намеренно: это и есть боевой случай, у ОМ с несколькими объектами каждый
+    согласуется отдельно.
     """
     base, event_id, first, _, _ = two_objects_on_approval
     _add_approver(manager, base, first)
@@ -550,3 +553,155 @@ def test_the_document_refuses_to_guess_the_object(
         _document_target(event, None)
 
     assert failure.value.code == "VISIT_OBJECT_REQUIRED"
+
+
+# ── Гварды этапа спрашивают стадию ОБЪЕКТА, а не мероприятия ────────────────
+
+
+def test_returning_one_object_does_not_lock_approval_of_its_neighbour(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ВОЗВРАТ ОДНОГО ОБЪЕКТА ЗАПИРАЛ СОГЛАСОВАНИЕ СОСЕДНЕГО (Plane №475).
+
+    Стадия МЕРОПРИЯТИЯ — наименьшая среди объектов, и это задумано: карточка
+    показывает, докуда дошло самое отстающее место. Но операции НАД ОБЪЕКТОМ
+    охранялись стадией мероприятия, а не своей. Возврат объекта А на доработку
+    ронял стадию ОМ на «Расстановку» — и у объекта Б переставали работать ВСЕ
+    действия согласования разом: 422 на отправке, отзыве, согласовании,
+    возврате. Карточка при этом рисовала Б согласуемым (цепочка этапов берёт
+    стадию ВЫБРАННОГО объекта), то есть на экране жили кнопки, каждая из
+    которых отвечала ошибкой.
+
+    Выхода из этого через интерфейс не было: последняя подпись по Б тоже не
+    закрыла бы этап — автозавершение выходило по тому же условию, а ручной
+    кнопки «Завершить этап» у согласующего больше нет (`[СОГ-11]`, №446).
+    Оставался только админский обход этапа.
+    """
+    base, event_id, first, second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    _add_approver(manager, base, second, name="Согласующий второго")
+
+    # Возврат второго объекта — штатный ход, а не редкость.
+    back = approver.post(
+        f"{base}approval/return/",
+        {"comment": "переделать расстановку", "visitObjectId": str(second.pk)},
+        format="json",
+    )
+    assert back.status_code == 200, back.content
+
+    second.refresh_from_db()
+    event = service.lock_event(event_id)
+    assert second.stage == "PLACEMENT", "возврат не вернул объект на расстановку"
+    assert event.stage == "PLACEMENT", (
+        "стадия мероприятия не упала до минимума — проба потеряла свой смысл"
+    )
+
+    # 🔴 И ВОТ ЗДЕСЬ ЛОМАЛОСЬ. Первый объект как стоял на «Согласовании», так и
+    # стоит; ни одно действие над ним от судьбы соседа зависеть не должно.
+    first.refresh_from_db()
+    assert first.stage == "APPROVAL"
+    sent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert sent.status_code == 200, sent.content
+
+    withdrawn = manager.post(
+        f"{base}approval/withdraw/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert withdrawn.status_code == 200, withdrawn.content
+    resent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert resent.status_code == 200, resent.content
+
+    # Подпись закрывает этап объекта САМА (`[СОГ-09]`) — и это второй конец
+    # ямы: автозавершение тоже спрашивало стадию мероприятия.
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    decided = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert decided.status_code == 200, decided.content
+    first.refresh_from_db()
+    assert first.approval_status == "APPROVED", (
+        "последняя подпись не закрыла этап объекта — из интерфейса не выбраться"
+    )
+    assert first.stage == "ACKNOWLEDGEMENT"
+
+
+def test_returning_one_object_does_not_lock_manual_approval_of_its_neighbour(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Та же яма у ручного завершения (`approval/approve/`) и у возврата.
+
+    Ручка админская, но она и есть последнее средство, когда всё встало, —
+    отказывать ей по стадии СОСЕДА особенно некстати.
+    """
+    base, event_id, first, second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    _add_approver(manager, base, second, name="Согласующий второго")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+
+    back = approver.post(
+        f"{base}approval/return/",
+        {"comment": "переделать расстановку", "visitObjectId": str(second.pk)},
+        format="json",
+    )
+    assert back.status_code == 200, back.content
+    event = service.lock_event(event_id)
+    assert event.stage == "PLACEMENT"
+
+    returned = approver.post(
+        f"{base}approval/return/",
+        {"comment": "и первый тоже", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert returned.status_code == 200, returned.content
+    first.refresh_from_db()
+    assert first.stage == "PLACEMENT"
+
+
+def test_an_object_that_has_not_reached_approval_is_still_refused(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Гвард ослаблен ровно на объект, а не снят (Plane №475).
+
+    Проба заведена потому, что мутация «пусть гвард ничего не проверяет»
+    оставалась ЗЕЛЁНОЙ: направление «не пускать того, кто до этапа не дошёл»
+    не стерёг никто, и правку гварда нечем было отличить от его удаления.
+    """
+    base, _, _, second, _ = two_objects_on_approval
+    _add_approver(manager, base, second, name="Согласующий второго")
+    back = approver.post(
+        f"{base}approval/return/",
+        {"comment": "переделать", "visitObjectId": str(second.pk)},
+        format="json",
+    )
+    assert back.status_code == 200, back.content
+    second.refresh_from_db()
+    assert second.stage == "PLACEMENT"
+
+    # Клиент у каждой ручки СВОЙ: «согласовать» и «вернуть» закрыты правом
+    # согласующего, и от менеджера они дали бы 403 — отказ по правам, а не по
+    # этапу, то есть проба стерегла бы не то.
+    cases = (
+        (manager, "approval/send/", {}),
+        (manager, "approval/withdraw/", {}),
+        (approver, "approval/approve/", {}),
+        (approver, "approval/return/", {"comment": "нельзя"}),
+    )
+    for client, path, extra in cases:
+        refused = client.post(
+            f"{base}{path}",
+            {"visitObjectId": str(second.pk), **extra},
+            format="json",
+        )
+        assert refused.status_code == 422, (path, refused.content)
+        body = refused.json()
+        assert body["error_code"] == "INVALID_STAGE_TRANSITION", (path, body)
+        # Отказ называет ОБЪЕКТ: на карточке с двумя объектами «можно только
+        # на этапе …» без адреса не говорит, о котором из них речь.
+        assert body["details"]["visitObjectId"] == str(second.pk), (path, body)
+        assert body["details"]["stage"] == "PLACEMENT", (path, body)
