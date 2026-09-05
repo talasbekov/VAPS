@@ -2924,6 +2924,10 @@ export const securityEventsHandlers = [
       const journalEntry: JournalEntry = {
         id: `${event.id}-journal-${event.journalEntries.length + 1}`,
         type: "REPLACEMENT",
+        // Пост записывается и здесь (Plane №727): сервер его пишет, и мок без
+        // него отдавал бы запись, которую нельзя отнести к объекту, — то есть
+        // врал бы про контракт ровно в ту сторону, откуда дефект и пришёл.
+        postId: outgoing.postId,
         title: `Замена: ${post?.post ?? outgoing.postId}`,
         description: `${outgoing.employeeName} → ${incoming.name} — причина: ${body.reasonCode.trim()}`,
         createdAt: nowIso(),
