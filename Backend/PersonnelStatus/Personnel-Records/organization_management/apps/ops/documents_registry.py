@@ -11,7 +11,9 @@
 строка здесь, и он появился и в ручке, и на экране.
 
 ЧЕГО ЗДЕСЬ НЕТ. Прав: их проверяет ручка. Реестр отвечает на вопрос «какие
-документы бывают и чем собираются», а не «кому их видно».
+документы бывают и чем собираются», а не «кому их видно». Права спрашивающего
+он ПЕРЕДАЁТ сборщику (`permissions`, Plane №695) — у «Дела объекта» есть
+раздел, открытый не всем, — но сам по ним ничего не решает.
 """
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.ops.documents import CONTENT_TYPES, FORMATS
@@ -110,7 +112,8 @@ def list_kinds():
     ]
 
 
-def render(kind, *, event_code=None, as_of=None, fmt="pdf", visit_object_id=None):
+def render(kind, *, event_code=None, as_of=None, fmt="pdf", visit_object_id=None,
+           permissions=None):
     """Собрать документ выбранного вида. Возвращает пару (байты, имя файла).
 
     Разница в подписях сборщиков спрятана ЗДЕСЬ и только здесь.
@@ -118,6 +121,11 @@ def render(kind, *, event_code=None, as_of=None, fmt="pdf", visit_object_id=None
     `fmt` — «docx» либо «pdf». По умолчанию PDF: так вели себя все читатели
     до появления выбора, и менять умолчание молча значило бы отдать им другой
     файл под тем же вызовом.
+
+    `permissions` — права спрашивающего. Реестр их НЕ ПРОВЕРЯЕТ (это работа
+    ручки, и оговорка в шапке модуля остаётся в силе), а только ПЕРЕДАЁТ
+    сборщику: у «Дела объекта» есть раздел со своим правом (Plane №695), и
+    решает про него тот, кто раздел собирает. `None` — «прав не проверяем».
     """
     if fmt not in FORMATS:
         raise DomainError(
@@ -181,7 +189,10 @@ def render(kind, *, event_code=None, as_of=None, fmt="pdf", visit_object_id=None
     elif kind == "case":
         from organization_management.apps.ops.documents_case import render_case
 
-        payload = render_case(code, visit_object_id=visit_object_id, fmt=fmt)
+        payload = render_case(
+            code, visit_object_id=visit_object_id, fmt=fmt,
+            permissions=permissions,
+        )
     elif kind == "vehicles":
         from organization_management.apps.ops.documents_vehicles import (
             render_vehicles,
