@@ -5066,6 +5066,33 @@ def unassign_placement(event_id, assignment_id, *, deputy=None):
     return event
 
 
+def _detach_remarks_of_post(event, post_id, post):
+    """Отвязать замечания снятого поста от него, сохранив, о чём они были.
+
+    Трогаются ВСЕ замечания поста, а не только открытые: закрытое замечание
+    тоже читают — в деле и в истории версий, — и ссылка на пост, которого нет,
+    там так же бесполезна. Статус при этом не меняется: закрытие — суждение
+    согласующего.
+    """
+    label = " · ".join(
+        part
+        for part in (str(post.get("sector") or ""), str(post.get("post") or ""))
+        if part
+    ) or str(post_id)
+    for visit in event.visit_objects.all():
+        remarks = list(visit.approval_remarks or [])
+        touched = False
+        for item in remarks:
+            if str(item.get("postId") or "") != str(post_id):
+                continue
+            item["postId"] = None
+            item["detachedPost"] = label
+            touched = True
+        if touched:
+            visit.approval_remarks = remarks
+            visit.save(update_fields=["approval_remarks", "updated_at"])
+
+
 @transaction.atomic
 def remove_placement_post(event_id, post_id, *, deputy=None):
     """Снять ПУСТОЙ пост с расчёта на этапе «Расстановка» (Plane №259, Ш-1).
