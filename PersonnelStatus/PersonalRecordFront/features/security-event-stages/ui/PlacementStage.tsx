@@ -361,6 +361,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * задача №390). */
   const allPosts = event.reconSectorPosts;
   const scope = useVisitObjectScope(event, allPosts);
+  // Причина возврата берётся у ПОКАЗАННОГО объекта (Plane №491); поля
+  // мероприятия остаются ответом только там, где объектов нет вовсе.
+  const returnedFrom = scope.visit ?? event;
+  const returnedComment =
+    returnedFrom.approvalStatus === "RETURNED"
+      ? (returnedFrom.approvalComment ?? "")
+      : "";
   const posts = scope.rows;
   // Замечания согласования ПОКАЗАННОГО объекта (`[РАС-07]`, Plane №397):
   // согласуют объект, и замечания живут у него (№386/№411). У ОМ без
@@ -884,10 +891,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             {access.reason(PLACEMENT_MANAGE)}
           </p>
         )}
-        {event.approvalStatus === "RETURNED" && event.approvalComment !== "" && (
+        {/* 🔴 ПРИЧИНА ВОЗВРАТА — ПОКАЗАННОГО ОБЪЕКТА, А НЕ МЕРОПРИЯТИЯ
+            (Plane №491). Баннер читал поля уровня ОМ, а с №411 у объекта
+            посещения свои `approvalStatus`/`approvalComment` — и сам экран
+            давно живёт в области объекта. На ОМ с двумя возвращёнными
+            объектами оператор, переключившийся на объект А, читал причину
+            возврата объекта Б и НЕ ИМЕЛ СПОСОБА увидеть свою: причина
+            мероприятия берётся у одного из возвращённых, и какого именно —
+            зависит от порядка объектов, а не от времени возврата.
+
+            Объекта нет (ОМ без объектов посещения) — отвечают поля
+            мероприятия: у него они действительно свои. */}
+        {returnedComment !== "" && (
           <Alert variant="destructive">
             <AlertDescription>
-              Возвращено с согласования: {event.approvalComment}
+              Возвращено с согласования: {returnedComment}
             </AlertDescription>
           </Alert>
         )}
