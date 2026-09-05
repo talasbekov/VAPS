@@ -18,6 +18,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
+import { probeTitle } from './probe-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -168,7 +169,17 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     expect(object, 'нет объекта с опубликованным паспортом').toBeDefined()
     const created = (await (
       await post('/api/ops/security-events/', {
-        title: `Своё назначение (e2e №403) ${Date.now()}`,
+        // 🔴 МЕТКА СТАВИТСЯ ПОМОЩНИКОМ, А НЕ РУКАМИ (Plane №457). Здесь
+        // стояло `Своё назначение (e2e №403) …` — строка, в которой метки
+        // `(e2e)` НЕТ: скобка закрывается после номера. Ни уборка прогона
+        // (`title.includes(PROBE_MARK)`), ни серверная чистилка
+        // (`purge_probe_events --marker '(e2e)'`) такую строку не находят, а
+        // сама проба удалить её не может — своё удаление сервер отбивает,
+        // пока у ОМ есть расстановка, снять которую после согласования тоже
+        // нельзя. К закрытию №449 на стенде так накопилось девять
+        // утверждённых ОМ на 2028 год: у acc_employee в календаре «+7», в
+        // бюллетенях три строки-утечки.
+        title: probeTitle(`Своё назначение №403 ${Date.now()}`),
         objectId: object!.id,
         businessDate: '2028-06-06',
         kind: 'INTERNAL',
@@ -324,7 +335,15 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
         'пустая история чужого профиля обращается к читателю на «вы»',
       ).toHaveCount(0)
     } finally {
-      // ОМ с расстановкой не удаляется (422) — сначала снять назначения.
+      // ОМ с расстановкой не удаляется (422) — сначала пробуем снять
+      // назначения. После согласования расстановка заморожена, и снять их
+      // уже нельзя: тогда ОМ остаётся, и его добивает общая уборка прогона
+      // по метке `(e2e)` (`global-teardown` → `purge_probe_events --force`).
+      //
+      // 🔴 РЕЗУЛЬТАТ УБОРКИ ПЕЧАТАЕТСЯ, А НЕ ГЛОТАЕТСЯ (Plane №457, тот же
+      // род, что №653). Молчаливая уборка неотличима от несделанной: именно
+      // так девять утверждённых ОМ и накопились незамеченными. Падать здесь
+      // нельзя — уборка не предмет пробы, — но молчать тоже нельзя.
       const current = await get<{ placementAssignments: { id: string }[] }>(admin, base)
       for (const row of current.placementAssignments ?? []) {
         await fetch(`${API}${base}placement/${row.id}/`, {
@@ -332,7 +351,16 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
           headers: { Authorization: `Bearer ${admin}` },
         })
       }
-      await fetch(`${API}${base}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin}` } })
+      const removed = await fetch(`${API}${base}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${admin}` },
+      })
+      if (!removed.ok) {
+        console.log(
+          `уборка пробы №403: ОМ ${created.code} не снят (${removed.status}) — ` +
+            'останется до общей уборки прогона по метке (e2e)',
+        )
+      }
     }
   })
 
