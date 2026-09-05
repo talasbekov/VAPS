@@ -61,6 +61,7 @@ import type {
   AssignPlacementRequest,
   BindableObject,
   CloseSecurityEventRequest,
+  ClosureSummary,
   CreateSecurityEventRequest,
   DecideApproverRequest,
   MoveApproverRequest,
@@ -81,6 +82,7 @@ import type {
   UpdateBulletinRequest,
   UpdateForceAllocationRequest,
   UpdateReconRequest,
+  VisitClosureSummary,
 } from "@/entities/security-event";
 import { readObjectsStore } from "./objects-handlers";
 import {
@@ -707,6 +709,90 @@ function softConflict(message: string, conflicts: Record<string, unknown>[]) {
   return errorEnvelope("SOFT_CONFLICT_DETECTED", message, { conflicts }, 409);
 }
 
+/**
+ * Посты ОБЪЕКТА посещения — зеркало `security_events.visit_object_posts`
+ * (Plane №728). Единственному объекту принадлежат все посты, включая
+ * неразмеченные: другим они принадлежать не могут (Plane №409).
+ */
+function visitPostsOf(event: SecurityEvent, visitId: string) {
+  const single = event.visitObjects.length <= 1;
+  return event.reconSectorPosts.filter(
+    (post) => single || (post.visitObjectId ?? null) === visitId
+  );
+}
+
+/**
+ * Сводка закрытия — ВЫВОД, а не поле (Plane №728, зеркало
+ * `serializers._closure_summary`).
+ *
+ * 🔴 ЧТО БЫЛО НЕ ТАК. Оба вхождения `closureSummary` в моке были литералами
+ * внутри `emptyEvent`, и больше это поле не писало НИЧТО: на мок-стенде
+ * заголовок задачи «Постов N · назначено K из N · замен · отказов ·
+ * инцидентов» всегда читался нулями — даже после импорта постов, назначения
+ * людей и записи инцидентов собственными же обработчиками мока. Правило
+ * «мок — зеркало» нарушалось для главного поля задачи.
+ *
+ * Считается на общем пути сохранения, рядом с `forceDemandTotal`, по тому же
+ * доводу: иначе каждая ручка обязана была бы помнить про это поле, и первая
+ * же забывшая отдала бы клиенту протухшую сводку.
+ */
+// Перегрузки называют инвариант ТИПОМ, а не комментарием: у сводки
+// МЕРОПРИЯТИЯ неизвестности не бывает (в знаменателе все посты расчёта), у
+// сводки объекта — бывает. Без них `tsc` справедливо не пускает `null` в
+// событийное поле.
+function closureSummaryOf(event: SecurityEvent, visitId: null): ClosureSummary;
+function closureSummaryOf(event: SecurityEvent, visitId: string): VisitClosureSummary;
+function closureSummaryOf(
+  event: SecurityEvent,
+  visitId: string | null
+): ClosureSummary | VisitClosureSummary {
+  const single = event.visitObjects.length <= 1;
+  if (visitId !== null && !single) {
+    // «НЕИЗВЕСТНО» ЗЕРКАЛИТСЯ ТОЖЕ (Plane №726). Пока в расчёте есть строки
+    // без объекта, принадлежность постов второму и последующим объектам не
+    // определена, и сервер отдаёт null. Мок, считающий здесь нули, врал бы
+    // ровно тем, что эта карточка и чинила, — только на мок-стенде.
+    const unmarked = event.reconSectorPosts.some(
+      (post) => (post.visitObjectId ?? "") === ""
+    );
+    if (unmarked) {
+      const own = new Set(visitPostsOf(event, visitId).map((post) => post.id));
+      const scoped = event.journalEntries.filter((entry) =>
+        own.has(entry.postId ?? "")
+      );
+      return {
+        posts: null,
+        need: null,
+        assigned: null,
+        declines: null,
+        replacements: scoped.filter((e) => e.type === "REPLACEMENT").length,
+        incidents: scoped.filter((e) => e.type === "INCIDENT").length,
+      };
+    }
+  }
+  const posts =
+    visitId === null
+      ? event.reconSectorPosts
+      : visitPostsOf(event, visitId);
+  const postIds = new Set(posts.map((post) => post.id));
+  const assignments = event.placementAssignments.filter((a) => postIds.has(a.postId));
+  // Запись журнала относится к объекту по ПОСТУ; запись без поста — только
+  // при единственном объекте, где ей больше некому принадлежать (Plane №727).
+  const journal = event.journalEntries.filter((entry) => {
+    if (visitId === null) return true;
+    const postId = entry.postId ?? "";
+    return postId === "" ? single : postIds.has(postId);
+  });
+  return {
+    posts: posts.length,
+    need: posts.reduce((sum, post) => sum + (post.need ?? 0), 0),
+    assigned: assignments.length,
+    replacements: journal.filter((e) => e.type === "REPLACEMENT").length,
+    declines: assignments.filter((a) => a.declinedAt != null).length,
+    incidents: journal.filter((e) => e.type === "INCIDENT").length,
+  };
+}
+
 function saveEvent(updated: SecurityEvent): SecurityEvent {
   // `forceDemandTotal` — ВЫВОД, а не поле: сервер считает его при каждой
   // выдаче. В моке он пересчитывается здесь, на общем пути сохранения, иначе
@@ -715,6 +801,13 @@ function saveEvent(updated: SecurityEvent): SecurityEvent {
   const withTotal: SecurityEvent = mirrorApproval({
     ...updated,
     forceDemandTotal: updated.reconForceRequest || updated.forceNeed,
+    // Сводка закрытия — такой же ВЫВОД (Plane №728): пересчитывается здесь,
+    // на общем пути, а не пишется каждой ручкой по отдельности.
+    closureSummary: closureSummaryOf(updated, null),
+    visitObjects: updated.visitObjects.map((visit) => ({
+      ...visit,
+      closureSummary: closureSummaryOf(updated, visit.id),
+    })),
   });
   events = getEvents().map((e) => (e.id === withTotal.id ? withTotal : e));
   persist(events);
