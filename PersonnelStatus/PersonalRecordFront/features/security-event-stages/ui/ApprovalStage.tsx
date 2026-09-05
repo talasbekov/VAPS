@@ -647,22 +647,40 @@ function ApprovalRoute({
   const route = view.route;
   const visitObjectId = view.visitObjectId;
   const sent = route.some((approver) => approver.status !== "NOT_SENT");
+  /** Кто-то ЖДЁТ решения — только таких снимает отзыв (`[СОГ-07]`). */
+  const awaiting = route.some((approver) => approver.status === "PENDING");
   const signed = route.some((approver) => approver.status === "APPROVED");
   // Статус документа словами по `[СОГ-01]` (Plane №446): «Черновик → На
   // согласовании → Согласовано (версия N от ДД.ММ ЧЧ:ММ) → Возвращено».
   const lastVersion = view.documentVersions[view.documentVersions.length - 1] ?? null;
+  // 🔴 ИСТОЧНИК ПОДЗАГОЛОВКА — СТАТУС ДОКУМЕНТА, А НЕ СОСТАВ МАРШРУТА
+  // (Plane №716). `sent` считался как «хоть одна строка не NOT_SENT», а
+  // `_return_visit` сбрасывает в NOT_SENT только APPROVED и PENDING: строка
+  // ВЕРНУВШЕГО намеренно остаётся RETURNED. Поэтому после «Вернуть» —
+  // основного пути по `[СОГ-08]` — `sent` оставался истинным, ветка
+  // «RETURNED && !sent» пропускалась, и подзаголовок читался «На
+  // согласовании», тогда как ярлык версии в ТОЙ ЖЕ СТРОКЕ дописывал
+  // «· документ v1 · возвращено». Две половины одного предложения
+  // противоречили друг другу.
+  //
+  // `documentStatus` отвечает на этот вопрос прямо и приходит с сервера;
+  // маршрут остаётся запасным путём для ОМ без объектов посещения, где
+  // документа нет вовсе.
+  const routeSubtitle = view.status === "RETURNED" && !sent
+    ? "Возвращено"
+    : sent
+      ? "На согласовании"
+      : "Черновик";
   const subtitle = view.stale
     ? "Согласование сброшено: расстановка изменена"
-    : view.status === "APPROVED"
+    : view.documentStatus === "APPROVED" || view.status === "APPROVED"
       ? approvedSubtitle(
           view.documentVersion ?? lastVersion?.number ?? null,
           lastVersion,
         )
-      : view.status === "RETURNED" && !sent
-        ? "Возвращено"
-        : sent
-          ? "На согласовании"
-          : "Черновик";
+      : view.documentStatus !== null
+        ? DOCUMENT_STATUS_LABEL[view.documentStatus]
+        : routeSubtitle;
   // Номер версии стоит РЯДОМ С КНОПКОЙ ОТПРАВКИ, потому что растит его именно
   // она: увидев «документ v2», человек знает, что следующая отправка сделает
   // третью. Отдельной плиткой в сводке версия отвечала бы на вопрос, которого
@@ -698,15 +716,22 @@ function ApprovalRoute({
             type="button"
             variant="outline"
             size="sm"
-            disabled={withdraw.isPending || !sent || signed || !rights.send}
+            /* «Отозвать» имеет смысл, ПОКА ЕСТЬ ЧТО ОТЗЫВАТЬ (Plane №716):
+               отзыв снимает строки PENDING, и без них вызов сервера ничего не
+               делает. Прежнее условие `sent` держало кнопку включённой и
+               после возврата — строка вернувшего остаётся RETURNED, — то есть
+               предлагало действие, которое гарантированно ничего не изменит. */
+            disabled={withdraw.isPending || !awaiting || signed || !rights.send}
             title={
               !rights.send
                 ? RIGHT_REASON.send
                 : !sent
                   ? "Расстановка ещё не отправлена."
-                  : signed
-                    ? "Отозвать можно, пока никто не подписал (`[СОГ-07]`)."
-                    : undefined
+                  : !awaiting
+                    ? "Отзывать нечего: никто не ждёт решения."
+                    : signed
+                      ? "Отозвать можно, пока никто не подписал (`[СОГ-07]`)."
+                      : undefined
             }
             onClick={() => withdraw.mutate({ visitObjectId })}
           >

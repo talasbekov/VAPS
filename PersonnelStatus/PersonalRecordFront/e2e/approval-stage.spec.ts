@@ -385,6 +385,53 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
       await expect(subtitle).toContainText('Согласовано')
       await expect(subtitle).not.toContainText('версия —')
     })
+
+    test('после возврата подзаголовок говорит «Возвращено», а не «На согласовании»', async ({
+      page,
+    }) => {
+      // `sent` считался как «хоть одна строка не NOT_SENT», а сервер при
+      // возврате сбрасывает в NOT_SENT только APPROVED и PENDING: строка
+      // ВЕРНУВШЕГО остаётся RETURNED. Поэтому подзаголовок читался «На
+      // согласовании», тогда как ярлык версии в той же строке дописывал
+      // «· возвращено» (Plane №716) — две половины одного предложения
+      // противоречили друг другу.
+      const token = await apiToken()
+      const target = (await events(token)).find((e) => e.reconSectorPosts.length > 0)
+      test.skip(target === undefined, 'нужен ОМ с постами расчёта')
+
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (r) => {
+          const response = await r.fetch()
+          const body = await response.json()
+          // Состояние ПОСЛЕ возврата, ровно как его оставляет сервер: строка
+          // вернувшего RETURNED, остальные сброшены в NOT_SENT.
+          const visit = { ...(body.visitObjects[0] ?? {}) }
+          visit.approvalStatus = 'RETURNED'
+          visit.documentStatus = 'RETURNED'
+          visit.documentVersion = 1
+          visit.approvalStale = false
+          visit.approvalRoute = [
+            { id: 'a1', order: 1, employeeId: '1', name: 'Вернувший', position: '', status: 'RETURNED', decidedAt: null, comment: '' },
+            { id: 'a2', order: 2, employeeId: '2', name: 'Второй', position: '', status: 'NOT_SENT', decidedAt: null, comment: '' },
+          ]
+          body.visitObjects = [visit]
+          await r.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/?step=3`)
+      const subtitle = page.locator('[data-slot="approval-subtitle"]')
+      await expect(subtitle).toBeVisible({ timeout: 15_000 })
+
+      await expect(subtitle).toContainText('Возвращено')
+      await expect(subtitle).not.toContainText('На согласовании')
+
+      // И «Отозвать» выключено: PENDING-строк нет, отзывать нечего.
+      const withdraw = page.getByRole('button', { name: 'Отозвать с согласования' })
+      await expect(withdraw).toBeDisabled()
+    })
   })
 })
 
