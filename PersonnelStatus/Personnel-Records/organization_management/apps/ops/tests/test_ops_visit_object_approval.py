@@ -994,3 +994,42 @@ def test_the_backfill_gives_old_remarks_the_new_shape():
     assert backfill._fill(old_done)["respondedAt"] == "2026-01-01T00:00:00"
     # Строку новой формы бэкфилл не трогает вовсе.
     assert backfill._fill(new_row) is None
+
+
+def test_the_event_carries_the_latest_return_reason_not_the_lowest_object(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """🔴 «ПОСЛЕДНИЙ ВОЗВРАЩЁННЫЙ» — ПО ВРЕМЕНИ, А НЕ ПО ПОРЯДКУ (Plane №491).
+
+    Поле мероприятия несло причину того из возвращённых объектов, кто стоит
+    НИЖЕ в списке, — то есть «последний» означало «нижний», вопреки собственной
+    докстроке. Человек мог читать причину, которая СТАРШЕ той, что он только
+    что получил.
+
+    Здесь возвращается сначала ВТОРОЙ объект, потом ПЕРВЫЙ: порядок объектов и
+    порядок возвратов расходятся, и проба различает их. Красная на мутации
+    «вернуть `returned[-1]`».
+    """
+    base, event_id, first, second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    _add_approver(manager, base, second, name="Согласующий второго")
+
+    older = approver.post(
+        f"{base}approval/return/",
+        {"comment": "СТАРАЯ причина второго", "visitObjectId": str(second.pk)},
+        format="json",
+    )
+    assert older.status_code == 200, older.content
+    newer = approver.post(
+        f"{base}approval/return/",
+        {"comment": "СВЕЖАЯ причина первого", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert newer.status_code == 200, newer.content
+
+    event = service.lock_event(event_id)
+    assert event.approval_status == "RETURNED"
+    assert event.approval_comment == "СВЕЖАЯ причина первого", (
+        "мероприятие несёт причину нижнего объекта, а не последнего по времени"
+    )
+
