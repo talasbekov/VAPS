@@ -633,3 +633,105 @@ async function prepareEvent(
   await call('POST', `${base}/approval/approve/`)
   return created.code
 }
+
+/**
+ * Завершение этапа — операция МЕРОПРИЯТИЯ, а не объекта (Plane №528).
+ *
+ * 🔴 СВОЁ ОПИСАНИЕ С `serviceWorkers: 'block'`: без него `page.route` не
+ * перехватывает запросы, ушедшие через service worker MSW, — состояние
+ * «объект впереди мероприятия» подделать нельзя, и проба была бы зелёной на
+ * живых данных, ничего не проверив.
+ *
+ * Состояние подделывается ПЕРЕХВАТОМ, а не правкой стенда: развести этапы
+ * объекта и мероприятия по-настоящему значило бы оставить на общем стенде
+ * мероприятие в противоречивом виде, и следующая проба нашла бы его первым.
+ */
+test.describe(LIVE ? 'ознакомление: этап мероприятия отстаёт' : 'ознакомление: отстающий этап (скип)', () => {
+  test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+  test.use({ serviceWorkers: 'block' })
+
+  test('кнопка «Завершить ознакомление» гаснет и называет причину (Plane №528)', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Цепочка этапов в карточке рисуется по этапу
+     * ПОКАЗАННОГО ОБЪЕКТА (`[МД-04]`, №412), а сервер сторожит
+     * `complete_acknowledgement` этапом МЕРОПРИЯТИЯ — и правильно: он смотрит
+     * на `placement_assignments`, которые общие. У ОМ, где один объект уже на
+     * «Ознакомлении», а второй ещё нет, карточка показывала этот этап с
+     * ВКЛЮЧЁННОЙ кнопкой, и сервер отвечал 422. Предлагать заведомо
+     * невыполнимое действие хуже, чем не предлагать: человек считает отказ
+     * поломкой и жмёт снова.
+     *
+     * Мутация, на которой проба обязана краснеть: убрать `!eventOnStage` из
+     * `disabled`.
+     */
+    const token = await apiToken()
+    const rows = (await (
+      await fetch(`${API}/api/ops/security-events/?page_size=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as {
+      results: {
+        id: string
+        visitObjects: { id: string }[]
+        placementAssignments: unknown[]
+      }[]
+    }
+    // ОМ С НАЗНАЧЕНИЯМИ, а не любой: кнопка гаснет ещё и при `total === 0`,
+    // и на пустой расстановке проба доказывала бы не тот запрет — она осталась
+    // бы зелёной на мутации (проверено запуском: так и вышло с первой версией).
+    const target = rows.results.find(
+      (row) => row.visitObjects.length > 0 && row.placementAssignments.length > 0
+    )
+    expect(target, 'в реестре нет ОМ с объектом посещения и назначениями').toBeTruthy()
+
+    await page.route(
+      new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+      async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        // Объект ВПЕРЕДИ мероприятия — ровно то состояние, где карточка
+        // предлагала невыполнимое.
+        body.stage = 'APPROVAL'
+        body.visitObjects = body.visitObjects.map((visit: Record<string, unknown>, index: number) =>
+          index === 0
+            ? { ...visit, stage: 'ACKNOWLEDGEMENT' }
+            : { ...visit, stage: 'APPROVAL' },
+        )
+        await route.fulfill({ response, json: body })
+      },
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=${target!.visitObjects[0].id}`)
+
+    const complete = page.getByRole('button', { name: 'Завершить ознакомление' })
+    await expect(complete).toBeVisible({ timeout: 20_000 })
+    await expect(complete).toBeDisabled()
+    // Причина НАЗВАНА: это не «нет прав» и не «не все подтвердили», а третье
+    // состояние, и молчать о нём нельзя.
+    await expect(complete).toHaveAttribute('title', /по всему мероприятию/)
+
+    // И обратная сторона: когда мероприятие ДОШЛО до этапа, кнопка живая —
+    // иначе проба доказывала бы «кнопка всегда выключена».
+    await page.unroute(new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`))
+    await page.route(
+      new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+      async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        body.stage = 'ACKNOWLEDGEMENT'
+        body.visitObjects = body.visitObjects.map((visit: Record<string, unknown>) => ({
+          ...visit,
+          stage: 'ACKNOWLEDGEMENT',
+        }))
+        await route.fulfill({ response, json: body })
+      },
+    )
+    await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=${target!.visitObjects[0].id}`)
+    await expect(page.getByRole('button', { name: 'Завершить ознакомление' })).toBeEnabled({
+      timeout: 20_000,
+    })
+  })
+})

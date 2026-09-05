@@ -83,6 +83,17 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
   const remindAll = useRemindAllPending(event.id);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [completeComment, setCompleteComment] = useState("");
+  // Мероприятие ДОШЛО до этого этапа? Его стадия — наименьшая среди объектов
+  // (Plane №412), поэтому «объект здесь» и «мероприятие здесь» — разные факты,
+  // а завершает этап сервер по мероприятию (Plane №528).
+  const eventOnStage = event.stage === "ACKNOWLEDGEMENT";
+  const behind = event.visitObjects.filter(
+    (visit) => visit.stage !== "ACKNOWLEDGEMENT" && visit.stage !== "CONDUCT" && visit.stage !== "CLOSED"
+  );
+  const behindLabel =
+    behind.length === 0
+      ? "мероприятие ещё не на этом этапе"
+      : `ещё не дошли объекты: ${behind.map((visit) => visit.objectName).join(", ")}`;
   const complete = useCompleteAcknowledgement(event.id);
   const [scope, setScope] = useState<Scope>("all");
   const [replacing, setReplacing] = useState<PlacementAssignment | null>(null);
@@ -208,10 +219,32 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
               <Bell className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {remindAll.isPending ? "Отправка…" : `Напомнить всем, кто не подтвердил (${pending.length})`}
             </Button>
+            {/* 🔴 ЗАВЕРШЕНИЕ ЭТАПА — ОПЕРАЦИЯ МЕРОПРИЯТИЯ, А НЕ ОБЪЕКТА
+                (Plane №528). Цепочка этапов в карточке рисуется по этапу
+                ПОКАЗАННОГО ОБЪЕКТА (`[МД-04]`, №412), а сервер сторожит
+                `complete_acknowledgement` этапом МЕРОПРИЯТИЯ — и правильно:
+                он смотрит на `placement_assignments`, которые общие, а не
+                объектные. У ОМ, где один объект уже на «Ознакомлении», а
+                второй ещё нет, карточка показывала этот этап с ВКЛЮЧЁННОЙ
+                кнопкой, и сервер отвечал 422. Предлагать заведомо невыполнимое
+                действие хуже, чем не предлагать: человек считает отказ
+                поломкой.
+
+                Кнопка гаснет и НАЗЫВАЕТ причину — сколько объектов ещё не
+                дошло. Это не «нет прав» и не «не все подтвердили», а третье
+                состояние, и молчать о нём нельзя. */}
             <Button
               type="button"
-              disabled={complete.isPending || !canManage || total === 0}
-              title={access.reason(EVENT_MANAGE) || undefined}
+              disabled={
+                complete.isPending || !canManage || total === 0 || !eventOnStage
+              }
+              title={
+                !canManage
+                  ? access.reason(EVENT_MANAGE) || undefined
+                  : !eventOnStage
+                    ? `Этап завершается по всему мероприятию: ${behindLabel}`
+                    : undefined
+              }
               onClick={() =>
                 allConfirmed ? complete.mutate({}) : setCompleteOpen(true)
               }
