@@ -509,5 +509,53 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       await expect(sent).toContainText('версия 3')
       await expect(sent).toContainText('лист ознакомления в приложении')
     })
+
+    test('неудачный повтор «Скачать дело» не показывает прежнее «сохранено»', async ({
+      page,
+    }) => {
+      // `render.mutate` не чистил `saved` (Plane №698): после удачной первой
+      // выгрузки неудачная вторая показывала ОДНОВРЕМЕННО «сохранено:
+      // delo-….pdf» и сообщение об ошибке — два взаимоисключающих итога
+      // одного действия рядом. Соседний экран согласования так не делает.
+      const token = await apiToken()
+      const target = requireFixture(
+        (await events(token, 'CLOSED')).find((e) => e.reconSectorPosts.length > 0),
+        'закрытое мероприятие с постами расчёта',
+      )
+
+      // Первый вызов проходит, второй отбивается: предмет пробы — что
+      // показывает экран ПОСЛЕ отказа, шедшего за успехом.
+      let calls = 0
+      await page.route('**/api/ops/event-documents/render/**', async (route) => {
+        calls += 1
+        if (calls === 1) {
+          await route.fallback()
+          return
+        }
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error_code: 'INTERNAL_ERROR',
+            message: 'Сборка дела не удалась',
+          }),
+        })
+      })
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target.id}/`)
+      const block = page.locator('[data-slot="case-download"]')
+      await expect(block).toBeVisible({ timeout: 15_000 })
+
+      const download = page.waitForEvent('download', { timeout: 60_000 })
+      await block.getByRole('button', { name: /Скачать дело/ }).click()
+      await download
+      await expect(block.getByRole('status')).toContainText('сохранено:')
+
+      await block.getByRole('button', { name: /Скачать дело/ }).click()
+      await expect(block.getByRole('alert')).toBeVisible({ timeout: 30_000 })
+      // Итог ОДИН: строка успеха ушла вместе с попыткой, которая её породила.
+      await expect(block.getByRole('status')).toHaveCount(0)
+    })
   })
 })
