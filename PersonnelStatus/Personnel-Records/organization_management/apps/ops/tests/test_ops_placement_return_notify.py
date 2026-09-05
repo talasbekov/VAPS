@@ -284,3 +284,87 @@ def test_two_returns_of_the_SAME_object_still_give_one_row(
     assert rows.count() == 1
     # Выживает ПЕРВАЯ полезная нагрузка — так устроен `get_or_create`.
     assert rows.first().payload["remarksOpen"] == 1
+
+
+def test_a_refused_insert_is_counted_as_undelivered_not_as_notified(
+    manager, approver, django_user_model, monkeypatch  # noqa: F811
+):
+    """🔴 СЧИТАЕТСЯ ДОСТАВЛЕННОЕ, А НЕ ПОПЫТКИ (Plane №809, тот же дефект, что
+    №561 закрыла в `forces_notify`).
+
+    `notify_service.notify` по замыслу глотает любое исключение и возвращает
+    `None`, а счётчик рос безусловно: при отказе вставки для ВСЕХ получателей
+    отчёт всё равно говорил `notified: 2` и пустой список недоставленного.
+    Возврат расстановки — событие, ради которого старший объекта бросает
+    дела; отчёт, утверждающий доставку, которой не было, уводит разбор
+    «почему не починили замечания» по ложному следу.
+
+    Недоставленное — СВОЙ список, отдельно от `unlinked`: «нет учётки» чинит
+    кадровик, отказ вставки — тот, кто чинит базу.
+
+    Мутация, на которой проба обязана краснеть: вернуть безусловное
+    `notified += 1` — `notified` станет 2, а `undelivered` пустым.
+    """
+    from organization_management.apps.ops import placement_return_notify
+
+    base, event_id, visit = _event_sent(manager)
+    chief = make_employee(last_name="Старшов")
+    deputy = make_employee(last_name="Заместов")
+    chief_account = _link(django_user_model, chief, "chief-undeliv")
+    deputy_account = _link(django_user_model, deputy, "deputy-undeliv")
+    manager.post(
+        f"{base}visit-objects/{visit.pk}/chief/",
+        {"employeeId": str(chief.pk)},
+        format="json",
+    )
+    manager.post(
+        f"{base}visit-objects/{visit.pk}/deputies/",
+        {"employeeId": str(deputy.pk), "canEditPlacement": True},
+        format="json",
+    )
+    event = service.lock_event(event_id)
+    visit.refresh_from_db()
+    monkeypatch.setattr(
+        placement_return_notify.notify_service, "notify", lambda *a, **kw: None
+    )
+
+    report = notify_placement_returned(
+        event, visit, comment="Усилить КПП", remarks_open=1, urgent=False
+    )
+
+    assert report["notified"] == 0
+    assert report["unlinked"] == []
+    # Имя И учётка: имя нужно тому, кто пойдёт звонить, учётка — тому, кто
+    # пойдёт смотреть, почему запись не легла.
+    assert sorted(report["undelivered"]) == sorted(
+        [
+            f"{visit.chief_name} · {chief_account.pk}",
+            f"{deputy.last_name} {deputy.first_name[0]}. · {deputy_account.pk}",
+        ]
+    )
+
+
+def test_the_report_always_carries_the_undelivered_key(manager):  # noqa: F811
+    """Форма отчёта одна на все выходы (Plane №809).
+
+    Ветка «уведомлять некого» возвращала отчёт БЕЗ ключа `undelivered`, и
+    читатель обязан был бы гадать, есть он в этот раз или нет. Проба стережёт
+    именно форму: без ключа `report["undelivered"]` бросит `KeyError`.
+    """
+    base, event_id, visit = _event_sent(manager)
+    # У объекта из фикстуры старший уже назначен — снимаем, чтобы попасть
+    # ИМЕННО в ветку «уведомлять некого»: замещающих у него и так нет.
+    OpsSecurityEventVisitObject.objects.filter(pk=visit.pk).update(
+        chief_employee_id=None
+    )
+    event = service.lock_event(event_id)
+    visit.refresh_from_db()
+    assert visit.deputies.count() == 0
+
+    report = notify_placement_returned(
+        event, visit, comment="", remarks_open=0, urgent=False
+    )
+
+    assert report["nobody"] is True
+    assert report["notified"] == 0
+    assert report["undelivered"] == []
