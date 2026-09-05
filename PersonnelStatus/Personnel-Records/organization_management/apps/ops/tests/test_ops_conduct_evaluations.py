@@ -58,6 +58,50 @@ def test_summary_counts_only_this_objects_assignments(manager, two_objects_on_co
     assert set(row) >= {"assignmentId", "post", "sector", "employeeName", "score", "comment", "replaced"}
 
 
+def test_reading_the_summary_needs_the_manage_right_too(  # noqa: F811
+    manager, approver, two_objects_on_conduct
+):
+    """Оценки закрыты правом ВЕДЕНИЯ целиком — и на чтение тоже
+    (`[ЗАК-02]`, Plane №433; комментарий выправлен по факту в №776).
+
+    🔴 ЗАЧЕМ ЭТО ПИН, А НЕ КОММЕНТАРИЙ. Над картой прав стояла фраза «читает
+    тот, кто видит ОМ; ставит тот, кто его ведёт» — контракт, которого нет:
+    обе ручки закрыты `event.manage`, а `visit_object_evaluations` — ОДНО
+    действие DRF на GET и POST, и развести их правами, не разведя маршруты,
+    нельзя в принципе. Врущий комментарий дороже отсутствующего: следующий,
+    кто придёт чинить панель оценок, примет 403 у читателя за дефект гейта.
+
+    Теперь правило не написано, а проверено. `approver` подходит для этого
+    лучше любого другого клиента: у него ЕСТЬ `event.view` (он видит
+    мероприятие и решает по расстановке) и НЕТ `event.manage` — то есть он и
+    есть тот самый «кто видит ОМ», которому фраза обещала чтение оценок.
+
+    Правило то же, что рядом: №695 закрывает оценки в «Скачать дело» тем, у
+    кого прав на них нет. Открыть их здесь значило бы завести два ответа на
+    один вопрос «кому видны баллы людей».
+    """
+    _, event_id, first, _ = two_objects_on_conduct
+
+    # Ведущий читает — иначе проба доказывала бы «ручка закрыта всем».
+    allowed = manager.get(_url(event_id, first))
+    assert allowed.status_code == 200, allowed.content
+    assignment_id = allowed.json()["rows"][0]["assignmentId"]
+
+    refused_read = approver.get(_url(event_id, first))
+    assert refused_read.status_code == 403, refused_read.content
+
+    refused_write = approver.post(
+        _url(event_id, first),
+        {"assignmentId": assignment_id, "score": 7},
+        format="json",
+    )
+    assert refused_write.status_code == 403, refused_write.content
+
+    # «Всем 10» — та же мерка: соседняя ручка того же экрана.
+    refused_all = approver.post(f"{_url(event_id, first)}all/", {"score": 10}, format="json")
+    assert refused_all.status_code == 403, refused_all.content
+
+
 def test_click_sets_and_second_click_withdraws(manager, two_objects_on_conduct):  # noqa: F811
     _, event_id, first, _ = two_objects_on_conduct
     row = manager.get(_url(event_id, first)).json()["rows"][0]
