@@ -502,6 +502,74 @@ test.describe('заявки департаменту', () => {
     }
   })
 
+  test('диалог отправки называет, что при неразложенной квоте не уйдёт НИЧЕГО (Plane №808)', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 Plane №808. Департамент, нажавший «Отправить в управления» до того,
+     * как разложил квоту, не отправляет НИ ОДНОГО уведомления (с №557 письма
+     * «Выделите 0» не шлются вовсе) — но строке ставится `notifiedAt`, и после
+     * этого сервер отбивает правку квот кодом `DIRECTORATE_QUOTAS_LOCKED`.
+     * То есть один щелчок отбирает разбивку насовсем и не даёт взамен ничего.
+     *
+     * Диалог подтверждения (№532) предупреждал о необратимости ВООБЩЕ и
+     * печатал «Разложено 0 из N» — но не говорил ГЛАВНОГО: что отправлять
+     * сейчас нечего. Число «0 из 12» человек читает как «мало», а не как
+     * «ноль писем и запертая форма».
+     *
+     * Заказчик в карточке назвал три варианта; сделан ПЕРВЫЙ (диалог называет
+     * положение прямо) — он ничего не запрещает и не меняет порядок работы.
+     * Варианты «выключить кнопку» и «отбивать на сервере» остаются за
+     * заказчиком: второй уже стоил 30 красных проб в №557.
+     *
+     * КРАСНАЯ ПРОВЕРКА: убрать блок `data-slot="notify-nothing-to-send"` из
+     * `DepartmentRequestCard` — проба падает.
+     *
+     * Проба НИЧЕГО НЕ ОТПРАВЛЯЕТ: она открывает диалог, читает предупреждение
+     * и закрывает его «Отменой». Отправка здесь была бы необратимой, а
+     * предмет пробы — текст, который человек видит ДО решения.
+     */
+    const token = await apiToken()
+    const fixture = await createDepartmentAllocationFixture(token)
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+
+      const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+      const quotaInputs = splitSection.locator('input[id^="quota-"]')
+      await expect(quotaInputs.first()).toBeVisible({ timeout: 20_000 })
+      // Квоту НЕ раскладываем: свежая заявка приходит с нулями, и это ровно
+      // то положение, о котором карточка.
+
+      await splitSection.getByRole('button', { name: 'Отправить в управления' }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByText('Отправить заявку в управления?')).toBeVisible()
+
+      const warning = dialog.locator('[data-slot="notify-nothing-to-send"]')
+      await expect(
+        warning,
+        'диалог не говорит, что при нулевой раскладке не уйдёт ни одного уведомления',
+      ).toBeVisible()
+      await expect(warning).toContainText('ни одного уведомления')
+      await expect(warning).toContainText('запрут')
+
+      // Уходим без отправки — действие необратимо, и проверять его тут нечем.
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await expect(dialog).toBeHidden()
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
+
   test('отказ ДО рассылки не отбирает у департамента разбивку по управлениям (Plane №554)', async ({
     page,
   }) => {

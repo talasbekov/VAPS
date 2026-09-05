@@ -803,6 +803,40 @@ export function DepartmentRequestCard({
               ? ` · не разложено ${splitCap - (splitDirty ? draftTotal : splitTotal)}`
               : ""}
           </p>
+          {/* 🔴 «0 из 12» — ЧИСЛО, А НЕ ПОЛОЖЕНИЕ (Plane №808). Человек читает
+              его как «мало», а происходит другое: уведомления с «Выделите 0»
+              не шлются вовсе (№557), значит при нулевой раскладке не уйдёт НИ
+              ОДНОГО письма — а `notifiedAt` встанет, и сервер после этого
+              отобьёт правку квот кодом `DIRECTORATE_QUOTAS_LOCKED`. Один
+              щелчок отбирает разбивку насовсем и не даёт взамен ничего.
+              Из трёх вариантов карточки сделан ПЕРВЫЙ — назвать положение
+              словами. Кнопку здесь НЕ выключаем и на сервере нажатие НЕ
+              отбиваем: и то, и другое меняет порядок работы, а второе уже
+              стоило 30 красных проб в №557. Решение за заказчиком. */}
+          {(splitDirty ? draftTotal : splitTotal) === 0 && (
+            <p
+              data-slot="notify-nothing-to-send"
+              role="status"
+              className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+            >
+              По управлениям не разложено ни одного человека:{" "}
+              <b>не уйдёт ни одного уведомления</b>, а поля квот после нажатия
+              запрутся — поправить раскладку будет нельзя. Сначала разложите
+              цифры по управлениям; кнопка никуда не денется.
+            </p>
+          )}
+          {/* Частичная раскладка — та же цена, но тише: управления без цифры
+              писем не получат, и дописать их после отправки нельзя. */}
+          {(splitDirty ? draftTotal : splitTotal) > 0 &&
+            (splitDirty ? draftTotal : splitTotal) < splitCap && (
+              <p
+                data-slot="notify-partial"
+                className="text-muted-foreground text-sm"
+              >
+                Управления без цифры уведомления не получат, и дописать их
+                после отправки будет нельзя.
+              </p>
+            )}
           {(split.isError || notify.isError) && (
             <p role="alert" className="text-destructive-ink text-sm">
               {split.error?.message ??
