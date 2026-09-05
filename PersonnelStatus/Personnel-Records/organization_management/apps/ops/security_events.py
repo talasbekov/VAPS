@@ -59,6 +59,35 @@ RECON_CHECKLIST_TEMPLATE = [
 CHECK_STATES = ("NORMAL", "REMARK", "UNCHECKED")
 
 
+#: Идентификаторы пунктов ШАБЛОНА и их обязательность (Plane №541).
+#:
+#: Пункты шаблона заводит `create_event` под именами `checklist-<индекс>`, и
+#: обязательны они ВСЕ — это правило `[РЕК-07]`, а не поле формы.
+TEMPLATE_CHECK_IDS = frozenset(
+    f"checklist-{index}" for index in range(len(RECON_CHECKLIST_TEMPLATE))
+)
+
+
+def _required_of(item):
+    """Обязателен ли пункт — по ШАБЛОНУ, а не по телу запроса (Plane №541).
+
+    🔴 ПРОВЕРКА, КОТОРУЮ МОЖНО ВЫКЛЮЧИТЬ СНАРУЖИ, ПРОВЕРКОЙ НЕ ЯВЛЯЕТСЯ.
+    Признак брался прямо из присланного (`bool(item.get("required", True))`), а
+    `complete_recon` отказывается закрывать этап только из-за обязательных
+    пунктов. Значит любой клиент, вернувший чек-лист с `required: false`, снимал
+    правило `[РЕК-07]` целиком — и для этого не нужен злой умысел, довольно
+    клиента, который теряет поле при сериализации. На экране при этом всё
+    выглядело рабочим.
+
+    Пункт ШАБЛОНА обязателен всегда; присланное значение у него игнорируется.
+    Пункт, дописанный человеком (свой `id`), обязательности не наследует —
+    он не часть `[РЕК-07]`, и его признак остаётся за тем, кто его завёл.
+    """
+    if str(item.get("id") or "") in TEMPLATE_CHECK_IDS:
+        return True
+    return bool(item.get("required", True))
+
+
 def normalize_check_item(item):
     """Пункт чек-листа с согласованными `state`, `done`, `result`."""
     if item.get("result") == "NEEDS_CHANGES":
@@ -68,14 +97,27 @@ def normalize_check_item(item):
     else:
         derived = "UNCHECKED"
     state = item.get("state")
-    # Явное состояние побеждает, кроме случая, когда старый клиент прислал
-    # `done: True` поверх «Не проверено» — тогда верим старым ключам.
-    if state not in CHECK_STATES or (state == "UNCHECKED" and derived != "UNCHECKED"):
+    # 🔴 ЯВНОЕ СОСТОЯНИЕ ПОБЕЖДАЕТ ВСЕГДА (Plane №538). Здесь стояла оговорка
+    # «кроме случая, когда старый клиент прислал `done: True` поверх „Не
+    # проверено“ — тогда верим старым ключам». Писалась она под клиента,
+    # который про `state` не знает вовсе, а попадал под неё ТЕКУЩИЙ: экран
+    # мержит патч на существующий пункт, поэтому вместе с
+    # `state: "UNCHECKED"` наверх уезжают унаследованные `done: true` и
+    # `result: "MATCHES"`. Сервер выводил `derived = "NORMAL"` и переписывал
+    # состояние обратно — кнопка «Не проверено» не действовала вовсе, счётчик
+    # «Проверено K из N» не уменьшался, а `complete_recon` переставал держать
+    # этап.
+    #
+    # Старый клиент по-прежнему обслужен ПЕРВЫМ условием: он `state` не
+    # присылает, значит состояние выводится из `done`/`result`, как и раньше.
+    # Оговорка защищала не его, а гипотетического клиента, который присылает
+    # ОБА набора ключей и хочет, чтобы победили старые, — такого нет.
+    if state not in CHECK_STATES:
         state = derived
     return {
         **item,
         "state": state,
-        "required": bool(item.get("required", True)),
+        "required": _required_of(item),
         "done": state != "UNCHECKED",
         "result": {"NORMAL": "MATCHES", "REMARK": "NEEDS_CHANGES"}.get(state),
         "comment": str(item.get("comment", "")).strip(),
@@ -1374,6 +1416,39 @@ def _require_visit_chief(visit):
         )
 
 
+#: Поля поста, по которым видно, что расчёт объекта изменился (Plane №634).
+#: Служебные ключи (`id` сохраняется, порядок) в отпечаток не входят: правка
+#: — это другой СОСТАВ постов, а не другой их порядок в списке.
+_POST_FINGERPRINT_FIELDS = (
+    "id", "sector", "post", "task", "need", "shift", "requirements", "comment",
+)
+
+
+def _posts_by_visit(rows):
+    """{объект посещения → отпечаток его постов}. Строки без объекта не
+    считаются: они ничьи, и гард старшего их не касается."""
+    grouped = {}
+    for row in rows or []:
+        key = str(row.get("visitObjectId") or "").strip()
+        if not key:
+            continue
+        grouped.setdefault(key, []).append(
+            tuple(str(row.get(field, "") or "").strip() for field in _POST_FINGERPRINT_FIELDS)
+        )
+    return {key: sorted(items) for key, items in grouped.items()}
+
+
+def _visits_with_changed_posts(event, sector_posts):
+    """Объекты, чей расчёт постов запрос МЕНЯЕТ (Plane №634)."""
+    before = _posts_by_visit(event.recon_sector_posts or [])
+    after = _posts_by_visit(sector_posts)
+    return {
+        key
+        for key in set(before) | set(after)
+        if before.get(key, []) != after.get(key, [])
+    }
+
+
 @transaction.atomic
 def assign_visit_object_chief(event_id, visit_object_id, *, employee_id, actor):
     """Назначить старшего НА ОБЪЕКТ посещения (Plane «Реестр ОМ-35.2»).
@@ -1851,11 +1926,20 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
         raise _validation(field_errors)
     # Посты объекта пишет его старший — без старшего объект закрыт (№424).
     # Нераспределённые строки (без `visitObjectId`) гард не трогает.
-    touched = {
-        str(row.get("visitObjectId") or "").strip()
-        for row in sector_posts
-        if str(row.get("visitObjectId") or "").strip()
-    }
+    #
+    # 🔴 «ТРОНУТ» ЗНАЧИТ «ИЗМЕНЁН», А НЕ «УПОМЯНУТ» (Plane №634). Гард смотрел
+    # на все объекты, названные в присланных постах, — а посты присылаются
+    # ЦЕЛИКОМ, и при отметке одного пункта чек-листа список подставляется из
+    # хранимого (запасной путь №416). Значит один объект без старшего делал
+    # несохраняемой рекогносцировку ВСЕГО мероприятия: и чужие посты, и даже
+    # галочку в чек-листе, к постам не относящуюся. То же у любого ОМ, чьи
+    # посты старше правила.
+    #
+    # Сравниваются наборы постов по объекту: гард держит только те объекты,
+    # чьи посты человек ДЕЙСТВИТЕЛЬНО правит. Перенос строки между объектами
+    # меняет оба набора — оба и требуют старшего, это верно: пост уходит из
+    # одного расчёта и приходит в другой.
+    touched = _visits_with_changed_posts(event, sector_posts)
     for visit in event.visit_objects.filter(pk__in=touched or [-1]):
         _require_visit_chief(visit)
     event.recon_checklist = [

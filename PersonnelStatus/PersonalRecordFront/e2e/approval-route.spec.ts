@@ -72,7 +72,7 @@ async function prepareOnApproval(call: ReturnType<typeof caller>): Promise<{ id:
   await call('POST', `${base}/recon/import-from-passport/`)
   const after = await call('GET', `${base}/`)
   await call('PATCH', `${base}/recon/`, {
-    checklist: after.reconChecklist.map((i: Record<string, unknown>) => ({ ...i, done: true, result: 'MATCHES' })),
+    checklist: after.reconChecklist.map((i: Record<string, unknown>) => ({ ...i, state: 'NORMAL', done: true, result: 'MATCHES' })),
     sectorPosts: after.reconSectorPosts,
   })
   await call('POST', `${base}/recon/complete/`)

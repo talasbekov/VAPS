@@ -794,7 +794,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     recon_post_id = event_service.update_recon(
         om.pk,
         checklist=[
-            {**item, "done": True} for item in om.recon_checklist
+            {**item, "state": "NORMAL"} for item in om.recon_checklist
         ],
         sector_posts=[
             {
@@ -1141,8 +1141,10 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     _svc.import_recon_from_passport(shortage_event.pk)
     shortage_event.refresh_from_db()
     for item in shortage_event.recon_checklist:
-        item["done"] = True
-        item["result"] = "MATCHES"
+        # Состояние ЯВНО (Plane №538): старые ключи `done`/`result` сервер
+        # выводит сам, а присланные вместе с `state` больше его не
+        # перебивают — это и было дефектом кнопки «Не проверено».
+        item["state"] = "NORMAL"
     _svc.update_recon(
         shortage_event.pk,
         checklist=shortage_event.recon_checklist,

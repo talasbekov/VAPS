@@ -240,6 +240,7 @@ test.describe(
           body: JSON.stringify({
             checklist: fresh.reconChecklist.map((item: Record<string, unknown>) => ({
               ...item,
+              state: 'NORMAL',
               done: true,
               result: 'MATCHES',
             })),

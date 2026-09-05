@@ -492,7 +492,7 @@ class Command(BaseCommand):
         event = event_service.update_recon(
             event.id,
             checklist=[
-                {**item, "done": True} for item in (event.recon_checklist or [])
+                {**item, "state": "NORMAL"} for item in (event.recon_checklist or [])
             ],
             sector_posts=posts,
         )
@@ -737,7 +737,7 @@ class Command(BaseCommand):
             event = event_service.complete_bulletin(event.id)
         event = event_service.update_recon(
             event.id,
-            checklist=[{**item, "done": True} for item in (event.recon_checklist or [])],
+            checklist=[{**item, "state": "NORMAL"} for item in (event.recon_checklist or [])],
             # ДВА направления — требование самих проб, а не выдумка:
             # «готовность считается по итогам» сторожит `фикстуре нужно ≥2
             # направления` (на одном направлении «1 из 2 готовы» не
@@ -983,7 +983,7 @@ class Command(BaseCommand):
         event = event_service.update_recon(
             event.id,
             checklist=[
-                {**item, "done": True} for item in (event.recon_checklist or [])
+                {**item, "state": "NORMAL"} for item in (event.recon_checklist or [])
             ],
             sector_posts=event.recon_sector_posts,
         )

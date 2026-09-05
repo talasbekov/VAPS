@@ -27,7 +27,7 @@ interface EventRow {
   title?: string
   reconForceRequest?: number
   reconForceRequestedAt?: string | null
-  reconChecklist?: { id: string; done: boolean }[]
+  reconChecklist?: { id: string; done: boolean; state?: string; result?: string | null }[]
   passportBinding: { versionId: string; versionNumber: number } | null
   reconSectorPosts: {
     id: string
@@ -187,19 +187,18 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await expect(
       page.getByRole('button', { name: 'Открыть рекогносцировку' }),
     ).toHaveCount(0)
-    // Панели бюллетеня на рекогносцировке БОЛЬШЕ НЕТ (Plane №468, решение
-    // заказчика 04.09.2026 — подтверждено им повторно, когда следствие ниже
-    // было названо): панель рисуется только на стадии «Бюллетень».
-    //
-    // Прежде здесь стояло обратное: «панель ПРАВИТСЯ, иначе описание и задачи
-    // такому ОМ уже никогда не вписать». Это следствие никуда не делось —
-    // ОМ с объектом заводится сразу рекогносцировкой (`initial_stage` в
-    // `security_events.py`) и стадии «Бюллетень» не видит, значит описание и
-    // первичные задачи ему теперь вписать НЕГДЕ. Поля не читает ни один
-    // документ, и гейт открытия рекогносцировки требует их только у ОМ БЕЗ
-    // объекта, поэтому потеря не ломает цепочку; заведена карточка на решение
-    // «снять поля или дать им место».
-    await expect(page.getByTestId('bulletin-panel')).toHaveCount(0)
+    // 🔴 ПАНЕЛЬ БЮЛЛЕТЕНЯ НА РЕКОГНОСЦИРОВКЕ СНОВА ЕСТЬ (Plane №748), и пин
+    // здесь ПЕРЕВЁРНУТ ОСОЗНАННО. История у него такая:
+    //   1) сначала проба требовала панель — «иначе описание и задачи такому
+    //      ОМ уже никогда не вписать»;
+    //   2) №468 панель убрал, и пин перевернули на «панели нет»;
+    //   3) названное в п. 1 следствие сбылось — ОМ с объектом заводится сразу
+    //      рекогносцировкой и стадии «Бюллетень» не видит, — и №748 вернул
+    //      панель на все незакрытые стадии, оставив от №468 главное: сама она
+    //      больше не раскрывается вне «Бюллетеня» и места вниз не отжимает.
+    // Пин остался от шага 2 и краснел с самого №748; правится вместе с ним, а
+    // не подгоном под вывод: проверяется теперь ровно то, что решил заказчик.
+    await expect(page.getByTestId('bulletin-panel')).toHaveCount(1)
 
     // `[РЕК-04]` (Plane №443): один переключатель «Норма / Замечание / Не
     // проверено», счётчик «Проверено X из Y» считает по черновику формы;
@@ -473,16 +472,27 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     // Проба ЖИВАЯ и мутирующая: предмет — что сервер принял и вернул, а
     // подменённый ответ этого не докажет. Прежнее состояние возвращается в
     // `finally`.
+    // ОМ СВОЙ: проба мутирующая, и общий со стендом ОМ делал её мигающей —
+    // разбор в шапке `ownEventOnRecon`.
     const token = await apiToken()
-    const suitable = (rows: EventRow[]): EventRow | undefined =>
-      rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
-    let found = suitable(await events(token))
-    if (found === undefined) {
-      await prepareEvent(token)
-      found = suitable(await events(token))
-    }
-    expect(found, 'не удалось подготовить ОМ на «Рекогносцировке»').toBeDefined()
-    const target = found!
+    const target = await ownEventOnRecon(token)
+    // 🔴 НАЧИНАЕМ С «НЕ ПРОВЕРЕНО» — ЭТО ЧАСТЬ ПРЕДМЕТА. Форма сравнивалась
+    // с пропом `event`, а карточка ОМ намеренно не пересобирается на каждом
+    // обновлении данных: проп остаётся тем, каким пришёл при открытии. Значит
+    // «отметил → сохранил → снял отметку» возвращало форму РОВНО к тому, что
+    // лежит в устаревшем пропе, «Сохранить» гасла, и второе сохранение не
+    // уходило вовсе. Если начать с «Норма», этой половины дефекта не видно.
+    await fetch(`${API}/api/ops/security-events/${target.id}/recon/`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        checklist: (target.reconChecklist ?? []).map((item, index) =>
+          index === 0
+            ? { ...item, state: 'UNCHECKED', done: false, result: null }
+            : item,
+        ),
+      }),
+    })
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
@@ -493,11 +503,48 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     // «Сохранить» выключена, пока форма не изменена, — жать её вслепую значит
     // ждать десять секунд отключённую кнопку (так и вышло на первом прогоне,
     // когда пункт УЖЕ был «Норма»).
+    //
+    // 🔴 СНАЧАЛА ДОЖИДАЕМСЯ КОНЦА ПРЕДЫДУЩЕГО СОХРАНЕНИЯ. Пока мутация в
+    // полёте, кнопка подписана «Сохранение…» и выключена — `isEnabled()`
+    // вернул бы `false` не потому, что править нечего, и второе сохранение
+    // молча не состоялось бы. Ответ первого затем переносился в форму и
+    // возвращал «Норма» поверх только что снятой отметки: проба падала
+    // ровно тем симптомом, который стережёт, и мигала прогон через прогон
+    // (замерено: два запуска подряд — passed, failed).
+    //
+    // Локатор по имени «Сохранить» и есть ожидание: во время сохранения
+    // кнопка зовётся иначе, и `toBeVisible` держит паузу до её возвращения.
+    const footer = page.locator('[data-slot="recon-footer"]')
     const save = async () => {
-      const button = page
-        .locator('[data-slot="recon-footer"]')
-        .getByRole('button', { name: 'Сохранить' })
-      if (await button.isEnabled()) await button.click()
+      const button = footer.getByRole('button', { name: 'Сохранить' })
+      await expect(button).toBeVisible({ timeout: 15_000 })
+      // 🔴 `isEnabled()` — СНИМОК БЕЗ ОЖИДАНИЯ. Сразу после щелчка по «Не
+      // проверено» React ещё не перерисовал подвал, кнопка снимком выключена,
+      // и сохранение молча не отправлялось: в сеть уходил ОДИН PATCH из двух
+      // (проверено логом запросов). Проба падала «состояние вернулось в
+      // „Норма“» — то есть ровно тем симптомом, который стережёт, и врала бы
+      // про дефект сервера.
+      //
+      // `toBeEnabled` ждёт; отсутствие правок — не ошибка пробы, поэтому
+      // ожидание короткое и его исход не обязателен.
+      await expect(button).toBeEnabled({ timeout: 5_000 }).catch(() => undefined)
+      if (!(await button.isEnabled())) return
+      // 🔴 ЖДЁМ ОТВЕТ СЕРВЕРА, А НЕ ПОДПИСЬ КНОПКИ. Ответ сохранения
+      // переносится в форму (`onEvent` → `setChecklist`), поэтому правка,
+      // сделанная ПОКА запрос в полёте, затирается пришедшим ответом: проба
+      // щёлкала «Не проверено» поверх летящего сохранения «Норма», ответ
+      // возвращал «Норма», и падение выглядело дефектом сервера.
+      //
+      // Ожидание по подписи («Сохранение…» появилась и пропала) здесь НЕ
+      // работает: проверка отсутствия проходит мгновенно — React ещё не успел
+      // перерисовать кнопку после щелчка. Ждать надо ответ, и подписка на
+      // него оформляется ДО щелчка, иначе он успеет прийти раньше.
+      const saved = page.waitForResponse(
+        (r) => r.url().includes('/recon/') && r.request().method() === 'PATCH',
+        { timeout: 20_000 },
+      )
+      await button.click()
+      await saved
     }
 
     try {
@@ -629,8 +676,98 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       // мероприятию расчёт есть.
       await expect(complete).not.toHaveAttribute('title', 'Нет постов расчёта.')
     })
+
+    test('кнопка знает про старшего СОСЕДНЕГО объекта и называет его', async ({
+      page,
+    }) => {
+      // 🔴 Plane №635. `completeBlocked` смотрел старшего только у ПОКАЗАННОГО
+      // объекта, а `complete_recon` требует его у КАЖДОГО объекта на этапе
+      // «Рекогносцировка». Человек стоял на объекте со старшим, кнопка была
+      // включена, сервер отвечал 422 — и это не редкий случай, а состояние
+      // двухобъектного ОМ ПО УМОЛЧАНИЮ: второй объект, добавленный кнопкой
+      // «+», старшего не наследует.
+      //
+      // Красная проверка — вернуть условие по активному объекту: подпись
+      // станет `null`, кнопка включится, и `toHaveAttribute` не найдёт текста.
+      const token = await apiToken()
+      const suitable = (rows: EventRow[]): EventRow | undefined =>
+        rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
+      let found = suitable(await events(token))
+      if (found === undefined) {
+        await prepareEvent(token)
+        found = suitable(await events(token))
+      }
+      expect(found, 'не удалось подготовить ОМ на «Рекогносцировке»').toBeDefined()
+      const target = found
+
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (r) => {
+          const response = await r.fetch()
+          const body = await response.json()
+          const base = body.visitObjects[0] ?? {}
+          // Показанный объект — СО СТАРШИМ (иначе экран показывает пустое
+          // состояние «назначьте старшего» и до кнопки дело не доходит);
+          // соседний — БЕЗ старшего и на том же этапе.
+          const shown = {
+            ...base,
+            id: 'probe-a',
+            objectName: 'Объект А',
+            stage: 'RECON',
+            chiefEmployeeId: base.chiefEmployeeId ?? '1',
+          }
+          const neighbour = {
+            ...shown,
+            id: 'probe-b',
+            objectName: 'Объект Б',
+            chiefEmployeeId: null,
+          }
+          body.visitObjects = [shown, neighbour]
+          body.reconSectorPosts = body.reconSectorPosts.map(
+            (post: Record<string, unknown>) => ({ ...post, visitObjectId: 'probe-a' }),
+          )
+          await r.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=probe-a`)
+      const footer = page.locator('[data-slot="recon-footer"]')
+      await expect(footer).toBeVisible({ timeout: 15_000 })
+
+      const complete = footer.getByRole('button', { name: /Завершить рекогносцировку/ })
+      await expect(complete).toBeDisabled()
+      // Имя в подписи обязательно: без него человек не поймёт, куда идти —
+      // объект, на котором он стоит, со старшим.
+      await expect(complete).toHaveAttribute(
+        'title',
+        'Не назначен старший объекта «Объект Б».',
+      )
+    })
   })
 })
+
+/**
+ * СВОЙ ОМ на «Рекогносцировке» с постами — и его строка реестра.
+ *
+ * 🔴 ПОЧЕМУ НЕ «ПЕРВЫЙ ПОДХОДЯЩИЙ СО СТЕНДА». Пробы, которые ПРАВЯТ состояние,
+ * не имеют права брать чужую строку: стенд один на все сессии, и соседняя
+ * проба (или соседний Claude) ведёт тот же ОМ своим путём. Замерено
+ * 05.09.2026: проба «Не проверено» на общем ОМ мигала прогон через прогон —
+ * четыре запуска подряд дали ✓ ✘ ✓ ✘, причём падение было ровно тем
+ * симптомом, который она стережёт, то есть врало про дефект.
+ *
+ * Читающим пробам первый подходящий по-прежнему годится: они ничего не меняют.
+ */
+async function ownEventOnRecon(token: string): Promise<EventRow> {
+  await prepareEvent(token)
+  const rows = await events(token)
+  const mine = rows
+    .filter((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
+    .sort((a, b) => Number(b.id) - Number(a.id))[0]
+  expect(mine, 'не удалось завести свой ОМ на «Рекогносцировке»').toBeDefined()
+  return mine
+}
 
 /** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта. */
 async function prepareEvent(token: string): Promise<void> {
@@ -745,6 +882,7 @@ async function createRequestFixture(
   await call('PATCH', `${base}/recon/`, {
     checklist: (withPosts.reconChecklist ?? []).map((i: { id: string }) => ({
       ...i,
+      state: 'NORMAL',
       done: true,
     })),
     sectorPosts: withPosts.reconSectorPosts,

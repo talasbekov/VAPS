@@ -106,6 +106,7 @@ async function seed(token: string): Promise<Fixture> {
   await call('PATCH', `${base}/recon/`, {
     checklist: (imported.payload.reconChecklist as Record<string, unknown>[]).map((i) => ({
       ...i,
+      state: 'NORMAL',
       done: true,
     })),
     sectorPosts: imported.payload.reconSectorPosts,

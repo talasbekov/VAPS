@@ -59,7 +59,7 @@ def event_on_demand(manager, business_date="2026-08-10"):  # noqa: F811
     manager.patch(
         f"{base}recon/",
         {
-            "checklist": [{**i, "done": True} for i in data["reconChecklist"]],
+            "checklist": [{**i, "state": "NORMAL"} for i in data["reconChecklist"]],
             "sectorPosts": posts,
         },
         format="json",

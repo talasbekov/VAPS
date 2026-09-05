@@ -590,6 +590,7 @@ async function prepareEvent(
   await call('PATCH', `${base}/recon/`, {
     checklist: afterImport.reconChecklist.map((item) => ({
       ...item,
+      state: 'NORMAL',
       done: true,
       result: 'MATCHES',
     })),
