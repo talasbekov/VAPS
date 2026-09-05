@@ -1165,6 +1165,219 @@ test.describe(
       expect(result.mineCount, 'список «моих назначений» пуст').toBeGreaterThan(0)
     })
 
+    test('возврат обнуляет маршрут, ответ на последнее замечание завершает этап (Plane №569, №570)', async ({
+      page,
+    }) => {
+      // №570: подпись под ВОЗВРАЩЁННЫМ составом ничего не говорит о
+      // следующем — сервер снимает все подписи (`[ВОЗ-03]`), мок оставлял их
+      // в «Согласовано»/«На согласовании» на ОБЕИХ дорогах возврата.
+      // №569: ответ на последнее открытое замечание — тоже «последняя
+      // подпись» (`[СОГ-09]`): сервер завершает этап сам, мок не двигался.
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const result = await page.evaluate(async () => {
+        const post = (url: string, body?: unknown) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+        const read = async () =>
+          (await (await fetch('/api/ops/security-events/se-1/')).json()) as {
+            stage: string
+            approvalRoute: { id: string; status: string; comment: string }[]
+            approvalRemarks: { id: string; status: string }[]
+            visitObjects: { statusLabel: string }[]
+          }
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'RECON' })
+        await post('/api/ops/security-events/se-1/recon/import-from-passport/', {})
+        const withPosts = await read()
+        const roster = await (await fetch('/api/ops/personnel/?page_size=50')).json()
+        for (const [index, p0] of (withPosts as unknown as {
+          reconSectorPosts: { id: string }[]
+          placementAssignments: { postId: string }[]
+        }).reconSectorPosts.entries()) {
+          if (
+            (withPosts as unknown as { placementAssignments: { postId: string }[] })
+              .placementAssignments.some((a) => a.postId === p0.id)
+          )
+            continue
+          await post('/api/ops/security-events/se-1/placement/assign/', {
+            postId: p0.id,
+            employeeId: roster.results[index].id,
+          })
+        }
+        // №606: подпись объекта на «Расстановке» считается по живым данным.
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'APPROVAL' })
+        for (const name of ['Первый (проба №570)', 'Второй (проба №570)']) {
+          await post('/api/ops/security-events/se-1/approval/route/', {
+            name,
+            employeeId: '1',
+            position: 'Начальник',
+          })
+        }
+        await post('/api/ops/security-events/se-1/approval/send/')
+        const sent = await read()
+        // Первый подписывает, второй возвращает — тогда есть ЧТО обнулять.
+        await post(
+          `/api/ops/security-events/se-1/approval/route/${sent.approvalRoute[0].id}/decide/`,
+          { decision: 'APPROVED', comment: '' },
+        )
+        await post(
+          `/api/ops/security-events/se-1/approval/route/${sent.approvalRoute[1].id}/decide/`,
+          { decision: 'RETURNED', comment: 'Переставьте людей (проба №570)' },
+        )
+        const returned = await read()
+
+        // Повторная отправка идёт ЧЕРЕЗ ЗАВЕРШЕНИЕ РАССТАНОВКИ: возврат
+        // опустил ОМ на «Расстановку», а `approval/send/` работает на
+        // «Согласовании» — тот же порядок, что у человека на экране.
+        await post('/api/ops/security-events/se-1/placement/complete/', {})
+        await post('/api/ops/security-events/se-1/approval/send/')
+        const resent = await read()
+        for (const approver of resent.approvalRoute) {
+          if (approver.status === 'PENDING') {
+            await post(
+              `/api/ops/security-events/se-1/approval/route/${approver.id}/decide/`,
+              { decision: 'APPROVED', comment: '' },
+            )
+          }
+        }
+        const signed = await read()
+        const open = signed.approvalRemarks.find((r) => r.status === 'OPEN')
+        if (open === undefined) {
+          return { broken: 'открытых замечаний не осталось — автозавершение проверять нечем' }
+        }
+        // Идентификатор замечания собран из id согласующего, а в нём есть
+        // двоеточия и плюс (метка времени) — без кодирования путь не совпал
+        // бы с обработчиком, и ответ ушёл бы в пустоту молча.
+        const resolved = await post(
+          `/api/ops/security-events/se-1/approval/remarks/${encodeURIComponent(
+            open.id,
+          )}/resolve/`,
+          { decision: 'RESOLVED', response: 'Переставили (проба №569)' },
+        )
+        const after = await read()
+        return {
+          broken: null as string | null,
+          // №606: подпись объекта на «Расстановке» считается по живым данным,
+          // а не по полю, которому ноль присвоили однажды.
+          labelOnPlacement: (returned as unknown as {
+            visitObjects: { statusLabel: string }[]
+          }).visitObjects[0]?.statusLabel ?? '',
+          returnedStatuses: returned.approvalRoute.map((a) => a.status),
+          stageAfterSign: signed.stage,
+          stageAfterResolve: after.stage,
+          resolveStatus: resolved.status,
+          resolveBody: (await resolved.text()).slice(0, 180),
+          signedRoute: signed.approvalRoute.map((a) => a.status),
+          stale: (signed as unknown as { approvalStale?: boolean }).approvalStale ?? null,
+          visitLabel: after.visitObjects[0]?.statusLabel ?? '',
+        }
+      })
+
+      expect(result.broken ?? null, `${result.broken}`).toBeNull()
+      // №606: после возврата ОМ стоит на «Расстановке», и люди на постах
+      // назначены — подпись объекта обязана это отражать. До правки ветка
+      // «PLACEMENT + назначено 0» срабатывала всегда.
+      expect(
+        result.labelOnPlacement,
+        'подпись объекта на «Расстановке» с назначенными людьми осталась прежней',
+      ).not.toEqual('Рекогносцировка завершена')
+      expect(
+        result.returnedStatuses,
+        'после возврата в маршруте остались подписи — таблица показывает «Согласовано» под возвращённым составом',
+      ).toEqual(['NOT_SENT', 'RETURNED'])
+      expect(
+        result.stageAfterSign,
+        'после подписей ОМ не на «Согласовании» — автозавершение проверять нечем',
+      ).toEqual('APPROVAL')
+      expect(
+        result.resolveStatus,
+        `ответ на замечание не принят: ${result.resolveBody}`,
+      ).toEqual(200)
+      expect(
+        result.stageAfterResolve,
+        `ответ на последнее открытое замечание не завершил этап; маршрут ${JSON.stringify(
+          result.signedRoute,
+        )}, состав менялся после отправки: ${result.stale}`,
+      ).toEqual('ACKNOWLEDGEMENT')
+    })
+
+    test('мок пишет «ознакомлен сам», а не «лично» (Plane №542)', async ({ page }) => {
+      // Сервер (Plane №721) ставит «лично», только когда ЧУЖАЯ строка
+      // ДОКАЗАНА, а неизвестность читает как «в системе». У мока учётных
+      // записей нет вовсе — доказать чужую строку нечем, значит это «сам».
+      // Мок же писал `personal` и автора «Старший (мок)» БЕЗУСЛОВНО, и каждое
+      // самоподтверждение рисовалось видом, которого живой стенд не выдаёт.
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const row = await page.evaluate(async () => {
+        const post = (url: string, body?: unknown) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'RECON' })
+        await post('/api/ops/security-events/se-1/recon/import-from-passport/', {})
+        const withPosts = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const roster = await (await fetch('/api/ops/personnel/?page_size=50')).json()
+        for (const [index, p0] of withPosts.reconSectorPosts.entries()) {
+          if (
+            withPosts.placementAssignments.some(
+              (a: { postId: string }) => a.postId === p0.id,
+            )
+          )
+            continue
+          await post('/api/ops/security-events/se-1/placement/assign/', {
+            postId: p0.id,
+            employeeId: roster.results[index].id,
+          })
+        }
+        const staged = await (await fetch('/api/ops/security-events/se-1/')).json()
+        const assignment = staged.placementAssignments[0]
+        await post(`/api/ops/security-events/se-1/acknowledge/${assignment.id}/`, {})
+        const after = await (await fetch('/api/ops/security-events/se-1/')).json()
+        return after.placementAssignments.find(
+          (a: { id: string }) => a.id === assignment.id,
+        ) as { acknowledgedVia: string; acknowledgedBy: string; acknowledgedAt: string | null }
+      })
+
+      expect(row.acknowledgedAt, 'подтверждение не записалось').not.toBeNull()
+      expect(
+        row.acknowledgedVia,
+        'мок объявил самоподтверждение отметкой старшего «лично»',
+      ).toEqual('self')
+      expect(row.acknowledgedBy, 'у самоподтверждения появился автор').toEqual('')
+    })
+
     test('стор мока не поднимает события прежней формы', async ({ page }) => {
       // Стор лежит в `sessionStorage` и восстанавливался ДОСЛОВНО, а ключ не
       // был версионирован (Plane №733): вкладка, открытая ДО выката новой
