@@ -231,3 +231,102 @@ def test_a_closed_visit_object_refuses_every_edit(
     assert OpsSecurityEventVisitObject.objects.filter(pk=first.pk).exists(), (
         "закрытый объект снят с мероприятия"
     )
+
+
+# ── Журнал в сводке объекта — про ЭТОТ объект (Plane №727) ──────────────
+
+
+def test_the_object_summary_counts_only_its_own_journal(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """Инцидент на посту одного объекта не считается вторым как свой.
+
+    🔴 ЧТО БЫЛО НЕ ТАК. Назначения и отказы в сводке фильтровались по постам
+    объекта, а замены и инциденты брались из `journal_entries` ЦЕЛИКОМ. У
+    многообъектного ОМ каждый объект отчитывался общей цифрой мероприятия как
+    своей: один инцидент превращался в «инцидентов 1» у обоих.
+    """
+    base, event_id, first, second = two_objects_on_conduct
+    event = service.lock_event(event_id)
+    first_posts = service.visit_object_posts(event, first)
+    assert first_posts, "фикстура обязана дать первому объекту хоть один пост"
+
+    manager.post(
+        f"{base}journal/",
+        {
+            "type": "INCIDENT",
+            "title": "Задержание на периметре",
+            "description": "",
+            "postId": str(first_posts[0]["id"]),
+        },
+        format="json",
+    )
+
+    rows = {row["id"]: row for row in manager.get(base).json()["visitObjects"]}
+
+    assert rows[str(first.pk)]["closureSummary"]["incidents"] == 1
+    assert rows[str(second.pk)]["closureSummary"]["incidents"] == 0, (
+        "инцидент чужого объекта не может считаться своим"
+    )
+
+
+def test_a_journal_entry_without_a_post_is_not_shared_between_objects(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """Запись без поста у НЕСКОЛЬКИХ объектов не приписывается никому.
+
+    Приписать её каждому значило бы посчитать одно событие по разу на объект —
+    ровно то, ради чего карточка и заведена. Тот же довод, которым
+    `_visit_placement` отказывается делить общий расчёт постов между
+    объектами (Plane №409).
+    """
+    base, event_id, first, second = two_objects_on_conduct
+
+    manager.post(
+        f"{base}journal/",
+        {"type": "INCIDENT", "title": "Общая обстановка", "description": ""},
+        format="json",
+    )
+
+    rows = {row["id"]: row for row in manager.get(base).json()["visitObjects"]}
+
+    assert rows[str(first.pk)]["closureSummary"]["incidents"] == 0
+    assert rows[str(second.pk)]["closureSummary"]["incidents"] == 0
+    # А сводка МЕРОПРИЯТИЯ её видит — запись не исчезла, она просто не чья-то.
+    assert manager.get(base).json()["closureSummary"]["incidents"] == 1
+
+
+def test_a_replacement_now_records_its_post(manager, two_objects_on_conduct):  # noqa: F811
+    """Замена записывает пост — без него её нельзя отнести к объекту.
+
+    Инцидент несёт `postId` с `[ЗАК-03]`, у замены его просто забыли, и
+    поэтому замены разъезжались по всем объектам сразу.
+    """
+    base, event_id, first, second = two_objects_on_conduct
+    event = service.lock_event(event_id)
+    first_posts = service.visit_object_posts(event, first)
+    target = next(
+        a
+        for a in event.placement_assignments
+        if str(a.get("postId")) == str(first_posts[0]["id"])
+    )
+    spare = make_employee("Сменный", "С")
+
+    resp = manager.post(
+        f"{base}conduct/replace/",
+        {
+            "assignmentId": target["id"],
+            "incomingEmployeeId": str(spare.pk),
+            "reasonCode": "Отказ: болезнь",
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.content
+    replacement = next(
+        e for e in resp.json()["journalEntries"] if e["type"] == "REPLACEMENT"
+    )
+    assert replacement["postId"] == str(first_posts[0]["id"])
+    rows = {row["id"]: row for row in resp.json()["visitObjects"]}
+    assert rows[str(first.pk)]["closureSummary"]["replacements"] == 1
+    assert rows[str(second.pk)]["closureSummary"]["replacements"] == 0

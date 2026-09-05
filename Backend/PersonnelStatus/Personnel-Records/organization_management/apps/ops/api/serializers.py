@@ -103,6 +103,39 @@ def _acknowledgement_deadline(event):
     return deadline.isoformat() if deadline is not None else None
 
 
+def _journal_of(event, visit, post_ids, *, single):
+    """Записи журнала, относящиеся к ЭТОМУ объекту (Plane №727).
+
+    Замены и инциденты считались по `journal_entries` ЦЕЛИКОМ, тогда как
+    назначения и отказы рядом — по постам объекта. У многообъектного ОМ каждый
+    объект отчитывался общей цифрой мероприятия как своей.
+
+    Запись относится к объекту, если её пост — его. Запись БЕЗ поста
+    (`postId` пуст) принадлежит объекту только когда объект у мероприятия
+    ОДИН: там ей больше некому принадлежать — тот же довод, которым
+    `_visit_placement` отдаёт единственному объекту неразмеченные посты
+    (Plane №409). У нескольких объектов такая запись не приписывается никому:
+    приписать её каждому значило бы посчитать одно событие по разу на объект,
+    ради чего эта карточка и заведена.
+
+    Записи о замене до №727 поста не несут вовсе — писатель его не сохранял.
+    Исторические строки многообъектных ОМ поэтому останутся вне объектных
+    сводок, и это честнее, чем разложить их догадкой.
+    """
+    if visit is None:
+        return event.journal_entries or []
+    rows = []
+    for entry in event.journal_entries or []:
+        post_id = str(entry.get("postId") or "").strip()
+        if post_id == "":
+            if single:
+                rows.append(entry)
+            continue
+        if post_id in post_ids:
+            rows.append(entry)
+    return rows
+
+
 def _closure_summary(event, visit, *, single=True):
     """`[ЗАК-01]`: «Постов N · назначено K из N · замен N · отказов N ·
     инцидентов N» — считается на чтении по постам объекта (или всем).
@@ -126,7 +159,16 @@ def _closure_summary(event, visit, *, single=True):
     else:
         need, _assigned = _visit_placement(event, visit, single=single)
         if need is None:
-            journal = event.journal_entries or []
+            # Числа по постам неизвестны, а журнал — нет: запись ссылается на
+            # ПОСТ прямо, и размеченные посты объекта известны даже тогда,
+            # когда в расчёте остались неразмеченные строки. Правило одно и то
+            # же для обеих веток (Plane №727) — иначе объект отчитывался бы
+            # общим числом мероприятия ровно там, где про остальное молчит.
+            marked = {
+                str(p.get("id"))
+                for p in security_events.visit_object_posts(event, visit)
+            }
+            journal = _journal_of(event, visit, marked, single=single)
             return {
                 "posts": None,
                 "need": None,
@@ -142,7 +184,7 @@ def _closure_summary(event, visit, *, single=True):
     assignments = [
         a for a in (event.placement_assignments or []) if str(a.get("postId")) in post_ids
     ]
-    journal = event.journal_entries or []
+    journal = _journal_of(event, visit, post_ids, single=single)
     return {
         "posts": len(posts),
         "need": sum(int(p.get("need") or 0) for p in posts),
