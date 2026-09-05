@@ -260,3 +260,70 @@ def test_summary_names_the_division_of_the_employee(manager, two_objects_on_cond
         if r["assignmentId"] == row["assignmentId"]
     )
     assert again["divisionName"] == "Управление №9"
+
+
+def _incident_on(manager, event_id, post_id, title):  # noqa: F811
+    resp = manager.post(
+        f"{URL}{event_id}/journal/",
+        {"type": "INCIDENT", "title": title, "postId": post_id},
+        format="json",
+    )
+    assert resp.status_code in (200, 201), resp.content
+    return resp
+
+
+def test_summary_counts_only_this_objects_journal(manager, two_objects_on_conduct):  # noqa: F811
+    """Замены и инциденты — ОБЪЕКТА, а не мероприятия (Plane №645).
+
+    Журнал ведётся по мероприятию, а панель оценок и подтверждение закрытия
+    говорят про ОДИН объект: до правки каждый объект печатал общее по ОМ
+    число инцидентов как своё, и решение о закрытии принималось по чужой
+    цифре.
+    """
+    _, event_id, first, second = two_objects_on_conduct
+    event = service.lock_event(event_id)
+    post_of = {
+        str(visit.pk): str(service.visit_object_posts(event, visit)[0]["id"])
+        for visit in (first, second)
+    }
+    assert post_of[str(first.pk)] != post_of[str(second.pk)], "посты объектов совпали"
+
+    _incident_on(manager, event_id, post_of[str(first.pk)], "Происшествие на первом")
+    _incident_on(manager, event_id, post_of[str(second.pk)], "Происшествие на втором")
+
+    a = manager.get(_url(event_id, first)).json()
+    b = manager.get(_url(event_id, second)).json()
+
+    assert a["incidents"] == 1, "объект отчитался инцидентами соседа"
+    assert b["incidents"] == 1, "объект отчитался инцидентами соседа"
+
+
+def test_replacement_of_the_neighbour_is_not_listed(manager, two_objects_on_conduct):  # noqa: F811
+    """Снятый заменой на СОСЕДНЕМ объекте в списке не появляется (Plane №645).
+
+    Пост у записи о замене пишется с №727 — ровно ради того, чтобы отнести её
+    к объекту; до этой правки поле писалось, но никем не читалось.
+    """
+    _, event_id, first, second = two_objects_on_conduct
+    event = service.lock_event(event_id)
+    second_posts = {str(p["id"]) for p in service.visit_object_posts(event, second)}
+    victim = next(
+        a for a in event.placement_assignments if str(a.get("postId")) in second_posts
+    )
+    incoming = make_employee(last_name="Заменовский")
+    service.replace_assignment(
+        event_id,
+        assignment_id=victim["id"],
+        incoming_employee_id=str(incoming.pk),
+        reason_code="ILLNESS",
+    )
+
+    a = manager.get(_url(event_id, first)).json()
+    b = manager.get(_url(event_id, second)).json()
+
+    assert [r["employeeName"] for r in a["rows"] if r["replaced"]] == [], (
+        "замена соседнего объекта перечислена как своя"
+    )
+    assert [r["employeeName"] for r in b["rows"] if r["replaced"]] != [], (
+        "своя замена потерялась вместе с чужой"
+    )

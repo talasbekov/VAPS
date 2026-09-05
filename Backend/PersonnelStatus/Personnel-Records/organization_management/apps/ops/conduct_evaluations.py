@@ -43,18 +43,47 @@ def _current_evaluations(event):
     return {row.participant_code: row for row in rows}
 
 
-def _replaced_rows(event):
+def _entries_of_visit(event, post_ids, entry_type):
+    """Записи журнала, относящиеся к ОБЪЕКТУ посещения (Plane №645).
+
+    Журнал ведётся по мероприятию, а панель оценок и диалог закрытия говорят
+    про ОДИН объект: до этой правки каждый объект перечислял замены соседнего
+    и печатал общее по ОМ число инцидентов как своё, и решение о закрытии
+    принималось по чужой цифре.
+
+    Отнести запись к объекту позволяет `postId` — у инцидента он есть с
+    `[ЗАК-03]`, у замены дописан в №727 ровно ради этого. Запись БЕЗ поста
+    (заведённая раньше) не приписывается никому, если объектов несколько:
+    выдумать ей объект значило бы поставить в сводку факт, которого в данных
+    нет — тот же довод, по которому `visit_object_posts` не раздаёт
+    неразмеченные посты. У единственного объекта такая запись его: другому
+    она принадлежать не может, и правило здесь то же, что у постов.
+    """
+    single = event.visit_objects.count() == 1
+    out = []
+    for entry in event.journal_entries or []:
+        if entry.get("type") != entry_type:
+            continue
+        post_id = str(entry.get("postId") or "")
+        if post_id == "":
+            if single:
+                out.append(entry)
+            continue
+        if post_id in post_ids:
+            out.append(entry)
+    return out
+
+
+def _replaced_rows(event, post_ids):
     """Снятые заменой — только в журнале (`replace_assignment` убирает строку
     назначения). Имя берётся из описания «X → Y — причина: …»."""
     out = []
-    for entry in event.journal_entries or []:
-        if entry.get("type") != "REPLACEMENT":
-            continue
+    for entry in _entries_of_visit(event, post_ids, "REPLACEMENT"):
         head = str(entry.get("description") or "").split(" → ", 1)[0].strip()
         out.append({
             "assignmentId": None,
-            "postId": None,
             "post": str(entry.get("title") or "").replace("Замена: ", "", 1),
+            "postId": str(entry.get("postId") or "") or None,
             "sector": "",
             "employeeId": None,
             "employeeName": head,
@@ -105,12 +134,12 @@ def visit_evaluations(event, visit):
     total = len(rows)
     evaluated = sum(1 for r in rows if r["score"] is not None)
     return {
-        "rows": rows + _replaced_rows(event),
+        "rows": rows + _replaced_rows(event, set(posts)),
         "evaluated": evaluated,
         "total": total,
-        "incidents": sum(
-            1 for e in (event.journal_entries or []) if e.get("type") == "INCIDENT"
-        ),
+        # Инциденты — ОБЪЕКТА, а не мероприятия (Plane №645): это число
+        # клиент печатает в подтверждении закрытия ЭТОГО объекта.
+        "incidents": len(_entries_of_visit(event, set(posts), "INCIDENT")),
     }
 
 

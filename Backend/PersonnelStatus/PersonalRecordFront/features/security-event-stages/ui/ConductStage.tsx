@@ -350,26 +350,13 @@ function ReplacementPanel({ event }: { event: SecurityEvent }) {
   );
 }
 
-/**
- * Сводка «план / факт» из ЖИВЫХ данных карточки. Человеко-часов здесь нет,
- * хотя в прототипе они есть: учёта часов у домена ОМ не существует вовсе, и
- * посчитать их из назначений нельзя — вышла бы выдумка на месте отчётной
- * цифры.
- */
-export function closureFacts(event: SecurityEvent): {
-  assigned: number;
-  need: number;
-  replacements: number;
-  incidents: number;
-} {
-  return {
-    assigned: event.placementAssignments.length,
-    need: event.reconSectorPosts.reduce((sum, post) => sum + post.need, 0),
-    replacements: event.journalEntries.filter((e) => e.type === "REPLACEMENT")
-      .length,
-    incidents: event.journalEntries.filter((e) => e.type === "INCIDENT").length,
-  };
-}
+// 🔴 `closureFacts` СНЯТА (Plane №645). Она считала «план / факт» по ВСЕМУ
+// мероприятию, а единственным её читателем был запасной путь числа инцидентов
+// в подтверждении закрытия ОДНОГО объекта: пока сводка объекта не загрузилась,
+// диалог печатал общее по ОМ число как число этого объекта. Теперь сводка
+// объекта — единственный источник, и подставлять вместо неё что-то другое
+// нечем и незачем; функцию, у которой не осталось читателей, оставлять значило
+// бы копить мёртвый код (та же болезнь, что в №652).
 
 /**
  * Закрытие ОБЪЕКТА посещения (`[ЗАК-05]`, Plane №404) и автозакрытие
@@ -602,10 +589,12 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
     access.can(EVENT_MANAGE)
   );
   if (visit === null) return null;
-  const evaluated = evaluations.data?.evaluated ?? 0;
-  const totalRated = evaluations.data?.total ?? 0;
-  const incidents = evaluations.data?.incidents ?? closureFacts(event).incidents;
-  const unrated = totalRated - evaluated;
+  // Числа берутся ТОЛЬКО из сводки объекта (Plane №645). Пока её нет, диалог
+  // не называет чисел вовсе: подставить сюда общее по мероприятию значило бы
+  // сказать про объект чужую цифру, а ноль — выдумать факт (тот же довод, что
+  // в №726).
+  const summary = evaluations.data ?? null;
+  const unrated = summary === null ? 0 : summary.total - summary.evaluated;
   const others = event.visitObjects.filter((item) => item.id !== visit.id);
   const openOthers = others.filter((item) => item.stage !== "CLOSED").length;
   const isLast = openOthers === 0;
@@ -650,8 +639,10 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                 <DialogHeader>
                   <DialogTitle>Закрыть объект «{visit.objectName}»?</DialogTitle>
                   <DialogDescription data-slot="close-summary">
-                    Оценено {evaluated} из {totalRated}, инцидентов {incidents}. После
-                    закрытия изменения по объекту невозможны.
+                    {summary === null
+                      ? "Сводка объекта ещё считается. "
+                      : `Оценено ${summary.evaluated} из ${summary.total}, инцидентов ${summary.incidents}. `}
+                    После закрытия изменения по объекту невозможны.
                     {isLast ? " Мероприятие при этом закроется целиком." : ""}
                   </DialogDescription>
                   {unrated > 0 && (
