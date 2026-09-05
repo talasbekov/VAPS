@@ -19,6 +19,7 @@ import { anyChiefId } from './stand-chief'
 import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { acceptRosterFor } from './stand-roster'
+import { prepareDemandEvent } from './prepare-events'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -1125,6 +1126,29 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     // Метка «!N» у поста в дереве — открытое замечание видно и без клика.
     await expect(treeButton).toContainText('!1')
   })
+  // ── Перенос человека между постами обратим (Plane №744, №703) ──────────────
+  //
+  // 🔴 ОБЕ ПРОБЫ ЗАВОДЯТ СВОЁ МЕРОПРИЯТИЕ, а не берут стендовое, и это стоило
+  // четырёх переписанных редакций. Взятое общим `placementEventWithRoster` ОМ
+  // делится с соседними спеками: то они разбирают его состав по постам и
+  // подготовка падает «не хватает людей», то убирают за собой в `finally` и
+  // на постах не стоит никто. Попытка добрать состав на месте задевала уже
+  // третью пробу («знаменатели взяты у расхода»), потому что меняла числа,
+  // которые та считает. Ровно об этом предупреждает шапка `prepare-events.ts`:
+  // проба, взявшая чужое мероприятие, зелена в одиночку и красна в прогоне.
+
+  /** Своё ОМ на «Расстановке» с составом, которого хватает на перенос. */
+  async function ownPlacementEvent(
+    token: string,
+  ): Promise<{ eventId: string; roster: string[] }> {
+    // Дата ДАЛЁКАЯ и своя: на ближних днях у половины кадров уже стоят статусы,
+    // и выделение молча пропускает их (`STATUS_OVERLAP_WARNING`) — состав
+    // выходил бы меньше запрошенного.
+    const { id } = await prepareDemandEvent(token, '2027-07-11')
+    const accepted = await acceptRosterFor(token, id, { count: 5 })
+    return { eventId: id, roster: accepted.employeeIds }
+  }
+
   test('отмена обоснования возвращает человека на прежний пост, а не теряет его', async ({
     page,
     request,
@@ -1148,9 +1172,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
      */
     const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-    const target = await placementEventWithRoster(request, auth, token)
-    requireFixture(target, 'мероприятие на стадии «Расстановка»')
-    const eventId = target!.id
+    const { eventId } = await ownPlacementEvent(token)
     type Row = { id: string; postId: string; employeeId: string }
     const fresh = async () =>
       (await (
@@ -1161,17 +1183,6 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         forceRoster: { employeeId: string }[]
       }
     const before = new Set((await fresh()).placementAssignments.map((row) => row.id))
-    const assignTo = async (postId: string, employeeId: string) =>
-      request.post(`${API}/api/ops/security-events/${eventId}/placement/assign/`, {
-        headers: auth,
-        data: {
-          postId,
-          employeeId,
-          override: true,
-          override_reason: 'Подготовка пробы №744: расстановка до переноса',
-        },
-      })
-
     try {
       await signIn(page)
       await page.goto(`${APP}/security-ops/events/${eventId}/`)
@@ -1181,50 +1192,91 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         nodes.map((node) => node.getAttribute('data-drop-post')),
       )
 
-      const state = await fresh()
-      const visible = state.reconSectorPosts
-        .filter((row) => shown.includes(row.id))
-        .sort((a, b) => Number(a.need ?? 0) - Number(b.need ?? 0))
+      const assignTo = async (postId: string, employeeId: string) =>
+        request.post(`${API}/api/ops/security-events/${eventId}/placement/assign/`, {
+          headers: auth,
+          data: {
+            postId,
+            employeeId,
+            override: true,
+            override_reason: 'Подготовка пробы переноса: расстановка до отказа',
+          },
+        })
+
+      /**
+       * Собрать расстановку, на которой перенос ОТКАЗЫВАЕТ: приёмник набран до
+       * расчёта, а наш человек стоит на другом посту.
+       *
+       * 🔴 ПАРА ПОСТОВ ПОДБИРАЕТСЯ, А НЕ НАЗНАЧАЕТСЯ (Plane №703/№744). Три
+       * прежние редакции опирались каждая на своё допущение о стенде — «в
+       * составе есть свободные», «на постах уже кто-то стоит», «состав можно
+       * добрать» — и каждая падала при прогоне ФАЙЛА ЦЕЛИКОМ: соседние пробы
+       * то занимают людей, то убирают за собой в `finally`, а `acceptRosterFor`
+       * на уже принятом составе отвечает `DOUBLE_ASSIGNMENT`. Порядок проб в
+       * файле не гарантирует ни занятости, ни свободы. Поэтому перебираются
+       * пары постов и берётся первая, которую ХВАТАЕТ людей собрать: стоящий
+       * на посту человек годится как есть, свободный — доназначается.
+       */
+      async function stageTransfer(): Promise<{
+        destination: { id: string; need: number }
+        source: { id: string }
+        traveller: { id: string; employeeId: string; roleCode?: string | null }
+      }> {
+        const state = await fresh()
+        const visible = state.reconSectorPosts
+          .filter((row) => shown.includes(row.id))
+          .sort((a, b) => Number(a.need ?? 0) - Number(b.need ?? 0))
+        requireFixture(visible[1], 'в дереве меньше двух постов — переносить не с чего на что')
+        const takenOf = (postId: string) =>
+          state.placementAssignments.filter((row) => row.postId === postId).length
+        const free = state.forceRoster
+          .map((member) => member.employeeId)
+          .filter((id) => !state.placementAssignments.some((row) => row.employeeId === id))
+
+        for (const destination of visible) {
+          const missing = Math.max(0, Number(destination.need ?? 0) - takenOf(destination.id))
+          for (const source of visible) {
+            if (source.id === destination.id) continue
+            const standing = state.placementAssignments.find((row) => row.postId === source.id)
+            if (missing + (standing === undefined ? 1 : 0) > free.length) continue
+
+            let taken = takenOf(destination.id)
+            let cursor = 0
+            while (taken < Number(destination.need ?? 0) && cursor < free.length) {
+              const res = await assignTo(destination.id, free[cursor]!)
+              if (res.ok()) taken += 1
+              cursor += 1
+            }
+            if (taken < Number(destination.need ?? 0)) continue
+            if (standing !== undefined) return { destination, source, traveller: standing }
+            if (cursor >= free.length) continue
+
+            const mine = free[cursor]!
+            const placed = await assignTo(source.id, mine)
+            expect(placed.ok(), 'подготовка: человек не встал на пост-источник').toBe(true)
+            const row = (await fresh()).placementAssignments.find(
+              (assignment) => assignment.employeeId === mine,
+            )
+            requireFixture(row, 'подготовленное назначение не нашлось в карточке ОМ')
+            return { destination, source, traveller: row! }
+          }
+        }
+        throw new Error(
+          'на стенде не собрать перенос: ни для одной пары постов не хватает людей на ' +
+            'приёмник по расчёту плюс одного на пост-источник',
+        )
+      }
+
       // Постов нужно ДВА и разных: с одного тянем, на другой роняем. Перенос
       // на тот же пост экран отсекает сам (`fromPostId === postId`), и проба
       // на одном посту была бы вакуумной.
-      requireFixture(visible[1], 'в дереве меньше двух постов — переносить не с чего на что')
-      const destination = visible[0]!
-      const source = visible[1]!
-
-      const free = state.forceRoster
-        .map((member) => member.employeeId)
-        .filter((id) => !state.placementAssignments.some((row) => row.employeeId === id))
-      requireFixture(free[0], 'в составе мероприятия нет свободного человека для переноса')
-
-      // Пост-приёмник набирается ДО расчёта — иначе сервер не спросит
-      // обоснования и проверять будет нечего.
-      let taken = state.placementAssignments.filter((row) => row.postId === destination.id).length
-      let cursor = 1
-      while (taken < Number(destination.need ?? 0) && cursor < free.length) {
-        const res = await assignTo(destination.id, free[cursor]!)
-        if (res.ok()) taken += 1
-        cursor += 1
-      }
-      expect(
-        taken,
-        'пост-приёмник не набран до расчёта — обоснования никто не спросит',
-      ).toBeGreaterThanOrEqual(Number(destination.need ?? 0))
-
-      // Наш человек встаёт на пост-источник: именно он должен уцелеть.
-      const placed = await assignTo(source.id, free[0]!)
-      expect(placed.ok(), 'подготовка не удалась: человек не встал на пост-источник').toBe(true)
+      const { destination, source, traveller } = await stageTransfer()
 
       await page.reload()
       await tree.locator(`li[data-drop-post="${source.id}"]`).click()
       // Якорь — id назначения, а не имя: имя на экране не единственно
       // (Plane №415), и `.first()` по строке взял бы чужую.
-      const traveller = free[0]!
-      const placedRow = (await fresh()).placementAssignments.find(
-        (assignment) => assignment.employeeId === traveller,
-      )
-      requireFixture(placedRow, 'подготовленное назначение не нашлось в карточке ОМ')
-      const row = page.getByTestId(`placement-assignment-${placedRow!.id}`)
+      const row = page.getByTestId(`placement-assignment-${traveller.id}`)
       await expect(row).toBeVisible({ timeout: 25_000 })
       await row.dragTo(tree.locator(`li[data-drop-post="${destination.id}"]`))
 
@@ -1240,7 +1292,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         .poll(
           async () =>
             (await fresh()).placementAssignments.filter(
-              (assignment) => assignment.employeeId === traveller,
+              (assignment) => assignment.employeeId === traveller.employeeId,
             ).length,
           {
             message: 'после отмены человек не назначен никуда — перенос съел его молча',
@@ -1249,11 +1301,189 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         )
         .toBe(1)
       const sourceRows = (await fresh()).placementAssignments.filter(
-        (assignment) => assignment.employeeId === traveller,
+        (assignment) => assignment.employeeId === traveller.employeeId,
       )
       expect(sourceRows[0]!.postId, 'человек вернулся не на тот пост, с которого его тянули').toBe(
         source.id,
       )
+    } finally {
+      for (const row of (await fresh()).placementAssignments) {
+        if (before.has(row.id)) continue
+        await request.delete(
+          `${API}/api/ops/security-events/${eventId}/placement/${encodeURIComponent(row.id)}/`,
+          { headers: auth },
+        )
+      }
+    }
+  })
+
+  test('отклонённая правка роли возвращает человека с ПРЕЖНЕЙ ролью, а не с новой', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * ПОЛОВИНА ОТКЛОНЁННОЙ ПРАВКИ (Plane №703). Окно «Роль и секция…» умеет
+     * менять ПОСТ заодно с ролью, и делает это тем же способом, что
+     * перетаскивание, — снятием и назначением заново. Возврат из №744
+     * собирался из ЦЕЛЕВЫХ значений, поэтому у перетаскивания был верен (там
+     * роль не меняется), а здесь ставил человека на прежний пост с НОВОЙ
+     * ролью: отклонённая правка применялась наполовину и молча.
+     *
+     * Проба меняет РАЗОМ роль и пост, получает отказ на набранном посту и
+     * жмёт «Отмена». Проверяется не только «человек на месте», но и «роль та
+     * же»: без второй проверки правка свелась бы к №744.
+     *
+     * Красная проверка — вернуть в `restoreMove` целевые `move.roleCode` /
+     * `move.sectionCode` вместо `move.origin.*`: роль после отмены станет
+     * новой.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const roles = (await (
+      await request.get(`${API}/api/ops/dictionaries/PLACEMENT_ROLES/entries/`, { headers: auth })
+    ).json()) as { results: { code: string; label: string }[] }
+    requireFixture(roles.results[0], 'справочник ролей наряда пуст — менять нечего')
+
+    const { eventId } = await ownPlacementEvent(token)
+    type Row = { id: string; postId: string; employeeId: string; roleCode: string | null }
+    const fresh = async () =>
+      (await (
+        await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+      ).json()) as {
+        placementAssignments: Row[]
+        reconSectorPosts: { id: string; need: number }[]
+        forceRoster: { employeeId: string }[]
+      }
+    const before = new Set((await fresh()).placementAssignments.map((row) => row.id))
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${eventId}/`)
+      const tree = page.getByRole('complementary', { name: 'Дерево постов' })
+      await expect(tree.locator('li[data-drop-post]').first()).toBeVisible()
+      const shown = await tree.locator('li[data-drop-post]').evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-drop-post')),
+      )
+
+      const assignTo = async (postId: string, employeeId: string) =>
+        request.post(`${API}/api/ops/security-events/${eventId}/placement/assign/`, {
+          headers: auth,
+          data: {
+            postId,
+            employeeId,
+            override: true,
+            override_reason: 'Подготовка пробы переноса: расстановка до отказа',
+          },
+        })
+
+      /**
+       * Собрать расстановку, на которой перенос ОТКАЗЫВАЕТ: приёмник набран до
+       * расчёта, а наш человек стоит на другом посту.
+       *
+       * 🔴 ПАРА ПОСТОВ ПОДБИРАЕТСЯ, А НЕ НАЗНАЧАЕТСЯ (Plane №703/№744). Три
+       * прежние редакции опирались каждая на своё допущение о стенде — «в
+       * составе есть свободные», «на постах уже кто-то стоит», «состав можно
+       * добрать» — и каждая падала при прогоне ФАЙЛА ЦЕЛИКОМ: соседние пробы
+       * то занимают людей, то убирают за собой в `finally`, а `acceptRosterFor`
+       * на уже принятом составе отвечает `DOUBLE_ASSIGNMENT`. Порядок проб в
+       * файле не гарантирует ни занятости, ни свободы. Поэтому перебираются
+       * пары постов и берётся первая, которую ХВАТАЕТ людей собрать: стоящий
+       * на посту человек годится как есть, свободный — доназначается.
+       */
+      async function stageTransfer(): Promise<{
+        destination: { id: string; need: number }
+        source: { id: string }
+        traveller: { id: string; employeeId: string; roleCode?: string | null }
+      }> {
+        const state = await fresh()
+        const visible = state.reconSectorPosts
+          .filter((row) => shown.includes(row.id))
+          .sort((a, b) => Number(a.need ?? 0) - Number(b.need ?? 0))
+        requireFixture(visible[1], 'в дереве меньше двух постов — переносить не с чего на что')
+        const takenOf = (postId: string) =>
+          state.placementAssignments.filter((row) => row.postId === postId).length
+        const free = state.forceRoster
+          .map((member) => member.employeeId)
+          .filter((id) => !state.placementAssignments.some((row) => row.employeeId === id))
+
+        for (const destination of visible) {
+          const missing = Math.max(0, Number(destination.need ?? 0) - takenOf(destination.id))
+          for (const source of visible) {
+            if (source.id === destination.id) continue
+            const standing = state.placementAssignments.find((row) => row.postId === source.id)
+            if (missing + (standing === undefined ? 1 : 0) > free.length) continue
+
+            let taken = takenOf(destination.id)
+            let cursor = 0
+            while (taken < Number(destination.need ?? 0) && cursor < free.length) {
+              const res = await assignTo(destination.id, free[cursor]!)
+              if (res.ok()) taken += 1
+              cursor += 1
+            }
+            if (taken < Number(destination.need ?? 0)) continue
+            if (standing !== undefined) return { destination, source, traveller: standing }
+            if (cursor >= free.length) continue
+
+            const mine = free[cursor]!
+            const placed = await assignTo(source.id, mine)
+            expect(placed.ok(), 'подготовка: человек не встал на пост-источник').toBe(true)
+            const row = (await fresh()).placementAssignments.find(
+              (assignment) => assignment.employeeId === mine,
+            )
+            requireFixture(row, 'подготовленное назначение не нашлось в карточке ОМ')
+            return { destination, source, traveller: row! }
+          }
+        }
+        throw new Error(
+          'на стенде не собрать перенос: ни для одной пары постов не хватает людей на ' +
+            'приёмник по расчёту плюс одного на пост-источник',
+        )
+      }
+
+      const { destination, source, traveller } = await stageTransfer()
+      // ИСХОДНУЮ РОЛЬ ЧИТАЕМ, А НЕ СТАВИМ. Поставить её отдельно нечем: своей
+      // операции «сменить роль» у бэка нет вовсе — она и ЕСТЬ снятие с
+      // назначением заново, то самое, что проба проверяет. Роль берётся такая,
+      // какая у человека уже есть (в том числе «нет вовсе»), а новая —
+      // ОТЛИЧНАЯ от неё: правка на ту же роль ничего не меняет, и проба была
+      // бы вакуумной.
+      const keptRole = traveller.roleCode ?? null
+      const newRole = roles.results.find((entry) => entry.code !== keptRole)
+      requireFixture(newRole, 'в справочнике ролей нет роли, отличной от нынешней')
+
+      await page.reload()
+      await tree.locator(`li[data-drop-post="${source.id}"]`).click()
+      const row = page.getByTestId(`placement-assignment-${traveller.id}`)
+      await expect(row).toBeVisible({ timeout: 25_000 })
+      await row.getByRole('button', { name: /^Роль и секция: / }).click()
+
+      // Меняем РАЗОМ роль и пост — в этом и разница с №744.
+      const dialog = page.getByRole('dialog')
+      await dialog.getByRole('combobox', { name: 'Роль наряда' }).selectOption(newRole!.code)
+      await dialog.getByRole('combobox', { name: 'Пост' }).selectOption(destination.id)
+      await dialog.getByRole('button', { name: 'Сохранить' }).click()
+
+      const conflict = page.getByRole('dialog')
+      await expect(conflict).toContainText('обоснование усиления', { timeout: 15_000 })
+      await conflict.getByRole('button', { name: 'Отмена' }).click()
+
+      await expect
+        .poll(
+          async () => {
+            const rows = (await fresh()).placementAssignments.filter(
+              (assignment) => assignment.employeeId === traveller.employeeId,
+            )
+            return rows.length === 1
+              ? `${rows[0]!.postId}|${rows[0]!.roleCode ?? null}`
+              : 'нет|нет'
+          },
+          {
+            message:
+              'после отмены человек должен стоять на ПРЕЖНЕМ посту с ПРЕЖНЕЙ ролью — ' +
+              'иначе отклонённая правка применилась наполовину',
+            timeout: 15_000,
+          },
+        )
+        .toBe(`${source.id}|${keptRole}`)
     } finally {
       for (const row of (await fresh()).placementAssignments) {
         if (before.has(row.id)) continue

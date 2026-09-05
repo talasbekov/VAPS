@@ -873,7 +873,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(tree).toContainText(`1/${sectorNeed}`)
   })
 
-  test('старший сектора назначается кнопкой и виден в дереве', async ({ page }) => {
+  test('старший поста назначается кнопкой и виден в дереве вместе со своим постом', async ({ page }) => {
     const token = await apiToken()
     const prepared = await prepareEventOnPlacement(token)
     const name = prepared.roster[0]
@@ -887,17 +887,26 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
     const main = page.getByRole('main')
     await expect(main).toContainText('Задача поста', { timeout: 25_000 })
-    // До нажатия сектор старшего НЕ имеет — иначе ассерт ниже вечнозелёный.
-    await expect(main).toContainText('Старший: не назначен')
+    // 🔴 ПИН ПОДПИСИ ПОДНЯТ ОСОЗНАННО (Plane №705). Здесь стояло «Старший:» —
+    // единственное число, доставшееся от старших СЕКТОРА. Старший теперь на
+    // ПОСТ (`[РАС-03]`, Plane №445), и у сектора с двумя постами их двое:
+    // подпись назвала бы обоих одним старшим сектора, а чьи это посты —
+    // умолчала бы. Проба сверяет не только новую подпись, но и то, что рядом
+    // с именем назван ПОСТ: без этого правка свелась бы к переименованию.
+    await expect(main).toContainText('Старший поста: не назначен')
 
     // Чип «Старший поста» (`[РАС-03]`, Plane №445): состояние — aria-pressed.
     await main.getByRole('button', { name: /^Старший поста: / }).first().click()
 
-    await expect(main).toContainText(`Старший: ${name}`, { timeout: 15_000 })
+    await expect(main).toContainText(`Старший поста: ${name} (`, { timeout: 15_000 })
     await expect(main.getByRole('button', { name: /^Старший поста: / }).first()).toHaveAttribute('aria-pressed', 'true')
+    // Бейдж строки зовётся ТАК ЖЕ, как переключатель: «Старший сектора» на нём
+    // обещал должность, которой после перехода на посты не существует.
+    await expect(main).toContainText('Старший поста')
+    await expect(main).not.toContainText('Старший сектора')
 
     await main.getByRole('button', { name: /^Старший поста: / }).first().click()
-    await expect(main).toContainText('Старший: не назначен', { timeout: 15_000 })
+    await expect(main).toContainText('Старший поста: не назначен', { timeout: 15_000 })
   })
 
   test('бейдж рейтинга открывает краткую информацию о рейтинге', async ({ page }) => {

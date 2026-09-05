@@ -120,14 +120,23 @@ type DragPayload = {
   sectionCode?: string | null;
 };
 /** Перенос, застрявший на вопросе «почему усиление» (Plane №744): человек уже
- * снят с `fromPostId`, а на `toPostId` его ещё не пустили. */
+ * снят с прежнего поста, а на `toPostId` его ещё не пустили.
+ *
+ * 🔴 ЦЕЛЬ И ИСТОК ОПИСАНЫ ПОРОЗНЬ (Plane №703). У перетаскивания роль и секция
+ * едут неизменными, и разница незаметна. Но окно «Роль и секция…» меняет их
+ * ЗАОДНО со сменой поста — и возврат, собранный из целевых значений, поставил
+ * бы человека на прежний пост с НОВОЙ ролью: половина отклонённой правки
+ * применилась бы молча, вместо того чтобы не примениться вовсе. `origin`
+ * помнит, как он стоял ДО правки, и возврат идёт по нему. */
 type PendingMove = {
   employeeId: string;
   assignmentId: string;
-  fromPostId: string;
+  /** Куда ведём и с чем — то, что человек попросил. */
   toPostId: string;
   roleCode?: string;
   sectionCode?: string;
+  /** Откуда сняли и как он там стоял — этим и возвращаем. */
+  origin: { postId: string; roleCode?: string; sectionCode?: string };
 };
 const DRAG_MIME = "application/x-placement";
 
@@ -733,10 +742,15 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     await movePerson({
       employeeId: payload.employeeId,
       assignmentId,
-      fromPostId,
       toPostId: postId,
+      // Перетаскивание роль и секцию не меняет — цель и исток совпадают.
       ...(payload.roleCode ? { roleCode: payload.roleCode } : {}),
       ...(payload.sectionCode ? { sectionCode: payload.sectionCode } : {}),
+      origin: {
+        postId: fromPostId,
+        ...(payload.roleCode ? { roleCode: payload.roleCode } : {}),
+        ...(payload.sectionCode ? { sectionCode: payload.sectionCode } : {}),
+      },
     });
   }
 
@@ -816,18 +830,18 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * переноса. Молчать здесь нельзя в обе стороны: удавшийся возврат человек
    * обязан прочитать как «ничего не произошло», а неудавшийся — как беду,
    * потому что тогда сотрудник действительно нигде не стоит. */
-  async function restoreMove(move: {
-    employeeId: string;
-    fromPostId: string;
-    roleCode?: string;
-    sectionCode?: string;
-  }): Promise<void> {
+  async function restoreMove(move: PendingMove): Promise<void> {
     try {
       await assign.mutateAsync({
-        postId: move.fromPostId,
+        // ИСТОК, а не цель: роль и секция берутся те, с которыми человек стоял
+        // ДО правки (Plane №703) — иначе отклонённая смена роли применилась бы
+        // наполовину.
+        postId: move.origin.postId,
         employeeId: move.employeeId,
-        ...(move.roleCode ? { roleCode: move.roleCode } : {}),
-        ...(move.sectionCode ? { sectionCode: move.sectionCode } : {}),
+        ...(move.origin.roleCode ? { roleCode: move.origin.roleCode } : {}),
+        ...(move.origin.sectionCode
+          ? { sectionCode: move.origin.sectionCode }
+          : {}),
         override: true,
         override_reason: RESTORE_REASON,
       });
@@ -863,14 +877,20 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     if (changed) {
       // Тот же перенос и та же щель, что у перетаскивания (Plane №744): окно
       // правки умеет менять ПОСТ, и отказ на новом посту оставлял бы человека
-      // снятым с прежнего.
+      // снятым с прежнего. Здесь же и разница (Plane №703): роль с секцией
+      // меняются ЗАОДНО, поэтому исток описан отдельно от цели — возврат
+      // обязан вернуть человека таким, каким он был ДО правки.
       await movePerson({
         employeeId: editing.employeeId,
         assignmentId: editing.id,
-        fromPostId: editing.postId,
         toPostId: next.postId,
         ...(next.roleCode === "" ? {} : { roleCode: next.roleCode }),
         ...(next.sectionCode === "" ? {} : { sectionCode: next.sectionCode }),
+        origin: {
+          postId: editing.postId,
+          ...(editing.roleCode ? { roleCode: editing.roleCode } : {}),
+          ...(editing.sectionCode ? { sectionCode: editing.sectionCode } : {}),
+        },
       });
     }
     setEditing(null);
@@ -1047,11 +1067,18 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   );
                   const sectorFull = sectorAssigned >= sectorNeed;
                   // Старший — на ПОСТ (`[РАС-03]`, Plane №445): в секторе их
-                  // столько, сколько постов со старшим, и строка перечисляет
-                  // всех.
-                  const sectorSeniors = sector.posts
-                    .flatMap((post) => assignmentsOf(post.id))
-                    .filter((a) => a.isSectorSenior);
+                  // столько, сколько постов со старшим.
+                  //
+                  // 🔴 ИМЯ ИДЁТ С ПОСТОМ (Plane №705). Строка перечисляла одни
+                  // имена под подписью «Старший:» в единственном числе — у
+                  // сектора с двумя постами выходило, что старший сектора один,
+                  // а имён у него два, и какой пост чьё — неизвестно. Пара
+                  // «имя (пост)» отвечает на оба вопроса разом.
+                  const sectorSeniors = sector.posts.flatMap((post) =>
+                    assignmentsOf(post.id)
+                      .filter((a) => a.isSectorSenior)
+                      .map((a) => `${a.employeeName} (${post.post})`)
+                  );
                   return (
                   <div key={sector.name} className="mb-2">
                     <p className="flex items-center justify-between gap-2 px-1 py-1 text-xs font-semibold">
@@ -1066,14 +1093,14 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         {sectorAssigned}/{sectorNeed}
                       </span>
                     </p>
-                    {/* Старший сектора назван в дереве: спрашивать доклад с
-                        сектора будут с него, и знать это надо ДО того, как
-                        открыт конкретный пост. */}
+                    {/* Старшие постов названы в дереве: спрашивать доклад
+                        будут с них, и знать это надо ДО того, как открыт
+                        конкретный пост. */}
                     <p className="px-1 pb-1 text-[10px] text-muted-foreground">
-                      Старший:{" "}
+                      {sectorSeniors.length > 1 ? "Старшие постов: " : "Старший поста: "}
                       {sectorSeniors.length === 0
                         ? "не назначен"
-                        : sectorSeniors.map((a) => a.employeeName).join(", ")}
+                        : sectorSeniors.join(", ")}
                     </p>
                     <ul className="flex flex-col gap-1">
                       {sector.posts.map((post) => {
@@ -1307,9 +1334,14 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               {ratingOf(assignment.employeeId)}
                             </button>
                           )}
+                          {/* Бейдж зовётся ТАК ЖЕ, как переключатель в этой же
+                              строке (Plane №705): он читался «Старший сектора»,
+                              и у сектора с двумя постами обе строки заявляли
+                              себя старшим сектора — должность, которой после
+                              перехода на старших по постам не существует. */}
                           {assignment.isSectorSenior && (
                             <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">
-                              Старший сектора
+                              Старший поста
                             </span>
                           )}
                           {assignment.ratingOverrideReason !== null && (
