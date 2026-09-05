@@ -3595,6 +3595,11 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
             as_of=parse_as_of(request.query_params.get("asOf")),
             fmt=fmt,
             visit_object_id=request.query_params.get("visitObject"),
+            # Права спрашивающего уходят в сборщик (Plane №695): у «Дела
+            # объекта» есть раздел оценок, открытый по `event.manage`, тогда
+            # как сама выдача — по `event.view`. Без этого файл отдавал то,
+            # что те же роли не видят ни на одном экране.
+            permissions=effective_permissions(request),
         )
         # Отдаём JSON с содержимым, а НЕ файл потоком, — по контракту раздела
         # (`download_artifact` устроен так же). Причина не в красоте: клиент

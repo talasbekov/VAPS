@@ -20,6 +20,16 @@ from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops.documents import emit
 
+#: Право, которым охраняются оценки этапа «Проведение» (Plane №695).
+#:
+#: То же, что у ручки `visit_object_evaluations`, отдающей ровно эти строки:
+#: балл и комментарий по каждому сотруднику. Раздел объявляет своим правилом
+#: «выгрузка открывает ровно то, что показывают экраны мероприятия» — и до
+#: этой правки нарушал его сам: файл собирался под `event.view`, а те же
+#: сведения на экране требовали `event.manage`. Роли EVENT_APPROVER,
+#: PATROL_LEAD, DUTY_PLANNER, AUDITOR скачивали закрытое им.
+EVALUATIONS_PERMISSION = "event.manage"
+
 _STAGE_ORDER = [
     "BULLETIN", "RECON", "DEMAND", "FORCES", "PLACEMENT", "APPROVAL",
     "ACKNOWLEDGEMENT", "CONDUCT", "CLOSED",
@@ -129,9 +139,32 @@ def _remarks(document, visit):
     _table(document, ["Замечание", "Автор", "Дата", "Привязка", "Статус", "Ответ старшего", "Версия"], rows, empty="Замечаний не было.")
 
 
-def _evaluations(document, event, visit):
+def _may_see_evaluations(permissions):
+    """`None` — прав не проверяем (внутренний вызов), иначе обычная мерка.
+
+    Умолчание НЕ «запретить»: сборщик зовут не только ручка, и собственного
+    понятия о спрашивающем у него нет. Запрет по умолчанию означал бы, что
+    внутренний вызов молча теряет раздел вместо отказа.
+    """
+    if permissions is None:
+        return True
+    return "*" in permissions or EVALUATIONS_PERMISSION in permissions
+
+
+def _evaluations(document, event, visit, permissions=None):
     from organization_management.apps.ops import conduct_evaluations
 
+    if not _may_see_evaluations(permissions):
+        # ИЗЪЯТИЕ НАЗЫВАЕТСЯ ВСЛУХ, а раздел остаётся в оглавлении. Дело —
+        # архивный документ «для проверок»: молча собранный без раздела, он
+        # выглядел бы полным, и два человека получили бы разные файлы под
+        # одним именем, не зная об этом.
+        document.add_paragraph(
+            "Раздел не показан: у вас нет права "
+            f"«{EVALUATIONS_PERMISSION}». Оценки и комментарии по сотрудникам "
+            "открыты тому, кто ведёт мероприятие."
+        )
+        return
     summary = conduct_evaluations.visit_evaluations(event, visit)
     rows = [[r["sector"], r["post"], r["employeeName"] + (" (снят)" if r["replaced"] else ""), r["score"] if r["score"] is not None else "—", r["comment"]]
             for r in summary["rows"]]
@@ -146,8 +179,13 @@ def _journal(document, event):
     _table(document, ["Время", "Вид", "Заголовок", "Описание"], rows, empty="Инцидентов не было.")
 
 
-def render_case(event_code, *, visit_object_id=None, fmt="pdf"):
-    """Байты дела объекта (все объекты ОМ, если объект не назван)."""
+def render_case(event_code, *, visit_object_id=None, fmt="pdf", permissions=None):
+    """Байты дела объекта (все объекты ОМ, если объект не назван).
+
+    `permissions` — права спрашивающего (Plane №695). `None` означает
+    «прав не проверяем»: сборщик зовут и внутренние пути, у которых
+    спрашивающего нет вовсе.
+    """
     from docx import Document
     from docx.enum.text import WD_BREAK
 
@@ -200,7 +238,7 @@ def render_case(event_code, *, visit_object_id=None, fmt="pdf"):
         if visit is None:
             document.add_paragraph("Оценивать было некого.")
         else:
-            _evaluations(document, event, visit)
+            _evaluations(document, event, visit, permissions)
     document.add_heading("5. Журнал штаба", level=1)
     _journal(document, event)
     handle, path = tempfile.mkstemp(suffix=".docx", prefix="delo-")
