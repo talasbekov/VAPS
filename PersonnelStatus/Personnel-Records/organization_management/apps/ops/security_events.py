@@ -1873,6 +1873,31 @@ def _normalize_post_ids(rows, *, known_ids):
 
 
 
+def _require_visit_placement_editable(visit):
+    """Отказ, если расстановка объекта заморожена (Plane №535).
+
+    Отличается от `_require_placement_editable` только входом: там пост, здесь
+    сам объект. Правило одно и живёт в одном месте (`placement_frozen`) —
+    вторая копия разошлась бы с первой ровно там, где это труднее заметить.
+    """
+    if not placement_frozen(visit):
+        return
+    raise DomainError(
+        "PLACEMENT_FROZEN",
+        422,
+        detail={
+            "visitObjectId": str(visit.pk),
+            "stage": visit.stage,
+            "documentStatus": document_status_of(visit),
+        },
+        message=(
+            "Расчёт постов объекта заморожен: документ на согласовании или "
+            "согласован. Изменение состава — через возврат на доработку, "
+            "новой версией документа."
+        ),
+    )
+
+
 @transaction.atomic
 def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     """Правка рекогносцировки. `force_request` — запрос личного состава
@@ -1942,6 +1967,19 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     touched = _visits_with_changed_posts(event, sector_posts)
     for visit in event.visit_objects.filter(pk__in=touched or [-1]):
         _require_visit_chief(visit)
+        # 🔴 ЗАМОРОЗКА ДЕЙСТВУЕТ И ЗДЕСЬ (Plane №535). Правка рекогносцировки
+        # переписывает `recon_sector_posts` ЦЕЛИКОМ, минуя `_require_placement_
+        # editable`, которым закрыты точечные операции расстановки. Через неё
+        # пост СОГЛАСОВАННОГО объекта удалялся ответом 200: пост исчезал,
+        # назначение на него оставалось сиротой, документ по-прежнему числился
+        # согласованным, новой версии не появлялось. Согласованный документ
+        # расходился с фактом, и расхождение нигде не отмечалось.
+        #
+        # Тот же набор «тронутых» объектов, что у проверки старшего: гвард
+        # держит только те объекты, чьи посты человек ДЕЙСТВИТЕЛЬНО правит, —
+        # иначе один замороженный объект запер бы правку чужих постов и даже
+        # галочку в чек-листе (ровно болезнь №634, вылеченная строкой выше).
+        _require_visit_placement_editable(visit)
     event.recon_checklist = [
         {**item, "comment": str(item.get("comment", "")).strip()}
         for item in checklist

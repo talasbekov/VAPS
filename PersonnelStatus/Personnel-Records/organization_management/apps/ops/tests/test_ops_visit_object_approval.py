@@ -1422,3 +1422,65 @@ def test_withdrawing_unfreezes_the_placement_and_the_document(
         format="json",
     )
     assert moved.status_code == 200, moved.content
+
+
+def test_recon_edit_cannot_strip_a_post_of_a_frozen_object(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ПРАВКА РЕКОГНОСЦИРОВКИ ОБХОДИЛА ЗАМОРОЗКУ (Plane №535).
+
+    `update_recon` переписывает расчёт постов ЦЕЛИКОМ, минуя проверку, которой
+    закрыты точечные операции расстановки. Через неё пост отправленного (и
+    даже согласованного) объекта удалялся ответом 200: пост исчезал,
+    назначение на него оставалось сиротой, документ по-прежнему числился
+    отправленным, новой версии не появлялось. Согласованный документ расходился
+    с фактом, и расхождение нигде не отмечалось.
+
+    Проверяется и обратное — что заморозка одного объекта НЕ запирает правку
+    чужих постов: иначе вернулась бы болезнь №634, где один объект делал
+    несохраняемой рекогносцировку всего мероприятия.
+    """
+    base, event_id, first, second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    sent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert sent.status_code == 200, sent.content
+    first.refresh_from_db()
+    assert service.placement_frozen(first), "фикстура не заморозила объект"
+
+    card = manager.get(base).json()
+    posts = card["reconSectorPosts"]
+    victim = next(p for p in posts if p["visitObjectId"] == str(first.pk))
+
+    refused = manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": card["reconChecklist"],
+            "sectorPosts": [p for p in posts if p["id"] != victim["id"]],
+        },
+        format="json",
+    )
+
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "PLACEMENT_FROZEN", refused.json()
+    event = service.lock_event(event_id)
+    assert any(
+        str(p.get("id")) == str(victim["id"]) for p in event.recon_sector_posts
+    ), "пост замороженного объекта всё же снят"
+
+    # А правка постов СОСЕДНЕГО объекта (он не заморожен) проходит — иначе
+    # один замороженный объект запирал бы рекогносцировку всего мероприятия.
+    theirs = next(p for p in posts if p["visitObjectId"] == str(second.pk))
+    allowed = manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": card["reconChecklist"],
+            "sectorPosts": [
+                {**p, "task": "уточнено"} if p["id"] == theirs["id"] else p
+                for p in posts
+            ],
+        },
+        format="json",
+    )
+    assert allowed.status_code == 200, allowed.content
