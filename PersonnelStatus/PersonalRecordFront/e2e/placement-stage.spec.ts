@@ -1651,5 +1651,59 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         'баннер показывает причину чужого объекта — свою человеку не увидеть',
       ).not.toContainText(THEIRS)
     })
+
+    test('«выделено штабом» сравнивается с потребностью МЕРОПРИЯТИЯ', async ({
+      page,
+      request,
+    }) => {
+      // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №489). `allocated` — сумма выделенного
+      // штабом по ВСЕМУ мероприятию (люди выделяются ему, а не объекту), а
+      // потребность рядом с №410 считается по ПОКАЗАННОМУ объекту. Сложенные в
+      // одну фразу, они давали «Выделено 12 из потребности 5» — выдуманный
+      // избыток под заголовком «Выделено на объект штабом». До №410 обе
+      // половины были про мероприятие, и фраза была связной.
+      const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+      const auth = { Authorization: `Bearer ${token}` }
+      const target = await placementEventWithRoster(request, auth, token)
+      requireFixture(target, 'мероприятие на стадии «Расстановка»')
+
+      const ALLOCATED = 12
+      const EVENT_NEED = 9
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (route) => {
+          const response = await route.fetch()
+          const body = await response.json()
+          // Числа разведены НАРОЧНО: пока обе половины брались из одной
+          // области, подмена ничего бы не показала.
+          body.forceNeed = EVENT_NEED
+          const requests = body.forceRequests ?? []
+          body.forceRequests = requests.map(
+            (row: Record<string, unknown>, index: number) => ({
+              ...row,
+              allocatedCount: index === 0 ? ALLOCATED : 0,
+            }),
+          )
+          await route.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+      const main = page.getByRole('main')
+      await expect(main).toBeVisible({ timeout: 15_000 })
+
+      // Область названа СЛОВОМ: иначе следующий читатель снова сравнит её с
+      // числом объекта.
+      await expect(main).toContainText(
+        `Выделено ${ALLOCATED} из потребности мероприятия ${EVENT_NEED}`,
+        { timeout: 15_000 },
+      )
+      // А потребность показанного объекта стоит отдельной строкой — именно её
+      // закрывает оператор на этом экране.
+      await expect(main.locator('[data-slot="object-need"]')).toContainText(
+        'Потребность объекта',
+      )
+    })
   })
 })
