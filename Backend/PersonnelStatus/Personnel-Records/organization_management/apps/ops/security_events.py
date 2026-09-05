@@ -17,6 +17,7 @@ import logging
 from uuid import uuid4
 
 from django.db import transaction
+from django.utils.dateparse import parse_datetime
 
 from organization_management.apps.operations import audit_service
 from organization_management.apps.ops import approval_route as approval_route_service
@@ -5625,6 +5626,42 @@ def complete_acknowledgement(event_id):
 
 
 @transaction.atomic
+def _incident_moment(raw):
+    """Время инцидента журнала штаба: ISO-строка или `None` (Plane №766).
+
+    🔴 РАЗБИРАЕТСЯ, А НЕ ПРИНИМАЕТСЯ НА СЛОВО. До этой проверки поле клалось
+    как `str(occurred_at or "").strip() or None` — в журнал уезжала любая
+    строка («10:15», «вчера», мусор). №730 научил панель печатать прочерк
+    вместо «Invalid Date», но это защита читателя, а не починка факта: журнал
+    неизменяем, документ дела печатает значение через `_fmt_dt` строкой как
+    есть, а сортировка и расчёты по времени инцидента на таких строках неверны.
+
+    Значение хранится ДОСЛОВНО, приведения к канону здесь нет намеренно:
+    `_now_iso()` пишет UTC, пояс проекта — `Asia/Almaty`, и нормализация
+    развела бы `occurredAt` с соседним `createdAt` по форме, а заодно
+    переписала бы канон-строку существующей пробы. Разнобой смещений в
+    накопленных строках — отдельная задача, не эта.
+    """
+    text = str(raw or "").strip()
+    if text == "":
+        # Время необязательно: инцидент могли записать без него.
+        return None
+    try:
+        moment = parse_datetime(text)
+    except ValueError:
+        # `parse_datetime` разбирает ФОРМУ, а не смысл: на «2026-13-45T99:00:00»
+        # она не возвращает None, а бросает ValueError («month must be in
+        # 1..12»). Без этой ветки такая строка давала бы 500 вместо отказа —
+        # поймано пробой, а не рассуждением.
+        moment = None
+    if moment is None:
+        raise _validation(
+            {"occurredAt": ["Ожидается дата и время в формате ISO."]},
+            message="Время инцидента не разобрано.",
+        )
+    return text
+
+
 def add_journal_entry(event_id, *, entry_type, title, description, occurred_at=None, post_id=None, measures=""):
     event = lock_event(event_id)
     title = str(title or "").strip()
@@ -5639,7 +5676,7 @@ def add_journal_entry(event_id, *, entry_type, title, description, occurred_at=N
         "title": title,
         "description": str(description or "").strip(),
         # Инцидент (`[ЗАК-03]`, Plane №448): время, пост, принятые меры.
-        "occurredAt": str(occurred_at or "").strip() or None,
+        "occurredAt": _incident_moment(occurred_at),
         "postId": str(post_id or "").strip() or None,
         "measures": str(measures or "").strip(),
         "createdAt": _now_iso(),

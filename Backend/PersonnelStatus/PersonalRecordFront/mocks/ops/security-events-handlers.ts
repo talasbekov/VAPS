@@ -699,6 +699,35 @@ function validationError(fieldErrors: Record<string, unknown>) {
   );
 }
 
+/**
+ * Время инцидента журнала: ISO-момент или пусто (Plane №766).
+ *
+ * Зеркало `_incident_moment` сервера. До этой проверки обе стороны клали
+ * `body.occurredAt` как есть, и в журнал уезжала любая строка («10:15»,
+ * «вчера»). №730 научил панель печатать прочерк вместо «Invalid Date», но
+ * это защита читателя: значение оставалось в данных и печаталось документом
+ * дела строкой как есть.
+ *
+ * Проверок ДВЕ, и вторая не лишняя: форму стережёт регулярное выражение
+ * (иначе `new Date("2026")` прошло бы, а сервер такое отвергает), смысл —
+ * `Date`, потому что «2026-13-45T99:00:00» форме соответствует, а месяца 13
+ * не бывает. На сервере это ровно те же две ветки: `parse_datetime`
+ * возвращает `null` по форме и бросает `ValueError` по смыслу.
+ *
+ * Дата БЕЗ времени принимается — так её разбирает `parse_datetime`
+ * сервера (Django 4.1+ уходит в `fromisoformat`, получая полночь).
+ * Первая версия этой проверки была строже сервера и отвергала
+ * `2026-09-10`; расхождение поймано сверкой обеих сторон на одном
+ * наборе строк, а не чтением. Форма экрана шлёт `datetime-local`,
+ * так что вживую этот вход не встречается ни там, ни там.
+ */
+const ISO_MOMENT = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+function isIsoMoment(value: string): boolean {
+  if (!ISO_MOMENT.test(value)) return false;
+  return !Number.isNaN(new Date(value).getTime());
+}
+
 /** 422 — нарушение бизнес-правила (жёсткое, без обхода). */
 function businessRuleError(code: string, message: string) {
   return errorEnvelope(code, message, {}, 422);
@@ -2931,6 +2960,15 @@ export const securityEventsHandlers = [
       if (body.title.trim() === "") {
         return validationError({ title: ["Обязательное поле."] });
       }
+      const occurredAt = (body.occurredAt ?? "").trim();
+      if (occurredAt !== "" && !isIsoMoment(occurredAt)) {
+        return errorEnvelope(
+          "VALIDATION_ERROR",
+          "Время инцидента не разобрано.",
+          { occurredAt: ["Ожидается дата и время в формате ISO."] },
+          400
+        );
+      }
       if (event.stage !== "CONDUCT") {
         return businessRuleError(
           "INVALID_STAGE_TRANSITION",
@@ -2943,7 +2981,7 @@ export const securityEventsHandlers = [
         title: body.title.trim(),
         description: body.description.trim(),
         // Инцидент (`[ЗАК-03]`, Plane №448): время, пост, меры.
-        occurredAt: body.occurredAt ?? null,
+        occurredAt: occurredAt === "" ? null : occurredAt,
         postId: body.postId ?? null,
         measures: (body.measures ?? "").trim(),
         createdAt: nowIso(),
