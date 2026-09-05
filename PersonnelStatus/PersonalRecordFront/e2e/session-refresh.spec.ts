@@ -26,7 +26,14 @@ import { encode } from 'next-auth/jwt'
 import fs from 'node:fs'
 import path from 'node:path'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
-import { isTokenRejected, makeOnce } from '../lib/refresh-policy'
+import {
+  EXPIRY_SKEW_MS,
+  UNKNOWN_EXPIRY_MS,
+  accessExpiryMs,
+  isExpiring,
+  isTokenRejected,
+  makeOnce,
+} from '../lib/refresh-policy'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -199,22 +206,73 @@ test.describe(LIVE ? 'продление сессии' : 'продление с�
     // столько же, сколько запросов; со склейкой ответ у всех один.
     const secret = sessionSecret()
     expect(secret, 'NEXTAUTH_SECRET не найден — подписать cookie нечем').not.toBeNull()
-    const pair = await tokenPair()
-    const cookie = await expiredSessionCookie(secret!, pair.access, pair.refresh)
 
-    // Прогрев: `next dev` компилирует маршрут на первом обращении, и пока он
-    // этим занят, соседний запрос успевает проскочить мимо ещё не созданной
-    // склейки. Замерено — на холодном стенде выходило два продления вместо
-    // одного; это свойство dev-сервера, а не дефект правила.
-    await fetch(`${APP}/api/auth/session/`)
-
-    const sessions = await Promise.all(Array.from({ length: 10 }, () => sessionWith(cookie)))
-    for (const session of sessions) {
-      expect(session.error, 'параллельное продление уронило сессию').toBeUndefined()
+    /** Сколько РАЗНЫХ токенов принесли десять одновременных запросов сессии.
+     *  Разных ровно столько, сколько было обращений к бэкенду. */
+    async function distinctTokens(): Promise<number> {
+      const pair = await tokenPair()
+      const cookie = await expiredSessionCookie(secret!, pair.access, pair.refresh)
+      // Прогрев: `next dev` компилирует маршрут на первом обращении, и пока
+      // он этим занят, соседний запрос проскакивает мимо ещё не созданной
+      // склейки.
+      await fetch(`${APP}/api/auth/session/`)
+      const sessions = await Promise.all(Array.from({ length: 10 }, () => sessionWith(cookie)))
+      for (const session of sessions) {
+        expect(session.error, 'параллельное продление уронило сессию').toBeUndefined()
+      }
+      const tokens = new Set(sessions.map((session) => session.user?.accessToken))
+      expect(tokens.has(pair.access), 'кому-то достался протухший токен').toBe(false)
+      return tokens.size
     }
-    const tokens = new Set(sessions.map((session) => session.user?.accessToken))
-    expect(tokens.has(pair.access), 'кому-то достался протухший токен').toBe(false)
-    expect(tokens.size, `продлений было ${tokens.size}, а надо одно`).toBe(1)
+
+    // 🔴 ПОЧЕМУ ГРАНИЦА, А НЕ РОВНО ОДИН. Число продлений равно числу
+    // запросов, которые ДЕЙСТВИТЕЛЬНО перекрылись во времени, а этим
+    // распоряжается dev-сервер, а не правило. Замерено на одном стенде: эта
+    // проба в одиночку даёт 1 (первый запрос компилирует маршрут, остальные
+    // девять успевают накопиться), она же в конце файла — устойчивые 2,2,2
+    // (маршрут прогрет, первое продление успевает кончиться раньше, чем до
+    // сервера доходит последний запрос). Мутация «звать бэкенд напрямую»
+    // даёт в ТОЙ ЖЕ обстановке 10,10,10 — по продлению на запрос. Стережём
+    // поэтому свойство, а не число: продлений в разы меньше, чем запросов.
+    // Точное «одно на токен» проверено выше прямой пробой, где никакой
+    // dev-сервер в дело не вмешивается.
+    const count = await distinctTokens()
+    expect(count, `продлений ${count} на десять запросов — склейки нет`).toBeLessThanOrEqual(3)
+  })
+
+  test('токен с нечитаемым сроком продлевается раз в минуту, а не на каждое чтение', async () => {
+    // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №464). Комментарий обещал, что непрочитанный
+    // `exp` стоит «лишнего продления» — ОДНОГО. На деле в сессию клался сам
+    // `null`, а `isExpiring(null)` истинно всегда: продление уходило на
+    // КАЖДОЕ чтение сессии, а их за обход портала около полутора сотен. Пока
+    // бэкенд отдаёт SimpleJWT с `exp`, это не стреляет; перейдут на
+    // непрозрачный токен — и портал удвоит запросы с симптомом «стало
+    // медленнее», без единой ошибки в логах. Ровно та цена, с которой уже
+    // боролись в №343.
+    const now = 1_800_000_000_000
+
+    // Срок читается из самого токена, когда он там есть.
+    const payload = Buffer.from(JSON.stringify({ exp: now / 1000 + 3600 })).toString('base64url')
+    expect(accessExpiryMs(`заголовок.${payload}.подпись`, now)).toBe(now + 3600_000)
+
+    // Нечитаемый — считается по часам, а не остаётся неизвестным.
+    for (const unreadable of ['не-токен', '', 'a.b.c', undefined, 42]) {
+      const got = accessExpiryMs(unreadable, now)
+      expect(typeof got, `${String(unreadable)}: срок обязан быть числом`).toBe('number')
+      expect(isExpiring(got, now), `${String(unreadable)}: продление на каждое чтение`).toBe(false)
+    }
+
+    // И всё же протухает: фолбэк даёт передышку, а не вечную жизнь.
+    expect(isExpiring(accessExpiryMs('не-токен', now), now + UNKNOWN_EXPIRY_MS)).toBe(true)
+
+    // 🔴 Окно ОБЯЗАНО быть шире запаса, иначе фолбэк не делает ничего:
+    // `isExpiring` вычитает запас, и «сейчас + минута» при минутном запасе
+    // протухает в ту же секунду.
+    expect(UNKNOWN_EXPIRY_MS, 'окно не шире запаса — фолбэк пустой').toBeGreaterThan(EXPIRY_SKEW_MS)
+
+    // Сессия, выданная до появления срока, продлевается сразу: иначе она
+    // доживёт до 401 на каждом экране (№383).
+    expect(isExpiring(undefined, now)).toBe(true)
   })
 
   test('форма входа называет причину, по которой человек на ней оказался', async ({ page }) => {
