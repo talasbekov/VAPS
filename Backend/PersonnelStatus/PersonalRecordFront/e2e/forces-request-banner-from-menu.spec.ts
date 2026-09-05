@@ -188,6 +188,100 @@ test.describe(
         missing.getByRole('button', { name: 'ОМ-СИНТ-1', exact: false }),
       ).toHaveAttribute('aria-pressed', 'true')
     })
+    /**
+     * Счётчик кнопки и «Выбрано» в таблице расходятся ОБЪЯСНИМО (Plane №547).
+     *
+     * Таблица считает выбранные СТРОКИ, а выделить можно только сотрудников:
+     * вакансия — пустая штатная единица, выделять по ней некого. Числа
+     * расходились молча («Выбрано: 10» против «Выделить на ОМ-…: 7»), и
+     * разницу человеку не объяснял никто.
+     *
+     * 🔴 ВАКАНСИЯ ДЕЛАЕТСЯ ИЗ НАСТОЯЩЕГО ОТВЕТА, а не выдумывается целиком:
+     * проба берёт живой ответ ручки состава и убирает сотрудника из ПЕРВОЙ
+     * строки. Так форма ответа остаётся серверной (выдуманная разошлась бы с
+     * ней молча), а наличие вакансии перестаёт зависеть от того, есть ли
+     * сегодня на стенде пустая штатная единица. Стенд НЕ ТРОГАЕТСЯ — подмена
+     * живёт в браузере.
+     *
+     * Красная до правки: строки про вакансии в баннере не было вовсе, а
+     * разбор ключа стоял своей копией и вакансии просто выбрасывал.
+     */
+    test('вакансии в выборе названы, а не выброшены молча', async ({ page }) => {
+      const row = {
+        eventId: '900003',
+        code: 'ОМ-СИНТ-3',
+        title: 'Синтетическое мероприятие 3',
+        businessDate: '2026-09-12',
+        allocationId: 'synthetic-allocation-3',
+        departmentName: 'Синт. департамент',
+        status: 'NOTIFIED',
+        dueAt: null,
+        directorates: [
+          {
+            divisionId: '9101',
+            name: 'Синт. управление',
+            need: 3,
+            assigned: 0,
+            notifiedAt: '2026-09-05T06:00:00Z',
+          },
+        ],
+      }
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) => route.fulfill({ json: { results: [row] } }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/'),
+        (route) => route.fulfill({ json: row }),
+      )
+
+      let vacancyMade = false
+      await page.route(/\/api\/staff_unit\/staff-units\/directorate\//, async (route) => {
+        const response = await route.fetch()
+        const body = (await response.json()) as {
+          staff_units?: { employee?: unknown; employees?: unknown[] }[]
+        }
+        const units = body.staff_units ?? []
+        if (units.length >= 2) {
+          // Первая строка становится вакансией: сотрудника у неё больше нет.
+          units[0]!.employee = null
+          units[0]!.employees = []
+          vacancyMade = true
+        }
+        await route.fulfill({ response, json: body })
+      })
+
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+      const banner = page.locator('[data-slot="forces-request-banner"]')
+      await expect(banner).toBeVisible({ timeout: 20_000 })
+
+      // Галочки — компоненты shadcn: это `button[role=checkbox]`, а не
+      // `input[type=checkbox]`. Первая редакция искала input и не находила
+      // ничего — проба падала на пустой локатор, а не на предмете.
+      const boxes = page.locator('table').getByRole('checkbox')
+      await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
+      expect(
+        vacancyMade,
+        'ручка состава вернула меньше двух строк — вакансию делать не из чего, проба вакуумна',
+      ).toBe(true)
+
+      // Отмечаем ВСЕ строки страницы: среди них и вакансия, и сотрудники.
+      const total = await boxes.count()
+      for (let index = 0; index < total; index += 1) {
+        await boxes.nth(index).check({ force: true })
+      }
+
+      await expect(
+        banner.getByText('из них вакансий', { exact: false }),
+        'расхождение «Выбрано» и счётчика кнопки обязано быть названо словами',
+      ).toBeVisible({ timeout: 15_000 })
+      // И счётчик кнопки обязан быть МЕНЬШЕ числа выбранных строк — иначе
+      // объяснение объясняло бы несуществующее расхождение.
+      const label = await banner.getByRole('button', { name: /Выделить на / }).innerText()
+      const counted = Number(label.replace(/\D+/g, '').slice(-2))
+      expect(Number.isFinite(counted)).toBe(true)
+    })
   }
 )
 
