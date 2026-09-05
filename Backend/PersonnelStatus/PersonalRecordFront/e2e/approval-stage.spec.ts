@@ -335,6 +335,57 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     await route.getByRole('button', { name: 'Отозвать с согласования' }).click()
     await expect(route).toContainText(`документ v${expectedAfterSend}`, { timeout: 15_000 })
   })
+
+  // 🔴 ВОРКЕР MSW БЛОКИРУЕТСЯ ТОЛЬКО ЗДЕСЬ — тем же приёмом и по той же
+  // причине, что в `closure-stage.spec.ts`: иначе `page.route` не
+  // перехватывает запрос карточки, подмена молча не применяется, и проба
+  // зеленеет на НЕПОДМЕНЁННЫХ данных. Проверено запуском: без блокировки
+  // подзаголовок приходил «Согласовано (версия 1 …)», то есть объекты
+  // посещения оставались на месте. На весь файл ставить нельзя: соседние
+  // пробы работают с живым стеком.
+  test.describe('подзаголовок без объектов посещения', () => {
+    test.use({ serviceWorkers: 'block' })
+
+    test('у ОМ без объектов посещения подзаголовок не печатает «(версия —)»', async ({
+      page,
+    }) => {
+      // У таких мероприятий документ не принадлежит никому: `approvalViewOf`
+      // отдаёт `documentVersion: null` и пустую историю. При статусе APPROVED
+      // подзаголовок буквально читался «Согласовано (версия —)» (Plane №719) —
+      // скобка не несёт сведений и читается как сбой данных.
+      //
+      // Состояние подставляется перехватом: доводить ОМ до согласования и
+      // утверждать его необратимо, а предмет пробы — ОДНА СТРОКА текста.
+      const token = await apiToken()
+      const target = (await events(token)).find((e) => e.reconSectorPosts.length > 0)
+      test.skip(target === undefined, 'нужен ОМ с постами расчёта')
+
+      // Перехват РЕГУЛЯРКОЙ, а не глобом: карточка дозапрашивается и с
+      // `?visit=…`, которого `**/…/{id}/` не покрывает.
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (r) => {
+          const response = await r.fetch()
+          const body = await response.json()
+          body.visitObjects = []
+          body.approvalStatus = 'APPROVED'
+          body.approvalStale = false
+          await r.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      // Шаг «Согласование» — третий (`EVENT_STEPS`); открываем его номером, а
+      // не подменой стадии: стадию отдаёт и серверный рендер, а `?step=`
+      // читает клиент, и панель показывается на любом ОМ, прошедшем шаг.
+      await page.goto(`${APP}/security-ops/events/${target!.id}/?step=3`)
+      const subtitle = page.locator('[data-slot="approval-subtitle"]')
+      await expect(subtitle).toBeVisible({ timeout: 15_000 })
+
+      await expect(subtitle).toContainText('Согласовано')
+      await expect(subtitle).not.toContainText('версия —')
+    })
+  })
 })
 
 /**

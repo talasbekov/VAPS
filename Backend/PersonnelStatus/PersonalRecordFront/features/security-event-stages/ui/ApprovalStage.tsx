@@ -623,6 +623,27 @@ function ApprovalRoute({
     onEvent: closeReturnDialog,
   });
 
+  /**
+   * «Согласовано» с версией — и БЕЗ СКОБКИ, когда версии нет (Plane №719).
+   *
+   * У ОМ без объектов посещения документ не принадлежит никому:
+   * `approvalViewOf` отдаёт таким `documentVersion: null` и пустую историю.
+   * Прежняя строка печатала «Согласовано (версия —)» — скобка не несёт
+   * сведений и читается как сбой данных. Раньше такие ОМ показывали
+   * «Отправлено на согласование», то есть вопроса про версию не возникало
+   * вовсе; он появился вместе с версиями документа объекта (№398).
+   */
+  const approvedSubtitle = (
+    number: number | null,
+    version: { decidedAt?: string | null } | null,
+  ) => {
+    if (number === null) return "Согласовано";
+    const when = version?.decidedAt
+      ? ` от ${formatIsoDateTime(version.decidedAt)}`
+      : "";
+    return `Согласовано (версия ${number}${when})`;
+  };
+
   const route = view.route;
   const visitObjectId = view.visitObjectId;
   const sent = route.some((approver) => approver.status !== "NOT_SENT");
@@ -633,9 +654,10 @@ function ApprovalRoute({
   const subtitle = view.stale
     ? "Согласование сброшено: расстановка изменена"
     : view.status === "APPROVED"
-      ? `Согласовано (версия ${view.documentVersion ?? lastVersion?.number ?? "—"}${
-          lastVersion?.decidedAt ? ` от ${formatIsoDateTime(lastVersion.decidedAt)}` : ""
-        })`
+      ? approvedSubtitle(
+          view.documentVersion ?? lastVersion?.number ?? null,
+          lastVersion,
+        )
       : view.status === "RETURNED" && !sent
         ? "Возвращено"
         : sent
@@ -652,7 +674,10 @@ function ApprovalRoute({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
         <div>
           <p className="text-xs font-semibold">Маршрут согласования</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p
+            className="text-[11px] text-muted-foreground"
+            data-slot="approval-subtitle"
+          >
             {subtitle}
             {versionLabel !== null && (
               /* `role="status"` с целой фразой, а не голым числом: смена
