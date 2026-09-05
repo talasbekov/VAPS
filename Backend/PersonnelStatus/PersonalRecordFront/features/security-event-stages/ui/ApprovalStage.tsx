@@ -1241,6 +1241,19 @@ function ApprovalRemarks({
     const post = postById.get(postId);
     return post ? `${post.sector} · ${post.post}` : `пост ${postId}`;
   };
+  /** Подпись привязки с учётом СНЯТОГО поста (Plane №510).
+   *
+   * Замечание к снятому посту становится общим — иначе оно ссылалось бы на
+   * пост, которого нет, и держало бы согласование невидимо. Но «общее» здесь
+   * сказало бы неправду: согласующий писал про конкретный пост. Поэтому
+   * название снятого поста печатается и помечается снятым. */
+  const attachmentLabel = (remark: ApprovalRemark): string => {
+    const detached = remark.detachedPost ?? "";
+    if (remark.postId === null || remark.postId === undefined) {
+      return detached === "" ? "общее" : `${detached} · пост снят с расчёта`;
+    }
+    return postLabel(remark.postId);
+  };
 
   return (
     <section className="rounded-md border">
@@ -1273,7 +1286,7 @@ function ApprovalRemarks({
                     {[
                       remark.author,
                       formatIsoDateTime(remark.createdAt),
-                      postLabel(remark.postId),
+                      attachmentLabel(remark),
                       remark.documentVersion == null
                         ? ""
                         : `документ v${remark.documentVersion}`,

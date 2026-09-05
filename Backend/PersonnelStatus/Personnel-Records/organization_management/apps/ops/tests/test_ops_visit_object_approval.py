@@ -1089,3 +1089,79 @@ def test_completing_placement_twice_does_not_drag_an_approved_object_back(
     first.refresh_from_db()
     assert first.stage == "ACKNOWLEDGEMENT", "согласованный объект откатили назад"
     assert first.approval_status == "APPROVED"
+
+
+def test_removing_a_post_does_not_lock_approval_with_an_invisible_remark(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ЗАМЕЧАНИЕ К СНЯТОМУ ПОСТУ ЗАПИРАЛО СОГЛАСОВАНИЕ НАВСЕГДА (Plane №510).
+
+    Согласующий вернул расстановку с замечанием к посту, старший объекта снял
+    этот пост с расчёта — и замечание осталось «Открыто» со ссылкой на пост,
+    которого больше нет. Метка «!N» пропадала вместе с постом, на экране
+    замечание не показывалось, а `_approval_ready` держал согласование ровно по
+    нему: этап не завершался НИКОГДА, и причина была невидима.
+
+    Замечание теперь становится ОБЩИМ по объекту (штатная форма `[МД-07]`), а
+    имя снятого поста сохраняется в `detachedPost` — слова согласующего не
+    переписываются, но и контекст не теряется. Закрывать чужое замечание за
+    согласующего система не имеет права: это его суждение, и её дело —
+    оставить его видимым и отвечаемым.
+    """
+    base, event_id, first, _second, assigned = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+
+    # Возврат с замечанием К ПОСТУ первого объекта. Пост освобождается ПОСЛЕ
+    # возврата: на «Согласовании» расстановка заморожена, а возврат как раз
+    # возвращает объект на «Расстановку» — это и есть боевая
+    # последовательность из карточки.
+    event = service.lock_event(event_id)
+    own_posts = service.visit_object_posts(event, first)
+    assert own_posts, "у объекта нет постов — проба стерегла бы не то"
+    victim = own_posts[0]
+    decided = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {
+            "decision": "RETURNED",
+            "comment": "переделать",
+            "visitObjectId": str(first.pk),
+            "remarks": [
+                {"text": "Пост лишний", "postId": str(victim["id"]), "urgent": False}
+            ],
+        },
+        format="json",
+    )
+    assert decided.status_code == 200, decided.content
+    first.refresh_from_db()
+    assert any(
+        r.get("postId") == str(victim["id"]) for r in (first.approval_remarks or [])
+    ), "замечание к посту не завелось — проба стерегла бы не то"
+
+    # Освобождаем пост: занятый снять нельзя — сервер отбивает по правилу
+    # заказчика «пост с людьми не удаляют».
+    fresh = manager.get(base).json()
+    for row in fresh["placementAssignments"]:
+        if str(row["postId"]) == str(victim["id"]):
+            dropped = manager.delete(f"{base}placement/{row['id']}/")
+            assert dropped.status_code == 200, dropped.content
+
+    removed = manager.delete(f"{base}placement/posts/{victim['id']}/")
+    assert removed.status_code == 200, removed.content
+
+    first.refresh_from_db()
+    detached = [
+        r for r in (first.approval_remarks or []) if r.get("text") == "Пост лишний"
+    ]
+    assert detached, "замечание исчезло вместе с постом"
+    assert detached[0]["postId"] is None, (
+        "замечание всё ещё ссылается на пост, которого нет"
+    )
+    assert detached[0]["detachedPost"] != "", (
+        "имя снятого поста потеряно — согласующий не узнает, о чём писал"
+    )
+    assert str(victim["post"]) in detached[0]["detachedPost"]
+    # Статус НЕ трогаем: закрыть замечание может только согласующий.
+    assert detached[0]["status"] == "OPEN"
