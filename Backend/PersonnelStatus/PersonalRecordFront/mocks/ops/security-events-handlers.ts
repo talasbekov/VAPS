@@ -227,8 +227,9 @@ function withStaleFlag(event: SecurityEvent): SecurityEvent {
  * Версии документа «Расстановка сил» в моке (`[СОГ-04]`, Plane №398) — порт
  * правил сервера, а не вторая их версия: завершение расстановки заводит v1
  * «Черновик»; первая отправка делает черновик «На согласовании» с тем же
- * номером; повторная отправка после возврата заводит N+1 и помечает прежнюю
- * отменённой; решения ставят статус текущей версии.
+ * номером; отправка поверх РЕШЁННОЙ версии (согласована или возвращена)
+ * заводит N+1 и помечает прежнюю отменённой; решения ставят статус текущей
+ * версии.
  */
 type MockVersion = SecurityEvent["visitObjects"][number]["documentVersions"][number];
 
@@ -268,10 +269,18 @@ function versionsOpenDraft(versions: MockVersion[], now: string): MockVersion[] 
   ];
 }
 
+// Версия, по которой согласующие УЖЕ высказались: отправка её не правит, а
+// открывает следующую (Plane №534). Ветка ловила только `RETURNED`, и
+// повторная отправка СОГЛАСОВАННОГО объекта затирала «Согласовано» на «На
+// согласовании» прямо в той же строке — запись о согласовании исчезала.
+// Правило `[СОГ-04]` одно для обоих решённых статусов: «любое изменение =
+// новая версия → повторное согласование», возврат — его частный случай.
+const DECIDED_VERSION_STATUSES = ["APPROVED", "RETURNED"];
+
 function versionsSubmit(versions: MockVersion[], now: string): MockVersion[] {
   const base = versionsOpenDraft(versions, now);
   const current = base[base.length - 1];
-  if (current.status === "RETURNED") {
+  if (DECIDED_VERSION_STATUSES.includes(current.status)) {
     return [
       ...base.slice(0, -1),
       { ...current, supersededAt: now },
