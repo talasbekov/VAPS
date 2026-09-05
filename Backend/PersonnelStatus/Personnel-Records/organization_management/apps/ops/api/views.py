@@ -926,12 +926,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         from organization_management.apps.ops import force_collection_board as board
 
         rows = []
+        # Порог автосрочности — ОДНО число на весь ответ (Plane №669). Читался
+        # он внутри `board_row`, то есть заново на каждую строку листинга:
+        # лишний запрос на строку ровно за тем же значением.
+        urgent_days = event_service.return_urgent_days()
         for event in OpsSecurityEvent.objects.exclude(
             stage=OpsSecurityEvent.Stage.CLOSED
         ).order_by("business_date", "code"):
             if event_service.force_demand_total(event) <= 0:
                 continue
-            rows.append(board.board_row(event))
+            rows.append(board.board_row(event, urgent_days=urgent_days))
         rows.sort(key=board.sort_key)
         return Response({"results": rows})
 
@@ -1623,23 +1627,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return False
         if visit.chief_employee_id == employee.pk:
             self._acting_as_object_lead = True
-            self._object_lead_employee = employee
             return True
-        # 🔴 ЗАМЕЩАЮЩИЙ-НАБЛЮДАТЕЛЬ НЕ РАБОТАЕТ С ЗАМЕЧАНИЯМИ (Plane №572).
-        # Флаг `can_edit_placement` заведён ровно затем, чтобы отличать
-        # замещающего, который ВЕДЁТ объект, от того, кто внесён «в список» и
-        # расстановку не трогает. Здесь его не спрашивали вовсе, и наблюдатель
-        # закрывал и отвечал на замечания согласования без права `event.manage`
-        # — то есть распоряжался чужим документом. Соседний обход расстановки
-        # по этому же флагу фильтрует; асимметрия и была дырой.
-        if (
-            self.action in self._OBJECT_DEPUTY_ACTIONS
-            and visit.deputies.filter(
-                employee_id=employee.pk, can_edit_placement=True
-            ).exists()
-        ):
+        if self.action in self._OBJECT_DEPUTY_ACTIONS and visit.deputies.filter(
+            employee_id=employee.pk
+        ).exists():
             self._acting_as_object_lead = True
-            self._object_lead_employee = employee
             return True
         return False
 

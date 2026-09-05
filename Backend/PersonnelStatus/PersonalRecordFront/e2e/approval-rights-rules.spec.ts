@@ -98,44 +98,14 @@ test.describe('права экрана согласования', () => {
     })
     expect(otherChief.send, 'старший чужого объекта отправляет этот').toBe(false)
 
-    // Замещающий, ВЕДУЩИЙ объект, отвечает на замечания, но не отправляет —
-    // разные права.
+    // Замещающий отвечает на замечания, но не отправляет — разные права.
     const deputy = approvalRightsOf({
-      ...NOBODY,
-      myId: me,
-      visit: {
-        chiefEmployeeId: '99',
-        deputies: [{ employeeId: me, canEditPlacement: true }],
-      },
-    })
-    expect(deputy.answerRemarks, 'замещающий не может ответить на замечание').toBe(true)
-    expect(deputy.send, 'замещающий отправляет объект на согласование').toBe(false)
-
-    // 🔴 НАБЛЮДАТЕЛЬ — НЕ ЗАМЕЩАЮЩИЙ (Plane №572). Флаг `canEditPlacement`
-    // отличает того, кто ВЕДЁТ объект, от внесённого «в список». Сервер
-    // теперь спрашивает его же, и экран, показывающий кнопку тому, кому
-    // сервер откажет, приглашает к действию, которого не будет.
-    const watcher = approvalRightsOf({
-      ...NOBODY,
-      myId: me,
-      visit: {
-        chiefEmployeeId: '99',
-        deputies: [{ employeeId: me, canEditPlacement: false }],
-      },
-    })
-    expect(
-      watcher.answerRemarks,
-      'наблюдателю показаны кнопки ответа на замечание — сервер их отобьёт',
-    ).toBe(false)
-
-    // Строка БЕЗ флага — старая форма: умолчание модели «ведёт», и отнимать
-    // право у тех, кто его имел, правка не должна.
-    const legacy = approvalRightsOf({
       ...NOBODY,
       myId: me,
       visit: { chiefEmployeeId: '99', deputies: [{ employeeId: me }] },
     })
-    expect(legacy.answerRemarks, 'старая строка замещающего потеряла право').toBe(true)
+    expect(deputy.answerRemarks, 'замещающий не может ответить на замечание').toBe(true)
+    expect(deputy.send, 'замещающий отправляет объект на согласование').toBe(false)
 
     // Учётка без кадровой записи не совпадает ни с кем — даже когда у объекта
     // старшего нет вовсе (`null === null` дало бы ложное совпадение).

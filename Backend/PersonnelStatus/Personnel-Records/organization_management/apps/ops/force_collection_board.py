@@ -57,13 +57,18 @@ def collection_status(event, allocations):
     }
 
 
-def is_urgent(event, allocations, now=None):
+def is_urgent(event, allocations, now=None, *, urgent_days=None):
     """«Срочно» — просрочен срок хотя бы одной заявки или до даты ОМ не
     больше порога `APPROVAL.RETURN_URGENT_DAYS` (тот же порог, что у
-    возврата расстановки, `[ВОЗ-02]`)."""
+    возврата расстановки, `[ВОЗ-02]`).
+
+    `urgent_days` — порог, прочитанный вызывающим ОДИН раз на весь листинг
+    (Plane №669); без него читается сам, как и раньше, — карточке одного
+    сбора экономить нечего.
+    """
     if any(r.get("overdue") for r in allocations):
         return True
-    return bool(events._is_urgent(event, None))
+    return bool(events._is_urgent(event, None, urgent_days=urgent_days))
 
 
 def totals(event, allocations):
@@ -232,7 +237,9 @@ def detail_extras(event, allocations):
     }
 
 
-def board_row(event):
+def board_row(event, *, urgent_days=None):
+    """Строка доски. `urgent_days` — см. `is_urgent`: листинг читает порог
+    один раз и передаёт его сюда (Plane №669)."""
     allocations = events.allocation_members_view(event)
     status = collection_status(event, allocations)
     t = totals(event, allocations)
@@ -255,7 +262,7 @@ def board_row(event):
         "departments": len(allocations),
         "collectionStatus": events._collection_status(allocations, t["sent"]),
         "boardStatus": status,
-        "urgent": is_urgent(event, allocations),
+        "urgent": is_urgent(event, allocations, urgent_days=urgent_days),
         "isNew": status["code"] == "NEW",
         "overdueCount": sum(1 for r in allocations if r.get("overdue")),
     }

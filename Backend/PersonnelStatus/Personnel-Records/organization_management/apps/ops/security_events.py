@@ -5684,7 +5684,7 @@ def return_urgent_days():
         return 1
 
 
-def _is_urgent(event, explicit):
+def _is_urgent(event, explicit, *, urgent_days=None):
     """Срочно — явно поставлено человеком ИЛИ автоматически (`[ВОЗ-02]`):
     до даты мероприятия осталось не больше порога из настроек раздела
     (`APPROVAL.RETURN_URGENT_DAYS`, по умолчанию сутки).
@@ -5702,13 +5702,26 @@ def _is_urgent(event, explicit):
     Прошедшая дата — не срочность, а залежавшаяся запись. Опоздание у доски
     считается своим признаком и раньше этой проверки: просроченный срок хотя
     бы одной заявки (`overdue`) делает строку срочной независимо от даты.
+
+    🔴 `urgent_days` — ПОРОГ, УЖЕ ПРОЧИТАННЫЙ ВЫЗЫВАЮЩИМ (Plane №669). Без
+    него `return_urgent_days()` идёт в базу на КАЖДУЮ строку листинга: доска
+    сбора сил зовёт эту функцию по каждому незакрытому мероприятию, и порог —
+    одно и то же число на весь ответ — перечитывался столько раз, сколько
+    строк.
+
+    Почему НЕ `lru_cache` на `return_urgent_days`: настройка правится из
+    раздела (`update_setting`), процесс живёт долго, и кэш на весь процесс
+    означал бы, что изменённый порог не действует до перезапуска — молча.
+    Параметр держит кэш ровно на один ответ, а это и есть та область, где
+    значение обязано быть одним.
     """
     if explicit is True:
         return True
     if event.business_date is None:
         return False
     days_left = (event.business_date - Clock.today_local()).days
-    return 0 <= days_left <= return_urgent_days()
+    threshold = return_urgent_days() if urgent_days is None else int(urgent_days)
+    return 0 <= days_left <= threshold
 
 
 def remark_is_open(item):
