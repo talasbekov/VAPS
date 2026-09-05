@@ -26,6 +26,7 @@ import { encode } from 'next-auth/jwt'
 import fs from 'node:fs'
 import path from 'node:path'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { isTokenRejected } from '../lib/refresh-policy'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -116,6 +117,33 @@ test.describe(LIVE ? 'продление сессии' : 'продление с�
     // ровно тот симптом, из-за которого задача появилась: клиент шлёт его
     // дальше и получает 401 на каждом экране.
     expect(session.user?.accessToken, 'отдан мёртвый токен').toBeUndefined()
+  })
+
+
+  test('временный отказ продления НЕ считается мёртвым токеном', async () => {
+    // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №459). Раньше ВСЕ отказы продления сводились
+    // к одному `RefreshAccessTokenError`: 502 при перезапуске Django, 504,
+    // `ECONNREFUSED`, заминка DNS были неотличимы от «refresh-токен не
+    // годен». Дальше клиент немедленно жёг сессию и стирал cookie, в которой
+    // лежал ЖИВОЙ refresh-токен: один перезапуск бэкенда в рабочее время
+    // выкидывал из системы каждого, чей access-токен попал в минутное окно
+    // продления, и человек терял несохранённый экран, не понимая за что.
+    //
+    // ПОЧЕМУ ПРАВИЛО ПРОВЕРЯЕТСЯ ПРЯМО, А НЕ ЧЕРЕЗ ЭКРАН. Продление идёт на
+    // стороне Next, внутри серверного колбэка NextAuth: ни `page.route`, ни
+    // запрос из браузера туда не попадают. Подделать 5xx можно было бы,
+    // только подняв фальшивый бэкенд рядом со стендом, — дорого и хрупко.
+    // Поэтому решение вынесено в `lib/refresh-policy` и зовётся оттуда же,
+    // откуда его зовёт `auth-config`: второй копии правила нет.
+    for (const dead of [400, 401, 403]) {
+      expect(isTokenRejected(dead), `${dead} — сервер сказал «токен не годен»`).toBe(true)
+    }
+    for (const temporary of [500, 502, 503, 504, 408, 429]) {
+      expect(
+        isTokenRejected(temporary),
+        `${temporary} — беда сервера, а не мёртвый токен: сессию жечь нельзя`,
+      ).toBe(false)
+    }
   })
 
   test('форма входа называет причину, по которой человек на ней оказался', async ({ page }) => {
