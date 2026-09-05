@@ -811,6 +811,37 @@ def set_event_chief(event_id, *, employee_id, actor):
 # ── Объекты посещения ───────────────────────────────────────────────────────
 
 
+def _pin_unmarked_posts_to_the_only_visit(event):
+    """Закрепить неразмеченные посты за ЕДИНСТВЕННЫМ объектом мероприятия.
+
+    Зовётся ПЕРЕД добавлением второго объекта (Plane №490). Пока объект один,
+    неразмеченный пост принадлежит ему по правилу `visit_object_posts`;
+    появление второго меняет ответ на «никому», и всё, что этим ответом
+    пользуется — подпись расстановки, снимок согласования, печатный
+    документ, — молча меняет смысл.
+
+    Ничего не делает, когда объектов не один или неразмеченных постов нет:
+    у ОМ без объектов приписывать некому, а у нескольких — приписать значило
+    бы выдумать факт (тот же довод, что в `visit_object_posts`).
+    """
+    visits = list(event.visit_objects.all())
+    if len(visits) != 1:
+        return
+    posts = event.recon_sector_posts or []
+    owner = str(visits[0].pk)
+    changed = False
+    marked = []
+    for post in posts:
+        if str(post.get("visitObjectId") or "") == "":
+            post = {**post, "visitObjectId": owner}
+            changed = True
+        marked.append(post)
+    if not changed:
+        return
+    event.recon_sector_posts = marked
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+
+
 @transaction.atomic
 def add_visit_object(event_id, *, object_id, protected_person_id=None):
     """Добавить объект посещения к мероприятию.
@@ -878,6 +909,28 @@ def add_visit_object(event_id, *, object_id, protected_person_id=None):
     applicable = resolve_applicable_version(security_object, event.business_date)
     if applicable is not None:
         binding = bind_passport_version(security_object, applicable, _now_iso())
+
+    # 🔴 РАЗМЕТКА ЗАКРЕПЛЯЕТСЯ ДО ПОЯВЛЕНИЯ ВТОРОГО ОБЪЕКТА (Plane №490).
+    #
+    # Пока объект ОДИН, неразмеченный пост принадлежит ему — это не допущение,
+    # а правило `visit_object_posts`: другим он принадлежать не может. Как
+    # только объектов становится двое, то же правило отвечает «никому», и
+    # смысл существующих данных меняется В МОМЕНТ ДОБАВЛЕНИЯ, без единой
+    # правки расчёта.
+    #
+    # Чем это било. ОМ с одним объектом и неразмеченными постами отправлен на
+    # согласование: `approval_snapshot` записан по ВСЕМ постам. Добавляют
+    # второй объект — и `placement_signature` первого становится ПУСТОЙ:
+    # `approval_is_stale` навсегда истинна, `_approve_visit` отбивает
+    # `APPROVAL_STALE`, а повторная отправка — `PLACEMENT_EMPTY`. Объект
+    # нельзя ни согласовать, ни переотправить, а мероприятие не уйдёт с этапа
+    # никогда, потому что оно ждёт согласования ВСЕХ объектов. Тем же
+    # переключением молча пустеет печатный документ.
+    #
+    # Поэтому разметка проставляется ЯВНО ровно тем объектом, которому посты и
+    # так принадлежали. Это не выдуманный факт: он был верен секунду назад по
+    # тому же правилу — просто перестаёт быть выводимым, и его записывают.
+    _pin_unmarked_posts_to_the_only_visit(event)
 
     # Позиция — следующая по порядку человека, а не по id: удаление строки из
     # середины не должно перетасовывать оставшиеся.

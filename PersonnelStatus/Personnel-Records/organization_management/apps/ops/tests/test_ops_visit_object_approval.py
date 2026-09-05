@@ -1165,3 +1165,72 @@ def test_removing_a_post_does_not_lock_approval_with_an_invisible_remark(
     assert str(victim["post"]) in detached[0]["detachedPost"]
     # Статус НЕ трогаем: закрыть замечание может только согласующий.
     assert detached[0]["status"] == "OPEN"
+
+
+def test_adding_a_second_object_does_not_lock_the_first_one_forever(
+    manager,  # noqa: F811
+):
+    """🔴 ДОБАВЛЕНИЕ ВТОРОГО ОБЪЕКТА ЗАПИРАЛО ОМ НАВСЕГДА (Plane №490).
+
+    Пока объект ОДИН, неразмеченный пост принадлежит ему — это правило
+    `visit_object_posts`, а не допущение. Как только объектов становится двое,
+    то же правило отвечает «никому», и смысл существующих данных меняется В
+    МОМЕНТ ДОБАВЛЕНИЯ, без единой правки расчёта.
+
+    Сценарий из карточки: ОМ с одним объектом и неразмеченными постами
+    отправлен на согласование — снимок записан по ВСЕМ постам. Добавляют
+    второй объект, и подпись расстановки первого становится ПУСТОЙ:
+    `approval_is_stale` навсегда истинна (`_approve_visit` отбивает
+    `APPROVAL_STALE`), а повторная отправка отбивается `PLACEMENT_EMPTY`.
+    Объект нельзя ни согласовать, ни переотправить, а мероприятие ждёт
+    согласования ВСЕХ объектов — то есть не уйдёт с этапа никогда.
+
+    Разметка теперь проставляется явно ПЕРЕД добавлением второго объекта — тем
+    объектом, которому посты и так принадлежали.
+    """
+    first_object = make_object(code="OBJ-LOCK-1", with_passport=True)
+    created = manager.post(
+        URL,
+        {
+            "title": "Проба запирания вторым объектом",
+            "objectId": str(first_object.pk),
+            "businessDate": "2026-09-03",
+            "kind": "INTERNAL",
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.content
+    event_id = created.json()["id"]
+    base = f"{URL}{event_id}/"
+    give_chief(manager, event_id)
+    imported = manager.post(f"{base}recon/import-from-passport/")
+    assert imported.status_code == 200, imported.content
+
+    # Расчёт БЕЗ разметки по объектам — ровно то, что оставляет после себя
+    # переезд данных и что прямо разрешает правка рекогносцировки.
+    event = service.lock_event(event_id)
+    event.recon_sector_posts = [
+        {**p, "visitObjectId": ""} for p in event.recon_sector_posts
+    ]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+    only = list(event.visit_objects.all())[0]
+    signature_before = service.placement_signature(event, only)
+
+    second_object = make_object(code="OBJ-LOCK-2", with_passport=True)
+    added = manager.post(
+        f"{base}visit-objects/", {"objectId": str(second_object.pk)}, format="json"
+    )
+    assert added.status_code in (200, 201), added.content
+
+    event = service.lock_event(event_id)
+    only.refresh_from_db()
+    assert service.placement_signature(event, only) == signature_before, (
+        "подпись расстановки первого объекта изменилась от появления соседа — "
+        "его согласование объявлено устаревшим, а расстановку никто не трогал"
+    )
+    assert service.visit_object_posts(event, only), (
+        "первый объект остался без постов: документ печатался бы пустым"
+    )
+    assert all(
+        str(p.get("visitObjectId") or "") != "" for p in event.recon_sector_posts
+    ), "остались неразмеченные посты — они снова ничьи"
