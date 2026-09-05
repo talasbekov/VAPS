@@ -359,6 +359,119 @@ test.describe(
         'отчёт по прежнему запросу висит под шапкой нового и выдаёт себя за его итог',
       ).toBeHidden({ timeout: 15_000 })
     })
+    /**
+     * Мягкий отказ при выделении — не тупик (Plane №545).
+     *
+     * Сервер помечает обходимый отказ `overridable: true`, но обойти его было
+     * нечем: поля обоснования на экране не существовало, а второго пути у
+     * начальника управления нет — ручной статус «Участие в ОМ» запрещён
+     * решением заказчика (№427). Он читал «не выделены: Иванов — статус
+     * пересекается» и упирался в стену.
+     *
+     * Проба подменяет ответы: первый вызов выделения отбивает человека мягко,
+     * повтор С ОБОСНОВАНИЕМ выделяет. Проверяется и то, что жёсткий отказ
+     * обхода НЕ получает — иначе кнопка обещала бы то, чего сервер не сделает.
+     *
+     * Красная до правки: блока обоснования в баннере нет вовсе.
+     */
+    test('мягкий отказ выделения обходится обоснованием, жёсткий — нет', async ({
+      page,
+    }) => {
+      const row = {
+        eventId: '900020',
+        code: 'ОМ-СИНТ-М1',
+        title: 'Синтетическое мероприятие М1',
+        businessDate: '2026-09-14',
+        allocationId: 'synthetic-soft-1',
+        departmentName: 'Синт. департамент',
+        status: 'NOTIFIED',
+        dueAt: null,
+        directorates: [
+          {
+            divisionId: '9101',
+            name: 'Синт. управление',
+            need: 3,
+            assigned: 0,
+            notifiedAt: '2026-09-05T06:00:00Z',
+          },
+        ],
+      }
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) => route.fulfill({ json: { results: [row] } }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/') && !url.pathname.endsWith('/select/'),
+        (route) => route.fulfill({ json: row }),
+      )
+
+      let attempt = 0
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/') && url.pathname.endsWith('/select/'),
+        async (route) => {
+          attempt += 1
+          const body = route.request().postDataJSON() as { override?: boolean }
+          if (attempt === 1 || body.override !== true) {
+            return route.fulfill({
+              json: {
+                selected: [],
+                refused: [
+                  {
+                    employeeId: '101',
+                    name: 'Занятов З.',
+                    code: 'STATUS_OVERLAP_WARNING',
+                    message: 'Статус пересекает soft-статус (возможен override).',
+                    overridable: true,
+                  },
+                  {
+                    employeeId: '102',
+                    name: 'Отпускников О.',
+                    code: 'OVERLAPPING_HARD_STATUS',
+                    message: 'Статус конфликтует с hard-статусом сотрудника.',
+                    overridable: false,
+                  },
+                ],
+                request: row,
+              },
+            })
+          }
+          return route.fulfill({ json: { selected: ['101'], refused: [], request: row } })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+      const banner = page.locator('[data-slot="forces-request-banner"]')
+      await expect(banner).toBeVisible({ timeout: 20_000 })
+      const boxes = page.locator('table').getByRole('checkbox')
+      await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
+      await boxes.nth(1).check({ force: true })
+      await banner.getByRole('button', { name: /Выделить на / }).click()
+
+      const override = banner.locator('[data-slot="select-override"]')
+      await expect(
+        override,
+        'мягкий отказ обязан предлагать обход: другого пути у начальника нет',
+      ).toBeVisible({ timeout: 15_000 })
+      // Обход предлагается ТОЛЬКО по обходимым: жёсткий отказ в счёт не идёт.
+      await expect(
+        override.getByRole('button', { name: 'Выделить с обоснованием: 1' }),
+      ).toBeVisible()
+
+      // Пока причина не введена, кнопка обхода выключена — обход БЕЗ причины
+      // сервер отвергнет, и предлагать его значило бы обещать отказ.
+      await expect(
+        override.getByRole('button', { name: /Выделить с обоснованием/ }),
+      ).toBeDisabled()
+      await override.getByLabel(/Обоснование/).fill('беру, несмотря на дежурство')
+      await override.getByRole('button', { name: /Выделить с обоснованием/ }).click()
+
+      await expect(
+        banner.locator('[data-slot="select-report"]'),
+        'после обхода отчёт обязан показать выделенного',
+      ).toContainText('Выделено: 1', { timeout: 15_000 })
+      await expect(override).toBeHidden()
+    })
   }
 )
 

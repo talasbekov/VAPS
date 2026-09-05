@@ -1156,6 +1156,131 @@ def test_selecting_builds_the_full_request_view_exactly_once(manager, monkeypatc
     )
 
 
+def _soft_conflicting_status(employee, business_date="2026-08-10"):
+    """Мягко конфликтующий статус на дату мероприятия.
+
+    Тип НЕ из `HARD_STATUS_TYPE_CODES`: жёсткий отдал бы 422, который не
+    обходится никогда, и проба проверяла бы не то. Дата — прошедшая
+    относительно сегодня, чтобы пересечение не понизилось до необязывающего
+    предупреждения правилом «PLANNED → warning».
+    """
+    from organization_management.apps.operations.models import StatusType
+    from organization_management.apps.operations.models_status import (
+        OpsEmployeeStatus,
+    )
+
+    StatusType.objects.get_or_create(
+        code="DUTY",
+        defaults={"name": "Дежурство", "priority": 20, "report_column_code": "DUTY"},
+    )
+    # `date_end` СТРОГО больше `date_start` — этого требует `chk_status_dates`;
+    # однодневный статус выражается следующим днём в конце.
+    return OpsEmployeeStatus.objects.create(
+        employee_id=employee.pk,
+        status_type_code="DUTY",
+        date_start=business_date,
+        date_end="2026-08-12",
+    )
+
+
+def test_soft_conflict_at_selection_is_marked_overridable_and_passes_with_a_reason(
+    manager,  # noqa: F811
+):
+    """Мягкий конфликт при выделении — не тупик (Plane №545).
+
+    🔴 ЧТО БЫЛО. Докстринг обещал «обход по причине — тем же полем `override`,
+    что у штаба», а ручка `override`/`override_reason` не принимала и в
+    `add_allocation_member` не передавала. В `refused[]` не было признака
+    «обходимо», поэтому экран не отличал мягкий конфликт от жёсткого.
+    Начальник управления читал «не выделены: Иванов — статус пересекается» и
+    не мог ни подтвердить, ни понять, подтверждаемо ли это вообще. Второго
+    пути у него нет: ручной статус «Участие в ОМ» запрещён решением заказчика
+    (№427), — то есть тупик был окончательным.
+
+    Проба ведёт ровно этот путь: отказ, потом повтор с обоснованием.
+
+    Красная на мутации «не передавать override в `add_allocation_member`»:
+    второй вызов отобьётся тем же отказом.
+    """
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    person = employee_of(first, "Занятов")
+    make_assignment_status_type()
+    _soft_conflicting_status(person)
+    head = _status_head("dir-head-soft", "DIR_HEAD_SOFT", first)
+    url = f"{URL}forces/requests/{allocation_id}/directorate/select/"
+
+    refused = head.post(url, {"employeeIds": [str(person.pk)]}, format="json")
+
+    assert refused.status_code == 200, refused.data
+    body = refused.json()
+    assert body["selected"] == []
+    assert len(body["refused"]) == 1, body
+    row = body["refused"][0]
+    assert row["code"] == "STATUS_OVERLAP_WARNING", row
+    # 🔴 БЕЗ ЭТОГО ПОЛЯ экран не отличит мягкий отказ от жёсткого и предложит
+    # обход либо всем, либо никому.
+    assert row["overridable"] is True, row
+
+    passed = head.post(
+        url,
+        {
+            "employeeIds": [str(person.pk)],
+            "override": True,
+            "override_reason": "беру, несмотря на дежурство",
+        },
+        format="json",
+    )
+
+    assert passed.status_code == 200, passed.data
+    assert passed.json()["selected"] == [str(person.pk)], passed.json()
+    assert passed.json()["refused"] == []
+
+
+def test_hard_conflict_at_selection_is_not_offered_an_override(manager):  # noqa: F811
+    """Жёсткий отказ обходом НЕ помечается — обещать нечего (Plane №545).
+
+    Признак `overridable` берётся у самого отказа, а не проставляется всем
+    подряд: пометить жёсткий конфликт обходимым значило бы предложить человеку
+    кнопку, после которой сервер откажет во второй раз с тем же текстом.
+    """
+    from organization_management.apps.operations.models import StatusType
+    from organization_management.apps.operations.models_status import (
+        OpsEmployeeStatus,
+    )
+
+    own = make_department("Департамент А")
+    first = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, first)
+    person = employee_of(first, "Отпускников")
+    make_assignment_status_type()
+    StatusType.objects.get_or_create(
+        code="VACATION",
+        defaults={"name": "Отпуск", "priority": 10, "report_column_code": "VACATION"},
+    )
+    OpsEmployeeStatus.objects.create(
+        employee_id=person.pk,
+        status_type_code="VACATION",
+        date_start="2026-08-10",
+        date_end="2026-08-12",
+    )
+    head = _status_head("dir-head-hard", "DIR_HEAD_HARD", first)
+
+    resp = head.post(
+        f"{URL}forces/requests/{allocation_id}/directorate/select/",
+        {"employeeIds": [str(person.pk)]},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.data
+    row = resp.json()["refused"][0]
+    assert row["code"] == "OVERLAPPING_HARD_STATUS", row
+    assert row["overridable"] is False, row
+
+
 def test_a_stranger_in_the_list_is_refused_without_naming_him(manager):  # noqa: F811
     """Чужой сотрудник — отказ по строке, БЕЗ его фамилии; свои выделяются.
 

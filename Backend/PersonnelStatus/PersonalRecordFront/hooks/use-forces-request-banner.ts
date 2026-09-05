@@ -81,9 +81,24 @@ export function useDirectorateForcesRequest(allocationId: string | null) {
 
 /** Отчёт выделения по запросу (Plane №395): кого выделили, кому отказано —
  *  поимённо, с причиной сервера. */
+export interface SelectForRequestRefusal {
+  employeeId: string;
+  name: string;
+  code: string;
+  message: string;
+  /**
+   * Обходится ли отказ обоснованием (Plane №545).
+   *
+   * Признак приходит С САМОГО ОТКАЗА, а не выводится из кода на клиенте:
+   * жёсткий конфликт не обходится никогда, и предложить обход по нему значило
+   * бы дать кнопку, после которой сервер откажет второй раз тем же текстом.
+   */
+  overridable: boolean;
+}
+
 export interface SelectForRequestReport {
   selected: string[];
-  refused: { employeeId: string; name: string; code: string; message: string }[];
+  refused: SelectForRequestRefusal[];
   request: DirectorateForcesRequest;
 }
 
@@ -98,7 +113,11 @@ export function directorateSelectPath(allocationId: string): string {
  */
 export function useSelectForRequest(allocationId: string | null) {
   const client = useQueryClient();
-  return useMutation<SelectForRequestReport, OpsApiFailure, { employeeIds: string[] }>({
+  return useMutation<
+    SelectForRequestReport,
+    OpsApiFailure,
+    { employeeIds: string[]; override?: boolean; override_reason?: string }
+  >({
     mutationFn: (body) =>
       opsApiClient.post<SelectForRequestReport>(directorateSelectPath(allocationId as string), body),
     onSuccess: () => {

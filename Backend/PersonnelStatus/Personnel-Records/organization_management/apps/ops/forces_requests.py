@@ -245,7 +245,15 @@ def _event_of_request(allocation_id, allowed_division_ids):
     raise _not_found("Запрос управлению не найден.", allocation_id)
 
 
-def select_for_request(allocation_id, employee_ids, allowed_division_ids, *, actor):
+def select_for_request(
+    allocation_id,
+    employee_ids,
+    allowed_division_ids,
+    *,
+    actor,
+    override=False,
+    override_reason="",
+):
     """Начальник управления выделяет людей ПО ЗАПРОСУ (Plane №395, `[СБС-31]`).
 
     Спецификация: «Начальник отмечает сотрудников чекбоксами. Статус „Участие
@@ -262,6 +270,20 @@ def select_for_request(allocation_id, employee_ids, allowed_division_ids, *, act
     выделили и кому отказано — с причиной, поимённо. Мягкий конфликт (409)
     приходит той же причиной; обход по причине — тем же полем `override`,
     что у штаба.
+
+    🔴 ОБХОД ДЕЙСТВИТЕЛЬНО ПРОВЕДЁН (Plane №545). До этой правки обещание
+    выше было пустым: `override`/`override_reason` функция не принимала и в
+    `add_allocation_member` не передавала, а `refused[]` не нёс признака
+    «обходимо». Начальник управления читал «не выделены: Иванов — статус
+    пересекается» и не мог ни подтвердить, ни понять, подтверждаемо ли это
+    вообще: жёсткий отказ и мягкий выглядели одинаково. Второго пути у него
+    нет — ручной статус «Участие в ОМ» запрещён решением заказчика (№427),
+    и тупик был окончательным.
+
+    ОБОСНОВАНИЕ ОДНО НА ВЫЗОВ, а не на человека: начальник отмечает пачку
+    галочками и объясняет ОДНО решение — «беру этих, несмотря на занятость».
+    Требовать причину отдельно на каждого значило бы заставить его повторять
+    одно и то же столько раз, сколько строк отбилось.
 
     Область — управления актора под `status.manage`: чужого сотрудника
     выделить нельзя, и это отказ по конкретному человеку, а не по запросу.
@@ -310,7 +332,14 @@ def select_for_request(allocation_id, employee_ids, allowed_division_ids, *, act
             )
             continue
         try:
-            add_allocation_member(event_id, allocation_id, employee_id=employee_id, actor=actor)
+            add_allocation_member(
+                event_id,
+                allocation_id,
+                employee_id=employee_id,
+                actor=actor,
+                override=bool(override),
+                override_reason=str(override_reason or ""),
+            )
         except DomainError as error:
             employee = _find_personnel(employee_id)
             refused.append(
@@ -319,6 +348,11 @@ def select_for_request(allocation_id, employee_ids, allowed_division_ids, *, act
                     "name": personnel_display_name(employee) if employee else employee_id,
                     "code": error.code,
                     "message": error.message,
+                    # 🔴 ПРИЗНАК «ОБХОДИМО» — ЧАСТЬ ОТКАЗА (Plane №545). Без
+                    # него экран не отличает мягкий конфликт от жёсткого и
+                    # предлагает обход либо всем, либо никому: первое обещает
+                    # то, чего сервер не сделает, второе запирает работу.
+                    "overridable": bool(getattr(error, "overridable", False)),
                 }
             )
             continue
