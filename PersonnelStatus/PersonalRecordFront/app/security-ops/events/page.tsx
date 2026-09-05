@@ -70,6 +70,7 @@ import type {
 } from "@/entities/security-event";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
+import { REMARKS, ruCount } from "@/lib/ru-plural";
 
 const PAGE_SIZE = 20;
 
@@ -98,17 +99,14 @@ function isStage(value: string | null): value is SecurityEventStage {
 }
 
 /** «1 замечание · 2 замечания · 5 замечаний» — бейдж читают глазами, и
- *  «1 замечаний» в нём режет так же, как ошибка в цифре. */
+ *  «1 замечаний» в нём режет так же, как ошибка в цифре.
+ *
+ *  Правило переехало в `lib/ru-plural` и стало ОДНИМ на портал (Plane №585):
+ *  здесь оно было верным, а в уведомлении о ТОМ ЖЕ возврате — своим и
+ *  сломанным на втором десятке. Копия правила рядом с копией правила
+ *  расходится не «если», а «когда». */
 function remarksLabel(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  const word =
-    mod10 === 1 && mod100 !== 11
-      ? "замечание"
-      : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)
-        ? "замечания"
-        : "замечаний";
-  return `${n} ${word}`;
+  return ruCount(n, REMARKS);
 }
 
 export default function SecurityEventsPage() {

@@ -675,7 +675,8 @@ test.describe('заявки департаменту', () => {
       })
       await boss.goto(`${APP}/dashboard`)
       await boss.getByRole('button', { name: 'Уведомления' }).click()
-      const item = boss.getByRole('menu').getByText(`Выделите 1 сотрудников на ${event.code}`, { exact: false })
+      // «сотрудника», а не «сотрудников»: склонение по числу (Plane №562).
+      const item = boss.getByRole('menu').getByText(`Выделите 1 сотрудника на ${event.code}`, { exact: false })
       await expect(item).toBeVisible({ timeout: 15_000 })
       await item.click()
       await expect(boss).toHaveURL(new RegExp(`/statuses/\\?forcesRequest=`), { timeout: 15_000 })

@@ -1,6 +1,7 @@
 import { getAccessToken } from "@/lib/api";
 import { apiClient, type OpsNotification as OpsNotificationRow } from "@/lib/api";
 import { BACKEND_URL } from "@/shared/config/env";
+import { EMPLOYEES, REMARKS, ruCount } from "@/lib/ru-plural";
 
 const BASE = "/api/notifications/notifications";
 
@@ -37,21 +38,29 @@ async function authorizedFetch(endpoint: string, init?: RequestInit) {
 /** Заголовок и текст уведомления раздела ОМ — у `OpsNotification` их нет
  *  вовсе (сервер отдаёт факт: вид + сырой payload), формулировку складывает
  *  экран (Plane №402). Один `kind` живёт здесь один раз — второе место, где
- *  выдумывался бы текст, разошлось бы с этим при первой же правке подписи. */
-function describeOpsNotification(row: OpsNotificationRow): {
+ *  выдумывался бы текст, разошлось бы с этим при первой же правке подписи.
+ *
+ *  ЭКСПОРТИРОВАНА РАДИ ПРОБЫ (Plane №585). Формулировку читает человек, и
+ *  сломать её легче всего молча — склонением, порядком слов, потерянной
+ *  цифрой. Через `fetchUnreadNotifications` до неё не добраться, не подняв
+ *  два бэкенда; сама функция чистая и от сети не зависит. */
+export function describeOpsNotification(row: OpsNotificationRow): {
   title: string;
   message: string;
   link: string | null;
 } {
   if (row.kind === "FORCES_REQUEST") {
-    // Запрос сил управлению (Plane №392, `[СБС-22]`): «Выделите N сотрудников
-    // на ОМ-… (дата)». Ссылка ведёт в «Статусы сотрудников» — там начальник
+    // Запрос сил управлению (Plane №392, `[СБС-22]`): «Выделите N сотрудника
+    // /сотрудников на ОМ-… (дата)». Ссылка ведёт в «Статусы сотрудников» — там начальник
     // управления отмечает людей (`[СБС-30]`/`[СБС-31]`, Plane №394/№395);
     // баннер запроса на том экране — их шаг, здесь только адрес.
     const p = row.payload;
     const need = p.need ?? 0;
     return {
-      title: `Выделите ${need} сотрудников на ${p.eventCode ?? "мероприятие"}`,
+      // «Выделите 1 сотрудников» — самое частое значение этого уведомления и
+      // самая заметная в нём ошибка (Plane №562). Склонение — общим правилом,
+      // а не пятой копией тернарника.
+      title: `Выделите ${ruCount(need, EMPLOYEES)} на ${p.eventCode ?? "мероприятие"}`,
       message: `${p.eventTitle ?? ""} · ${p.businessDate ?? ""} · запрос от ${p.departmentName ?? "департамента"}`,
       link: p.allocationId
         ? `/statuses/?forcesRequest=${encodeURIComponent(p.allocationId)}`
@@ -65,9 +74,10 @@ function describeOpsNotification(row: OpsNotificationRow): {
     // деревом постов (№397). «Срочно» — словом в заголовке, не только цветом.
     const p = row.payload;
     const object = p.objectName ? `«${p.objectName}»` : "(объект не указан)";
-    const n = p.remarksOpen ?? 0;
-    const remarks =
-      n === 1 ? "1 замечание" : n >= 2 && n <= 4 ? `${n} замечания` : `${n} замечаний`;
+    // Склонение — ОБЩЕЕ с бейджем реестра (Plane №585): тернарник без `% 100`
+    // ломался ровно на втором десятке (21 → «21 замечаний», 22-24 →
+    // «замечаний»), и две поверхности говорили про одно число по-разному.
+    const remarks = ruCount(p.remarksOpen ?? 0, REMARKS);
     return {
       title: `${p.urgent ? "Срочно: " : ""}Расстановка по объекту ${object} возвращена: ${remarks}`,
       message: `${p.eventCode ?? ""} ${p.eventTitle ?? ""} · ${p.businessDate ?? ""}${p.comment ? ` · ${p.comment}` : ""}`.trim(),
