@@ -1597,5 +1597,59 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       // назначений у показанного объекта; предмет в том, что счёт есть.
       await expect(main).toContainText('постов усилено сверх расчёта:')
     })
+
+    test('баннер возврата показывает причину ПОКАЗАННОГО объекта', async ({
+      page,
+      request,
+    }) => {
+      // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №491). Баннер читал `approvalComment`
+      // МЕРОПРИЯТИЯ, хотя с №411 у объекта посещения есть свой, а сам экран
+      // давно живёт в области объекта. На ОМ с двумя возвращёнными объектами
+      // оператор, переключившийся на объект А, читал причину возврата объекта
+      // Б и не имел способа увидеть свою: поле мероприятия несёт причину
+      // одного из возвращённых, и какого именно — вопрос порядка, а не
+      // времени.
+      //
+      // Состояние подставляется перехватом: довести стенд до двух возвращённых
+      // объектов значит пройти согласование дважды и оставить после себя ОМ,
+      // который не удалить.
+      const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+      const auth = { Authorization: `Bearer ${token}` }
+      const target = await placementEventWithRoster(request, auth, token)
+      requireFixture(target, 'мероприятие на стадии «Расстановка»')
+
+      const MINE = 'МОЯ причина: переставить пост у ворот'
+      const THEIRS = 'ЧУЖАЯ причина: соседний объект'
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (route) => {
+          const response = await route.fetch()
+          const body = await response.json()
+          // Поле МЕРОПРИЯТИЯ несёт чужую причину — ровно то, что баннер
+          // показывал раньше.
+          body.approvalStatus = 'RETURNED'
+          body.approvalComment = THEIRS
+          body.visitObjects = (body.visitObjects ?? []).map(
+            (visit: Record<string, unknown>, index: number) => ({
+              ...visit,
+              approvalStatus: 'RETURNED',
+              approvalComment: index === 0 ? MINE : THEIRS,
+            }),
+          )
+          await route.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+      const main = page.getByRole('main')
+      await expect(main).toBeVisible({ timeout: 15_000 })
+
+      await expect(main).toContainText(MINE, { timeout: 15_000 })
+      await expect(
+        main,
+        'баннер показывает причину чужого объекта — свою человеку не увидеть',
+      ).not.toContainText(THEIRS)
+    })
   })
 })
