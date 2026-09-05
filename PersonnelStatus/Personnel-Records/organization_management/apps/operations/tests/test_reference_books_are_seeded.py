@@ -30,6 +30,7 @@ from organization_management.apps.operations.models import (
     OpsDutyType,
     OpsFeedbackRegistry,
     OpsLegalDocument,
+    OpsPolicySectionVersion,
     OpsPolicySetting,
     OpsRatingFeatureFlags,
     OpsServiceReportType,
@@ -46,6 +47,12 @@ REFERENCE_BOOKS = (
     (OpsCombatDutyType, "seed_operations"),
     (OpsCombatRoute, "seed_operations"),
     (OpsPolicySetting, "seed_operations"),
+    # 🔴 ВЕРСИЯ РАЗДЕЛА — ТОЖЕ СПРАВОЧНИК (Plane №670). Её забыли внести сюда
+    # вместе с самими настройками, и потому раздел мог оказаться посеянным
+    # наполовину: настройки есть, версии нет. Экран настроек читает версию
+    # отдельным полем и рисовал тогда бейдж «версия:» без числа — признак,
+    # который читается как поломка экрана, а не как незаполненная база.
+    (OpsPolicySectionVersion, "seed_operations"),
     (OpsAnalyticsMetricDefinition, "seed_operations"),
     (OpsAnalyticsPeriodPreset, "seed_operations"),
     (OpsAttentionDetector, "seed_operations"),
