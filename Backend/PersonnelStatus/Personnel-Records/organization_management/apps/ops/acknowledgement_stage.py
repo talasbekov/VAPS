@@ -46,6 +46,30 @@ def _payload(event, reminder=True):
 
 
 def _send(event, assignments):
+    """Разослать НАПОМИНАНИЕ назначенным и их руководителям (Plane №611).
+
+    🔴 НАПОМИНАНИЕ — СОБЫТИЕ, А НЕ СОСТОЯНИЕ ДНЯ, и потому идёт с
+    `dedupe_key=None`. Обычный `notify` держит договор «одно на день»
+    (`get_or_create` по паре «получатель + вид + дата»), и рассылка при
+    ОТКРЫТИИ этапа (`_autonotify_acknowledgement`) занимает этот ключ первой —
+    тем же видом и той же датой. К моменту, когда старший нажимает
+    «Напомнить», строка у каждого получателя уже есть: уведомление не
+    создаётся, push не уходит, метка `reminder: true` выбрасывается вместе с
+    нагрузкой. Ручка при этом возвращала `employees: N`, и экран рапортовал
+    «Напоминание отправлено: N заступающим» — про отправку, которой не было.
+    Переуведомить было нечем: ручная кнопка «Отправить уведомления» с экрана
+    снята.
+
+    `None` — не послабление, а тот же довод, которым он заведён для ответов
+    департаментов (Plane №677): нажатие человека приходит внутри транзакции,
+    а не из догона, откат уносит его вместе с делом, и идемпотентность ему не
+    нужна. Три напоминания за день — это три напоминания, а не три пересказа
+    одного.
+
+    Договор «одно на день» у САМОЙ рассылки открытия этапа не трогается: она
+    как раз состояние дня, и повторный вход в этап не должен звонить второй
+    раз.
+    """
     employee_ids = [str(a.get("employeeId")) for a in assignments if a.get("employeeId") is not None]
     users = _employee_users(employee_ids)
     divisions = _division_of(employee_ids)
@@ -57,11 +81,17 @@ def _send(event, assignments):
         if user_id is None:
             unlinked.append(employee_id)
             continue
-        notify_service.notify(user_id, KIND, event.business_date, payload)
+        notify_service.notify(
+            user_id, KIND, event.business_date, payload, dedupe_key=None
+        )
         sent.add(user_id)
     for user_id in supervisors - sent:
         notify_service.notify(
-            user_id, KIND, event.business_date, {**payload, "asSupervisor": True}
+            user_id,
+            KIND,
+            event.business_date,
+            {**payload, "asSupervisor": True},
+            dedupe_key=None,
         )
     return {
         "employees": len(sent),
@@ -84,6 +114,21 @@ def remind_assignment(event_id, assignment_id):
         raise DomainError("ENTITY_NOT_FOUND", 404, detail={"id": str(assignment_id)}, message="Назначение не найдено.")
     if row.get("acknowledgedAt") is not None:
         raise DomainError("ALREADY_ACKNOWLEDGED", 422, message="Сотрудник уже подтвердил ознакомление — напоминать нечего.")
+    # 🔴 ОТКАЗАВШЕМУСЯ НАПОМИНАТЬ НЕЧЕГО (Plane №616). Правило написано в
+    # `_pending` прямым текстом — «его заменяют», — и `remind_pending` его
+    # соблюдает; одиночная ручка отбивала только по подтверждению. Прямой
+    # вызов по отказавшейся строке слал напоминание и ставил `remindedAt`
+    # человеку, который уже сказал «не могу»: экран такую кнопку не рисует,
+    # но ручка была открыта, и правило модуля жило только в половине путей.
+    if row.get("declinedAt") is not None:
+        raise DomainError(
+            "ALREADY_DECLINED",
+            422,
+            message=(
+                "Сотрудник отказался заступить — напоминать нечего, его "
+                "заменяют."
+            ),
+        )
     report = _send(event, [row])
     _mark_reminded(event, [row])
     return report
