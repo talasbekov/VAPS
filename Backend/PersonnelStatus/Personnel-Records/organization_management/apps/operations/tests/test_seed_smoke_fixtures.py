@@ -413,3 +413,63 @@ def test_the_absence_is_reported_outside_in_service(stand):
     absence_type = StatusType.objects.get(code=seed_smoke_fixtures.ABSENCE_CODE)
 
     assert absence_type.report_column_code != "IN_SERVICE"
+
+
+def test_a_dismissed_first_employee_does_not_break_the_seed(stand):
+    """Уволенный сотрудник с наименьшим id не роняет сид (Plane №636).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Старший объекта выбирался `Employee.objects
+    .order_by("id").first()` — БЕЗ фильтра `is_active`, — а `_find_personnel`
+    требует действующего. Стоило уволить сотрудника с наименьшим id, и команда
+    сида обрывалась сырым `DomainError` вместо задуманного `CommandError`: на
+    стенде это читается как поломка кода, а не как «поправьте фикстуру», и
+    разбирать идут не туда.
+
+    Мутация, на которой проба обязана краснеть: снять `.filter(is_active=True)`
+    — сид упадёт `DomainError`.
+    """
+    first = Employee.objects.order_by("id").first()
+    assert first is not None, "предусловие: в фикстуре есть сотрудники"
+    assert Employee.objects.filter(is_active=True).exclude(pk=first.pk).exists(), (
+        "предусловие: кроме первого есть хотя бы один действующий"
+    )
+    Employee.objects.filter(pk=first.pk).update(is_active=False)
+
+    # Сам факт, что команда доходит до конца, и есть предмет пробы: до правки
+    # она обрывалась на первом же назначении.
+    seed(assigned=1)
+
+    # И ни один уволенный не попал ни в старшие объекта, ни в расстановку —
+    # обе выборки шли без фильтра, и карточка называла только первую.
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEventVisitObject,
+    )
+
+    chiefs = set(
+        OpsSecurityEventVisitObject.objects.exclude(
+            chief_employee_id__isnull=True
+        ).values_list("chief_employee_id", flat=True)
+    )
+    assert chiefs, "ни одному объекту посещения не назначен старший"
+    assert first.pk not in chiefs, "старшим объекта стал уволенный"
+
+    placed = {
+        str(row.get("employeeId"))
+        for event in OpsSecurityEvent.objects.all()
+        for row in (event.placement_assignments or [])
+    }
+    assert str(first.pk) not in placed, "уволенный расставлен на пост"
+
+
+def test_no_active_employees_is_a_command_error_not_a_domain_error(stand):
+    """Совсем нет действующих — понятный `CommandError` (Plane №636).
+
+    Вторая половина того же правила: отказ обязан называть причину словами
+    команды сида, а не протекать доменной ошибкой сервиса.
+    """
+    Employee.objects.update(is_active=False)
+
+    with pytest.raises(CommandError) as failure:
+        seed(assigned=1)
+
+    assert "сотрудник" in str(failure.value).lower(), str(failure.value)

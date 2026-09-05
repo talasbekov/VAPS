@@ -244,16 +244,26 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
 
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
-    await expect(metric(page, 'По штату')).toBeVisible({ timeout: 25_000 })
+    // 🔴 ЖДЁМ ЧИСЛО, А НЕ ВИДИМОСТЬ (Plane №582). Плитка появляется в разметке
+    // С НУЛЁМ — значение считается из ещё не пришедшего расхода — и становится
+    // `visible` РАНЬШЕ данных. Ассерт с умолчанием читал ноль и краснел; на
+    // прогретом стенде данные успевали, на холодном нет, отсюда «краснеет
+    // через раз». Замерено 04.09.2026: «ожидалось По штату 442, плитка
+    // показывала 0», повтор той же пробы — passed за 2,3 с, а API в тот же
+    // момент отдавал 442. Сервер был прав, проба спросила экран слишком рано.
+    //
+    // Своё ожидание у КАЖДОЙ плитки, а не одно на первую: они наполняются из
+    // одного запроса, но проверка «первая дождалась — значит все» держится на
+    // порядке отрисовки, а он не обещан ничем.
+    const shown = (name: string, value: number) =>
+      expect(metric(page, name)).toContainText(String(value), { timeout: 25_000 })
 
-    await expect(metric(page, 'По штату')).toContainText(String(report.totals.staff_total))
-    await expect(metric(page, 'По списку')).toContainText(String(report.totals.list_total))
-    await expect(metric(page, 'В строю')).toContainText(String(inServiceColumn))
-    await expect(metric(page, 'Участие в ОМ')).toContainText(String(assigned))
+    await shown('По штату', report.totals.staff_total)
+    await shown('По списку', report.totals.list_total)
+    await shown('В строю', inServiceColumn)
+    await shown('Участие в ОМ', assigned)
     // Ключевая арифметика экрана: остаток — это колонка МИНУС привлечённые.
-    await expect(metric(page, 'Осталось в строю')).toContainText(
-      String(inServiceColumn - assigned),
-    )
+    await shown('Осталось в строю', inServiceColumn - assigned)
   })
 
   test('люди разложены по управлениям, вкладки не пересекаются', async ({ page }) => {

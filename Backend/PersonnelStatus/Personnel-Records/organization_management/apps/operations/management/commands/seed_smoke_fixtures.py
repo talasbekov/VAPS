@@ -809,10 +809,19 @@ class Command(BaseCommand):
 
     def _assign_visit_chief(self, event):
         """Старший объекта — условие рекогносцировки (`[РЕК-02]`/`[РЕК-07]`,
-        Plane №424): без него импорт постов и «Завершить» отвечают 422."""
-        chief = Employee.objects.order_by("id").first()
+        Plane №424): без него импорт постов и «Завершить» отвечают 422.
+
+        🔴 ТОЛЬКО ДЕЙСТВУЮЩИЙ (Plane №636). Отбор шёл без `is_active`, а
+        `_find_personnel` требует `is_active=True`: стоило уволить сотрудника с
+        наименьшим id — и сид обрывался сырым `DomainError` вместо задуманного
+        `CommandError`. На стенде это читается как поломка кода, а не как
+        «поправьте фикстуру», и разбирать идут не туда.
+        """
+        chief = Employee.objects.filter(is_active=True).order_by("id").first()
         if chief is None:
-            raise CommandError("нет сотрудников — старшего объекта взять неоткуда")
+            raise CommandError(
+                "нет ДЕЙСТВУЮЩИХ сотрудников — старшего объекта взять неоткуда"
+            )
         for visit in event.visit_objects.all():
             if visit.chief_employee_id is None:
                 event_service.assign_visit_object_chief(
@@ -824,7 +833,12 @@ class Command(BaseCommand):
     def _employee_count(self):
         from organization_management.apps.employees.models import Employee
 
-        return Employee.objects.count()
+        # 🔴 СЧИТАЮТСЯ ТОЛЬКО ДЕЙСТВУЮЩИЕ (Plane №636). Число идёт в расчёт
+        # потребности постов, а расставить фикстура может лишь тех, кого
+        # примет `_find_personnel` (он требует `is_active=True`). Считать всех,
+        # включая уволенных, значило бы завести постов больше, чем есть кому
+        # занять, и уронить пробу недобора на фикстуре.
+        return Employee.objects.filter(is_active=True).count()
 
     def _some_employees(self, count, linked_first=False):
         """Кто угодно из кадров: пробам важен факт назначения, а не человек.
@@ -840,16 +854,22 @@ class Command(BaseCommand):
         """
         from organization_management.apps.employees.models import Employee
 
+        # 🔴 ТОЛЬКО ДЕЙСТВУЮЩИЕ (Plane №636). `_find_personnel` требует
+        # `is_active=True`, и уволенный, попавший в этот отбор, ронял сид сырым
+        # `DomainError` на `placement/assign` — «Сотрудник не найден» про того,
+        # кого фикстура сама и выбрала. Карточка называла один такой отбор
+        # (старший объекта); их два, и второй ловится той же пробой.
+        active = Employee.objects.filter(is_active=True)
         if linked_first:
-            linked = list(Employee.objects.filter(user__isnull=False).order_by("id"))
-            rest = list(Employee.objects.filter(user__isnull=True).order_by("id"))
+            linked = list(active.filter(user__isnull=False).order_by("id"))
+            rest = list(active.filter(user__isnull=True).order_by("id"))
             people = (linked + rest)[:count]
         else:
-            people = list(Employee.objects.order_by("id")[:count])
+            people = list(active.order_by("id")[:count])
         if len(people) < count:
             raise CommandError(
-                f"в кадрах {len(people)} сотрудников, фикстуре нужно {count} — "
-                "засейте кадры"
+                f"в кадрах {len(people)} ДЕЙСТВУЮЩИХ сотрудников, фикстуре "
+                f"нужно {count} — засейте кадры"
             )
         return people
 
