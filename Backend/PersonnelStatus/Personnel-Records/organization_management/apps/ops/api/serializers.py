@@ -383,25 +383,40 @@ def _document_status(visit):
     return current.status if current is not None else None
 
 
-def _serialize_visit_objects(event):
+def visit_objects_of(event):
+    """Объекты посещения ОМ — ОДНИМ чтением на весь ответ (Plane №480).
+
+    🔴 КЭШ PREFETCH ЧИТАЕТСЯ, А НЕ ОБХОДИТСЯ. `event.visit_objects.prefetch_
+    related(...)` — это НОВЫЙ queryset, и он игнорирует то, что список уже
+    подтянут набором реестра: на каждую строку уходили свои запросы за
+    объектами, замещающими и версиями документа. Комментарий об этом здесь
+    стоял (№786), а проверки кэша в коде не было — замерено пробой
+    `test_ops_registry_queries`: три лишних запроса на КАЖДУЮ строку реестра.
+
+    `.all()` на подтянутой связи запросов не делает вовсе. Когда связь НЕ
+    подтянута (одиночная карточка, документ, сервисный вызов), сохраняется
+    прежний путь с вложенным prefetch — иначе внутри одного мероприятия
+    вернулся бы свой N+1.
+
+    Функция отдельная, потому что читателей ДВА: список объектов и поле
+    `approvalStale` уровня мероприятия, которому нужно знать, один ли объект.
+    Спросить дважды значило бы вернуть ровно тот запрос на строку, ради ухода
+    от которого всё это и делается.
+    """
+    if "visit_objects" in getattr(event, "_prefetched_objects_cache", {}):
+        return list(event.visit_objects.all())
+    return list(event.visit_objects.prefetch_related("deputies", "document_versions"))
+
+
+def _serialize_visit_objects(event, visits=None):
     """Список объектов посещения ОМ в форме контракта.
 
     `single` считается ОДИН раз по всему списку: от него зависит, можно ли
     отнести нерасписанный расчёт постов к объекту (см. `_visit_placement`).
+    `visits` передаётся, когда список уже прочитан выше по ответу.
     """
-    # 🔴 КЭШ PREFETCH ИСПОЛЬЗУЕТСЯ, А НЕ ОБХОДИТСЯ (Plane №786). Здесь стоял
-    # `event.visit_objects.prefetch_related(...)` — это НОВЫЙ queryset, и он
-    # игнорирует то, что список уже подтянут набором реестра: на каждую строку
-    # уходили свои запросы за объектами, замещающими и версиями документа.
-    # Замерено: страница реестра росла на восемь запросов на строку, и четыре
-    # из восьми приходились сюда.
-    #
-    # `.all()` на подтянутой связи запросов не делает вовсе. Когда связь НЕ
-    # подтянута (одиночная карточка), сохраняется прежний путь с вложенным
-    # prefetch — иначе внутри одного мероприятия вернулся бы свой N+1.
-    visits = list(
-        event.visit_objects.prefetch_related("deputies", "document_versions")
-    )
+    if visits is None:
+        visits = visit_objects_of(event)
     single = len(visits) == 1
     return [serialize_visit_object(event, v, single=single) for v in visits]
 
@@ -414,6 +429,7 @@ def serialize_security_event(event):
     snake→camel; декларативный сериализатор здесь свёлся бы к тому же списку,
     только разнесённому по двум местам.
     """
+    visits = visit_objects_of(event)
     return {
         "id": str(event.pk),
         "code": event.code,
@@ -523,11 +539,15 @@ def serialize_security_event(event):
         # ВЫВОД, а не поле: «расстановка изменилась после отправки» клиент
         # иначе считал бы сам — то есть завёл бы вторую реализацию правила,
         # по которой сервер завершение этапа не блокирует.
-        "approvalStale": security_events.approval_is_stale(event),
+        # `single` — тот же, что у списка объектов: без него внутри снова
+        # уходил бы `count()` на каждое мероприятие (Plane №480).
+        "approvalStale": security_events.approval_is_stale(
+            event, single=len(visits) == 1
+        ),
         # Объекты посещения бюллетеня. Пустой список — только у строк, не
         # прошедших бэкфилл 0035 (их быть не должно); объект мероприятия сюда
         # перенесён как первый.
-        "visitObjects": _serialize_visit_objects(event),
+        "visitObjects": _serialize_visit_objects(event, visits),
         # Выделенный транспорт из реестра ГОН (Plane №215). Свободный текст
         # «Выделяемый транспорт» в патче сводки ГВО ОСТАЁТСЯ и живёт своей
         # жизнью: у него есть читатели (сводка и документ сводных данных), и
