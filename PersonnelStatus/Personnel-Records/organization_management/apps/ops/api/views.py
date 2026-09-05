@@ -1623,11 +1623,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return False
         if visit.chief_employee_id == employee.pk:
             self._acting_as_object_lead = True
+            self._object_lead_employee = employee
             return True
-        if self.action in self._OBJECT_DEPUTY_ACTIONS and visit.deputies.filter(
-            employee_id=employee.pk
-        ).exists():
+        # 🔴 ЗАМЕЩАЮЩИЙ-НАБЛЮДАТЕЛЬ НЕ РАБОТАЕТ С ЗАМЕЧАНИЯМИ (Plane №572).
+        # Флаг `can_edit_placement` заведён ровно затем, чтобы отличать
+        # замещающего, который ВЕДЁТ объект, от того, кто внесён «в список» и
+        # расстановку не трогает. Здесь его не спрашивали вовсе, и наблюдатель
+        # закрывал и отвечал на замечания согласования без права `event.manage`
+        # — то есть распоряжался чужим документом. Соседний обход расстановки
+        # по этому же флагу фильтрует; асимметрия и была дырой.
+        if (
+            self.action in self._OBJECT_DEPUTY_ACTIONS
+            and visit.deputies.filter(
+                employee_id=employee.pk, can_edit_placement=True
+            ).exists()
+        ):
             self._acting_as_object_lead = True
+            self._object_lead_employee = employee
             return True
         return False
 
