@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { formatIsoDayTime } from "@/shared/lib/date";
 import { useVisitObjectScope } from "./useVisitObjectScope";
 import type { VisitEvaluationRow } from "@/entities/security-event";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
@@ -750,9 +751,14 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
               <li key={entry.id} className="rounded-md border px-3 py-2 text-sm" data-slot="incident-row">
                 <p>
                   <span className="text-muted-foreground tabular-nums">
-                    {entry.occurredAt
-                      ? new Date(entry.occurredAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
-                      : new Date(entry.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {/* Обе отметки через ОДИН защищённый форматтер (Plane
+                        №730): `occurredAt` приходит из JSON мероприятия как
+                        есть, и неразбираемая строка печаталась буквальным
+                        «Invalid Date». Запасное «—» — то же, что показывает
+                        архив на тех же данных. */}
+                    {formatIsoDayTime(entry.occurredAt ?? "") !== "—"
+                      ? formatIsoDayTime(entry.occurredAt ?? "")
+                      : formatIsoDayTime(entry.createdAt)}
                   </span>{" "}
                   · {postName(entry.postId)} · <b>{entry.title}</b>
                 </p>

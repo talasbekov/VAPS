@@ -290,5 +290,54 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
         block.getByRole('listitem').filter({ hasText: first.post }),
       ).toContainText(`${filledOnFirst} / ${first.need + 2}`)
     })
+
+    test('неразбираемое время инцидента печатается прочерком, а не Invalid Date', async ({
+      page,
+    }) => {
+      // `occurredAt` приходит из JSON мероприятия КАК ЕСТЬ — сервер хранит его
+      // необрезанной строкой, — и `new Date("10:15")` даёт Invalid Date,
+      // которую `toLocaleString` печатает буквально (Plane №730). Архив на тех
+      // же данных уже показывал «—»: два вида на одни данные расходились.
+      //
+      // Значение подставляется ПЕРЕХВАТОМ ответа, а не записью в журнал
+      // стенда: запись необратима, а предмет пробы — как экран рисует то, что
+      // сервер уже способен вернуть.
+      const token = await apiToken()
+      const target = requireFixture(
+        (await events(token, 'CONDUCT'))[0],
+        'мероприятие на стадии «Проведение»',
+      )
+
+      await page.route(`**/api/ops/security-events/${target.id}/`, async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        body.journalEntries = [
+          {
+            id: 'probe-bad-time',
+            type: 'INCIDENT',
+            title: 'Проба неразбираемого времени',
+            description: '',
+            createdAt: '2026-09-05T07:00:00.000Z',
+            occurredAt: '10:15',
+            postId: null,
+            measures: '',
+          },
+          ...body.journalEntries,
+        ]
+        await route.fulfill({ response, json: body })
+      })
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target.id}/`)
+      const row = page
+        .locator('[data-slot="incidents-panel"] [data-slot="incident-row"]')
+        .filter({ hasText: 'Проба неразбираемого времени' })
+      await expect(row).toBeVisible({ timeout: 15_000 })
+
+      await expect(row).not.toContainText('Invalid Date')
+      // Запасное значение то же, что у архива на тех же данных.
+      await expect(row).toContainText('—')
+    })
+
   })
 })
