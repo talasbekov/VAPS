@@ -599,6 +599,12 @@ export interface OpsNotification {
     remarksOpen?: number;
     urgent?: boolean;
     documentVersion?: number;
+    /** `ACKNOWLEDGEMENT_DUE_SOON` (Plane №427, `[ОЗН-06]`): за час до
+     *  заступления — ПОИМЁННО те, кто ещё не подтвердил. Список, а не число:
+     *  руководителю нужно знать, кому звонить, а не сколько их. */
+    unconfirmed?: { employeeId: string; employeeName: string }[];
+    /** Признак того самого часа — сервер ставит его тем же payload'ом. */
+    oneHourBefore?: boolean;
   };
   read_at: string | null;
   created_at: string;

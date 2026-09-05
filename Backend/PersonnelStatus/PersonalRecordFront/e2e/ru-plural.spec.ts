@@ -88,4 +88,72 @@ test.describe('склонение по числу', () => {
     expect(describeOpsNotification(row(5)).title).toBe('Выделите 5 сотрудников на ОМ-2026-1')
     expect(ruPlural(1, EMPLOYEES)).toBe('сотрудника')
   })
+
+  /**
+   * Напоминание за час до заступления называет СВОИМИ словами и ведёт в
+   * карточку ОМ (Plane №564; правило — №427, `[ОЗН-06]`).
+   *
+   * У `ACKNOWLEDGEMENT_DUE_SOON` не было своей ветки: уведомление падало в
+   * общую и печаталось сначала как «Отставание по сдаче · Подразделений без
+   * сдачи: 0», а после №677 — как «Уведомление раздела ·
+   * ACKNOWLEDGEMENT_DUE_SOON». Ссылки не было ни в том, ни в другом случае.
+   * Требование выполнено на сервере (`acknowledgement_reminders.py` шлёт
+   * поимённый список) и не выполнялось на экране.
+   *
+   * 🔴 ПРОВЕРЯЕТСЯ ИМЕННО ТО, ЧТО НУЖНО ЧИТАТЕЛЮ: фамилии, а не число.
+   * Вопрос руководителя за час до заступления один — кому звонить.
+   */
+  test('напоминание за час называет неподтвердивших поимённо (Plane №564)', () => {
+    const row = (names: string[]): OpsNotification => ({
+      id: 1,
+      recipient: '7',
+      kind: 'ACKNOWLEDGEMENT_DUE_SOON',
+      business_date: '2026-09-05',
+      payload: {
+        eventId: '42',
+        eventCode: 'ОМ-2026-7',
+        eventTitle: 'Проба напоминания',
+        businessDate: '2026-09-05',
+        objectName: 'Мейрам',
+        asSupervisor: true,
+        oneHourBefore: true,
+        unconfirmed: names.map((employeeName, index) => ({
+          employeeId: String(index + 1),
+          employeeName,
+        })),
+      },
+      read_at: null,
+      created_at: '2026-09-05T00:00:00Z',
+    })
+
+    const one = describeOpsNotification(row(['Абаев А.']))
+    expect(one.title).toBe('Через час заступление ОМ-2026-7: Абаев А.')
+    expect(one.message).toBe('Проба напоминания · объект «Мейрам» · 2026-09-05')
+    // Ссылка ведёт в карточку ОМ: этап «Ознакомление» там же, и руководитель
+    // может отметить «лично» за позвонившего.
+    expect(one.link).toBe('/security-ops/events/42/')
+
+    // Двое — оба поимённо; трое и больше — первые двое и «ещё N»: заголовок
+    // обязан читаться с одного взгляда, весь список ждёт в карточке.
+    expect(describeOpsNotification(row(['Абаев А.', 'Беков Б.'])).title).toBe(
+      'Через час заступление ОМ-2026-7: Абаев А., Беков Б.',
+    )
+    expect(
+      describeOpsNotification(row(['Абаев А.', 'Беков Б.', 'Валиев В.', 'Гали Г.'])).title,
+    ).toBe('Через час заступление ОМ-2026-7: Абаев А., Беков Б. и ещё 2')
+
+    // Имён нет вовсе (кадровая запись без ФИО) — честнее назвать число, чем
+    // печатать пустоту после двоеточия. Склонение — общим правилом.
+    expect(describeOpsNotification(row(['', ''])).title).toBe(
+      'Через час заступление ОМ-2026-7: 2 сотрудника не подтвердили',
+    )
+    expect(describeOpsNotification(row(['', '', '', '', ''])).title).toBe(
+      'Через час заступление ОМ-2026-7: 5 сотрудников не подтвердили',
+    )
+
+    // И главное: ни следа чужой подписи, из-за которой заведена карточка.
+    expect(one.title).not.toContain('Отставание по сдаче')
+    expect(one.message).not.toContain('Подразделений без сдачи')
+    expect(one.message).not.toContain('ACKNOWLEDGEMENT_DUE_SOON')
+  })
 })

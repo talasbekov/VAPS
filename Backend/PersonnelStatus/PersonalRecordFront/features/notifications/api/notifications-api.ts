@@ -1,7 +1,7 @@
 import { getAccessToken } from "@/lib/api";
 import { apiClient, type OpsNotification as OpsNotificationRow } from "@/lib/api";
 import { BACKEND_URL } from "@/shared/config/env";
-import { EMPLOYEES, REMARKS, ruCount } from "@/lib/ru-plural";
+import { EMPLOYEES, PEOPLE, REMARKS, ruCount } from "@/lib/ru-plural";
 
 const BASE = "/api/notifications/notifications";
 
@@ -146,6 +146,44 @@ export function describeOpsNotification(row: OpsNotificationRow): {
       // существует — увести человека на первую вкладку значило бы обещать
       // переход и не сделать его. Заведение адреса — своя карточка.
       link: null,
+    };
+  }
+  if (row.kind === "ACKNOWLEDGEMENT_DUE_SOON") {
+    // Напоминание руководителю за час до заступления (Plane №427, №564,
+    // `[ОЗН-06]`; шлёт `acknowledgement_reminders.py`). Своей ветки не было
+    // вовсе, и уведомление падало в общую: сначала выдавало себя за
+    // «Отставание по сдаче», после №677 — за «Уведомление раздела ·
+    // ACKNOWLEDGEMENT_DUE_SOON». Требование выполнено на сервере и не
+    // выполнялось на экране.
+    //
+    // 🔴 ФАМИЛИИ В ЗАГОЛОВКЕ, А НЕ ТОЛЬКО ЧИСЛО. Вопрос руководителя за час
+    // до заступления один — КОМУ ЗВОНИТЬ; «не подтвердили: 3» отвечает на
+    // другой. Список сервер и присылает поимённо. Первые двое и «ещё N» —
+    // заголовок обязан читаться с одного взгляда, а весь список ждёт в
+    // карточке ОМ, куда и ведёт ссылка.
+    const p = row.payload;
+    const rows = p.unconfirmed ?? [];
+    const names = rows
+      .map((item) => item.employeeName)
+      .filter((name) => name.trim() !== "");
+    const shown = names.slice(0, 2).join(", ");
+    const rest = names.length - Math.min(names.length, 2);
+    // Имён может не быть вовсе (кадровая запись без ФИО) — тогда честнее
+    // назвать число, чем печатать пустоту после двоеточия.
+    const who =
+      shown === ""
+        ? `${ruCount(rows.length, PEOPLE)} не подтвердили`
+        : rest > 0
+          ? `${shown} и ещё ${rest}`
+          : shown;
+    return {
+      title: `Через час заступление ${p.eventCode ?? "мероприятия"}: ${who}`,
+      message: `${p.eventTitle ?? ""} · ${
+        p.objectName ? `объект «${p.objectName}»` : "объект не указан"
+      } · ${p.businessDate ?? ""}`.trim(),
+      // Ссылка — в карточку ОМ: этап «Ознакомление» там же, и руководитель
+      // видит весь список и может отметить «лично» за позвонившего.
+      link: p.eventId ? `/security-ops/events/${p.eventId}/` : null,
     };
   }
   if (row.kind === "SUBMISSION_LAGGING") {
