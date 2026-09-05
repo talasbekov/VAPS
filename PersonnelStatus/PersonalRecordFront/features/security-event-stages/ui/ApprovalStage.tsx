@@ -301,6 +301,29 @@ const REMARK_STATUS_CLASS: Record<ApprovalRemark["status"], string> = {
   DISAGREED: "bg-muted text-muted-foreground",
 };
 
+/**
+ * Состояние замечания, ПОНЯТНОЕ даже у строки старой формы (Plane №503).
+ *
+ * 🔴 ЧТО БЫЛО НЕ ТАК. До №386 у замечания было булево `resolved`, а не
+ * тройственный `status`; миграции с бэкфиллом тогда не завели (её пишет
+ * №502), и такие строки приходили без `status` вовсе. Тогда
+ * `REMARK_STATUS_CLASS[remark.status]` и `REMARK_STATUS_LABEL[remark.status]`
+ * давали `undefined`: плашка теряла оформление — `className` буквально
+ * оканчивался словом «undefined», — и оставалась БЕЗ ПОДПИСИ. Человек видел
+ * серую пустую плашку и не мог понять, открыто замечание или закрыто.
+ *
+ * Данные чинит миграция, но экран обязан пережить старую строку сам: базу
+ * поднимают из дампов, а «сломанная плашка» — худший из ответов, потому что
+ * она не сообщает даже о том, что чего-то не знает.
+ */
+export function remarkStatusOf(remark: ApprovalRemark): ApprovalRemark["status"] {
+  if (remark.status === undefined || remark.status === null) {
+    // Прежний смысл: не устранено — значит открыто.
+    return (remark as { resolved?: boolean }).resolved ? "RESOLVED" : "OPEN";
+  }
+  return remark.status in REMARK_STATUS_LABEL ? remark.status : "OPEN";
+}
+
 const VISIT_APPROVAL_LABEL: Record<SecurityEvent["approvalStatus"], string> = {
   PENDING: "ожидает",
   APPROVED: "согласовано",
@@ -1125,13 +1148,18 @@ function ApprovalRemarks({
     },
   });
   const remarks = view.remarks;
-  const open = remarks.filter((remark) => remark.status === "OPEN").length;
+  const open = remarks.filter((remark) => remarkStatusOf(remark) === "OPEN").length;
   const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
   // Блок «Замечания» — только если они есть (`[СОГ-06]`, Plane №446):
   // пустая лента «возвратов не было» занимала место, не сообщая ничего.
   if (remarks.length === 0) return null;
-  const postLabel = (postId: string | null): string => {
-    if (postId === null) return "общее";
+  const postLabel = (postId: string | null | undefined): string => {
+    // 🔴 `undefined` — ТОЖЕ «общее» (Plane №503). У замечаний старой формы
+    // ключа `postId` нет вовсе, а `undefined === null` ложно: печаталось «пост
+    // undefined» — сообщение о посте, которого не существует. Замечание без
+    // привязки к посту и есть общее, и неважно, чем именно его отсутствие
+    // выражено.
+    if (postId === null || postId === undefined) return "общее";
     const post = postById.get(postId);
     return post ? `${post.sector} · ${post.post}` : `пост ${postId}`;
   };
@@ -1158,10 +1186,27 @@ function ApprovalRemarks({
                 <span className="min-w-0 flex-1">
                   <span className="block">{remark.text}</span>
                   <span className="block text-[11px] text-muted-foreground">
-                    {remark.author} · {formatIsoDateTime(remark.createdAt)} ·{" "}
-                    {postLabel(remark.postId)} · документ v{remark.documentVersion}
+                    {/* 🔴 ПУСТОЕ НЕ ПЕЧАТАЕТСЯ (Plane №503). У замечаний
+                        старой формы нет ни автора, ни версии документа, и
+                        строка выходила как «· · документ vundefined» — набор
+                        разделителей вокруг несуществующих сведений. Пустая
+                        ячейка честнее выдуманной, но «vundefined» не пустая
+                        ячейка, а мусор. */}
+                    {[
+                      remark.author,
+                      formatIsoDateTime(remark.createdAt),
+                      postLabel(remark.postId),
+                      remark.documentVersion == null
+                        ? ""
+                        : `документ v${remark.documentVersion}`,
+                    ]
+                      .filter((part) => part !== "" && part !== undefined)
+                      .join(" · ")}
                   </span>
-                  {remark.response !== "" && (
+                  {/* `!== ""` истинно и для `undefined`: у старой строки ответа
+                      нет вовсе, и под замечанием появлялась пустая подпись
+                      «Ответ:» без текста. */}
+                  {(remark.response ?? "") !== "" && (
                     <span className="mt-1 block text-xs">
                       <span className="text-muted-foreground">Ответ: </span>
                       {remark.response}
@@ -1174,11 +1219,11 @@ function ApprovalRemarks({
                   </span>
                 )}
                 <span
-                  className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${REMARK_STATUS_CLASS[remark.status]}`}
+                  className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${REMARK_STATUS_CLASS[remarkStatusOf(remark)]}`}
                 >
-                  {REMARK_STATUS_LABEL[remark.status]}
+                  {REMARK_STATUS_LABEL[remarkStatusOf(remark)]}
                 </span>
-                {remark.status === "OPEN" ? (
+                {remarkStatusOf(remark) === "OPEN" ? (
                   <>
                     <Button
                       type="button"

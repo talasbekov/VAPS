@@ -772,3 +772,225 @@ def test_placement_empty_still_means_placement_empty(
     )
     assert refused.status_code == 422, refused.content
     assert refused.json()["error_code"] == "PLACEMENT_EMPTY", refused.json()
+
+
+# ── Подпись живёт ровно столько, сколько статус (Plane №583/№513) ───────────
+
+
+def test_returning_clears_the_signature_of_the_one_who_signed(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Возврат снимает реквизиты подписи, а не только статус (Plane №583).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. `_return_visit` объявляет в комментарии «все подписи
+    сняты» и сбрасывает `status`/`decidedAt`, но `item["signature"]` не трогал
+    НИКТО: ни возврат, ни повторная отправка, ни что-либо ещё (грепом по
+    разделу — только места записи). Экран рисует реквизиты по
+    `signature != null`, без оглядки на статус, — и строка, которая ЖДЁТ
+    решения, показывала «Согласовано» с ФИО, должностью, временем и номером
+    СТАРОЙ версии документа.
+
+    Подпись — факт под КОНКРЕТНЫМ составом: под следующим она врёт по
+    определению. История подписей при этом не теряется — она в журнале
+    (`SECURITY_EVENT_APPROVAL_SIGNED`) и в версиях документа.
+
+    Мутация, на которой проба обязана краснеть: убрать `item.pop("signature")`
+    из `_return_visit`.
+    """
+    base, _, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Первый С.")
+    _add_approver(manager, base, first, name="Второй В.")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    signer_id = first.approval_route[0]["id"]
+    returner_id = first.approval_route[1]["id"]
+
+    signed = approver.post(
+        f"{base}approval/route/{signer_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert signed.status_code == 200, signed.content
+    first.refresh_from_db()
+    assert first.approval_route[0].get("signature"), "предусловие: подпись записана"
+
+    returned = approver.post(
+        f"{base}approval/route/{returner_id}/decide/",
+        {"decision": "RETURNED", "comment": "Поправьте пост 2",
+         "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert returned.status_code == 200, returned.content
+
+    first.refresh_from_db()
+    signer = first.approval_route[0]
+    assert signer["status"] == "NOT_SENT", "статус подписавшего не сброшен"
+    assert signer.get("signature") is None, (
+        "реквизиты подписи пережили возврат — строка ждёт решения и "
+        "показывает «Согласовано»"
+    )
+
+
+def test_resending_clears_signatures_from_the_previous_round(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Повторная отправка не тащит подписи прошлого круга (Plane №513).
+
+    Второй путь того же дефекта: возврат бывает без повторной отправки, а
+    повторная отправка — без возврата (после отзыва). Чистка нужна на обоих.
+
+    Мутация, на которой проба обязана краснеть: убрать `item.pop("signature")`
+    из `send_for_approval`.
+    """
+    base, _, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Единственный Е.")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    first.refresh_from_db()
+    assert first.approval_route[0].get("signature"), "предусловие: подпись записана"
+
+    resent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert resent.status_code == 200, resent.content
+
+    first.refresh_from_db()
+    row = first.approval_route[0]
+    assert row["status"] == "PENDING"
+    assert row.get("signature") is None, (
+        "подпись прошлого круга осталась у строки, которая снова ждёт решения"
+    )
+
+
+def test_resending_takes_the_object_out_of_returned(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Повторная отправка снимает с объекта «Возвращено» (Plane №584).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. `approval_status` присваивался в трёх местах —
+    `PENDING` при заведении, `APPROVED` и `RETURNED` при решении, — а
+    повторная отправка его не трогала. Объект честно уходил на согласование
+    заново, но поле оставалось `RETURNED`, и бейдж реестра «Возвращено · N
+    замечаний» горел до следующего решения согласующего: читатель видел
+    «вернули, чините» там, где чинить уже нечего.
+
+    Мутация, на которой проба обязана краснеть: убрать
+    `visit.approval_status = "PENDING"` из `send_for_approval`.
+    """
+    base, event_id, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first)
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "RETURNED", "comment": "Поправьте", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    first.refresh_from_db()
+    assert first.approval_status == "RETURNED", "предусловие: объект возвращён"
+
+    # Возврат уводит объект обратно на «Расстановку» — путь заказчика такой:
+    # поправить, завершить расстановку, отправить заново.
+    done = manager.post(
+        f"{base}placement/complete/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert done.status_code == 200, done.content
+    resent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert resent.status_code == 200, resent.content
+
+    first.refresh_from_db()
+    assert first.approval_status == "PENDING", (
+        "объект отправлен заново, а в реестре по-прежнему «Возвращено»"
+    )
+    # Сводное поле мероприятия идёт следом: пока второй объект не возвращён,
+    # у мероприятия тоже нечему гореть.
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    assert OpsSecurityEvent.objects.get(pk=event_id).approval_status == "PENDING"
+
+
+# ── Замечания старой формы (Plane №502) ─────────────────────────────────────
+
+
+def test_a_remark_without_status_still_holds_the_stage(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Замечание, записанное ДО №386, держит этап (Plane №502).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Тот коммит заменил булево `resolved` на тройственный
+    `status`, но миграции с бэкфиллом не завёл: строки старой формы лежат как
+    `{"text": …, "resolved": false}` и переехали дословно. Читатели сравнивают
+    `status == "OPEN"`, а у них ключа нет вовсе — `None == "OPEN"` ложно, и
+    неотвеченное замечание переставало держать этап: согласование
+    завершалось мимо него.
+
+    Мутация, на которой проба обязана краснеть: вернуть в `remark_is_open`
+    сравнение `item.get("status") == "OPEN"`.
+    """
+    base, _, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first)
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+
+    # Строка СТАРОЙ формы — ровно та, что лежит в базах до №386.
+    first.approval_remarks = [
+        {"text": "Замечание старой формы", "resolved": False, "resolvedAt": None}
+    ]
+    first.save(update_fields=["approval_remarks"])
+    first.refresh_from_db()
+
+    approver_id = first.approval_route[0]["id"]
+    decided = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+
+    # Подпись проходит, а вот ЗАВЕРШИТЬ этап с открытым замечанием нельзя.
+    assert decided.status_code == 200, decided.content
+    first.refresh_from_db()
+    assert first.stage == "APPROVAL", (
+        "этап завершился мимо неотвеченного замечания старой формы"
+    )
+
+
+def test_the_backfill_gives_old_remarks_the_new_shape():
+    """Миграция 0095 дописывает старой строке ключи контракта (Plane №502).
+
+    Проверяется САМА функция бэкфилла, а не факт применения миграции: в
+    тестовой базе миграции уже прогнаны, и «данные починены» там истинно по
+    построению. Предмет — правило переноса, и его надо уметь прочитать.
+    """
+    # Имя модуля начинается с цифры — обычным `import` его не взять.
+    from importlib import import_module
+
+    backfill = import_module(
+        "organization_management.apps.operations.migrations"
+        ".0095_backfill_approval_remark_status"
+    )
+
+    old_open = {"text": "Не устранено", "resolved": False, "resolvedAt": None}
+    old_done = {"text": "Устранено", "resolved": True, "resolvedAt": "2026-01-01T00:00:00"}
+    new_row = {"id": "r1", "status": "OPEN", "text": "Новая форма"}
+
+    filled_open = backfill._fill(old_open)
+    assert filled_open["status"] == "OPEN"
+    # Ничего не выдумано: автора и версию у старой строки взять неоткуда.
+    assert filled_open["author"] == "" and filled_open["documentVersion"] is None
+    assert filled_open["urgent"] is False and filled_open["response"] == ""
+    # Прежний ключ остаётся на месте — откат опирается на него.
+    assert filled_open["resolved"] is False
+
+    assert backfill._fill(old_done)["status"] == "RESOLVED"
+    assert backfill._fill(old_done)["respondedAt"] == "2026-01-01T00:00:00"
+    # Строку новой формы бэкфилл не трогает вовсе.
+    assert backfill._fill(new_row) is None
