@@ -89,6 +89,7 @@ import { readObjectsStore } from "./objects-handlers";
 import {
   findPersonnel,
   personnelDayStatus,
+  personnelPhone,
   personnelRowOn,
   personnelRating,
   RATING_BAND_MATCHES,
@@ -1104,6 +1105,14 @@ export const securityEventsHandlers = [
    * собирает по кадровой привязке. Отбор по человеку (`?employee=`) мок не
    * делает: своей учётки у него нет вовсе, и «мои» здесь значит «все» —
    * сказано вслух, чтобы это не приняли за фильтр.
+   *
+   * 🔴 ОТМЕТКУ «ОТКРЫЛ» (`viewedAt`, Plane №452) МОК НЕ СТАВИТ — И ЭТО
+   * НАМЕРЕННО. Сервер ставит её при чтении человеком СВОЕГО списка, а «свой»
+   * у мока значит «все»: повторив запись здесь, мок пометил бы открытыми
+   * ВСЕХ назначенных сразу после первого захода в профиль, и панель
+   * ознакомления на мок-стенде стала бы жёлтой целиком. Поле отдаётся как
+   * есть из стора, а поведение проверяется на живом стеке (`pytest`
+   * `test_ops_my_assignments.py`) и пробой с подменённым ответом.
    */
   http.get(`*${SECURITY_EVENTS_PATH}my-assignments/`, () => {
     const results = getEvents().flatMap((event) =>
@@ -1146,6 +1155,11 @@ export const securityEventsHandlers = [
           // ради которого поля и заведены.
           declinedVia: a.declinedVia ?? "",
           declinedBy: a.declinedBy ?? "",
+          // «Открыл и не нажал» и ☎ (Plane №452) — как у сервера
+          // (`my_assignments.py`): `null` у не открывавших, пустая строка у
+          // тех, чьего номера нет.
+          viewedAt: a.viewedAt ?? null,
+          phone: a.phone ?? personnelPhone(a.employeeId),
         };
       })
     );
@@ -2489,6 +2503,12 @@ export const securityEventsHandlers = [
         // старшим по умолчанию не становится (Plane №65, «Р-4»).
         isSectorSenior: false,
         acknowledgedAt: null,
+        // Четвёртое состояние строки и ☎ (Plane №452): только что назначенный
+        // ничего ещё не открывал, а телефон сервер считает НА ЧТЕНИИ по
+        // кадровой записи — мок повторяет и то и другое, иначе жёлтый сегмент
+        // и звонок зеленели бы на моке при пустом контракте.
+        viewedAt: null,
+        phone: personnelPhone(employee.id),
         // обоснование сохраняется только при реально возникшем предупреждении
         ratingOverrideReason:
           ratingConflictMessage === null ? null : overrideReason,

@@ -1581,6 +1581,17 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                      "unlinkedReason": mine.DISMISSED_REASON}
                 )
             target = str(employee.pk)
+            # 🔴 «ОТКРЫЛ И НЕ НАЖАЛ» ОТМЕЧАЕТСЯ ЗДЕСЬ, А НЕ В `assignments_of`
+            # (`[ОЗН-02]`, Plane №452). Отметка ставится ТОЛЬКО на этой ветке —
+            # когда человек читает СВОЙ список: чтение старшим чужого
+            # (`?employee=`) не имеет права записать «он открыл», это было бы
+            # ложью о другом человеке, да ещё и той, по которой решают,
+            # звонить ему или нет.
+            #
+            # Запись разовая и только до ответа (условие внутри `mark_viewed`),
+            # поэтому обычное обновление профиля не пишет ничего: платит только
+            # ПЕРВЫЙ заход.
+            mine.mark_viewed(target)
         return Response(
             {
                 "results": mine.assignments_of(target),

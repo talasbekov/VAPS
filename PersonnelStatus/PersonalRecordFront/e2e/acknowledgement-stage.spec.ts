@@ -42,6 +42,8 @@ interface EventRow {
     employeeName: string
     remindedAt?: string | null
     declinedAt?: string | null
+    /** «Открыл и не нажал» (`[ОЗН-02]`, Plane №452). */
+    viewedAt?: string | null
     acknowledgedAt: string | null
   }[]
 }
@@ -102,6 +104,13 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     const pending = event.placementAssignments.filter(
       (a) => a.acknowledgedAt === null && (a.declinedAt ?? null) === null,
     )
+    // С №452 неотвеченные РАЗДЕЛЕНЫ на две корзины: «не открыли» и «открыли и
+    // молчат». Счётчики кнопок и фильтра по-прежнему считают обе (`pending`
+    // выше), а шапка печатает их по отдельности — поэтому число «не открыли»
+    // берётся ОТДЕЛЬНО. Пин на `pending.length` здесь молча соврал бы, как
+    // только на стенде появится хоть одна открытая строка.
+    const notOpened = pending.filter((a) => (a.viewedAt ?? null) === null)
+    const opened = pending.filter((a) => (a.viewedAt ?? null) !== null)
     const confirmed = event.placementAssignments.filter((a) => a.acknowledgedAt !== null)
 
     await signIn(page)
@@ -111,7 +120,10 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     })
     await expect(card).toBeVisible({ timeout: 15_000 })
     // `[ОЗН-02]` (№447): «не открыли · отказов · срок подтверждения», легенда полосы.
-    await expect(card.getByTestId('ack-summary')).toContainText(`не открыли ${pending.length}`)
+    await expect(card.getByTestId('ack-summary')).toContainText(`не открыли ${notOpened.length}`)
+    await expect(card.getByTestId('ack-summary')).toContainText(
+      `открыли и молчат ${opened.length}`,
+    )
     await expect(card.getByTestId('ack-summary')).toContainText('отказов')
     await expect(card.getByTestId('ack-summary')).toContainText('срок подтверждения')
     await expect(card.getByTestId('ack-legend')).toContainText('не открывал')

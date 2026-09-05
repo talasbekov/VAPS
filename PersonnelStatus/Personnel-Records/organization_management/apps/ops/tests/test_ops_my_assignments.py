@@ -302,3 +302,104 @@ def test_dismissed_employee_stops_reading_his_own_assignments(manager):  # noqa:
 
     # Второй путь — по параметру: тот же отказ, но уже правом.
     assert api.get(f"{MINE}?employee={me.pk}").status_code == 403
+
+
+# ─── «Открыл и не нажал» и ☎ в строке (`[ОЗН-02]`/`[ОЗН-03]`, Plane №452) ────
+#
+# Старший на «Ознакомлении» видел три состояния и в «ждём» не отличал «не
+# видел» от «видел и молчит». Это разные положения и разные действия: первому
+# напомнить, второму позвонить. Факт открытия система не хранила вовсе, а
+# телефона в снимке назначения не было.
+
+
+def _assignment_of(manager, base, assignment_id):  # noqa: F811
+    """Строка глазами СТАРШЕГО — так её видит панель ознакомления."""
+    rows = manager.get(base).json()["placementAssignments"]
+    return next(row for row in rows if row["id"] == assignment_id)
+
+
+def test_the_first_reading_of_my_own_list_stamps_that_i_opened_it(manager):  # noqa: F811
+    me = make_employee("Открывший", "Сотрудник")
+    base, assignment_id = placed(manager, me)
+    api = linked_client("emp-viewed", me)
+
+    # До первого захода — не открывал: `null`, а не отсутствие поля.
+    assert _assignment_of(manager, base, assignment_id)["viewedAt"] is None
+
+    assert api.get(MINE).status_code == 200
+    stamped = _assignment_of(manager, base, assignment_id)["viewedAt"]
+    assert stamped is not None
+    # Своя строка тоже несёт отметку — человек видит, что система его открытие
+    # заметила.
+    assert api.get(MINE).json()["results"][0]["viewedAt"] == stamped
+
+    # ОДИН РАЗ: второе чтение не переписывает момент открытия. Иначе «открыл
+    # три дня назад и молчит» превращалось бы в «открыл только что», и старший
+    # читал бы свежесть, которой нет.
+    assert api.get(MINE).status_code == 200
+    assert _assignment_of(manager, base, assignment_id)["viewedAt"] == stamped
+
+
+def test_reading_someone_elses_list_does_not_stamp_that_they_opened_it(manager):  # noqa: F811
+    """🔴 Чтение старшим ЧУЖОГО списка не имеет права записать «он открыл».
+
+    Это была бы ложь о другом человеке — и та самая, по которой решают,
+    звонить ему или нет.
+    """
+    mine_div = Division.objects.create(
+        name="Управление №452", division_type=Division.DivisionType.DIRECTORATE
+    )
+    subordinate = make_employee("Подчинённый", "Незаходивший")
+    StaffUnit.objects.create(division=mine_div, employee=subordinate, index=1)
+    base, assignment_id = placed(manager, subordinate)
+    chief, _ = client_for(
+        "chief-452", "HEAD_DIRECTORATE", perms=("status.manage",),
+        scope_division_id=mine_div.pk,
+    )
+
+    assert chief.get(f"{MINE}?employee={subordinate.pk}").status_code == 200
+    assert _assignment_of(manager, base, assignment_id)["viewedAt"] is None
+
+
+def test_an_answered_row_is_not_stamped_as_opened(manager):  # noqa: F811
+    """Ответ поглощает факт открытия: подтвердившему звонить не о чем."""
+    me = make_employee("Подтвердивший", "Сотрудник")
+    base, assignment_id = placed(manager, me)
+    api = linked_client("emp-acked", me)
+    assert api.post(f"{base}acknowledge/{assignment_id}/").status_code == 200
+
+    assert api.get(MINE).status_code == 200
+    row = _assignment_of(manager, base, assignment_id)
+    assert row["acknowledgedAt"] is not None
+    assert row["viewedAt"] is None
+
+
+def test_the_row_carries_a_phone_service_number_first(manager):  # noqa: F811
+    """☎ в строке: служебный, иначе личный, иначе пусто.
+
+    Порядок не случаен — звонит старший по службе, служебный номер для этого и
+    заведён; личный подставляется только когда служебного нет, потому что
+    «звонить некуда» хуже, чем звонок на личный.
+    """
+    both = make_employee("Сослужебным", "Ф")
+    both.work_phone, both.personal_phone = "+7 701 111-11-11", "+7 702 222-22-22"
+    both.save(update_fields=["work_phone", "personal_phone"])
+    personal_only = make_employee("Тольколичный", "Ф")
+    personal_only.personal_phone = "+7 703 333-33-33"
+    personal_only.save(update_fields=["personal_phone"])
+    silent = make_employee("Безтелефона", "Ф")
+
+    base_both, id_both = placed(manager, both)
+    base_personal, id_personal = placed(manager, personal_only)
+    base_silent, id_silent = placed(manager, silent)
+
+    assert _assignment_of(manager, base_both, id_both)["phone"] == "+7 701 111-11-11"
+    assert (
+        _assignment_of(manager, base_personal, id_personal)["phone"]
+        == "+7 703 333-33-33"
+    )
+    assert _assignment_of(manager, base_silent, id_silent)["phone"] == ""
+
+    # Тот же номер и в СВОЁМ списке — контракт один на обе ручки.
+    api = linked_client("emp-phone", both)
+    assert api.get(MINE).json()["results"][0]["phone"] == "+7 701 111-11-11"
