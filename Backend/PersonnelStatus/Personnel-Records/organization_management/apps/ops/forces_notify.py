@@ -71,24 +71,60 @@ def _directorate_heads(division_ids):
     поле `notifiedHeads` в аудите переставало отвечать на вопрос «кого на
     самом деле попросили» — разбор «почему не выделили» шёл по ложному следу.
 
-    ВРЕМЕННЫЕ ДЕЖУРСТВА здесь НЕ учитываются, и это осознанно: гранты приходят
-    из двух источников (`UserRole` и `TemporaryDutyPermission`), а этот
-    фильтр читает первый. Дежурный по управлению выделить людей может, а
-    уведомления не получит — расхождение записано карточкой, потому что
-    решать его надо вместе с ключом «одно уведомление на день»: окно дежурства
-    короче суток, и правило «кого просили» перестанет быть однозначным.
+    🔴 ОБА ИСТОЧНИКА ГРАНТОВ, А НЕ ОДНИ РОЛИ (Plane №800, решение заказчика
+    06.09.2026). Права в разделе приходят из ДВУХ таблиц — постоянных
+    назначений (`UserRole`) и временных дежурств (`TemporaryDutyPermission`
+    со своим окном `starts_at`/`ends_at`); `PermissionService._active_grants`
+    перечисляет обе, а эта рассылка читала только первую. Отсюда расхождение:
+    заступивший дежурным по управлению ВЫДЕЛИТЬ людей мог — гейт ручки
+    пропускал его по дежурному гранту, — а уведомления «Выделите N
+    сотрудников» не получал. Запрос уходил постоянному начальнику, которого в
+    этот момент может не быть на месте, и никто не понимал, почему список не
+    собран.
+
+    Заказчик выбрал «слать ОБОИМ»; отвергнуты «слать только тому, кто на
+    дежурстве» (при смене дежурного после рассылки новый не увидел бы ничего)
+    и «оставить как есть». Ключ уведомления — (получатель, вид, деловая дата),
+    то есть СВОЙ на каждого получателя: двойного уведомления одному человеку
+    объединение источников не даёт, даже если он и начальник, и дежурный.
+
+    Окно дежурства короче суток — и это ничего не ломает: рассылка спрашивает
+    «кто может выделить ПРЯМО СЕЙЧАС», ровно как и гейт ручки в тот же момент.
+    Дежурство, начавшееся после рассылки, уведомления не получит; на этот
+    случай у управления есть баннер запроса на экране статусов (`[СБС-30]`).
+
+    Время берётся у `Clock`, а не у `timezone.now()`: остальной раздел живёт по
+    нему же, и подменяемые часы — единственный способ проверить границы окна
+    пробой.
     """
-    from organization_management.apps.operations.models import UserRole
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models import (
+        TemporaryDutyPermission,
+        UserRole,
+    )
 
     heads = {str(pk): set() for pk in division_ids}
     if not division_ids:
         return heads
+    ids = list(division_ids)
+    roles = _roles_that_may_select()
+
     rows = UserRole.objects.filter(
         is_active=True,
-        scope_division_id__in=list(division_ids),
-        role_code_id__in=_roles_that_may_select(),
+        scope_division_id__in=ids,
+        role_code_id__in=roles,
     ).values_list("scope_division_id", "user_id")
-    for division_id, user_id in rows:
+
+    now = Clock.now()
+    duty_rows = TemporaryDutyPermission.objects.filter(
+        is_active=True,
+        scope_division_id__in=ids,
+        duty_role_code__in=roles,
+        starts_at__lte=now,
+        ends_at__gte=now,
+    ).values_list("scope_division_id", "user_id")
+
+    for division_id, user_id in list(rows) + list(duty_rows):
         heads.setdefault(str(division_id), set()).add(str(user_id))
     return heads
 
