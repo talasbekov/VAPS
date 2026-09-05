@@ -90,7 +90,7 @@ async function seedOverdueRequest(token: string): Promise<Fixture> {
   const afterImport = await call('GET', `${base}/`)
   await call('PATCH', `${base}/recon/`, {
     checklist: afterImport.payload.reconChecklist.map(
-      (item: Record<string, unknown>) => ({ ...item, done: true, result: 'MATCHES' }),
+      (item: Record<string, unknown>) => ({ ...item, state: 'NORMAL', done: true, result: 'MATCHES' }),
     ),
     sectorPosts: afterImport.payload.reconSectorPosts.map(
       (post: Record<string, unknown>, index: number) =>

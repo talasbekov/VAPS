@@ -196,7 +196,7 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
         method: 'PATCH',
         headers: { Authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
         body: JSON.stringify({
-          checklist: imported.reconChecklist.map((i) => ({ ...i, done: true })),
+          checklist: imported.reconChecklist.map((i) => ({ ...i, state: 'NORMAL', done: true })),
           sectorPosts: imported.reconSectorPosts,
         }),
       })

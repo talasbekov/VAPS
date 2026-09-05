@@ -59,6 +59,7 @@ export async function prepareDemandEvent(
   await call('PATCH', `${base}/recon/`, {
     checklist: afterImport.reconChecklist.map((item: Record<string, unknown>) => ({
       ...item,
+      state: 'NORMAL',
       done: true,
       result: 'MATCHES',
     })),

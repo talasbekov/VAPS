@@ -61,7 +61,7 @@ def _event_sent(manager, *, approvers=("К. Оразов",)):  # noqa: F811
     manager.patch(
         f"{base}recon/",
         {
-            "checklist": [{**i, "done": True} for i in data["reconChecklist"]],
+            "checklist": [{**i, "state": "NORMAL"} for i in data["reconChecklist"]],
             "sectorPosts": data["reconSectorPosts"],
         },
         format="json",

@@ -57,7 +57,7 @@ def prepared(manager):  # noqa: F811
     manager.patch(
         f"{base}recon/",
         {
-            "checklist": [{**item, "done": True} for item in data["reconChecklist"]],
+            "checklist": [{**item, "state": "NORMAL"} for item in data["reconChecklist"]],
             "sectorPosts": [*data["reconSectorPosts"], extra],
         },
         format="json",

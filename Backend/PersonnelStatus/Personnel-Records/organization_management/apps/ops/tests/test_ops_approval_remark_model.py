@@ -66,7 +66,7 @@ def _event_on_approval(manager, *, business_date="2026-12-31"):  # noqa: F811
     manager.patch(
         f"{base}recon/",
         {
-            "checklist": [{**i, "done": True} for i in data["reconChecklist"]],
+            "checklist": [{**i, "state": "NORMAL"} for i in data["reconChecklist"]],
             "sectorPosts": data["reconSectorPosts"],
         },
         format="json",

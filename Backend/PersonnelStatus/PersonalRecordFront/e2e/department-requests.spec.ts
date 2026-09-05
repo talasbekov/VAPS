@@ -89,6 +89,7 @@ async function createDepartmentAllocationFixture(
   await apiCall(token, 'PATCH', `/api/ops/security-events/${created.id}/recon/`, {
     checklist: (withRecon.reconChecklist as { done: boolean }[]).map((item) => ({
       ...item,
+      state: 'NORMAL',
       done: true,
     })),
     sectorPosts: withRecon.reconSectorPosts,

@@ -630,7 +630,7 @@ def test_full_lifecycle_walkthrough(manager, approver_client):
     resp = manager.post(f"{base}recon/complete/")
     assert resp.json()["error_code"] == "RECON_CHECKLIST_INCOMPLETE"
     checklist = [
-        {**item, "done": True} for item in data["reconChecklist"]
+        {**item, "state": "NORMAL"} for item in data["reconChecklist"]
     ]
     posts = data["reconSectorPosts"]
     resp = manager.patch(
@@ -1801,7 +1801,7 @@ def test_recon_force_request_reaches_the_registry_row(manager):
     manager.patch(
         f"{base}recon/",
         {
-            "checklist": [{**i, "done": True} for i in data["reconChecklist"]],
+            "checklist": [{**i, "state": "NORMAL"} for i in data["reconChecklist"]],
             "sectorPosts": data["reconSectorPosts"],
             "forceRequest": 41,
         },

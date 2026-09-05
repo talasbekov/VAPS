@@ -60,7 +60,7 @@ def event_ready_for_placement(manager):  # noqa: F811
     manager.patch(
         f"{base}recon/",
         {
-            "checklist": [{**i, "done": True} for i in data["reconChecklist"]],
+            "checklist": [{**i, "state": "NORMAL"} for i in data["reconChecklist"]],
             "sectorPosts": data["reconSectorPosts"],
         },
         format="json",
@@ -202,7 +202,7 @@ def test_completing_one_object_does_not_touch_the_other(manager):  # noqa: F811
     manager.patch(
         f"{base}recon/",
         {
-            "checklist": [{**i, "done": True} for i in data["reconChecklist"]],
+            "checklist": [{**i, "state": "NORMAL"} for i in data["reconChecklist"]],
             "sectorPosts": data["reconSectorPosts"],
         },
         format="json",

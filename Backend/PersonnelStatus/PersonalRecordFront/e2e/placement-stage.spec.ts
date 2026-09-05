@@ -673,6 +673,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     await call('patch', `${base}/recon/`, {
       checklist: (state.reconChecklist as { id: string }[]).map((item) => ({
         ...item,
+        state: 'NORMAL',
         done: true,
         result: 'MATCHES',
       })),
@@ -829,6 +830,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     await call('PATCH', `${base}/recon/`, {
       checklist: afterImport.reconChecklist.map((item) => ({
         ...item,
+        state: 'NORMAL',
         done: true,
         result: 'MATCHES',
       })),
@@ -1070,7 +1072,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       reconSectorPosts: { id: string; sector: string; post: string; need: number }[]
     }
     await call('PATCH', `${base}/recon/`, {
-      checklist: afterImport.reconChecklist.map((item) => ({ ...item, done: true, result: 'MATCHES' })),
+      checklist: afterImport.reconChecklist.map((item) => ({ ...item, state: 'NORMAL', done: true, result: 'MATCHES' })),
       sectorPosts: afterImport.reconSectorPosts,
     })
     await call('POST', `${base}/recon/complete/`)

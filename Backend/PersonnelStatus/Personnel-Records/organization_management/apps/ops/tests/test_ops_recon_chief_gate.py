@@ -87,7 +87,137 @@ def test_patch_without_sector_posts_keeps_posts(manager):  # noqa: F811
     assert imported.status_code == 200, imported.content
     before = imported.json()["reconSectorPosts"]
     assert before, "импорт ничего не принёс — проба вакуумна"
-    checklist = [{**item, "done": True} for item in imported.json()["reconChecklist"]]
+    checklist = [{**item, "state": "NORMAL"} for item in imported.json()["reconChecklist"]]
     resp = manager.patch(f"{URL}{event_id}/recon/", {"checklist": checklist}, format="json")
     assert resp.status_code == 200, resp.content
     assert [r["id"] for r in resp.json()["reconSectorPosts"]] == [r["id"] for r in before]
+
+
+# ── Ревью 1efd9fdf: гард держит ИЗМЕНЁННОЕ, а не упомянутое (Plane №634) ────
+
+
+def _two_objects_one_chiefless(manager):  # noqa: F811
+    """ОМ с двумя объектами: у первого старший есть, у второго нет, и у
+    ОБОИХ уже сохранены посты."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    first = OpsSecurityEventVisitObject.objects.get(event_id=event_id)
+    assert first.chief_employee_id is not None
+    second = OpsSecurityEventVisitObject.objects.create(
+        event=first.event,
+        security_object=make_object(code="OBJ-REC-2", name="Второй объект"),
+        object_name="Второй объект",
+        passport_binding=None,
+        position=(first.position or 0) + 1,
+        stage=first.stage,
+    )
+    assert second.chief_employee_id is None
+    # Посты обоим — напрямую, минуя гард: предмет пробы не заведение расчёта, а
+    # то, что с ним делает СЛЕДУЮЩИЙ запрос.
+    first.event.recon_sector_posts = [
+        {
+            "id": "post-1", "sector": "Периметр", "post": "Пост 1",
+            "task": "Охрана", "need": 1, "shift": "", "requirements": "",
+            "comment": "", "visitObjectId": str(first.pk),
+        },
+        {
+            "id": "post-2", "sector": "Периметр", "post": "Пост 2",
+            "task": "Охрана", "need": 1, "shift": "", "requirements": "",
+            "comment": "", "visitObjectId": str(second.pk),
+        },
+    ]
+    first.event.save(update_fields=["recon_sector_posts", "updated_at"])
+    return event_id, first, second
+
+
+def test_a_chiefless_neighbour_does_not_block_the_checklist(manager):  # noqa: F811
+    """🔴 Plane №634: один объект без старшего не запирает ВСЁ мероприятие.
+
+    Гард смотрел на объекты, НАЗВАННЫЕ в присланных постах, — а посты
+    присылаются целиком, и при отметке одного пункта чек-листа список
+    подставляется из хранимого (запасной путь №416). Значит объект без
+    старшего делал несохраняемой рекогносцировку целиком: и чужие посты, и
+    даже галочку в чек-листе, к постам не относящуюся.
+
+    Мутация: вернуть `touched` по присланным строкам — этот PATCH отобьётся
+    `VISIT_CHIEF_REQUIRED`.
+    """
+    event_id, _first, _second = _two_objects_one_chiefless(manager)
+    checklist = manager.get(f"{URL}{event_id}/").json()["reconChecklist"]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/recon/",
+        {"checklist": [{**i, "state": "NORMAL"} for i in checklist]},
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.content
+    assert all(i["state"] == "NORMAL" for i in resp.json()["reconChecklist"])
+
+
+def test_editing_posts_of_the_object_that_HAS_a_chief_still_passes(manager):  # noqa: F811
+    """Правка расчёта объекта СО СТАРШИМ проходит, хотя сосед без старшего.
+
+    Та же беда с другого конца: гард обязан держать объект, чьи посты правят,
+    и не держать соседний.
+
+    Мутация та же — по присланным строкам этот PATCH тоже отобьётся.
+    """
+    event_id, first, second = _two_objects_one_chiefless(manager)
+    posts = manager.get(f"{URL}{event_id}/").json()["reconSectorPosts"]
+    changed = [
+        {**row, "task": "Охрана и пропуск"} if row["visitObjectId"] == str(first.pk) else row
+        for row in posts
+    ]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/recon/", {"sectorPosts": changed}, format="json"
+    )
+
+    assert resp.status_code == 200, resp.content
+    mine = next(
+        r for r in resp.json()["reconSectorPosts"] if r["visitObjectId"] == str(first.pk)
+    )
+    assert mine["task"] == "Охрана и пропуск"
+    assert second.chief_employee_id is None
+
+
+def test_editing_posts_of_the_chiefless_object_is_still_refused(manager):  # noqa: F811
+    """А вот его СОБСТВЕННЫЙ расчёт по-прежнему закрыт — правило №424 живо.
+
+    Без этой пробы №634 можно было бы «починить», сняв гард вовсе.
+    """
+    event_id, _first, second = _two_objects_one_chiefless(manager)
+    posts = manager.get(f"{URL}{event_id}/").json()["reconSectorPosts"]
+    changed = [
+        {**row, "task": "Правка чужого"} if row["visitObjectId"] == str(second.pk) else row
+        for row in posts
+    ]
+
+    refused = manager.patch(
+        f"{URL}{event_id}/recon/", {"sectorPosts": changed}, format="json"
+    )
+
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "VISIT_CHIEF_REQUIRED"
+
+
+def test_completion_still_demands_a_chief_for_every_object(manager):  # noqa: F811
+    """`complete_recon` требует старшего у КАЖДОГО объекта на этапе — правка
+    №634 касается только сохранения, а не завершения.
+
+    Это же и есть то, что чинит фронтовая половина band-а (№635): кнопка
+    смотрела на показанный объект, сервер — на все.
+    """
+    event_id, _first, _second = _two_objects_one_chiefless(manager)
+    checklist = manager.get(f"{URL}{event_id}/").json()["reconChecklist"]
+    manager.patch(
+        f"{URL}{event_id}/recon/",
+        {"checklist": [{**i, "state": "NORMAL"} for i in checklist]},
+        format="json",
+    )
+
+    refused = manager.post(f"{URL}{event_id}/recon/complete/")
+
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "VISIT_CHIEF_REQUIRED"
