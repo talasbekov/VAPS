@@ -318,6 +318,64 @@ def test_changing_this_object_does_stale_its_approval(
 # ── Версия документа ────────────────────────────────────────────────────────
 
 
+def test_resending_an_approved_object_supersedes_it_instead_of_overwriting(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Отправка поверх СОГЛАСОВАННОЙ версии открывает N+1, а не правит её
+    (Plane №534).
+
+    До правки `_submit_document_version` ветвился только на `RETURNED`, и
+    повторная отправка согласованного объекта переписывала его строку НА
+    МЕСТЕ: «Согласовано» затиралось на «На согласовании», а `decided_at`
+    оставался от прежнего решения — момент согласования, которого больше нет.
+    История схлопывалась в одну строку `(1, SUBMITTED, superseded_at=None)`,
+    то есть запись о согласовании УНИЧТОЖАЛАСЬ — ровно противоположное тому,
+    что обещает `[СОГ-04]`: «Все версии хранятся… отменённые помечены».
+
+    🔴 ПОЧЕМУ ДВА ОБЪЕКТА, А НЕ ОДИН. Отправку сторожит `_require_stage` по
+    этапу МЕРОПРИЯТИЯ, и на одном объекте согласование уводит мероприятие с
+    «Согласования» — ручка отбивается раньше, чем доходит до версии. Второй
+    объект держит мероприятие на этапе, и путь открывается. Это же и есть
+    боевой случай: у ОМ с несколькими объектами каждый согласуется отдельно.
+    """
+    base, event_id, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first)
+    manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    decided = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert decided.status_code == 200, decided.content
+    rows = list(first.document_versions.order_by("number"))
+    assert [(r.number, r.status) for r in rows] == [(1, "APPROVED")]
+    approved_at = rows[0].decided_at
+    assert approved_at is not None
+
+    resp = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+
+    assert resp.status_code == 200, resp.content
+    rows = list(first.document_versions.order_by("number"))
+    assert [(r.number, r.status) for r in rows] == [
+        (1, "APPROVED"),
+        (2, "SUBMITTED"),
+    ], "согласованная версия переписана вместо того, чтобы быть перекрытой"
+    # Согласованная остаётся согласованной и помечена отменённой; момент её
+    # решения — прежний, а не протухший рядом с новым статусом.
+    assert rows[0].superseded_at is not None
+    assert rows[0].decided_at == approved_at
+    assert rows[1].superseded_at is None
+    assert rows[1].decided_at is None
+    first.refresh_from_db()
+    assert first.document_version == 2
+
+
 def test_the_document_version_grows_with_every_sending(
     manager, approver, two_objects_on_approval  # noqa: F811
 ):
