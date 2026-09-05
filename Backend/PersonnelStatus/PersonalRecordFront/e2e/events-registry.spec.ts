@@ -1228,13 +1228,26 @@ async function createEvent(
     const visit = target!.visitObjects![0]
 
     await signIn(page)
-    await page.goto(`${APP}/security-ops/events/`)
-    await page
-      .getByRole('button', {
-        name: new RegExp(`объекты посещения ${target!.code}`, 'i'),
-      })
-      .first()
-      .click()
+    // 🔴 РЕЕСТР ОТКРЫВАЕТСЯ ПОИСКОМ ПО КОДУ (Plane №763). Цель выбиралась из
+    // ПОЛНОГО списка ручки, а раскрывалась кликом НА ЭКРАНЕ — а экран
+    // показывает страницу: на стенде десятки мероприятий, сортировка по дате
+    // убыванию, и выбранный ОМ на первой странице не оказывался. Проба падала
+    // «кнопка не найдена» — не на своём предмете, и тем чаще, чем больше
+    // мероприятий на стенде. В смоуке это читалось как поломка реестра.
+    //
+    // `?search=` реестр понимает (тем же приёмом пользуется проба выше), и
+    // проверка ниже подтверждает, что цель действительно видна.
+    await page.goto(
+      `${APP}/security-ops/events/?search=${encodeURIComponent(target!.code)}`,
+    )
+    const expander = page.getByRole('button', {
+      name: new RegExp(`объекты посещения ${target!.code}`, 'i'),
+    })
+    await expect(
+      expander,
+      `ОМ ${target!.code} не виден в реестре даже поиском по коду`,
+    ).toHaveCount(1)
+    await expander.click()
 
     // Строка ОБЪЕКТА во врезке (`li`), а не `tr`: имя объекта стоит и в
     // колонке бюллетеня, и таких `tr` на стенде десятки.
