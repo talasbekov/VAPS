@@ -1365,3 +1365,60 @@ def test_a_repeated_return_after_the_stage_closed_is_refused(
     first.refresh_from_db()
     assert first.stage == "ACKNOWLEDGEMENT", "объект укатился назад с «Ознакомления»"
     assert first.approval_status == "APPROVED"
+
+
+def test_withdrawing_unfreezes_the_placement_and_the_document(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 «ОТОЗВАТЬ С СОГЛАСОВАНИЯ» БЫЛ ФУНКЦИОНАЛЬНО МЁРТВ (Plane №536).
+
+    Отзыв сбрасывал ТОЛЬКО статусы маршрута: документ оставался «На
+    согласовании», расстановка — замороженной. Править нельзя, а вернуть
+    документ некому: весь маршрут уже в «Не отправлено». Отозвавший упирался в
+    стену, которую сам же и поставил. `test_ops_withdraw_rule` этого не видел,
+    потому что стерёг одни статусы маршрута.
+
+    Отзыв означает «не отправляли»: документ снова черновик, отметка отправки
+    снята, снимок состава стёрт — сравнивать «устарела ли расстановка» после
+    отзыва не с чем. Номер версии при этом НЕ откатывается: она уже уходила
+    людям.
+    """
+    base, event_id, first, _second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    sent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert sent.status_code == 200, sent.content
+    first.refresh_from_db()
+    version_before = first.document_version
+    assert service.placement_frozen(first), "после отправки заморозка обязана быть"
+
+    withdrawn = manager.post(
+        f"{base}approval/withdraw/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert withdrawn.status_code == 200, withdrawn.content
+
+    first.refresh_from_db()
+    assert service.document_status_of(first) == "DRAFT", (
+        "документ остался «на согласовании» — расстановка не разморозится"
+    )
+    assert not service.placement_frozen(first), (
+        "после отзыва править по-прежнему нельзя, а возвращать документ некому"
+    )
+    assert first.approval_snapshot == "", "снимок отправки пережил отзыв"
+    assert first.document_version == version_before, "номер версии откатили"
+
+    # И правка действительно проходит — то, ради чего отзыв и нажимают.
+    event = service.lock_event(event_id)
+    mine = service.visit_object_posts(event, first)
+    moved = manager.post(
+        f"{base}placement/assign/",
+        {
+            "postId": str(mine[0]["id"]),
+            "employeeId": str(make_employee(last_name="Отзывов").pk),
+            "override": True,
+            "override_reason": "усиление после отзыва",
+        },
+        format="json",
+    )
+    assert moved.status_code == 200, moved.content
