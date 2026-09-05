@@ -1,6 +1,7 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
+import { REFRESH_RETRY_MS, isTokenRejected } from "@/lib/refresh-policy";
 
 // Для серверных запросов NextAuth нужно использовать прямой URL к бэкенду
 // Прокси rewrites работают только для клиентских запросов
@@ -68,12 +69,33 @@ function isExpiring(expires: unknown): boolean {
  * совсем. Оставить мёртвый токен на месте значило бы вернуть ровно тот
  * симптом, из-за которого задача и появилась: клиент шлёт его дальше и
  * получает 401 на каждом экране, не понимая, что дело в сессии.
+ *
+ * 🔴 НО «ТОКЕН МЁРТВ» И «СЕТЬ ИКНУЛА» — РАЗНЫЕ ОТВЕТЫ (Plane №459). Раньше
+ * все отказы сводились к одному `RefreshAccessTokenError`: 502 при
+ * перезапуске Django, 504, `ECONNREFUSED`, заминка DNS были неотличимы от
+ * «refresh-токен и правда не годен», а дальше клиент немедленно жёг сессию и
+ * стирал cookie, в которой лежал ЖИВОЙ refresh-токен. Один перезапуск
+ * бэкенда в рабочее время выкидывал из системы каждого, чей access-токен
+ * попал в минутное окно продления, — и человек терял несохранённый экран, не
+ * понимая за что.
+ *
+ * Мёртвым токен считается ТОЛЬКО по ответу сервера «не годен» (400/401/403).
+ * Временная беда — 5xx, сеть, нечитаемое тело — оставляет сессию жить и
+ * помечается `retryAfter`: повтор будет, но не чаще раза в
+ * `REFRESH_RETRY_MS`.
  */
 async function refreshed(token: JWT): Promise<JWT> {
   const refreshToken = token.refreshToken;
   if (typeof refreshToken !== "string" || refreshToken === "") {
     return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
   }
+  /** Временный отказ: токен НЕ жжём, но и не долбим сервер без паузы. */
+  const retryLater = (why: string): JWT => {
+    console.warn("Token refresh postponed:", why);
+    const next: JWT = { ...token, accessTokenExpires: Date.now() + REFRESH_RETRY_MS };
+    delete next.error;
+    return next;
+  };
   try {
     const response = await fetch(`${getBackendUrl()}/api/token/refresh/`, {
       method: "POST",
@@ -81,12 +103,15 @@ async function refreshed(token: JWT): Promise<JWT> {
       body: JSON.stringify({ refresh: refreshToken }),
     });
     if (!response.ok) {
+      if (!isTokenRejected(response.status)) return retryLater(`HTTP ${response.status}`);
       console.error("Token refresh failed:", response.status);
       return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
     }
     const data = (await response.json()) as { access?: string };
     if (typeof data.access !== "string" || data.access === "") {
-      return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+      // Сервер ответил 200, но без токена — это его беда, а не мёртвый
+      // refresh: жечь сессию не за что.
+      return retryLater("200 без поля access");
     }
     const next: JWT = {
       ...token,
@@ -96,10 +121,10 @@ async function refreshed(token: JWT): Promise<JWT> {
     delete next.error;
     return next;
   } catch (error) {
-    // Сеть могла просто икнуть — но и тогда честнее сказать «войдите
-    // заново», чем отдать экранам токен, который бэкенд не примет.
+    // Сюда попадают сетевые беды: сервер не ответил вовсе. Прежний код и
+    // здесь говорил «войдите заново» — это и есть дефект №459.
     console.error("Token refresh error:", error);
-    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+    return retryLater("сеть недоступна");
   }
 }
 
