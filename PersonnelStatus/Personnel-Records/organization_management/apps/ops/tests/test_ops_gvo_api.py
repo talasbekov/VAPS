@@ -207,6 +207,70 @@ def test_gvo_reset_of_last_section_deletes_record():
     assert not OpsGvoSummaryPatch.objects.filter(event=ev).exists()
 
 
+def test_gvo_reset_without_section_returns_every_section_at_once():
+    """«Вернуть исходные» — ОДИН запрос, а не цикл по разделам (Plane №765).
+
+    До этого форма слала POST на каждый раздел подряд, и падение середины
+    оставляло часть разделов сброшенной, часть — прежней: человек читал «Не
+    удалось вернуть исходные данные. Попробуйте ещё раз» над сводкой, половина
+    которой уже вернулась к исходной, и снимок формы этому состоянию не
+    соответствовал. Раздел здесь не называется вовсе — по образцу `apply_patch`
+    (№694), где ту же щель закрыли у кнопки «Сохранить».
+
+    Проба красная на мутации «вернуть `_section_keys` на месте `None`»: сброс
+    без раздела отбивался 400 «Неизвестный раздел: None».
+    """
+    from organization_management.apps.operations.models_gvo import OpsForeignVisit
+
+    ev = make_event("ОМ-Т-14Б")
+    OpsGvoSummaryPatch.objects.create(
+        event=ev,
+        patch={
+            "country": "Черногория",
+            "arrival": {"date": "2026-08-21"},
+            "meetEmployeeIds": ["1"],
+            "weapons": "нет",
+            "transport": {"cars": 2},
+            "groups": [{"name": "Первая"}],
+        },
+    )
+    visit = OpsForeignVisit.objects.create(
+        event=ev,
+        data={"country": "Черногория", "weapons": "нет"},
+        unspecified=["arrival.date", "stay.place"],
+    )
+
+    api, _ = manager("gvo-reset-all")
+    r = api.post(f"{GVO_URL}ОМ-Т-14Б/reset/", {}, format="json")
+    assert r.status_code == 200, r.json()
+    # Сводки не осталось вовсе: снят КАЖДЫЙ раздел, а пустой остаток удаляет
+    # запись — тот же итог, что давал цикл, но одним действием.
+    assert r.json()["patch"] == {}
+    assert not OpsGvoSummaryPatch.objects.filter(event=ev).exists()
+    visit.refresh_from_db()
+    assert visit.data == {}
+    # Флаги «уточняется» уезжают вместе с данными разделов (Plane №689) — все,
+    # раз вернулись все разделы.
+    assert visit.unspecified == []
+
+
+def test_gvo_reset_of_unknown_section_is_still_400():
+    """Опечатка в имени раздела НЕ читается как «сбросить всё» (Plane №765).
+
+    Отсутствие раздела и неизвестный раздел — разные вещи: первое просит
+    вернуть исходной всю сводку, второе означает ошибку вызывающего. Если бы
+    неизвестное имя падало в ту же ветку, `{"section": "head "}` с пробелом
+    молча снимал бы сводку целиком.
+    """
+    ev = make_event("ОМ-Т-14В")
+    OpsGvoSummaryPatch.objects.create(event=ev, patch={"country": "X"})
+    api, _ = manager("gvo-reset-typo")
+    r = api.post(f"{GVO_URL}ОМ-Т-14В/reset/", {"section": "haed"}, format="json")
+    assert r.status_code == 400
+    ev.refresh_from_db()
+    assert ev.gvo_patch.patch == {"country": "X"}  # ничего не снято
+
+
 def test_gvo_patch_writes_new_audit_row():
     from organization_management.apps.operations.models_audit import OpsAuditLog
 

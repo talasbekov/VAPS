@@ -260,6 +260,14 @@ SECTION_PATCH_KEYS = {
 }
 
 
+# Все ключи разделов разом (Plane №765). Считается ИЗ `SECTION_PATCH_KEYS`, а
+# не выписывается рядом вторым списком: второй разошёлся бы с первым при первой
+# же новой секции — ровно так и родился №689.
+ALL_SECTION_KEYS = tuple(
+    sorted({key for keys in SECTION_PATCH_KEYS.values() for key in keys})
+)
+
+
 def _section_keys(section):
     if isinstance(section, str):
         if section.startswith("person:"):
@@ -500,7 +508,16 @@ def reset_patch(om_code, body, actor=None):
     if event is None:
         return None
     _require_foreign(event)
-    keys = _section_keys((body or {}).get("section"))
+    # РАЗДЕЛ НЕОБЯЗАТЕЛЕН (Plane №765) — по образцу `apply_patch` (№694).
+    # Отсутствие раздела означает «вернуть исходным ВСЁ»: ключи берутся
+    # объединением `SECTION_PATCH_KEYS`. Пока раздел был обязателен, «Вернуть
+    # исходные» слало цикл из POST по одному на раздел, и падение середины
+    # оставляло часть разделов сброшенной, часть — прежней; человек читал
+    # «Не удалось вернуть исходные данные», хотя половина уже вернулась.
+    # Присланный раздел по-прежнему ПРОВЕРЯЕТСЯ, чтобы опечатка в имени не
+    # проходила молча снятием всей сводки.
+    section = (body or {}).get("section")
+    keys = ALL_SECTION_KEYS if section is None else _section_keys(section)
     visit = visit_for_event(event)
     if visit is not None:
         visit.data = {k: v for k, v in (visit.data or {}).items() if k not in keys}
@@ -544,7 +561,7 @@ def reset_patch(om_code, body, actor=None):
         action=audit_service.GVO_SUMMARY_RESET,
         entity_type=audit_service.ENTITY_SECURITY_EVENT,
         entity_id=event.pk,
-        new_value={"omCode": event.code, "section": (body or {}).get("section")},
+        new_value={"omCode": event.code, "section": section},
     )
     return {"omCode": event.code, "patch": remaining}
 

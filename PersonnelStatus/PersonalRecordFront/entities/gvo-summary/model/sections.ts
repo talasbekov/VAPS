@@ -518,12 +518,38 @@ export function gvoPatchFromForm(
 }
 
 /**
+ * Разделы, у которых есть свой патч, — область «Вернуть исходные» целиком.
+ * Зеркалит `SECTION_PATCH_KEYS` сервера (Plane №765).
+ */
+const ALL_RESET_SECTIONS: GvoSection[] = [
+  "head",
+  "persons",
+  "arrival",
+  "departure",
+  "org",
+  "groups",
+  "resp",
+  "transport",
+];
+
+/**
  * Ключи патча, которые снимает «Вернуть исходные». Совпадают с ключами,
  * которые кладёт gvoPatchFromForm того же раздела.
+ *
+ * `null` — ВСЕ разделы разом (Plane №765): объединение всех веток ниже, а не
+ * выписанный рядом второй список — второй разошёлся бы с первым при первой же
+ * новой секции. Тот же ответ держит сервер (`ALL_SECTION_KEYS` в gvo.py).
  */
 export function gvoSectionPatchKeys(
-  section: GvoSection
+  section: GvoSection | null
 ): (keyof GvoSummaryPatch)[] {
+  if (section === null) {
+    return [
+      ...new Set(
+        ALL_RESET_SECTIONS.flatMap((one) => gvoSectionPatchKeys(one))
+      ),
+    ];
+  }
   if (isGroupSection(section)) return ["groups"];
   if (isPersonSection(section)) return ["persons"];
   switch (section) {

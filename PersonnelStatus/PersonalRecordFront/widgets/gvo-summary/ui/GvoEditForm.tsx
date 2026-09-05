@@ -42,17 +42,6 @@ const WHOLE_SECTIONS: GvoSection[] = [
   "transport",
 ];
 
-/** Разделы «Вернуть исходные» — все, у которых есть свой патч. */
-const RESET_SECTIONS: GvoSection[] = [
-  "head",
-  "persons",
-  "arrival",
-  "departure",
-  "org",
-  "groups",
-  "transport",
-];
-
 interface Draft {
   whole: Record<string, GvoSectionForm>;
   persons: GvoSectionForm[];
@@ -220,13 +209,25 @@ export function GvoEditForm({
     }
   }
 
+  /**
+   * Вернуть исходные ОДНИМ запросом (Plane №765).
+   *
+   * 🔴 ЗДЕСЬ БЫЛ ЦИКЛ — тот же дефект, что у «Сохранить» (№694), но у другой
+   * кнопки. По одному POST на раздел: «шапка» вернулась, «группы» ответили
+   * отказом — и человек читал «Не удалось вернуть исходные данные»,
+   * стоя над сводкой, половина которой УЖЕ вернулась к исходной. Состояние
+   * между двумя нажатиями не описывал никто, и снимок формы ему не отвечал.
+   *
+   * Раздельные вызовы были не нужны: сервер принимает отсутствие раздела как
+   * «вся сводка» и снимает ключи одним `save`. «Ещё раз» после отказа теперь
+   * значит ровно то, что написано: не вернулось НИЧЕГО.
+   */
   async function resetAll(): Promise<void> {
     setBusy("reset");
     setFailure(null);
     try {
-      for (const section of RESET_SECTIONS) {
-        await reset.mutateAsync({ omCode, section });
-      }
+      // Раздел не называется: их несколько, и сервер об этом знает.
+      await reset.mutateAsync({ omCode, section: null });
       toast({ description: "Сводка возвращена к исходным данным" });
       onDone();
     } catch {
