@@ -1510,3 +1510,180 @@ def test_the_requests_list_carries_the_department_answer(manager):  # noqa: F811
     after = api.get(REQUESTS_URL).json()["results"]
     assert after[0]["allocating"] == 3
     assert after[0]["assigned"] == 0, "«выделяем» и «собрано» — разные числа"
+
+
+# ── Ревью a5348abf: отказ, возврат и разбивка (Plane №551, №552, №554) ──────
+
+
+def _collection_status_of(manager, base):  # noqa: F811
+    code = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1]).code
+    return next(
+        item
+        for item in manager.get(COLLECTIONS_URL).data["results"]
+        if item["code"] == code
+    )["collectionStatus"]
+
+
+def test_a_decline_on_a_never_dispatched_row_is_not_a_dispatch(manager):  # noqa: F811
+    """🔴 Plane №551: доска штаба не рапортует о рассылке, которой не было.
+
+    `_collection_status` считала разосланной ЛЮБУЮ строку не в черновике — в
+    том числе отказ. А департамент видит в своём списке и черновые строки
+    (`department_requests_view` фильтрует по области, а не по статусу) и,
+    ответив «0» на нерассылавшуюся строку, переводил её в `DECLINED`. Доска
+    сбора сил после этого утверждала «разнарядка разослана» о мероприятии,
+    где рассылки не было вовсе.
+
+    Мутация: вернуть условие `status != DRAFT` — статус станет `NOTIFIED`.
+    """
+    own = make_department("Департамент А")
+    make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-decline-draft", "DEPT_LEAD_D1", own.pk)
+    assert _collection_status_of(manager, base) == "NEW"
+
+    declined = _respond(dept_lead, base, allocation_id, 0, "Все на объекте")
+
+    assert _allocation(declined)["status"] == "DECLINED"
+    assert _allocation(declined)["notifiedAt"] is None, (
+        "рассылки не было — момента оповещения быть не должно"
+    )
+    assert _collection_status_of(manager, base) == "NEW", (
+        "штабу доложили о разосланной разнарядке, которой не рассылали"
+    )
+
+
+def test_the_returned_state_survives_a_decline_and_a_change_of_mind(manager):  # noqa: F811
+    """🔴 Plane №552: отзыв отказа возвращает то, что было, а не «оповещено».
+
+    Штаб вернул сданный список с причиной (`RETURNED`) → департамент ответил
+    «0» → передумал и ответил «2». Прежняя ветка восстанавливала статус «по
+    факту оповещения» и теряла возврат НАВСЕГДА: баннер «Возвращено штабом»
+    исчезал (хотя причина хранилась), реестр штаба переподписывал строку
+    «Управления оповещены», а главное — строка теряла освобождение от
+    просрочки и начинала копить `overdueCount` за задержку, которой
+    департамент не делал.
+
+    Мутация: убрать чтение `statusBeforeDecline` — статус вернётся `NOTIFIED`.
+    """
+    own = make_department("Департамент А")
+    directorate = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-decline-returned", "DEPT_LEAD_D2", own.pk)
+    _split_first(manager, base, allocation_id, directorate, need=1)
+    dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    person = employee_of(directorate, "Возвращенов")
+    make_assignment_status_type()
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(person.pk)},
+        format="json",
+    )
+    assert dept_lead.post(f"{base}forces/allocation/{allocation_id}/submit/").status_code == 200
+    returned = manager.post(
+        f"{base}forces/allocation/{allocation_id}/return/",
+        {"reason": "Не хватает одного"},
+        format="json",
+    )
+    assert returned.status_code == 200, returned.content
+    assert _allocation(returned)["status"] == "RETURNED"
+
+    declined = _respond(dept_lead, base, allocation_id, 0, "Передумали")
+    assert _allocation(declined)["status"] == "DECLINED"
+
+    reopened = _respond(dept_lead, base, allocation_id, 2)
+
+    row = _allocation(reopened)
+    assert row["status"] == "RETURNED", "возврат штаба стёрт отзывом отказа"
+    assert row["declinedAt"] is None
+    assert row["decisionComment"] == "Не хватает одного"
+    # Освобождение от просрочки держится статусом — и оно вернулось вместе с ним.
+    assert row["overdue"] is False
+
+
+def test_the_memory_of_the_state_before_a_decline_survives_a_staff_resave(manager):  # noqa: F811
+    """Память о состоянии до отказа переживает пересохранение раскладки штабом.
+
+    Строка раскладки пересобирается ЯВНЫМ перечнем ключей, и забытый ключ
+    означает не «поле пустое», а «факт стёрт» — тем же правилом, что уже
+    держат `submittedLate` и `allocating`. Без переноса `statusBeforeDecline`
+    штаб, пересохранивший раскладку ради чужого `need`, уносил возврат.
+
+    Мутация: убрать ключ `statusBeforeDecline` из `split_force_demand`.
+    """
+    own = make_department("Департамент А")
+    directorate = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-decline-resave", "DEPT_LEAD_D3", own.pk)
+    _split_first(manager, base, allocation_id, directorate, need=1)
+    dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    person = employee_of(directorate, "Пересохраненов")
+    make_assignment_status_type()
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/members/",
+        {"employeeId": str(person.pk)},
+        format="json",
+    )
+    dept_lead.post(f"{base}forces/allocation/{allocation_id}/submit/")
+    manager.post(
+        f"{base}forces/allocation/{allocation_id}/return/",
+        {"reason": "Не хватает одного"},
+        format="json",
+    )
+    _respond(dept_lead, base, allocation_id, 0, "Передумали")
+
+    # Штаб трогает раскладку ради своего числа — ответ и память департамента
+    # это пережить обязаны.
+    need = _allocation(manager.get(base))["need"]
+    resaved = manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(own.pk), "need": need}]},
+        format="json",
+    )
+    assert resaved.status_code == 200, resaved.data
+
+    row = _allocation(_respond(dept_lead, base, allocation_id, 1))
+    assert row["status"] == "RETURNED"
+
+
+def test_a_decline_before_dispatch_keeps_the_directorate_split_editable(manager):  # noqa: F811
+    """🔴 Plane №554: отказ до рассылки не запирает разбивку.
+
+    Разбивка по управлениям запиралась условием `status != DRAFT`, и оно
+    ловило заодно ОТКАЗ: департамент, ответивший «0» ещё до рассылки, терял
+    форму целиком — поля квот гасли, кнопка «Отправить в управления»
+    пропадала, а объяснение и на экране, и в ответе сервера называло причиной
+    «управления уже запрошены», хотя ни одного не запрашивали.
+
+    Мутация: вернуть условие `status != _ALLOCATION_DRAFT` — первый же `split`
+    ниже отобьётся `DIRECTORATE_QUOTAS_LOCKED`.
+    """
+    own = make_department("Департамент А")
+    directorate = make_directorate(own, "Управление А-1")
+    base, allocation_id = allocated_event(manager, own)
+    dept_lead = scoped_client("forces-decline-split", "DEPT_LEAD_D4", own.pk)
+    assert _allocation(_respond(dept_lead, base, allocation_id, 0, "Пока никого"))["status"] == "DECLINED"
+
+    # 🔴 СЕРДЦЕ ПРОБЫ: раскладка правится ПРЯМО В ОТКАЗЕ. Управлений никто не
+    # звал, значит форма обязана быть живой — а прежнее условие гасило её
+    # именно здесь, и вернуть её можно было только отзывом собственного
+    # отказа, о котором экран не говорил.
+    in_decline = _split_first(manager, base, allocation_id, directorate, need=0)
+    assert in_decline.status_code == 200, in_decline.data
+
+    # Передумали — форма по-прежнему живая.
+    reopened = _respond(dept_lead, base, allocation_id, 1)
+    assert _allocation(reopened)["status"] == _ALLOCATION_DRAFT_FOR_TESTS
+    ok = _split_first(manager, base, allocation_id, directorate, need=1)
+    assert ok.status_code == 200, ok.data
+
+    # А после настоящей рассылки — запрет, как и обещает подпись.
+    assert dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/").status_code == 200
+    locked = _split_first(manager, base, allocation_id, directorate, need=1)
+    assert locked.status_code == 422, locked.data
+    assert locked.json()["error_code"] == "DIRECTORATE_QUOTAS_LOCKED"
+
+
+#: Черновик строки раскладки — тот же литерал, что у сервера. Отдельным именем,
+#: чтобы проба выше читалась как правило, а не как сравнение со строкой.
+_ALLOCATION_DRAFT_FOR_TESTS = "DRAFT"

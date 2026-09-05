@@ -501,6 +501,85 @@ test.describe('заявки департаменту', () => {
     }
   })
 
+  test('отказ ДО рассылки не отбирает у департамента разбивку по управлениям (Plane №554)', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 Plane №554. Разбивка запиралась условием «статус не DRAFT», и оно
+     * ловило заодно ОТКАЗ: департамент, ответивший «0» ещё до рассылки, терял
+     * форму целиком — поля квот гасли, кнопка «Отправить в управления»
+     * пропадала, а подпись объясняла это неправдой: «Управления уже
+     * запрошены — цифры правятся до запроса». Ни одного управления при этом
+     * не запрашивали, и вернуть себе форму человек мог, только догадавшись
+     * отозвать собственный отказ — а текст вёл его в другую сторону.
+     *
+     * Красная проверка — вернуть `allocation.status !== "DRAFT"` в
+     * `DepartmentRequestCard`: поле квоты после отказа окажется выключенным,
+     * а подпись — той самой неправдой.
+     */
+    const token = await apiToken()
+    const fixture = await createDepartmentAllocationFixture(token)
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+
+      const answer = page.locator('section[aria-labelledby="answer-heading"]')
+      const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+      const quotaInputs = splitSection.locator('input[id^="quota-"]')
+      await expect(quotaInputs.first()).toBeEnabled({ timeout: 30_000 })
+
+      // Отказ ДО всякой рассылки.
+      await answer.getByLabel('Выделяем').fill('0')
+      await answer.getByRole('button', { name: 'Сохранить ответ' }).click()
+      await expect(answer.getByText('Запрос закрыт отказом', { exact: false })).toBeVisible({
+        timeout: 15_000,
+      })
+
+      // 🔴 СЕРДЦЕ ПРОБЫ: форма разбивки жива, и подпись не врёт про запрос.
+      await expect(
+        quotaInputs.first(),
+        'после отказа поле квоты выключено — департамент лишился разбивки, которой никто не запрашивал',
+      ).toBeEnabled()
+      await expect(
+        splitSection.getByText('Управления уже запрошены', { exact: false }),
+        'экран объясняет запрет запросом, которого не было',
+      ).toHaveCount(0)
+      await expect(
+        splitSection.getByRole('button', { name: 'Сохранить раскладку' }),
+      ).toBeVisible()
+
+      // А после НАСТОЯЩЕЙ рассылки — запрет и та же подпись, теперь правдивая.
+      await answer.getByLabel('Выделяем').fill('1')
+      await answer.getByRole('button', { name: 'Сохранить ответ' }).click()
+      await expect(answer.getByText('Запрос закрыт отказом', { exact: false })).toHaveCount(0)
+      const firstRow = splitSection
+        .locator('tr', { hasText: 'Первое управление' })
+        .locator('input')
+      await firstRow.fill('1')
+      await splitSection.getByRole('button', { name: 'Сохранить раскладку' }).click()
+      await expect(splitSection.getByText('Набрано 1 из', { exact: false })).toBeVisible({
+        timeout: 15_000,
+      })
+      await splitSection.getByRole('button', { name: 'Отправить в управления' }).click()
+      // Подтверждение необратимого действия (Plane №532).
+      await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click()
+      await expect(
+        splitSection.getByText('Управления уже запрошены', { exact: false }),
+      ).toBeVisible({ timeout: 20_000 })
+      await expect(quotaInputs.first()).toBeDisabled()
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
+
   test('ответ департамента «Выделяем: X» — своя цифра, отказ нулём и снятие отказа (Plane №391)', async ({
     page,
   }) => {

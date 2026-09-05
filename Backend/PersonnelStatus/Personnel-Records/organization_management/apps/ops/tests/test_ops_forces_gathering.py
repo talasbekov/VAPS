@@ -1349,3 +1349,143 @@ def test_the_count_follows_a_transfer_without_touching_the_event(manager):  # no
     }
     assert rows[str(first.pk)]["assigned"] == 0
     assert rows[str(second.pk)]["assigned"] == 1
+
+
+# ── Ревью a5348abf/911ebfae: правила разнарядки (Plane №551-№561) ───────────
+
+
+def test_the_quota_ceiling_counts_the_rows_the_request_did_not_name(manager):  # noqa: F811
+    """🔴 Plane №559: две частичные отправки не складываются мимо предела.
+
+    Строке, которую запрос не назвал, квота НЕ обнуляется (это правило верное
+    и остаётся), а предел проверялся ТОЛЬКО по присланным строкам. Значит
+    защита, ради которой правку и делали, обходилась двумя запросами — и
+    докстринг `split_directorate_quotas` прямо утверждает, что этого быть не
+    может.
+
+    Мутация, которую стережёт проба: считать `total` по `prepared`, а не по
+    `resulting` — второй запрос снова пройдёт.
+    """
+    department = make_department()
+    first = make_directorate(department, "Управление охраны")
+    second = make_directorate(department, "Управление сопровождения")
+    base, allocation_id = allocated_event(manager, department)
+    quota = _find_row(manager, base, allocation_id)["need"]
+    assert quota >= 3, f"квота фикстуры мала: {quota}"
+
+    ok = _split(manager, base, allocation_id, [{"divisionId": str(first.pk), "need": quota}])
+    assert ok.status_code == 200, ok.data
+
+    # Второй запрос называет ТОЛЬКО второе управление — первое остаётся с
+    # прежней квотой, и вместе они уезжают за предел.
+    over = _split(manager, base, allocation_id, [{"divisionId": str(second.pk), "need": 1}])
+
+    assert over.status_code == 422, over.data
+    assert over.json()["error_code"] == "DIRECTORATE_QUOTA_OVERFLOW"
+    assert over.json()["details"] == {"quota": str(quota), "split": str(quota + 1)}
+    # Состояние не поехало: у второго управления по-прежнему ноль.
+    rows = {
+        row["divisionId"]: row
+        for row in _find_row(manager, base, allocation_id)["directorates"]
+    }
+    assert rows[str(second.pk)]["need"] == 0
+
+
+def test_a_fractional_or_boolean_number_is_refused_not_rounded(manager):  # noqa: F811
+    """🔴 Plane №556: `int()` не проверяет целость, а приводит к ней.
+
+    `int(2.9)` даёт 2, `int(True)` даёт 1 — и оба молча становились
+    сохранённым числом при тексте ошибки «Укажите целое число».
+
+    Мутация: вернуть `int(row.get("need", 0))` — оба запроса ниже станут
+    зелёными и сохранят 2 и 1.
+    """
+    department = make_department()
+    directorate = make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+
+    fractional = _split(
+        manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": 2.9}]
+    )
+    assert fractional.status_code == 400, fractional.data
+    assert fractional.json()["details"]["rows.0.need"] == ["Укажите целое число."]
+
+    boolean = _split(
+        manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": True}]
+    )
+    assert boolean.status_code == 400, boolean.data
+
+    # Строка целых цифр — законный ввод: формы шлют числа текстом.
+    text = _split(
+        manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": "2"}]
+    )
+    assert text.status_code == 200, text.data
+    rows = {
+        row["divisionId"]: row
+        for row in _find_row(manager, base, allocation_id)["directorates"]
+    }
+    assert rows[str(directorate.pk)]["need"] == 2
+
+
+def test_the_staff_split_also_refuses_a_fractional_need(manager):  # noqa: F811
+    """Та же проверка на ВЕРХНЕМ уровне раскладки (Plane №556).
+
+    Мутация: вернуть в `split_force_demand` голый `int()` — 2.9 сохранится
+    департаменту как 2.
+    """
+    department = make_department()
+    base, _total = event_on_demand(manager)
+
+    resp = manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(department.pk), "need": 2.9}]},
+        format="json",
+    )
+
+    assert resp.status_code == 400, resp.data
+    assert resp.json()["details"]["rows.0.need"] == ["Укажите целое число."]
+
+
+def test_dispatch_refuses_a_split_wider_than_the_promise(manager):  # noqa: F811
+    """🔴 Plane №558: рассылка не уходит шире обещанного «Выделяем».
+
+    Разбивка ограничена цифрой «Выделяем» в момент сохранения, но сама цифра
+    правится, пока список не ушёл. Значит предел обходился порядком действий:
+    разложить по управлениям, пока «Выделяем» не задан (потолок падает на
+    запрос штаба), затем ответить меньшим числом — и начальникам уходило
+    больше обещанного.
+
+    Проверка стоит в рассылке, а не в ответе: «0 закрывает запрос» —
+    правило `[СБС-21]`, и запрещать ответ из-за сохранённой разбивки значило
+    бы его отменить.
+
+    Мутация: убрать проверку `planned > promised` из `notify_directorates` —
+    рассылка пройдёт с перебором.
+    """
+    department = make_department()
+    directorate = make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    quota = _find_row(manager, base, allocation_id)["need"]
+    assert quota >= 3, f"квота фикстуры мала: {quota}"
+
+    assert _split(
+        manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": 3}]
+    ).status_code == 200
+    lowered = manager.post(
+        f"{base}forces/allocation/{allocation_id}/respond/",
+        {"allocating": 1, "comment": ""},
+        format="json",
+    )
+    assert lowered.status_code == 200, lowered.data
+
+    refused = manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    assert refused.status_code == 422, refused.data
+    assert refused.json()["error_code"] == "DIRECTORATE_QUOTA_OVERFLOW"
+    assert refused.json()["details"] == {"quota": "1", "split": "3"}
+
+    # Поправили разбивку — рассылка уходит.
+    assert _split(
+        manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": 1}]
+    ).status_code == 200
+    assert manager.post(f"{base}forces/allocation/{allocation_id}/notify/").status_code == 200

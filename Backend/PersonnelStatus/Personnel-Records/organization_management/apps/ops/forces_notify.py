@@ -98,15 +98,32 @@ def notify_directorate_heads(event, allocation, directorates):
 
     `directorates` — строки управлений заявки (`{divisionId, name, need,
     …}`), как их держит `force_allocation[].directorates`. Возвращает отчёт:
-    сколько учёток уведомлено и у каких управлений начальника не нашлось —
-    поимённо, а не числом: «двоим не дошло» не говорит, кому, и чинить это
-    некому.
+    сколько учёток уведомлено, у каких управлений начальника не нашлось, кому
+    не отправляли и кому не дошло — поимённо, а не числом: «двоим не дошло» не
+    говорит, кому, и чинить это некому.
+
+    🔴 УПРАВЛЕНИЕ БЕЗ КВОТЫ НЕ ЗОВУТ (Plane №557). Раньше рассылка шла по ВСЕМ
+    действующим управлениям департамента, а `need` по умолчанию ноль — и
+    начальники управлений, которым ничего не назначили, получали требование
+    «Выделите 0 сотрудников». Хуже, чем шум: ключ уведомления — «получатель,
+    вид, деловая дата», поэтому пустышка ПЕРЕКРЫВАЛА настоящий запрос, если
+    департамент в тот же день раскладывал квоту и рассылал заново. Одно
+    ошибочное нажатие глушило рассылку до завтра.
+
+    🔴 СЧИТАЕТСЯ ДОСТАВЛЕННОЕ, А НЕ ПОПЫТКИ (Plane №561). `notify_service.notify`
+    по замыслу глотает любое исключение и возвращает `None`, а счётчик рос
+    безусловно: при отказе вставки для всех получателей журнал аудита всё
+    равно писал `notifiedHeads: N` и пустой список недоставленного. Модуль
+    заведён ровно против такого — «рассылка, которая молчит о недоставленном».
     """
     ids = [int(row["divisionId"]) for row in directorates if str(row.get("divisionId", "")).isdigit()]
     heads = _directorate_heads(ids)
-    notified, headless = 0, []
+    notified, headless, without_quota, undelivered = 0, [], [], []
     for row in directorates:
         key = str(row.get("divisionId"))
+        if int(row.get("need") or 0) <= 0:
+            without_quota.append(row.get("name") or key)
+            continue
         users = heads.get(key, set())
         if not users:
             headless.append(row.get("name") or key)
@@ -125,9 +142,16 @@ def notify_directorate_heads(event, allocation, directorates):
             "dueAt": allocation.get("dueAt"),
         }
         for user_id in users:
-            notify_service.notify(user_id, KIND, event.business_date, payload)
+            if notify_service.notify(user_id, KIND, event.business_date, payload) is None:
+                undelivered.append(f"{row.get('name') or key} · {user_id}")
+                continue
             notified += 1
-    return {"notified": notified, "headlessDirectorates": headless}
+    return {
+        "notified": notified,
+        "headlessDirectorates": headless,
+        "withoutQuota": without_quota,
+        "undelivered": undelivered,
+    }
 
 
 # ── Штабу: департамент ответил «Выделяем: X» (`[СБС-12]`, Plane №426) ──────
