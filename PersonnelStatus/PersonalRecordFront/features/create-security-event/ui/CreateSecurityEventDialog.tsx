@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
+import { FieldErrors } from "@/features/security-event-stages/ui/StageErrors";
 import { ObjectPicker } from "./ObjectPicker";
 import {
   useBindableObjects,
@@ -231,8 +232,15 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
     ? "Визит иностранного охраняемого лица — назначается старший ГВО"
     : "Посещение городских объектов — назначается старший наряда";
 
+  /** Ответ сервера по полям — как он есть (Plane №618). */
+  const [serverErrors, setServerErrors] = useState<Record<string, unknown> | null>(
+    null
+  );
   const mutation = useCreateSecurityEvent({
     onFormError: (details) => {
+      // Показать ВСЁ, что назвал сервер: часть ключей рисует форма сама,
+      // часть — некому (см. блок `FieldErrors` ниже).
+      setServerErrors(details);
       for (const [field, value] of Object.entries(details)) {
         const message = Array.isArray(value) ? String(value[0]) : String(value);
         setError(field as keyof FormValues, { message });
@@ -326,8 +334,10 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
           noValidate
           onSubmit={(e) =>
             void handleSubmit(
-              (values) =>
-                mutation.mutate({
+              (values) => {
+                // Прошлый отказ принадлежал прошлой отправке (Plane №618).
+                setServerErrors(null);
+                return mutation.mutate({
                   title: values.title,
                   objectId: values.objectId,
                   businessDate: values.businessDate,
@@ -340,7 +350,8 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
                   cityId: values.cityId,
                   address: values.address,
                   chiefEmployeeId: values.chiefEmployeeId,
-                }),
+                });
+              },
               (invalid) => focusFirstError(invalid)
             )(e)
           }
@@ -683,6 +694,18 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
               Не удалось создать мероприятие. Проверьте поля и попробуйте снова.
             </p>
           )}
+          {/* 🔴 СЕРВЕРНЫЕ ОШИБКИ, У КОТОРЫХ НЕТ СВОЕГО ПОЛЯ (Plane №618).
+              `setError` кладёт сообщение в форму по ключу сервера, но рисует
+              его только зарегистрированное поле. У `countryId`, `cityId` и
+              `protectedPersonDetails` поверхности нет вовсе: страну и город
+              рисует `LocationFields`, атрибуты визита — `PersonDetailsFields`,
+              и оба живут вне формы. Сообщение уходило в никуда, а строка выше
+              говорила «проверьте поля», не называя ни одного.
+
+              Список показывается ЦЕЛИКОМ, вместе с ключами, у которых поле
+              есть: так устроен и раздел настроек. Повтор рядом с полем — шум,
+              а потерянное сообщение — тупик; из двух зол выбрано первое. */}
+          <FieldErrors errors={serverErrors} />
           </div>
           <DialogFooter className="shrink-0 border-t px-[22px] py-3.5">
             <Button

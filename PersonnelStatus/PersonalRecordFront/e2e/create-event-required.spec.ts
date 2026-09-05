@@ -60,6 +60,85 @@ test.describe(LIVE ? 'окно создания ОМ: обязательные �
     await expect(hint).toHaveCount(0)
   })
 
+  /**
+   * Серверная ошибка поля, у которого НЕТ своей поверхности, всё равно видна
+   * (Plane №618).
+   *
+   * `onFormError` кладёт сообщение в форму по ключу сервера, но рисует его
+   * только ЗАРЕГИСТРИРОВАННОЕ поле. У `countryId`, `cityId` и
+   * `protectedPersonDetails` поверхности нет вовсе: страну и город рисует
+   * `LocationFields`, атрибуты визита — `PersonDetailsFields`, и оба живут вне
+   * формы. Сообщение уходило в никуда: окно просто не закрывалось, а строка
+   * над кнопкой говорила «проверьте поля», не называя ни одного. Человеку
+   * оставалось гадать.
+   *
+   * 🔴 ОТКАЗ ПОДДЕЛЫВАЕТСЯ, А НЕ ВЫЗЫВАЕТСЯ ПО-НАСТОЯЩЕМУ. Настоящий путь —
+   * вписать 101 символ в «Борт прибытия», — с этой же задачей закрыт
+   * `maxLength`, и поле больше столько не принимает. Предмет пробы не «как
+   * получить отказ», а «виден ли он»; подмена оставляет проверяемым ровно
+   * его. Заодно проба не заводит на стенде мероприятие.
+   */
+  test('серверная ошибка поля без поверхности видна словами (Plane №618)', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/api/ops/security-events/'),
+      async (route) => {
+        if (route.request().method() !== 'POST') return route.continue()
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error_code: 'VALIDATION_ERROR',
+            message: 'Проверьте заполнение формы.',
+            details: {
+              countryId: ['Страна скрыта из справочника.'],
+              protectedPersonDetails: ['flightArrival: не длиннее 100 символов.'],
+            },
+          }),
+        })
+      },
+    )
+
+    await page.goto(`${APP}/security-ops/events/`)
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'Внутреннее' }).click()
+    await dialog.getByLabel('Дата начала').fill('2026-11-11')
+    await dialog.getByLabel('Дата окончания').fill('2026-11-11')
+    await dialog.getByLabel('Охраняемые лица').click()
+    await page.locator('[data-slot="persons-combobox"] li button').first().click()
+    await dialog.getByLabel('Название ОМ').fill('Проба ошибки поля (e2e)')
+    await expect(dialog.getByLabel('Город')).not.toHaveValue('', { timeout: 15_000 })
+
+    const submit = dialog.getByRole('button', { name: 'Создать бюллетень' })
+    await expect(submit).toBeEnabled()
+    await submit.click()
+
+    // Окно осталось открытым — и теперь говорит, ЧТО не так и ГДЕ.
+    await expect(dialog).toBeVisible()
+    // Адрес — СПИСОК серверных ошибок, а не «где-нибудь в окне»: слово
+    // «Страна» стоит и подписью поля, и `getByText` по нему ловит подпись,
+    // ничего не проверив (поймано первым прогоном).
+    const listed = dialog.getByRole('listitem')
+    await expect(
+      listed.filter({ hasText: 'Страна скрыта из справочника.' }),
+      'ошибка поля без поверхности не показана нигде',
+    ).toHaveCount(1, { timeout: 15_000 })
+    // 🔴 ГЛАВНОЕ — `protectedPersonDetails`: у него поверхности нет ВООБЩЕ, и
+    // до правки это сообщение не показывалось никак. Ключ переведён на
+    // человеческий, а не напечатан машинным именем.
+    await expect(
+      listed.filter({ hasText: 'Данные визита охраняемого лица' }),
+      'ошибка атрибутов визита не показана нигде',
+    ).toHaveCount(1)
+    await expect(dialog).toContainText('не длиннее 100 символов')
+    await expect(dialog, 'машинный ключ показан человеку').not.toContainText(
+      'protectedPersonDetails',
+    )
+  })
+
   test('превью локации повторяет правило документа: объект вытесняет адрес (Plane №629)', async ({
     page,
   }) => {

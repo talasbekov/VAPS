@@ -36,6 +36,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, focusFirstError, focusFirstOf, useZodForm } from "@/shared/lib/form";
+import { FieldErrors } from "@/features/security-event-stages/ui/StageErrors";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useUpdateBulletinDetails } from "@/hooks/use-create-security-event";
 import { useProtectedPersons } from "@/hooks/use-protected-persons";
@@ -138,6 +139,10 @@ export function EditBulletinDialog({
   const [personDetails, setPersonDetails] = useState<PersonDetailsMap>(() =>
     detailsOf(event.protectedPersons)
   );
+  /** Ответ сервера по полям — как он есть (Plane №618). */
+  const [serverErrors, setServerErrors] = useState<Record<string, unknown> | null>(
+    null
+  );
   const {
     register,
     handleSubmit,
@@ -163,6 +168,9 @@ export function EditBulletinDialog({
     // 400-канал бэка кладёт ошибки В ПОЛЯ: «проверьте форму» без указания
     // поля заставляет человека искать самому.
     onFormError: (details) => {
+      // Показать ВСЁ, что назвал сервер (Plane №618): часть ключей рисует
+      // форма сама, часть — некому.
+      setServerErrors(details);
       const named = Object.keys(details);
       for (const [field, messages] of Object.entries(details)) {
         const text = Array.isArray(messages) ? String(messages[0]) : String(messages);
@@ -205,14 +213,19 @@ export function EditBulletinDialog({
           noValidate
           onSubmit={(submitEvent) =>
             void handleSubmit(
-              (values) =>
-                save.mutate({
+              (values) => {
+                // Прошлый отказ принадлежал прошлой отправке: оставить его —
+                // значит показать старую красную строку над новым ответом
+                // (Plane №618, та же мысль, что в №590).
+                setServerErrors(null);
+                return save.mutate({
                   ...values,
                   // Только отмеченные лица: у снятого атрибутов больше нет.
                   protectedPersonDetails: values.protectedPersonIds
                     .map((id) => personDetails[id])
                     .filter((row) => row !== undefined),
-                }),
+                });
+              },
               (invalid) => focusFirstError(invalid)
             )(submitEvent)
           }
@@ -353,6 +366,19 @@ export function EditBulletinDialog({
             controlClassName={CONTROL_CLASS}
           />
 
+          {/* 🔴 СЕРВЕРНЫЕ ОШИБКИ, У КОТОРЫХ НЕТ СВОЕГО ПОЛЯ (Plane №618).
+              `setError` кладёт сообщение в форму по ключу сервера, но рисует
+              его только зарегистрированное поле. У `countryId`, `cityId` и
+              `protectedPersonDetails` поверхности нет вовсе: страну и город
+              рисует `LocationFields`, атрибуты визита — `PersonDetailsFields`,
+              и оба живут вне формы. Сообщение уходило в никуда, окно просто
+              не закрывалось, и человек не знал ни что не так, ни где.
+
+              Список показывается ЦЕЛИКОМ, вместе с ключами, у которых поле
+              есть: так устроен и раздел настроек (`security-ops/settings`).
+              Повтор рядом с полем — шум, а потерянное сообщение — тупик; из
+              двух зол выбрано первое. */}
+          <FieldErrors errors={serverErrors} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Отмена
