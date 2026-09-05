@@ -24,6 +24,7 @@ import pytest
 
 from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
+    OpsSecurityEventTransition,
     OpsSecurityEventVisitObject,
 )
 from organization_management.apps.ops import security_events as service
@@ -210,3 +211,69 @@ def test_an_event_without_visit_objects_keeps_its_own_stage(manager):  # noqa: F
     assert resp.status_code == 200, resp.content
     event = OpsSecurityEvent.objects.get(pk=event_id)
     assert event.stage == "RECON", "стадия ОМ без объектов перестала двигаться"
+
+
+def test_the_override_aligns_objects_even_when_the_event_is_already_there(
+    manager, approver, actor, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ОБХОД МОЛЧА НЕ СРАБАТЫВАЛ ИМЕННО ТОГДА, КОГДА НУЖЕН (Plane №478).
+
+    Шорткат идемпотентности `if old_stage == stage: return event` написан во
+    времена, когда этап был один на мероприятие. Теперь `event.stage` —
+    МИНИМУМ по объектам, и равенство ему перестало значить «все на месте».
+
+    Объект А на «Согласовании», объект Б на «Расстановке» — этап мероприятия
+    «Расстановка». Администратор жмёт обход на «Расстановку», желая вернуть
+    карточку ЦЕЛИКОМ, и получает успех, за которым не сделано ничего: А как
+    был согласуемым, так и остался.
+
+    Цена ошибки выше обычной: обход — последнее средство, к нему идут, когда
+    всё остальное встало (№475). Именно в этот момент он и отказывал, отвечая
+    «сделано».
+    """
+    _, event_id, first, second, _ = two_objects_on_approval
+    back = approver.post(
+        f"{URL}{event_id}/approval/return/",
+        {"comment": "переделать", "visitObjectId": str(second.pk)},
+        format="json",
+    )
+    assert back.status_code == 200, back.content
+
+    event = service.lock_event(event_id)
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert (first.stage, second.stage) == ("APPROVAL", "PLACEMENT")
+    assert event.stage == "PLACEMENT", "минимум по объектам — иначе проба не о том"
+    before = OpsSecurityEventTransition.objects.filter(event=event).count()
+
+    service.override_stage(event_id, stage="PLACEMENT", actor=actor)
+
+    assert {v.stage for v in _visits(event_id)} == {"PLACEMENT"}, (
+        "обход ответил успехом и не выровнял объекты"
+    )
+    # Переход из этапа в него же в журнал НЕ пишется: воронка посчитала бы его
+    # прогрессом (вид определяется сравнением индексов, равенство даёт
+    # FORWARD). Выровнялись объекты, а этап мероприятия не двигался.
+    assert OpsSecurityEventTransition.objects.filter(event=event).count() == before
+
+
+def test_the_override_still_does_nothing_when_everyone_is_already_there(
+    manager, actor, two_objects_on_approval  # noqa: F811
+):
+    """Обратная сторона №478: шорткат ослаблен ровно на выравнивание объектов.
+
+    Без этой пробы правку не отличить от «снять шорткат совсем»: повтор
+    запроса (двойной клик, ретрай сети) снова писал бы в журнал переход из
+    этапа в него же.
+    """
+    _, event_id, _, _, _ = two_objects_on_approval
+    service.override_stage(event_id, stage="RECON", actor=actor)
+    event = service.lock_event(event_id)
+    stamp = event.updated_at
+    before = OpsSecurityEventTransition.objects.filter(event=event).count()
+
+    service.override_stage(event_id, stage="RECON", actor=actor)
+
+    event = service.lock_event(event_id)
+    assert event.updated_at == stamp, "повтор обхода тронул карточку"
+    assert OpsSecurityEventTransition.objects.filter(event=event).count() == before
