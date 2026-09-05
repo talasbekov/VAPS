@@ -951,6 +951,15 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.assign_visit_object_chief(
         om.pk, visit.pk, employee_id=str(deputy_employee.pk), actor=ACTOR
     )
+    # Согласование, ВЕДЁННОЕ старшим объекта (Plane №576): действие в обход
+    # общего права `event.manage` пишет именной след — по тому же основанию,
+    # что и операция замещающего выше. Сервис зовётся напрямую: предмет здесь
+    # запись в журнал, а не гейт, который её включает.
+    om.refresh_from_db()
+    visit.refresh_from_db()
+    event_service.record_object_lead_action(
+        om, visit, deputy_employee, "approval_send"
+    )
     event_service.remove_visit_object_chief(om.pk, visit.pk, actor=ACTOR)
 
     # Старший НАРЯДА мероприятия (Plane №190) — отдельное действие от старшего
