@@ -142,3 +142,30 @@ def test_the_known_debt_list_does_not_rot():
         "нарушения (зависимость объявлена или файл удалён) — уберите их, "
         "иначе проба ослаблена молча:\n  " + "\n  ".join(stale)
     )
+
+
+def test_the_pinned_file_pins_everything_base_requires():
+    """🔴 Закреплённый `requirements.txt` не имеет права отставать от `base.txt`.
+
+    Второй файл зависимостей существует ровно ради воспроизводимости сборки:
+    где-то ставится по нему, а не по диапазонам. Пакет, названный в `base.txt`
+    и отсутствующий в пине, на такой сборке НЕ ВСТАНЕТ ВОВСЕ — это не «старая
+    версия», а `ModuleNotFoundError` на старте (`psycopg2`) или при первом
+    обращении к кэшу (`django_redis`). Дыра того же рода, что №492: объявлено
+    в одном месте, ставится из другого.
+
+    Имена сравниваются НОРМАЛИЗОВАННО (PEP 503: регистр и `_`/`-` в имени
+    дистрибутива неразличимы). Без этого проба врала бы в обе стороны:
+    `django_celery_results` в пине и `django-celery-results` в `base.txt` —
+    один и тот же пакет, а буквально они не равны.
+    """
+    base = _declared(ROOT / "requirements" / "base.txt")
+    pinned = _declared(ROOT / "requirements.txt")
+    assert "django" in pinned, "предусловие: requirements.txt разобран"
+
+    missing = sorted(base - pinned)
+    assert missing == [], (
+        "requirements/base.txt называет пакеты, которых нет в закреплённом "
+        "requirements.txt — сборка по пину не поставит их вовсе:\n  "
+        + "\n  ".join(missing)
+    )
