@@ -307,6 +307,29 @@ function SecurityEventScreen() {
             unassignedShown={unassignedShown}
             onSelect={replaceVisit}
           />
+          {/* 🔴 ОБЪЯСНЕНИЕ ПРО ПАСПОРТ — ТАМ, ГДЕ ПОЛОСЫ ОБЪЕКТА НЕТ (Plane
+              №711). Строку «Паспорт: версия …» сняли (№443) с доводом «объект
+              и версия уже названы полосой объекта посещения ниже» — верным
+              ровно до тех пор, пока полоса рисуется. У ОМ без объектов
+              посещения `VisitObjectContext` возвращает null, и вместе с ним
+              исчезли ОБА объяснения, почему импорт постов недоступен: человек
+              видел выключенную кнопку без причины. Прямая улика — импорты
+              NO_OBJECT_TEXT/NO_PUBLISHED_VERSION_TEXT стали мёртвыми.
+
+              Ветвление то же, что было снято, и показывается только здесь:
+              там, где полоса есть, она по-прежнему говорит за себя. */}
+          {(event.visitObjects ?? []).length === 0 && (
+            <p
+              className="mt-2 text-xs text-muted-foreground"
+              data-slot="passport-context"
+            >
+              {event.passportBinding !== null
+                ? `Паспорт: версия ${event.passportBinding.versionNumber} (действует с ${formatIsoDate(event.passportBinding.effectiveFrom)})`
+                : event.objectId !== null
+                  ? NO_PUBLISHED_VERSION_TEXT
+                  : NO_OBJECT_TEXT}
+            </p>
+          )}
           <div className="mt-3">
             <EventStepper
               stage={objectStage}
