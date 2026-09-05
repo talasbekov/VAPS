@@ -111,12 +111,79 @@ def may_read(target_employee_id, actor_employee, allowed_division_ids):
     return division is not None and division in allowed_division_ids
 
 
+def _phone_of(employee_id):
+    """Телефон сотрудника для строки ознакомления (`[ОЗН-03]`, Plane №452).
+
+    Служебный, иначе личный, иначе пусто. Порядок не случаен: звонит старший
+    по службе, служебный номер для этого и заведён, а личный подставляется
+    только когда служебного нет — «звонить некуда» хуже, чем звонок на личный.
+    """
+    employee = Employee.objects.filter(pk=employee_id).only(
+        "work_phone", "personal_phone"
+    ).first()
+    if employee is None:
+        return ""
+    return (employee.work_phone or employee.personal_phone or "").strip()
+
+
+@transaction.atomic
+def mark_viewed(employee_id):
+    """Отметить, что человек ОТКРЫЛ свои назначения (`[ОЗН-02]`, Plane №452).
+
+    🔴 ЗАЧЕМ ЗАПИСЬ НА ЧТЕНИИ. Старший на этапе «Ознакомление» видел три
+    состояния — подтвердил, отказался, ждём, — и в третьем не мог отличить «не
+    видел» от «видел и молчит». Это разные положения и разные действия:
+    первому напомнить, второму позвонить. Другого способа узнать факт
+    открытия у системы нет: карточку назначения человек читает, а не нажимает.
+
+    ПИШЕТСЯ ОДИН РАЗ И ТОЛЬКО ДО ОТВЕТА. Условие `viewedAt is None` делает
+    отметку разовой: обычное чтение списка не пишет НИЧЕГО, и запись случается
+    ровно на первом заходе. После ответа факт открытия смысла не имеет —
+    ответ его поглощает, — и переписывать строку ради него значило бы дёргать
+    JSON мероприятия на каждом обновлении профиля.
+
+    ТОЛЬКО СВОЙ СПИСОК. Зовётся из ветки «мои назначения» без параметра
+    `?employee=`: чтение старшим чужого списка не имеет права ставить «он
+    открыл» — это было бы ложью о другом человеке, да ещё и той, по которой
+    решают, звонить ему или нет.
+    """
+    key = str(employee_id)
+    stamped = 0
+    events = OpsSecurityEvent.objects.filter(
+        placement_assignments__contains=[{"employeeId": key}]
+    )
+    for event in events:
+        rows = event.placement_assignments or []
+        touched = False
+        updated = []
+        for a in rows:
+            unanswered = a.get("acknowledgedAt") is None and a.get("declinedAt") is None
+            if (
+                str(a.get("employeeId")) == key
+                and a.get("viewedAt") is None
+                and unanswered
+            ):
+                updated.append({**a, "viewedAt": _now_iso()})
+                touched = True
+                stamped += 1
+            else:
+                updated.append(a)
+        if touched:
+            event.placement_assignments = updated
+            event.save(update_fields=["placement_assignments", "updated_at"])
+    return stamped
+
+
 def assignments_of(employee_id):
     """Строки расстановки сотрудника по ВСЕМ мероприятиям — плоско, с
     мероприятием, объектом посещения и постом в каждой строке: профилю
     нужна карточка «где, когда, что делать», а не агрегат ОМ."""
     key = str(employee_id)
     rows = []
+    # Телефон один на человека, а строк у него столько, сколько назначений:
+    # читается ОДИН раз до цикла, иначе список из десяти нарядов стоил бы
+    # десяти запросов за одним и тем же номером (`[ОЗН-03]`, Plane №452).
+    phone = _phone_of(employee_id)
     events = (
         OpsSecurityEvent.objects.filter(placement_assignments__contains=[{"employeeId": key}])
         .prefetch_related("visit_objects")
@@ -176,6 +243,19 @@ def assignments_of(employee_id):
                     # и у отказов без разрешимой подписи актора.
                     "declinedBy": a.get("declinedBy") or "",
                     "declinedVia": a.get("declinedVia") or "",
+                    # 🔴 «ОТКРЫЛ И НЕ НАЖАЛ» (`[ОЗН-02]`, Plane №452). Четвёртое
+                    # состояние строки, без которого старший не отличает «не
+                    # видел» от «видел и молчит»: первому надо напомнить,
+                    # второму — звонить. Ставится ОДИН раз, при первом чтении
+                    # человеком СВОЕГО списка (см. `mark_viewed`).
+                    "viewedAt": a.get("viewedAt"),
+                    # ☎ В СТРОКЕ (`[ОЗН-03]`): служебный телефон, иначе личный.
+                    # Порядок не случаен — звонит старший по службе, и
+                    # служебный номер для этого и заведён; личный подставляется
+                    # только когда служебного нет, потому что «звонить некуда»
+                    # хуже, чем звонок на личный. Пусто — телефона нет ни
+                    # одного, и строка честно молчит.
+                    "phone": phone,
                 }
             )
     return rows

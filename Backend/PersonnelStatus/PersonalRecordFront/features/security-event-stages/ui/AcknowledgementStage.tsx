@@ -25,7 +25,7 @@ import { useMemo, useState } from "react";
 // согласование (`useApprovalRights`): право этапа «Ознакомление» у сервера
 // шире кода `event.manage` (Plane №612).
 import { useMyEmployee } from "@/hooks/use-my-employee";
-import { Bell, Check, RefreshCw, X } from "lucide-react";
+import { Bell, Check, Phone, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -50,16 +50,29 @@ import { PersonnelPicker } from "@/features/personnel-picker";
 import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import type { PlacementAssignment, SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
-import { formatIsoDateTime } from "@/shared/lib/date";
+import { formatIsoDateTime, formatIsoDayTime } from "@/shared/lib/date";
 import { PEOPLE, ruPlural } from "@/lib/ru-plural";
 
 type Scope = "all" | "pending";
 
-type RowState = "confirmed" | "declined" | "pending";
+type RowState = "confirmed" | "declined" | "opened" | "pending";
 
+/**
+ * Состояние строки ознакомления (`[ОЗН-02]`).
+ *
+ * 🔴 ЧЕТЫРЕ СОСТОЯНИЯ, А НЕ ТРИ (Plane №452). «Открыл и не нажал» —
+ * отдельное положение, и оно требует ДРУГОГО действия: тому, кто не открывал,
+ * напоминают; тому, кто открыл и молчит, звонят. Пока состояний было три, оба
+ * лежали в «ждём», и старший не мог их различить вовсе.
+ *
+ * Порядок проверок — от сильного к слабому: ответ поглощает факт открытия
+ * (подтвердивший его, разумеется, открывал), поэтому `viewedAt` смотрится
+ * последним.
+ */
 function stateOf(a: PlacementAssignment): RowState {
   if (a.acknowledgedAt !== null) return "confirmed";
   if ((a.declinedAt ?? null) !== null) return "declined";
+  if ((a.viewedAt ?? null) !== null) return "opened";
   return "pending";
 }
 
@@ -102,14 +115,22 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
   const assignments = event.placementAssignments;
   const confirmed = assignments.filter((a) => stateOf(a) === "confirmed");
   const declined = assignments.filter((a) => stateOf(a) === "declined");
+  // «Открыл и не нажал» (Plane №452) — своя корзина, но для НАПОМИНАНИЯ она
+  // такая же неотвеченная, как «не открывал»: обеим шлют напоминание, а
+  // разница в том, что делать дальше человеку.
+  const opened = assignments.filter((a) => stateOf(a) === "opened");
   const pending = assignments.filter((a) => stateOf(a) === "pending");
+  const unanswered = [...opened, ...pending];
   const total = assignments.length;
   const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 100));
 
   // Группировка по секторам и постам — в порядке расчёта постов.
   const groups = useMemo(() => {
     const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
-    const rows = scope === "pending" ? pending : assignments;
+    // «Ожидают» = ВСЕ неотвеченные: и открывшие, и не открывавшие
+    // (Plane №452). Фильтр отвечает на вопрос «с кем ещё работать», а не
+    // «кто не открывал».
+    const rows = scope === "pending" ? unanswered : assignments;
     const bySector = new Map<string, Map<string, { post: string; rows: PlacementAssignment[] }>>();
     for (const a of rows) {
       const post = postById.get(a.postId);
@@ -131,7 +152,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
       sector,
       posts: [...posts.entries()].map(([postId, bucket]) => ({ postId, ...bucket })),
     }));
-  }, [assignments, event.reconSectorPosts, pending, scope]);
+  }, [assignments, event.reconSectorPosts, unanswered, scope]);
 
   /** Отчёт ПОСЛЕДНЕГО нажатия (Plane №614), а не первого попавшегося. */
   const report =
@@ -190,10 +211,13 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
             {/* Шапка одной строкой (`[ОЗН-02]`) — без дублирующего «(K/N)». */}
             <p className="mt-1 text-sm text-muted-foreground" data-testid="ack-summary">
               {/* `[ОЗН-02]` (Plane №447): «Ознакомились K из N · не открыли M ·
-                  отказов D · срок подтверждения ДД.ММ ЧЧ:ММ». «Открыл и не
-                  нажал» система не различает (карточка №452) — считаем как
-                  «не открыли». */}
-              Ознакомились {confirmed.length} из {total} · не открыли {pending.length} · отказов{" "}
+                  отказов D · срок подтверждения ДД.ММ ЧЧ:ММ». С №452
+                  добавлено четвёртое число — «открыли и молчат»: это ДРУГОЕ
+                  положение, и старший поступает с ним иначе (не напомнить, а
+                  позвонить). Ставится рядом с «не открыли», чтобы два
+                  неотвеченных случая читались вместе. */}
+              Ознакомились {confirmed.length} из {total} · не открыли {pending.length} ·
+              открыли и молчат {opened.length} · отказов{" "}
               {declined.length}
               {event.acknowledgementDeadline
                 ? ` · срок подтверждения ${formatIsoDateTime(event.acknowledgementDeadline)}`
@@ -204,12 +228,12 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
             <Button
               type="button"
               variant="outline"
-              disabled={remindAll.isPending || pending.length === 0 || !canManage}
+              disabled={remindAll.isPending || unanswered.length === 0 || !canManage}
               title={
                 !canManage
                   ? access.reason(EVENT_MANAGE) || undefined
-                  : pending.length === 0
-                    ? "Все подтвердили — напоминать некому"
+                  : unanswered.length === 0
+                    ? "Все ответили — напоминать некому"
                     : "Напомнить каждому, кто ещё не подтвердил, и их руководителям"
               }
               onClick={() => {
@@ -218,7 +242,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
               }}
             >
               <Bell className="mr-1.5 h-4 w-4" aria-hidden="true" />
-              {remindAll.isPending ? "Отправка…" : `Напомнить всем, кто не подтвердил (${pending.length})`}
+              {remindAll.isPending ? "Отправка…" : `Напомнить всем, кто не подтвердил (${unanswered.length})`}
             </Button>
             {/* 🔴 ЗАВЕРШЕНИЕ ЭТАПА — ОПЕРАЦИЯ МЕРОПРИЯТИЯ, А НЕ ОБЪЕКТА
                 (Plane №528). Цепочка этапов в карточке рисуется по этапу
@@ -266,22 +290,28 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
         >
           <div className="h-full bg-green-500" style={{ width: `${pct(confirmed.length)}%` }} data-segment="confirmed" />
           <div className="h-full bg-red-500" style={{ width: `${pct(declined.length)}%` }} data-segment="declined" />
+          {/* ЖЁЛТЫЙ — «открыл и не нажал» (`[ОЗН-02]`, Plane №452). Стоит
+              между отказом и «не открывал» намеренно: слева ответы, справа
+              молчание, а этот сегмент — молчание, о котором уже известно,
+              что человек его выбрал. */}
+          <div className="h-full bg-amber-400" style={{ width: `${pct(opened.length)}%` }} data-segment="opened" />
           <div className="h-full bg-muted-foreground/30" style={{ width: `${pct(pending.length)}%` }} data-segment="pending" />
         </div>
         <p className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground" data-testid="ack-legend">
           <span><span className="inline-block h-2 w-2 rounded-full bg-green-500" /> подтвердил</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-amber-400" /> открыл, не ответил</span>
           <span><span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/30" /> не открывал</span>
           <span><span className="inline-block h-2 w-2 rounded-full bg-red-500" /> отказ</span>
         </p>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {pending.length > 0 && (
+        {unanswered.length > 0 && (
           <div className="inline-flex gap-1 rounded-md bg-muted p-1">
             {(
               [
                 ["all", `Все (${total})`],
-                ["pending", `Ожидают (${pending.length})`],
+                ["pending", `Ожидают (${unanswered.length})`],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -490,13 +520,48 @@ function AssignmentRow({
           </Button>
         </>
       )}
-      {state === "pending" && (
+      {/* НЕОТВЕЧЕННЫЕ — одна ветка на два положения (Plane №452). Кнопки у них
+          одинаковые: напомнить и отметить лично можно и тому, кто открыл, и
+          тому, кто не открывал. Различает их ПЛАШКА и телефон: «открыл и
+          молчит» — это повод позвонить, а не напомнить ещё раз. */}
+      {(state === "pending" || state === "opened") && (
         <>
-          <span className="ml-auto inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-            Ожидается
-            {(assignment.remindedAt ?? null) !== null &&
-              ` · напомнили ${formatIsoDateTime(assignment.remindedAt ?? "")}`}
-          </span>
+          {state === "opened" ? (
+            <span
+              className="ml-auto inline-flex rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+              title={`Открыл свои назначения ${formatIsoDateTime(
+                assignment.viewedAt ?? ""
+              )} и не нажал ни «ознакомлен», ни отказ`}
+            >
+              {/* Момент — КОРОТКИЙ (день и время): «открыл три дня назад и
+                  молчит» и «открыл минуту назад» — разные поводы, поэтому
+                  время в плашке нужно, а год в строке наряда не значит
+                  ничего. Полный момент остаётся в подсказке. Длинная форма
+                  распирала строку так, что кнопки уезжали на второй ряд. */}
+              Открыл {formatIsoDayTime(assignment.viewedAt ?? "")}, не ответил
+            </span>
+          ) : (
+            <span className="ml-auto inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+              Не открывал
+              {(assignment.remindedAt ?? null) !== null &&
+                ` · напомнили ${formatIsoDateTime(assignment.remindedAt ?? "")}`}
+            </span>
+          )}
+          {/* ☎ (`[ОЗН-03]`, Plane №452) — ССЫЛКА `tel:`, а не текст: со
+              служебного планшета старший звонит нажатием, а не переписывает
+              номер. Показывается только неотвеченным — у подтвердивших звонить
+              не о чем, и номер там был бы лишними данными на экране. */}
+          {(assignment.phone ?? "") !== "" && (
+            <a
+              href={`tel:${assignment.phone}`}
+              className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              title={`Позвонить: ${assignment.employeeName}`}
+              data-testid={`ack-phone-${assignment.id}`}
+            >
+              <Phone className="h-3 w-3" aria-hidden="true" />
+              {assignment.phone}
+            </a>
+          )}
           <Button
             type="button"
             variant="outline"
