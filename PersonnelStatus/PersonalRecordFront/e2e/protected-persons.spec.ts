@@ -39,14 +39,26 @@ async function unlinkProbePersons(): Promise<void> {
   const rows = await apiGet<{ results: GvoSummaryRow[] }>('/api/ops/gvo-summaries/assembled/', token)
   for (const row of rows.results) {
     const persons = row.summary.persons ?? []
-    const kept = persons.filter((person) => person.role !== PROBE_ROLE)
-    if (kept.length === persons.length) continue
+    if (!persons.some((person) => person.role === PROBE_ROLE)) continue
+    // 🔴 СБРОС РАЗДЕЛА, А НЕ ПАТЧ ОСТАТКОМ (Plane №740). Патч возвращал
+    // СОБРАННЫЙ список обратно, поэтому `visit.data['persons']` оставался
+    // заполненным НАВСЕГДА: `filled` это `bool(data)` и оставался true, а
+    // `apply_patch` на каждом прогоне поднимал версию визита и переводил
+    // статус DRAFT→READY. Хуже всего, когда пробное лицо было единственным:
+    // остаток выходил пустым, и в сводке оседала вечная подмена
+    // `persons: []`, скрывавшая охраняемое лицо БЮЛЛЕТЕНЯ из этой сводки и
+    // из счётчика «заполнено K из N».
+    //
+    // `reset/` снимает ключи раздела и удаляет запись патча, когда не
+    // осталось ничего, — то есть возвращает сводку к выводу из бюллетеня, а
+    // не к «пустому списку, записанному руками». Именно это уборка и должна
+    // делать: убрать СВОЙ след, а не оставить свой отпечаток.
     const res = await fetch(
-      `${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/`,
+      `${API}/api/ops/gvo-summaries/${encodeURIComponent(row.omCode)}/reset/`,
       {
-        method: 'PATCH',
+        method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ section: 'persons', values: { persons: kept } }),
+        body: JSON.stringify({ section: 'persons' }),
       },
     )
     // 🔴 КОД ОТВЕТА ПРОВЕРЯЕТСЯ (Plane №739). Ответ не читался вовсе, а 4xx
