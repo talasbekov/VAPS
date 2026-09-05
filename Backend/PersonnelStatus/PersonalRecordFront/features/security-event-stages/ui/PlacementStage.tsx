@@ -334,7 +334,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // колонка показывает пустое состояние `[РАС-05]` со ссылкой в «Сбор сил» —
   // ни списка, ни запроса.
   /** Состав мероприятия в форме кадровой строки подбора. */
-  const rosterPeople = useMemo(
+  const rosterAll = useMemo(
     () =>
       event.forceRoster.map((member) => ({
         id: member.employeeId,
@@ -343,6 +343,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         unit: member.divisionName,
         statusCode: member.statusCode,
         statusLabel: member.statusLabel,
+        visitObjectId: member.visitObjectId ?? null,
       })),
     [event.forceRoster]
   );
@@ -361,6 +362,27 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * задача №390). */
   const allPosts = event.reconSectorPosts;
   const scope = useVisitObjectScope(event, allPosts);
+  /**
+   * Кандидаты ПОКАЗАННОГО ОБЪЕКТА (Plane №579).
+   *
+   * 🔴 Штаб раздаёт состав объектам (`[СБС-13]`), и строка состава несёт
+   * `visitObjectId` — кому человек отдан. Читать его было некому: подбор
+   * показывал ВЕСЬ состав, и на пост объекта Б предлагался и принимался
+   * любой, отданный объекту А. Сервер теперь такое назначение отбивает —
+   * значит и предлагать его нельзя: подбор, обещающий невозможное, хуже
+   * пустого.
+   *
+   * Нераспределённые (`null`) остаются видны везде: это обычное состояние
+   * ОМ, где штаб раздачей не пользовался, и прятать их значило бы опустошить
+   * подбор у всех таких мероприятий.
+   */
+  const rosterPeople = useMemo(() => {
+    const shown = scope.visit?.id ?? null;
+    if (shown === null) return rosterAll;
+    return rosterAll.filter(
+      (person) => person.visitObjectId === null || person.visitObjectId === shown
+    );
+  }, [rosterAll, scope.visit?.id]);
   // Причина возврата берётся у ПОКАЗАННОГО объекта (Plane №491); поля
   // мероприятия остаются ответом только там, где объектов нет вовсе.
   const returnedFrom = scope.visit ?? event;
@@ -1663,11 +1685,18 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   className="text-[11px] text-muted-foreground"
                   aria-live="polite"
                 >
-                  Состав мероприятия: {rosterPeople.length} чел.
+                  {/* Число НАЗЫВАЕТ то, что показано (Plane №579): подбор
+                      отбирает состав по объекту, и «состав мероприятия: 12»
+                      над списком из четырёх читалось бы как потеря восьми.
+                      Когда отбор что-то убрал, названы оба числа. */}
+                  {rosterPeople.length === rosterAll.length
+                    ? `Состав мероприятия: ${rosterAll.length} чел.`
+                    : `Отдано этому объекту: ${rosterPeople.length} из ${rosterAll.length} чел. состава`}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  Кандидаты — люди, принятые штабом в «Сборе сил на ОМ».
-                  Постороннего на пост сервер не поставит.
+                  Кандидаты — люди, принятые штабом в «Сборе сил на ОМ» и
+                  отданные этому объекту. Постороннего на пост сервер не
+                  поставит.
                 </p>
                 {/* `aria-busy` вместо подмены списка спиннером (правило скилла
                     «стабильный скелет с aria-busy; не мигать»): прежняя
@@ -1688,7 +1717,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                        запросом (Plane №652) — они были недостижимы. */
                     <p className="px-1 py-3 text-center text-xs text-muted-foreground">
                       {rosterPeople.length === 0
-                        ? "Состав мероприятия пуст — соберите людей в «Сборе сил на ОМ»."
+                        ? rosterAll.length === 0
+                          ? "Состав мероприятия пуст — соберите людей в «Сборе сил на ОМ»."
+                          : "Этому объекту никого не отдали — раздайте состав по объектам в «Сборе сил на ОМ»."
                         : activeFilters.length === 0
                           ? "В составе мероприятия кандидатов нет."
                           : `Под выбранные фильтры (${activeFilters.join(", ")}) в составе никто не подходит.`}

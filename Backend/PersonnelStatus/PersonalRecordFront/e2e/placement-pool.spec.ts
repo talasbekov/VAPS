@@ -161,7 +161,13 @@ test.describe(LIVE ? 'пул штаба на расстановке' : 'пул �
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
     const card = page.getByRole('region', { name: 'Расстановка сил' })
     await expect(card.getByText('Выделено на объект штабом')).toBeVisible()
-    await expect(card.getByText(/Выделено \d+ из потребности \d+/)).toBeVisible()
+    // 🔴 ПИН ПРАВЛЕН ПОД №489, а не подогнан под вывод: строка «Выделено N из
+    // потребности M» переписана в «Выделено N из потребности МЕРОПРИЯТИЯ M»,
+    // потому что два числа складывались в одну фразу и давали «Выделено 12 из
+    // потребности 5» — выдуманный факт. Потребность объекта с тех пор стоит
+    // отдельной строкой (`data-slot="object-need"`). Пин остался от прежней
+    // формулировки и краснел с самого №489.
+    await expect(card.getByText(/Выделено \d+ из потребности мероприятия \d+/)).toBeVisible()
     await expect(card.getByLabel('Фильтр по управлению')).toBeVisible()
     await expect(card.getByText(/свободен|на посту /).first()).toBeVisible()
     // Плейсхолдер обещает ровно то, что делает (Plane №651): поиск по

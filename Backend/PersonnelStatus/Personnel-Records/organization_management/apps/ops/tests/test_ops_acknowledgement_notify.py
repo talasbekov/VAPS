@@ -24,6 +24,9 @@ from organization_management.apps.ops.tests.test_ops_security_events_api import 
 from organization_management.apps.operations.tests.test_strength_report import (
     make_employee,
 )
+from organization_management.apps.ops.tests.test_ops_visit_object_approval import (  # noqa: F401
+    two_objects_on_approval,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -225,3 +228,70 @@ def test_approving_an_event_nobody_is_linked_to_still_approves(manager, approver
 
     assert approved.status_code == 200, approved.data
     assert approved.json()["stage"] == "ACKNOWLEDGEMENT"
+
+
+# ── Ревью №402: рассылка идёт по ОБЪЕКТУ, а не по мероприятию (Plane №537) ──
+
+
+def test_the_first_approved_object_notifies_without_waiting_for_the_last(
+    manager, approver, django_user_model, two_objects_on_approval  # noqa: F811
+):
+    """🔴 Plane №537: заступающие на утверждённый объект узнают об этом сразу.
+
+    Стадия мероприятия — НАИМЕНЬШАЯ среди объектов (№412), а рассылка стояла
+    под условием `event.stage == "ACKNOWLEDGEMENT"` и вторым таким же гардом
+    внутри самой рассылки. Значит пока отстаёт хотя бы один объект, не
+    уведомляли НИКОГО: заступающие на объект, утверждённый первым, узнавали о
+    назначении, только когда догонит последний, — а заступать им, возможно,
+    уже завтра. Требование `[ОЗН-01]` выполнялось на бумаге и не выполнялось
+    по объектам. Это четвёртое место одного корня (см. №475, №520, №528).
+
+    Мутация: вернуть условие по `event.stage` (в `_approve_visit` или в самой
+    `notify_acknowledgement`) — строки уведомления не появится.
+    """
+    from organization_management.apps.employees.models import Employee
+    from .test_ops_visit_object_approval import _add_approver
+
+    base, event_id, first, second, assigned = two_objects_on_approval
+    # Заступающий ПЕРВОГО объекта связан с учёткой: иначе рассылка честно
+    # запишет его в «не дошло», и проверять будет нечего.
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    first_post = assigned[str(first.pk)]
+    employee_id = next(
+        a["employeeId"] for a in event.placement_assignments if a["postId"] == first_post
+    )
+    account = django_user_model.objects.create_user(username="ack-first-object", password="x")
+    Employee.objects.filter(pk=employee_id).update(user=account)
+
+    # Согласуем ТОЛЬКО первый объект: второй остаётся на «Согласовании», и
+    # стадия мероприятия остаётся ниже «Ознакомления».
+    _add_approver(manager, base, first)
+    sent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert sent.status_code == 200, sent.content
+    first.refresh_from_db()
+    decided = approver.post(
+        f"{base}approval/route/{first.approval_route[0]['id']}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert decided.status_code == 200, decided.content
+
+    event.refresh_from_db()
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.stage == "ACKNOWLEDGEMENT", "первый объект не открыл «Ознакомление»"
+    assert second.stage != "ACKNOWLEDGEMENT", "второй объект догнал — проба вакуумна"
+    assert event.stage != "ACKNOWLEDGEMENT", (
+        "мероприятие уже на «Ознакомлении» — проба не стережёт разрез по объектам"
+    )
+
+    row = OpsNotification.objects.get(recipient=str(account.pk), kind=KIND)
+    assert row.payload["eventCode"] == event.code
+    # Уведомление называет ОБЪЕКТ, на который человек заступает, а не
+    # мероприятие: идти ему туда.
+    assert row.payload["objectName"] == first.object_name
+    assert row.payload["visitObjectId"] == str(first.pk)

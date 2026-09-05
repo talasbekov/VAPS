@@ -111,8 +111,22 @@ def supervisors_by_division(division_ids):
 
 
 @transaction.atomic
-def notify_acknowledgement(event_id):
+def notify_acknowledgement(event_id, *, visit=None):
     """Разослать уведомления о заступлении: назначенным и их руководителям.
+
+    🔴 ЭТАП СПРАШИВАЕТСЯ У ОБЪЕКТА, КОГДА ОБЪЕКТ НАЗВАН (Plane №537). Стадия
+    мероприятия — НАИМЕНЬШАЯ среди объектов (№412), поэтому проверка
+    `event.stage != "ACKNOWLEDGEMENT"` означала «пока отстаёт хотя бы один
+    объект, не рассылать никому». Заступающие на объект, который утвердили
+    первым, узнавали о назначении только когда догонит последний, — а
+    заступать им, возможно, уже завтра. Требование `[ОЗН-01]` («уведомления
+    при открытии этапа автоматически») выполнялось на бумаге и не выполнялось
+    по объектам.
+    (Это четвёртое место одного корня: см. №475, №520, №528 — «спросили
+    мероприятие там, где отвечает объект».)
+
+    Объект не назван — отвечает мероприятие, как и раньше: у ОМ без объектов
+    посещения другой сущности нет, а ручная кнопка этапа шлёт по всему ОМ.
 
     Возвращает отчёт: кому ушло, скольким не дошло и почему. Это не
     украшение — рассылка, которая молчит о недоставленном, выглядит как
@@ -129,8 +143,11 @@ def notify_acknowledgement(event_id):
     """
     from organization_management.apps.ops.security_events import lock_event
 
+    from organization_management.apps.ops.security_events import visit_object_posts
+
     event = lock_event(event_id)
-    if event.stage != "ACKNOWLEDGEMENT":
+    stage = visit.stage if visit is not None else event.stage
+    if stage != "ACKNOWLEDGEMENT":
         raise DomainError(
             "ACKNOWLEDGEMENT_STAGE_REQUIRED",
             422,
@@ -140,6 +157,13 @@ def notify_acknowledgement(event_id):
             ),
         )
     assignments = event.placement_assignments or []
+    if visit is not None:
+        # Назначения ЭТОГО объекта — по его постам: адресаты рассылки те, кто
+        # заступает именно сюда.
+        own_posts = {str(p.get("id")) for p in visit_object_posts(event, visit)}
+        assignments = [
+            row for row in assignments if str(row.get("postId")) in own_posts
+        ]
     if not assignments:
         raise DomainError(
             "PLACEMENT_EMPTY",
@@ -161,21 +185,39 @@ def notify_acknowledgement(event_id):
         "eventCode": event.code,
         "eventTitle": event.title,
         "businessDate": event.business_date.isoformat(),
-        "objectName": event.object_name,
+        # Имя ОБЪЕКТА, когда объект назван: человек заступает на объект, а не
+        # на мероприятие, и «объект «…»» в уведомлении должно называть тот,
+        # куда идти.
+        "objectName": visit.object_name if visit is not None else event.object_name,
+        "visitObjectId": str(visit.pk) if visit is not None else None,
     }
+    # Ключ дедупликации — ОБЪЕКТ (Plane №537, тем же правилом, что №586/№666):
+    # «одно на (получателя, вид, деловую дату)» схлопнуло бы заступление на
+    # два объекта одного ОМ в одну строку, и человек узнал бы только о первом.
+    # Объект не назван — прежний ключ «одно на день».
+    dedupe_key = str(visit.pk) if visit is not None else ""
     sent, unlinked = set(), []
     for employee_id in employee_ids:
         user_id = users.get(employee_id)
         if user_id is None:
             unlinked.append(employee_id)
             continue
-        notify_service.notify(user_id, KIND, event.business_date, payload)
+        notify_service.notify(
+            user_id, KIND, event.business_date, payload, dedupe_key=dedupe_key
+        )
         sent.add(user_id)
-    # Руководителю уведомление идёт ОДНО на день, как и всем: он и так
-    # получит его о своём подчинённом, а второе о втором — нет (ключ модели).
+    # Руководителю уведомление идёт по тому же ключу, что и заступающим: он и
+    # так получит его о своём подчинённом, а второе о втором подчинённом того
+    # же объекта — нет (ключ модели). Разные ОБЪЕКТЫ при этом не схлопываются
+    # (Plane №537): у каждого свой ключ, и «куда заступает подчинённый»
+    # остаётся ответом на вопрос, а не первым из двух.
     for user_id in supervisors - sent:
         notify_service.notify(
-            user_id, KIND, event.business_date, {**payload, "asSupervisor": True}
+            user_id,
+            KIND,
+            event.business_date,
+            {**payload, "asSupervisor": True},
+            dedupe_key=dedupe_key,
         )
     return {
         "notified": len(sent) + len(supervisors - sent),

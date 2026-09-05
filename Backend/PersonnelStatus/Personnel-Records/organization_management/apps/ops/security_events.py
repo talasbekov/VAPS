@@ -1095,7 +1095,22 @@ def remove_visit_object(event_id, visit_object_id):
     # `complete_acknowledgement` отбивает единственный оставшийся объект,
     # который уже стоит на «Ознакомлении», — мероприятие запирается снятием
     # чужого объекта.
+    old_stage = event.stage
     recompute_event_stage(event)
+    # 🔴 СНЯТИЕ ОБЪЕКТА ТОЖЕ МОЖЕТ ЗАКРЫТЬ МЕРОПРИЯТИЕ (Plane №608).
+    # Автозакрытие `[ЗАК-12]` жило только в `close_visit_object`, а «все
+    # объекты закрыты» становится правдой и отсюда: закрыли объект А
+    # (мероприятие осталось на «Проведении» из-за Б), сняли Б — и открытых
+    # объектов не осталось. Мероприятие навсегда стояло на CONDUCT с
+    # готовностью меньше 100, `close_visit_object(А)` отвечал «объект уже
+    # закрыт», и добить его могло только ручное `close_event`. В реестре ОМ
+    # без единого открытого объекта числился «Проведением».
+    #
+    # Финал тот же, что у закрытия последнего объекта, — штамп, переход,
+    # оценивание, аудит: закрытие мероприятия не должно зависеть от того,
+    # каким действием оно наступило.
+    if event.stage == "CLOSED" and old_stage != "CLOSED":
+        _finalize_event_closure(event, actor="system:visit-object-removed", old_stage=old_stage)
     return event
 
 
@@ -4696,6 +4711,45 @@ def assign_placement(
                 "на посты ставят тех, кого штаб принял в «Сборе сил»."
             ),
         )
+    # 🔴 ОТДАННЫЙ ОДНОМУ ОБЪЕКТУ НЕ СТАВИТСЯ НА ПОСТ ДРУГОГО (Plane №579).
+    # Штаб раздаёт состав объектам (`[СБС-13]`), и строка состава несёт
+    # `visitObjectId` — кому человек отдан. Записывали его с самого шага, а
+    # ЧИТАТЬ было некому: гард проверял только принадлежность к составу, и
+    # беда, которую тот шаг объявлял починенной («у ОМ с двумя объектами люди
+    # одного предлагались на посты другого»), воспроизводилась ровно как
+    # раньше.
+    #
+    # `null` в строке — «ещё не роздан», такого ставят куда угодно: это
+    # обычное состояние ОМ, где штаб раздачей не пользовался. У мероприятия
+    # без объектов посещения адресата нет вовсе, и правило не включается.
+    owner = _visit_of_post(event, post_id)
+    given_to = next(
+        (
+            str(member.get("visitObjectId") or "")
+            for member in event.force_roster or []
+            if str(member.get("employeeId")) == employee_key
+        ),
+        "",
+    )
+    if owner is not None and given_to and given_to != str(owner.pk):
+        given_name = next(
+            (
+                v.object_name
+                for v in event.visit_objects.all()
+                if str(v.pk) == given_to
+            ),
+            "другому объекту",
+        )
+        raise DomainError(
+            "NOT_IN_ROSTER",
+            422,
+            message=(
+                f"{personnel_display_name(employee)} отдан(а) объекту "
+                f"«{given_name}» — на посты объекта «{owner.object_name}» "
+                "ставят тех, кого штаб отдал ему."
+            ),
+            detail={"visitObjectId": given_to},
+        )
     # hard-правило: сотрудник не может занимать два поста одного ОМ
     if any(
         a.get("employeeId") == employee_key and a.get("postId") != post_id
@@ -6430,12 +6484,16 @@ def _approve_visit(event, visit):
     # Рассылка о заступлении САМА (Plane №402, `[ОЗН-01]`) — тем же движением,
     # что и переход на «Ознакомление», и для ручки, и для автозавершения
     # последней подписью (№399): общее тело — одна точка рассылки.
-    if event.stage == "ACKNOWLEDGEMENT":
-        _autonotify_acknowledgement(event)
+    # 🔴 РАССЫЛКА ИДЁТ ПО ОБЪЕКТУ, А НЕ ПО МЕРОПРИЯТИЮ (Plane №537). Условие
+    # `event.stage == "ACKNOWLEDGEMENT"` означало «пока отстаёт хотя бы один
+    # объект, не рассылать никому»: заступающие на объект, утверждённый
+    # первым, узнавали о назначении, только когда догонит последний.
+    if visit.stage == "ACKNOWLEDGEMENT":
+        _autonotify_acknowledgement(event, visit)
     return event
 
 
-def _autonotify_acknowledgement(event):
+def _autonotify_acknowledgement(event, visit=None):
     """Разослать уведомления о заступлении САМИМ, без клика (Plane №402,
     `[ОЗН-01]`).
 
@@ -6457,7 +6515,7 @@ def _autonotify_acknowledgement(event):
     )
 
     try:
-        notify_acknowledgement(event.pk)
+        notify_acknowledgement(event.pk, visit=visit)
     except DomainError:
         pass
 
