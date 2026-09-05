@@ -148,6 +148,19 @@ def project_forces_ledger(sender, instance, update_fields=None, created=False, *
         set(update_fields) & _FORCES_JSON_FIELDS
     ):
         return
+    # 🔴 ПРОЕЦИРОВАТЬ НЕЧЕГО, ПОКА ОБА ПОЛЯ ПУСТЫ (Plane №522, п. 5). Условие
+    # выше выходит рано ТОЛЬКО когда `update_fields` передан: любое
+    # `event.save()` без него — и всякое СОЗДАНИЕ — прогоняло проекцию
+    # целиком, с запросами в четыре таблицы, ради заведомо пустого результата.
+    # А сохранений мероприятия без `update_fields` в цепочке большинство:
+    # писателей в `security_events` около дюжины.
+    #
+    # Проверка по СОДЕРЖИМОМУ, а не по списку полей, и потому безопасна: если
+    # заявок и раскладки нет, `forces_ledger.project` не найдёт что дописать
+    # (он проходит ровно по этим двум спискам) и вернёт нули. Появилась первая
+    # строка — условие перестаёт срабатывать в тот же момент.
+    if not (instance.force_requests or instance.force_allocation):
+        return
     if getattr(instance, "_skip_forces_ledger", False):
         return
     from organization_management.apps.ops import forces_ledger

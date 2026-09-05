@@ -9,6 +9,7 @@ Plane №426).
 при каждом ответе департамента.
 """
 import datetime as dt
+from unittest import mock
 
 import pytest
 
@@ -130,6 +131,59 @@ def test_top_up_is_a_new_row_and_draft_is_refused(manager):  # noqa: F811
     # Таблицы `[МД-06]`: у новой строки своя история, старая не тронута.
     assert OpsDepartmentRequest.objects.filter(event_id=_event_id(base), allocation_key=extra["id"]).exists()
     assert OpsDepartmentRequest.objects.filter(event_id=_event_id(base), allocation_key=allocation_id, requested_count=original["need"]).exists()
+
+
+def test_two_top_ups_get_different_ids_under_a_frozen_clock(manager):  # noqa: F811
+    """Два добора по одной заявке различимы, даже когда часы стоят
+    (Plane №522, п. 6).
+
+    🔴 ЧТО ЭТО СТЕРЕГЛО БЫ, БУДЬ ОНО РАНЬШЕ. Идентификатор строки добора
+    собирался из `Clock.now().isoformat()`, а `Clock` уважает заморозку
+    времени — ту самую, на которой стоят пробы и сеяные стенды. Под
+    фиксированными часами второй добор получал ТОТ ЖЕ id, что первый:
+    `_find_allocation` всегда находит первый, и вторая строка становилась
+    недостижима через API — по ней нельзя ни ответить, ни отправить, ни
+    принять, хотя в списке она видна.
+
+    Часы здесь замораживаются НАРОЧНО: без заморозки два вызова подряд
+    различаются микросекундами и проба зеленеет на сломанном коде — ровно то,
+    из-за чего дефект и дожил до ревью.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    frozen = dt.datetime(2026, 9, 5, 12, 0, tzinfo=dt.timezone.utc)
+    with mock.patch.object(Clock, "now", staticmethod(lambda: frozen)):
+        first = manager.post(
+            f"{base}forces/allocation/{allocation_id}/top-up/", {"count": 2}, format="json"
+        )
+        second = manager.post(
+            f"{base}forces/allocation/{allocation_id}/top-up/", {"count": 3}, format="json"
+        )
+    assert first.status_code == 200, first.content
+    assert second.status_code == 200, second.content
+
+    rows = second.json()["forceAllocation"]
+    ids = [r["id"] for r in rows]
+    assert len(ids) == len(set(ids)), f"строки запроса делят один id: {ids}"
+    extras = [r for r in rows if r.get("topUpOf") == allocation_id]
+    assert len(extras) == 2, "второй добор не завёл своей строки"
+    assert {r["need"] for r in extras} == {2, 3}
+
+    # И главное: ВТОРАЯ строка достижима по своему id, а не съедена первой.
+    answered = manager.post(
+        f"{base}forces/allocation/{extras[1]['id']}/respond/",
+        {"allocating": 1, "comment": "по второму добору"},
+        format="json",
+    )
+    assert answered.status_code == 200, answered.content
+    after = {r["id"]: r for r in answered.json()["forceAllocation"]}
+    assert after[extras[1]["id"]].get("allocating") == 1
+    assert after[extras[0]["id"]].get("allocating") in (None, 0), (
+        "ответ уехал в чужую строку — id не различаются"
+    )
 
 
 def test_editing_the_split_keeps_the_top_up_and_the_original(manager):  # noqa: F811
