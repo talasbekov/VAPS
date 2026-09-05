@@ -283,6 +283,27 @@ export function DepartmentRequestCard({
     (row) => (Number(draft[row.divisionId]) || 0) !== (row.need ?? 0)
   );
 
+  // 🔴 ЧТО ИМЕННО УЕДЕТ ПРИ НАЖАТИИ «ОТПРАВИТЬ В УПРАВЛЕНИЯ» (Plane №808,
+  // уточнено ревью). Отправляется НАБРАННОЕ, когда оно расходится с
+  // сохранённым: кнопка диалога сперва зовёт `save()` и только потом `notify`.
+  const effectiveNeed = (row: ForceAllocationDirectorate) =>
+    splitDirty ? Number(draft[row.divisionId]) || 0 : row.need ?? 0;
+  const effectiveTotal = splitDirty ? draftTotal : splitTotal;
+  // 🔴 «МОЛЧАЩИЕ» СЧИТАЮТСЯ ПО СТРОКАМ, А НЕ ПО СУММЕ. Сумма на этот вопрос не
+  // отвечает, и ошибалась она в обе стороны: потолок 3, всё отдано одному
+  // управлению из трёх — сумма равна потолку, предупреждения нет, а двум
+  // начальникам письма не уйдут и дописать их после нажатия нельзя (самый
+  // частый случай); и наоборот, потолок 5 при двух управлениях по 2 — сумма
+  // меньше потолка, а молчащих управлений нет вовсе.
+  // Уведомление с нулём не шлётся (`forces_notify.notify_directorate_heads`
+  // складывает такие строки в `without_quota`), поэтому «ноль в строке» и
+  // означает «этому начальнику не придёт ничего».
+  const silentRows = directorateRows.filter((row) => effectiveNeed(row) <= 0);
+  const nothingWillBeSent =
+    directorateRows.length > 0 && silentRows.length === directorateRows.length;
+  const someWillBeSilent =
+    silentRows.length > 0 && silentRows.length < directorateRows.length;
+
   async function save() {
     await split.mutateAsync({
       // 🔴 УЕЗЖАЮТ ТОЛЬКО СТРОКИ ДЕРЕВА (Plane №530). Таблица показывает и
@@ -784,10 +805,23 @@ export function DepartmentRequestCard({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Отправить заявку в управления?</DialogTitle>
+            {/* 🔴 ПРЕДУПРЕЖДЕНИЕ ЖИВЁТ В ОПИСАНИИ ДИАЛОГА, а не только в
+                жёлтом блоке ниже (ревью №808). Живой регион (`role="status"`)
+                объявляет ИЗМЕНЕНИЯ после того, как он смонтирован, а Radix
+                монтирует содержимое диалога целиком и сразу с текстом — такой
+                вставки читалки обычно не читают. Зато с описанием диалог
+                связан сам (`aria-describedby`), и при открытии незрячий
+                услышит его. Жёлтый блок ниже — та же фраза для глаз. */}
             <DialogDescription>
               Начальники управлений получат уведомление и начнут выделять
               людей. После этого раскладку по управлениям не поправить —
               ни правкой, ни отзывом списка.
+              {nothingWillBeSent
+                ? " Внимание: по управлениям не разложено ни одного человека — сейчас не уйдёт ни одного уведомления, а поля квот всё равно запрутся."
+                : ""}
+              {someWillBeSilent
+                ? ` Внимание: ${silentRows.length} из ${directorateRows.length} управлений стоят без цифры — им уведомление не уйдёт, и дописать их после отправки будет нельзя.`
+                : ""}
               {splitDirty
                 ? " Набранные, но не сохранённые цифры пропадут: кнопка ниже сохранит раскладку и только потом отправит."
                 : ""}
@@ -798,9 +832,9 @@ export function DepartmentRequestCard({
               будет уже поздно. Показывается НАБРАННОЕ, когда оно расходится с
               сохранённым, — отправлять будем именно его. */}
           <p className="text-muted-foreground text-sm">
-            Разложено {splitDirty ? draftTotal : splitTotal} из {splitCap}
-            {(splitDirty ? draftTotal : splitTotal) < splitCap
-              ? ` · не разложено ${splitCap - (splitDirty ? draftTotal : splitTotal)}`
+            Разложено {effectiveTotal} из {splitCap}
+            {effectiveTotal < splitCap
+              ? ` · не разложено ${splitCap - effectiveTotal}`
               : ""}
           </p>
           {/* 🔴 «0 из 12» — ЧИСЛО, А НЕ ПОЛОЖЕНИЕ (Plane №808). Человек читает
@@ -813,30 +847,33 @@ export function DepartmentRequestCard({
               словами. Кнопку здесь НЕ выключаем и на сервере нажатие НЕ
               отбиваем: и то, и другое меняет порядок работы, а второе уже
               стоило 30 красных проб в №557. Решение за заказчиком. */}
-          {(splitDirty ? draftTotal : splitTotal) === 0 && (
+          {nothingWillBeSent && (
             <p
               data-slot="notify-nothing-to-send"
-              role="status"
+              aria-hidden="true"
               className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
             >
               По управлениям не разложено ни одного человека:{" "}
-              <b>не уйдёт ни одного уведомления</b>, а поля квот после нажатия
-              запрутся — поправить раскладку будет нельзя. Сначала разложите
-              цифры по управлениям; кнопка никуда не денется.
+              <strong>не уйдёт ни одного уведомления</strong>, а поля квот
+              после нажатия запрутся — поправить раскладку будет нельзя.
+              {splitCap > 0
+                ? " Сначала разложите цифры по управлениям; кнопка никуда не денется."
+                : " Раскладывать нечего: в ответе департамента стоит «Выделяем: 0» — сперва поправьте ответ, если людей всё же выделяете."}
             </p>
           )}
           {/* Частичная раскладка — та же цена, но тише: управления без цифры
               писем не получат, и дописать их после отправки нельзя. */}
-          {(splitDirty ? draftTotal : splitTotal) > 0 &&
-            (splitDirty ? draftTotal : splitTotal) < splitCap && (
-              <p
-                data-slot="notify-partial"
-                className="text-muted-foreground text-sm"
-              >
-                Управления без цифры уведомления не получат, и дописать их
-                после отправки будет нельзя.
-              </p>
-            )}
+          {someWillBeSilent && (
+            <p
+              data-slot="notify-partial"
+              aria-hidden="true"
+              className="text-foreground text-sm"
+            >
+              {silentRows.length} из {directorateRows.length} управлений стоят
+              без цифры — уведомление им не уйдёт, и дописать их после отправки
+              будет нельзя: {silentRows.map((row) => row.name).join(", ")}.
+            </p>
+          )}
           {(split.isError || notify.isError) && (
             <p role="alert" className="text-destructive-ink text-sm">
               {split.error?.message ??

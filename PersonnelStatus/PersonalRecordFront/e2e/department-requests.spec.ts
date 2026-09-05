@@ -554,6 +554,15 @@ test.describe('заявки департаменту', () => {
       const dialog = page.getByRole('dialog')
       await expect(dialog.getByText('Отправить заявку в управления?')).toBeVisible()
 
+      // Потолок обязан быть НЕНУЛЕВЫМ, иначе сценарий вырождается: «0 из 0»
+      // — это отказ департамента, там раскладывать нечего и предупреждение
+      // звучит иначе (ревью №808). Без этой строки проба осталась бы зелёной
+      // на бессмысленном случае.
+      await expect(
+        dialog,
+        'у заявки нулевой потолок раскладки — проверять нечего',
+      ).toContainText(/Разложено 0 из [1-9]/)
+
       const warning = dialog.locator('[data-slot="notify-nothing-to-send"]')
       await expect(
         warning,
@@ -561,8 +570,84 @@ test.describe('заявки департаменту', () => {
       ).toBeVisible()
       await expect(warning).toContainText('ни одного уведомления')
       await expect(warning).toContainText('запрут')
+      // Та же фраза обязана быть В ОПИСАНИИ диалога: жёлтый блок — для глаз, а
+      // читалке диалог объявляет именно описание (`aria-describedby`).
+      await expect(
+        dialog.locator('[data-slot="dialog-description"]'),
+        'предупреждение не попало в описание диалога — читалка его не объявит',
+      ).toContainText('не уйдёт ни одного уведомления')
 
       // Уходим без отправки — действие необратимо, и проверять его тут нечем.
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await expect(dialog).toBeHidden()
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
+
+  test('диалог называет управления, которым не уйдёт ничего, даже когда сумма сошлась (Plane №808)', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 САМЫЙ ЧАСТЫЙ СЛУЧАЙ, и первая редакция №808 его МОЛЧАЛА (найдено
+     * ревью). Предупреждение о «молчащих» управлениях считалось по СУММЕ:
+     * `0 < разложено < потолок`. Разложить всё на ОДНО управление из трёх —
+     * сумма равна потолку, предупреждения нет, а двум начальникам письма не
+     * уйдут и дописать их после нажатия нельзя. Сумма на вопрос «есть ли
+     * управления без цифры» не отвечает вовсе; считать надо СТРОКИ.
+     *
+     * КРАСНАЯ ПРОВЕРКА: вернуть условие `effectiveTotal < splitCap` вместо
+     * счёта `silentRows` — проба падает.
+     *
+     * Проба, как и соседняя, НИЧЕГО НЕ ОТПРАВЛЯЕТ: читает диалог и уходит
+     * «Отменой».
+     */
+    const token = await apiToken()
+    const fixture = await createDepartmentAllocationFixture(token)
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      await page
+        .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
+        .click()
+
+      const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+      const quotaInputs = splitSection.locator('input[id^="quota-"]')
+      await expect(quotaInputs.first()).toBeVisible({ timeout: 20_000 })
+      const rows = await quotaInputs.count()
+      expect(rows, 'у департамента одно управление — «молчащих» быть не может').toBeGreaterThan(1)
+
+      // ВСЁ на первое управление: сумма сойдётся с потолком, остальные строки
+      // останутся с нулём — то самое положение, о котором проба.
+      const need: number = event.forceNeed
+      await quotaInputs.first().fill(String(need))
+      await splitSection.getByRole('button', { name: 'Сохранить раскладку' }).click()
+      await expect(
+        splitSection.getByText(`Набрано ${need} из ${need}`, { exact: false }),
+      ).toBeVisible({ timeout: 15_000 })
+
+      await splitSection.getByRole('button', { name: 'Отправить в управления' }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByText('Отправить заявку в управления?')).toBeVisible()
+
+      // Сумма сошлась — «не разложено» не печатается, и именно поэтому
+      // предупреждение обязано прийти из счёта строк.
+      await expect(dialog).toContainText(`Разложено ${need} из ${need}`)
+      const partial = dialog.locator('[data-slot="notify-partial"]')
+      await expect(
+        partial,
+        'диалог молчит про управления без цифры, хотя сумма сошлась только потому, что всё ушло одному',
+      ).toBeVisible()
+      await expect(partial).toContainText(`${rows - 1} из ${rows}`)
+      // Нулевого предупреждения тут быть не должно — уйдёт одно письмо.
+      await expect(dialog.locator('[data-slot="notify-nothing-to-send"]')).toHaveCount(0)
+
       await dialog.getByRole('button', { name: 'Отмена' }).click()
       await expect(dialog).toBeHidden()
     } finally {
