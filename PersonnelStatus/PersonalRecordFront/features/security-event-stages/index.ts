@@ -8,4 +8,7 @@ export { ConductStage } from "./ui/ConductStage";
 export { ClosedView } from "./ui/ClosedView";
 // Показанный объект живёт в адресе (Plane №388): карточка и этап читают одно
 // значение, и «строки без объекта» — такое же значение, как объект.
-export { UNASSIGNED_VISIT } from "./ui/useVisitObjectScope";
+export {
+  UNASSIGNED_VISIT,
+  unassignedIsMeaningful,
+} from "./ui/useVisitObjectScope";

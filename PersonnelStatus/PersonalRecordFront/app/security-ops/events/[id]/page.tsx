@@ -36,6 +36,7 @@ import {
   PlacementStage,
   ReconStage,
   UNASSIGNED_VISIT,
+  unassignedIsMeaningful,
 } from "@/features/security-event-stages";
 import {
   NO_OBJECT_TEXT,
@@ -86,7 +87,14 @@ function SecurityEventScreen() {
   // этап расчёта умеет показывать неразмеченные посты, и раз показанное живёт
   // в `?visit=`, шапка обязана понимать это значение, а не чинить его молча в
   // первый объект — иначе шапка и дерево постов снова разошлись бы.
-  const unassignedShown = visitParam === UNASSIGNED_VISIT;
+  // 🔴 «СТРОКИ БЕЗ ОБЪЕКТА» ПОКАЗЫВАЮТСЯ, ТОЛЬКО ЕСЛИ ОНИ ЕСТЬ (Plane №488).
+  // Значение `__unassigned__` законно и приходит ссылкой, но законно ровно
+  // тогда, когда неразмеченные строки есть и объектов больше одного. Правило
+  // одно на страницу и хук — второй ответ на тот же вопрос разошёлся бы с
+  // первым, чем этот дефект и был.
+  const unassignedShown =
+    visitParam === UNASSIGNED_VISIT &&
+    unassignedIsMeaningful(visits, query.data?.reconSectorPosts ?? []);
   // Неизвестный `visit` в адресе (объект сняли с мероприятия по чужой ссылке)
   // не должен выглядеть как выбранный: берём первый, а не подставляем пустоту.
   const selectedVisit = unassignedShown
@@ -108,6 +116,10 @@ function SecurityEventScreen() {
     if (selectedVisit === null) return;
     if (visitParam === selectedVisit.id) return;
     if (visitParam === null) return;
+    // Сюда теперь попадает и «Не отнесены», когда показывать под ним нечего:
+    // адрес чинится на первый объект, а не остаётся указывать в пустоту
+    // (Plane №488). Без этого шапка продолжала бы утверждать «показаны строки,
+    // не отнесённые ни к одному объекту», а ссылку пересылали бы дальше.
     replaceVisit(selectedVisit.id);
   }, [replaceVisit, selectedVisit, unassignedShown, visitParam]);
 
