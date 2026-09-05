@@ -408,11 +408,23 @@ function evaluationSummary(event: SecurityEvent, visitObjectId: string): VisitEv
         comment: stored?.comment ?? "",
       };
     });
+  // Инциденты — ОБЪЕКТА, а не мероприятия (Plane №645), зеркало
+  // `_entries_of_visit`: запись относят к объекту по посту; запись без поста
+  // принадлежит объекту только у ОМ с ЕДИНСТВЕННЫМ объектом, иначе не
+  // принадлежит никому. Прежний счёт по всему журналу делал мок слепым к
+  // дефекту сервера — ровно как зашитый пустым `divisionName` (Plane №643).
+  const single = event.visitObjects.length <= 1;
+  const mine = (postId: string | null | undefined) =>
+    postId === null || postId === undefined || postId === ""
+      ? single
+      : posts.has(postId) &&
+        (single || (posts.get(postId)!.visitObjectId ?? null) === visitObjectId);
   return {
     rows,
     evaluated: rows.filter((r) => r.score !== null).length,
     total: rows.length,
-    incidents: event.journalEntries.filter((e) => e.type === "INCIDENT").length,
+    incidents: event.journalEntries.filter((e) => e.type === "INCIDENT" && mine(e.postId))
+      .length,
   };
 }
 
