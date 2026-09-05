@@ -238,11 +238,39 @@ export async function fetchUnreadNotifications(): Promise<NotificationFeed> {
   return { items, failed };
 }
 
-export async function markAllRead(): Promise<void> {
-  await Promise.all([
+/** Отметить прочитанным ТО, ЧТО ЧЕЛОВЕК ВИДЕЛ (Plane №566).
+ *
+ * 🔴 ГРАНИЦА `until`. Сервер раздела её принимает и прямо объясняет зачем:
+ * уведомление, прилетевшее между открытием панели и нажатием «Прочитать все»,
+ * иначе окажется прочитанным, ни разу не показавшись. Клиент слал пустое тело,
+ * то есть «отметить всю ленту», — и граница жила только в докстринге сервера.
+ * Здесь `until` — момент появления САМОГО СВЕЖЕГО из показанных сейчас строк.
+ *
+ * 🔴 ДВЕ НОГИ РАЗВЯЗАНЫ. Под `Promise.all` отказ одной отменял отчёт об обеих:
+ * вторая при этом уже закоммитилась на сервере, мутация докладывала об отказе
+ * и НЕ звала `invalidateQueries`, и экран расходился с сервером на все 30
+ * секунд `staleTime`. Теперь запросы идут независимо, а наверх летит отказ
+ * ТОЛЬКО если что-то и правда не удалось; обновление списка вызывающий делает
+ * в `onSettled` — то есть в обоих исходах.
+ *
+ * ⚠️ Границы у ЛЕГАСИ-ленты нет вовсе: `mark_all_read` там делает
+ * `update(is_read=True)` по всей выборке и параметров не принимает
+ * (`apps/notifications/api/views.py`). Это её собственный дефект, заведён
+ * отдельной карточкой; чинить его отсюда нечем.
+ */
+export async function markAllRead(until?: string): Promise<void> {
+  const [legacy, ops] = await Promise.allSettled([
     authorizedFetch(`${BASE}/mark_all_read/`, { method: "POST" }),
-    apiClient.markAllOpsNotificationsRead(),
+    apiClient.markAllOpsNotificationsRead(until),
   ]);
+  if (legacy.status === "rejected") throw legacy.reason;
+  if (ops.status === "rejected") throw ops.reason;
+}
+
+/** Момент самой свежей из ПОКАЗАННЫХ строк — граница «что человек видел». */
+export function seenUntil(items: Notification[]): string | undefined {
+  if (items.length === 0) return undefined;
+  return items.reduce((newest, row) => (row.created_at > newest ? row.created_at : newest), items[0].created_at);
 }
 
 export async function markNotificationRead(notification: Notification): Promise<void> {

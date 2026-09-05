@@ -18,6 +18,7 @@ import { Loader2, Bell, CheckCircle2, BellOff } from "lucide-react";
 import {
   fetchUnreadNotifications,
   markAllRead,
+  seenUntil,
   markNotificationRead,
   notificationKey,
   Notification,
@@ -91,12 +92,24 @@ export function NotificationsDropdown() {
   });
 
   const markAllMutation = useMutation({
-    mutationFn: markAllRead,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      toast({ title: "Все уведомления прочитаны" });
+    // Граница «что человек видел» (Plane №566): отмечается лента ПО СОСТОЯНИЮ
+    // НА ЭКРАНЕ, а не всё, что успело прилететь, пока панель открыта.
+    mutationFn: () => markAllRead(seenUntil(notifications)),
+    onSuccess: () => toast({ title: "Все уведомления прочитаны" }),
+    onError: () =>
+      toast({
+        title: "Не удалось отметить все прочитанными",
+        description: "Часть уведомлений могла остаться непрочитанной.",
+        variant: "destructive",
+      }),
+    // 🔴 `onSettled`, А НЕ `onSuccess`. Ног у операции две, и отказ одной не
+    // отменяет другую: под прежним `onSuccess` закоммитившаяся половина не
+    // попадала на экран, потому что обновление списка не звалось вовсе, — и
+    // экран расходился с сервером на все 30 секунд `staleTime`. Обновлять надо
+    // в ОБОИХ исходах: после отказа состояние сервера тем более неизвестно.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
-    onError: () => toast({ title: "Ошибка", variant: "destructive" }),
   });
 
   // Счётчик на колокольчике — по тому, что ДЕЙСТВИТЕЛЬНО пришло. При частичном
