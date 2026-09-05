@@ -438,6 +438,119 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
       const withdraw = page.getByRole('button', { name: 'Отозвать с согласования' })
       await expect(withdraw).toBeDisabled()
     })
+
+  })
+
+  /**
+   * Черновики ответов на замечания (Plane №507).
+   *
+   * Своё окружение, а не соседнее: нужен и блок воркера MSW (иначе `page.route`
+   * не перехватит карточку), и БОЛЕЕ ВЫСОКОЕ ОКНО. При стандартных 720 строка
+   * второго замечания уезжает ниже видимой области, `elementFromPoint` в её
+   * центре возвращает null, и Playwright отказывается кликать с диагностикой
+   * «<main> intercepts pointer events» — признак, читающийся как перекрытие,
+   * хотя перекрытия нет вовсе (проверено замером координат кнопок: y=904 и
+   * y=961 при высоте окна 900).
+   */
+  test.describe('черновики ответов на замечания', () => {
+    test.use({ serviceWorkers: 'block', viewport: { width: 1400, height: 1400 } })
+
+    /**
+       * Черновик ответа принадлежит СВОЕМУ замечанию (Plane №507).
+       *
+       * Поле «Почему не согласны» было ОДНО на весь список, а «Не согласен»
+       * лишь переставляла, под каким замечанием оно раскрыто. Набрать
+       * несогласие на замечании A, не отправляя, и нажать «Не согласен» у
+       * замечания B — поле B уже заполнено текстом A, и «Подтвердить
+       * несогласие» отправит формулировку A ОТВЕТОМ НА B. Согласующий читает
+       * чужой ответ как ответ по своему поводу, и заметить подмену нечем: оба
+       * текста написаны одним человеком в одну минуту.
+       *
+       * Два замечания подставляются перехватом: довести ОМ до двух РАЗНЫХ
+       * возвратов значит пройти цикл согласования дважды и оставить на стенде
+       * необратимое состояние, а предмет пробы — содержимое ОДНОГО поля ввода.
+       *
+       * Красная до правки: поле второго замечания приходит заполненным.
+       */
+      test('черновик ответа не переезжает на соседнее замечание (Plane №507)', async ({
+        page,
+      }) => {
+        const token = await apiToken()
+        const target = (await events(token)).find((e) => e.reconSectorPosts.length > 0)
+        test.skip(target === undefined, 'нужен ОМ с постами расчёта')
+
+        const remark = (id: string, text: string) => ({
+          id,
+          text,
+          author: 'Согласующий С.',
+          createdAt: '2026-09-05T06:00:00Z',
+          postId: null,
+          documentVersion: 1,
+          status: 'OPEN',
+          response: '',
+          urgent: false,
+        })
+        await page.route(
+          new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+          async (r) => {
+            const response = await r.fetch()
+            const body = await response.json()
+            const visit = { ...(body.visitObjects[0] ?? {}) }
+            // 🔴 ОБЪЕКТ СТОИТ НА СОГЛАСОВАНИИ, А НЕ ПРОСМАТРИВАЕТСЯ ЧУЖОЙ ШАГ.
+            // Открыть панель через `?step=3` на объекте другой стадии мало:
+            // карточка помечает такой просмотр `inert` (и это правильно — форма
+            // не должна принимать ввод, который сервер на этой стадии отвергнет),
+            // и клик по кнопке не проходит вовсе. Соседние пробы этого не
+            // замечают: они только читают текст. Диагностика при этом читается
+            // наоборот — «<main> intercepts pointer events», как перекрытие.
+            visit.stage = 'APPROVAL'
+            visit.approvalStatus = 'RETURNED'
+            visit.documentStatus = 'RETURNED'
+            visit.documentVersion = 1
+            visit.approvalStale = false
+            visit.approvalRemarks = [
+              remark('remark-a', 'Замечание А: уточнить расчёт постов'),
+              remark('remark-b', 'Замечание Б: заменить старшего'),
+            ]
+            body.stage = 'APPROVAL'
+            body.visitObjects = [visit]
+            await r.fulfill({ response, json: body })
+          },
+        )
+
+        await signIn(page)
+        // БЕЗ `?step=`: шаг берётся из стадии объекта, и панель активна.
+        await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+        const remarks = page.locator('section', { hasText: 'Замечания' }).first()
+        await expect(remarks).toContainText('Замечание А', { timeout: 20_000 })
+        await expect(remarks).toContainText('Замечание Б')
+        // 🔴 ЗНАЧОК DEV-СБОРКИ ПЕРЕКРЫВАЕТ НИЖНЮЮ ЧАСТЬ СТРАНИЦЫ. `next dev`
+        // рисует «Open issues overlay» фиксированным углом, и Playwright
+        // отказывался кликать по строке замечания: «<main> intercepts pointer
+        // events» (проверено запуском). Прячем именно его, а не глушим проверки
+        // кликабельности через `force`: обход actionability скрыл бы настоящее
+        // перекрытие, если оно когда-нибудь появится в самом экране.
+        await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' })
+
+        const rowA = remarks.locator('li', { hasText: 'Замечание А' }).first()
+        const rowB = remarks.locator('li', { hasText: 'Замечание Б' }).first()
+
+        await rowA.getByRole('button', { name: 'Не согласен' }).click()
+        await rowA.getByLabel('Почему не согласны *').fill('Пост режимный, снять нельзя')
+
+        await rowB.getByRole('button', { name: 'Не согласен' }).click()
+        await expect(
+          rowB.getByLabel('Почему не согласны *'),
+          'поле соседнего замечания заполнено чужим текстом — он уедет ответом не тому',
+        ).toHaveValue('')
+
+        // И свой черновик не потерян: человек сравнивает замечания, переключаясь
+        // между ними, и терять набранное на полпути тоже нельзя.
+        await rowA.getByRole('button', { name: 'Не согласен' }).click()
+        await expect(rowA.getByLabel('Почему не согласны *')).toHaveValue(
+          'Пост режимный, снять нельзя',
+        )
+      })
   })
 })
 

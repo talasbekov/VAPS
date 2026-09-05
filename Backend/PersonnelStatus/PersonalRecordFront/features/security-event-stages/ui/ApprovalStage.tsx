@@ -1045,15 +1045,32 @@ function ApprovalRemarks({
   // строкой, как причина возврата у согласующего, и только для одного
   // замечания за раз.
   const [respondFor, setRespondFor] = useState<string | null>(null);
-  const [response, setResponse] = useState("");
+  // 🔴 ЧЕРНОВИК ОТВЕТА — ПО ЗАМЕЧАНИЮ, А НЕ ОДИН НА СПИСОК (Plane №507).
+  // Здесь стояло одно поле `response` на все замечания, а «Не согласен» лишь
+  // переставляла `respondFor`. Набрать несогласие на замечании A, не отправляя
+  // его, и нажать «Не согласен» у замечания B — поле B уже заполнено текстом
+  // A, и «Подтвердить несогласие» отправит формулировку A ОТВЕТОМ НА B.
+  // Согласующий читает чужой ответ как ответ по своему поводу, и заметить
+  // подмену нечем: оба текста написаны одним человеком в одну минуту.
+  //
+  // Черновики ХРАНЯТСЯ, а не чистятся при переключении: человек сравнивает
+  // два замечания, переключаясь между ними, и потерянный на полпути текст —
+  // не меньшая беда, чем чужой.
+  const [responses, setResponses] = useState<Record<string, string>>({});
   const [respondErrors, setRespondErrors] = useState<Record<string, unknown> | null>(
     null
   );
   const resolve = useResolveRemark(event.id, {
     onFormError: (details) => setRespondErrors(details),
     onEvent: () => {
+      // Черновик снимается ТОЛЬКО у отвеченного замечания: остальные ждут
+      // своего хода и терять набранное не должны.
+      setResponses((prev) => {
+        if (respondFor === null) return prev;
+        const { [respondFor]: _answered, ...rest } = prev;
+        return rest;
+      });
       setRespondFor(null);
-      setResponse("");
       setRespondErrors(null);
     },
   });
@@ -1175,8 +1192,13 @@ function ApprovalRemarks({
                     id={`respond-${remark.id}`}
                     className="h-8 w-72 text-xs"
                     placeholder="Ответ согласующему"
-                    value={response}
-                    onChange={(e) => setResponse(e.target.value)}
+                    value={responses[remark.id] ?? ""}
+                    onChange={(e) =>
+                      setResponses((prev) => ({
+                        ...prev,
+                        [remark.id]: e.target.value,
+                      }))
+                    }
                   />
                   <Button
                     type="button"
@@ -1187,7 +1209,7 @@ function ApprovalRemarks({
                       resolve.mutate({
                         remarkId: remark.id,
                         decision: "DISAGREED",
-                        response,
+                        response: responses[remark.id] ?? "",
                         visitObjectId: view.visitObjectId,
                       })
                     }
