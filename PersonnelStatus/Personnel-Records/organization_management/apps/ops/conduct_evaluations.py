@@ -72,7 +72,16 @@ def visit_evaluations(event, visit):
     posts = {str(p.get("id")): p for p in events.visit_object_posts(event, visit)}
     current = _current_evaluations(event)
     rows = []
-    for a in event.placement_assignments or []:
+    # 🔴 НАЗНАЧЕНИЯ БЕРУТСЯ ИЗ СЕРИАЛИЗАТОРА, А НЕ ИЗ СЫРОГО JSON (Plane №643).
+    # `divisionName` в строке расстановки НЕ ХРАНИТСЯ вовсе — перевод человека
+    # не должен требовать правки чужих строк, поэтому подразделение считается
+    # на чтении в `placement_assignments_view`. Панель читала сырой
+    # `event.placement_assignments`, где такого ключа нет ни у одной строки, и
+    # обещанное «ФИО · управление» не печаталось НИКОГДА: клиент прячет
+    # подпись при пустой строке. Тот же сериализатор — тот же ответ, что и у
+    # карточки расстановки; второй способ вычислить подразделение разошёлся бы
+    # с первым молча.
+    for a in events.placement_assignments_view(event):
         post = posts.get(str(a.get("postId")))
         if post is None:
             continue
