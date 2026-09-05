@@ -330,3 +330,76 @@ def test_a_replacement_now_records_its_post(manager, two_objects_on_conduct):  #
     rows = {row["id"]: row for row in resp.json()["visitObjects"]}
     assert rows[str(first.pk)]["closureSummary"]["replacements"] == 1
     assert rows[str(second.pk)]["closureSummary"]["replacements"] == 0
+
+
+# ── Ревью 8b12d8f7: снятие объекта тоже закрывает мероприятие (Plane №608) ──
+
+
+def test_removing_the_last_open_object_closes_the_event(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """🔴 Plane №608: «все объекты закрыты» наступает и от СНЯТИЯ объекта.
+
+    Автозакрытие `[ЗАК-12]` жило только в `close_visit_object`, а правдой
+    «открытых объектов не осталось» становится и здесь: закрыли объект А
+    (мероприятие осталось на «Проведении» из-за Б), сняли Б — и мероприятие
+    навсегда стояло на CONDUCT с готовностью меньше 100. Добить его могло
+    только ручное `close_event`: `close_visit_object(А)` отвечал «объект уже
+    закрыт». В реестре ОМ без единого открытого объекта числился
+    «Проведением».
+
+    Мутация: убрать вызов `_finalize_event_closure` из `remove_visit_object` —
+    мероприятие останется на CONDUCT, и переход в «Закрыто» не запишется.
+    """
+    base, event_id, first, second = two_objects_on_conduct
+    closed = manager.post(f"{base}visit-objects/{first.pk}/close/", {}, format="json")
+    assert closed.status_code == 200, closed.content
+    assert closed.json()["stage"] == "CONDUCT", "мероприятие закрылось по одному объекту"
+    # У снимаемого объекта не должно быть постов расчёта — иначе снятие
+    # отбивается своим правилом, и до предмета пробы дело не дойдёт.
+    event = service.lock_event(event_id)
+    event.recon_sector_posts = [
+        post
+        for post in (event.recon_sector_posts or [])
+        if str(post.get("visitObjectId") or "") != str(second.pk)
+    ]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+
+    removed = manager.delete(f"{base}visit-objects/{second.pk}/")
+
+    assert removed.status_code in (200, 204), removed.content
+    event = service.lock_event(event_id)
+    assert event.stage == "CLOSED", "открытых объектов нет, а мероприятие не закрыто"
+    assert event.readiness_percent == 100
+    assert event.closed_at is not None
+    assert OpsSecurityEventTransition.objects.filter(
+        event_id=event_id, to_stage="CLOSED"
+    ).exists(), "переход в «Закрыто» не записан"
+    assert OpsAuditLog.objects.filter(
+        action=audit_service.SECURITY_EVENT_CLOSED, entity_id=event_id
+    ).exists(), "аудит закрытия мероприятия не записан"
+
+
+def test_removing_an_object_while_another_stays_open_does_not_close_the_event(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """А пока открыт хоть один объект, снятие соседнего ничего не закрывает.
+
+    Без этой пробы №608 можно было бы «починить» безусловным закрытием, и
+    снятие лишнего объекта закрывало бы работающее мероприятие.
+    """
+    base, event_id, _first, second = two_objects_on_conduct
+    event = service.lock_event(event_id)
+    event.recon_sector_posts = [
+        post
+        for post in (event.recon_sector_posts or [])
+        if str(post.get("visitObjectId") or "") != str(second.pk)
+    ]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+
+    removed = manager.delete(f"{base}visit-objects/{second.pk}/")
+
+    assert removed.status_code in (200, 204), removed.content
+    event = service.lock_event(event_id)
+    assert event.stage == "CONDUCT"
+    assert event.closed_at is None

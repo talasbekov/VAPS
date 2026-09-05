@@ -86,13 +86,22 @@ def assign_roster_objects(event_id, rows, *, actor):
     обязан быть объектом ЭТОГО мероприятия.
     """
     event = lock_event(event_id)
-    if event.force_handover:
-        raise DomainError(
-            "FORCE_HANDED_OVER",
-            422,
-            message="Состав уже передан на расстановку — распределение закрыто.",
-        )
     known_objects = {str(v.pk) for v in event.visit_objects.all()}
+    # 🔴 ПОСЛЕ ПЕРЕДАЧИ РАСПРЕДЕЛЯТЬ МОЖНО ТОЛЬКО ЕЩЁ НЕ РОЗДАННЫХ (Plane
+    # №577). Прежний отказ закрывал распределение целиком, а состав ПОСЛЕ
+    # передачи продолжает пополняться: `accept_allocation` принимает
+    # довыделение (`[СБС-12]`, явно поддержанный ход), и `top_up` дописывает
+    # строку. Новые люди приходят без `visitObjectId`, второй передачи нет —
+    # и отдать их объекту становилось нельзя НИКОГДА. Они лежали в составе
+    # нераспределёнными, а отказ объяснял это «распределение закрыто».
+    #
+    # Закрытым остаётся ПЕРЕРАСПРЕДЕЛЕНИЕ: у кого объект уже есть, того после
+    # передачи не двигают — расстановка объекта уже считает его своим.
+    already_given = {
+        str(row.get("employeeId"))
+        for row in (event.force_roster or [])
+        if row.get("visitObjectId")
+    }
     wanted = {}
     for index, row in enumerate(rows or []):
         employee_id = str(row.get("employeeId") or "").strip()
@@ -105,6 +114,18 @@ def assign_roster_objects(event_id, rows, *, actor):
                 {f"rows.{index}.visitObjectId": ["Объект не принадлежит мероприятию."]}
             )
         wanted[employee_id] = target
+    if event.force_handover:
+        moved = sorted(employee_id for employee_id in wanted if employee_id in already_given)
+        if moved:
+            raise DomainError(
+                "FORCE_HANDED_OVER",
+                422,
+                message=(
+                    "Состав передан на расстановку — уже розданных объектам "
+                    "не переставляют. Нераспределённых (довыделение) отдать "
+                    "объекту можно."
+                ),
+            )
     roster = event.force_roster or []
     roster_ids = {str(r.get("employeeId")) for r in roster}
     missing = [e for e in wanted if e not in roster_ids]
@@ -145,7 +166,13 @@ def hand_over_to_placement(event_id, *, comment, actor):
     unassigned = sum(
         1 for r in (event.force_roster or []) if not r.get("visitObjectId")
     )
-    if unassigned:
+    # 🔴 У ОМ БЕЗ ОБЪЕКТОВ ПОСЕЩЕНИЯ РАСПРЕДЕЛЯТЬ НЕ ПО ЧЕМУ (Plane №578).
+    # Мероприятия без объектов поддержаны разделом явно, а `visitObjectId` у
+    # них может быть только `null` — значит `unassigned` всегда равен размеру
+    # состава, и «Передать на расстановку» была вечно выключена с подсказкой
+    # «сначала отдайте объектам всех собранных», при пустом списке «На
+    # объект…». Человеку велели сделать то, чего сделать нечем.
+    if unassigned and objects:
         raise DomainError(
             "FORCE_ROSTER_UNASSIGNED",
             422,
