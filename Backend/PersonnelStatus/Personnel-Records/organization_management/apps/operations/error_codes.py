@@ -54,6 +54,11 @@ CODES = {
     "VISIT_OBJECT_NOT_FOUND": frozenset({404}),
     "RECON_CHECKLIST_INCOMPLETE": frozenset({422}),
     "RECON_SECTOR_POSTS_EMPTY": frozenset({422}),
+    # Посты расчёта не отнесены к объектам посещения (Plane №477). Отдельный
+    # код, а не `PLACEMENT_EMPTY`: там расстановку надо доукомплектовать, а
+    # здесь — разметить посты на рекогносцировке. Клиент ветвится по коду, и
+    # один код на две беды увёл бы человека чинить не то.
+    "RECON_POSTS_UNASSIGNED": frozenset({422}),
     "EVENT_DELETE_FORBIDDEN": frozenset({422}),
     # Реестр транспорта ГОН (Plane №215).
     # Уведомления о заступлении на ОМ (Plane №243).
@@ -288,6 +293,11 @@ CODES = {
     "DOCUMENT_ROW_SHAPE": frozenset({500}),
     "PDF_CONVERTER_MISSING": frozenset({500}),
     "PDF_CONVERSION_FAILED": frozenset({500}),
+    # Кириллический шрифт водяного знака «ПРОЕКТ» (Plane №637). Системная
+    # зависимость ровно того же рода, что LibreOffice выше, и отказ у неё
+    # должен быть такой же названный: без неё reportlab поднимал `TTFError`, и
+    # каждый досогласовательный PDF расстановки отвечал голой трассировкой.
+    "WATERMARK_FONT_MISSING": frozenset({500}),
 }
 
 
