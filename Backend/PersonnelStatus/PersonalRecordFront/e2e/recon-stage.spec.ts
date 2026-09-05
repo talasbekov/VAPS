@@ -461,6 +461,72 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
   })
 
 
+
+  test('«Не проверено» переживает сохранение чек-листа', async ({ page }) => {
+    // Кнопка меняла только `state`, и наверх уходило тело
+    // `{state:'UNCHECKED', done:true, result:'MATCHES'}` — со СТАРЫМИ
+    // значениями выводимых ключей. Серверное правило «явное UNCHECKED поверх
+    // done — не верим» переписывало состояние обратно в NORMAL, ответ
+    // переносился в форму, счётчик откатывался, и ошибки не было никакой:
+    // человек снимал отметку, а она возвращалась сама (Plane №707).
+    //
+    // Проба ЖИВАЯ и мутирующая: предмет — что сервер принял и вернул, а
+    // подменённый ответ этого не докажет. Прежнее состояние возвращается в
+    // `finally`.
+    const token = await apiToken()
+    const suitable = (rows: EventRow[]): EventRow | undefined =>
+      rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
+    let found = suitable(await events(token))
+    if (found === undefined) {
+      await prepareEvent(token)
+      found = suitable(await events(token))
+    }
+    expect(found, 'не удалось подготовить ОМ на «Рекогносцировке»').toBeDefined()
+    const target = found!
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    const item = page.locator('[data-slot="recon-check-item"]').first()
+    await expect(item).toBeVisible({ timeout: 15_000 })
+    const before = await item.getAttribute('data-state')
+
+    // «Сохранить» выключена, пока форма не изменена, — жать её вслепую значит
+    // ждать десять секунд отключённую кнопку (так и вышло на первом прогоне,
+    // когда пункт УЖЕ был «Норма»).
+    const save = async () => {
+      const button = page
+        .locator('[data-slot="recon-footer"]')
+        .getByRole('button', { name: 'Сохранить' })
+      if (await button.isEnabled()) await button.click()
+    }
+
+    try {
+      // Ставим «Норма», сохраняем — чтобы снимать было что.
+      await item.getByRole('button', { name: 'Норма' }).click()
+      await save()
+      await expect(item).toHaveAttribute('data-state', 'NORMAL', { timeout: 15_000 })
+
+      // Снимаем отметку и сохраняем: состояние обязано остаться «Не проверено».
+      await item.getByRole('button', { name: 'Не проверено' }).click()
+      await save()
+      await expect(item).toHaveAttribute('data-state', 'UNCHECKED', { timeout: 15_000 })
+
+      // И это состояние СЕРВЕРА, а не экрана: перечитываем карточку.
+      await page.reload()
+      await expect(page.locator('[data-slot="recon-check-item"]').first()).toHaveAttribute(
+        'data-state',
+        'UNCHECKED',
+        { timeout: 15_000 },
+      )
+    } finally {
+      if (before !== null && before !== 'UNCHECKED') {
+        const label = before === 'REMARK' ? 'Замечание' : 'Норма'
+        await page.locator('[data-slot="recon-check-item"]').first().getByRole('button', { name: label }).click()
+        await save()
+      }
+    }
+  })
+
   // Воркер MSW блокируется ТОЛЬКО здесь: обе пробы ниже подменяют карточку
   // `page.route`, а с живым воркером подмена не применяется и проба зеленеет
   // на неподменённых данных (та же яма, что в `approval-stage.spec.ts`).

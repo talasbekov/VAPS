@@ -48,6 +48,7 @@ import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import type {
+  ReconCheckState,
   ReconChecklistItem,
   ReconSectorPost,
   SecurityEvent,
@@ -218,6 +219,35 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
     setChecklist((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
     );
+  }
+
+  /**
+   * Смена состояния пункта — вместе с ВЫВОДИМЫМИ `done` и `result`
+   * (Plane №707).
+   *
+   * 🔴 ЧТО БЫЛО НЕ ТАК. Кнопка меняла только `state`, и наверх уходило тело
+   * `{state: 'UNCHECKED', done: true, result: 'MATCHES'}` — с прежними
+   * значениями старых ключей. Серверное правило «явное UNCHECKED поверх
+   * done — не верим» (`normalize_check_item`) переписывало состояние обратно
+   * в NORMAL, ответ переносился в форму, счётчик откатывался, и ошибки не
+   * было НИКАКОЙ: человек снимал отметку, а она возвращалась сама.
+   *
+   * Правило на сервере нужное — оно защищает от СТАРОГО клиента, который про
+   * `state` не знает. Чинить надо здесь: слать согласованную тройку, и тогда
+   * ветка «не верим» не срабатывает вовсе. Вывод тот же, что у сервера и у
+   * мока, и записан рядом, чтобы три копии одного правила читались как одно.
+   */
+  function setCheckState(id: string, state: ReconCheckState): void {
+    patchItem(id, {
+      state,
+      done: state !== "UNCHECKED",
+      result:
+        state === "NORMAL"
+          ? "MATCHES"
+          : state === "REMARK"
+            ? "NEEDS_CHANGES"
+            : null,
+    });
   }
 
   function patchRow(id: string, patch: Partial<ReconSectorPost>): void {
@@ -449,7 +479,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                                 : "border-foreground/40 bg-muted font-semibold"
                             : "bg-background hover:bg-muted")
                         }
-                        onClick={() => patchItem(item.id, { state: value })}
+                        onClick={() => setCheckState(item.id, value)}
                       >
                         {label}
                       </button>
