@@ -525,7 +525,17 @@ function StageViewNotice({
           <Button variant="outline" size="sm" onClick={onLeaveView}>
             К текущему шагу
           </Button>
-          <Button size="sm" disabled={override.isPending} onClick={() => setConfirmOpen(true)}>
+          <Button
+            size="sm"
+            disabled={override.isPending}
+            onClick={() => {
+              // Прежний отказ снимается при НОВОМ открытии окна (Plane №709):
+              // иначе оно открывалось бы с чужой красной строкой от прошлой
+              // попытки, ещё до нажатия.
+              override.reset();
+              setConfirmOpen(true);
+            }}
+          >
             Перевести ОМ сюда
           </Button>
         </div>
@@ -541,6 +551,20 @@ function StageViewNotice({
               журнал переходов и в аудит. Обычный путь — довести этап до конца, а не переводить.
             </DialogDescription>
           </DialogHeader>
+          {/* 🔴 ОТКАЗ ПОКАЗЫВАЕТСЯ ВНУТРИ ОКНА (Plane №709). Он рисовался под
+              оверлеем, то есть был не виден вовсе: диалог не закрывался,
+              обратной связи не появлялось никакой, и кнопка жалась повторно —
+              каждый раз с тем же отказом. Место сообщения — там, где стоит
+              кнопка, его вызвавшая. */}
+          {override.error !== null && (
+            <p
+              role="alert"
+              className="text-destructive-ink text-xs"
+              data-slot="stage-override-error"
+            >
+              {override.error.message}
+            </p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>
               Отмена
@@ -555,11 +579,6 @@ function StageViewNotice({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {override.error !== null && (
-        <p className="text-destructive-ink mt-1.5 text-xs">
-          {override.error.message}
-        </p>
-      )}
     </div>
   );
 }

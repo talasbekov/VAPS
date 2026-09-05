@@ -557,5 +557,63 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       // Итог ОДИН: строка успеха ушла вместе с попыткой, которая её породила.
       await expect(block.getByRole('status')).toHaveCount(0)
     })
+
+
+    test('отказ «Перевести ОМ сюда» виден внутри окна, а окно не закрывается', async ({
+      page,
+    }) => {
+      // Отказ рисовался ПОД оверлеем диалога (Plane №709), то есть не был
+      // виден вовсе: окно не закрывалось, обратной связи не появлялось
+      // никакой, и кнопка жалась повторно — каждый раз с тем же отказом.
+      const token = await apiToken()
+      const target = requireFixture(
+        (await events(token, 'CONDUCT'))[0],
+        'мероприятие на стадии «Проведение»',
+      )
+
+      await page.route(
+        `**/api/ops/security-events/${target.id}/stage/`,
+        async (route) => {
+          await route.fulfill({
+            status: 422,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              error_code: 'INVALID_STAGE_TRANSITION',
+              message: 'Перевод на этот этап запрещён правилом раздела.',
+            }),
+          })
+        },
+      )
+
+      await signIn(page)
+      // Шаг выбирается номером (`?step=`), как в соседней пробе перевода
+      // стадии: второй шаг — «Рекогносцировка», он у ОМ «Проведения» пройден,
+      // и полоса «просмотр пройденного этапа» с кнопкой появляется.
+      await page.goto(`${APP}/security-ops/events/${target.id}/?step=2`)
+      const notice = page.locator('[data-slot="stage-view-notice"]')
+      await expect(notice).toBeVisible({ timeout: 15_000 })
+      const move = notice.getByRole('button', { name: 'Перевести ОМ сюда' })
+      await move.click()
+
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('button', { name: 'Перевести' }).click()
+
+      // Сообщение ВНУТРИ окна, и окно осталось открытым: человеку есть что
+      // прочитать и куда нажать «Отмена».
+      await expect(dialog.locator('[data-slot="stage-override-error"]')).toContainText(
+        'Перевод на этот этап запрещён',
+        { timeout: 15_000 },
+      )
+      await expect(dialog).toBeVisible()
+
+      // Закрыли и открыли заново — прежний отказ не встречает на входе.
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await expect(dialog).toBeHidden()
+      await move.click()
+      await expect(
+        page.getByRole('dialog').locator('[data-slot="stage-override-error"]'),
+      ).toHaveCount(0)
+    })
   })
 })
