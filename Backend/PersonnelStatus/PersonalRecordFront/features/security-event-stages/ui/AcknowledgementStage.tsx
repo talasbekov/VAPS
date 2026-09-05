@@ -62,6 +62,20 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
   const access = useChainAccess();
   const acknowledge = useAcknowledgePlacement(event.id);
   const remindOne = useRemindAssignment(event.id);
+  /**
+   * Какое напоминание нажали ПОСЛЕДНИМ (Plane №614).
+   *
+   * 🔴 Блок отчёта читал `(remindOne.data ?? remindAll.data)`, а React Query
+   * держит `data` после завершения мутации — панель навсегда приколачивалась
+   * к результату одиночного «Напомнить»: последующее «Напомнить всем»
+   * обновляло свои данные, а на экране оставалось прежнее «отправлено: 1
+   * заступающим» вместе с протухшим предупреждением «не дошло до N».
+   *
+   * Порядок хранится ЯВНО, а не выводится из наличия данных: у мутаций нет
+   * общего времени ответа, а «кто позвал последним» — это ровно то, что
+   * человек и хочет видеть.
+   */
+  const [lastRemind, setLastRemind] = useState<"one" | "all" | null>(null);
   const remindAll = useRemindAllPending(event.id);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [completeComment, setCompleteComment] = useState("");
@@ -91,11 +105,25 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
       posts.set(a.postId, bucket);
       bySector.set(sector, posts);
     }
+    // 🔴 КОРЗИНА НЕСЁТ СВОЙ id (Plane №615). Ключились корзины по `postId`, а
+    // рисовались с `key={bucket.post}` — ПОДПИСЬЮ поста. Два разных поста с
+    // одинаковым названием в одном секторе — норма расчёта («два поста
+    // наружного наблюдения»), и React получал совпавшие ключи: предупреждение
+    // в консоли и переиспользование состояния DOM между группами при
+    // перерисовке после мутации.
     return [...bySector.entries()].map(([sector, posts]) => ({
       sector,
-      posts: [...posts.values()],
+      posts: [...posts.entries()].map(([postId, bucket]) => ({ postId, ...bucket })),
     }));
   }, [assignments, event.reconSectorPosts, pending, scope]);
+
+  /** Отчёт ПОСЛЕДНЕГО нажатия (Plane №614), а не первого попавшегося. */
+  const report =
+    lastRemind === "all"
+      ? remindAll.data
+      : lastRemind === "one"
+        ? remindOne.data
+        : undefined;
 
   const canManage = access.can(EVENT_MANAGE);
   const allConfirmed = total > 0 && confirmed.length === total;
@@ -131,7 +159,10 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                     ? "Все подтвердили — напоминать некому"
                     : "Напомнить каждому, кто ещё не подтвердил, и их руководителям"
               }
-              onClick={() => remindAll.mutate({})}
+              onClick={() => {
+                setLastRemind("all");
+                remindAll.mutate({});
+              }}
             >
               <Bell className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {remindAll.isPending ? "Отправка…" : `Напомнить всем, кто не подтвердил (${pending.length})`}
@@ -207,7 +238,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                   {group.sector}
                 </h3>
                 {group.posts.map((bucket) => (
-                  <div key={bucket.post} className="rounded-md border">
+                  <div key={bucket.postId} className="rounded-md border">
                     <p className="border-b bg-muted/40 px-2.5 py-1.5 text-xs font-semibold">
                       {bucket.post}
                     </p>
@@ -218,7 +249,10 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                           assignment={assignment}
                           canManage={canManage}
                           onAcknowledge={() => acknowledge.mutate({ assignmentId: assignment.id })}
-                          onRemind={() => remindOne.mutate({ assignmentId: assignment.id })}
+                          onRemind={() => {
+                            setLastRemind("one");
+                            remindOne.mutate({ assignmentId: assignment.id });
+                          }}
                           onReplace={() => setReplacing(assignment)}
                           busy={acknowledge.isPending || remindOne.isPending}
                         />
@@ -236,20 +270,20 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
         <StageError error={remindAll.error} />
         <StageError error={complete.error} />
 
-        {(remindOne.data ?? remindAll.data) !== undefined && (
+        {report !== undefined && (
           <p
             className={
-              (remindOne.data ?? remindAll.data)!.unlinkedEmployeeIds.length > 0
+              report.unlinkedEmployeeIds.length > 0
                 ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
                 : "rounded-md border px-3 py-2 text-xs text-muted-foreground"
             }
             data-testid="remind-report"
           >
-            Напоминание отправлено: {(remindOne.data ?? remindAll.data)!.employees} заступающим и{" "}
-            {(remindOne.data ?? remindAll.data)!.supervisors} руководителям.
-            {(remindOne.data ?? remindAll.data)!.unlinkedEmployeeIds.length > 0 && (
+            Напоминание отправлено: {report.employees} заступающим и{" "}
+            {report.supervisors} руководителям.
+            {report.unlinkedEmployeeIds.length > 0 && (
               <>
-                {" "}Не дошло до {(remindOne.data ?? remindAll.data)!.unlinkedEmployeeIds.length}:
+                {" "}Не дошло до {report.unlinkedEmployeeIds.length}:
                 у их кадровых записей нет связанной учётной записи.
               </>
             )}

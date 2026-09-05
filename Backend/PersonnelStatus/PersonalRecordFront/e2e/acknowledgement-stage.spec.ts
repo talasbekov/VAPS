@@ -151,9 +151,50 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     const fresh = (await events(token)).find((e) => e.id === event!.id)!
     expect(fresh.placementAssignments.find((a) => a.id === first.id)?.remindedAt).toBeTruthy()
 
+    // 🔴 ОТЧЁТ ПОКАЗЫВАЕТ ПОСЛЕДНЕЕ НАЖАТИЕ (Plane №614). Блок читал
+    // `remindOne.data ?? remindAll.data`, а React Query держит данные после
+    // мутации: панель навсегда приколачивалась к результату одиночного
+    // «Напомнить», и «Напомнить всем» её не меняло. Числа у двух нажатий
+    // разные — одному против всех ожидающих, — и на них это видно.
+    //
+    // Сравниваются ТЕКСТЫ двух отчётов, а не конкретные числа: у стенда часть
+    // назначенных без учётной записи, и «отправлено» с «не дошло» делятся
+    // по-разному от прогона к прогону. Предмет пробы — обновился ли блок,
+    // а не сколько кому ушло.
+    const oneReport = await card.getByTestId('remind-report').innerText()
+    expect(oneReport, 'отчёт одиночного напоминания не появился').toContain(
+      'Напоминание отправлено',
+    )
     // «Напомнить всем, кто не подтвердил» — столько же, сколько ожидают.
     await card.getByRole('button', { name: `Напомнить всем, кто не подтвердил (${pending.length})` }).click()
     await expect(card.getByTestId('remind-report')).toBeVisible({ timeout: 15_000 })
+    if (pending.length > 1) {
+      await expect
+        .poll(async () => await card.getByTestId('remind-report').innerText(), {
+          timeout: 15_000,
+        })
+        .not.toBe(oneReport)
+    }
+
+    // Корзин столько же, сколько РАЗНЫХ постов в выборке — группировка идёт
+    // по `postId`, а не по подписи.
+    //
+    // 🔴 ЧЕСТНО ПРО ГРАНИЦУ: на возврате ключа `key={bucket.post}` (Plane
+    // №615) эта проверка НЕ КРАСНЕЕТ — проверено запуском. Число корзин
+    // задаёт `Map` по `postId`, а `key` влияет только на сверку React, и
+    // вред от совпавших ключей — предупреждение в консоли и переиспользование
+    // состояния DOM при перерисовке. Чтобы это проявилось, нужны два поста с
+    // ОДИНАКОВОЙ подписью в одном секторе, которых у фикстуры стенда нет.
+    // Правка ключа верна и оставлена; покрытия у неё нет, и это сказано
+    // вслух, а не выдано за проверку.
+    const postsShown = await card.locator('[data-testid="ack-groups"] > section > div').count()
+    const distinctPosts = new Set(
+      event.placementAssignments.map((a) => a.postId),
+    ).size
+    expect(
+      postsShown,
+      'корзин постов меньше, чем разных постов — группировка схлопнулась',
+    ).toBe(distinctPosts)
 
     await card.getByRole('button', { name: `Ожидают (${pending.length})` }).click()
     await expect(card.locator('li[data-state]')).toHaveCount(pending.length)
@@ -292,10 +333,28 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     expect(found.results.length, 'на стенде нет сотрудника «Токтаров»').toBeGreaterThan(0)
     const linkedEmployeeId = found.results[0].id
 
-    // 2027-02-01 + (секунды эпохи mod 300) дней — уникально на прогон и
-    // всегда валидная дата.
-    const day = new Date(Date.UTC(2027, 1, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
-    const businessDate = day.toISOString().slice(0, 10)
+    // 🔴 ДАТА ОБЯЗАНА БЫТЬ УНИКАЛЬНОЙ, А НЕ «ПОЧТИ» (Plane №567). Стояло
+    // `эпоха в СЕКУНДАХ mod 300` дней — то есть цикл длиной ровно ПЯТЬ МИНУТ:
+    // прогон и его повтор через пять минут брали ОДНУ И ТУ ЖЕ деловую дату.
+    // Уведомление ключится (получатель, вид, деловая дата), уборка только
+    // помечает прочитанным, — и `notify` во втором прогоне становился
+    // холостым: опрос падал по таймауту на ИНФРАСТРУКТУРЕ, ничего не сказав о
+    // коде.
+    //
+    // Теперь шаг считается по МИЛЛИСЕКУНДАМ, а окно — десять лет (≈3650 дней):
+    // повтор требует совпадения с точностью до миллисекунды. Дата остаётся
+    // валидной и заведомо будущей — этап ознакомления открывается только у
+    // предстоящего мероприятия.
+    const uniqueBusinessDate = (at: number) =>
+      new Date(Date.UTC(2027, 1, 1) + (at % 3650) * 86_400_000).toISOString().slice(0, 10)
+    // Свойство, ради которого формула именно такая, проверяется ЗДЕСЬ, а не
+    // ожиданием повтора через пять минут: прежняя формула на этой строке
+    // краснеет (300 000 мс — ровно её период), новая проходит.
+    expect(
+      uniqueBusinessDate(Date.now()),
+      'дата повторяется через пять минут — проба будет мигать',
+    ).not.toBe(uniqueBusinessDate(Date.now() + 300_000))
+    const businessDate = uniqueBusinessDate(Date.now())
     const code = await prepareEvent(token, { firstEmployeeId: linkedEmployeeId, businessDate })
 
     // Сервер: у руководителя появилась строка об ЭТОМ мероприятии — без клика.
