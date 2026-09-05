@@ -1807,15 +1807,19 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             employee is not None and row is not None
             and str(row.get("employeeId")) == str(employee.pk)
         )
-        actor_name = ""
-        if employee is not None:
-            from organization_management.apps.ops.security_events import personnel_display_name
+        from organization_management.apps.ops.security_events import (
+            actor_display_name,
+        )
 
-            actor_name = personnel_display_name(employee)
+        # Подпись актора берётся ОБЩЕЙ функцией (Plane №723): правило «ФИО из
+        # кадровой записи, иначе username учётки» было написано здесь второй
+        # раз, и две копии одного правила разошлись бы при первой же правке.
+        actor_id = resolve_actor_id(request)
         return self._event_response(
             mine.acknowledge(
                 pk, assignment_id, personal=not own,
-                actor=resolve_actor_id(request), actor_name=actor_name or request.user.get_username(),
+                actor=actor_id,
+                actor_name=actor_display_name(actor_id) or request.user.get_username(),
             )
         )
 
