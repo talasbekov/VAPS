@@ -513,3 +513,138 @@ def test_event_need_counts_unmarked_posts_beside_marked_ones(manager, event_on_r
     assert event.force_need == 12, (
         "мероприятие просит только за размеченный пост — ничей потерялся"
     )
+
+
+# ── Тот же вопрос, но на пути АВТОПРОХОДА (Plane №743) ──────────────────────
+#
+# 🔴 ОБЕ ПРОБЫ №476 ВЫШЕ ЗОВУТ `recompute_event_stage` НАПРЯМУЮ — и потому
+# остались зелёными, когда починка оказалась неполной. По-настоящему первым
+# отрабатывает ДРУГОЙ путь: завершение рекогносцировки считает потребность
+# само (`_autopass_demand_and_forces`), и его формула осталась прежней.
+# Проба идёт ручкой, как ходит человек, а не мимо неё.
+
+
+def _complete_recon_with(api, event_id, visit, marked_need, unmarked_need):
+    """Завершить рекогносцировку у ОМ с ДВУМЯ объектами и частичной разметкой.
+
+    Один пост отнесён к объекту, второй ничей — при двух объектах он не
+    принадлежит никому, и ровно на нём формулы расходятся.
+    """
+    saved = api.patch(
+        f"/api/ops/security-events/{event_id}/recon/",
+        {
+            "checklist": [],
+            "sectorPosts": [
+                {
+                    "sector": "Сектор 1",
+                    "post": "Мой пост",
+                    "task": "",
+                    "need": marked_need,
+                    "shift": "",
+                    "requirements": "",
+                    "comment": "",
+                    "visitObjectId": str(visit.pk),
+                },
+                {
+                    "sector": "Сектор 2",
+                    "post": "Ничей пост",
+                    "task": "",
+                    "need": unmarked_need,
+                    "shift": "",
+                    "requirements": "",
+                    "comment": "",
+                },
+            ],
+        },
+        format="json",
+    )
+    assert saved.status_code == 200, saved.content
+    done = api.post(f"/api/ops/security-events/{event_id}/recon/complete/")
+    assert done.status_code == 200, done.content
+    return done
+
+
+@pytest.fixture
+def event_with_two_objects(manager, event_on_recon):
+    """ОМ на рекогносцировке, у которого объектов посещения два."""
+    event_id, _ = event_on_recon
+    visit = OpsSecurityEventVisitObject.objects.get(event_id=event_id)
+    second_object = make_object(code="OBJ-SECOND", name="Второй объект")
+    added = manager.post(
+        f"/api/ops/security-events/{event_id}/visit-objects/",
+        {"objectId": str(second_object.pk)},
+        format="json",
+    )
+    assert added.status_code in (200, 201), added.content
+    give_chief(manager, event_id)
+    return event_id, visit
+
+
+def test_autopass_counts_unmarked_posts_at_partial_marking(
+    manager, event_with_two_objects
+):
+    """Автопроход просит людей на ВЕСЬ расчёт, а не на размеченную его часть.
+
+    Красная проба к `_autopass_demand_and_forces`: до правки — 5 вместо 12.
+    Запасная ветка через `or` спасала только ПОЛНОСТЬЮ неразмеченный случай
+    (`0 or 12` → 12); при частичной разметке она коротила на истинной частичной
+    сумме, и неразмеченный пост выпадал — ровно тот дефект, ради которого
+    заведена №476, на пути, который отрабатывает ПЕРВЫМ.
+    """
+    event_id, visit = event_with_two_objects
+
+    _complete_recon_with(manager, event_id, visit, marked_need=5, unmarked_need=7)
+
+    event = service.lock_event(event_id)
+    assert event.force_need == 12, (
+        "автопроход потерял неразмеченный пост: штабу уходит 5 вместо 12"
+    )
+
+
+def test_autopass_agrees_with_the_recompute_that_follows_it(
+    manager, event_with_two_objects
+):
+    """Два ответа на «сколько людей просим» обязаны совпасть.
+
+    Дефект был виден не отказом, а ПРЫЖКОМ ЧИСЛА: колонка реестра
+    «Потребность» показывала 5 от завершения рекогносцировки до первого
+    перехода стадии, а затем сама менялась на 12 — без записи в журнал и без
+    действия человека. Проба держит именно совпадение, а не оба числа порознь:
+    разойтись они не имеют права ни на каком значении.
+    """
+    event_id, visit = event_with_two_objects
+
+    _complete_recon_with(manager, event_id, visit, marked_need=5, unmarked_need=7)
+
+    after_autopass = service.lock_event(event_id).force_need
+    event = service.recompute_event_stage(service.lock_event(event_id))
+    event.refresh_from_db()
+
+    assert after_autopass == event.force_need, (
+        "потребность прыгнула при первом же переходе стадии: "
+        f"{after_autopass} → {event.force_need}"
+    )
+
+
+def test_the_auto_force_request_asks_for_the_whole_calculation(
+    manager, event_with_two_objects
+):
+    """Число в автозаявке — то же, что в потребности, и оно не устаревает.
+
+    `requestedCount` пишется ОДИН раз и больше не пересобирается, а
+    `_sync_auto_force_request` читает его как цель: с заниженной пятёркой
+    заявка переходила в «Выделено» после пяти человек, тогда как потребность
+    и строки расчёта говорили, что нужно двенадцать. То же заниженное число
+    уезжало в реестр сбора сил (`forces_ledger`) и в аналитику.
+    """
+    event_id, visit = event_with_two_objects
+
+    _complete_recon_with(manager, event_id, visit, marked_need=5, unmarked_need=7)
+
+    event = service.lock_event(event_id)
+    assert [row["requestedCount"] for row in event.force_requests] == [12], (
+        "автозаявка просит меньше, чем потребность мероприятия"
+    )
+    assert event.recon_force_request == 12, (
+        "число, ушедшее штабу при завершении осмотра, разошлось с потребностью"
+    )
