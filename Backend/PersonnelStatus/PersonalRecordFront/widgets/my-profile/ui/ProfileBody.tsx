@@ -21,6 +21,10 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatIsoDate } from "@/shared/lib/date";
+// Арифметика дат берётся у расхода, а не пишется здесь второй раз: там же
+// живёт правило «полуинтервал бэка ↔ включительный день на экране», и второй
+// его экземпляр разошёлся бы с первым молча (Plane №657).
+import { addDaysIso } from "@/entities/daily-grid";
 import {
   useCoreDirectories,
   useEmployeeStatuses,
@@ -138,6 +142,27 @@ const isoOf = (year: number, month: number, day: number) =>
 const coversDay = (period: CalendarPeriod, iso: string) =>
   iso >= period.from && iso <= (period.to ?? period.from);
 
+/**
+ * ПОСЛЕДНИЙ ДЕНЬ СТАТУСА по его `date_end` (Plane №657).
+ *
+ * 🔴 `date_end` — ГРАНИЦА ПОЛУИНТЕРВАЛА `[date_start, date_end)`, а не
+ * последний день. Так его хранит сервер (`models_status.py`: действующим
+ * считается статус с `date_end > business_date`) и так его пишет расход
+ * (`daily-grid.toBulkRequest` прибавляет к введённому дню сутки). Профиль
+ * печатал границу как включительную: «Отпуск до 15.09» при фактическом
+ * последнем дне 14.09 — человек выходит на день позже, чем должен.
+ *
+ * Календарь этого же виджета читает `to` включительно (`coversDay`), поэтому
+ * перевод нужен ОДИН и в одном месте — здесь, на входе данных в экран.
+ *
+ * Вырожденная строка (`date_end <= date_start`, нулевая длина) не уводится
+ * ниже начала: показать «с 15-го по 14-е» хуже, чем показать один день.
+ */
+const lastDayOfStatus = (dateStart: string, dateEnd: string) => {
+  const previous = addDaysIso(dateEnd, -1);
+  return previous < dateStart ? dateStart : previous;
+};
+
 const MONTH_GENITIVE = [
   "января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря",
@@ -205,7 +230,12 @@ export function ProfileBody({
   const evaluatedEvents = useMemo(() => {
     const codes = new Set<string>();
     for (const row of evaluations.data?.results ?? []) {
-      if (String(row.employeeId) !== String(employee.id)) continue;
+      // 🔴 СВЕРКА ИДЁТ ПО КАДРОВОМУ ID (Plane №655). `employeeId` строки
+      // реестра — КОД УЧАСТНИКА рейтинга (`employee-<id>`), и сравнение его с
+      // кадровым id не совпадало НИКОГДА: чип рейтинга в шапке не
+      // показывался, а в колонке «Балл» истории стояло «не оценивалось» у
+      // всех. `personnelId` отдан сервером рядом ровно для таких читателей.
+      if (String(row.personnelId) !== String(employee.id)) continue;
       if (row.aggregateRating === null) continue;
       codes.add(row.eventNumber);
     }
@@ -224,7 +254,8 @@ export function ProfileBody({
    */
   const rating = useMemo(() => {
     const mine = (evaluations.data?.results ?? []).filter(
-      (row) => String(row.employeeId) === String(employee.id)
+      // По кадровому id, а не по коду участника (Plane №655) — см. выше.
+      (row) => String(row.personnelId) === String(employee.id)
     );
     const aggregate = mine.find((row) => row.aggregateRating !== null)?.aggregateRating;
     if (aggregate === undefined || aggregate === null) return null;
@@ -236,6 +267,21 @@ export function ProfileBody({
   // Смены ЧУЖОГО сотрудника ручка «мои смены» не отдаёт — в чужом профиле
   // запрос не делается, а календарь говорит об этом словами.
   const shifts = useMyDutyShifts({ enabled: !readOnly });
+  /**
+   * Смены, которые календарь имеет право нарисовать (Plane №656).
+   *
+   * 🔴 `enabled: false` НЕ ОЧИЩАЕТ КЭШ. Ключ `['ops-duty-shifts','mine']`
+   * общий на всё приложение: после захода в СВОЙ профиль смены смотрящего
+   * лежат в кэше React Query, и в чужом профиле хук отдавал их как данные.
+   * Календарь чужого человека рисовал полоски «Дежурство» — СВОИ смены
+   * администратора, — пока баннер под ним уверял, что смены не показываются.
+   * Экран утверждал две противоположные вещи, и картинка убедительнее текста.
+   *
+   * Пустой список тут — не «дежурств нет», а «мы про них не знаем», и это
+   * сказано словами в `shiftsNote` рядом: молчаливый ноль читался бы как факт
+   * о человеке.
+   */
+  const shownShifts = readOnly ? [] : (shifts.data?.results ?? []);
 
   const myAssignments = useMemo(
     () => (events.data?.results ?? []).map(toMyAssignment),
@@ -300,7 +346,7 @@ export function ProfileBody({
       {tab === "calendar" && (
         <CalendarTab
           statuses={statuses.data ?? []}
-          shifts={shifts.data?.results ?? []}
+          shifts={shownShifts}
           assignments={myAssignments}
           shiftsNote={shiftsNote}
           loading={statuses.isPending || (!readOnly && shifts.isPending)}
@@ -348,7 +394,7 @@ function statusWords(
       text:
         active.status_type_code === "IN_SERVICE"
           ? label
-          : `${label} до ${formatIsoDate(active.date_end)}`,
+          : `${label} до ${formatIsoDate(lastDayOfStatus(active.date_start, active.date_end))}`,
       inService: active.status_type_code === "IN_SERVICE",
     };
   }
@@ -1211,7 +1257,7 @@ function CalendarTab({
             title: labelOf(row.status_type_code),
             detail: eventLabel,
             from: row.date_start,
-            to: row.date_end,
+            to: lastDayOfStatus(row.date_start, row.date_end),
             state: row.state,
             stateLabel: STATE_LABEL[row.state] ?? row.state,
             dot: STATE_DOT[row.state] ?? "bg-muted-foreground",

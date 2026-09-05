@@ -436,7 +436,15 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     // подменяется: две страницы, на второй — своё мероприятие.
     const registryRow = (eventNumber: string) => ({
       id: `row-${eventNumber}`,
-      employeeId: employee.id,
+      // 🔴 ФОРМА СТРОКИ ПРАВЛЕНА ОСОЗНАННО (Plane №655). Здесь стоял
+      // `employeeId: employee.id` — КАДРОВЫЙ id, тогда как сервер кладёт в
+      // это поле КОД УЧАСТНИКА рейтинга `employee-<id>`. Проба чинила за код
+      // недостающее (№254) и потому была зелёной, пока чип рейтинга в жизни
+      // не показывался НИ РАЗУ: клиент сравнивал код участника с кадровым id,
+      // и совпадений не бывало. Кадровая ссылка приезжает отдельным полем
+      // `personnelId` — им профиль и сверяется.
+      employeeId: `employee-${employee.id}`,
+      personnelId: String(employee.id),
       eventNumber,
       aggregateRating: 7.5,
     })
@@ -473,6 +481,9 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       ratingChip,
       'счёт оценённых мероприятий взят по ПЕРВОЙ странице реестра',
     ).toContainText('из 2 мероприятий')
+    // И сам балл: без сверки по кадровой ссылке чип не появлялся вовсе
+    // (Plane №655) — «из 2 мероприятий» тогда некому было бы напечатать.
+    await expect(ratingChip, 'средний балл участника не доехал до шапки').toContainText('7,5')
     await page.unroute('**/api/ops/evaluation-registry/**')
   })
 
@@ -537,13 +548,27 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     horizon.setDate(horizon.getDate() + 30)
     const horizonIso = `${horizon.getFullYear()}-${String(horizon.getMonth() + 1).padStart(2, '0')}-${String(horizon.getDate()).padStart(2, '0')}`
     const inWindow = (from: string, to: string | null) => (to ?? from) >= todayIso && from <= horizonIso
+    // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №657). `date_end` статуса — ГРАНИЦА
+    // полуинтервала `[date_start, date_end)`, а не последний день: так его
+    // хранит сервер (`models_status.py`: действующий — `date_end >
+    // business_date`) и так пишет расход. Проба считала окно по границе, то
+    // есть повторяла ту же ошибку, что и экран, и зеленела на ней: статус,
+    // кончившийся ВЧЕРА (`date_end` = сегодня), она ждала в списке
+    // «Ближайшие 30 дней». Ожидание считается по последнему дню — как теперь
+    // считает экран.
+    const lastDayOf = (from: string, end: string) => {
+      const d = new Date(`${end}T00:00:00Z`)
+      d.setUTCDate(d.getUTCDate() - 1)
+      const previous = d.toISOString().slice(0, 10)
+      return previous < from ? from : previous
+    }
     const mineAssignments = await get<{
       results: { eventCode: string; businessDate: string; businessDateEnd: string | null }[]
     }>(otherToken, '/api/ops/security-events/my-assignments/')
     const assignedCodes = new Set(mineAssignments.results.map((row) => row.eventCode))
     const expected =
       (statuses.results as (StatusRow & { date_start: string; date_end: string; participations?: { event_code: string }[] })[])
-        .filter((row) => inWindow(row.date_start, row.date_end))
+        .filter((row) => inWindow(row.date_start, lastDayOf(row.date_start, row.date_end)))
         .filter((row) => {
           const event = row.participations?.[0]
           return event === undefined || !assignedCodes.has(event.event_code)
@@ -753,6 +778,168 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     } else {
       await expect(card).toContainText('Закрытых мероприятий с вашим участием нет.')
     }
+  })
+
+  test('в чужом профиле на календаре нет СВОИХ дежурств смотрящего (Plane №656)', async ({
+    page,
+  }) => {
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const mine = await get<MyEmployee>(token, '/api/operations/my-employee/')
+    const other = await get<{ results: CoreEmployee[] }>(
+      token,
+      '/api/core/employees/?page_size=50',
+    )
+    const stranger = other.results.find((row) => row.id !== mine.employee!.id)
+    expect(stranger, 'на стенде один сотрудник — чужой профиль не открыть').toBeDefined()
+
+    // 🔴 СМЕНА ПОДМЕНЯЕТСЯ ОТВЕТОМ РУЧКИ, а не ищется на стенде: без НИ ОДНОЙ
+    // своей смены проба была бы вакуумной — «полосок нет» выполнялось бы само
+    // собой. Предмет пробы не в том, есть ли у админа дежурства, а в том, что
+    // ЕГО дежурства не попадают в ЧУЖОЙ календарь.
+    const today = new Date().toISOString().slice(0, 10)
+    await page.route(
+      (url) => url.pathname.endsWith('/api/ops/duty-shifts/mine/'),
+      async (route) =>
+        route.fulfill({
+          json: {
+            results: [
+              {
+                id: 'probe-shift-1',
+                businessDate: today,
+                dutyTypeCode: 'DUTY',
+                target: { targetType: 'OBJECT', objectId: '1', safeLabel: 'Объект пробы' },
+                employeeName: 'Смотрящий',
+                employeeId: String(mine.employee!.id),
+                stateCode: 'PLANNED',
+                acknowledgedAt: null,
+                actualStart: null,
+                actualEnd: null,
+                updatedAt: `${today}T00:00:00Z`,
+                passportBinding: null,
+                note: null,
+                cancellation: null,
+                overrideReason: null,
+              },
+            ],
+            unlinkedReason: null,
+          },
+        }),
+    )
+
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    // ПОРЯДОК ЗНАЧИМ. Сначала чужой профиль (кэш пуст — дефект не виден),
+    // затем свой (кэш `['ops-duty-shifts','mine']` наполняется), затем НАЗАД
+    // переходом внутри приложения: полная перезагрузка кэш сбрасывает, и
+    // болезнь пряталась бы именно от неё.
+    await page.goto(`${APP}${SCREEN}/${stranger!.id}`)
+    const tabs = page.getByRole('navigation', { name: 'Разделы профиля' })
+    await expect(tabs).toBeVisible({ timeout: 20_000 })
+
+    await page.getByRole('link', { name: 'Мой профиль' }).first().click()
+    await expect(page).toHaveURL(new RegExp(`${SCREEN}/?$`), { timeout: 20_000 })
+    await page.getByRole('navigation', { name: 'Разделы профиля' })
+      .getByRole('button', { name: 'Календарь' })
+      .click()
+    // Свой календарь смену ПОКАЗЫВАЕТ — иначе проверять на чужом нечего.
+    await expect(
+      page.locator('[data-slot="day-bars"]').getByText('Дежурство').first(),
+      'своя смена не нарисована — подмена ручки не доехала, проба вакуумна',
+    ).toBeVisible({ timeout: 20_000 })
+
+    await page.goBack()
+    await expect(page).toHaveURL(new RegExp(`${SCREEN}/${stranger!.id}/?$`), { timeout: 20_000 })
+    await page.getByRole('navigation', { name: 'Разделы профиля' })
+      .getByRole('button', { name: 'Календарь' })
+      .click()
+    await expect(
+      page.locator('[data-slot="day-bars"]').getByText('Дежурство'),
+      'в чужом календаре нарисованы СВОИ смены смотрящего',
+    ).toHaveCount(0)
+    // И экран говорит, почему их нет, — молчаливая пустота читалась бы как
+    // «дежурств у человека нет».
+    await expect(page.getByText('смены дежурств другого сотрудника здесь не показываются')).toBeVisible()
+  })
+
+  test('«до …» в шапке — последний день статуса, а не граница полуинтервала (Plane №657)', async ({
+    page,
+  }) => {
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
+    const mine = await get<MyEmployee>(token, '/api/operations/my-employee/')
+    const employee = mine.employee as CoreEmployee
+
+    // 🔴 СТАТУС ПОДМЕНЯЕТСЯ ОТВЕТОМ РУЧКИ. Предмет пробы — арифметика границы,
+    // и она проверяема только на ЗАРАНЕЕ ИЗВЕСТНЫХ датах: со стендовыми
+    // строками «на день меньше» пришлось бы считать по тем же правилам, что
+    // и в коде, то есть проверять код им же самим.
+    const addDays = (iso: string, days: number) => {
+      const d = new Date(`${iso}T00:00:00Z`)
+      d.setUTCDate(d.getUTCDate() + days)
+      return d.toISOString().slice(0, 10)
+    }
+    const today = new Date().toISOString().slice(0, 10)
+    const dateStart = today
+    // Полуинтервал [start, end): последний день статуса — end − 1.
+    const dateEnd = addDays(today, 3)
+    const lastDay = addDays(today, 2)
+    const ruDate = (iso: string) => {
+      const [y, m, d] = iso.split('-')
+      return `${d}.${m}.${y}`
+    }
+
+    await page.route(
+      (url) => url.pathname.endsWith('/api/operations/statuses/'),
+      async (route) =>
+        route.fulfill({
+          json: {
+            count: 1,
+            next: null,
+            previous: null,
+            results: [
+              {
+                id: 999001,
+                employee_id: employee.id,
+                status_type_code: 'VACATION',
+                date_start: dateStart,
+                date_end: dateEnd,
+                state: 'ACTIVE',
+                source: 'MANUAL',
+                comment: '',
+                document_basis: '',
+                cancelled_at: null,
+                cancelled_reason: '',
+                participations: [],
+              },
+            ],
+          },
+        }),
+    )
+
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto(`${APP}${SCREEN}`)
+    const chip = page.getByTestId('profile-status')
+    await expect(chip).toBeVisible({ timeout: 20_000 })
+    await expect(
+      chip,
+      'в шапке напечатана граница полуинтервала — человек выйдет на день позже',
+    ).toContainText(`до ${ruDate(lastDay)}`)
+    await expect(chip).not.toContainText(ruDate(dateEnd))
+
+    // Календарь читает ту же границу: последний день закрашен, следующий нет.
+    await page.getByRole('button', { name: 'Календарь' }).click()
+    const dayCell = (iso: string) =>
+      page.getByRole('button', { name: new RegExp(`^${Number(iso.slice(8))} \\S+ \\d{4} — `) })
+    await expect(dayCell(lastDay), 'последний день статуса не закрашен').toBeVisible({
+      timeout: 20_000,
+    })
+    await dayCell(lastDay).click()
+    const dayCard = page.locator('[data-slot="card"]', { hasText: 'Что назначено на этот день' })
+    await expect(dayCard.getByRole('listitem')).toHaveCount(1)
+    await page.getByRole('button', { name: 'Весь месяц' }).click()
+    await dayCell(dateEnd).click()
+    await expect(
+      page.locator('[data-slot="card"]', { hasText: 'Что назначено на этот день' }),
+      'день ЗА границей статуса показан занятым',
+    ).toContainText('В этот день ничего не назначено')
   })
 
 })
