@@ -1509,6 +1509,74 @@ test.describe(
       expect(answers.readinessPercent, 'готовность разошлась с STAGE_READINESS').toBe(95)
     })
 
+    /**
+     * Кадровые идентификаторы мока — ОДНО пространство (Plane №633).
+     *
+     * У объекта посещения в сиде стоял `chiefEmployeeId: "1"`, а состав мока
+     * нумеруется `emp-N`. Совпасть было не с чем: окно «Назначить старшего»
+     * сверяет старшего объекта со строками кадрового списка, и текущий не
+     * подсвечивался НИКОГДА — «уже старший» не появлялось, и его можно было
+     * «назначить» повторно. На живом стенде оба конца из одной таблицы, так
+     * что дефект был чисто мок-режимный и глазами не ловился.
+     *
+     * 🔴 ПРОВЕРЯЕТСЯ ПРИНАДЛЕЖНОСТЬ СПИСКУ, А НЕ КОНКРЕТНОЕ ЗНАЧЕНИЕ. Пин на
+     * `"emp-9"` пришлось бы править при каждой перетасовке сида и он ничего
+     * не говорил бы о СВЯЗИ. Правило же простое: кем бы ни был старший, он
+     * обязан быть человеком из того же списка, по которому его выбирают.
+     */
+    test('старший объекта в сиде — из кадрового списка мока (Plane №633)', async ({
+      page,
+    }) => {
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const seen = await page.evaluate(async () => {
+        const roster = (await (
+          await fetch('/api/ops/personnel/?page_size=200')
+        ).json()) as { results: { id: string; name: string }[] }
+        const events = (await (
+          await fetch('/api/ops/security-events/?page_size=50')
+        ).json()) as {
+          results: {
+            code: string
+            visitObjects: { chiefEmployeeId: string | null; chiefName: string }[]
+          }[]
+        }
+        const chiefs = events.results.flatMap((event) =>
+          event.visitObjects
+            .filter((visit) => visit.chiefEmployeeId !== null)
+            .map((visit) => ({
+              code: event.code,
+              id: visit.chiefEmployeeId as string,
+              name: visit.chiefName,
+            })),
+        )
+        return { ids: roster.results.map((person) => person.id), chiefs }
+      })
+
+      // Гвард: без назначенного старшего проверять нечего, и «расхождений
+      // нет» означало бы не то.
+      expect(seen.chiefs.length, 'у объектов сида нет ни одного старшего').toBeGreaterThan(0)
+      for (const chief of seen.chiefs) {
+        expect(
+          seen.ids,
+          `старший объекта ${chief.code} («${chief.name}», id ${chief.id}) не найден в кадровом списке мока`,
+        ).toContain(chief.id)
+      }
+    })
+
     test('возврат обнуляет маршрут, ответ на последнее замечание завершает этап (Plane №569, №570)', async ({
       page,
     }) => {
