@@ -351,8 +351,8 @@ def test_the_export_is_written_to_the_log(types, division):
 # Неподдерживаемой обязана оставаться какая-то БУДУЩАЯ версия, иначе проверка
 # «отказ до журнала» стала бы про одни только опечатки. Число здесь сдвигается
 # при каждом повышении схемы: 3 ушла со срезом 135, 4 — с 141, 5 — с 142,
-# 6 — с 144, 7 — с 146.
-@pytest.mark.parametrize("schema_version", [None, "1", 8, True])
+# 6 — с 144, 7 — с 146, 8 — с Plane №751.
+@pytest.mark.parametrize("schema_version", [None, "1", 9, True])
 def test_an_unsupported_snapshot_schema_is_422_before_the_log(
     types, division, schema_version
 ):

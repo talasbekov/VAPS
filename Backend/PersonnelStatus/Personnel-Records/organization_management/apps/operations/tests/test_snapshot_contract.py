@@ -1,8 +1,9 @@
 """Раскладка снимка и её история — под замком.
 
-За одну партию схема снимка прошла с 2 до 7, и каждое повышение закрывало
+За одну партию схема снимка прошла с 2 до 8, и каждое повышение закрывало
 УТЕЧКУ ЖИВЫХ ДАННЫХ в подписанный день: справочник (3), подписи статусов (4),
-название подразделения (5), знаменатель по штату (6), «+N» приданных (7).
+название подразделения (5), знаменатель по штату (6), «+N» приданных (7), вид
+участия в мероприятии (8).
 Ошибка в этой цепочке дорогая: снимок читают документы, которые подписывают, а
 поле, добавленное без повышения версии, делает две версии с одним номером
 неразличимыми — и читатель, который «поддерживает версию 7», получает то одну
@@ -54,6 +55,8 @@ KEYS_BY_VERSION = {
     5: BASE | {"catalog", "division_title"},
     6: BASE | {"catalog", "division_title", "staff_total", "vacancies"},
     7: BASE | {"catalog", "division_title", "staff_total", "vacancies", "attached"},
+    # participations добавлены ВНУТРЬ строки фактов, не наверх
+    8: BASE | {"catalog", "division_title", "staff_total", "vacancies", "attached"},
 }
 
 # Поля ВНУТРИ вложенных структур — их номер версии тоже отражает.
@@ -65,6 +68,19 @@ CATALOG_KEYS_BY_VERSION = {
     3: frozenset({"code", "priority", "report_column_code", "counts_in_staff"}),
     4: frozenset(
         {"code", "name", "priority", "report_column_code", "counts_in_staff"}
+    ),
+}
+# Строка ФАКТА. Своей таблицы у неё не было до №751 — и это была дыра ровно
+# того размера, в которую дефект и провалился: расширение `rows` не краснило
+# здесь ничем, а именно `rows` читает документ расхода.
+ROW_KEYS_BY_VERSION = {
+    1: frozenset(
+        {"employee_id", "status_type_code", "status_id", "date_start",
+         "date_end", "source"}
+    ),
+    8: frozenset(
+        {"employee_id", "status_type_code", "status_id", "date_start",
+         "date_end", "source", "participations"}
     ),
 }
 
@@ -113,6 +129,18 @@ def test_the_roster_entry_matches_the_table(snapshot):
 def test_the_catalog_row_matches_the_table(snapshot):
     latest = max(CATALOG_KEYS_BY_VERSION)
     assert set(snapshot["catalog"][0]) == CATALOG_KEYS_BY_VERSION[latest]
+
+
+def test_the_fact_row_matches_the_table(snapshot):
+    """Строка факта — та самая, которую читает документ расхода.
+
+    Без этого замка расширение `rows` проходило молча: договор описывал состав
+    и каталог, а факты — нет. Дефект №751 жил в противоположную сторону (поля
+    НЕ хватало), но обнаружился бы здесь так же — набор ключей разошёлся бы с
+    таблицей.
+    """
+    latest = max(ROW_KEYS_BY_VERSION)
+    assert set(snapshot["rows"][0]) == ROW_KEYS_BY_VERSION[latest]
 
 
 # ── История версий ───────────────────────────────────────────────────────
