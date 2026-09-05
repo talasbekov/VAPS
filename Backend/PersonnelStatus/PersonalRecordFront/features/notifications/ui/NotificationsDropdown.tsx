@@ -69,7 +69,11 @@ export function NotificationsDropdown() {
     staleTime: 30000,
   });
 
-  const notifications = unreadQuery.data || [];
+  const notifications = unreadQuery.data?.items ?? [];
+  // Часть ленты не пришла — это НЕ отказ всего колокольчика (Plane №565):
+  // строки, которые загрузились, показываются, а про недостающую половину
+  // говорится прямо. Прятать её молча значило бы объявить «это всё, что есть».
+  const partlyFailed = (unreadQuery.data?.failed.length ?? 0) > 0;
 
   const readMutation = useMutation({
     mutationFn: (notification: Notification) => markNotificationRead(notification),
@@ -95,7 +99,9 @@ export function NotificationsDropdown() {
     onError: () => toast({ title: "Ошибка", variant: "destructive" }),
   });
 
-  const unreadCount = unreadQuery.data?.length ?? 0;
+  // Счётчик на колокольчике — по тому, что ДЕЙСТВИТЕЛЬНО пришло. При частичном
+  // отказе он занижен, и об этом говорит строка в самом списке.
+  const unreadCount = notifications.length;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -184,7 +190,7 @@ export function NotificationsDropdown() {
             isRetrying={unreadQuery.isFetching}
             className="items-center px-4 text-center"
           />
-        ) : notifications.length === 0 ? (
+        ) : notifications.length === 0 && !partlyFailed ? (
           <motion.div 
             className="text-center text-muted-foreground py-6 flex flex-col items-center gap-2"
             initial={{ opacity: 0, y: 10 }}
@@ -200,6 +206,27 @@ export function NotificationsDropdown() {
             initial="hidden"
             animate="visible"
           >
+            {/* Отказ ОБЪЯВЛЯЕТСЯ, а не только окрашивается: `role="alert"`
+                читает скринридер, а «Повторить» рядом — потому что человек
+                пришёл сюда за списком, и уходить со страницы ради обновления
+                ему незачем. */}
+            {partlyFailed && (
+              <div
+                role="alert"
+                className="flex items-center justify-between gap-2 px-4 py-2 text-xs text-destructive"
+              >
+                <span>Часть уведомлений не загрузилась — список неполный.</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-2 py-1 text-xs"
+                  onClick={() => void unreadQuery.refetch()}
+                  disabled={unreadQuery.isFetching}
+                >
+                  {unreadQuery.isFetching ? "Обновляем…" : "Повторить"}
+                </Button>
+              </div>
+            )}
             <AnimatePresence mode="popLayout">
               {notifications.map((n: Notification, index: number) => (
                 <motion.div

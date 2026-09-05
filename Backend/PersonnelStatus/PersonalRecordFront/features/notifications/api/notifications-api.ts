@@ -167,6 +167,16 @@ export function describeOpsNotification(row: OpsNotificationRow): {
   };
 }
 
+/** Источник строки ленты: две таблицы, слитые в один список (Plane №402). */
+export type NotificationSource = Notification["source"];
+
+/** Лента и ЧЕСТНЫЙ отчёт о том, что из неё не пришло (Plane №565). */
+export interface NotificationFeed {
+  items: Notification[];
+  /** Ленты, которые ответили отказом. Пусто — пришло всё. */
+  failed: NotificationSource[];
+}
+
 /** Обе ленты — легаси (`/api/notifications/`) и раздела ОМ
  *  (`/api/operations/notifications/`) — СЛИТЫ в одну (Plane №402, `[ОЗН-01]`).
  *
@@ -177,31 +187,55 @@ export function describeOpsNotification(row: OpsNotificationRow): {
  * `unread-count` рос, а хедер показывал «Нет новых уведомлений». Слияние, а
  * не переезд: легаси-лента несёт СВОИ виды уведомлений (не ОМ), и снимать её
  * не входит в рамки этой задачи.
+ *
+ * 🔴 ОТКАЗ ОДНОЙ ЛЕНТЫ НЕ ГАСИТ ВТОРУЮ (Plane №565). Слияние сделали через
+ * `Promise.all`, и это оказалось РЕГРЕССОМ по сравнению с прежним поведением:
+ * до него легаси-уведомления показывались сами по себе, а после — единственный
+ * 500 со стороны раздела ОМ ронял весь запрос, и колокольчик показывал «не
+ * удалось загрузить» вместо тех строк, которые прекрасно пришли. Отказ одной
+ * половины — повод сказать про эту половину, а не спрятать вторую.
+ *
+ * Обе легли — это отказ целиком, и он летит наверх: показывать пустую ленту
+ * там, где ничего не известно, значило бы сказать «уведомлений нет».
  */
-export async function fetchUnreadNotifications(): Promise<Notification[]> {
-  const [legacyRes, opsPage] = await Promise.all([
+export async function fetchUnreadNotifications(): Promise<NotificationFeed> {
+  const [legacyResult, opsResult] = await Promise.allSettled([
     authorizedFetch(`${BASE}/unread/`).then((r) => r.json()) as Promise<
       Omit<Notification, "source">[]
     >,
     apiClient.getOpsNotifications({ unread: true }),
   ]);
-  const legacy: Notification[] = legacyRes.map((row) => ({ ...row, source: "legacy" }));
-  const ops: Notification[] = opsPage.results.map((row) => {
-    const { title, message, link } = describeOpsNotification(row);
-    return {
-      id: row.id,
-      notification_type: row.kind,
-      title,
-      message,
-      link,
-      is_read: row.read_at !== null,
-      created_at: row.created_at,
-      source: "ops",
-    };
-  });
+
+  if (legacyResult.status === "rejected" && opsResult.status === "rejected") {
+    throw legacyResult.reason;
+  }
+
+  const failed: NotificationSource[] = [];
+  const legacy: Notification[] =
+    legacyResult.status === "fulfilled"
+      ? legacyResult.value.map((row) => ({ ...row, source: "legacy" as const }))
+      : (failed.push("legacy"), []);
+  const ops: Notification[] =
+    opsResult.status === "fulfilled"
+      ? opsResult.value.results.map((row) => {
+          const { title, message, link } = describeOpsNotification(row);
+          return {
+            id: row.id,
+            notification_type: row.kind,
+            title,
+            message,
+            link,
+            is_read: row.read_at !== null,
+            created_at: row.created_at,
+            source: "ops" as const,
+          };
+        })
+      : (failed.push("ops"), []);
+
   // Свежие сверху — сортировка по времени, а не конкатенация: иначе лента
   // читалась бы как «сначала все легаси, потом все ОМ» вместо «что новее».
-  return [...legacy, ...ops].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  const items = [...legacy, ...ops].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  return { items, failed };
 }
 
 export async function markAllRead(): Promise<void> {
