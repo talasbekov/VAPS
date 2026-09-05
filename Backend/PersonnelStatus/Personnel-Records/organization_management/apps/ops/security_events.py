@@ -120,6 +120,45 @@ def _require_stage(event, stage, message):
         raise DomainError("INVALID_STAGE_TRANSITION", 422, message= message)
 
 
+def _require_visit_stage(visit, stages, message):
+    """То же для операции НАД ОБЪЕКТОМ: спрашиваем стадию ЕГО, а не ОМ.
+
+    🔴 ПОЧЕМУ ЭТОГО НЕ ДЕЛАЕТ `_require_stage` (Plane №475). Стадия
+    мероприятия — НАИМЕНЬШАЯ среди объектов (`recompute_event_stage`), и это
+    задумано: карточка показывает, докуда дошло самое отстающее место. Пока
+    этап был один на мероприятие, разницы между «стадией ОМ» и «стадией
+    объекта» не было; после переезда этапов на объекты (`[МД-04]`, №411)
+    охранять действие над объектом стадией мероприятия стало значить «пусть
+    сосед решает за тебя».
+
+    Чем это било: возврат объекта А на доработку ронял стадию ОМ до
+    «Расстановки», и у объекта Б переставали работать ВСЕ действия
+    согласования разом — 422 на каждой живой кнопке. Из интерфейса выхода не
+    было: последняя подпись по Б тоже не закрывала этап (автозавершение
+    выходило по тому же условию), а ручной кнопки «Завершить этап» у
+    согласующего нет (`[СОГ-11]`, №446). Возврат при этом — ход штатный, а не
+    редкий, так что любое ОМ с двумя объектами вставало при первом же.
+
+    `stages` — строка или набор: у отправки на согласование их два, и это не
+    послабление, а `[СОГ-04]` («любое изменение = новая версия → повторное
+    согласование»). Уже согласованный объект стоит на «Ознакомлении», и
+    отправка новой версии обязана быть ему доступна — иначе согласованную
+    расстановку нельзя пересогласовать вовсе.
+
+    Отказ несёт `visitObjectId`: без него сообщение «можно только на этапе
+    …» на карточке с несколькими объектами не говорит, о котором из них речь.
+    """
+    allowed = (stages,) if isinstance(stages, str) else tuple(stages)
+    if visit.stage in allowed:
+        return
+    raise DomainError(
+        "INVALID_STAGE_TRANSITION",
+        422,
+        detail={"visitObjectId": str(visit.pk), "stage": visit.stage},
+        message=message,
+    )
+
+
 def lock_event(event_id):
     """Событие под замком агрегата; незнакомый id — 404 с конвертом.
 
@@ -5478,9 +5517,13 @@ def send_for_approval(event_id, *, visit_object_id=None):
     """
     event = lock_event(event_id)
     visit = _approval_target(event, visit_object_id)
-    _require_stage(
-        event,
-        "APPROVAL",
+    # Два этапа, а не один: согласованный объект уже стоит на «Ознакомлении»,
+    # а `[СОГ-04]` требует, чтобы новая версия уходила на повторное
+    # согласование (Plane №534). Объект, до «Согласования» не дошедший,
+    # по-прежнему отбивается.
+    _require_visit_stage(
+        visit,
+        ("APPROVAL", "ACKNOWLEDGEMENT"),
         "Отправить на согласование можно только на этапе «Согласование».",
     )
     # Объекты, вышедшие на этап до настройки маршрута, получают его здесь.
@@ -5528,8 +5571,8 @@ def withdraw_from_approval(event_id, *, visit_object_id=None):
     """
     event = lock_event(event_id)
     visit = _approval_target(event, visit_object_id)
-    _require_stage(
-        event,
+    _require_visit_stage(
+        visit,
         "APPROVAL",
         "Отозвать с согласования можно только на этапе «Согласование».",
     )
@@ -5737,7 +5780,10 @@ def _autocomplete_approval(event, visit):
     проходит — `_approve_visit` откажет, и отказ здесь ГЛОТАЕТСЯ намеренно:
     подпись состоялась, а этап дождётся повторной отправки.
     """
-    if event.stage != "APPROVAL" or not _approval_ready(visit):
+    # Стадия ОБЪЕКТА, а не мероприятия (Plane №475): у ОМ с двумя объектами
+    # возврат соседа ронял стадию ОМ, и последняя подпись переставала
+    # закрывать этап — из интерфейса выхода не оставалось вовсе.
+    if visit.stage != "APPROVAL" or not _approval_ready(visit):
         return event
     try:
         return _approve_visit(event, visit)
@@ -5752,8 +5798,8 @@ def approve_placement(event_id, *, visit_object_id=None):
     подпись в маршруте, а этап закрывается сам (`[СОГ-09]`)."""
     event = lock_event(event_id)
     visit = _approval_target(event, visit_object_id)
-    _require_stage(
-        event,
+    _require_visit_stage(
+        visit,
         "APPROVAL",
         "Согласовать расстановку можно только на этапе «Согласование».",
     )
@@ -5835,8 +5881,8 @@ def return_placement(event_id, *, comment, visit_object_id=None):
     comment = str(comment or "").strip()
     if comment == "":
         raise _validation({"comment": ["Укажите причину возврата."]})
-    _require_stage(
-        event,
+    _require_visit_stage(
+        visit,
         "APPROVAL",
         "Вернуть на доработку можно только на этапе «Согласование».",
     )
