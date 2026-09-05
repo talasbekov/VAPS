@@ -2324,9 +2324,17 @@ def open_evaluation_for_event(event, *, actor):
 
     Возвращает `OpsEvaluationEvent` либо `None`, когда оценивать некого.
 
-    Повторный вызов НИЧЕГО не плодит: код мероприятия оценивания выводится из
-    кода ОМ, а задания — из пары «мероприятие + участник». Закрытие ОМ бывает
-    один раз, но ручку зовут и миграции, и возможный повтор после отката.
+    Повторный вызов НИЧЕГО не плодит и НИЧЕГО НЕ СБРАСЫВАЕТ: код мероприятия
+    оценивания выводится из кода ОМ, а задания — из пары «мероприятие +
+    участник»; у уже заведённого задания обновляются только подписи, пост и
+    время, а ход оценивания (статус, отметка об отправке, ревизия, адресат)
+    берётся из `create_defaults` и потому пишется единожды — при заведении.
+
+    🔴 ЗВАТЬ ЭТУ РУЧКУ ДВАЖДЫ — ШТАТНО, а не авария. С Plane №433 задания
+    открываются входом объекта в «Проведение», а закрытие ОМ зовёт её ещё раз
+    (за подписью состояния «Завершено» и за теми ОМ, что до «Проведения» этим
+    путём не проходили). Пока ход оценивания лежал в общем `defaults`, второй
+    вызов сбрасывал в PENDING ВСЕ выставленные оценки разом — см. №641.
     """
     assignments = [
         row for row in (event.placement_assignments or [])
@@ -2373,17 +2381,44 @@ def open_evaluation_for_event(event, *, actor):
                 "employee_id": employee_id,
             },
         )
-        OpsEvaluationWorkItem.objects.update_or_create(
+        work_item, work_item_created = OpsEvaluationWorkItem.objects.update_or_create(
             work_item_code=f"{event_code}-{code}",
+            # ОПИСАНИЕ задания обновляется всегда: подписи, пост и время могли
+            # измениться между открытием этапа и закрытием ОМ, и задание должно
+            # называть человека и пост так, как они выглядят сейчас.
             defaults={
                 "event_code": event_code,
                 "event_run_code": evaluation_event.event_run_code,
                 "assignment_code": str(assignment.get("id") or ""),
-                # Оценивает ТОТ, КТО ЗАКРЫЛ мероприятие: он его вёл и видел
-                # людей на постах. Приписать оценивание старшему объекта
-                # нельзя — `chief_employee_id` это КАДРОВАЯ запись, а задание
-                # адресуется учётной записи, и однозначного моста между ними
-                # в системе нет.
+                "target_participant_code": participant.participant_code,
+                "target_group_code": None,
+                "target_safe_label": participant.safe_label,
+                "target_safe_unit_label": assignment.get("divisionName") or "",
+                "post_label": post.get("post") or post.get("task") or "",
+                "actual_starts_at": evaluation_event.actual_starts_at,
+                "actual_ends_at": evaluation_event.actual_ends_at,
+                "participated": True,
+                "evaluation_direction": "SENIOR_TO_EMPLOYEE",
+            },
+            # 🔴 ХОД ОЦЕНИВАНИЯ ЗАДАЁТСЯ ТОЛЬКО ПРИ ЗАВЕДЕНИИ (Plane №641).
+            # Эти поля жили в общем `defaults`, и ВТОРОЙ вызов сбрасывал их у
+            # всех заданий разом. До №433 оценивание заводилось только
+            # закрытием, второго вызова в жизни задания не случалось, и вред
+            # был невидим. С №433 задания открываются входом объекта в
+            # «Проведение» — то есть к моменту закрытия ОМ они уже бывают
+            # отправлены, и закрытие стирало отметку об отправке у каждого.
+            # Хуже, чем потеря: `submit_evaluation` отказывает по закрытому
+            # мероприятию (`EVALUATION_ARCHIVE_LOCKED`), и сброшенные задания
+            # оставались PENDING навсегда, без единого способа их отправить.
+            #
+            # Адресат при заведении — тот, кто зовёт ручку. (Приписать
+            # оценивание старшему объекта нельзя вовсе: `chief_employee_id`
+            # это КАДРОВАЯ запись, а задание адресуется учётной записи, и
+            # однозначного моста между ними в системе нет.)
+            create_defaults={
+                "event_code": event_code,
+                "event_run_code": evaluation_event.event_run_code,
+                "assignment_code": str(assignment.get("id") or ""),
                 "evaluator_user_id": str(actor or ""),
                 "target_participant_code": participant.participant_code,
                 "target_group_code": None,
@@ -2402,4 +2437,24 @@ def open_evaluation_for_event(event, *, actor):
                 "submitted_at": None,
             },
         )
+        # АДРЕСАТ ДОБИРАЕТСЯ, ПОКА ЗАДАНИЕ НЕ ОТПРАВЛЕНО, и не трогается
+        # никогда после (Plane №641). Вход объекта в «Проведение» зовёт эту
+        # ручку БЕЗ актора (`actor=None`, `security_events.py`), и задание
+        # заводится с пустым адресатом; очередь оценщика фильтруется ровно по
+        # этому полю (`filter(evaluator_user_id=actor)`), так что без добора
+        # оно не попало бы ни в чью очередь вовсе. Закрытие ОМ идёт с актором
+        # и адресата проставляет — ровно как было до правки.
+        #
+        # Отправленное задание не переписывается: оценку поставил конкретный
+        # человек, и заменить его на того, кто нажал «Закрыть», значит
+        # приписать чужую подпись.
+        actor_id = str(actor or "")
+        if (
+            not work_item_created
+            and actor_id != ""
+            and work_item.status != "SUBMITTED"
+            and work_item.evaluator_user_id != actor_id
+        ):
+            work_item.evaluator_user_id = actor_id
+            work_item.save(update_fields=["evaluator_user_id", "updated_at"])
     return evaluation_event
