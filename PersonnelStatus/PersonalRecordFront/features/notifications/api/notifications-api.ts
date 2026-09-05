@@ -260,7 +260,16 @@ export async function fetchUnreadNotifications(): Promise<NotificationFeed> {
  */
 export async function markAllRead(until?: string): Promise<void> {
   const [legacy, ops] = await Promise.allSettled([
-    authorizedFetch(`${BASE}/mark_all_read/`, { method: "POST" }),
+    // 🔴 ГРАНИЦА УХОДИТ В ОБЕ ЛЕНТЫ (Plane №784). Старая ручка тела не
+    // принимала вовсе, и «Прочитать все» отмечало в ней ВСЮ ленту, а не
+    // показанное: уведомление, прилетевшее между открытием панели и нажатием,
+    // становилось прочитанным, ни разу не показавшись. №566 передал границу
+    // только ленте раздела ОМ — половина кнопки осталась прежней.
+    authorizedFetch(`${BASE}/mark_all_read/`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(until === undefined ? {} : { until }),
+    }),
     apiClient.markAllOpsNotificationsRead(until),
   ]);
   if (legacy.status === "rejected") throw legacy.reason;

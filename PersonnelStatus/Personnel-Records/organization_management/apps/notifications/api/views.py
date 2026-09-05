@@ -8,7 +8,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 
 from organization_management.apps.notifications.models import Notification
-from .serializers import NotificationSerializer
+from .serializers import MarkAllReadSerializer, NotificationSerializer
 
 
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -71,18 +71,38 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
 
     @extend_schema(
         summary="Пометить все уведомления как прочитанные",
-        description="Помечает все уведомления текущего пользователя как прочитанные"
+        description=(
+            "Помечает уведомления текущего пользователя прочитанными. "
+            "Необязательное поле `until` — верхняя граница по времени "
+            "появления, ВКЛЮЧИТЕЛЬНО: клиент отмечает «всё, что я вижу», и "
+            "без границы уведомление, прилетевшее между открытием панели и "
+            "нажатием, оказалось бы прочитанным, ни разу не показавшись. "
+            "Граница обязана нести часовой пояс."
+        ),
+        request=MarkAllReadSerializer,
     )
     @action(detail=False, methods=['post'])
     def mark_all_read(self, request: Request) -> Response:
-        """
-        Пометить все уведомления как прочитанные.
+        """Пометить прочитанными свои уведомления — до границы, если она подана.
 
-        Args:
-            request: HTTP запрос
+        🔴 ГРАНИЦА `until` (Plane №784). Здесь стояло безусловное
+        `update(is_read=True)`, и «Прочитать все» отмечало ВСЮ ленту, а не
+        показанное. Уведомление, прилетевшее между открытием панели и нажатием,
+        помечалось прочитанным, не будучи показанным, — и человек не узнавал о
+        нём НИКОГДА: непрочитанным оно больше не считается. №566 закрыл ровно
+        половину кнопки: у ленты раздела ОМ граница уже была, у этой нет.
 
-        Returns:
-            Response с кодом 204 при успехе
+        ТРОГАЮТСЯ ТОЛЬКО НЕПРОЧИТАННЫЕ — тем же доводом, что в ленте ОМ:
+        безусловное обновление переписало бы и уже прочитанные строки.
+
+        Возвращается 204 без тела, как и прежде: клиент этой ленты числа
+        отмеченных не читает, и менять контракт ради него незачем.
         """
-        self.get_queryset().update(is_read=True)
+        form = MarkAllReadSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        until = form.validated_data.get("until")
+        queryset = self.get_queryset().filter(is_read=False)
+        if until is not None:
+            queryset = queryset.filter(created_at__lte=until)
+        queryset.update(is_read=True)
         return Response(status=status.HTTP_204_NO_CONTENT)
