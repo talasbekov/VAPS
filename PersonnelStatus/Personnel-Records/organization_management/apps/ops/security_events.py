@@ -13,6 +13,7 @@ handlers.ts) ДОСЛОВНО — он был первой реализацие�
 """
 import datetime as dt
 import hashlib
+import logging
 from uuid import uuid4
 
 from django.db import transaction
@@ -35,6 +36,10 @@ from organization_management.apps.operations.models_object import (
     OpsPassportVersion,
     OpsSecurityObject,
 )
+
+# Побочные каналы (уведомления) свои отказы не роняют наверх, но и не молчат:
+# след остаётся в журнале процесса — как у `operations.notify_service`.
+logger = logging.getLogger(__name__)
 
 # Шаблон чек-листа рекогносцировки нового ОМ (порт мок-фикстуры).
 RECON_CHECKLIST_TEMPLATE = [
@@ -3706,12 +3711,33 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
         patch["declinedAt"] = None
     event = _update_allocation(event, allocation_id, patch)
     # Штаб узнаёт о каждом изменении «Выделяют» (`[СБС-12]`, Plane №426).
+    #
+    # 🔴 ТОЧКА СОХРАНЕНИЯ ОБЯЗАТЕЛЬНА, А НЕ «НА ВСЯКИЙ СЛУЧАЙ» (Plane №682).
+    # Свои отказы `notify_service.notify` глотает сам, поэтому наружу отсюда
+    # долетает ровно одно — ошибка БАЗЫ из `_headquarters_users()` (чтение
+    # ролей). Проглотить её голым `except` внутри `@transaction.atomic`
+    # нельзя: блок остаётся сломанным, и СЛЕДУЮЩИЙ же оператор —
+    # `audit_service.record` строкой ниже — поднимает
+    # `TransactionManagementError`. Ответ департамента терялся целиком, а
+    # сообщение об ошибке показывало на журнал аудита, то есть на невиновного.
+    # Вложенный `atomic` ставит точку сохранения: откатывается только она,
+    # внешняя транзакция остаётся рабочей.
     try:
-        from organization_management.apps.ops import forces_notify
+        with transaction.atomic():
+            from organization_management.apps.ops import forces_notify
 
-        forces_notify.notify_headquarters_response(event, target, allocating=count)
+            forces_notify.notify_headquarters_response(
+                event, target, allocating=count
+            )
     except Exception:  # noqa: BLE001 — уведомление не должно ронять ответ
-        pass
+        # Глотать МОЛЧА тоже нельзя: побочный канал отвалился, и об этом
+        # обязан остаться след — соседний `notify_service` пишет свои отказы
+        # ровно так же.
+        logger.exception(
+            "уведомление штабу об ответе департамента не ушло: ОМ=%r заявка=%r",
+            event.code,
+            allocation_id,
+        )
     audit_service.record(
         actor=actor,
         action=audit_service.FORCE_ALLOCATION_SPLIT,
@@ -5637,6 +5663,12 @@ def replace_assignment(event_id, *, assignment_id, incoming_employee_id, reason_
     journal_entry = {
         "id": f"journal-{len(event.journal_entries) + 1}-{_now_iso()}",
         "type": "REPLACEMENT",
+        # ПОСТ ЗАПИСЫВАЕТСЯ (Plane №727). Без него запись о замене нельзя
+        # отнести к объекту посещения, и сводка закрытия каждого объекта
+        # отчитывалась общим числом замен по мероприятию как своим. Пост здесь
+        # известен точно — с него человека и снимают; у инцидента это поле
+        # есть с `[ЗАК-03]`, у замены его просто забыли.
+        "postId": str(outgoing.get("postId") or "").strip() or None,
         "title": f"Замена: {(post or {}).get('post', outgoing.get('postId'))}",
         "description": (
             f"{outgoing.get('employeeName')} → "

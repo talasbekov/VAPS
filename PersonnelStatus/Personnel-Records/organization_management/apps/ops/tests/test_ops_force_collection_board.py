@@ -207,3 +207,52 @@ def test_headquarters_is_notified_on_every_answer(manager, hq):  # noqa: F811
     note = OpsNotification.objects.filter(kind="FORCES_RESPONSE", recipient=str(hq_user.pk)).first()
     assert note is not None
     assert note.payload["allocating"] == 2 and note.payload["allocationId"] == allocation_id
+
+
+def test_a_database_failure_in_the_notification_does_not_lose_the_answer(
+    manager, hq, monkeypatch  # noqa: F811
+):
+    """Отказ побочного канала не уносит деловую операцию (Plane №682).
+
+    Свои отказы `notify_service.notify` глотает сам — наружу отсюда долетает
+    ровно одно: ошибка БАЗЫ из чтения ролей штаба. До правки её глотал голый
+    `except` ВНУТРИ `@transaction.atomic`, и блок оставался сломанным:
+    следующий же оператор (`audit_service.record`) поднимал
+    `TransactionManagementError`. Ответ департамента терялся целиком, а
+    сообщение об ошибке показывало на журнал аудита — на невиновного.
+
+    Проба ломает ровно то место, что ломается в бою, и проверяет, что ответ
+    сохранился, аудит записан, а операция не упала.
+    """
+    from django.db import connection
+
+    from organization_management.apps.operations import audit_service
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+    from organization_management.apps.ops import forces_notify
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    event_id = _event_id(base)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    # 🔴 ОТКАЗ ДОЛЖЕН БЫТЬ НАСТОЯЩИМ ЗАПРОСОМ, А НЕ `raise DatabaseError`.
+    # Проверено запуском: поднятое вручную исключение проходит и БЕЗ точки
+    # сохранения — транзакцию ломает не тип исключения, а сама СУБД, помечая
+    # соединение `needs_rollback` при неудачном запросе. Подделка давала
+    # зелёную пробу на сломанном коде, то есть стерегла бы пустоту.
+    def broken(*args, **kwargs):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1 FROM таблицы_которой_нет")
+
+    monkeypatch.setattr(forces_notify, "_headquarters_users", broken)
+
+    service.respond_allocation(
+        event_id, allocation_id, allocating=4, comment="", actor="user:dep"
+    )
+
+    row = _row(hq, base)
+    assert row["allocating"] == 4, "ответ департамента потерян отказом уведомления"
+    assert OpsAuditLog.objects.filter(
+        action=audit_service.FORCE_ALLOCATION_SPLIT, entity_id=int(event_id)
+    ).exists(), "аудит ответа не записан — транзакция осталась сломанной"
