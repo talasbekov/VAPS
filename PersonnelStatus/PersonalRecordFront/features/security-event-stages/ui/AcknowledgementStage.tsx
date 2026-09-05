@@ -50,6 +50,7 @@ import { PersonnelPicker } from "@/features/personnel-picker";
 import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import type { PlacementAssignment, SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
+import { AccessHints, RightGate } from "@/shared/ui/right-gate";
 import { formatIsoDateTime, formatIsoDayTime } from "@/shared/lib/date";
 import { PEOPLE, ruPlural } from "@/lib/ru-plural";
 
@@ -224,17 +225,24 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                 : ""}
             </p>
           </div>
+          {/* Причина отказа по праву — ВИДИМОЙ строкой и один раз на шаг
+              (Plane №801): на выключенной кнопке `title` не показывается
+              вовсе, браузер подавляет на ней указательные события. Связь
+              кнопки с причиной держит `aria-describedby`. */}
+          <div className="flex flex-col items-start gap-2">
+          <AccessHints reasons={[access.reason(EVENT_MANAGE)]}>
           <div className="flex flex-wrap gap-2">
+            <RightGate reason={access.reason(EVENT_MANAGE)}>
+              {(describedBy) => (
             <Button
               type="button"
               variant="outline"
               disabled={remindAll.isPending || unanswered.length === 0 || !canManage}
+              aria-describedby={describedBy}
               title={
-                !canManage
-                  ? access.reason(EVENT_MANAGE) || undefined
-                  : unanswered.length === 0
-                    ? "Все ответили — напоминать некому"
-                    : "Напомнить каждому, кто ещё не подтвердил, и их руководителям"
+                unanswered.length === 0
+                  ? "Все ответили — напоминать некому"
+                  : "Напомнить каждому, кто ещё не подтвердил, и их руководителям"
               }
               onClick={() => {
                 setLastRemind("all");
@@ -244,6 +252,8 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
               <Bell className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {remindAll.isPending ? "Отправка…" : `Напомнить всем, кто не подтвердил (${unanswered.length})`}
             </Button>
+              )}
+            </RightGate>
             {/* 🔴 ЗАВЕРШЕНИЕ ЭТАПА — ОПЕРАЦИЯ МЕРОПРИЯТИЯ, А НЕ ОБЪЕКТА
                 (Plane №528). Цепочка этапов в карточке рисуется по этапу
                 ПОКАЗАННОГО ОБЪЕКТА (`[МД-04]`, №412), а сервер сторожит
@@ -258,17 +268,18 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                 Кнопка гаснет и НАЗЫВАЕТ причину — сколько объектов ещё не
                 дошло. Это не «нет прав» и не «не все подтвердили», а третье
                 состояние, и молчать о нём нельзя. */}
+            <RightGate reason={access.reason(EVENT_MANAGE)}>
+              {(describedBy) => (
             <Button
               type="button"
               disabled={
                 complete.isPending || !canManage || total === 0 || !eventOnStage
               }
+              aria-describedby={describedBy}
               title={
-                !canManage
-                  ? access.reason(EVENT_MANAGE) || undefined
-                  : !eventOnStage
-                    ? `Этап завершается по всему мероприятию: ${behindLabel}`
-                    : undefined
+                !eventOnStage
+                  ? `Этап завершается по всему мероприятию: ${behindLabel}`
+                  : undefined
               }
               onClick={() =>
                 allConfirmed ? complete.mutate({}) : setCompleteOpen(true)
@@ -276,6 +287,10 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
             >
               {complete.isPending ? "Завершение…" : "Завершить ознакомление"}
             </Button>
+              )}
+            </RightGate>
+          </div>
+          </AccessHints>
           </div>
         </div>
 

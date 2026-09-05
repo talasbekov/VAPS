@@ -1,56 +1,103 @@
 /**
- * Причина, по которой действие закрыто правом, ДОСТИЖИМА (Plane №801).
+ * Причина, по которой действие закрыто правом, ДОСТИЖИМА и сказана ОДИН РАЗ
+ * (Plane №801).
  *
- * 🔴 ПОЧЕМУ ПРОБА НЕ ЖИВАЯ. Она читает ИСХОДНИК двух экранов и отвечает на
- * один вопрос: не вернулась ли связка «`disabled` по праву + `title` с
- * причиной». Живой прогон на это не годится — подсказки на выключенной кнопке
- * не видно НИ ПРИ КАКОМ поведении браузера, ровно поэтому дефект и жил
- * незамеченным: проверить его можно только по коду. Тот же приём, что у
- * `route-map-coverage` и `ru-plural-single-rule`; без `SMOKE_LIVE` даёт
- * «passed», а не «skipped».
+ * 🔴 ПОЧЕМУ ПРОБА НЕ ЖИВАЯ. Она читает ИСХОДНИКИ и отвечает на два вопроса:
+ * не вернулась ли связка «`disabled` по праву + `title` с причиной» и не
+ * начала ли обёртка `RightGate` печатать причину у каждой кнопки. Живой прогон
+ * на первое не годится вовсе — подсказки на выключенной кнопке не видно НИ ПРИ
+ * КАКОМ поведении браузера, ровно поэтому дефект и жил незамеченным. Тот же
+ * приём, что у `route-map-coverage` и `ru-plural-single-rule`; без `SMOKE_LIVE`
+ * даёт «passed», а не «skipped».
  *
- * ЧТО СТЕРЕГЁТ. Браузер подавляет на выключенном элементе указательные
- * события, а с ними и всплывающую подсказку: `title` показывался бы ровно
- * тогда, когда показаться не может. Человек без права видел серую кнопку и
- * ничего больше. Разбор сделан точечно в №714 и №777, шаблон найден грепом в
- * №801 — двенадцать мест в двух файлах.
+ * 🔴 ЧТО ИЗМЕНИЛОСЬ ПОСЛЕ РЕВЮ (06.09.2026, задача №825). Прежняя проба
+ * искала `title={access.reason(` регулярным выражением и смотрела в список из
+ * четырёх файлов. Оба решения оказались дырявыми:
+ *   — prettier переносит длинное выражение на следующую строку, и запись
+ *     становится `title={\n  access.reason(…)`. Регулярка её не видела, а
+ *     живой пример был прямо в стерегомом файле — `PlacementStage.tsx`,
+ *     кнопка назначения кандидата на пост;
+ *   — список экранов пропускал `AcknowledgementStage.tsx`, где та же связка
+ *     стояла ДВАЖДЫ.
+ * Теперь проба разбирает содержимое `title={…}` по БАЛАНСУ СКОБОК (перенос
+ * строки ей безразличен) и идёт по ВСЕМ исходникам раздела, а не по списку.
  */
 import { expect, test } from '@playwright/test'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const ROOT = join(__dirname, '..')
 
-/** Экраны, где связка «право → выключенная кнопка» встречается пачкой. */
-const SCREENS = [
-  'features/forces-split/ui/ForcesSplitPanel.tsx',
-  'features/security-event-stages/ui/PlacementStage.tsx',
-  'features/security-event-stages/ui/ConductStage.tsx',
-  'features/create-security-event/ui/CreateSecurityEventDialog.tsx',
-]
+/** Каталоги исходников экрана; `node_modules` и сборки сюда не попадают. */
+const SOURCE_DIRS = ['app', 'components', 'entities', 'features', 'shared', 'widgets']
+
+function sourceFiles(): string[] {
+  const found: string[] = []
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) {
+        walk(full)
+      } else if (entry.endsWith('.tsx')) {
+        found.push(full)
+      }
+    }
+  }
+  for (const dir of SOURCE_DIRS) walk(join(ROOT, dir))
+  return found
+}
+
+/**
+ * Содержимое каждого `title={…}` файла — по балансу фигурных скобок, а не по
+ * регулярке: выражение внутри бывает в несколько строк, с тернарником и с
+ * вложенными `{}` (шаблонные строки, объекты стилей).
+ */
+function titleExpressions(source: string): string[] {
+  const found: string[] = []
+  const marker = 'title={'
+  for (let at = source.indexOf(marker); at !== -1; at = source.indexOf(marker, at + 1)) {
+    let depth = 0
+    let end = at + marker.length - 1
+    for (; end < source.length; end += 1) {
+      if (source[end] === '{') depth += 1
+      else if (source[end] === '}') {
+        depth -= 1
+        if (depth === 0) break
+      }
+    }
+    found.push(source.slice(at, end + 1))
+  }
+  return found
+}
 
 test.describe('причина отказа по праву', () => {
-  test('`title` больше не стоит на кнопке, выключенной правом', () => {
-    for (const path of SCREENS) {
-      const source = readFileSync(join(ROOT, path), 'utf8')
-      const dead = source.match(/title=\{access\.reason\(/g) ?? []
-      expect(dead, `${path}: мёртвая подсказка на выключенной кнопке`).toEqual([])
+  test('`title` больше не несёт причину отказа по праву — ни в одном экране', () => {
+    const guilty: string[] = []
+    for (const path of sourceFiles()) {
+      const source = readFileSync(path, 'utf8')
+      for (const expression of titleExpressions(source)) {
+        if (!expression.includes('access.reason(') && !expression.includes('.reason(')) continue
+        guilty.push(`${path.slice(ROOT.length + 1)}: ${expression.split('\n')[0].trim()}…`)
+      }
     }
+    expect(
+      guilty,
+      'мёртвая подсказка: на выключенной кнопке `title` не показывается — причина должна быть видимой строкой через RightGate',
+    ).toEqual([])
   })
 
   test('причина объявлена связью с кнопкой, а не отдельным текстом', () => {
-    // У обоих экранов пачки — обёртка `RightGate`, и каждая её кнопка несёт
-    // `aria-describedby`: иначе читалка прочла бы причину как текст рядом,
-    // неизвестно о чём.
-    for (const path of SCREENS.slice(0, 2)) {
-      const source = readFileSync(join(ROOT, path), 'utf8')
-      const gates = source.match(/<RightGate\s/g) ?? []
-      const described = source.match(/aria-describedby=\{describedBy\}/g) ?? []
-      expect(gates.length, `${path}: обёрток причины нет вовсе`).toBeGreaterThan(0)
+    // Каждая обёртка `RightGate` обязана отдать идентификатор кнопке: иначе
+    // читалка прочла бы причину как текст рядом, неизвестно о чём.
+    for (const path of sourceFiles()) {
+      const source = readFileSync(path, 'utf8')
+      const gates = (source.match(/<RightGate\s/g) ?? []).length
+      if (gates === 0) continue
+      const described = (source.match(/aria-describedby=\{describedBy\}/g) ?? []).length
       expect(
-        described.length,
-        `${path}: обёрток ${gates.length}, а связей с кнопкой ${described.length}`,
-      ).toBe(gates.length)
+        described,
+        `${path.slice(ROOT.length + 1)}: обёрток ${gates}, а связей с кнопкой ${described}`,
+      ).toBe(gates)
     }
   })
 
@@ -60,5 +107,30 @@ test.describe('причина отказа по праву', () => {
     // появилась бы пустая подпись под каждой кнопкой.
     const source = readFileSync(join(ROOT, 'shared/ui/right-gate.tsx'), 'utf8')
     expect(source).toContain('if (text === "") return <>{children(undefined)}</>')
+  })
+
+  test('причина не повторяется у каждой кнопки: обёртка ссылается на общий блок', () => {
+    // 🔴 Вторая половина №801. На «Расстановке» две обёртки стоят ВНУТРИ цикла
+    //    по назначенным: на шести назначенных прежняя обёртка печатала
+    //    двенадцать одинаковых строк, и ещё одну — общая подпись шага.
+    //    Теперь текст говорит блок `AccessHints`, а обёртка внутри него только
+    //    ссылается. Мутация «убрать короткое замыкание» краснит эту пробу.
+    const source = readFileSync(join(ROOT, 'shared/ui/right-gate.tsx'), 'utf8')
+    expect(
+      source,
+      'RightGate снова печатает причину у каждой кнопки — экран станет частоколом',
+    ).toContain('if (sharedId !== undefined) return <>{children(sharedId)}</>')
+
+    // Экраны, где обёрток БОЛЬШЕ ОДНОЙ, обязаны иметь общий блок причин:
+    // иначе повтор вернётся сам собой.
+    for (const path of sourceFiles()) {
+      const source = readFileSync(path, 'utf8')
+      const gates = (source.match(/<RightGate\s/g) ?? []).length
+      if (gates < 2) continue
+      expect(
+        source,
+        `${path.slice(ROOT.length + 1)}: обёрток ${gates}, а общего блока причин нет — причина повторится ${gates} раз`,
+      ).toContain('<AccessHints')
+    }
   })
 })
