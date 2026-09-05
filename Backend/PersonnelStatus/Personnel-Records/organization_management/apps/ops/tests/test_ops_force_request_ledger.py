@@ -186,3 +186,103 @@ def test_backfill_counts_what_it_moved(manager):  # noqa: F811
     assert lines and "перенесено строк" in lines[0]
     # Повтор бэкфилла ничего не плодит.
     assert forces_ledger.backfill([event], log=lambda _: None)["departments"] == 0
+
+
+# ── Многострочная заявка «по группам» (Plane №673, №674) ────────────────────
+
+
+def _request(row_id, count):
+    """Строка заявки; `row_id=None` — старая запись БЕЗ идентификатора."""
+    row = {"group": "Группа", "status": "SENT", "comment": "",
+           "allocatedCount": 0, "requestedCount": count}
+    return row if row_id is None else {**row, "id": row_id}
+
+
+def test_two_id_less_request_rows_do_not_grow_the_ledger_forever(event_with_json):
+    """Строки БЕЗ идентификатора не схлопываются в один источник.
+
+    Ключ проекции брался как `row["id"] or "force-request-1"`, и две такие
+    строки делили один источник: проход писал seq1=A, seq2=B; следующее
+    сохранение сравнивало A с ПОСЛЕДНЕЙ строкой ключа (B), видело разницу и
+    дописывало seq3=A, затем seq4=B. Две новые строки на КАЖДОЕ сохранение, в
+    append-only таблицу, которую история заявки показывает человеку.
+
+    Красная проверка — вернуть общий запасной ключ: второй `project` добавит
+    ещё две строки, и счёт станет 4.
+    """
+    event, _, _ = event_with_json
+    event.force_requests = [_request(None, 5), _request(None, 7)]
+    event.save(update_fields=["force_requests", "updated_at"])
+
+    forces_ledger.project(event)
+    after_first = OpsForceRequest.objects.filter(event_id=event.pk).count()
+    forces_ledger.project(event)
+    after_second = OpsForceRequest.objects.filter(event_id=event.pk).count()
+
+    assert after_first == 2, "две строки заявки дали не две строки реестра"
+    assert after_second == after_first, (
+        "повторное сохранение дописало строки в append-only реестр — "
+        "проекция не идемпотентна"
+    )
+    # Числа сохранены как есть, а не перепутаны между строками.
+    assert sorted(
+        row.requested_count
+        for row in OpsForceRequest.objects.filter(event_id=event.pk)
+    ) == [5, 7]
+
+
+def test_department_requests_are_not_hung_on_a_guessed_request_row(event_with_json):
+    """При нескольких заявках связь запроса департамента НЕ выдумывается.
+
+    `latest_request` держал последнюю строку массива, и каждый запрос
+    департамента приписывался ей. У мероприятий с многострочной заявкой «по
+    группам» вся перенесённая история уходила под ту группу, которая
+    случайно оказалась последней в JSON, — а таблица append-only, исправить
+    потом нечем.
+
+    Строка раскладки ссылки на заявку не несёт вовсе, поэтому `None` —
+    единственный честный ответ: пустую связь видно, неверная выглядит фактом.
+
+    Красная проверка — вернуть `latest_request`: связь станет непустой и
+    укажет на строку с requestedCount=7.
+    """
+    event, e1, _ = event_with_json
+    # Заявок становится ДВЕ, и запрос департамента меняется — иначе проекция
+    # новой строки не заведёт, и проба смотрела бы на строку, созданную
+    # фикстурой ещё при ОДНОЙ заявке (так она и падала в первой редакции).
+    event.force_requests = [_request("force-request-1", 5), _request("force-request-2", 7)]
+    event.force_allocation = [_allocation("alloc-1", need=9, members=[e1])]
+    event.save(update_fields=["force_requests", "force_allocation", "updated_at"])
+
+    forces_ledger.project(event)
+
+    fresh = (
+        OpsDepartmentRequest.objects
+        .filter(event_id=event.pk, allocation_key="alloc-1")
+        .order_by("-sequence").first()
+    )
+    assert fresh is not None, "проба вакуумна — запрос департамента не спроецировался"
+    assert fresh.requested_count == 9, (
+        "новая строка не завелась — проба смотрит на состояние до двух заявок"
+    )
+    assert fresh.force_request_id is None, (
+        "запрос департамента приписан заявке, которую никто не называл"
+    )
+
+
+def test_a_single_request_row_still_carries_the_link(event_with_json):
+    """Когда заявка ОДНА, связь однозначна — и она остаётся.
+
+    Без этой пробы починка №673 могла бы обнулить связь всегда: у обычного
+    мероприятия заявка одна, и терять её незачем.
+    """
+    event, e1, _ = event_with_json
+    event.force_allocation = [_allocation("alloc-1", need=5, members=[e1])]
+    event.save(update_fields=["force_allocation", "updated_at"])
+
+    forces_ledger.project(event)
+
+    request = OpsForceRequest.objects.filter(event_id=event.pk).get()
+    rows = list(OpsDepartmentRequest.objects.filter(event_id=event.pk))
+    assert rows, "проба вакуумна — запрос департамента не спроецировался"
+    assert {row.force_request_id for row in rows} == {request.pk}

@@ -71,9 +71,25 @@ def project(event, *, models=None, now=None):
 
     # ── Заявка мероприятия ──────────────────────────────────────────────
     visit_id = _primary_visit_id(event)
-    latest_request = None
-    for row in event.force_requests or []:
-        key = str(row.get("id") or "force-request-1")
+    requests = list(event.force_requests or [])
+    projected = []
+    for index, row in enumerate(requests, start=1):
+        # 🔴 КЛЮЧ ИСТОЧНИКА РАЗНЫЙ У РАЗНЫХ СТРОК (Plane №674). Здесь стояло
+        # `row.get("id") or "force-request-1"`, и ВСЕ строки без id
+        # схлопывались в один ключ. На двух таких строках (достижимо на
+        # старых данных «по группам»; нынешние писатели id проставляют)
+        # проход писал seq1=A, seq2=B; следующее сохранение того же
+        # мероприятия сравнивало A с последней строкой ключа — а ею была B, —
+        # видело разницу и дописывало seq3=A, затем seq4=B. И так ДВЕ НОВЫЕ
+        # СТРОКИ НА КАЖДОЕ СОХРАНЕНИЕ, вечно, в append-only таблицу, которую
+        # `force_collection_board.history()` рисует человеку как настоящую
+        # историю заявки.
+        #
+        # Запасной ключ — ПОРЯДКОВЫЙ. Другого различителя у строки без id нет
+        # вовсе, а позиция хотя бы стабильна между сохранениями, пока строки
+        # не переставляют. У единственной строки ключ прежний
+        # («force-request-1»), поэтому уже перенесённая история не рвётся.
+        key = str(row.get("id") or f"force-request-{index}")
         count = _int(row.get("requestedCount"))
         last = (
             M.OpsForceRequest.objects.filter(event_id=event.pk, source_key=key)
@@ -85,7 +101,22 @@ def project(event, *, models=None, now=None):
                 requested_count=count, sequence=(last.sequence + 1) if last else 1,
             )
             added["requests"] += 1
-        latest_request = last
+        projected.append(last)
+
+    # 🔴 ПРИВЯЗКА ТОЛЬКО КОГДА ОНА ОДНОЗНАЧНА (Plane №673). Здесь была
+    # переменная `latest_request`, в которой оставалась ПОСЛЕДНЯЯ строка
+    # массива, и каждый запрос департамента приписывался ей. У мероприятий с
+    # многострочной заявкой «по группам» (они поддержаны явно — см.
+    # `security_events.py` и миграцию 0043) вся перенесённая история уходила
+    # под ту группу, которая случайно оказалась последней в JSON. Таблица
+    # append-only — исправить это потом нечем.
+    #
+    # Строка раскладки НЕ НЕСЁТ ссылки на заявку: в ней есть департамент,
+    # потребность, срок и управления, но не «по какой из заявок». Значит при
+    # нескольких заявках связь неизвестна, и `None` — единственный честный
+    # ответ. Приписать чужое хуже, чем не приписать: пустую связь видно, а
+    # неверная выглядит как факт.
+    link_request = projected[0] if len(projected) == 1 else None
 
     # ── Запросы департаментам ───────────────────────────────────────────
     seen_members = {}
@@ -111,7 +142,7 @@ def project(event, *, models=None, now=None):
         if changed:
             last = M.OpsDepartmentRequest.objects.create(
                 event_id=event.pk,
-                force_request_id=latest_request.pk if latest_request else None,
+                force_request_id=link_request.pk if link_request else None,
                 department_id=dep_id, department_key=dep_key,
                 allocation_key=key, requested_count=need,
                 allocating_count=allocating, status=status, due_at=due_at,
