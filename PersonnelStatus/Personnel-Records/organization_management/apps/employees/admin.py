@@ -25,9 +25,11 @@ class HasUserFilter(admin.SimpleListFilter):
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
     list_display = ['personnel_number', 'last_name', 'first_name', 'middle_name',
-                    'rank', 'employment_status', 'user_info_display', 'hire_date']
+                    'rank', 'callsign', 'employment_status', 'user_info_display',
+                    'hire_date']
     list_filter = ['employment_status', 'gender', 'rank', HasUserFilter]
     search_fields = ['personnel_number', 'last_name', 'first_name', 'middle_name',
+                     'callsign',
                      'work_email', 'personal_email', 'user__username', 'user__email', 'iin']
     readonly_fields = ['created_at', 'updated_at', 'user_detail_display']
     autocomplete_fields = ['user']  # Автодополнение для выбора пользователя
@@ -41,7 +43,12 @@ class EmployeeAdmin(admin.ModelAdmin):
             'description': 'Связь сотрудника с учетной записью пользователя системы'
         }),
         ('Служебная информация', {
-            'fields': ('rank', 'hire_date', 'dismissal_date', 'employment_status')
+            # Позывной (`[МД-10]`, Plane №456) — здесь, а не в «Основной
+            # информации»: это служебное имя в эфире, а не паспортное. Пока
+            # это единственное место, где его можно вписать: своего экрана у
+            # кадровой записи в портале нет.
+            'fields': ('rank', 'callsign', 'hire_date', 'dismissal_date',
+                       'employment_status')
         }),
         ('Контактные данные', {
             'fields': ('work_phone', 'work_email', 'personal_phone', 'personal_email')

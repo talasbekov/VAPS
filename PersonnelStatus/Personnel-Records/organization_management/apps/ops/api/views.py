@@ -2436,6 +2436,11 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "id": str(employee.pk),
                     "name": personnel_display_name(employee),
                     "rankLabel": employee.rank.name if employee.rank else "",
+                    # Позывной (`[МД-10]`, Plane №456): пустая строка — «не
+                    # вписан», и это единственное, чем «нет позывного»
+                    # отличается от «есть». Второго способа сказать то же
+                    # (null) у поля нет намеренно.
+                    "callsign": employee.callsign or "",
                     "unit": unit,
                     "statusCode": code,
                     "statusLabel": label,
@@ -2505,6 +2510,7 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "id": str(employee.pk),
                 "name": personnel_display_name(employee),
                 "rankLabel": employee.rank.name if employee.rank else "",
+                "callsign": employee.callsign or "",
                 "unit": unit,
             }
         )
