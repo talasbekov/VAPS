@@ -407,7 +407,14 @@ test.describe('заявки департаменту', () => {
       // «Отправить в управления» — кнопки на этом экране не было вовсе.
       // Подпись — словами спецификации `[СБС-22]` (Plane №392); в №389 она
       // звалась «Оповестить управления» — пин правлен осознанно.
+      // ШАГ ЧЕРЕЗ ДИАЛОГ добавлен осознанно (Plane №532): действие необратимо
+      // (после него сервер запирает квоты навсегда), и кнопка больше не шлёт
+      // мутацию сразу. Раскладка тут уже сохранена — значит подпись действия
+      // «Отправить», а не «Сохранить и отправить».
       await splitSection.getByRole('button', { name: 'Отправить в управления' }).click()
+      const notifyDialog = page.getByRole('dialog')
+      await expect(notifyDialog.getByText('Отправить заявку в управления?')).toBeVisible()
+      await notifyDialog.getByRole('button', { name: 'Отправить', exact: true }).click()
       await expect(splitSection.getByText('Запрошено', { exact: false }).first()).toBeVisible({
         timeout: 15_000,
       })
@@ -466,6 +473,23 @@ test.describe('заявки департаменту', () => {
       await expect(
         membersSection.getByText('Отправлено — ждём решения штаба.', { exact: false }),
       ).toBeVisible({ timeout: 15_000 })
+
+      // 🔴 ОТЗЫВ СО СВОЕГО ЭКРАНА (Plane №532). Диалог отправки обещает
+      // «отозвать список», а кнопка отзыва жила только в `ForcesSplitPanel`
+      // за правом `event.view`, которого ответственному за департамент не
+      // дают: обещание было невыполнимым ровно для того, кто его читал.
+      // Ручка отзыва гейтится тем же `forces.allocate` со скопом своего
+      // департамента, что и отправка, — экрана не было, права были.
+      await membersSection.getByRole('button', { name: 'Отозвать список' }).click()
+      await expect(
+        membersSection.getByRole('button', { name: 'Отправить список в штаб' }),
+        'после отзыва список не вернулся в работу',
+      ).toBeVisible({ timeout: 15_000 })
+      // Отзыв возвращает заявку в NOTIFIED, а НЕ в DRAFT: квоты управлений
+      // остаются запертыми, и экран это ПОВТОРЯЕТ, а не обещает обратное.
+      await expect(
+        splitSection.getByText('Управления уже запрошены', { exact: false }),
+      ).toBeVisible()
     } finally {
       await dropEvent(token, fixture.eventId)
     }
@@ -602,6 +626,8 @@ test.describe('заявки департаменту', () => {
       await splitSection.getByRole('button', { name: 'Сохранить раскладку' }).click()
       await expect(splitSection.getByText('Набрано 1 из', { exact: false })).toBeVisible({ timeout: 15_000 })
       await splitSection.getByRole('button', { name: 'Отправить в управления' }).click()
+      // Подтверждение необратимого действия (Plane №532).
+      await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click()
       await expect(splitSection.getByText('Запрошено', { exact: false }).first()).toBeVisible({ timeout: 15_000 })
 
       // Сервер: у начальника управления — запрос об ЭТОЙ заявке.

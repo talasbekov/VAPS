@@ -20,6 +20,7 @@ import {
   securityEventForcesNotifyPath,
   securityEventForcesRespondPath,
   securityEventForcesSubmitPath,
+  securityEventForcesWithdrawPath,
   type DepartmentRequestDetail,
   type DepartmentRequestRow,
 } from "@/entities/security-event";
@@ -118,6 +119,33 @@ export function useSubmitDepartmentAllocation(eventId: string, allocationId: str
   const client = useQueryClient();
   return useMutation<unknown, OpsApiFailure, Record<string, never>>({
     mutationFn: () => opsApiClient.post(securityEventForcesSubmitPath(eventId, allocationId)),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
+      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+    },
+  });
+}
+
+/**
+ * Отозвать отправленный список обратно (Plane №532, `[СБС-23]`).
+ *
+ * 🔴 РУЧКА БЫЛА, КНОПКИ У ДЕПАРТАМЕНТА НЕ БЫЛО. `POST …/withdraw/` гейтится
+ * тем же `forces.allocate` со скопом департамента строки, что и `notify` и
+ * `submit` (`forces_withdraw` в `ops/api/views.py`) — `event.view` ему не
+ * нужен. Единственная кнопка «Отозвать список» жила в `ForcesSplitPanel`, то
+ * есть на панели МЕРОПРИЯТИЯ у штаба, куда ответственного за департамент не
+ * пускают намеренно. Диалог отправки при этом обещал ему отзыв — обещание
+ * было невыполнимым для того, кто его читал.
+ *
+ * Отзыв возвращает список в `NOTIFIED`, а НЕ в `DRAFT`: квоты управлений
+ * после запроса не правятся ни при каком отзыве (правило `[СБС-22]`, оно же
+ * `DIRECTORATE_QUOTAS_LOCKED` на сервере). Поэтому подпись отправки говорит
+ * ровно это, а не «поправить можно после отзыва».
+ */
+export function useWithdrawDepartmentAllocation(eventId: string, allocationId: string) {
+  const client = useQueryClient();
+  return useMutation<unknown, OpsApiFailure, Record<string, never>>({
+    mutationFn: () => opsApiClient.post(securityEventForcesWithdrawPath(eventId, allocationId)),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
       void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });

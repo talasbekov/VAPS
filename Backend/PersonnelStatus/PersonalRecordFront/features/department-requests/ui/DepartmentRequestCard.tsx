@@ -50,6 +50,7 @@ import {
   useRespondDepartmentAllocation,
   useSplitDirectorateQuotas,
   useSubmitDepartmentAllocation,
+  useWithdrawDepartmentAllocation,
 } from "@/hooks/use-department-requests";
 import { apiClient, type CoreDivision } from "@/lib/api";
 import { formatIsoDate } from "@/shared/lib/date";
@@ -101,7 +102,13 @@ export function DepartmentRequestCard({
   const notify = useNotifyDepartmentDirectorates(detail?.eventId ?? "", allocationId);
   const submit = useSubmitDepartmentAllocation(detail?.eventId ?? "", allocationId);
   const respond = useRespondDepartmentAllocation(detail?.eventId ?? "", allocationId);
+  const withdraw = useWithdrawDepartmentAllocation(detail?.eventId ?? "", allocationId);
   const [submitOpen, setSubmitOpen] = useState(false);
+  // Запрос управлений НЕОБРАТИМ (Plane №532): после него сервер запирает
+  // квоты (`DIRECTORATE_QUOTAS_LOCKED`) навсегда — отзыв списка возвращает
+  // заявку в `NOTIFIED`, а не в `DRAFT`. Такое действие спрашивают, а не
+  // выполняют по одному щелчку.
+  const [notifyOpen, setNotifyOpen] = useState(false);
   // Ответ «Выделяем: X · Комментарий» (Plane №391). Черновик наполняется ИЗ
   // ОТВЕТА сервера тем же доводом, что и квоты ниже: пустое поле над
   // сохранённой цифрой читалось бы как «ноль», а ноль здесь — отказ.
@@ -200,6 +207,14 @@ export function DepartmentRequestCard({
   const draftTotal = Object.values(draft).reduce(
     (sum, value) => sum + (Number(value) || 0),
     0
+  );
+  // Набрано, но не сохранено (Plane №532). Оповещение перерисовывает карточку
+  // ответом сервера, и `useEffect` выше сбрасывает черновик на сохранённые
+  // цифры — набранное молча исчезает. Разница считается по СТРОКАМ таблицы,
+  // а не по сумме: две правки, гасящие друг друга (+2 одному, −2 другому),
+  // дают ту же сумму и тоже пропадут.
+  const splitDirty = directorateRows.some(
+    (row) => (Number(draft[row.divisionId]) || 0) !== (row.need ?? 0)
   );
 
   async function save() {
@@ -408,8 +423,8 @@ export function DepartmentRequestCard({
               type="button"
               variant="outline"
               size="sm"
-              disabled={notify.isPending}
-              onClick={() => notify.mutate({})}
+              disabled={notify.isPending || split.isPending}
+              onClick={() => setNotifyOpen(true)}
             >
               {notify.isPending ? "Отправляю…" : "Отправить в управления"}
             </Button>
@@ -587,9 +602,33 @@ export function DepartmentRequestCard({
             )}
           </div>
         )}
+        {/* 🔴 ОТЗЫВ БЕЗ ПАНЕЛИ ШТАБА (Plane №532). Диалог отправки обещает
+            «отозвать список», а единственная кнопка отзыва жила в
+            `ForcesSplitPanel` за правом `event.view`, которого этой роли не
+            дают: обещание было невыполнимым ровно для того, кто его читал.
+            Ручка отзыва гейтится тем же `forces.allocate` со скопом своего
+            департамента, что и отправка. Подтверждения нет намеренно —
+            действие обратное (список отправляется заново той же кнопкой) и
+            повторяет поведение штабной панели. */}
         {allocation.status === "SUBMITTED" && (
-          <p className="text-muted-foreground text-sm">
-            Отправлено — ждём решения штаба.
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-muted-foreground text-sm">
+              Отправлено — ждём решения штаба.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={withdraw.isPending}
+              onClick={() => withdraw.mutate({})}
+            >
+              {withdraw.isPending ? "Отзываю…" : "Отозвать список"}
+            </Button>
+          </div>
+        )}
+        {withdraw.isError && (
+          <p role="alert" className="text-destructive-ink text-sm">
+            {withdraw.error?.message ?? "Список не отозван"}
           </p>
         )}
         {allocation.status === "RETURNED" && allocation.decisionComment !== "" && (
@@ -598,6 +637,74 @@ export function DepartmentRequestCard({
           </p>
         )}
       </section>
+
+      {/* ПОДТВЕРЖДЕНИЕ ЗАПРОСА УПРАВЛЕНИЙ (Plane №532). Кнопка слала мутацию
+          сразу: один случайный щелчок запирал раскладку насовсем — сервер
+          после `NOTIFIED` отвечает на правку квот `DIRECTORATE_QUOTAS_LOCKED`,
+          а отзыв списка возвращает заявку в `NOTIFIED`, не в `DRAFT`. Диалог
+          называет обе цены действия: необратимость и судьбу несохранённого
+          черновика. */}
+      <Dialog open={notifyOpen} onOpenChange={setNotifyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Отправить заявку в управления?</DialogTitle>
+            <DialogDescription>
+              Начальники управлений получат уведомление и начнут выделять
+              людей. После этого раскладку по управлениям не поправить —
+              ни правкой, ни отзывом списка.
+              {splitDirty
+                ? " Набранные, но не сохранённые цифры пропадут: кнопка ниже сохранит раскладку и только потом отправит."
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {/* Числа рядом с решением, а не в голове у человека: сравнивать
+              «сколько разложено» с «сколько выделяем» после закрытия диалога
+              будет уже поздно. Показывается НАБРАННОЕ, когда оно расходится с
+              сохранённым, — отправлять будем именно его. */}
+          <p className="text-muted-foreground text-sm">
+            Разложено {splitDirty ? draftTotal : splitTotal} из {splitCap}
+            {(splitDirty ? draftTotal : splitTotal) < splitCap
+              ? ` · не разложено ${splitCap - (splitDirty ? draftTotal : splitTotal)}`
+              : ""}
+          </p>
+          {(split.isError || notify.isError) && (
+            <p role="alert" className="text-destructive-ink text-sm">
+              {split.error?.message ??
+                notify.error?.message ??
+                "Управления не оповещены"}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNotifyOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              disabled={notify.isPending || split.isPending}
+              onClick={() => {
+                // Сохранение и оповещение — ДВА запроса, и второй идёт
+                // только после успеха первого: иначе несохранённая
+                // раскладка запиралась бы вместе с сохранённой.
+                void (async () => {
+                  if (splitDirty) {
+                    try {
+                      await save();
+                    } catch {
+                      return;
+                    }
+                  }
+                  notify.mutate({}, { onSuccess: () => setNotifyOpen(false) });
+                })();
+              }}
+            >
+              {notify.isPending || split.isPending
+                ? "Отправляю…"
+                : splitDirty
+                  ? "Сохранить и отправить"
+                  : "Отправить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={submitOpen} onOpenChange={setSubmitOpen}>
         <DialogContent>
@@ -620,8 +727,9 @@ export function DepartmentRequestCard({
                 : assigned < quota
                   ? `Выделено ${assigned} из ${quota} — отправить список с недобором ${quota - assigned}?`
                   : `Выделено ${assigned} из ${quota} — список полный, отправить штабу?`}
-              {" "}После отправки раскладку по управлениям не поправить —
-              только отозвать список целиком.
+              {" "}Раскладку по управлениям после отправки не поправить:
+              отзыв возвращает список в работу, но квоты управлений остаются
+              прежними.
             </DialogDescription>
           </DialogHeader>
           {submit.isError && (
