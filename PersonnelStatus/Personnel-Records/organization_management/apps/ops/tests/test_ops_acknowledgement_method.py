@@ -70,3 +70,46 @@ def test_deadline_is_an_hour_before_start(manager, two_objects_on_conduct):  # n
     expected = _start_of(event) - dt.timedelta(hours=1)
     assert body["acknowledgementDeadline"] is not None
     assert dt.datetime.fromisoformat(body["acknowledgementDeadline"]) == expected
+
+
+def test_account_without_a_personnel_link_does_not_claim_personally(
+    two_objects_on_conduct,  # noqa: F811
+):
+    """Учётка без кадровой привязки не утверждает «лично» (Plane №721).
+
+    🔴 ЧТО БЫЛО НЕ ТАК. «Своё или чужое» решалось ТОЛЬКО по связке
+    `User → Employee`, а учётка без кадровой привязки — штатный исход
+    (докстринг `actor_display_name` говорит это прямо, и сид связь не
+    заполняет). Человек подтверждал СВОЮ строку из профиля, а сервер писал
+    `acknowledgedVia='personal'` с логином в `acknowledgedBy` — и лист
+    ознакомления в деле печатал «лично» вместо «в системе». Документ утверждал
+    неправду о способе.
+
+    «Лично» — УТВЕРЖДЕНИЕ о том, как человека довели: старший сказал устно.
+    Утверждать его, не зная, чья это строка, нельзя — тот же довод, которым
+    раздел отказывается печатать ноль вместо «неизвестно» (№726, №409).
+    """
+    from organization_management.apps.operations.tests.test_strength_report import (
+        client_for,
+    )
+
+    _, event_id, _, _ = two_objects_on_conduct
+    event = service.lock_event(event_id)
+    row = event.placement_assignments[0]
+
+    # Учётка с правом вести мероприятие, но БЕЗ кадровой записи за ней — ровно
+    # то состояние стенда, про которое предупреждает докстринг
+    # `actor_display_name` («сид её не заполняет»).
+    api, _user = client_for(
+        "ack-unlinked", "ACK_UNLINKED", perms=("event.view", "event.manage")
+    )
+
+    resp = api.post(f"{URL}{event_id}/acknowledge/{row['id']}/")
+
+    assert resp.status_code == 200, resp.content
+    marked = next(a for a in resp.json()["placementAssignments"] if a["id"] == row["id"])
+    assert marked["acknowledgedAt"] is not None, "подтверждение обязано пройти"
+    assert marked["acknowledgedVia"] == "self", (
+        "без кадровой привязки чья это строка неизвестно — «лично» утверждать нечем"
+    )
+    assert marked["acknowledgedBy"] == ""

@@ -1803,9 +1803,27 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             (a for a in ((event.placement_assignments if event else None) or []) if a.get("id") == assignment_id),
             None,
         )
-        own = (
+        # 🔴 «ЛИЧНО» СТАВИТСЯ, ТОЛЬКО КОГДА ЧУЖАЯ СТРОКА ДОКАЗАНА (Plane №721).
+        # Прежде «своё или чужое» решалось одной связкой `User → Employee`, а
+        # учётка без кадровой привязки — ШТАТНЫЙ исход (докстринг
+        # `actor_display_name` говорит это прямо, сид связь не заполняет).
+        # Человек подтверждал СВОЮ строку из профиля, а сервер писал
+        # `personal` с логином, и лист ознакомления печатал «лично» вместо «в
+        # системе»: документ утверждал неправду о способе.
+        #
+        # «Лично» — утверждение о том, КАК человека довели (старший сказал
+        # устно). Не зная, чья это строка, утверждать его нельзя — тот же
+        # довод, которым раздел отказывается печатать ноль вместо
+        # «неизвестно» (№726, №409). Поэтому чужое должно быть ДОКАЗАНО, а
+        # неизвестность читается как «в системе».
+        #
+        # Что при этом недосказано, и это осознанно: старший БЕЗ кадровой
+        # привязки, отметивший чужую строку, тоже получит «в системе» —
+        # преуменьшение вместо ложного утверждения. Отличить его от самого
+        # сотрудника нечем, пока привязки нет.
+        someone_elses = (
             employee is not None and row is not None
-            and str(row.get("employeeId")) == str(employee.pk)
+            and str(row.get("employeeId")) != str(employee.pk)
         )
         from organization_management.apps.ops.security_events import (
             actor_display_name,
@@ -1817,7 +1835,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         actor_id = resolve_actor_id(request)
         return self._event_response(
             mine.acknowledge(
-                pk, assignment_id, personal=not own,
+                pk, assignment_id, personal=someone_elses,
                 actor=actor_id,
                 actor_name=actor_display_name(actor_id) or request.user.get_username(),
             )
