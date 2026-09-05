@@ -57,6 +57,14 @@ import { DUTY_STATE_LABEL } from "@/entities/duty-shift";
 import type { DutyShift } from "@/entities/duty-shift";
 import type { CoreEmployee, OpsEmployeeStatusRow } from "@/lib/api";
 import type { SecurityEvent } from "@/entities/security-event";
+import {
+  ASSIGNMENTS,
+  EVENTS,
+  EVENTS_OF,
+  PERIODS,
+  ruCount,
+  ruPlural,
+} from "@/lib/ru-plural";
 
 // «История» стоит ПОСЛЕ «Моей статистики» — так просил заказчик (Plane
 // «Реестр ОМ-40»). Порядок вкладок здесь и есть порядок на экране.
@@ -181,13 +189,9 @@ function dayAriaLabel(iso: string, count: number): string {
   return `${dayTitle(iso)} — ${count} ${periodWord(count)}`;
 }
 
+/** Правило склонения — общее (Plane №783, `lib/ru-plural.ts`). */
 function periodWord(count: number): string {
-  const tail = count % 10;
-  const teen = count % 100;
-  if (teen >= 11 && teen <= 14) return "периодов";
-  if (tail === 1) return "период";
-  if (tail >= 2 && tail <= 4) return "периода";
-  return "периодов";
+  return ruPlural(count, PERIODS);
 }
 
 export function ProfileBody({
@@ -411,12 +415,7 @@ function statusWords(
   return { text: "В строю", inService: true };
 }
 
-function eventsWord(n: number): string {
-  const tens = n % 100;
-  const ones = n % 10;
-  if (ones === 1 && tens !== 11) return "мероприятия";
-  return "мероприятий";
-}
+
 
 function HeroCard({
   employee,
@@ -498,7 +497,7 @@ function HeroCard({
                 className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
               >
                 {rating.average.toFixed(1).replace(".", ",")} · из {rating.events}{" "}
-                {eventsWord(rating.events)}
+                {ruPlural(rating.events, EVENTS_OF)}
               </span>
             )}
           </div>
@@ -826,7 +825,11 @@ function HistoryTab({
         <div>
           <CardTitle>История заступлений на ОМ</CardTitle>
           <p className="text-xs text-muted-foreground" data-testid="history-summary">
-            Участие в ОМ: {past.length} {eventsWord(past.length)}
+            {/* ПАДЕЖ ЗДЕСЬ ИМЕНИТЕЛЬНЫЙ, а не родительный, как в бейдже
+                рейтинга выше: «Участие в ОМ: 2 мероприятия». Обе строки звала
+                ОДНА функция на две формы, и эта печатала «2 мероприятий»
+                (Plane №783). */}
+            Участие в ОМ: {ruCount(past.length, EVENTS)}
             {rating !== null &&
               ` · средний балл ${rating.average.toFixed(1).replace(".", ",")}`}
           </p>
@@ -955,12 +958,7 @@ function ScoreCell({
 /** Счётчик в шапке карточки — с русским согласованием: «1 назначение»,
  * «2 назначения», «5 назначений». */
 function countLabel(count: number): string {
-  const tail = count % 100;
-  const last = count % 10;
-  if (tail >= 11 && tail <= 14) return `${count} назначений`;
-  if (last === 1) return `${count} назначение`;
-  if (last >= 2 && last <= 4) return `${count} назначения`;
-  return `${count} назначений`;
+  return ruCount(count, ASSIGNMENTS);
 }
 
 /**

@@ -33,6 +33,7 @@ import {
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
 import type { GvoSummaryRow } from "@/entities/gvo-summary";
+import { EVENTS, ruPlural } from "@/lib/ru-plural";
 
 // Вкладка не листается: сводки смотрят по всем визитам сразу, а фильтр здесь
 // один — «Мои / Все».
@@ -40,12 +41,9 @@ const PAGE_SIZE = 200;
 
 type Scope = "mine" | "all";
 
+/** Правило склонения — общее (Plane №783, `lib/ru-plural.ts`). */
 function pluralEvents(count: number): string {
-  const tens = count % 100;
-  const ones = count % 10;
-  if (ones === 1 && tens !== 11) return "мероприятие";
-  if (ones >= 2 && ones <= 4 && (tens < 12 || tens > 14)) return "мероприятия";
-  return "мероприятий";
+  return ruPlural(count, EVENTS);
 }
 
 export function GvoVisitsRegistry() {

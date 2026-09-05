@@ -56,6 +56,7 @@ import { OpsKpiCards } from "@/widgets/ops-kpi-cards";
 import type { OpsKpiItem } from "@/widgets/ops-kpi-cards";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
+import { ruPlural } from "@/lib/ru-plural";
 
 const LEVELS: readonly OpsLevel[] = ["ALL", "OBJECT", "EVENT", "DIRECTION", "POST"];
 
@@ -1208,13 +1209,9 @@ function pluralRows(level: OpsLevel, count: number): string {
     DIRECTION: ["пост", "поста", "постов"],
     POST: ["строка", "строки", "строк"],
   };
-  const [one, few, many] = forms[level];
-  const mod100 = count % 100;
-  if (mod100 >= 11 && mod100 <= 14) return many;
-  const mod10 = count % 10;
-  if (mod10 === 1) return one;
-  if (mod10 >= 2 && mod10 <= 4) return few;
-  return many;
+  // Правило склонения — общее (Plane №783, `lib/ru-plural.ts`); здесь
+  // остаётся только таблица форм по уровню разреза.
+  return ruPlural(count, forms[level]);
 }
 
 /** Подпись разреза обеспеченности: «по объектам», «по мероприятиям» и так

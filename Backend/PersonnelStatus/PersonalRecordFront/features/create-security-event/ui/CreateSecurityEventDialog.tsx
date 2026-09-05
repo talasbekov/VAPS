@@ -47,6 +47,7 @@ import { ProtectedPersonsPicker } from "./ProtectedPersonsPicker";
 import { ChiefCombobox } from "./ChiefCombobox";
 import type { ChiefChoice } from "./ChiefCombobox";
 import { BulletinRowPreview } from "./BulletinRowPreview";
+import { DAYS, ruPlural } from "@/lib/ru-plural";
 import type {
   EventProtectedPersonDetails,
   SecurityEventKind,
@@ -801,10 +802,8 @@ function longDate(iso: string): string {
   return `${day}, ${date.toLocaleDateString("ru-RU", { weekday: "long" })}`;
 }
 
+/** Правило склонения — общее (Plane №783, `lib/ru-plural.ts`). Здесь стояла
+ *  своя копия: верная, но копия верна ровно до первой правки оригинала. */
 function dayWord(count: number): string {
-  const tens = count % 100;
-  const ones = count % 10;
-  if (ones === 1 && tens !== 11) return "день";
-  if (ones >= 2 && ones <= 4 && (tens < 12 || tens > 14)) return "дня";
-  return "дней";
+  return ruPlural(count, DAYS);
 }
