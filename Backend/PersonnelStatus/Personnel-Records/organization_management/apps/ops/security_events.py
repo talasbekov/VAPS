@@ -1885,10 +1885,21 @@ def primary_visit_object(event):
     объекта: ровно его показывал экран и до переезда, когда согласование было
     одно на мероприятие. Снимается вместе с полями в Ш-7 (№413).
     """
+    # 🔴 ПОДТЯНУТЫЙ СПИСОК ЧИТАЕТСЯ, А НЕ ОБХОДИТСЯ (Plane №480). `order_by`
+    # заводит НОВЫЙ queryset и игнорирует `prefetch_related` набора реестра:
+    # на каждую строку уходил свой запрос, и не один — сериализатор зовёт это
+    # трижды на мероприятие. `.all()` на подтянутой связи запросов не делает
+    # вовсе, а порядок здесь тот же, что в `order_by`. Тот же приём и по той
+    # же причине уже стоит в `_serialize_visit_objects` (Plane №786).
+    if "visit_objects" in getattr(event, "_prefetched_objects_cache", {}):
+        visits = sorted(
+            event.visit_objects.all(), key=lambda v: (v.position, v.pk)
+        )
+        return visits[0] if visits else None
     return event.visit_objects.order_by("position", "pk").first()
 
 
-def visit_object_posts(event, visit):
+def visit_object_posts(event, visit, *, single=None):
     """Строки расчёта постов, принадлежащие объекту посещения.
 
     У ЕДИНСТВЕННОГО объекта его посты — ВСЕ, включая неразмеченные: другим
@@ -1901,7 +1912,14 @@ def visit_object_posts(event, visit):
     scoped = [
         p for p in posts if str(p.get("visitObjectId") or "") == str(visit.pk)
     ]
-    if event.visit_objects.count() == 1:
+    # `single` считает ВЫЗЫВАЮЩИЙ, когда уже знает ответ (Plane №480): своим
+    # `count()` здесь мы делали по запросу на каждый вызов, а сериализатор
+    # строки реестра зовёт это дважды на объект посещения. `None` — «не
+    # знаю», тогда спрашиваем сами: у одиночных вызовов из ручек считать
+    # заранее нечего.
+    if single is None:
+        single = event.visit_objects.count() == 1
+    if single:
         return list(posts)
     return scoped
 
@@ -5177,6 +5195,27 @@ def _is_urgent(event, explicit):
     return 0 <= days_left <= return_urgent_days()
 
 
+def remark_is_open(item):
+    """Замечание ждёт ответа (`[ВОЗ-05]`).
+
+    🔴 СТАРАЯ ФОРМА ТОЖЕ СЧИТАЕТСЯ (Plane №502). До №386 у замечания было
+    булево `resolved`, а не тройственный `status`; миграции с бэкфиллом тогда
+    не завели, и строки старой формы лежали без ключа `status` вовсе. Простое
+    сравнение `item.get("status") == "OPEN"` для них ЛОЖНО — то есть
+    неотвеченное замечание переставало держать этап, и согласование
+    завершалось мимо него.
+
+    Данные чинит миграция `0095_backfill_approval_remark_status`; эта функция —
+    ремень к ней: база, поднятая из старого дампа или не прошедшая миграцию,
+    не должна молча пропускать этап. Правило одно и живёт в одном месте,
+    поэтому его нельзя забыть на четвёртом по счёту читателе.
+    """
+    status = item.get("status")
+    if status is None:
+        return not item.get("resolved")
+    return status == "OPEN"
+
+
 def new_remark(
     event, *, remark_id, approver_id, author, text, post_id, urgent,
     document_version, created_at,
@@ -5458,7 +5497,7 @@ def decide_approver(
     return _autocomplete_approval(event, visit)
 
 
-def placement_signature(event, visit=None):
+def placement_signature(event, visit=None, *, single=None):
     """Подпись расстановки: что именно согласуют.
 
     Сортированная, потому что порядок назначений в списке — деталь хранения, а
@@ -5473,7 +5512,7 @@ def placement_signature(event, visit=None):
     assignments = event.placement_assignments or []
     if visit is not None:
         post_ids = {
-            str(p.get("id")) for p in visit_object_posts(event, visit)
+            str(p.get("id")) for p in visit_object_posts(event, visit, single=single)
         }
         assignments = [
             a for a in assignments if str(a.get("postId")) in post_ids
@@ -5485,7 +5524,7 @@ def placement_signature(event, visit=None):
     return ";".join(pairs)
 
 
-def approval_is_stale(event, visit=None):
+def approval_is_stale(event, visit=None, *, single=None):
     """Расстановка изменилась ПОСЛЕ отправки на согласование.
 
     Пустой снимок — «не отправляли», а не «не изменилась»: до отправки
@@ -5501,7 +5540,7 @@ def approval_is_stale(event, visit=None):
         return False
     if visit.approval_snapshot == "":
         return False
-    return visit.approval_snapshot != placement_signature(event, visit)
+    return visit.approval_snapshot != placement_signature(event, visit, single=single)
 
 
 def _unattributed_posts(event):
@@ -5596,14 +5635,41 @@ def send_for_approval(event_id, *, visit_object_id=None):
         was_returned = item.get("status") == "RETURNED"
         item["status"] = "PENDING"
         item["decidedAt"] = None
+        # 🔴 И ЗДЕСЬ ТОЖЕ (Plane №513/№583). Повторная отправка сбрасывала
+        # `status` и `decidedAt`, но не `signature`: после «подписал → сосед
+        # вернул → поправили → отправили заново» строка первого согласующего
+        # снова ждала решения — и показывала его же реквизиты под составом,
+        # которого он не видел. Путей два (возврат и повторная отправка), и
+        # чистка нужна на обоих: возврат бывает без повторной отправки, а
+        # повторная отправка — без возврата (после отзыва).
+        item.pop("signature", None)
         if not was_returned:
             item["comment"] = ""
     visit.approval_route = route
     visit.approval_snapshot = scoped_assignments
-    visit.save(update_fields=["approval_route", "approval_snapshot", "updated_at"])
+    # 🔴 ОБЪЕКТ СНОВА «ЖДЁТ РЕШЕНИЯ» (Plane №584). `approval_status`
+    # присваивался ровно в трёх местах — `PENDING` при заведении, `APPROVED` и
+    # `RETURNED` при решении, — а повторная отправка его не трогала. Объект
+    # честно уходил на согласование заново (и подпись выше маршрут это
+    # показывает), но поле оставалось `RETURNED`, и бейдж реестра
+    # «Возвращено · N замечаний» горел до следующего решения согласующего.
+    # Читатель видел в списке «вернули, чините», хотя чинить уже нечего —
+    # отправлено.
+    #
+    # Возврат к `PENDING` — это и есть смысл отправки: «ждём решения». Другого
+    # состояния у объекта в этот момент нет.
+    visit.approval_status = "PENDING"
+    visit.save(
+        update_fields=[
+            "approval_route", "approval_snapshot", "approval_status", "updated_at",
+        ]
+    )
     # Версия документа (`[СОГ-04]`, Plane №398): черновик становится «на
     # согласовании» тем же номером; после возврата — N+1. Указатель
     # `document_version` ведёт сама история.
+    # Сводное поле мероприятия идёт следом за объектом: у ОМ с двумя
+    # объектами «Возвращено» снимается только когда его снял последний.
+    _sync_event_approval(event)
     _submit_document_version(event, visit)
     return event
 
@@ -5744,10 +5810,7 @@ def _approve_visit(event, visit):
             if pending
             else "Расстановка не отправлена на согласование.",
         )
-    if any(
-        item.get("status") == "OPEN"
-        for item in (visit.approval_remarks or [])
-    ):
+    if any(remark_is_open(item) for item in (visit.approval_remarks or [])):
         # `[ВОЗ-05]`: блокирует только ОТКРЫТОЕ, без ответа — «Не согласен» с
         # объяснением не хуже «Устранено», и держать этап из-за несогласия,
         # на которое уже ответили, значило бы наказывать за честный ответ.
@@ -5814,7 +5877,7 @@ def _approval_ready(visit):
     route = list(visit.approval_route or [])
     if not route or any(item.get("status") != "APPROVED" for item in route):
         return False
-    if any(item.get("status") == "OPEN" for item in (visit.approval_remarks or [])):
+    if any(remark_is_open(item) for item in (visit.approval_remarks or [])):
         return False
     return True
 
@@ -5882,6 +5945,19 @@ def _return_visit(event, visit, comment):
         if item.get("status") in ("APPROVED", "PENDING"):
             item["status"] = "NOT_SENT"
             item["decidedAt"] = None
+            # 🔴 РЕКВИЗИТЫ ПОДПИСИ СНИМАЮТСЯ ВМЕСТЕ СО СТАТУСОМ (Plane
+            # №583/№513). Комментарий выше объявляет «все подписи сняты», но
+            # `signature` не трогал никто: ни здесь, ни в `send_for_approval`,
+            # ни где-либо ещё (грепом по разделу — только места ЗАПИСИ). Экран
+            # рисует реквизиты по `signature != null`, без оглядки на статус, —
+            # и строка, которая ждёт решения, показывала «Согласовано» с ФИО,
+            # должностью, временем и номером СТАРОЙ версии.
+            #
+            # Подпись — факт под КОНКРЕТНЫМ составом: она врёт про следующий по
+            # определению, а не по недосмотру. Оставлять её «на память» некуда:
+            # история подписей живёт в журнале (`SECURITY_EVENT_APPROVAL_SIGNED`)
+            # и в версиях документа, а маршрут показывает СЕГОДНЯШНЕЕ состояние.
+            item.pop("signature", None)
             if item.get("comment") == "Без замечаний":
                 item["comment"] = ""
     visit.approval_route = route
@@ -5895,9 +5971,7 @@ def _return_visit(event, visit, comment):
     # Уведомление старшему объекта и замещающим (`[ВОЗ-03]`) — следствие
     # возврата, и его сбой не откатывает сам возврат: рассылка «не дошла»
     # — состояние адресатов (нет учётки), а не ошибка решения.
-    open_remarks = [
-        r for r in (visit.approval_remarks or []) if r.get("status") == "OPEN"
-    ]
+    open_remarks = [r for r in (visit.approval_remarks or []) if remark_is_open(r)]
     try:
         from organization_management.apps.ops.placement_return_notify import (
             notify_placement_returned,
