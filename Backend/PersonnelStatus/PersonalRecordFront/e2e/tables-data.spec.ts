@@ -320,17 +320,47 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       await fetch(`${API}/api/operations/statuses/?business_date=${today}&limit=200`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-    ).json()) as { results?: Array<{ employee_id: number; participations?: unknown[] }> }
-    const attached = (statuses.results ?? []).find(
-      (row) => (row.participations ?? []).length > 0,
-    )
+    ).json()) as {
+      results?: Array<{
+        employee_id: number
+        participations?: Array<{ event_id: number }>
+      }>
+    }
+    const rows = statuses.results ?? []
+    const attached = rows.find((row) => (row.participations ?? []).length > 0)
     expect(
       attached,
       'на стенде сегодня нет ни одного привлечения на ОМ — проверять нечего',
     ).toBeDefined()
 
+    // 🔴 ПОДОПЫТНЫЙ ВЫБИРАЕТСЯ ПО СТЕРЕГОМОМУ СВОЙСТВУ, А НЕ «КТО ПЕРВЫЙ»
+    // (уточнено ревью №819). Дубль в ячейке возникает у сотрудника, у
+    // которого ОДНО И ТО ЖЕ мероприятие висит на ДВУХ строках статуса; строка
+    // «первая с любым участием» этого не гарантирует. Пока свойство совпадало
+    // случайно, ассерт о повторах был бы вакуумно зелёным после первого же
+    // пересева фикстур — то есть перестал бы падать на мутации «убрать
+    // сведение в хуке», сохраняя вид рабочего.
+    const eventsOfEmployee = new Map<number, number[]>()
+    for (const row of rows) {
+      const seen = eventsOfEmployee.get(row.employee_id) ?? []
+      seen.push(...(row.participations ?? []).map((p) => p.event_id))
+      eventsOfEmployee.set(row.employee_id, seen)
+    }
+    const duplicated = [...eventsOfEmployee.entries()].find(
+      ([, events]) => new Set(events).size < events.length,
+    )
+    const subjectId = duplicated?.[0] ?? attached!.employee_id
+    // Гард — как у соседей: «свойства нет на стенде» и «дефект вернулся»
+    // должны выглядеть по-разному.
+    if (duplicated === undefined) {
+      console.log(
+        'на стенде нет сотрудника с одним ОМ на двух строках статуса — ' +
+          'проверяется только раскладка учётов по колонкам, не сведение дублей',
+      )
+    }
+
     const employee = (await (
-      await fetch(`${API}/api/core/employees/${attached!.employee_id}/`, {
+      await fetch(`${API}/api/core/employees/${subjectId}/`, {
         headers: { Authorization: `Bearer ${token}` },
       })
     ).json()) as { last_name: string; first_name: string }
@@ -347,7 +377,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     // «пропала ссылка на мероприятие» и указала на регрессию, которой нет.
     // Атрибут `data-employee-id` заведён ради этого же в №281.
     const row = page.locator(
-      `table tbody tr[data-employee-id="${attached!.employee_id}"]`,
+      `table tbody tr[data-employee-id="${subjectId}"]`,
     )
     await expect(row, `сотрудник ${employee.last_name} не нашёлся в таблице`).toBeVisible({
       timeout: 15_000,

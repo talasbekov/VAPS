@@ -21,6 +21,7 @@ import {
   getEmployeeStatusColor,
 } from "@/lib/status";
 import type { OpsStatusParticipation } from "@/lib/api";
+import { participationLabelKey } from "@/hooks/use-ops-section-statuses";
 import type { Employee } from "../model/types";
 import { EmployeeAvatar } from "./EmployeeAvatar";
 
@@ -219,7 +220,16 @@ export function EmployeeProfile({
                       <p className="text-sm font-medium">Привлечён на ОМ</p>
                       <ul className="mt-0.5 space-y-0.5">
                         {events.map((participation) => (
-                          <li key={participation.event_id}>
+                          /* Ключ — тот же, что у ячейки таблицы (Plane №819,
+                             ревью): массив ОДИН (`byEmployee` хука), и разный
+                             ключ у двух его читателей разошёлся бы при первой
+                             правке подписи. Подпись здесь КОРОЧЕ табличной (без
+                             объекта и поста), поэтому две строки одного ОМ
+                             выглядели бы одинаково — но их и не будет: хук
+                             сводит массив до правки, а ключ страхует от
+                             повторения узлов, если сведение когда-нибудь
+                             ослабят. */
+                          <li key={participationLabelKey(participation)}>
                             {/* Ссылка — только на существующее ОМ: пустой код
                                 означает удалённое мероприятие, и переход вёл бы
                                 в 404 (то же правило, что в таблице статусов). */}

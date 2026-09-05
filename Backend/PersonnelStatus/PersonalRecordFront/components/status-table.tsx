@@ -236,9 +236,11 @@ function SectionAccountCell({
       {participations.map((participation) =>
         participation.event_code ? (
           <Link
-            // Ключ — по видимой подписи (Plane №819): у одного мероприятия
-            // законно бывает несколько участий, и `event_id` давал бы React
-            // два узла с одним ключом.
+            // Ключ — по видимой подписи (Plane №819). Сегодня он равен
+            // `event_id` (сервер отдаёт для пары сотрудник+ОМ одну и ту же
+            // расстановку — разбор в `use-ops-section-statuses.ts`), но собран
+            // по подписи на вырост: `event_id` начнёт склеивать разные строки
+            // молча, как только расстановка станет множественной.
             key={participationLabelKey(participation)}
             href={`/security-ops/events/${participation.event_id}`}
             // Подпись стала длиннее (объект · пост · ознакомлен) — переносится,
