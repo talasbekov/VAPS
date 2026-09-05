@@ -1,9 +1,38 @@
+"""Проверки веб-сокета уведомлений.
+
+🔴 ЭТОТ ФАЙЛ НЕ СОБИРАЛСЯ НИКОГДА (Plane №799). Его имя не подходило под
+`python_files` в `pytest.ini`, и ни один гейт его не гонял; собираться он стал
+только с правкой шаблона.
+
+И первый же сбор показал, ПОЧЕМУ это не мелочь: модуль не импортируется вовсе.
+`channels.testing` тянет `channels.testing.live`, тот — `daphne`, а `daphne` в
+зависимостях проекта нет (`requirements/base.txt` объявляет только `channels`).
+Ошибка импорта в сборе не «красит одну пробу», а ПРЕРЫВАЕТ ВЕСЬ ПРОГОН
+(`Interrupted: 1 error during collection`) — то есть включение шаблона без
+этой оговорки уронило бы гейт всем.
+
+`importorskip` ДО импорта `channels.testing`, а не `pytest.mark.skip` на
+пробах: пропустить надо сам импорт, до которого разметка не доживает. Появится
+`daphne` в зависимостях — файл начнёт выполняться сам, без правки здесь.
+Отдельная карточка на то, вводить ли `daphne` в зависимости, — за решением
+заказчика: это боевой пакет ASGI-сервера, а не тестовая мелочь.
+"""
+
 import pytest
-from channels.testing import WebsocketCommunicator
-from django.test import override_settings
-from django.contrib.auth.models import User
-from organization_management.config.asgi import application
-from channels.db import database_sync_to_async
+
+pytest.importorskip(
+    "daphne",
+    reason=(
+        "channels.testing тянет daphne, которого нет в зависимостях "
+        "(Plane №799); без пропуска ошибка импорта прерывает весь сбор"
+    ),
+)
+
+from channels.testing import WebsocketCommunicator  # noqa: E402
+from django.test import override_settings  # noqa: E402
+from django.contrib.auth.models import User  # noqa: E402
+from organization_management.config.asgi import application  # noqa: E402
+from channels.db import database_sync_to_async  # noqa: E402
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
