@@ -4772,7 +4772,6 @@ def set_sector_senior(event_id, assignment_id, *, senior, actor):
 
 
 @transaction.atomic
-@transaction.atomic
 def complete_placement(
     event_id, *, visit_object_id=None, override=False, override_reason=None,
     actor=None,
@@ -5505,7 +5504,6 @@ def approval_is_stale(event, visit=None):
     return visit.approval_snapshot != placement_signature(event, visit)
 
 
-@transaction.atomic
 def _unattributed_posts(event):
     """Посты расчёта, у которых не указан объект посещения."""
     return [
@@ -5558,6 +5556,7 @@ def _refuse_empty_placement(event, visit):
     )
 
 
+@transaction.atomic
 def send_for_approval(event_id, *, visit_object_id=None):
     """Отправить расстановку объекта согласующим.
 
@@ -6015,6 +6014,7 @@ def _incident_moment(raw):
     return text
 
 
+@transaction.atomic
 def add_journal_entry(event_id, *, entry_type, title, description, occurred_at=None, post_id=None, measures=""):
     event = lock_event(event_id)
     title = str(title or "").strip()
