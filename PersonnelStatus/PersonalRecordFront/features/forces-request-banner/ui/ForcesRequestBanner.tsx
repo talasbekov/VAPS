@@ -46,6 +46,7 @@ import {
   useDirectorateForcesRequests,
   useSelectForRequest,
 } from "@/hooks/use-forces-request-banner";
+import { employeeIdOfKey } from "@/features/employee-status-update/model/row-key";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 export function ForcesRequestBanner({
@@ -89,9 +90,22 @@ export function ForcesRequestBanner({
   // а вакансии — `${unitId}-vacant…`. Серверу нужен ГОЛЫЙ employeeId: первая
   // редакция слала ключ как есть, и сервер честно отвечал «5132-18 —
   // Сотрудник не вашего управления» (поймано живой пробой).
+  //
+  // РАЗБОР КЛЮЧА — ОБЩИЙ (Plane №547). Здесь стояла своя копия правила, и
+  // она разошлась бы с оригиналом при первой же смене формата ключа: у
+  // `employeeIdOfKey` тот же предмет и та же оговорка про вакансии.
   const employeeIds = selectedEmployees
-    .map((key) => key.split("-")[1])
-    .filter((id): id is string => id !== undefined && !id.startsWith("vacant") && /^\d+$/.test(id));
+    .map((key) => employeeIdOfKey(key))
+    .filter((id): id is number => id !== null)
+    .map(String);
+  // 🔴 РАСХОЖДЕНИЕ СЧЁТЧИКОВ НАЗЫВАЕТСЯ ВСЛУХ (Plane №547). Таблица считает
+  // ВЫБРАННЫЕ СТРОКИ («Выбрано: 10»), а выделить можно только сотрудников —
+  // вакансия это пустая штатная единица, выделять по ней некого. Числа
+  // расходились молча: «Выбрано: 10» и «Выделить на ОМ-…: 7», и разницу
+  // человеку не объяснял никто. Прятать её, убрав вакансии из выбора, —
+  // не наш выбор: строку выделяют галочкой в общей таблице, и запрещать
+  // галочку ради одной кнопки значило бы чинить не там.
+  const vacantSelected = selectedEmployees.length - employeeIds.length;
 
   // Пока список едет — НЕ рисуем скелет: на «Статусах сотрудников» запроса
   // чаще всего нет вовсе, и полоса-заглушка обещала бы содержимое, которого
@@ -266,6 +280,12 @@ export function ForcesRequestBanner({
               ? "Отметьте сотрудников в таблице — и выделите на ОМ"
               : `Выделить на ${data.code}: ${employeeIds.length}`}
         </Button>
+        {vacantSelected > 0 && (
+          <span className="text-muted-foreground text-xs">
+            Выбрано строк: {selectedEmployees.length}, из них вакансий:{" "}
+            {vacantSelected} — выделяются только сотрудники.
+          </span>
+        )}
         <span className="text-muted-foreground text-xs">
           Статус «Участие в ОМ» с датами мероприятия проставится сам; объект
           назначит штаб.{" "}
