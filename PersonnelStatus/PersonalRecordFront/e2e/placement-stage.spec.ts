@@ -1075,10 +1075,21 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     })
     await call('POST', `${base}/recon/complete/`)
     const roster = (await call('GET', '/api/ops/personnel/')) as { results: { id: string }[] }
+    // 🔴 ПЕРЕНОС ПО ДЛИНЕ СПИСКА (Plane №511). Индексация без `% length`
+    // падала `TypeError` на стенде, где постов расчёта больше, чем людей на
+    // ПЕРВОЙ странице `/api/ops/personnel/` — то есть красное на подготовке
+    // данных, а не на стерегомом поведении. Соседние спеки того же сценария
+    // (`approval-return`, `approval-route`) пишут этот цикл правильно; здесь
+    // правило пропустили. Повтор человека на разных постах пробе не мешает:
+    // предмет у неё — замечания согласования, а не уникальность назначений.
+    expect(roster.results.length, 'кадровый список пуст — расставлять некого').toBeGreaterThan(0)
     let i = 0
     for (const post of afterImport.reconSectorPosts) {
       for (let k = 0; k < Math.max(post.need, 1); k += 1) {
-        await call('POST', `${base}/placement/assign/`, { postId: post.id, employeeId: roster.results[i].id })
+        await call('POST', `${base}/placement/assign/`, {
+          postId: post.id,
+          employeeId: roster.results[i % roster.results.length].id,
+        })
         i += 1
       }
     }
