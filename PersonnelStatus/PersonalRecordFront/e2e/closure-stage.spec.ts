@@ -558,6 +558,41 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       await expect(block.getByRole('status')).toHaveCount(0)
     })
 
+    test('у ОМ без объектов посещения объяснение про паспорт на месте', async ({
+      page,
+    }) => {
+      // Строку «Паспорт: версия …» сняли (№443) с доводом «объект и версия
+      // уже названы полосой объекта посещения ниже» — верным ровно до тех
+      // пор, пока полоса рисуется. У ОМ без объектов посещения она
+      // возвращает null, и вместе с ней исчезли ОБА объяснения, почему импорт
+      // постов недоступен (Plane №711): человек видел выключенную кнопку без
+      // причины.
+      const token = await apiToken()
+      const target = requireFixture(
+        (await events(token, 'CONDUCT'))[0],
+        'мероприятие на стадии «Проведение»',
+      )
+
+      await page.route(`**/api/ops/security-events/${target.id}/`, async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        // ОМ без объектов посещения и без привязки к объекту реестра — то
+        // самое состояние, где полосы нет и объяснению взяться неоткуда.
+        body.visitObjects = []
+        body.objectId = null
+        body.passportBinding = null
+        await route.fulfill({ response, json: body })
+      })
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target.id}/`)
+      const context = page.locator('[data-slot="passport-context"]')
+
+      await expect(context).toBeVisible({ timeout: 15_000 })
+      await expect(context).toContainText('не привязано к объекту реестра')
+      // Полосы объекта при этом нет — иначе объяснение дублировало бы её.
+      await expect(page.locator('[data-slot="visit-context"]')).toHaveCount(0)
+    })
 
     test('отказ «Перевести ОМ сюда» виден внутри окна, а окно не закрывается', async ({
       page,
