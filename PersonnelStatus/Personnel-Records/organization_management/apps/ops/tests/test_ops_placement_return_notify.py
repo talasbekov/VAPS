@@ -202,3 +202,85 @@ def test_nobody_to_notify_is_not_an_error(manager, approver):  # noqa: F811
 
     assert resp.status_code == 200, resp.content
     assert not OpsNotification.objects.filter(kind=KIND).exists()
+
+
+def test_returns_of_two_objects_do_not_collapse_into_one(
+    manager, approver, django_user_model  # noqa: F811
+):
+    """🔴 Plane №586: «одно на день» глотало возврат ВТОРОГО объекта.
+
+    Ключ уведомления был «получатель, вид, деловая дата», а старший (или
+    замещающий) бывает старшим сразу двух объектов одного ОМ — или двух ОМ на
+    одну дату. Второе уведомление молча проглатывалось, а выжившее несло
+    payload ПЕРВОГО: ссылка `?visit=` вела человека не к тому объекту, и о
+    втором возврате ему не говорили вовсе. То есть он открывал исправный
+    объект и не находил замечаний, о которых ему сообщили.
+
+    Мутация, которую стережёт проба: убрать `dedupe_key=str(visit.pk)` —
+    второй строки не появится, и `visitObjectId` останется от первого объекта.
+    """
+    base, event_id, first = _event_sent(manager)
+    chief = make_employee(last_name="Двухобъектов")
+    account = _link(django_user_model, chief, "chief-two-objects")
+    manager.post(
+        f"{base}visit-objects/{first.pk}/chief/",
+        {"employeeId": str(chief.pk)},
+        format="json",
+    )
+    first.refresh_from_db()
+
+    # Второй объект того же мероприятия с ТЕМ ЖЕ старшим: заводится напрямую —
+    # предмет пробы рассылка, а не путь заведения объекта. Объект реестра свой:
+    # пара (мероприятие, объект) уникальна ограничением
+    # `uniq_ops_event_visit_object`.
+    second = OpsSecurityEventVisitObject.objects.create(
+        event=first.event,
+        security_object=make_object(code="OBJ-RET-2", name="Второй объект"),
+        object_name="Второй объект",
+        passport_binding=None,
+        position=(first.position or 0) + 1,
+        stage=first.stage,
+        chief_employee_id=chief.pk,
+        chief_name="Двухобъектов Д.",
+    )
+    event = service.lock_event(event_id)
+
+    notify_placement_returned(event, first, comment="Первый", remarks_open=1, urgent=False)
+    notify_placement_returned(event, second, comment="Второй", remarks_open=2, urgent=False)
+
+    rows = OpsNotification.objects.filter(recipient=str(account.pk), kind=KIND)
+    assert rows.count() == 2, "возврат второго объекта проглочен ключом «одно на день»"
+    by_object = {row.payload["visitObjectId"]: row.payload for row in rows}
+    assert set(by_object) == {str(first.pk), str(second.pk)}
+    assert by_object[str(second.pk)]["objectName"] == "Второй объект"
+    assert by_object[str(second.pk)]["remarksOpen"] == 2
+
+
+def test_two_returns_of_the_SAME_object_still_give_one_row(
+    manager, approver, django_user_model  # noqa: F811
+):
+    """А вот ОДИН объект дважды за день — по-прежнему одна строка.
+
+    Это принятое решение раздела (см. шапку модуля): второй возврат того же
+    объекта человек увидит на самой карточке, а лента не превращается в дубли.
+    Проба стережёт мутацию `dedupe_key=None`, которой легко было бы «починить»
+    №586: она развела бы объекты и заодно вернула дубли по одному и тому же.
+    """
+    base, event_id, visit = _event_sent(manager)
+    chief = make_employee(last_name="Одинобъектов")
+    account = _link(django_user_model, chief, "chief-one-object")
+    manager.post(
+        f"{base}visit-objects/{visit.pk}/chief/",
+        {"employeeId": str(chief.pk)},
+        format="json",
+    )
+    visit.refresh_from_db()
+    event = service.lock_event(event_id)
+
+    notify_placement_returned(event, visit, comment="Раз", remarks_open=1, urgent=False)
+    notify_placement_returned(event, visit, comment="Два", remarks_open=5, urgent=True)
+
+    rows = OpsNotification.objects.filter(recipient=str(account.pk), kind=KIND)
+    assert rows.count() == 1
+    # Выживает ПЕРВАЯ полезная нагрузка — так устроен `get_or_create`.
+    assert rows.first().payload["remarksOpen"] == 1
