@@ -106,6 +106,11 @@ export interface GvoSummaryPatchRecord {
   omCode: string;
   patch: GvoSummaryPatch;
   updatedAt: string;
+  /** Флаги «уточняется» — ПУТЯМИ полей в сводке (Plane №686/№687). Хранит их
+   * мок; на сервере это `visit.unspecified`. */
+  unspecified?: string[];
+  /** Отметка утверждения визита (`[ГВО-07]`); null — не утверждён. */
+  approvedAt?: string | null;
 }
 
 // ── Разделы правки ───────────────────────────────────────────────────────

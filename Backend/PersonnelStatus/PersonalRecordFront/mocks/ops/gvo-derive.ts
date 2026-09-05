@@ -39,12 +39,20 @@ export function ruWeekday(isoDate: string): string {
  *
  * Расстановка (placementAssignments) СОЗНАТЕЛЬНО не подмешивается в состав
  * ГВО: это назначения на посты мероприятия, а не группа выездной охраны.
+ *
+ * 🔴 ПУСТОЕ ОСТАЁТСЯ ПУСТЫМ (`[ГВО-06]`, Plane №435; починка мока — №691).
+ * Здесь «уточняется» подставлялось ЗНАЧЕНИЕМ во все незаполненные поля, тогда
+ * как сервер с №435 отдаёт пустые строки: «уточняется» стало ФЛАГОМ поля
+ * (`visit.unspecified`), который ставит человек галочкой. Пока мок жил на
+ * прежнем правиле, ни одно поле на мок-стенде не было пустым — а значит
+ * «обязательные поля без данных» всегда сходились, и правило [ГВО-06] на моке
+ * не воспроизводилось вовсе.
  */
 export function deriveGvoSummary(event: SecurityEvent): GvoSummary {
   const day = formatRuDate(event.businessDate);
-  const emptyGroup: GvoGroup = { name: "ГВО (состав уточняется)", members: [] };
+  const emptyGroup: GvoGroup = { name: "ГВО", members: [] };
   return {
-    country: UNSPECIFIED,
+    country: "",
     // Лицо, выбранное в окне создания ОМ. Пусто — в бюллетене его не назвали:
     // подставлять сюда «уточняется» вместо человека нечем.
     persons:
@@ -57,33 +65,21 @@ export function deriveGvoSummary(event: SecurityEvent): GvoSummary {
               facts: [],
             },
           ],
-    arrival: {
-      date: day,
-      time: UNSPECIFIED,
-      route: UNSPECIFIED,
-      flight: UNSPECIFIED,
-      dur: UNSPECIFIED,
-    },
-    departure: {
-      date: day,
-      time: UNSPECIFIED,
-      route: UNSPECIFIED,
-      flight: UNSPECIFIED,
-      dur: UNSPECIFIED,
-    },
+    arrival: { date: day, time: "", route: "", flight: "", dur: "" },
+    departure: { date: day, time: "", route: "", flight: "", dur: "" },
     meet: [],
     farewell: [],
-    stay: { place: UNSPECIFIED, room: UNSPECIFIED },
+    stay: { place: "", room: "" },
     delegation: [],
-    sbChief: UNSPECIFIED,
-    weapons: UNSPECIFIED,
-    wishes: UNSPECIFIED,
-    obVariant: UNSPECIFIED,
-    radio: UNSPECIFIED,
+    sbChief: "",
+    weapons: "",
+    wishes: "",
+    obVariant: "",
+    radio: "",
     responsible:
       event.ownerName === ""
         ? null
-        : { name: event.ownerName, callsign: UNSPECIFIED, role: "ответственный" },
+        : { name: event.ownerName, callsign: "", role: "ответственный" },
     groups: [emptyGroup],
     transport: [],
     visits: gvoVisitDays(event),

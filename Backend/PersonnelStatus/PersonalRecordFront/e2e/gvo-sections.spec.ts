@@ -400,6 +400,82 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     })
   })
 
+  test('флаги «уточняется» у Прибытия и Убытия РАЗНЫЕ, а Ответственный вообще получил флаг', async ({
+    page,
+  }) => {
+    /**
+     * ОДНА СХЕМА КЛЮЧЕЙ (Plane №686/№687). Флаги «уточняется» хранятся одним
+     * списком у визита и читаются сервером как ПУТИ в сводке
+     * (`arrival.date`), а форма писала голое имя поля (`date`). Отсюда две
+     * беды сразу: «Прибытие» и «Убытие» делят имя `date`, и галочка ставилась
+     * в обоих; сервер же не узнавал ни одного флага, кроме `country`, — то
+     * есть «уточняется» было недостижимо для четырёх из пяти обязательных
+     * полей, и «Утвердить» не разблокировался ничем, кроме ручного PATCH.
+     *
+     * Красная проверка — вернуть в `Fields` ключ `field.key` вместо
+     * `field.path`: первый же `expect` увидит в списке голое `date`, а
+     * галочка у убытия окажется отмеченной заодно с прибытием.
+     */
+    const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
+    expect(target, 'в реестре нет ОМ с иностранным ОЛ').toBeTruthy()
+    const token = await apiToken()
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
+    await page.getByRole('main').getByRole('button', { name: 'Редактировать' }).click()
+    const form = page.locator('[data-slot="gvo-edit-form"]')
+
+    // Секции «Прибытие» и «Убытие» стоят рядом, и поле «Дата» в них одно и то
+    // же по имени — берём их ПО СВОЕЙ СЕКЦИИ, а не первое попавшееся.
+    const arrival = form.getByRole('region', { name: 'Прибытие / тип борта' })
+    const departure = form.getByRole('region', { name: 'Убытие / тип борта' })
+    const arrivalFlag = arrival.getByRole('checkbox', { name: 'Уточняется: Дата' })
+    const departureFlag = departure.getByRole('checkbox', { name: 'Уточняется: Дата' })
+
+    await arrival.getByRole('textbox', { name: 'Дата' }).fill('')
+    await arrivalFlag.check()
+    // 🔴 СЕРДЦЕ ПРОБЫ: галочка у соседа НЕ должна была шевельнуться.
+    await expect(
+      departureFlag,
+      'флаг «Прибытия» поставился заодно и «Убытию» — ключ у них общий',
+    ).not.toBeChecked()
+
+    // «Ответственный» — обязательное поле, и галочка у него была выключена
+    // вовсе (`noFlags`), то есть пометить его было нечем.
+    const respFlag = form.getByRole('checkbox', { name: 'Уточняется: Ответственный' })
+    await expect(respFlag, 'у «Ответственного» нет галочки «уточняется»').toBeVisible()
+    await form.getByRole('textbox', { name: 'Ответственный' }).fill('')
+    await respFlag.check()
+
+    // «Охраняемые лица» правятся карточками, и своего поля у списка нет —
+    // флаг у него на БЛОКЕ.
+    const personsFlag = form.getByRole('checkbox', { name: 'Уточняется: Охраняемые лица' })
+    await expect(personsFlag, 'у списка лиц нет галочки «уточняется»').toBeVisible()
+
+    await form.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(form).toBeHidden({ timeout: 15_000 })
+
+    const after = await apiGet<{ unspecified: string[]; missingRequired: string[] }>(
+      `/api/ops/gvo-summaries/${encodeURIComponent(target!.code)}/`,
+      token,
+    )
+    // Ключи — ПУТИ, и сервер их узнаёт: «Дата прибытия» и «Старший ГВО» ушли
+    // из списка недостающих, «Дата убытия» осталась нетронутой.
+    expect(after.unspecified).toContain('arrival.date')
+    expect(after.unspecified).toContain('responsible')
+    expect(after.unspecified, 'флаг убытия поставился сам').not.toContain('departure.date')
+    expect(after.unspecified, 'в списке осталось голое имя поля формы').not.toContain('date')
+    expect(after.missingRequired).not.toContain('Дата прибытия')
+    expect(after.missingRequired).not.toContain('Старший ГВО')
+
+    // Уборка: снимаем флаги, чтобы соседние пробы читали чистую сводку.
+    await fetch(`${API}/api/ops/gvo-summaries/${encodeURIComponent(target!.code)}/`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ section: 'org', values: {}, unspecified: [] }),
+    })
+  })
+
   test('у внутреннего мероприятия ссылки «Карточка визита →» нет', async ({
     page,
   }) => {

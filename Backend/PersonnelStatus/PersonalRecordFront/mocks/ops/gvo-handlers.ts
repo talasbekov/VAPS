@@ -18,6 +18,8 @@ import {
   GVO_SUMMARIES_ASSEMBLED_PATH,
   GVO_SUMMARIES_PATH,
   gvoSectionPatchKeys,
+  missingRequiredFields,
+  REQUIRED_VISIT_FIELDS,
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
 import { deriveGvoSummary, mergeGvoSummary } from "./gvo-derive";
@@ -219,17 +221,36 @@ function getRecords(): GvoSummaryPatchRecord[] {
   return records;
 }
 
-function saveRecord(omCode: string, patch: GvoSummaryPatch): GvoSummaryPatchRecord {
+function saveRecord(
+  omCode: string,
+  patch: GvoSummaryPatch,
+  extra: { unspecified?: string[]; approvedAt?: string | null } = {}
+): GvoSummaryPatchRecord {
+  const previous = getRecords().find((item) => item.omCode === omCode);
   const record: GvoSummaryPatchRecord = {
     omCode,
     patch,
     updatedAt: nowIso(),
+    // Флаги и отметка утверждения ПЕРЕЖИВАЮТ правку патча: помеченное
+    // «уточняется» не должно сниматься оттого, что человек сохранил соседний
+    // раздел (Plane №691).
+    unspecified: extra.unspecified ?? previous?.unspecified ?? [],
+    approvedAt:
+      extra.approvedAt !== undefined
+        ? extra.approvedAt
+        : (previous?.approvedAt ?? null),
   };
   const rest = getRecords().filter((item) => item.omCode !== omCode);
   // Пустой патч не хранится: «Вернуть исходные» по последнему разделу обязано
   // возвращать сводку в состояние «Черновик», а не оставлять пустую запись,
-  // которую isGvoSummaryFilled прочитает как «Заполнена».
-  records = Object.keys(patch).length === 0 ? rest : [...rest, record];
+  // которую isGvoSummaryFilled прочитает как «Заполнена». Флаги и утверждение
+  // держат запись живой наравне с патчем — иначе помеченное «уточняется»
+  // исчезало бы вместе с последним сохранённым разделом.
+  const empty =
+    Object.keys(patch).length === 0 &&
+    (record.unspecified ?? []).length === 0 &&
+    record.approvedAt === null;
+  records = empty ? rest : [...rest, record];
   persist(records);
   return record;
 }
@@ -248,23 +269,42 @@ function decodeCode(raw: string | readonly string[] | undefined): string {
   }
 }
 
-/** Строка собранной сводки — то же, что отдаёт сервер по одному ОМ. */
+/** Строка собранной сводки — то же, что отдаёт сервер по одному ОМ.
+ *
+ * 🔴 ОБЯЗАТЕЛЬНЫЕ ПОЛЯ СЧИТАЮТСЯ И ЗДЕСЬ (Plane №691). Без `missingRequired`
+ * и счётчиков экран визита прятал прогресс (проверка `total > 0`), считал
+ * `approveBlocker` пустым и рисовал «Утвердить» ВКЛЮЧЁННОЙ — то есть правило
+ * `[ГВО-07]` на мок-стенде не воспроизводилось вовсе, а реестр вырождался в
+ * голое «Черновик» без счётчиков.
+ */
 function assembledRow(event: { code: string }): GvoSummaryRow {
   const record = getRecords().find((item) => item.omCode === event.code);
   const patch = record?.patch ?? {};
+  const unspecified = record?.unspecified ?? [];
+  const summary = mergeGvoSummary(deriveGvoSummary(event as never), patch);
+  const missing = missingRequiredFields(summary, unspecified);
+  const approvedAt = record?.approvedAt ?? null;
   return {
     omCode: event.code,
-    summary: mergeGvoSummary(deriveGvoSummary(event as never), patch),
+    summary,
     filled: Object.keys(patch).length > 0,
     // Визит (Plane №435): мок держит его у каждой строки — черновик/заполнен.
     visit: {
-      status: Object.keys(patch).length > 0 ? "READY" : "DRAFT",
+      status:
+        approvedAt !== null
+          ? "APPROVED"
+          : Object.keys(patch).length > 0
+            ? "READY"
+            : "DRAFT",
       version: 1,
       protectedPersonId: null,
-      unspecified: [],
-      approvedAt: null,
+      unspecified,
+      approvedAt,
     },
-    unspecified: [],
+    unspecified,
+    missingRequired: missing,
+    requiredTotal: REQUIRED_VISIT_FIELDS.length,
+    requiredFilled: REQUIRED_VISIT_FIELDS.length - missing.length,
     updatedAt: record?.updatedAt ?? null,
   };
 }
@@ -302,7 +342,49 @@ export const gvoHandlers = [
     const omCode = decodeCode(params.omCode);
     const body = (await request.json()) as UpdateGvoSummaryRequest;
     const merged: GvoSummaryPatch = { ...currentPatch(omCode), ...body.values };
-    return HttpResponse.json(saveRecord(omCode, merged));
+    // Флаги приходят тем же PATCH, что и значения (последним вызовом формы).
+    return HttpResponse.json(
+      saveRecord(
+        omCode,
+        merged,
+        body.unspecified === undefined ? {} : { unspecified: body.unspecified }
+      )
+    );
+  }),
+
+  /**
+   * «Утвердить» визит (`[ГВО-07]`) — обработчика НЕ БЫЛО ВОВСЕ (Plane №691).
+   * Нажатие уходило в необработанный маршрут, а MSW настроен на
+   * `onUnhandledRequest: 'bypass'` и пропускал запрос В СЕТЬ: на мок-стенде
+   * кнопка молча била по настоящему серверу либо в никуда.
+   *
+   * Отказ при незаполненных обязательных полях — тот же, что у сервера: мок,
+   * который «утверждает» всегда, зелен ровно там, где правило и живёт.
+   */
+  http.post(`*${GVO_SUMMARIES_PATH}:omCode/approve/`, ({ params }) => {
+    const omCode = decodeCode(params.omCode);
+    const event = readSecurityEventsStore().find((item) => item.code === omCode);
+    if (event === undefined) {
+      return HttpResponse.json({ detail: "Мероприятие не найдено." }, { status: 404 });
+    }
+    const row = assembledRow(event);
+    if ((row.missingRequired ?? []).length > 0) {
+      return HttpResponse.json(
+        {
+          error_code: "VISIT_REQUIRED_FIELDS_MISSING",
+          detail: `Заполните обязательные поля: ${(row.missingRequired ?? []).join(", ")}.`,
+        },
+        { status: 422 }
+      );
+    }
+    if (row.visit?.approvedAt != null) {
+      return HttpResponse.json(
+        { error_code: "VISIT_ALREADY_APPROVED", detail: "Визит уже утверждён." },
+        { status: 422 }
+      );
+    }
+    saveRecord(omCode, currentPatch(omCode), { approvedAt: nowIso() });
+    return HttpResponse.json<GvoSummaryRow>(assembledRow(event));
   }),
 
   http.post(`*${GVO_SUMMARIES_PATH}:omCode/reset/`, async ({ params, request }) => {
