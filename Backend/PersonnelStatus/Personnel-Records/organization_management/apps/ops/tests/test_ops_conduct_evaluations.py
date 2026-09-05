@@ -231,3 +231,32 @@ def test_single_score_opens_the_evaluation_when_the_stage_did_not(
     code = ratings._participant_code_for(int(row["employeeId"]))
     work_item = OpsEvaluationWorkItem.objects.get(work_item_code=f"{event_code}-{code}")
     assert work_item.status == "SUBMITTED", "задание не заведено — оценка легла в пустоту"
+
+
+def test_summary_names_the_division_of_the_employee(manager, two_objects_on_conduct):  # noqa: F811
+    """«ФИО · управление» на панели оценок печатается (Plane №643).
+
+    Подразделение в строке расстановки НЕ ХРАНИТСЯ — оно считается на чтении
+    (`placement_assignments_view`), поэтому проба и заводит штатную единицу
+    ПОСЛЕ назначения: так же это выглядит в жизни при переводе человека.
+    """
+    from organization_management.apps.divisions.models import Division
+    from organization_management.apps.employees.models import Employee
+    from organization_management.apps.staff_unit.models import StaffUnit
+
+    _, event_id, first, _ = two_objects_on_conduct
+    row = manager.get(_url(event_id, first)).json()["rows"][0]
+    assert row["divisionName"] == "", "у сотрудника пробы уже есть подразделение"
+
+    division = Division.objects.create(
+        name="Управление №9", division_type=Division.DivisionType.DIRECTORATE
+    )
+    employee = Employee.objects.get(pk=int(row["employeeId"]))
+    StaffUnit.objects.create(division=division, employee=employee, index=employee.pk)
+
+    again = next(
+        r
+        for r in manager.get(_url(event_id, first)).json()["rows"]
+        if r["assignmentId"] == row["assignmentId"]
+    )
+    assert again["divisionName"] == "Управление №9"

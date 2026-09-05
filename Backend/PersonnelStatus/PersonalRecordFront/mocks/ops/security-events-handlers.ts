@@ -397,7 +397,11 @@ function evaluationSummary(event: SecurityEvent, visitObjectId: string): VisitEv
         sector: post.sector,
         employeeId: a.employeeId,
         employeeName: a.employeeName,
-        divisionName: "",
+        // Подразделение — из строки расстановки, а не пустая строка (Plane
+        // №643). Зашитый здесь `""` делал мок слепым к дефекту сервера: клиент
+        // прячет подпись «· управление» при пустой строке, и ни одна проба по
+        // моку не могла поймать, что живая ручка не отдаёт её никогда.
+        divisionName: a.divisionName,
         acknowledgedAt: a.acknowledgedAt,
         replaced: false,
         score: stored?.score ?? null,
