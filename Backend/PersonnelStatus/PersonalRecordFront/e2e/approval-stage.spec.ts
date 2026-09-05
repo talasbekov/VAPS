@@ -552,6 +552,52 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
         )
       })
   })
+
+  test('«строки без объекта» не выдают чужое согласование за своё', async ({ page }) => {
+    // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №479). При `?visit=__unassigned__` разрез
+    // отдаёт «объекта нет», и этап показывал поля УРОВНЯ МЕРОПРИЯТИЯ — то
+    // есть маршрут и замечания ПЕРВОГО объекта. Человек читал чужое
+    // согласование и считал его тем, что видит: это хуже пустого экрана. При
+    // этом адрес объекта в мутации не уходил вовсе, и каждая кнопка отвечала
+    // «выберите, согласование какого объекта вы правите». Выхода со страницы,
+    // кроме правки адреса руками, не было.
+    //
+    // Адрес достижим не только руками: `__unassigned__` пишет сам выборщик
+    // объекта на рекогносцировке и расстановке, а чинилка адреса в шапке для
+    // этого значения намеренно выходит раньше.
+    const token = await apiToken()
+    const suitable = (rows: EventRow[]): EventRow | undefined =>
+      rows.find((e) => e.stage === 'APPROVAL' && e.visitObjects.length > 0)
+    let event = suitable(await events(token))
+    if (event === undefined) {
+      await prepareEvent(token)
+      event = suitable(await events(token))
+      expect(event, 'не удалось подготовить фикстуру').toBeDefined()
+    }
+    const target = event!
+    const first = target.visitObjects[0]!
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/?visit=__unassigned__`)
+    const card = page.getByRole('region', { name: 'Согласование расстановки' })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
+    const blank = card.locator('[data-slot="approval-unassigned"]')
+    await expect(blank).toBeVisible()
+    // Чужого согласования на экране НЕТ ни в каком виде: ни маршрута, ни
+    // кнопок, которые всё равно ответили бы отказом.
+    await expect(card.getByText('Маршрут согласования')).toHaveCount(0)
+    await expect(
+      card.getByRole('button', { name: 'Отправить на согласование' }),
+    ).toHaveCount(0)
+
+    // И отсюда есть ход: кнопка ведёт к объекту, а не оставляет в тупике.
+    await blank.getByRole('button', { name: /^Показать «/ }).click()
+    await expect(page).toHaveURL(new RegExp(`visit=${first.id}`), { timeout: 15_000 })
+    await expect(card.getByText('Маршрут согласования').first()).toBeVisible({
+      timeout: 15_000,
+    })
+  })
 })
 
 /**

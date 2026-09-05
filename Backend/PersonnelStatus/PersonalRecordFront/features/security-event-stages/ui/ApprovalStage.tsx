@@ -53,7 +53,11 @@ import type {
 } from "@/entities/security-event";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDateTime } from "@/shared/lib/date";
-import { useVisitObjectScope, type VisitObjectScope } from "./useVisitObjectScope";
+import {
+  UNASSIGNED_VISIT,
+  useVisitObjectScope,
+  type VisitObjectScope,
+} from "./useVisitObjectScope";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useMyEmployee } from "@/hooks/use-my-employee";
 import { useRenderEventDocument } from "@/hooks/use-ops-reports";
@@ -399,6 +403,22 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
   const view = approvalViewOf(event, scope.visit);
   const rights = useApprovalRights(event, scope.visit);
+  // 🔴 «СТРОКИ БЕЗ ОБЪЕКТА» — НЕ ОБЪЕКТ, И СОГЛАСОВЫВАТЬ ТАМ НЕЧЕГО (Plane
+  // №479). Разрез отдаёт `visit === null` и для ОМ БЕЗ объектов посещения, и
+  // для псевдо-выбора «строки без объекта»; первому отвечает мероприятие — у
+  // него маршрут и замечания действительно свои, — а второму отвечать нечем.
+  //
+  // Раньше отвечали ОДИНАКОВО, и на «строках без объекта» экран показывал
+  // маршрут и замечания ПЕРВОГО объекта как свои: человек читал чужое
+  // согласование и считал его тем, что видит. Это хуже пустого экрана. При
+  // этом `visitObjectId` в мутации не уходил вовсе, и каждая кнопка —
+  // добавить, отправить, отозвать, решить, согласовать, вернуть, закрыть
+  // замечание — отвечала `VISIT_OBJECT_REQUIRED`. Выхода со страницы, кроме
+  // правки адреса руками, не было: чинилка адреса в шапке для этого значения
+  // намеренно выходит раньше, а сам адрес пишет выборщик объекта на
+  // рекогносцировке и расстановке.
+  const nothingToApprove =
+    scope.shown === UNASSIGNED_VISIT && event.visitObjects.length > 0;
 
   const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
   const postLabel = (postId: string): string => {
@@ -432,6 +452,34 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
       <CardContent className="space-y-4">
         <VisitObjectApprovalStrip event={event} scope={scope} />
 
+        {nothingToApprove ? (
+          /* Пустое состояние объясняет и даёт ход (скилл: Feedback → Empty
+             States, «show helpful message and action»): без кнопки человек
+             остался бы там же, откуда не выбраться. */
+          <div
+            className="rounded-md border border-dashed px-3 py-6 text-center"
+            data-slot="approval-unassigned"
+          >
+            <p className="text-sm font-semibold">
+              Согласовывать нечего: строки расчёта не отнесены к объекту
+            </p>
+            <p className="mx-auto mt-1 max-w-prose text-xs text-muted-foreground">
+              Согласуется расстановка ОБЪЕКТА посещения — у каждого свой
+              маршрут, свои замечания и свой документ. «Строки без объекта»
+              объектом не являются, поэтому ни маршрута, ни документа у них
+              нет. Отнести строки к объекту можно на рекогносцировке.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-3"
+              onClick={() => scope.setShown(event.visitObjects[0]!.id)}
+            >
+              Показать «{event.visitObjects[0]!.objectName}»
+            </Button>
+          </div>
+        ) : (
+          <>
         {view.status === "RETURNED" && view.comment !== "" && (
           <Alert>
             <AlertDescription>
@@ -500,6 +548,8 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           замечаний без ответа. Возврат любым согласующим возвращает объект на
           «Расстановку».
         </p>
+          </>
+        )}
       </CardContent>
     </Card>
   );
