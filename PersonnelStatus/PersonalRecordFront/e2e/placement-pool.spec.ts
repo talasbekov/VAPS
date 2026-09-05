@@ -87,7 +87,18 @@ async function prepareWithoutRoster(tok: string): Promise<string> {
     checklist: after.reconChecklist.map((i: Record<string, unknown>) => ({ ...i, done: true, result: 'MATCHES' })),
     sectorPosts: after.reconSectorPosts,
   })
-  await call('POST', `${base}/recon/complete/`)
+  const onPlacement = await call('POST', `${base}/recon/complete/`)
+  // 🔴 ФИКСТУРА ОТВЕЧАЕТ ЗА СЕБЯ (Plane №653). Здесь результат завершения
+  // рекогносцировки не читался вовсе: подготовка, споткнувшаяся на любом
+  // шаге, возвращала id, и проба падала ПОЗЖЕ и НЕ ТАМ — на «нет колонки
+  // расстановки» вместо имени сломанного звена. Соседняя `placement-stage`
+  // эту проверку делает; здесь её просто забыли.
+  if (onPlacement.stage !== 'PLACEMENT') {
+    throw new Error(
+      `фикстура не дошла до «Расстановки»: стадия ${onPlacement.stage ?? '—'}, ` +
+        `${JSON.stringify(onPlacement).slice(0, 200)}`,
+    )
+  }
   return created.id as string
 }
 
