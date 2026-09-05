@@ -17,6 +17,7 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from django.db import transaction
 
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.ops.security_events import (
     _now_iso,
@@ -148,6 +149,12 @@ def assignments_of(employee_id):
                     "acknowledgedBy": a.get("acknowledgedBy") or "",
                     "declinedAt": a.get("declinedAt"),
                     "declineReason": a.get("declineReason"),
+                    # КТО ВПИСАЛ ОТКАЗ (Plane №588) — рядом с текстом, а не
+                    # только в журнале: читатель видит слова там же, где
+                    # узнаёт, чьи они. Пусто — у строк, заведённых до правки,
+                    # и у отказов без разрешимой подписи актора.
+                    "declinedBy": a.get("declinedBy") or "",
+                    "declinedVia": a.get("declinedVia") or "",
                 }
             )
     return rows
@@ -173,6 +180,19 @@ def _find_assignment(event, assignment_id):
         )
 
 
+def _require_open(event, what):
+    """Закрытое мероприятие ответы сотрудника не принимает (Plane №587, №589).
+
+    Один текст на оба ответа: они закрываются одной и той же причиной, а две
+    формулировки одного запрета разошлись бы при первой правке.
+    """
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION", 422,
+            message=f"Мероприятие закрыто — {what} уже нельзя.",
+        )
+
+
 def _patch_assignment(event, assignment_id, **fields):
     event.placement_assignments = [
         {**a, **fields} if str(a.get("id")) == str(assignment_id) else a
@@ -190,9 +210,19 @@ def acknowledge(event_id, assignment_id, *, personal=False, actor=None, actor_na
     `personal` — старший отметил «Ознакомлен лично» (доведено устно); кто
     отметил — `acknowledgedBy`. Пишется в строку назначения — это и есть
     история ознакомления, которую читают лист ознакомления и дело.
+
+    🔴 ЗАКРЫТОЕ МЕРОПРИЯТИЕ НЕ ПРАВИТСЯ (Plane №587). Гард стоял только у
+    близнеца `decline`, и до №405 отсутствие его здесь было безобидно:
+    подтверждение лишь ставило `acknowledgedAt`. С №405 оно ещё и СТИРАЕТ
+    `declinedAt`/`declineReason` — а «отказов N» в сводке закрытия считается
+    на чтении по этим полям. Один запрос на закрытый ОМ менял отчёт о УЖЕ
+    ЗАКРЫТОМ мероприятии, и причина отказа терялась навсегда. Комментарий
+    клиента при этом утверждал, что сервер это стережёт: верно было только
+    для отказа.
     """
     event = lock_event(event_id)
     _find_assignment(event, assignment_id)
+    _require_open(event, "подтвердить ознакомление")
     return _patch_assignment(
         event, assignment_id,
         acknowledgedAt=_now_iso(), declinedAt=None, declineReason=None,
@@ -202,11 +232,36 @@ def acknowledge(event_id, assignment_id, *, personal=False, actor=None, actor_na
 
 
 @transaction.atomic
-def decline(event_id, assignment_id, reason):
+def decline(
+    event_id, assignment_id, reason, *, actor=None, actor_name="", personal=False
+):
     """«Не могу заступить»: причина обязательна — старшему надо знать, кого
-    и почему заменять; отказ без слов читался бы как сбой."""
+    и почему заменять; отказ без слов читался бы как сбой.
+
+    🔴 АВТОР ЗАПИСЫВАЕТСЯ (Plane №588). Отказ читается как СЛОВА САМОГО
+    СОТРУДНИКА — «Не могу заступить: …» стоит в его карточке и в листе
+    «Ознакомление». А вписать их может не только он: гейт ручки пускает
+    старшего и ведущего мероприятие, и это сделано намеренно (человек может
+    позвонить). Пока автора не было, чужая формулировка выдавалась за его
+    собственную, и опровергнуть её было нечем. Пишем оба следа: `declinedBy` в
+    строке — чтобы читатель видел это там же, где текст, и запись в журнале
+    мутаций — чтобы разбирательство не упиралось в строку без автора.
+
+    СПОСОБ — ТОЙ ЖЕ МЕРКОЙ, ЧТО У ПОДТВЕРЖДЕНИЯ (`declinedVia`, ср. №447 и
+    №721): `self` — сотрудник сказал сам, `personal` — записано с его слов.
+    Экран различает эти два случая ПО ПОЛЮ, а не сравнением подписи автора с
+    фамилией сотрудника: подписи приходят из разных источников и совпадают не
+    всегда. Неизвестность читается как «сказал сам» — преуменьшение вместо
+    ложного утверждения о чужих словах, тем же доводом, что в №721.
+    """
     event = lock_event(event_id)
     _find_assignment(event, assignment_id)
+    # 🔴 ПОРЯДОК ПРОВЕРОК ЗНАЧИМ (Plane №589). Пустая причина проверялась
+    # ПЕРВОЙ, и отказ на закрытом ОМ отвечал «Проверьте заполнение формы» с
+    # ошибкой поля `reason`. Человек правил текст, отправлял снова и упирался
+    # в другой отказ — про этап. Состояние мероприятия старше формы: если
+    # действие невозможно вовсе, форму править незачем.
+    _require_open(event, "отказаться от назначения")
     text = (reason or "").strip()
     if not text:
         raise DomainError(
@@ -214,12 +269,25 @@ def decline(event_id, assignment_id, reason):
             detail={"reason": ["Укажите причину, по которой не можете заступить."]},
             message="Проверьте заполнение формы.",
         )
-    if event.stage == "CLOSED":
-        raise DomainError(
-            "INVALID_STAGE_TRANSITION", 422,
-            message="Мероприятие закрыто — отказаться от назначения уже нельзя.",
-        )
-    return _patch_assignment(
+    author = (actor_name or str(actor or "")).strip()
+    patched = _patch_assignment(
         event, assignment_id,
         acknowledgedAt=None, declinedAt=_now_iso(), declineReason=text,
+        acknowledgedVia="", acknowledgedBy="",
+        declinedBy=author,
+        declinedVia="personal" if personal else "self",
     )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.ASSIGNMENT_DECLINED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "code": event.code,
+            "assignmentId": str(assignment_id),
+            "reason": text,
+            "declinedBy": author,
+            "via": "personal" if personal else "self",
+        },
+    )
+    return patched

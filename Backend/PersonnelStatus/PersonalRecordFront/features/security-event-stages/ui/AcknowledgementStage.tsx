@@ -359,6 +359,22 @@ function AssignmentRow({
             Не может заступить
             {assignment.declineReason ? `: ${assignment.declineReason}` : ""}
           </span>
+          {/* 🔴 ЧЬИ ЭТО СЛОВА (Plane №588). Отказ читается как сказанное САМИМ
+              сотрудником, а вписать его может и старший — гейт ручки пускает
+              старшего и ведущего ОМ намеренно: человек может позвонить. Пока
+              автора не было, чужая формулировка выдавалась за его собственную.
+              Подпись стоит ОТДЕЛЬНОЙ строкой, а не внутри плашки: у плашки
+              есть предел ширины, и длинная причина обрезала бы именно то, ради
+              чего подпись добавлена.
+              Показывается ТОЛЬКО когда записал не сам сотрудник: способ берётся
+              полем `declinedVia`, а не сравнением подписи с фамилией — подписи
+              приходят из разных источников и совпадают не всегда. */}
+          {assignment.declinedVia === "personal" &&
+            (assignment.declinedBy ?? "") !== "" && (
+              <span className="text-[11px] text-muted-foreground">
+                записал: {assignment.declinedBy}
+              </span>
+            )}
           <Button type="button" size="sm" variant="destructive" disabled={!canManage} onClick={onReplace}>
             <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
             Заменить →

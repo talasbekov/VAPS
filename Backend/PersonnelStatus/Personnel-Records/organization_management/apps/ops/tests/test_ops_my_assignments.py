@@ -165,3 +165,103 @@ def test_decline_needs_a_reason_and_is_exclusive_with_acknowledgement(manager): 
     assert api.post(
         f"{their_base}decline/{their_assignment}/", {"reason": "Не моё"}, format="json"
     ).status_code == 403
+
+
+def _close_event(event_id):
+    """Закрыть мероприятие мимо цепочки — предмет проб ниже это ОТВЕТ на
+    закрытом ОМ, а не путь к закрытию."""
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    OpsSecurityEvent.objects.filter(pk=event_id).update(stage="CLOSED")
+
+
+def test_acknowledge_on_a_closed_event_is_refused(manager):  # noqa: F811
+    """Закрытое мероприятие подтверждением НЕ правится (Plane №587).
+
+    🔴 ЧТО СТЕРЕЖЁТСЯ. Гард стоял только у близнеца `decline`. До №405
+    отсутствие его здесь было безобидно: подтверждение лишь ставило
+    `acknowledgedAt`. С №405 оно ещё и СТИРАЕТ отказ — а «отказов N» в сводке
+    закрытия считается на чтении по этим полям. Один запрос на закрытый ОМ
+    менял отчёт о УЖЕ ЗАКРЫТОМ мероприятии, и причина отказа терялась
+    навсегда.
+
+    Красная на снятии `_require_open` из `acknowledge`: отказ исчезнет.
+    """
+    me = make_employee("Свой", "С")
+    base, assignment = placed(manager, me)
+    api = linked_client("emp-ack-closed", me)
+    assert api.post(
+        f"{base}decline/{assignment}/", {"reason": "Болен"}, format="json"
+    ).status_code == 200
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    _close_event(event_id)
+
+    resp = api.post(f"{base}acknowledge/{assignment}/")
+
+    assert resp.status_code == 422, resp.data
+    assert resp.json()["error_code"] == "INVALID_STAGE_TRANSITION"
+    # 🔴 ГЛАВНОЕ: отчёт закрытого мероприятия НЕ изменился.
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    row = OpsSecurityEvent.objects.get(pk=event_id).placement_assignments[0]
+    assert row["declineReason"] == "Болен"
+    assert row["acknowledgedAt"] is None
+
+
+def test_decline_on_a_closed_event_names_the_stage_not_the_form(manager):  # noqa: F811
+    """Пустая причина на ЗАКРЫТОМ ОМ — отказ про этап, а не про форму (№589).
+
+    Проверка пустой причины стояла ПЕРВОЙ, и человек получал 400 «Проверьте
+    заполнение формы» с ошибкой поля. Он правил текст, отправлял снова и
+    упирался в другой отказ — про этап. Состояние мероприятия старше формы:
+    если действие невозможно вовсе, форму править незачем.
+
+    Красная на возврате прежнего порядка проверок: ответ станет 400.
+    """
+    me = make_employee("Свой", "С")
+    base, assignment = placed(manager, me)
+    api = linked_client("emp-decline-closed", me)
+    _close_event(base.rstrip("/").rsplit("/", 1)[-1])
+
+    resp = api.post(f"{base}decline/{assignment}/", {"reason": "  "}, format="json")
+
+    assert resp.status_code == 422, resp.data
+    assert resp.json()["error_code"] == "INVALID_STAGE_TRANSITION"
+    assert "закрыто" in resp.json()["message"]
+
+
+def test_decline_records_who_wrote_it(manager):  # noqa: F811
+    """Отказ несёт АВТОРА и строку журнала (Plane №588).
+
+    Отказ читается как слова самого сотрудника — «Не могу заступить: …» стоит
+    в его карточке и в листе ознакомления. А вписать их может не только он:
+    гейт ручки пускает старшего и ведущего мероприятие, и это сделано
+    намеренно (человек может позвонить). Без автора чужая формулировка
+    выдавалась за его собственную, и опровергнуть её было нечем.
+
+    Красная на снятии `declinedBy` и записи журнала.
+    """
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    me = make_employee("Свой", "С")
+    base, assignment = placed(manager, me)
+    before = set(OpsAuditLog.objects.values_list("pk", flat=True))
+
+    # Пишет ВЕДУЩИЙ мероприятие, а не сам сотрудник — тот самый случай, ради
+    # которого авторство и заводится.
+    resp = manager.post(
+        f"{base}decline/{assignment}/", {"reason": "Наряд по части"}, format="json"
+    )
+
+    assert resp.status_code == 200, resp.data
+    row = resp.json()["placementAssignments"][0]
+    assert row["declineReason"] == "Наряд по части"
+    written = OpsAuditLog.objects.exclude(pk__in=before).filter(
+        action="ASSIGNMENT_DECLINED"
+    )
+    assert written.count() == 1, "отказ не оставил следа в журнале"
+    assert written.first().new_value["reason"] == "Наряд по части"
+    assert written.first().new_value["declinedBy"] != ""
+    # Автор доезжает и до читателя карточки, а не только до журнала.
+    mine = linked_client("emp-decline-author", me).get(MINE).json()["results"][0]
+    assert mine["declinedBy"] != ""
