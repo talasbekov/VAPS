@@ -114,7 +114,19 @@ test.describe(LIVE ? 'пул штаба на расстановке' : 'пул �
     const empty = card.locator('[data-slot="placement-pool-empty"]')
     await expect(empty).toBeVisible()
     await expect(empty).toContainText('Силы на объект ещё не выделены')
-    await expect(empty).toContainText(new RegExp(`Заявка ${target!.code}: прислано \\d+ из \\d+`))
+    // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №648). Здесь стояло «прислано X из N» —
+    // строка, числитель которой СТРУКТУРНО ноль: у автозаявки сервер пишет
+    // `allocatedCount = len(force_roster)`, а это состояние рисуется ровно
+    // тогда, когда состав пуст. Регулярка со `\d+` принимала ноль как
+    // законное число и потому зеленела на дефекте. Теперь экран называет то,
+    // что действительно знает, и проба требует именно этого.
+    await expect(empty).toContainText(
+      new RegExp(
+        `(Заявка ${target!.code}: запрошено \\d+ чел\\. В состав штаб пока никого не принял\\.` +
+          `|Заявки на силы по ${target!.code} ещё нет\\.)`,
+      ),
+    )
+    await expect(empty, 'вернулось «прислано X из N»').not.toContainText('прислано')
     await expect(empty.getByRole('link', { name: 'Сбор сил на ОМ →' })).toBeVisible()
     await expect(card.getByLabel('Поиск кандидатов')).toHaveCount(0)
     await page.waitForLoadState('networkidle').catch(() => {})
@@ -141,6 +153,147 @@ test.describe(LIVE ? 'пул штаба на расстановке' : 'пул �
     await expect(card.getByText(/Выделено \d+ из потребности \d+/)).toBeVisible()
     await expect(card.getByLabel('Фильтр по управлению')).toBeVisible()
     await expect(card.getByText(/свободен|на посту /).first()).toBeVisible()
+    // Плейсхолдер обещает ровно то, что делает (Plane №651): поиск по
+    // подразделению серверная половина умела, но её выключил `[РАС-04]`.
+    await expect(card.getByLabel('Поиск кандидатов')).toHaveAttribute(
+      'placeholder',
+      'Поиск по ФИО',
+    )
+    // Мёртвой разметки кадрового списка на экране нет (Plane №652): счётчика
+    // страниц и пагинации при составе не бывает — он весь на руках.
+    await expect(card.getByText(/Найдено \d+ · страница/)).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Дальше', exact: true })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Назад', exact: true })).toHaveCount(0)
+    await expect(card.getByText(/Состав мероприятия: \d+ чел\./)).toBeVisible()
     await card.screenshot({ path: path.join(SHOTS, 'placement-pool.png') })
+  })
+
+  test('пустой список называет ТЕ фильтры, что стоят (Plane №649, №650)', async ({ page }) => {
+    const tok = await token()
+    let target = (await events(tok)).find((e) => e.stage === 'PLACEMENT' && e.forceRoster.length > 0)
+    if (target === undefined) {
+      const id = await prepareWithoutRoster(tok)
+      await acceptRosterFor(tok, id, { count: 2 })
+      target = (await events(tok)).find((e) => e.id === id)
+    }
+    expect(target, 'не удалось подготовить ОМ с принятым составом').toBeDefined()
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+    const card = page.getByRole('region', { name: 'Расстановка сил' })
+    await expect(card.getByText('Выделено на объект штабом')).toBeVisible()
+
+    // Фамилия, которой в составе заведомо нет: список пустеет ПОИСКОМ, а не
+    // фильтром рейтинга — и экран обязан назвать именно поиск. До правки он
+    // посылал сбрасывать рейтинг, который стоит на «Все».
+    await card.getByLabel('Поиск кандидатов').fill('ЗаведомоНетТакойФамилии')
+    const emptyNote = card.getByText(/Под выбранные фильтры/)
+    await expect(emptyNote).toBeVisible()
+    await expect(emptyNote, 'пустоту объяснили не тем фильтром').toContainText(
+      'поиск «ЗаведомоНетТакойФамилии»',
+    )
+    await expect(emptyNote).not.toContainText('рейтинг')
+    await card.getByLabel('Поиск кандидатов').fill('')
+
+    // 🔴 ФИЛЬТР УПРАВЛЕНИЯ СВЕРЯЕТСЯ СО СПИСКОМ ВАРИАНТОВ (Plane №650).
+    // Значение, которого в вариантах нет, — то же самое, что состояние после
+    // снятия штабом последнего человека управления: `<select>` рисует «Все
+    // управления», а отбор резал по исчезнувшему значению. Ставим его прямо
+    // в DOM и проверяем, что экран и отбор говорят одно и то же.
+    const unit = card.getByLabel('Фильтр по управлению')
+    await unit.evaluate((node: HTMLSelectElement) => {
+      const ghost = document.createElement('option')
+      ghost.value = 'Управление, которого нет в составе'
+      ghost.text = 'Управление, которого нет в составе'
+      node.append(ghost)
+      node.value = ghost.value
+      node.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await expect(unit, 'выбранное значение осталось в поле, хотя варианта нет').toHaveValue('')
+    await expect(
+      card.getByText(/Под выбранные фильтры/),
+      'отбор режет по значению, которого в поле уже нет',
+    ).toHaveCount(0)
+  })
+
+  /**
+   * Два назначения одного человека называются ОБА (Plane №654).
+   *
+   * 🔴 ЭТО ПРОБА НА ДАННЫЕ, А НЕ НА ПУТЬ ЭКРАНА. Сегодня создать такую
+   * расстановку через API нельзя: `assign_placement` отбивает
+   * `DOUBLE_ASSIGNMENT` — «сотрудник не может занимать два поста одного ОМ».
+   * Но `placement_assignments` это JSON-поле без ограничения БД: строки в него
+   * кладут ещё и миграции с фикстурами, а прежнее правило было заведено не
+   * всегда. Поэтому состояние подменяется в ОТВЕТЕ РУЧКИ — экран обязан
+   * пережить данные, которые может получить, а не только те, которые сам
+   * умеет создать.
+   */
+  // 🔴 `serviceWorkers: 'block'` НУЖЕН ЗДЕСЬ И ТОЛЬКО ЗДЕСЬ: без него запросы
+  // страницы идут через MSW, и `page.route` не видит их вовсе — перехват
+  // молча не срабатывает, а проба падает на «данных нет» вместо предмета.
+  test.describe(() => {
+    test.use({ serviceWorkers: 'block' })
+
+  test('человек на двух постах назван обоими постами (Plane №654)', async ({ page }) => {
+    const tok = await token()
+    let target = (await events(tok)).find((e) => e.stage === 'PLACEMENT' && e.forceRoster.length > 0)
+    if (target === undefined) {
+      const id = await prepareWithoutRoster(tok)
+      await acceptRosterFor(tok, id, { count: 2 })
+      target = (await events(tok)).find((e) => e.id === id)
+    }
+    expect(target, 'не удалось подготовить ОМ с принятым составом').toBeDefined()
+
+    let titles: string[] = []
+    await page.route(
+      (url) => url.pathname.endsWith(`/api/ops/security-events/${target!.id}/`),
+      async (route) => {
+        const response = await route.fetch()
+        const body = (await response.json()) as {
+          reconSectorPosts: { id: string; sector: string; post: string }[]
+          placementAssignments: Record<string, unknown>[]
+          forceRoster: { employeeId: string; name: string }[]
+        }
+        const [first, second] = body.reconSectorPosts
+        if (first === undefined || second === undefined) {
+          await route.fulfill({ response })
+          return
+        }
+        const member = body.forceRoster[0]!
+        titles = [
+          `${first.sector} · ${first.post}`,
+          `${second.sector} · ${second.post}`,
+        ]
+        const row = (postId: string, index: number) => ({
+          id: `probe-assignment-${index}`,
+          postId,
+          employeeId: member.employeeId,
+          employeeName: member.name,
+          roleCode: null,
+          sectionCode: null,
+          acknowledgedAt: null,
+          ratingOverrideReason: null,
+          needOverrideReason: null,
+          divisionName: '',
+          statusCode: null,
+          statusLabel: null,
+          isSectorSenior: false,
+        })
+        body.placementAssignments = [row(first.id, 1), row(second.id, 2)]
+        await route.fulfill({ response, json: body })
+      },
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+    const card = page.getByRole('region', { name: 'Расстановка сил' })
+    await expect(card.getByText('Выделено на объект штабом')).toBeVisible({ timeout: 20_000 })
+    expect(titles.length, 'у ОМ меньше двух постов — проба вакуумна').toBe(2)
+
+    const line = card.getByText(/на пост(у|ах) /).first()
+    await expect(line, 'второе назначение человека скрыто').toContainText(
+      `на постах ${titles[0]}, ${titles[1]}`,
+    )
+  })
   })
 })

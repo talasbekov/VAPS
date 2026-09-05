@@ -59,7 +59,6 @@ import {
   useAssignPlacement,
   useMovePlacement,
   useCompletePlacement,
-  usePersonnelPage,
   useRemovePlacementPost,
   useSetSectorSenior,
   useUnassignPlacement,
@@ -85,18 +84,10 @@ const SORT_OPTIONS = [
   "По алфавиту",
 ] as const;
 
-/** Подпись полосы на экране → КОД контракта ручки (Plane №67, шаг РЙ-5).
- *
- * Подпись живёт на экране и переводится, код — контракт. Полоса `Все` кода не
- * имеет: «не отбирать» это отсутствие параметра, а не особое значение. */
-const BAND_CODE: Record<string, string | undefined> = {
-  Все: undefined,
-  "9,0–10,0": "9_10",
-  "8,0–8,9": "8_9",
-  "7,0–7,9": "7_8",
-  "Ниже 7,0": "below_7",
-  "Недостаточно данных": "no_data",
-};
+// 🔴 `BAND_CODE` СНЯТА (Plane №652). Карта переводила подпись полосы в код
+// параметра ручки кадровой базы — а ручка не спрашивается с `[РАС-04]`
+// (Plane №428). Отбор по рейтингу идёт по составу и на клиенте (`inBand`),
+// кода контракта ему не нужно.
 
 const RATE_OPTIONS = [
   "Все",
@@ -191,10 +182,8 @@ export function PlacementStage({ event }: { event: SecurityEvent }) {
   return <PlacementBoard event={event} />;
 }
 
-/** Размер страницы подбора. Крупнее окна выбора человека: здесь список не
- * выбирают одним кликом, а просматривают — отбор по рейтингу и автоподбор
- * работают по показанному, и страница в двадцать строк резала бы им основание. */
-const CANDIDATE_PAGE_SIZE = 50;
+// 🔴 `CANDIDATE_PAGE_SIZE` СНЯТА (Plane №652): страницами листался кадровый
+// список, а он больше не спрашивается — состав мероприятия приходит целиком.
 
 // ── Расстановка: три колонки прототипа ───────────────────────────────────
 
@@ -309,11 +298,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
 
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  // Запрос уходит на СЕРВЕР с задержкой (Plane №61): раньше экран тянул весь
-  // кадровый снимок одним ответом и фильтровал его на клиенте — такой «поиск»
-  // отвечает «никого не нашлось», имея в виду «нет в загруженном».
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  // 🔴 `search`, `page` И ЗАПРОС К КАДРОВОЙ БАЗЕ СНЯТЫ (Plane №652). `[РАС-04]`
+  // выключил `usePersonnelPage` (`enabled: false`) — с тех пор запрос не
+  // уходил никогда, а состояние под него, дребезг на 250 мс и целый блок
+  // разметки «Найдено N · страница X» с пагинацией продолжали жить. Здесь
+  // остаётся только то, что выполняется: поиск по составу идёт по `query` на
+  // клиенте, страниц у состава нет.
   const [sort, setSort] = useState<SortOption>("Рекомендуемые");
   const [band, setBand] = useState<RateOption>("Все");
   // Фильтр по управлению (`[РАС-04]`) — по составу, принятому штабом: список
@@ -339,28 +329,10 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // список тогда не спрашивается вовсе: предлагать в подборе тех, кого сервер
   // всё равно откажется ставить, значит обещать невозможное.
   const fromRoster = event.forceRoster.length > 0;
-  // Отбор и порядок уезжают на СЕРВЕР только для кадровой базы (Plane №67,
-  // шаг РЙ-5). У мероприятия со своим составом они остаются на клиенте
-  // ОСОЗНАННО: состав — десятки строк, они уже на руках, и круг к серверу за
-  // ними ничего бы не уточнил. Там же, где список листается страницами, отбор
-  // по показанному был прямым враньём — «нет кандидатов» означало «нет на этой
-  // странице».
-  // `[РАС-04]` (Plane №428): «поиска по всей базе нет; постороннего назначить
-  // нельзя». До этого, пока штаб не принял состав, колонка показывала ВСЮ
-  // кадровую базу (440 человек) — и предлагала тех, кого сервер всё равно
-  // откажется ставить. Запрос к базе выключен насовсем; без состава колонка
-  // показывает пустое состояние `[РАС-05]` со ссылкой в «Сбор сил».
-  const roster = usePersonnelPage({
-    search,
-    page,
-    pageSize: CANDIDATE_PAGE_SIZE,
-    enabled: false,
-    ratingBand: canSeeRatings ? BAND_CODE[band] : undefined,
-    ordering: canSeeRatings && sort === "По рейтингу" ? "rating" : undefined,
-    // Статус спрашивается на день МЕРОПРИЯТИЯ: подбор отвечает на вопрос
-    // «свободен ли он тогда», а не «свободен ли он сейчас» (Plane №65, «Р-2»).
-    businessDate: event.businessDate,
-  });
+  // Кандидаты — ТОЛЬКО состав, принятый штабом (`[РАС-04]`, Plane №428):
+  // «поиска по всей базе нет; постороннего назначить нельзя». Без состава
+  // колонка показывает пустое состояние `[РАС-05]` со ссылкой в «Сбор сил» —
+  // ни списка, ни запроса.
   /** Состав мероприятия в форме кадровой строки подбора. */
   const rosterPeople = useMemo(
     () =>
@@ -374,14 +346,6 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
       })),
     [event.forceRoster]
   );
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(query);
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [query]);
 
   /* Расстановка ведётся ПО ОБЪЕКТУ ПОСЕЩЕНИЯ (Plane №410, `[МД-04]`).
    *
@@ -554,16 +518,59 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // «свободен / на посту K» (`[РАС-04]`): пост занятого — словами, а не
   // одним признаком занятости; ищется по ВСЕМ постам мероприятия, потому что
   // человек бывает занят на соседнем объекте.
-  const postOfEmployee = new Map(
-    event.placementAssignments.map((a) => [a.employeeId, a.postId])
-  );
+  // 🔴 ВСЕ ПОСТЫ ЧЕЛОВЕКА, А НЕ ПОСЛЕДНИЙ (Plane №654). Здесь стоял
+  // `new Map(assignments.map(a => [a.employeeId, a.postId]))`: у сотрудника,
+  // назначенного на два поста (комментарий выше это прямо и предполагает —
+  // «занят на соседнем объекте»), карта хранила только последнюю запись, и
+  // строка сообщала про один пост, скрывая второй.
+  const postsOfEmployee = new Map<string, string[]>();
+  for (const a of event.placementAssignments) {
+    postsOfEmployee.set(a.employeeId, [
+      ...(postsOfEmployee.get(a.employeeId) ?? []),
+      a.postId,
+    ]);
+  }
   const postTitleById = new Map(
     event.reconSectorPosts.map((post) => [post.id, `${post.sector} · ${post.post}`])
   );
+  /** «на посту …» или «на постах …, …» (Plane №654): два назначения одного
+   *  человека называются оба — умолчать о втором значит показать расстановку
+   *  неполной ровно там, где её и проверяют. */
+  function postsLabelOf(employeeId: string): string {
+    const titles = (postsOfEmployee.get(employeeId) ?? []).map(
+      (postId) => postTitleById.get(postId) ?? "—"
+    );
+    if (titles.length === 0) return "на посту —";
+    return titles.length === 1
+      ? `на посту ${titles[0]}`
+      : `на постах ${titles.join(", ")}`;
+  }
   const unitOptions = Array.from(
     new Set(rosterPeople.map((person) => person.unit).filter((unit) => unit !== ""))
   ).sort((a, b) => a.localeCompare(b, "ru"));
-  // «Прислано Y из N» для пустого состояния — по заявкам штаба.
+  /** Действующий фильтр управления (Plane №650).
+   *
+   * 🔴 `unitFilter` СВЕРЯЕТСЯ СО СПИСКОМ ВАРИАНТОВ. Варианты считаются по
+   * ЖИВОМУ составу: штаб снял последнего человека выбранного управления,
+   * карточка перезапросила данные — и выбранного значения в списке больше
+   * нет. `<select>` без подходящего `<option>` рисует первый, то есть «Все
+   * управления», а отбор продолжал резать по исчезнувшему значению: экран
+   * показывал пустой список и все органы управления при этом говорили, что
+   * фильтра нет.
+   *
+   * Значение ВЫВОДИТСЯ, а не чинится эффектом: эффект дал бы лишний кадр с
+   * пустым списком, а вывод не даёт неверного состояния ни на один кадр.
+   */
+  const activeUnitFilter = unitOptions.includes(unitFilter) ? unitFilter : "";
+  /** Фильтры, которые ДЕЙСТВИТЕЛЬНО стоят — словами (Plane №649). Пустой
+   *  список кандидатов обязан назвать причину, иначе человек сбрасывает не
+   *  тот отбор. */
+  const activeFilters = [
+    query.trim() === "" ? null : `поиск «${query.trim()}»`,
+    activeUnitFilter === "" ? null : `управление «${activeUnitFilter}»`,
+    band === "Все" ? null : `рейтинг «${band}»`,
+  ].filter((part): part is string => part !== null);
+  // Запрошено штабом — для пустого состояния (`[РАС-05]`).
   const requestedTotal = event.forceRequests.reduce(
     (sum, request) => sum + request.requestedCount,
     0
@@ -636,16 +643,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const candidates = useMemo(() => {
     // Поиск по составу идёт НА КЛИЕНТЕ: состав — десятки строк, они уже на
     // руках, и круг к серверу за подстрокой в них ничего бы не уточнил.
-    const source = fromRoster
-      ? rosterPeople.filter(
-          (person) =>
-            person.name.toLowerCase().includes(query.trim().toLowerCase()) &&
-            (unitFilter === "" || person.unit === unitFilter)
-        )
-      : (roster.data?.results ?? []);
-    const list = fromRoster
-      ? source.filter((person) => inBand(ratingOfRow(person)))
-      : source;
+    const list = rosterPeople
+      .filter(
+        (person) =>
+          person.name.toLowerCase().includes(query.trim().toLowerCase()) &&
+          (activeUnitFilter === "" || person.unit === activeUnitFilter)
+      )
+      .filter((person) => inBand(ratingOfRow(person)));
     const withFit = list.map((person) => ({
       person,
       fit: fitOf(person),
@@ -655,11 +659,10 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     }));
     switch (sort) {
       case "По рейтингу":
-        // Порядок кадровой базы задал СЕРВЕР — пересортировать страницу здесь
-        // значило бы переставить её внутри себя и выдать это за ранжирование.
-        return fromRoster
-          ? withFit.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1))
-          : withFit;
+        // Ветка «оставить порядок сервера» снята вместе с кадровым списком
+        // (Plane №652): сортируется состав, он весь на руках, и порядка
+        // сервера у него нет.
+        return withFit.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
       case "По соответствию":
         return withFit.sort((a, b) => b.fit - a.fit);
       case "По алфавиту":
@@ -671,11 +674,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    roster.data,
     rosterPeople,
-    fromRoster,
     query,
-    unitFilter,
+    activeUnitFilter,
     sort,
     band,
     selected,
@@ -1511,8 +1512,23 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                    подписью всё равно шла вся база. */
                 <div className="p-3 text-xs" data-slot="placement-pool-empty">
                   <p className="font-semibold">Силы на объект ещё не выделены</p>
+                  {/* 🔴 «ПРИСЛАНО X ИЗ N» СНЯТО (Plane №648). Числитель был
+                      структурно нулём: у автозаявки сервер пишет
+                      `allocatedCount = len(force_roster)`, а эта ветка
+                      рисуется ровно тогда, когда состав ПУСТ. Человек читал
+                      «прислано 0», когда департаменты уже выделили людей и не
+                      хватало только приёмки штабом. Хуже того, при нулевой
+                      потребности сервер держит `force_requests = []`, и экран
+                      сообщал про заявку, которой нет вовсе.
+
+                      Теперь названо то, что этот экран действительно знает:
+                      сколько запрошено и что в составе никого. Сколько
+                      выделили департаменты — вопрос «Сбора сил», и ссылка
+                      ниже ведёт туда. */}
                   <p className="mt-1 text-muted-foreground">
-                    Заявка {event.code}: прислано {allocated} из {requestedTotal}
+                    {event.forceRequests.length === 0
+                      ? `Заявки на силы по ${event.code} ещё нет.`
+                      : `Заявка ${event.code}: запрошено ${requestedTotal} чел. В состав штаб пока никого не принял.`}
                   </p>
                   <Link
                     href="/employees?view=forces"
@@ -1528,7 +1544,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   <select
                     aria-label="Фильтр по управлению"
                     className="mt-0.5 block h-8 w-full rounded-md border bg-background px-2 text-xs"
-                    value={unitFilter}
+                    value={activeUnitFilter}
                     onChange={(e) => setUnitFilter(e.target.value)}
                   >
                     <option value="">Все управления</option>
@@ -1541,7 +1557,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 </label>
                 <Input
                   className="h-8 text-xs"
-                  placeholder="Поиск по ФИО или подразделению"
+                  // 🔴 ПОИСК ИДЁТ ТОЛЬКО ПО ФИО (Plane №651). Серверную
+                  // половину, которая искала и по подразделению, выключил
+                  // `[РАС-04]`; обещание осталось, и набранное название
+                  // управления давало «никого не подходит». Управление
+                  // выбирается СВОИМ полем выше — дублировать его строкой
+                  // поиска незачем.
+                  placeholder="Поиск по ФИО"
                   aria-label="Поиск кандидатов"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -1554,11 +1576,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       className="mt-0.5 block h-8 w-full rounded-md border border-input bg-background px-1 text-xs"
                       value={sort}
                       onChange={(e) => {
+                        // Сброса страницы больше нет и не нужно: страниц у
+                        // состава не бывает — он весь на руках (Plane №652).
                         setSort(e.target.value as SortOption);
-                        // Порядок теперь считает сервер: остаться на третьей
-                        // странице прежнего порядка значило бы показать кусок
-                        // из середины другого списка.
-                        setPage(1);
                       }}
                     >
                       {SORT_OPTIONS.map((option) => (
@@ -1574,9 +1594,6 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       value={band}
                       onChange={(e) => {
                         setBand(e.target.value as RateOption);
-                        // Отбор считает сервер: страница прежнего отбора к
-                        // новому отношения не имеет.
-                        setPage(1);
                       }}
                     >
                       {RATE_OPTIONS.map((option) => (
@@ -1593,54 +1610,23 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   <Chip>Свободны {free}</Chip>
                   <Chip>Назначены {assignedInEvent}</Chip>
                 </div>
-                {/* «Найдено N» считает СЕРВЕР, а не длина страницы: счётчик по
-                    странице обещал бы, что список кончился, ровно на её краю.
-                    С РЙ-5 это число — результат ОТБОРА ПО ВСЕЙ БАЗЕ, поэтому
-                    прежняя оговорка «отбор идёт по показанному» снята: она
-                    лечила словами то, что теперь вылечено кодом. */}
-                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                  <span aria-live="polite">
-                    {fromRoster
-                      ? `Состав мероприятия: ${rosterPeople.length} чел.`
-                      : `Найдено ${roster.data?.count ?? 0} · страница ${page}`}
-                  </span>
-                  <span className={fromRoster ? "hidden" : "flex gap-1"}>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2 text-[11px]"
-                      disabled={roster.data?.previous === null || roster.isFetching}
-                      onClick={() => setPage((current) => Math.max(current - 1, 1))}
-                    >
-                      Назад
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2 text-[11px]"
-                      disabled={roster.data?.next === null || roster.isFetching}
-                      onClick={() => setPage((current) => current + 1)}
-                    >
-                      Дальше
-                    </Button>
-                  </span>
-                </div>
-                {fromRoster && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Кандидаты — люди, принятые штабом в «Сборе сил на ОМ».
-                    Постороннего на пост сервер не поставит.
-                  </p>
-                )}
-                {!fromRoster && (roster.data?.next !== null || page > 1) && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Отбор по рейтингу и порядок по баллу считаются по всей базе.
-                    «По соответствию» и автоподбор — по показанной странице:
-                    соответствие считается против выбранного поста, о котором
-                    кадровый список не знает.
-                  </p>
-                )}
+                {/* 🔴 СЧЁТЧИК И ПАГИНАЦИЯ КАДРОВОЙ БАЗЫ СНЯТЫ (Plane №652).
+                    Весь этот блок стоял ВНУТРИ ветки `fromRoster` и рисовал
+                    ветки `!fromRoster` — недостижимые по определению
+                    (`fromRoster === event.forceRoster.length > 0`). Вместе с
+                    ними ушли `roster.isFetching` (всегда `false` у
+                    выключенного запроса) и `aria-busy` по нему. Список
+                    состава страницами не листается: он весь на руках. */}
+                <p
+                  className="text-[11px] text-muted-foreground"
+                  aria-live="polite"
+                >
+                  Состав мероприятия: {rosterPeople.length} чел.
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Кандидаты — люди, принятые штабом в «Сборе сил на ОМ».
+                  Постороннего на пост сервер не поставит.
+                </p>
                 {/* `aria-busy` вместо подмены списка спиннером (правило скилла
                     «стабильный скелет с aria-busy; не мигать»): прежняя
                     страница остаётся на экране, пока едет новая — за это
@@ -1648,25 +1634,22 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     обязана быть, иначе список выглядит готовым, а показывает
                     прежний отбор. Полупрозрачность — ВТОРОЙ признак, не
                     единственный: одним цветом состояние не кодируется. */}
-                <div
-                  aria-busy={roster.isFetching}
-                  className={`max-h-[360px] space-y-1 overflow-y-auto ${
-                    roster.isFetching ? "opacity-60" : ""
-                  }`}
-                >
+                <div className="max-h-[360px] space-y-1 overflow-y-auto">
                   {candidates.length === 0 ? (
+                    /* 🔴 ПУСТОТА НАЗЫВАЕТ ТЕ ФИЛЬТРЫ, ЧТО ДЕЙСТВИТЕЛЬНО
+                       СТОЯТ (Plane №649). Здесь было «никто не подходит под
+                       выбранный фильтр рейтинга» — при том, что `[РАС-04]`
+                       добавил рядом ещё два отбора: по управлению и по
+                       фамилии. Человек выбирал управление, получал пустой
+                       список и шёл сбрасывать рейтинг, который стоял на
+                       «Все». Ветки кадровой базы сняты вместе с самим
+                       запросом (Plane №652) — они были недостижимы. */
                     <p className="px-1 py-3 text-center text-xs text-muted-foreground">
-                      {fromRoster
-                        ? rosterPeople.length === 0
-                          ? "Состав мероприятия пуст — соберите людей в «Сборе сил на ОМ»."
-                          : "В составе никто не подходит под выбранный фильтр рейтинга"
-                        : roster.isPending
-                          ? "Загрузка кадрового списка…"
-                          : roster.isError
-                            ? "Кадровый список сейчас недоступен."
-                            : band !== "Все"
-                              ? `Во всей базе нет никого с рейтингом «${band}» — отбор считал сервер, а не эта страница.`
-                              : "По запросу никого не нашлось."}
+                      {rosterPeople.length === 0
+                        ? "Состав мероприятия пуст — соберите людей в «Сборе сил на ОМ»."
+                        : activeFilters.length === 0
+                          ? "В составе мероприятия кандидатов нет."
+                          : `Под выбранные фильтры (${activeFilters.join(", ")}) в составе никто не подходит.`}
                     </p>
                   ) : (
                     candidates.map(({ person, fit, rating, busy, warn }) => (
@@ -1704,9 +1687,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           <span className="block truncate text-muted-foreground">
                             {person.unit}
                             {" · "}
-                            {busy
-                              ? `на посту ${postTitleById.get(postOfEmployee.get(person.id) ?? "") ?? "—"}`
-                              : "свободен"}
+                            {busy ? postsLabelOf(person.id) : "свободен"}
                           </span>
                           <span className="mt-0.5 flex flex-wrap items-center gap-1">
                             <StatusBadge
