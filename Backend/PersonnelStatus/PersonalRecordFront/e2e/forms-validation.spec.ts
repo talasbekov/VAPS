@@ -19,6 +19,7 @@
  * 🔴 `serviceWorkers: 'block'` — иначе MSW перехватывает запросы живого стенда.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { clickRowMenuItem } from './row-menu'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -138,9 +139,10 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
       },
     )
 
-    // Модалка открывается из меню действий строки.
-    await page.getByRole('button', { name: /^Действия: / }).first().click()
-    await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
+    // Модалка открывается из меню действий строки. Через помощника: строка
+    // доводится до окна ДО открытия меню, иначе в полном прогоне пункт
+    // оказывается «вне области просмотра» (Plane №820).
+    await clickRowMenuItem(page, page.locator('table tbody tr').first(), 'Запланировать статус')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Статусы сотрудника')).toBeVisible()
@@ -175,8 +177,11 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
     await page.goto('/statuses')
     await hydrated(page)
 
-    await page.getByRole('button', { name: /^Действия: / }).first().click()
-    await page.getByRole('menuitem', { name: 'Откомандировать сотрудника' }).click()
+    await clickRowMenuItem(
+      page,
+      page.locator('table tbody tr').first(),
+      'Откомандировать сотрудника',
+    )
 
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Откомандировать сотрудника')).toBeVisible()

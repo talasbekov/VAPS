@@ -33,6 +33,7 @@
  * 409 по собственному следу — падение было её, а не кода.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { clickRowMenuItem } from './row-menu'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -121,12 +122,8 @@ test.describe('расход: постановка статуса с меропр
     await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
 
-    const menu = page.getByRole('button', { name: /^Действия: / }).first()
-    await expect(menu, 'в таблице нет строки с действиями').toBeVisible({ timeout: 20_000 })
-    await menu.click()
-    const plan = page.getByRole('menuitem', { name: 'Запланировать статус' })
-    await expect(plan, 'у сотрудника нет пункта «Запланировать статус»').toBeVisible()
-    await plan.click()
+    // Через помощника (Plane №820): строка доводится до окна ДО открытия меню.
+    await clickRowMenuItem(page, page.locator('table tbody tr').first(), 'Запланировать статус')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })

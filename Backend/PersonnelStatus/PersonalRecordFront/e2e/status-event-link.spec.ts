@@ -19,6 +19,7 @@
  *      (мутация «убрать блок» — красная).
  */
 import { expect, test, type Page } from '@playwright/test'
+import { clickRowMenuItem } from './row-menu'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { assertStep } from './fixture-step'
 
@@ -239,8 +240,9 @@ test.describe(LIVE ? 'статусы: адрес мероприятия' : 'ст
     ).toHaveCount(0)
 
     // (2) КАРТОЧКА СОТРУДНИКА называет то же мероприятие.
-    await row.getByRole('button', { name: /^Действия:/ }).click()
-    await page.getByRole('menuitem', { name: 'Просмотр профиля' }).click()
+    // Через помощника (Plane №820): строка доводится до окна ДО открытия меню,
+    // иначе в полном прогоне пункт оказывается «вне области просмотра».
+    await clickRowMenuItem(page, row, 'Просмотр профиля')
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Привлечён на ОМ')).toBeVisible({ timeout: 20_000 })
     await expect(

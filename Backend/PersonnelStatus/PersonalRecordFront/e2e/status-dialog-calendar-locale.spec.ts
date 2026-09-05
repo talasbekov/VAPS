@@ -18,6 +18,7 @@
  * подписи: ассерт «в календаре есть 15» прошёл бы и на английском.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { clickRowMenuItem } from './row-menu'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -55,8 +56,8 @@ test.describe(LIVE ? 'статусы: язык календаря' : 'стату
       .locator('table tbody tr')
       .filter({ hasNot: page.getByText('ВАКАНТ') })
       .first()
-    await staffedRow.getByRole('button', { name: /^Действия:/ }).click()
-    await page.getByRole('menuitem', { name: 'Запланировать статус' }).click()
+    // Через помощника (Plane №820): строка доводится до окна ДО открытия меню.
+    await clickRowMenuItem(page, staffedRow, 'Запланировать статус')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
