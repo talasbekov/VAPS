@@ -9,15 +9,16 @@
 Проба зовёт ту же функцию, что зовёт починочная миграция 0092, — на состоянии
 «снятые типы есть, целевого нет», то есть ровно на том, где старая логика
 сдавалась.
+
+Хвостом файла стережётся НЕОБРАТИМОСТЬ слияния (Plane №758): обратного хода у
+0091 и 0092 больше нет, и вернуть его молча нельзя.
 """
 import datetime as dt
 
 import pytest
-from django.apps import apps as django_apps
 
 from organization_management.apps.operations.models import StatusType
 from organization_management.apps.operations.models_status import (
-    UNKNOWN_EVENT_ID,
     OpsEmployeeStatus,
     OpsStatusParticipation,
 )
@@ -130,61 +131,48 @@ def test_merge_is_idempotent_on_an_already_merged_base():
     assert status.status_type_code == TARGET
 
 
-def _backwards():
-    """Обратный ход 0091 — тем же интерфейсом, каким его зовёт Django.
 
-    `backwards` берёт `apps` и достаёт модели через `get_model`; настоящий
-    реестр отвечает на тот же вызов, поэтому шима не нужно. Проверять откат
-    прогоном `migrate operations 0090` нельзя: тестовая база одна на все
-    приложения, и откат раздела снёс бы её для соседних проб.
-    """
+# ─── Необратимость слияния (Plane №758) ──────────────────────────────────────
+#
+# Здесь стояли две пробы обратного хода 0091 — они стерегли, что откат снимает
+# синтетическую строку «мероприятие неизвестно» и не трогает живое участие.
+# Обратного хода больше нет: заказчик 06.09.2026 объявил слияние необратимым,
+# потому что правило отката было негодным в корне — оно уводило на снятые коды
+# ВСЕ строки `IN_EVENT` с известным видом, включая заведённые цепочкой уже
+# после слияния, а отличить их в данных нечем. Стеречь теперь надо не
+# поведение отката, а его ОТСУТСТВИЕ: молча вернувшийся `backwards` — это
+# возврат того же дефекта.
+
+
+def _migration(name):
     from importlib import import_module
 
-    module = import_module(
-        "organization_management.apps.operations.migrations"
-        ".0091_merge_event_assignment_into_in_event"
+    return import_module(
+        f"organization_management.apps.operations.migrations.{name}"
     )
-    return module.backwards(django_apps, None)
 
 
-def test_backwards_removes_the_synthetic_unknown_event_row():
-    """Что завёл прямой ход — снимает обратный (Plane №753).
+@pytest.mark.parametrize(
+    "name",
+    [
+        "0091_merge_event_assignment_into_in_event",
+        "0092_repair_event_assignment_merge",
+    ],
+)
+def test_the_merge_refuses_to_roll_back_instead_of_passing_quietly(name):
+    """Django обязан отказать `migrate operations 0090`, а не пройти вхолостую.
 
-    Строку «мероприятие неизвестно» прямой ход заводит ровно там, где вид
-    наряда жил В КОДЕ СТАТУСА. Обратный ход возвращает вид в код — и, оставляя
-    строку, записывал бы тот же факт дважды. Хуже того, повторный прямой ход
-    спотыкался бы об ограничение уникальности пары (статус, мероприятие).
+    Проверяется ровно то, по чему судит сам Django: `RunPython.reversible`
+    возвращает `reverse_code is not None`. Отсюда красная мутация — вернуть
+    любой обратный вызов, хоть `RunPython.noop`: проба покраснеет, и вместе с
+    ней покраснеет попытка сделать откат «успешным, но пустым», из-за которой
+    прочитавший «OK» решил бы, что строки разведены обратно.
     """
-    _legacy_types()
-    man = make_employee()
-    status = _status(man, TARGET)
-    OpsStatusParticipation.objects.create(
-        status=status, event_id=UNKNOWN_EVENT_ID, kind_code="PHYSICAL_SQUAD",
-        role_code="",
-    )
+    module = _migration(name)
+    operation = module.Migration.operations[0]
 
-    _backwards()
-
-    status.refresh_from_db()
-    assert status.status_type_code == SQUAD
-    assert not status.participations.exists()
-
-
-def test_backwards_keeps_a_real_participation():
-    """Снимается ТОЛЬКО маркер: живое участие обратный ход не трогает.
-
-    Мутация «сносить все участия статуса при откате» краснеет здесь — это
-    была бы вторая, куда более крупная потеря данных, чем та, что чинилась.
-    """
-    _legacy_types()
-    man = make_employee()
-    status = _status(man, TARGET)
-    OpsStatusParticipation.objects.create(
-        status=status, event_id=4242, kind_code="SCREENING_GROUP", role_code=""
-    )
-
-    _backwards()
-
-    status.refresh_from_db()
-    assert status.status_type_code == GROUP
-    assert [row.event_id for row in status.participations.all()] == [4242]
+    assert operation.reverse_code is None
+    assert operation.reversible is False
+    # Функции тоже быть не должно: оставленная рядом, она читается как
+    # «откат есть, просто не подключён», и следующий заход её подключит.
+    assert not hasattr(module, "backwards")
