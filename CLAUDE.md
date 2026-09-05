@@ -113,7 +113,7 @@ npm run build:check       # только сборка: NEXT_DIST_DIR=.next-build
 #    обращение к `window` в модуле), а Suspense-границы держатся конвенцией:
 #    тело экрана в `*Screen`, `export default` только с границей.
 SMOKE_LIVE=1 npx playwright test -c playwright.smoke.config.ts <спека>.spec.ts   # целевые живые пробы по dev-стенду
-npm run stand:prod && npm run smoke:prod                                          # ВСЕ целевые пробы по ПРОД-СТЕНДУ (459 проб; 06.09.2026 — 437 passed, 4 failed, 18 skipped)
+npm run stand:prod && npm run smoke:prod                                          # ВСЕ целевые пробы по ПРОД-СТЕНДУ — число СЧИТАТЬ `--list`, не сверять (замер 06.09.2026: 461 проба, 439 passed, 4 мигающих failed, 18 skipped)
 SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"  # обход портала — БЛОКАМИ по персонам (150 проб = 3 × 50)
 #    🔴 ПОЛНЫЙ СМОУК ГОНЯЕТСЯ ПО ПРОД-СТЕНДУ, а не по `next dev` (Plane №173).
 #    `next dev` компилирует маршруты на лету и набирает 2 ГБ за минуту, под
