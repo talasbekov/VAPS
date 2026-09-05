@@ -1125,4 +1125,143 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     // Метка «!N» у поста в дереве — открытое замечание видно и без клика.
     await expect(treeButton).toContainText('!1')
   })
+  test('отмена обоснования возвращает человека на прежний пост, а не теряет его', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * ПЕРЕНОС ОБРАТИМ (Plane №744). Перенос человека с поста на пост — это два
+     * запроса: снятие и назначение. С `OVER_NEED` (Plane №414) второй отвечает
+     * 409 на ЛЮБОМ укомплектованном посту, то есть в нормальном его состоянии,
+     * — открывается окно обоснования. До правки «Отмена» в этом окне оставляла
+     * человека снятым с исходного поста и не назначенным никуда, МОЛЧА: снятие
+     * уже прошло, а назначение не состоялось.
+     *
+     * Проба ведёт путь ЧЕЛОВЕКОМ: набирает пост-приёмник до расчёта, ставит
+     * одного человека на отдельный пост-источник, тянет его мышью на набранный
+     * пост, дожидается окна и жмёт «Отмена». Проверяется НЕ сообщение, а факт
+     * в данных: назначение на исходном посту цело.
+     *
+     * Красная проверка — вернуть `onCancel={() => assign.dismissConflict()}` в
+     * `PlacementStage`: человек исчезает с обоих постов, и `sourceRows` внизу
+     * становится пустым.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const target = await placementEventWithRoster(request, auth, token)
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
+    const eventId = target!.id
+    type Row = { id: string; postId: string; employeeId: string }
+    const fresh = async () =>
+      (await (
+        await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+      ).json()) as {
+        placementAssignments: Row[]
+        reconSectorPosts: { id: string; need: number }[]
+        forceRoster: { employeeId: string }[]
+      }
+    const before = new Set((await fresh()).placementAssignments.map((row) => row.id))
+    const assignTo = async (postId: string, employeeId: string) =>
+      request.post(`${API}/api/ops/security-events/${eventId}/placement/assign/`, {
+        headers: auth,
+        data: {
+          postId,
+          employeeId,
+          override: true,
+          override_reason: 'Подготовка пробы №744: расстановка до переноса',
+        },
+      })
+
+    try {
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${eventId}/`)
+      const tree = page.getByRole('complementary', { name: 'Дерево постов' })
+      await expect(tree.locator('li[data-drop-post]').first()).toBeVisible()
+      const shown = await tree.locator('li[data-drop-post]').evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-drop-post')),
+      )
+
+      const state = await fresh()
+      const visible = state.reconSectorPosts
+        .filter((row) => shown.includes(row.id))
+        .sort((a, b) => Number(a.need ?? 0) - Number(b.need ?? 0))
+      // Постов нужно ДВА и разных: с одного тянем, на другой роняем. Перенос
+      // на тот же пост экран отсекает сам (`fromPostId === postId`), и проба
+      // на одном посту была бы вакуумной.
+      requireFixture(visible[1], 'в дереве меньше двух постов — переносить не с чего на что')
+      const destination = visible[0]!
+      const source = visible[1]!
+
+      const free = state.forceRoster
+        .map((member) => member.employeeId)
+        .filter((id) => !state.placementAssignments.some((row) => row.employeeId === id))
+      requireFixture(free[0], 'в составе мероприятия нет свободного человека для переноса')
+
+      // Пост-приёмник набирается ДО расчёта — иначе сервер не спросит
+      // обоснования и проверять будет нечего.
+      let taken = state.placementAssignments.filter((row) => row.postId === destination.id).length
+      let cursor = 1
+      while (taken < Number(destination.need ?? 0) && cursor < free.length) {
+        const res = await assignTo(destination.id, free[cursor]!)
+        if (res.ok()) taken += 1
+        cursor += 1
+      }
+      expect(
+        taken,
+        'пост-приёмник не набран до расчёта — обоснования никто не спросит',
+      ).toBeGreaterThanOrEqual(Number(destination.need ?? 0))
+
+      // Наш человек встаёт на пост-источник: именно он должен уцелеть.
+      const placed = await assignTo(source.id, free[0]!)
+      expect(placed.ok(), 'подготовка не удалась: человек не встал на пост-источник').toBe(true)
+
+      await page.reload()
+      await tree.locator(`li[data-drop-post="${source.id}"]`).click()
+      // Якорь — id назначения, а не имя: имя на экране не единственно
+      // (Plane №415), и `.first()` по строке взял бы чужую.
+      const traveller = free[0]!
+      const placedRow = (await fresh()).placementAssignments.find(
+        (assignment) => assignment.employeeId === traveller,
+      )
+      requireFixture(placedRow, 'подготовленное назначение не нашлось в карточке ОМ')
+      const row = page.getByTestId(`placement-assignment-${placedRow!.id}`)
+      await expect(row).toBeVisible({ timeout: 25_000 })
+      await row.dragTo(tree.locator(`li[data-drop-post="${destination.id}"]`))
+
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible({ timeout: 15_000 })
+      await expect(dialog).toContainText('обоснование усиления')
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await expect(dialog).toBeHidden()
+
+      // 🔴 ПРОВЕРЯЕТСЯ ФАКТ В ДАННЫХ, а не надпись: экран мог бы нарисовать
+      // человека на месте и из устаревшего кэша.
+      await expect
+        .poll(
+          async () =>
+            (await fresh()).placementAssignments.filter(
+              (assignment) => assignment.employeeId === traveller,
+            ).length,
+          {
+            message: 'после отмены человек не назначен никуда — перенос съел его молча',
+            timeout: 15_000,
+          },
+        )
+        .toBe(1)
+      const sourceRows = (await fresh()).placementAssignments.filter(
+        (assignment) => assignment.employeeId === traveller,
+      )
+      expect(sourceRows[0]!.postId, 'человек вернулся не на тот пост, с которого его тянули').toBe(
+        source.id,
+      )
+    } finally {
+      for (const row of (await fresh()).placementAssignments) {
+        if (before.has(row.id)) continue
+        await request.delete(
+          `${API}/api/ops/security-events/${eventId}/placement/${encodeURIComponent(row.id)}/`,
+          { headers: auth },
+        )
+      }
+    }
+  })
 })
