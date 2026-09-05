@@ -113,8 +113,8 @@ npm run build:check       # только сборка: NEXT_DIST_DIR=.next-build
 #    обращение к `window` в модуле), а Suspense-границы держатся конвенцией:
 #    тело экрана в `*Screen`, `export default` только с границей.
 SMOKE_LIVE=1 npx playwright test -c playwright.smoke.config.ts <спека>.spec.ts   # целевые живые пробы по dev-стенду
-npm run stand:prod && npm run smoke:prod                                          # ВСЕ целевые пробы по ПРОД-СТЕНДУ (252 пробы; 29.08.2026 — 248 passed, 4 skipped)
-SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"  # обход портала — БЛОКАМИ по персонам (141 проба = 3 × 47)
+npm run stand:prod && npm run smoke:prod                                          # ВСЕ целевые пробы по ПРОД-СТЕНДУ (459 проб; 06.09.2026 — 437 passed, 4 failed, 18 skipped)
+SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"  # обход портала — БЛОКАМИ по персонам (150 проб = 3 × 50)
 #    🔴 ПОЛНЫЙ СМОУК ГОНЯЕТСЯ ПО ПРОД-СТЕНДУ, а не по `next dev` (Plane №173).
 #    `next dev` компилирует маршруты на лету и набирает 2 ГБ за минуту, под
 #    нагрузкой 2,8-3,2 ГБ; сторож перезапускает его каждые одну-две минуты, и
@@ -146,9 +146,13 @@ SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"
 #          admin    — ADMIN → `*`
 #          observer — OPS_READER (object.view + duty.view)
 #          erda     — DIVISION_OPERATOR (ОМ-прав нет)
-#        проб 141 = 3 × 47: у персоны 44 маршрута + 2 пробы каркаса
-#          (`aside`, `header`) + выход из системы. Ничего вне персон в обходе
-#          БОЛЬШЕ НЕТ — и это следствие вот чего.
+#        проб 150 = 3 × 50 (посчитано 06.09.2026, Plane №821): у персоны 47
+#          маршрутов (`ROUTES` в `e2e/portal-routes.ts`) + 2 пробы каркаса
+#          (`aside`, `header`) + выход из системы. Здесь стояло «141 = 3 × 47»
+#          от 29.08.2026 — счёт растёт с каждым новым маршрутом, поэтому
+#          ПЕРЕСЧИТЫВАТЬ, а не сверять с этой строкой: `--list` печатает итог
+#          обхода, `--list -g "persona <ключ>"` — итог блока. Ничего вне
+#          персон в обходе БОЛЬШЕ НЕТ — и это следствие вот чего.
 #          🔴 СВЕРКА ПОКРЫТИЯ ПЕРЕЕХАЛА В ЦЕЛЕВОЙ СМОУК (Plane №319,
 #          29.08.2026): `e2e/route-map-coverage.spec.ts`, гоняется каждой
 #          задачей вместе с остальными целевыми пробами. Раньше она жила в
