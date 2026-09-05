@@ -97,6 +97,10 @@ import {
 import { PROTECTED_PERSONS_CATALOG } from "./protected-persons-handlers";
 import { isOpsProtectedPersonsLive } from "@/lib/ops-env";
 import { appendAudit } from "./audit-store";
+// Порог автосрочности возврата — из НАСТРОЕК раздела, тем же кодом, что
+// читает сервер (Plane №504): зашитое число расходилось с боем при первой же
+// правке порога в «Администрировании».
+import { readReturnUrgentDays } from "./settings-store";
 
 /** Подпись автозаявки на силы — порт `AUTO_FORCE_REQUEST_GROUP` бэкенда
  * (Plane №110). Не название пула, а источник числа: заявка одна на
@@ -446,7 +450,53 @@ function normalizeCheckItem(item: ReconChecklistItem): ReconChecklistItem {
   };
 }
 
+/**
+ * Календарных суток до даты ОМ (Plane №504) — порт серверной
+ * `(business_date − Clock.today_local()).days`, а не вторая её версия.
+ *
+ * Считаются ДАТЫ, а не мгновения: обе стороны приводятся к полуночи UTC, и
+ * разница получается целым числом суток независимо от местного времени.
+ * Прежняя формула вычитала «сейчас» из полуночи и округляла — у ОМ через два
+ * календарных дня после полудня выходила единица.
+ */
+function calendarDaysUntil(businessDate: string): number {
+  const day = new Date(`${businessDate}T00:00:00Z`).getTime();
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((day - today) / 86_400_000);
+}
+
+/**
+ * Версия документа ТОГО объекта, которому адресовано решение (Plane №505).
+ *
+ * Адресата не прислали — объект один, и он же адресат; объектов несколько, а
+ * адресат не назван — версии нет (`0`), и это честнее версии первого
+ * попавшегося: сервер в таком случае и не отвечает согласованием вовсе.
+ */
+function decidedVisitVersion(
+  event: SecurityEvent,
+  visitObjectId: string | undefined
+): number {
+  const visits = event.visitObjects;
+  if (visitObjectId === undefined || visitObjectId === "") {
+    return visits.length === 1 ? (visits[0]?.documentVersion ?? 0) : 0;
+  }
+  return visits.find((v) => v.id === visitObjectId)?.documentVersion ?? 0;
+}
+
 function mirrorApproval(event: SecurityEvent): SecurityEvent {
+  // 🔴 ЗЕРКАЛО РАБОТАЕТ ТОЛЬКО ПРИ ОДНОМ ОБЪЕКТЕ (Plane №500). Оно — упрощение
+  // для мира мока, где объект у ОМ ровно один: тогда «наименьшая стадия среди
+  // объектов» это стадия самого объекта, и переписать её стадией мероприятия
+  // безвредно. При ДВУХ объектах то же действие становится ложью и стирает
+  // работу: закрытие одного объекта не закрывает мероприятие, а зеркало
+  // немедленно откатывало объекту `stage` и `closedAt` обратно по стадии ОМ.
+  //
+  // Условие здесь — не «пока не дошли руки», а граница применимости. Как
+  // только у мока появятся ОМ с двумя объектами (ветка №385 ровно про это),
+  // правила согласования и закрытия придётся портировать по-настоящему; до
+  // тех пор честнее НЕ ТРОГАТЬ объекты, чем трогать их неверно.
+  if (event.visitObjects.length > 1) return event;
   return {
     ...event,
     visitObjects: event.visitObjects.map((visit) => ({
@@ -2715,7 +2765,11 @@ export const securityEventsHandlers = [
       if (body.decision === "DISAGREED" && answer === "") {
         return validationError({ response: ["Укажите, почему вы не согласны."] });
       }
-      const version = event.visitObjects[0]?.documentVersion ?? 0;
+      // Версия — У РЕШАЕМОГО ОБЪЕКТА, а не у первого (Plane №505, вторая
+      // половина карточки). Здесь стоял `visitObjects[0]`, тогда как тело
+      // запроса адресата несёт (`VisitObjectAddressed`), и сервер берёт
+      // версию решаемого объекта (`_approval_target` в `resolve_remark`).
+      const version = decidedVisitVersion(event, body.visitObjectId);
       return HttpResponse.json(
         saveEvent({
           ...event,
@@ -2790,9 +2844,15 @@ export const securityEventsHandlers = [
       // Окно ограничено С ОБЕИХ СТОРОН (Plane №681): одностороннее «не больше
       // порога» истинно и для всех ПРОШЕДШИХ дат (у прошлогодней разница
       // −365, тоже «не больше суток»). Прошедшая дата — не срочность.
-      const daysToEvent = Math.round(
-        (new Date(event.businessDate).getTime() - Date.now()) / 86_400_000
-      );
+      // 🔴 СРАВНИВАЮТСЯ КАЛЕНДАРНЫЕ ДАТЫ, А НЕ МГНОВЕНИЯ (Plane №504). Здесь
+      // стояло `Math.round((дата ОМ − сейчас) / сутки)`: полночь UTC минус
+      // текущее мгновение, округлённое. У ОМ через ДВА календарных дня любое
+      // местное время после полудня давало round(1.17) = 1 — мок ставил
+      // «Срочно», сервер (`(business_date − today_local).days`) не ставил.
+      // Порог тоже брался числом 1, а сервер читает его из настроек раздела:
+      // заказчик поднимал порог в «Администрировании», бой менялся, мок нет.
+      const daysToEvent = calendarDaysUntil(event.businessDate);
+      const urgentDays = readReturnUrgentDays();
       // Список замечаний модалки возврата (`[ВОЗ-01]`, Plane №431): каждое со
       // своей привязкой и срочностью; без списка — одно из причины, как у
       // сервера.
@@ -2811,11 +2871,19 @@ export const securityEventsHandlers = [
                 createdAt: now,
                 text: row.text.trim(),
                 postId: row.postId ?? null,
-                urgent: row.urgent === true || (daysToEvent >= 0 && daysToEvent <= 1),
+                urgent:
+                  row.urgent === true ||
+                  (daysToEvent >= 0 && daysToEvent <= urgentDays),
                 status: "OPEN" as const,
                 response: "",
                 respondedAt: null,
-                documentVersion: event.visitObjects[0]?.documentVersion ?? 0,
+                // Версия документа — У ТОГО ОБЪЕКТА, которому адресовано
+                // решение (Plane №505). Здесь стоял `visitObjects[0]`, то
+                // есть версия ПЕРВОГО объекта независимо от адресата: на ОМ с
+                // двумя объектами разных версий мок показывал «v1» там, где
+                // сервер поставил бы «v3». Сервер берёт `visit.document_version`
+                // решаемого объекта.
+                documentVersion: decidedVisitVersion(event, body.visitObjectId),
                 resolvedInDocumentVersion: null,
               })),
             ]
@@ -3180,10 +3248,16 @@ export const securityEventsHandlers = [
       if (incoming === undefined) {
         return validationError({ incomingEmployeeId: ["Сотрудник не найден."] });
       }
-      if (event.stage !== "CONDUCT") {
+      // 🔴 ЗАМЕНА И НА «ОЗНАКОМЛЕНИИ» (Plane №500, зеркало №432 `[ОЗН-03]`).
+      // Мок отставал от сервера: тот разрешает замену на обоих этапах —
+      // «отказавшийся заменяется там, где отказ виден, а не после перехода
+      // на „Проведение“», — и кнопка «Заменить →» на экране ознакомления уже
+      // есть. Мок отбивал её, то есть мок-проба была зелена над поведением,
+      // которого в бою нет.
+      if (event.stage !== "ACKNOWLEDGEMENT" && event.stage !== "CONDUCT") {
         return businessRuleError(
           "INVALID_STAGE_TRANSITION",
-          "Замена доступна только на этапе «Проведение»."
+          "Замена доступна на этапах «Ознакомление» и «Проведение»."
         );
       }
       const outgoing = event.placementAssignments.find(
