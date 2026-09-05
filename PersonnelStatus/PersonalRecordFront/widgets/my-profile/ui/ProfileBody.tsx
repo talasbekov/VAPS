@@ -47,8 +47,7 @@ import type { MyAssignmentRow } from "@/hooks/use-my-assignments";
 import { useMyDutyShifts } from "@/hooks/use-duty-shifts";
 import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
 import { STAGE_LABEL } from "@/entities/security-event";
-import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
-import { EMPTY_FILTERS } from "@/entities/operational-rating";
+import { useAllEvaluationsOf } from "@/hooks/use-ops-ratings";
 import { DUTY_STATE_LABEL } from "@/entities/duty-shift";
 import type { DutyShift } from "@/entities/duty-shift";
 import type { CoreEmployee, OpsEmployeeStatusRow } from "@/lib/api";
@@ -181,25 +180,56 @@ export function ProfileBody({
   // открыт держателю `event.view`, и рядовому сотруднику вкладка отвечала
   // «реестр недоступен» — назначения не показывались никогда.
   const events = useMyAssignments(readOnly ? String(employee.id) : undefined);
-  // Оценки по закрытым ОМ (`[ПРФ-02]`, `[ПРФ-06]`): один запрос на профиль —
-  // шапке нужен средний балл, истории — балл по мероприятию.
-  const evaluations = useEvaluationRegistry({
-    ...EMPTY_FILTERS,
-    employee: String(employee.id),
-  });
-  const scoreByEvent = useMemo(() => {
-    const map = new Map<string, number | null>();
+  // Оценки по закрытым ОМ (`[ПРФ-02]`, `[ПРФ-06]`): ВСЕ страницы реестра, а
+  // не первая (Plane №660). Шапке нужен средний балл, истории — балл по
+  // мероприятию, и оба считаются по полному списку: реестр отдаёт по десять
+  // строк, и при одиннадцати оценённых ОМ старшие получали «не оценивалось»,
+  // а «из N мероприятий» было занижено — молча, без признака обрезки.
+  const evaluations = useAllEvaluationsOf(String(employee.id));
+  /**
+   * Мероприятия, по которым человека ОЦЕНИВАЛИ. Множество кодов, а не карта
+   * «код → балл» (Plane №658).
+   *
+   * 🔴 БАЛЛА ЗА ОТДЕЛЬНОЕ МЕРОПРИЯТИЕ КЛИЕНТ НЕ ЗНАЕТ И ЗНАТЬ НЕ ДОЛЖЕН.
+   * Здесь стояла карта `eventNumber → row.aggregateRating`, но
+   * `aggregateRating` в строке реестра — АГРЕГАТ УЧАСТНИКА за период
+   * методики: он одинаков во всех его строках. История печатала одно и то же
+   * число напротив каждого мероприятия, а «средний балл» получался средним
+   * из копий этого числа, то есть им же.
+   *
+   * Взять настоящий балл неоткуда, и это не пробел, а правило раздела:
+   * `score` закрытых записей наружу не сериализуется нигде (§19.16, §19.21,
+   * шапка `ratings.py`). Поэтому история говорит то, что реестр
+   * действительно знает: оценивали ли человека по этому мероприятию.
+   */
+  const evaluatedEvents = useMemo(() => {
+    const codes = new Set<string>();
     for (const row of evaluations.data?.results ?? []) {
       if (String(row.employeeId) !== String(employee.id)) continue;
-      map.set(row.eventNumber, row.aggregateRating);
+      if (row.aggregateRating === null) continue;
+      codes.add(row.eventNumber);
     }
-    return map;
+    return codes;
   }, [evaluations.data, employee.id]);
+  /**
+   * Средний балл — АГРЕГАТ, взятый как есть, а не пересчитанный на клиенте.
+   * Сервер считает его сам (§19.19: среднее учтённых оценок периода
+   * методики, округлённое там же), и второй расчёт здесь был бы вторым
+   * ответом на тот же вопрос. Число одинаково во всех строках участника —
+   * берём первое непустое.
+   *
+   * «Из N мероприятий» считается по РАЗНЫМ мероприятиям, а не по числу строк
+   * реестра: у одного мероприятия оценок бывает несколько (направления,
+   * исправления), и счёт строк завышал бы N.
+   */
   const rating = useMemo(() => {
-    const scores = [...scoreByEvent.values()].filter((v): v is number => v !== null);
-    if (scores.length === 0) return null;
-    return { average: scores.reduce((a, b) => a + b, 0) / scores.length, events: scores.length };
-  }, [scoreByEvent]);
+    const mine = (evaluations.data?.results ?? []).filter(
+      (row) => String(row.employeeId) === String(employee.id)
+    );
+    const aggregate = mine.find((row) => row.aggregateRating !== null)?.aggregateRating;
+    if (aggregate === undefined || aggregate === null) return null;
+    return { average: aggregate, events: evaluatedEvents.size };
+  }, [evaluations.data, employee.id, evaluatedEvents]);
   // СВОИ смены, а не реестр целиком: реестр открыт только держателю
   // `duty.view`, и рядовому сотруднику он отвечал 403 — смены в календаре не
   // показывались никогда, а ошибка гасилась молча (Plane №381).
@@ -229,6 +259,12 @@ export function ProfileBody({
         divisionLabel={directories.divisionLabel(employee.division)}
         statuses={statuses.data ?? []}
         statusesLoading={statuses.isPending}
+        // Отказ запроса — НЕ факт о человеке (Plane №659). Без этого признака
+        // `statuses.data ?? []` при 403 или обрыве давал пустой список, а
+        // пустой список — законное «В строю»: сотрудник в отпуске был
+        // неотличим от сотрудника в строю, и ошибка связи печаталась зелёным
+        // чипом как утверждение.
+        statusesFailed={statuses.isError}
         rating={rating}
       />
 
@@ -268,17 +304,19 @@ export function ProfileBody({
           assignments={myAssignments}
           shiftsNote={shiftsNote}
           loading={statuses.isPending || (!readOnly && shifts.isPending)}
+          readOnly={readOnly}
         />
       )}
       {tab === "history" && (
         <HistoryTab
           assignments={myAssignments}
-          scoreByEvent={scoreByEvent}
+          evaluatedEvents={evaluatedEvents}
           rating={rating}
           scoresDenied={evaluations.isError}
           scoresLoading={evaluations.isPending}
           loading={events.isPending}
           failed={events.isError}
+          readOnly={readOnly}
         />
       )}
     </>
@@ -340,6 +378,7 @@ function HeroCard({
   divisionLabel,
   statuses,
   statusesLoading,
+  statusesFailed,
   rating,
 }: {
   employee: CoreEmployee;
@@ -348,6 +387,10 @@ function HeroCard({
   divisionLabel: string | null;
   statuses: OpsEmployeeStatusRow[];
   statusesLoading: boolean;
+  /** Запрос статусов не прошёл (403, обрыв). Тогда статуса НЕТ — ни «В
+   *  строю», ни любого другого: пустой ответ и отсутствие ответа это разные
+   *  вещи (`[ПРФ-02]`, Plane №659). */
+  statusesFailed: boolean;
   /** Средний балл по закрытым ОМ и число оценённых мероприятий; null —
    * оценок нет, и блока рейтинга нет (`[ПРФ-02]`, `[ПРФ-01]`). */
   rating: { average: number; events: number } | null;
@@ -378,6 +421,16 @@ function HeroCard({
             {statusesLoading ? (
               <span className="text-xs text-muted-foreground">
                 статус загружается…
+              </span>
+            ) : statusesFailed ? (
+              // Ни зелёного, ни утверждения: сказано ровно то, что известно.
+              <span
+                data-testid="profile-status"
+                role="status"
+                title="Запрос статусов сотрудника не прошёл — обновите страницу"
+                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+              >
+                статус не получен
               </span>
             ) : (
               <span
@@ -612,20 +665,24 @@ function EventsTab({
  */
 function HistoryTab({
   assignments,
-  scoreByEvent,
+  evaluatedEvents,
   rating,
   scoresDenied,
   scoresLoading,
   loading,
   failed,
+  readOnly = false,
 }: {
   assignments: MyAssignment[];
-  scoreByEvent: Map<string, number | null>;
+  evaluatedEvents: Set<string>;
   rating: { average: number; events: number } | null;
   scoresDenied: boolean;
   scoresLoading: boolean;
   loading: boolean;
   failed: boolean;
+  /** Чужой профиль (`[ПРФ-08]`, Plane №662): «с вашим участием» читает не
+   *  владелец. */
+  readOnly?: boolean;
 }) {
   // Только закрытые ОМ (`[ПРФ-06]`), свежие сверху.
   const past = assignments
@@ -672,7 +729,9 @@ function HistoryTab({
       <CardContent>
         {past.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Закрытых мероприятий с вашим участием нет.
+            {readOnly
+              ? "Закрытых мероприятий с участием сотрудника нет."
+              : "Закрытых мероприятий с вашим участием нет."}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -711,8 +770,7 @@ function HistoryTab({
                       : formatIsoDate(item.acknowledgedAt.slice(0, 10))}
                   </span>
                   <ScoreCell
-                    score={scoreByEvent.get(item.event.code)}
-                    known={scoreByEvent.has(item.event.code)}
+                    evaluated={evaluatedEvents.has(item.event.code)}
                     denied={scoresDenied}
                     loading={scoresLoading}
                   />
@@ -730,22 +788,25 @@ function HistoryTab({
  * «нет права», «оценки не было» и само число. Прочерк на все случаи сразу
  * читался бы как «ноль баллов». */
 function ScoreCell({
-  score,
-  known,
+  evaluated,
   denied,
   loading,
 }: {
-  score: number | null | undefined;
-  known: boolean;
+  evaluated: boolean;
   denied: boolean;
   loading: boolean;
 }) {
   if (loading) {
-    return <span className="text-[11px] text-muted-foreground">…</span>;
+    return (
+      <span data-slot="history-score" className="text-[11px] text-muted-foreground">
+        …
+      </span>
+    );
   }
   if (denied) {
     return (
       <span
+        data-slot="history-score"
         className="text-[11px] text-muted-foreground"
         title="Оперативный рейтинг ведётся обезличенно и открывается по своему праву."
       >
@@ -753,14 +814,25 @@ function ScoreCell({
       </span>
     );
   }
-  if (!known || score === null || score === undefined) {
+  if (!evaluated) {
     return (
-      <span className="text-[11px] text-muted-foreground">не оценивалось</span>
+      <span data-slot="history-score" className="text-[11px] text-muted-foreground">
+        не оценивалось
+      </span>
     );
   }
+  // ЧИСЛА ЗДЕСЬ БОЛЬШЕ НЕТ (Plane №658): балл за конкретное мероприятие
+  // закрыт (§19.16, §19.21), а стоявший тут агрегат участника одинаков во
+  // всех строках — колонка «Балл» печатала одно и то же число напротив
+  // каждого мероприятия. Средний балл остаётся в шапке, где он и есть
+  // ответ на свой вопрос.
   return (
-    <span className="text-sm font-semibold tabular-nums">
-      {score.toFixed(1)}
+    <span
+      data-slot="history-score"
+      className="text-[11px] text-muted-foreground"
+      title="Балл за отдельное мероприятие не раскрывается: рейтинг ведётся агрегатом за период."
+    >
+      оценён
     </span>
   );
 }
@@ -1032,6 +1104,7 @@ function CalendarTab({
   assignments,
   shiftsNote,
   loading,
+  readOnly = false,
 }: {
   statuses: OpsEmployeeStatusRow[];
   shifts: DutyShift[];
@@ -1041,6 +1114,10 @@ function CalendarTab({
    *  связана с кадровой») или сорванный запрос. null — смены пришли. */
   shiftsNote: string | null;
   loading: boolean;
+  /** Чужой профиль (`[ПРФ-08]`, Plane №662): подписи от первого лица здесь
+   *  врут — читает не владелец. Соседние вкладки переписаны ещё в №449,
+   *  календарь и история остались с «моими». */
+  readOnly?: boolean;
 }) {
   // Хуки стоят ДО раннего выхода на загрузке — иначе между рендерами
   // разъезжается их порядок.
@@ -1229,8 +1306,21 @@ function CalendarTab({
   };
   // Клик по строке списка ведёт к дню: у периода, начавшегося раньше месяца,
   // это первый его день В ПОКАЗАННОМ месяце.
+  //
+  // 🔴 ЕСЛИ ДЕНЬ ВПЕРЕДИ ПОКАЗАННОГО МЕСЯЦА — ПЕРЕЛИСТЫВАЕМ СЕТКУ (Plane
+  // №661). Зажималось только начало, а «Ближайшие 30 дней» смотрят на месяц
+  // вперёд и в конце месяца заведомо содержат строки следующего: клик по
+  // такой строке открывал панель про 12 октября, тогда как сетка оставалась
+  // сентябрьской и подсветки в ней не было — экран рассказывал про день,
+  // которого не показывает. Тот же довод, по которому `shiftMonth` СНИМАЕТ
+  // выбор дня: панель и сетка обязаны говорить об одном месяце.
   const selectPeriodDay = (period: CalendarPeriod) => {
-    setSelectedIso(period.from < monthStart ? monthStart : period.from);
+    const target = period.from < monthStart ? monthStart : period.from;
+    if (target > monthEnd) {
+      const [year, month] = target.split("-").map(Number);
+      setCursor({ year, month: month - 1 });
+    }
+    setSelectedIso(target);
   };
 
   return (
@@ -1239,11 +1329,13 @@ function CalendarTab({
         <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
           <div>
             <CardTitle>
-              Мой календарь · {MONTH_NAME[cursor.month]} {cursor.year}
+              {readOnly ? "Календарь" : "Мой календарь"} ·{" "}
+              {MONTH_NAME[cursor.month]} {cursor.year}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Дни с отметками моих статусов и смен — выберите день, чтобы
-              увидеть, что в нём
+              {readOnly
+                ? "Дни с отметками статусов и смен сотрудника — выберите день, чтобы увидеть, что в нём"
+                : "Дни с отметками моих статусов и смен — выберите день, чтобы увидеть, что в нём"}
             </p>
           </div>
           <div className="flex gap-1">
