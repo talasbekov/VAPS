@@ -24,3 +24,28 @@ export const REFRESH_RETRY_MS = 30_000;
 export function isTokenRejected(status: number): boolean {
   return status === 400 || status === 401 || status === 403;
 }
+
+/**
+ * Одна работа на ключ: параллельные вызовы ждут ПЕРВЫЙ, а не заводят свой
+ * (Plane №465, №474).
+ *
+ * Правило вынесено сюда по той же причине, что и `isTokenRejected`: колбэк
+ * NextAuth из пробы не позвать, а гонку надо чем-то стеречь. Здесь она
+ * проверяется прямо — счётчиком запусков.
+ *
+ * Запись снимается В ЛЮБОМ исходе: оставшийся промис раздавал бы всем
+ * следующим уже протухший ответ, и продление перестало бы работать совсем —
+ * хуже исходной гонки.
+ */
+export function makeOnce<T>(): (key: string, work: () => Promise<T>) => Promise<T> {
+  const inflight = new Map<string, Promise<T>>();
+  return (key, work) => {
+    const running = inflight.get(key);
+    if (running !== undefined) return running;
+    const started = work().finally(() => {
+      inflight.delete(key);
+    });
+    inflight.set(key, started);
+    return started;
+  };
+}

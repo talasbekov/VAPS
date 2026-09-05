@@ -26,7 +26,7 @@ import { encode } from 'next-auth/jwt'
 import fs from 'node:fs'
 import path from 'node:path'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
-import { isTokenRejected } from '../lib/refresh-policy'
+import { isTokenRejected, makeOnce } from '../lib/refresh-policy'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -144,6 +144,77 @@ test.describe(LIVE ? 'продление сессии' : 'продление с�
         `${temporary} — беда сервера, а не мёртвый токен: сессию жечь нельзя`,
       ).toBe(false)
     }
+  })
+
+  test('параллельные продления делают ОДИН запрос, а не по одному на каждое', async () => {
+    // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №465, №474). Страницу портала открывают
+    // десятки компонентов сразу, и каждый дёргает `/api/auth/session`. Когда
+    // access-токен протух, КАЖДЫЙ такой вызов заводил своё продление: за один
+    // заход насчитывалось под полторы сотни параллельных
+    // `POST /api/token/refresh/`. Побеждала не первая удача, а ПОСЛЕДНИЙ
+    // ответ: одного неудачника (502 при перезапуске Django, таймаут) хватало,
+    // чтобы затереть cookie, уже обновлённую успешным соседом, и выкинуть
+    // человека из совершенно здоровой системы. Плюс мина на будущее: включат
+    // `ROTATE_REFRESH_TOKENS` — и при `BLACKLIST_AFTER_ROTATION: True` первый
+    // же ответ убьёт токен, которым в ту же секунду пользуются остальные сто.
+    //
+    // Проверяется счётчиком запусков: правило про «одну работу на ключ»
+    // вынесено в `lib/refresh-policy` по той же причине, что и соседнее, —
+    // колбэк NextAuth из пробы не позвать.
+    const once = makeOnce<number>()
+    let runs = 0
+    const slow = () =>
+      new Promise<number>((resolve) => {
+        runs += 1
+        setTimeout(() => resolve(runs), 30)
+      })
+
+    const answers = await Promise.all(Array.from({ length: 20 }, () => once('токен-A', slow)))
+    expect(runs, 'каждый вызов завёл своё продление вместо ожидания первого').toBe(1)
+    expect(new Set(answers).size, 'ответы разошлись — ждали не один и тот же').toBe(1)
+
+    // Ключ отпускается ПОСЛЕ работы: иначе продление сделалось бы разовым и
+    // все следующие получали бы протухший ответ навсегда — хуже гонки.
+    await once('токен-A', slow)
+    expect(runs, 'ключ не отпущен: второе продление не состоялось').toBe(2)
+
+    // Отказ отпускает ключ так же, как удача.
+    const boom = () => {
+      runs += 1
+      return Promise.reject(new Error('бэкенд лёг'))
+    }
+    await expect(once('токен-A', boom)).rejects.toThrow('бэкенд лёг')
+    await once('токен-A', slow)
+    expect(runs, 'после отказа ключ остался занят').toBe(4)
+
+    // Разные токены — разные работы: общий ключ склеил бы сессии двух людей.
+    runs = 0
+    await Promise.all([once('токен-A', slow), once('токен-Б', slow)])
+    expect(runs, 'два разных токена продлились одним запросом').toBe(2)
+  })
+
+  test('десяток одновременных сессий получает ОДИН новый токен', async () => {
+    // Живая половина №465: то же самое, но через настоящий стенд. Без
+    // склейки каждый из запросов приносит СВОЙ свежий токен — их набирается
+    // столько же, сколько запросов; со склейкой ответ у всех один.
+    const secret = sessionSecret()
+    expect(secret, 'NEXTAUTH_SECRET не найден — подписать cookie нечем').not.toBeNull()
+    const pair = await tokenPair()
+    const cookie = await expiredSessionCookie(secret!, pair.access, pair.refresh)
+
+    // Прогрев: `next dev` компилирует маршрут на первом обращении, и пока он
+    // этим занят, соседний запрос успевает проскочить мимо ещё не созданной
+    // склейки. Замерено — на холодном стенде выходило два продления вместо
+    // одного; это свойство dev-сервера, а не дефект правила.
+    await fetch(`${APP}/api/auth/session/`)
+
+    const sessions = await Promise.all(Array.from({ length: 10 }, () => sessionWith(cookie)))
+    for (const session of sessions) {
+      expect(session.error, 'параллельное продление уронило сессию').toBeUndefined()
+    }
+    const tokens = new Set(sessions.map((session) => session.user?.accessToken))
+    expect(tokens.has(pair.access), 'кому-то достался протухший токен').toBe(false)
+    expect(tokens.size, `продлений было ${tokens.size}, а надо одно`).toBe(1)
   })
 
   test('форма входа называет причину, по которой человек на ней оказался', async ({ page }) => {
