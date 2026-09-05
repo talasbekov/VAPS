@@ -60,6 +60,32 @@ export function formatIsoDateTime(value: string, fallback = "—"): string {
   });
 }
 
+/**
+ * День и время БЕЗ ГОДА — формат журнала штаба (Plane №730).
+ *
+ * Отдельная функция, а не параметр у `formatIsoDateTime`: там год есть и
+ * нужен (документы, архив), здесь его намеренно нет — записи журнала
+ * читаются в пределах мероприятия, и год в каждой строке был бы шумом.
+ *
+ * 🔴 ПРОВЕРКА НА NaN — И ЕСТЬ ПРЕДМЕТ. `new Date(...)` от неразбираемой
+ * строки даёт `Invalid Date`, и `toLocaleString` печатает её БУКВАЛЬНО. Поле
+ * `occurredAt` приходит из JSON мероприятия как есть, поэтому клиент,
+ * приславший `"10:15"`, заставлял панель нарисовать «Invalid Date» человеку.
+ * Соседний вид (`ClosedView`) уже был защищён `formatIsoDateTime`, и два
+ * вида на одни данные расходились.
+ */
+export function formatIsoDayTime(value: string, fallback = "—"): string {
+  if (value === "") return fallback;
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) return fallback;
+  return moment.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 const BULLETIN_MONTHS = [
   "января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря",
