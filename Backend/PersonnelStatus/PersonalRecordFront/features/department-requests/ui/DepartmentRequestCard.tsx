@@ -53,7 +53,7 @@ import {
   useWithdrawDepartmentAllocation,
 } from "@/hooks/use-department-requests";
 import { apiClient, type CoreDivision } from "@/lib/api";
-import { formatIsoDate } from "@/shared/lib/date";
+import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 /**
  * Управления ДЕПАРТАМЕНТА заявки — из общего справочника оргструктуры, а не
@@ -581,7 +581,18 @@ export function DepartmentRequestCard({
                       ? "Не запрошено"
                       : (row.assigned ?? 0) >= (row.need ?? 0) && (row.need ?? 0) > 0
                         ? "Выделено"
-                        : `Запрошено ${formatIsoDate(row.notifiedAt)}`}
+                        : // 🔴 МОМЕНТ, А НЕ ДАТА (Plane №560). `notifiedAt` —
+                          // метка времени сервера в UTC, и `formatIsoDate`
+                          // режет из неё префикс «ГГГГ-ММ-ДД» РЕГУЛЯРКОЙ,
+                          // минуя часовой пояс намеренно (так и надо для
+                          // `businessDate` выше — там даты без времени).
+                          // Департамент, разославший запрос в 03:00 по
+                          // местному (+05), хранится как «…T22:00:00+00:00»
+                          // ПРЕДЫДУЩЕГО дня, и колонка печатала «Запрошено
+                          // <вчера>». Соседний экран того же поля
+                          // (`ForcesSplitPanel.tsx`) уже читает его
+                          // `formatIsoDateTime`.
+                          `Запрошено ${formatIsoDateTime(row.notifiedAt)}`}
                   </TableCell>
                 </TableRow>
               ))}
