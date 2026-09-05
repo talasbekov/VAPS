@@ -10,7 +10,6 @@ import {
 } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { resetAccessToken } from "@/lib/access-token";
-import { apiClient } from "@/lib/api";
 import { expiredLoginUrl } from "@/lib/expired-redirect";
 
 /**

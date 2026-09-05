@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
@@ -20,21 +18,16 @@ import {
   Sparkles,
   AlertCircle,
   RefreshCw,
-  ChevronDown,
   Search,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/lib/auth";
 import {
   OrgUnit,
   Employee,
   convertStaffUnitsResponseToOrgUnit,
 } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
-import {
-  getEmployeeStatusColor,
-  getEmployeeStatusDot,
-} from "@/lib/status";
+import { getEmployeeStatusDot } from "@/lib/status";
 import { useStatusNaming } from "@/entities/status";
 import { OrgNode } from "./OrgNode";
 
@@ -48,7 +41,6 @@ const statusStateLabels = {
 };
 
 export default function OrgChart() {
-  const { user } = useAuth();
   // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
   // в админке, иначе читается как «Не обновлено».
   const naming = useStatusNaming();
@@ -78,7 +70,6 @@ export default function OrgChart() {
   const [selectedUnit, setSelectedUnit] = useState<OrgUnit | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [focusedUnitId, setFocusedUnitId] = useState<string>("");
-  const [treePosition, setTreePosition] = useState({ x: 0, y: 0, scale: 1 });
   const [searchQuery, setSearchQuery] = useState("");
 
   // Обновляем expandedUnits и focusedUnitId при изменении данных
@@ -128,7 +119,9 @@ export default function OrgChart() {
   const resetFocus = () => {
     if (orgData?.id) {
       setFocusedUnitId(orgData.id);
-      setTreePosition({ x: 0, y: 0, scale: 1 });
+      // Положение дерева (`treePosition`) снято: его НЕ ЧИТАЛ никто —
+      // ни стиль, ни трансформация, — и сброс здесь только вызывал лишнюю
+      // перерисовку (Plane №767). Прокрутка и масштаб у схемы браузерные.
     }
   };
 

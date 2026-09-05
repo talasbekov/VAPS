@@ -31,7 +31,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { expect, request as apiRequest, test, type Page, type Request } from '@playwright/test'
+import { request as apiRequest, test, type Page, type Request } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { ROUTES } from './portal-routes'
 

@@ -9,7 +9,6 @@
 import { http, HttpResponse } from "msw";
 import {
   PROTECTED_PERSONS_PATH,
-  protectedPersonHistoryPath,
 } from "@/entities/protected-person";
 import { readEventsStore } from "./security-events-handlers";
 import type {

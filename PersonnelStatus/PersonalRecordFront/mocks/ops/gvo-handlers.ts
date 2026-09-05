@@ -20,11 +20,9 @@ import {
   gvoSectionPatchKeys,
   missingRequiredFields,
   REQUIRED_VISIT_FIELDS,
-  UNSPECIFIED,
 } from "@/entities/gvo-summary";
 import { deriveGvoSummary, mergeGvoSummary } from "./gvo-derive";
 import type {
-  GvoSummary,
   GvoSummaryPatch,
   GvoSummaryPatchRecord,
   GvoSummaryRow,

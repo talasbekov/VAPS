@@ -31,7 +31,6 @@ import {
   securityEventApprovalRoutePath,
   securityEventApprovalSendPath,
   securityEventApprovalWithdrawPath,
-  securityEventRemarkResolvePath,
   securityEventBulletinCompletePath,
   securityEventBulletinPath,
   securityEventClosePath,
@@ -79,7 +78,6 @@ import type {
   SecurityEvent,
   SecurityEventStage,
   SplitForceDemandRequest,
-  StaffingDemandRow,
   UpdateBulletinRequest,
   UpdateForceAllocationRequest,
   UpdateReconRequest,
@@ -1054,24 +1052,6 @@ function findEvent(id: string):
   return { event: found, response: null };
 }
 
-/** Агрегация утверждённой потребности в запросы силам — по группам. */
-function aggregateForceRequests(
-  eventId: string,
-  rows: StaffingDemandRow[]
-): ForceRequest[] {
-  const byGroup = new Map<string, number>();
-  for (const row of rows) {
-    byGroup.set(row.group, (byGroup.get(row.group) ?? 0) + row.need);
-  }
-  return [...byGroup.entries()].map(([group, requestedCount], index) => ({
-    id: `${eventId}-force-request-${index}-${group}`,
-    group,
-    requestedCount,
-    allocatedCount: 0,
-    status: "NOT_SENT",
-    comment: "",
-  }));
-}
 
 /** Срок сдачи списка по умолчанию — за сутки до начала мероприятия (№287).
  *  Время ОМ мок не держит, поэтому началом считается полночь — как и на
@@ -1580,10 +1560,6 @@ export const securityEventsHandlers = [
         fieldErrors[`sectorPosts.${index}.need`] = ["Должно быть не меньше 1."];
     });
     if (Object.keys(fieldErrors).length > 0) return validationError(fieldErrors);
-    const checklist: ReconChecklistItem[] = body.checklist.map((item) => ({
-      ...item,
-      comment: item.comment.trim(),
-    }));
     const knownIds = new Set(event.reconSectorPosts.map((row) => row.id));
     const sectorPosts: ReconSectorPost[] = normalizePostIds(
       incomingPosts.map((row) => ({

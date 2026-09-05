@@ -1,57 +1,20 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, User } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { StaffUnit, StaffUnitEmployee, StaffUnitStatistics } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
-import {
-  EMPLOYEE_STATUS_PAINT,
-} from "@/lib/status";
 import { useStatusNaming } from "@/entities/status";
 import styles from "./org-board.module.css";
 
 const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "";
 
-// Шестой источник той же таблицы — теперь производная от общей палитры.
-const statusColors: Record<string, string> = Object.fromEntries(
-  Object.entries(EMPLOYEE_STATUS_PAINT).map(([code, paint]) => [code, paint.dot])
-);
 
 
 
 // Построение дерева из плоского списка
-const buildTree = (units: StaffUnit[]): Map<number, StaffUnit> => {
-  const unitMap = new Map<number, StaffUnit>();
-
-  // Нормализуем данные: убеждаемся, что parent_id существует
-  const normalizedUnits = units.map((unit) => ({
-    ...unit,
-    parent_id: unit.parent_id ?? null,
-  }));
-
-  // Создаем карту всех элементов
-  normalizedUnits.forEach((unit) => {
-    unitMap.set(unit.id, { ...unit, children: [] });
-  });
-
-  // Строим дерево
-  normalizedUnits.forEach((unit) => {
-    if (unit.parent_id !== null && unit.parent_id !== undefined) {
-      const parent = unitMap.get(unit.parent_id);
-      if (parent) {
-        if (!parent.children) {
-          parent.children = [];
-        }
-        parent.children.push(unitMap.get(unit.id)!);
-      }
-    }
-  });
-
-  return unitMap;
-};
 
 // Структура для отображения
 interface OrgStructure {
@@ -322,9 +285,14 @@ export default function OrgBoard() {
   // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
   // в админке, иначе читается как «Не обновлено».
   const naming = useStatusNaming();
-  const [highlightedStatus, setHighlightedStatus] = useState<string | null>(
-    null
-  );
+  // 🔴 ПОДСВЕТКА СТАТУСА МЕРТВА, И ЭТО НАЗВАНО ВСЛУХ (Plane №767 → карточка
+  // «подсветка статуса на доске оргструктуры не включается ниоткуда»).
+  // Значение читают четыре места ниже, а МЕНЯТЬ его было некому: setter не
+  // звали ни клик, ни фильтр, ни адрес. То есть условия подсветки всегда
+  // ложны, и код, который их проверяет, выглядит работающим, не будучи им.
+  // Setter снят, чтобы это было видно; сама подсветка либо подключается
+  // отдельной задачей, либо снимается целиком — это решение заказчика.
+  const [highlightedStatus] = useState<string | null>(null);
 
   // Используем React Query для загрузки данных
   const {

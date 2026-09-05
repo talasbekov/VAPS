@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,14 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Bell,
-  Menu,
-  Settings,
-  LogOut,
-  AlertTriangle,
-  User,
-} from "lucide-react";
+import { Menu, Settings, LogOut, User } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { NotificationsDropdown } from "@/features/notifications/ui/NotificationsDropdown";
 import { EditProfileDialog } from "@/features/edit-profile";
