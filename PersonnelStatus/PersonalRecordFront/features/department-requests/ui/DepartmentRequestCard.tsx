@@ -136,16 +136,31 @@ export function DepartmentRequestCard({
     allocating: "",
     comment: "",
   });
+  // 🔴 ЗАВИСИМОСТИ — ЗНАЧЕНИЯ СЕРВЕРА, А НЕ ОБЪЕКТ ЗАЯВКИ (Plane №555).
+  //
+  // Эффект стоял на `[allocation]`, то есть на ИДЕНТИЧНОСТИ объекта, а её
+  // меняет ЛЮБОЙ рефетч: и `notify`, и `split` гасят ключ
+  // `['ops-department-request', allocationId]` на успехе. Ответственный
+  // набирал «Выделяем: 3» с пояснением, не нажимая «Сохранить ответ», жал
+  // «Сохранить раскладку» — и набранное откатывалось к серверному молча, без
+  // единого слова о том, куда оно делось.
+  //
+  // На значениях эффект молчит, пока сервер отвечает то же самое, и
+  // срабатывает, когда цифра или комментарий ДЕЙСТВИТЕЛЬНО изменились —
+  // после собственного «Сохранить ответ» в том числе. `allocationId` в
+  // списке потому, что у СОСЕДНЕЙ заявки значения могут совпасть с
+  // текущими: без него переход между заявками оставил бы чужой черновик.
+  const serverAllocating =
+    allocation === undefined || allocation.allocating === null || allocation.allocating === undefined
+      ? ""
+      : String(allocation.allocating);
+  const serverComment = allocation?.answerComment ?? "";
   useEffect(() => {
     if (allocation === undefined) return;
-    setAnswer({
-      allocating:
-        allocation.allocating === null || allocation.allocating === undefined
-          ? ""
-          : String(allocation.allocating),
-      comment: allocation.answerComment ?? "",
-    });
-  }, [allocation]);
+    setAnswer({ allocating: serverAllocating, comment: serverComment });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `allocation` в
+    // списке и есть дефект: объект новый на каждом рефетче.
+  }, [allocationId, serverAllocating, serverComment]);
   const [draft, setDraft] = useState<Record<string, string>>({});
 
   const {
