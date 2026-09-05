@@ -587,3 +587,45 @@ def test_a_single_object_does_not_get_a_second_row(manager, hq):  # noqa: F811
         "у единственного объекта заведена лишняя строка «без объекта» — двойной счёт"
     )
     assert sum(row["need"] for row in rows) == 6
+
+
+def test_the_urgency_threshold_is_read_once_per_listing(manager, hq):  # noqa: F811
+    """🔴 ПОРОГ АВТОСРОЧНОСТИ — ОДНО ЧИСЛО НА ВЕСЬ ОТВЕТ (Plane №669).
+
+    `return_urgent_days()` читал настройку раздела НЕКЭШИРОВАННО, а доска
+    зовёт `is_urgent` по каждой строке листинга — то есть лишний запрос на
+    строку ровно за тем же значением. Ошибка не видна в ответе: числа
+    правильные, страница просто дороже, чем должна быть, и дорожает линейно
+    вместе с числом незакрытых сборов.
+
+    Считается ИМЕННО обращение к таблице настроек, а не общее число запросов:
+    общий счётчик пришлось бы править при каждой посторонней правке листинга,
+    и проба стерегла бы не свой предмет.
+
+    Мутация, на которой проба обязана краснеть: вернуть `board_row` к
+    `is_urgent(event, allocations)` без порога — обращений станет по одному
+    на строку.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    first_base, first_id = allocated_event(manager, department, business_date="2026-10-01")
+    manager.post(f"{first_base}forces/allocation/{first_id}/notify/")
+    _free_object_code()
+    second_base, second_id = allocated_event(manager, department, business_date="2026-11-01")
+    manager.post(f"{second_base}forces/allocation/{second_id}/notify/")
+
+    with CaptureQueriesContext(connection) as queries:
+        rows = hq.get(LIST).json()["results"]
+
+    # Две строки в ответе — иначе «один запрос» доказывал бы только то, что
+    # листинг пуст.
+    assert len({r["eventId"] for r in rows}) >= 2
+    settings_reads = [q for q in queries.captured_queries if "ops_policy_settings" in q["sql"]]
+    assert len(settings_reads) <= 1, (
+        f"порог автосрочности прочитан {len(settings_reads)} раз(а) на "
+        f"{len(rows)} строк листинга: "
+        + "; ".join(q["sql"][:120] for q in settings_reads)
+    )

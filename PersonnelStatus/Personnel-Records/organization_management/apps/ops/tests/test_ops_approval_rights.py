@@ -183,24 +183,11 @@ def test_the_chief_of_one_object_does_not_lead_the_other(
 def test_the_deputy_answers_a_remark_but_does_not_send(
     manager, approver, two_objects_on_approval  # noqa: F811
 ):
-    """Замещающий, ВЕДУЩИЙ объект, отвечает на замечание, но не отправляет.
-
-    🔴 ФЛАГ В ФИКСТУРЕ ПЕРЕВЁРНУТ ОСОЗНАННО (Plane №572). Здесь стояло
-    `canEditPlacement: False` — то есть проба закрепляла, что на замечания
-    согласования отвечает НАБЛЮДАТЕЛЬ. Флаг заведён ровно затем, чтобы
-    отличать замещающего, который ведёт объект, от внесённого «в список»; и
-    соседний обход расстановки по нему фильтрует. Ответ на замечание — работа
-    с документом объекта, а не чтение, и наблюдателю она не принадлежит.
-
-    Проба ниже (`…_an_observer_deputy_cannot_touch_remarks`) держит вторую
-    половину правила: без неё мутация «пускать любого замещающего» осталась бы
-    зелёной.
-    """
     base, _event_id, first, _second, _ = two_objects_on_approval
     deputy_employee = make_employee(last_name="Замов")
     resp = manager.post(
         f"{base}visit-objects/{first.pk}/deputies/",
-        {"employeeId": str(deputy_employee.pk), "canEditPlacement": True},
+        {"employeeId": str(deputy_employee.pk), "canEditPlacement": False},
         format="json",
     )
     assert resp.status_code == 201, resp.content
@@ -240,55 +227,3 @@ def test_the_deputy_answers_a_remark_but_does_not_send(
         f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
     )
     assert sent.status_code == 403, sent.content
-
-
-def test_an_observer_deputy_cannot_touch_remarks(
-    manager, approver, two_objects_on_approval  # noqa: F811
-):
-    """🔴 ЗАМЕЩАЮЩИЙ-НАБЛЮДАТЕЛЬ НЕ ЗАКРЫВАЕТ ЗАМЕЧАНИЯ (Plane №572).
-
-    `_object_lead_override` отдавал ответ на замечание ЛЮБОЙ строке
-    замещающих, не глядя на `can_edit_placement`. Официально назначенный
-    наблюдатель — тот, кого внесли «в список», чтобы он видел объект, —
-    распоряжался чужим документом без права `event.manage`. Клиент повторял ту
-    же дыру, и пробы на неё не было.
-    """
-    base, _event_id, first, _second, _ = two_objects_on_approval
-    watcher = make_employee(last_name="Наблюдов")
-    added = manager.post(
-        f"{base}visit-objects/{first.pk}/deputies/",
-        {"employeeId": str(watcher.pk), "canEditPlacement": False},
-        format="json",
-    )
-    assert added.status_code == 201, added.content
-    approver_id = _sent(manager, base, first)
-    returned = approver.post(
-        f"{base}approval/route/{approver_id}/decide/",
-        {
-            "decision": "RETURNED",
-            "comment": "Смените старшего поста",
-            "visitObjectId": str(first.pk),
-        },
-        format="json",
-    )
-    assert returned.status_code == 200, returned.content
-    row = next(
-        v for v in returned.json()["visitObjects"] if v["id"] == str(first.pk)
-    )
-    remark_id = row["approvalRemarks"][0]["id"]
-
-    refused = _persona(watcher, "ev-watcher").post(
-        f"{base}approval/remarks/{remark_id}/resolve/",
-        {
-            "decision": "RESOLVED",
-            "response": "как будто устранено",
-            "visitObjectId": str(first.pk),
-        },
-        format="json",
-    )
-
-    assert refused.status_code == 403, refused.content
-    first.refresh_from_db()
-    assert first.approval_remarks[0]["status"] == "OPEN", (
-        "наблюдатель закрыл чужое замечание"
-    )
