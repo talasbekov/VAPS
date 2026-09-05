@@ -283,6 +283,16 @@ def render_pdf_from_template(template_path, values, *, allow_unresolved=False):
         _drop_temp(filled_path, template_path)
 
 
+# Кириллический шрифт для водяного знака. Раскладка зависит от дистрибутива:
+# Debian/Ubuntu — `truetype/dejavu`, Alpine и часть RPM — `dejavu` (Plane №637).
+_DEJAVU_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/local/share/fonts/DejaVuSans.ttf",
+)
+
+
 def stamp_draft(pdf_bytes, label="ПРОЕКТ"):
     """Водяной знак на каждой странице PDF (`[СОГ-03]`, Plane №430).
 
@@ -294,6 +304,18 @@ def stamp_draft(pdf_bytes, label="ПРОЕКТ"):
 
     Шрифт — DejaVu Sans из системы: у встроенных шрифтов reportlab кириллицы
     нет, и «ПРОЕКТ» превратился бы в чёрные квадраты.
+
+    🔴 ОТСУТСТВИЕ ШРИФТА — НАЗВАННЫЙ ОТКАЗ, А НЕ 500 (Plane №637). Путь был
+    зашит абсолютной строкой и не проверялся: на хосте без `fonts-dejavu`
+    reportlab поднимал `TTFError`, и каждый досогласовательный PDF расстановки
+    отвечал голым 500 с трассировкой. Соседняя системная зависимость этого же
+    модуля стережётся правильно — `shutil.which("soffice")` → `DomainError
+    PDF_CONVERTER_MISSING`; здесь правило пропустили.
+
+    Путей несколько, потому что раскладка шрифтов зависит от дистрибутива:
+    Debian/Ubuntu кладут в `truetype/dejavu`, Alpine и часть RPM — в
+    `dejavu`. Перебор дешевле, чем настройка на каждом хосте, и честнее, чем
+    одна угаданная строка.
     """
     import io
 
@@ -303,8 +325,16 @@ def stamp_draft(pdf_bytes, label="ПРОЕКТ"):
     from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.pdfgen import canvas
 
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     if "DejaVuSans" not in pdfmetrics.getRegisteredFontNames():
+        font_path = next(
+            (path for path in _DEJAVU_CANDIDATES if os.path.exists(path)), None
+        )
+        if font_path is None:
+            raise DomainError(
+                "WATERMARK_FONT_MISSING", 500,
+                detail={"font": ["Шрифт DejaVu Sans не установлен."]},
+                message="Шрифт для водяного знака недоступен.",
+            )
         pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
