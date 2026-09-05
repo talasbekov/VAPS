@@ -47,6 +47,8 @@ import {
 import { GripVertical, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
+import { OpsApiError, OpsConflictError, OpsNetworkError } from "@/lib/ops-errors";
+import { useToast } from "@/shared/hooks/use-toast";
 import { RatingBriefDialog } from "./RatingBriefDialog";
 import {
   PLACEMENT_MANAGE,
@@ -117,7 +119,51 @@ type DragPayload = {
   roleCode?: string | null;
   sectionCode?: string | null;
 };
+/** Перенос, застрявший на вопросе «почему усиление» (Plane №744): человек уже
+ * снят с `fromPostId`, а на `toPostId` его ещё не пустили. */
+type PendingMove = {
+  employeeId: string;
+  assignmentId: string;
+  fromPostId: string;
+  toPostId: string;
+  roleCode?: string;
+  sectionCode?: string;
+};
 const DRAG_MIME = "application/x-placement";
+
+/** Обоснование, с которым уходит ВОЗВРАТ на прежний пост после несостоявшегося
+ * переноса (Plane №744). Своё, а не пустое: сервер требует обоснование на
+ * усиление сверх расчёта, и без него возврат получил бы тот же 409 — второе
+ * окно обоснования поверх первого. Текст попадает в `needOverrideReason`
+ * назначения и в журнал: читающий должен понять, что усиление никто не решал,
+ * система вернула как было. */
+const RESTORE_REASON = "Возврат на прежний пост: перенос не состоялся";
+
+/**
+ * Довести до конца действие, запущенное из обработчика разметки (Plane №745).
+ *
+ * `mutateAsync` отклоняется на ЛЮБОЙ ошибке — независимо от того, что
+ * `useOpsMutation.onError` уже развёл её по каналам (форма, окно обоснования,
+ * тост, `mutation.error`). А обработчики разметки подвешены как
+ * `onDrop={(e) => runPlacementAction(onDropPost(e, post.id))}`: `void` отклонение не ловит, он
+ * лишь глушит правило «промис без обработки» у линтера. Отклонение уходило в
+ * никуда — оверлей ошибки у `next dev` и красная консоль в смоуке.
+ *
+ * Раньше путь был достижим только через `RATING_DATA_MISSING`, который требует
+ * `post.minRating !== null`, — а его не ставят ни сид, ни мок, поэтому дыра
+ * спала. С `OVER_NEED` (Plane №414) это будничное событие.
+ *
+ * 🔴 ГЛОТАЕТСЯ ТОЛЬКО ТО, У ЧЕГО УЖЕ ЕСТЬ КАНАЛ. Отказ API человек видит и без
+ * нас, второй показ был бы дублем. Всё остальное — ошибка программы, а не
+ * сервера, и она обязана попасть в консоль: смоук смотрит на неё, и молчаливое
+ * `catch {}` спрятало бы настоящую поломку экрана вместе с ожидаемым отказом.
+ */
+function runPlacementAction(action: Promise<unknown>): void {
+  void action.catch((error: unknown) => {
+    if (error instanceof OpsApiError || error instanceof OpsNetworkError) return;
+    console.error("Расстановка: действие не завершилось", error);
+  });
+}
 
 function readDragPayload(e: React.DragEvent): DragPayload | null {
   try {
@@ -618,9 +664,15 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     assignedIds.size,
   ]);
 
+  const { toast } = useToast();
+
   // ── Перетаскивание и окно «Роль и секция…» (`[РАС-03]`, Plane №445) ──────
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [editing, setEditing] = useState<PlacementAssignment | null>(null);
+  /** Перенос, чьё назначение ждёт ответа в окне обоснования (Plane №744).
+   * Человек уже снят с `fromPostId` — здесь лежит всё, чем его вернуть, И
+   * куда его вести, если обоснование дадут. */
+  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
 
   function payloadOfAssignment(assignment: PlacementAssignment): DragPayload {
     return {
@@ -660,18 +712,143 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * назначение заново ПО ОЧЕРЕДИ, с ролью и секцией (Plane №242: всё, что не
    * передано, теряется молча). */
   async function placePayload(postId: string, payload: DragPayload): Promise<void> {
-    if (payload.assignmentId === undefined) {
+    const { assignmentId, fromPostId } = payload;
+    if (assignmentId === undefined) {
       assign.mutate({ postId, employeeId: payload.employeeId });
       return;
     }
-    if (payload.fromPostId === postId) return;
-    await unassign.mutateAsync({ assignmentId: payload.assignmentId });
-    await assign.mutateAsync({
-      postId,
+    if (fromPostId === postId) return;
+    if (fromPostId === undefined) {
+      // Строка с поста, у которой поста нет: вернуть человека будет НЕКУДА, а
+      // перенос без возврата — ровно то, что чинит №744. Такой нагрузки
+      // `payloadOfAssignment` не строит; появится — человек это увидит, а не
+      // потеряет сотрудника молча.
+      toast({
+        variant: "destructive",
+        description:
+          "Не удалось определить пост, с которого переносят. Обновите страницу и повторите.",
+      });
+      return;
+    }
+    await movePerson({
       employeeId: payload.employeeId,
+      assignmentId,
+      fromPostId,
+      toPostId: postId,
       ...(payload.roleCode ? { roleCode: payload.roleCode } : {}),
       ...(payload.sectionCode ? { sectionCode: payload.sectionCode } : {}),
     });
+  }
+
+  /**
+   * ПЕРЕНОС ОБРАТИМ (Plane №744). Снять и назначить заново — два запроса, и
+   * между ними человек не стоит нигде. Пока второй запрос отвечал отказом
+   * только на `RATING_DATA_MISSING` (а `post.minRating` не ставят ни сид, ни
+   * мок), эта щель спала. С `OVER_NEED` (Plane №414) она стала будничной:
+   * сервер спрашивает обоснование на ЛЮБОМ укомплектованном посту, то есть в
+   * нормальном его состоянии, — а «Отмена» в окне обоснования оставляла
+   * человека снятым с исходного поста и не назначенным никуда, МОЛЧА.
+   *
+   * 🔴 «НАЗНАЧИТЬ ПЕРВЫМ» НЕВОЗМОЖНО, и это проверено в коде сервера:
+   * `DOUBLE_ASSIGNMENT` (422) — жёсткое правило «сотрудник не может занимать
+   * два поста одного ОМ». Поэтому починка — не перестановка запросов, а
+   * ВОЗВРАТ: исходное место запоминается до снятия и восстанавливается, если
+   * назначение не состоялось.
+   *
+   * Возврат идёт с `override`: пост, с которого человека только что сняли,
+   * мог быть усилен сверх расчёта и до переноса — тогда обычный возврат
+   * получил бы тот же 409 и открыл бы второе окно обоснования поверх первого.
+   * Обосновывать возврат человеку нечего: он ничего не решал, он отменил.
+   */
+  async function movePerson(move: PendingMove, reason?: string): Promise<void> {
+    // Снятие идёт один раз: при подтверждении обоснования человек УЖЕ снят, и
+    // второе снятие удалило бы чужую строку.
+    if (reason === undefined) {
+      await unassign.mutateAsync({ assignmentId: move.assignmentId });
+    }
+    try {
+      await assign.mutateAsync({
+        postId: move.toPostId,
+        employeeId: move.employeeId,
+        ...(move.roleCode ? { roleCode: move.roleCode } : {}),
+        ...(move.sectionCode ? { sectionCode: move.sectionCode } : {}),
+        ...(reason === undefined
+          ? {}
+          : { override: true, override_reason: reason }),
+      });
+      setPendingMove(null);
+    } catch (error) {
+      // Обходимый конфликт — окно обоснования ОТКРЫТО, и решение ещё не
+      // принято: «Обосновать» доведёт перенос, «Отмена» вернёт на место.
+      // Возвращать здесь значило бы отменить за человека прежде, чем он
+      // ответил, — и подтверждение поставило бы его на ДВА поста.
+      if (error instanceof OpsConflictError && error.overridable) {
+        setPendingMove(move);
+        return;
+      }
+      setPendingMove(null);
+      await restoreMove(move);
+    }
+  }
+
+  /**
+   * «Обосновать» в окне: доводим ИМЕННО ЭТОТ перенос и ждём ответа.
+   *
+   * 🔴 НЕ `assign.confirmOverride` (Plane №744). Тот повторяет тело обычным
+   * `mutate`, ответа не ждёт и о переносе не знает — а значит не может ни
+   * очистить `pendingMove` при удаче, ни вернуть человека при новой неудаче.
+   * Забытый `pendingMove` хуже исходного дефекта: следующая «Отмена» на
+   * ЧУЖОМ конфликте вернула бы на пост человека, который и так на месте.
+   * Обычное назначение из пула переносом не является — там `confirmOverride`
+   * и остаётся.
+   */
+  function confirmAssignConflict(reason: string): void {
+    const move = pendingMove;
+    if (move === null) {
+      assign.confirmOverride(reason);
+      return;
+    }
+    setPendingMove(null);
+    runPlacementAction(movePerson(move, reason));
+  }
+
+  /** Вернуть человека на пост, с которого его сняли ради несостоявшегося
+   * переноса. Молчать здесь нельзя в обе стороны: удавшийся возврат человек
+   * обязан прочитать как «ничего не произошло», а неудавшийся — как беду,
+   * потому что тогда сотрудник действительно нигде не стоит. */
+  async function restoreMove(move: {
+    employeeId: string;
+    fromPostId: string;
+    roleCode?: string;
+    sectionCode?: string;
+  }): Promise<void> {
+    try {
+      await assign.mutateAsync({
+        postId: move.fromPostId,
+        employeeId: move.employeeId,
+        ...(move.roleCode ? { roleCode: move.roleCode } : {}),
+        ...(move.sectionCode ? { sectionCode: move.sectionCode } : {}),
+        override: true,
+        override_reason: RESTORE_REASON,
+      });
+      toast({ description: "Перенос не состоялся — человек остался на прежнем посту." });
+    } catch {
+      toast({
+        variant: "destructive",
+        description:
+          "Перенос не состоялся, и вернуть человека на прежний пост не удалось: " +
+          "он сейчас не назначен никуда. Назначьте его заново.",
+      });
+    }
+  }
+
+  /** «Отмена» в окне обоснования: снимаем окно И возвращаем человека. */
+  function cancelAssignConflict(): void {
+    assign.dismissConflict();
+    const move = pendingMove;
+    if (move === null) return;
+    setPendingMove(null);
+    runPlacementAction(restoreMove(move));
   }
   async function saveEdit(next: {
     roleCode: string;
@@ -684,10 +861,14 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
       next.sectionCode !== (editing.sectionCode ?? "") ||
       next.postId !== editing.postId;
     if (changed) {
-      await unassign.mutateAsync({ assignmentId: editing.id });
-      await assign.mutateAsync({
-        postId: next.postId,
+      // Тот же перенос и та же щель, что у перетаскивания (Plane №744): окно
+      // правки умеет менять ПОСТ, и отказ на новом посту оставлял бы человека
+      // снятым с прежнего.
+      await movePerson({
         employeeId: editing.employeeId,
+        assignmentId: editing.id,
+        fromPostId: editing.postId,
+        toPostId: next.postId,
         ...(next.roleCode === "" ? {} : { roleCode: next.roleCode }),
         ...(next.sectionCode === "" ? {} : { sectionCode: next.sectionCode }),
       });
@@ -1269,7 +1450,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         data-slot="placement-empty-slot"
                         onDragOver={(e) => dragOverPost(e, selected.id)}
                         onDragLeave={() => leaveDrop(selected.id)}
-                        onDrop={(e) => void onDropPost(e, selected.id)}
+                        onDrop={(e) => runPlacementAction(onDropPost(e, selected.id))}
                         className={`flex flex-wrap items-center gap-2 rounded-md border border-dashed px-2 py-2 text-xs ${
                           dropTarget === selected.id
                             ? "border-primary bg-accent"
@@ -1662,7 +1843,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
           sections={placementSections.data ?? []}
           pending={assign.isPending || unassign.isPending}
           onClose={() => setEditing(null)}
-          onSave={saveEdit}
+          onSave={(next) => runPlacementAction(saveEdit(next))}
         />
 
         <RatingBriefDialog
@@ -1677,8 +1858,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
 
         <ConflictDialog
           conflict={assign.conflict}
-          onOverride={(reason) => assign.confirmOverride(reason)}
-          onCancel={() => assign.dismissConflict()}
+          onOverride={confirmAssignConflict}
+          onCancel={cancelAssignConflict}
         />
         <ConflictDialog
           conflict={complete.conflict}
@@ -1833,7 +2014,10 @@ function AssignmentEditDialog({
   sections: { code: string; label: string }[];
   pending: boolean;
   onClose: () => void;
-  onSave: (next: { roleCode: string; sectionCode: string; postId: string }) => Promise<void>;
+  /** Возвращает `void`, а не промис (Plane №745): ждать здесь нечего, а
+   * отклонение ловит `runPlacementAction` у родителя — `void onSave(...)` в
+   * этом месте было той же дырой этажом ниже. */
+  onSave: (next: { roleCode: string; sectionCode: string; postId: string }) => void;
 }) {
   const [roleCode, setRoleCode] = useState("");
   const [sectionCode, setSectionCode] = useState("");
@@ -1917,7 +2101,7 @@ function AssignmentEditDialog({
           <Button
             type="button"
             disabled={pending || assignment === null}
-            onClick={() => void onSave({ roleCode, sectionCode, postId })}
+            onClick={() => onSave({ roleCode, sectionCode, postId })}
           >
             {pending ? "Сохранение…" : "Сохранить"}
           </Button>
