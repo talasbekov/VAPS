@@ -60,7 +60,10 @@ import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatu
 import { PlannedStatusesDialog } from "@/features/employee-status-update/ui/PlannedStatusesDialog";
 import { SecondEmployeeDialog } from "@/features/employee-status-update/ui/SecondEmployeeDialog";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
-import { useOpsSectionStatuses } from "@/hooks/use-ops-section-statuses";
+import {
+  participationLabelKey,
+  useOpsSectionStatuses,
+} from "@/hooks/use-ops-section-statuses";
 import {
   Dialog,
   DialogContent,
@@ -233,7 +236,10 @@ function SectionAccountCell({
       {participations.map((participation) =>
         participation.event_code ? (
           <Link
-            key={participation.event_id}
+            // Ключ — по видимой подписи (Plane №819): у одного мероприятия
+            // законно бывает несколько участий, и `event_id` давал бы React
+            // два узла с одним ключом.
+            key={participationLabelKey(participation)}
             href={`/security-ops/events/${participation.event_id}`}
             // Подпись стала длиннее (объект · пост · ознакомлен) — переносится,
             // а не обрезается: снимок №427 поймал «· Пост 1 · …» без хвоста.
@@ -249,7 +255,7 @@ function SectionAccountCell({
           </Link>
         ) : (
           <span
-            key={participation.event_id}
+            key={participationLabelKey(participation)}
             className="text-muted-foreground whitespace-nowrap text-xs"
             title="Мероприятие удалено — открыть его карточку нельзя"
           >
