@@ -1,6 +1,14 @@
 -r base.txt
 pytest>=7.4.0
 pytest-django>=4.5.0
+# 🔴 БЕЗ НЕГО ПРОБЫ ВЕБ-СОКЕТА НЕ ВЫПОЛНЯЮТСЯ (Plane №806). Три пробы
+# `apps/notifications/tests_websockets.py` написаны как `async def` с
+# `@pytest.mark.asyncio`, а сам pytest корутины не исполняет. ЗАМЕРЕНО
+# 06.09.2026 запуском `-p no:asyncio`: 3 failed, «async def functions are not
+# natively supported. You need to install a suitable plugin…». То есть pytest 9
+# падает громко, а не скипает молча, — и это хорошо; плагин всё равно нужен,
+# иначе три пробы просто красные. С плагином: 3 passed.
+pytest-asyncio>=0.23
 # pypdf ПЕРЕЕХАЛ В `base.txt` (Plane №492/№639): им пользуется боевой путь
 # выдачи PDF, а не только пробы. Здесь он остаётся нужен ровно затем, зачем был
 # заведён изначально — читать готовый .pdf в тестах: единственный честный

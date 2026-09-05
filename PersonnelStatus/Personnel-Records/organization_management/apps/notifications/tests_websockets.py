@@ -1,38 +1,39 @@
-"""Проверки веб-сокета уведомлений.
+"""Проверки веб-сокета уведомлений (`/ws/notifications/`).
 
 🔴 ЭТОТ ФАЙЛ НЕ СОБИРАЛСЯ НИКОГДА (Plane №799). Его имя не подходило под
 `python_files` в `pytest.ini`, и ни один гейт его не гонял; собираться он стал
-только с правкой шаблона.
+только с правкой шаблона. Первый же сбор показал, что модуль не импортируется
+вовсе: `channels.testing` тянет `channels.testing.live`, тот — `daphne`, а
+`daphne` в зависимостях не был объявлен. Ошибка импорта в сборе не «красит одну
+пробу», а ПРЕРЫВАЕТ ВЕСЬ ПРОГОН, поэтому файл был закрыт `importorskip`.
 
-И первый же сбор показал, ПОЧЕМУ это не мелочь: модуль не импортируется вовсе.
-`channels.testing` тянет `channels.testing.live`, тот — `daphne`, а `daphne` в
-зависимостях проекта нет (`requirements/base.txt` объявляет только `channels`).
-Ошибка импорта в сборе не «красит одну пробу», а ПРЕРЫВАЕТ ВЕСЬ ПРОГОН
-(`Interrupted: 1 error during collection`) — то есть включение шаблона без
-этой оговорки уронило бы гейт всем.
+🔴 ПРОПУСКА БОЛЬШЕ НЕТ (Plane №806, решение заказчика 06.09.2026): веб-сокет
+уведомлений признан живым в боевом контуре, `daphne` и `channels-redis`
+объявлены в `requirements/base.txt`, и эти три пробы гоняются в каждом прогоне.
+`importorskip` снят намеренно, а не забыт: пока он стоял, исчезнувший `daphne`
+превращал пробы в тихий скип, а скип читается как зелень. Теперь пропавший
+пакет обязан уронить сбор — это ошибка поставки, и молчать о ней нечем.
 
-`importorskip` ДО импорта `channels.testing`, а не `pytest.mark.skip` на
-пробах: пропустить надо сам импорт, до которого разметка не доживает. Появится
-`daphne` в зависимостях — файл начнёт выполняться сам, без правки здесь.
-Отдельная карточка на то, вводить ли `daphne` в зависимости, — за решением
-заказчика: это боевой пакет ASGI-сервера, а не тестовая мелочь.
+ЧТО ЕЩЁ ПОТРЕБОВАЛОСЬ, чтобы «гоняются» было правдой: `pytest-asyncio`
+(`requirements/development.txt`). Пробы написаны как `async def`, а сам pytest
+корутины не исполняет. Замерено 06.09.2026: `-p no:asyncio` даёт 3 failed
+(«async def functions are not natively supported. You need to install a suitable
+plugin…»), с плагином — 3 passed. Падение громкое, а не тихий скип, — но пробы
+без плагина всё равно не выполняются, поэтому он в поставке разработки.
+
+СОСЕДНИЙ СРЕЗ. `apps/operations/tests/test_ws_consumer.py` проверяет ДРУГОЙ
+маршрут (`/ws/operations/notifications/`) и делает это без daphne — своим
+тонким коммуникатором поверх `asgiref.testing`. Дубля нет: там своя
+идентичность (токен раздела), здесь — сессия через `AuthMiddlewareStack`.
 """
-
 import pytest
 
-pytest.importorskip(
-    "daphne",
-    reason=(
-        "channels.testing тянет daphne, которого нет в зависимостях "
-        "(Plane №799); без пропуска ошибка импорта прерывает весь сбор"
-    ),
-)
+from channels.db import database_sync_to_async
+from channels.testing import WebsocketCommunicator
+from django.contrib.auth.models import User
+from django.test import override_settings
 
-from channels.testing import WebsocketCommunicator  # noqa: E402
-from django.test import override_settings  # noqa: E402
-from django.contrib.auth.models import User  # noqa: E402
-from organization_management.config.asgi import application  # noqa: E402
-from channels.db import database_sync_to_async  # noqa: E402
+from organization_management.config.asgi import application
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
@@ -65,24 +66,42 @@ async def test_unauthenticated_user_cannot_connect():
 @pytest.mark.asyncio
 @override_settings(CHANNEL_LAYERS={"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}})
 async def test_notification_is_broadcast_to_user():
-    user = await database_sync_to_async(User.objects.create_user)(username='testuser2', password='password')
+    """Конверт из группы пользователя доезжает до сокета дословно.
+
+    🔴 ЭТА ПРОБА ПЕРВЫМ ЖЕ ВЫПОЛНЕНИЕМ ВСКРЫЛА ДЕФЕКТ БОЕВОГО КОДА (Plane
+    №824). Она написана была на группу `user_<id>_notifications`, и на ней
+    падала по таймауту: потребитель заходит в группу `user_<id>` (см.
+    `consumers.py`), и в адрес с суффиксом не заходит НИКТО. Тот же неверный
+    адрес стоит в `signals.py`, откуда уходят уведомления о смене статуса, —
+    то есть они не приезжают в браузер вообще. Правится это отдельной
+    карточкой: здесь проверяется ПОТРЕБИТЕЛЬ, и брать он обязан свой
+    собственный адрес, а не тот, по которому ошибочно пишет один из издателей.
+
+    Форма конверта тоже взята у потребителя, а не придумана: `send_json`
+    отправляет `event["message"]` КАК ЕСТЬ, ничего не оборачивая. Прежний
+    ассерт `response["message"]` предполагал обёртку, которой нет, и на
+    строковом теле дал бы `TypeError` — до него дело не доходило только
+    потому, что раньше падал таймаут.
+    """
+    user = await database_sync_to_async(User.objects.create_user)(
+        username="testuser2", password="password"
+    )
     communicator = WebsocketCommunicator(application, "/ws/notifications/")
     communicator.scope["user"] = user
     connected, _ = await communicator.connect()
     assert connected
 
-    # Send a message to the user's group
     from channels.layers import get_channel_layer
-    channel_layer = get_channel_layer()
-    await channel_layer.group_send(
-        f'user_{user.id}_notifications',
-        {
-            'type': 'notification.message',
-            'message': 'Hello, world!'
-        }
+
+    # Тело — словарь, как у настоящего издателя
+    # (`services/websocket_service.py`), а не строка: так проверяется, что
+    # структура доезжает целиком, а не только факт доставки.
+    payload = {"type": "status_update", "employee_id": 42, "new_status": "ON_DUTY"}
+    await get_channel_layer().group_send(
+        f"user_{user.id}",
+        {"type": "notification.message", "message": payload},
     )
 
-    response = await communicator.receive_json_from()
-    assert response['message'] == 'Hello, world!'
+    assert await communicator.receive_json_from() == payload
 
     await communicator.disconnect()
