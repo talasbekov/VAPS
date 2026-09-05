@@ -417,7 +417,17 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # prefetch объектов посещения: без него каждая строка реестра
         # добирала бы свой список отдельным запросом (страница в 20 строк —
         # 20 лишних round-trip, календарь берёт 200).
-        rows = list(OpsSecurityEvent.objects.prefetch_related("visit_objects__deputies"))
+        #
+        # 🔴 СТРАНА И ГОРОД — ТУДА ЖЕ (Plane №619). С №418 подпись строки несёт
+        # локацию (`location_view` разыменовывает `event.country.name` и
+        # `event.city.name`), а queryset остался прежним — и тот же регресс,
+        # что описан абзацем выше про объекты посещения, воспроизвёлся заново
+        # ДВУМЯ ссылками: около 400 лишних round-trip на календарной странице в
+        # 200 строк.
+        rows = list(
+            OpsSecurityEvent.objects.select_related("country", "city")
+            .prefetch_related("visit_objects__deputies")
+        )
         if stage:
             # Список стадий через запятую, а не одна: ленты «Сбора сил на ОМ»
             # спрашивают ОКНО, в котором сбор живёт («Потребность», «Запрос
@@ -462,7 +472,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
         event = (
-            OpsSecurityEvent.objects.filter(pk=pk).first()
+            # Локация карточки читает `country.name`/`city.name` (Plane №619) —
+            # без `select_related` это два лишних запроса на КАЖДОЕ открытие.
+            OpsSecurityEvent.objects.select_related("country", "city")
+            .filter(pk=pk)
+            .first()
             if str(pk).isdigit()
             else None
         )
@@ -1047,10 +1061,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def forces_directorate_select(self, request, allocation_id=None):
         """Выделить отмеченных сотрудников по запросу (Plane №395, `[СБС-31]`).
 
-        Тело: `{"employeeIds": ["18", …]}`. Статус «Участие в ОМ» ставится из
+        Тело: `{"employeeIds": ["18", …]}`, необязательно `override` и
+        `override_reason` (Plane №545). Статус «Участие в ОМ» ставится из
         заявки — мероприятие и даты человек не выбирает. Отказы по отдельным
-        людям СОБИРАЮТСЯ в ответ (`refused[]` с причиной), а не роняют запрос.
-        Гейт — `status.manage`, область — управления актора.
+        людям СОБИРАЮТСЯ в ответ (`refused[]` с причиной и признаком
+        `overridable`), а не роняют запрос. Гейт — `status.manage`, область —
+        управления актора.
         """
         from organization_management.apps.operations.services import (
             PermissionService,
@@ -1091,6 +1107,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 list(raw_ids),
                 allowed,
                 actor=actor_id,
+                # Обход мягкого конфликта — тем же протоколом, что у штаба
+                # (Plane №545): одно обоснование на вызов, потому что человек
+                # объясняет ОДНО решение про отмеченную пачку.
+                override=bool(data.get("override")),
+                override_reason=data.get("override_reason") or "",
             )
         )
 
@@ -4164,7 +4185,20 @@ class OpsCountriesViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsCountry,
         )
 
-        if not OpsCountry.objects.filter(pk=pk, is_active=True).exists():
+        # 🔴 НЕЧИСЛОВОЙ id — ЭТО «НЕ НАЙДЕНО», А НЕ 500 (Plane №600/№497).
+        # Шаблон роутера DRF — `[^/.]+`, то есть в `pk` приезжает любая строка,
+        # а Django на нечисловом значении для AutoField бросает
+        # `ValueError: Field 'id' expected a number` ещё до запроса. Проверка
+        # стоит ПЕРЕД фильтром намеренно: соседние ручки этого файла (`retrieve`)
+        # и `resolve_location` спрашивают `isdigit()` ровно так же — здесь
+        # правило просто пропустили, и ручка стала исключением.
+        #
+        # Разницы для человека нет («такой страны нет»), а для дежурного есть:
+        # 5xx попадают в мониторинг и в пункт полного прогона «каждый эндпоинт
+        # отвечает не 5xx», то есть кривая ссылка отвлекала бы на себя разбор.
+        if not str(pk).isdigit() or not OpsCountry.objects.filter(
+            pk=pk, is_active=True
+        ).exists():
             raise DomainError(
                 "ENTITY_NOT_FOUND", 404, detail={"id": str(pk)},
                 message="Страна не найдена.",

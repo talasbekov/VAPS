@@ -41,6 +41,8 @@ import Link from "next/link";
 import { Megaphone } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   useDirectorateForcesRequest,
   useDirectorateForcesRequests,
@@ -68,6 +70,9 @@ export function ForcesRequestBanner({
   const mine = useDirectorateForcesRequests({ enabled: linkedId === null });
   const rows = mine.data?.results ?? [];
   const [picked, setPicked] = useState<string | null>(null);
+  // Обоснование обхода мягкого конфликта (Plane №545) — ОДНО на повтор:
+  // человек объясняет одно решение про отмеченную пачку, а не по строке.
+  const [overrideReason, setOverrideReason] = useState("");
   // Порядок значим: ссылка из уведомления сильнее выбора и списка — человек
   // пришёл по конкретному адресу. Дальше — его собственный выбор. И только
   // когда запрос ровно один, он подставляется сам.
@@ -100,6 +105,9 @@ export function ForcesRequestBanner({
   const { reset: resetReport } = select;
   useEffect(() => {
     resetReport();
+    // Обоснование обхода принадлежит тому же отчёту (Plane №545): набранный
+    // для запроса A текст под шапкой запроса B объяснял бы чужое решение.
+    setOverrideReason("");
   }, [allocationId, resetReport]);
   // 🔴 СТРОКА ТАБЛИЦЫ СТАТУСОВ АДРЕСУЕТ СОТРУДНИКА СОСТАВНЫМ КЛЮЧОМ
   // `${staffUnitId}-${employeeId}` (см. `status-table.tsx`, `employeeIdOf`),
@@ -122,6 +130,12 @@ export function ForcesRequestBanner({
   // не наш выбор: строку выделяют галочкой в общей таблице, и запрещать
   // галочку ради одной кнопки значило бы чинить не там.
   const vacantSelected = selectedEmployees.length - employeeIds.length;
+  // Кого можно взять повторно, с обоснованием (Plane №545). Считается по
+  // признаку отказа, а не по его коду: список кодов на клиенте разошёлся бы
+  // с сервером при первом же новом виде конфликта.
+  const overridableRefused = (select.data?.refused ?? []).filter(
+    (row) => row.overridable
+  );
 
   // Пока список едет — НЕ рисуем скелет: на «Статусах сотрудников» запроса
   // чаще всего нет вовсе, и полоса-заглушка обещала бы содержимое, которого
@@ -323,6 +337,55 @@ export function ForcesRequestBanner({
             </>
           )}
         </p>
+      )}
+      {/* 🔴 МЯГКИЙ ОТКАЗ ПЕРЕСТАЛ БЫТЬ ТУПИКОМ (Plane №545). Сервер отвечает
+          «статус пересекается» и помечает такой отказ обходимым — но обойти
+          его было нечем: поля обоснования на экране не было, а второго пути у
+          начальника управления нет (ручной статус «Участие в ОМ» запрещён
+          решением заказчика, №427). Жёсткие отказы сюда не попадают: их
+          сервер помечает `overridable: false`, и предлагать по ним кнопку
+          значило бы обещать то, чего он не сделает. */}
+      {overridableRefused.length > 0 && (
+        <div className="flex flex-wrap items-end gap-2" data-slot="select-override">
+          <div className="grid gap-1">
+            {/* Подпись ВИДИМАЯ, а не плейсхолдер: плейсхолдер исчезает при
+                первом же символе, и человек перестаёт видеть, что он пишет. */}
+            <Label htmlFor="forces-override-reason" className="text-xs">
+              Обоснование: почему берём, несмотря на занятость
+            </Label>
+            <Input
+              id="forces-override-reason"
+              value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)}
+              className="h-8 w-72 text-sm"
+            />
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={overrideReason.trim() === "" || select.isPending}
+            onClick={() =>
+              select.mutate(
+                {
+                  employeeIds: overridableRefused.map((row) => row.employeeId),
+                  override: true,
+                  override_reason: overrideReason.trim(),
+                },
+                {
+                  onSuccess: () => {
+                    setOverrideReason("");
+                    onSelected?.();
+                  },
+                }
+              )
+            }
+          >
+            {select.isPending
+              ? "Выделяю…"
+              : `Выделить с обоснованием: ${overridableRefused.length}`}
+          </Button>
+        </div>
       )}
       {select.isError && (
         <p role="alert" className="text-destructive-ink text-sm">
