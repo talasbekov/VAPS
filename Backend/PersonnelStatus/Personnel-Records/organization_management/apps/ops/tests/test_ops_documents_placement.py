@@ -115,3 +115,73 @@ def test_the_pdf_carries_the_event_the_moment_and_every_post():
     assert "АбеновС.2-27" in flat(text)
     assert "ОспановаА.7-41" in flat(text)
     assert "{{" not in text
+
+
+# ── Водяной знак «ПРОЕКТ» (Plane №638, №637) ────────────────────────────────
+
+
+def test_an_event_without_visit_objects_loses_the_draft_stamp_once_approved():
+    """Согласованный ОМ БЕЗ объектов посещения печатается чистым (Plane №638).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. `_is_draft(None)` возвращал True безусловно, и такой
+    документ штамповался «ПРОЕКТ» НАВСЕГДА — даже после согласования. При этом
+    экран предупреждение о черновике прятал: `ApprovalStage` читает
+    `view.status`, который при пустом объекте падает на `event.approvalStatus`.
+    Экран обещал чистый документ, сервер отдавал черновик, и спорить с бумагой
+    человеку было нечем.
+
+    Мероприятия без объектов посещения `_document_target` поддерживает
+    НАМЕРЕННО — у них расчёт лежит в самом мероприятии, — поэтому «нет объекта»
+    не повод считать документ вечным проектом.
+
+    Мутация, на которой проба обязана краснеть: вернуть `if visit is None:
+    return True` — знак останется на согласованном документе.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    event = make_event()
+    assert not event.visit_objects.exists(), "предусловие: объектов посещения нет"
+
+    # До согласования знак ЕСТЬ — иначе проба доказывала бы только его отсутствие.
+    draft = text_of(placement.render_placement(event.code, dt.datetime(2026, 4, 20, 8, 0)))
+    assert "ПРОЕКТ" in flat(draft)
+
+    OpsSecurityEvent.objects.filter(pk=event.pk).update(approval_status="APPROVED")
+
+    approved = text_of(
+        placement.render_placement(event.code, dt.datetime(2026, 4, 20, 8, 0))
+    )
+    assert "ПРОЕКТ" not in flat(approved), "согласованный документ всё ещё проект"
+    # И это тот же документ, а не пустой: знак снят, содержимое на месте.
+    assert event.code in flat(approved)
+    assert "АбеновС.2-27" in flat(approved)
+
+
+def test_a_missing_watermark_font_is_a_named_refusal_not_a_traceback(monkeypatch):
+    """Нет шрифта — понятный отказ, а не голый 500 (Plane №637).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Путь к DejaVu был зашит одной абсолютной строкой и не
+    проверялся: на хосте без `fonts-dejavu` (в том числе в образе САМОГО
+    репозитория — там шрифты не ставились ничем) reportlab поднимал `TTFError`,
+    и каждый досогласовательный PDF расстановки отвечал трассировкой. Соседняя
+    системная зависимость того же модуля стережётся правильно —
+    `shutil.which("soffice")` → `PDF_CONVERTER_MISSING`; здесь правило
+    пропустили.
+
+    Мутация, на которой проба обязана краснеть: снять проверку существования —
+    вместо `DomainError` полетит `TTFError`.
+    """
+    from reportlab.pdfbase import pdfmetrics
+
+    from organization_management.apps.ops import documents
+
+    # Шрифт мог быть зарегистрирован соседней пробой в том же процессе —
+    # снимаем регистрацию, иначе ветка проверки недостижима.
+    pdfmetrics._fonts.pop("DejaVuSans", None)
+    monkeypatch.setattr(documents, "_DEJAVU_CANDIDATES", ("/нет/такого/шрифта.ttf",))
+
+    with pytest.raises(DomainError) as failure:
+        documents.stamp_draft(b"%PDF-1.4\n")
+
+    assert failure.value.code == "WATERMARK_FONT_MISSING"
+    assert failure.value.http_status == 500

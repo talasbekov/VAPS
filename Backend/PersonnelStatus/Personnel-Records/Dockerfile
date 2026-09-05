@@ -4,9 +4,17 @@ FROM python:3.12-bookworm
 WORKDIR /app
 
 # Install system dependencies
+#
+# fonts-dejavu-core — кириллический шрифт для водяного знака «ПРОЕКТ» на
+# несогласованной расстановке (Plane №637, `[СОГ-03]`). У встроенных шрифтов
+# reportlab кириллицы нет, а в образе шрифты не ставились ничем: на голом образе
+# ЭТОГО ЖЕ репозитория каждый досогласовательный PDF отвечал 500. Комментарий
+# стоит НАД инструкцией, а не внутри списка пакетов: `#` внутри строки,
+# продолженной `\`, разбирается по-разному разными версиями сборщика.
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
