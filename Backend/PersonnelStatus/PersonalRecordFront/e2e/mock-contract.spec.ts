@@ -171,7 +171,8 @@ test.describe(
         const event = await (
           await fetch('/api/ops/security-events/se-1/')
         ).json()
-        const approver = event.approvalRoute[event.approvalRoute.length - 1]
+        // Подписывает ПЕРВЫЙ по порядку, второй остаётся ждать.
+        const approver = event.approvalRoute[0]
         const base = `/api/ops/security-events/se-1/approval/route/${approver.id}`
         const moved = await fetch(`${base}/move/`, {
           method: 'POST',
@@ -701,6 +702,101 @@ test.describe(
       expect(measured.summary.assigned).toEqual(measured.assigned)
       // И она ЖИВАЯ: записанный инцидент в неё попал.
       expect(measured.summary.incidents).toEqual(measured.incidentsBefore + 1)
+    })
+
+    test('отзыв согласования в моке отбивается после первой подписи', async ({
+      page,
+    }) => {
+      // Правило сервера `[СОГ-07]`: «Отозвать» доступна, пока никто не
+      // подписал — подпись есть факт под составом, и отзыв после неё был бы
+      // переписыванием. Мок проверял только этап и молча отвечал 200 даже с
+      // APPROVED в маршруте (Plane №717): экран под мок-режимом вёл себя
+      // иначе, чем в бою, и мок-проба регресс `[СОГ-07]` поймать не могла.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-1/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const result = await page.evaluate(async () => {
+        const post = (url: string, body?: unknown) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+        // Путь к состоянию: отправка требует НЕПУСТОЙ расстановки
+        // (`PLACEMENT_EMPTY`), а мок-сид постов не заводит. Поэтому сперва
+        // рекогносцировка с импортом из паспорта и назначение людей — теми же
+        // ручками мока, что и экран.
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'RECON' })
+        await post(
+          '/api/ops/security-events/se-1/recon/import-from-passport/',
+          {},
+        )
+        const withPosts = await (
+          await fetch('/api/ops/security-events/se-1/')
+        ).json()
+        const roster = await (await fetch('/api/ops/personnel/?page_size=50')).json()
+        for (const [index, p0] of withPosts.reconSectorPosts.entries()) {
+          await post('/api/ops/security-events/se-1/placement/assign/', {
+            postId: p0.id,
+            employeeId: roster.results[index].id,
+          })
+        }
+        await post('/api/ops/security-events/se-1/stage/', { stage: 'APPROVAL' })
+        // СОГЛАСУЮЩИХ ДВОЕ, и это не украшение: последняя подпись завершает
+        // этап (`[СОГ-09]`), и с одним подписавшим ОМ уходит с «Согласования»
+        // — отзыв тогда отбивается стадией, а не правилом `[СОГ-07]`, и
+        // проба сторожила бы не то. Со вторым, ждущим решения, этап остаётся
+        // на месте, и предметом отказа становится именно подпись.
+        for (const name of ['Подписавший (проба №717)', 'Ждущий (проба №717)']) {
+          await post('/api/ops/security-events/se-1/approval/route/', {
+            name,
+            employeeId: '1',
+            position: 'Начальник',
+          })
+        }
+        const sent = await post('/api/ops/security-events/se-1/approval/send/')
+        const sentBody = await sent.text()
+        const event = await (
+          await fetch('/api/ops/security-events/se-1/')
+        ).json()
+        const approver = event.approvalRoute[event.approvalRoute.length - 1]
+        // Подпись ставится ручкой мока — предмет пробы отзыв, а не путь к нему.
+        const signed = await post(
+          `/api/ops/security-events/se-1/approval/route/${approver.id}/decide/`,
+          { decision: 'APPROVED', comment: '' },
+        )
+        const withdrawn = await post(
+          '/api/ops/security-events/se-1/approval/withdraw/',
+        )
+        return {
+          sendStatus: sent.status,
+          sendBody: sentBody.slice(0, 200),
+          approverStatus: approver.status,
+          signStatus: signed.status,
+          withdrawStatus: withdrawn.status,
+          withdrawBody: await withdrawn.text(),
+        }
+      })
+
+      expect(
+        result.signStatus,
+        `подпись обязана пройти; send=${result.sendStatus} ${result.sendBody}; статус согласующего=${result.approverStatus}`,
+      ).toEqual(200)
+      // Отказ мока — тот же код и тот же смысл, что у сервера.
+      expect(result.withdrawStatus).toEqual(422)
+      expect(result.withdrawBody).toContain('APPROVAL_WITHDRAW_AFTER_SIGN')
     })
   },
 )
