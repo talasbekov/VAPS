@@ -552,10 +552,20 @@ test.describe('заявки департаменту', () => {
       // Цифра ответа видна В СТРОКЕ ТАБЛИЦЫ заявок — колонка «выделяем»
       // (`[СБС-20]`, Plane №444), отдельно от «собрано».
       await page.getByRole('button', { name: /Назад к заявкам/ }).click()
+      // 🔴 КОД СВЕРЯЕТСЯ ЦЕЛИКОМ, а не подстрокой (Plane №725). `hasText`
+      // ищет ВХОЖДЕНИЕ, и «ОМ-2027-1» находит заодно «ОМ-2027-10» и
+      // «ОМ-2027-11»: коды пробных мероприятий идут по возрастанию, и как
+      // только их накопится больше десяти, `.first()` начнёт брать чужую
+      // строку — молча, потому что строка похожа. Тот же приём и тот же довод
+      // уже записаны в `allocation-due-at.spec.ts`; здесь он повторён, а
+      // `toHaveCount(1)` делает подмену видимой сразу.
       const tableRow = page
         .locator('section[aria-labelledby="department-requests-heading"] tbody tr')
-        .filter({ hasText: event.code })
-        .first()
+        .filter({ has: page.getByText(event.code, { exact: true }) })
+      await expect(
+        tableRow,
+        `строки заявки ${event.code} нет в таблице ровно одной`,
+      ).toHaveCount(1)
       await expect(tableRow.locator('[data-slot="allocating"]')).toHaveText(String(less), {
         timeout: 15_000,
       })
