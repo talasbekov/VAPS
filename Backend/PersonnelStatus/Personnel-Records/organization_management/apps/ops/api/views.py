@@ -11,6 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.response import Response
 
+from organization_management.apps.common.request_ip import client_ip
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
@@ -1704,8 +1705,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 # Подпись «если в маршруте» и её реквизиты (`[СОГ-05]`,
                 # `[СОГ-10]`, Plane №429): кто и откуда; админ не сужается.
                 actor=request.user,
-                ip=request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
-                or request.META.get("REMOTE_ADDR", ""),
+                # IP берётся у соединения, а не из заголовка запроса
+                # (Plane №699): `X-Forwarded-For` присылает сам подписант, и
+                # реквизит его же подписи не должен быть его словом.
+                ip=client_ip(request),
                 bypass_identity="*" in effective_permissions(request),
             )
         )

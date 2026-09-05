@@ -180,3 +180,49 @@ def test_admin_signs_any_line_without_identity_check(admin_api, signers, manager
         {"decision": "APPROVED", "visitObjectId": str(first.pk)}, format="json",
     )
     assert resp.status_code == 200, resp.content
+
+
+def test_signature_ip_ignores_forged_x_forwarded_for(
+    admin_api, signers, manager, two_objects_on_approval  # noqa: F811
+):
+    """IP подписи не берётся из заголовка запроса (Plane №699).
+
+    🔴 ПОДПИСЫВАЮЩИЙ НЕ ДИКТУЕТ IP, ЗАПИСАННЫЙ ПРОТИВ ЕГО ЖЕ ПОДПИСИ.
+    `X-Forwarded-For` присылает клиент, и до этой пробы он побеждал
+    `REMOTE_ADDR` безусловно: значение уходило в реквизиты подписи и в
+    неизменяемую строку аудита `SECURITY_EVENT_APPROVAL_SIGNED`. Подписант
+    одной строкой в запросе назначал себе любой адрес — а именно этот адрес
+    и служит доказательством, откуда подписали.
+
+    Стенд и тесты идут БЕЗ доверенного прокси (`TRUSTED_PROXY_IPS` пуст),
+    поэтому заголовок здесь не значит ничего и ответ один — `REMOTE_ADDR`.
+    """
+    first_signer, _second_signer = signers
+    base, _event_id, first, _second, _ = two_objects_on_approval
+    _set_route(admin_api, [
+        {"roleLabel": "Начальник 2-го департамента", "username": "dept-head"},
+    ])
+    sent = manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    step = next(v for v in sent.json()["visitObjects"] if v["id"] == str(first.pk))["approvalRoute"][0]["id"]
+
+    signed = first_signer.post(
+        f"{base}approval/route/{step}/decide/",
+        {"decision": "APPROVED", "visitObjectId": str(first.pk)},
+        format="json",
+        REMOTE_ADDR="10.7.7.7",
+        HTTP_X_FORWARDED_FOR="203.0.113.9, 198.51.100.4",
+    )
+    assert signed.status_code == 200, signed.content
+
+    signature = next(
+        v for v in signed.json()["visitObjects"] if v["id"] == str(first.pk)
+    )["approvalRoute"][0]["signature"]
+    assert signature["ip"] == "10.7.7.7", (
+        "IP подписи взят из присланного заголовка — подписант подделал "
+        f"собственный реквизит: {signature['ip']}"
+    )
+
+    # Аудит неизменяем: подделка, попавшая туда, остаётся навсегда.
+    trace = OpsAuditLog.objects.filter(action=SECURITY_EVENT_APPROVAL_SIGNED)
+    assert trace.count() == 1
+    assert trace.first().new_value["ip"] == "10.7.7.7"
