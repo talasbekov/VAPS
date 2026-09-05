@@ -363,6 +363,41 @@ def test_sector_senior_is_written_to_the_audit_log(manager):  # noqa: F811
     assert rows[1].new_value["sector"] == sector
 
 
+def test_audit_log_names_the_post_not_only_the_sector(manager):  # noqa: F811
+    """Две записи о РАЗНЫХ постах одного сектора различимы (Plane №706).
+
+    Старший назначается ПОСТУ (`[РАС-03]`, Plane №445), а запись журнала несла
+    один `sector`: у сектора с двумя постами обе записи говорили о секторе одно
+    и то же, и разбирательство «кого и куда поставили» упиралось в две строки,
+    по которым пост не назвать.
+    """
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    base, ids, sector = two_assignments_in_one_sector(manager)
+    posts = {
+        a["id"]: a["postId"]
+        for a in manager.get(base).json()["placementAssignments"]
+    }
+    assert posts[ids[0]] != posts[ids[1]], "оба назначения на одном посту — различать нечего"
+
+    manager.post(f"{base}placement/{ids[0]}/senior/", {}, format="json")
+    manager.post(f"{base}placement/{ids[1]}/senior/", {}, format="json")
+
+    rows = list(
+        OpsAuditLog.objects.filter(action="PLACEMENT_SECTOR_SENIOR_SET").order_by("id")
+    )
+    assert len(rows) == 2
+    # Сектор у обеих записей ОДИН — именно поэтому одного сектора мало.
+    assert rows[0].new_value["sector"] == sector
+    assert rows[1].new_value["sector"] == sector
+    assert rows[0].new_value["postId"] == posts[ids[0]]
+    assert rows[1].new_value["postId"] == posts[ids[1]]
+    # Подпись поста читает человек: по одному id пост в журнале не узнать, а по
+    # одной подписи не найти, если её переименовали, — поэтому пишутся обе.
+    assert rows[0].new_value["post"] != rows[1].new_value["post"]
+    assert rows[0].new_value["post"] != ""
+
+
 def test_unknown_assignment_is_not_found(manager):  # noqa: F811
     """Незнакомое назначение — 404, а не тихое ничего."""
     base, _, _ = two_assignments_in_one_sector(manager)
