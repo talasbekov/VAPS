@@ -98,17 +98,51 @@ def need_by_object(event):
     return rows
 
 
+#: Право, которым отвечают по заявке департамента (`forces_requests`: «реестр
+#: `forces/requests` гейтится `forces.allocate`, правом ДЕПАРТАМЕНТА»).
+RESPONSIBLE_PERMISSION = "forces.allocate"
+
+
 def _responsibles(department_ids):
-    """Ответственный за сбор сил департамента — учётка с ролью области РОВНО
-    на департамент (как начальник управления в `forces_notify`)."""
-    from organization_management.apps.operations.models import UserRole
+    """Ответственный за сбор сил департамента — учётка, которая МОЖЕТ ответить
+    по его заявке: активная роль с областью РОВНО на департамент и правом
+    `forces.allocate`.
+
+    🔴 ОТБОР ПО ПРАВУ, А НЕ ПО ОБЛАСТИ (Plane №680). Докстринг обещал «учётку
+    с ролью области ровно на департамент», а запрос фильтровал ТОЛЬКО
+    `is_active` и область: победить могла любая активная роль на этом
+    департаменте — читатель, оператор, кто угодно. Колонка называла человека,
+    который к заявке отношения не имеет.
+
+    🔴 И ПОРЯДОК ЗАДАЁТСЯ ЯВНО. `setdefault` брал ту строку, которую Postgres
+    отдал первой, а без `order_by` он вправе отдать их в любом порядке: имя в
+    колонке могло меняться между двумя ОДИНАКОВЫМИ запросами. Порядок — по
+    идентификатору роли: он не меняется, пока роль не переназначили.
+
+    Право, а не список кодов ролей: отвечать по заявке умеют и «Ответственный
+    за расход департамента», и «Ответственный за сбор сил», а завтра появится
+    третья роль — перечисление кодов разошлось бы с правами молча, а право
+    одно и проверяется тем же ключом, что и сама ручка ответа.
+    """
+    from organization_management.apps.operations.models import RolePermission, UserRole
 
     ids = [int(x) for x in department_ids if str(x).isdigit()]
     out = {str(pk): "" for pk in ids}
     if not ids:
         return out
-    rows = UserRole.objects.filter(is_active=True, scope_division_id__in=ids).values_list(
-        "scope_division_id", "user_id"
+    allowed_roles = list(
+        RolePermission.objects.filter(
+            permission_code_id=RESPONSIBLE_PERMISSION
+        ).values_list("role_code_id", flat=True)
+    )
+    rows = list(
+        UserRole.objects.filter(
+            is_active=True,
+            scope_division_id__in=ids,
+            role_code_id__in=allowed_roles,
+        )
+        .order_by("id")
+        .values_list("scope_division_id", "user_id")
     )
     names = {}
     from django.contrib.auth import get_user_model

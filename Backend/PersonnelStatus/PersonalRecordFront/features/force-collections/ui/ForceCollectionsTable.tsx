@@ -200,11 +200,19 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
                     )}
                   </TableCell>
                   <TableCell>
+                    {/* ЗОНА НАЖАТИЯ 44 px (Plane №684). Здесь стоял `p-1`, и
+                        вокруг шеврона в 16 px оставалось около 24 px — вдвое
+                        меньше минимума, которого требуют правила касания. А
+                        это ЕДИНСТВЕННЫЙ орган управления в строке и
+                        единственный вход в карточку сбора: промах по нему
+                        означает «страница не отвечает». Размер задан
+                        `size-11` (44 px) с центрированием, а не увеличенным
+                        отступом: отступ раздул бы и строку таблицы. */}
                     <button
                       type="button"
                       onClick={() => setOpened(row.eventId)}
                       aria-label={`Открыть сбор ${row.code}`}
-                      className="hover:bg-muted rounded-md p-1"
+                      className="hover:bg-muted inline-flex size-11 items-center justify-center rounded-md"
                     >
                       <ChevronRight className="size-4" aria-hidden="true" />
                     </button>
