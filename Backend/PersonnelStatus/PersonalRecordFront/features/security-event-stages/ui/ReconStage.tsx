@@ -333,7 +333,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
       ? "Сохраните расчёт перед завершением этапа."
       : activeVisitObject !== null && activeVisitObject.chiefEmployeeId === null
         ? "Не назначен старший объекта."
-        : (activeVisitObject !== null ? visibleRows : rows).length === 0
+        : /* 🔴 ПУСТОТУ СЧИТАЕМ ПО МЕРОПРИЯТИЮ, А НЕ ПО ПОКАЗАННОМУ ОБЪЕКТУ
+             (Plane №710). Сервер требует непустой расчёт ЦЕЛИКОМ, и человек,
+             стоящий на объекте без постов, видел выключенную кнопку с
+             неверной причиной — завершение прошло бы. Показанный объект —
+             это то, что человек СЕЙЧАС правит, а не то, что проверяет
+             сервер. */
+          rows.length === 0
           ? "Нет постов расчёта."
           : checklist.some((item) => (item.required ?? true) && item.state === "UNCHECKED")
             ? "Обязательные пункты чек-листа остались в «Не проверено»."
