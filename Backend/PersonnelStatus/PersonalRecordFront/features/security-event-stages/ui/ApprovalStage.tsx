@@ -1,6 +1,5 @@
 "use client";
 
-import { X } from "lucide-react";
 
 // Этап 6 «Согласование»: утверждение расстановки (сразу открывает
 // «Ознакомление») либо возврат на доработку с обязательной причиной.
@@ -42,10 +41,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  useAddApprover,
   useDecideApprover,
-  useMoveApprover,
-  useRemoveApprover,
   useResolveRemark,
   useSendForApproval,
   useWithdrawApproval,
@@ -563,10 +559,6 @@ function ApprovalRoute({
   view: ApprovalView;
   rights: ApprovalRights;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
-  const [unit, setUnit] = useState("");
-  const [position, setPosition] = useState("");
   const [returnFor, setReturnFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   // Замечания модалки возврата (`[ВОЗ-01]`, Plane №431): список, каждое с
@@ -584,16 +576,6 @@ function ApprovalRoute({
       post.visitObjectId === view.visitObjectId
   );
 
-  const add = useAddApprover(event.id, {
-    onEvent: () => {
-      setAdding(false);
-      setName("");
-      setUnit("");
-      setPosition("");
-    },
-  });
-  const remove = useRemoveApprover(event.id);
-  const move = useMoveApprover(event.id);
   const send = useSendForApproval(event.id);
   const withdraw = useWithdrawApproval(event.id);
   // Детали 400 показываем полем: без onFormError пользователь видел бы только
@@ -760,49 +742,16 @@ function ApprovalRoute({
         </div>
       </div>
 
-      {adding && rights.manageRoute && false && (
-        <div className="flex flex-wrap gap-2 border-b p-2">
-          <Input
-            className="h-8 w-48 text-xs"
-            placeholder="ФИО"
-            aria-label="ФИО согласующего"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Input
-            className="h-8 w-44 text-xs"
-            placeholder="Подразделение"
-            aria-label="Подразделение согласующего"
-            value={unit}
-            onChange={(e) => setUnit(e.target.value)}
-          />
-          <Input
-            className="h-8 w-40 text-xs"
-            placeholder="Должность"
-            aria-label="Должность согласующего"
-            value={position}
-            onChange={(e) => setPosition(e.target.value)}
-          />
-          <Button
-            type="button"
-            size="sm"
-            disabled={add.isPending}
-            onClick={() =>
-              add.mutate({ name, unit, position, visitObjectId })
-            }
-          >
-            Добавить
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setAdding(false)}
-          >
-            Отмена
-          </Button>
-        </div>
-      )}
+      {/* 🔴 ФОРМЫ ДОБАВЛЕНИЯ СОГЛАСУЮЩЕГО ЗДЕСЬ НЕТ (Plane №702). Она стояла
+          под условием `adding && rights.manageRoute && false` — сорок пять
+          строк разметки, недостижимой ни при каком состоянии. Маршрут с №429
+          (`[СОГ-05]`) задаёт администратор в «Администрировании», объект
+          получает его при отправке; пустое состояние ниже это и объясняет.
+          Литерал `false` был заглушкой на время переезда и пережил его: код,
+          который «просто выключен», читается как временно выключенный и
+          зовёт вернуть кнопку, которой не должно быть. Вместе с формой сняты
+          осиротевшие `adding`/`name`/`unit`/`position`, мутации
+          добавления/снятия/перемещения согласующего и их строки ошибок. */}
 
       {route.length === 0 ? (
         <p className="px-3 py-3 text-xs text-muted-foreground" data-slot="approval-route-empty">
@@ -1070,9 +1019,6 @@ function ApprovalRoute({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <StageError error={add.error} />
-      <StageError error={remove.error} />
-      <StageError error={move.error} />
       <StageError error={send.error} />
       <StageError error={withdraw.error} />
       <StageError error={decide.error} />
