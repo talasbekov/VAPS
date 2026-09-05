@@ -90,6 +90,33 @@ def _notified_mine(allocation, allowed_division_ids):
     ]
 
 
+def _events_with_allocations():
+    """Мероприятия, у которых раскладка вообще есть, — ОДИН запрос."""
+    return OpsSecurityEvent.objects.exclude(force_allocation=[])
+
+
+def _raw_allocations(event):
+    """Раскладка КАК ЛЕЖИТ В JSON, без сведения со статусами.
+
+    🔴 ЗАЧЕМ ОТДЕЛЬНО ОТ `allocation_members_view` (Plane №756). Полный вид
+    заявки — дорогой: он сводит людей из статусов и участий, ходит в
+    `StaffUnit` и `Division` за живыми подразделениями и считает «выделено N
+    из M» по поддеревьям. Всё это про ЛЮДЕЙ. А вопросы «есть ли здесь строка
+    МОЕГО управления» и «разослан ли по ней запрос» — про строку управления,
+    и ответ на них лежит в JSON мероприятия целиком: `divisionId` и
+    `notifiedAt` сведение не меняет и новых строк управлений не добавляет
+    (`_merge_status_members` дописывает ЛЮДЕЙ в существующие строки,
+    `_with_directorate_progress` дописывает счёт в существующие управления).
+
+    Поэтому отбор идёт по сырому JSON, а полный вид собирается ТОЛЬКО для тех
+    мероприятий, которые отбор прошли. До этого три ручки платили за сведение
+    на КАЖДОМ мероприятии с разнарядкой, включая чужие департаменты, — и
+    `directorate_requests_view` с №487 платит это на любом открытии
+    «Статусов сотрудников», одного из самых частых экранов.
+    """
+    return event.force_allocation or []
+
+
 def requested_event_ids(allowed_division_ids):
     """Идентификаторы ОМ, по которым управлениям актора разослан запрос сил.
 
@@ -108,8 +135,11 @@ def requested_event_ids(allowed_division_ids):
     if allowed_division_ids is not None and not allowed_division_ids:
         return set()
     found = set()
-    for event in OpsSecurityEvent.objects.exclude(force_allocation=[]):
-        for allocation in allocation_members_view(event):
+    # Сведение со статусами здесь не нужно вовсе: вопрос — «есть ли в этом ОМ
+    # оповещённая строка моего управления», и он решается по сырому JSON
+    # (Plane №756).
+    for event in _events_with_allocations():
+        for allocation in _raw_allocations(event):
             if _notified_mine(allocation, allowed_division_ids):
                 found.add(str(event.pk))
                 break
@@ -141,7 +171,16 @@ def directorate_requests_view(allowed_division_ids):
     if allowed_division_ids is not None and not allowed_division_ids:
         return []
     rows = []
-    for event in OpsSecurityEvent.objects.exclude(force_allocation=[]):
+    for event in _events_with_allocations():
+        # Сначала ДЕШЁВЫЙ отбор по сырому JSON (Plane №756): мероприятие без
+        # оповещённой строки моего управления не должно стоить ни одного
+        # запроса. Полный вид собирается только для прошедших отбор — им нужен
+        # счёт «выделено N из M», а он и правда считается по людям.
+        if not any(
+            _notified_mine(allocation, allowed_division_ids)
+            for allocation in _raw_allocations(event)
+        ):
+            continue
         for allocation in allocation_members_view(event):
             mine = _notified_mine(allocation, allowed_division_ids)
             if not mine:
@@ -160,7 +199,14 @@ def directorate_request_view(allocation_id, allowed_division_ids):
     без области): тогда любая строка управления своя. Пустое множество —
     видеть нечего: 404 на любую заявку.
     """
-    for event in OpsSecurityEvent.objects.exclude(force_allocation=[]):
+    for event in _events_with_allocations():
+        # Заявка ищется по идентификатору — он лежит в сыром JSON, и сводить
+        # людей у чужих мероприятий ради этого не нужно (Plane №756).
+        if not any(
+            allocation.get("id") == allocation_id
+            for allocation in _raw_allocations(event)
+        ):
+            continue
         for allocation in allocation_members_view(event):
             if allocation.get("id") != allocation_id:
                 continue

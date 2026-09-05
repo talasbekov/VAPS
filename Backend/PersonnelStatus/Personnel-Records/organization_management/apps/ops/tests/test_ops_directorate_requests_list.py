@@ -98,3 +98,116 @@ def test_foreign_directorate_request_does_not_arrive(manager):  # noqa: F811
 
     assert resp.status_code == 200, resp.content
     assert resp.json()["results"] == []
+
+
+def _allocated_event(code, department, directorate, business_date="2026-08-10"):
+    """ОМ с ОПОВЕЩЁННОЙ заявкой одному департаменту — прямо в базу.
+
+    Через ручки такое мероприятие не завести пачкой: `event_on_demand` создаёт
+    объект с фиксированным кодом `OBJ-1` и второй вызов падает на уникальном
+    ключе. Здесь предмет пробы — ЦЕНА ЧТЕНИЯ по числу мероприятий, поэтому
+    заявка кладётся тем же составом ключей, который пишет
+    `save_force_allocation` + `notify`.
+    """
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEvent,
+    )
+
+    return OpsSecurityEvent.objects.create(
+        code=code,
+        title="Визит",
+        object_name="Объект",
+        business_date=business_date,
+        stage=OpsSecurityEvent.Stage.PLACEMENT,
+        readiness_percent=0,
+        force_need=4,
+        conflicts_count=0,
+        owner_name="Тест",
+        recon_checklist=[],
+        recon_sector_posts=[],
+        demand_rows=[],
+        demand_approved=True,
+        force_requests=[],
+        force_allocation=[
+            {
+                "id": f"alloc-{code}",
+                "departmentId": str(department.pk),
+                "departmentName": department.name,
+                "need": 4,
+                "status": "NOTIFIED",
+                "comment": "",
+                "dueAt": "2026-08-09T12:00:00+00:00",
+                "notifiedAt": "2026-08-08T12:00:00+00:00",
+                "submittedAt": None,
+                "submittedLate": False,
+                "decidedAt": None,
+                "decisionComment": "",
+                "directorates": [
+                    {
+                        "divisionId": str(directorate.pk),
+                        "name": directorate.name,
+                        "need": 4,
+                        "notifiedAt": "2026-08-08T12:00:00+00:00",
+                    }
+                ],
+                "members": [],
+                "allocating": None,
+                "answerComment": "",
+                "declinedAt": None,
+            }
+        ],
+        placement_assignments=[],
+        approval_status=OpsSecurityEvent.ApprovalStatus.PENDING,
+        journal_entries=[],
+        closure_direction_summaries=[],
+    )
+
+
+def test_foreign_events_do_not_cost_a_query_each():
+    """Чужие мероприятия не оплачиваются запросами (Plane №756).
+
+    🔴 ЧТО СТЕРЕЖЁТ ПРОБА. Ручка перебирала ВСЕ мероприятия с разнарядкой и на
+    каждом собирала полный вид заявки — со сведением людей из статусов и
+    участий, походом в `StaffUnit` и `Division` за живыми подразделениями и
+    счётом «выделено N из M» по поддеревьям. Пока список выходил только по
+    `?forcesRequest=` из письма, это платилось изредка; с №487 он платится на
+    ЛЮБОМ открытии «Статусов сотрудников» — одного из самых частых экранов.
+
+    Мероприятие чужого департамента отбрасывается по сырому JSON: `divisionId`
+    и `notifiedAt` строки управления сведение со статусами не меняет и новых
+    строк управлений не добавляет. Значит цена ответа не должна расти с числом
+    ЧУЖИХ мероприятий вовсе.
+
+    Сравниваются два одинаковых вопроса — при одном чужом ОМ и при пяти: число
+    запросов ОБЯЗАНО совпасть. На мутации «убрать дешёвый отбор» каждое
+    следующее чужое мероприятие снова стоит запросов, и равенство ломается.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from organization_management.apps.ops.forces_requests import (
+        directorate_requests_view,
+    )
+
+    own = make_department("Департамент А")
+    mine = make_directorate(own, "Управление А-1")
+    _allocated_event("ОМ-Ц-1", own, mine)
+
+    foreign = make_department("Департамент Б")
+    theirs = make_directorate(foreign, "Управление Б-1")
+    _allocated_event("ОМ-Ц-2", foreign, theirs)
+
+    scope = {mine.pk}
+    with CaptureQueriesContext(connection) as few:
+        assert len(directorate_requests_view(scope)) == 1
+
+    for index in range(3, 7):
+        _allocated_event(f"ОМ-Ц-{index}", foreign, theirs)
+
+    with CaptureQueriesContext(connection) as many:
+        assert len(directorate_requests_view(scope)) == 1
+
+    assert len(many) == len(few), (
+        "цена ответа выросла с числом ЧУЖИХ мероприятий: "
+        f"{len(few)} → {len(many)} запросов"
+    )
