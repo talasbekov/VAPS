@@ -256,3 +256,73 @@ def test_a_database_failure_in_the_notification_does_not_lose_the_answer(
     assert OpsAuditLog.objects.filter(
         action=audit_service.FORCE_ALLOCATION_SPLIT, entity_id=int(event_id)
     ).exists(), "аудит ответа не записан — транзакция осталась сломанной"
+
+
+def test_a_past_event_is_not_urgent_by_its_date_alone(manager, hq):  # noqa: F811
+    """Прошедшая дата — не срочность, а залежавшаяся запись (Plane №681).
+
+    Условие автосрочности было односторонним («до даты осталось не больше
+    порога») и потому истинным для ВСЕХ прошедших дат: у вчерашней разница
+    −1, у прошлогодней −365, обе «не больше суток». Написано это было для
+    замечаний согласования, где прошедшая дата возникнуть не может; доска же
+    зовёт ту же проверку по каждой строке листинга, а листинг исключает
+    только закрытые. В итоге незакрытый сбор прошлого месяца получал красный
+    бейдж и по `sort_key` вставал ВЫШЕ сегодняшних действительно срочных.
+
+    🔴 ЗАЯВКА ЗДЕСЬ ОТПРАВЛЕНА (`SUBMITTED`) — и это не деталь фикстуры, а
+    единственный способ спросить про ДАТУ. Первая редакция пробы брала
+    сорокадневный сбор с неотвеченной заявкой и падала на правильном коде:
+    у такой заявки вышел свой срок, и доска зовёт её срочной по `overdue` —
+    раньше и независимо от даты. То есть проба спрашивала не про то, что
+    чинится. Отправленная заявка просроченной не считается вовсе, и остаётся
+    ровно один повод для срочности — дата.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    today = Clock.today_local()
+    stale_base, stale_id = allocated_event(
+        manager, department, business_date=(today - dt.timedelta(days=40)).isoformat()
+    )
+    manager.post(f"{stale_base}forces/allocation/{stale_id}/notify/")
+    stale = service.lock_event(_event_id(stale_base))
+    stale.force_allocation[0]["status"] = "SUBMITTED"
+    stale.save(update_fields=["force_allocation", "updated_at"])
+    _free_object_code()
+    soon_base, soon_id = allocated_event(
+        manager, department, business_date=today.isoformat()
+    )
+    manager.post(f"{soon_base}forces/allocation/{soon_id}/notify/")
+
+    rows = hq.get(LIST).json()["results"]
+    stale_row = next(r for r in rows if r["eventId"] == _event_id(stale_base))
+    soon_row = next(r for r in rows if r["eventId"] == _event_id(soon_base))
+
+    assert stale_row["urgent"] is False, "сбор сорокадневной давности объявлен срочным"
+    assert soon_row["urgent"] is True, "сегодняшний сбор перестал быть срочным"
+    ids = [r["eventId"] for r in rows]
+    assert ids.index(_event_id(soon_base)) < ids.index(_event_id(stale_base)), (
+        "залежавшийся сбор стоит выше сегодняшнего срочного"
+    )
+
+
+def test_a_past_event_with_an_overdue_request_is_still_urgent(manager, hq):  # noqa: F811
+    """Опоздание считается СВОИМ признаком и границей окна не снимается.
+
+    Иначе починка №681 увела бы с глаз ровно те сборы, по которым департамент
+    просрочил срок: у доски для них есть `overdue`, и он проверяется раньше
+    даты.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    today = Clock.today_local()
+    base, allocation_id = allocated_event(
+        manager, department, business_date=(today - dt.timedelta(days=40)).isoformat()
+    )
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    event = service.lock_event(_event_id(base))
+    event.force_allocation[0]["dueAt"] = (Clock.now() - dt.timedelta(days=1)).isoformat()
+    event.save(update_fields=["force_allocation", "updated_at"])
+
+    row = _row(hq, base)
+
+    assert row["urgent"] is True, "просроченная заявка перестала быть срочной"

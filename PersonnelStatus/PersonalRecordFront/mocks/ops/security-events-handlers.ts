@@ -2494,6 +2494,9 @@ export const securityEventsHandlers = [
       );
       // Срочно — вручную ИЛИ автоматически при ≤ 1 суток до даты ОМ
       // (`[ВОЗ-02]`): порт правила сервера, а не вторая его версия.
+      // Окно ограничено С ОБЕИХ СТОРОН (Plane №681): одностороннее «не больше
+      // порога» истинно и для всех ПРОШЕДШИХ дат (у прошлогодней разница
+      // −365, тоже «не больше суток»). Прошедшая дата — не срочность.
       const daysToEvent = Math.round(
         (new Date(event.businessDate).getTime() - Date.now()) / 86_400_000
       );
@@ -2515,7 +2518,7 @@ export const securityEventsHandlers = [
                 createdAt: now,
                 text: row.text.trim(),
                 postId: row.postId ?? null,
-                urgent: row.urgent === true || daysToEvent <= 1,
+                urgent: row.urgent === true || (daysToEvent >= 0 && daysToEvent <= 1),
                 status: "OPEN" as const,
                 response: "",
                 respondedAt: null,
