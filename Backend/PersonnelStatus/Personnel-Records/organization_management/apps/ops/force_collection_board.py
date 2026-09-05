@@ -79,9 +79,24 @@ def totals(event, allocations):
 
 
 def need_by_object(event):
-    """`[СБС-11]`: «„Мейрам“ — 8 (рекогносцировка завершена, Тлесов) · „Рахат“ — 3»."""
+    """`[СБС-11]`: «„Мейрам“ — 8 (рекогносцировка завершена, Тлесов) · „Рахат“ — 3».
+
+    🔴 ПОСТЫ БЕЗ ОБЪЕКТА ПОЛУЧАЮТ СВОЮ СТРОКУ (Plane №678). Разрез
+    `visit_object_posts` отдаёт неразмеченный пост ЕДИНСТВЕННОМУ объекту и
+    НИКОМУ, как только объектов стало двое. Для потребности объекта это верно
+    — приписать чужое значило бы выдумать факт, — но на экране такие посты
+    исчезали совсем: строки объектов не покрывали расчёт, а «Итого» рядом
+    считалось по другому источнику, и человек видел «„Мейрам“ — 8 · „Рахат“ —
+    3 · Итого 12», где 8 + 3 ≠ 12. Наряд на эти посты просят, и молчать о них
+    нельзя: пусть строка честно называется «без объекта посещения».
+
+    Строка добавляется ТОЛЬКО когда объектов несколько и такие посты есть: у
+    единственного объекта они уже сидят в его числе, и вторая строка была бы
+    двойным счётом.
+    """
     rows = []
-    for visit in event.visit_objects.order_by("position", "pk"):
+    visits = list(event.visit_objects.order_by("position", "pk"))
+    for visit in visits:
         posts = events.visit_object_posts(event, visit)
         need = sum(int(p.get("need") or 0) for p in posts)
         assigned = sum(
@@ -95,6 +110,22 @@ def need_by_object(event):
             "statusLabel": events.visit_status_label(visit, assigned=assigned),
             "chiefName": visit.chief_name or "",
         })
+    if len(visits) > 1:
+        loose = sum(
+            int(post.get("need") or 0)
+            for post in (event.recon_sector_posts or [])
+            if not str(post.get("visitObjectId") or "").strip()
+        )
+        if loose > 0:
+            rows.append({
+                # Пустой идентификатор — не объект: строка про посты, которые
+                # объекту не отнесены. Клиент по нему же и отличает её.
+                "visitObjectId": "",
+                "objectName": "без объекта посещения",
+                "need": loose,
+                "statusLabel": "",
+                "chiefName": "",
+            })
     return rows
 
 

@@ -394,3 +394,78 @@ def test_the_responsible_name_does_not_change_between_identical_requests(manager
     }
 
     assert len(names) == 1, f"имя ответственного меняется между запросами: {names}"
+
+
+# ── «Итого» сходится со строками, напечатанными рядом (Plane №678) ──────────
+
+
+def test_posts_without_an_object_get_their_own_row(manager, hq):  # noqa: F811
+    """Пост, не отнесённый ни к одному объекту, ВИДЕН в потребности.
+
+    Разрез `visit_object_posts` отдаёт неразмеченный пост единственному
+    объекту и НИКОМУ, как только объектов стало двое. Для потребности объекта
+    это верно, но на экране такие посты исчезали совсем: строки объектов не
+    покрывали расчёт, а «Итого» рядом бралось из другого, замороженного
+    источника — человек читал «„Мейрам“ — 8 · „Рахат“ — 3 · Итого 12» и не мог
+    свести.
+
+    Красная проверка — убрать добавочную строку в `need_by_object`: сумма
+    строк перестанет сходиться с расчётом постов.
+    """
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEventVisitObject,
+    )
+    from organization_management.apps.ops.tests.test_ops_security_events_api import (
+        make_object,
+    )
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    event_id = _event_id(base)
+    event = service.lock_event(event_id)
+
+    # Второй объект посещения: с ним неразмеченный пост перестаёт принадлежать
+    # первому — ровно то состояние, в котором он и пропадал с экрана.
+    second = make_object(code="OBJ-СБС-678", name="Второй объект")
+    OpsSecurityEventVisitObject.objects.create(
+        event=event, security_object=second, object_name=second.name, position=2,
+    )
+    event.recon_sector_posts = [
+        {"id": "post-marked", "sector": "С1", "post": "Размеченный", "need": 4,
+         "visitObjectId": str(event.visit_objects.order_by("position", "pk").first().pk)},
+        {"id": "post-loose", "sector": "С2", "post": "Ничей", "need": 7},
+    ]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+
+    rows = hq.get(f"{base}force-collection/").json()["needByObject"]
+
+    loose = [row for row in rows if row["visitObjectId"] == ""]
+    assert loose, "посты без объекта не показаны вовсе — их наряд просят молча"
+    assert loose[0]["need"] == 7
+    assert sum(row["need"] for row in rows) == 11, (
+        "строки потребности не покрывают расчёт постов"
+    )
+
+
+def test_a_single_object_does_not_get_a_second_row(manager, hq):  # noqa: F811
+    """У единственного объекта неразмеченные посты УЖЕ в его числе.
+
+    Без этой пробы починка №678 удвоила бы потребность обычного мероприятия:
+    добавочная строка сложилась бы с теми же постами внутри объекта.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    event = service.lock_event(_event_id(base))
+    event.recon_sector_posts = [
+        {"id": "post-loose", "sector": "С1", "post": "Ничей", "need": 6},
+    ]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+
+    rows = hq.get(f"{base}force-collection/").json()["needByObject"]
+
+    assert [row["visitObjectId"] == "" for row in rows] == [False] * len(rows), (
+        "у единственного объекта заведена лишняя строка «без объекта» — двойной счёт"
+    )
+    assert sum(row["need"] for row in rows) == 6
