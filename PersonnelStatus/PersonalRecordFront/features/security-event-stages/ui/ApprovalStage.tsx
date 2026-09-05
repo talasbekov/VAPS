@@ -1122,19 +1122,18 @@ function ApprovalRemarks({
     <section className="rounded-md border">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-3 py-2">
         <p className="text-xs font-semibold">Замечания</p>
+        {/* Пустого состояния здесь НЕТ и быть не может (Plane №718): блок
+            целиком не рисуется без замечаний — ранний выход стоит выше.
+            Прежний тернарник «замечаний нет» и абзац «возвратов на доработку
+            не было» были МЁРТВЫМИ ветками: они читались как живое поведение и
+            приглашали следующего править пустое состояние, которое не
+            показывается никогда. */}
         <p className="text-[11px] text-muted-foreground">
-          Формируются при возврате на доработку ·{" "}
-          {remarks.length === 0
-            ? "замечаний нет"
-            : `${open} без ответа · ${remarks.length} всего`}
+          Формируются при возврате на доработку · {open} без ответа ·{" "}
+          {remarks.length} всего
         </p>
       </div>
-      {remarks.length === 0 ? (
-        <p className="px-3 py-3 text-xs text-muted-foreground">
-          Замечаний нет — возвратов на доработку не было.
-        </p>
-      ) : (
-        <ul className="divide-y">
+      <ul className="divide-y">
           {remarks.map((remark) => (
             <li key={remark.id} className="px-3 py-2 text-sm">
               <div className="flex flex-wrap items-center gap-2">
@@ -1246,10 +1245,9 @@ function ApprovalRemarks({
                   </Button>
                 </div>
               )}
-            </li>
-          ))}
-        </ul>
-      )}
+          </li>
+        ))}
+      </ul>
       <FieldErrors errors={respondErrors} />
       <StageError error={resolve.error} />
     </section>
