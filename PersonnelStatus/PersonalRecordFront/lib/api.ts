@@ -2218,10 +2218,17 @@ class ApiClient {
   }
 
   /** Отметить прочитанными ВСЕ свои уведомления раздела. */
-  async markAllOpsNotificationsRead(): Promise<{ marked: number }> {
+  /** Отметить прочитанными свои уведомления раздела ОМ.
+   *
+   *  `until` — ВЕРХНЯЯ ГРАНИЦА по времени появления, включительно (Plane
+   *  №566). Сервер её принимает и объясняет зачем: «клиент отмечает то, что
+   *  ВИДЕЛ, а прилетевшее между открытием ленты и нажатием иначе оказалось бы
+   *  прочитанным, не будучи показанным». Клиент её не слал вовсе, и граница
+   *  существовала только в докстринге сервера. */
+  async markAllOpsNotificationsRead(until?: string): Promise<{ marked: number }> {
     return this.postDomainJson<{ marked: number }>(
       `/api/operations/notifications/read-all/`,
-      {}
+      until === undefined ? {} : { until }
     );
   }
 
