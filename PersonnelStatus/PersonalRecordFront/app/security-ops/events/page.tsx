@@ -1046,6 +1046,15 @@ function VisitObjectList({
           const need = visit.placementNeed ?? 0;
           const assigned = visit.placementAssigned ?? 0;
           const percent = need === 0 ? 0 : Math.round((assigned / need) * 100);
+          // ЗАКРЫТЫЙ ОБЪЕКТ ПРАВИТСЯ НЕ БОЛЬШЕ, ЧЕМ ЗАКРЫТОЕ ОМ (Plane №607).
+          // `canEdit` считается один раз на МЕРОПРИЯТИЕ, а этап мероприятия —
+          // наименьший среди объектов: пока жив хоть один незакрытый, ОМ стоит
+          // на «Проведении», и у ЗАКРЫТОГО объекта все кнопки оставались
+          // включёнными. Сервер их теперь отбивает
+          // (`VISIT_OBJECT_ALREADY_CLOSED`), и довод здесь тот же, которым
+          // выше объяснён `canEdit` для закрытого ОМ: кнопка, которая
+          // гарантированно получит отказ, — обещание, а не действие.
+          const canEditVisit = canEdit && visit.stage !== "CLOSED";
           return (
             <li
               key={visit.id}
@@ -1194,7 +1203,7 @@ function VisitObjectList({
                 </span>
               )}
 
-              {canEdit && (
+              {canEditVisit && (
                 <button
                   type="button"
                   onClick={() =>
@@ -1216,7 +1225,7 @@ function VisitObjectList({
                   замещающий определяется относительно него («вместо
                   старшего»), и читать список замещающих раньше, чем имя того,
                   кого замещают, нельзя. */}
-              <ChiefLine event={event} visit={visit} canEdit={canEdit} />
+              <ChiefLine event={event} visit={visit} canEdit={canEditVisit} />
 
               {/* Замещающие — ВТОРАЯ строка объекта, а не ещё одна колонка:
                   их может не быть, может быть трое, и колонка переменной
@@ -1226,7 +1235,7 @@ function VisitObjectList({
               <DeputyLine
                 event={event}
                 visit={visit}
-                canEdit={canEdit}
+                canEdit={canEditVisit}
               />
             </li>
           );
