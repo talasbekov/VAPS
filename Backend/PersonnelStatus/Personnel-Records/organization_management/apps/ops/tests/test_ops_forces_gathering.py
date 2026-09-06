@@ -359,6 +359,18 @@ def test_notify_is_recorded_in_the_audit_trail(manager):  # noqa: F811
     recorded = entries.order_by("-id").first()
     assert recorded.new_value["departmentName"] == department.name
     assert recorded.new_value["directorates"] == ["Управление охраны"]
+    # 🔴 ГРАФЫ ЖУРНАЛА ЧИТАЮТСЯ ПРОБОЙ, А НЕ ТОЛЬКО ОТЧЁТ РАССЫЛКИ (Plane
+    # №921). До этой строки закреплён был только `report["notified"]`, то есть
+    # содержимое записи не стерёг никто: рассылка могла считать честно, а в
+    # журнал уходить что угодно.
+    #
+    # Здесь управлению квоту не делили, поэтому рассылка его пропускает
+    # (`withoutQuota`, Plane №557), и «кому дошло» пусто. Все три графы
+    # проверяются ВМЕСТЕ: пустой список и отсутствующий ключ читаются
+    # одинаково только до первого разбора.
+    assert recorded.new_value["notifiedHeadsList"] == []
+    assert recorded.new_value["notifiedHeads"] == 0
+    assert recorded.new_value["directoratesWithoutQuota"] == ["Управление охраны"]
 
 
 def test_notify_unknown_allocation_is_404(manager):  # noqa: F811

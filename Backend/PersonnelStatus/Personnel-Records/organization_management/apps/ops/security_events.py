@@ -3548,6 +3548,15 @@ def notify_directorates(event_id, allocation_id, *, actor):
             "need": target["need"],
             "directorates": [row["name"] for row in rows],
             "notifiedHeads": delivery["notified"],
+            # 🔴 ЧИСЛО НЕ ОТВЕЧАЕТ НА ВОПРОС, РАДИ КОТОРОГО ЗАПИСЬ ВЕДЁТСЯ
+            # (Plane №921). Соседние графы этой же записи поимённые —
+            # `headlessDirectorates`, `directoratesWithoutQuota`,
+            # `undeliveredHeads`, — и только доставленное было числом. Разбор
+            # «почему у нас никого не запросили» упирался в `notifiedHeads: 3`:
+            # неизвестно, дошло ли до нужного человека, а у управления может
+            # быть несколько учёток с областью. Число оставлено рядом: оно
+            # отвечает на «сколько», список — на «кому именно».
+            "notifiedHeadsList": delivery["delivered"],
             "headlessDirectorates": delivery["headlessDirectorates"],
             # Кому не отправляли (нет квоты) и кому не дошло (Plane №557,
             # №561). Оба списка поимённые: разбор «почему у нас никого не

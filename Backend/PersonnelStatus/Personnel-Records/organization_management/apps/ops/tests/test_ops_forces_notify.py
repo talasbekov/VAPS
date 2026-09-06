@@ -100,6 +100,33 @@ def test_the_directorate_head_is_notified_with_the_request(chain):
     assert report["notified"] == 1
 
 
+def test_the_report_names_who_actually_got_it(chain):
+    """Кому дошло — ПОИМЁННО, а не числом (Plane №921).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Соседние графы того же отчёта поимённые —
+    `headlessDirectorates`, `withoutQuota`, `undelivered`, — и только
+    доставленное было числом. Разбор «почему у нас никого не запросили»
+    упирался в `notifiedHeads: 1`: неизвестно, дошло ли до НУЖНОГО человека, а
+    у управления может быть несколько учёток с областью, и одна доставка —
+    возможно, чужая.
+
+    Подпись — та же, что у недоставленного («управление · учётка»): одна
+    форма на обе графы, иначе читатель журнала ветвится (довод №825).
+
+    Число рядом ОСТАЁТСЯ: «сколько» и «кому именно» — разные вопросы, и
+    подменять первое вторым значило бы заставить читателя считать строки.
+
+    КРАСНАЯ ПРОБА: убери `self.delivered.append(...)` в `DeliveryTally.deliver`
+    — список опустеет, а число останется прежним.
+    """
+    event, allocation, directorates, head, _officer, _watcher = chain
+
+    report = notify_directorate_heads(event, allocation, directorates)
+
+    assert report["delivered"] == [f"Первое управление · {head.pk}"], report
+    assert report["notified"] == len(report["delivered"])
+
+
 def test_a_directorate_without_a_head_is_named_not_swallowed(chain):
     """Управление без начальника названо ПОИМЁННО в отчёте, а не потеряно."""
     event, allocation, directorates, _head, _officer, _watcher = chain
