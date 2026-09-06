@@ -583,6 +583,34 @@ function buildSelections(
 
 // ── Handlers ─────────────────────────────────────────────────────────────
 
+//: Ветка §22.26 «персональная детализация подавлена» — включается окружением.
+/**
+ * Подавлять ли персональную детализацию в выборке (§22.26, Plane №839).
+ *
+ * 🔴 ЗАЧЕМ ПЕРЕКЛЮЧАТЕЛЬ, А НЕ ПРАВО. На сервере ветка решается правом
+ * `analytics.personal_detail` (`apps/ops/analytics.py`): нет права — строки
+ * приходят БЕЗ сотрудника, и это делает СЕРВЕР, а не вёрстка. Мок прав не
+ * знает вовсе: ручка `/api/operations/my-permissions/` в мок-слое не
+ * реализована намеренно, права приезжают с живого бэка. Поэтому мок берёт
+ * ветку из окружения — тем же приёмом, что и выбор доменов
+ * (`NEXT_PUBLIC_OPS_MOCK_DOMAINS`).
+ *
+ * До №839 здесь стояло жёсткое `false`, и ветка подавления не воспроизводилась
+ * НИКОГДА: мок был зелен и тогда, когда живой сервер детализацию подавляет, а
+ * проба, снятая с мок-стенда, запинила бы выдуманную полноту как факт.
+ *
+ * Поднять ветку: `NEXT_PUBLIC_OPS_MOCK_PERSONAL_DETAIL=suppressed`.
+ */
+const PERSONAL_DETAIL_SUPPRESSED =
+  process.env.NEXT_PUBLIC_OPS_MOCK_PERSONAL_DETAIL === "suppressed";
+
+/** Текст причины — ДОСЛОВНО серверный (`_PERSONAL_DETAIL_REASON`): экран
+ *  печатает его как есть, и расхождение здесь было бы расхождением контракта. */
+const PERSONAL_DETAIL_REASON =
+  "У вас нет права на персональную детализацию: строки показаны без " +
+  "сотрудника (§22.26). Сервер их не присылает — скрывать ФИО в вёрстке " +
+  "значило бы всё равно отдать его браузеру.";
+
 export const analyticsHandlers = [
   // §22.5 пресеты и предел произвольного периода.
   http.get(`*${ANALYTICS_PRESETS_PATH}`, () => {
@@ -716,8 +744,9 @@ export const analyticsHandlers = [
     const rows = pageIds
       .map((id) => byId.get(id))
       .filter((shift): shift is AnalyticsSourceShift => shift !== undefined)
-      // Демо-персона wildcard: персональная детализация разрешена сервером.
-      .map((shift) => toDrilldownRow(shift, true));
+      // Персональная детализация — та же ветка, что у сервера: при подавлении
+      // ФИО не «скрывается», а НЕ ПРИСЫЛАЕТСЯ (`employeeLabel: null`).
+      .map((shift) => toDrilldownRow(shift, !PERSONAL_DETAIL_SUPPRESSED));
     const nextOffset = offset + DRILLDOWN_PAGE_SIZE;
 
     return HttpResponse.json({
@@ -738,8 +767,10 @@ export const analyticsHandlers = [
         rows,
         nextCursor: nextOffset < ids.length ? encodeCursor(nextOffset) : null,
         totalCount: ids.length,
-        personalDetailSuppressed: false,
-        personalDetailReason: null,
+        personalDetailSuppressed: PERSONAL_DETAIL_SUPPRESSED,
+        personalDetailReason: PERSONAL_DETAIL_SUPPRESSED
+          ? PERSONAL_DETAIL_REASON
+          : null,
       },
     });
   }),
