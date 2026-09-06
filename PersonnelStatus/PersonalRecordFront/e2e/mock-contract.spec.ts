@@ -1890,5 +1890,81 @@ test.describe(
       expect(after.hasSummary).toBe(true)
       expect(after.legacyLeft).toBe(false)
     })
+
+    test('мок знает заморозку расстановки: закрытый объект правку отбивает', async ({
+      page,
+    }) => {
+      // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №867). Строки `PLACEMENT_FROZEN` не было на
+      // фронте НИ ОДНОЙ, а сервер отбивает ею шесть операций расстановки:
+      // назначение, перенос, снятие, старшего сектора и правку расчёта постов.
+      // Значит мок разрешал то, что живой сервер запрещает, и «зелёный мок»
+      // здесь не доказывал ничего — ни старого поведения заморозки, ни нового.
+      //
+      // Проверяется САМОЕ ПОЗДНЕЕ основание — закрытый объект (`[ЗАК-05]`):
+      // у него статус документа может быть любым, вплоть до черновика, и
+      // правило «заморожен по документу» его бы не покрыло.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      // Запрос идёт ИЗ СТРАНИЦЫ: перехватывает мок service worker, и запрос
+      // мимо браузера он не увидит. `se-3` — закрытое мероприятие мок-сида.
+      await page.goto(`${MOCK_APP}/security-ops/events/se-3/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const refusal = await page.evaluate(async () => {
+        const event = await (
+          await fetch('/api/ops/security-events/se-3/')
+        ).json()
+        const visit = event.visitObjects[0]
+        const res = await fetch('/api/ops/security-events/se-3/recon/', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            checklist: event.reconChecklist,
+            sectorPosts: [
+              ...event.reconSectorPosts,
+              {
+                id: '',
+                visitObjectId: visit?.id ?? null,
+                sector: 'Сектор пробы 867',
+                post: 'Пост пробы',
+                task: '',
+                need: 1,
+                kind: null,
+                weapon: '',
+                uniform: '',
+                requirements: '',
+                minRating: null,
+                comment: '',
+                shift: '',
+              },
+            ],
+          }),
+        })
+        return {
+          status: res.status,
+          stage: visit?.stage ?? null,
+          body: await res.json().catch(() => null),
+        }
+      })
+
+      // Объект закрыт — иначе проба вакуумна и проверяет не заморозку.
+      expect(refusal.stage, 'объект мок-сида не закрыт').toBe('CLOSED')
+      expect(refusal.status, JSON.stringify(refusal.body)).toBe(422)
+      expect(refusal.body?.error_code).toBe('PLACEMENT_FROZEN')
+      // Причина названа ТА, что у закрытого объекта, а не «документ на
+      // согласовании»: у закрытого статус документа может быть любым.
+      expect(refusal.body?.message).toContain('Объект закрыт')
+      expect(refusal.body?.details?.closed).toBe(true)
+    })
   },
 )
