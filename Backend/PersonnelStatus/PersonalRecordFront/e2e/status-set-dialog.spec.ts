@@ -33,7 +33,7 @@
  * 409 по собственному следу — падение было её, а не кода.
  */
 import { expect, test, type Page } from '@playwright/test'
-import { clickRowMenuItem } from './row-menu'
+import { clickRowMenuItem, staffedRow } from './row-menu'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -46,6 +46,7 @@ async function signIn(page: Page): Promise<void> {
     form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
   })
 }
+
 
 test.describe('расход: постановка статуса с мероприятиями', () => {
   test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
@@ -123,7 +124,7 @@ test.describe('расход: постановка статуса с меропр
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
 
     // Через помощника (Plane №820): строка доводится до окна ДО открытия меню.
-    await clickRowMenuItem(page, page.locator('table tbody tr').first(), 'Запланировать статус')
+    await clickRowMenuItem(page, staffedRow(page), 'Запланировать статус')
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
