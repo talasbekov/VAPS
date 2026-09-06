@@ -54,11 +54,15 @@ def _fmt_dt(value):
     return Clock.to_local(parsed).strftime("%d.%m.%Y %H:%M")
 
 
-def acknowledgement_sheet_rows(event, visit=None):
+def acknowledgement_sheet_rows(event, visit_object=None):
     """`[ОЗН-07]`: ФИО · пост · дата-время · способ (в системе / лично)."""
     from organization_management.apps.ops import security_events
 
-    posts = security_events.visit_object_posts(event, visit) if visit is not None else (event.recon_sector_posts or [])
+    posts = (
+        security_events.visit_object_posts(event, visit_object)
+        if visit_object is not None
+        else (event.recon_sector_posts or [])
+    )
     names = {str(p.get("id")): p.get("post") or "" for p in posts}
     rows = []
     for a in event.placement_assignments or []:
@@ -310,18 +314,22 @@ def render_case(event_code, *, visit_object_id=None, fmt="pdf", permissions=None
             pass
 
 
-def append_acknowledgement_sheet(document, event, visit):
-    """`[ОЗН-07]`: приложение к расстановке после завершения ознакомления."""
+def append_acknowledgement_sheet(document, event, visit_object):
+    """`[ОЗН-07]`: приложение к расстановке после завершения ознакомления.
+
+    `visit_object` — объект посещения, а не `OpsForeignVisit` (Plane №907; см.
+    разбор в `acknowledgement_completed`).
+    """
     from docx.enum.text import WD_BREAK
 
     document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
     # Не `add_heading`: у бланка заказчика нет стилей Heading, и python-docx
     # падает на «no style with name».
     document.add_paragraph().add_run("Приложение. Лист ознакомления").bold = True
-    _table(document, ["ФИО", "Пост", "Дата-время", "Способ"], acknowledgement_sheet_rows(event, visit), empty="Назначений не было.")
+    _table(document, ["ФИО", "Пост", "Дата-время", "Способ"], acknowledgement_sheet_rows(event, visit_object), empty="Назначений не было.")
 
 
-def acknowledgement_completed(event, visit=None):
+def acknowledgement_completed(event, visit_object=None):
     """Ознакомление пройдено — можно прикладывать лист (`[ОЗН-07]`).
 
     🔴 СПРАШИВАЕТСЯ ЭТАП ОБЪЕКТА, КОГДА ОБЪЕКТ НАЗВАН (Plane №520). Функция
@@ -338,8 +346,19 @@ def acknowledgement_completed(event, visit=None):
 
     Объект НЕ НАЗВАН (ОМ без объектов посещения, сборка по всему мероприятию) —
     отвечает мероприятие, как и раньше: другой сущности у такого ОМ нет.
+
+    🔴 ПАРАМЕТР ЗОВЁТСЯ `visit_object`, А НЕ `visit` (Plane №907). Слово
+    «визит» в этом коде занято ДВАЖДЫ: здесь это `OpsSecurityEventVisitObject`
+    (у него есть `.stage`), а в соседнем `documents_summary` — `OpsForeignVisit`
+    (у него `.stage` НЕТ). Вызывающий, взявший «визит» из привычного соседнего
+    места, получил бы `AttributeError` прямо в печати документа — то есть в
+    ветке, куда доходят редко и с уже открытым окном скачивания.
+
+    Сегодня вызывающий один, так что это ловушка на будущее, а не живой
+    дефект. Имя дешевле проверки типа: оно отвечает на вопрос «что сюда
+    класть» в момент написания вызова, а не в момент падения.
     """
-    stage = visit.stage if visit is not None else event.stage
+    stage = visit_object.stage if visit_object is not None else event.stage
     return (
         stage in _STAGE_ORDER
         and _STAGE_ORDER.index(stage) >= _STAGE_ORDER.index("CONDUCT")

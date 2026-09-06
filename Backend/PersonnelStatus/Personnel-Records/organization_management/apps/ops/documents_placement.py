@@ -212,8 +212,13 @@ def render_placement(event_code, as_of=None, fmt="pdf", visit_object_id=None):
         # завершения ознакомления, и без объектов это правило то же.
         from organization_management.apps.ops import documents_case
 
-        if documents_case.acknowledgement_completed(event, visit):
-            documents_case.append_acknowledgement_sheet(document, event, visit)
+        # Здесь `visit` — ОБЪЕКТ ПОСЕЩЕНИЯ (Plane №907): у именованного
+        # параметра то же имя, что у типа, и вызов теперь сам говорит, что
+        # именно в него кладут.
+        if documents_case.acknowledgement_completed(event, visit_object=visit):
+            documents_case.append_acknowledgement_sheet(
+                document, event, visit_object=visit
+            )
         document.save(filled_path)
         payload = emit(filled_path, fmt)
         # `[СОГ-03]` (Plane №430): «Скачать PDF» доступна всегда, до
