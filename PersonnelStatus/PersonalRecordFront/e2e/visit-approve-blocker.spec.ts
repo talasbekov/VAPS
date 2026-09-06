@@ -87,15 +87,21 @@ test.describe(
         approve,
         'кнопка утверждения кликабельна до загрузки сводки — сервер ответит 422',
       ).toBeDisabled()
-      await expect(approve).toHaveAttribute('title', 'Сводка ещё загружается')
+      // 🔴 ПРИЧИНА ЧИТАЕТСЯ ВИДИМОЙ СТРОКОЙ, А НЕ `title` (правило №801,
+      // найдено ревью №825): на выключенной кнопке подсказка не показывается
+      // ни при каком поведении браузера, и прежний пин стерёг атрибут,
+      // которого человек не видит. Связь строки с кнопкой держит
+      // `aria-describedby` — её проверяем отдельно, иначе читалка произнесёт
+      // текст «неизвестно о чём».
+      const hint = page.locator('[data-slot="right-hint"]')
+      await expect(hint).toHaveText('Сводка ещё загружается')
+      await expect(approve).toHaveAttribute('aria-describedby', /.+/)
 
       // Ответ пришёл ОТКАЗОМ — причина меняется: «подождите» тут уже неправда.
       slow = false
-      await expect(approve).toHaveAttribute(
-        'title',
-        'Сводка не загрузилась — обновите страницу',
-        { timeout: 20_000 },
-      )
+      await expect(hint).toHaveText('Сводка не загрузилась — обновите страницу', {
+        timeout: 20_000,
+      })
       await expect(approve, 'после отказа сводки кнопка ожила').toBeDisabled()
     })
   },

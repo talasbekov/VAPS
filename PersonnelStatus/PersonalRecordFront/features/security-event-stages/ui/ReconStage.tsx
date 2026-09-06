@@ -57,6 +57,7 @@ import {
   UNASSIGNED_VISIT,
   VisitObjectPicker,
 } from "./useVisitObjectScope";
+import { RightGate } from "@/shared/ui/right-gate";
 import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
 import { formatIsoDate } from "@/shared/lib/date";
@@ -984,15 +985,29 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
             >
               {update.isPending ? "Сохранение…" : "Сохранить"}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={completeBlocked !== null || complete.isPending}
-              title={completeBlocked ?? undefined}
-              onClick={() => setConfirmOpen(true)}
-            >
-              {complete.isPending ? "Завершение…" : "Завершить рекогносцировку →"}
-            </Button>
+            {/* 🔴 ПРИЧИНА — ВИДИМОЙ СТРОКОЙ, А НЕ `title` (правило №801,
+                найдено ревью №825). На ВЫКЛЮЧЕННОЙ кнопке браузер подавляет
+                указательные события, а вместе с ними и всплывающую подсказку:
+                `title` показывался бы ровно тогда, когда показаться не может.
+                Человек видел серую кнопку и ничего больше — ни почему, ни что
+                делать. Соседние этапы того же раздела (`PlacementStage`,
+                `AcknowledgementStage`, `ConductStage`) переведены на `RightGate`
+                раньше; этот остался, хотя №635 переписала сам текст причины. */}
+            <RightGate reason={completeBlocked}>
+              {(describedBy) => (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={completeBlocked !== null || complete.isPending}
+                  aria-describedby={describedBy}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  {complete.isPending
+                    ? "Завершение…"
+                    : "Завершить рекогносцировку →"}
+                </Button>
+              )}
+            </RightGate>
           </div>
         </div>
         <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

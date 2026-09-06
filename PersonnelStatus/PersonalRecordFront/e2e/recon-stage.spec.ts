@@ -652,11 +652,14 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       const footer = page.locator('[data-slot="recon-footer"]')
       await expect(footer).toBeVisible({ timeout: 15_000 })
 
-      const complete = footer.getByRole('button', { name: /Завершить рекогносцировку/ })
       // Причина отказа может быть ДРУГОЙ (чек-лист, старший объекта) — это не
       // предмет пробы. Предмет: она не «Нет постов расчёта», потому что по
       // мероприятию расчёт есть.
-      await expect(complete).not.toHaveAttribute('title', 'Нет постов расчёта.')
+      //
+      // 🔴 ПИН ПЕРЕЕХАЛ С `title` НА ВИДИМУЮ СТРОКУ (правило №801, найдено
+      // ревью №825): на выключенной кнопке подсказка не показывается, и
+      // проба стерегла атрибут, которого человек не видит.
+      await expect(footer).not.toContainText('Нет постов расчёта.')
     })
 
     test('кнопка знает про старшего СОСЕДНЕГО объекта и называет его', async ({
@@ -713,11 +716,13 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       const complete = footer.getByRole('button', { name: /Завершить рекогносцировку/ })
       await expect(complete).toBeDisabled()
       // Имя в подписи обязательно: без него человек не поймёт, куда идти —
-      // объект, на котором он стоит, со старшим.
-      await expect(complete).toHaveAttribute(
-        'title',
-        'Не назначен старший объекта «Объект Б».',
-      )
+      // объект, на котором он стоит, со старшим. Причина читается ВИДИМОЙ
+      // строкой (правило №801): на выключенной кнопке `title` не показывается
+      // ни при каком поведении браузера.
+      await expect(
+        footer.locator('[data-slot="right-hint"]'),
+      ).toHaveText('Не назначен старший объекта «Объект Б».')
+      await expect(complete).toHaveAttribute('aria-describedby', /.+/)
     })
   })
 })

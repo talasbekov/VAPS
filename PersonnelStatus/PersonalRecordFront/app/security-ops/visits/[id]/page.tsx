@@ -34,6 +34,7 @@ import { SECURITY_EVENT_KIND_LABEL } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import type { GvoSummaryRow } from "@/entities/gvo-summary";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { RightGate } from "@/shared/ui/right-gate";
 
 const VISIT_STATUS_LABEL: Record<string, string> = {
   DRAFT: "Черновик",
@@ -204,16 +205,29 @@ function VisitCard({ event }: { event: SecurityEvent }) {
             >
               {render.isPending ? "Собираем…" : "PDF"}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={approveBlocker !== null || approve.isPending}
-              title={approveBlocker ?? undefined}
-              aria-busy={approve.isPending}
-              onClick={() => approve.mutate({ omCode: event.code })}
-            >
-              {approve.isPending ? "Утверждаем…" : "Утвердить"}
-            </Button>
+            {/* 🔴 ПРИЧИНА — ВИДИМОЙ СТРОКОЙ, А НЕ `title` (правило №801,
+                найдено ревью №825). На ВЫКЛЮЧЕННОЙ кнопке браузер подавляет
+                указательные события вместе с подсказкой: `title` показывался
+                бы ровно тогда, когда показаться не может. У двух ветвей причина
+                видна и без него (перечень незаполненных печатается абзацем
+                ниже, «утверждён» — чипом статуса), а у ДВУХ НОВЫХ — «сводка
+                ещё загружается» и «сводка не загрузилась» — не видно ничего:
+                человек получал вечно мёртвую кнопку без единого слова. То
+                есть предмет пункта 2 карточки был выполнен наполовину. */}
+            <RightGate reason={approveBlocker}>
+              {(describedBy) => (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={approveBlocker !== null || approve.isPending}
+                  aria-describedby={describedBy}
+                  aria-busy={approve.isPending}
+                  onClick={() => approve.mutate({ omCode: event.code })}
+                >
+                  {approve.isPending ? "Утверждаем…" : "Утвердить"}
+                </Button>
+              )}
+            </RightGate>
           </div>
         }
       />

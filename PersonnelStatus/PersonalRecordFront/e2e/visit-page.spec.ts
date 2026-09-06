@@ -73,7 +73,15 @@ test.describe(LIVE ? 'страница визита' : 'страница виз�
     await expect(head.locator('[data-slot="visit-progress"]')).toContainText(/заполнено \d+ из \d+ обязательных/)
     const approve = head.getByRole('button', { name: 'Утвердить' })
     await expect(approve).toBeDisabled()
-    await expect(approve).toHaveAttribute('title', /Заполните обязательные поля/)
+    // 🔴 ПРИЧИНА ЧИТАЕТСЯ ВИДИМОЙ СТРОКОЙ, А НЕ `title` (правило №801,
+    // найдено ревью №825 по задаче №522): на выключенной кнопке браузер
+    // подавляет указательные события вместе с подсказкой, и прежний пин
+    // стерёг атрибут, которого человек не видит. Связь строки с кнопкой
+    // держит `aria-describedby`.
+    await expect(head.locator('[data-slot="right-hint"]')).toContainText(
+      /Заполните обязательные поля/,
+    )
+    await expect(approve).toHaveAttribute('aria-describedby', /.+/)
     await expect(page.getByRole('tab', { name: 'Сводные данные ГВО' })).toBeVisible()
     await expect(page.getByRole('tab', { name: /Объекты посещения/ })).toBeVisible()
     await page.screenshot({ path: path.join(SHOTS, 'visit-page-draft.png') })

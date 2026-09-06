@@ -197,3 +197,37 @@ def test_a_repeated_run_in_the_same_window_adds_nothing(two_directorates):
     assert (
         OpsNotification.objects.filter(recipient=str(boss_a.pk), kind=KIND).count() == 1
     )
+
+
+def test_a_swallowed_failure_is_not_counted_as_a_notified_supervisor(
+    two_directorates, monkeypatch
+):
+    """🔴 ОТЧЁТ СЧИТАЛ УВЕДОМЛЁННЫМ ТОГО, КОМУ НЕ ДОШЛО (Plane №666, вторая
+    половина карточки; найдено ревью №825).
+
+    `notify_service.notify` по замыслу глотает любое исключение и возвращает
+    `None`. Счёт в коде уже честный, но мутация «вернуть безусловное
+    `notified += 1`» переживала все четыре пробы файла: они считают строки в
+    базе, а поля отчёта не читает ни одна.
+
+    Цена этого — не абстрактная. `report["supervisors"]` печатает команда
+    планировщика `remind_unconfirmed_acknowledgements`, и это ЕДИНСТВЕННАЯ
+    поверхность, по которой видно, работает ли рассылка вообще. При
+    безусловном инкременте лог остаётся зелёным на полностью мёртвой
+    рассылке — то есть возвращается ровно дефект №666.
+
+    Тот же приём, что у соседней рассылки после №561
+    (`test_ops_forces_notify.py::test_a_swallowed_failure_is_not_counted_as_delivered`).
+    """
+    from organization_management.apps.ops import acknowledgement_reminders
+
+    monkeypatch.setattr(
+        acknowledgement_reminders.notify_service, "notify", lambda *a, **kw: None
+    )
+
+    report = remind_supervisors_before_start(_in_window())
+
+    assert report["unconfirmed"] == 2, "рассылать было нечего — проба вакуумна"
+    assert report["supervisors"] == 0, (
+        "отчёт считает уведомлённым того, кому уведомление не дошло"
+    )
