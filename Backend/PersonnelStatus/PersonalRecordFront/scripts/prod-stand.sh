@@ -10,10 +10,18 @@
 #   bash scripts/prod-stand.sh            # собрать и поднять на :3108
 #   bash scripts/prod-stand.sh --no-build # поднять уже собранное
 #
+#   BACKEND_URL=http://localhost:8101 bash scripts/prod-stand.sh
+#                                         # собрать на отдельный бэкенд (№843)
+#
 # Гонять по нему:
 #   SMOKE_LIVE=1 SMOKE_BASE_URL=http://localhost:3108 \
 #     SMOKE_APP=http://localhost:3108 \
 #     npx playwright test --config playwright.smoke.config.ts
+#
+# ⚠️ BACKEND_URL ДЕЙСТВУЕТ НА СБОРКУ, а не на запуск: переписи запекаются в
+# `routes-manifest.json` во время `next build`. С `--no-build` скрипт сверяет
+# запечённый адрес с запрошенным и отказывается поднимать стенд, который
+# ходил бы не туда, куда его позвали.
 #
 # Гасить: kill по PID, который печатает скрипт (он же лежит в
 # /tmp/next-prod-<порт>.pid — путь переопределяется переменной PIDFILE).
@@ -25,6 +33,7 @@ set -u
 PORT="${PORT:-3108}"
 DIST="${DIST:-.next-prod}"
 LOG="${LOG:-/tmp/next-prod-$PORT.log}"
+BACKEND="${BACKEND_URL:-http://localhost:8100}"
 
 cd "$(dirname "$0")/.." || exit 1
 
@@ -37,9 +46,42 @@ if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
   exit 1
 fi
 
+# 🔴 ПЕРЕПИСИ ЗАПЕКАЮТСЯ В СБОРКУ, А НЕ ЧИТАЮТСЯ ПРИ ЗАПУСКЕ (Plane №843).
+# `rewrites()` из `next.config.js` Next исполняет во время `next build` и
+# кладёт готовые адреса в `routes-manifest.json`. Поэтому `BACKEND_URL`,
+# переданный ТОЛЬКО серверу, на проксирование не влияет вовсе: сервер честно
+# получал переменную, а запросы всё равно уходили на тот адрес, который был у
+# сборки. Замерено 06.09.2026: в `.next-prod/routes-manifest.json` стояло
+# `http://127.0.0.1:8100/...` при любом значении переменной у процесса.
+# Отсюда две вещи ниже — сборка идёт С этой переменной, а `--no-build`
+# сверяет запечённый адрес с запрошенным и отказывается врать.
 if [ "${1:-}" != "--no-build" ]; then
-  echo "[prod-stand] сборка в $DIST…"
-  NEXT_DIST_DIR="$DIST" npx next build || exit 1
+  echo "[prod-stand] сборка в $DIST (бэкенд $BACKEND)…"
+  BACKEND_URL="$BACKEND" NEXT_DIST_DIR="$DIST" npx next build || exit 1
+else
+  MANIFEST="$DIST/routes-manifest.json"
+  if [ -f "$MANIFEST" ]; then
+    BAKED="$(node -e '
+      const fs = require("fs");
+      const m = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const rw = m.rewrites;
+      const all = Array.isArray(rw)
+        ? rw
+        : [...(rw?.beforeFiles ?? []), ...(rw?.afterFiles ?? []), ...(rw?.fallback ?? [])];
+      const hit = all.map((r) => r.destination)
+        .filter((d) => typeof d === "string" && /^https?:\/\//.test(d))
+        .map((d) => d.match(/^https?:\/\/[^/]+/)[0]);
+      process.stdout.write([...new Set(hit)].join(",") );
+    ' "$MANIFEST" 2>/dev/null)"
+    # Сравниваем по хосту и порту: `localhost` и `127.0.0.1` — один адрес.
+    want="$(printf '%s' "$BACKEND" | sed -E 's#^https?://##; s#/$##; s#^localhost#127.0.0.1#')"
+    got="$(printf '%s' "$BAKED" | sed -E 's#https?://##g; s#localhost#127.0.0.1#g')"
+    if [ -n "$got" ] && [ "$got" != "$want" ]; then
+      echo "[prod-stand] СБОРКА ЗАПЕЧЕНА НА ДРУГОЙ БЭКЕНД: в $MANIFEST — $got, запрошен $want."
+      echo "[prod-stand] это не настраивается при запуске: пересоберите без --no-build."
+      exit 1
+    fi
+  fi
 fi
 
 # `output: standalone` кладёт сервер отдельно, но БЕЗ статики и public — Next
@@ -117,7 +159,7 @@ NEXTAUTH_SECRET="$SECRET" setsid bash -c '
   printf "[prod-stand] СЕРВЕР ОСТАНОВЛЕН %s: pid=%s, %s\n" \
     "$(date "+%Y-%m-%d %H:%M:%S")" "$child" "$why" >> "$log"
   rm -f "$pidfile"
-' _ "$LOG" "$PIDFILE" "$PORT" "${BACKEND_URL:-http://localhost:8100}" \
+' _ "$LOG" "$PIDFILE" "$PORT" "$BACKEND" \
   >> "$LOG" 2>&1 &
 
 # 🔴 ЖДЁМ ПОРТ, А НЕ PID-ФАЙЛ (ревью №823). Надзиратель пишет pid сразу после
