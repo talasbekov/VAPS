@@ -27,6 +27,7 @@
 растить файл, в котором и так под пять тысяч строк.
 """
 from organization_management.apps.operations import notify_service
+from organization_management.apps.operations.services import PermissionService
 
 #: Вид уведомления. Заведён в модели вместе с этим шагом (миграция 0074).
 KIND = "FORCES_REQUEST"
@@ -42,19 +43,15 @@ KIND = "FORCES_REQUEST"
 #: и фильтр по нему не оставил бы получателей ни одного.
 SELECT_PERMISSION = "status.manage"
 
-#: Грант ADMIN. Роль с «*» может всё, значит и выделить людей.
-_WILDCARD = "*"
-
-
 def _roles_that_may_select():
-    """Коды ролей, под которыми выделение вообще возможно."""
-    from organization_management.apps.operations.models import RolePermission
+    """Коды ролей, под которыми выделение вообще возможно.
 
-    return list(
-        RolePermission.objects.filter(
-            permission_code_id__in=[SELECT_PERMISSION, _WILDCARD]
-        ).values_list("role_code_id", flat=True)
-    )
+    Вопрос «какие роли держат право» задаётся общему договору (Plane №880):
+    он же отвечает штабу ниже и рассылке ознакомления. Здесь стояла копия
+    запроса — третья на раздел; четвёртая была бы делом времени, как это уже
+    случилось с правилом области гранта (№894).
+    """
+    return PermissionService.roles_holding(SELECT_PERMISSION)
 
 
 def _directorate_heads(division_ids):
@@ -103,7 +100,6 @@ def _directorate_heads(division_ids):
         UserRole,
     )
     from organization_management.apps.operations.selectors import DivisionTreeSelector
-    from organization_management.apps.operations.services import PermissionService
 
     heads = {str(pk): set() for pk in division_ids}
     if not division_ids:
@@ -229,6 +225,11 @@ def notify_directorate_heads(event, allocation, directorates):
         "headlessDirectorates": headless,
         "withoutQuota": without_quota,
         "undelivered": tally.undelivered,
+        # Кому дошло — поимённо (Plane №921). Подпись «управление · учётка»
+        # та же, что у недоставленного: разбор идёт по одной графе с другой,
+        # и разноформатные строки заставили бы читателя журнала ветвиться
+        # (тот же довод, что в №825).
+        "delivered": tally.delivered,
     }
 
 
@@ -267,16 +268,11 @@ def _headquarters_users():
     """
     from organization_management.apps.operations.clock import Clock
     from organization_management.apps.operations.models import (
-        RolePermission,
         TemporaryDutyPermission,
         UserRole,
     )
 
-    roles = list(
-        RolePermission.objects.filter(
-            permission_code_id__in=[COMMAND_PERMISSION, _WILDCARD]
-        ).values_list("role_code_id", flat=True)
-    )
+    roles = PermissionService.roles_holding(COMMAND_PERMISSION)
     if not roles:
         return set()
     users = {
