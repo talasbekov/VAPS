@@ -129,6 +129,42 @@ def test_each_supervisor_gets_only_his_own_people(two_directorates):
     assert event.code == "ОМ-REM-1"
 
 
+def test_the_one_who_refused_is_not_on_the_call_list(two_directorates):
+    """🔴 Plane №884: отказавшийся — не неподтвердивший.
+
+    `_unconfirmed` фильтровал только по `acknowledgedAt is None`, и в список
+    «кому звонить за час до заступления» попадал человек, уже сказавший «не
+    могу заступить». Начальник тратил бы час на того, кого положено ЗАМЕНИТЬ.
+
+    Правило здесь не изобретено: соседний `acknowledgement_stage._pending`
+    держит его прямым текстом с №616, и одиночная ручка напоминания отбивает
+    отказ ошибкой `ALREADY_DECLINED`. Из трёх путей раздела правило соблюдали
+    два — поведение зависело от того, каким путём до системы дошли.
+
+    Мутация: снять `and a.get("declinedAt") is None` — отказавшийся снова
+    окажется в списке своего начальника, а `unconfirmed` станет 2.
+    """
+    event, boss_a, boss_b, ours, theirs = two_directorates
+    # Отказ ровно у ОДНОГО из двоих: второй остаётся неподтвердившим и
+    # проверяет, что правило не выкосило рассылку целиком. Без него зелёным
+    # был бы и код, который не шлёт напоминаний вовсе.
+    rows = list(event.placement_assignments)
+    rows[1] = {**rows[1], "declinedAt": "2026-08-21T06:00:00+05:00"}
+    event.placement_assignments = rows
+    event.save(update_fields=["placement_assignments"])
+
+    report = remind_supervisors_before_start(_in_window())
+
+    assert report["unconfirmed"] == 1, (
+        "отказавшийся посчитан неподтвердившим — начальника пошлют его уговаривать"
+    )
+    mine = {row["employeeId"] for row in _payload_of(boss_a)["unconfirmed"]}
+    assert mine == {str(ours.pk)}, "напоминание о своём человеке пропало вместе с чужим отказом"
+    assert not OpsNotification.objects.filter(
+        recipient=str(boss_b.pk), kind=KIND
+    ).exists(), "начальнику отказавшегося пришло напоминание, хотя напоминать не о ком"
+
+
 def test_the_supervisor_above_both_sees_both(two_directorates, django_user_model):
     """Начальник НАД обоими управлениями видит обоих — «свои» считаются по
     области, а не по совпадению подразделения.
