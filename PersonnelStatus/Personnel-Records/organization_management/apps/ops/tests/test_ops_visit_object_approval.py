@@ -427,8 +427,15 @@ def test_the_document_version_grows_with_every_sending(
     assert second.document_version == 1, "у соседа тоже черновик — своя расстановка"
 
     # Отзыв и повторная отправка ТОГО ЖЕ состава — тот же номер.
+    # Отзыв возвращает объект на «Расстановку» (Plane №536, доведена ревью
+    # №825): чтобы отправить снова, расстановку надо завершить — тем же
+    # шагом, что и после возврата согласующим. Пин пробы от этого не
+    # меняется: её предмет — номер версии, а не путь.
     manager.post(
         f"{base}approval/withdraw/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    manager.post(
+        f"{base}placement/complete/", {"visitObjectId": str(first.pk)}, format="json"
     )
     manager.post(
         f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
@@ -631,6 +638,17 @@ def test_returning_one_object_does_not_lock_approval_of_its_neighbour(
         f"{base}approval/withdraw/", {"visitObjectId": str(first.pk)}, format="json"
     )
     assert withdrawn.status_code == 200, withdrawn.content
+    # Отзыв возвращает объект на «Расстановку» (Plane №536, доведена ревью
+    # №825): чтобы отправить снова, расстановку надо завершить — тем же
+    # шагом, что и после возврата согласующим. Пин пробы от этого не
+    # меняется: её предмет — независимость объекта от судьбы соседа, а не путь.
+    assert (
+        manager.post(
+            f"{base}placement/complete/", {"visitObjectId": str(first.pk)},
+            format="json",
+        ).status_code
+        == 200
+    )
     resent = manager.post(
         f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
     )
@@ -1402,8 +1420,13 @@ def test_withdrawing_unfreezes_the_placement_and_the_document(
 
     Отзыв означает «не отправляли»: документ снова черновик, отметка отправки
     снята, снимок состава стёрт — сравнивать «устарела ли расстановка» после
-    отзыва не с чем. Номер версии при этом НЕ откатывается: она уже уходила
-    людям.
+    отзыва не с чем. Номер версии при этом НЕ откатывается: отзыв возможен
+    только пока никто не подписал, и закреплять там нечего.
+
+    🔴 И ОБЪЕКТ ВОЗВРАЩАЕТСЯ НА «РАССТАНОВКУ» (найдено ревью №825). Иначе
+    разморозка была правдой для API и неправдой для человека: карточка ОМ
+    рисует панель по этапу объекта, а на «Согласовании» операций расстановки
+    нет вовсе, и без права `event.stage_override` уйти на нужный шаг нельзя.
     """
     base, event_id, first, _second, _ = two_objects_on_approval
     _add_approver(manager, base, first, name="Согласующий первого")
@@ -1429,6 +1452,10 @@ def test_withdrawing_unfreezes_the_placement_and_the_document(
     )
     assert first.approval_snapshot == "", "снимок отправки пережил отзыв"
     assert first.document_version == version_before, "номер версии откатили"
+    assert first.stage == "PLACEMENT", (
+        "объект остался на «Согласовании» — панели расстановки там нет, и "
+        "человек без права обхода этапов до правки не дойдёт"
+    )
 
     # И правка действительно проходит — то, ради чего отзыв и нажимают.
     event = service.lock_event(event_id)
@@ -1672,3 +1699,80 @@ def test_recon_edit_cannot_change_a_field_outside_the_old_fingerprint(
         format="json",
     )
     assert allowed.status_code == 200, allowed.content
+
+
+def test_resending_after_a_withdrawal_keeps_the_number_and_takes_the_new_line_up(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 «ОТОЗВАЛ → ПОМЕНЯЛ СОСТАВ → ОТПРАВИЛ СНОВА» НЕ СТЕРЁГ НИКТО (ревью
+    №825 по задаче №536).
+
+    До №536 сценарий был недостижим: после отзыва документ оставался
+    `SUBMITTED`, а расстановка — замороженной. С №536 он стал обычным, и
+    поведение надо назвать вслух, а не оставить на догадку: номер версии тот
+    же (закреплять нечего — подписи не было, отзыв после подписи запрещён
+    отдельно), а подпись и снимок строки версии перезаписываются НОВЫМ
+    составом. Прежняя проба этого не видела: она отправляла повторно ТОТ ЖЕ
+    состав, и подпись совпадала сама собой.
+    """
+    base, event_id, first, _second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    assert (
+        manager.post(
+            f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+        ).status_code
+        == 200
+    )
+    first.refresh_from_db()
+    number_before = first.document_version
+    signature_before = service._current_document_version(first).signature
+    assert signature_before, "фикстура отправила пустой состав — проба вакуумна"
+
+    assert (
+        manager.post(
+            f"{base}approval/withdraw/", {"visitObjectId": str(first.pk)},
+            format="json",
+        ).status_code
+        == 200
+    )
+
+    # Состав МЕНЯЕТСЯ — ради этого отзыв и нажимают.
+    event = service.lock_event(event_id)
+    mine = service.visit_object_posts(event, first)
+    added = manager.post(
+        f"{base}placement/assign/",
+        {
+            "postId": str(mine[0]["id"]),
+            "employeeId": str(make_employee(last_name="Довесков").pk),
+            "override": True,
+            "override_reason": "усиление после отзыва",
+        },
+        format="json",
+    )
+    assert added.status_code == 200, added.content
+
+    assert (
+        manager.post(
+            f"{base}placement/complete/", {"visitObjectId": str(first.pk)},
+            format="json",
+        ).status_code
+        == 200
+    )
+    resent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert resent.status_code == 200, resent.content
+
+    first.refresh_from_db()
+    current = service._current_document_version(first)
+    assert first.document_version == number_before, (
+        "номер вырос: отозванная версия ничьим решением не закреплена"
+    )
+    assert current.status == "SUBMITTED"
+    assert current.signature != signature_before, (
+        "строка версии несёт подпись ПРЕЖНЕГО состава — согласующие подпишут "
+        "не то, что видят"
+    )
+    assert first.approval_snapshot == current.signature, (
+        "снимок отправки разошёлся с подписью версии"
+    )

@@ -336,6 +336,25 @@ function versionsSubmit(versions: MockVersion[], now: string): MockVersion[] {
   return [...base.slice(0, -1), { ...current, status: "SUBMITTED", sentAt: now }];
 }
 
+/**
+ * Отзыв: текущая версия возвращается в «Черновик» тем же номером (Plane №536).
+ *
+ * Порт правила сервера (`_unsend_document_version`), а не вторая его версия:
+ * решённую версию (согласована или возвращена) не трогаем — отзыв после
+ * решения запрещён отдельно; подпись и снимок строки не чистим — их
+ * перезаписывает следующая отправка, а до неё они единственное, с чем
+ * сравнивается новая версия.
+ */
+function versionsUnsend(versions: MockVersion[], now: string): MockVersion[] {
+  if (versions.length === 0) return versions;
+  const current = versions[versions.length - 1];
+  if (current.status !== "SUBMITTED") return versions;
+  return [
+    ...versions.slice(0, -1),
+    { ...current, status: "DRAFT" as const, sentAt: null },
+  ];
+}
+
 function versionsDecide(
   status: "APPROVED" | "RETURNED"
 ): (versions: MockVersion[], now: string) => MockVersion[] {
@@ -3066,16 +3085,32 @@ export const securityEventsHandlers = [
     }
     // Принятые решения отзыв не отменяет: стирать чужое решение значило бы
     // переписывать историю.
+    //
+    // 🔴 ОТЗЫВ — ЭТО «НЕ ОТПРАВЛЯЛИ», А НЕ «СНЯЛИ ГАЛОЧКИ» (Plane №536,
+    // доведено ревью №825). Обработчик сбрасывал ТОЛЬКО статусы маршрута —
+    // ровно то единственное, что делал сервер, пока кнопка была мёртвой. На
+    // мок-стенде после отзыва подзаголовок оставался «На согласовании»,
+    // «История версий» никуда не девалась, а первая же правка состава зажигала
+    // «Согласование сброшено: расстановка изменена». Теперь как на сервере:
+    // документ возвращается в черновик тем же номером, снимок отправки
+    // стирается, объект уходит обратно на «Расстановку» — иначе экран покажет
+    // панель согласования, в которой расстановку не правят.
+    approvalSnapshots.delete(event.id);
     return HttpResponse.json(
-      saveEvent({
-        ...event,
-        approvalRoute: event.approvalRoute.map((approver) =>
-          approver.status === "PENDING"
-            ? { ...approver, status: "NOT_SENT" as const }
-            : approver
-        ),
-        updatedAt: nowIso(),
-      })
+      saveEvent(
+        withVersions(
+          {
+            ...retreatVisits(event, "PLACEMENT", addressed.visitObjectId),
+            approvalRoute: event.approvalRoute.map((approver) =>
+              approver.status === "PENDING"
+                ? { ...approver, status: "NOT_SENT" as const }
+                : approver
+            ),
+            updatedAt: nowIso(),
+          },
+          versionsUnsend
+        )
+      )
     );
   }),
 
