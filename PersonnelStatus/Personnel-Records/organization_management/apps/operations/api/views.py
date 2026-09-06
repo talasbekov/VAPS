@@ -214,6 +214,49 @@ _OVERRIDE_BLOCK_PERMISSION = "daily_report.override_block"
 MAX_OVERRIDE_HORIZON_DAYS = 7
 
 
+#: Параметры, которые несёт САМА обвязка, а не вьюха: страничная выдача
+#: (`LimitOffsetPagination`) и согласование формата DRF. Вьюха их не называет и
+#: запрещать не вправе — иначе `?limit=500` стал бы 400.
+_ENVELOPE_QUERY_PARAMS = frozenset({"limit", "offset", "format"})
+
+
+def _reject_unknown_query_params(request, allowed):
+    """Неизвестный параметр отбора — 400, а не тихо ВЕСЬ список (Plane №855).
+
+    🔴 ЗАЧЕМ. Опечатка в имени параметра превращалась не в отказ, а в тихо
+    неверный ответ: замер на стенде дал `?employee=45` → count=137,
+    `?employee=999999` → те же 137, вообще без отбора → снова 137, и только
+    `?employee_id=45` → 3. То есть ручка отдавала весь список, как будто
+    отбора не просили.
+
+    Чем это опаснее обычной ошибки: она не выглядит ошибкой. У пробы
+    `status-event-link` молчание дало сообщение, уводящее в ПРОТИВОПОЛОЖНУЮ
+    сторону, — «ни один сотрудник не свободен» там, где свободны были 414 из
+    440, и на этот ложный след ушёл целый заход разбора. У человека на экране
+    то же самое покажет чужие строки под видом своих, и заметить это можно
+    только сверкой глазами.
+
+    ПОЧЕМУ ИМЕННО ОТКАЗ, а не синоним и не запись в правила. Принять `employee`
+    вторым именем `employee_id` — завести два имени одного отбора, то есть
+    долг вместо починки. Записать «параметры ровно такие» — оставить молчание
+    на месте: правило прочтёт человек, а опечатку сделает клиент.
+
+    ЧТО ЭТО НЕ ЛОВИТ: параметр с ВЕРНЫМ именем и мусорным значением — им
+    занимаются `_parse_*_param` выше, каждый со своим сообщением. Здесь
+    проверяются только ИМЕНА.
+    """
+    known = frozenset(allowed) | _ENVELOPE_QUERY_PARAMS
+    unknown = sorted(set(request.query_params.keys()) - known)
+    if unknown:
+        accepted = ", ".join(sorted(known))
+        raise ValidationError(
+            {
+                name: f"Неизвестный параметр отбора. Ручка принимает: {accepted}."
+                for name in unknown
+            }
+        )
+
+
 def _parse_int_param(request, name):
     """Целочисленный query-параметр или None; мусор — 400, не 500.
 
@@ -1162,6 +1205,18 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             resolve_actor_id(request), _BULK_STATUS_PERMISSION
         )
 
+    #: Отборы списка статусов. Держится рядом с `list()` намеренно: список
+    #: имён и код, который их читает, обязаны меняться одной правкой.
+    LIST_QUERY_PARAMS = frozenset(
+        {
+            "business_date",
+            "division_id",
+            "employee_id",
+            "include_cancelled",
+            "status_type_code",
+        }
+    )
+
     @extend_schema(
         parameters=[
             OpenApiParameter(
@@ -1201,10 +1256,13 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "только сотрудников своего поддерева, запрос чужого подразделения "
             "получает 403, а не пустой список. Отменённые строки по умолчанию "
             "скрыты (include_cancelled=true — показать). Порядок ответа задаёт "
-            "сервер: свежие интервалы первыми. 400 — нечитаемый параметр."
+            "сервер: свежие интервалы первыми. 400 — нечитаемый параметр ЛИБО параметр "
+            "с неизвестным именем: набор отборов закрытый, и лишнее имя отбивается, "
+            "а не проглатывается молча (Plane №855)."
         ),
     )
     def list(self, request, *args, **kwargs):
+        _reject_unknown_query_params(request, self.LIST_QUERY_PARAMS)
         business_date = _parse_date_param(request, "business_date")
         division_id = _parse_int_param(request, "division_id")
         employee_id = _parse_int_param(request, "employee_id")

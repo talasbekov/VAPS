@@ -157,9 +157,16 @@ async function seed(token: string): Promise<Fixture> {
     // его не находила и объявляла «ни один сотрудник не свободен» — то есть
     // называла ЛОЖНУЮ причину, а настоящую (свой же неверный параметр)
     // скрывала. Молчаливое игнорирование неизвестного параметра — Plane №855.
+    //
+    // 🔴 `limit`, А НЕ `page_size` (Plane №855, вторая половина). Здесь стоял
+    // `page_size=50` — и он был ровно тем же дефектом, что чинит эта карточка:
+    // списки раздела ОМ пагинируются `LimitOffsetPagination`, `page_size` она
+    // не понимает вовсе, и проба думала, что ограничила страницу, не ограничив
+    // её. Теперь ручка такой параметр ОТБИВАЕТ четырёхсотым, так что строка
+    // ниже — не украшение: со старым именем проба падала бы на 400.
     const statuses = await call(
       'GET',
-      `/api/operations/statuses/?employee_id=${candidate.id}&page_size=50`,
+      `/api/operations/statuses/?employee_id=${candidate.id}&limit=50`,
     )
     const own = (statuses.payload.results as { id: number; state: string; participations: { event_id: number }[] }[]).find(
       (row) => row.participations.some((x) => x.event_id === Number(created.payload.id)),

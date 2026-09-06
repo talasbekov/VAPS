@@ -400,7 +400,12 @@ def test_section_column_carries_object_post_and_acknowledgement(types, event_wit
         system_participations=True,
     )
     api, _ = client_for("viewer", "VIEWER", perms=("status.view",))
-    resp = api.get(f"/api/operations/statuses/?employee={unlinked.id}")
+    # `employee_id`, а не `employee` (Plane №855). Здесь стояло неверное имя,
+    # и проба проходила лишь потому, что ручка молча игнорировала отбор и
+    # отдавала ВЕСЬ список: своя строка находилась в нём перебором ниже.
+    # То есть отбор не проверялся вовсе. Теперь лишнее имя отбивается 400,
+    # и эта строка — половина починки, а не подгон под новый вывод.
+    resp = api.get(f"/api/operations/statuses/?employee_id={unlinked.id}")
     assert resp.status_code == 200, resp.data
     row = next(r for r in resp.json()["results"] if r["id"] == status.pk)
     part = row["participations"][0]
