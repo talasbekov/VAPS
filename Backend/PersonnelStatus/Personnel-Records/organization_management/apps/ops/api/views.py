@@ -623,7 +623,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 )
             )
         return self._event_response(
-            event_service.remove_visit_object(pk, visit_object_id)
+            event_service.remove_visit_object(
+                pk, visit_object_id, actor=resolve_actor_id(request)
+            )
         )
 
     # ── Уведомления о заступлении (Plane №243) ──────────────────────────

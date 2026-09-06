@@ -102,9 +102,34 @@ def test_closing_the_last_object_closes_the_event_with_the_same_consequences(
     assert OpsSecurityEventTransition.objects.filter(
         event_id=event_id, to_stage="CLOSED"
     ).exists(), "переход в «Закрыто» не записан"
-    assert OpsAuditLog.objects.filter(
+    record = OpsAuditLog.objects.filter(
         action=audit_service.SECURITY_EVENT_CLOSED, entity_id=event_id
-    ).exists(), "аудит закрытия мероприятия не записан"
+    ).first()
+    assert record is not None, "аудит закрытия мероприятия не записан"
+    # 🔴 И ЗАПИСЬ НЕ ОБЕЗЛИЧЕНА (дописано по ревью, задача №825). Актор здесь
+    #    был постоянной строкой «system:visit-object-removed», и уходила она НЕ
+    #    ТОЛЬКО в аудит: `_finalize_event_closure` передаёт его в
+    #    `open_evaluation_for_event`, а тот в ветке «добор адресата»
+    #    ПЕРЕПИСЫВАЕТ `evaluator_user_id` у каждого неотправленного задания.
+    #    Очередь оценщика фильтруется ровно по этому полю — то есть живые
+    #    задания уходили из очередей настоящих людей в учётную запись, которой
+    #    не существует (тот же дефект, что №641/№642, через другую дверь).
+    assert not str(record.actor_user_id).startswith("system"), (
+        f"закрытие мероприятия подписано псевдоактором: {record.actor_user_id!r}"
+    )
+    # И задания оценивания остались у ЖИВЫХ адресатов, а не у метки.
+    from organization_management.apps.operations.models_rating import OpsEvaluationWorkItem
+
+    stolen = list(
+        OpsEvaluationWorkItem.objects.filter(
+            evaluator_user_id__startswith="system"
+        ).values_list(
+            "id", "evaluator_user_id"
+        )
+    )
+    assert stolen == [], (
+        f"задания оценивания переписаны на несуществующую учётку: {stolen}"
+    )
     assert OpsAuditLog.objects.filter(
         action=audit_service.VISIT_OBJECT_CLOSED, entity_id=event_id
     ).count() == 2
