@@ -377,6 +377,28 @@ def test_resending_an_approved_object_supersedes_it_instead_of_overwriting(
     assert rows[1].decided_at is None
     first.refresh_from_db()
     assert first.document_version == 2
+    # 🔴 И ОБЪЕКТ СНОВА НА «СОГЛАСОВАНИИ», А НЕ В ТУПИКЕ (Plane №534 + №568;
+    #    найдено ревью, задача №825). Отправка принимает объект и с
+    #    «Ознакомления», но этап его не меняла — а после того как №568 закрыла
+    #    решение согласующего гвардом «только на этапе „Согласование“»,
+    #    повторно отправленный объект становился ТУПИКОМ: версия `SUBMITTED`,
+    #    маршрут `PENDING`, и все четыре ручки (решить, вернуть, отозвать,
+    #    завершить расстановку) отвечали 422 по этапу. Выйти можно было только
+    #    админским `override_stage`.
+    assert first.stage == "APPROVAL", (
+        f"объект ждёт решения, но стоит на этапе {first.stage}: решать его некому"
+    )
+    # И решение действительно принимается — то есть цикл `[СОГ-04]` замкнут.
+    again = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert again.status_code == 200, (
+        f"повторно отправленную версию некому согласовать: {again.content}"
+    )
+    rows = list(first.document_versions.order_by("number"))
+    assert [(r.number, r.status) for r in rows] == [(1, "APPROVED"), (2, "APPROVED")]
 
 
 def test_the_document_version_grows_with_every_sending(
