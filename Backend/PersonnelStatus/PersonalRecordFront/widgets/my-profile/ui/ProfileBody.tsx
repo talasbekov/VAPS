@@ -292,6 +292,17 @@ export function ProfileBody({
     [events.data]
   );
 
+  // 🔴 ТО ЖЕ САМОЕ ДЛЯ НАЗНАЧЕНИЙ (доводка №596 по ревью №825). Сервер с
+  // №596 отвечает уволенному пустым списком И причиной словами
+  // (`my_assignments.DISMISSED_REASON`, а учётке без кадровой привязки —
+  // `UNLINKED_REASON`), но экран брал из ответа только `results` и показывал
+  // «Действующих назначений нет.» — ровно тот молчаливый ноль, который двумя
+  // строками ниже объявлен недопустимым для смен. Задача была сделана на
+  // одной стороне: причина есть в ответе, до человека не доходит.
+  const assignmentsNote = readOnly
+    ? null
+    : (events.data?.unlinkedReason ?? null);
+
   // Почему смен не видно, если их не видно. Молчаливый ноль читается как
   // «дежурств нет», а это разные вещи.
   const shiftsNote = readOnly
@@ -342,6 +353,7 @@ export function ProfileBody({
       {tab === "events" && (
         <EventsTab
           assignments={myAssignments}
+          note={assignmentsNote}
           loading={events.isPending}
           failed={events.isError}
           readOnly={readOnly}
@@ -662,11 +674,14 @@ function toMyAssignment(row: MyAssignmentRow): MyAssignment {
 
 function EventsTab({
   assignments,
+  note,
   loading,
   failed,
   readOnly = false,
 }: {
   assignments: MyAssignment[];
+  /** Почему назначений не видно, если их не видно, — словами сервера. */
+  note: string | null;
   loading: boolean;
   failed: boolean;
   readOnly?: boolean;
@@ -719,6 +734,19 @@ function EventsTab({
             </span>
           </CardHeader>
           <CardContent>
+            {/* Причина — ПЕРЕД списком и не вместо него: сервер отдаёт её и с
+                непустым списком (например, привязка есть, а часть нарядов
+                закрыта), и подменять ею пустое состояние значило бы снова
+                выбирать за человека, что ему важнее. Оформление то же, что у
+                баннера смен на «Календаре», — это одно и то же сообщение. */}
+            {note !== null && (
+              <p
+                data-slot="assignments-note"
+                className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
+              >
+                {note}
+              </p>
+            )}
             {upcoming.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Действующих назначений нет.
