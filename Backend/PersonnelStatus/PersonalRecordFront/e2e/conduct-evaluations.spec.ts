@@ -56,7 +56,17 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     }
     const target = requireFixture(
       registry.results.find(
-        (e) => e.placementAssignments.length > 0 && e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+        (e) =>
+          e.placementAssignments.length > 0 &&
+          // 🔴 ПЕРВЫЙ объект, а не «какой-нибудь» (Plane №914). Экран
+          // показывает `visitObjects[0]` (`useVisitObjectScope`), и `goto`
+          // идёт без `?visit=`. Если первый закрыт, `ConductStage` рисует
+          // «Объект закрыт», кнопок нет вовсе — и проба падала по причине,
+          // не связанной с проверяемым кодом. На общем стенде такая
+          // мигающая проба стоит чужого времени: по правилу проекта
+          // красную сперва перепроверяют повтором, разбирая
+          // несуществующий регресс.
+          (e.visitObjects[0]?.stage ?? 'CLOSED') !== 'CLOSED',
       ),
       'ОМ на «Проведении» с назначениями и незакрытым объектом',
     )
@@ -147,7 +157,17 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     }
     const target = requireFixture(
       registry.results.find(
-        (e) => e.placementAssignments.length > 0 && e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+        (e) =>
+          e.placementAssignments.length > 0 &&
+          // 🔴 ПЕРВЫЙ объект, а не «какой-нибудь» (Plane №914). Экран
+          // показывает `visitObjects[0]` (`useVisitObjectScope`), и `goto`
+          // идёт без `?visit=`. Если первый закрыт, `ConductStage` рисует
+          // «Объект закрыт», кнопок нет вовсе — и проба падала по причине,
+          // не связанной с проверяемым кодом. На общем стенде такая
+          // мигающая проба стоит чужого времени: по правилу проекта
+          // красную сперва перепроверяют повтором, разбирая
+          // несуществующий регресс.
+          (e.visitObjects[0]?.stage ?? 'CLOSED') !== 'CLOSED',
       ),
       'ОМ на «Проведении» с назначениями и незакрытым объектом',
     )
@@ -230,7 +250,17 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     }
     const target = requireFixture(
       registry.results.find(
-        (e) => e.placementAssignments.length > 0 && e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+        (e) =>
+          e.placementAssignments.length > 0 &&
+          // 🔴 ПЕРВЫЙ объект, а не «какой-нибудь» (Plane №914). Экран
+          // показывает `visitObjects[0]` (`useVisitObjectScope`), и `goto`
+          // идёт без `?visit=`. Если первый закрыт, `ConductStage` рисует
+          // «Объект закрыт», кнопок нет вовсе — и проба падала по причине,
+          // не связанной с проверяемым кодом. На общем стенде такая
+          // мигающая проба стоит чужого времени: по правилу проекта
+          // красную сперва перепроверяют повтором, разбирая
+          // несуществующий регресс.
+          (e.visitObjects[0]?.stage ?? 'CLOSED') !== 'CLOSED',
       ),
       'ОМ на «Проведении» с назначениями и незакрытым объектом',
     )
@@ -363,7 +393,17 @@ test.describe(
     }
     const target = requireFixture(
       registry.results.find(
-        (e) => e.placementAssignments.length > 0 && e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+        (e) =>
+          e.placementAssignments.length > 0 &&
+          // 🔴 ПЕРВЫЙ объект, а не «какой-нибудь» (Plane №914). Экран
+          // показывает `visitObjects[0]` (`useVisitObjectScope`), и `goto`
+          // идёт без `?visit=`. Если первый закрыт, `ConductStage` рисует
+          // «Объект закрыт», кнопок нет вовсе — и проба падала по причине,
+          // не связанной с проверяемым кодом. На общем стенде такая
+          // мигающая проба стоит чужого времени: по правилу проекта
+          // красную сперва перепроверяют повтором, разбирая
+          // несуществующий регресс.
+          (e.visitObjects[0]?.stage ?? 'CLOSED') !== 'CLOSED',
       ),
       'ОМ на «Проведении» с назначениями и незакрытым объектом',
     )

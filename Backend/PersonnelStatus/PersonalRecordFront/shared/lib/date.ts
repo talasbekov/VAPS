@@ -9,6 +9,26 @@
 // разбор часового пояса.
 
 /** Разобрать «ГГГГ-ММ-ДД» в местную дату. `null` — строка не дата. */
+/**
+ * Местная календарная дата «ГГГГ-ММ-ДД» — та, что человек видит на своих
+ * часах (Plane №927).
+ *
+ * 🔴 ПОЧЕМУ НЕ `new Date().toISOString().slice(0, 10)`. `toISOString` отдаёт
+ * UTC, и в поясе +05 между 00:00 и 05:00 по местному он даёт ВЧЕРАШНИЙ день.
+ * Ровно эта ловушка описана в `e2e/business-date.ts` (Plane №373) — там
+ * правило написано для проб, а в боевом коде реестра ОМ оно было нарушено:
+ * месяц-якорь календаря выбирался по вчерашней дате. Последствие мягкое, но
+ * это тот же класс, что №560 и №581, и живёт он в коде, который читают как
+ * образец.
+ *
+ * Части берутся у ЛОКАЛЬНОГО времени (`getFullYear`/`getMonth`/`getDate`) —
+ * иначе получилась бы та же UTC-дата другим способом.
+ */
+export function localIsoDate(date: Date = new Date()): string {
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export function parseIsoDate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   if (match === null) return null;
