@@ -58,7 +58,7 @@ test.describe('расход: каталог статусов окна — из �
   test('варианты «Статус» совпадают с активными типами справочника', async ({ page }) => {
     const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const catalog = (await (
-      await fetch(`${API}/api/operations/status-types/?page_size=200`, {
+      await fetch(`${API}/api/operations/status-types/?limit=200`, {
         headers: { Authorization: `Bearer ${token}` },
       })
     ).json()) as { results: StatusTypeRow[] }
