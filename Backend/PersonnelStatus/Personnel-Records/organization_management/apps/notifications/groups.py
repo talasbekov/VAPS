@@ -5,7 +5,7 @@
 
     consumers.py:10                    f"user_{self.user.id}"              ← слушает
     services/websocket_service.py:24   f"user_{report.created_by_id}"      ← доезжает
-    signals.py:73                      f"user_{...}_notifications"         ← НИКУДА
+    signals.py:73 (снят по №866)       f"user_{...}_notifications"         ← НИКУДА
 
 Расхождение имени группы НИЧЕГО НЕ РОНЯЕТ: `group_send` в несуществующую
 группу — законная операция канального слоя, она молча уходит в пустоту. Поэтому
@@ -38,7 +38,8 @@ def group_name_for(user_id) -> str:
     """Имя группы канального слоя для пользователя портала.
 
     Единственная точка правды: и потребитель (`consumers.py`), и оба издателя
-    (`signals.py`, `services/websocket_service.py`) обязаны звать ОТСЮДА.
+    (`services/websocket_service.py`; был и `signals.py`, снятый по №866)
+    обязаны звать ОТСЮДА.
     """
     if user_id is None or str(user_id).strip() == "":
         raise ValueError("group_name_for требует пользователя")
