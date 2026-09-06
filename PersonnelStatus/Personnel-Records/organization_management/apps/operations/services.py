@@ -27,14 +27,37 @@ class PermissionService:
     """Stateless-резолюция авторизации: все проверки идут через неё."""
 
     @staticmethod
-    def _scope_matches(scope_division_id, division_id) -> bool:
+    def scope_matches(scope_division_id, division_id, *, children_map=None) -> bool:
+        """Накрывает ли ОБЛАСТЬ ГРАНТА данное подразделение.
+
+        🔴 ЭТО ОБЩИЙ ДОГОВОР, А НЕ ВНУТРЕННЯЯ ДЕТАЛЬ (Plane №894, найдено
+        ревью). Правило нужно не только гейту: рассылка запроса сил обязана
+        спрашивать «кого просить» ТЕМ ЖЕ вопросом, каким гейт спрашивает «кого
+        пускать». Пока правило было приватным (`_scope_matches`), у рассылки
+        стояла его копия в множественной форме — и разошлась бы при первой же
+        новой ветке, а симптом расхождения известен: право есть, уведомление
+        не приходит (№800, №882). Три ветки ниже — весь договор, и обе стороны
+        зовут ИХ, а не пересказывают.
+
+        `children_map` пробрасывается насквозь: вызывающему, который решает
+        НЕСКОЛЬКО подразделений за раз, незачем сканировать дерево на каждую
+        пару — именно этот довод и породил копию.
+        """
         if scope_division_id is None:
+            # Грант без области — глобальный.
             return True
         if division_id is None:
             # Scope сужает только division-специфичные проверки; глобальные
             # проходят.
             return True
-        return division_id in DivisionTreeSelector.subtree_ids(scope_division_id)
+        return division_id in DivisionTreeSelector.subtree_ids(
+            scope_division_id, children_map=children_map
+        )
+
+    @classmethod
+    def _scope_matches(cls, scope_division_id, division_id) -> bool:
+        """Прежнее имя договора — оставлено для внутренних вызовов."""
+        return cls.scope_matches(scope_division_id, division_id)
 
     @classmethod
     def _active_grants(cls, user_id) -> list:

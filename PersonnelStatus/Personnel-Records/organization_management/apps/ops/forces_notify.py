@@ -103,6 +103,7 @@ def _directorate_heads(division_ids):
         UserRole,
     )
     from organization_management.apps.operations.selectors import DivisionTreeSelector
+    from organization_management.apps.operations.services import PermissionService
 
     heads = {str(pk): set() for pk in division_ids}
     if not division_ids:
@@ -145,17 +146,20 @@ def _directorate_heads(division_ids):
     ).values_list("scope_division_id", "user_id")
 
     wanted = {int(pk) for pk in ids}
-    # Один скан дерева на весь вызов, а не на каждое дежурство.
+    # 🔴 ПРАВИЛО ЗОВЁТСЯ, А НЕ ПЕРЕСКАЗЫВАЕТСЯ (Plane №894, найдено ревью).
+    # Здесь стояла КОПИЯ `_scope_matches` в множественной форме. Семантика
+    # совпадала ветка в ветку, но у договора три ветки и он растёт: появится
+    # четвёртая — копия разойдётся молча, и симптом будет прежний, право есть,
+    # уведомление не приходит. Довод за копию был честный (один скан дерева на
+    # вызов вместо скана на каждое дежурство) — но он снимается тем, что
+    # договор сам принимает `children_map`.
     children_map = DivisionTreeSelector.children_map()
     for scope_division_id, user_id in duties:
-        if scope_division_id is None:
-            covered = wanted
-        else:
-            covered = wanted & DivisionTreeSelector.subtree_ids(
-                scope_division_id, children_map=children_map
-            )
-        for division_id in covered:
-            heads.setdefault(str(division_id), set()).add(str(user_id))
+        for division_id in wanted:
+            if PermissionService.scope_matches(
+                scope_division_id, division_id, children_map=children_map
+            ):
+                heads.setdefault(str(division_id), set()).add(str(user_id))
     return heads
 
 
