@@ -1615,7 +1615,14 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     пробы карточки читают её как одну. */}
                 {fromRoster && (
                   <Link
-                    href="/employees?view=forces"
+                    // 🔴 ВКЛАДКА НАЗВАНА В АДРЕСЕ (Plane №931). До №928 по
+                    // `?view=forces` открывался экран, где лента входящих
+                    // была видна сразу; теперь того блока нет, и адрес без
+                    // вкладки приводит на «Список сотрудников» — кадровый
+                    // реестр вместо сбора сил. Ошибки при этом нет: экран
+                    // открылся, просто не тот, и человек доклацывает сам.
+                    // Адрес вкладок заведён №779 (`KNOWN_TABS`).
+                    href="/employees?view=forces&tab=collections"
                     className="mt-0.5 inline-block text-[11px] font-semibold text-primary-ink"
                   >
                     Открыть «Сбор сил на ОМ» →
@@ -1646,7 +1653,9 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       : `Заявка ${event.code}: запрошено ${requestedTotal} чел. В состав штаб пока никого не принял.`}
                   </p>
                   <Link
-                    href="/employees?view=forces"
+                    // Та же вкладка, что и у ссылки выше (Plane №931): обе
+                    // отвечают на вопрос «сколько выделили департаменты».
+                    href="/employees?view=forces&tab=collections"
                     className="mt-1.5 inline-block font-semibold text-primary-ink"
                   >
                     Сбор сил на ОМ →
