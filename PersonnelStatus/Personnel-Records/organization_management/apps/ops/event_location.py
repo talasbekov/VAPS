@@ -109,15 +109,35 @@ _DETAIL_KEYS = {
     "note": "note",
 }
 
+#: Как поле называется ЧЕЛОВЕКУ (Plane №618, найдено ревью №825). Ошибка
+#: уезжала на экран машинным ключом («flightArrival: не длиннее 100
+#: символов»), а собственная проба того же коммита утверждает, что машинных
+#: ключей человеку не показывают. Здесь подписи и есть единственное место,
+#: где ключ становится словами: у поля внутри структуры своей поверхности на
+#: экране нет, и подписать его больше негде.
+_DETAIL_LABELS = {
+    "arrivalAt": "Прибытие",
+    "departureAt": "Убытие",
+    "flightArrival": "Борт прибытия",
+    "flightDeparture": "Борт убытия",
+    "isSenior": "Старший",
+    "note": "Примечание",
+}
 
-def _parse_when(value, errors, key):
+
+def _parse_when(value, errors, key, *, where=None):
+    """`where` — номер строки таблицы лиц, если разбор идёт по ней (№618)."""
     raw = str(value or "").strip()
     if raw == "":
         return None
     try:
         parsed = dt.datetime.fromisoformat(raw)
     except ValueError:
-        errors.append(f"{key}: укажите дату и время в формате ГГГГ-ММ-ДДTЧЧ:ММ.")
+        label = _DETAIL_LABELS.get(key, key)
+        prefix = f"{where}, {label}" if where else label
+        errors.append(
+            f"{prefix}: укажите дату и время в формате ГГГГ-ММ-ДДTЧЧ:ММ."
+        )
         return None
     # Ввод без смещения — местное время (как <input type="datetime-local">);
     # хранится aware, отдаётся тем же местным временем без смещения.
@@ -146,28 +166,38 @@ def parse_person_details(raw_details, field_errors, field="protectedPersonDetail
         return None
     details = {}
     errors = []
-    for row in raw_details:
+    # 🔴 ЛИЦО НАЗЫВАЕТСЯ (Plane №618, найдено ревью №825). Ошибки ВСЕХ строк
+    # складывались в один плоский список без указания, о ком речь: у бюллетеня
+    # с тремя охраняемыми лицами человек читал «Борт прибытия: не длиннее 100
+    # символов» и не знал, чей борт править. Имён у разбора нет — он видит
+    # только идентификаторы, — поэтому называется НОМЕР СТРОКИ, как её видит
+    # человек на экране: она там одна на лицо и идёт тем же порядком.
+    for index, row in enumerate(raw_details, start=1):
+        where = f"Строка {index}"
         if not isinstance(row, dict):
-            errors.append("строка должна быть объектом")
+            errors.append(f"{where}: строка должна быть объектом.")
             continue
         person_id = str(row.get("id") or "").strip()
         if not person_id.isdigit():
-            errors.append("у строки нет идентификатора лица")
+            errors.append(f"{where}: у строки нет идентификатора лица.")
             continue
         fields = {}
         for key, model_field in _DETAIL_KEYS.items():
             if key not in row:
                 continue
             value = row[key]
+            label = _DETAIL_LABELS.get(key, key)
             if model_field in ("arrival_at", "departure_at"):
-                fields[model_field] = _parse_when(value, errors, key)
+                fields[model_field] = _parse_when(value, errors, key, where=where)
             elif model_field == "is_senior":
                 fields[model_field] = bool(value)
             else:
                 text = str(value or "").strip()
                 limit = 255 if model_field == "note" else 100
                 if len(text) > limit:
-                    errors.append(f"{key}: не длиннее {limit} символов.")
+                    errors.append(
+                        f"{where}, {label}: не длиннее {limit} символов."
+                    )
                 fields[model_field] = text
         details[person_id] = fields
     if errors:

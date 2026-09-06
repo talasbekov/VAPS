@@ -49,7 +49,9 @@ const FIELD_LABEL: Record<string, string> = {
   protectedPersonDetails: "Данные визита охраняемого лица",
   protectedPersonIds: "Охраняемые лица",
   objectId: "Объект",
-  businessDate: "Дата",
+  // Подпись совпадает с подписью поля на экране («Дата начала»), иначе
+  // список, задуманный как указатель «куда смотреть», указывает мимо.
+  businessDate: "Дата начала",
   businessDateEnd: "Дата окончания",
   eventTime: "Время",
   chiefEmployeeId: "Старший",
@@ -85,13 +87,25 @@ export function FieldErrors({
 }) {
   if (errors === null || Object.keys(errors).length === 0) return null;
   return (
-    <ul className="list-disc pl-5 text-xs text-destructive-ink" role="alert">
-      {Object.entries(errors).map(([field, value]) => (
-        <li key={field}>
-          <span className="font-semibold">{humanizeFieldPath(field)}</span>:{" "}
-          {Array.isArray(value) ? String(value[0]) : String(value)}
-        </li>
-      ))}
-    </ul>
+    // 🔴 `role="alert"` НА ОБЁРТКЕ, А НЕ НА СПИСКЕ (найдено ревью №825): на
+    // `<ul>` он перекрывает неявную роль `list`, и `<li>` внутри остаются без
+    // родителя — часть программ чтения с экрана их не объявит.
+    <div role="alert">
+      <ul className="list-disc pl-5 text-xs text-destructive-ink">
+        {Object.entries(errors).flatMap(([field, value]) =>
+          // 🔴 ВСЕ СООБЩЕНИЯ ПОЛЯ, А НЕ ПЕРВОЕ (найдено ревью №825). Здесь
+          // стояло `String(value[0])`, а сервер складывает в один список
+          // ошибки ВСЕХ строк таблицы: у бюллетеня с тремя охраняемыми лицами
+          // человек видел одну строку и не знал, что их три. Молча потерянное
+          // сообщение хуже некрасивого списка.
+          (Array.isArray(value) ? value : [value]).map((item, index) => (
+            <li key={`${field}:${index}`}>
+              <span className="font-semibold">{humanizeFieldPath(field)}</span>
+              : {String(item)}
+            </li>
+          ))
+        )}
+      </ul>
+    </div>
   );
 }
