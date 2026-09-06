@@ -11,6 +11,8 @@
  * фикстура стала бы одноразовой.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { createOwnEvent, objectWithPassport, standCall } from './prepare-events'
+import { probeTitle } from './probe-events'
 import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { assertStep } from './fixture-step'
@@ -770,30 +772,18 @@ async function ownEventOnRecon(token: string): Promise<EventRow> {
   return mine
 }
 
-/** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта. */
+/** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта.
+ *
+ * Заведение живёт в общем `prepare-events.ts` (Plane №822 Ш-1): своя копия
+ * была одной из шестнадцати, и контракт заведения они держали вразнобой.
+ * Здесь остаётся только то, что своё, — доведение до рекогносцировки. */
 async function prepareEvent(token: string): Promise<void> {
-  const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-  const call = async (method: string, path: string, body?: unknown): Promise<any> => {
-    const res = await fetch(`${API}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-    return res.json().catch(() => ({}))
-  }
-  const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
-  const object = objects.results.find(
-    (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
-  )
-  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
-  const created = await call('POST', '/api/ops/security-events/', {
-    title: 'Проба рекогносцировки (e2e)',
-    objectId: object.id,
+  const call = standCall(token)
+  const created = await createOwnEvent(call, token, {
+    name: 'Проба рекогносцировки',
+    // Своя деловая дата у КАЖДОЙ подготовки: общая воспроизводит исчерпание
+    // кадрового пула, от которого и уходим (№822, подвид 4).
     businessDate: '2026-08-24',
-    // `kind` обязателен с 23.08 — без него создание отбивается 400, и вся
-    // подготовка дальше бьёт по /security-events/undefined/.
-    kind: 'INTERNAL',
-    chiefEmployeeId: await anyChiefId(token),
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, {
@@ -809,26 +799,9 @@ async function prepareEvent(token: string): Promise<void> {
 /** Заводит ОМ С ОБЪЕКТОМ и возвращает ответ сервера — предмет пробы именно
  * состояние ЗАВЕДЕНИЯ, а не состояние случайной строки стенда. */
 async function createWithObject(token: string): Promise<EventRow> {
-  const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-  const call = async (method: string, path: string, body?: unknown): Promise<any> => {
-    const res = await fetch(`${API}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-    return res.json().catch(() => ({}))
-  }
-  const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
-  const object = objects.results.find(
-    (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
-  )
-  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
-  return (await call('POST', '/api/ops/security-events/', {
-    title: 'Проба старта с рекогносцировки (e2e)',
-    objectId: object.id,
+  return (await createOwnEvent(standCall(token), token, {
+    name: 'Проба старта с рекогносцировки',
     businessDate: '2026-08-25',
-    kind: 'INTERNAL',
-    chiefEmployeeId: await anyChiefId(token),
   })) as EventRow
 }
 
@@ -855,13 +828,12 @@ async function apiCall(
 async function createRequestFixture(
   call: (method: string, path: string, body?: unknown) => Promise<any>,
 ): Promise<{ code: string; request: number; id: string }> {
-  const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
-  const object = objects.results.find(
-    (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
-  )
-  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+  // Поиск объекта — общий (Plane №822 Ш-1). Заведение здесь НЕ общее осознанно:
+  // эта фикстура ходит обёрткой с `assertStep` и берёт старшего из другого
+  // источника, и подмена того и другого была бы правкой предмета, а не дедупом.
+  const object = await objectWithPassport(call)
   const created = await call('POST', '/api/ops/security-events/', {
-    title: 'Проба запроса штабу (e2e)',
+    title: probeTitle('Проба запроса штабу'),
     objectId: object.id,
     businessDate: '2026-08-25',
     kind: 'INTERNAL',
