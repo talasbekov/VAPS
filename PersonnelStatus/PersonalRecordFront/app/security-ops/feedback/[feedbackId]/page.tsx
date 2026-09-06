@@ -509,7 +509,6 @@ function CommentForms(props: CommentFormsProps) {
           type="button"
           className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
           disabled={!props.replyAction.available || reply.trim() === "" || props.pending}
-          title={props.replyAction.reason ?? undefined}
           onClick={() => props.onSend("PUBLIC_REPLY", reply)}
         >
           Отправить ответ

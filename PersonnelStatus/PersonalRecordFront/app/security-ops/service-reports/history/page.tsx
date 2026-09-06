@@ -3,6 +3,7 @@
 // История отчётов (§22.25). Экран не решает, что можно делать со строкой:
 // доступность каждого действия и причина отказа приходят с сервера — здесь
 // нет ни одной ветки «если работа упала, выключить кнопку».
+import { RightGate } from "@/shared/ui/right-gate";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -269,9 +270,15 @@ export default function ReportHistoryPage() {
                         </TableCell>
                         <TableCell className="whitespace-normal">
                           <div className="flex flex-wrap gap-1.5">
+                            {/* Причина видимой строкой, а не в `title`
+                                (Plane №912): на выключенной кнопке подсказка
+                                не показывается ни при каком поведении
+                                браузера. Обёртка ставит строку рядом и
+                                связывает её с кнопкой `aria-describedby`. */}
                             {actions.map((action) => (
+                              <RightGate key={action.code} reason={action.available ? null : action.reason}>
+                                {(describedBy) => (
                               <button
-                                key={action.code}
                                 type="button"
                                 className="rounded-md border px-2.5 py-1 text-xs disabled:opacity-50"
                                 disabled={
@@ -279,7 +286,7 @@ export default function ReportHistoryPage() {
                                   download.isPending ||
                                   rerun.isPending
                                 }
-                                title={action.reason ?? undefined}
+                                aria-describedby={describedBy}
                                 onClick={() => {
                                   setNotice(null);
                                   if (action.code === "OPEN_PARAMETERS") {
@@ -316,6 +323,8 @@ export default function ReportHistoryPage() {
                               >
                                 {ACTION_LABEL[action.code]}
                               </button>
+                                )}
+                              </RightGate>
                             ))}
                           </div>
 

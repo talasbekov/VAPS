@@ -141,7 +141,6 @@ export default function OpsSettingsPage() {
                         variant="outline"
                         size="sm"
                         disabled={!setting.action.canEdit}
-                        title={setting.action.disabledReason ?? undefined}
                         onClick={() => setEditing(setting)}
                       >
                         Изменить
