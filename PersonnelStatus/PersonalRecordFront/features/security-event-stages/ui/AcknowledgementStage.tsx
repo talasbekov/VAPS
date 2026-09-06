@@ -110,6 +110,22 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
     behind.length === 0
       ? "мероприятие ещё не на этом этапе"
       : `ещё не дошли объекты: ${behind.map((visit) => visit.objectName).join(", ")}`;
+  /**
+   * Причина, по которой ВСЕ действия этапа закрыты отставанием мероприятия.
+   *
+   * 🔴 №528 БЫЛ ЗАКРЫТ НА ОДНОЙ КНОПКЕ ИЗ ТРЁХ (найдено ревью №825). Сервер
+   * стережёт этапом МЕРОПРИЯТИЯ не только завершение
+   * (`acknowledgement_stage.complete:168`), но и оба напоминания —
+   * `remind_assignment:108` и `remind_pending:141`, оба с одним и тем же
+   * `_require_stage(event, "ACKNOWLEDGEMENT")`. Пока гасла только кнопка
+   * завершения, на ОМ с отстающим объектом человек видел худшее из
+   * возможного: одна кнопка погашена и объясняет почему, а две соседние
+   * молча отвечают 422. Это читается как поломка вернее, чем если бы не
+   * гасла ни одна.
+   */
+  const stageBehindReason = eventOnStage
+    ? null
+    : `Этап ведётся по всему мероприятию: ${behindLabel}`;
   const complete = useCompleteAcknowledgement(event.id);
   const [scope, setScope] = useState<Scope>("all");
   const [replacing, setReplacing] = useState<PlacementAssignment | null>(null);
@@ -310,12 +326,17 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           <div className="flex flex-col items-start gap-2">
           <AccessHints reasons={[access.reason(EVENT_MANAGE), completeReason]}>
           <div className="flex flex-wrap gap-2">
-            <RightGate reason={access.reason(EVENT_MANAGE)}>
+            <RightGate reason={stageBehindReason || access.reason(EVENT_MANAGE)}>
               {(describedBy) => (
             <Button
               type="button"
               variant="outline"
-              disabled={remindAll.isPending || unanswered.length === 0 || !canManage}
+              disabled={
+                remindAll.isPending ||
+                unanswered.length === 0 ||
+                !canManage ||
+                !eventOnStage
+              }
               aria-describedby={describedBy}
               title={
                 unanswered.length === 0
@@ -346,7 +367,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                 Кнопка гаснет и НАЗЫВАЕТ причину — сколько объектов ещё не
                 дошло. Это не «нет прав» и не «не все подтвердили», а третье
                 состояние, и молчать о нём нельзя. */}
-            <RightGate reason={completeReason || access.reason(EVENT_MANAGE)}>
+            <RightGate reason={completeReason || stageBehindReason || access.reason(EVENT_MANAGE)}>
               {(describedBy) => (
             <Button
               type="button"
@@ -453,6 +474,9 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                           key={assignment.id}
                           assignment={assignment}
                           canManage={canManage}
+                          // Напоминание закрыто и отставанием мероприятия:
+                          // ручка стережётся тем же `_require_stage` (№528).
+                          stageBehindReason={stageBehindReason}
                           canReplace={canManage && mayReplaceOn(assignment.postId)}
                           onAcknowledge={() => acknowledge.mutate({ assignmentId: assignment.id })}
                           onRemind={() => {
@@ -557,6 +581,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
 function AssignmentRow({
   assignment,
   canManage,
+  stageBehindReason,
   canReplace,
   onAcknowledge,
   onRemind,
@@ -565,6 +590,8 @@ function AssignmentRow({
 }: {
   assignment: PlacementAssignment;
   canManage: boolean;
+  /** Мероприятие ещё не дошло до этапа — словами; `null`, когда дошло. */
+  stageBehindReason: string | null;
   /** Замена — операция ОБЪЕКТА: чужой пост её не получает (Plane №613). */
   canReplace: boolean;
   onAcknowledge: () => void;
@@ -693,17 +720,22 @@ function AssignmentRow({
               {assignment.phone}
             </a>
           )}
+          <RightGate reason={stageBehindReason}>
+            {(describedBy) => (
           <Button
             type="button"
             variant="outline"
             size="sm"
-            disabled={busy || !canManage}
+            disabled={busy || !canManage || stageBehindReason !== null}
+            aria-describedby={describedBy}
             aria-label={`Напомнить: ${assignment.employeeName}`}
             onClick={onRemind}
           >
             <Bell className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
             Напомнить
           </Button>
+            )}
+          </RightGate>
           <Button
             type="button"
             variant="outline"
