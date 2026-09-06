@@ -43,8 +43,8 @@ const E2E = __dirname
  * `сторож не гниёт` краснеет на файле, который больше не нарушает, поэтому
  * оставить его здесь «на всякий случай» нельзя.
  *
- * Кто снимает: `acknowledgement-stage` уже снят (№822 Ш-2), `approval-stage`
- * снимет Ш-3. Остальные планом №822 НЕ покрыты и живут здесь до Plane №853:
+ * Кто снимает: `acknowledgement-stage` снят в Ш-2, `approval-stage` — в Ш-3.
+ * Остальные планом №822 НЕ покрыты и живут здесь до Plane №853:
  * `approval-print`, `approval-rights`, `bulletin-stage`, остаток
  * `recon-stage` и `placement-pool` (Ш-4 берёт `placement-stage` — это ДРУГОЙ
  * файл, и спутать их легко).
@@ -52,7 +52,6 @@ const E2E = __dirname
 const KNOWN_LAZY_PREPARATION = new Map<string, number>([
   ['approval-print.spec.ts', 1],
   ['approval-rights.spec.ts', 1],
-  ['approval-stage.spec.ts', 3],
   ['bulletin-stage.spec.ts', 2],
   ['placement-pool.spec.ts', 4],
   ['recon-stage.spec.ts', 4],
