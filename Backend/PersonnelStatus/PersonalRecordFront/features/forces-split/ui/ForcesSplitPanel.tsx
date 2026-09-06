@@ -1,9 +1,15 @@
 "use client";
 
 // Раскладка потребности по департаментам — первое звено цепочки «Сбор сил на
-// ОМ» (задача заказчика Plane №73, шаг «СС-1»). Живёт ВНУТРИ ленты входящих
-// штаба: разложить пришедшее число — не отдельная работа со своим экраном, а
-// продолжение той строки, в которой это число показано.
+// ОМ» (задача заказчика Plane №73, шаг «СС-1»).
+//
+// 🔴 ЖИВЁТ В КАРТОЧКЕ СБОРА (`ForceCollectionCard`), а не в ленте входящих
+// (Plane №928, задача заказчика). Лента «Запрос сил по мероприятиям» стояла
+// над вкладками `/employees?view=forces` и была снята: она показывала то же
+// множество сборов, что и вкладка «Сборы», а действия держала у себя. Довод
+// прежнего места («разложить пришедшее число — продолжение той строки, в
+// которой оно показано») сохранён БУКВАЛЬНО: теперь эта строка — таблица
+// `[СБС-12]` карточки сбора, и форма стоит прямо под ней.
 //
 // Итог («разложено M из N») берётся у сервера: по этому же числу он отбивает
 // перебор, и второй счёт на клиенте разошёлся бы с ним молча. Считается на
@@ -41,9 +47,33 @@ import { apiClient, type CoreDivision } from "@/lib/api";
 import type {
   ForceAllocationRow,
   ForceAllocationStatus,
-  SecurityEvent,
+  ForceRosterMember,
 } from "@/entities/security-event";
 import { formatIsoDateTime } from "@/shared/lib/date";
+
+/**
+ * ЧТО ПАНЕЛИ НУЖНО ОТ МЕРОПРИЯТИЯ — четыре поля, а не карточка ОМ целиком
+ * (Plane №928).
+ *
+ * 🔴 ЭТО НЕ КОСМЕТИКА ТИПОВ, А ГРАНИЦА ПО ПРАВАМ. Панель переехала из ленты
+ * входящих (снята) в карточку сбора штаба, а та живёт на своей ручке
+ * `force-collection/` за правом `forces.command`. Прими панель `SecurityEvent`
+ * — карточке пришлось бы звать `useSecurityEvent`, то есть вернуть в цепочку
+ * сбора право `event.view`, которого ответственному за департамент НЕ дают
+ * намеренно (из-за этого и пришлось дублировать кнопки в
+ * `DepartmentRequestCard`, см. №389 и №532).
+ *
+ * Подстановка ТОЧНАЯ, а не похожая: сервер собирает `forceDemandTotal`,
+ * `forceAllocation` и `forceRoster` карточки ОМ теми же функциями
+ * (`force_demand_total`, `allocation_members_view`, `force_roster_view`), из
+ * которых карточка сбора получает `need`, `allocations` и `roster`.
+ */
+export interface ForcesSplitSubject {
+  id: string;
+  forceDemandTotal: number;
+  forceAllocation: ForceAllocationRow[];
+  forceRoster: ForceRosterMember[];
+}
 
 /** Строка формы. `key` — своя, стабильная: departmentId ещё может быть пуст.
  *
@@ -92,10 +122,10 @@ function toLocalInput(value: string | null | undefined): string {
  * сохранение отказывало; а до починки сервера — уничтожало обе строки.
  * Довыделенные показывает карточка сбора (`ForceCollectionCard`), где у них
  * своя пометка; здесь их не правят. */
-const baseRows = (event: SecurityEvent) =>
+const baseRows = (event: ForcesSplitSubject) =>
   event.forceAllocation.filter((row) => !row.topUpOf);
 
-function seedRows(event: SecurityEvent): DraftRow[] {
+function seedRows(event: ForcesSplitSubject): DraftRow[] {
   return baseRows(event).map((row) => ({
     key: row.id,
     departmentId: row.departmentId,
@@ -105,7 +135,7 @@ function seedRows(event: SecurityEvent): DraftRow[] {
   }));
 }
 
-export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
+export function ForcesSplitPanel({ event }: { event: ForcesSplitSubject }) {
   const access = useChainAccess();
   const [rows, setRows] = useState<DraftRow[]>(() => seedRows(event));
   const [saved, setSaved] = useState(false);
@@ -153,8 +183,13 @@ export function ForcesSplitPanel({ event }: { event: SecurityEvent }) {
     <AccessHints reasons={[access.reason(FORCES_COMMAND)]} className="mb-1">
     <div className="mt-3 border-t pt-3" data-slot="forces-split">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
+        {/* «Правка раскладки», а не «Раскладка по департаментам» (Plane
+            №928): в карточке сбора над этой формой стоит секция `[СБС-12]`
+            «Распределение по департаментам», и два заголовка-синонима подряд
+            читались бы как два разных блока об одном. Заголовок называет
+            РОЛЬ: таблица показывает состояние, форма его правит. */}
         <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-          Раскладка по департаментам
+          Правка раскладки
         </h4>
         <p
           className="text-xs tabular-nums text-muted-foreground"
@@ -381,7 +416,7 @@ function AllocationState({
   event,
   row,
 }: {
-  event: SecurityEvent;
+  event: ForcesSplitSubject;
   row: ForceAllocationRow | undefined;
 }) {
   const access = useChainAccess();

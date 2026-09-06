@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useCallback, useMemo, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -55,10 +54,7 @@ import { useStatusNaming, type StatusNaming } from "@/entities/status";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { formatIsoDate } from "@/shared/lib/date";
-import { Progress } from "@/components/ui/progress";
-import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useForcesGathering } from "@/hooks/use-forces-gathering";
-import { ForcesSplitPanel } from "@/features/forces-split/ui/ForcesSplitPanel";
 import { DepartmentRequestsTable } from "@/features/department-requests";
 import { ForceCollectionsTable } from "@/features/force-collections";
 import {
@@ -66,8 +62,6 @@ import {
   FORCES_COMMAND,
   useChainAccess,
 } from "@/features/forces-split/ui/chain-access";
-import { objectLabel } from "@/entities/security-event";
-import type { SecurityEvent } from "@/entities/security-event";
 import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee } from "@/entities/employee/model/types";
 
@@ -80,44 +74,6 @@ import type { Employee } from "@/entities/employee/model/types";
  * вместо прежних четырёх плиток, блок заявок на силы и две вкладки с тем же
  * списком, отобранным по статусу.
  */
-/** Окно, в котором живёт сбор сил: от завершения рекогносцировки до
- * согласования расстановки. Зеркалит `_ALLOCATION_STAGES` бэкенда — лента не
- * должна показывать мероприятие, действия в котором сервер отобьёт. */
-const COLLECTION_STAGES = "DEMAND,FORCES,PLACEMENT" as const;
-
-const FORCE_REQUEST_LABEL: Record<string, string> = {
-  NOT_SENT: "Не отправлен",
-  SENT: "Отправлен",
-  PARTIALLY_ALLOCATED: "Выделено частично",
-  ALLOCATED: "Выделено полностью",
-};
-
-const FORCE_REQUEST_CLASS: Record<string, string> = {
-  NOT_SENT: "bg-gray-100 text-gray-800",
-  SENT: "bg-blue-100 text-blue-800",
-  PARTIALLY_ALLOCATED: "bg-amber-100 text-amber-800",
-  ALLOCATED: "bg-green-100 text-green-800",
-};
-
-/** Сводка одного сбора: сколько запрошено расчётом и сколько уже выделено.
- * Знаменатель — сумма запросов, она же `forceNeed`: сервер пишет оба числа из
- * ОДНИХ строк утверждённого расчёта, разойтись они не могут. */
-function eventForceTotals(event: SecurityEvent): {
-  requested: number;
-  allocated: number;
-  percent: number;
-} {
-  let requested = 0;
-  let allocated = 0;
-  for (const request of event.forceRequests) {
-    requested += request.requestedCount;
-    allocated += request.allocatedCount;
-  }
-  const percent =
-    requested === 0 ? 0 : Math.round((allocated / requested) * 100);
-  return { requested, allocated, percent };
-}
-
 /**
  * Подпись под вкладками сбора: сколько строк ПОКАЗАНО против того, сколько их
  * в разрезе.
@@ -522,50 +478,11 @@ function EmployeesScreen() {
   // область («мой ли это департамент») проверяет сервер, и второй ответ на
   // тот же вопрос разошёлся бы с ним при первой правке дерева подразделений.
   const chainAccess = useChainAccess();
-  // Входящие штаба 2-го департамента: запрос личного состава, направленный
-  // ЗАВЕРШЕНИЕМ рекогносцировки (Plane «Реестр ОМ-23»).
-  //
-  // Спрашивается ОКНО СБОРА, а не одна стадия (Plane №110). «Потребность» и
-  // «Запрос сил» проходит сервер сам, и мероприятие приходит на «Расстановку»
-  // сразу с рекогносцировки — отбор по `stage=DEMAND` оставил бы ленту штаба
-  // пустой навсегда, то есть погасил бы всю цепочку сбора сил. Три стадии —
-  // ровно то окно, в котором сервер разрешает править раскладку
-  // (`_ALLOCATION_STAGES`): лента не должна показывать мероприятие, действия
-  // в котором сервер отобьёт.
-  const inboundEvents = useSecurityEvents({
-    search: "",
-    stage: COLLECTION_STAGES,
-    from: "",
-    to: "",
-    owner: "",
-    page: 1,
-    pageSize: 50,
-  });
-  const inboundRows = useMemo(
-    () =>
-      (inboundEvents.data?.results ?? []).filter(
-        // Черновик старшего наряда штабу не показываем: запрос считается
-        // направленным только с момента, который ставит завершение этапа.
-        (event) => event.reconForceRequestedAt !== null
-      ),
-    [inboundEvents.data]
-  );
-  const inboundTotal = useMemo(
-    () => inboundRows.reduce((sum, event) => sum + event.reconForceRequest, 0),
-    [inboundRows]
-  );
-
-  const forcesDemand = useMemo(() => {
-    let requested = 0;
-    let allocated = 0;
-    for (const event of inboundRows) {
-      const totals = eventForceTotals(event);
-      requested += totals.requested;
-      allocated += totals.allocated;
-    }
-    return { requested, allocated };
-  }, [inboundRows]);
-
+  // 🔴 РЕЕСТР МЕРОПРИЯТИЙ ЭТОТ ЭКРАН БОЛЬШЕ НЕ СПРАШИВАЕТ (Plane №928). Здесь
+  // стоял `useSecurityEvents` за окном стадий сбора — он кормил снятую ленту
+  // входящих. Вкладка «Сборы» берёт те же мероприятия своей ручкой
+  // `forces/collections/` за правом `forces.command`, и лишний запрос за
+  // правом `event.view` уходил с экрана у каждого, кто его открыл.
   // Кто на мероприятии и кто в строю — по идентификаторам разреза сбора:
   // легаси-запись сотрудника кода «Участие в ОМ» не знает вовсе (у типа нет
   // legacy_code), и отбирать по её подписи статуса было бы нечем.
@@ -907,147 +824,25 @@ function EmployeesScreen() {
           />
         </div>
 
-        {/* Сбор сил: ОДНА лента вместо двух (Plane №110).
-            До задачи их разводили СТАДИИ — «Потребность» ждала распределения,
-            «Запрос сил» вела план против факта. Стадии проходит сервер, обе
-            ленты стали описывать одно и то же множество, и любой признак,
-            которым их пробовали развести, заставлял карточку ПРЫГАТЬ из блока
-            в блок посреди работы: человек сохранял раскладку — и терял из-под
-            курсора панель, которой её ведёт. Один блок, одна карточка на ОМ,
-            план и факт в её шапке. */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex flex-wrap items-baseline justify-between gap-2 text-base">
-              <span className="flex items-center gap-2">
-                <Building2 className="h-4 w-4" />
-                Запрос сил по мероприятиям
-              </span>
-              {inboundTotal > 0 && (
-                <span className="text-xs font-normal text-muted-foreground">
-                  всего запрошено {inboundTotal} чел.
-                  {forcesDemand.requested > 0 && (
-                    <>
-                      {" · "}выделено {forcesDemand.allocated} из{" "}
-                      {forcesDemand.requested}
-                      {forcesDemand.allocated < forcesDemand.requested && (
-                        <> · недобор {forcesDemand.requested - forcesDemand.allocated}</>
-                      )}
-                    </>
-                  )}
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {inboundEvents.isPending && (
-              <p className="text-xs text-muted-foreground">Загрузка запросов…</p>
-            )}
-            {inboundEvents.isError && (
-              <p className="text-xs text-muted-foreground">
-                Реестр мероприятий сейчас недоступен.
-              </p>
-            )}
-            {inboundEvents.data && inboundRows.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                Новых запросов с рекогносцировки нет — старшие нарядов ещё не
-                завершили осмотр либо их запросы уже разложены.
-              </p>
-            )}
-            {inboundRows.map((event) => (
-              <div key={event.id} className="rounded-lg border p-3">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <div className="min-w-0">
-                  <Link
-                    href={`/security-ops/events/${event.id}`}
-                    className="truncate text-sm font-semibold text-primary-ink"
-                  >
-                    {event.title}
-                  </Link>
-                  <p className="text-xs text-muted-foreground">
-                    {event.code} · {formatIsoDate(event.businessDate)} ·{" "}
-                    {objectLabel(event)}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-sm font-semibold tabular-nums">
-                    {event.reconForceRequest} чел.
-                  </p>
-                  {/* Кто просит — старший наряда; его подпись стоит рядом с
-                      числом: запрос это оценка ЧЕЛОВЕКА, а не выход расчёта. */}
-                  <p className="text-xs text-muted-foreground">
-                    запросил {event.chiefName.trim() === "" ? event.ownerName : event.chiefName}
-                  </p>
-                </div>
-                </div>
-                {/* План против факта по ЭТОМУ мероприятию — перенесено из
-                    снятой второй ленты: недобор виден и суммой, и построчно. */}
-                {(() => {
-                  const totals = eventForceTotals(event);
-                  const gap = totals.requested - totals.allocated;
-                  if (totals.requested === 0) return null;
-                  return (
-                    <div className="mt-2">
-                      <p className="text-xs tabular-nums text-muted-foreground">
-                        {totals.allocated} из {totals.requested} · {totals.percent}%
-                        {gap > 0 && (
-                          <span className="ml-2 font-semibold text-amber-700">
-                            недобор {gap}
-                          </span>
-                        )}
-                      </p>
-                      <Progress value={totals.percent} className="mt-1 h-2" />
-                      <ul className="mt-2 space-y-1">
-                        {event.forceRequests.map((request) => {
-                          const short =
-                            request.requestedCount - request.allocatedCount;
-                          return (
-                            <li
-                              key={request.id}
-                              className="flex flex-wrap items-baseline gap-2 border-b py-1 text-xs last:border-0"
-                            >
-                              <span className="flex-1 truncate">{request.group}</span>
-                              <span className="tabular-nums text-muted-foreground">
-                                {request.allocatedCount} из {request.requestedCount}
-                              </span>
-                              {/* Недодача названа у КАЖДОЙ строки, а не только
-                                  суммой: сумма говорит «сколько», строка — «с кого». */}
-                              {short > 0 && (
-                                <span className="tabular-nums font-semibold text-amber-700">
-                                  не отдано {short}
-                                </span>
-                              )}
-                              <Badge
-                                variant="secondary"
-                                className={
-                                  FORCE_REQUEST_CLASS[request.status] ??
-                                  "bg-gray-100 text-gray-800"
-                                }
-                              >
-                                {FORCE_REQUEST_LABEL[request.status] ?? request.status}
-                              </Badge>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  );
-                })()}
-                {/* Раскладка живёт ЗДЕСЬ, а не на своём экране: разложить
-                    пришедшее число — продолжение той же строки, в которой оно
-                    показано (Plane №73, шаг «СС-1»). */}
-                <ForcesSplitPanel event={event} />
-              </div>
-            ))}
-            {/* Оговорка переехала из снятого второго блока: она про ЭТИ же
-                заявки, и потерять её вместе с блоком значило бы убрать
-                предупреждение, а не дубль. */}
-            <p className="text-[11px] text-muted-foreground">
-              Довыделение отдельной строкой раздел пока не хранит: заявка
-              департаменту одна, и увеличение выделения переписывает её же —
-              истории «кто закрыл чужой недобор» из этих данных не построить.
-            </p>
-          </CardContent>
-        </Card>
+        {/* 🔴 БЛОКА «ЗАПРОС СИЛ ПО МЕРОПРИЯТИЯМ» ЗДЕСЬ БОЛЬШЕ НЕТ (Plane
+            №928, задача заказчика: «зачем этот бокс нужен, если он ничего не
+            делает убери его»).
+
+            Он показывал ТО ЖЕ множество сборов, что и вкладка «Сборы» ниже, —
+            и держал у себя единственный редактор раскладки
+            (`ForcesSplitPanel`). Поэтому убрать его молча было нельзя:
+            заказчик выбрал перенести действия во вкладку, и панель переехала
+            в `ForceCollectionCard`, под таблицу `[СБС-12]`.
+
+            Что снялось ВМЕСТЕ с блоком и не переехало никуда:
+            • сводка «всего запрошено N · выделено M из N · недобор K» по всем
+              входящим сразу — в разрезе одного сбора её заменяет строка
+              «Итог: …», в списке сборов — колонки `[СБС-10]`;
+            • абзац «Довыделение отдельной строкой раздел пока не хранит» — он
+              устарел ещё до этой задачи: `[СБС-12]` (№426) заводит
+              довыделение отдельной строкой с `topUpOf`, а №675 научил
+              редактор её не показывать. Абзац утверждал обратное и снят как
+              неправда, а не как довесок. */}
 
         {/* Main Content */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
