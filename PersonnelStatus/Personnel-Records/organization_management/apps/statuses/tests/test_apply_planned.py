@@ -37,7 +37,7 @@ def employee(db):
 
 @pytest.fixture
 def today():
-    return timezone.now().date()
+    return timezone.localdate()
 
 
 def _in_service(employee, author, start):

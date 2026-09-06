@@ -91,7 +91,7 @@ def org(db):
 
 
 def _row(org, ref_date=None):
-    ref_date = ref_date or timezone.now().date()
+    ref_date = ref_date or timezone.localdate()
     data = DataAggregator().collect_data(
         FakeReport(division=org["division"], date_to=ref_date)
     )
@@ -119,7 +119,7 @@ def test_employee_without_status_counts_as_in_service(org):
 
 @pytest.mark.django_db
 def test_statuses_land_in_their_own_columns(org, author):
-    today = timezone.now().date()
+    today = timezone.localdate()
     people = org["employees"]
     _status(people[0], _ST.ON_DUTY, today, author)
     _status(people[1], _ST.AFTER_DUTY, today, author)
@@ -139,7 +139,7 @@ def test_statuses_land_in_their_own_columns(org, author):
 
 @pytest.mark.django_db
 def test_columns_always_sum_to_headcount(org, author):
-    today = timezone.now().date()
+    today = timezone.localdate()
     people = org["employees"]
     _status(people[0], _ST.SICK_LEAVE, today, author)
     _status(people[1], _ST.ON_DUTY, today, author)
@@ -152,7 +152,7 @@ def test_columns_always_sum_to_headcount(org, author):
 
 @pytest.mark.django_db
 def test_cancelled_status_does_not_count(org, author):
-    today = timezone.now().date()
+    today = timezone.localdate()
     _status(
         org["employees"][0],
         _ST.VACATION,
@@ -167,7 +167,7 @@ def test_cancelled_status_does_not_count(org, author):
 
 @pytest.mark.django_db
 def test_early_termination_ends_the_status(org, author):
-    today = timezone.now().date()
+    today = timezone.localdate()
     _status(
         org["employees"][0],
         _ST.VACATION,
@@ -184,7 +184,7 @@ def test_early_termination_ends_the_status(org, author):
 
 @pytest.mark.django_db
 def test_seconded_out_employee_leaves_the_in_service_column(org, author):
-    today = timezone.now().date()
+    today = timezone.localdate()
     _status(
         org["employees"][0],
         _ST.SECONDED_TO,
@@ -203,7 +203,7 @@ def test_overlapping_secondment_pair_counts_the_person_once(org, author):
     # (secondments/api/views.py::approve), хотя модель пересечения запрещает —
     # через save() вторая не проходит. Пара может прийти импортом или из
     # старых данных, и тогда наивная сумма посчитала бы человека дважды.
-    today = timezone.now().date()
+    today = timezone.localdate()
     employee = org["employees"][0]
     EmployeeStatus.objects.bulk_create(
         [
@@ -236,7 +236,7 @@ def test_overlapping_secondment_pair_counts_the_person_once(org, author):
 
 @pytest.mark.django_db
 def test_incoming_secondment_from_outside_the_scope_is_counted(org, author):
-    today = timezone.now().date()
+    today = timezone.localdate()
     outsider = Employee.objects.create(
         personnel_number="agg-out", last_name="Пришлый", first_name="Имя"
     )
@@ -253,7 +253,7 @@ def test_incoming_secondment_from_outside_the_scope_is_counted(org, author):
 
 @pytest.mark.django_db
 def test_after_duty_is_not_counted_as_present(org, author):
-    today = timezone.now().date()
+    today = timezone.localdate()
     _status(org["employees"][0], _ST.AFTER_DUTY, today, author)
     _status(org["employees"][1], _ST.ON_DUTY, today, author)
 
@@ -277,9 +277,9 @@ def test_document_prints_every_aggregated_column(org, author):
     # ячейка теперь строятся из одного описания — тест это и стережёт.
     from organization_management.apps.reports.infrastructure import report_table
 
-    _status(org["employees"][0], _ST.ON_DUTY, timezone.now().date(), author)
+    _status(org["employees"][0], _ST.ON_DUTY, timezone.localdate(), author)
     data = DataAggregator().collect_data(
-        FakeReport(division=org["division"], date_to=timezone.now().date())
+        FakeReport(division=org["division"], date_to=timezone.localdate())
     )
     headers = report_table.headers(data)
     row = next(r for r in data["rows"] if r["division_id"] == org["division"].id)

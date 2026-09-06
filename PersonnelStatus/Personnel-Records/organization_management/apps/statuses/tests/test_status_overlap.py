@@ -44,7 +44,7 @@ def other_division(db):
 
 @pytest.fixture
 def today():
-    return timezone.now().date()
+    return timezone.localdate()
 
 
 def _plan(employee, author, status_type, start, end):

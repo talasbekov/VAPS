@@ -55,7 +55,7 @@ def scene(db, actor):
         name="Отдел", code="ro-div",
         division_type=Division.DivisionType.DIVISION, parent=root,
     )
-    today = timezone.now().date()
+    today = timezone.localdate()
 
     def person(index, last_name):
         employee = Employee.objects.create(
