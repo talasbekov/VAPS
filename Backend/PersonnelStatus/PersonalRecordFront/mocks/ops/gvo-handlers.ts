@@ -280,7 +280,9 @@ function assembledRow(event: { code: string }): GvoSummaryRow {
   const patch = record?.patch ?? {};
   const unspecified = record?.unspecified ?? [];
   const summary = mergeGvoSummary(deriveGvoSummary(event as never), patch);
-  const missing = missingRequiredFields(summary, unspecified);
+  // Третьим доводом — ПРАВКА человека: по выводимым путям (обе даты) «не
+  // пусто» в сводке ничего не значит, там всегда стоит день мероприятия.
+  const missing = missingRequiredFields(summary, unspecified, patch);
   const approvedAt = record?.approvedAt ?? null;
   return {
     omCode: event.code,
