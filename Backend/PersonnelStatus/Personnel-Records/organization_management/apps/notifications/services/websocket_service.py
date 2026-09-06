@@ -1,6 +1,7 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
+from organization_management.apps.notifications.groups import NOTIFY_MESSAGE_TYPE, group_name_for
 from organization_management.apps.notifications.models import Notification
 
 
@@ -21,7 +22,6 @@ def send_report_ready_notification(report):
     )
 
     channel_layer = get_channel_layer()
-    group = f"user_{report.created_by_id}"
     payload = {
         "id": notification.id,
         "title": notification.title,
@@ -31,9 +31,11 @@ def send_report_ready_notification(report):
         "created_at": notification.created_at.isoformat(),
     }
     async_to_sync(channel_layer.group_send)(
-        group,
+        # Имя берётся ПРЯМО в вызове, а не через переменную: путь, спрятанный
+        # в переменную, делает сторожа слепым (тот же урок, что в Plane №857).
+        group_name_for(report.created_by_id),
         {
-            "type": "notification_message",
+            "type": NOTIFY_MESSAGE_TYPE,
             "message": payload,
         },
     )

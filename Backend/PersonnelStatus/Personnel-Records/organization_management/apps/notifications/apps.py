@@ -1,22 +1,40 @@
+import logging
+
 from django.apps import AppConfig
+
+logger = logging.getLogger(__name__)
 
 
 class NotificationsConfig(AppConfig):
-    """
-    Configuration for the notifications app.
+    """Настройка раздела уведомлений портала.
 
-    Ensures that signal handlers are imported when the app is ready so
-    that model events generate corresponding notifications.  Uses the
-    ``ready`` hook to avoid import side effects during startup.
+    Обработчики сигналов подключаются в `ready()`, чтобы не тянуть побочные
+    эффекты на импорте модуля.
     """
+
     default_auto_field = "django.db.models.BigAutoField"
     name = "organization_management.apps.notifications"
 
-    def ready(self):  # pragma: no cover
-        # Import signal handlers.  Any ImportError is silently ignored
-        # to allow the project to run even if optional dependencies are
-        # unavailable (e.g. Channels).
+    def ready(self):
+        # 🔴 ОТКАЗ БОЛЬШЕ НЕ МОЛЧИТ (Plane №824). Здесь стоял
+        # `except Exception: pass` с объяснением «чтобы проект запускался и без
+        # необязательных зависимостей». На деле он прятал не отсутствие
+        # Channels, а НЕРАБОЧИЙ МОДУЛЬ: `signals.py` импортирует
+        # `EmployeeStatusLog` из `apps.statuses.models`, а такой модели в этом
+        # репозитории нет вовсе — её нет ни в моделях, ни в миграциях, ни в
+        # истории. То есть ВСЕ ТРИ обработчика (прикомандирование, смена
+        # статуса, правка сотрудника) не подключались НИ РАЗУ, и узнать об этом
+        # было неоткуда: ошибка гасилась на месте.
+        #
+        # Глушение оставлено намеренно — падать на старте из-за уведомлений
+        # неправильно, — но теперь оно ПИШЕТ, и запись видна в первой же
+        # строке лога сервера. Что делать с самими обработчиками (чинить импорт
+        # и оживлять или снять как мёртвый порт чужого проекта) — решение
+        # заказчика, оно вынесено карточкой Plane №866.
         try:
             import organization_management.apps.notifications.signals  # noqa: F401
         except Exception:
-            pass
+            logger.exception(
+                "обработчики сигналов раздела уведомлений НЕ подключены — "
+                "уведомления по этим событиям не создаются вовсе"
+            )
