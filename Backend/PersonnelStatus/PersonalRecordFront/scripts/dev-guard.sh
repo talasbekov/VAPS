@@ -129,7 +129,14 @@ start_server() {
   : > "$LOG"
   npx next dev -p "$PORT" >> "$LOG" 2>&1 &
   SERVER_PID=$!
+  # 🔴 КТО ПОДНЯЛ — ЗАПИСЬЮ, А НЕ ДОГАДКОЙ (Plane №832). Метка живёт в
+  # `/tmp/next-stand-<порт>.owner` и попадает в список соседей у ОБОИХ
+  # сторожей: до неё «лишний» сервер опознавался только по наличию порта, и
+  # спросить владельца было не у кого поимённо. Имя сессии берётся из
+  # `STAND_OWNER`, если она его задала.
+  stand_owner_write "$PORT" dev "$SERVER_PID"
   echo "[dev-guard] сервер поднят: pid=$SERVER_PID, порт=$PORT, лимит=${LIMIT_MB} МБ, лог=$LOG"
+  echo "[dev-guard] метка принадлежности: $(stand_owner_note "$PORT")" | tee -a "$LOG"
 }
 
 # Все потомки процесса, а не только прямые дети.
@@ -207,6 +214,9 @@ stop_server() {
   sleep 3
   for p in $pids; do kill -9 "$p" 2>/dev/null; done
   sleep 1
+  # Метка снимается вместе с сервером: файл в /tmp переживает свой процесс, и
+  # оставленный он назвал бы владельцем того, кто давно ушёл (Plane №832).
+  stand_owner_forget "$PORT"
 }
 
 trap 'echo "[dev-guard] выход"; stop_server; exit 0' INT TERM

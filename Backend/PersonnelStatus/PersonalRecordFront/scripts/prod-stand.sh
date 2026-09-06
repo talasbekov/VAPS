@@ -159,7 +159,7 @@ rm -f "$PIDFILE"
 # не автор скрипта, а любой, кто выполнит замер.
 NEXTAUTH_SECRET="$SECRET" setsid bash -c '
   set -u
-  log="$1"; pidfile="$2"; port="$3"; backend="$4"
+  log="$1"; pidfile="$2"; port="$3"; backend="$4"; ownerfile="$5"
   # Надзирателя тоже могут снять — тогда о смерти сервера не напишет никто.
   # `trap` переживает всё, кроме SIGKILL по самому надзирателю: эта дыра
   # остаётся по построению, и здесь она названа вслух, чтобы отсутствие строки
@@ -189,8 +189,11 @@ NEXTAUTH_SECRET="$SECRET" setsid bash -c '
   fi
   printf "[prod-stand] СЕРВЕР ОСТАНОВЛЕН %s: pid=%s, %s\n" \
     "$(date "+%Y-%m-%d %H:%M:%S")" "$child" "$why" >> "$log"
-  rm -f "$pidfile"
-' _ "$LOG" "$PIDFILE" "$PORT" "$BACKEND" \
+  # Метка принадлежности снимается вместе с сервером (Plane №832): оставленная,
+  # она назвала бы владельцем того, кто давно ушёл. Путь передан аргументом —
+  # надзиратель живёт в своей сессии и общий дом не подключает.
+  rm -f "$pidfile" "$ownerfile"
+' _ "$LOG" "$PIDFILE" "$PORT" "$BACKEND" "$(stand_owner_file "$PORT")" \
   >> "$LOG" 2>&1 &
 
 # 🔴 ЖДЁМ ПОРТ, А НЕ PID-ФАЙЛ (ревью №823). Надзиратель пишет pid сразу после
@@ -215,7 +218,12 @@ for _ in $(seq 1 30); do
 done
 
 if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+  # 🔴 КТО ПОДНЯЛ — ЗАПИСЬЮ, А НЕ ДОГАДКОЙ (Plane №832): метка попадает в
+  # список соседей у обоих сторожей, и следующая сессия читает владельца
+  # вместо того, чтобы гадать по наличию порта.
+  stand_owner_write "$PORT" prod "$PID"
   echo "[prod-stand] поднят: pid=$PID, порт=$PORT, лог=$LOG"
+  echo "[prod-stand] метка принадлежности: $(stand_owner_note "$PORT")" | tee -a "$LOG"
   echo "[prod-stand] смерть сервера будет записана в тот же лог строкой «СЕРВЕР ОСТАНОВЛЕН»."
 else
   echo "[prod-stand] сервер не поднялся, смотрите $LOG"
