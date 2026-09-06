@@ -25,6 +25,7 @@
 — сторож назовёт файл и строку.
 """
 import ast
+from fnmatch import fnmatch
 from pathlib import Path
 
 #: Каталог `apps`. Считается от файла, а не от рабочего каталога: pytest зовут
@@ -37,6 +38,9 @@ from pathlib import Path
 #: стоит проба на то, что дерево вообще обойдено — она же поймала и вторую
 #: попытку (`parents[1]`, то есть каталог одного приложения).
 APPS = Path(__file__).resolve().parents[2]
+
+#: `pytest.ini` — ЕДИНСТВЕННЫЙ источник правды о том, что считается пробой.
+PYTEST_INI = APPS.parents[1] / "pytest.ini"
 
 #: Файлы, где запрещённый вызов стоит ПО ДЕЛУ. Список поимённый: «исключение по
 #: маске» через год закрыло бы половину дерева.
@@ -86,9 +90,45 @@ def _violation(name):
     return None
 
 
+def _masks():
+    """Маски файлов проб — прочитанные из `pytest.ini`, а не вспомненные.
+
+    🔴 ПОЧЕМУ НЕ СВОЙ СПИСОК (Plane №874). Первая редакция обходила
+    `*/tests/**/*.py` — то есть ТОЛЬКО каталоги `tests`, — а `pytest.ini`
+    объявляет пробами ещё и `tests.py`, `tests_*.py`, `*_tests.py` рядом с
+    кодом приложения. Десять файлов (`audit/tests_api.py`,
+    `notifications/tests_websockets.py` и соседи) не попадали в разбор ВОВСЕ:
+    сторож был зелен не потому, что там чисто, а потому, что он туда не
+    смотрел. Найдено ревью — мутацией: проба с `date.today()`, дописанная в
+    `audit/tests_migration.py`, сторожа не покраснила.
+
+    Маски читаются из файла, поэтому правка `python_files` (как в №799, где
+    шаблон `tests_*.py` и добавили) автоматически расширяет и обход сторожа.
+    """
+    for line in PYTEST_INI.read_text(encoding="utf-8").splitlines():
+        clean = line.strip()
+        if clean.startswith("python_files"):
+            masks = tuple(clean.split("=", 1)[1].split())
+            assert masks, "python_files пуст — сторожу нечего обходить"
+            return masks
+    raise AssertionError(
+        f"в {PYTEST_INI} нет строки python_files — сторож не знает, "
+        "что pytest считает пробой"
+    )
+
+
 def _test_files():
-    """Все файлы проб раздела — один список на сторожа и на его проверку."""
-    return sorted(APPS.glob("*/tests/**/*.py"))
+    """Все файлы проб раздела — один список на сторожа и на его проверку.
+
+    Обход идёт по ВСЕМУ дереву приложений, а отбор — по маскам pytest: где
+    лежит проба, решает не сторож, а `pytest.ini`.
+    """
+    masks = _masks()
+    return sorted(
+        path
+        for path in APPS.rglob("*.py")
+        if any(fnmatch(path.name, mask) for mask in masks)
+    )
 
 
 def _offenders():
@@ -116,20 +156,52 @@ def test_no_test_takes_today_by_the_process_clock():
     )
 
 
-def test_the_guard_actually_walks_the_tree():
-    """Сторож обошёл дерево, а не промолчал на пустом списке.
+def test_the_guard_walks_everything_pytest_calls_a_test():
+    """Обход сторожа совпадает с тем, что пробой считает pytest.
 
-    🔴 РОВНО ЭТО И СЛУЧИЛОСЬ в первой редакции: путь склеивался как
+    🔴 ДВЕ РАЗНЫЕ БЕДЫ, И ОБЕ СЛУЧИЛИСЬ. Первая: путь склеивался как
     `apps/apps/*/tests/**`, глоб не находил ни одного файла, и сторож был
-    зелёным по построению. Число намеренно грубое — оно стережёт «список
-    пуст», а не состав дерева, и не будет краснеть от каждой новой пробы.
+    зелёным по построению — это ловит проверка «список не пуст». Вторая
+    (Plane №874, найдена ревью): список был НЕ ПУСТ, но НЕ ПОЛОН — обходились
+    только каталоги `tests/`, а десять файлов проб лежат рядом с кодом
+    приложения. Проверка «больше ста» такую потерю не пробивает, ровно как
+    порог «обработчиков больше ста» не пробивал потерю набора в соседнем
+    стороже №834.
+
+    Поэтому проверяются ОБЕ стороны: список не пуст И в нём есть файлы,
+    которых в каталогах `tests/` нет по построению.
     """
     files = _test_files()
+    outside_tests_dirs = [f for f in files if "/tests/" not in str(f)]
 
     assert len(files) > 100, f"сторож обошёл {len(files)} файлов — путь неверен"
-    assert any(
-        str(f).endswith("statuses/tests/test_business_date_is_local.py") for f in files
-    ), "в обходе нет файла, который заведомо есть"
+    assert outside_tests_dirs, (
+        "в обходе нет ни одного файла проб ВНЕ каталогов tests/ — значит "
+        "отбор снова идёт по каталогу, а не по маскам pytest.ini"
+    )
+    names = {f.name for f in outside_tests_dirs}
+    # Поимённо — те самые файлы, из-за которых заведена №874: они существуют,
+    # pytest их собирает, и сторож обязан их видеть.
+    assert {"tests_migration.py", "tests_websockets.py"} <= names, sorted(names)
+
+
+def test_the_allowed_list_does_not_rot():
+    """Исключение остаётся в списке, только пока оно нужно.
+
+    Конвенция раздела: у каждого храповика есть проба «не гниёт»
+    (`KNOWN_UNDECLARED` в `test_production_dependencies`, `KNOWN_PROBE_CALLS`
+    в стороже пагинации). Здесь её не было — расхождение с собственной
+    конвенцией, найдено ревью (Plane №874). Без неё файл, переставший
+    нарушать, остался бы в `ALLOWED` навсегда и молча прикрывал бы будущее
+    нарушение в себе.
+    """
+    for relative in sorted(ALLOWED):
+        path = APPS / relative
+        assert path.exists(), f"{relative} в ALLOWED, а файла нет"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        assert any(_violation(name) for name, _ in _calls(tree)), (
+            f"{relative} больше не нарушает — исключение пора снять"
+        )
 
 
 def test_the_guard_itself_can_see_a_violation():
