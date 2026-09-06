@@ -24,25 +24,30 @@
 """
 from organization_management.apps.operations import notify_service
 from organization_management.apps.ops.acknowledgement_notify import _employee_users
+from organization_management.apps.ops.security_events import _visit_of_post
 
 KIND = "ASSIGNMENT_DECLINED"
 
 
 def _visit_of_assignment(event, assignment):
-    """Объект посещения поста, на котором стоял отказавшийся; `None` —
-    определить не удалось (пост снят, разметки нет)."""
-    post_id = str(assignment.get("postId") or "")
-    owner = next(
-        (
-            str(post.get("visitObjectId") or "")
-            for post in (event.recon_sector_posts or [])
-            if str(post.get("id")) == post_id
-        ),
-        "",
-    )
-    if owner == "":
-        return None
-    return event.visit_objects.filter(pk=owner).first()
+    """Объект посещения поста, на котором стоял отказавшийся.
+
+    🔴 ПРАВИЛО ЗДЕСЬ НЕ ПЕРЕПИСЫВАЕТСЯ, А БЕРЁТСЯ ОБЩЕЕ (найдено ревью,
+    задача №825). Своя версия читала у поста `visitObjectId` и сдавалась,
+    когда его нет, — но неразмеченный пост это НЕ неизвестный пост:
+    неизвестен он только при ДВУХ и более объектах. У единственного объекта
+    его посты — ВСЕ, включая неразмеченные, и разметки сегодня нет у
+    большинства ОМ: расчёт постов ведётся на мероприятии целиком (решение
+    24.08.2026), а `visitObjectId: None` пишется любой строке рекогносцировки,
+    сохранённой без него; размечает посты только импорт из паспорта.
+
+    Цена ошибки была ровно та, ради устранения которой карточка и заведена:
+    на ОМ с ОДНИМ объектом и постами, заведёнными руками, старший объекта и
+    его замещающие не получали НИЧЕГО, а ссылка в письме вела на мероприятие
+    вместо объекта. Оставался только ведущий ОМ — а если его нет, об отказе
+    не узнавал никто.
+    """
+    return _visit_of_post(event, assignment.get("postId"))
 
 
 def notify_assignment_declined(event, assignment, *, reason):
@@ -100,9 +105,11 @@ def notify_assignment_declined(event, assignment, *, reason):
             payload,
             dedupe_key=str(assignment.get("id")),
         ) is None:
-            undelivered.append(
-                {"employee": names.get(employee_id, employee_id), "user": user_id}
-            )
+            # Форма строки — как у соседей (`forces_notify`,
+            # `placement_return_notify`): «имя · учётка». Здесь стоял словарь,
+            # и одна и та же графа журнала получалась разноформатной —
+            # читателю пришлось бы ветвиться (найдено ревью, задача №825).
+            undelivered.append(f"{names.get(employee_id, employee_id)} · {user_id}")
             continue
         notified += 1
     return {
