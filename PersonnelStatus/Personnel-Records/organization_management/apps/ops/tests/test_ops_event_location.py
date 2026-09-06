@@ -270,8 +270,19 @@ def test_registry_does_not_fetch_persons_and_vehicles_per_row(manager):  # noqa:
         ]
 
     with CaptureQueriesContext(connection) as queries:
-        assert manager.get(f"{URL}?page_size=50").status_code == 200
+        first = manager.get(f"{URL}?page_size=50")
+        assert first.status_code == 200
     few = len(linked(queries.captured_queries))
+    # 🔴 НИЖНЯЯ ГРАНИЦА ПЕРВОГО ЗАМЕРА (доводка по ревью №825). Без неё проба
+    # хрупка в одну сторону: перестань фикстура привязывать лицо — сравнение
+    # `many == few` выполнится на нулях, и «реестр не добирает построчно»
+    # станет утверждением ни о чём. Проверяется и то, что обращения к этим
+    # таблицам ВООБЩЕ были (иначе считать нечего), и то, что привязка доехала
+    # до ответа.
+    assert few > 0, "к таблицам лиц и машин не обращались вовсе — считать нечего"
+    assert any(
+        row.get("protectedPersons") for row in first.json()["results"]
+    ), "ни одна строка не несёт привязанного лица — замер вакуумен"
 
     for number in range(3, 9):
         create_event(
