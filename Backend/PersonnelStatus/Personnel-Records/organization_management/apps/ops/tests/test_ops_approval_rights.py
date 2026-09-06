@@ -564,6 +564,50 @@ def test_the_object_deputy_leads_the_stage_but_does_not_finish_it(
     assert refused.status_code == 403, refused.content
 
 
+def test_the_deputy_of_one_object_does_not_replace_on_the_other(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ЗАМЕЩАЮЩИЙ ОБЪЕКТА А НЕ ТРОГАЕТ ОБЪЕКТ Б (дописано по ревью, задача
+    №825).
+
+    Ветка замещающего в `_replaces_own_post` проверялась только положительно —
+    заменой на СВОЁМ объекте. У соседнего правила (старший объекта) отрицание
+    есть: `test_the_chief_of_one_object_does_not_replace_on_the_other`. Без
+    зеркальной пробы «упрощение» правила до «любой замещающий мероприятия»
+    прошло бы весь набор, открыв сквозную дыру между объектами.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    base, event_id, first, second, assigned = _on_acknowledgement(
+        manager, two_objects_on_approval
+    )
+    deputy_employee = make_employee(last_name="Чужев")
+    added = manager.post(
+        f"{base}visit-objects/{first.pk}/deputies/",
+        {"employeeId": str(deputy_employee.pk), "canEditPlacement": True},
+        format="json",
+    )
+    assert added.status_code in (200, 201), added.content
+    deputy = _persona(deputy_employee, "ev-deputy-cross")
+
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    of_post = {a["postId"]: a["id"] for a in event.placement_assignments}
+    refused = deputy.post(
+        f"{base}conduct/replace/",
+        {
+            # Пост ЧУЖОГО объекта — того, где этот человек никто.
+            "assignmentId": of_post[assigned[str(second.pk)]],
+            "incomingEmployeeId": str(make_employee(last_name="Подставнов").pk),
+            "reasonCode": "SICK",
+        },
+        format="json",
+    )
+    assert refused.status_code == 403, (
+        "замещающий одного объекта заменил человека на ЧУЖОМ объекте: "
+        f"{refused.content}"
+    )
+
+
 def test_an_observer_deputy_does_not_lead_the_stage(
     manager, two_objects_on_approval  # noqa: F811
 ):

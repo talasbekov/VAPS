@@ -2084,6 +2084,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 pk,
                 comment=data.get("comment"),
                 visit_object_id=self._visit_object_of(request),
+                # 🔴 КТО ВЕРНУЛ — ПЕРВЫЙ ВОПРОС К ЗАПИСИ О РЕШЕНИИ (найдено
+                #    ревью, задача №825). Запись ставилась от постоянного
+                #    «system:approval-return», то есть журнал отвечал «возврат
+                #    был и вот отчёт рассылки», но не «кто решил». У соседней
+                #    записи «Согласовано» актор настоящий.
+                actor=str(getattr(request.user, "username", "") or "") or None,
             )
         )
 
