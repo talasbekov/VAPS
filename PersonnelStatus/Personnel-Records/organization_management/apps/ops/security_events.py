@@ -5802,9 +5802,18 @@ def remark_is_open(item):
 
 def new_remark(
     event, *, remark_id, approver_id, author, text, post_id, urgent,
-    document_version, created_at,
+    document_version, created_at, urgent_days=None,
 ):
-    """Собрать (не сохранить) замечание в форме контракта."""
+    """Собрать (не сохранить) замечание в форме контракта.
+
+    `urgent_days` — тот же приём, что у доски сбора сил (Plane №669): порог
+    автосрочности читается ОДИН раз и передаётся внутрь. Здесь он понадобился
+    потому, что сообщение той карточки утверждало, будто замечания
+    согласования — одиночный вызов, а это НЕ ТАК (найдено ревью, задача №825):
+    `decide_approver` собирает замечания ЦИКЛОМ по списку из модалки возврата,
+    и без параметра одно и то же число читалось из базы столько раз, сколько
+    замечаний написал согласующий, — внутри `@transaction.atomic`.
+    """
     return {
         "id": remark_id,
         "approverId": approver_id,
@@ -5819,7 +5828,7 @@ def new_remark(
         # становилось бы неотличимо от изначально общего, а согласующий терял
         # бы, о чём писал.
         "detachedPost": "",
-        "urgent": _is_urgent(event, urgent),
+        "urgent": _is_urgent(event, urgent, urgent_days=urgent_days),
         "status": "OPEN",
         "response": "",
         "respondedAt": None,
@@ -6155,6 +6164,10 @@ def decide_approver(
         existing = list(visit.approval_remarks or [])
         incoming = _incoming_remarks(remarks, comment=clean_comment, post_id=post_id, urgent=urgent)
         _require_own_posts(event, visit, incoming)
+        # Порог автосрочности — ОДИН на весь возврат (Plane №669, дополнено
+        # ревью задачи №825): он не может измениться посреди одного решения, а
+        # чтение внутри цикла давало запрос на каждое замечание.
+        urgent_days = return_urgent_days()
         for row in incoming:
             existing.append(
                 new_remark(
@@ -6167,6 +6180,7 @@ def decide_approver(
                     urgent=row.get("urgent"),
                     document_version=visit.document_version,
                     created_at=now,
+                    urgent_days=urgent_days,
                 )
             )
         visit.approval_remarks = existing

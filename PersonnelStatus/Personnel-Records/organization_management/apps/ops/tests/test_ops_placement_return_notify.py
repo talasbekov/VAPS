@@ -437,3 +437,52 @@ def test_the_delivery_report_reaches_the_audit(manager, approver, django_user_mo
     assert payload.get("dispatchFailed") is False, (
         "запись выдаёт отказ вставки за падение самой рассылки"
     )
+
+
+def test_the_urgency_threshold_is_read_once_per_return_with_many_remarks(
+    manager, approver  # noqa: F811
+):
+    """🔴 ВОЗВРАТ СО СПИСКОМ ЗАМЕЧАНИЙ — ТОЖЕ ЦИКЛ (Plane №669, дополнено
+    ревью задачи №825).
+
+    Сообщение карточки №669 утверждало, что замечания согласования —
+    ОДИНОЧНЫЙ вызов и порог автосрочности им читать незачем. Это не так:
+    модалка возврата шлёт СПИСОК замечаний, и `decide_approver` собирает их
+    циклом. Одно и то же число читалось из базы столько раз, сколько замечаний
+    написал согласующий, — внутри `@transaction.atomic`.
+
+    Мутация: убрать `urgent_days=urgent_days` из вызова `new_remark` —
+    обращений к таблице настроек станет по одному на замечание.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    base, event_id, visit = _event_sent(manager)
+    route = manager.get(base).json()["visitObjects"][0]["approvalRoute"]
+    # 🔴 ИМЕННО РЕШЕНИЕ СОГЛАСУЮЩЕГО СО СПИСКОМ, а не ручка `approval/return/`:
+    #    та собирает одно замечание из причины и цикла не имеет. Цикл — здесь.
+    with CaptureQueriesContext(connection) as queries:
+        decided = approver.post(
+            f"{base}approval/route/{route[0]['id']}/decide/",
+            {
+                "decision": "RETURNED",
+                "comment": "Общая причина",
+                "remarks": [
+                    {"text": "Замечание один"},
+                    {"text": "Замечание два"},
+                    {"text": "Замечание три"},
+                    {"text": "Замечание четыре"},
+                ],
+            },
+            format="json",
+        )
+    assert decided.status_code == 200, decided.content
+    remarks = decided.json()["visitObjects"][0]["approvalRemarks"]
+    assert len(remarks) >= 4, (
+        f"замечаний в ответе {len(remarks)} — цикл не отработал, считать нечего"
+    )
+    settings_reads = [q for q in queries.captured_queries if "ops_policy_settings" in q["sql"]]
+    assert len(settings_reads) <= 1, (
+        f"таблица настроек раздела прочитана {len(settings_reads)} раз(а) на "
+        f"{len(remarks)} замечаний одного возврата"
+    )
