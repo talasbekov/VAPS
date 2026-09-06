@@ -370,3 +370,46 @@ def test_the_version_diff_names_a_post_the_same_way_everywhere():
     assert added == [
         service.post_label(post) for post in current["posts"]
     ]
+
+
+# ── Кто подписан автором версии ─────────────────────────────────────────────
+
+
+def test_the_version_names_the_author_by_surname_not_by_login(
+    manager, staffed_event  # noqa: F811
+):
+    """Фамилия доезжает ОТ РУЧКИ ДО ПОЛЯ, а не только из функции (Plane №484).
+
+    🔴 ЗАЧЕМ ЭТА ПРОБА, ЕСЛИ ЕСТЬ `test_ops_actor_display_name` (найдено ревью
+    №825). Та проверяет саму функцию, а жалоба карточки была о другом: в
+    «Истории версий документа» на подписываемой «Расстановке сил» стоял
+    `admin` вместо фамилии. Путь от ручки до поля длинный —
+    `views.complete_placement(actor=request.user)` → `_submit_document_version`
+    → `created_by=actor_display_name(actor)` → сериализатор `createdBy` →
+    экран `ApprovalStage`, — и до этой пробы он не был закреплён НИГДЕ:
+    `created_by` встречался в пробах только как аргумент фикстуры. Мутация
+    `views.py` «`actor=request.user` → `actor=None`» оставляла поле пустым, и
+    не краснела ни одна проба.
+
+    Красная на своей мутации: снять ветку `isinstance` в
+    `actor_display_name` — вернётся `ev-manager`.
+    """
+    base, event_id, _ = staffed_event
+    # Кадровая запись ЗА учёткой ведущего у фикстуры уже есть (`chief_for`
+    # связала старшего объекта с её пользователем) — ей даётся говорящая
+    # фамилия, чтобы разница между «Ниязов П.» и `ev-manager` читалась в
+    # ассерте, а не выводилась из умолчаний фикстуры.
+    author = chief_for(manager)
+    author.last_name, author.first_name = "Ниязов", "Пётр"
+    author.save(update_fields=["last_name", "first_name"])
+
+    resp = manager.post(f"{base}placement/complete/")
+
+    assert resp.status_code == 200, resp.content
+    version = resp.json()["visitObjects"][0]["documentVersions"][0]
+    assert version["createdBy"] == "Ниязов П.", (
+        "в «кем создана версия» подписываемого документа стоит не фамилия: "
+        f"{version['createdBy']!r}"
+    )
+    # И то же самое в хранилище, а не только в ответе ручки.
+    assert _versions(event_id)[0].created_by == "Ниязов П."
