@@ -62,7 +62,7 @@ async function events(token: string): Promise<EventRow[]> {
  * укомплектован по потребности, расстановка завершена, согласующий добавлен и
  * расстановка ему отправлена. Уборка стенда снимает такие ОМ по заголовку.
  */
-async function prepareSentEvent(token: string): Promise<void> {
+async function prepareSentEvent(token: string): Promise<string> {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
   const call = async (method: string, path: string, body?: unknown): Promise<any> => {
     const res = await fetch(`${API}${path}`, {
@@ -123,16 +123,26 @@ async function prepareSentEvent(token: string): Promise<void> {
     position: 'Начальник',
   })
   await call('POST', `${base}/approval/send/`)
+  // id СВОЕЙ фикстуры (Plane №853) — см. разбор у `sentEvent`.
+  return String(created.id)
 }
 
+/**
+ * СВОЙ ОМ на «Согласовании» с неподписанным обходом.
+ *
+ * 🔴 БЫЛО «ПЕРВОЕ ПОДХОДЯЩЕЕ СО СТЕНДА» (Plane №853): подготовка звалась только
+ * если готового не нашлось. Пробы этого файла ПОДПИСЫВАЮТ обход — то есть на
+ * живом стенде подписывали чужой ОМ, а соседняя сессия вела его своим путём.
+ */
 async function sentEvent(): Promise<EventRow | undefined> {
   const token = await apiToken()
-  const pick = (rows: EventRow[]) => rows.find((e) => e.stage === 'APPROVAL' && hasPending(e))
-  let target = pick(await events(token))
-  if (target === undefined) {
-    await prepareSentEvent(token)
-    target = pick(await events(token))
-  }
+  const id = await prepareSentEvent(token)
+  const target = (await events(token)).find((e) => e.id === id)
+  expect(target, `не удалось подготовить свой ОМ на «Согласовании» (${id})`).toBeDefined()
+  expect(
+    hasPending(target!),
+    'у своей фикстуры нет неподписанного обхода — подписывать нечего',
+  ).toBe(true)
   return target
 }
 

@@ -22,6 +22,7 @@ import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { acceptRosterFor } from './stand-roster'
+import { uniqueBusinessDate } from './business-date'
 import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -75,7 +76,10 @@ async function prepareWithoutRoster(tok: string): Promise<string> {
   const created = await call('POST', '/api/ops/security-events/', {
     title: 'Проба пула штаба (e2e)',
     objectId: object.id,
-    businessDate: '2026-09-22',
+    // Своя деловая дата на КАЖДУЮ подготовку (Plane №853): занятость людей
+    // считается по дате, и четыре подготовки одного прогона на общей дате
+    // объедали бы друг друга.
+    businessDate: uniqueBusinessDate(),
     kind: 'INTERNAL',
     // Старший объекта — с №424 рекогносцировка без него закрыта.
     chiefEmployeeId: roster.results[0]?.id,
@@ -109,17 +113,44 @@ async function prepareWithoutRoster(tok: string): Promise<string> {
   return created.id as string
 }
 
+/**
+ * СВОЙ ОМ на «Расстановке» — без состава и с составом.
+ *
+ * 🔴 БЫЛО «ПЕРВОЕ ПОДХОДЯЩЕЕ СО СТЕНДА» (Plane №853, продолжение №822): четыре
+ * пробы файла искали готовый ОМ по реестру и заводили своё только если не
+ * нашлось. Стенд один на все сессии, а пробы ПРАВЯТ состояние — назначают людей
+ * на посты, читают «свободен / на посту». Взятый чужой ОМ соседняя сессия ведёт
+ * своим путём, и падение выглядит тем симптомом, который проба стережёт.
+ *
+ * Заведение здесь безусловное, а найденное сверяется ПО СВОЕМУ id — не «самое
+ * новое по номеру»: между заведением и чтением сосед успевает завести своё.
+ */
+async function ownPlacementWithoutRoster(tok: string): Promise<EventRow> {
+  const id = await prepareWithoutRoster(tok)
+  const mine = (await events(tok)).find((e) => e.id === id)
+  expect(mine, `не удалось завести свой ОМ на «Расстановке» (${id})`).toBeDefined()
+  return mine!
+}
+
+/** То же, но с принятым составом: он нужен пробам, которые смотрят пул. */
+async function ownPlacementWithRoster(tok: string, count = 2): Promise<EventRow> {
+  const id = await prepareWithoutRoster(tok)
+  await acceptRosterFor(tok, id, { count })
+  const mine = (await events(tok)).find((e) => e.id === id)
+  expect(mine, `не удалось завести свой ОМ с составом (${id})`).toBeDefined()
+  expect(
+    mine!.forceRoster.length,
+    'у своей фикстуры пустой состав — смотреть пул не на чем',
+  ).toBeGreaterThan(0)
+  return mine!
+}
+
 test.describe(LIVE ? 'пул штаба на расстановке' : 'пул штаба (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
   test('без принятого состава — пустое состояние, кадровая база не спрашивается', async ({ page }) => {
     const tok = await token()
-    let target = (await events(tok)).find((e) => e.stage === 'PLACEMENT' && e.forceRoster.length === 0)
-    if (target === undefined) {
-      const id = await prepareWithoutRoster(tok)
-      target = (await events(tok)).find((e) => e.id === id)
-    }
-    expect(target, 'не удалось подготовить ОМ на «Расстановке» без состава').toBeDefined()
+    const target = await ownPlacementWithoutRoster(tok)
 
     const personnelCalls: string[] = []
     page.on('request', (req) => {
@@ -154,15 +185,7 @@ test.describe(LIVE ? 'пул штаба на расстановке' : 'пул �
 
   test('с составом — «Выделено X из потребности N», фильтр по управлению, «свободен / на посту»', async ({ page }) => {
     const tok = await token()
-    let target = (await events(tok)).find((e) => e.stage === 'PLACEMENT' && e.forceRoster.length > 0)
-    if (target === undefined) {
-      // Состав принимается тем же API-путём, что и в «Сборе сил» (общий
-      // помощник `stand-roster`): своего ОМ с составом на стенде может не быть.
-      const id = await prepareWithoutRoster(tok)
-      await acceptRosterFor(tok, id, { count: 2 })
-      target = (await events(tok)).find((e) => e.id === id)
-    }
-    expect(target, 'не удалось подготовить ОМ с принятым составом').toBeDefined()
+    const target = await ownPlacementWithRoster(tok)
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
@@ -194,13 +217,7 @@ test.describe(LIVE ? 'пул штаба на расстановке' : 'пул �
 
   test('пустой список называет ТЕ фильтры, что стоят (Plane №649, №650)', async ({ page }) => {
     const tok = await token()
-    let target = (await events(tok)).find((e) => e.stage === 'PLACEMENT' && e.forceRoster.length > 0)
-    if (target === undefined) {
-      const id = await prepareWithoutRoster(tok)
-      await acceptRosterFor(tok, id, { count: 2 })
-      target = (await events(tok)).find((e) => e.id === id)
-    }
-    expect(target, 'не удалось подготовить ОМ с принятым составом').toBeDefined()
+    const target = await ownPlacementWithRoster(tok)
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
@@ -260,13 +277,7 @@ test.describe(LIVE ? 'пул штаба на расстановке' : 'пул �
 
   test('человек на двух постах назван обоими постами (Plane №654)', async ({ page }) => {
     const tok = await token()
-    let target = (await events(tok)).find((e) => e.stage === 'PLACEMENT' && e.forceRoster.length > 0)
-    if (target === undefined) {
-      const id = await prepareWithoutRoster(tok)
-      await acceptRosterFor(tok, id, { count: 2 })
-      target = (await events(tok)).find((e) => e.id === id)
-    }
-    expect(target, 'не удалось подготовить ОМ с принятым составом').toBeDefined()
+    const target = await ownPlacementWithRoster(tok)
 
     let titles: string[] = []
     await page.route(
