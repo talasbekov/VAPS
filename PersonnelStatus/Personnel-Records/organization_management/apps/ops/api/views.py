@@ -2078,6 +2078,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             event_service.send_for_approval(
                 pk,
                 visit_object_id=self._visit_object_of(request),
+                # 🔴 АВТОР ВЕРСИИ ДОКУМЕНТА (Plane №896). Без этого
+                # `created_by` заполнялся только у версии 1, а «История
+                # версий» подписываемой «Расстановки сил» показывала
+                # последующие версии без автора — экран пустое прячет, и это
+                # читалось как «версию никто не заводил».
+                actor=resolve_actor_id(request),
                 # Кто действует ролью в данных, а не правом (Plane №576):
                 # журнал мутаций пишет СЕРВИС — у него транзакция операции, и
                 # запись «вёл старший объекта» не может разъехаться с самим
@@ -2127,6 +2133,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 response=data.get("response"),
                 visit_object_id=self._visit_object_of(request),
                 object_lead=self._object_lead_actor(),
+                # Ответ на ПОСЛЕДНЕЕ открытое замечание завершает этап сам
+                # (`[СОГ-09]`), то есть решает версию документа, — значит и
+                # автор решения приходит отсюда (Plane №896).
+                actor=resolve_actor_id(request),
             )
         )
 
@@ -2134,7 +2144,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def approval_approve(self, request, pk=None):
         return self._event_response(
             event_service.approve_placement(
-                pk, visit_object_id=self._visit_object_of(request)
+                pk,
+                visit_object_id=self._visit_object_of(request),
+                actor=resolve_actor_id(request),
             )
         )
 

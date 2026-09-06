@@ -415,6 +415,53 @@ def test_the_version_names_the_author_by_surname_not_by_login(
     assert _versions(event_id)[0].created_by == "Ниязов П."
 
 
+def test_the_version_opened_by_a_resend_names_its_author_too(
+    manager, approver, staffed_event  # noqa: F811
+):
+    """Автор есть и у ВТОРОЙ версии, не только у первой (Plane №896).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Актор доходил ровно до одного места — `complete_placement`,
+    которое заводит версию 1. У `send_for_approval` параметра актора не было
+    ВОВСЕ, и `_submit_document_version` звался без него; то же у решений
+    маршрута. В «Истории версий» подписываемой «Расстановки сил» у первой
+    версии стояла фамилия, а у последующих — пусто, и экран пустое ПРЯЧЕТ:
+    читается как «версию никто не заводил».
+
+    Путь до второй версии — штатный ход `[ВОЗ-06]`: отправили, вернули,
+    отправили снова. То есть без автора оказывалась не редкая ветка, а
+    ровно те версии, под которыми в итоге и подписываются.
+
+    Проба идёт ЧЕРЕЗ РУЧКУ, а не через сервис: предмет — что видит человек в
+    истории версий, а не что вернула функция.
+
+    КРАСНАЯ ПРОБА: убери `actor=resolve_actor_id(request)` у `approval/send`
+    в `views.py` — вторая версия снова придёт без автора.
+    """
+    base, event_id, _ = staffed_event
+    author = chief_for(manager)
+    author.last_name, author.first_name = "Ниязов", "Пётр"
+    author.save(update_fields=["last_name", "first_name"])
+
+    manager.post(f"{base}placement/complete/")
+    _send_and_return(manager, approver, base)
+    # Возврат ставит объект обратно на «Расстановку»: чтобы отправить снова,
+    # её надо снова завершить — тот же порядок, что у соседней пробы выше.
+    manager.post(f"{base}placement/complete/")
+    # Повторная отправка — она и заводит версию 2.
+    resp = manager.post(f"{base}approval/send/")
+
+    assert resp.status_code == 200, resp.content
+    versions = resp.json()["visitObjects"][0]["documentVersions"]
+    assert len(versions) >= 2, f"второй версии нет: {versions}"
+    latest = max(versions, key=lambda v: v["number"])
+    assert latest["createdBy"] == "Ниязов П.", (
+        "у версии, заведённой повторной отправкой, нет автора — в истории "
+        f"версий это читается как «версию никто не заводил»: {latest!r}"
+    )
+    # И в хранилище, а не только в ответе ручки.
+    assert {v.created_by for v in _versions(event_id)} == {"Ниязов П."}
+
+
 def test_import_from_passport_is_refused_on_a_frozen_object(manager):  # noqa: F811
     """Импорт постов из паспорта тоже держит заморозку (Plane №868).
 

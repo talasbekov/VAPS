@@ -6628,7 +6628,7 @@ def decide_approver(
     # (`[СОГ-11]`) — иначе одно решение принималось бы в двух местах.
     if decision == "RETURNED":
         return _return_visit(event, visit, clean_comment, actor=actor_login or "system")
-    return _autocomplete_approval(event, visit)
+    return _autocomplete_approval(event, visit, actor=actor)
 
 
 def placement_signature(event, visit=None, *, single=None):
@@ -6730,7 +6730,7 @@ def _refuse_empty_placement(event, visit):
 
 
 @transaction.atomic
-def send_for_approval(event_id, *, visit_object_id=None, object_lead=None):
+def send_for_approval(event_id, *, visit_object_id=None, object_lead=None, actor=None):
     """Отправить расстановку объекта согласующим.
 
     До отправки маршрут — это список людей, а не процесс: решать им нечего.
@@ -6738,6 +6738,14 @@ def send_for_approval(event_id, *, visit_object_id=None, object_lead=None):
     подпишутся, — и выдаёт документу объекта СЛЕДУЮЩИЙ НОМЕР ВЕРСИИ: версия
     это то, под чем подписываются, и растёт она отправкой, а не каждым
     движением человека по постам.
+    
+    🔴 АКТОР ДОХОДИТ ДО ВЕРСИИ (Plane №896). Параметра здесь не было вовсе, и
+    `_submit_document_version` звался без него: `created_by` заполнялся ТОЛЬКО
+    у версии 1, которую заводит `complete_placement` — туда актор доходил. У
+    версии 2 и дальше поле оставалось пустым, а экран пустое прячет, и в
+    «Истории версий» подписываемой «Расстановки сил» это читалось как «версию
+    никто не заводил». После возврата и повторной отправки — а это штатный ход
+    `[ВОЗ-06]` — автора не было видно ни у одной значимой версии.
     """
     event = lock_event(event_id)
     visit = _approval_target(event, visit_object_id)
@@ -6808,7 +6816,7 @@ def send_for_approval(event_id, *, visit_object_id=None, object_lead=None):
     # Канонический путь после возврата спасался случайно (`complete_placement`
     # заводит строку раньше), а повторная отправка СОГЛАСОВАННОГО объекта с
     # «Ознакомления» идёт мимо него — и там воскресал дефект №534.
-    _submit_document_version(event, visit)
+    _submit_document_version(event, visit, actor=actor)
     visit.approval_status = "PENDING"
     visit.save(
         update_fields=[
@@ -6968,6 +6976,7 @@ def resolve_remark(
     response=None,
     visit_object_id=None,
     object_lead=None,
+    actor=None,
 ):
     """Решить замечание (`[ВОЗ-04]`): «Устранено» — ответ необязателен;
     «Не согласен» — ОБЯЗАТЕЛЕН, иначе замечание превращается в отказ без
@@ -7008,10 +7017,10 @@ def resolve_remark(
     # Ответ на последнее открытое замечание — тоже «последняя подпись»
     # (`[СОГ-09]`): если все уже согласовали и держало только оно, этап
     # завершается сам.
-    return _autocomplete_approval(event, visit)
+    return _autocomplete_approval(event, visit, actor=actor)
 
 
-def _approve_visit(event, visit):
+def _approve_visit(event, visit, *, actor=None):
     """Согласование ОБЪЕКТА: проверки эталона и переход на «Ознакомление».
 
     Общее тело для ручки `approval/approve/` и для АВТОЗАВЕРШЕНИЯ последней
@@ -7059,7 +7068,7 @@ def _approve_visit(event, visit):
     visit.save(
         update_fields=["approval_status", "approval_comment", "updated_at"]
     )
-    _decide_document_version(event, visit, "APPROVED")
+    _decide_document_version(event, visit, "APPROVED", actor=actor)
     _sync_event_approval(event)
     # МЕРОПРИЯТИЕ ИДЁТ ДАЛЬШЕ, КОГДА СОГЛАСОВАНЫ ВСЕ ЕГО ОБЪЕКТЫ. Утверждение
     # переводит на «Ознакомление» ЭТОТ объект; мероприятие берёт наименьшую
@@ -7122,7 +7131,7 @@ def _approval_ready(visit):
     return True
 
 
-def _autocomplete_approval(event, visit):
+def _autocomplete_approval(event, visit, *, actor=None):
     """`[СОГ-09]`: «Этап завершается автоматически последней подписью» —
     кнопки «Завершить этап» у согласующего нет (`[СОГ-11]`).
 
@@ -7138,13 +7147,13 @@ def _autocomplete_approval(event, visit):
     if visit.stage != "APPROVAL" or not _approval_ready(visit):
         return event
     try:
-        return _approve_visit(event, visit)
+        return _approve_visit(event, visit, actor=actor)
     except DomainError:
         return event
 
 
 @transaction.atomic
-def approve_placement(event_id, *, visit_object_id=None):
+def approve_placement(event_id, *, visit_object_id=None, actor=None):
     """Ручка `approval/approve/` — ручное завершение (админ, API). У
     согласующего на экране такой кнопки больше нет (`[СОГ-11]`): его действие —
     подпись в маршруте, а этап закрывается сам (`[СОГ-09]`)."""
@@ -7155,7 +7164,7 @@ def approve_placement(event_id, *, visit_object_id=None):
         "APPROVAL",
         "Согласовать расстановку можно только на этапе «Согласование».",
     )
-    return _approve_visit(event, visit)
+    return _approve_visit(event, visit, actor=actor)
 
 
 def _return_visit(event, visit, comment, *, actor="system:approval-return"):
@@ -7206,7 +7215,7 @@ def _return_visit(event, visit, comment, *, actor="system:approval-return"):
             "approval_status", "approval_comment", "approval_route", "updated_at",
         ]
     )
-    _decide_document_version(event, visit, "RETURNED")
+    _decide_document_version(event, visit, "RETURNED", actor=actor)
     _sync_event_approval(event)
     # Уведомление старшему объекта и замещающим (`[ВОЗ-03]`) — следствие
     # возврата, и его сбой не откатывает сам возврат: рассылка «не дошла»
