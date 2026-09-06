@@ -542,3 +542,95 @@ def test_the_scan_reads_settings_named_by_their_suffix():
     ):
         seen = _paths_in_source(line + "\n")
         assert expected in seen, (line, seen)
+
+
+# ── Команда запуска боевого контейнера (Plane №830) ─────────────────────────
+#
+# 🔴 ТРЕТЬЯ ДВЕРЬ В ТОТ ЖЕ ОТКАЗ. Две проверки выше стерегут импорты боевого
+# кода и строки настроек. Но есть ещё одна строка, которая поднимает боевой
+# контур и не является ни импортом, ни настройкой, — КОМАНДА ЗАПУСКА
+# КОНТЕЙНЕРА. Через неё уже прошли два дефекта разом (№830): образ звал
+# `gunicorn`, не объявленный НИ В ОДНОМ файле зависимостей, и звал он
+# `config.wsgi:application` — WSGI, который веб-сокет не обслуживает никак,
+# сколько бы `channels-redis` и `uvicorn` ни было объявлено рядом.
+#
+# Ни гейт, ни сборка образа этого не ловят: сборка ставит зависимости и не
+# запускает команду, а запуск бывает только в бою.
+LAUNCH_FILES = (ROOT / "Dockerfile", ROOT / "docker-compose.yml")
+
+#: Исполняемые имена, которые может звать команда запуска, и дистрибутив,
+#: который их приносит. Список короткий намеренно: он перечисляет то, чем
+#: контур ЗАПУСКАЕТСЯ, а не всё, что установлено.
+LAUNCHERS = {
+    "gunicorn": "gunicorn",
+    "uvicorn": "uvicorn",
+    "daphne": "daphne",
+    "celery": "celery",
+}
+
+
+def _launch_commands():
+    """Строки запуска из `Dockerfile` (CMD/ENTRYPOINT) и `docker-compose.yml`."""
+    for path in LAUNCH_FILES:
+        if not path.exists():
+            continue
+        for index, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            line = raw.strip()
+            if line.startswith("#"):
+                continue
+            if line.startswith(("CMD", "ENTRYPOINT", "command:")):
+                yield f"{path.name}:{index}", line
+
+
+def test_the_launch_command_names_only_declared_executables():
+    """Чем контейнер ЗАПУСКАЕТСЯ, тоже обязано быть объявлено в `base.txt`.
+
+    🔴 КРАСНАЯ ПРОБА: убери `gunicorn` из `requirements/base.txt` — проба
+    назовёт файл, строку и имя.
+    """
+    declared = _declared(ROOT / "requirements" / "base.txt")
+    offenders = []
+    for where, line in _launch_commands():
+        for executable, distribution in LAUNCHERS.items():
+            if re.search(rf"(^|[\s\"']){executable}([\s\"']|$)", line):
+                if distribution not in declared:
+                    offenders.append(f"{where}: {executable} → {distribution}")
+    assert offenders == [], (
+        "команда запуска боевого контейнера зовёт то, чего нет в "
+        f"requirements/base.txt: {offenders}"
+    )
+
+
+def test_the_launch_command_serves_asgi_not_wsgi():
+    """Боевой контур поднимает ASGI-приложение (Plane №830).
+
+    🔴 ЧТО СТЕРЕЖЁТСЯ. `config.wsgi:application` веб-сокет не обслуживает
+    НИКАК: маршрут `/ws/operations/notifications/`, `ASGI_APPLICATION` и слой
+    каналов могут быть настроены и объявлены — до ASGI-приложения запрос всё
+    равно не дойдёт. Дефект не виден ни гейтом, ни сборкой образа: он есть
+    только в бою, и читается там не как «веб-сокет выключен», а как «сокет
+    почему-то не подключается».
+
+    Решение заказчика 06.09.2026: перевести запуск на ASGI. Проба держит это
+    решение, а не форму команды: сменить gunicorn на голый uvicorn можно, а
+    вернуться к `wsgi:application` — нельзя без нового решения.
+
+    КРАСНАЯ ПРОБА: верни `config.wsgi:application` в `Dockerfile` — покраснеет.
+    """
+    commands = list(_launch_commands())
+    assert commands, "команд запуска не нашлось — проба ничего не проверила"
+
+    serving = [
+        (where, line)
+        for where, line in commands
+        if "config.wsgi:application" in line or "config.asgi:application" in line
+    ]
+    assert serving, (
+        "ни одна команда запуска не называет приложение Django — "
+        f"проверять нечего: {[w for w, _ in commands]}"
+    )
+    wsgi = [where for where, line in serving if "config.wsgi:application" in line]
+    assert wsgi == [], (
+        "боевой контур поднимает WSGI-приложение — веб-сокет там не "
+        f"обслуживается вовсе (Plane №830): {wsgi}"
+    )

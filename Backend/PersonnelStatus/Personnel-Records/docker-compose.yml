@@ -18,7 +18,10 @@ services:
   web:
     build: .
     entrypoint: /app/docker/entrypoint.sh
-    command: gunicorn organization_management.config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --graceful-timeout 30 --keep-alive 5
+    # ASGI, а не WSGI (Plane №830): иначе веб-сокет не обслуживается вовсе.
+    # `--keep-alive` снят намеренно — у асинхронных воркеров gunicorn его не
+    # применяет, время удержания соединения держит сам uvicorn.
+    command: gunicorn organization_management.config.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 4 --timeout 120 --graceful-timeout 30
     volumes:
       - .:/app
       - ./staticfiles:/app/staticfiles
