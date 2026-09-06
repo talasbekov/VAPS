@@ -55,6 +55,24 @@ export function standCall(token: string): StandCall {
     //    разбирается по полям: отказ давал `undefined` вместо кода, и проба
     //    умирала десятью строками ниже с «элемент не найден».
     await assertStep(res, method, path)
+    // 🔴 ОТКАЗ ОТБИВАЕТСЯ ЗДЕСЬ, А НЕ ЧЕРЕЗ `TRANSITION_STEPS` (найдено ревью,
+    // Plane №892). Общий сторож молчащих шагов освобождает шаг по СПИСКУ
+    // переходов, и ни заведение ОМ (`POST /security-events/`), ни
+    // `PATCH …/bulletin/` в этот список не входят. Отбитое заведение проходило
+    // молча: `created.id` выходил `undefined`, подготовка дальше била по
+    // `/security-events/undefined/…`, а вызывающие печатали «не удалось
+    // подготовить фикстуру (undefined)» — сообщение, уводящее от настоящей
+    // причины (кода и тела отказа) туда, где её нет.
+    //
+    // Помощник живёт ТОЛЬКО в подготовке фикстур, где каждый шаг обязан
+    // удаться, — поэтому проверяется КАЖДЫЙ вызов, а не список избранных.
+    // Расширять `TRANSITION_STEPS` было бы неверно: он сверяет по
+    // `path.includes`, и строка `security-events/` накрыла бы заодно все
+    // чтения реестра в четырнадцати живых файлах.
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`${method} ${path} → ${res.status}: ${text.slice(0, 400)}`)
+    }
     return res.json().catch(() => ({}))
   }
 }
@@ -62,10 +80,25 @@ export function standCall(token: string): StandCall {
 /** Объект стенда с опубликованным паспортом — без него ОМ не завести. */
 export async function objectWithPassport(call: StandCall): Promise<{ id: string }> {
   const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
-  const object = (objects.results ?? []).find(
+  // 🔴 «НЕТ КЛЮЧА» И «НЕТ ПОДХОДЯЩЕГО» — РАЗНЫЕ БЕДЫ (найдено ревью, №892).
+  // Стояло `objects.results ?? []`, и упавший запрос давал ту же фразу «на
+  // стенде нет объекта с паспортом», что и живой ответ без нужного объекта.
+  // Первая причина — про доступ или сервер, вторая — про данные стенда.
+  if (!Array.isArray(objects.results)) {
+    throw new Error(
+      'ответ ручки объектов без ключа results; ключи: ' +
+        Object.keys(objects).join(', '),
+    )
+  }
+  const object = objects.results.find(
     (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
   )
-  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+  if (object === undefined) {
+    throw new Error(
+      'на стенде нет объекта с опубликованным паспортом (объектов всего: ' +
+        `${objects.results.length})`,
+    )
+  }
   return object
 }
 
@@ -111,6 +144,14 @@ export async function createOwnEvent(
     kind: 'INTERNAL',
     chiefEmployeeId: await anyChiefId(token),
   })
+  // Сторож на случай «2xx, но не то тело»: код отказа ловит `standCall`, а
+  // `String(undefined)` даёт строку "undefined", с которой подготовка идёт
+  // бить по `/security-events/undefined/`.
+  if (created.id === undefined || created.id === null) {
+    throw new Error(
+      `заведение ОМ ответило без идентификатора: ${JSON.stringify(created).slice(0, 300)}`,
+    )
+  }
   // Ответ сервера возвращается ЦЕЛИКОМ, а не двумя полями: для пробы заведения
   // предмет проверки — само состояние заведения, и урезать его здесь значило бы
   // заставить её сходить за тем же вторым запросом.

@@ -23,7 +23,6 @@
  * рекогносцировки, это единственное место, где описание и задачи вписывают.
  */
 import { uniqueBusinessDate } from './business-date'
-import { assertStep } from './fixture-step'
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
@@ -369,7 +368,17 @@ async function prepareFilledBulletin(token: string): Promise<string> {
       initialTasks: 'Проба задач.',
     }),
   })
-  await assertStep(res, 'PATCH', `/api/ops/security-events/${id}/bulletin/`)
+  // 🔴 `assertStep` ЗДЕСЬ НЕ СРАБАТЫВАЛ НИКОГДА (найдено ревью, №892): он
+  // освобождает шаг по списку `TRANSITION_STEPS`, где есть
+  // `bulletin/complete/`, но нет `bulletin/`. Отбитый PATCH оставался
+  // молчаливым, и проба падала позже на «кнопка не включилась» — вместо кода и
+  // тела отказа. Проверяем прямо.
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(
+      `PATCH /api/ops/security-events/${id}/bulletin/ → ${res.status}: ${body.slice(0, 300)}`,
+    )
+  }
   return id
 }
 
