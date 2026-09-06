@@ -415,8 +415,30 @@ def visit_objects_of(event):
     Спросить дважды значило бы вернуть ровно тот запрос на строку, ради ухода
     от которого всё это и делается.
     """
-    if "visit_objects" in getattr(event, "_prefetched_objects_cache", {}):
-        return list(event.visit_objects.all())
+    cached = getattr(event, "_prefetched_objects_cache", {})
+    if "visit_objects" in cached:
+        visits = list(event.visit_objects.all())
+        # 🔴 ВНЕШНЕГО КЛЮЧА МАЛО (Plane №911). Здесь проверялся только сам
+        # `visit_objects`, и набор, подтянувший ЕГО без вложенных, получал
+        # список объектов даром — а потом платил ДВА запроса на каждый объект,
+        # когда сериализатор доходил до замещающих и версий документа. Такие
+        # наборы уже существуют: `my_assignments`, `documents_summary`,
+        # `documents_bulletin` тянут `visit_objects` и на этом останавливаются.
+        #
+        # Сторож реестра этого не показал бы: он гоняет СВОЙ набор, где
+        # вложенные подтянуты, и остаётся зелёным.
+        #
+        # Спрашиваем у ПЕРВОГО объекта: prefetch наполняет кэш у всех
+        # элементов набора разом, поэтому «подтянут первый» равносильно
+        # «подтянуты все». Пустой список отвечает сам за себя — читать нечего.
+        if not visits:
+            return visits
+        nested = getattr(visits[0], "_prefetched_objects_cache", {})
+        if "deputies" in nested and "document_versions" in nested:
+            return visits
+        # Кэш есть, но неполный: дотягиваем вложенные ОДНИМ разом на весь
+        # список, а не по объекту. Список объектов при этом перечитывается —
+        # это один запрос против двух на каждый объект.
     return list(event.visit_objects.prefetch_related("deputies", "document_versions"))
 
 
