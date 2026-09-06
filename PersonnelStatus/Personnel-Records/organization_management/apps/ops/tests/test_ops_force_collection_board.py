@@ -770,6 +770,75 @@ def test_the_urgency_threshold_is_read_once_per_listing(manager, hq):  # noqa: F
 
 
 
+def test_the_listing_reads_participations_and_divisions_once(manager, hq):  # noqa: F811
+    """🔴 УЧАСТИЯ И ПОДРАЗДЕЛЕНИЯ — ОДИН РАЗ НА ОТВЕТ, А НЕ НА СТРОКУ (Plane
+    №933).
+
+    `board_row` звал `allocation_members_view(event)` БЕЗ общего контекста
+    чтений, поэтому раскладка каждой строки спрашивала своё: участия
+    мероприятия (`ops_status_participations`, джойном тянущие
+    `ops_employee_statuses`) и карту детей подразделений
+    (`DivisionTreeSelector.children_map` → `divisions`). Ответ верный, страница
+    просто дороже — и дорожает ЛИНЕЙНО: ручка идёт по всем незакрытым ОМ и
+    пагинации не имеет, так что полсотни сборов это около сотни лишних
+    round-trip на один заход штаба.
+
+    ЗАМЕР ДО ПРАВКИ (эта же фикстура): на 2 строки — 2 обращения к участиям и
+    2 к подразделениям; на 3 строки — 3 и 3. Линейность проверена ДВУМЯ
+    точками нарочно: на одной строке рост неотличим от константы, а на двух —
+    от совпадения.
+
+    Считаются ИМЕНА ТАБЛИЦ, а не общее число запросов: общий счётчик пришлось
+    бы править при каждой посторонней правке листинга, и проба стерегла бы не
+    свой предмет (тот же довод, что у №669 и №908).
+
+    Мутация, на которой проба обязана краснеть: перестать передавать
+    `read_context` в `board_row` — оба счётчика вернутся к числу строк.
+    """
+    import re
+
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    first_base, first_id = allocated_event(manager, department, business_date="2026-10-01")
+    manager.post(f"{first_base}forces/allocation/{first_id}/notify/")
+    _free_object_code()
+    second_base, second_id = allocated_event(manager, department, business_date="2026-11-01")
+    manager.post(f"{second_base}forces/allocation/{second_id}/notify/")
+    _free_object_code()
+    third_base, third_id = allocated_event(manager, department, business_date="2026-12-01")
+    manager.post(f"{third_base}forces/allocation/{third_id}/notify/")
+
+    with CaptureQueriesContext(connection) as queries:
+        rows = hq.get(LIST).json()["results"]
+
+    # ТРИ строки в ответе — иначе «один запрос» доказывал бы только то, что
+    # листинг короче, чем кажется.
+    assert len({r["eventId"] for r in rows}) >= 3
+
+    def touching(table):
+        return [
+            q
+            for q in queries.captured_queries
+            if re.search(rf'(?:FROM|JOIN)\s+"{table}"', q["sql"])
+        ]
+
+    participations = touching("ops_status_participations")
+    divisions = touching("divisions")
+    assert len(participations) <= 1, (
+        f"участия прочитаны {len(participations)} раз(а) на {len(rows)} строк "
+        "листинга — раскладка каждой строки спрашивает свои: "
+        + "; ".join(q["sql"][:120] for q in participations)
+    )
+    assert len(divisions) <= 1, (
+        f"подразделения прочитаны {len(divisions)} раз(а) на {len(rows)} строк "
+        "листинга — карта детей строится заново на каждую строку: "
+        + "; ".join(q["sql"][:120] for q in divisions)
+    )
+
+
 def test_the_collection_card_reads_visit_objects_once(manager, hq):  # noqa: F811
     """Карточка сбора читает объекты посещения ОДИН раз, а не по разу на объект
     (Plane №908).

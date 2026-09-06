@@ -3645,6 +3645,8 @@ class RegistryReadContext:
         self._employees = {}
         #: {id мероприятия: [строки участия]} — см. `prime_participations`.
         self._participations = {}
+        #: Карта детей подразделений — одна на ответ (Plane №933).
+        self._division_children = None
 
     def status_names(self):
         """Справочник кодов статусов — ОДИН раз на страницу."""
@@ -3655,6 +3657,26 @@ class RegistryReadContext:
 
             self._status_names = StatusTypeSelector.names_map()
         return self._status_names
+
+    def division_children_map(self):
+        """Карта детей подразделений — ОДИН раз на ответ (Plane №933).
+
+        Её строят ДВА места раскладки — `_merge_status_members` и
+        `_with_directorate_progress`, — и оба зовутся на КАЖДОЙ строке
+        листинга сборов. Запрос дешёвый, но их число росло вместе с числом
+        сборов, а ручка идёт по всем незакрытым ОМ и пагинации не имеет.
+
+        Здесь, а не рядом с контекстом: смысл контекста в том, что он один на
+        ответ ручки и не требует инвалидации по построению. Четвёртый вид
+        чтения, положенный «рядом», эту гарантию бы и потерял.
+        """
+        if self._division_children is None:
+            from organization_management.apps.operations.selectors import (
+                DivisionTreeSelector,
+            )
+
+            self._division_children = DivisionTreeSelector.children_map()
+        return self._division_children
 
     def prime_statuses(self, employee_ids, on_date):
         """Посчитать статусы дня разом для всех, кто встретится на странице.
@@ -3847,7 +3869,13 @@ def _merge_status_members(event, rows, *, read_context=None):
         return rows
 
     # Департамент каждого добавленного: поддерево строки раскладки.
-    children_map = DivisionTreeSelector.children_map()
+    # Карта детей — общая на ответ, если вьюха собрала контекст (Plane №933);
+    # без контекста строится по месту, как и раньше.
+    children_map = (
+        read_context.division_children_map()
+        if read_context is not None
+        else DivisionTreeSelector.children_map()
+    )
     subtree_of = {
         str(row.get("departmentId")): DivisionTreeSelector.subtree_ids(
             _as_division_id(row.get("departmentId")), children_map=children_map
@@ -3961,7 +3989,8 @@ def allocation_members_view(event, *, read_context=None):
     """
     rows = event.force_allocation or []
     merged = _with_directorate_progress(
-        _merge_status_members(event, rows, read_context=read_context)
+        _merge_status_members(event, rows, read_context=read_context),
+        read_context=read_context,
     )
     # «Просрочено» считается здесь, а не хранится: это факт о ТЕКУЩЕМ моменте
     # (Plane №287). Момент один на весь ответ — иначе строки одного экрана
@@ -3970,7 +3999,7 @@ def allocation_members_view(event, *, read_context=None):
     return [{**row, "overdue": allocation_is_overdue(row, now=now)} for row in merged]
 
 
-def _with_directorate_progress(rows):
+def _with_directorate_progress(rows, *, read_context=None):
     """«Выделено N из M» по каждому управлению (Plane №272, Ш-2).
 
     СЧИТАЕТСЯ НА ЧТЕНИИ, а не хранится — тем же правилом, что статус дня у
@@ -4014,7 +4043,13 @@ def _with_directorate_progress(rows):
     ]
     live_division = StaffUnitSelector.divisions_of(member_ids) if member_ids else {}
 
-    children_map = DivisionTreeSelector.children_map()
+    # Карта детей — общая на ответ, если вьюха собрала контекст (Plane №933);
+    # без контекста строится по месту, как и раньше.
+    children_map = (
+        read_context.division_children_map()
+        if read_context is not None
+        else DivisionTreeSelector.children_map()
+    )
     result = []
     for row in rows:
         directorates = row.get("directorates") or []
