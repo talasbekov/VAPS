@@ -1050,7 +1050,7 @@ def update_visit_object(event_id, visit_object_id, *, visit_day, note):
 
 
 @transaction.atomic
-def remove_visit_object(event_id, visit_object_id):
+def remove_visit_object(event_id, visit_object_id, *, actor=None):
     """Убрать объект посещения. Закрытое мероприятие не правится."""
     event = lock_event(event_id)
     if event.stage == "CLOSED":
@@ -1110,7 +1110,20 @@ def remove_visit_object(event_id, visit_object_id):
     # оценивание, аудит: закрытие мероприятия не должно зависеть от того,
     # каким действием оно наступило.
     if event.stage == "CLOSED" and old_stage != "CLOSED":
-        _finalize_event_closure(event, actor="system:visit-object-removed", old_stage=old_stage)
+        # 🔴 АКТОР — НАСТОЯЩИЙ, А НЕ МЕТКА (Plane №608; найдено ревью, задача
+        #    №825). Здесь стояла постоянная строка «system:visit-object-removed»,
+        #    и она уходила НЕ ТОЛЬКО в аудит: `_finalize_event_closure`
+        #    передаёт актора в `open_evaluation_for_event`, а тот в ветке
+        #    «добор адресата» ПЕРЕПИСЫВАЕТ `evaluator_user_id` у каждого
+        #    неотправленного задания. Очередь оценщика фильтруется ровно по
+        #    этому полю — значит живые задания уходили из очередей настоящих
+        #    людей в учётную запись, которой не существует. Это тот же дефект,
+        #    что закрывали №641/№642, только через другую дверь. Плюс запись
+        #    аудита о ЗАКРЫТИИ мероприятия называла псевдоактора, тогда как
+        #    соседний `close_visit_object` на том же пути пишет настоящего.
+        _finalize_event_closure(
+            event, actor=actor or "system:visit-object-removed", old_stage=old_stage
+        )
     return event
 
 
