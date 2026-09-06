@@ -798,10 +798,16 @@ def test_placement_empty_still_means_placement_empty(
     base, event_id, first, _, _ = two_objects_on_approval
     _add_approver(manager, base, first)
 
-    # Назначения снимаются ПРЯМО В МОДЕЛИ, а не ручкой: на «Согласовании»
-    # расстановка заморожена (`PLACEMENT_FROZEN`), и ручка ответила бы 422
-    # раньше, чем проба дошла бы до своего вопроса. Разметка постов при этом
-    # НЕ трогается — в ней и разница с соседней пробой.
+    # Назначения снимаются ПРЯМО В МОДЕЛИ, а не ручкой: снятие последнего
+    # человека с укомплектованного поста ручка отбивает своей проверкой, и
+    # проба не дошла бы до своего вопроса. Разметка постов при этом НЕ
+    # трогается — в ней и разница с соседней пробой.
+    #
+    # 🔴 ЗДЕСЬ СТОЯЛО «на „Согласовании“ расстановка заморожена, и ручка
+    # ответила бы 422», и это перестало быть правдой в тот же день (Plane
+    # №533): фикстура расстановку ЗАВЕРШАЕТ, но не ОТПРАВЛЯЕТ, документ
+    # остаётся черновиком, и заморозки на нём нет. Обоснование обхода было
+    # неверным, сам обход — нет.
     event = service.lock_event(event_id)
     assert all(p.get("visitObjectId") for p in event.recon_sector_posts)
     event.placement_assignments = []
@@ -1316,7 +1322,14 @@ def test_a_remark_cannot_be_pinned_to_a_post_of_another_object(
     assert refused.status_code == 400, refused.content
     body = refused.json()
     assert body["error_code"] == "VALIDATION_ERROR", body
-    assert "remarks" in body["details"], body
+    # 🔴 АДРЕС ОШИБКИ — СО СТРОКОЙ, А ID В ТЕКСТ НЕ ПОПАДАЕТ (найдено ревью
+    # №825). Поле называлось `remarks` — именем КОЛЛЕКЦИИ, — и окно возврата
+    # не могло подсветить строку, а в текст уезжал сырой `post-…`, ровно тот,
+    # из-за которого карточка №506 и заведена.
+    assert "remarks.0" in body["details"], body
+    assert str(theirs[0]["id"]) not in str(body), (
+        "сырой id поста уехал человеку на экран"
+    )
     first.refresh_from_db()
     assert not (first.approval_remarks or []), "замечание к чужому посту всё же завелось"
     # Возврат НЕ состоялся: отказ по нагрузке не должен наполовину применить
@@ -1776,3 +1789,127 @@ def test_resending_after_a_withdrawal_keeps_the_number_and_takes_the_new_line_up
     assert first.approval_snapshot == current.signature, (
         "снимок отправки разошёлся с подписью версии"
     )
+
+
+def test_every_frozen_status_has_its_own_words():
+    """🔴 ОТКАЗ ЗАМОРОЗКИ ГОВОРИТ, ЧТО ДЕЛАТЬ, — И ДЛЯ КАЖДОГО СТАТУСА СВОЁ
+    (Plane №533, найдено ревью №825).
+
+    Прежний текст был один на оба статуса: «документ на согласовании ИЛИ
+    согласован… через возврат на доработку». Для СОГЛАСОВАННОГО объекта совет
+    неисполним — `return_placement` требует стадии «Согласование», а
+    согласованный объект уже на «Ознакомлении».
+
+    Проба сторожит не формулировки, а ПОЛНОТУ таблицы: статус, попавший в
+    заморозку без своей строки, дал бы `KeyError` — то есть 500 вместо отказа.
+    """
+    assert set(service._FROZEN_MESSAGE) == set(service._FROZEN_DOCUMENT_STATUSES)
+    for status, words in service._FROZEN_MESSAGE.items():
+        assert words.strip(), status
+
+
+def test_a_closed_object_refuses_placement_even_with_a_draft_document(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ЗАКРЫТЫЙ ОБЪЕКТ СНОВА СТАЛ ПРАВИМЫМ (Plane №533, найдено ревью №825).
+
+    Ключ заморозки переехал со стадии объекта на статус документа — и в одну
+    сторону стал слабее прежнего: объект с документом-ЧЕРНОВИКОМ пропускался
+    независимо от того, как далеко он уехал по этапам. Других гвардов у
+    `placement/assign|unassign|senior` нет, поэтому закрытый объект с
+    черновиком снова принимал правки — против `[ЗАК-05]` «после закрытия
+    изменения невозможны».
+
+    Состояние заводится ПРЯМО В МОДЕЛИ, а не боевым путём: боевое закрытие
+    требует «Проведения» и по дороге доводит документ до согласованного, то
+    есть замораживает его и без нового правила — проба стала бы вакуумной и
+    зеленела бы даже с откаченным гвардом.
+    """
+    base, event_id, first, _second, assigned = two_objects_on_approval
+    first.refresh_from_db()
+    assert service.document_status_of(first) == "DRAFT", (
+        "фикстура отправила документ — проба проверяла бы старое правило"
+    )
+    assert not service.placement_frozen(first), "фикстура заморозила объект заранее"
+
+    first.stage = "CLOSED"
+    first.save(update_fields=["stage", "updated_at"])
+
+    refused = manager.post(
+        f"{base}placement/assign/",
+        {
+            "postId": str(assigned[str(first.pk)]),
+            "employeeId": str(make_employee(last_name="Позднев").pk),
+            "override": True,
+            "override_reason": "проверка гарда",
+        },
+        format="json",
+    )
+    assert refused.status_code == 422, refused.content
+    payload = refused.json()
+    assert payload["error_code"] == "PLACEMENT_FROZEN", payload
+    assert payload["details"]["closed"] is True, payload
+    assert "закрыт" in payload["message"], payload["message"]
+    # А соседний объект, который не закрыт, правится как раньше.
+    allowed = manager.post(
+        f"{base}placement/assign/",
+        {
+            "postId": str(assigned[str(_second.pk)]),
+            "employeeId": str(make_employee(last_name="Соседов").pk),
+            "override": True,
+            "override_reason": "усиление",
+        },
+        format="json",
+    )
+    assert allowed.status_code == 200, allowed.content
+
+
+def test_a_remark_on_an_unmarked_post_of_the_only_object_is_accepted(
+    manager, approver, one_object_with_unmarked_posts  # noqa: F811
+):
+    """🔴 ПРАВИЛО «ЧЕЙ ЭТО ПОСТ» НЕ ЗАПРЕЩАЕТ ЗАКОННОГО (Plane №506, найдено
+    ревью №825).
+
+    Проверка принадлежности делегирована общему `visit_object_posts`, и это
+    верно: у ЕДИНСТВЕННОГО объекта его посты — ВСЕ, включая неразмеченные. Но
+    ни одна проба до этой в сломанную ветку не заходила — все они идут на
+    фикстуре с импортом из паспорта, а импорт всегда пишет `visitObjectId`.
+    То есть «упрощение» до `p["visitObjectId"] == visit.pk` (дословная форма
+    дефекта №451) оставило бы весь набор зелёным, а живьём запретило бы
+    законное замечание на любом ОМ без разметки.
+    """
+    base, event_id, visit, post = one_object_with_unmarked_posts
+    _add_approver(manager, base, visit, name="Согласующий единственного")
+    assert (
+        manager.post(
+            f"{base}approval/send/", {"visitObjectId": str(visit.pk)}, format="json"
+        ).status_code
+        == 200
+    )
+    visit.refresh_from_db()
+    approver_id = visit.approval_route[0]["id"]
+
+    event = service.lock_event(event_id)
+    unmarked = [
+        p for p in event.recon_sector_posts if not (p.get("visitObjectId") or "")
+    ]
+    assert unmarked, "разметка появилась — проба вакуумна"
+
+    accepted = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {
+            "decision": "RETURNED",
+            "comment": "переделать",
+            "visitObjectId": str(visit.pk),
+            "remarks": [
+                {"text": "Свой пост", "postId": str(unmarked[0]["id"]), "urgent": False}
+            ],
+        },
+        format="json",
+    )
+
+    assert accepted.status_code == 200, accepted.content
+    visit.refresh_from_db()
+    assert [str(r.get("postId")) for r in (visit.approval_remarks or [])] == [
+        str(unmarked[0]["id"])
+    ]
