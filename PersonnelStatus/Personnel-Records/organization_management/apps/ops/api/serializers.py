@@ -433,7 +433,7 @@ def _serialize_visit_objects(event, visits=None):
     return [serialize_visit_object(event, v, single=single) for v in visits]
 
 
-def serialize_security_event(event, *, with_phone=False):
+def serialize_security_event(event, *, with_phone=False, read_context=None):
     """ОМ в форме контракта клиента (SecurityEvent, camelCase).
 
     Словарь руками, а не ModelSerializer: половина полей — JSONB уже В ФОРМЕ
@@ -482,10 +482,14 @@ def serialize_security_event(event, *, with_phone=False):
         # ручного набора штаба: начальник управления ставит статус участия в
         # своём расходе, и человек обязан появиться у ответственного за
         # департамент. Разбор — в `security_events.allocation_members_view`.
-        "forceAllocation": security_events.allocation_members_view(event),
+        "forceAllocation": security_events.allocation_members_view(
+            event, read_context=read_context
+        ),
         # Состав мероприятия — принятые штабом люди (шаг «СС-5»): из него
         # расстановка берёт кандидатов.
-        "forceRoster": security_events.force_roster_view(event),
+        "forceRoster": security_events.force_roster_view(
+            event, read_context=read_context
+        ),
         "forceDemandTotal": security_events.force_demand_total(event),
         # Назначения идут с подразделением и статусом дня — они считаются
         # на чтении (см. security_events.placement_assignments_view).
@@ -494,7 +498,7 @@ def serialize_security_event(event, *, with_phone=False):
         # `event.view`, то есть доставались рядовому сотруднику без
         # `personnel.view`. Разбор — в докстроке `placement_assignments_view`.
         "placementAssignments": security_events.placement_assignments_view(
-            event, with_phone=with_phone
+            event, with_phone=with_phone, read_context=read_context
         ),
         "approvalStatus": event.approval_status,
         "approvalComment": event.approval_comment,

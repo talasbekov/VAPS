@@ -527,6 +527,44 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # собранный по странице список предлагал бы не всех.
         owners = sorted({e.owner_name for e in OpsSecurityEvent.objects.all() if e.owner_name})
         start = (page - 1) * page_size
+        page_rows = rows[start : start + page_size]
+        # 🔴 ЧТЕНИЯ, ОБЩИЕ НА СТРАНИЦУ, СЧИТАЮТСЯ ОДИН РАЗ (Plane №909).
+        # Назначения, состав и раскладка спрашивали каждое своё: справочник
+        # статусов (полный скан таблицы на КАЖДЫЙ вызов), перекрытия дня и
+        # кадровые записи — шесть запросов на строку, и все шесть росли вместе
+        # с числом мероприятий. Сторож реестра этого не видел: его фикстура
+        # оставляла все три поля пустыми, а вьюхи начинаются с
+        # `if not rows: return []`.
+        #
+        # Набор собирается ПО ВСЕЙ СТРАНИЦЕ и группируется по деловой дате —
+        # предикат «статус действует на дату» спрашивается на дату, а у
+        # мероприятий страницы дата чаще всего общая: реестр по ней и
+        # отсортирован.
+        from organization_management.apps.ops import (
+            security_events as registry_reads,
+        )
+
+        read_context = registry_reads.RegistryReadContext()
+        by_date = {}
+        everyone = set()
+        for event in page_rows:
+            people = by_date.setdefault(event.business_date, set())
+            for source in (
+                event.placement_assignments or [],
+                event.force_roster or [],
+            ):
+                for row in source:
+                    key = str(row.get("employeeId") or "")
+                    if key:
+                        people.add(key)
+                        everyone.add(key)
+        for business_date, people in by_date.items():
+            if people:
+                read_context.prime_statuses(people, business_date)
+        if everyone:
+            read_context.prime_employees(everyone)
+        if page_rows:
+            read_context.prime_participations([event.pk for event in page_rows])
         return Response(
             {
                 "owners": owners,
@@ -534,8 +572,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "next": str(page + 1) if start + page_size < len(rows) else None,
                 "previous": str(page - 1) if page > 1 else None,
                 "results": [
-                    serialize_security_event(e)
-                    for e in rows[start : start + page_size]
+                    serialize_security_event(e, read_context=read_context)
+                    for e in page_rows
                 ],
             }
         )

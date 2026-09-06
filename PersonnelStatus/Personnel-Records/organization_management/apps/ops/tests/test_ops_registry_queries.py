@@ -62,7 +62,69 @@ def _event_with_two_objects(manager, index):  # noqa: F811
         format="json",
     )
     assert imported.status_code == 200, imported.content
+    _populate_people(manager, event_id)
     return event_id
+
+
+def _populate_people(manager, event_id):  # noqa: F811
+    """Люди в строке: назначения, состав и раскладка (Plane №909).
+
+    🔴 БЕЗ ЭТОГО СТОРОЖ НЕ ДОХОДИЛ ДО САМЫХ ДОРОГИХ ПОЛЕЙ. Фикстура заводила
+    только объекты посещения и посты, а `placement_assignments`, `force_roster`
+    и `force_allocation` оставались пустыми — все три вьюхи начинаются с
+    `if not rows: return []`, то есть на пробе стояли ноль запросов и не
+    проверялись ВОВСЕ. Между тем именно там живут самые дорогие чтения строки:
+    справочник статусов и перекрытия дня спрашиваются на каждую группу людей.
+
+    Назначения ставятся ЧЕРЕЗ РУЧКУ — она же считает готовность, и подделка
+    поля мимо неё дала бы строку, которой система не производит. Состав и
+    раскладку кладём полями модели: их боевой путь идёт через сбор сил с
+    департаментами и правами, а к предмету сторожа (растут ли запросы вместе
+    со строками) он отношения не имеет — фикстура стала бы вдвое длиннее
+    самой пробы.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+    from organization_management.apps.ops.tests.test_ops_security_events_api import (
+        make_employee,
+    )
+
+    base = f"{URL}{event_id}/"
+    posts = manager.get(base).json()["reconSectorPosts"]
+    assigned = []
+    for post in posts[:2]:
+        employee = make_employee()
+        resp = manager.post(
+            base + "placement/assign/",
+            {"postId": post["id"], "employeeId": str(employee.pk)},
+            format="json",
+        )
+        assert resp.status_code == 200, resp.content
+        assigned.append(employee)
+    extra = [make_employee(), make_employee()]
+
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.force_roster = [
+        {
+            "id": f"roster-{employee.pk}",
+            "employeeId": str(employee.pk),
+            "employeeName": employee.last_name,
+            "divisionName": "",
+        }
+        for employee in assigned + extra
+    ]
+    event.force_allocation = [
+        {
+            "id": f"alloc-{event_id}",
+            "departmentId": "",
+            "departmentName": "Департамент пробы",
+            "need": 2,
+            "members": [
+                {"employeeId": str(employee.pk), "employeeName": employee.last_name}
+                for employee in extra
+            ],
+        }
+    ]
+    event.save(update_fields=["force_roster", "force_allocation", "updated_at"])
 
 
 def _queries_for_registry(manager):  # noqa: F811
@@ -79,6 +141,12 @@ def test_the_registry_does_not_add_queries_per_row(manager):  # noqa: F811
     Красная на мутации: верни `event.visit_objects.count()` внутрь
     `visit_object_posts` (или `order_by().first()` в `primary_visit_object`) —
     каждая новая строка снова начнёт стоить своих запросов.
+
+    🔴 СТРОКА ФИКСТУРЫ — ЖИВАЯ, А НЕ ПУСТАЯ (Plane №909). До этого в ней были
+    только объекты посещения и посты, а три самых дорогих поля —
+    `placement_assignments`, `force_roster`, `force_allocation` — оставались
+    пустыми. Все три вьюхи начинаются с `if not rows: return []`, то есть
+    сторож их не проверял вовсе и был бы зелёным при любом N+1 внутри них.
     """
     _event_with_two_objects(manager, 1)
     one, rows_one = _queries_for_registry(manager)
