@@ -71,6 +71,7 @@ import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { usePlacementRoles } from "@/hooks/use-placement-roles";
 import { usePlacementSections } from "@/hooks/use-placement-sections";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { remarkIsOpen } from "@/entities/security-event";
 import type {
   ApprovalRemark,
   PersonnelSummarySnapshot,
@@ -220,7 +221,7 @@ function ReturnedRemarksPanel({
 }) {
   if (remarks.length === 0) return null;
   const postById = new Map(posts.map((post) => [post.id, post]));
-  const open = remarks.filter((remark) => remark.status === "OPEN").length;
+  const open = remarks.filter(remarkIsOpen).length;
   return (
     <section
       className="rounded-md border border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/30"
@@ -415,7 +416,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   const remarksOfPost = (postId: string) =>
     objectRemarks.filter((remark) => remark.postId === postId);
   const openRemarksOf = (postId: string) =>
-    remarksOfPost(postId).filter((remark) => remark.status === "OPEN").length;
+    remarksOfPost(postId).filter(remarkIsOpen).length;
   // Клик по замечанию ПОДСВЕЧИВАЕТ пост: выбирает его (тот же путь, что клик
   // в дереве) и прокручивает дерево к нему. Прокрутка плавная, но уважает
   // `prefers-reduced-motion` — иначе человек с укачиванием получал бы рывок.

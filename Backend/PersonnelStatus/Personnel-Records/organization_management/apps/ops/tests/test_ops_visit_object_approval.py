@@ -877,6 +877,60 @@ def test_returning_clears_the_signature_of_the_one_who_signed(
     )
 
 
+def test_the_returner_loses_his_own_signature_too(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Подписал и сам же вернул — своя подпись тоже снята (Plane №583/№513).
+
+    🔴 ТРЕТИЙ ВХОД, НАЙДЕННЫЙ РЕВЬЮ №825. `decide_approver` не запрещает
+    решать по уже решённой строке: проверяется только `NOT_SENT`, а очередь
+    смотрит лишь предыдущие. Значит подписавший может нажать «Вернуть» —
+    двойным кликом, ретраем сети, из второй вкладки. Статус становился
+    `RETURNED`, а реквизиты подписи оставались: `_return_visit` чистит только
+    `APPROVED`/`PENDING` и до собственной строки возвращающего не доходит.
+    Получалась строка «Возвращено» с надписью «Согласовано … версия N · хэш».
+
+    Мутация, на которой проба обязана краснеть: убрать `target.pop("signature")`
+    из ветки не-`APPROVED` в `decide_approver`.
+    """
+    base, _, first, _, _ = two_objects_on_approval
+    # Согласующих ДВА нарочно: с одним подпись завершает этап, объект уходит
+    # на «Ознакомление», и №568 отбивает любое дальнейшее решение — случай
+    # был бы недостижим. С двумя объект остаётся на «Согласовании», и первый
+    # может передумать, пока второй не решил.
+    _add_approver(manager, base, first, name="Первый С.")
+    _add_approver(manager, base, first, name="Второй В.")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+
+    signed = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert signed.status_code == 200, signed.content
+    first.refresh_from_db()
+    assert first.approval_route[0].get("signature"), "предусловие: подпись записана"
+
+    # ТА ЖЕ строка решается второй раз — возвратом.
+    returned = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "RETURNED", "comment": "Передумал, поправьте пост 2",
+         "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert returned.status_code == 200, returned.content
+
+    first.refresh_from_db()
+    row = first.approval_route[0]
+    assert row["status"] == "RETURNED"
+    assert row.get("signature") is None, (
+        "строка «Возвращено» показывает реквизиты подписи под составом, "
+        "который её автор больше не согласовывает"
+    )
+
+
 def test_resending_clears_signatures_from_the_previous_round(
     manager, approver, two_objects_on_approval  # noqa: F811
 ):
@@ -1040,6 +1094,72 @@ def test_the_backfill_gives_old_remarks_the_new_shape():
     assert backfill._fill(old_done)["respondedAt"] == "2026-01-01T00:00:00"
     # Строку новой формы бэкфилл не трогает вовсе.
     assert backfill._fill(new_row) is None
+
+
+def test_a_backfilled_remark_can_actually_be_closed(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Дополненное замечание ЗАКРЫВАЕТСЯ ручкой, а не запирает объект (№502).
+
+    🔴 ПРЕДЫДУЩАЯ ПОЛОВИНА ПРАВКИ СДЕЛАЛА ХУЖЕ ИСХОДНОГО ДЕФЕКТА (найдено
+    ревью №825). `0095` дала старому замечанию `status`, и оно начало честно
+    держать этап — то, чего требовала карточка. Но `id` она не дала, а
+    `_resolve_remark` ищет строку ИМЕННО по нему. Экран после №503 рисует
+    такому замечанию кнопки «Устранено» и «Не согласен», они шлют
+    `remarkId = undefined`, адрес собирается как
+    `…/approval/remarks/undefined/resolve/`, сервер отвечает 404 — и объект не
+    сдвинуть ничем, кроме админского обхода этапа.
+
+    Было: замечание МОЛЧА пропускало этап. Стало бы: заперло его насмерть.
+
+    Проба идёт ЧЕРЕЗ РУЧКУ, а не через функцию бэкфилла: предмет — «человек
+    может закрыть это замечание», а не «в словаре появился ключ». Обе
+    миграции зовутся напрямую с боевым реестром — они меняют только данные, и
+    исторические модели тождественны нынешним (тот же приём, что в
+    `test_ops_actor_signature_backfill`).
+
+    Красная на мутации: убрать проставление `id` в `forwards` миграции 0099 —
+    ручка ответит 404, и объект останется заперт.
+    """
+    from importlib import import_module
+
+    from django.apps import apps as django_apps
+
+    base, _, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first)
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    first.approval_remarks = [
+        {"text": "Замечание старой формы", "resolved": False, "resolvedAt": None}
+    ]
+    first.save(update_fields=["approval_remarks"])
+
+    for name in (
+        "0095_backfill_approval_remark_status",
+        "0099_backfill_approval_remark_id",
+    ):
+        import_module(
+            f"organization_management.apps.operations.migrations.{name}"
+        ).forwards(django_apps, None)
+
+    first.refresh_from_db()
+    remark = first.approval_remarks[0]
+    assert remark["status"] == "OPEN", "бэкфилл статуса не отработал — проверять нечего"
+    assert str(remark.get("id") or "").strip(), (
+        "у дополненного замечания нет идентификатора — закрыть его нечем"
+    )
+
+    closed = manager.post(
+        f"{base}approval/remarks/{remark['id']}/resolve/",
+        {"decision": "RESOLVED", "response": "поправили", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+
+    assert closed.status_code == 200, closed.content
+    first.refresh_from_db()
+    assert first.approval_remarks[0]["status"] == "RESOLVED", (
+        "замечание не закрылось — объект заперт бэкфиллом"
+    )
 
 
 def test_the_event_carries_the_latest_return_reason_not_the_lowest_object(

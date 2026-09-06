@@ -148,14 +148,24 @@ test.describe('«Прочитать все» и сервер (Plane №566)', ()
     const NEWEST = '2026-09-05T10:00:00Z'
     let feedReads = 0
     let readAllBody: string | null = null
+    let legacyBody: string | null = null
 
     await page.route('**/api/notifications/notifications/unread/', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
     )
-    // Легаси-нога ОТКАЗЫВАЕТ — тот самый половинчатый исход.
-    await page.route('**/api/notifications/notifications/mark_all_read/', (route) =>
-      route.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"boom"}' })
-    )
+    // Легаси-нога ОТКАЗЫВАЕТ — тот самый половинчатый исход. Но тело её
+    // запроса СНИМАЕТСЯ (Plane №784, доводка по ревью №825): граница обязана
+    // уходить в ОБЕ ленты. Пока читалось только тело ноги ОМ, откат клиента к
+    // `{ method: "POST" }` без тела проходил весь гейт зелёным, а дефект №784
+    // возвращался наполовину — сервер границу принимает, клиент не шлёт.
+    await page.route('**/api/notifications/notifications/mark_all_read/', (route) => {
+      legacyBody = route.request().postData()
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: '{"detail":"boom"}',
+      })
+    })
     await page.route('**/api/operations/notifications/**', async (route) => {
       const url = route.request().url()
       if (url.includes('read-all')) {
@@ -208,6 +218,9 @@ test.describe('«Прочитать все» и сервер (Plane №566)', ()
     // 1. Граница ушла на сервер и равна моменту САМОЙ СВЕЖЕЙ показанной строки.
     await expect.poll(() => readAllBody, { timeout: 15_000 }).not.toBeNull()
     expect(JSON.parse(readAllBody ?? '{}')).toEqual({ until: NEWEST })
+    // И ТА ЖЕ граница — в старую ленту: обе половины кнопки одинаковы.
+    await expect.poll(() => legacyBody, { timeout: 15_000 }).not.toBeNull()
+    expect(JSON.parse(legacyBody ?? '{}')).toEqual({ until: NEWEST })
     // 2. Список перечитан, хотя легаси-нога ответила 500: половина операции
     //    закоммитилась, и экран обязан узнать об этом, а не ждать staleTime.
     await expect.poll(() => feedReads, { timeout: 15_000 }).toBeGreaterThan(readsBefore)

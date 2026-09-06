@@ -61,6 +61,7 @@ import {
   SECURITY_EVENT_STAGES,
   STAGE_LABEL,
   StageBadge,
+  remarkIsOpen,
 } from "@/entities/security-event";
 import type {
   ListSecurityEventsParams,
@@ -1178,11 +1179,11 @@ function VisitObjectList({
                   data-slot="visit-returned-badge"
                 >
                   Возвращено · {remarksLabel(
-                    visit.approvalRemarks.filter((r) => r.status === "OPEN").length
+                    visit.approvalRemarks.filter(remarkIsOpen).length
                   )}
                 </span>
               )}
-              {visit.approvalRemarks.some((r) => r.status === "OPEN" && r.urgent) && (
+              {visit.approvalRemarks.some((r) => remarkIsOpen(r) && r.urgent) && (
                 <span
                   className="inline-flex whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[10.5px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-200"
                   data-slot="visit-urgent-badge"

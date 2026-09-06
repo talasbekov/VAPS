@@ -46,6 +46,7 @@ import {
   useSendForApproval,
   useWithdrawApproval,
 } from "@/hooks/use-security-event-stages";
+import { remarkStatusOf } from "@/entities/security-event";
 import type {
   ApprovalRemark,
   SecurityEvent,
@@ -395,25 +396,13 @@ const REMARK_STATUS_CLASS: Record<ApprovalRemark["status"], string> = {
 /**
  * Состояние замечания, ПОНЯТНОЕ даже у строки старой формы (Plane №503).
  *
- * 🔴 ЧТО БЫЛО НЕ ТАК. До №386 у замечания было булево `resolved`, а не
- * тройственный `status`; миграции с бэкфиллом тогда не завели (её пишет
- * №502), и такие строки приходили без `status` вовсе. Тогда
- * `REMARK_STATUS_CLASS[remark.status]` и `REMARK_STATUS_LABEL[remark.status]`
- * давали `undefined`: плашка теряла оформление — `className` буквально
- * оканчивался словом «undefined», — и оставалась БЕЗ ПОДПИСИ. Человек видел
- * серую пустую плашку и не мог понять, открыто замечание или закрыто.
- *
- * Данные чинит миграция, но экран обязан пережить старую строку сам: базу
- * поднимают из дампов, а «сломанная плашка» — худший из ответов, потому что
- * она не сообщает даже о том, что чего-то не знает.
+ * 🔴 ПРАВИЛО ПЕРЕЕХАЛО В СУЩНОСТЬ (ревью №825). Оно жило здесь — и потому
+ * знал его один экран из четырёх: реестр ОМ и «Расстановка» сравнивали сырой
+ * `status` с `"OPEN"` и на старой строке показывали «Возвращено · 0
+ * замечаний» и «0 без ответа». Разбор — в `entities/security-event`, здесь
+ * оставлен ре-экспорт: его читает проба `e2e/approval-remarks-shape.spec.ts`.
  */
-export function remarkStatusOf(remark: ApprovalRemark): ApprovalRemark["status"] {
-  if (remark.status === undefined || remark.status === null) {
-    // Прежний смысл: не устранено — значит открыто.
-    return (remark as { resolved?: boolean }).resolved ? "RESOLVED" : "OPEN";
-  }
-  return remark.status in REMARK_STATUS_LABEL ? remark.status : "OPEN";
-}
+export { remarkStatusOf };
 
 const VISIT_APPROVAL_LABEL: Record<SecurityEvent["approvalStatus"], string> = {
   PENDING: "ожидает",

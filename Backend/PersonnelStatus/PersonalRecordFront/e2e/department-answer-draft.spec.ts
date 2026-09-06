@@ -62,7 +62,9 @@ interface Division {
  * №530) — с выдуманным департаментом кнопки «Сохранить раскладку» не было бы
  * вовсе, и проба щёлкала бы в пустоту.
  */
-async function realDepartmentWithDirectorates(token: string): Promise<string> {
+async function realDepartmentWithDirectorates(
+  token: string,
+): Promise<{ departmentId: string; directorateId: string; directorateName: string }> {
   const res = await fetch(`${API}/api/core/divisions/?page_size=200`, {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -74,7 +76,14 @@ async function realDepartmentWithDirectorates(token: string): Promise<string> {
       active.some((child) => child.parent === row.id && child.type_code === 'directorate'),
   )
   expect(department, 'на стенде нет департамента с действующими управлениями').toBeDefined()
-  return String((department as Division).id)
+  const directorate = active.find(
+    (row) => row.parent === (department as Division).id && row.type_code === 'directorate',
+  ) as Division
+  return {
+    departmentId: String((department as Division).id),
+    directorateId: String(directorate.id),
+    directorateName: directorate.name,
+  }
 }
 
 test.describe(
@@ -84,7 +93,7 @@ test.describe(
 
     test('«Сохранить раскладку» не стирает набранное «Выделяем»', async ({ page }) => {
       const token = await apiToken()
-      const departmentId = await realDepartmentWithDirectorates(token)
+      const { departmentId } = await realDepartmentWithDirectorates(token)
       await signIn(page)
 
       // Раскладка сохранена — сервер вернул бы ДРУГИЕ `directorates`.
@@ -198,6 +207,126 @@ test.describe(
       await expect(comment, 'набранный комментарий откатился к серверному').toHaveValue(
         'людей не хватает',
       )
+    })
+
+    test('«Сохранить ответ» не стирает набранные КВОТЫ', async ({ page }) => {
+      /**
+       * 🔴 ВТОРАЯ ПОЛОВИНА ТОГО ЖЕ КЛАССА (доводка по ревью №825). Соседний
+       * эффект той же карточки наполнял черновик квот и стоял на
+       * `[directorateRows]` — на идентичности массива. Путь «Отправить в
+       * управления» залатан обходом (`splitDirty` + «кнопка диалога сперва
+       * зовёт save()»), а путь «набрал квоты → нажал „Сохранить ответ“»
+       * держался ТОЛЬКО на `structuralSharing`: `respond` меняет `allocating`,
+       * а ссылка на `directorates` уцелевает. Основание ненадёжное — сама
+       * №555 объявила его таким.
+       *
+       * Здесь `directorates` НЕ МЕНЯЮТСЯ, а тело ответа меняется (`allocating`
+       * стал `3`) — значит `structuralSharing` отдаёт новый объект, и старый
+       * код черновик квот сбрасывал. Красная на мутации: вернуть эффекту
+       * зависимость `[directorateRows]`.
+       */
+      const token = await apiToken()
+      const { departmentId, directorateId, directorateName } =
+        await realDepartmentWithDirectorates(token)
+      await signIn(page)
+
+      let answered = false
+      const listRow = {
+        eventId: EVENT_ID,
+        code: CODE,
+        title: 'Синтетическое мероприятие 555',
+        businessDate: '2026-09-10',
+        eventTime: null,
+        location: 'Синт. адрес',
+        stage: 'PLACEMENT',
+        allocationId: ALLOCATION_ID,
+        departmentId,
+        departmentName: 'Синт. департамент 555',
+        need: 5,
+        allocating: null,
+        assigned: 0,
+        status: 'DRAFT',
+        dueAt: null,
+        overdue: false,
+        submittedLate: false,
+      }
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/requests/'),
+        (route) => route.fulfill({ json: { results: [listRow] } }),
+      )
+      await page.route(
+        (url) => url.pathname.endsWith(`/forces/requests/${ALLOCATION_ID}/`),
+        (route) =>
+          route.fulfill({
+            json: {
+              eventId: EVENT_ID,
+              code: CODE,
+              title: 'Синтетическое мероприятие 555',
+              businessDate: '2026-09-10',
+              eventTime: null,
+              location: 'Синт. адрес',
+              stage: 'PLACEMENT',
+              allocation: {
+                id: ALLOCATION_ID,
+                departmentId,
+                departmentName: 'Синт. департамент 555',
+                need: 5,
+                status: 'DRAFT',
+                comment: '',
+                // Меняется ТОЛЬКО ответ: раскладка та же и до, и после.
+                allocating: answered ? 3 : null,
+                answerComment: answered ? 'людей не хватает' : '',
+                notifiedAt: null,
+                submittedAt: null,
+                decidedAt: null,
+                decisionComment: '',
+                directorates: [
+                  {
+                    id: 'force-directorate-555b',
+                    divisionId: directorateId,
+                    name: directorateName,
+                    need: 1,
+                    assigned: 0,
+                    notifiedAt: null,
+                  },
+                ],
+                members: [],
+              },
+            },
+          }),
+      )
+      await page.route(
+        (url) => url.pathname.endsWith(`/forces/allocation/${ALLOCATION_ID}/respond/`),
+        (route) => {
+          answered = true
+          return route.fulfill({ json: {} })
+        },
+      )
+
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+      await page.getByRole('button', { name: new RegExp(`^Открыть заявку ${CODE} `) }).click()
+
+      const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+      const quota = splitSection.locator('input[id^="quota-"]').first()
+      await expect(quota).toBeVisible({ timeout: 15_000 })
+      // Набрано ОТЛИЧНОЕ от серверного: иначе откат был бы неотличим.
+      await quota.fill('4')
+
+      const answerSection = page.locator('section[aria-labelledby="answer-heading"]')
+      await answerSection.locator('#answer-allocating').fill('3')
+      await answerSection.locator('#answer-comment').fill('людей не хватает')
+      await answerSection.getByRole('button', { name: 'Сохранить ответ' }).click()
+
+      // Ждём сам рефетч: без него проба проверяла бы состояние ДО отката.
+      await expect(
+        answerSection.locator('#answer-comment'),
+        'подменённая ручка не отдала сохранённый ответ — проверять нечего',
+      ).toHaveValue('людей не хватает', { timeout: 15_000 })
+
+      await expect(quota, 'набранная квота откатилась к серверной').toHaveValue('4')
     })
   },
 )
