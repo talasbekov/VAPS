@@ -28,4 +28,9 @@ COPY . /app/
 # Collect static files
 RUN python manage.py collectstatic --noinput
 
-CMD ["gunicorn", "organization_management.config.wsgi:application", "--bind", "0.0.0.0:8000"]
+# 🔴 ASGI, А НЕ WSGI (Plane №830). `config.wsgi:application` веб-сокет не
+# обслуживает никак: маршрут `/ws/...` и слой каналов существовали, но запрос
+# до ASGI-приложения не доходил. Воркер uvicorn даёт протокол, gunicorn
+# остаётся управлять процессами.
+CMD ["gunicorn", "organization_management.config.asgi:application", \
+     "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]

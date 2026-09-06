@@ -126,3 +126,9 @@ websockets==17.1
 # `-p no:asyncio` → 3 failed; с плагином → 3 passed). Соседи по инструменту
 # (`pytest`, `pytest-django`) закреплены здесь же.
 pytest-asyncio==1.4.0
+
+# Боевой ASGI-запуск (Plane №830): `gunicorn` держит процессы, воркер uvicorn
+# даёт протокол. Версия снята разрешателем (`pip download gunicorn --no-deps`),
+# а не придумана; обязательных зависимостей у пакета нет — всё прочее у него в
+# `extra`, и тянуть их незачем.
+gunicorn==26.2.0
