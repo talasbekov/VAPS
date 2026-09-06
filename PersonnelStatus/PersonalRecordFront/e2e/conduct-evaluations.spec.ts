@@ -214,9 +214,13 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
    *
    * Красная до правки: строки нет вовсе, у кнопки стоит `title`.
    */
-  test('причина отказа у «Закрыть объект» видна, а не спрятана в title (Plane №777)', async ({
+  test('причина отказа у кнопок закрытия видна, а не спрятана в title (Plane №777)', async ({
     page,
   }) => {
+    // Формулировка причины — ОДНОЙ константой на всю пробу: она же приходит
+    // из `chain-access.ts`, и правка текста там не должна требовать четырёх
+    // правок здесь.
+    const RIGHT_REASON = 'Переводит этапы и закрывает мероприятие ведущий ОМ или штаб'
     const token = await apiToken()
     const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
     const registry = (await (
@@ -252,18 +256,43 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     await expect(
       hint,
       'выключенная кнопка не объясняет, чьё это действие',
-    ).toHaveText('Переводит этапы и закрывает мероприятие ведущий ОМ или штаб')
+    ).toHaveText(RIGHT_REASON)
 
     // Связь кнопки с подписью — не украшение: у читалки другого пути к ней нет.
     const describedBy = await button.getAttribute('aria-describedby')
     expect(describedBy, 'кнопка не связана с подписью через aria-describedby').not.toBeNull()
-    await expect(page.locator(`#${describedBy}`)).toHaveText(
-      'Переводит этапы и закрывает мероприятие ведущий ОМ или штаб',
-    )
+    await expect(page.locator(`#${describedBy}`)).toHaveText(RIGHT_REASON)
 
     expect(
       await button.getAttribute('title'),
       'title вернулся на выключенную кнопку — подсказка снова мертва',
+    ).toBeNull()
+
+    // 🔴 ВТОРАЯ КНОПКА ТОГО ЖЕ КОММИТА (доводка по ревью №825). №777 правил
+    // ДВЕ кнопки — «Закрыть объект» и «Закрыть мероприятие», — а проба
+    // проверяла первую. Снять подпись у второй можно было молча: сторож
+    // `right-hint-pattern` ловит только ВОЗВРАТ `title`, а не пропажу видимой
+    // строки. Обе панели рисуются на «Проведении» одновременно, так что
+    // отдельного захода это не стоит.
+    const closeEvent = page.getByRole('button', { name: 'Закрыть мероприятие' })
+    await expect(closeEvent).toBeVisible()
+    await expect(
+      closeEvent,
+      'кнопка закрытия мероприятия открыта тому, у кого нет права',
+    ).toBeDisabled()
+    await expect(
+      page.locator('[data-slot="close-event-locked"]'),
+      'выключенная кнопка закрытия мероприятия не объясняет, чьё это действие',
+    ).toHaveText(RIGHT_REASON)
+    const eventDescribedBy = await closeEvent.getAttribute('aria-describedby')
+    expect(
+      eventDescribedBy,
+      'кнопка закрытия мероприятия не связана с подписью через aria-describedby',
+    ).not.toBeNull()
+    await expect(page.locator(`#${eventDescribedBy}`)).toHaveText(RIGHT_REASON)
+    expect(
+      await closeEvent.getAttribute('title'),
+      'title вернулся на кнопку закрытия мероприятия — подсказка снова мертва',
     ).toBeNull()
   })
 })
