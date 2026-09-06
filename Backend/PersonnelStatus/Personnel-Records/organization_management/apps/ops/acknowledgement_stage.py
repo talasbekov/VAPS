@@ -14,6 +14,7 @@ from organization_management.apps.ops.acknowledgement_notify import (
     KIND,
     _division_of,
     _employee_users,
+    dismissed_employees,
     _supervisor_users,
 )
 from organization_management.apps.ops.security_events import (
@@ -76,7 +77,12 @@ def _send(event, assignments):
     supervisors = _supervisor_users(set(divisions.values()))
     payload = _payload(event)
     sent, unlinked = set(), []
+    # Уволенному не напоминают (Plane №900) — и он не «тот, до кого не дошло»:
+    # см. `dismissed_employees`.
+    dismissed = set(dismissed_employees(employee_ids))
     for employee_id in employee_ids:
+        if employee_id in dismissed:
+            continue
         user_id = users.get(employee_id)
         if user_id is None:
             unlinked.append(employee_id)
@@ -97,6 +103,7 @@ def _send(event, assignments):
         "employees": len(sent),
         "supervisors": len(supervisors - sent),
         "unlinkedEmployeeIds": unlinked,
+        "dismissedEmployeeIds": sorted(dismissed),
         "remindedAssignmentIds": [str(a.get("id")) for a in assignments],
     }
 

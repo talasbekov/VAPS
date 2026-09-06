@@ -366,6 +366,43 @@ def test_mine_without_employee_link_answers_reason(planner):
     assert "не связана с кадровой" in resp.json()["unlinkedReason"]
 
 
+def test_mine_hides_the_shifts_of_a_dismissed_person(planner):
+    """Уволенный не читает даже СВОИ смены (Plane №900).
+
+    🔴 УЧЁТКА ЖИВЁТ ДОЛЬШЕ КАДРОВОЙ ЗАПИСИ. Увольнение снимает человека с
+    наряда, но учётную запись гасят отдельным действием и часто позже — а
+    иногда не гасят вовсе. В этой щели уволенный продолжал открывать «Мой
+    календарь» и видеть объект, дату, паспортную привязку и примечание смены,
+    то есть сведения о наряде, к которому больше не имеет отношения. Тот же
+    класс закрыт для назначений ОМ карточкой №596.
+
+    ПРИЧИНА — СВОЯ, а не «учётка не связана с кадровой»: связь-то цела, и
+    прежний текст сказал бы уволенному неправду о его учётке, а поддержку
+    отправил бы искать поломку привязки.
+
+    Ответ 200, а не 403: у человека законная учётка и законный экран, отказ по
+    праву читался бы как поломка доступа.
+
+    КРАСНАЯ ПРОБА: убери `if not employee.is_active` в `duty-shifts/mine` —
+    смены уволенного возвращаются в ответ.
+    """
+    obj = make_object()
+    employee = make_employee(last_name="Уволенов")
+    assert create_shift(planner, obj, employee, "2026-08-17").status_code == 201
+
+    api, user = client_for("duty-dismissed")
+    employee.user = user
+    employee.is_active = False
+    employee.save(update_fields=["user", "is_active"])
+
+    resp = api.get(SHIFTS + "mine/")
+
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["results"] == [], "уволенный читает свои смены дежурств"
+    assert "уволен" in body["unlinkedReason"], body["unlinkedReason"]
+
+
 def test_mine_open_to_duty_view_holder(viewer):
     """Держатель `duty.view` ручку не теряет: у него та же ручка о себе."""
     resp = viewer.get(SHIFTS + "mine/")

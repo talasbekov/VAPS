@@ -894,3 +894,80 @@ test.describe(LIVE ? 'ознакомление: этап мероприятия 
     await expect(page.getByRole('button', { name: /^Напомнить: / }).first()).toBeEnabled()
   })
 })
+
+/**
+ * Отчёт напоминания: три исхода, и желтит только тот, который чинят
+ * (Plane №900).
+ *
+ * 🔴 СВОЁ ОПИСАНИЕ С `serviceWorkers: 'block'` — по той же причине, что у
+ * соседнего блока выше: без него `page.route` не перехватывает запрос, ушедший
+ * через service worker MSW, и подделать состав отчёта нельзя.
+ *
+ * Состояние подделывается ПЕРЕХВАТОМ ОТВЕТА, а не увольнением человека на
+ * стенде: уволить назначенного значило бы оставить на общем стенде расстановку
+ * с уволенным, и следующая проба нашла бы её первой. Предмет здесь — ПОДАЧА
+ * трёх исходов, а не серверный отбор; отбор стерегут пробы бэкенда.
+ */
+test.describe(
+  LIVE ? 'ознакомление: отчёт напоминания' : 'ознакомление: отчёт напоминания (скип)',
+  () => {
+    test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+    test.use({ serviceWorkers: 'block' })
+
+    test('пропущенные уволенные не желтят плашку и названы отдельно (Plane №900)', async ({
+      page,
+    }) => {
+      /**
+       * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. У рассылки три исхода, и два из них — не ошибки.
+       * «Нет учётки» зовёт кадровика её завести; «уволен» не зовёт никого —
+       * человека в наряде уже нет, чинить нечего. Пока обе строки лежали в
+       * одной жёлтой плашке (а до №900 уволенные вообще считались «не
+       * дошло»), старший шёл разбираться с тем, что работает как задумано, и
+       * каждый такой разбор кончался ничем.
+       *
+       * Мутация, на которой проба обязана краснеть: желтить плашку по
+       * `dismissedEmployeeIds` наравне с `unlinkedEmployeeIds` — или вернуть
+       * уволенных в строку «Не дошло до N».
+       */
+      const token = await apiToken()
+      // Своя фикстура безусловно (Plane №822 Ш-2): проба нажимает
+      // «Напомнить всем», то есть ПРАВИТ состояние.
+      const businessDate = uniqueBusinessDate()
+      const code = await prepareEvent(token, { businessDate })
+      const event = (await events(token)).find((e) => e.code === code)
+      expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+
+      await page.route(
+        new RegExp(`/api/ops/security-events/${event!.id}/acknowledgement/remind-all/$`),
+        async (route) => {
+          const response = await route.fetch()
+          const body = await response.json()
+          // Исход, ради которого проба заведена: слать было некому только
+          // потому, что двое уволены. Чинить нечего.
+          body.unlinkedEmployeeIds = []
+          body.dismissedEmployeeIds = ['1', '2']
+          await route.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+      const card = page.locator('[data-slot="card"]', {
+        has: page.locator('[data-slot="card-title"]', { hasText: 'Ознакомление' }),
+      })
+      await expect(card).toBeVisible({ timeout: 15_000 })
+      await card.getByRole('button', { name: /Напомнить всем/ }).click()
+
+      const report = card.getByTestId('remind-report')
+      await expect(report).toBeVisible({ timeout: 15_000 })
+      // Названы СВОИМИ словами, с ответом «делать ничего не надо».
+      await expect(report).toContainText('Пропущено 2')
+      await expect(report).toContainText('уволены')
+      // И НЕ названы «теми, до кого не дошло»: это разные вопросы.
+      await expect(report).not.toContainText('Не дошло')
+      // Цвет тревоги — только там, где есть починка. Различие несёт и текст
+      // (правило «не цветом одним»), но плашка не должна звать зря.
+      await expect(report).not.toHaveClass(/bg-amber-50/)
+    })
+  },
+)

@@ -7210,7 +7210,13 @@ def _return_visit(event, visit, comment, *, actor="system:approval-return"):
     # честную цифру было негде, и разбор «старший не узнал о возврате»
     # упирался в пустоту. У соседней рассылки запроса сил отчёт лежит в
     # аудите — здесь то же место.
-    delivery = {"notified": 0, "unlinked": [], "undelivered": [], "nobody": True}
+    delivery = {
+        "notified": 0,
+        "unlinked": [],
+        "undelivered": [],
+        "dismissed": [],
+        "nobody": True,
+    }
     try:
         from organization_management.apps.ops.placement_return_notify import (
             notify_placement_returned,
@@ -7246,6 +7252,10 @@ def _return_visit(event, visit, comment, *, actor="system:approval-return"):
             "notified": delivery.get("notified", 0),
             "unlinked": delivery.get("unlinked", []),
             "undelivered": delivery.get("undelivered", []),
+            # Уволенные — своей графой (Plane №900): без неё они лежали бы в
+            # `unlinked`, и журнал звал бы заводить учётку тому, кого в наряде
+            # уже нет.
+            "dismissed": delivery.get("dismissed", []),
             # «Некому было слать» и «рассылка отказала» — разные беды: первая
             # значит, что у объекта нет ни старшего, ни замещающих, вторая —
             # что вызов упал. Без этих двух ключей запись у обеих одинакова.

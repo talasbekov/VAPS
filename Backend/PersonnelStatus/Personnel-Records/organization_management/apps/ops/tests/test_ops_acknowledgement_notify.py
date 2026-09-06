@@ -127,6 +127,48 @@ def test_a_person_without_an_account_is_named_and_not_swallowed(event_with_peopl
     assert report["unlinkedEmployeeIds"] == [str(unlinked.pk)]
 
 
+def test_a_dismissed_person_gets_no_notification(event_with_people):
+    """Уволенному «заступаешь на ОМ» не уходит (Plane №900).
+
+    ЧТО СТЕРЕГУТ ЭТИ ДВЕ ПРОВЕРКИ. Учётка живёт дольше кадровой записи, и без
+    фильтра `is_active` уволенный ПОЛУЧАЛ уведомление с кодом, названием,
+    датой и именем объекта. Это хуже соседнего случая с чтением смен: там надо
+    было зайти и открыть экран, а уведомление приходит само.
+
+    🔴 ВТОРАЯ ПОЛОВИНА — ЧТО УВОЛЕННЫЙ НЕ ПРЕВРАЩАЕТСЯ В «КОМУ НЕ ДОШЛО».
+    Список `unlinkedEmployeeIds` отвечает на вопрос «кому надо было, но
+    некуда»; уволенный туда не относится — ему не надо. Свалить их в одну
+    строку значило бы каждый раз звать разбираться с человеком, которого в
+    наряде уже нет.
+
+    КРАСНАЯ ПРОБА: убери ветку `if employee_id in dismissed` — уволенный
+    падает в «кому не дошло», и вторая проверка краснеет. Отсечение стоит
+    ИМЕННО там, а не только в `_employee_users`: фильтр помощника закрывает
+    доставку у всех четырёх рассылок ОМ, но на форму отчёта не влияет.
+    """
+    event, account, _boss, _unlinked = event_with_people
+    from organization_management.apps.employees.models import Employee
+
+    employee = Employee.objects.get(user=account)
+    employee.is_active = False
+    employee.save(update_fields=["is_active"])
+
+    report = notify_acknowledgement(event.pk)
+
+    recipients = set(
+        OpsNotification.objects.filter(kind=KIND).values_list("recipient", flat=True)
+    )
+    assert str(account.pk) not in recipients, (
+        "уволенный получил уведомление о наряде, к которому не имеет отношения"
+    )
+    assert str(employee.pk) not in report["unlinkedEmployeeIds"], (
+        "уволенный попал в «кому не дошло» — это другой вопрос: ему не надо"
+    )
+    # Но и не потерян молча: отчёт обязан объяснить, почему уведомлений
+    # меньше, чем назначенных, — иначе числа не сойдутся с расстановкой.
+    assert report["dismissedEmployeeIds"] == [str(employee.pk)], report
+
+
 def test_the_notification_carries_the_event_it_is_about(event_with_people):
     """В уведомлении назван КОД мероприятия.
 

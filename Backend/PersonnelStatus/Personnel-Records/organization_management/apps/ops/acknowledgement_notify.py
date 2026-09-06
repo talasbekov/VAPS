@@ -36,7 +36,20 @@ KIND = "EVENT_ACKNOWLEDGEMENT"
 
 
 def _employee_users(employee_ids):
-    """Учётки сотрудников: {employee_id → user_id} (только связанные)."""
+    """Учётки сотрудников: {employee_id → user_id} (только связанные).
+
+    Отвечает РОВНО на один вопрос — «у кого есть учётка», и уволенных не
+    отсеивает. Отсечение стоит у каждой рассылки отдельно, через
+    `dismissed_employees`, и вот почему: здесь оно закрыло бы доставку, но
+    уволенный тогда попадал бы в графу «нет учётки» — то есть отчёт звал бы
+    кадровика чинить связь, которая цела. Один фильтр в двух ролях врал бы
+    в отчёте у всех четырёх рассылок сразу.
+
+    Так и было сделано сперва (Plane №900), и мутация показала, что фильтр
+    здесь МЁРТВ: все четыре читателя отбрасывают уволенных раньше, чем
+    заглянут в этот словарь. Мёртвый рубеж хуже отсутствующего — он выглядит
+    защитой и не стережётся ни одной пробой.
+    """
     from organization_management.apps.employees.models import Employee
 
     return {
@@ -45,6 +58,28 @@ def _employee_users(employee_ids):
             id__in=employee_ids, user__isnull=False
         ).values("id", "user_id")
     }
+
+
+def dismissed_employees(employee_ids):
+    """Уволенные среди назначенных — списком (Plane №900).
+
+    🔴 ЗАЧЕМ ОТДЕЛЬНО ОТ «КОМУ НЕ ДОШЛО». `unlinkedEmployeeIds` отвечает на
+    вопрос «кому надо было, но некуда»: у человека нет учётки, связь
+    заполняется руками, и это чинится. Уволенный туда не относится — ему НЕ
+    НАДО. Сваленные в одну строку, они звали бы разбираться с человеком,
+    которого в наряде уже нет, и каждый такой разбор кончался бы ничем.
+
+    Молча выбрасывать их тоже нельзя: в расстановке они остались, и отчёт
+    обязан объяснить, почему уведомлений меньше, чем назначенных.
+    """
+    from organization_management.apps.employees.models import Employee
+
+    return sorted(
+        str(row["id"])
+        for row in Employee.objects.filter(
+            id__in=employee_ids, is_active=False
+        ).values("id")
+    )
 
 
 def _division_of(employee_ids):
@@ -197,7 +232,12 @@ def notify_acknowledgement(event_id, *, visit=None):
     # Объект не назван — прежний ключ «одно на день».
     dedupe_key = str(visit.pk) if visit is not None else ""
     sent, unlinked = set(), []
+    dismissed = set(dismissed_employees(employee_ids))
     for employee_id in employee_ids:
+        # Уволенный не получает и в «кому не дошло» не попадает —
+        # см. `dismissed_employees`.
+        if employee_id in dismissed:
+            continue
         user_id = users.get(employee_id)
         if user_id is None:
             unlinked.append(employee_id)
@@ -226,4 +266,8 @@ def notify_acknowledgement(event_id, *, visit=None):
         # Поимённо, а не числом: «двоим не дошло» не говорит, кому именно, и
         # чинить это некому.
         "unlinkedEmployeeIds": unlinked,
+        # Уволенные — СВОЕЙ строкой (Plane №900): им уведомление не идёт, и
+        # это не «не дошло», а «не надо». Отчёт при этом обязан объяснить, куда
+        # делись назначенные, — иначе числа не сойдутся с расстановкой.
+        "dismissedEmployeeIds": sorted(dismissed),
     }

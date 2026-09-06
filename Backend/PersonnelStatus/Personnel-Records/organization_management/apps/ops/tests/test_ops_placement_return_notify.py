@@ -157,6 +157,47 @@ def test_an_unlinked_chief_does_not_break_the_return(manager, approver):  # noqa
     assert report["unlinked"] == [visit.chief_name]
 
 
+def test_a_dismissed_chief_is_counted_apart_from_the_unlinked(
+    manager, approver, django_user_model  # noqa: F811
+):
+    """Уволенный старший объекта — СВОЯ графа отчёта (Plane №900).
+
+    Учётка живёт дольше кадровой записи. Без отсечения уволенный старший
+    получал «расстановка возвращена: N замечаний» с именем объекта, а с одним
+    лишь фильтром доставки он попадал в `unlinked` — то есть журнал звал
+    кадровика заводить учётную запись человеку, у которого она есть и который
+    в наряде уже не значится. Графы этого отчёта делятся по ПОЧИНКЕ, и у
+    уволенного починки нет.
+
+    КРАСНАЯ ПРОБА: убери ветку `if employee_id in dismissed` — строка уедет в
+    `unlinked`, и обе проверки ниже покраснеют.
+    """
+    base, event_id, visit = _event_sent(manager)
+    chief = make_employee(last_name="Уволенов")
+    account = _link(django_user_model, chief, "chief-dismissed")
+    manager.post(
+        f"{base}visit-objects/{visit.pk}/chief/",
+        {"employeeId": str(chief.pk)},
+        format="json",
+    )
+    chief.is_active = False
+    chief.save(update_fields=["is_active"])
+
+    event = service.lock_event(event_id)
+    visit.refresh_from_db()
+    report = notify_placement_returned(
+        event, visit, comment="переделать", remarks_open=1, urgent=False
+    )
+
+    assert report["dismissed"] == [visit.chief_name], report
+    assert report["unlinked"] == [], (
+        "уволенный назван «без учётки» — кадровик пойдёт чинить несуществующее"
+    )
+    assert not OpsNotification.objects.filter(
+        kind=KIND, recipient=str(account.pk)
+    ).exists(), "уволенный получил уведомление о возврате чужой расстановки"
+
+
 def test_the_route_is_reset_and_the_return_reason_survives(manager, approver):  # noqa: F811
     """`[ВОЗ-03]`: «маршрут обнуляется, все подписи сняты». Комментарий
     вернувшего остаётся — он объясняет, что чинили (`send_for_approval` его

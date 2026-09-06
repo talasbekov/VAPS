@@ -23,7 +23,10 @@
 `my_assignments.py` незачем.
 """
 from organization_management.apps.operations import notify_service
-from organization_management.apps.ops.acknowledgement_notify import _employee_users
+from organization_management.apps.ops.acknowledgement_notify import (
+    _employee_users,
+    dismissed_employees,
+)
 from organization_management.apps.ops.security_events import _visit_of_post
 
 KIND = "ASSIGNMENT_DECLINED"
@@ -75,9 +78,16 @@ def notify_assignment_declined(event, assignment, *, reason):
             event.chief_name or str(event.chief_employee_id),
         )
     if not employee_ids:
-        return {"notified": 0, "unlinked": [], "undelivered": [], "nobody": True}
+        return {
+            "notified": 0,
+            "unlinked": [],
+            "undelivered": [],
+            "dismissed": [],
+            "nobody": True,
+        }
 
     users = _employee_users(employee_ids)
+    dismissed = set(dismissed_employees(employee_ids))
     payload = {
         "eventId": str(event.pk),
         "eventCode": event.code,
@@ -97,6 +107,11 @@ def notify_assignment_declined(event, assignment, *, reason):
     # стоял словарь, и одна графа журнала получалась разноформатной (№825).
     tally = notify_service.DeliveryTally()
     for employee_id in dict.fromkeys(str(pk) for pk in employee_ids):
+        # Уволенный старший объекта — своей графой (Plane №900): слать ему об
+        # отказе не надо, и в «нет учётки» он бы звал чинить несуществующее.
+        if employee_id in dismissed:
+            tally.skip_dismissed(names.get(employee_id, employee_id))
+            continue
         user_id = users.get(employee_id)
         if user_id is None:
             tally.skip_unlinked(names.get(employee_id, employee_id))
@@ -113,5 +128,6 @@ def notify_assignment_declined(event, assignment, *, reason):
         "notified": tally.notified,
         "unlinked": tally.unlinked,
         "undelivered": tally.undelivered,
+        "dismissed": tally.dismissed,
         "nobody": False,
     }

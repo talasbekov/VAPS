@@ -471,7 +471,13 @@ def decline(
         ),
         None,
     )
-    delivery = {"notified": 0, "unlinked": [], "undelivered": [], "nobody": True}
+    delivery = {
+        "notified": 0,
+        "unlinked": [],
+        "undelivered": [],
+        "dismissed": [],
+        "nobody": True,
+    }
     if row is not None:
         delivery = notify_assignment_declined(patched, row, reason=text) or delivery
     audit_service.record(
@@ -488,6 +494,10 @@ def decline(
             "notified": delivery.get("notified", 0),
             "unlinked": delivery.get("unlinked", []),
             "undelivered": delivery.get("undelivered", []),
+            # Уволенные — своей графой (Plane №900): без неё они лежали бы в
+            # `unlinked`, и журнал звал бы заводить учётку тому, кого в наряде
+            # уже нет.
+            "dismissed": delivery.get("dismissed", []),
             # «Некому было слать» и «рассылка отказала» — разные беды и разная
             # починка (тот же довод, что у `unlinked` и `undelivered`).
             "nobody": bool(delivery.get("nobody", False)),

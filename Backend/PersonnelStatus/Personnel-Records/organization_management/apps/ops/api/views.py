@@ -2744,6 +2744,13 @@ _UNLINKED_REASON = (
     "показать не из чего."
 )
 
+#: Причина СВОЯ, отличная от «нет привязки»: это разные положения, и
+#: сваливать их в одну строку значило бы сказать уволенному неправду о его
+#: учётке (Plane №900, тем же приёмом, что `my_assignments.DISMISSED_REASON`).
+_DISMISSED_REASON = (
+    "Сотрудник уволен — смены дежурств больше не показываются."
+)
+
 
 def _duty_rights(request):
     perms = effective_permissions(request)
@@ -2897,6 +2904,18 @@ class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         if employee is None:
             return Response({"results": [], "unlinkedReason": _UNLINKED_REASON})
+        # 🔴 УВОЛЕННЫЙ НЕ ЧИТАЕТ ДАЖЕ СВОИ СМЕНЫ (Plane №900). Учётка живёт
+        # дольше кадровой записи, и без этой проверки уволенный продолжал
+        # видеть объект, дату, паспортную привязку и примечание смены — то
+        # есть сведения о наряде, к которому больше не имеет отношения. Ровно
+        # тот же класс закрыт для назначений ОМ карточкой №596, и докстринг
+        # `my_assignments` называет эту ручку ОБРАЗЦОМ, по которому сделаны
+        # «мои назначения»: образец обязан держать то же правило.
+        #
+        # Ответ 200 с причиной, а не 403: у человека законная учётка и законный
+        # экран, и отказ по праву читался бы как поломка доступа.
+        if not employee.is_active:
+            return Response({"results": [], "unlinkedReason": _DISMISSED_REASON})
         shifts = list(
             OpsDutyShift.objects.filter(employee_id=str(employee.pk))
         )
