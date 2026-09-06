@@ -61,3 +61,23 @@ def test_an_account_without_a_personnel_record_falls_back_to_the_login(
 
 def test_nobody_is_an_empty_string_not_the_word_none():
     assert actor_display_name(None) == ""
+
+
+def test_an_anonymous_visitor_is_empty_not_the_word_anonymoususer():
+    """Аноним не подписывает документ словом «AnonymousUser» (Plane №897).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. `AnonymousUser` — отдельный класс, `isinstance(actor,
+    User)` его не ловит; дальше идёт `str(actor)`, `.isdigit()` ложь, и строка
+    уходила в поле КАК ЕСТЬ. Гарды вызывающих проверяют `actor is not None` и
+    от этого не защищают: аноним не `None`, он истинный объект.
+
+    Практически недостижимо — ручки закрыты правами, — но проверяется не
+    достижимость, а ЦЕНА: «AnonymousUser» встало бы в подпись документа,
+    который печатают и рассылают. Пусто честнее: пустое поле читается как
+    «автор не назван», выдуманное слово — как факт.
+
+    КРАСНАЯ ПРОБА: убери ветку `is_authenticated` — вернётся «AnonymousUser».
+    """
+    from django.contrib.auth.models import AnonymousUser
+
+    assert actor_display_name(AnonymousUser()) == ""
