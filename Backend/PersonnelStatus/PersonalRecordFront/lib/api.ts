@@ -565,6 +565,7 @@ export interface OpsNotification {
     | "SUBMISSION_LAGGING"
     | "EVENT_ACKNOWLEDGEMENT"
     | "FORCES_REQUEST"
+    | "FORCES_REQUEST_DEPARTMENT"
     | "PLACEMENT_RETURNED"
     | "ACKNOWLEDGEMENT_DUE_SOON"
     | "FORCES_RESPONSE"
@@ -589,6 +590,14 @@ export interface OpsNotification {
     directorateName?: string;
     need?: number;
     dueAt?: string | null;
+    /** `FORCES_REQUEST_DEPARTMENT` (Plane №922): СВОДНЫЙ запрос ответственному
+     *  за департамент — одно письмо на все его управления заявки. Отдельный
+     *  вид, а не тот же с другой нагрузкой: ключ уведомления — (получатель,
+     *  вид, деловая дата), и под общим видом сводка схлопнулась бы с письмом
+     *  по управлению, оставив человеку правду про ОДНО управление из
+     *  нескольких. `need` здесь — СУММА по управлениям сводки. */
+    directorateCount?: number;
+    directorates?: { divisionId: string; name: string; need: number }[];
     /** `FORCES_RESPONSE` (Plane №426, `[СБС-12]`): департамент ответил штабу
      *  «Выделяем: X» на запрос из `requested`. */
     requested?: number;

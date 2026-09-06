@@ -1,7 +1,13 @@
 import { getAccessToken } from "@/lib/api";
 import { apiClient, type OpsNotification as OpsNotificationRow } from "@/lib/api";
 import { BACKEND_URL } from "@/shared/config/env";
-import { EMPLOYEES, PEOPLE, REMARKS, ruCount } from "@/lib/ru-plural";
+import {
+  DIRECTORATES_DATIVE,
+  EMPLOYEES,
+  PEOPLE,
+  REMARKS,
+  ruCount,
+} from "@/lib/ru-plural";
 
 const BASE = "/api/notifications/notifications";
 
@@ -80,6 +86,35 @@ export function describeOpsNotification(row: OpsNotificationRow): {
       // а не пятой копией тернарника.
       title: `Выделите ${ruCount(need, EMPLOYEES)} на ${p.eventCode ?? "мероприятие"}`,
       message: `${p.eventTitle ?? ""} · ${p.businessDate ?? ""} · запрос от ${p.departmentName ?? "департамента"}`,
+      link: p.allocationId
+        ? `/statuses/?forcesRequest=${encodeURIComponent(p.allocationId)}`
+        : "/statuses/",
+    };
+  }
+  if (row.kind === "FORCES_REQUEST_DEPARTMENT") {
+    // 🔴 СВОДНЫЙ запрос ответственному за департамент (Plane №922, решение
+    // заказчика 06.09.2026). Он накрывает областью НЕСКОЛЬКО управлений
+    // заявки, и письмо по каждому ему не приходило вовсе. Послать их «как
+    // всем» было нельзя: ключ уведомления — (получатель, вид, деловая дата),
+    // и он получил бы одну строку про ПЕРВОЕ управление, не узнав про
+    // остальные, — полуправду, которую не видно.
+    //
+    // Поэтому в заголовке стоят ОБА числа: сколько людей и по скольким
+    // управлениям. Одно число без другого возвращает ту же беду: «выделите 3»
+    // не говорит, что их надо разложить по двум управлениям, а «по 2
+    // управлениям» не говорит сколько.
+    const p = row.payload;
+    const need = p.need ?? 0;
+    const count = p.directorateCount ?? p.directorates?.length ?? 0;
+    // Состав — в подписи, поимённо: ответственный решает, откуда брать людей,
+    // и решает он в ленте. Без имён ему пришлось бы открывать карточку, чтобы
+    // узнать, о каких управлениях речь.
+    const names = (p.directorates ?? [])
+      .map((d) => `${d.name} — ${d.need}`)
+      .join(", ");
+    return {
+      title: `Выделите ${ruCount(need, EMPLOYEES)} по ${ruCount(count, DIRECTORATES_DATIVE)} на ${p.eventCode ?? "мероприятие"}`,
+      message: `${p.eventTitle ?? ""} · ${p.businessDate ?? ""}${names ? ` · ${names}` : ""}`.trim(),
       link: p.allocationId
         ? `/statuses/?forcesRequest=${encodeURIComponent(p.allocationId)}`
         : "/statuses/",
