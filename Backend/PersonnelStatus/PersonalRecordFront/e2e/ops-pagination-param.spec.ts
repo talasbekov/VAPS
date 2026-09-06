@@ -54,38 +54,9 @@ const PRODUCTION_DIRS = [
  * не нарушает.
  */
 const KNOWN_PROBE_CALLS = new Map<string, number>([
-  ['ack-opened-and-phone.spec.ts', 1],
-  ['acknowledgement-stage.spec.ts', 4],
-  ['approval-print.spec.ts', 2],
-  ['approval-return.spec.ts', 1],
-  ['approval-rights.spec.ts', 2],
-  ['approval-route.spec.ts', 1],
-  ['approval-stage.spec.ts', 1],
-  ['command-center.spec.ts', 1],
-  ['conduct-evaluations.spec.ts', 3],
-  ['daily-expense.spec.ts', 1],
-  ['department-requests.spec.ts', 1],
-  ['events-registry.spec.ts', 5],
-  ['force-collections.spec.ts', 2],
-  ['forces-gathering.spec.ts', 4],
-  ['gvo-sections.spec.ts', 1],
-  ['in-development-badge.spec.ts', 1],
-  ['mock-contract.spec.ts', 13],
-  ['my-profile.spec.ts', 2],
-  ['placement-pool.spec.ts', 2],
-  ['placement-stage.spec.ts', 1],
-  ['probe-events.ts', 1],
-  ['protected-persons.spec.ts', 3],
-  ['recon-stage.spec.ts', 2],
-  ['stage-override.spec.ts', 1],
-  ['stand-chief.ts', 1],
-  ['stand-roster.ts', 1],
-  ['status-catalog-source.spec.ts', 1],
-  ['status-event-link.spec.ts', 1],
-  ['ui-access-rule.spec.ts', 1],
-  ['vehicles-registry.spec.ts', 1],
-  ['visit-approve-blocker.spec.ts', 1],
-  ['visit-page.spec.ts', 2],
+  // ПУСТ с 06.09.2026: оба настоящих нарушителя (`daily-expense`,
+  // `status-catalog-source`) починены здесь же. Пустым и обязан остаться —
+  // новая строка сюда не дописывается, она чинится.
 ])
 
 /**
@@ -149,8 +120,24 @@ function stringLiterals(source: string): string[] {
   return found
 }
 
-/** Строка-адрес раздела ОМ, спрошенная через `page_size`. */
-const OPS_WITH_PAGE_SIZE = /\/api\/(?:operations|ops)\/[^\n]*page_size/
+/**
+ * Строка-адрес `/api/operations/`, спрошенная через `page_size`.
+ *
+ * 🔴 ТОЛЬКО `operations`, НО НЕ `ops` — И ЭТО ГЛАВНОЕ В ПРОБЕ (найдено ревью).
+ * Два пространства имён раздела пагинируются ПО-РАЗНОМУ, и правило у них
+ * ПРОТИВОПОЛОЖНОЕ. Замерено на живом стенде 06.09.2026:
+ *
+ *     /api/ops/security-events/?page_size=3   → 3 строки   ?limit=3 → 20
+ *     /api/ops/personnel/?page_size=3         → 3 строки   ?limit=3 → 100
+ *     /api/operations/status-types/?page_size=3 → 19 строк  ?limit=3 → 3
+ *
+ * `/api/ops/` пагинируется ВРУЧНУЮ (`api/views.py`, свои `page`/`page_size`),
+ * а `LimitOffsetPagination` живёт только у `/api/operations/`. Первая редакция
+ * этой пробы ловила `(?:operations|ops)` и требовала `limit` от обоих — то
+ * есть требовала сломать 62 рабочих вызова: на `/api/ops/` `limit` не
+ * применяется, и страница схлопнулась бы до умолчания.
+ */
+const OPS_WITH_PAGE_SIZE = /\/api\/operations\/[^\n]*page_size/
 
 function countIn(text: string): number {
   return stringLiterals(text).filter((value) => OPS_WITH_PAGE_SIZE.test(value)).length
@@ -177,8 +164,29 @@ test.describe('пагинация раздела ОМ', () => {
     }
     expect(
       offenders,
-      'раздел ОМ игнорирует `page_size` и молча отдаёт 50 строк — спрашивайте ' +
-        '`limit` (Plane №870, замер: ?page_size=5 → 19 строк, ?limit=5 → 5)',
+      '`/api/operations/` игнорирует `page_size` и молча отдаёт умолчание — ' +
+        'спрашивайте `limit` (Plane №870, замер: ?page_size=5 → 19 строк, ' +
+        '?limit=5 → 5). ⚠️ У `/api/ops/` правило ОБРАТНОЕ: там работает ' +
+        '`page_size`, а `limit` игнорируется — эти адреса трогать НЕ надо',
+    ).toEqual([])
+  })
+
+  test('пробы тоже не спрашивают /api/operations/ через page_size', () => {
+    // 🔴 ДЫРА, ЗАКРЫТАЯ ПОСЛЕ РЕВЮ: прежде эта половина сторожа перебирала
+    // ТОЛЬКО храповик, то есть новый нарушитель СРЕДИ ПРОБ не ловился ничем —
+    // сторож был зелёным по построению ровно для тех файлов, которых в списке
+    // нет. Теперь обходятся все спеки.
+    //
+    // Свой файл исключён намеренно: образцы в пробе разбора — предмет
+    // проверки, а не долг.
+    const offenders = readdirSync(__dirname)
+      .filter((name) => name.endsWith('.ts') && name !== 'ops-pagination-param.spec.ts')
+      .map((name) => ({ name, count: countIn(readFileSync(join(__dirname, name), 'utf8')) }))
+      .filter(({ name, count }) => count > 0 && !KNOWN_PROBE_CALLS.has(name))
+    expect(
+      offenders,
+      '`/api/operations/` игнорирует `page_size` — спрашивайте `limit`. ' +
+        '⚠️ адреса `/api/ops/` сюда НЕ относятся: там правило обратное',
     ).toEqual([])
   })
 
@@ -210,9 +218,10 @@ test.describe('пагинация раздела ОМ', () => {
 
     expect(
       countIn(sample),
-      'разбор обязан посчитать ТРИ строки кода (обычную, шаблонную и ту, что ' +
-        'идёт ПОСЛЕ заголовка "*/*") и не считать две в комментариях',
-    ).toBe(3)
+      'разбор обязан посчитать ОДНУ строку кода — `/api/operations/` после ' +
+        'заголовка "*/*"; адреса `/api/ops/` правилу не подлежат (там ' +
+        '`page_size` работает), а две строки в комментариях не считаются',
+    ).toBe(1)
   })
 
   test('сторож обошёл дерево, а не пустоту', () => {

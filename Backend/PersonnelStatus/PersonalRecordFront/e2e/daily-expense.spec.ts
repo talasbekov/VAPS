@@ -306,7 +306,7 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     // умолчанию «в строю», как у рядовых строк расхода: тут честная метка
     // «статус не заведён», если действующего статуса нет).
     const statusTypes = await get<{ results: { code: string; name: string }[] }>(
-      token, '/api/operations/status-types/?page_size=200')
+      token, '/api/operations/status-types/?limit=200')
     const nameByCode = new Map(statusTypes.results.map((t) => [t.code, t.name]))
     const first = leaders[0]
     const divisionStatuses = await get<{ results: { employee_id: number; status_type_code: string }[] }>(
