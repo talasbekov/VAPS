@@ -46,6 +46,37 @@ if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
   exit 1
 fi
 
+# 🔴 СОСЕДИ СЧИТАЮТСЯ ПО ПРОЦЕССАМ, А НЕ ПО ПОРТУ (Plane №835, продолжение
+# №817). Проверка выше спрашивает только «занят ли МОЙ порт», а прод-стенд
+# берёт памяти реально: 145-320 МБ сам сервер и ГИГАБАЙТЫ во время сборки.
+# До этой правки он поднимался в переполненную машину без единого слова —
+# ровно то положение, из которого OOM-killer снимает чужие прогоны, а признак
+# читается не как нехватка памяти, а как «я сломал свою правку» (мигающие
+# пробы, `ECONNREFUSED`, обрывы `/api/auth/csrf/`).
+#
+# Правило то же, что у dev-сторожа, и живёт оно в одном доме на двоих:
+# `scripts/neighbours.sh`.
+NEIGHBOURS_TAG=prod-stand
+# shellcheck source=scripts/neighbours.sh
+. "$(dirname "$0")/neighbours.sh"
+
+NEIGHBOURS=$(neighbours_total_mb)
+if [ "$NEIGHBOURS" -gt 0 ]; then
+  echo "[prod-stand] на машине уже живут next-серверы на ${NEIGHBOURS} МБ:"
+  neighbours_report
+fi
+if [ "${PROD_STAND_ALLOW_NEIGHBOURS:-0}" != "1" ]; then
+  REFUSE=$(neighbours_refusal_reason \
+    "$NEIGHBOURS" "${NEIGHBOUR_LIMIT_MB:-$(neighbours_budget_mb)}" "$(neighbours_available_mb)")
+  if [ -n "$REFUSE" ]; then
+    echo "[prod-stand] ${REFUSE} — стенд НЕ поднимаю."
+    echo "[prod-stand] что делать: погасить СИРОТУ из списка выше (у неё нет порта), а сервер"
+    echo "[prod-stand]   со слушающим портом может быть чужим прогоном — сперва спросите владельца."
+    echo "[prod-stand] перекрыть намеренно: PROD_STAND_ALLOW_NEIGHBOURS=1 (или NEIGHBOUR_LIMIT_MB=<МБ>)."
+    exit 1
+  fi
+fi
+
 # 🔴 ПЕРЕПИСИ ЗАПЕКАЮТСЯ В СБОРКУ, А НЕ ЧИТАЮТСЯ ПРИ ЗАПУСКЕ (Plane №843).
 # `rewrites()` из `next.config.js` Next исполняет во время `next build` и
 # кладёт готовые адреса в `routes-manifest.json`. Поэтому `BACKEND_URL`,

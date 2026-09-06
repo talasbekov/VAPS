@@ -8,7 +8,7 @@
     "dev:webpack": "next dev",
     "lint": "next lint",
     "build:check": "NEXT_DIST_DIR=.next-build bash scripts/build-lock.sh next build",
-    "gate:front": "tsc --noEmit && npm run check:rewrites && npm run check:shots && npm run build:check",
+    "gate:front": "tsc --noEmit && npm run check:rewrites && npm run check:shots && npm run check:stand && npm run build:check",
     "start": "next start",
     "dev:guard": "bash scripts/dev-guard.sh",
     "stand:prod": "bash scripts/prod-stand.sh",
@@ -16,7 +16,8 @@
     "stand:isolated": "PORT=3109 DIST=.next-isolated BACKEND_URL=http://localhost:8101 bash scripts/prod-stand.sh",
     "smoke:isolated": "SMOKE_LIVE=1 SMOKE_BASE_URL=http://localhost:3109 SMOKE_APP=http://localhost:3109 SMOKE_API=http://127.0.0.1:8101 playwright test --config playwright.smoke.config.ts",
     "check:rewrites": "node scripts/check-rewrites.mjs",
-    "check:shots": "node scripts/check-shot-paths.mjs"
+    "check:shots": "node scripts/check-shot-paths.mjs",
+    "check:stand": "bash scripts/tests/neighbours-test.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
