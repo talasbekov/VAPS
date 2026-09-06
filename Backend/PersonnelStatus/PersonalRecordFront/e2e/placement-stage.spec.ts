@@ -1738,16 +1738,26 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const target = await placementEventWithRoster(token)
       requireFixture(target, 'мероприятие на стадии «Расстановка»')
 
+      // 🔴 ВСЕ ТРИ ЧИСЛА ЗАДАЮТСЯ ПОДМЕНОЙ И ПОПАРНО РАЗЛИЧНЫ (доводка по
+      // ревью №825). Прежде проба задавала только два и стерегла у строки
+      // объекта одно СЛОВО: подмена «поставить в строку объекта любое другое
+      // число» её не красила, а число объекта бралось из БД стенда и вполне
+      // могло совпасть с числом мероприятия — тогда и подмена знаменателя
+      // прошла бы незамеченной.
       const ALLOCATED = 12
       const EVENT_NEED = 9
+      const OBJECT_NEED = 4
+      let objectName = ''
       await page.route(
         new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
         async (route) => {
           const response = await route.fetch()
           const body = await response.json()
-          // Числа разведены НАРОЧНО: пока обе половины брались из одной
-          // области, подмена ничего бы не показала.
-          body.forceNeed = EVENT_NEED
+          // Знаменатель строки — `forceDemandTotal`: им сервер меряет
+          // выделение. `forceNeed` задаётся ЗАВЕДОМО ДРУГИМ, чтобы возврат к
+          // нему краснил пробу.
+          body.forceDemandTotal = EVENT_NEED
+          body.forceNeed = EVENT_NEED + 5
           const requests = body.forceRequests ?? []
           body.forceRequests = requests.map(
             (row: Record<string, unknown>, index: number) => ({
@@ -1755,6 +1765,14 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
               allocatedCount: index === 0 ? ALLOCATED : 0,
             }),
           )
+          const posts = body.reconSectorPosts ?? []
+          body.reconSectorPosts = posts.map(
+            (row: Record<string, unknown>, index: number) => ({
+              ...row,
+              need: index === 0 ? OBJECT_NEED : 0,
+            }),
+          )
+          objectName = String(body.visitObjects?.[0]?.objectName ?? '')
           await route.fulfill({ response, json: body })
         },
       )
@@ -1771,10 +1789,16 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         { timeout: 15_000 },
       )
       // А потребность показанного объекта стоит отдельной строкой — именно её
-      // закрывает оператор на этом экране.
-      await expect(main.locator('[data-slot="object-need"]')).toContainText(
-        'Потребность объекта',
+      // закрывает оператор на этом экране. Пинится ЦЕЛИКОМ: имя объекта и
+      // само число, а не слово «Потребность объекта».
+      expect(objectName, 'подмена не увидела объекта посещения').not.toBe('')
+      const objectNeed = main.locator('[data-slot="object-need"]')
+      await expect(objectNeed).toHaveText(
+        `Потребность объекта «${objectName}»: ${OBJECT_NEED}`,
       )
+      // И два числа обязаны РАЗОЙТИСЬ: совпади они — проба зеленела бы и на
+      // том самом дефекте, ради которого заведена.
+      expect(OBJECT_NEED).not.toBe(EVENT_NEED)
     })
   })
 })
