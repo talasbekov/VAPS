@@ -9,12 +9,18 @@ import datetime as dt
 import pytest
 
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.operations.models import Role, UserRole
+from organization_management.apps.operations.models import (
+    Permission,
+    Role,
+    RolePermission,
+    UserRole,
+)
 from organization_management.apps.operations.models_notification import (
     OpsNotification,
 )
 from organization_management.apps.ops.acknowledgement_notify import (
     KIND,
+    SUPERVISE_PERMISSION,
     notify_acknowledgement,
 )
 from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: F401
@@ -60,6 +66,14 @@ def event_with_people(django_user_model):
     # тот, чья область его накрывает.
     boss = django_user_model.objects.create_user(username="ack-boss", password="x")
     role = Role.objects.create(code="ACK_BOSS", name="Начальник пробы")
+    # 🔴 ПРАВО, А НЕ ОДНА ЛИШЬ ОБЛАСТЬ (Plane №880). Рассылка отбирает
+    # получателей поимённого списка по `status.manage`; роль без права
+    # получателем не считается — и фикстура обязана заводить начальника
+    # таким, каков он в жизни, иначе проба стерегла бы несуществующий случай.
+    permission, _ = Permission.objects.get_or_create(
+        code=SUPERVISE_PERMISSION, defaults={"name": "Распоряжаться личным составом"}
+    )
+    RolePermission.objects.get_or_create(role_code=role, permission_code=permission)
     UserRole.objects.create(
         user_id=str(boss.pk), role_code=role, scope_division_id=department.pk
     )

@@ -16,9 +16,15 @@ import pytest
 from django.utils import timezone
 
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.operations.models import Role, UserRole
+from organization_management.apps.operations.models import (
+    Permission,
+    Role,
+    RolePermission,
+    UserRole,
+)
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_notification import OpsNotification
+from organization_management.apps.ops.acknowledgement_notify import SUPERVISE_PERMISSION
 from organization_management.apps.ops.acknowledgement_reminders import (
     KIND,
     remind_supervisors_before_start,
@@ -57,9 +63,22 @@ def _event(code, assignments, business_date=DAY):
     )
 
 
-def _boss(django_user_model, username, role_code, division):
+def _boss(django_user_model, username, role_code, division, *, may_supervise=True):
+    """Начальник с областью на подразделение.
+
+    🔴 ПРАВО ВЫДАЁТСЯ ЯВНО (Plane №880). До правки роль в фикстуре была
+    пустой — и этого хватало, потому что рассылка смотрела ОДНУ область.
+    Теперь она смотрит и право, поэтому «начальник» без права получателем не
+    считается; `may_supervise=False` заводит ровно такую учётку — ею и
+    проверяется, что фильтр работает.
+    """
     user = django_user_model.objects.create_user(username=username, password="x")
     role, _ = Role.objects.get_or_create(code=role_code, defaults={"name": "Начальник пробы"})
+    if may_supervise:
+        permission, _ = Permission.objects.get_or_create(
+            code=SUPERVISE_PERMISSION, defaults={"name": "Распоряжаться личным составом"}
+        )
+        RolePermission.objects.get_or_create(role_code=role, permission_code=permission)
     UserRole.objects.create(
         user_id=str(user.pk), role_code=role, scope_division_id=division.pk
     )
@@ -126,6 +145,46 @@ def test_each_supervisor_gets_only_his_own_people(two_directorates):
     yours = {row["employeeId"] for row in _payload_of(boss_b)["unconfirmed"]}
     assert mine == {str(ours.pk)}, "начальнику управления А приехал чужой личный состав"
     assert yours == {str(theirs.pk)}, "начальнику управления Б приехал чужой личный состав"
+    assert event.code == "ОМ-REM-1"
+
+
+def test_a_role_without_the_right_gets_no_names(two_directorates, django_user_model):
+    """🔴 Plane №880: поимённый список уходит по ПРАВУ, а не по одной области.
+
+    Фильтр по области был, по праву — не было вовсе, и «своими» людей считала
+    любая активная роль с областью над подразделением. Замер на живой базе до
+    правки: список получали 10 учёток, среди них роль `EMPLOYEE` (обычный
+    сотрудник) и два наблюдателя. Нагрузка здесь СПИСОЧНАЯ — фамилии и
+    идентификаторы, — так что после №665 утечка сузилась, но не исчезла:
+    чужой состав перестал уезжать, свой уезжал слишком широкому кругу.
+
+    Проба заводит наблюдателя с областью РОВНО на то же управление, что и
+    начальник: у него всё то же самое, кроме права. Именно поэтому она
+    отличает «отбор по праву» от «отбор по области» — на любой другой паре
+    учёток обе версии кода вели бы себя одинаково.
+
+    Мутация: убрать `role_code_id__in=roles` из запроса — наблюдатель получит
+    фамилии, и проба покраснеет.
+    """
+    event, boss_a, _boss_b, ours, _theirs = two_directorates
+    watcher = _boss(
+        django_user_model,
+        "rem-watcher",
+        "REM_WATCHER",
+        Division.objects.get(code="DIR-REM-A"),
+        may_supervise=False,
+    )
+
+    remind_supervisors_before_start(_in_window())
+
+    assert not OpsNotification.objects.filter(
+        recipient=str(watcher.pk), kind=KIND
+    ).exists(), "наблюдателю без права приехал поимённый список личного состава"
+    # Вторая половина обязательна: без неё зелёным был бы и код, который не
+    # рассылает вовсе. Начальник с правом и той же областью список получает.
+    assert {row["employeeId"] for row in _payload_of(boss_a)["unconfirmed"]} == {
+        str(ours.pk)
+    }
     assert event.code == "ОМ-REM-1"
 
 

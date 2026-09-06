@@ -34,6 +34,13 @@ from organization_management.apps.operations.exceptions import DomainError
 #: Вид уведомления. Заведён в модели вместе с этим срезом.
 KIND = "EVENT_ACKNOWLEDGEMENT"
 
+#: Право, которым отбираются начальники — получатели ПОИМЁННОГО списка
+#: неподтвердивших (Plane №880). То же, что у запроса сил (`forces_notify.
+#: SELECT_PERMISSION`, №481): «распоряжаться личным составом». Константа, а
+#: не литерал в запросе — на неё смотрит и проба, и разъехавшийся литерал
+#: расширил бы круг получателей ПДн молча.
+SUPERVISE_PERMISSION = "status.manage"
+
 
 def _employee_users(employee_ids):
     """Учётки сотрудников: {employee_id → user_id} (только связанные).
@@ -120,11 +127,38 @@ def supervisors_by_division(division_ids):
     Один начальник может отвечать за несколько подразделений сразу; он
     появится в нескольких строках разреза, и его личный список склеится из
     них — это и есть «свои».
+
+    🔴 ПРАВО, А НЕ ОДНА ЛИШЬ ОБЛАСТЬ (Plane №880, решение заказчика
+    06.09.2026). Фильтр по области был, по праву — не было вовсе, и «своими»
+    людей считала ЛЮБАЯ активная роль с областью над подразделением. Замер на
+    живой базе до правки: список получали 10 учёток, среди них роль `EMPLOYEE`
+    (обычный сотрудник) и два наблюдателя `OVERVIEW_DEPARTMENT`. Нагрузка
+    здесь СПИСОЧНАЯ — фамилии и идентификаторы личного состава, — так что
+    утечка ПДн после №665 сузилась, но не исчезла: чужой состав перестал
+    уезжать, свой продолжал уезжать слишком широкому кругу.
+
+    ПРАВО ВЗЯТО ТО ЖЕ, ЧТО У ЗАПРОСА СИЛ (`status.manage`) — прецедент №481,
+    где этот же дефект уже закрывали у соседа, и решение заказчика. Смысл
+    права — «распоряжаться личным составом», а список неподтвердивших нужен
+    ровно для того, чтобы им распорядиться: позвать, заменить, доложить.
+    Отвергнуто заводить своё право «знать фамилии подчинённых»: точнее по
+    смыслу, но до раздачи его ролям напоминания не получал бы НИКТО — пауза в
+    работающей функции ради чистоты каталога. Замер после правки: 6 учёток
+    из 10.
     """
     from organization_management.apps.divisions.models import Division
     from organization_management.apps.operations.models import UserRole
+    from organization_management.apps.operations.services import PermissionService
 
     if not division_ids:
+        return {}
+    # Роли спрашиваются у общего договора, а не своим запросом: тот же вопрос
+    # задают ещё два места раздела, и четвёртая копия была бы делом времени
+    # (№894 — ровно этот урок на правиле области гранта).
+    roles = PermissionService.roles_holding(SUPERVISE_PERMISSION)
+    if not roles:
+        # Права не держит ни одна роль — рассылать некому. Пустой разрез, а не
+        # «всем подряд»: fail-closed, как у соседа (№481).
         return {}
     scopes_of = {}
     all_scopes = set()
@@ -134,7 +168,7 @@ def supervisors_by_division(division_ids):
         all_scopes |= scopes
     users_of_scope = {}
     for scope_id, user_id in UserRole.objects.filter(
-        is_active=True, scope_division_id__in=all_scopes
+        is_active=True, scope_division_id__in=all_scopes, role_code_id__in=roles
     ).values_list("scope_division_id", "user_id"):
         users_of_scope.setdefault(scope_id, set()).add(str(user_id))
     return {

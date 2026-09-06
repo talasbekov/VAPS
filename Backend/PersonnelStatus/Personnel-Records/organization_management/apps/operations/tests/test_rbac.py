@@ -179,3 +179,51 @@ class TestMyPermissionsApi:
     def test_division_id_must_be_int(self):
         api_client, _user = self._client()
         assert api_client.get(self.URL, {"division_id": "abc"}).status_code == 400
+
+
+@pytest.mark.django_db
+class TestRolesHoldingContract:
+    """Общий договор «какие роли держат право» (Plane №880).
+
+    🔴 ЗАЧЕМ ПРОБЫ У ОДНОСТРОЧНОГО ЗАПРОСА. Договор заведён, чтобы этот
+    вопрос перестал жить копиями: его задают рассылка запроса сил, отбор
+    штаба и рассылка ознакомления, а раньше каждый спрашивал сам. У копий
+    была ровно одна тонкость, которую легко потерять при переписывании, —
+    wildcard: роль с «*» держит любое право, и без него ADMIN тихо выпадает
+    из ВСЕХ рассылок сразу. Замерено: без этих проб мутация «убрать WILDCARD
+    из договора» оставалась ЗЕЛЁНОЙ на всех 39 пробах трёх модулей-читателей.
+    """
+
+    @staticmethod
+    def _role_with(code, permission_code):
+        role, _ = Role.objects.get_or_create(code=code, defaults={"name": code})
+        permission, _ = Permission.objects.get_or_create(
+            code=permission_code, defaults={"name": permission_code}
+        )
+        RolePermission.objects.get_or_create(role_code=role, permission_code=permission)
+        return role
+
+    def test_a_role_with_the_right_is_returned(self):
+        self._role_with("RH_HOLDER", "rh.probe")
+        self._role_with("RH_OTHER", "rh.another")
+        assert PermissionService.roles_holding("rh.probe") == {"RH_HOLDER"}
+
+    def test_the_wildcard_role_holds_every_right(self):
+        """Мутация: убрать `WILDCARD` из договора — ADMIN выпадет из рассылок.
+
+        Тихо и сразу из всех: получатель просто перестанет приходить, а
+        отчёт скажет «уведомлено 0» без единой ошибки.
+        """
+        self._role_with("RH_ADMIN", "*")
+        assert "RH_ADMIN" in PermissionService.roles_holding("rh.probe")
+        assert "RH_ADMIN" in PermissionService.roles_holding("rh.never.granted.to.anyone")
+
+    def test_nobody_holding_it_is_an_empty_set_not_everybody(self):
+        """Права не держит никто — пусто, а не «все».
+
+        Читатели на этом строят fail-closed: пустой набор ролей означает
+        «рассылать некому». Верни сюда `None` или полный список — и рассылка
+        поимённого состава ушла бы всем подряд.
+        """
+        self._role_with("RH_HOLDER", "rh.probe")
+        assert PermissionService.roles_holding("rh.absent") == set()
