@@ -3617,23 +3617,132 @@ def _employee_division(employee):
     return str(staff_unit.division_id), staff_unit.division.name
 
 
-def day_status_map(employee_ids, on_date):
-    """{id сотрудника: (код статуса, подпись)} на дату, ОДИН запрос.
+class RegistryReadContext:
+    """Чтения, общие на СТРАНИЦУ реестра, а не на строку (Plane №909).
 
-    Предикат «какая строка действует на дату» берётся у расхода
-    (`EmployeeStatusSelector`) — второй способ решить тот же вопрос разошёлся
-    бы с ним молча. Отсутствие ключа значит «действующего статуса нет», что и
-    есть «в строю»: строки «в строю» в справочнике не существует.
+    🔴 ЗАЧЕМ. Три самых дорогих поля строки — назначения, состав и раскладка —
+    каждое спрашивало своё: справочник статусов (`ops_status_types`, полный
+    скан на КАЖДЫЙ вызов), перекрытия дня (`ops_employee_statuses`) и кадровые
+    записи. На строку выходило шесть запросов, и все шесть росли линейно вместе
+    с числом мероприятий. Сторож реестра этого не видел: его фикстура оставляла
+    все три поля ПУСТЫМИ, а вьюхи начинаются с `if not rows: return []`.
+
+    🔴 ПОЧЕМУ КОНТЕКСТ, А НЕ КЭШ ВНУТРИ СЕЛЕКТОРА. Кэш на уровне селектора
+    пришлось бы гасить при каждой правке справочника, и он жил бы дольше
+    запроса — то есть отвечал бы вчерашним составом на сегодняшний вопрос.
+    Контекст живёт ровно один ответ ручки: собран во вьюхе, отдан сериализатору,
+    выброшен. Никакой инвалидации не требуется по построению.
+
+    Контекста НЕТ — всё работает как раньше, построчно: карточка одного ОМ,
+    документы, команды. Там строка одна, и собирать для неё пакет незачем.
     """
+
+    def __init__(self):
+        self._status_names = None
+        #: {деловая дата: {id сотрудника: (код, подпись)}} — по датам, потому
+        #: что предикат «действует на дату» у расхода спрашивается на дату.
+        self._statuses_by_date = {}
+        self._employees = {}
+        #: {id мероприятия: [строки участия]} — см. `prime_participations`.
+        self._participations = {}
+
+    def status_names(self):
+        """Справочник кодов статусов — ОДИН раз на страницу."""
+        if self._status_names is None:
+            from organization_management.apps.operations.selectors import (
+                StatusTypeSelector,
+            )
+
+            self._status_names = StatusTypeSelector.names_map()
+        return self._status_names
+
+    def prime_statuses(self, employee_ids, on_date):
+        """Посчитать статусы дня разом для всех, кто встретится на странице.
+
+        Зовётся вьюхой листинга ДО сериализации: она одна знает весь набор
+        мероприятий. Даты группируются, потому что у мероприятий страницы дата
+        чаще всего общая — реестр отсортирован по ней.
+        """
+        ids = {str(key) for key in employee_ids}
+        known = self._statuses_by_date.setdefault(on_date, {})
+        missing = {key for key in ids if key not in known}
+        if not missing:
+            return
+        known.update(_day_statuses(missing, on_date, names=self.status_names()))
+        # Тех, у кого статуса нет, помечаем известными, иначе следующий вызов
+        # спросит про них снова — а «нет статуса» это тоже ответ.
+        for key in missing:
+            known.setdefault(key, (None, None))
+
+    def day_statuses(self, employee_ids, on_date):
+        """Статусы дня для набора; недостающее досчитывается по месту."""
+        self.prime_statuses(employee_ids, on_date)
+        known = self._statuses_by_date[on_date]
+        return {str(key): known.get(str(key), (None, None)) for key in employee_ids}
+
+    def prime_participations(self, event_ids):
+        """Участия по ВСЕМ мероприятиям страницы — одним запросом.
+
+        Раскладка сил у каждой строки спрашивала свои участия
+        (`OpsStatusParticipation.filter(event_id=…)`), то есть запрос на
+        строку. Индекс есть, запрос дешёвый — но их число росло линейно, а
+        это и есть N+1: он не виден глазом и виден только замером.
+        """
+        from organization_management.apps.operations.models_status import (
+            OpsStatusParticipation,
+        )
+
+        keys = {str(key) for key in event_ids}
+        missing = {key for key in keys if key not in self._participations}
+        if not missing:
+            return
+        for key in missing:
+            self._participations[key] = []
+        rows = (
+            OpsStatusParticipation.objects.filter(event_id__in=list(missing))
+            .select_related("status")
+            .filter(status__cancelled_at__isnull=True)
+        )
+        for row in rows:
+            self._participations.setdefault(str(row.event_id), []).append(row)
+
+    def participations(self, event_id):
+        self.prime_participations([event_id])
+        return self._participations.get(str(event_id), [])
+
+    def prime_employees(self, employee_ids):
+        """Кадровые записи разом: подразделение и телефон берут их построчно."""
+        from organization_management.apps.employees.models import Employee
+
+        ids = {str(key) for key in employee_ids}
+        missing = [int(key) for key in ids if key.isdigit() and key not in self._employees]
+        if not missing:
+            return
+        for employee in Employee.objects.filter(pk__in=missing).select_related(
+            "staff_unit__division"
+        ):
+            self._employees[str(employee.pk)] = employee
+        for key in ids:
+            self._employees.setdefault(key, None)
+
+    def employees(self, employee_ids):
+        self.prime_employees(employee_ids)
+        return {
+            str(key): self._employees.get(str(key))
+            for key in employee_ids
+            if self._employees.get(str(key)) is not None
+        }
+
+
+def _day_statuses(employee_ids, on_date, *, names):
+    """Тело `day_status_map` со ГОТОВЫМ справочником имён."""
     from organization_management.apps.operations.selectors import (
         EmployeeStatusSelector,
-        StatusTypeSelector,
     )
 
     numeric = [int(key) for key in employee_ids if str(key).isdigit()]
     if not numeric:
         return {}
-    names = StatusTypeSelector.names_map()
     return {
         str(row["employee_id"]): (
             row["status_type_code"],
@@ -3645,7 +3754,24 @@ def day_status_map(employee_ids, on_date):
     }
 
 
-def _merge_status_members(event, rows):
+def day_status_map(employee_ids, on_date):
+    """{id сотрудника: (код статуса, подпись)} на дату, ОДИН запрос.
+
+    Предикат «какая строка действует на дату» берётся у расхода
+    (`EmployeeStatusSelector`) — второй способ решить тот же вопрос разошёлся
+    бы с ним молча. Отсутствие ключа значит «действующего статуса нет», что и
+    есть «в строю»: строки «в строю» в справочнике не существует.
+    """
+    from organization_management.apps.operations.selectors import (
+        StatusTypeSelector,
+    )
+
+    return _day_statuses(
+        employee_ids, on_date, names=StatusTypeSelector.names_map()
+    )
+
+
+def _merge_status_members(event, rows, *, read_context=None):
     """Люди строк раскладки: ручной набор штаба ПЛЮС взятые из статусов.
 
     Выделено из `allocation_members_view` при Ш-2 (Plane №272): считать
@@ -3693,11 +3819,17 @@ def _merge_status_members(event, rows):
     )
 
     # Кто участвует в ЭТОМ мероприятии — один запрос по индексу
-    # `idx_participation_event`; отменённые статусы не в счёт.
+    # `idx_participation_event`; отменённые статусы не в счёт. На СТРАНИЦЕ
+    # реестра тот же вопрос задаётся один раз на всех (Plane №909): запрос
+    # дешёвый, но их число росло вместе со строками.
     participations = (
-        OpsStatusParticipation.objects.filter(event_id=event.pk)
-        .select_related("status")
-        .filter(status__cancelled_at__isnull=True)
+        read_context.participations(event.pk)
+        if read_context is not None
+        else (
+            OpsStatusParticipation.objects.filter(event_id=event.pk)
+            .select_related("status")
+            .filter(status__cancelled_at__isnull=True)
+        )
     )
     by_employee = {}
     for row in participations:
@@ -3808,7 +3940,7 @@ def _merge_status_members(event, rows):
     ]
 
 
-def allocation_members_view(event):
+def allocation_members_view(event, *, read_context=None):
     """Раскладка по департаментам ДЛЯ ЭКРАНА: люди сведены, прогресс посчитан.
 
     ПЕРЕВОРОТ НАПРАВЛЕНИЯ, которого просил заказчик (Plane №274, Ш-5). До того
@@ -3828,7 +3960,9 @@ def allocation_members_view(event):
     управлениям — в `_with_directorate_progress` (Plane №272, Ш-2).
     """
     rows = event.force_allocation or []
-    merged = _with_directorate_progress(_merge_status_members(event, rows))
+    merged = _with_directorate_progress(
+        _merge_status_members(event, rows, read_context=read_context)
+    )
     # «Просрочено» считается здесь, а не хранится: это факт о ТЕКУЩЕМ моменте
     # (Plane №287). Момент один на весь ответ — иначе строки одного экрана
     # отвечали бы про разные секунды.
@@ -4162,7 +4296,7 @@ def _collection_status(allocations, gathered):
     return "NEW"
 
 
-def force_roster_view(event):
+def force_roster_view(event, *, read_context=None):
     """Состав мероприятия со статусом дня (Plane №65, шаг «Р-2»).
 
     Состав — источник кандидатов расстановки с шага «СС-6», и подбор обязан
@@ -4173,8 +4307,11 @@ def force_roster_view(event):
     rows = event.force_roster or []
     if not rows:
         return []
-    statuses = day_status_map(
-        {str(row.get("employeeId")) for row in rows}, event.business_date
+    keys = {str(row.get("employeeId")) for row in rows}
+    statuses = (
+        read_context.day_statuses(keys, event.business_date)
+        if read_context is not None
+        else day_status_map(keys, event.business_date)
     )
     view = []
     for row in rows:
@@ -4200,7 +4337,7 @@ def _assignment_phone(row, employee, *, with_phone):
     return (employee.work_phone or employee.personal_phone or "").strip()
 
 
-def placement_assignments_view(event, *, with_phone=False):
+def placement_assignments_view(event, *, with_phone=False, read_context=None):
     """Назначения на посты С ПОДРАЗДЕЛЕНИЕМ и статусом дня (Plane №65, «Р-1»).
 
     🔴 ТЕЛЕФОН ОТДАЁТСЯ НЕ ВСЕМ И НЕ ВСЕГДА (найдено ревью №825 по задаче
@@ -4243,14 +4380,20 @@ def placement_assignments_view(event, *, with_phone=False):
     if not rows:
         return []
     keys = {str(row.get("employeeId")) for row in rows}
-    numeric = [int(key) for key in keys if key.isdigit()]
-    employees = {
-        str(employee.pk): employee
-        for employee in Employee.objects.filter(pk__in=numeric).select_related(
-            "staff_unit__division"
-        )
-    }
-    statuses = day_status_map(keys, event.business_date)
+    # `read_context` — чтения, общие на страницу реестра (Plane №909). Без него
+    # всё идёт как раньше, построчно: у карточки одного ОМ строка одна.
+    if read_context is not None:
+        employees = read_context.employees(keys)
+        statuses = read_context.day_statuses(keys, event.business_date)
+    else:
+        numeric = [int(key) for key in keys if key.isdigit()]
+        employees = {
+            str(employee.pk): employee
+            for employee in Employee.objects.filter(pk__in=numeric).select_related(
+                "staff_unit__division"
+            )
+        }
+        statuses = day_status_map(keys, event.business_date)
     view = []
     for row in rows:
         key = str(row.get("employeeId"))
