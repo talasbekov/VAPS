@@ -624,8 +624,14 @@ def test_the_urgency_threshold_is_read_once_per_listing(manager, hq):  # noqa: F
     # листинг пуст.
     assert len({r["eventId"] for r in rows}) >= 2
     settings_reads = [q for q in queries.captured_queries if "ops_policy_settings" in q["sql"]]
+    # Сообщение говорит про ТАБЛИЦУ, а не про конкретную настройку (уточнено
+    # ревью, задача №825): счётчик считает любое обращение к ней и различить
+    # настройки не умеет — назвав одну, он врал бы, начни листинг читать
+    # соседнюю.
     assert len(settings_reads) <= 1, (
-        f"порог автосрочности прочитан {len(settings_reads)} раз(а) на "
-        f"{len(rows)} строк листинга: "
+        f"таблица настроек раздела прочитана {len(settings_reads)} раз(а) на "
+        f"{len(rows)} строк листинга — порог автосрочности берётся заново на "
+        f"каждую строку: "
         + "; ".join(q["sql"][:120] for q in settings_reads)
     )
+
