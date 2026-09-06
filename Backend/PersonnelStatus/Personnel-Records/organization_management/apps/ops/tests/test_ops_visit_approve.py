@@ -18,14 +18,28 @@ from organization_management.apps.ops.tests.test_ops_gvo_api import (
     _employee,
     make_event,
 )
+from organization_management.apps.operations.services import RoleAdminService
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
 def staff():
+    """Штаб — это профиль ПЛЮС роль-добавка `OPS_STAFF_COMMAND` (Plane №601).
+
+    С решения заказчика 06.09.2026 право `gvo.manage` («штаб правит и
+    утверждает сводку визита», `[ГВО-09]`) живёт не в профиле
+    `HEAD_OPS_UNIT`, а в отдельной роли: профиль носят ОБЕ персоны второго
+    департамента, а это право область гранта не спрашивает — начальник
+    управления утверждал бы сводки по всей организации. Фикстура повторяет
+    матрицу персон (`seed_access_matrix`, `dept_head_d2`), а не собирает
+    удобный набор прав.
+    """
     call_command("seed_operations")
-    api, _ = client_for("d2-staff", "HEAD_OPS_UNIT")
+    api, user = client_for("d2-staff", "HEAD_OPS_UNIT")
+    RoleAdminService.assign_role(
+        str(user.pk), "OPS_STAFF_COMMAND", None, actor="test"
+    )
     return api
 
 

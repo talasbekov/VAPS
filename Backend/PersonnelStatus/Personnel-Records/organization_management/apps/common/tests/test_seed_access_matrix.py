@@ -151,6 +151,37 @@ def test_the_events_scope_is_the_whole_organisation_but_the_statuses_are_not(sta
     }
 
 
+def test_only_the_department_head_commands_the_placement_everywhere(stand):
+    """Штабные обходы — у начальника ДЕПАРТАМЕНТА, и больше ни у кого (№601).
+
+    Решение заказчика 06.09.2026. Профиль `HEAD_OPS_UNIT` носят ОБЕ персоны
+    второго департамента, различаясь только областью гранта, а права
+    `placement.command`, `gvo.manage` и `event.stage_override` область не
+    спрашивают: они снимают проверку «своё ли это мероприятие». Пока они
+    лежали в профиле, начальник УПРАВЛЕНИЯ расставлял людей по всей
+    организации, хотя `[РАС-08]` отдаёт «всё» штабу.
+
+    🔴 Проба спрашивает ГРАНТЫ, а не набор прав: расхождение было именно в
+    том, кому роль досталась. Выдай `OPS_STAFF_COMMAND` второй персоне — и
+    покраснеет вторая половина, а не первая.
+    """
+    call_command("seed_access_matrix", "--password", PASSWORD)
+
+    department = Division.objects.get(code="am-second")
+    assert grants("acc_dept_head_d2") == {
+        ("HEAD_OPS_UNIT", department.id),
+        ("OM_CATEGORY_ORG", None),
+        # Область «вся организация» — ровно то, что право и означает.
+        ("OPS_STAFF_COMMAND", None),
+    }
+    assert RoleAdminService.role_permission_codes("OPS_STAFF_COMMAND") == [
+        "event.stage_override", "gvo.manage", "placement.command",
+    ]
+    assert not any(
+        code == "OPS_STAFF_COMMAND" for code, _ in grants("acc_dir_head_d2")
+    ), "начальник управления снова командует расстановкой по всей организации"
+
+
 def test_the_system_section_is_closed_to_everyone_but_the_admin(stand):
     call_command("seed_access_matrix", "--password", PASSWORD)
 

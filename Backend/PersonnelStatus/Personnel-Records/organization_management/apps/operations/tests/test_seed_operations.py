@@ -183,8 +183,19 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # штаб и админа.
     assert holders("event.create") == {"EVENT_OFFICER", "EMPLOYEE_OPS_D2", "HEAD_OPS_UNIT"}
     assert holders("event.bulletin") == {"EVENT_OFFICER", "EMPLOYEE_OPS_D2", "HEAD_OPS_UNIT"}
-    # Расстановка на любом объекте — только штаб (`[РАС-08]`, №421).
-    assert holders("placement.command") == {"HEAD_OPS_UNIT"}
+    # Расстановка на любом объекте — только штаб (`[РАС-08]`, №421), и с
+    # №601 (решение заказчика 06.09.2026) «штаб» это РОЛЬ-ДОБАВКА, а не
+    # профиль второго департамента. Профиль носят обе персоны — начальник
+    # департамента и начальник его управления, — а это право область гранта
+    # не спрашивает вовсе: пока оно лежало в профиле, начальник управления
+    # командовал расстановкой по всей организации. Пин перенацелен на новую
+    # роль осознанно и стережёт ОБЕ стороны переезда: право появилось у
+    # добавки И пропало у профиля.
+    assert holders("placement.command") == {"OPS_STAFF_COMMAND"}
+    # Два соседних обхода уехали туда же и той же причиной. `gvo.manage`
+    # остаётся и у `GVO_LEAD`: старший ГВО правит сводку СВОЕГО мероприятия.
+    assert holders("gvo.manage") == {"GVO_LEAD", "OPS_STAFF_COMMAND"}
+    assert holders("event.stage_override") == {"OPS_STAFF_COMMAND"}
     # Персональная детализация и выгрузка со скрытыми полями — «пока только
     # администратор» (решение №267), то есть ни одной роли, кроме «*».
     assert holders("analytics.personal_detail") == set()
