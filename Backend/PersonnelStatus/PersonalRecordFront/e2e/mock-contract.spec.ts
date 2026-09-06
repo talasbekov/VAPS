@@ -1141,6 +1141,15 @@ test.describe(
         const declinedRow = afterDecline.placementAssignments.find(
           (a: { id: string }) => a.id === assignment.id,
         )
+        // 🔴 «МОИ НАЗНАЧЕНИЯ» ЧИТАЮТСЯ ДО ПОДТВЕРЖДЕНИЯ: подтверждение ниже
+        //    снимает отказ, и после него способ с автором были бы пусты у
+        //    любого кода.
+        const declinedMine = (
+          await (await fetch('/api/ops/security-events/my-assignments/')).json()
+        ).results?.find(
+          (r: { assignmentId?: string }) => r.assignmentId === assignment.id,
+        )
+
         // Подтверждение СНИМАЕТ отказ — обе отметки взаимоисключающи.
         await post(`/api/ops/security-events/se-1/acknowledge/${assignment.id}/`, {})
         const afterAck = await (await fetch('/api/ops/security-events/se-1/')).json()
@@ -1161,8 +1170,16 @@ test.describe(
           mineCount: (JSON.parse(mineText).results ?? []).length as number,
           // Способ и автор ОТКАЗА (Plane №588, показ — №796): сервер пишет
           // их той же мутацией, что и причину (`my_assignments.decline`).
-          declinedVia: declinedRow.declinedVia as string | undefined,
-          declinedBy: declinedRow.declinedBy as string | undefined,
+          //
+          // 🔴 ЧИТАЮТСЯ ИЗ «МОИХ НАЗНАЧЕНИЙ», А НЕ ИЗ КАРТОЧКИ ОМ (найдено
+          //    ревью коммита e6b8fd98, задача №825). Прежде оба поля брались
+          //    у `placementAssignments` карточки мероприятия — то есть проба
+          //    стерегла мутацию, а отображение в списке «мои назначения»,
+          //    которым и живёт карточка профиля, можно было снять, и проба
+          //    всё равно прошла бы.
+          declinedVia: declinedMine?.declinedVia as string | undefined,
+          declinedBy: declinedMine?.declinedBy as string | undefined,
+          declinedMineFound: declinedMine !== undefined,
         }
       })
 
@@ -1185,10 +1202,24 @@ test.describe(
       // учётных записей нет, доказать чужую строку нечем — то же правило, по
       // которому подтверждение в моке пишется «сам» (№542).
       expect(
+        result.declinedMineFound,
+        'строки отказа нет в «моих назначениях» — читать нечего, проба вакуумна',
+      ).toBe(true)
+      expect(
         result.declinedVia,
         'мок не пишет способ отказа — «записал: …» в мок-режиме недостижимо',
       ).toEqual('self')
-      expect(result.declinedBy, 'у собственного отказа появился автор').toEqual('')
+      // 🔴 АВТОР НЕПУСТ — И ЭТО ФОРМА СЕРВЕРА, А НЕ ВОЛЬНОСТЬ МОКА. В
+      //    `my_assignments.decline` стоит `declinedBy=author` БЕЗ УСЛОВИЯ:
+      //    у собственного отказа там имя самого сотрудника. Прежний ассерт
+      //    требовал пустоты «по образцу подтверждения» — а подтверждение как
+      //    раз и есть ветка-исключение (`acknowledgedBy` обнуляется). Мок,
+      //    отдававший пустоту, делал зелёным в мок-режиме любое правило,
+      //    читающее одного лишь автора, — и оно же ломалось бы в бою.
+      expect(
+        result.declinedBy,
+        'мок не пишет автора собственного отказа — расходится с сервером',
+      ).not.toEqual('')
     })
 
     /**
