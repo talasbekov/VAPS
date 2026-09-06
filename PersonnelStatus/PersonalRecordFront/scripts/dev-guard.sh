@@ -89,70 +89,14 @@ fi
 # машины целиком и опускает на их вес свой потолок. Не хватало ровно двух
 # вещей — сказать о них при старте и не стартовать, когда машина уже за
 # бюджетом.
-# ОДИН фильтр на все три места (ревью №817): `comm` у Next меняется от версии
-# («next-server (v15.2.4)», в усечении «next-server (v1»), и три копии этого
-# awk означали бы три места, где правку забудут. Возраст нужен, чтобы отличить
-# сироту от чужого рабочего сервера.
-next_server_rows() {
-  ps -eo pid=,rss=,etimes=,comm= | awk '$4 ~ /^next-server/ {print $1, $2, $3}'
-}
-
-port_of() {
-  ss -ltnp 2>/dev/null | awk -v p="pid=$1," '$0 ~ p {split($4, a, ":"); print a[length(a)]; exit}'
-}
-
-# 🔴 СПИСОК РАЗЛИЧАЕТ СИРОТУ И ЧУЖОЙ РАБОЧИЙ СЕРВЕР (ревью №817). Плоский совет
-# «kill <pid>» одинаково указывал и на восьмичасовую сироту без порта, и на
-# прод-стенд соседа под часовым обходом — а правила проекта требуют в таком
-# случае сперва списаться, а не гасить.
-neighbours_report() {
-  local pid rss etimes port age
-  while read -r pid rss etimes; do
-    [ -z "$pid" ] && continue
-    port=$(port_of "$pid")
-    age=$((etimes / 60))
-    if [ -z "$port" ]; then
-      echo "[dev-guard]   pid=$pid  $((rss / 1024)) МБ  возраст ${age} мин  ПОРТА НЕТ — похоже на сироту, её и гасите"
-    else
-      echo "[dev-guard]   pid=$pid  $((rss / 1024)) МБ  возраст ${age} мин  слушает :$port — может быть чужим прогоном, сперва спросите"
-    fi
-  done <<EOF_NEIGH
-$(next_server_rows)
-EOF_NEIGH
-}
-
-neighbours_total_mb() {
-  local total=0 rss
-  while read -r _pid rss _etimes; do
-    [ -n "$rss" ] && total=$((total + rss))
-  done <<EOF_NEIGH
-$(next_server_rows)
-EOF_NEIGH
-  echo $((total / 1024))
-}
-
-# 🔴 МЕРКА ОТКАЗА — ПАМЯТЬ МАШИНЫ, А НЕ ПОТОЛОК ОДНОГО СЕРВЕРА (ревью №817).
-# Здесь стоял `HARD_LIMIT_MB`, и это была подмена величины: он равен
-# min(40 % памяти, ABS_HARD_CAP_MB), а ABS_HARD_CAP_MB=3500 взят по
-# ПОВЕДЕНЧЕСКОЙ причине — выше ~3,5 ГБ сломан САМ `next dev`. О том, сколько
-# памяти есть у машины, это число не говорит ничего. Замерено при ревью: на
-# машине 15 093 МБ, свободно 5204 МБ, соседи держали 2794 МБ — а отказ по
-# прежней мерке сработал бы уже на 3500, то есть при пяти свободных гигабайтах.
-# И на машине с 64 ГБ он сработал бы там же.
-default_neighbour_limit() {
-  local total_mb
-  total_mb=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
-  [ -z "$total_mb" ] && { echo 6000; return; }
-  echo $((total_mb * 40 / 100))
-}
-NEIGHBOUR_LIMIT_MB="${NEIGHBOUR_LIMIT_MB:-$(default_neighbour_limit)}"
-# Сколько памяти нужно оставить свободной, чтобы новый стенд не начал отбирать
-# её у чужих прогонов: свежий `next dev` стартует на 1,3-1,6 ГБ (замер №323).
-START_NEED_MB="${START_NEED_MB:-1800}"
-
-available_mb() {
-  awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0
-}
+# 🔴 СОСЕДИ — ОБЩИЙ ДОМ (Plane №835). Фильтр `comm`, разбор порта, сумма и
+# мерка бюджета переехали в `scripts/neighbours.sh`: их же читает `prod-stand.sh`,
+# который до №835 поднимался в переполненную машину молча. Копия здесь означала
+# бы два места, где правку забудут.
+NEIGHBOURS_TAG=dev-guard
+# shellcheck source=scripts/neighbours.sh
+. "$(dirname "$0")/neighbours.sh"
+NEIGHBOUR_LIMIT_MB="${NEIGHBOUR_LIMIT_MB:-$(neighbours_budget_mb)}"
 
 NEIGHBOURS=$(neighbours_total_mb)
 if [ "$NEIGHBOURS" -gt 0 ]; then
@@ -164,14 +108,10 @@ fi
 # соседство значило бы сломать документированный порядок работы. А вот
 # четвёртый гигабайтный сервер на машине, которая уже за потолком, — это то
 # самое положение, из которого OOM-killer и начинает убивать чужие прогоны.
-AVAILABLE=$(available_mb)
+AVAILABLE=$(neighbours_available_mb)
 REFUSE=""
 if [ "${DEV_GUARD_ALLOW_NEIGHBOURS:-0}" != "1" ]; then
-  if [ "$NEIGHBOURS" -ge "$NEIGHBOUR_LIMIT_MB" ]; then
-    REFUSE="соседи держат ${NEIGHBOURS} МБ ≥ бюджета машины ${NEIGHBOUR_LIMIT_MB} МБ"
-  elif [ "$AVAILABLE" -gt 0 ] && [ "$AVAILABLE" -lt "$START_NEED_MB" ]; then
-    REFUSE="свободно всего ${AVAILABLE} МБ, а свежему стенду нужно ${START_NEED_MB} МБ"
-  fi
+  REFUSE=$(neighbours_refusal_reason "$NEIGHBOURS" "$NEIGHBOUR_LIMIT_MB" "$AVAILABLE")
 fi
 if [ -n "$REFUSE" ]; then
   echo "[dev-guard] ${REFUSE} — сервер НЕ поднимаю."
@@ -248,21 +188,7 @@ EOF_OTHERS
 # сам перевалил абсолютный потолок: выше ~3,5 ГБ `next dev` сломан
 # поведенчески, и это уже не «много памяти», а «рядом сломанный сервер».
 report_fat_neighbour() {
-  local mine pid rss port
-  mine=" $(descendants "$SERVER_PID") "
-  while read -r pid rss _etimes; do
-    [ -z "$pid" ] && continue
-    case "$mine" in *" $pid "*) continue ;; esac
-    if [ $((rss / 1024)) -gt "$ABS_HARD_CAP_MB" ]; then
-      port=$(port_of "$pid")
-      echo "[dev-guard] 🔴 СОСЕД pid=$pid $( [ -n "$port" ] && echo "порт=:$port" || echo "без порта" ) держит $((rss / 1024)) МБ — выше абсолютного потолка ${ABS_HARD_CAP_MB}."
-      echo "[dev-guard]    Это НЕ мой сервер, погасить его я не могу: выше ~3,5 ГБ next dev рвёт соединения, и падать будут ЧУЖИЕ пробы тоже."
-      return 0
-    fi
-  done <<EOF_FAT
-$(next_server_rows)
-EOF_FAT
-  return 1
+  neighbours_fat_report "$(descendants "$SERVER_PID")" "$ABS_HARD_CAP_MB"
 }
 
 seconds_since_log() {
