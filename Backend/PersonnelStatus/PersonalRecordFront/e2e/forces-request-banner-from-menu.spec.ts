@@ -236,41 +236,63 @@ test.describe(
       )
 
       let vacancyMade = false
+      //: Почему вакансию сделать не удалось — СВОИМИ словами, а не догадкой
+      //: ассерта. Пусто, пока всё хорошо.
+      let whyNoVacancy = ''
       await page.route(/\/api\/staff_unit\/staff-units\/directorate\//, async (route) => {
-        const response = await route.fetch()
-        const body = (await response.json()) as {
-          staff_units?: Record<string, unknown>[]
-        }
-        const units = body.staff_units ?? []
-        // 🔴 ВАКАНСИЯ ДЕЛАЕТСЯ КЛОНИРОВАНИЕМ, А НЕ ТРЕБОВАНИЕМ ДВУХ СТРОК
-        // (Plane №822 Ш-6). Стояло `if (units.length >= 2)` — то есть проба
-        // молча становилась вакуумной и падала «вакансию делать не из чего»,
-        // когда стенд отдавал одну строку. Сколько строк вернёт ручка, зависит
-        // от штата подразделения, а его правят соседние сессии: в замере
-        // 06.09.2026 эта проба упала именно так, а в следующем прогоне прошла.
+        // 🔴 ЗАПРОС СОСТАВА МОЖЕТ НЕ УДАТЬСЯ, И ЭТО НЕ «МАЛО СТРОК» (Plane №856).
+        // Прежняя редакция валила любую беду в одно сообщение «ручка состава
+        // вернула меньше двух строк — вакансию делать не из чего». Замер
+        // 06.09.2026 показал, что «мало строк» тут не бывает вовсе: ручка
+        // отдаёт 442 штатные единицы (440 с сотрудником, 2 вакантных), потому
+        // что область админа — всё дерево. А падение в полном прогоне было —
+        // значит причина была ДРУГАЯ: обрыв `route.fetch()` при перезапуске
+        // бэкенда (№843) оставляет тело без ключа `staff_units`, и проба
+        // объявляла нехватку строк там, где не удался запрос.
         //
-        // Довод исходной редакции сохранён ЦЕЛИКОМ: форма ответа остаётся
-        // СЕРВЕРНОЙ — вакансия делается из настоящей строки, а не выдумывается.
-        // Клон нужен ровно затем, чтобы рядом с вакансией осталась
-        // укомплектованная строка: проба и проверяет РАЗНИЦУ между «выбрано» и
+        // Сообщение, называющее ложную причину, хуже отсутствия сообщения: за
+        // ним идут разбирать состав стенда, которого никто не ломал.
+        let response
+        try {
+          response = await route.fetch()
+        } catch (error) {
+          whyNoVacancy = `запрос состава не удался: ${String(error)}`
+          await route.abort()
+          return
+        }
+        let body: { staff_units?: Record<string, unknown>[] }
+        try {
+          body = (await response.json()) as { staff_units?: Record<string, unknown>[] }
+        } catch (error) {
+          whyNoVacancy = `ответ состава не разобрался как JSON (${response.status()}): ${String(error)}`
+          await route.fulfill({ response })
+          return
+        }
+        if (body.staff_units === undefined) {
+          whyNoVacancy = `в ответе состава нет ключа staff_units (${response.status()}), ключи: ${Object.keys(body).join(', ')}`
+          await route.fulfill({ response, json: body })
+          return
+        }
+        const units = body.staff_units
+        if (units.length === 0) {
+          whyNoVacancy = 'ручка состава вернула ноль строк — вакансию делать не из чего'
+          await route.fulfill({ response, json: body })
+          return
+        }
+        // Вакансия делается КЛОНОМ настоящей строки и добавляется рядом, а не
+        // отбирается у единственной: форма ответа остаётся СЕРВЕРНОЙ
+        // (выдуманная разошлась бы с ней молча), и все настоящие строки
+        // остаются на месте — проба проверяет РАЗНИЦУ между «выбрано» и
         // «выделить», а на одной строке разницы не бывает.
-        //
-        // ⚠️ ЧЕГО ЭТО НЕ ЛЕЧИТ (проверено имитацией, Plane №856): если у
-        // подразделения ОДНА настоящая штатная единица, проба всё равно
-        // красна — просто иначе («из них вакансий» не появляется, потому что
-        // расхождения «выбрано»/«выделить» не возникает). Это лечится не
-        // пробой, а фикстурой: у управления должно быть минимум две единицы.
-        if (units.length >= 1) {
-          const vacancy: Record<string, unknown> = {
-            ...units[0]!,
-            employee: null,
-            employees: [],
-          }
-          if (typeof vacancy.id === 'string') vacancy.id = `${vacancy.id}-vacancy`
-          else if (typeof vacancy.id === 'number') vacancy.id = -Math.abs(vacancy.id)
-          body.staff_units = [vacancy, ...units]
-          vacancyMade = true
+        const vacancy: Record<string, unknown> = {
+          ...units[0]!,
+          employee: null,
+          employees: [],
         }
+        if (typeof vacancy.id === 'string') vacancy.id = `${vacancy.id}-vacancy`
+        else if (typeof vacancy.id === 'number') vacancy.id = -Math.abs(vacancy.id)
+        body.staff_units = [vacancy, ...units]
+        vacancyMade = true
         await route.fulfill({ response, json: body })
       })
 
@@ -286,7 +308,9 @@ test.describe(
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       expect(
         vacancyMade,
-        'ручка состава вернула меньше двух строк — вакансию делать не из чего, проба вакуумна',
+        // Причина — та, что случилась на самом деле, а не единственная,
+        // которую умело назвать прежнее сообщение (Plane №856).
+        whyNoVacancy || 'вакансию сделать не удалось по неизвестной причине',
       ).toBe(true)
 
       // Отмечаем ВСЕ строки страницы: среди них и вакансия, и сотрудники.
