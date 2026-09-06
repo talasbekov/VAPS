@@ -163,7 +163,14 @@ def test_participation_status_is_refused_by_the_personnel_handle(actor, scene):
     )
 
     assert response.status_code == 400, response.data
-    assert "Сбор сил на ОМ" in str(response.data), response.data
+    # 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №840, ревью №825). Здесь стерёгся адрес
+    # «Сбор сил на ОМ» — и адрес был НЕВЕРНЫЙ: по решению №737 «Участие в ОМ»
+    # проставляет начальник управления, и делает это на ТОМ ЖЕ экране
+    # «Статусы сотрудников» — чекбоксами запроса и в окне одного сотрудника.
+    # Человек, прочитав прежний отказ, уходил на другой экран искать то, что
+    # лежало в соседнем окне. Текст отказа теперь общий на все входы
+    # (`statuses/participation_guard.py::REFUSAL`), и пин стережёт его суть.
+    assert "кадровой ручкой не ставится" in str(response.data), response.data
     assert not EmployeeStatus.objects.filter(
         employee=person, status_type="IN_EVENT"
     ).exists(), "статус привлечения записан кадровой ручкой"

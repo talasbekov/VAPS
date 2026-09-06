@@ -11,6 +11,9 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.divisions.models import Division
 
 from organization_management.apps.statuses import catalog
+from organization_management.apps.statuses.participation_guard import (
+    refuse_manual_participation,
+)
 
 
 def validate_status_type_code(value: str) -> str:
@@ -102,7 +105,15 @@ class EmployeeStatusSerializer(serializers.ModelSerializer):
     """
 
     def validate_status_type(self, value):
-        return validate_status_type_code(value)
+        validate_status_type_code(value)
+        # 🔴 ВТОРАЯ ДВЕРЬ В ТОТ ЖЕ ФАКТ (Plane №757, закрыто до конца в №840).
+        # Здесь сходятся ОБА пути этой ручки — создание и правка, — поэтому
+        # запрет стоит тут, а не четвёртым вызовом рядом с тремя. `self.instance`
+        # даёт текущий тип: правку и закрытие УЖЕ заведённого участия запрет не
+        # трогает, отбивается только заведение и смена типа на участие.
+        current = getattr(self.instance, "status_type", None)
+        refuse_manual_participation(value, current=current)
+        return value
 
     employee_data = EmployeeBasicSerializer(source='employee', read_only=True)
     related_division_data = DivisionBasicSerializer(source='related_division', read_only=True)
