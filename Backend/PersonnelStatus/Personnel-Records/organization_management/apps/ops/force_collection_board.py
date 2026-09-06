@@ -259,10 +259,20 @@ def detail_extras(event, allocations):
     }
 
 
-def board_row(event, *, urgent_days=None):
-    """Строка доски. `urgent_days` — см. `is_urgent`: листинг читает порог
-    один раз и передаёт его сюда (Plane №669)."""
-    allocations = events.allocation_members_view(event)
+def board_row(event, *, urgent_days=None, read_context=None):
+    """Строка доски.
+
+    `urgent_days` — см. `is_urgent`: листинг читает порог один раз и передаёт
+    его сюда (Plane №669).
+
+    `read_context` — чтения, общие на ВЕСЬ ответ листинга (Plane №933). Без
+    него раскладка каждой строки спрашивала свои участия и свою карту детей
+    подразделений: ответ верный, но число запросов росло линейно, а ручка
+    идёт по всем незакрытым ОМ и пагинации не имеет. Контекста нет — всё
+    работает как раньше, построчно: у карточки одного сбора строка одна, и
+    собирать для неё пакет незачем.
+    """
+    allocations = events.allocation_members_view(event, read_context=read_context)
     status = collection_status(event, allocations)
     t = totals(event, allocations)
     return {

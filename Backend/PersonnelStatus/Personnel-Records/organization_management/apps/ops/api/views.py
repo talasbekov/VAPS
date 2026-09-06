@@ -1036,17 +1036,46 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         from organization_management.apps.ops import force_collection_board as board
 
+        from organization_management.apps.ops import (
+            security_events as registry_reads,
+        )
+
         rows = []
         # Порог автосрочности — ОДНО число на весь ответ (Plane №669). Читался
         # он внутри `board_row`, то есть заново на каждую строку листинга:
         # лишний запрос на строку ровно за тем же значением.
         urgent_days = event_service.return_urgent_days()
-        for event in OpsSecurityEvent.objects.exclude(
-            stage=OpsSecurityEvent.Stage.CLOSED
-        ).order_by("business_date", "code"):
-            if event_service.force_demand_total(event) <= 0:
-                continue
-            rows.append(board.board_row(event, urgent_days=urgent_days))
+        # 🔴 ЧТЕНИЯ, ОБЩИЕ НА ОТВЕТ (Plane №933). Раскладка каждой строки
+        # спрашивала СВОИ участия (`ops_status_participations`, джойном
+        # тянущие статусы) и СВОЮ карту детей подразделений — то есть два
+        # запроса на строку. Замер: на 2 строки 2 и 2, на 3 строки 3 и 3.
+        # Ответ при этом верный, страница просто дороже, и заметить это по
+        # жалобе нельзя: ручка идёт по ВСЕМ незакрытым ОМ и пагинации не
+        # имеет, так что полсотни сборов — около сотни лишних round-trip.
+        #
+        # Механизм не изобретается: тот же `RegistryReadContext`, что у
+        # реестра ОМ (Plane №909). Он живёт ровно один ответ ручки, поэтому
+        # инвалидации не требует по построению.
+        #
+        # Набор мероприятий приходится собрать СПИСКОМ до сериализации: пакет
+        # можно набить, только зная всю страницу, а отбор по `force_demand_
+        # total` идёт в питоне и оставляет не все строки очереди.
+        page = [
+            event
+            for event in OpsSecurityEvent.objects.exclude(
+                stage=OpsSecurityEvent.Stage.CLOSED
+            ).order_by("business_date", "code")
+            if event_service.force_demand_total(event) > 0
+        ]
+        read_context = registry_reads.RegistryReadContext()
+        if page:
+            read_context.prime_participations([event.pk for event in page])
+        for event in page:
+            rows.append(
+                board.board_row(
+                    event, urgent_days=urgent_days, read_context=read_context
+                )
+            )
         rows.sort(key=board.sort_key)
         return Response({"results": rows})
 
