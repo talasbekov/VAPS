@@ -286,6 +286,78 @@ def test_the_time_carries_its_own_flag_next_to_a_filled_date(staff):
     assert values["arrival_1"] == "18.06.2026 г. уточняется"
 
 
+def test_both_flags_on_one_field_print_the_word_once(staff):
+    """Обе галочки на одном поле — ОДНО «уточняется», а не два (Plane №904).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Флаг спрашивается у каждой части склейки (№518), а
+    строка у поля документа одна. Оператор, которому не сообщили ни даты, ни
+    времени, ставит обе галочки — экран рисует их рядом, — и место `arrival_1`
+    собиралось как «уточняется уточняется». Это не экзотика, а обычное
+    состояние заявки: «прилёт согласован, дату и время сообщат позже» —
+    ровно тот сценарий, ради которого заводилась №518. Документ при этом
+    уходит на подпись и рассылку, и удвоенное слово в подписываемой бумаге
+    читается как опечатка, а не как сведение.
+
+    Существующие пробы этого не ловили по построению: `:137` помечает только
+    дату, `:261` — только время, и обе строки склейки ни разу не оказывались
+    «уточняется» ОДНОВРЕМЕННО.
+
+    КРАСНАЯ ПРОБА: убери в `joined()` ветку «все части — UNSPECIFIED» — в
+    обоих полях снова окажется слово, напечатанное дважды.
+    """
+    from organization_management.apps.ops import documents_summary
+
+    event = make_event("ОМ-Т-56")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-56/",
+        {
+            "section": "arrival",
+            "values": {
+                "arrival": {"date": "", "time": ""},
+                "departure": {"date": "", "time": ""},
+            },
+            "unspecified": [
+                "arrival.date",
+                "arrival.time",
+                "departure.date",
+                "departure.time",
+            ],
+        },
+        format="json",
+    )
+
+    values = documents_summary.document_values(event)
+
+    assert values["arrival_1"] == "уточняется", values["arrival_1"]
+    assert values["departure_1"] == "уточняется", values["departure_1"]
+
+
+def test_a_flagged_time_next_to_a_flagged_date_does_not_swallow_the_date(staff):
+    """Смешанный случай не схлопывается: дата остаётся на месте (Plane №904).
+
+    Обратная сторона правки выше. Ветка «все части неизвестны» обязана быть
+    именно такой: сработай она на ЛЮБОМ совпадении, «18.06.2026 уточняется»
+    превратилось бы в одно слово, и документ потерял бы дату, которую человек
+    сообщил. Без этой пробы починка №904 чинила бы одно и ломала соседнее.
+    """
+    from organization_management.apps.ops import documents_summary
+
+    event = make_event("ОМ-Т-57")
+    staff.patch(
+        f"{GVO_URL}ОМ-Т-57/",
+        {
+            "section": "arrival",
+            "values": {"arrival": {"date": "18.06.2026", "time": ""}},
+            "unspecified": ["arrival.time"],
+        },
+        format="json",
+    )
+
+    values = documents_summary.document_values(event)
+
+    assert values["arrival_1"] == "18.06.2026 г. уточняется"
+
+
 # ── Правка утверждённого визита (Plane №685) ────────────────────────────────
 
 
