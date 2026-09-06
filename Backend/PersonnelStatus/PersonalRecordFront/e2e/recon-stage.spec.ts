@@ -12,6 +12,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { createOwnEvent, objectWithPassport, standCall } from './prepare-events'
+import { uniqueBusinessDate } from './business-date'
 import { probeTitle } from './probe-events'
 import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
@@ -763,9 +764,12 @@ async function prepareEvent(token: string): Promise<string> {
   const call = standCall(token)
   const created = await createOwnEvent(call, token, {
     name: 'Проба рекогносцировки',
-    // Своя деловая дата у КАЖДОЙ подготовки: общая воспроизводит исчерпание
-    // кадрового пула, от которого и уходим (№822, подвид 4).
-    businessDate: '2026-08-24',
+    // 🔴 ЗДЕСЬ СТОЯЛА КОНСТАНТА ПОД ЭТИМ ЖЕ КОММЕНТАРИЕМ (найдено ревью).
+    // Комментарий обещал «свою дату у КАЖДОЙ подготовки», а дата была зашита
+    // — и `ownEventOnRecon` зовут четыре пробы файла, все на один день. То
+    // есть текст обещал лечение подвида 4, а код его не делал: обещание в
+    // комментарии само по себе дефект, когда код ему не соответствует.
+    businessDate: uniqueBusinessDate(),
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, {
