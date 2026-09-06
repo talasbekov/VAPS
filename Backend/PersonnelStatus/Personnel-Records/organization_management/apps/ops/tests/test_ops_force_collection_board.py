@@ -263,6 +263,98 @@ def test_headquarters_is_notified_on_every_answer(manager, hq):  # noqa: F811
     assert note.payload["allocating"] == 2 and note.payload["allocationId"] == allocation_id
 
 
+def test_a_swallowed_failure_is_not_counted_as_delivered_to_headquarters(
+    manager, hq, monkeypatch  # noqa: F811
+):
+    """🔴 Plane №883: штабу считается ДОСТАВЛЕННОЕ, а не попытки.
+
+    `notify_service.notify` по замыслу глотает любое исключение и возвращает
+    `None` (рассылка не должна ронять ответ департамента), а счётчик здесь рос
+    безусловно: при отказе вставки для всех получателей отчёт всё равно
+    сказал бы «уведомлено N» и не назвал бы никого недоставленным.
+
+    Это последнее место раздела, где правило было забыто, а не позвано:
+    соседняя рассылка того же модуля (№561), возврат расстановки (№809) и
+    отказ от заступления считают честно с №829. Разнобой хуже однородной
+    ошибки — читатель журнала не знает, какому `notified` верить.
+
+    Мутация, на которой проба обязана краснеть: вернуть безусловное
+    `notified += 1` — `notified` станет 1, а `undelivered` пустым.
+    """
+    from organization_management.apps.ops import forces_notify
+
+    hq_user = hq.user
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    event = service.lock_event(_event_id(base))
+    allocation = next(
+        row for row in event.force_allocation if row["id"] == allocation_id
+    )
+
+    monkeypatch.setattr(
+        forces_notify.notify_service, "notify", lambda *a, **kw: None
+    )
+    report = forces_notify.notify_headquarters_response(
+        event, allocation, allocating=2
+    )
+
+    assert report["notified"] == 0, "отказ вставки посчитан как доставка"
+    # Поимённо, а не числом: «одному не дошло» не говорит, кому, и чинить
+    # это некому. Формат подписи — общий, из `DeliveryTally.deliver`.
+    #
+    # Сверяется СОСТАВ, а не одна строка: право `forces.command` в этой
+    # фикстуре есть не только у `hq` — у управляющей учётки стоит `*`, и
+    # штаба здесь двое. Пин на одного пришлось бы править при каждой правке
+    # фикстуры, а «список непустой» не отличил бы «назвали всех» от
+    # «назвали одного из двух».
+    assert set(report["undelivered"]) == {
+        f"штаб · {user_id}" for user_id in forces_notify._headquarters_users()
+    }
+    assert f"штаб · {hq_user.pk}" in report["undelivered"]
+
+
+def test_the_undelivered_headquarters_report_reaches_the_log(
+    manager, hq, monkeypatch, caplog  # noqa: F811
+):
+    """Честное число ДОХОДИТ до читателя, а не остаётся в отброшенном отчёте.
+
+    🔴 ЗАЧЕМ ОТДЕЛЬНАЯ ПРОБА. Предыдущая проверяет, что функция считает
+    честно, — и этого мало: её отчёт вызывающий отбрасывал целиком, а честное
+    число, которого никто не видит, отличается от нечестного только на бумаге.
+    У отказа вставки НЕТ ни одного другого следа: `notify()` глотает своё
+    исключение сам, а `except` вокруг вызова ловит только ошибку чтения ролей.
+    Значит либо эта строка журнала, либо ничего.
+
+    Мутация: снова отбросить отчёт (не присваивать `report` или снять `if`) —
+    предупреждения в журнале не будет, и проба покраснеет.
+    """
+    from organization_management.apps.ops import forces_notify
+
+    hq_user = hq.user
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    monkeypatch.setattr(
+        forces_notify.notify_service, "notify", lambda *a, **kw: None
+    )
+
+    with caplog.at_level("WARNING", logger=service.logger.name):
+        service.respond_allocation(
+            _event_id(base), allocation_id, allocating=2, comment="", actor="user:dep"
+        )
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("не легло" in text for text in warnings), (
+        "отказ доставки штабу не оставил следа ни в одном месте: "
+        f"{warnings}"
+    )
+    assert any(f"штаб · {hq_user.pk}" in text for text in warnings), (
+        "в журнале не названо, КОМУ не дошло — чинить некому"
+    )
+
+
 def test_every_department_answer_reaches_headquarters(manager, hq):  # noqa: F811
     """КАЖДЫЙ ответ — своё уведомление, а не только первый за день (Plane №677).
 

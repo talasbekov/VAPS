@@ -299,7 +299,22 @@ def _headquarters_users():
 
 
 def notify_headquarters_response(event, allocation, *, allocating):
-    """Штаб получает уведомление при КАЖДОМ изменении «Выделяют» департаментом."""
+    """Штаб получает уведомление при КАЖДОМ изменении «Выделяют» департаментом.
+
+    Возвращает отчёт `{notified, undelivered}`.
+
+    🔴 СЧИТАЕТСЯ ДОСТАВЛЕННОЕ, А НЕ ПОПЫТКИ (Plane №883). Здесь стоял
+    безусловный `notified += 1` при том, что `notify()` по замыслу глотает
+    любое исключение и возвращает `None`: при отказе вставки для ВСЕХ
+    получателей отчёт всё равно сказал бы «уведомлено N».
+
+    Это последнее место раздела, где правило было не позвано, а забыто:
+    соседняя рассылка того же модуля (`notify_directorate_heads`, №561),
+    возврат расстановки (№809) и отказ от заступления перешли на общий счёт
+    ещё в №829, а эта функция осталась — ровно тот разнобой, ради которого
+    помощник и заводился. Однородная ошибка лучше разнобоя только на словах:
+    читатель журнала не знает, какое из полей `notified` честное.
+    """
     payload = {
         "eventId": str(event.pk),
         "eventCode": event.code,
@@ -310,7 +325,7 @@ def notify_headquarters_response(event, allocation, *, allocating):
         "requested": int(allocation.get("need") or 0),
         "allocating": int(allocating),
     }
-    notified = 0
+    tally = notify_service.DeliveryTally()
     for user_id in _headquarters_users():
         # 🔴 СОБЫТИЕ, А НЕ СОСТОЯНИЕ ДНЯ (Plane №677). «Одно на день» —
         # умолчание `notify`, и под ним штаб на ОМ с тремя департаментами
@@ -318,12 +333,15 @@ def notify_headquarters_response(event, allocation, *, allocating):
         # третий ответы и все последующие правки «Выделяют» проглатывались
         # без следа, ровно вопреки строке докстринга выше. `dedupe_key=None`
         # снимает схлопывание для этих строк и только для них.
-        notify_service.notify(
+        # Подпись недоставленного — «штаб · учётка»: имени у получателя здесь
+        # нет и взять его неоткуда (штаб отбирается ПРАВОМ, а не сотрудником),
+        # а формат подписи один на все модули — см. `DeliveryTally.deliver`.
+        tally.deliver(
             user_id,
             RESPONSE_KIND,
             event.business_date,
             payload,
             dedupe_key=None,
+            label="штаб",
         )
-        notified += 1
-    return {"notified": notified}
+    return {"notified": tally.notified, "undelivered": tally.undelivered}
