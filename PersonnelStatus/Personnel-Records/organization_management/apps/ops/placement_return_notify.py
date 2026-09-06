@@ -32,7 +32,10 @@
 предмет, и растить `security_events.py` ею незачем.
 """
 from organization_management.apps.operations import notify_service
-from organization_management.apps.ops.acknowledgement_notify import _employee_users
+from organization_management.apps.ops.acknowledgement_notify import (
+    _employee_users,
+    dismissed_employees,
+)
 
 KIND = "PLACEMENT_RETURNED"
 
@@ -64,8 +67,15 @@ def notify_placement_returned(event, visit, *, comment, remarks_open, urgent):
     if not employee_ids:
         # Форма отчёта ОДНА на все выходы (Plane №809): читатель не должен
         # гадать, есть ли ключ `undelivered` в этой ветке.
-        return {"notified": 0, "unlinked": [], "undelivered": [], "nobody": True}
+        return {
+            "notified": 0,
+            "unlinked": [],
+            "undelivered": [],
+            "dismissed": [],
+            "nobody": True,
+        }
     users = _employee_users(employee_ids)
+    dismissed = set(dismissed_employees(employee_ids))
     payload = {
         "eventId": str(event.pk),
         "eventCode": event.code,
@@ -85,6 +95,11 @@ def notify_placement_returned(event, visit, *, comment, remarks_open, urgent):
     if visit.chief_employee_id is not None:
         names[str(visit.chief_employee_id)] = visit.chief_name or str(visit.chief_employee_id)
     for employee_id in dict.fromkeys(str(pk) for pk in employee_ids):
+        # Уволенный — своей графой (Plane №900): о возврате объекта ему знать
+        # не надо, а в «нет учётки» он бы звал заводить её уволенному.
+        if employee_id in dismissed:
+            tally.skip_dismissed(names.get(employee_id, employee_id))
+            continue
         user_id = users.get(employee_id)
         if user_id is None:
             tally.skip_unlinked(names.get(employee_id, employee_id))
@@ -102,5 +117,6 @@ def notify_placement_returned(event, visit, *, comment, remarks_open, urgent):
         "notified": tally.notified,
         "unlinked": tally.unlinked,
         "undelivered": tally.undelivered,
+        "dismissed": tally.dismissed,
         "nobody": False,
     }

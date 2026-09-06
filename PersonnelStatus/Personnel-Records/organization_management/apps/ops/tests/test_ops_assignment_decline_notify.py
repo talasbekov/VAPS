@@ -207,6 +207,54 @@ def test_a_single_object_event_with_unmarked_posts_still_reaches_its_lead(
     )
 
 
+def test_a_dismissed_object_lead_is_counted_apart_from_the_unlinked(
+    manager, django_user_model, two_objects_on_approval  # noqa: F811
+):
+    """Уволенный старший объекта — СВОЯ графа отчёта (Plane №900).
+
+    Об отказе заступить узнаёт старший объекта. Уволенный старший — не адресат
+    (он этим нарядом больше не занимается) и не «тот, у кого нет учётки»:
+    вторая графа зовёт кадровика чинить связь, а чинить тут нечего. Третья
+    графа отвечает на настоящий вопрос — почему уведомлений меньше, чем
+    названных в объекте людей.
+
+    КРАСНАЯ ПРОБА: убери ветку `if employee_id in dismissed` — строка уедет в
+    `unlinked`, и обе проверки ниже покраснеют.
+    """
+    base, event_id, first, _second, _ = two_objects_on_approval
+    event = service.lock_event(event_id)
+    own_posts = {str(p["id"]) for p in service.visit_object_posts(event, first)}
+    rows = [a for a in event.placement_assignments if str(a.get("postId")) in own_posts]
+
+    lead = make_employee(last_name="Уволенов")
+    lead_user = django_user_model.objects.create_user(
+        username="decline-dismissed", password="x"
+    )
+    lead.user = lead_user
+    lead.is_active = False
+    lead.save(update_fields=["user", "is_active"])
+    first.chief_employee_id = lead.pk
+    first.chief_name = "Уволенов У."
+    first.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+
+    who = django_user_model.objects.create_user(username="decline-self-5", password="x")
+    my_assignments.decline(event_id, rows[0]["id"], "Болен", actor=who, actor_name="Сам")
+
+    record = (
+        OpsAuditLog.objects.filter(action="ASSIGNMENT_DECLINED", entity_id=str(event_id))
+        .order_by("-id")
+        .first()
+    )
+    assert record is not None, "отказ не оставил записи в журнале"
+    assert "Уволенов У." in record.new_value.get("dismissed", []), record.new_value
+    assert "Уволенов У." not in record.new_value.get("unlinked", []), (
+        "уволенный назван «без учётки» — кадровик пойдёт чинить несуществующее"
+    )
+    assert not OpsNotification.objects.filter(
+        recipient=str(lead_user.pk)
+    ).exists(), "уволенный получил уведомление об отказе по чужому наряду"
+
+
 def test_the_delivery_report_reaches_the_journal(
     manager, django_user_model, two_objects_on_approval, monkeypatch  # noqa: F811
 ):

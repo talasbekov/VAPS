@@ -66,6 +66,40 @@ def test_remind_one_and_all_mark_rows_and_refuse_the_confirmed(manager, acknowle
     assert second in resp.json()["remindedAssignmentIds"]
 
 
+def test_reminding_everyone_skips_the_dismissed(manager, event_with_people):  # noqa: F811
+    """«Напомнить всем» обходит уволенного (Plane №900).
+
+    Та же беда, что у рассылки при открытии этапа, но приходит ПО НАЖАТИЮ: без
+    отсечения уволенный получал «напоминаем: заступаешь», а старший видел его
+    в графе «не дошло» и шёл заводить учётку тому, кого в наряде уже нет.
+
+    КРАСНАЯ ПРОБА: убери ветку `if employee_id in dismissed` в `_send` —
+    уволенный возвращается либо в получатели, либо в `unlinkedEmployeeIds`.
+    """
+    from organization_management.apps.employees.models import Employee
+
+    event, account, _boss, _unlinked = event_with_people
+    employee = Employee.objects.get(user=account)
+    employee.is_active = False
+    employee.save(update_fields=["is_active"])
+    before = set(
+        OpsNotification.objects.values_list("recipient", flat=True)
+    )
+
+    resp = manager.post(f"{URL}{event.pk}/acknowledgement/remind-all/")
+
+    assert resp.status_code == 200, resp.data
+    report = resp.json()
+    assert report["dismissedEmployeeIds"] == [str(employee.pk)], report
+    assert str(employee.pk) not in report["unlinkedEmployeeIds"], (
+        "уволенный назван «тем, до кого не дошло» — чинить это некому"
+    )
+    after = set(OpsNotification.objects.values_list("recipient", flat=True))
+    assert str(account.pk) not in (after - before), (
+        "уволенному напомнили о наряде, к которому он не имеет отношения"
+    )
+
+
 def test_complete_needs_force_and_comment_when_someone_did_not_confirm(manager, acknowledgement_event):  # noqa: F811
     base, rows = acknowledgement_event
     resp = manager.post(f"{base}acknowledgement/complete/")

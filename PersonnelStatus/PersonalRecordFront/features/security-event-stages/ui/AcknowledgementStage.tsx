@@ -501,12 +501,27 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
         <StageError error={complete.error} />
 
         {report !== undefined && (
+          // 🔴 ЖЕЛТИТ ТОЛЬКО ТО, ЧТО ЧИНЯТ (Plane №900). Исходов у рассылки
+          // теперь три, и два из них — не ошибки. «Нет учётки» зовёт
+          // кадровика; «уволен» не зовёт никого — человека в наряде уже нет.
+          // Пропущенные уволенные плашку НЕ желтят, иначе старший ходил бы
+          // разбираться с тем, что работает как задумано.
+          //
+          // Различие несёт ТЕКСТ, а не только цвет: правило «не передавать
+          // смысл одним цветом» (скилл `ui-ux-pro-max`, Accessibility →
+          // Color Only) здесь и есть предмет — обе строки в одной плашке
+          // отличаются как раз тем, зовут ли они что-то делать. Поэтому у
+          // каждой названа ПОЧИНКА или её отсутствие, а не только число.
           <p
             className={
               report.unlinkedEmployeeIds.length > 0
                 ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
                 : "rounded-md border px-3 py-2 text-xs text-muted-foreground"
             }
+            // Одно атомарное сообщение о состоянии, а не живое число: экранный
+            // читатель произносит строку целиком и не перебивает работу.
+            role="status"
+            aria-atomic="true"
             data-testid="remind-report"
           >
             Напоминание отправлено: {report.employees} заступающим и{" "}
@@ -514,7 +529,14 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
             {report.unlinkedEmployeeIds.length > 0 && (
               <>
                 {" "}Не дошло до {report.unlinkedEmployeeIds.length}:
-                у их кадровых записей нет связанной учётной записи.
+                у их кадровых записей нет связанной учётной записи — её
+                заводит кадровик.
+              </>
+            )}
+            {report.dismissedEmployeeIds.length > 0 && (
+              <>
+                {" "}Пропущено {report.dismissedEmployeeIds.length}:
+                сотрудники уволены, напоминать им не нужно.
               </>
             )}
           </p>
