@@ -534,12 +534,25 @@ function EvaluationPanel({ event }: { event: SecurityEvent }) {
                       {row.divisionName !== "" && (
                         <span className="text-muted-foreground">· {row.divisionName}</span>
                       )}
+                      {/* 🔴 МОМЕНТ «ОЗНАКОМЛЕН» — ЧЕРЕЗ ОБЩИЙ МОДУЛЬ, А НЕ
+                          ИНЛАЙНОМ (Plane №926). Ниже стоял
+                          `new Date(...).toLocaleString("ru-RU", {…})` с тем же
+                          набором полей: формат СОВПАДАЛ, и правка выглядит
+                          косметической. Но обхода модуля хватило, чтобы
+                          потерять ЗАЩИТУ — `new Date` от неразбираемой строки
+                          даёт `Invalid Date`, и `toLocaleString` печатает её
+                          человеку буквально. `formatIsoDayTime` заведён по
+                          №730 ровно от этого и отдаёт «—».
+
+                          Один и тот же момент `acknowledgedAt` печатался на
+                          трёх экранах тремя способами; два свёл модуль
+                          раньше, это третий. */}
                       {row.replaced ? (
                         <span className="rounded-full bg-muted px-2 text-[11px]">снят</span>
                       ) : (
                         <span className="text-xs text-muted-foreground">
                           {row.acknowledgedAt !== null
-                            ? `· ознакомлен ${new Date(row.acknowledgedAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
+                            ? `· ознакомлен ${formatIsoDayTime(row.acknowledgedAt)}`
                             : "· не ознакомлен"}
                         </span>
                       )}
