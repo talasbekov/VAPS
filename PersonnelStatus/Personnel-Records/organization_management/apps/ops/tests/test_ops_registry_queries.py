@@ -163,3 +163,56 @@ def test_the_registry_does_not_add_queries_per_row(manager):  # noqa: F811
         f"строк ({one} → {three}). Запрос на строку — это N+1: он не виден "
         "глазом и растёт линейно вместе с числом мероприятий."
     )
+
+
+def test_a_partial_prefetch_does_not_cost_two_queries_per_object(manager):  # noqa: F811
+    """Набор, подтянувший объекты БЕЗ вложенных, не платит за каждый объект
+    (Plane №911).
+
+    🔴 ЧТО СТЕРЕЖЁТ. `visit_objects_of` решал «кэш есть» по наличию ключа
+    `visit_objects` — и только его. Набор, подтянувший объекты без
+    `deputies`/`document_versions`, проходил проверку и получал список даром, а
+    потом платил ДВА запроса на КАЖДЫЙ объект, когда сериализатор доходил до
+    замещающих и версий. Такие наборы существуют не в теории: `my_assignments`,
+    `documents_summary` и `documents_bulletin` тянут `visit_objects` и на этом
+    останавливаются.
+
+    Сторож реестра выше этого не показывал бы НИКОГДА: он гоняет свой набор,
+    где вложенные подтянуты, и остаётся зелёным — ровно та слепая зона, из-за
+    которой дефект и был бы найден только замером на живой странице.
+
+    Проба строит именно такой неполный набор и считает обращения к таблицам
+    замещающих и версий: их должно быть не больше одного на каждую, сколько бы
+    объектов посещения ни было. У фикстуры их два.
+
+    КРАСНАЯ ПРОБА: убери проверку вложенных ключей в `visit_objects_of` —
+    обращений станет по два на объект.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+    from organization_management.apps.ops.api.serializers import (
+        serialize_security_event,
+    )
+
+    event_id = _event_with_two_objects(manager, 9)
+    # Набор-нарушитель: объекты подтянуты, вложенные — нет.
+    partial = (
+        OpsSecurityEvent.objects.prefetch_related("visit_objects")
+        .filter(pk=event_id)
+        .first()
+    )
+    assert partial is not None
+
+    with CaptureQueriesContext(connection) as captured:
+        serialize_security_event(partial)
+
+    def reads(table):
+        return sum(1 for q in captured.captured_queries if table in q["sql"])
+
+    assert reads("ops_visit_object_deputies") <= 1, (
+        f"замещающие прочитаны {reads('ops_visit_object_deputies')} раз(а) — "
+        "по запросу на объект посещения"
+    )
+    assert reads("ops_placement_document_versions") <= 1, (
+        f"версии документа прочитаны {reads('ops_placement_document_versions')} "
+        "раз(а) — по запросу на объект посещения"
+    )
