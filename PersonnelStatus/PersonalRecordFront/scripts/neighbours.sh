@@ -39,6 +39,62 @@ port_of() {
   "$NEIGHBOURS_PORT_OF" "$1"
 }
 
+#: Где лежат метки принадлежности стендов. Ключ — ПОРТ: сервер в списке соседей
+#: опознаётся именно по нему, а pid у него свой (потомок обёртки).
+STAND_OWNER_DIR="${STAND_OWNER_DIR:-/tmp}"
+
+stand_owner_file() {
+  echo "$STAND_OWNER_DIR/next-stand-$1.owner"
+}
+
+# Записать, КТО поднял стенд на этом порту (Plane №832).
+#
+# 🔴 ЗАЧЕМ. До этой метки «лишний» `next-server` в списке опознавался только
+# догадкой: порт есть — «наверное, чужой прогон, спрошу»; порта нет — «наверное,
+# сирота». Спросить было не у кого поимённо, а гасить чужой рабочий стенд
+# правила запрещают. Теперь сессия пишет о себе сама, и следующая читает, а не
+# гадает.
+#
+# `$1` — порт, `$2` — вид стенда (`dev`/`prod`/`mock`), `$3` — pid сервера.
+# Имя владельца берётся из `STAND_OWNER`, если сессия его задала; иначе
+# остаётся пользователь и команда родителя — это хуже имени сессии, но лучше
+# пустоты.
+stand_owner_write() {
+  local port="$1" kind="$2" pid="$3" parent
+  parent=$(cat "/proc/$PPID/comm" 2>/dev/null || echo "?")
+  {
+    echo "pid=$pid"
+    echo "kind=$kind"
+    echo "owner=${STAND_OWNER:-${USER:-?}}"
+    echo "ppid=$PPID ($parent)"
+    echo "started=$(date '+%Y-%m-%d %H:%M:%S')"
+  } > "$(stand_owner_file "$port")" 2>/dev/null || true
+}
+
+stand_owner_forget() {
+  rm -f "$(stand_owner_file "$1")" 2>/dev/null || true
+}
+
+# Однострочная справка о владельце порта — или пусто, если метки нет.
+#
+# Метка УМЕРШЕГО стенда не выбрасывается молча, а называется протухшей: файл в
+# `/tmp` переживает свой сервер, и «поднял такой-то» про мёртвый процесс увело
+# бы разбор к живому человеку вместо сироты.
+stand_owner_note() {
+  local file owner kind pid started
+  file="$(stand_owner_file "$1")"
+  [ -r "$file" ] || return 0
+  pid=$(awk -F= '$1=="pid"{print $2}' "$file")
+  kind=$(awk -F= '$1=="kind"{print $2}' "$file")
+  owner=$(awk -F= '$1=="owner"{print $2}' "$file")
+  started=$(awk -F= '$1=="started"{sub(/^started=/,""); print substr($0, index($0,"=")+1)}' "$file")
+  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+    echo "метка протухла (в ней pid=$pid, его уже нет): поднимал $owner, $kind, $started"
+    return 0
+  fi
+  echo "поднял $owner, $kind, $started"
+}
+
 # ОДИН фильтр на все места (ревью №817): три копии этого awk означали бы три
 # места, где правку забудут. Возраст нужен, чтобы отличить сироту от чужого
 # рабочего сервера.
@@ -51,7 +107,7 @@ next_server_rows() {
 # прод-стенд соседа под часовым обходом — а правила проекта требуют в таком
 # случае сперва списаться, а не гасить.
 neighbours_report() {
-  local pid rss etimes port age
+  local pid rss etimes port age note
   while read -r pid rss etimes; do
     [ -z "$pid" ] && continue
     port=$(port_of "$pid")
@@ -59,7 +115,8 @@ neighbours_report() {
     if [ -z "$port" ]; then
       echo "[$NEIGHBOURS_TAG]   pid=$pid  $((rss / 1024)) МБ  возраст ${age} мин  ПОРТА НЕТ — похоже на сироту, её и гасите"
     else
-      echo "[$NEIGHBOURS_TAG]   pid=$pid  $((rss / 1024)) МБ  возраст ${age} мин  слушает :$port — может быть чужим прогоном, сперва спросите"
+      note=$(stand_owner_note "$port")
+      echo "[$NEIGHBOURS_TAG]   pid=$pid  $((rss / 1024)) МБ  возраст ${age} мин  слушает :$port — ${note:-владелец не назвался, сперва спросите}"
     fi
   done <<EOF_NEIGH
 $(next_server_rows)
