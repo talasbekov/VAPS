@@ -5,7 +5,8 @@ documents: заводить второй механизм прав ради но
 защищать одни и те же сведения по-разному в зависимости от того, каким адресом
 их спросили.
 """
-from django.db.models import Exists, OuterRef, Prefetch
+from django.db.models import CharField, Exists, OuterRef, Prefetch, Value
+from django.db.models.functions import Cast, Concat
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied
@@ -483,9 +484,75 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Вложенные `select_related` перечислены ЗДЕСЬ, а не оставлены
         # помощникам: помощник, строящий свой queryset, кэш обходит — ровно
         # так этот N+1 и возвращался дважды (№418, №619).
-        rows = list(
-            OpsSecurityEvent.objects.select_related("country", "city")
-            .prefetch_related(
+        # 🔴 ФИЛЬТРЫ И СТРАНИЦА — В БАЗЕ, А НЕ В ПАМЯТИ (Plane №910). Здесь
+        # стоял `list(OpsSecurityEvent.objects…)` — ВСЯ таблица, — а отбор и
+        # срез страницы шли питоном. Три `Prefetch`, добавленные №499 и №480,
+        # отрабатывали по всей таблице: число запросов падало, число
+        # вытащенных строк росло. При двадцати строках на странице это выигрыш,
+        # при нескольких тысячах ОМ — проигрыш, и растёт он молча.
+        #
+        # Сторож `test_ops_registry_queries` этого не видит ПО УСТРОЙСТВУ: он
+        # считает запросы, а не строки, и «прирост ноль» выполняется и тогда,
+        # когда ручка тащит в память весь реестр. Поэтому ему дописана вторая
+        # половина — верхняя граница вытащенных строк.
+        queryset = OpsSecurityEvent.objects.all()
+        if stage:
+            # Список стадий через запятую, а не одна: ленты «Сбора сил на ОМ»
+            # спрашивают ОКНО, в котором сбор живёт («Потребность», «Запрос
+            # сил», «Расстановка»), а не одну стадию (Plane №110). Фильтровать
+            # такое окно на клиенте значило бы сузить только загруженную
+            # страницу — тот же вид вранья, что и с периодом выше.
+            wanted = {part.strip() for part in stage.split(",") if part.strip()}
+            queryset = queryset.filter(stage__in=wanted)
+        # Границы периода сравниваются С ТЕКСТОМ ДАТЫ, как и раньше: параметр
+        # приходит строкой `ГГГГ-ММ-ДД`, и разбирать её здесь значило бы
+        # заводить своё поведение на кривом вводе — прежний код на нём просто
+        # не находил ничего, и это правильный ответ на «дата, которой нет».
+        if date_from:
+            queryset = queryset.annotate(
+                business_date_text=Cast("business_date", CharField())
+            ).filter(business_date_text__gte=date_from)
+        if date_to:
+            queryset = queryset.annotate(
+                business_date_text_to=Cast("business_date", CharField())
+            ).filter(business_date_text_to__lte=date_to)
+        if owner:
+            queryset = queryset.filter(owner_name=owner)
+        if search:
+            # Поиск идёт по СКЛЕЙКЕ четырёх полей через пробел — ровно как
+            # раньше, а не по каждому полю отдельно: запрос «Оразов ОМ-2026»
+            # находил строку через границу полей, и разбить склейку на `OR`
+            # значило бы молча сузить поиск.
+            queryset = queryset.annotate(
+                haystack=Concat(
+                    "title",
+                    Value(" "),
+                    "code",
+                    Value(" "),
+                    "object_name",
+                    Value(" "),
+                    "owner_name",
+                    output_field=CharField(),
+                )
+            ).filter(haystack__icontains=search)
+        # Значения фильтра «ответственный» считает СЕРВЕР по всему реестру:
+        # собранный по странице список предлагал бы не всех. Берётся ОДНА
+        # КОЛОНКА, а не строки целиком (Plane №910): прежний вариант тащил в
+        # память всю таблицу объектами ради одного поля.
+        owners = sorted(
+            name
+            for name in OpsSecurityEvent.objects.exclude(owner_name="")
+            .values_list("owner_name", flat=True)
+            .distinct()
+            if name
+        )
+        total = queryset.count()
+        start = (page - 1) * page_size
+        # Prefetch применяется К СТРАНИЦЕ: сначала срез, потом дозагрузка
+        # связей. В прежнем порядке те же три `Prefetch` отрабатывали по всей
+        # таблице.
+        page_rows = list(
+            queryset.select_related("country", "city").prefetch_related(
                 "visit_objects__deputies",
                 # История версий документа объекта тоже читается КАЖДОЙ
                 # строкой (`documentVersions`, `[СОГ-04]`): без неё
@@ -500,34 +567,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "vehicles",
                     queryset=OpsEventVehicle.objects.select_related("vehicle"),
                 ),
-            )
+            )[start : start + page_size]
         )
-        if stage:
-            # Список стадий через запятую, а не одна: ленты «Сбора сил на ОМ»
-            # спрашивают ОКНО, в котором сбор живёт («Потребность», «Запрос
-            # сил», «Расстановка»), а не одну стадию (Plane №110). Фильтровать
-            # такое окно на клиенте значило бы сузить только загруженную
-            # страницу — тот же вид вранья, что и с периодом выше.
-            wanted = {part.strip() for part in stage.split(",") if part.strip()}
-            rows = [e for e in rows if e.stage in wanted]
-        if date_from:
-            rows = [e for e in rows if str(e.business_date) >= date_from]
-        if date_to:
-            rows = [e for e in rows if str(e.business_date) <= date_to]
-        if owner:
-            rows = [e for e in rows if e.owner_name == owner]
-        if search:
-            rows = [
-                e
-                for e in rows
-                if search
-                in f"{e.title} {e.code} {e.object_name} {e.owner_name}".lower()
-            ]
-        # Значения фильтра «ответственный» считает СЕРВЕР по всему реестру:
-        # собранный по странице список предлагал бы не всех.
-        owners = sorted({e.owner_name for e in OpsSecurityEvent.objects.all() if e.owner_name})
-        start = (page - 1) * page_size
-        page_rows = rows[start : start + page_size]
         # 🔴 ЧТЕНИЯ, ОБЩИЕ НА СТРАНИЦУ, СЧИТАЮТСЯ ОДИН РАЗ (Plane №909).
         # Назначения, состав и раскладка спрашивали каждое своё: справочник
         # статусов (полный скан таблицы на КАЖДЫЙ вызов), перекрытия дня и
@@ -568,8 +609,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             {
                 "owners": owners,
-                "count": len(rows),
-                "next": str(page + 1) if start + page_size < len(rows) else None,
+                "count": total,
+                "next": str(page + 1) if start + page_size < total else None,
                 "previous": str(page - 1) if page > 1 else None,
                 "results": [
                     serialize_security_event(e, read_context=read_context)
