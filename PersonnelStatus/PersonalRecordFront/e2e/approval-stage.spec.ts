@@ -217,11 +217,17 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
 
     // Старший завершает расстановку заново (состав не менялся) — объект снова
     // на согласовании, и замечание ждёт ответа там.
-    await fetch(`${API}/api/ops/security-events/${target.id}/placement/complete/`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: '{}',
-    })
+    // Шаг-переход: отбитый сервером, он оставил бы объект НЕ на согласовании,
+    // и всё ниже проверяло бы не то, что написано (Plane №812).
+    const again = await fetch(
+      `${API}/api/ops/security-events/${target.id}/placement/complete/`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      },
+    )
+    await assertStep(again, 'POST', `/api/ops/security-events/${target.id}/placement/complete/`)
     await page.reload()
     await expect(card).toBeVisible({ timeout: 15_000 })
 

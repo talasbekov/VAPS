@@ -17,6 +17,8 @@ import { anyChiefId } from './stand-chief'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
 /** Ответ ручки стенда, разобранный из JSON. Форма у каждой ручки своя. */
+import { assertStep } from './fixture-step'
+
 type StandResponse = any
 
 export type StandCall = (
@@ -43,6 +45,16 @@ export function standCall(token: string): StandCall {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+    // 🔴 ШАГ-ПЕРЕХОД, ОТБИТЫЙ СЕРВЕРОМ, РОНЯЕТ ПОДГОТОВКУ ЗДЕСЬ (Plane №812,
+    //    №813; пропуск найден ревью, задача №825). Это ОБЩАЯ фикстура трёх
+    //    спек, и до сих пор она была единственным местом, где шаги молчали:
+    //    сторож `fixture-steps-checked` читал только `*.spec.ts` и помощника
+    //    не видел вовсе. Между тем именно здесь идут `recon/complete/` и
+    //    `recon/import-from-passport/` — те самые переходы, ради которых
+    //    карточка и заведена, и результат `recon/complete/` тут же
+    //    разбирается по полям: отказ давал `undefined` вместо кода, и проба
+    //    умирала десятью строками ниже с «элемент не найден».
+    await assertStep(res, method, path)
     return res.json().catch(() => ({}))
   }
 }
@@ -122,7 +134,13 @@ export async function prepareDemandEvent(
     briefDescription: 'Проба раскладки.',
     initialTasks: '—',
   })
-  await call('POST', `${base}/bulletin/complete/`)
+  // 🔴 ЗДЕСЬ БЫЛ МЁРТВЫЙ ШАГ `bulletin/complete/` (Plane №812; в девяти
+  //    спеках он снят коммитом 315e0968, а в ОБЩЕЙ фикстуре остался —
+  //    пропуск найден ревью, задача №825). ОМ, заведённый С ОБЪЕКТОМ, встаёт
+  //    сразу на рекогносцировку, и завершать бюллетень нечего: сервер отвечал
+  //    INVALID_STAGE_TRANSITION, а фикстура шла дальше молча. Пока шаги не
+  //    проверялись, это было незаметно; теперь `standCall` роняет подготовку
+  //    на первом же отбитом шаге, и мёртвую строку надо снять, а не глушить.
   await call('POST', `${base}/recon/import-from-passport/`)
   const afterImport = await call('GET', `${base}/`)
   const posts = afterImport.reconSectorPosts.map(
