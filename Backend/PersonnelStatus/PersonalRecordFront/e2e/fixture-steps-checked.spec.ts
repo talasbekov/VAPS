@@ -109,7 +109,33 @@ function transitionCalls(source: string): { line: number; text: string }[] {
     }
     return text
   })
-  joined.forEach((raw, index) => {
+  // 🔴 ПУТЬ, СПРЯТАННЫЙ В ПЕРЕМЕННУЮ, ТОЖЕ ВИДЕН (Plane №857). Запись
+  //    `const path = \`/api/…/placement/assign/\`` + `request.post(\`${API}${path}\`)`
+  //    разносит путь и вызов по РАЗНЫМ операторам, и склейка продолжений не
+  //    помогает: шаг становился сторожу невидим. Это не теория — первая
+  //    редакция правки №854 была написана именно так и спрятала сама себя,
+  //    а поймала это мутация, а не глаза. Собираем однострочные объявления
+  //    строк и подставляем их в места употребления. Один уровень: вложенной
+  //    сборки путей в фикстурах не встречается, а больше и не нужно —
+  //    предмет проверки прежний, «виден ли путь в тексте вызова».
+  const literals = new Map<string, string>()
+  for (const line of lines) {
+    const declared = /^\s*(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*[`'"]([^`'"]*)[`'"]\s*;?\s*$/.exec(
+      line,
+    )
+    if (declared !== null) literals.set(declared[1]!, declared[2]!)
+  }
+  const expand = (text: string): string => {
+    let out = text
+    for (const [name, value] of literals) {
+      if (!out.includes(name)) continue
+      out = out.split('${' + name + '}').join(value)
+    }
+    return out
+  }
+
+  joined.forEach((rawLine, index) => {
+    const raw = expand(rawLine)
     const text = raw.trim()
     if (text.startsWith('//') || text.startsWith('*')) return
     if (!TRANSITION_STEPS.some((step) => text.includes(step))) return
