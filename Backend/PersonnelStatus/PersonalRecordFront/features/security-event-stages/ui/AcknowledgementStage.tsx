@@ -3,8 +3,9 @@
 // Этап 7 «Ознакомление» — экран старшего объекта по спецификации
 // `[ОЗН-02]`…`[ОЗН-04]`, `[ОЗН-08]` (Plane №432, Ш-16 плана P2):
 //
-//  • шапка — «Ознакомились K из N · не подтвердили N · отказов N» и полоса
-//    из трёх цветов (зелёный — подтвердил, красный — отказ, серый — ждёт);
+//  • шапка — «Ознакомились K из N · не открыли M · открыли и молчат O ·
+//    отказов D» и полоса ИЗ ЧЕТЫРЁХ цветов (зелёный — подтвердил, красный —
+//    отказ, жёлтый — открыл и не ответил, серый — не открывал; №452);
 //  • список НАЗНАЧЕННЫХ ПО СЕКТОРАМ И ПОСТАМ — так читает расстановку
 //    старший, а плоский список на сотне строк не читается никем;
 //  • у каждого — «Напомнить» (адресное уведомление ему и руководителям),
@@ -371,7 +372,10 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           </div>
         </div>
 
-        {/* Полоса трёх цветов: подтвердил / отказ / ждёт (`[ОЗН-02]`). */}
+        {/* Полоса ЧЕТЫРЁХ цветов: подтвердил / отказ / открыл и молчит /
+            не открывал (`[ОЗН-02]`, Plane №452). Здесь стояло «трёх», и это
+            перестало быть правдой в тот же заход, что и правка (найдено
+            ревью №825). */}
         <div
           className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
           role="progressbar"
@@ -389,11 +393,15 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           <div className="h-full bg-amber-400" style={{ width: `${pct(opened.length)}%` }} data-segment="opened" />
           <div className="h-full bg-muted-foreground/30" style={{ width: `${pct(pending.length)}%` }} data-segment="pending" />
         </div>
+        {/* Порядок легенды — ТОТ ЖЕ, ЧТО У СЕГМЕНТОВ ПОЛОСЫ (найдено ревью
+            №825): полоса шла зелёный → красный → жёлтый → серый, а легенда
+            зелёный → жёлтый → серый → красный, и подпись приходилось искать
+            вместо того, чтобы читать слева направо вместе с полосой. */}
         <p className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground" data-testid="ack-legend">
           <span><span className="inline-block h-2 w-2 rounded-full bg-green-500" /> подтвердил</span>
+          <span><span className="inline-block h-2 w-2 rounded-full bg-red-500" /> отказ</span>
           <span><span className="inline-block h-2 w-2 rounded-full bg-amber-400" /> открыл, не ответил</span>
           <span><span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/30" /> не открывал</span>
-          <span><span className="inline-block h-2 w-2 rounded-full bg-red-500" /> отказ</span>
         </p>
       </CardHeader>
 
@@ -633,6 +641,11 @@ function AssignmentRow({
           молчит» — это повод позвонить, а не напомнить ещё раз. */}
       {(state === "pending" || state === "opened") && (
         <>
+          {/* 🔴 «НАПОМНИЛИ» ГОВОРИТСЯ В ОБОИХ ПОЛОЖЕНИЯХ (найдено ревью №825).
+              Отметка стояла только у «не открывал», а нужна она СИЛЬНЕЕ ВСЕГО
+              во втором: напомнили → человек открыл → молчит. Старший не видел,
+              что напоминание уже уходило, и жал «Напомнить» повторно — то
+              есть повторял действие, которое как раз и не сработало. */}
           {state === "opened" ? (
             <span
               className="ml-auto inline-flex rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
@@ -646,9 +659,15 @@ function AssignmentRow({
                   ничего. Полный момент остаётся в подсказке. Длинная форма
                   распирала строку так, что кнопки уезжали на второй ряд. */}
               Открыл {formatIsoDayTime(assignment.viewedAt ?? "")}, не ответил
+              {(assignment.remindedAt ?? null) !== null &&
+                ` · напомнили ${formatIsoDayTime(assignment.remindedAt ?? "")}`}
             </span>
           ) : (
-            <span className="ml-auto inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+            /* Серая, а не янтарная (найдено ревью №825): две почти одинаковые
+               янтарные плашки стояли на ДВУХ ПРОТИВОПОЛОЖНЫХ положениях, и
+               различались они только оттенком — то, что читают глазами первым.
+               Серый совпадает с серым сегментом «не открывал» в полосе выше. */
+            <span className="ml-auto inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
               Не открывал
               {(assignment.remindedAt ?? null) !== null &&
                 ` · напомнили ${formatIsoDateTime(assignment.remindedAt ?? "")}`}
@@ -660,7 +679,12 @@ function AssignmentRow({
               не о чем, и номер там был бы лишними данными на экране. */}
           {(assignment.phone ?? "") !== "" && (
             <a
-              href={`tel:${assignment.phone}`}
+              /* Номер в `href` — только `+` и цифры (найдено ревью №825): в
+                 кадровой записи он лежит форматированным («+7 701 000-10-01»),
+                 а по RFC 3966 пробелов в `tel:` быть не должно — часть
+                 наборников на них спотыкается. Видимым текстом остаётся
+                 форматированный. */
+              href={`tel:${(assignment.phone ?? "").replace(/[^+\d]/g, "")}`}
               className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
               title={`Позвонить: ${assignment.employeeName}`}
               data-testid={`ack-phone-${assignment.id}`}

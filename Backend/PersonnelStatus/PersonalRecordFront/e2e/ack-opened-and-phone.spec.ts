@@ -175,7 +175,15 @@ test.describe(LIVE ? 'ознакомление: открыл и не нажал'
     await expect(openedRow).toHaveAttribute('data-state', 'opened')
     await expect(openedRow).toContainText('не ответил')
     const phone = card.getByTestId(`ack-phone-${openedId}`)
-    await expect(phone).toHaveAttribute('href', `tel:${OPENED_PHONE}`)
+    // 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (найдено ревью №825). В `href` уходит номер без
+    // пробелов и дефисов: по RFC 3966 в `tel:` их быть не должно, а в кадровой
+    // записи номер лежит форматированным. ВИДИМЫЙ текст остаётся
+    // форматированным — его человек и читает, — и это проверяется строкой
+    // ниже; поэтому проба стережёт обе половины, а не подогнана под вывод.
+    await expect(phone).toHaveAttribute(
+      'href',
+      `tel:${OPENED_PHONE.replace(/[^+\d]/g, '')}`,
+    )
     await expect(phone).toContainText(OPENED_PHONE)
     // Кнопки у неответившего те же: напомнить и отметить лично можно и тому,
     // кто открыл.
@@ -185,9 +193,10 @@ test.describe(LIVE ? 'ознакомление: открыл и не нажал'
     const pendingRow = card.getByTestId(`ack-row-${pendingId}`)
     await expect(pendingRow).toHaveAttribute('data-state', 'pending')
     await expect(pendingRow).toContainText('Не открывал')
+    // Тот же довод, что у ссылки выше: в `href` номер без разделителей.
     await expect(card.getByTestId(`ack-phone-${pendingId}`)).toHaveAttribute(
       'href',
-      `tel:${PENDING_PHONE}`,
+      `tel:${PENDING_PHONE.replace(/[^+\d]/g, '')}`,
     )
 
     // ── Подтвердившему звонить не о чем: ☎ у него нет ─────────────────────

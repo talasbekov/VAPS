@@ -411,7 +411,28 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     http_method_names = ["get", "post", "patch", "delete", "options"]
 
     def _event_response(self, event, status=200):
-        return Response(serialize_security_event(event), status=status)
+        # 🔴 ТЕЛЕФОН — ТОЛЬКО ВЕДУЩЕМУ ЭТАП (Plane №452, найдено ревью №825).
+        # Он лежал в каждой строке назначения и ехал в ЛЮБОЙ ответ, включая
+        # СПИСОК реестра под `event.view`: рядовой сотрудник без
+        # `personnel.view` получал служебные и личные номера всех назначенных.
+        # Здесь ответ ОДНОГО мероприятия, и читателя видно — спрашиваем то же
+        # правило, которым гейтятся действия этапа.
+        from organization_management.apps.ops import my_assignments as mine
+
+        # Кто ведёт этап — по данным (старший ОМ, старший объекта, его
+        # замещающий с правом правки) ИЛИ по праву `event.manage`: у штаба и
+        # админа старшинства в данных нет, а «Напомнить всем» на этом экране
+        # им доступна — телефон нужен ровно за тем же.
+        perms = effective_permissions(self.request)
+        by_right = bool(perms & {_MANAGE_EVENT_PERMISSION, "*"})
+        viewer = None if by_right else mine.employee_of_user(
+            resolve_actor_id(self.request)
+        )
+        with_phone = by_right or mine.may_manage_stage(event, viewer)
+        return Response(
+            serialize_security_event(event, with_phone=with_phone),
+            status=status,
+        )
 
     def list(self, request):
         from organization_management.apps.operations.models_event import (
