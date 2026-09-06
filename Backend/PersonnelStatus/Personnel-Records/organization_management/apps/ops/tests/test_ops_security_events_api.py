@@ -2083,6 +2083,66 @@ def test_event_delete_removes_the_row_and_leaves_a_trace(manager):
     assert row.old_value["stage"] == "RECON"
 
 
+def test_audit_stores_the_account_id_even_when_the_view_passes_the_account(manager):
+    """В `actor_user_id` — идентификатор учётки, а не её логин (Plane №895).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Поле называется `actor_user_id`, а `_build` писал в
+    него `str(actor)`; для `actor=request.user` это USERNAME. Таких вызовов в
+    `ops/api/views.py` десять против 35 с `resolve_actor_id`, и журнал по
+    одним и тем же действиям хранил то идентификатор, то логин. Ошибки при
+    этом НЕТ — поле заполнено, — поэтому расхождение и не всплывало: выборка
+    по человеку молча находила половину его действий, а вторая половина
+    выглядела чужой.
+
+    Удаление ОМ взято потому, что это один из тех десяти путей
+    (`views.destroy` → `delete_event(actor=request.user)`), и проба идёт
+    ЧЕРЕЗ РУЧКУ: предмет — что записывает журнал на живом пути, а не что
+    вернула функция.
+
+    Логин здесь НЕ ПОХОЖ на идентификатор нарочно: возьми проба учётку с
+    цифровым именем, она осталась бы зелёной на дефекте.
+
+    КРАСНАЯ ПРОБА: убери приведение `isinstance(actor, get_user_model())` в
+    `audit_service._build` — в поле окажется «ev-remover».
+    """
+    obj = make_object(with_passport=True)
+    data = create_event(manager, obj, title="Кем удалено").json()
+    remover, remover_user = client_for(
+        "ev-remover-id", "EV_REMOVER_ID", perms=("event.view", "event.delete")
+    )
+
+    assert remover.delete(f"{URL}{data['id']}/").status_code == 204
+
+    row = OpsAuditLog.objects.get(action=SECURITY_EVENT_DELETED)
+    assert row.actor_user_id == str(remover_user.pk), (
+        "журнал записал не идентификатор учётки — выборка по человеку "
+        "найдёт только часть его действий"
+    )
+    assert row.actor_user_id != remover_user.username
+
+
+def test_audit_keeps_system_actors_as_they_are():
+    """Строковый актор не превращается в цифры (Plane №895).
+
+    Приведение к идентификатору касается ТОЛЬКО объекта учётки. `system:…`,
+    `seed_access_matrix` и прочие строковые акторы — законные значения этого
+    поля: за ними нет учётной записи вовсе, и сторож «в журнале всегда цифры»
+    был бы неправдой о системе, а первая же фоновая задача роняла бы запись.
+    """
+    from organization_management.apps.operations import audit_service
+
+    audit_service.record(
+        actor="system:probe-895",
+        action=SECURITY_EVENT_DELETED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=895_000_895,
+        old_value={"code": "ОМ-ПРОБА"},
+    )
+
+    row = OpsAuditLog.objects.get(entity_id=895_000_895)
+    assert row.actor_user_id == "system:probe-895"
+
+
 def test_event_delete_takes_its_participations_with_it(manager):
     """Удаление ОМ снимает участия на него, а статус, который ими и держался,
     закрывается (Plane №355, решение 02.09.2026).

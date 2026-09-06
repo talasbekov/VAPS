@@ -868,6 +868,47 @@ class TomorrowBlockOverrideSelector:
         ).exists()
 
 
+def _actor_matches(actor_user_id):
+    """Условие «это действия ЭТОГО человека» (Plane №895).
+
+    🔴 ПОЧЕМУ НЕ ПРОСТОЕ РАВЕНСТВО. До 06.09.2026 `audit_service` писал в
+    `actor_user_id` значение `str(actor)`, а десять вьюх ОМ передают
+    `actor=request.user` — то есть в поле уходил USERNAME. Код это уже не
+    делает (приведение живёт в `_build`), но записанное остаётся: журнал
+    ДОПОЛНЯЕТСЯ ТОЛЬКО, и запрет стоит триггером в БД, потому что «правка
+    задним числом — единственное, что делает журнал бесполезным» (миграция
+    `0006`). Значит бэкфилл здесь не просто неудобен, а запрещён по замыслу,
+    и чинить надо ЧТЕНИЕ, а не запись.
+
+    Без этого выборка по человеку молча отдавала половину его действий, а
+    вторая половина выглядела чужой: события настоящие, время настоящее,
+    актор настоящий — такую ленту нечем опровергнуть, ровно та беда, от
+    которой соседний абзац защищает `entity_id` без типа.
+
+    Логин добавляется, только если за идентификатором стоит живая учётка;
+    неизвестное значение сравнивается как раньше. Совпадение чужого
+    строкового актора (`system:…`) с чьим-то логином теоретически подмешало бы
+    лишнюю строку — но такой актор и в самом журнале был бы неотличим от
+    учётки, и чинить тогда надо имя актора, а не эту выборку.
+    """
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    value = str(actor_user_id)
+    condition = Q(actor_user_id=value)
+    username = (
+        get_user_model()
+        .objects.filter(pk=value)
+        .values_list("username", flat=True)
+        .first()
+        if value.isdigit()
+        else None
+    )
+    if username and username != value:
+        condition |= Q(actor_user_id=username)
+    return condition
+
+
 class OpsAuditLogSelector:
     """Чтение журнала раздела: фильтры и ПОЛНЫЙ порядок.
 
@@ -931,7 +972,7 @@ class OpsAuditLogSelector:
         if entity_id is not None:
             queryset = queryset.filter(entity_id=entity_id)
         if actor_user_id is not None:
-            queryset = queryset.filter(actor_user_id=actor_user_id)
+            queryset = queryset.filter(_actor_matches(actor_user_id))
         if action is not None:
             queryset = queryset.filter(action=action)
         if created_from is not None:
