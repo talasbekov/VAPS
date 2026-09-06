@@ -11,9 +11,99 @@
  * и спека, взявшая чужое мероприятие, зелена в одиночку и красна в полном
  * прогоне: сосед успевает перевести его в состояние, где правка отбивается.
  */
+import { probeTitle } from './probe-events'
 import { anyChiefId } from './stand-chief'
 
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+
+/** Ответ ручки стенда, разобранный из JSON. Форма у каждой ручки своя. */
+type StandResponse = any
+
+export type StandCall = (
+  method: string,
+  path: string,
+  body?: unknown,
+) => Promise<StandResponse>
+
+/**
+ * Обёртка над API стенда: заголовки, тело и разбор — ОДИН раз на весь смоук.
+ *
+ * 🔴 ШЕСТНАДЦАТЬ КОПИЙ ОДНОГО (Plane №822, замерено 06.09.2026:
+ * `grep -rl 'publishedVersionCount > 0' e2e/*.ts` даёт 16 файлов). У каждой
+ * спеки свой `call`, свой поиск объекта с паспортом и своё сообщение об
+ * ошибке. Когда контракт заведения ОМ менялся — обязательный `kind` с
+ * 23.08 — править надо было все шестнадцать; правили не все, и копии
+ * расходятся молча.
+ */
+export function standCall(token: string): StandCall {
+  const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+  return async (method, path, body) => {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return res.json().catch(() => ({}))
+  }
+}
+
+/** Объект стенда с опубликованным паспортом — без него ОМ не завести. */
+export async function objectWithPassport(call: StandCall): Promise<{ id: string }> {
+  const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
+  const object = (objects.results ?? []).find(
+    (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
+  )
+  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
+  return object
+}
+
+/**
+ * СВОЁ мероприятие с объектом — заведённое пробой, а не найденное на стенде.
+ *
+ * 🔴 ЗАЧЕМ СВОЁ, А НЕ ПЕРВОЕ ПОДХОДЯЩЕЕ (Plane №822). Пробы, которые ПРАВЯТ
+ * состояние, не имеют права брать чужую строку: стенд один на все сессии.
+ * Замерено 05.09.2026 на `recon-stage`: проба на общем ОМ давала ✓ ✘ ✓ ✘ без
+ * единой правки кода, причём падение было ровно тем симптомом, который она
+ * стережёт, — то есть врало про дефект.
+ *
+ * Читающим пробам первый подходящий по-прежнему годится: они ничего не меняют.
+ *
+ * 🔴 ЧЕГО ЭТОТ ПОМОЩНИК НЕ ЛЕЧИТ — знать заранее, а не выяснять заново
+ * (замер 06.09.2026, №822 дал четыре РАЗНЫХ подвида, свой ОМ лечит два):
+ *   • «первую строку ТАБЛИЦЫ» в интерфейсе: `page.locator('table tbody
+ *     tr').first()` на `/statuses` берёт того, кого поставила соседняя
+ *     сессия. Лечится выбором своего человека ПО ИМЕНИ (Ш-5);
+ *   • исчерпание кадрового пула: своё мероприятие есть, а свободных людей на
+ *     его день уже нет — их заняли ПРЕДЫДУЩИЕ пробы того же прогона. Лечится
+ *     своей деловой датой (Ш-6), и потому `businessDate` здесь ОБЯЗАТЕЛЬНЫЙ
+ *     параметр без умолчания: общая дата у двух спек воспроизводит ровно ту
+ *     беду, от которой уходим.
+ *
+ * `kind` обязателен с 23.08: без него создание отбивается 400, и вся
+ * подготовка дальше бьёт по `/security-events/undefined/`.
+ */
+export async function createOwnEvent(
+  call: StandCall,
+  token: string,
+  { name, businessDate }: { name: string; businessDate: string },
+): Promise<StandResponse & { id: string; code: string }> {
+  const object = await objectWithPassport(call)
+  const created = await call('POST', '/api/ops/security-events/', {
+    // Метка `(e2e)` ставится помощником, а не руками (Plane №457): строку без
+    // неё не находит ни уборка прогона, ни `purge_probe_events`, а сама проба
+    // удалить её не сможет — своё удаление сервер отбивает, пока у ОМ есть
+    // расстановка.
+    title: probeTitle(name),
+    objectId: object.id,
+    businessDate,
+    kind: 'INTERNAL',
+    chiefEmployeeId: await anyChiefId(token),
+  })
+  // Ответ сервера возвращается ЦЕЛИКОМ, а не двумя полями: для пробы заведения
+  // предмет проверки — само состояние заведения, и урезать его здесь значило бы
+  // заставить её сходить за тем же вторым запросом.
+  return { ...created, id: String(created.id), code: created.code }
+}
 
 export async function prepareDemandEvent(
   token: string,
@@ -22,27 +112,10 @@ export async function prepareDemandEvent(
   // мероприятия (оповещение, довыделение), и искать его по коду через реестр
   // значило бы завести второй способ узнать то, что здесь уже известно.
 ): Promise<{ id: string; code: string; total: number }> {
-  const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-  const call = async (method: string, path: string, body?: unknown): Promise<any> => {
-    const res = await fetch(`${API}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-    return res.json().catch(() => ({}))
-  }
-  const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
-  const object = objects.results.find(
-    (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
-  )
-  if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
-
-  const created = await call('POST', '/api/ops/security-events/', {
-    title: 'Проба раскладки сил (e2e)',
-    objectId: object.id,
+  const call = standCall(token)
+  const created = await createOwnEvent(call, token, {
+    name: 'Проба раскладки сил',
     businessDate,
-    kind: 'INTERNAL',
-    chiefEmployeeId: await anyChiefId(token),
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, {
@@ -66,5 +139,5 @@ export async function prepareDemandEvent(
     sectorPosts: posts,
   })
   const demand = await call('POST', `${base}/recon/complete/`)
-  return { id: String(created.id), code: demand.code, total: demand.forceDemandTotal }
+  return { id: created.id, code: demand.code, total: demand.forceDemandTotal }
 }
