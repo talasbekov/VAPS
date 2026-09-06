@@ -358,6 +358,76 @@ def test_a_flagged_time_next_to_a_flagged_date_does_not_swallow_the_date(staff):
     assert values["arrival_1"] == "18.06.2026 г. уточняется"
 
 
+def test_the_paths_the_document_reads_are_derived_not_pinned(staff):
+    """Список путей, которые документ читает из сводки, ВЫВОДИТСЯ с двух
+    концов (Plane №905).
+
+    🔴 ЧТО БЫЛО НЕ ТАК. Рядом с двумя настоящими источниками — местами
+    подстановки документа и обязательными полями визита — жил ТРЕТИЙ ручной
+    перечень: пин `PATHS_THE_SERVER_READS` в клиентской пробе. Он стерёг одно
+    направление (добавили галочку на клиенте — впиши путь), и оба обхода
+    оставались открытыми:
+      • вписать путь в пин, НЕ добавив `field(path, …)` на сервере — проба
+        зелёная, галочка снова инертна (ровно так родился №518);
+      • убрать `field("wishes", …)` — пин остаётся правдоподобным, и не
+        краснеет НИЧЕГО.
+
+    Теперь набор собирается прогоном настоящей сборки документа
+    (`flaggable_paths`), и проба сверяет его с клиентским пином ПО РАВЕНСТВУ —
+    то есть ловит расхождение в обе стороны. Тот же приём, которым закрыт
+    соседний класс в №517: список выводится из кода, а не пишется вторым.
+
+    Пин читается из исходника клиента, а не копируется сюда: копия была бы
+    четвёртым перечнем.
+    """
+    import re
+    from pathlib import Path
+
+    from organization_management.apps.ops import documents_summary, gvo as gvo_service
+
+    event = make_event("ОМ-Т-58")
+    derived = documents_summary.flaggable_paths(event)
+
+    # 1. У пина ДВА источника, и это его собственный уговор: места подстановки
+    #    документа ПЛЮС обязательные поля визита. Второе читает не документ, а
+    #    проверка обязательности (`gvo.missing_required`), поэтому требовать
+    #    `required <= derived` НЕЛЬЗЯ — проверено запуском: `persons` и
+    #    `responsible` печатаются в документе не через `field()` (имена лиц
+    #    собираются строками), и «уточняется» у них живёт на другом пути.
+    required = {path for path, _label in gvo_service.REQUIRED_VISIT_FIELDS}
+
+    # 2. Корень каждого пути — ключ раздела: документ не может спрашивать то,
+    #    чего экран не даёт заполнить.
+    roots = {path.split(".")[0] for path in derived}
+    unknown = roots - set(gvo_service.ALL_SECTION_KEYS)
+    assert not unknown, (
+        f"документ читает пути вне разделов сводки: {sorted(unknown)}"
+    )
+
+    # 3. И равенство с клиентским пином — обе стороны сразу.
+    spec = (
+        Path(__file__).resolve().parents[5]
+        / "PersonalRecordFront"
+        / "e2e"
+        / "gvo-unspecified-flags.spec.ts"
+    )
+    assert spec.exists(), f"не найден исходник клиентской пробы: {spec}"
+    block = re.search(
+        r"PATHS_THE_SERVER_READS = new Set<string>\(\[(.*?)\]\)",
+        spec.read_text(encoding="utf-8"),
+        re.S,
+    )
+    assert block is not None, "в клиентской пробе не найден пин PATHS_THE_SERVER_READS"
+    pinned = set(re.findall(r"'([^']+)'", block.group(1)))
+    expected = derived | required
+    assert pinned == expected, (
+        "пин клиента разошёлся с тем, что сервер читает на самом деле "
+        "(места подстановки документа плюс обязательные поля визита).\n"
+        f"  только в пине: {sorted(pinned - expected)}\n"
+        f"  только в коде: {sorted(expected - pinned)}"
+    )
+
+
 # ── Правка утверждённого визита (Plane №685) ────────────────────────────────
 
 
