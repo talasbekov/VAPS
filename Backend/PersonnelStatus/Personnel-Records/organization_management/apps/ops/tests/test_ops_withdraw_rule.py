@@ -3,6 +3,13 @@
 До подписи отзыв возвращает маршрут в «не отправлено»; после первой подписи
 сервер отказывает — подпись под составом не стирается отзывом, дальше только
 возврат согласующим (`[СОГ-08]`).
+
+🔴 СМЫСЛ отзыва (документ снова черновик, расстановка разморожена, объект
+вернулся на «Расстановку») стережёт `test_withdrawing_unfreezes_the_placement_
+and_the_document` в `test_ops_visit_object_approval.py`. Здесь — только
+доступность действия. Разделение названо вслух потому, что этот файл был
+зелёным всё время, пока кнопка была бесполезной: он проверял ровно то
+единственное, что отзыв тогда делал (Plane №536).
 """
 import pytest
 
@@ -35,6 +42,17 @@ def test_withdraw_works_before_any_signature_and_refuses_after(
     assert withdrawn.status_code == 200, withdrawn.content
     assert all(a["status"] == "NOT_SENT" for a in _row(withdrawn.json(), first)["approvalRoute"])
 
+    # Отзыв возвращает объект на «Расстановку» (Plane №536, доведена ревью
+    # №825): чтобы отправить снова, расстановку надо завершить — тем же шагом,
+    # что и после возврата согласующим. Предмет пробы — доступность самого
+    # отзыва до подписи и отказ после неё, и он не меняется.
+    assert (
+        manager.post(
+            f"{base}placement/complete/", {"visitObjectId": str(first.pk)},
+            format="json",
+        ).status_code
+        == 200
+    )
     sent = manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
     first_id = _row(sent.json(), first)["approvalRoute"][0]["id"]
     signed = approver.post(
