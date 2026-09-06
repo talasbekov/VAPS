@@ -31,6 +31,8 @@
  * шаблон в выключенном домене остался бы невидимым до первого включения.
  */
 import { expect, test } from '@playwright/test'
+import fs from 'node:fs'
+import path from 'node:path'
 
 import { accessHandlers } from '../mocks/ops/access-handlers'
 import { analyticsHandlers } from '../mocks/ops/analytics-handlers'
@@ -48,40 +50,80 @@ import { reportsHandlers } from '../mocks/ops/reports-handlers'
 import { securityEventsHandlers } from '../mocks/ops/security-events-handlers'
 import { settingsHandlers } from '../mocks/ops/settings-store'
 
-/** Все наборы поимённо: новый набор добавляется сюда же, одной строкой. */
+//: Каталог наборов и файл, из которого каждый приехал.
+/**
+ * Наборы обработчиков — ключом стоит ИМЯ ФАЙЛА, а не короткое слово
+ * (Plane №834).
+ *
+ * 🔴 ЗАЧЕМ ИМЕННО ФАЙЛ. Список наборов ведётся руками, и это его слабое
+ * место: появится `mocks/ops/vehicles-handlers.ts`, его впишут в
+ * `composeOpsHandlers` и забудут вписать сюда — весь новый домен окажется без
+ * сторожа, и ничего не покраснеет. Самопроверка «обработчиков больше ста» от
+ * этого не спасает: порог стоит на ОБЩЕЕ число (сейчас 138), и потеря целого
+ * набора — access (16), ratings (15), duties (15) — его не пробивает.
+ *
+ * Ключ-файл позволяет спросить у файловой системы прямо: «каждый ли файл
+ * каталога, где есть регистрация `http.*`, попал под сторожа». Приём взят у
+ * соседней пробы `route-map-coverage.spec.ts`, которая нарочно берёт одну
+ * сторону из файловой системы, чтобы новая страница не могла ускользнуть.
+ */
 const SETS: ReadonlyArray<readonly [string, readonly unknown[]]> = [
-  ['access', accessHandlers],
-  ['analytics', analyticsHandlers],
-  ['audit', auditHandlers],
-  ['dictionaries', dictionariesHandlers],
-  ['duties', dutiesHandlers],
-  ['feedback', feedbackHandlers],
-  ['geo', geoHandlers],
-  ['gvo', gvoHandlers],
-  ['legal-documents', legalDocumentsHandlers],
-  ['objects', objectsHandlers],
-  ['protected-persons', protectedPersonsHandlers],
-  ['ratings', ratingsHandlers],
-  ['reports', reportsHandlers],
-  ['security-events', securityEventsHandlers],
-  ['settings', settingsHandlers],
+  ['access-handlers.ts', accessHandlers],
+  ['analytics-handlers.ts', analyticsHandlers],
+  ['audit-store.ts', auditHandlers],
+  ['dictionaries-handlers.ts', dictionariesHandlers],
+  ['duties-handlers.ts', dutiesHandlers],
+  ['feedback-handlers.ts', feedbackHandlers],
+  ['geo-handlers.ts', geoHandlers],
+  ['gvo-handlers.ts', gvoHandlers],
+  ['legal-documents-handlers.ts', legalDocumentsHandlers],
+  ['objects-handlers.ts', objectsHandlers],
+  ['protected-persons-handlers.ts', protectedPersonsHandlers],
+  ['ratings-handlers.ts', ratingsHandlers],
+  ['reports-handlers.ts', reportsHandlers],
+  ['security-events-handlers.ts', securityEventsHandlers],
+  ['settings-store.ts', settingsHandlers],
 ]
 
-function pathOf(handler: unknown): string {
+/**
+ * Шаблон маршрута обработчика — строкой, ровно та, по которой пойдёт
+ * сравнение MSW.
+ *
+ * 🔴 ВОЗВРАЩАЕТ `null`, А НЕ ПУСТУЮ СТРОКУ (Plane №834). Прежняя редакция
+ * приводила значение к строке через `String(info?.path ?? '')`, и это делало
+ * сторожа слепым молча: переименуй MSW поле `info.path` или попади в набор
+ * не-`http` обработчик — все пути стали бы пустыми строками, список виновных
+ * остался бы пустым, счётчик прежним, и проба вечно печатала бы «1 passed»,
+ * не проверяя ничего. Ровно тот отказ, ради которого сторож и заведён, — на
+ * этаж выше.
+ */
+function pathOf(handler: unknown): string | null {
   const info = (handler as { info?: { path?: unknown } }).info
-  return typeof info?.path === 'string' ? info.path : String(info?.path ?? '')
+  return typeof info?.path === 'string' && info.path !== '' ? info.path : null
 }
 
 test('в шаблонах мок-маршрутов нет закодированного двоеточия', () => {
-  const guilty: string[] = []
+  const encoded: string[] = []
+  const unreadable: string[] = []
+  const withoutStar: string[] = []
   let counted = 0
-  for (const [name, handlers] of SETS) {
+  for (const [file, handlers] of SETS) {
     for (const handler of handlers) {
       counted += 1
-      const path = pathOf(handler)
+      const template = pathOf(handler)
+      if (template === null) {
+        unreadable.push(`${file}: обработчик №${counted}`)
+        continue
+      }
       // `%3A` в любом регистре: `encodeURIComponent` даёт верхний, но чужой
       // код мог закодировать и вручную.
-      if (/%3a/i.test(path)) guilty.push(`${name}: ${path}`)
+      if (/%3a/i.test(template)) encoded.push(`${file}: ${template}`)
+      // 🔴 ВЕДУЩАЯ «*» — ВТОРАЯ ПОЛОВИНА ТОГО ЖЕ КЛАССА (Plane №834). Без неё
+      // запрос по абсолютному адресу бэкенда уходит мимо мока в сеть — тот же
+      // симптом, что у кодированного двоеточия: обработчик есть, ответ есть,
+      // а правила внутри него не выполняются. Требование записано в шапке
+      // `protected-persons-handlers.ts`; здесь оно закреплено проверкой.
+      if (!template.startsWith('*')) withoutStar.push(`${file}: ${template}`)
     }
   }
 
@@ -89,7 +131,47 @@ test('в шаблонах мок-маршрутов нет закодирова�
   // именно так выглядит сломанный импорт.
   expect(counted, 'обработчиков не найдено — проба ничего не проверила').toBeGreaterThan(100)
   expect(
-    guilty,
-    `шаблон собран помощником, кодирующим параметр, — обработчик недостижим:\n${guilty.join('\n')}`,
+    unreadable,
+    `у обработчика не читается шаблон маршрута — форма MSW изменилась, и сторож ослеп:\n${unreadable.join('\n')}`,
+  ).toEqual([])
+  expect(
+    encoded,
+    `шаблон собран помощником, кодирующим параметр, — обработчик недостижим:\n${encoded.join('\n')}`,
+  ).toEqual([])
+  expect(
+    withoutStar,
+    `шаблон без ведущей «*» — запрос по абсолютному адресу уйдёт мимо мока:\n${withoutStar.join('\n')}`,
+  ).toEqual([])
+})
+
+test('каждый файл обработчиков мока попал под сторожа', () => {
+  // 🔴 ОДНА СТОРОНА БЕРЁТСЯ ИЗ ФАЙЛОВОЙ СИСТЕМЫ (Plane №834, приём из
+  // `route-map-coverage.spec.ts`). Пока обе стороны вели руками, новый набор
+  // обработчиков мог остаться без сторожа, и узнать об этом было неоткуда:
+  // проба продолжала печатать «1 passed».
+  const directory = path.join(__dirname, '..', 'mocks', 'ops')
+  const files = fs
+    .readdirSync(directory)
+    .filter((name) => name.endsWith('.ts'))
+    .filter((name) =>
+      /\bhttp\.(get|post|put|patch|delete)\b/.test(
+        fs.readFileSync(path.join(directory, name), 'utf8'),
+      ),
+    )
+    .sort()
+  const covered = new Set(SETS.map(([file]) => file))
+
+  // Обход каталога обязан что-то находить: пустой список — это сломанный
+  // путь, и он прошёл бы молча, как и всё остальное в этой пробе.
+  expect(files.length, 'в каталоге мока не найдено файлов с обработчиками').toBeGreaterThan(10)
+  expect(
+    files.filter((name) => !covered.has(name)),
+    'файл обработчиков не перечислен в SETS — его маршруты не стережёт никто',
+  ).toEqual([])
+  // И обратное: имя в SETS, которому не соответствует файл, — след переезда,
+  // после которого набор молча выпал из проверки.
+  expect(
+    [...covered].filter((name) => !files.includes(name)),
+    'в SETS есть файл, которого нет в каталоге (или в нём не осталось обработчиков)',
   ).toEqual([])
 })
