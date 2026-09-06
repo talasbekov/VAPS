@@ -254,7 +254,8 @@ def _duty(user, division_id, role_code, moment, *, offset_hours=1):
     return TemporaryDutyPermission.objects.create(
         user_id=str(user.pk),
         duty_role_code=role_code,
-        scope_division_id=int(division_id),
+        # `None` — грант БЕЗ области: гейт считает такой глобальным (Plane №882).
+        scope_division_id=None if division_id is None else int(division_id),
         starts_at=moment - dt.timedelta(hours=offset_hours),
         ends_at=moment + dt.timedelta(hours=offset_hours),
         created_by="test",
@@ -347,3 +348,70 @@ def test_a_duty_without_the_select_permission_is_not_notified(
 
     assert report["notified"] == 1
     assert not OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
+
+
+def test_a_duty_scoped_to_the_department_is_notified_too(
+    chain, duty_role, django_user_model
+):
+    """Область дежурства читается так же, как её читает ГЕЙТ (Plane №882).
+
+    🔴 НАЙДЕНО РЕВЮ. Первая редакция №800 брала дежурства точным совпадением
+    области с управлением, а `PermissionService._scope_matches` накрывает
+    управления через ПРЕДКА: грант на департамент проходит на все его
+    управления (`subtree_ids`). Значит дежурный по департаменту выделить людей
+    мог, а «Выделите N сотрудников» не получал — то самое расхождение, которое
+    карточка объявляла закрытым. Фильтр строже гейта — не «осторожнее», а
+    другая беда с тем же симптомом.
+
+    Красная мутация: вернуть `scope_division_id__in=ids` — дежурный по
+    департаменту исчезнет из получателей, `notified` станет 1.
+    """
+    from organization_management.apps.operations import clock
+
+    event, allocation, directorates, head, officer, _watcher = chain
+    duty = django_user_model.objects.create_user(username="fr-duty-dep", password="x")
+    moment = dt.datetime(2026, 9, 19, 10, 0, tzinfo=dt.timezone.utc)
+    # Область — ДЕПАРТАМЕНТ, а запрос адресован его управлению.
+    department_id = UserRole.objects.get(user_id=str(officer.pk)).scope_division_id
+    _duty(duty, department_id, duty_role.code, moment)
+
+    with clock.override(moment):
+        report = notify_directorate_heads(event, allocation, directorates)
+
+    assert OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
+    # 🔴 СЛЕДСТВИЕ, КОТОРОЕ СТОИТ НАЗВАТЬ: область на департамент накрывает ОБА
+    # его управления, и второе — то, у которого постоянного начальника нет
+    # вовсе, — перестаёт быть «без адресата». Раньше оно уходило в
+    # `headlessDirectorates` и запрос по нему не получал НИКТО.
+    assert report["headlessDirectorates"] == []
+    # Трижды: начальник первого управления и дежурный по каждому из двух.
+    # Строка уведомления у дежурного при этом ОДНА — ключ «получатель, вид,
+    # деловая дата» схлопывает их; счётчик считает удачные доставки, а не
+    # людей, и это его давнее свойство (см. №561), а не следствие этой правки.
+    assert report["notified"] == 3
+
+
+def test_a_duty_without_a_scope_is_notified_too(chain, duty_role, django_user_model):
+    """Грант БЕЗ области гейт считает глобальным — рассылка обязана тоже.
+
+    `_scope_matches` при `scope_division_id is None` возвращает `True` для
+    любого подразделения. Поле у дежурства nullable, то есть такой грант
+    достижим, а не выдуман.
+
+    Красная мутация: вернуть `scope_division_id__in=ids` — `None` в список не
+    попадёт, и дежурный снова выпадет из получателей.
+    """
+    from organization_management.apps.operations import clock
+
+    event, allocation, directorates, head, _officer, _watcher = chain
+    duty = django_user_model.objects.create_user(username="fr-duty-any", password="x")
+    moment = dt.datetime(2026, 9, 19, 10, 0, tzinfo=dt.timezone.utc)
+    _duty(duty, None, duty_role.code, moment)
+
+    with clock.override(moment):
+        report = notify_directorate_heads(event, allocation, directorates)
+
+    # Глобальный грант накрывает ОБА управления заявки, но у второго нет квоты
+    # начальника — уведомление уходит только по управлению с квотой.
+    assert OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
+    assert report["notified"] >= 2
