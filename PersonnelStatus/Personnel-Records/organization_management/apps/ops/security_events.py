@@ -4016,8 +4016,44 @@ def force_roster_view(event):
     return view
 
 
-def placement_assignments_view(event):
+def _assignment_phone(row, employee, *, with_phone):
+    """Телефон строки назначения — служебный, иначе личный, иначе пусто.
+
+    Пусто и тогда, когда читателю он не положен (`with_phone`), и тогда, когда
+    человек уже ответил: звонить не о чем. Разбор — в докстроке
+    `placement_assignments_view`.
+    """
+    if not with_phone or employee is None:
+        return ""
+    answered = (
+        row.get("acknowledgedAt") is not None or row.get("declinedAt") is not None
+    )
+    if answered:
+        return ""
+    return (employee.work_phone or employee.personal_phone or "").strip()
+
+
+def placement_assignments_view(event, *, with_phone=False):
     """Назначения на посты С ПОДРАЗДЕЛЕНИЕМ и статусом дня (Plane №65, «Р-1»).
+
+    🔴 ТЕЛЕФОН ОТДАЁТСЯ НЕ ВСЕМ И НЕ ВСЕГДА (найдено ревью №825 по задаче
+    №452). Он кладётся в каждую строку, а строки едут в
+    `serialize_security_event`, который обслуживает и карточку, и СПИСОК
+    реестра; гейт списка — `event.view`. Роль «рядовой сотрудник второго
+    департамента» имеет `event.view` и НАМЕРЕННО не имеет `personnel.view`,
+    под которым кадровая ручка отдаёт телефоны, — то есть открыв реестр, он
+    получал служебные И ЛИЧНЫЕ номера всех назначенных по всем мероприятиям
+    страницы. Карточка просила телефон в строке ознакомления для старшего, а
+    не в реестре для всех.
+
+    `with_phone` включает вьюха и только там, где он нужен: карточка ОМ,
+    прочитанная тем, кто ВЕДЁТ этап (`my_assignments.may_manage_stage`).
+    Список реестра не включает его никогда.
+
+    И даже под флагом — только НЕОТВЕЧЕННЫМ строкам: у подтвердившего звонить
+    не о чем, экран его телефон и не показывает (`AcknowledgementStage`).
+    Отдавать больше, чем рисуется, — лишний повод для утечки без единого
+    читателя.
 
     Оба факта считаются НА ЧТЕНИИ, а не хранятся в строке назначения: статус
     сотрудника меняется мимо мероприятия (отпуск оформили вечером), и копия,
@@ -4087,11 +4123,7 @@ def placement_assignments_view(event):
                 # назначения, соврала бы уже к следующему переводу. Служебный,
                 # иначе личный: звонит старший по службе, а «звонить некуда»
                 # хуже, чем звонок на личный.
-                "phone": (
-                    (employee.work_phone or employee.personal_phone or "").strip()
-                    if employee is not None
-                    else ""
-                ),
+                "phone": _assignment_phone(row, employee, with_phone=with_phone),
             }
         )
     return view
@@ -5123,6 +5155,13 @@ def move_placement(
         "roleCode": _validated_placement_role(role_code),
         "sectionCode": _validated_placement_section(section_code),
         "acknowledgedAt": None,
+        # 🔴 «ОТКРЫЛ» СНИМАЕТСЯ ВМЕСТЕ С ПОДТВЕРЖДЕНИЕМ (Plane №452, найдено
+        # ревью №825). Подтверждение снималось, а отметка открытия — нет, и
+        # строка сразу показывала «Открыл ДД.ММ, не ответил» про пост, которого
+        # человек не видел. Хуже, что штамп разовый (`viewedAt is None`): он бы
+        # уже не обновился, и старший до конца этапа читал бы дату открытия
+        # ЧУЖОГО назначения.
+        "viewedAt": None,
         "isSectorSenior": False,
         "ratingOverrideReason": None if rating_conflict is None else reason,
         "needOverrideReason": None if need_conflict is None else reason,

@@ -433,7 +433,7 @@ def _serialize_visit_objects(event, visits=None):
     return [serialize_visit_object(event, v, single=single) for v in visits]
 
 
-def serialize_security_event(event):
+def serialize_security_event(event, *, with_phone=False):
     """ОМ в форме контракта клиента (SecurityEvent, camelCase).
 
     Словарь руками, а не ModelSerializer: половина полей — JSONB уже В ФОРМЕ
@@ -489,7 +489,13 @@ def serialize_security_event(event):
         "forceDemandTotal": security_events.force_demand_total(event),
         # Назначения идут с подразделением и статусом дня — они считаются
         # на чтении (см. security_events.placement_assignments_view).
-        "placementAssignments": security_events.placement_assignments_view(event),
+        # `with_phone` — только читателю, который ВЕДЁТ этап (Plane №452,
+        # найдено ревью №825): телефоны ехали и в СПИСОК реестра, гейт которого
+        # `event.view`, то есть доставались рядовому сотруднику без
+        # `personnel.view`. Разбор — в докстроке `placement_assignments_view`.
+        "placementAssignments": security_events.placement_assignments_view(
+            event, with_phone=with_phone
+        ),
         "approvalStatus": event.approval_status,
         "approvalComment": event.approval_comment,
         "journalEntries": event.journal_entries,

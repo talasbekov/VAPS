@@ -62,6 +62,30 @@ def linked_client(username, employee, **grant):
     return api
 
 
+def on_acknowledgement(base):
+    """Довести ОМ фикстуры до этапа «Ознакомление» — ПРЯМО В МОДЕЛИ.
+
+    🔴 БЕЗ ЭТОГО ПРОБЫ ОТМЕТКИ «ОТКРЫЛ» БЫЛИ БЫ НЕ О ТОМ (Plane №452, найдено
+    ревью №825). Отметка ставится только на этапе «Ознакомление»: раньше него
+    у строки в профиле нет ни одной кнопки ответа (карточка рисует «назначение
+    готовится»), и штамповать «открыл» там значило бы наполнять жёлтую корзину
+    людьми, которым было не на что нажать. Фикстура `placed` доводит ОМ до
+    расстановки, поэтому этап проставляется здесь.
+
+    Боевым путём (согласование → подпись) сюда не идём намеренно: он длинный,
+    стережётся своими пробами в `test_ops_visit_object_approval`, и его
+    подробности к предмету ЭТИХ проб отношения не имеют.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    event_id = base.rstrip("/").split("/")[-1]
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.visit_objects.update(stage="ACKNOWLEDGEMENT")
+    event.stage = "ACKNOWLEDGEMENT"
+    event.save(update_fields=["stage", "updated_at"])
+    return event
+
+
 def test_employee_reads_own_assignments_without_any_permission(manager):  # noqa: F811
     me = make_employee("Свой", "Сотрудник")
     other = make_employee("Чужой", "Сотрудник")
@@ -321,6 +345,7 @@ def _assignment_of(manager, base, assignment_id):  # noqa: F811
 def test_the_first_reading_of_my_own_list_stamps_that_i_opened_it(manager):  # noqa: F811
     me = make_employee("Открывший", "Сотрудник")
     base, assignment_id = placed(manager, me)
+    on_acknowledgement(base)
     api = linked_client("emp-viewed", me)
 
     # До первого захода — не открывал: `null`, а не отсутствие поля.
@@ -352,6 +377,7 @@ def test_reading_someone_elses_list_does_not_stamp_that_they_opened_it(manager):
     subordinate = make_employee("Подчинённый", "Незаходивший")
     StaffUnit.objects.create(division=mine_div, employee=subordinate, index=1)
     base, assignment_id = placed(manager, subordinate)
+    on_acknowledgement(base)
     chief, _ = client_for(
         "chief-452", "HEAD_DIRECTORATE", perms=("status.manage",),
         scope_division_id=mine_div.pk,
@@ -365,6 +391,7 @@ def test_an_answered_row_is_not_stamped_as_opened(manager):  # noqa: F811
     """Ответ поглощает факт открытия: подтвердившему звонить не о чем."""
     me = make_employee("Подтвердивший", "Сотрудник")
     base, assignment_id = placed(manager, me)
+    on_acknowledgement(base)
     api = linked_client("emp-acked", me)
     assert api.post(f"{base}acknowledge/{assignment_id}/").status_code == 200
 
@@ -403,3 +430,167 @@ def test_the_row_carries_a_phone_service_number_first(manager):  # noqa: F811
     # Тот же номер и в СВОЁМ списке — контракт один на обе ручки.
     api = linked_client("emp-phone", both)
     assert api.get(MINE).json()["results"][0]["phone"] == "+7 701 111-11-11"
+
+
+def test_the_phone_does_not_travel_to_everyone_with_event_view(manager):  # noqa: F811
+    """🔴 ЛИЧНЫЕ НОМЕРА УЕЗЖАЛИ В РЕЕСТР ВСЕМ (Plane №452, найдено ревью №825).
+
+    Телефон кладётся в каждую строку назначения, а строки едут в
+    `serialize_security_event`, который обслуживает и карточку, и СПИСОК
+    реестра; гейт списка — `event.view`. Роль «рядовой сотрудник второго
+    департамента» имеет `event.view` и НАМЕРЕННО не имеет `personnel.view`,
+    под которым кадровая ручка отдаёт телефоны. То есть, открыв реестр, он
+    получал служебные и личные номера всех назначенных по всем мероприятиям
+    страницы — карточка просила телефон в строке ознакомления для старшего.
+
+    Проверяется ОБА конца: список не несёт номера НИКОМУ (там его не рисует ни
+    один экран), а карточка несёт только тому, кто ведёт этап.
+    """
+    who = make_employee("Телефонов", "Сотрудник")
+    who.work_phone = "+7 701 000-00-01"
+    who.save(update_fields=["work_phone"])
+    base, assignment_id = placed(manager, who)
+    on_acknowledgement(base)
+
+    # Ведущему этап (у `manager` есть `event.manage`) номер положен.
+    assert _assignment_of(manager, base, assignment_id)["phone"] == "+7 701 000-00-01"
+
+    # А читателю с одним лишь `event.view` — нет, ни в карточке, ни в списке.
+    reader, _ = client_for("reader-452", "OPS_READER_452", perms=("event.view",))
+    card = reader.get(base)
+    assert card.status_code == 200, card.content
+    row = next(
+        r for r in card.json()["placementAssignments"] if r["id"] == assignment_id
+    )
+    assert row["phone"] == "", "телефон уехал читателю без права вести этап"
+
+    listing = reader.get(URL)
+    assert listing.status_code == 200, listing.content
+    phones = {
+        r.get("phone", "")
+        for event in listing.json()["results"]
+        for r in event["placementAssignments"]
+    }
+    assert phones <= {""}, f"телефоны уехали в СПИСОК реестра: {phones}"
+
+
+def test_the_phone_is_not_shown_for_a_row_that_already_answered(manager):  # noqa: F811
+    """Ответил — звонить не о чем, и номер не отдаётся даже старшему.
+
+    Экран его и не рисует; отдавать больше, чем рисуется, значит держать
+    лишние личные данные в ответе без единого читателя.
+    """
+    who = make_employee("Ответивший", "Сотрудник")
+    who.work_phone = "+7 701 000-00-02"
+    who.save(update_fields=["work_phone"])
+    base, assignment_id = placed(manager, who)
+    on_acknowledgement(base)
+    assert _assignment_of(manager, base, assignment_id)["phone"] != ""
+
+    api = linked_client("emp-answered-phone", who)
+    assert api.post(f"{base}acknowledge/{assignment_id}/").status_code == 200
+    assert _assignment_of(manager, base, assignment_id)["phone"] == ""
+
+
+def test_opening_the_profile_before_the_stage_does_not_stamp_anything(manager):  # noqa: F811
+    """🔴 ЖЁЛТАЯ КОРЗИНА НАПОЛНЯЛАСЬ ТЕМИ, КОМУ БЫЛО НЕ НА ЧТО НАЖАТЬ
+    (Plane №452, найдено ревью №825).
+
+    Отметка ставилась по ВСЕМ мероприятиям, где человек есть в расстановке, — а
+    профиль показывает и готовящиеся назначения: до «Ознакомления» у строки нет
+    ни одной кнопки ответа. Расстановка согласуется днями, человек заглядывает
+    в профиль — и получает «открыл». Штамп разовый, поэтому он уже не
+    обновится: к началу этапа старший читает «Открыл 03.09, не ответил» и идёт
+    звонить тому, кто ответить не мог, а корзина «не открыли» пустеет. То есть
+    различение «не видел / видел и молчит» схлопывалось обратно.
+    """
+    me = make_employee("Заглянувший", "Заранее")
+    base, assignment_id = placed(manager, me)
+    api = linked_client("emp-early", me)
+
+    assert api.get(MINE).status_code == 200
+    assert _assignment_of(manager, base, assignment_id)["viewedAt"] is None, (
+        "отметка поставлена до этапа «Ознакомление»"
+    )
+
+    # А на этапе — ставится: проба различает «не ставим никогда» и «не ставим
+    # рано», иначе мутация «не ставить вовсе» осталась бы зелёной.
+    on_acknowledgement(base)
+    assert api.get(MINE).status_code == 200
+    assert _assignment_of(manager, base, assignment_id)["viewedAt"] is not None
+
+
+def test_opening_the_profile_does_not_write_into_a_closed_event(manager):  # noqa: F811
+    """Закрытое мероприятие правится обычным GET-ом — так было (ревью №825).
+
+    `mark_viewed` не спрашивал стадию вовсе, поэтому заход в профиль писал
+    `viewedAt` в строки закрытых и давно прошедших ОМ и двигал их `updated_at`
+    («обновлено» на экране). Запись в закрытый агрегат — ровно то, что
+    запрещают №587/№589 для соседних `acknowledge` и `decline`.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    me = make_employee("Закрытов", "Сотрудник")
+    base, assignment_id = placed(manager, me)
+    event = on_acknowledgement(base)
+    event.visit_objects.update(stage="CLOSED")
+    event.stage = "CLOSED"
+    event.save(update_fields=["stage", "updated_at"])
+    touched_before = OpsSecurityEvent.objects.get(pk=event.pk).updated_at
+
+    api = linked_client("emp-closed", me)
+    assert api.get(MINE).status_code == 200
+
+    assert _assignment_of(manager, base, assignment_id)["viewedAt"] is None
+    assert OpsSecurityEvent.objects.get(pk=event.pk).updated_at == touched_before, (
+        "чтение профиля дёрнуло `updated_at` закрытого мероприятия"
+    )
+
+
+def test_moving_a_person_to_another_post_clears_that_they_opened_it(manager):  # noqa: F811
+    """🔴 ПЕРЕНОС ОСТАВЛЯЛ ЧУЖОЕ «ОТКРЫЛ» (Plane №452, найдено ревью №825).
+
+    `move_placement` снимал подтверждение и не снимал отметку открытия: строка
+    сразу показывала «Открыл ДД.ММ, не ответил» про пост, которого человек не
+    видел. Хуже, что штамп разовый (`viewedAt is None`), — он бы уже не
+    обновился, и до конца этапа старший читал бы дату открытия ЧУЖОГО
+    назначения.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    me = make_employee("Перенесённый", "Сотрудник")
+    base, assignment_id = placed(manager, me)
+    # Второй пост заводится ПРЯМО В МОДЕЛИ: паспорт объекта фикстуры даёт один
+    # пост, а переносить надо куда-то. Через `PATCH /recon/` не выйдет — этап
+    # уже не «Рекогносцировка», и предмет пробы к этому отношения не имеет.
+    event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").split("/")[-1])
+    first_post = dict(event.recon_sector_posts[0])
+    event.recon_sector_posts = [
+        *event.recon_sector_posts,
+        {**first_post, "id": "post-move-target", "post": "Пост 2"},
+    ]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+
+    on_acknowledgement(base)
+    api = linked_client("emp-moved", me)
+    assert api.get(MINE).status_code == 200
+    assert _assignment_of(manager, base, assignment_id)["viewedAt"] is not None
+
+    other = {"id": "post-move-target"}
+    # Идентификатор назначения несёт `+` и `:` из отметки времени — в адресе
+    # его надо кодировать, иначе `+` читается как пробел и маршрут не совпадает.
+    from urllib.parse import quote
+
+    moved = manager.post(
+        f"{base}placement/{quote(assignment_id, safe='')}/move/",
+        {"postId": other["id"], "override": True, "override_reason": "перенос"},
+        format="json",
+    )
+    assert moved.status_code == 200, moved.content
+
+    row = next(
+        r
+        for r in manager.get(base).json()["placementAssignments"]
+        if r["postId"] == other["id"] and str(r["employeeId"]) == str(me.pk)
+    )
+    assert row["viewedAt"] is None, "отметка открытия уехала на чужой пост"

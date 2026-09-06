@@ -2773,6 +2773,11 @@ export const securityEventsHandlers = [
         roleCode: body.roleCode ?? null,
         sectionCode: body.sectionCode ?? null,
         acknowledgedAt: null,
+        // «Открыл» снимается вместе с подтверждением (Plane №452, найдено
+        // ревью №825): унаследованная отметка показывала бы «Открыл ДД.ММ, не
+        // ответил» про пост, которого человек не видел, и уже не обновилась бы
+        // — штамп разовый.
+        viewedAt: null,
         isSectorSenior: false,
         ratingOverrideReason:
           ratingConflictMessage === null ? null : overrideReason,
@@ -3939,6 +3944,13 @@ export const securityEventsHandlers = [
         ...personnelDayStatus(incoming.id),
         isSectorSenior: false,
         acknowledgedAt: null,
+        // Четвёртое состояние и ☎ у ПРИШЕДШЕГО НА ЗАМЕНУ (Plane №452, найдено
+        // ревью №825). Здесь обоих полей не было вовсе, а сервер считает
+        // телефон на чтении для КАЖДОЙ строки: на мок-стенде у заменившего
+        // телефона не оказывалось — ровно у того человека, которому старший
+        // звонит в день мероприятия. `tsc` молчал: оба поля необязательные.
+        viewedAt: null,
+        phone: personnelPhone(incoming.id),
         // замена в ходе проведения — не расстановка: обхода не было
         ratingOverrideReason: null,
         needOverrideReason: null,
