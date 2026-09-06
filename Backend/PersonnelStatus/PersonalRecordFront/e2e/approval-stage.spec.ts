@@ -101,7 +101,7 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     // ПРАВИТ состояние — подписывает обход, возвращает документ, — и на живом
     // стенде правила чужое мероприятие, которое соседняя сессия ведёт своим
     // путём. Стережёт это `own-fixture-pattern.spec.ts`.
-    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate(Date.now()) })
+    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate() })
     const own = (await events(token)).find((e) => e.code === code)
     expect(own, `не удалось подготовить фикстуру (${code})`).toBeDefined()
     const target = own!
@@ -289,7 +289,7 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
   }) => {
     const token = await apiToken()
     // Своё безусловно и на своей деловой дате — разбор у первой пробы файла.
-    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate(Date.now()) })
+    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate() })
     const own = (await events(token)).find((e) => e.code === code)
     expect(own, `не удалось подготовить фикстуру (${code})`).toBeDefined()
     const target = own!
@@ -580,7 +580,7 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     // отправку такого ОМ отдельным кодом, Plane №477).
     const token = await apiToken()
     // Своё безусловно и на своей деловой дате — разбор у первой пробы файла.
-    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate(Date.now()) })
+    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate() })
     const own = (await events(token)).find((e) => e.code === code)
     expect(own, `не удалось подготовить фикстуру (${code})`).toBeDefined()
     const target = own!

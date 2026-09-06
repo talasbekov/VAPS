@@ -94,7 +94,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     // завершает ознакомление. Соседняя сессия ведёт тот же ОМ своим путём, и
     // падение выглядит ровно тем симптомом, который проба стережёт, то есть
     // врёт про дефект.
-    const businessDate = uniqueBusinessDate(Date.now())
+    const businessDate = uniqueBusinessDate()
     const code = await prepareEvent(token, { businessDate })
     let event = (await events(token)).find((e) => e.code === code)
     expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
@@ -262,7 +262,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
       // у соседней пробы этого файла. Дата своя не для порядка: занятость
       // сотрудников считается по дате, и подготовка на общую дату вычерпывает
       // свободных людей у соседней пробы того же прогона.
-      const businessDate = uniqueBusinessDate(Date.now())
+      const businessDate = uniqueBusinessDate()
       const code = await prepareEvent(token, { businessDate })
       const event = (await events(token)).find((e) => e.code === code)
       expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
@@ -363,7 +363,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
        * общий `canManage` — кнопка включается тому, кому сервер откажет.
        */
       const token = await apiToken()
-      const businessDate = uniqueBusinessDate(Date.now())
+      const businessDate = uniqueBusinessDate()
       const code = await prepareEvent(token, { businessDate })
       const event = (await events(token)).find((e) => e.code === code)
       expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
@@ -454,7 +454,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     const token = await apiToken()
     // Своя дата и здесь: без неё эта подготовка делила бы кадровый пул с двумя
     // соседними пробами файла, переведёнными на своё в Ш-2.
-    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate(Date.now()) })
+    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate() })
     const event = (await events(token)).find((e) => e.code === code)!
     const target = event.placementAssignments[0]!
     // Отказ — от имени сотрудника не завести (учётки нет), поэтому по API
@@ -563,14 +563,19 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     expect(found.results.length, 'на стенде нет сотрудника «Токтаров»').toBeGreaterThan(0)
     const linkedEmployeeId = found.results[0].id
 
-    // Свойство, ради которого формула именно такая, проверяется ЗДЕСЬ, а не
-    // ожиданием повтора через пять минут: прежняя формула на этой строке
-    // краснеет (300 000 мс — ровно её период), новая проходит.
+    // 🔴 СВОЙСТВО ПРОВЕРЯЕТСЯ ЗДЕСЬ, И ПРОВЕРКА ПЕРЕПИСАНА (Plane №881).
+    // Прежняя стерегла смещение +300 000 мс — период ПОЗАПРОШЛОЙ формулы, — и
+    // потому молчала о периоде прошлой (3,65 с). Теперь проверяется само
+    // требование: подряд идущие вызовы дают РАЗНЫЕ дни. Красная мутация —
+    // вернуть в формулу часы (`at % 3650`): десять вызовов подряд укладываются
+    // в миллисекунды, дадут одну дату, и `unique.size` схлопнется.
+    const unique = new Set(Array.from({ length: 10 }, () => uniqueBusinessDate()))
     expect(
-      uniqueBusinessDate(Date.now()),
-      'дата повторяется через пять минут — проба будет мигать',
-    ).not.toBe(uniqueBusinessDate(Date.now() + 300_000))
-    const businessDate = uniqueBusinessDate(Date.now())
+      unique.size,
+      'десять вызовов подряд дали не десять разных дней — подготовки одного ' +
+        'прогона поделят день и вычерпают друг у друга свободных людей',
+    ).toBe(10)
+    const businessDate = uniqueBusinessDate()
     const code = await prepareEvent(token, { firstEmployeeId: linkedEmployeeId, businessDate })
 
     // Сервер: у руководителя появилась строка об ЭТОМ мероприятии — без клика.
