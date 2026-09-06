@@ -39,8 +39,32 @@ URL = "/api/ops/security-events/"
 
 @pytest.fixture
 def staff():
+    """Начальник ДЕПАРТАМЕНТА: профиль плюс роль-добавка «Штаб ОМ».
+
+    Грантов два с №601 (решение заказчика 06.09.2026): штабные права-обходы
+    уехали из профиля в `OPS_STAFF_COMMAND`, потому что профиль носят обе
+    персоны второго департамента, а обходы область гранта не спрашивают.
+    Фикстура повторяет матрицу персон (`seed_access_matrix`, `dept_head_d2`),
+    а не собирает удобный набор прав.
+    """
     call_command("seed_operations")
-    api, _ = client_for("d2-staff", "HEAD_OPS_UNIT")
+    api, user = client_for("d2-staff", "HEAD_OPS_UNIT")
+    RoleAdminService.assign_role(
+        str(user.pk), "OPS_STAFF_COMMAND", None, actor="test"
+    )
+    return api
+
+
+@pytest.fixture
+def directorate_head():
+    """Начальник УПРАВЛЕНИЯ второго департамента: тот же профиль, и только он.
+
+    Ровно та персона, из-за которой заведён №601: до правки она получала
+    штабные обходы вместе с профилем и командовала расстановкой по всей
+    организации.
+    """
+    call_command("seed_operations")
+    api, _ = client_for("d2-dir-head", "HEAD_OPS_UNIT")
     return api
 
 
@@ -109,8 +133,57 @@ def test_the_staff_edits_the_visit_summary_of_any_event(staff):
 
 def test_forces_command_is_not_granted_until_the_customer_answers(staff):
     codes = set(RoleAdminService.role_permission_codes("HEAD_OPS_UNIT"))
-    assert {"event.create", "event.bulletin", "placement.manage",
-            "placement.command", "gvo.manage"} <= codes
+    assert {"event.create", "event.bulletin", "placement.manage"} <= codes
     assert not codes & {"forces.command", "forces.allocate", "forces.select"}, (
         "«Сбор сил» штабу — открытый вопрос заказчику (№421), право не выдаётся молча"
     )
+
+
+def test_the_staff_powers_left_the_profile_for_an_add_on_role(staff):
+    """Три обхода лежат в роли-добавке, а не в профиле (Plane №601).
+
+    🔴 КРАСНОТА НА МУТАЦИИ: верни любое из трёх обратно в раскладку
+    `HEAD_OPS_UNIT` в `seed_operations` — покраснеет первый набор, а следом
+    проба ниже, которая спрашивает то же самое поведением.
+    """
+    profile = set(RoleAdminService.role_permission_codes("HEAD_OPS_UNIT"))
+    add_on = set(RoleAdminService.role_permission_codes("OPS_STAFF_COMMAND"))
+
+    assert not profile & {"placement.command", "gvo.manage", "event.stage_override"}
+    assert add_on == {"placement.command", "gvo.manage", "event.stage_override"}
+
+
+def test_the_directorate_head_does_not_command_placement_of_a_foreign_event(
+    manager, directorate_head  # noqa: F811
+):
+    """Начальник управления второго департамента на ЧУЖОМ мероприятии — 403.
+
+    Это и есть дефект №601, записанный поведением: до правки та же учётка
+    расставляла людей по всей организации, потому что штабной обход
+    `placement.command` приезжал ей вместе с профилем.
+
+    🔴 КРАСНОТА НА МУТАЦИИ: выдай фикстуре `directorate_head` вторым грантом
+    `OPS_STAFF_COMMAND` (или верни `placement.command` в профиль) — ответ
+    станет 200, и проба покраснеет.
+    """
+    obj = make_object(with_passport=True)
+    chief = make_employee(last_name="Старшов")
+    assignee = make_employee(last_name="Назначаемый")
+    data = create_event(manager, obj).json()
+    base = f"{URL}{data['id']}/"
+    visit_id = data["visitObjects"][0]["id"]
+    manager.post(
+        f"{base}visit-objects/{visit_id}/chief/",
+        {"employeeId": str(chief.pk)},
+        format="json",
+    )
+    post_id = manager.post(f"{base}recon/import-from-passport/").json()[
+        "reconSectorPosts"
+    ][0]["id"]
+
+    denied = directorate_head.post(
+        f"{base}placement/assign/",
+        {"postId": post_id, "employeeId": str(assignee.pk)},
+        format="json",
+    )
+    assert denied.status_code == 403, denied.content
