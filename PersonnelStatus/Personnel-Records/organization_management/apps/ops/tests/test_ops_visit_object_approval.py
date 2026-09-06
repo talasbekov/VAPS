@@ -1214,7 +1214,7 @@ def test_removing_a_post_does_not_lock_approval_with_an_invisible_remark(
 
 
 def test_adding_a_second_object_does_not_lock_the_first_one_forever(
-    manager,  # noqa: F811
+    manager, approver,  # noqa: F811
 ):
     """🔴 ДОБАВЛЕНИЕ ВТОРОГО ОБЪЕКТА ЗАПИРАЛО ОМ НАВСЕГДА (Plane №490).
 
@@ -1260,7 +1260,61 @@ def test_adding_a_second_object_does_not_lock_the_first_one_forever(
     ]
     event.save(update_fields=["recon_sector_posts", "updated_at"])
     only = list(event.visit_objects.all())[0]
+
+    # 🔴 ОМ ДОВОДИТСЯ ДО СОГЛАСОВАНИЯ, А НЕ ОСТАЁТСЯ НА РЕКОГНОСЦИРОВКЕ
+    # (найдено ревью №825). Прежняя редакция сравнивала `placement_signature`
+    # ДО и ПОСЛЕ, не заведя НИ ОДНОГО назначения: подпись была пустой строкой
+    # с обеих сторон, и головной ассерт сравнивал `"" == ""` — он не покраснел
+    # бы ни от какой мутации. Хуже: сами симптомы карточки (`APPROVAL_STALE` и
+    # `PLACEMENT_EMPTY`) не стерёг никто, потому что до согласования проба не
+    # доходила вовсе. Об эту же ловушку предупреждает фикстура выше в этом
+    # файле: «без назначения отправка отбивается „расстановка пуста“».
+    card = manager.get(base).json()
+    manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": [{**i, "state": "NORMAL"} for i in card["reconChecklist"]],
+            # Разметку НЕ возвращаем — в ней и предмет пробы.
+            "sectorPosts": [
+                {**p, "visitObjectId": None} for p in card["reconSectorPosts"]
+            ],
+        },
+        format="json",
+    )
+    assert manager.post(f"{base}recon/complete/").status_code == 200
+    for post in manager.get(base).json()["reconSectorPosts"]:
+        while (
+            sum(
+                1
+                for a in manager.get(base).json()["placementAssignments"]
+                if a["postId"] == post["id"]
+            )
+            < post["need"]
+        ):
+            assigned = manager.post(
+                f"{base}placement/assign/",
+                {
+                    "postId": post["id"],
+                    "employeeId": str(make_employee(last_name="Одиночев").pk),
+                },
+                format="json",
+            )
+            assert assigned.status_code == 200, assigned.content
+    done = manager.post(
+        f"{base}placement/complete/", {"visitObjectId": str(only.pk)}, format="json"
+    )
+    assert done.status_code == 200, done.content
+    _add_approver(manager, base, only, name="Согласующий единственного")
+    sent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(only.pk)}, format="json"
+    )
+    assert sent.status_code == 200, sent.content
+
+    event = service.lock_event(event_id)
+    only.refresh_from_db()
     signature_before = service.placement_signature(event, only)
+    assert signature_before, "подпись пуста — проба сравнивала бы пустое с пустым"
+    assert not service.approval_is_stale(event, only)
 
     second_object = make_object(code="OBJ-LOCK-2", with_passport=True)
     added = manager.post(
@@ -1274,12 +1328,85 @@ def test_adding_a_second_object_does_not_lock_the_first_one_forever(
         "подпись расстановки первого объекта изменилась от появления соседа — "
         "его согласование объявлено устаревшим, а расстановку никто не трогал"
     )
+    assert not service.approval_is_stale(event, only), (
+        "согласование объявлено устаревшим появлением соседа — "
+        "`_approve_visit` отобьёт APPROVAL_STALE, и объект запрётся навсегда"
+    )
     assert service.visit_object_posts(event, only), (
         "первый объект остался без постов: документ печатался бы пустым"
     )
     assert all(
         str(p.get("visitObjectId") or "") != "" for p in event.recon_sector_posts
     ), "остались неразмеченные посты — они снова ничьи"
+
+    # И объект ДЕЙСТВИТЕЛЬНО согласуется — то, чего карточка и добивалась.
+    approver_id = only.approval_route[0]["id"]
+    decided = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "visitObjectId": str(only.pk)},
+        format="json",
+    )
+    assert decided.status_code == 200, decided.content
+
+
+def test_a_post_pointing_at_a_removed_object_is_pinned_too(
+    manager,  # noqa: F811
+):
+    """🔴 «НИЧЕЙ» — ЭТО И ПУСТАЯ РАЗМЕТКА, И ССЫЛКА В ПУСТОТУ (Plane №490,
+    найдено ревью №825).
+
+    Пин закреплял только строки с ПУСТЫМ `visitObjectId`, а пост, чей объект
+    сняли с мероприятия, не пуст и при этом ничей — тот же разрез, который
+    `event_force_need` уже различает после №759. Пока объект один,
+    `visit_object_posts` отдаёт такой пост вместе со всеми и он попадает в
+    снимок согласования; появление второго объекта его теряет, и запирание
+    №490 воспроизводится дословно — с той разницей, что отказ приходит
+    `PLACEMENT_EMPTY`, а не `RECON_POSTS_UNASSIGNED`, то есть уводит разбор в
+    расстановку, где всё на месте.
+    """
+    obj = make_object(code="OBJ-DANGLING-1", with_passport=True)
+    created = manager.post(
+        URL,
+        {
+            "title": "Проба ссылки в пустоту",
+            "objectId": str(obj.pk),
+            "businessDate": "2026-09-03",
+            "kind": "INTERNAL",
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.content
+    event_id = created.json()["id"]
+    base = f"{URL}{event_id}/"
+    give_chief(manager, event_id)
+    assert manager.post(f"{base}recon/import-from-passport/").status_code == 200
+
+    event = service.lock_event(event_id)
+    only = list(event.visit_objects.all())[0]
+    # Ссылка на объект, которого у мероприятия нет: так выглядят строки,
+    # переехавшие миграциями, и то, ради чего заведена №759.
+    event.recon_sector_posts = [
+        {**p, "visitObjectId": "999999"} for p in event.recon_sector_posts
+    ]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+    assert service.visit_object_posts(event, only), (
+        "у единственного объекта пропали посты ещё до добавления соседа"
+    )
+
+    second = make_object(code="OBJ-DANGLING-2", with_passport=True)
+    added = manager.post(
+        f"{base}visit-objects/", {"objectId": str(second.pk)}, format="json"
+    )
+    assert added.status_code in (200, 201), added.content
+
+    event = service.lock_event(event_id)
+    assert service.visit_object_posts(event, only), (
+        "посты со ссылкой в пустоту потерялись при добавлении второго объекта"
+    )
+    assert all(
+        str(p.get("visitObjectId") or "") == str(only.pk)
+        for p in event.recon_sector_posts
+    ), "ссылка в пустоту пережила закрепление"
 
 
 def test_a_remark_cannot_be_pinned_to_a_post_of_another_object(
@@ -1913,3 +2040,77 @@ def test_a_remark_on_an_unmarked_post_of_the_only_object_is_accepted(
     assert [str(r.get("postId")) for r in (visit.approval_remarks or [])] == [
         str(unmarked[0]["id"])
     ]
+
+
+def test_a_post_dropped_from_the_recon_screen_detaches_its_remarks_too(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ЗАКРЫТ БЫЛ ОДИН ВХОД ИЗ ДВУХ (Plane №510, найдено ревью №825).
+
+    Отвязка стояла только в `remove_placement_post`, а пост исчезает и через
+    `PATCH /recon/`: он переписывает расчёт ЦЕЛИКОМ, и у экрана рекогносцировки
+    есть «Удалить пост», «Удалить подпост» и «Удалить сектор». После возврата
+    на доработку человек идёт чинить именно туда — карточка №510 прямо про
+    этот сценарий, только называет второй вход.
+
+    Замечание оставалось `OPEN` со ссылкой на несуществующий пост,
+    `_approval_ready` держал этап навсегда, а причина была невидима: на экране
+    согласующего печатался сырой id.
+    """
+    base, event_id, first, _second, _assigned = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    manager.post(f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json")
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+
+    event = service.lock_event(event_id)
+    own_posts = service.visit_object_posts(event, first)
+    assert own_posts, "у объекта нет постов — проба стерегла бы не то"
+    victim = own_posts[0]
+    decided = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {
+            "decision": "RETURNED",
+            "comment": "переделать",
+            "visitObjectId": str(first.pk),
+            "remarks": [
+                {"text": "Убрать этот пост", "postId": str(victim["id"]), "urgent": False}
+            ],
+        },
+        format="json",
+    )
+    assert decided.status_code == 200, decided.content
+
+    # Людей с поста снимаем: правка рекогносцировки не трогает назначения, а
+    # осиротевшее назначение — предмет другой карточки (№535).
+    for row in manager.get(base).json()["placementAssignments"]:
+        if str(row["postId"]) == str(victim["id"]):
+            assert manager.delete(f"{base}placement/{row['id']}/").status_code == 200
+
+    # А сам пост снимаем ЭКРАНОМ РЕКОГНОСЦИРОВКИ — сохранением расчёта без него.
+    card = manager.get(base).json()
+    saved = manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": card["reconChecklist"],
+            "sectorPosts": [
+                p for p in card["reconSectorPosts"] if p["id"] != str(victim["id"])
+            ],
+        },
+        format="json",
+    )
+    assert saved.status_code == 200, saved.content
+
+    first.refresh_from_db()
+    detached = [
+        r for r in (first.approval_remarks or []) if r.get("text") == "Убрать этот пост"
+    ]
+    assert detached, "замечание исчезло вместе с постом"
+    assert detached[0]["postId"] is None, (
+        "замечание ссылается на пост, снятый через рекогносцировку, — "
+        "`_approval_ready` будет держать этап невидимо"
+    )
+    assert str(victim["post"]) in (detached[0].get("detachedPost") or ""), (
+        "имя снятого поста потеряно — согласующий не узнает, о чём писал"
+    )
+    assert detached[0]["status"] == "OPEN", "статус замечания трогать нельзя"

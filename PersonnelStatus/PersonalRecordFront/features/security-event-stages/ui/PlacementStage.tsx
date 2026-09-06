@@ -237,14 +237,28 @@ function ReturnedRemarksPanel({
       </div>
       <ul className="divide-y divide-amber-200 dark:divide-amber-900">
         {remarks.map((remark) => {
-          const post = remark.postId === null ? null : postById.get(remark.postId) ?? null;
+          // 🔴 ОТВЯЗАННОЕ ЗАМЕЧАНИЕ — НЕ «ОБЩЕЕ» (Plane №510, найдено ревью
+          // №825). При снятии поста замечание отвязывается от него, но имя
+          // поста сохраняется в `detachedPost` — согласующий писал про
+          // КОНКРЕТНЫЙ пост, и «общее» сказало бы неправду. Два соседних
+          // читателя это уже показывают (экран согласующего и дело), а панель
+          // старшего объекта — то место, куда смотрит человек, который
+          // замечание и чинит, — печатала «общее».
+          //
+          // `undefined` проверяется наравне с `null`: у строк, заведённых до
+          // №386, ключа `postId` нет вовсе — так же считает `ApprovalStage`.
+          const unpinned = remark.postId === null || remark.postId === undefined;
+          const detached = (remark.detachedPost ?? "").trim();
+          const post = unpinned ? null : postById.get(remark.postId!) ?? null;
           const meta = (
             <span className="block text-[11px] text-muted-foreground">
               {remark.author} · {REMARK_LABEL[remark.status]}
               {remark.urgent ? " · срочно" : ""} ·{" "}
               {post === null
-                ? remark.postId === null
-                  ? "общее"
+                ? unpinned
+                  ? detached !== ""
+                    ? `${detached} · пост снят с расчёта`
+                    : "общее"
                   : "пост другого объекта"
                 : `${post.sector} · ${post.post}`}
             </span>
