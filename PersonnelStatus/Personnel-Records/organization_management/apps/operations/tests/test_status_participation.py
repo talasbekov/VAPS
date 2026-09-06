@@ -174,3 +174,63 @@ def test_no_key_means_untouched_and_empty_list_means_none(
     assert (
         OpsStatusParticipation.objects.filter(status=status).count() == 0
     ), "пустой список не снял участия — «участий нет» не записалось"
+
+
+def test_one_event_may_live_on_two_status_rows_of_the_same_person(
+    types, division, participation_catalog  # noqa: F811
+):
+    """Что ограничение уникальности РЕАЛЬНО запрещает (Plane №833).
+
+    🔴 ПОЧЕМУ ПРОБА ВООБЩЕ НУЖНА. Рядом с `uniq_status_participation_event`
+    стоял комментарий «один человек участвует в одном мероприятии ОДИН раз».
+    Ограничение при этом взято по паре (СТРОКА СТАТУСА, мероприятие), а не
+    (СОТРУДНИК, мероприятие) — то есть комментарий обещал больше, чем
+    ограничение делает. Проверка была только словами, и слова разошлись с
+    кодом; замер 06.09.2026 на стенде: семь пар (сотрудник, мероприятие)
+    висят на нескольких строках статуса, у одной — тринадцать строк.
+
+    Проба делает смысл ограничения ИСПОЛНЯЕМЫМ: одно мероприятие на двух
+    РАЗНЫХ строках статуса одного человека — сегодня законно и не отбивается.
+    Соседняя проба стережёт вторую половину: то же мероприятие ДВАЖДЫ в ОДНОЙ
+    строке отбивается.
+
+    ⚠️ ЭТА ПРОБА ЗАКРЕПЛЯЕТ СЕГОДНЯШНИЙ ДОГОВОР, А НЕ ОДОБРЯЕТ ЕГО. Верно ли
+    само намерение — вопрос заказчика (Plane №833): если он выберет «один
+    человек — одно ОМ», ограничение расширится до (сотрудник, деловая дата,
+    мероприятие), и эта проба обязана покраснеть и смениться. Красная на этой
+    мутации — и есть её польза: молча такое изменение не пройдёт.
+    """
+    employee = make_employee(division)
+
+    # Строки РАЗВЕДЕНЫ ПО ДНЯМ намеренно: две строки на одни даты сервер
+    # отбивает как пересечение (`STATUS_OVERLAP_WARNING`), и проба падала бы на
+    # чужом правиле, ничего не сказав о своём предмете. Предмет здесь —
+    # ограничение уникальности участий, а не совместимость статусов.
+    with clock.override(TODAY):
+        first = create_status(
+            employee_id=employee.id,
+            status_type_code="DUTY",
+            date_start=TODAY,
+            date_end=TODAY + timedelta(days=1),
+            actor=ACTOR,
+            participations=[{"event_id": 707, "kind_code": "PHYSICAL_SQUAD"}],
+        )
+        second = create_status(
+            employee_id=employee.id,
+            status_type_code="DUTY",
+            date_start=TODAY + timedelta(days=3),
+            date_end=TODAY + timedelta(days=4),
+            actor=ACTOR,
+            participations=[
+                {"event_id": 707, "kind_code": "SCREENING_GROUP", "role_code": "SCREENER"}
+            ],
+        )
+
+    assert first.id != second.id, "фикстура завела одну строку вместо двух"
+    rows = OpsStatusParticipation.objects.filter(
+        event_id=707, status__employee_id=employee.id
+    )
+    assert rows.count() == 2, (
+        "одно мероприятие на двух строках статуса одного человека отбилось — "
+        "значит ограничение уже не то, что описано рядом с ним (Plane №833)"
+    )
