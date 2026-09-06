@@ -70,27 +70,55 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 }
 
-/** Тело `if (X === undefined) { … }` — по БАЛАНСУ СКОБОК, а не регуляркой:
- * перенос строки prettier'ом такому разбору безразличен (урок №801). */
+/**
+ * Подготовка фикстуры, спрятанная в проверку «а вдруг не нашлось».
+ *
+ * 🔴 ФОРМ БОЛЬШЕ ОДНОЙ, И ПЕРВАЯ РЕДАКЦИЯ ЗНАЛА ТОЛЬКО ОДНУ (найдено ревью).
+ * Стояло `if \(X === undefined\) \{` одной строкой — и мимо проходили
+ * `if (!X)`, `if (X == null)`, `if (state.event === undefined)` и перенос,
+ * который делает prettier у длинного условия. Докстрока при этом обещала, что
+ * «перенос строки такому разбору безразличен»: по балансу скобок разбирается
+ * ТЕЛО, а вход искался регуляркой по строке — обещание было шире правды.
+ *
+ * Сегодня ни одна из этих форм в дереве не встречается (замерено: ноль), то
+ * есть долга за слепотой нет — но храповик ПУСТ, и любое возвращение
+ * антишаблона в непокрытой форме прошло бы молча.
+ *
+ * Тело по-прежнему берётся по БАЛАНСУ СКОБОК: перенос строки внутри него
+ * разбору действительно безразличен.
+ */
+const LAZY_OPENERS = [
+  // `if (X === undefined) {`, `if (X == null) {`, `if (state.x === undefined) {`
+  /if\s*\(\s*[\w$.]+\s*===?\s*(?:undefined|null)\s*\)\s*\{/g,
+  // `if (!X) {`
+  /if\s*\(\s*!\s*[\w$.]+\s*\)\s*\{/g,
+]
+
+/** `X ?? await prepare()` и `X || await prepare()` — та же беда без `if`. */
+const LAZY_FALLBACK = /(?:\?\?|\|\|)\s*\(?\s*await\s+prepare\w*\(/g
+
 function lazyPreparations(raw: string): number {
   const source = withoutComments(raw)
   let count = 0
-  const opener = /if \([A-Za-z_$][\w$]* === undefined\) \{/g
-  let match: RegExpExecArray | null
-  while ((match = opener.exec(source)) !== null) {
-    const start = source.indexOf('{', match.index)
-    let depth = 0
-    for (let i = start; i < source.length; i += 1) {
-      if (source[i] === '{') depth += 1
-      else if (source[i] === '}') {
-        depth -= 1
-        if (depth === 0) {
-          if (/\bprepare\w*\(/.test(source.slice(start, i + 1))) count += 1
-          break
+  for (const opener of LAZY_OPENERS) {
+    opener.lastIndex = 0
+    let match: RegExpExecArray | null
+    while ((match = opener.exec(source)) !== null) {
+      const start = source.indexOf('{', match.index)
+      let depth = 0
+      for (let i = start; i < source.length; i += 1) {
+        if (source[i] === '{') depth += 1
+        else if (source[i] === '}') {
+          depth -= 1
+          if (depth === 0) {
+            if (/\bprepare\w*\(/.test(source.slice(start, i + 1))) count += 1
+            break
+          }
         }
       }
     }
   }
+  count += (source.match(LAZY_FALLBACK) ?? []).length
   return count
 }
 

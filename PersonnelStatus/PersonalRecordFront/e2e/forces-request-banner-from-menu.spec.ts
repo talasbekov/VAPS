@@ -299,6 +299,22 @@ test.describe(
       await signIn(page)
       await page.goto(`${APP}/statuses/`)
       const banner = page.locator('[data-slot="forces-request-banner"]')
+
+      // 🔴 ПРИЧИНА ГОВОРИТСЯ ДО ОЖИДАНИЙ ЭКРАНА, А НЕ ПОСЛЕ (найдено ревью).
+      // Собранная в перехвате причина печаталась ассертом, который стоял ПОСЛЕ
+      // двух ожиданий по двадцать секунд. А в ветке обрыва (`route.abort()` —
+      // тот самый сценарий №843, ради которого всё и писалось) страница состав
+      // не получает, баннер не появляется, и проба умирает на общем таймауте
+      // видимости: собранное сообщение не печаталось НИ РАЗУ. Сторож, который
+      // молчит именно тогда, когда он нужен, — это не сторож.
+      const deadline = Date.now() + 20_000
+      while (Date.now() < deadline) {
+        if (whyNoVacancy !== '') break
+        if (await banner.isVisible()) break
+        await page.waitForTimeout(200)
+      }
+      expect(whyNoVacancy, whyNoVacancy || 'причины нет').toBe('')
+
       await expect(banner).toBeVisible({ timeout: 20_000 })
 
       // Галочки — компоненты shadcn: это `button[role=checkbox]`, а не
