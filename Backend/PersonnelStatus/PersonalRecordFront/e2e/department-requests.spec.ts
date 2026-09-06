@@ -18,6 +18,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -53,6 +54,13 @@ async function apiCall(token: string, method: string, path: string, body?: unkno
     headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
+  // 🔴 ШАГ-ПЕРЕХОД, ОТБИТЫЙ СЕРВЕРОМ, РОНЯЕТ ПОДГОТОВКУ ЗДЕСЬ (Plane №812,
+  //    №813; пропуск найден ревью, задача №825). Сторож не видел этот
+  //    помощник из-за собственной регулярки: она требовала границы слова
+  //    перед `call`, и `apiCall(` под неё не подходил. Между тем здесь идут
+  //    `recon/import-from-passport/` и `recon/complete/` — те самые переходы,
+  //    ради которых карточка заведена.
+  await assertStep(res, method, path)
   return res.json().catch(() => ({}))
 }
 

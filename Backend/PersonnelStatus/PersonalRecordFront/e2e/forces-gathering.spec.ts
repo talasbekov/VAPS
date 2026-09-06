@@ -843,11 +843,17 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // на экране всегда и ничего не значила.
     await expect(main).not.toContainText('уже назначен на пост этого мероприятия')
 
-    await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
-    })
+    // Шаг-переход: отбитое назначение оставило бы человека НЕ на посту, и всё
+    // ниже проверяло бы не то, что написано (Plane №812).
+    await assertStep(
+      await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+      }),
+      'POST',
+      `/api/ops/security-events/${prepared.id}/placement/assign/`,
+    )
     await page.reload()
     await expect(main).toContainText('уже назначен на пост этого мероприятия', {
       timeout: 25_000,
@@ -881,11 +887,17 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     )
     await expect(tree).toContainText(`0/${sectorNeed}`)
 
-    await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
-    })
+    // Шаг-переход: отбитое назначение оставило бы человека НЕ на посту, и всё
+    // ниже проверяло бы не то, что написано (Plane №812).
+    await assertStep(
+      await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+      }),
+      'POST',
+      `/api/ops/security-events/${prepared.id}/placement/assign/`,
+    )
     await page.reload()
     await expect(tree).toContainText(name, { timeout: 25_000 })
     await expect(tree).toContainText(`1/${sectorNeed}`)
@@ -895,11 +907,17 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     const token = await apiToken()
     const prepared = await prepareEventOnPlacement(token)
     const name = prepared.roster[0]
-    await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
-    })
+    // Шаг-переход: отбитое назначение оставило бы человека НЕ на посту, и всё
+    // ниже проверяло бы не то, что написано (Plane №812).
+    await assertStep(
+      await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+      }),
+      'POST',
+      `/api/ops/security-events/${prepared.id}/placement/assign/`,
+    )
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
@@ -931,11 +949,17 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     const token = await apiToken()
     const prepared = await prepareEventOnPlacement(token)
     const name = prepared.roster[0]
-    await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
-    })
+    // Шаг-переход: отбитое назначение оставило бы человека НЕ на посту, и всё
+    // ниже проверяло бы не то, что написано (Plane №812).
+    await assertStep(
+      await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+      }),
+      'POST',
+      `/api/ops/security-events/${prepared.id}/placement/assign/`,
+    )
     // Проба стережёт ПОВЕДЕНИЕ модалки: бейдж нажали — открылась карточка про
     // ТОГО человека, с его агрегатом и блоком оценок.
     //
