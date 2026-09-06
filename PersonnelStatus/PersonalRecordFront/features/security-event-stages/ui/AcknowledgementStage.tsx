@@ -218,6 +218,50 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
         )
       ));
   const canManage = access.can(EVENT_MANAGE) || isStageLead;
+  // 🔴 ЗАМЕНА — ТОЛЬКО НА ПОСТАХ СВОЕГО ОБЪЕКТА (Plane №613; экранная половина
+  //    дописана по ревью, задача №825). Сервер с №613 отбивает замену на
+  //    ЧУЖОМ объекте (`_replaces_own_post`), а экран передавал в каждую строку
+  //    общий на мероприятие признак: старший объекта А видел включённую
+  //    «Заменить →» на строках объекта Б и получал 403. Правообладателю
+  //    (`event.manage`) сужение не касается — у него проходит любая проверка.
+  const visitOfPost = new Map<string, string>(
+    event.reconSectorPosts.map((post) => [
+      post.id,
+      String((post as { visitObjectId?: string | null }).visitObjectId ?? ""),
+    ])
+  );
+  const myVisitIds = new Set(
+    myEmployeeId === null
+      ? []
+      : event.visitObjects
+          .filter(
+            (visit) =>
+              (visit.chiefEmployeeId !== null &&
+                String(visit.chiefEmployeeId) === myEmployeeId) ||
+              (visit.deputies ?? []).some(
+                (deputy) =>
+                  String(deputy.employeeId) === myEmployeeId &&
+                  deputy.canEditPlacement !== false
+              )
+          )
+          .map((visit) => String(visit.id))
+  );
+  const mayReplaceOn = (postId: string): boolean => {
+    if (access.can(EVENT_MANAGE)) return true;
+    if (myEmployeeId !== null && event.chiefEmployeeId !== null &&
+        String(event.chiefEmployeeId) === myEmployeeId) {
+      return true;
+    }
+    const owner = visitOfPost.get(postId) ?? "";
+    // Неразмеченный пост у ЕДИНСТВЕННОГО объекта — его (то же правило, что у
+    // сервера в `_visit_of_post`): размечать было не к чему.
+    if (owner === "") {
+      return event.visitObjects.length === 1
+        ? myVisitIds.has(String(event.visitObjects[0]!.id))
+        : false;
+    }
+    return myVisitIds.has(owner);
+  };
   // 🔴 «ЗАВЕРШИТЬ» — ОПЕРАЦИЯ МЕРОПРИЯТИЯ, И ГЕЙТ У НЕЁ СВОЙ (Plane №453,
   //    вторая половина ревью задачи №825). Сервер держит
   //    `acknowledgement_complete` в `_EVENT_LEAD_ONLY_ACTIONS`: ни старший
@@ -401,6 +445,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                           key={assignment.id}
                           assignment={assignment}
                           canManage={canManage}
+                          canReplace={canManage && mayReplaceOn(assignment.postId)}
                           onAcknowledge={() => acknowledge.mutate({ assignmentId: assignment.id })}
                           onRemind={() => {
                             setLastRemind("one");
@@ -504,6 +549,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
 function AssignmentRow({
   assignment,
   canManage,
+  canReplace,
   onAcknowledge,
   onRemind,
   onReplace,
@@ -511,6 +557,8 @@ function AssignmentRow({
 }: {
   assignment: PlacementAssignment;
   canManage: boolean;
+  /** Замена — операция ОБЪЕКТА: чужой пост её не получает (Plane №613). */
+  canReplace: boolean;
   onAcknowledge: () => void;
   onRemind: () => void;
   onReplace: () => void;
@@ -562,7 +610,18 @@ function AssignmentRow({
                 записал: {assignment.declinedBy}
               </span>
             )}
-          <Button type="button" size="sm" variant="destructive" disabled={!canManage} onClick={onReplace}>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            disabled={!canReplace}
+            title={
+              canReplace
+                ? undefined
+                : "Заменить на посту чужого объекта может только его старший"
+            }
+            onClick={onReplace}
+          >
             <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
             Заменить →
           </Button>

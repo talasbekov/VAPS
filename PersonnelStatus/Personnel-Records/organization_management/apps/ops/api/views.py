@@ -1530,6 +1530,29 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     #: заведена карточка: это решение о зернистости этапа, а не строка кода.
     _EVENT_LEAD_ONLY_ACTIONS = frozenset({"acknowledgement_complete"})
 
+    def _acts_by_permission(self, request, code="event.manage"):
+        """У человека УЖЕ есть право на это действие — обход ему не нужен.
+
+        🔴 ЗАПИСЬ «ДЕЙСТВОВАЛ ПО РОЛИ» НЕ СТАВИТСЯ ПРАВООБЛАДАТЕЛЮ (Plane
+        №576; пропуск найден ревью, задача №825). `permission_override`
+        зовётся ДО `require_permission` (`operations/api/permissions.py`),
+        поэтому ведущий ОМ, который заодно является старшим объекта, уходил в
+        ветку обхода — и в журнал ложилась запись «Согласование ведёт старший
+        объекта» о человеке, действовавшем ПО ПРАВУ. Требование карточки прямо
+        обратное: запись отвечает на вопрос «действовал по роли, а не по
+        праву». Отрицательная проба этого не ловила: она делала старшего
+        посторонним, то есть случай пересечения не проверялся вовсе.
+
+        Гейт от этого не меняется: у такого человека `require_permission`
+        проходит сам.
+        """
+        from organization_management.apps.operations.api.permissions import (
+            effective_permissions,
+        )
+
+        perms = effective_permissions(request)
+        return "*" in perms or code in perms
+
     def _stage_lead_override(self, request):
         from organization_management.apps.ops import my_assignments as mine
 
@@ -1542,8 +1565,15 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             and int(event.chief_employee_id) == int(employee.pk)
         )
         if is_event_chief:
-            self._acting_as_object_lead = True
-            self._object_lead_employee = employee
+            # 🔴 ФЛАГ «СТАРШИЙ ОБЪЕКТА» ЗДЕСЬ НЕ СТАВИТСЯ (Plane №576; найдено
+            #    ревью, задача №825). Он читается только действиями
+            #    согласования (`_object_lead_actor` → `approval_send`,
+            #    `approval_withdraw`, `approval_remark_resolve`), а они ходят
+            #    через `_object_lead_override`, не сюда: множества действий не
+            #    пересекаются. То есть присваивание было write-only — ровно
+            #    тот дефект, о котором сама №576. Хуже: оно называло СТАРШИМ
+            #    ОБЪЕКТА ведущего МЕРОПРИЯТИЕ, и начни какое-нибудь действие
+            #    этапа читать флаг — журнал соврал бы о роли.
             return True
         if self.action in self._EVENT_LEAD_ONLY_ACTIONS:
             return False
@@ -1556,8 +1586,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             event, employee
         ):
             return False
-        self._acting_as_object_lead = True
-        self._object_lead_employee = employee
+        # Флаг здесь тоже не ставится — по той же причине, что и выше:
+        # действия этапа его не читают, а имя «старший объекта» подошло бы не
+        # всякому, кто сюда доходит.
         return True
 
     def _replaces_own_post(self, event, employee):
@@ -1684,12 +1715,17 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def _object_lead_override(self, request):
         """Старший объекта посещения — или его замещающий — по данным объекта.
 
+        Правообладателю обход не выдаётся вовсе (см. `_acts_by_permission`):
+        иначе журнал называл бы старшим объекта того, кто действовал по праву.
+
         Объект берётся тем же правилом, что и у самой операции
         (`_approval_target`): единственный — сам, несколько — только названный.
         Не назвали при нескольких или объектов нет вовсе — исключения нет, и
         отказ будет тем же 403, что у любого без права: гадать, чей это объект,
         гейт не имеет права.
         """
+        if self._acts_by_permission(request):
+            return False
         employee = getattr(request.user, "employee", None)
         if employee is None or not employee.is_active:
             return False
