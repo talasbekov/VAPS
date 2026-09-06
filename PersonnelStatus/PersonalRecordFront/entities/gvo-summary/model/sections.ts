@@ -40,20 +40,50 @@ export const REQUIRED_VISIT_FIELDS: { path: string; label: string }[] = [
   { path: "responsible", label: "Старший ГВО" },
 ];
 
-/** Незаполненные обязательные поля — подписями, по порядку списка. */
+/**
+ * Поля, которые СВОДКА ЗАПОЛНЯЕТ САМА, и потому «не пусто» о них ничего не
+ * говорит (Plane №521). Зеркало `gvo.DERIVED_DEFAULT_PATHS`.
+ *
+ * `deriveGvoSummary` кладёт в обе даты день мероприятия — разумное умолчание
+ * для ДОКУМЕНТА (визит идёт в этот день), но для проверки «человек заполнил»
+ * оно смертельно: по этим путям значение пусто не бывает НИКОГДА, и в
+ * `missingRequired` они не попадали ни при каких данных. Прогресс показывал
+ * «4 из 5», когда не введено ничего, а «Утвердить» не блокировалась вовсе.
+ *
+ * 🔴 СЕРВЕР ЭТО ЗАКРЫЛ, А МОК ОСТАВАЛСЯ НА СТАРОМ ПРАВИЛЕ (найдено ревью
+ * №825): правило `[ГВО-07]` на мок-стенде снова не воспроизводилось — ровно
+ * та болезнь, которую чинил №691. Список здесь и в `gvo.py` обязаны
+ * совпадать; расходятся — это дефект, а не «мок отстал».
+ */
+export const DERIVED_DEFAULT_PATHS: ReadonlySet<string> = new Set([
+  "arrival.date",
+  "departure.date",
+]);
+
+/** Незаполненные обязательные поля — подписями, по порядку списка.
+ *
+ * `entered` — то, что человек ВВЁЛ правкой (зеркало `visit.data` сервера).
+ * Для выводимых полей «заполнено» означает именно это, а не «в сводке
+ * непусто»: непусто там всегда.
+ */
 export function missingRequiredFields(
   summary: GvoSummary,
-  unspecified: string[]
+  unspecified: string[],
+  entered: Record<string, unknown> = {}
 ): string[] {
   const flagged = new Set(unspecified);
-  const at = (path: string): unknown =>
+  const dig = (root: unknown, path: string): unknown =>
     path.split(".").reduce<unknown>((node, part) => {
       if (node === null || typeof node !== "object") return undefined;
       return (node as Record<string, unknown>)[part];
-    }, summary as unknown);
+    }, root);
   return REQUIRED_VISIT_FIELDS.filter(({ path }) => {
     if (flagged.has(path)) return false;
-    const value = at(path);
+    if (DERIVED_DEFAULT_PATHS.has(path)) {
+      const byHand = dig(entered, path);
+      return byHand === null || byHand === undefined || byHand === "";
+    }
+    const value = dig(summary, path);
     if (value === null || value === undefined || value === "") return true;
     if (Array.isArray(value)) return value.length === 0;
     if (typeof value === "object") return Object.keys(value).length === 0;

@@ -19,6 +19,7 @@ export {
   // Обязательные поля визита — ЗЕРКАЛО серверного списка, нужное моку
   // (Plane №691). Живой экран считает их на сервере и берёт готовыми.
   REQUIRED_VISIT_FIELDS,
+  DERIVED_DEFAULT_PATHS,
   missingRequiredFields,
 } from "./model/sections";
 export type {
