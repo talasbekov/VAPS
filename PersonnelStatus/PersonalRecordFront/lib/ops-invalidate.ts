@@ -15,4 +15,16 @@ export function invalidateSecurityEvents(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
   void queryClient.invalidateQueries({ queryKey: ["ops-gvo-summary"] });
   void queryClient.invalidateQueries({ queryKey: ["ops-gvo-summaries"] });
+  // Сбор сил — тоже производная мероприятия (Plane №928). До переезда
+  // раскладки во вкладку «Сборы» этого не было видно: редактор
+  // (`ForcesSplitPanel`) жил на ленте `/employees`, а карточка сбора — за
+  // вкладкой, и устаревал экран, которого в этот момент никто не смотрел.
+  // Теперь форма и таблица `[СБС-12]` стоят друг под другом: сохранил
+  // раскладку — и таблица над формой показывала бы прежние числа.
+  //
+  // Оба ключа, а не один: `["ops-force-collection"]` НЕ префикс для
+  // `["ops-force-collections"]` — это разные строки, и совпадение по префиксу
+  // их не связывает.
+  void queryClient.invalidateQueries({ queryKey: ["ops-force-collection"] });
+  void queryClient.invalidateQueries({ queryKey: ["ops-force-collections"] });
 }

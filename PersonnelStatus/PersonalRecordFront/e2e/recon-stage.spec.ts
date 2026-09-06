@@ -237,19 +237,26 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
 
     await signIn(page)
     // Штаб видит ИМЕННО это число и именно у этого мероприятия.
-    // `?view=forces` ЯВНО (Plane №273): вид по умолчанию сменился на расход
-    // организации, а проба смотрит на РЕЕСТР — он живёт под «Сбором сил».
-    await page.goto(`${APP}/employees/?view=forces`)
-    // Заголовок ленты сменился осознанно (Plane №110): две ленты сбора сведены
-    // в одну — «Запрос сил по мероприятиям». Разводили их стадии, которых
-    // больше нет, и любой признак деления заставлял карточку прыгать из блока
-    // в блок посреди работы штаба.
-    const inbox = page.locator('[data-slot="card"]', {
-      has: page.getByText('Запрос сил по мероприятиям'),
-    })
-    await expect(inbox).toBeVisible({ timeout: 15_000 })
-    const row = inbox.locator('div').filter({ hasText: created.code }).first()
-    await expect(row).toContainText(`${want} чел.`, { timeout: 15_000 })
+    //
+    // 🔴 СМОТРИМ ВКЛАДКУ «СБОРЫ», А НЕ ЛЕНТУ (Plane №928, решение заказчика).
+    // Блок «Запрос сил по мероприятиям» над вкладками снят; то же число штаб
+    // теперь получает СВОЕЙ ручкой `forces/collections/` — колонка
+    // «Потребность» строки сбора. Это тот же факт, а не похожий: сервер
+    // считает её как `force_demand_total = recon_force_request or force_need`
+    // (`apps/ops/security_events.py`), то есть ровно введённое старшим наряда
+    // число. Путь пробы («ввод на этапе → завершение → экран штаба») цел.
+    //
+    // `?view=forces` ЯВНО (Plane №273): вид по умолчанию — расход организации.
+    await page.goto(`${APP}/employees/?view=forces&tab=collections`)
+    const row = page
+      .locator('[data-slot="force-collection-row"]')
+      .filter({ hasText: created.code })
+      .first()
+    await expect(
+      row,
+      'мероприятия с запросом нет в сборах штаба — число до него не дошло',
+    ).toBeVisible({ timeout: 25_000 })
+    await expect(row).toContainText(String(want), { timeout: 15_000 })
 
     // Проба убирает за собой — см. `dropEvent`.
     await dropEvent(call, created.id)

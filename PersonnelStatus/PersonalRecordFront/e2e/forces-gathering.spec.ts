@@ -215,6 +215,39 @@ async function prepareEventOnPlacement(
   }
 }
 
+/**
+ * Открыть КАРТОЧКУ СБОРА и вернуть редактор раскладки (Plane №928).
+ *
+ * 🔴 ЛЕНТЫ «ЗАПРОС СИЛ ПО МЕРОПРИЯТИЯМ» БОЛЬШЕ НЕТ. По решению заказчика блок
+ * над вкладками снят, а `ForcesSplitPanel` переехал во вкладку «Сборы», под
+ * таблицу `[СБС-12]` карточки сбора. Пробы ходили в ленту через
+ * `div.rounded-lg.border` с фильтром по коду ОМ — такого контейнера у нового
+ * места нет вовсе.
+ *
+ * Ходим ПО АДРЕСУ (`?tab=collections&collection=<id>`, №779), а не кликами по
+ * вкладке и строке: что вкладка и строка открываются нажатием, стережёт
+ * `force-collections.spec.ts`; предмет здешних проб — сама раскладка, и лишние
+ * два клика добавили бы им чужих причин покраснеть.
+ *
+ * Возвращается ИМЕННО панель, а не вся карточка: `getByRole('alert')` и
+ * `getByRole('button')` по всей карточке ловили бы и таблицу состояния, и
+ * блок «Собранные сотрудники → объекты».
+ */
+async function openSplitPanel(page: Page, eventId: string) {
+  await page.goto(
+    `${APP}${SCREEN}&tab=collections&collection=${encodeURIComponent(eventId)}`,
+  )
+  // Доказательство, что карточка ОТКРЫЛАСЬ, а не показывает скелет или отказ:
+  // у ветки ошибки «Назад к списку сборов» тоже рисуется, поэтому ждём саму
+  // панель — её в ветке отказа нет.
+  const split = page.locator('[data-slot="forces-split"]')
+  await expect(
+    split,
+    'карточка сбора не открылась — редактора раскладки на экране нет',
+  ).toBeVisible({ timeout: 25_000 })
+  return split
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (скип: нет SMOKE_LIVE=1)', () => {
@@ -493,76 +526,29 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     ).toBe(true)
   })
 
-  test('недобор по заявке назван поимённо, а не только суммой', async ({ page }) => {
-    await signIn(page)
-    // Такой ответ бэк вернуть МОЖЕТ: ровно эта форма приходит у мероприятия,
-    // по которому идёт сбор, — департамент отдал меньше запрошенного.
-    // Подменённое мероприятие запоминаем ПОИМЁННО. С Plane №110 лента ведёт
-    // окно сбора из трёх стадий, и на экране её строк десятки: «не отдано 5»
-    // законно встречается у многих ОМ, а строгий режим Playwright не терпит
-    // нескольких совпадений. Ищем недобор ВНУТРИ карточки того мероприятия,
-    // которому мы его и подставили, — иначе проба зеленела бы на чужой строке.
-    let patchedTitle = ''
-    await page.route(
-      (url) => url.pathname.includes('/api/ops/security-events/') && !url.pathname.match(/security-events\/[^/]+\//),
-      async (route) => {
-        const response = await route.fetch()
-        const body = (await response.json()) as {
-          results?: {
-            title?: string
-            reconForceRequestedAt?: string | null
-            forceRequests?: { requestedCount: number; allocatedCount: number }[]
-          }[]
-        }
-        // Берём первое мероприятие, которое ЛЕНТА ПОКАЖЕТ: с заявками и с
-        // проставленным моментом отправки штабу. Просто «первое с заявками»
-        // мало — черновик старшего наряда лента не показывает, и подмена
-        // уходила бы в карточку, которой на экране нет.
-        // 🔴 И СТАДИЯ ТОЖЕ. Лента показывает окно сбора — DEMAND, FORCES,
-        // PLACEMENT (`COLLECTION_STAGES` на экране): закрытое мероприятие с
-        // заявками в неё не попадает, и подмена уходила в карточку, которой
-        // на экране нет. Так проба и упала на полном прогоне 28.08.2026,
-        // когда первым в ответе оказался закрытый ОМ (Plane №251).
-        const visibleStages = ['DEMAND', 'FORCES', 'PLACEMENT']
-        const first = body.results?.find(
-          (row) =>
-            row.forceRequests?.length &&
-            row.reconForceRequestedAt !== null &&
-            visibleStages.includes(String((row as { stage?: string }).stage)),
-        )
-        if (first?.forceRequests?.length) {
-          first.forceRequests[0].requestedCount = 9
-          first.forceRequests[0].allocatedCount = 4
-          patchedTitle = first.title ?? ''
-        }
-        await route.fulfill({ json: body })
-      },
-    )
-    await page.goto(`${APP}${SCREEN}`)
-    const block = page.getByText('Запрос сил по мероприятиям')
-    await expect(block).toBeVisible({ timeout: 25_000 })
-    // ЖДЁМ ответ, а не читаем сразу: заголовок ленты рисуется ещё на загрузке,
-    // и синхронная проверка успевала раньше запроса — проба падала за 700 мс
-    // «реестр вернул пустой список», имея в виду «ответ ещё не пришёл».
-    await expect
-      .poll(() => patchedTitle, {
-        timeout: 25_000,
-        message: 'подмену некуда было применить — реестр не вернул ОМ с заявками',
-      })
-      .not.toBe('')
-    // Строка департамента обязана назвать СВОЙ недобор: сумма отвечает
-    // «сколько не хватает», строка — «с кого недобрали».
-    const patchedCard = page
-      .locator('div.rounded-lg.border')
-      .filter({ hasText: patchedTitle })
-      .first()
-    await expect(patchedCard.getByText('не отдано 5')).toBeVisible()
-  })
+  /**
+   * 🔴 ПРОБА «НЕДОБОР ПО ЗАЯВКЕ НАЗВАН ПОИМЁННО» СНЯТА ВМЕСТЕ С ТЕМ, ЧТО ОНА
+   * СТЕРЕГЛА (Plane №928, решение заказчика).
+   *
+   * Она подменяла ответ реестра ОМ и искала в ленте штаба строку
+   * «По расчёту рекогносцировки · 0 из 5 · не отдано 5». Эти строки рисовались
+   * из `event.forceRequests` и жили ТОЛЬКО в снятом блоке «Запрос сил по
+   * мероприятиям» — вместе с ним они и ушли с экрана.
+   *
+   * Инвариант, ради которого проба заводилась («сумма отвечает „сколько не
+   * хватает“, строка — „с кого недобрали“»), НЕ осиротел: в карточке сбора его
+   * держит `force-collections.spec.ts` — там колонки `[СБС-12]` проверяются у
+   * КАЖДОЙ строки департамента (`Запрошено · Выделяют · Прислано`), а сумма —
+   * отдельным ассертом по `[data-slot="collection-totals"]`.
+   *
+   * Переписывать пробу под новый экран значило бы завести второй сторож того
+   * же инварианта; оставлять её на старом — сторожить разметку, которой нет.
+   */
 
 
   test('раскладка по департаментам сохраняется, перебор отбивается', async ({ page }) => {
     const token = await apiToken()
-    const { id, code, total } = await prepareDemandEvent(token)
+    const { id, total } = await prepareDemandEvent(token)
     // Сторож фикстуры: делить нечего, если расчёт постов просит одного —
     // тогда и «остаток», и «перебор» проверялись бы вакуумно.
     expect(total, 'у пробного ОМ потребность меньше двух — делить нечего').toBeGreaterThan(1)
@@ -574,13 +560,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     expect(department, 'в справочнике стенда нет департамента — выбирать нечего').toBeTruthy()
 
     await signIn(page)
-    await page.goto(`${APP}${SCREEN}`)
-    const card = page
-      .locator('div.rounded-lg.border')
-      .filter({ hasText: code })
-      .first()
-    await expect(card, 'пробного запроса нет в ленте штаба').toBeVisible({ timeout: 25_000 })
-    await expect(card.locator('[data-slot="forces-split"]')).toBeVisible()
+    const card = await openSplitPanel(page, id)
 
     // Перебор: сервер отбивает своим текстом, и он же виден на экране.
     await card.getByRole('button', { name: 'Департамент', exact: true }).click()
@@ -593,8 +573,10 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await card.getByLabel('Сколько человек, строка 1', { exact: true }).fill(String(total - 1))
     await card.getByRole('button', { name: 'Сохранить раскладку' }).click()
     await expect(card.getByText('Раскладка сохранена')).toBeVisible()
+    // Перезагрузка — по тому же адресу: вкладка и открытый сбор живут в нём
+    // (№779), поэтому `reload` возвращает ровно в карточку, а не в список.
     await page.reload()
-    const saved = page.locator('div.rounded-lg.border').filter({ hasText: code }).first()
+    const saved = page.locator('[data-slot="forces-split"]')
     await expect(saved.locator('[data-slot="forces-split-total"]')).toContainText(
       `разложено ${total - 1} из ${total}`,
       { timeout: 25_000 },
@@ -627,7 +609,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     ).toBe(1)
 
     await page.reload()
-    const afterTopUp = page.locator('div.rounded-lg.border').filter({ hasText: code }).first()
+    const afterTopUp = page.locator('[data-slot="forces-split"]')
     await expect(
       afterTopUp.getByLabel('Департамент, строка 1', { exact: true }),
       'редактор не дождался данных',
@@ -646,7 +628,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     page,
   }) => {
     const token = await apiToken()
-    const { code, total } = await prepareDemandEvent(token)
+    const { id, total } = await prepareDemandEvent(token)
     const departments = await get<{ results: { id: number; name: string; type_code: string }[] }>(
       token,
       '/api/core/divisions/?page_size=200',
@@ -661,9 +643,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     expect(directorates.length, 'у стенда нет управлений — оповещать некого').toBeGreaterThan(0)
 
     await signIn(page)
-    await page.goto(`${APP}${SCREEN}`)
-    const card = page.locator('div.rounded-lg.border').filter({ hasText: code }).first()
-    await expect(card).toBeVisible({ timeout: 25_000 })
+    const card = await openSplitPanel(page, id)
 
     await card.getByRole('button', { name: 'Департамент', exact: true }).click()
     await card.getByLabel('Департамент, строка 1', { exact: true }).selectOption(String(department!.id))
@@ -694,7 +674,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // Мероприятие БУДУЩЕЙ датой: статус привлечения тогда ещё не начался, и
     // проба может проверить снятие. На сегодняшнем ОМ снятие запрещено самим
     // доменом статусов — это правило, а не обходимая помеха.
-    const { code } = await prepareDemandEvent(token, '2027-06-01')
+    const { id } = await prepareDemandEvent(token, '2027-06-01')
     const departments = await get<{ results: { id: number; name: string; type_code: string }[] }>(
       token,
       '/api/core/divisions/?page_size=200',
@@ -709,9 +689,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     expect(roster.count, 'в управлении стенда нет людей — выделять некого').toBeGreaterThan(0)
 
     await signIn(page)
-    await page.goto(`${APP}${SCREEN}`)
-    const card = page.locator('div.rounded-lg.border').filter({ hasText: code }).first()
-    await expect(card).toBeVisible({ timeout: 25_000 })
+    const card = await openSplitPanel(page, id)
     await card.getByRole('button', { name: 'Департамент', exact: true }).click()
     await card.getByLabel('Департамент, строка 1', { exact: true }).selectOption(String(department!.id))
     await card.getByRole('button', { name: 'Сохранить раскладку' }).click()
@@ -1102,9 +1080,34 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
   })
 
 
+  /**
+   * Мероприятие с УЖЕ СОХРАНЁННОЙ строкой раскладки (Plane №928).
+   *
+   * Состояние заявки (`[data-slot="allocation-state"]`) с кнопкой «Оповестить
+   * управления» рисуется только у СОХРАНЁННОЙ строки — у несохранённой на её
+   * месте стоит «Строка не сохранена…». Раскладку кладём ручкой, а не через
+   * экран: предмет проб ниже — гейт по праву, и набирать её кликами значило бы
+   * сперва воспользоваться тем самым правом, которого у одной из них нет.
+   */
+  async function prepareChainRightsFixture(token: string) {
+    const prepared = await prepareDemandEvent(token)
+    const departments = await get<{ results: { id: number; type_code: string }[] }>(
+      token,
+      '/api/core/divisions/?page_size=200',
+    )
+    const department = departments.results.find((row) => row.type_code === 'department')
+    expect(department, 'в справочнике стенда нет департамента — раскладку слать некому').toBeTruthy()
+    await send(token, 'POST', `/api/ops/security-events/${prepared.id}/forces/allocation/`, {
+      rows: [{ departmentId: String(department!.id), need: 1 }],
+    })
+    return prepared
+  }
+
   test('действия цепочки выключены без своего права и названы словами', async ({
     page,
   }) => {
+    const token = await apiToken()
+    const fixture = await prepareChainRightsFixture(token)
     // Права подменяются ОТВЕТОМ ручки: заводить на стенде роль без прав ради
     // пробы значило бы менять данные стенда ради проверки интерфейса. Набор —
     // «человек ведёт мероприятия, но звеньев сбора у него нет» (Plane №74).
@@ -1113,47 +1116,59 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
       async (route) =>
         route.fulfill({
           json: {
-            // `forces.select` держит ЭКРАН открытым, а не действие: с Ш-1
-            // (Plane №352) пункт «Сбор сил» закрыт гейтом страницы на трёх
-            // правах сбора, и без одного из них проба смотрела бы на отказ
-            // модуля вместо цепочки. Проверяемые права цепочки
-            // (`forces.command`, `forces.allocate`) остаются снятыми — именно
-            // их отсутствие и выключает кнопку.
+            // 🔴 `forces.command` ТЕПЕРЬ В НАБОРЕ, И ЭТО НЕ ПОСЛАБЛЕНИЕ (Plane
+            // №928). Редактор раскладки переехал во вкладку «Сборы», а она
+            // закрыта ИМЕННО правом `forces.command` — без него проба смотрела
+            // бы на закрытую вкладку вместо выключенной кнопки.
+            //
+            // Из этого следует и смена предмета: «Сохранить раскладку»
+            // гейтится тем же `forces.command`, что и вход, — состояния
+            // «вижу форму, но сохранять не могу» больше не существует.
+            // Поэтому стережём соседнее звено той же цепочки, которое
+            // осталось достижимым: `forces.allocate` у «Оповестить
+            // управления». Оно и по смыслу чужое для штаба — оповещает
+            // управления ответственный за выделение в департаменте.
             permissions: [
               'event.view', 'event.manage', 'status.view', 'personnel.view',
-              'forces.select',
+              'forces.command',
             ],
           },
         }),
     )
     await signIn(page)
-    await page.goto(`${APP}${SCREEN}`)
-    const block = page.getByRole('main').getByText('Запрос сил по мероприятиям')
-    await expect(block).toBeVisible({ timeout: 25_000 })
+    const card = await openSplitPanel(page, fixture.id)
 
     // Кнопка ВЫКЛЮЧЕНА, а не спрятана: спрятанная не отвечает на вопрос
     // «почему я этого не вижу», и человек идёт спрашивать.
-    const save = page.getByRole('button', { name: 'Сохранить раскладку' }).first()
-    await expect(save).toBeVisible()
-    await expect(save).toBeDisabled()
+    const notify = card.getByRole('button', { name: 'Оповестить управления' }).first()
+    await expect(notify).toBeVisible({ timeout: 25_000 })
+    await expect(notify).toBeDisabled()
 
     // Причина названа ролью, а не «нет прав»: общее «недостаточно прав» не
     // говорит человеку, чьё это действие и к кому идти.
     await expect(
-      page.getByText('Делит потребность и решает по спискам штаб').first(),
+      card
+        .getByText(
+          'Оповещает управления и отправляет список ответственный за выделение в своём департаменте',
+        )
+        .first(),
     ).toBeVisible()
   })
 
   test('со своим правом действие цепочки доступно', async ({ page }) => {
     // Контрольная проба: без неё «выключено» выше не отличалось бы от
     // «выключено всегда», и гейт мог бы просто не работать.
+    const token = await apiToken()
+    const fixture = await prepareChainRightsFixture(token)
     await signIn(page)
-    await page.goto(`${APP}${SCREEN}`)
-    const save = page.getByRole('button', { name: 'Сохранить раскладку' }).first()
-    await expect(save).toBeVisible({ timeout: 25_000 })
-    await expect(save).toBeEnabled()
+    const card = await openSplitPanel(page, fixture.id)
+    const notify = card.getByRole('button', { name: 'Оповестить управления' }).first()
+    await expect(notify).toBeVisible({ timeout: 25_000 })
+    await expect(notify).toBeEnabled()
     await expect(
-      page.getByText('Делит потребность и решает по спискам штаб'),
+      card.getByText(
+        'Оповещает управления и отправляет список ответственный за выделение в своём департаменте',
+      ),
     ).toHaveCount(0)
   })
 
