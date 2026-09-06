@@ -384,3 +384,34 @@ def test_the_attachment_column_names_the_post_and_the_removed_one_too():
     # Пост, которого в расчёте уже нет, а отвязать забыли: идентификатор —
     # последний запас, но он не должен вытеснять подпись у известного поста.
     assert attach({"postId": "post-404"}, labels) == "post-404"
+
+
+def test_the_stage_check_names_its_parameter_visit_object(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """Параметр зовётся `visit_object`, и вызов по этому имени работает
+    (Plane №907).
+
+    🔴 ЗАЧЕМ ПРОБА НА ИМЯ. Слово «визит» в этом коде занято дважды: у
+    `documents_case` это объект посещения (`.stage` есть), у соседнего
+    `documents_summary` — `OpsForeignVisit` (`.stage` НЕТ). Вызывающий,
+    взявший «визит» из привычного соседнего места, получил бы `AttributeError`
+    прямо в печати документа.
+
+    Проба зовёт функцию ИМЕНОВАННЫМ аргументом — значит откат имени к `visit`
+    её роняет `TypeError`. Это единственный способ закрепить имя: поведение от
+    переименования не меняется, и обычная проверка результата осталась бы
+    зелёной.
+
+    Тот же приём применён в `documents_placement`: единственный живой вызов
+    тоже идёт по ключевому слову, так что откат имени краснит и печать дела.
+    """
+    from organization_management.apps.ops import security_events as service
+
+    _, event_id, first, _ = two_objects_on_conduct
+    event = service.lock_event(event_id)
+
+    # Ответ безразличен — предмет в том, что вызов по имени вообще проходит.
+    result = documents_case.acknowledgement_completed(event, visit_object=first)
+
+    assert isinstance(result, bool)
