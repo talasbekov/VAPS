@@ -9,6 +9,8 @@ import datetime as dt
 
 import pytest
 
+from organization_management.apps.operations.clock import Clock
+
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.models import StatusType
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
@@ -104,7 +106,7 @@ def test_status_is_taken_on_the_event_date_not_today(manager):  # noqa: F811
             "report_column_code": "SICK_LEAVE",
         },
     )
-    today = dt.date.today()
+    today = Clock.today_local()
     assert today.isoformat() != BUSINESS_DATE, "день ОМ совпал с сегодня — проба вакуумна"
     OpsEmployeeStatus.objects.create(
         employee_id=employee.pk,
@@ -173,7 +175,7 @@ def test_personnel_page_without_date_answers_null_not_today(manager):  # noqa: F
         code="VACATION",
         defaults={"name": "Отпуск", "priority": 10, "report_column_code": "VACATION"},
     )
-    today = dt.date.today()
+    today = Clock.today_local()
     OpsEmployeeStatus.objects.create(
         employee_id=employee.pk,
         status_type_code="VACATION",

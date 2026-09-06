@@ -25,6 +25,8 @@ import datetime as dt
 
 import pytest
 
+from organization_management.apps.operations.clock import Clock
+
 from organization_management.apps.ops import security_events as service
 from organization_management.apps.ops.tests.test_ops_security_events_api import (
     chief_for,  # noqa: F401
@@ -119,7 +121,7 @@ def test_the_remark_without_a_post_is_general(manager, approver):  # noqa: F811
 
 def test_urgency_is_automatic_close_to_the_event_date(manager, approver):  # noqa: F811
     """`[ВОЗ-02]`: до даты мероприятия ≤ 1 сутки — срочно автоматически."""
-    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    tomorrow = (Clock.today_local() + dt.timedelta(days=1)).isoformat()
     base, _, _ = _event_on_approval(manager, business_date=tomorrow)
 
     remark = _returned_remark(manager, approver, base)

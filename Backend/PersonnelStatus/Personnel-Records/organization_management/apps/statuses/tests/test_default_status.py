@@ -49,7 +49,7 @@ def test_new_employee_gets_a_status():
     """
     employee = Employee.objects.create(
         personnel_number="def-1", last_name="Новиков", first_name="Иван",
-        hire_date=timezone.now().date() - timedelta(days=1000),
+        hire_date=timezone.localdate() - timedelta(days=1000),
     )
 
     status = _active(employee).get()
@@ -64,7 +64,7 @@ def test_new_employee_gets_a_status():
 @pytest.mark.django_db
 def test_dismissed_employee_gets_no_status():
     """Уволенному статус не заводится — ни сигналом, ни командой."""
-    today = timezone.now().date()
+    today = timezone.localdate()
     employee = Employee.objects.create(
         personnel_number="def-2", last_name="Уволенов", first_name="Пётр",
         hire_date=today - timedelta(days=500),
@@ -83,7 +83,7 @@ def test_dismissed_employee_gets_no_status():
 @pytest.mark.django_db
 def test_existing_status_is_left_alone():
     """Идемпотентность: у кого статус есть, тому ничего не дописывается."""
-    today = timezone.now().date()
+    today = timezone.localdate()
     employee = Employee.objects.create(
         personnel_number="def-3", last_name="Отпускной", first_name="Олег",
         hire_date=today - timedelta(days=500),
@@ -111,7 +111,7 @@ def test_start_follows_the_last_finished_status():
     С даты приёма нельзя: `clean()` запрещает пересечение периодов, и создание
     упало бы. Здесь сторожится именно расчёт, а не «хоть что-нибудь создалось».
     """
-    today = timezone.now().date()
+    today = timezone.localdate()
     employee = Employee.objects.create(
         personnel_number="def-4", last_name="Историев", first_name="Илья",
         hire_date=today - timedelta(days=500),
@@ -136,7 +136,7 @@ def test_start_follows_the_last_finished_status():
 @pytest.mark.django_db
 def test_command_fixes_everyone_and_repeats_cleanly():
     """Команда закрывает всех разом и при повторе не пишет ничего."""
-    today = timezone.now().date()
+    today = timezone.localdate()
     people = []
     for index in range(3):
         employee = Employee.objects.create(
@@ -165,7 +165,7 @@ def test_command_fixes_everyone_and_repeats_cleanly():
 
 @pytest.mark.django_db
 def test_dry_run_writes_nothing():
-    today = timezone.now().date()
+    today = timezone.localdate()
     employee = Employee.objects.create(
         personnel_number="def-dry", last_name="Сухов", first_name="Сергей",
         hire_date=today - timedelta(days=100),
@@ -194,7 +194,7 @@ def test_explicit_creation_and_signal_do_not_collide():
     Здесь воспроизводится именно порядок «сотрудник и статус в одной
     транзакции, колбэк после неё».
     """
-    today = timezone.now().date()
+    today = timezone.localdate()
     with transaction.atomic():
         employee = Employee.objects.create(
             personnel_number="def-both", last_name="Двойнов", first_name="Дмитрий",
@@ -219,7 +219,7 @@ def test_start_ignores_cancelled_and_respects_actual_end():
     статус создавался `planned` вместо `active`, а команда рапортовала
     «Заведено статусов: 7», не восстановив инвариант.
     """
-    today = timezone.now().date()
+    today = timezone.localdate()
     employee = Employee.objects.create(
         personnel_number="def-calc", last_name="Расчётов", first_name="Роман",
         hire_date=today - timedelta(days=900),

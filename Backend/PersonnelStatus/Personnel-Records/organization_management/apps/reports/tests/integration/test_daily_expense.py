@@ -88,7 +88,7 @@ def structure_setup():
     emp_div1_1 = Employee.objects.create(personnel_number="005", last_name="Николаев", first_name="Николай", gender=Employee.Gender.MALE); su_div1_1.employee = emp_div1_1; su_div1_1.save()
 
     # 4. Статусы
-    today = timezone.now().date()
+    today = timezone.localdate()
     yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
 
@@ -233,7 +233,7 @@ class TestDailyExpenseIntegration:
         # Управление 1 — принимающая сторона.
         ivanov = Employee.objects.get(personnel_number="001")
         author = User.objects.get(username='status_creator')
-        today = timezone.now().date()
+        today = timezone.localdate()
         StatusApplicationService().create_status(
             employee_id=ivanov.id,
             status_type=EmployeeStatus.StatusType.SECONDED_TO,

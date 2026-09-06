@@ -15,6 +15,7 @@
 from datetime import date, timedelta
 
 import pytest
+from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -145,7 +146,7 @@ def test_filter_by_current_status_not_by_any_active_one(actor, scene):
     # Здесь они заводятся `bulk_create` — тем же путём, каким появляются в
     # жизни.
     employee = scene["people"][0]
-    today = date.today()
+    today = timezone.localdate()
     EmployeeStatus.objects.bulk_create([
         EmployeeStatus(
             employee=employee, status_type="vacation",
@@ -237,7 +238,7 @@ def test_summary_counts_the_whole_selection_not_the_page(actor, scene):
     по всему подразделению. Посчитай их по странице в пятьдесят строк — числа
     станут про другое, а выглядеть будут так же.
     """
-    today = date.today()
+    today = timezone.localdate()
     people = scene["people"]
     EmployeeStatus.objects.bulk_create([
         EmployeeStatus(
@@ -270,7 +271,7 @@ def test_summary_is_not_sent_unless_asked(actor, scene):
 
 def test_status_not_leaves_only_the_absent(actor, scene):
     """Календарю нужны отсутствия, а не весь состав (Plane №236)."""
-    today = date.today()
+    today = timezone.localdate()
     EmployeeStatus.objects.bulk_create([
         EmployeeStatus(
             employee=scene["people"][0], status_type="in_service",

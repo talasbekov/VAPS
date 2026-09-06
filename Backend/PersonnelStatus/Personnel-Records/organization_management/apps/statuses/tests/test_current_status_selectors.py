@@ -30,7 +30,7 @@ _STATE = EmployeeStatus.StatusState
 def person(db):
     employee = Employee.objects.create(
         personnel_number="sel-1", last_name="Селектов", first_name="Семён",
-        hire_date=timezone.now().date() - timedelta(days=900),
+        hire_date=timezone.localdate() - timedelta(days=900),
     )
     # Статус, заведённый сигналом, убираем: каждый тест ставит свой расклад.
     employee.statuses.all().delete()
@@ -49,7 +49,7 @@ def test_two_selectors_answer_different_questions(person):
     🔴 Если эти два селектора когда-нибудь сольют в один, упадёт именно этот
     тест — и это правильно.
     """
-    today = timezone.now().date()
+    today = timezone.localdate()
     expired = EmployeeStatus.objects.create(
         employee=person, status_type=_ST.VACATION,
         start_date=today - timedelta(days=20), end_date=today - timedelta(days=5),
@@ -68,7 +68,7 @@ def test_two_selectors_answer_different_questions(person):
 
 @pytest.mark.django_db
 def test_active_status_ignores_cancelled_and_completed(person):
-    today = timezone.now().date()
+    today = timezone.localdate()
     EmployeeStatus.objects.create(
         employee=person, status_type=_ST.SICK_LEAVE,
         start_date=today - timedelta(days=40), end_date=today - timedelta(days=35),
@@ -92,7 +92,7 @@ def test_active_status_uses_prefetch_without_extra_query(person, django_assert_n
     убивал уже объявленный рядом `Prefetch` — получался запрос на каждого
     сотрудника.
     """
-    today = timezone.now().date()
+    today = timezone.localdate()
     EmployeeStatus.objects.create(
         employee=person, status_type=_ST.VACATION,
         start_date=today - timedelta(days=1), end_date=today + timedelta(days=3),
@@ -120,7 +120,7 @@ def test_serializer_reports_absence_instead_of_inventing_a_status(person):
 
     assert EmployeeSerializer(person).data['current_status'] is None
 
-    today = timezone.now().date()
+    today = timezone.localdate()
     EmployeeStatus.objects.create(
         employee=person, status_type=_ST.BUSINESS_TRIP,
         start_date=today, end_date=today + timedelta(days=2),

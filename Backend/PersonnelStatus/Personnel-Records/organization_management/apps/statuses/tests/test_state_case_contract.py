@@ -23,6 +23,7 @@ Plane №317. `/api/statuses/statuses/` (кадровый каталог) отд
 from datetime import date, timedelta
 
 import pytest
+from django.utils import timezone
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
@@ -56,7 +57,7 @@ def personnel_row():
     # пересчитывает состояние в `save()` по календарю, и строка с прошлыми
     # датами вернулась бы `completed` — проба проверяла бы не тот регистр, а
     # чужое состояние.
-    today = date.today()
+    today = timezone.localdate()
     return EmployeeStatus.objects.create(
         employee=employee,
         status_type=EmployeeStatus.StatusType.BUSINESS_TRIP,
@@ -74,7 +75,7 @@ def ops_row(division, types):  # noqa: F811 — фикстуры pytest
     # состояние обеих ручек считается по календарю, и строка «в прошлом» дала
     # бы COMPLETED в обоих каталогах — регистр бы совпал, а проба стала бы
     # вакуумной.
-    today = date.today()
+    today = timezone.localdate()
     return OpsEmployeeStatus.objects.create(
         employee_id=employee.id,
         status_type_code="DUTY",

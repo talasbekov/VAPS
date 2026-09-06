@@ -37,7 +37,7 @@ def scene(db, actor):
         division_type=Division.DivisionType.DIVISION, parent=root,
     )
     people = []
-    today = timezone.now().date()
+    today = timezone.localdate()
     for index in range(1, 3):
         employee = Employee.objects.create(
             personnel_number=f"mass-{index}",
