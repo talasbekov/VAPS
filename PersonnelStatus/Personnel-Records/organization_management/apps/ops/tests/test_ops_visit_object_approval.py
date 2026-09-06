@@ -2114,3 +2114,74 @@ def test_a_post_dropped_from_the_recon_screen_detaches_its_remarks_too(
         "имя снятого поста потеряно — согласующий не узнает, о чём писал"
     )
     assert detached[0]["status"] == "OPEN", "статус замечания трогать нельзя"
+
+
+def test_a_returned_version_without_a_moment_does_not_beat_a_dated_one(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """🔴 NULLS FIRST ПЕРЕВОРАЧИВАЛ ВЫБОР (Plane №491, найдено ревью №825).
+
+    `order_by("-decided_at")` в PostgreSQL кладёт NULL ВПЕРЁД. У объекта,
+    возвращённого дважды, старая строка `RETURNED` без отметки (такие заводит
+    `_ensure_document_version` у данных до миграции версий — бэкфилла у неё
+    нет намеренно) побеждала свежую датированную, `_returned_order` отвечал
+    «время неизвестно», и объект уезжал в самый низ сортировки. То есть в той
+    самой ветке старых строк, которую докстринг обещает обслуживать, дефект
+    №491 воспроизводился внутри собственной починки.
+
+    Прежняя проба этого не видела: у обоих объектов ровно по ОДНОЙ версии, и
+    внутренний выбор «последняя возвращённая версия объекта» не проверялся.
+    """
+    from organization_management.apps.operations.models_event import (
+        OpsPlacementDocumentVersion,
+    )
+
+    base, event_id, first, second, _ = two_objects_on_approval
+    for visit, who in ((first, "Первого"), (second, "Второго")):
+        _add_approver(manager, base, visit, name=f"Согласующий {who}")
+        assert (
+            manager.post(
+                f"{base}approval/send/", {"visitObjectId": str(visit.pk)}, format="json"
+            ).status_code
+            == 200
+        )
+
+    # ВТОРОЙ возвращён раньше, ПЕРВЫЙ позже — порядок возвратов обратен порядку
+    # объектов, как в соседней пробе.
+    for visit, comment in ((second, "второй раньше"), (first, "первый позже")):
+        visit.refresh_from_db()
+        returned = approver.post(
+            f"{base}approval/route/{visit.approval_route[0]['id']}/decide/",
+            {"decision": "RETURNED", "comment": comment, "visitObjectId": str(visit.pk)},
+            format="json",
+        )
+        assert returned.status_code == 200, returned.content
+
+    # У ПЕРВОГО дописывается СТАРАЯ возвращённая версия БЕЗ отметки времени —
+    # ровно то, что оставляют данные до появления таблицы версий.
+    first.refresh_from_db()
+    oldest = OpsPlacementDocumentVersion.objects.filter(visit_object=first).order_by(
+        "number"
+    ).first()
+    assert oldest is not None, "у объекта нет версий — проба стерегла бы не то"
+    OpsPlacementDocumentVersion.objects.create(
+        visit_object=first,
+        # Номер больше существующих: под прежним `-decided_at` строка без
+        # отметки побеждала бы независимо от него (NULL идут первыми), а
+        # ограничение таблицы требует номер не меньше единицы.
+        number=oldest.number + 99,
+        status="RETURNED",
+        signature="",
+        snapshot={},
+        created_by="",
+        decided_at=None,
+    )
+
+    event = service.lock_event(event_id)
+    service._sync_event_approval(event)
+    event.refresh_from_db()
+
+    assert event.approval_comment == "первый позже", (
+        "строка без отметки победила датированную — мероприятие несёт чужую "
+        "причину, то есть дефект №491 выжил внутри своей починки"
+    )
