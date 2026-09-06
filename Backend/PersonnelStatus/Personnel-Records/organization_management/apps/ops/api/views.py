@@ -45,6 +45,7 @@ from organization_management.apps.ops.bulletin_issues import parse_as_of
 from organization_management.apps.ops import reports as reports_service
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
+    require_permission,
     require_scoped_permission,
     resolve_actor_id,
 )
@@ -2501,6 +2502,13 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "me": _READ_EVENT_PERMISSION,
     }
 
+    #: Право, которое список НЕ ЗАКРЫВАЕТ, а расширяет (Plane №901, тем же
+    #: приёмом, что №602). `rating.view_aggregate` добавляет в строку поле
+    #: рейтинга и разрешает отбор по нему; проверяется членством в наборе
+    #: прав, а не гвардом, поэтому каталог его не видел — и экран «Права»
+    #: отвечал, что право не стоит ни на одной ручке.
+    permission_bypass_map = {"list": ratings_service.VIEW_AGGREGATE_PERMISSION}
+
     #: Потолок страницы. Без него `?page_size=1000000` отдаёт кадры целиком
     #: одним ответом — размер страницы назначал бы спросивший.
     MAX_PAGE_SIZE = 100
@@ -3446,12 +3454,20 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def create_entry(self, request, code=None):
         # RequirePermissionMixin гейтит по self.action="entries" (см. выше),
         # поэтому право правки проверяется здесь явно.
-        perms = effective_permissions(request)
-        if "*" not in perms and "dictionary.manage" not in perms:
-            raise DomainError(
-                "PERMISSION_DENIED", 403,
-                message="Нужно право управления справочниками.",
-            )
+        #
+        # 🔴 ЧЕРЕЗ `require_permission`, А НЕ СВОИМ `in perms` (Plane №901).
+        # Каталог прав читает построчные гейты РАЗБОРОМ ИСХОДНИКА и знает
+        # ровно два имени — `require_permission` и `require_scoped_permission`.
+        # Своя проверка членством ему невидима, и заведение значения
+        # справочника показывалось в каталоге под правом ЧТЕНИЯ
+        # (`dictionary.view`, которым закрыто маршрутное действие `entries`).
+        # Это опаснее пропуска: администратор читает, что запись открывается
+        # правом чтения, и раздаёт его шире, чем собирался.
+        #
+        # Сообщение стало общим («PERMISSION_DENIED» без своего текста) — цена
+        # известная и небольшая: гейт один на весь раздел, и различать его
+        # формулировкой значило бы держать два способа отвечать одно и то же.
+        require_permission(request, "dictionary.manage")
         data = request.data or {}
         entry = dict_service.create_entry(
             code,
@@ -3655,7 +3671,24 @@ class EvaluationWorkItemViewSet(viewsets.ViewSet):
     журнале оценивания и ЗАПРЕЩЁННЫЕ попытки (отказ по праву, чужая запись),
     а гейт миксина отвечал бы раньше, чем сервис успел бы записать отказ.
     Право проверяет сервис — первым действием, до любых данных.
+
+    🔴 КАРТА ДЛЯ КАТАЛОГА, А НЕ ДЛЯ ГЕЙТА (Plane №901). Без неё каталог прав
+    этих ручек не видел вовсе, и экран «Права» отвечал администратору, что
+    `rating.evaluate` «не стоит ни на одной ручке» — про право, которым
+    закрыта вся работа оценщика. Имя карты говорит, что она описывает, а не
+    закрывает: `permission_map` у класса без миксина читалась бы как гейт.
     """
+
+    permission_service_map = {
+        "submit": ratings_service.EVALUATE_PERMISSION,
+        "correct": ratings_service.CORRECT_PERMISSION,
+    }
+
+    #: `rating.view_correction_chain` карточку задания не закрывает — он
+    #: добавляет в неё цепочку исправлений (Plane №901).
+    permission_bypass_map = {
+        "detail_view": ratings_service.VIEW_CHAIN_PERMISSION
+    }
 
     @action(detail=True, methods=["post"], url_path="submit")
     def submit(self, request, pk=None):
@@ -3750,7 +3783,15 @@ class RatingExportsViewSet(viewsets.ViewSet):
 
     Без миксина по той же причине, что у заданий: отказ по праву на заказ
     выгрузки — событие журнала оценивания, и писать его должен сервис.
+
+    Карта — для каталога прав (Plane №901), см. `EvaluationWorkItemViewSet`.
     """
+
+    permission_service_map = {
+        "list": ratings_service.EXPORT_PERMISSION,
+        "create": ratings_service.EXPORT_PERMISSION,
+        "cancel": ratings_service.EXPORT_PERMISSION,
+    }
 
     def list(self, request):
         return Response(
@@ -3782,7 +3823,12 @@ class RatingExportsViewSet(viewsets.ViewSet):
 
 class RatingExportArtifactsViewSet(viewsets.ViewSet):
     """POST /api/ops/rating-export-artifacts/{id}/download/ — выдача файла
-    (§19.29): отдельная операция, повторно проверяющая право и состояние."""
+    (§19.29): отдельная операция, повторно проверяющая право и состояние.
+
+    Карта — для каталога прав (Plane №901), см. `EvaluationWorkItemViewSet`.
+    """
+
+    permission_service_map = {"download": ratings_service.EXPORT_PERMISSION}
 
     @action(detail=True, methods=["post"], url_path="download")
     def download(self, request, pk=None):
@@ -3802,6 +3848,13 @@ class ServiceAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """GET /api/ops/service-analytics/ — снимок показателей §22.4/§22.7."""
 
     permission_map = {"list": analytics_service.VIEW_PERMISSION}
+
+    #: Права, которые список НЕ ЗАКРЫВАЮТ, а расширяют (Plane №901).
+    #: `analytics.drilldown` добавляет в ответ признак «можно провалиться в
+    #: разбор по строкам»; проверяется он членством в наборе прав внутри
+    #: сервиса, а не гвардом, поэтому каталог его не видел — и экран «Права»
+    #: отвечал администратору, что право не стоит ни на одной ручке.
+    permission_bypass_map = {"list": analytics_service.DRILLDOWN_PERMISSION}
 
     @extend_schema(
         parameters=[
@@ -3859,6 +3912,16 @@ class ServiceAnalyticsDrilldownViewSet(RequirePermissionMixin, viewsets.ViewSet)
     не подтверждает."""
 
     permission_map = {"list": analytics_service.VIEW_PERMISSION}
+
+    #: `analytics.drilldown` открывает сам разбор, `analytics.personal_detail`
+    #: — поимённые строки внутри него (Plane №901). Оба проверяются в сервисе
+    #: членством в наборе прав, и каталог их не видел.
+    permission_bypass_map = {
+        "list": (
+            analytics_service.DRILLDOWN_PERMISSION,
+            analytics_service.PERSONAL_DETAIL_PERMISSION,
+        )
+    }
 
     @extend_schema(
         parameters=[
@@ -3981,6 +4044,10 @@ class ServiceReportTypesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     permission_map = {"list": reports_service.GENERATE_PERMISSION}
 
+    #: Список видов отчёта показывает чувствительные виды только с этим
+    #: правом (Plane №901) — расширение, не гейт.
+    permission_bypass_map = {"list": reports_service.SENSITIVE_PERMISSION}
+
     def list(self, request):
         return Response(
             reports_service.list_report_types(effective_permissions(request))
@@ -4002,6 +4069,16 @@ class ServiceReportJobsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "create": reports_service.GENERATE_PERMISSION,
         "retry": reports_service.GENERATE_PERMISSION,
         "new_revision": reports_service.GENERATE_PERMISSION,
+    }
+
+    #: `report.export_sensitive` заказ отчёта не закрывает — он открывает
+    #: чувствительные виды и разделы (Plane №901); проверяется в сервисе.
+    permission_bypass_map = {
+        "list": reports_service.SENSITIVE_PERMISSION,
+        "retrieve": reports_service.SENSITIVE_PERMISSION,
+        "create": reports_service.SENSITIVE_PERMISSION,
+        "retry": reports_service.SENSITIVE_PERMISSION,
+        "new_revision": reports_service.SENSITIVE_PERMISSION,
     }
 
     def list(self, request):
@@ -4176,6 +4253,12 @@ class ServiceReportArtifactsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     (§22.23): отдельная операция с повторной проверкой прав и срока."""
 
     permission_map = {"download": reports_service.GENERATE_PERMISSION}
+
+    #: `report.view_foreign_parameters` открывает параметры ЧУЖОГО заказа в
+    #: выданном файле (Plane №901): не гейт, а расширение.
+    permission_bypass_map = {
+        "download": reports_service.FOREIGN_PARAMETERS_PERMISSION
+    }
 
     @action(detail=True, methods=["post"], url_path="download")
     def download(self, request, pk=None):
@@ -4478,6 +4561,24 @@ class OpsFeedbackRequestsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "comments": feedback_service.VIEW_PERMISSION,
         "triage": feedback_service.TRIAGE_PERMISSION,
         "close": feedback_service.TRIAGE_PERMISSION,
+    }
+
+    #: Права, которые ручку не закрывают, а РАСШИРЯЮТ ответ (Plane №901):
+    #: `view_all` снимает отбор «только свои», `view_confidential` открывает
+    #: скрытое содержимое, `internal_note` — служебные комментарии и действия
+    #: по ним. Все три проверяются внутри сервиса членством в наборе прав,
+    #: и каталог их не видел ни одной строкой.
+    permission_bypass_map = {
+        "list": (
+            feedback_service.VIEW_ALL_PERMISSION,
+            feedback_service.VIEW_CONFIDENTIAL_PERMISSION,
+        ),
+        "retrieve": (
+            feedback_service.VIEW_ALL_PERMISSION,
+            feedback_service.VIEW_CONFIDENTIAL_PERMISSION,
+            feedback_service.INTERNAL_NOTE_PERMISSION,
+        ),
+        "comments": feedback_service.INTERNAL_NOTE_PERMISSION,
     }
 
     def list(self, request):
