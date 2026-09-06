@@ -1064,6 +1064,93 @@ function isIsoMoment(value: string): boolean {
   return !Number.isNaN(new Date(value).getTime());
 }
 
+// ── Заморозка расстановки (`[СОГ-04]`, `[ЗАК-05]`; Plane №867) ─────────────
+//
+// 🔴 МОК НЕ ЗНАЛ О ЗАМОРОЗКЕ ВОВСЕ. Строки `PLACEMENT_FROZEN` не было ни одной
+// на всём фронте, а сервер отбивает ею шесть операций расстановки. Значит
+// e2e по моку не различали ни старое поведение заморозки, ни новое: экран на
+// моке всегда мог править то, что живой сервер запрещает, и «зелёный мок»
+// здесь не доказывал ничего. Долг пришёл с №398 и с №535 расширился на
+// рекогносцировку.
+//
+// Правило — зеркало `security_events.placement_frozen`: закрытый объект
+// заморожен всегда (`[ЗАК-05]`, статус документа там любой, вплоть до
+// черновика), иначе решает статус документа. Черновик и возвращённый правятся
+// — в этом и смысл возврата.
+const FROZEN_DOCUMENT_STATUSES = ["SUBMITTED", "APPROVED"] as const;
+
+/** Тексты отказа — ДОСЛОВНО серверные (`_FROZEN_MESSAGE`, `_CLOSED_MESSAGE`):
+ *  человек читает их на экране, и расхождение здесь было бы расхождением
+ *  контракта, а не «мелочью мока». */
+const FROZEN_MESSAGE: Record<string, string> = {
+  SUBMITTED:
+    "Документ отправлен на согласование — состав только для чтения. " +
+    "Чтобы править: «Отозвать с согласования» (пока никто не подписал) " +
+    "или дождаться возврата согласующим.",
+  APPROVED:
+    "Документ согласован — состав заморожен. Замена людей — на этапе " +
+    "«Ознакомление»; изменение состава постов — новой версией документа " +
+    "после возврата согласующим.",
+};
+
+const CLOSED_MESSAGE =
+  "Объект закрыт — изменения невозможны (`[ЗАК-05]`). Правка закрытого " +
+  "объекта возможна только его повторным открытием.";
+
+type MockVisit = SecurityEvent["visitObjects"][number];
+
+function placementFrozen(visit: MockVisit): boolean {
+  if (visit.stage === "CLOSED" || visit.closedAt !== null) return true;
+  return FROZEN_DOCUMENT_STATUSES.includes(
+    visit.documentStatus as (typeof FROZEN_DOCUMENT_STATUSES)[number]
+  );
+}
+
+/**
+ * Объект посещения, которому принадлежит пост.
+ *
+ * 🔴 НЕРАЗМЕЧЕННЫЙ ПОСТ ПРИНАДЛЕЖИТ ЕДИНСТВЕННОМУ ОБЪЕКТУ, а не «никому» —
+ * так же, как на сервере (`_visit_of_post`). Посты заводятся без пометки, и
+ * у ОМ с одним объектом это ЕГО посты: считать иначе значило бы не включать
+ * заморозку в самом обычном состоянии (ровно дефект №535).
+ */
+function visitOfPost(event: SecurityEvent, postId: string): MockVisit | null {
+  const post = event.reconSectorPosts.find((row) => row.id === postId);
+  if (post === undefined) return null;
+  if (post.visitObjectId !== null && post.visitObjectId !== "") {
+    return event.visitObjects.find((v) => v.id === post.visitObjectId) ?? null;
+  }
+  return event.visitObjects.length === 1 ? event.visitObjects[0] : null;
+}
+
+/** Отказ заморозки — тем же конвертом, что у сервера (`_refuse_frozen_placement`). */
+function refuseFrozenPlacement(visit: MockVisit, what: string) {
+  const closed = visit.stage === "CLOSED" || visit.closedAt !== null;
+  const why = closed
+    ? CLOSED_MESSAGE
+    : (FROZEN_MESSAGE[visit.documentStatus ?? ""] ?? CLOSED_MESSAGE);
+  return errorEnvelope(
+    "PLACEMENT_FROZEN",
+    `${what} заморожен(а): ${why}`,
+    {
+      visitObjectId: visit.id,
+      stage: visit.stage,
+      documentStatus: visit.documentStatus,
+      closed,
+    },
+    422
+  );
+}
+
+/** Отказ, если расстановка объекта ЭТОГО ПОСТА заморожена. */
+function refuseIfPostFrozen(event: SecurityEvent, postId: string) {
+  const visit = visitOfPost(event, postId);
+  if (visit !== null && placementFrozen(visit)) {
+    return refuseFrozenPlacement(visit, "Расстановка объекта");
+  }
+  return null;
+}
+
 /** 422 — нарушение бизнес-правила (жёсткое, без обхода). */
 function businessRuleError(code: string, message: string) {
   return errorEnvelope(code, message, {}, 422);
@@ -1718,6 +1805,42 @@ export const securityEventsHandlers = [
         incomingPosts.some((row) => row.visitObjectId === visit.id)
     );
     if (chiefless !== undefined) return visitChiefRequired(chiefless.objectName);
+    // 🔴 ЗАМОРОЗКА ДЕРЖИТ ТОЛЬКО ТЕ ОБЪЕКТЫ, ЧЬИ СТРОКИ ДЕЙСТВИТЕЛЬНО ПРАВЯТ
+    // (Plane №867, зеркало `_visits_with_edited_rows`). Держать все объекты
+    // мероприятия значило бы, что один замороженный запирает правку чужих
+    // постов и даже галочку в чек-листе — ровно болезнь №634.
+    //
+    // Строка сравнивается ЦЕЛИКОМ, а не по части полей: у гарда старшего
+    // сравнение частичное, и сервер отдельно оговаривает, что заморозке оно
+    // не годится — вне сравнения остаётся в том числе `minRating`, который
+    // правится на этом же экране и уезжает в подписываемый снимок.
+    const previousRows = new Map(event.reconSectorPosts.map((row) => [row.id, row]));
+    const editedVisits = new Set<string>();
+    for (const row of incomingPosts) {
+      const before = previousRows.get(row.id);
+      if (before === undefined || JSON.stringify(before) !== JSON.stringify(row)) {
+        const visit = row.visitObjectId ?? (event.visitObjects.length === 1
+          ? event.visitObjects[0].id
+          : null);
+        if (visit !== null && visit !== "") editedVisits.add(visit);
+      }
+    }
+    // Снятые строки — тоже правка расчёта того объекта, которому они
+    // принадлежали: «Удалить пост» на экране рекогносцировки идёт этой же
+    // ручкой.
+    const incomingIds = new Set(incomingPosts.map((row) => row.id));
+    for (const row of event.reconSectorPosts) {
+      if (incomingIds.has(row.id)) continue;
+      const visit = row.visitObjectId ?? (event.visitObjects.length === 1
+        ? event.visitObjects[0].id
+        : null);
+      if (visit !== null && visit !== "") editedVisits.add(visit);
+    }
+    for (const visit of event.visitObjects) {
+      if (editedVisits.has(visit.id) && placementFrozen(visit)) {
+        return refuseFrozenPlacement(visit, "Расчёт постов объекта");
+      }
+    }
     incomingPosts.forEach((row, index) => {
       if (row.sector.trim() === "")
         fieldErrors[`sectorPosts.${index}.sector`] = ["Обязательное поле."];
@@ -2552,6 +2675,11 @@ export const securityEventsHandlers = [
           404
         );
       }
+      // Заморозка — ПЕРВЫМ правилом после «пост существует» (Plane №867), как
+      // на сервере: замороженному объекту незачем объяснять про состав и
+      // занятость, ответ у него один.
+      const frozenAssign = refuseIfPostFrozen(event, body.postId);
+      if (frozenAssign !== null) return frozenAssign;
       // Состав мероприятия (Plane №73, СС-6): у ОМ, прошедшего «Сбор сил»,
       // на посты ставят только принятых штабом. Пустой состав — прежний путь,
       // правило не включается.
@@ -2704,6 +2832,13 @@ export const securityEventsHandlers = [
           404
         );
       }
+      // 🔴 ПРОВЕРЯЮТСЯ ОБА КОНЦА (Plane №867, как на сервере — там два вызова
+      // подряд): перенос меняет расстановку И на посте-источнике, И на
+      // посте-приёмнике, и заморожен может быть любой из них.
+      const frozenSource = refuseIfPostFrozen(event, current.postId);
+      if (frozenSource !== null) return frozenSource;
+      const frozenTarget = refuseIfPostFrozen(event, body.postId);
+      if (frozenTarget !== null) return frozenTarget;
       const post = event.reconSectorPosts.find((p) => p.id === body.postId);
       if (post === undefined) {
         return errorEnvelope(
@@ -2820,6 +2955,8 @@ export const securityEventsHandlers = [
           404
         );
       }
+      const frozenSenior = refuseIfPostFrozen(event, target.postId);
+      if (frozenSenior !== null) return frozenSenior;
       const post = event.reconSectorPosts.find((p) => p.id === target.postId);
       if (post === undefined) {
         return businessRuleError(
@@ -2917,6 +3054,13 @@ export const securityEventsHandlers = [
       const { event, response } = findEvent(params.id as string);
       if (event === null) return response;
       const assignmentId = params.assignmentId as string;
+      // Снятие — тоже изменение расстановки (Plane №867): на сервере оно
+      // закрыто тем же гардом, что назначение и перенос.
+      const victim = event.placementAssignments.find((a) => a.id === assignmentId);
+      if (victim !== undefined) {
+        const frozenUnassign = refuseIfPostFrozen(event, victim.postId);
+        if (frozenUnassign !== null) return frozenUnassign;
+      }
       return HttpResponse.json(
         saveEvent({
           ...withStaleFlag({
