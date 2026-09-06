@@ -166,3 +166,50 @@ def test_an_item_added_by_hand_keeps_its_own_required_flag(manager):  # noqa: F8
     assert added["required"] is False
     # Этап закрывается: свой непроверенный пункт завершению не мешает.
     assert manager.post(f"{URL}{event_id}/recon/complete/").status_code == 200
+
+
+def test_a_checklist_wiped_by_the_client_does_not_unlock_the_stage(manager):  # noqa: F811
+    """🔴 ПРАВИЛО ВЫКЛЮЧАЛОСЬ СНАРУЖИ — ПРОПУСКОМ ПУНКТА (Plane №541, найдено
+    ревью №825).
+
+    Признак обязательности уже брался из шаблона, но сам ПЕРЕЧЕНЬ приходил
+    снаружи: `complete_recon` шёл по `event.recon_checklist`, а его целиком
+    заменяет тело `PATCH /recon/`. Значит `{"checklist": []}` снимало
+    `[РЕК-07]` полностью — проверять становилось нечего, — и то же давало
+    переименование `id` шаблонного пункта. Дыра ровно та, которую карточка и
+    называет: правило, которое можно выключить снаружи, правилом не является;
+    для этого не нужен злой умысел, довольно клиента, теряющего поле.
+    """
+    event_id, checklist = _event_with_posts(manager)
+    assert checklist, "у мероприятия нет чек-листа — проба стерегла бы не то"
+
+    wiped = manager.patch(f"{URL}{event_id}/recon/", {"checklist": []}, format="json")
+    assert wiped.status_code == 200, wiped.content
+
+    refused = manager.post(f"{URL}{event_id}/recon/complete/")
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "RECON_CHECKLIST_INCOMPLETE", refused.json()
+
+    # Переименование `id` — тот же обход другим входом.
+    renamed = manager.patch(
+        f"{URL}{event_id}/recon/",
+        {
+            "checklist": [
+                {**item, "id": f"mine-{index}", "required": False}
+                for index, item in enumerate(checklist)
+            ]
+        },
+        format="json",
+    )
+    assert renamed.status_code == 200, renamed.content
+    still_refused = manager.post(f"{URL}{event_id}/recon/complete/")
+    assert still_refused.status_code == 422, still_refused.content
+
+    # А честно отмеченный чек-лист этап закрывает — иначе проба стерегла бы
+    # «никогда не завершать», а не правило.
+    manager.patch(
+        f"{URL}{event_id}/recon/",
+        {"checklist": [{**i, "state": "NORMAL"} for i in checklist]},
+        format="json",
+    )
+    assert manager.post(f"{URL}{event_id}/recon/complete/").status_code == 200
