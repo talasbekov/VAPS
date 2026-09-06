@@ -239,13 +239,36 @@ test.describe(
       await page.route(/\/api\/staff_unit\/staff-units\/directorate\//, async (route) => {
         const response = await route.fetch()
         const body = (await response.json()) as {
-          staff_units?: { employee?: unknown; employees?: unknown[] }[]
+          staff_units?: Record<string, unknown>[]
         }
         const units = body.staff_units ?? []
-        if (units.length >= 2) {
-          // Первая строка становится вакансией: сотрудника у неё больше нет.
-          units[0]!.employee = null
-          units[0]!.employees = []
+        // 🔴 ВАКАНСИЯ ДЕЛАЕТСЯ КЛОНИРОВАНИЕМ, А НЕ ТРЕБОВАНИЕМ ДВУХ СТРОК
+        // (Plane №822 Ш-6). Стояло `if (units.length >= 2)` — то есть проба
+        // молча становилась вакуумной и падала «вакансию делать не из чего»,
+        // когда стенд отдавал одну строку. Сколько строк вернёт ручка, зависит
+        // от штата подразделения, а его правят соседние сессии: в замере
+        // 06.09.2026 эта проба упала именно так, а в следующем прогоне прошла.
+        //
+        // Довод исходной редакции сохранён ЦЕЛИКОМ: форма ответа остаётся
+        // СЕРВЕРНОЙ — вакансия делается из настоящей строки, а не выдумывается.
+        // Клон нужен ровно затем, чтобы рядом с вакансией осталась
+        // укомплектованная строка: проба и проверяет РАЗНИЦУ между «выбрано» и
+        // «выделить», а на одной строке разницы не бывает.
+        //
+        // ⚠️ ЧЕГО ЭТО НЕ ЛЕЧИТ (проверено имитацией, Plane №856): если у
+        // подразделения ОДНА настоящая штатная единица, проба всё равно
+        // красна — просто иначе («из них вакансий» не появляется, потому что
+        // расхождения «выбрано»/«выделить» не возникает). Это лечится не
+        // пробой, а фикстурой: у управления должно быть минимум две единицы.
+        if (units.length >= 1) {
+          const vacancy: Record<string, unknown> = {
+            ...units[0]!,
+            employee: null,
+            employees: [],
+          }
+          if (typeof vacancy.id === 'string') vacancy.id = `${vacancy.id}-vacancy`
+          else if (typeof vacancy.id === 'number') vacancy.id = -Math.abs(vacancy.id)
+          body.staff_units = [vacancy, ...units]
           vacancyMade = true
         }
         await route.fulfill({ response, json: body })

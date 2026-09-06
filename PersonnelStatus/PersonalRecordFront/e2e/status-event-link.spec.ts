@@ -147,9 +147,19 @@ async function seed(token: string): Promise<Fixture> {
       employeeId: String(candidate.id),
     })
     if (added.status !== 200) continue
+    // 🔴 `employee_id`, А НЕ `employee` (Plane №822 Ш-6). Ручка фильтрует по
+    // `employee_id`; неизвестный параметр `employee` она молча ИГНОРИРУЕТ и
+    // отдаёт общий список. Замерено 06.09.2026 на стенде:
+    //   ?employee=45      → count=137   (столько же, сколько без фильтра)
+    //   ?employee=999999  → count=137   (несуществующий id — тот же ответ)
+    //   ?employee_id=45   → count=3
+    // Своё участие лежало за пределами первых пятидесяти чужих строк, проба
+    // его не находила и объявляла «ни один сотрудник не свободен» — то есть
+    // называла ЛОЖНУЮ причину, а настоящую (свой же неверный параметр)
+    // скрывала. Молчаливое игнорирование неизвестного параметра — Plane №855.
     const statuses = await call(
       'GET',
-      `/api/operations/statuses/?employee=${candidate.id}&page_size=50`,
+      `/api/operations/statuses/?employee_id=${candidate.id}&page_size=50`,
     )
     const own = (statuses.payload.results as { id: number; state: string; participations: { event_id: number }[] }[]).find(
       (row) => row.participations.some((x) => x.event_id === Number(created.payload.id)),
