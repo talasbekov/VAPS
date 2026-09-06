@@ -92,29 +92,26 @@ def notify_assignment_declined(event, assignment, *, reason):
         "visitObjectId": "" if visit is None else str(visit.pk),
         "objectName": "" if visit is None else visit.object_name,
     }
-    notified, unlinked, undelivered = 0, [], []
+    # Счёт ведёт общий помощник (Plane №829). Форма строки недоставленного —
+    # «имя · учётка» — теперь тоже его, одна на все модули: здесь когда-то
+    # стоял словарь, и одна графа журнала получалась разноформатной (№825).
+    tally = notify_service.DeliveryTally()
     for employee_id in dict.fromkeys(str(pk) for pk in employee_ids):
         user_id = users.get(employee_id)
         if user_id is None:
-            unlinked.append(names.get(employee_id, employee_id))
+            tally.skip_unlinked(names.get(employee_id, employee_id))
             continue
-        if notify_service.notify(
+        tally.deliver(
             user_id,
             KIND,
             event.business_date,
             payload,
             dedupe_key=str(assignment.get("id")),
-        ) is None:
-            # Форма строки — как у соседей (`forces_notify`,
-            # `placement_return_notify`): «имя · учётка». Здесь стоял словарь,
-            # и одна и та же графа журнала получалась разноформатной —
-            # читателю пришлось бы ветвиться (найдено ревью, задача №825).
-            undelivered.append(f"{names.get(employee_id, employee_id)} · {user_id}")
-            continue
-        notified += 1
+            label=names.get(employee_id, employee_id),
+        )
     return {
-        "notified": notified,
-        "unlinked": unlinked,
-        "undelivered": undelivered,
+        "notified": tally.notified,
+        "unlinked": tally.unlinked,
+        "undelivered": tally.undelivered,
         "nobody": False,
     }

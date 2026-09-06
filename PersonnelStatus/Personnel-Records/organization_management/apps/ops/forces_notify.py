@@ -154,7 +154,12 @@ def notify_directorate_heads(event, allocation, directorates):
     """
     ids = [int(row["divisionId"]) for row in directorates if str(row.get("divisionId", "")).isdigit()]
     heads = _directorate_heads(ids)
-    notified, headless, without_quota, undelivered = 0, [], [], []
+    # Счёт ведёт общий помощник (Plane №829): правило «доставленное, а не
+    # попытки» (№561) жило тремя копиями. Списки `headless` и `withoutQuota`
+    # остаются СВОИМИ — это не отказ доставки, а «просить некого» и «не о чем»,
+    # и в общий отчёт их сводить было бы неправдой.
+    tally = notify_service.DeliveryTally()
+    headless, without_quota = [], []
     for row in directorates:
         key = str(row.get("divisionId"))
         if int(row.get("need") or 0) <= 0:
@@ -178,33 +183,85 @@ def notify_directorate_heads(event, allocation, directorates):
             "dueAt": allocation.get("dueAt"),
         }
         for user_id in users:
-            if notify_service.notify(user_id, KIND, event.business_date, payload) is None:
-                undelivered.append(f"{row.get('name') or key} · {user_id}")
-                continue
-            notified += 1
+            tally.deliver(
+                user_id,
+                KIND,
+                event.business_date,
+                payload,
+                label=row.get("name") or key,
+            )
     return {
-        "notified": notified,
+        "notified": tally.notified,
         "headlessDirectorates": headless,
         "withoutQuota": without_quota,
-        "undelivered": undelivered,
+        "undelivered": tally.undelivered,
     }
 
 
 # ── Штабу: департамент ответил «Выделяем: X» (`[СБС-12]`, Plane №426) ──────
 RESPONSE_KIND = "FORCES_RESPONSE"
-HEADQUARTERS_ROLE = "HEAD_OPS_UNIT"
+
+#: Право, под которым лежит доска сбора сил — цель ссылки уведомления
+#: (`forces_collections` и `forces_collection` в `api/views.py`).
+COMMAND_PERMISSION = "forces.command"
 
 
 def _headquarters_users():
-    """Учётки штаба второго департамента — роль `HEAD_OPS_UNIT` (Plane №421)."""
-    from organization_management.apps.operations.models import UserRole
+    """Учётки, которые МОГУТ открыть доску сбора, — по праву, а не по роли.
 
-    return {
+    🔴 РОЛЬ `HEAD_OPS_UNIT` ЗДЕСЬ БЫЛА НЕВЕРНЫМ АДРЕСОМ (Plane №779, решение
+    заказчика 06.09.2026; найдено ревью №825). У этой роли `forces.command`
+    НЕТ намеренно: спецификация `[СБС-10]` отдаёт заявки штабу, а матрица
+    заказчика №348 назвала «Сбор сил» недоступным начальнику второго
+    департамента — расхождение вынесено заказчику карточкой №421 и до ответа
+    право не выдано. А обе ручки сбора закрыты именно им. Получалось полное
+    расхождение: кто получал уведомление, тот не мог открыть цель; кто мог
+    открыть цель, тот уведомления не получал. Пока у уведомления не было
+    ссылки, это было незаметно; №779 ссылку добавила — и «обещания нет»
+    превратилось в «обещание сломано».
+
+    Заказчик выбрал «слать тем, у кого право есть»; отвергнуты «выдать
+    `forces.command` роли `HEAD_OPS_UNIT`» (это закрыло бы и №421, но правит
+    матрицу за заказчика) и «ставить ссылку по правам читателя» (тогда штаб
+    остаётся без пути к сбору вовсе). Следствие названо вслух: начальник
+    второго департамента об ответах управлений больше не узнаёт — до ответа
+    по №421 у него и не было способа с ними что-то сделать.
+
+    🔴 ОБА ИСТОЧНИКА ГРАНТОВ, как у `_directorate_heads` (Plane №800):
+    постоянные назначения и активные дежурства. Иначе заступивший дежурным по
+    штабу доску открыть мог бы, а уведомления не получал.
+    """
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models import (
+        RolePermission,
+        TemporaryDutyPermission,
+        UserRole,
+    )
+
+    roles = list(
+        RolePermission.objects.filter(
+            permission_code_id__in=[COMMAND_PERMISSION, _WILDCARD]
+        ).values_list("role_code_id", flat=True)
+    )
+    if not roles:
+        return set()
+    users = {
         str(user_id)
         for user_id in UserRole.objects.filter(
-            is_active=True, role_code_id=HEADQUARTERS_ROLE
+            is_active=True, role_code_id__in=roles
         ).values_list("user_id", flat=True)
     }
+    now = Clock.now()
+    users |= {
+        str(user_id)
+        for user_id in TemporaryDutyPermission.objects.filter(
+            is_active=True,
+            duty_role_code__in=roles,
+            starts_at__lte=now,
+            ends_at__gte=now,
+        ).values_list("user_id", flat=True)
+    }
+    return users
 
 
 def notify_headquarters_response(event, allocation, *, allocating):
