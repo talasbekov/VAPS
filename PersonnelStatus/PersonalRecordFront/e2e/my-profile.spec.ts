@@ -760,6 +760,43 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     await expect(page.getByRole('button', { name: 'Моя статистика' })).toHaveCount(0)
   })
 
+  test('уволенному сказано ПОЧЕМУ назначений нет, а не «Действующих назначений нет»', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 ВТОРАЯ ПОЛОВИНА №596 (найдена ревью №825). Сервер с №596 отвечает
+     * уволенному пустым списком И причиной словами (`DISMISSED_REASON`), и
+     * бэкенд-проба это закрепляет. А экран брал из ответа только `results` и
+     * печатал «Действующих назначений нет.» — тот самый молчаливый ноль,
+     * который сам же экран объявляет недопустимым для смен дежурств
+     * (`ProfileBody.tsx`, баннер `shiftsNote`). Человек видел ноль и не знал,
+     * что с ним произошло.
+     *
+     * Причина подменяется, а не добывается увольнением живого сотрудника:
+     * предмет пробы — доходит ли строка ответа до глаз, а не умеет ли сервер
+     * её выдать (это стережёт `test_dismissed_employee_stops_reading_his_own_assignments`).
+     *
+     * Красная на мутации: убрать блок `data-slot="assignments-note"` — на
+     * экране останется только «Действующих назначений нет.».
+     */
+    const REASON = 'Сотрудник уволен — назначения закрытых нарядов больше не показываются.'
+    await page.route(
+      (url) => url.pathname.endsWith('/api/ops/security-events/my-assignments/'),
+      async (route) =>
+        route.fulfill({ json: { results: [], employeeId: null, unlinkedReason: REASON } }),
+    )
+
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
+    await page.goto(`${APP}${SCREEN}`)
+    const note = page.locator('[data-slot="assignments-note"]')
+    await expect(note).toBeVisible({ timeout: 20_000 })
+    // Словами СЕРВЕРА, а не пересказом экрана.
+    await expect(note).toHaveText(REASON)
+    // И пустое состояние на месте: причина стоит РЯДОМ с ним, а не вместо —
+    // иначе экран снова выбирал бы за человека, что ему важнее.
+    await expect(page.getByText('Действующих назначений нет.')).toBeVisible()
+  })
+
   test('«История» — закрытые ОМ со средним баллом, без формы и вооружения (Plane №434)', async ({
     page,
   }) => {
