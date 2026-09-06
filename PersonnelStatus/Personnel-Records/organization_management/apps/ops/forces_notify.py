@@ -31,6 +31,10 @@ from organization_management.apps.operations.services import PermissionService
 
 #: Вид уведомления. Заведён в модели вместе с этим шагом (миграция 0074).
 KIND = "FORCES_REQUEST"
+#: Сводное письмо начальнику ДЕПАРТАМЕНТА (Plane №922). Отдельный вид, а не
+#: тот же с другой нагрузкой: ключ уведомления — (получатель, вид, деловая
+#: дата), и под общим видом сводка схлопнулась бы с письмом по управлению.
+DEPARTMENT_KIND = "FORCES_REQUEST_DEPARTMENT"
 
 
 #: Право, под которым управление ВЫДЕЛЯЕТ людей по запросу (`[СБС-31]`).
@@ -181,6 +185,71 @@ def _directorate_heads(division_ids):
     return heads
 
 
+def _department_heads_over(division_ids):
+    """Учётки, чья область НАКРЫВАЕТ управления заявки, но не равна ни одному
+    из них: {user_id → {division_id, …}} (Plane №922).
+
+    🔴 ЗАЧЕМ ОТДЕЛЬНЫЙ НАБОР, А НЕ РАСШИРЕНИЕ ПРЕЖНЕГО. Ревью (№922) показало,
+    что начальник департамента с правом `status.manage` набрать людей за своё
+    управление МОЖЕТ — гейт `forces_directorate_select` зовёт
+    `visible_division_ids`, а тот считает грант на предка накрывающим всё
+    поддерево, — а запроса не получал вовсе. Довод в коде («он и так
+    отправитель») говорил про держателя `forces.allocate`, то есть про
+    другого человека и другое право.
+
+    Но и просто добавить его к получателям письма по управлению было нельзя.
+    ЗАМЕРЕНО: ключ уведомления — (получатель, вид, деловая дата), и под общим
+    видом начальник департамента получал ОДНУ строку про ОДНО управление —
+    первое по списку, — а про остальные не узнавал; отчёт при этом рапортовал
+    «уведомлено 3». Полуправда хуже молчания: её не видно.
+
+    Заказчик выбрал (06.09.2026) третий вариант — СВОДНОЕ письмо: одно на
+    департамент, с числом людей и числом управлений. Ему и служит этот набор.
+
+    ГЛОБАЛЬНЫЙ ГРАНТ (область не задана) СЮДА НЕ ПОПАДАЕТ. Замер по живой
+    базе: буквальное равенство с гейтом дало бы 10 получателей вместо 3, и
+    среди новых — три ADMIN, интеграционная учётка и оператор подразделения.
+    «Может всё» не означает «отвечает за этот департамент», а требование
+    выделить людей адресуют тому, кто отвечает.
+
+    ⚠️ Ветка дежурств в `_directorate_heads` трактует область ШИРЕ: там грант
+    без области получателем ДЕЛАЕТ (проба `test_a_duty_without_a_scope_is_
+    notified_too`, решение заказчика по №882). Расхождение названо, а не
+    спрятано; свести оба места — отдельный его вопрос, карточка заведена.
+    """
+    from organization_management.apps.operations.models import UserRole
+    from organization_management.apps.operations.selectors import DivisionTreeSelector
+
+    if not division_ids:
+        return {}
+    wanted = {int(pk) for pk in division_ids}
+    roles = _roles_that_may_select()
+    if not roles:
+        return {}
+    children_map = DivisionTreeSelector.children_map()
+    over = {}
+    for scope_division_id, user_id in UserRole.objects.filter(
+        is_active=True,
+        role_code_id__in=roles,
+        scope_division_id__isnull=False,
+    ).values_list("scope_division_id", "user_id"):
+        if int(scope_division_id) in wanted:
+            # Область РОВНО на управление — это адресат письма по управлению,
+            # он уже получает своё. Сводное ему не нужно и было бы вторым
+            # письмом об одном и том же.
+            continue
+        covered = {
+            division_id
+            for division_id in wanted
+            if PermissionService.scope_matches(
+                scope_division_id, division_id, children_map=children_map
+            )
+        }
+        if covered:
+            over.setdefault(str(user_id), set()).update(covered)
+    return over
+
+
 def notify_directorate_heads(event, allocation, directorates):
     """Разослать запрос сил начальникам управлений заявки.
 
@@ -242,6 +311,56 @@ def notify_directorate_heads(event, allocation, directorates):
                 payload,
                 label=row.get("name") or key,
             )
+    # 🔴 СВОДНОЕ ПИСЬМО НАЧАЛЬНИКУ ДЕПАРТАМЕНТА (Plane №922, решение
+    # заказчика 06.09.2026). Он накрывает областью несколько управлений
+    # заявки, и письмо по каждому ему не уходило вовсе; послать их «как всем»
+    # тоже нельзя — ключ «одно на человека в день» оставил бы одно про первое
+    # управление, и разбор «почему не выделили по второму» упирался бы в
+    # уведомление, которое про второе молчит.
+    #
+    # Считается только то, что РЕАЛЬНО запрошено: управления без квоты в
+    # сводку не входят (то же правило №557, что и у писем по управлениям), и
+    # если после отсева не осталось ничего — письма нет.
+    asked = {
+        str(row.get("divisionId")): row
+        for row in directorates
+        if int(row.get("need") or 0) > 0
+    }
+    for user_id, covered in _department_heads_over(
+        [int(key) for key in asked if key.isdigit()]
+    ).items():
+        mine = [asked[str(division_id)] for division_id in sorted(covered)]
+        if not mine:
+            continue
+        tally.deliver(
+            user_id,
+            DEPARTMENT_KIND,
+            event.business_date,
+            {
+                "eventId": str(event.pk),
+                "eventCode": event.code,
+                "eventTitle": event.title,
+                "businessDate": event.business_date.isoformat(),
+                "allocationId": allocation.get("id"),
+                "departmentName": allocation.get("departmentName", ""),
+                # Сумма и состав — обе цифры письма: «N человек по k
+                # управлениям». Состав нужен не для красоты: без него
+                # получатель не знает, ЧТО именно на нём висит, а это ровно
+                # та полуправда, ради которой вид и заведён отдельным.
+                "need": sum(int(row.get("need") or 0) for row in mine),
+                "directorateCount": len(mine),
+                "directorates": [
+                    {
+                        "divisionId": str(row.get("divisionId")),
+                        "name": row.get("name", ""),
+                        "need": int(row.get("need") or 0),
+                    }
+                    for row in mine
+                ],
+                "dueAt": allocation.get("dueAt"),
+            },
+            label=allocation.get("departmentName") or "департамент",
+        )
     return {
         "notified": tally.notified,
         "headlessDirectorates": headless,

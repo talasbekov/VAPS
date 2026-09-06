@@ -1,8 +1,25 @@
 """Уведомления начальникам управлений о запросе сил (Plane №392, `[СБС-22]`).
 
 Спецификация: «„Отправить в управления“ → уведомления начальникам со
-ссылкой». Получатель — учётка с областью РОВНО на управление; ответственный
-за департамент (область выше) свой же запрос не получает.
+ссылкой». Получатель письма ПО УПРАВЛЕНИЮ — учётка с областью РОВНО на это
+управление.
+
+🔴 ОТВЕТСТВЕННЫЙ ЗА ДЕПАРТАМЕНТ ТЕПЕРЬ ТОЖЕ ПОЛУЧАЕТ — СВОДНОЕ ПИСЬМО
+(Plane №922, решение заказчика 06.09.2026). Здесь стояло «свой же запрос не
+получает», и пины ниже считали только письма по управлениям; после №922 к ним
+добавляется одно письмо вида `FORCES_REQUEST_DEPARTMENT` на каждого, чья
+область накрывает управления заявки, но не равна ни одному из них. Поэтому
+`notified` в пробах на фикстуре `chain` больше НЕ равен числу оповещённых
+управлений: в нём есть ещё сводное письмо ответственного.
+
+Почему пины правлены, а не подогнаны. Прежнее поведение опиралось на довод
+«он и так отправитель» — ревью (№922) показало, что довод говорит про
+держателя `forces.allocate`, а исключал держателя `status.manage`: это разные
+люди и разные права, и второй набрать людей за управление МОЖЕТ. Отдельный вид
+письма понадобился потому, что ключ уведомления — (получатель, вид, деловая
+дата): под общим видом ответственный получил бы ОДНУ строку про ПЕРВОЕ своё
+управление и не узнал бы про остальные (замерено), а отчёт рапортовал бы
+«уведомлено 3».
 """
 import datetime as dt
 
@@ -17,6 +34,7 @@ from organization_management.apps.operations.models import (
 )
 from organization_management.apps.operations.models_notification import OpsNotification
 from organization_management.apps.ops.forces_notify import (
+    DEPARTMENT_KIND,
     KIND,
     SELECT_PERMISSION,
     notify_directorate_heads,
@@ -97,7 +115,10 @@ def test_the_directorate_head_is_notified_with_the_request(chain):
     assert row.payload["need"] == 2
     assert row.payload["allocationId"] == "force-allocation-1"
     assert row.business_date == DAY
-    assert report["notified"] == 1
+        # +1 к прежнему числу — СВОДНОЕ письмо ответственного за департамент
+    # (Plane №922): у него область над обоими управлениями заявки, и с
+    # решения заказчика 06.09.2026 он получает одно письмо на департамент.
+    assert report["notified"] == 2
 
 
 def test_the_report_names_who_actually_got_it(chain):
@@ -119,11 +140,17 @@ def test_the_report_names_who_actually_got_it(chain):
     КРАСНАЯ ПРОБА: убери `self.delivered.append(...)` в `DeliveryTally.deliver`
     — список опустеет, а число останется прежним.
     """
-    event, allocation, directorates, head, _officer, _watcher = chain
+    event, allocation, directorates, head, officer, _watcher = chain
 
     report = notify_directorate_heads(event, allocation, directorates)
 
-    assert report["delivered"] == [f"Первое управление · {head.pk}"], report
+        # +1 к прежнему числу — СВОДНОЕ письмо ответственного за департамент
+    # (Plane №922): у него область над обоими управлениями заявки, и с
+    # решения заказчика 06.09.2026 он получает одно письмо на департамент.
+    assert report["delivered"] == [
+        f"Первое управление · {head.pk}",
+        f"Департамент · {officer.pk}",
+    ], report
     assert report["notified"] == len(report["delivered"])
 
 
@@ -225,7 +252,10 @@ def test_only_those_who_can_select_are_asked_to_select(chain):
     ).exists(), "наблюдателя попросили выделить людей, а выделять он не может"
     # Счёт уведомлённых — тоже про тех, кто может: он идёт в аудит, и лишние
     # получатели раздували бы его молча.
-    assert report["notified"] == 1
+        # +1 к прежнему числу — СВОДНОЕ письмо ответственного за департамент
+    # (Plane №922): у него область над обоими управлениями заявки, и с
+    # решения заказчика 06.09.2026 он получает одно письмо на департамент.
+    assert report["notified"] == 2
 
 
 # ── Ревью 911ebfae: кому НЕ шлём и что записываем (Plane №557, №561) ────────
@@ -290,7 +320,7 @@ def test_a_swallowed_failure_is_not_counted_as_delivered(chain, monkeypatch):
     """
     from organization_management.apps.ops import forces_notify
 
-    event, allocation, directorates, head, _officer, _watcher = chain
+    event, allocation, directorates, head, officer, _watcher = chain
     monkeypatch.setattr(
         forces_notify.notify_service, "notify", lambda *a, **kw: None
     )
@@ -298,8 +328,116 @@ def test_a_swallowed_failure_is_not_counted_as_delivered(chain, monkeypatch):
     report = notify_directorate_heads(event, allocation, directorates)
 
     assert report["notified"] == 0
-    assert report["undelivered"] == [f"Первое управление · {head.pk}"]
+    # Недоставленное называет ОБОИХ: и письмо по управлению, и сводное письмо
+    # ответственного за департамент (Plane №922). Пропусти сводное здесь — и
+    # правило «считается доставленное, а не попытки» действовало бы только на
+    # половину рассылки, а вторая молчала бы ровно так, как №561 запрещает.
+    assert report["undelivered"] == [
+        f"Первое управление · {head.pk}",
+        f"Департамент · {officer.pk}",
+    ]
 
+
+
+# ─── Сводное письмо ответственному за департамент (Plane №922) ───────────────
+
+
+def test_the_department_officer_gets_one_letter_about_all_his_directorates(chain):
+    """🔴 Plane №922: ответственный за департамент получает СВОДНОЕ письмо.
+
+    ЧТО БЫЛО. Рассылка требовала области РОВНО на управление, и держатель
+    `status.manage` с областью на департамент не получал ничего — при том, что
+    набрать людей за это управление он МОЖЕТ: `forces_directorate_select`
+    гейтится тем же правом через `visible_division_ids`, а тот считает грант на
+    предка накрывающим поддерево. Довод в коде («он и так отправитель») говорил
+    про держателя `forces.allocate` — другого человека и другое право.
+
+    ПОЧЕМУ НЕ ПРОСТО ДОБАВИЛИ ЕГО К ПИСЬМАМ ПО УПРАВЛЕНИЯМ. Ключ уведомления —
+    (получатель, вид, деловая дата). Под общим видом он получил бы ОДНУ строку
+    про ПЕРВОЕ управление и не узнал бы про остальные, а отчёт рапортовал бы
+    «уведомлено 3» — замерено до правки. Полуправда хуже молчания: её не видно.
+
+    Мутация: слать сводное тем же видом `KIND` — письмо схлопнется с письмом
+    по управлению, и проба покраснеет на составе `directorates`.
+    """
+    event, allocation, directorates, _head, officer, _watcher = chain
+
+    notify_directorate_heads(event, allocation, directorates)
+
+    row = OpsNotification.objects.get(recipient=str(officer.pk), kind=DEPARTMENT_KIND)
+    assert row.payload["directorateCount"] == 2, "сводка знает не про все управления"
+    assert row.payload["need"] == 3, "сумма по управлениям (2 + 1) не сошлась"
+    assert [d["name"] for d in row.payload["directorates"]] == [
+        "Первое управление",
+        "Второе управление",
+    ], "состав управлений в сводке неполон — это та самая полуправда"
+    # И письмо ПО УПРАВЛЕНИЮ ему не приходит: он не начальник управления, а
+    # два письма об одном и том же — это шум, а не забота.
+    assert not OpsNotification.objects.filter(
+        recipient=str(officer.pk), kind=KIND
+    ).exists()
+
+
+def test_a_directorate_without_a_quota_is_not_in_the_summary(chain):
+    """Управление без квоты в сводку не входит — то же правило, что и у писем
+    по управлениям (Plane №557).
+
+    Сводка отвечает на вопрос «сколько людей с вас просят и по скольким
+    управлениям». Управление, которому ничего не назначили, в этом ответе
+    участвовать не должно: иначе ответственный пойдёт искать несуществующий
+    запрос — ровно та беда, ради которой №557 и вводилась.
+
+    Мутация: считать сводку по всем `directorates` — `directorateCount`
+    станет 2 вместо 1.
+    """
+    event, allocation, directorates, _head, officer, _watcher = chain
+    rows = [directorates[0], {**directorates[1], "need": 0}]
+
+    notify_directorate_heads(event, allocation, rows)
+
+    row = OpsNotification.objects.get(recipient=str(officer.pk), kind=DEPARTMENT_KIND)
+    assert row.payload["directorateCount"] == 1
+    assert [d["name"] for d in row.payload["directorates"]] == ["Первое управление"]
+
+
+def test_nobody_is_asked_when_no_directorate_has_a_quota(chain):
+    """Ни одной квоты — ни одного письма, включая сводное.
+
+    Обратная сторона предыдущей пробы, и без неё зелёным был бы код, который
+    шлёт сводку «запрошено 0 человек по 0 управлениям». Такое письмо —
+    требование, которого нет.
+    """
+    event, allocation, directorates, _head, officer, _watcher = chain
+    rows = [{**row, "need": 0} for row in directorates]
+
+    report = notify_directorate_heads(event, allocation, rows)
+
+    assert report["notified"] == 0
+    assert not OpsNotification.objects.filter(recipient=str(officer.pk)).exists()
+
+
+def test_a_global_grant_gets_no_summary_either(chain, django_user_model):
+    """Грант БЕЗ области сводного письма не получает (Plane №922).
+
+    🔴 ЗАМЕР, А НЕ ОСТОРОЖНОСТЬ. Буквальное равенство с гейтом дало бы на живой
+    базе 10 получателей вместо 3, и среди новых — три ADMIN, интеграционная
+    учётка и оператор подразделения. «Может всё» не означает «отвечает за этот
+    департамент», а требование выделить людей адресуют тому, кто отвечает.
+    Заказчик выбрал поддерево БЕЗ глобальных грантов.
+
+    Мутация: убрать `scope_division_id__isnull=False` из `_department_heads_
+    over` — админ получит сводку по каждому департаменту в системе.
+    """
+    event, allocation, directorates, _head, _officer, _watcher = chain
+    role = Role.objects.get(code="FR_HEAD")
+    admin = django_user_model.objects.create_user(username="fr-global", password="x")
+    UserRole.objects.create(user_id=str(admin.pk), role_code=role, scope_division_id=None)
+
+    notify_directorate_heads(event, allocation, directorates)
+
+    assert not OpsNotification.objects.filter(recipient=str(admin.pk)).exists(), (
+        "держатель гранта без области получил требование выделить людей"
+    )
 
 # ─── Дежурный по управлению тоже получает запрос (Plane №800) ────────────────
 
@@ -363,7 +501,10 @@ def test_the_duty_officer_is_notified_alongside_the_permanent_head(
     with clock.override(moment):
         report = notify_directorate_heads(event, allocation, directorates)
 
-    assert report["notified"] == 2
+        # +1 — СВОДНОЕ письмо ответственного за департамент (Plane №922):
+    # его область накрывает управления заявки, и с решения заказчика
+    # 06.09.2026 он получает одно письмо на департамент.
+    assert report["notified"] == 3
     assert OpsNotification.objects.filter(recipient=str(head.pk), kind=KIND).exists()
     assert OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
 
@@ -390,7 +531,10 @@ def test_a_duty_outside_its_window_is_not_notified(chain, duty_role, django_user
     with clock.override(moment + dt.timedelta(hours=2)):
         report = notify_directorate_heads(event, allocation, directorates)
 
-    assert report["notified"] == 1
+        # +1 — СВОДНОЕ письмо ответственного за департамент (Plane №922):
+    # его область накрывает управления заявки, и с решения заказчика
+    # 06.09.2026 он получает одно письмо на департамент.
+    assert report["notified"] == 2
     assert OpsNotification.objects.filter(recipient=str(head.pk), kind=KIND).exists()
     assert not OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
 
@@ -419,7 +563,10 @@ def test_a_duty_without_the_select_permission_is_not_notified(
     with clock.override(moment):
         report = notify_directorate_heads(event, allocation, directorates)
 
-    assert report["notified"] == 1
+        # +1 — СВОДНОЕ письмо ответственного за департамент (Plane №922):
+    # его область накрывает управления заявки, и с решения заказчика
+    # 06.09.2026 он получает одно письмо на департамент.
+    assert report["notified"] == 2
     assert not OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
 
 
@@ -461,7 +608,10 @@ def test_a_duty_scoped_to_the_department_is_notified_too(
     # Строка уведомления у дежурного при этом ОДНА — ключ «получатель, вид,
     # деловая дата» схлопывает их; счётчик считает удачные доставки, а не
     # людей, и это его давнее свойство (см. №561), а не следствие этой правки.
-    assert report["notified"] == 3
+        # +1 — СВОДНОЕ письмо ответственного за департамент (Plane №922):
+    # его область накрывает управления заявки, и с решения заказчика
+    # 06.09.2026 он получает одно письмо на департамент.
+    assert report["notified"] == 4
 
 
 def test_a_duty_without_a_scope_is_notified_too(chain, duty_role, django_user_model):
