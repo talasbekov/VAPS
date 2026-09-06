@@ -411,6 +411,39 @@ def decline(
         declinedBy=author,
         declinedVia="personal" if personal else "self",
     )
+    # 🔴 ОБ ОТКАЗЕ УЗНАЮТ СРАЗУ, А НЕ ЗАГЛЯНУВ В КАРТОЧКУ (Plane №451). До
+    # этого отказ был виден только тому, кто сам откроет этап «Ознакомление»
+    # в карточке ОМ, — и замену искали в день мероприятия. Рассылка идёт
+    # старшему объекта, его замещающим и старшему мероприятия: заменять
+    # человека им.
+    #
+    # Рассылка не роняет отказ: `notify_service` глотает свои беды сам, а
+    # ответ ручки принадлежит сотруднику и не должен зависеть от того, дошло
+    # ли письмо старшему.
+    #
+    # 🔴 А ВОТ ОТЧЁТ РАССЫЛКИ ТЕПЕРЬ ЧИТАЮТ (найдено ревью, задача №825).
+    # Здесь стояло «отчёт здесь никто не читает» — и это описание дефекта, а
+    # не довод: модуль рассылки честно считает доставленное, называет
+    # поимённо тех, у кого нет учётки, и тех, кому запись не легла, — и всё
+    # это выбрасывалось. Разбор «старший не узнал об отказе» упирался в
+    # пустоту. Ровно ту же дыру закрыла №814 у соседней рассылки, положив
+    # отчёт в запись журнала; здесь запись журнала уже есть, и отчёт кладётся
+    # в неё же. Поэтому рассылка идёт ДО `audit_service.record`.
+    from organization_management.apps.ops.assignment_decline_notify import (
+        notify_assignment_declined,
+    )
+
+    row = next(
+        (
+            a
+            for a in (patched.placement_assignments or [])
+            if str(a.get("id")) == str(assignment_id)
+        ),
+        None,
+    )
+    delivery = {"notified": 0, "unlinked": [], "undelivered": [], "nobody": True}
+    if row is not None:
+        delivery = notify_assignment_declined(patched, row, reason=text) or delivery
     audit_service.record(
         actor=actor,
         action=audit_service.ASSIGNMENT_DECLINED,
@@ -422,26 +455,12 @@ def decline(
             "reason": text,
             "declinedBy": author,
             "via": "personal" if personal else "self",
+            "notified": delivery.get("notified", 0),
+            "unlinked": delivery.get("unlinked", []),
+            "undelivered": delivery.get("undelivered", []),
+            # «Некому было слать» и «рассылка отказала» — разные беды и разная
+            # починка (тот же довод, что у `unlinked` и `undelivered`).
+            "nobody": bool(delivery.get("nobody", False)),
         },
     )
-    # 🔴 ОБ ОТКАЗЕ УЗНАЮТ СРАЗУ, А НЕ ЗАГЛЯНУВ В КАРТОЧКУ (Plane №451). До
-    # этого отказ был виден только тому, кто сам откроет этап «Ознакомление»
-    # в карточке ОМ, — и замену искали в день мероприятия. Рассылка идёт
-    # старшему объекта, его замещающим и старшему мероприятия: заменять
-    # человека им.
-    #
-    # Рассылка ПОСЛЕ записи в журнал и не роняет отказ: `notify_service`
-    # глотает свои беды сам, а отчёт здесь никто не читает — ответ ручки
-    # принадлежит сотруднику, и он не должен зависеть от того, дошло ли
-    # письмо старшему.
-    from organization_management.apps.ops.assignment_decline_notify import (
-        notify_assignment_declined,
-    )
-
-    row = next(
-        a
-        for a in (patched.placement_assignments or [])
-        if str(a.get("id")) == str(assignment_id)
-    )
-    notify_assignment_declined(patched, row, reason=text)
     return patched
