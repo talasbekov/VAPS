@@ -1219,16 +1219,35 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         nodes.map((node) => node.getAttribute('data-drop-post')),
       )
 
-      const assignTo = async (postId: string, employeeId: string) =>
-        request.post(`${API}/api/ops/security-events/${eventId}/placement/assign/`, {
-          headers: auth,
-          data: {
-            postId,
-            employeeId,
-            override: true,
-            override_reason: 'Подготовка пробы переноса: расстановка до отказа',
+      // 🔴 ШАГ-ПЕРЕХОД ПРОВЕРЯЕТ ОТВЕТ (Plane №812; пропуск найден усилением
+      //    сторожа `fixture-steps-checked` 06.09.2026, задача №825). Отбитое
+      //    назначение оставило бы человека НЕ на посту, подготовка пошла бы
+      //    дальше молча, и проба упала бы ниже и в другом месте — «в дереве
+      //    нет назначенного», — а код и тело отказа не напечатались бы нигде.
+      const assignTo = async (postId: string, employeeId: string) => {
+        // Адрес подставлен ЦЕЛИКОМ, а не через переменную, и это не
+        // косметика: сторож молчащих шагов (`fixture-steps-checked`) ищет путь
+        // перехода в тексте ВЫЗОВА, и спрятанный в переменную путь делает шаг
+        // невидимым для него — проверено мутацией 06.09.2026.
+        const res = await request.post(
+          `${API}/api/ops/security-events/${eventId}/placement/assign/`,
+          {
+            headers: auth,
+            data: {
+              postId,
+              employeeId,
+              override: true,
+              override_reason: 'Подготовка пробы переноса: расстановка до отказа',
+            },
           },
-        })
+        )
+        await assertStep(
+          res,
+          'POST',
+          `/api/ops/security-events/${eventId}/placement/assign/`,
+        )
+        return res
+      }
 
       /**
        * Собрать расстановку, на которой перенос ОТКАЗЫВАЕТ: приёмник набран до
@@ -1411,16 +1430,35 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
         nodes.map((node) => node.getAttribute('data-drop-post')),
       )
 
-      const assignTo = async (postId: string, employeeId: string) =>
-        request.post(`${API}/api/ops/security-events/${eventId}/placement/assign/`, {
-          headers: auth,
-          data: {
-            postId,
-            employeeId,
-            override: true,
-            override_reason: 'Подготовка пробы переноса: расстановка до отказа',
+      // 🔴 ШАГ-ПЕРЕХОД ПРОВЕРЯЕТ ОТВЕТ (Plane №812; пропуск найден усилением
+      //    сторожа `fixture-steps-checked` 06.09.2026, задача №825). Отбитое
+      //    назначение оставило бы человека НЕ на посту, подготовка пошла бы
+      //    дальше молча, и проба упала бы ниже и в другом месте — «в дереве
+      //    нет назначенного», — а код и тело отказа не напечатались бы нигде.
+      const assignTo = async (postId: string, employeeId: string) => {
+        // Адрес подставлен ЦЕЛИКОМ, а не через переменную, и это не
+        // косметика: сторож молчащих шагов (`fixture-steps-checked`) ищет путь
+        // перехода в тексте ВЫЗОВА, и спрятанный в переменную путь делает шаг
+        // невидимым для него — проверено мутацией 06.09.2026.
+        const res = await request.post(
+          `${API}/api/ops/security-events/${eventId}/placement/assign/`,
+          {
+            headers: auth,
+            data: {
+              postId,
+              employeeId,
+              override: true,
+              override_reason: 'Подготовка пробы переноса: расстановка до отказа',
+            },
           },
-        })
+        )
+        await assertStep(
+          res,
+          'POST',
+          `/api/ops/security-events/${eventId}/placement/assign/`,
+        )
+        return res
+      }
 
       /**
        * Собрать расстановку, на которой перенос ОТКАЗЫВАЕТ: приёмник набран до
