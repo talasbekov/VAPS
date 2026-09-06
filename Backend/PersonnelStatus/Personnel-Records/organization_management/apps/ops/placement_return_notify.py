@@ -78,27 +78,29 @@ def notify_placement_returned(event, visit, *, comment, remarks_open, urgent):
         "urgent": bool(urgent),
         "documentVersion": int(visit.document_version or 0),
     }
-    notified, unlinked, undelivered = 0, [], []
+    # Счёт ведёт общий помощник (Plane №829): правило «доставленное, а не
+    # попытки» жило тремя копиями, и забыть его в четвёртой было делом времени.
+    tally = notify_service.DeliveryTally()
     names = {str(pk): name for pk, name in deputies}
     if visit.chief_employee_id is not None:
         names[str(visit.chief_employee_id)] = visit.chief_name or str(visit.chief_employee_id)
     for employee_id in dict.fromkeys(str(pk) for pk in employee_ids):
         user_id = users.get(employee_id)
         if user_id is None:
-            unlinked.append(names.get(employee_id, employee_id))
+            tally.skip_unlinked(names.get(employee_id, employee_id))
             continue
         # Ключ — объект посещения: он же и есть предмет возврата (см. шапку).
-        if notify_service.notify(
-            user_id, KIND, event.business_date, payload, dedupe_key=str(visit.pk)
-        ) is None:
-            # Имя И учётка: имя нужно тому, кто пойдёт звонить человеку,
-            # учётка — тому, кто пойдёт смотреть, почему запись не легла.
-            undelivered.append(f"{names.get(employee_id, employee_id)} · {user_id}")
-            continue
-        notified += 1
+        tally.deliver(
+            user_id,
+            KIND,
+            event.business_date,
+            payload,
+            dedupe_key=str(visit.pk),
+            label=names.get(employee_id, employee_id),
+        )
     return {
-        "notified": notified,
-        "unlinked": unlinked,
-        "undelivered": undelivered,
+        "notified": tally.notified,
+        "unlinked": tally.unlinked,
+        "undelivered": tally.undelivered,
         "nobody": False,
     }
