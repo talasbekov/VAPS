@@ -316,3 +316,88 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     ).toBeNull()
   })
 })
+
+
+/**
+ * Момент «ознакомлен» на «Проведении» (Plane №926).
+ *
+ * 🔴 СВОЁ ОПИСАНИЕ С `serviceWorkers: 'block'`: без него `page.route` не
+ * перехватывает запрос, ушедший через service worker MSW, — подменить
+ * `acknowledgedAt` нельзя, и проба зеленела бы на живых данных, ничего не
+ * проверив. Проверено запуском: без блокировки строка приходила
+ * неподменённой, и первый вариант пробы падал на своём же ассерте.
+ */
+test.describe(
+  LIVE ? 'проведение: момент «ознакомлен»' : 'проведение: момент «ознакомлен» (скип)',
+  () => {
+    test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+    test.use({ serviceWorkers: 'block' })
+
+  test('неразбираемый момент «ознакомлен» печатается прочерком, а не «Invalid Date» (Plane №926)', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 ЧТО СТЕРЕЖЁТ ЭТА ПРОБА, И ПОЧЕМУ ПРАВКА НЕ КОСМЕТИЧЕСКАЯ. Момент
+     * «ознакомлен» печатался здесь инлайном —
+     * `new Date(row.acknowledgedAt).toLocaleString("ru-RU", {…})` — в обход
+     * `shared/lib/date.ts`. Набор полей совпадал с `formatIsoDayTime`, то
+     * есть на глаз строка была той же. Обхода модуля хватило, чтобы потерять
+     * ЗАЩИТУ: `new Date` от неразбираемой строки даёт `Invalid Date`, и
+     * `toLocaleString` печатает её человеку буквально. Модульная функция
+     * заведена по №730 ровно от этого и отдаёт «—».
+     *
+     * Момент подделывается ПЕРЕХВАТОМ ответа, а не порчей данных на стенде:
+     * записать в базу неразбираемый `acknowledgedAt` значило бы оставить его
+     * следующим пробам, а предмет здесь — как экран читает то, что ему
+     * прислали.
+     *
+     * КРАСНАЯ ПРОБА: верни инлайн `new Date(...).toLocaleString(...)` — на
+     * экране появится «Invalid Date».
+     */
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const registry = (await (
+      await fetch(`${API}/api/ops/security-events/?page_size=50&stage=CONDUCT`, { headers })
+    ).json()) as {
+      results: { id: string; placementAssignments: unknown[]; visitObjects: { stage: string }[] }[]
+    }
+    const target = requireFixture(
+      registry.results.find(
+        (e) => e.placementAssignments.length > 0 && e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+      ),
+      'ОМ на «Проведении» с назначениями и незакрытым объектом',
+    )
+
+    await page.route(
+      (url) => url.pathname.includes('/evaluations/'),
+      async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        // Ровно то, от чего защищает модуль: клиент прислал время без даты.
+        // Такие значения приходили из JSON мероприятия и раньше (№730).
+        // ВСЕМ строкам, а не первой из ответа: на экране порядок свой, и
+        // «первая в JSON» не обязана быть «первой в списке».
+        body.rows = (body.rows ?? []).map((row: Record<string, unknown>) => ({
+          ...row,
+          replaced: false,
+          acknowledgedAt: '10:15',
+        }))
+        await route.fulfill({ response, json: body })
+      },
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+
+    const panel = page.locator('[data-slot="evaluation-panel"]')
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    const firstRow = panel.locator('[data-slot="evaluation-row"]').first()
+    await expect(firstRow).toBeVisible({ timeout: 15_000 })
+    await expect(
+      firstRow,
+      'неразбираемый момент напечатан человеку буквально',
+    ).not.toContainText('Invalid Date')
+    await expect(firstRow).toContainText('ознакомлен —')
+  })
+  },
+)
