@@ -705,6 +705,37 @@ export interface VisitObject {
   documentVersions: DocumentVersion[];
 }
 
+/**
+ * Правится ли расстановка прямо сейчас — зеркало серверного
+ * `placement_frozen` (`apps/ops/security_events.py`, Plane №861).
+ *
+ * 🔴 ПРАВИЛО ЖИВЁТ В СУЩНОСТИ, А НЕ НА ЭКРАНЕ. Его задают ДВА читателя:
+ * карточка ОМ решает, пускать ли обратно на шаг «Расстановка», а панель
+ * согласования — показывать ли туда дорогу. Разложенное по обоим местам, оно
+ * разошлось бы на первой же правке — тот же довод, по которому в сущность
+ * переехало чтение старого замечания (№503).
+ *
+ * Ключ — СТАТУС ДОКУМЕНТА, а не этап объекта (`[СОГ-04]`, №533/№536):
+ * черновик и возвращённый правятся, отправленный и согласованный — нет, под
+ * ними подписываются или уже подписались. Закрытый объект заморожен вторым,
+ * более поздним основанием (`[ЗАК-05]`).
+ *
+ * `visit === null` — это ДВА разных случая, и сервер обходится с ними
+ * одинаково: у ОМ без объектов посещения документа нет вовсе, а «строки без
+ * объекта» (`?visit=__unassigned__`) не принадлежат ни одному объекту.
+ * `_require_placement_editable` в обоих находит `visit is None` и не
+ * замораживает ничего — остаётся единственное основание, закрытие ОМ.
+ */
+export function placementEditable(
+  event: Pick<SecurityEvent, "stage">,
+  visit: Pick<VisitObject, "stage" | "closedAt" | "documentStatus"> | null
+): boolean {
+  if (event.stage === "CLOSED") return false;
+  if (visit === null) return true;
+  if (visit.stage === "CLOSED" || visit.closedAt !== null) return false;
+  return visit.documentStatus !== "SUBMITTED" && visit.documentStatus !== "APPROVED";
+}
+
 /** Замещающий на объекте посещения (Plane «Реестр ОМ-24»). */
 export interface VisitObjectDeputy {
   id: string;

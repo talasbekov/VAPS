@@ -28,6 +28,7 @@
 //   предупреждения по рейтингу с причиной, введённой при назначении.
 import { Fragment, useState } from "react";
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -46,7 +47,7 @@ import {
   useSendForApproval,
   useWithdrawApproval,
 } from "@/hooks/use-security-event-stages";
-import { remarkStatusOf } from "@/entities/security-event";
+import { EVENT_STEPS, placementEditable, remarkStatusOf } from "@/entities/security-event";
 import type {
   ApprovalRemark,
   SecurityEvent,
@@ -244,6 +245,9 @@ interface ApprovalView {
    * объектов — пусто: документ принадлежит объекту. */
   documentVersions: VisitObject["documentVersions"];
   documentStatus: VisitObject["documentStatus"];
+  /** Правится ли расстановка прямо сейчас (Plane №861) — считается ОДНОЙ
+   *  функцией сущности, зеркалящей серверный `placement_frozen`. */
+  canFixPlacement: boolean;
 }
 
 function approvalViewOf(
@@ -260,6 +264,7 @@ function approvalViewOf(
       documentVersion: null,
       documentVersions: [],
       documentStatus: null,
+      canFixPlacement: placementEditable(event, null),
     };
   }
   return {
@@ -272,6 +277,7 @@ function approvalViewOf(
     documentVersion: visit.documentVersion,
     documentVersions: visit.documentVersions,
     documentStatus: visit.documentStatus,
+    canFixPlacement: placementEditable(event, visit),
   };
 }
 
@@ -809,6 +815,30 @@ function ApprovalRoute({
 
   const route = view.route;
   const visitObjectId = view.visitObjectId;
+  /**
+   * 🔴 ДОРОГА НАЗАД К РАССТАНОВКЕ (Plane №861). Сервер правит расстановку,
+   * пока документ — черновик или возвращён (`[СОГ-04]`, №533/№536), а
+   * экранного пути к ней с этого этапа не было НИ У КОГО: `?step=` не
+   * действовал без права обхода этапов, а с правом панель показывалась
+   * `inert`. Заказчик, читая записку «черновик правится свободно», открывал
+   * карточку и не находил, куда нажать.
+   *
+   * Ссылка, а не кнопка-мутация: шаг цепочки живёт В АДРЕСЕ (№442), и
+   * пересылаемая ссылка «поправь вот здесь» — половина смысла этого адреса.
+   * Прочие параметры (`?visit=`) сохраняются: сбросив их, ссылка увела бы
+   * человека на другой объект.
+   */
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const canFixPlacement = view.canFixPlacement;
+  const placementStepHref = (() => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set(
+      "step",
+      String(EVENT_STEPS.findIndex((step) => step.key === "PLACEMENT") + 1)
+    );
+    return `${pathname}?${next.toString()}`;
+  })();
   const sent = route.some((approver) => approver.status !== "NOT_SENT");
   /** Кто-то ЖДЁТ решения — только таких снимает отзыв (`[СОГ-07]`). */
   const awaiting = route.some((approver) => approver.status === "PENDING");
@@ -871,6 +901,17 @@ function ApprovalRoute({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* «Поправить расстановку» стоит ПЕРВОЙ в этом ряду и только пока
+              документ правится: после отправки согласующим состав меняет
+              только новая версия, и предлагать правку было бы обещанием,
+              которое сервер отобьёт. */}
+          {canFixPlacement && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={placementStepHref} data-slot="fix-placement">
+                Поправить расстановку
+              </Link>
+            </Button>
+          )}
           {/* «+ Добавить согласующего» и стрелок порядка на объекте НЕТ
               (`[СОГ-05]`, Plane №429): маршрут задаётся в настройках раздела,
               объект получает его копию. Ручки маршрута на сервере остались

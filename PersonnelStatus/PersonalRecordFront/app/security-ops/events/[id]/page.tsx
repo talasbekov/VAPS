@@ -25,7 +25,12 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvent } from "@/hooks/use-security-events";
 import { useOverrideStage } from "@/hooks/use-security-event-stages";
 import { EventStepper } from "@/widgets/security-event-stepper";
-import { EVENT_STEPS, STEP_ENTRY_STAGE, stepIndexOfStage } from "@/entities/security-event";
+import {
+  EVENT_STEPS,
+  STEP_ENTRY_STAGE,
+  placementEditable,
+  stepIndexOfStage,
+} from "@/entities/security-event";
 import {
   AcknowledgementStage,
   ApprovalStage,
@@ -186,14 +191,34 @@ function SecurityEventScreen() {
   // не должна открывать пустоту, а без права обхода параметр не действует
   // вовсе — иначе он был бы дырой в обход гварда.
   const parsedStep = Number.parseInt(stepParam ?? "", 10);
-  const viewedIndex =
-    canOverrideStage &&
-    Number.isInteger(parsedStep) &&
-    parsedStep >= 1 &&
-    parsedStep <= EVENT_STEPS.length
-      ? parsedStep - 1
-      : currentIndex;
+  // 🔴 ШАГ «РАССТАНОВКА» ОТКРЫТ НАЗАД, ПОКА СЕРВЕР ПРИНИМАЕТ ПРАВКУ (Plane
+  // №861). После `placement/complete/` объект уходит на «Согласование», а
+  // документ при этом ЧЕРНОВИК — и по `[СОГ-04]` (№533, №536) такая
+  // расстановка правится свободно. Экранного пути к ней не было НИ У КОГО:
+  // без права обхода этапов параметр `?step=` не действовал вовсе, а с правом
+  // панель показывалась `inert`, то есть смотреть можно, трогать нельзя.
+  // Половина «стало» двух закрытых карточек была проверяема только по API.
+  //
+  // Открывается РОВНО ОДИН шаг и ровно по тому признаку, по которому решает
+  // сервер (`placementEditable` — зеркало `placement_frozen`): это не
+  // послабление гварда обхода этапов, а приведение экрана к правилу, которое
+  // сервер уже исполняет.
+  const placementStepIndex = EVENT_STEPS.findIndex((step) => step.key === "PLACEMENT");
+  const placementReopenable =
+    currentIndex > placementStepIndex && placementEditable(event, selectedVisit);
+  const stepInRange =
+    Number.isInteger(parsedStep) && parsedStep >= 1 && parsedStep <= EVENT_STEPS.length;
+  const requestedIndex = stepInRange ? parsedStep - 1 : currentIndex;
+  const stepAllowed =
+    canOverrideStage ||
+    (placementReopenable && requestedIndex === placementStepIndex);
+  const viewedIndex = stepInRange && stepAllowed ? requestedIndex : currentIndex;
   const viewingOtherStep = viewedIndex !== currentIndex;
+  // Открытая назад расстановка — НЕ «просмотр чужого шага»: форма живая, и
+  // гасить её `inert` значило бы показать человеку то, что он не может
+  // тронуть, ровно там, где сервер правку ждёт.
+  const editingReopenedPlacement =
+    viewingOtherStep && viewedIndex === placementStepIndex && placementReopenable;
   // Внутри своего шага показываем РЕАЛЬНУЮ стадию мероприятия (иначе на шаге
   // «Расстановка» карточка открывала бы «Потребность», когда ОМ уже на
   // расстановке), а в чужом — входную стадию шага.
@@ -395,6 +420,8 @@ function SecurityEventScreen() {
           currentStage={objectStage}
           viewedStage={viewedStage}
           viewedStepIndex={viewedIndex}
+          editing={editingReopenedPlacement}
+          canOverrideStage={canOverrideStage}
           onLeaveView={() => selectStep(currentIndex)}
         />
       )}
@@ -407,8 +434,10 @@ function SecurityEventScreen() {
           просмотра), но ни клик, ни Tab внутрь не проходят — иначе форма
           принимала бы ввод, который сервер на этой стадии отвергнет. */}
       <div
-        inert={viewingOtherStep || undefined}
-        className={viewingOtherStep ? "opacity-60" : undefined}
+        inert={(viewingOtherStep && !editingReopenedPlacement) || undefined}
+        className={
+          viewingOtherStep && !editingReopenedPlacement ? "opacity-60" : undefined
+        }
       >
         <ActiveStage
           key={viewedStage}
@@ -534,12 +563,21 @@ function StageViewNotice({
   currentStage,
   viewedStage,
   viewedStepIndex,
+  editing,
+  canOverrideStage,
   onLeaveView,
 }: {
   eventId: string;
   currentStage: SecurityEventStage;
   viewedStage: SecurityEventStage;
   viewedStepIndex: number;
+  /** Шаг открыт НАЗАД для правки (Plane №861): форма живая, и говорить про
+   *  «только для чтения» здесь было бы прямой неправдой. */
+  editing: boolean;
+  /** Обход этапов — админ-полномочие. До №861 баннер показывался ТОЛЬКО
+   *  обладателю права, и кнопка перевода рисовалась безусловно; теперь на
+   *  баннер попадает и оператор без него. */
+  canOverrideStage: boolean;
   onLeaveView: () => void;
 }) {
   const override = useOverrideStage(eventId, { onEvent: () => setConfirmOpen(false) });
@@ -548,25 +586,57 @@ function StageViewNotice({
   const passed = viewedStepIndex < currentStepIndex;
   return (
     <div
-      className="border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 mb-3 rounded-md border px-3 py-2"
+      className={
+        editing
+          ? "border-blue-300 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/40 mb-3 rounded-md border px-3 py-2"
+          : "border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 mb-3 rounded-md border px-3 py-2"
+      }
       data-slot="stage-view-notice"
+      data-editing={editing ? "true" : "false"}
       role="status"
     >
       {/* Баннер ОДНОЙ строкой (`[РЕК-03]`, Plane №442): что за шаг показан и
           что форма только для чтения; «Перевести ОМ сюда» — с подтверждением,
-          штабу и админу (право `event.stage_override`). */}
+          штабу и админу (право `event.stage_override`).
+
+          🔴 ДВА СОСТОЯНИЯ, А НЕ ОДНО (Plane №861). Открытая назад расстановка
+          — живая форма, и жёлтая рамка со словами «только для чтения» над ней
+          была бы той самой путаницей «выключенное выглядит как обычное»,
+          только наоборот: человек не стал бы даже пробовать. Цвет здесь
+          вторичен, решает ТЕКСТ — он прямо говорит, что правка идёт и почему
+          она разрешена. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[12.5px] text-amber-900 dark:text-amber-100">
-          <span className="font-semibold">
-            {passed ? "Этап пройден" : "Этап ещё не открыт"} · мероприятие на шаге{" "}
-            {currentStepIndex + 1} «{EVENT_STEPS[currentStepIndex].label}».
-          </span>{" "}
-          Форма только для чтения.
+        <p
+          className={
+            editing
+              ? "text-[12.5px] text-blue-900 dark:text-blue-100"
+              : "text-[12.5px] text-amber-900 dark:text-amber-100"
+          }
+        >
+          {editing ? (
+            <>
+              <span className="font-semibold">
+                Правка расстановки открыта · мероприятие на шаге{" "}
+                {currentStepIndex + 1} «{EVENT_STEPS[currentStepIndex].label}».
+              </span>{" "}
+              Документ ещё не ушёл согласующим, поэтому состав правится. После
+              отправки на согласование правка закроется.
+            </>
+          ) : (
+            <>
+              <span className="font-semibold">
+                {passed ? "Этап пройден" : "Этап ещё не открыт"} · мероприятие на шаге{" "}
+                {currentStepIndex + 1} «{EVENT_STEPS[currentStepIndex].label}».
+              </span>{" "}
+              Форма только для чтения.
+            </>
+          )}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={onLeaveView}>
-            К текущему шагу
+            {editing ? "Вернуться к согласованию" : "К текущему шагу"}
           </Button>
+          {canOverrideStage && (
           <Button
             size="sm"
             disabled={override.isPending}
@@ -580,6 +650,7 @@ function StageViewNotice({
           >
             Перевести ОМ сюда
           </Button>
+          )}
         </div>
       </div>
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
