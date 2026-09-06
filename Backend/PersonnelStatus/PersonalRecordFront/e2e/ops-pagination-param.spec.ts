@@ -42,8 +42,8 @@ const PRODUCTION_DIRS = [
 ]
 
 /**
- * 🔴 ХРАПОВИК ТОЛЬКО ДЛЯ ПРОБ, а не разрешение. На 06.09.2026 пробы несут 64
- * таких вызова в 32 файлах — они тоже получают 50 строк вместо запрошенных, и
+ * 🔴 ХРАПОВИК ТОЛЬКО ДЛЯ ПРОБ, а не разрешение. На 06.09.2026 пробы несут 60
+ * таких вызовов в 32 файлах — они тоже получают 50 строк вместо запрошенных, и
  * это уже стоило разбора: комментарий в `bulletin-stage` объясняет пропажу
  * своей фикстуры словами «реестр стенда перевалил за page_size», хотя параметр
  * не применяется вовсе и потолок берётся из умолчания.
@@ -55,7 +55,7 @@ const PRODUCTION_DIRS = [
  */
 const KNOWN_PROBE_CALLS = new Map<string, number>([
   ['ack-opened-and-phone.spec.ts', 1],
-  ['acknowledgement-stage.spec.ts', 3],
+  ['acknowledgement-stage.spec.ts', 4],
   ['approval-print.spec.ts', 2],
   ['approval-return.spec.ts', 1],
   ['approval-rights.spec.ts', 2],
@@ -70,7 +70,7 @@ const KNOWN_PROBE_CALLS = new Map<string, number>([
   ['forces-gathering.spec.ts', 4],
   ['gvo-sections.spec.ts', 1],
   ['in-development-badge.spec.ts', 1],
-  ['mock-contract.spec.ts', 13],
+  ['mock-contract.spec.ts', 8],
   ['my-profile.spec.ts', 2],
   ['placement-pool.spec.ts', 2],
   ['placement-stage.spec.ts', 1],
@@ -88,11 +88,33 @@ const KNOWN_PROBE_CALLS = new Map<string, number>([
   ['visit-page.spec.ts', 2],
 ])
 
-/** Адрес раздела ОМ, спрошенный с `page_size`, — в одной строке с ним. */
-const OPS_WITH_PAGE_SIZE = /\/api\/(?:operations|ops)\/[^"'`\n]*page_size/g
+/**
+ * Адрес раздела ОМ, спрошенный с `page_size`, — в одной строке с ним.
+ *
+ * 🔴 КЛАСС СИМВОЛОВ — «ЧТО УГОДНО, КРОМЕ ПЕРЕВОДА СТРОКИ», И ЭТО НЕ НЕБРЕЖНОСТЬ.
+ * Первая редакция стояла как `[^"'`\n]*`, то есть обрывалась на любой кавычке.
+ * В шаблонной строке кавычка живёт ВНУТРИ интерполяции — и адрес переставал
+ * опознаваться. Замерено на себе же сразу после написания: сторож пропускал
+ * ровно один вызов из 65 —
+ *
+ *     await fetch(`${API}/api/ops/personnel/?search=${encodeURIComponent('Токтаров')}&page_size=1`)
+ *
+ * Один пропуск из 65 — это не «почти всё поймали»: сторож, у которого есть
+ * слепая зона, зеленеет ровно на том случае, который в неё попал.
+ *
+ * Комментарии выбрасываются ДО разбора: разбор этой самой ловушки выписан ниже
+ * по файлу и в `lib/api.ts`, и без очистки сторож обвинил бы собственную
+ * документацию — тот же случай, что был у `own-fixture-pattern`.
+ */
+const OPS_WITH_PAGE_SIZE = /\/api\/(?:operations|ops)\/[^\n]*page_size/g
+
+/** Комментарии и докстроки выбрасываются до разбора — см. выше. */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+}
 
 function countIn(text: string): number {
-  return (text.match(OPS_WITH_PAGE_SIZE) ?? []).length
+  return (withoutComments(text).match(OPS_WITH_PAGE_SIZE) ?? []).length
 }
 
 function walk(dir: string, out: string[] = []): string[] {
