@@ -63,6 +63,7 @@ import { useMyEmployee } from "@/hooks/use-my-employee";
 import { useRenderEventDocument } from "@/hooks/use-ops-reports";
 import { saveBinaryFile } from "@/features/ops-reports/report-shared";
 import { formatIsoDate } from "@/shared/lib/date";
+import { AccessHints, RightGate } from "@/shared/ui/right-gate";
 
 /**
  * Кто что может на этапе 3 (`[СОГ-12]`, Plane №401).
@@ -563,6 +564,28 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           содержимого. Подзаголовки внутри карточки остаются — они называют
           блоки, а не этап. */}
       <CardContent className="space-y-4">
+        {/* Причина недоступности — СЛОВАМИ и ОДИН РАЗ НА ШАГ (правило №801,
+            доведено ревью №825). Подсказки `title` здесь больше нет вовсе: на
+            выключенной кнопке браузер подавляет указательные события вместе с
+            ней, и семь кнопок этого экрана показывали серый прямоугольник без
+            единого слова. Сторож правила экран не видел — он искал `.reason(`,
+            а здесь функция называется `reasonUnless(`; отбор сторожа расширен
+            тем же заходом.
+
+            Блок ОДИН на карточку, а кнопки ссылаются на него
+            `aria-describedby`: решений на экране много (согласовать, вернуть,
+            отправить, отозвать, ответы на замечания), и повтор одной строки у
+            каждой превратил бы карточку в частокол — ровно это уже случилось
+            на «Расстановке», и там же было вылечено. */}
+        <AccessHints
+          reasons={[
+            reasonUnless(rights.manageRoute, "manageRoute"),
+            reasonUnless(rights.send, "send"),
+            reasonUnless(rights.answerRemarks, "answerRemarks"),
+            reasonUnless(rights.approve, "approve"),
+            reasonUnless(rights.returnBack, "returnBack"),
+          ]}
+        >
         <VisitObjectApprovalStrip event={event} scope={scope} />
 
         {nothingToApprove ? (
@@ -663,6 +686,7 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
         </p>
           </>
         )}
+        </AccessHints>
       </CardContent>
     </Card>
   );
@@ -862,46 +886,58 @@ function ApprovalRoute({
               (`[СОГ-05]`, Plane №429): маршрут задаётся в настройках раздела,
               объект получает его копию. Ручки маршрута на сервере остались
               под админа и API. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            /* «Отозвать» имеет смысл, ПОКА ЕСТЬ ЧТО ОТЗЫВАТЬ (Plane №716):
-               отзыв снимает строки PENDING, и без них вызов сервера ничего не
-               делает. Прежнее условие `sent` держало кнопку включённой и
-               после возврата — строка вернувшего остаётся RETURNED, — то есть
-               предлагало действие, которое гарантированно ничего не изменит. */
-            disabled={withdraw.isPending || !awaiting || signed || !rights.send}
-            title={
-              !rights.send
-                ? RIGHT_REASON.send
-                : !sent
-                  ? "Расстановка ещё не отправлена."
-                  : !awaiting
-                    ? "Отзывать нечего: никто не ждёт решения."
-                    : signed
-                      ? "Отозвать можно, пока никто не подписал (`[СОГ-07]`)."
-                      : undefined
+          <RightGate
+            reason={
+            !rights.send
+            ? RIGHT_REASON.send
+            : !sent
+            ? "Расстановка ещё не отправлена."
+            : !awaiting
+            ? "Отзывать нечего: никто не ждёт решения."
+            : signed
+            ? "Отозвать можно, пока никто не подписал (`[СОГ-07]`)."
+            : undefined
             }
-            onClick={() => withdraw.mutate({ visitObjectId })}
           >
-            Отозвать с согласования
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={send.isPending || route.length === 0 || !rights.send}
-            title={
-              !rights.send
-                ? RIGHT_REASON.send
-                : route.length === 0
-                  ? "Маршрут согласования пуст."
-                  : undefined
+            {(describedBy) => (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                /* «Отозвать» имеет смысл, ПОКА ЕСТЬ ЧТО ОТЗЫВАТЬ (Plane №716):
+                   отзыв снимает строки PENDING, и без них вызов сервера ничего не
+                   делает. Прежнее условие `sent` держало кнопку включённой и
+                   после возврата — строка вернувшего остаётся RETURNED, — то есть
+                   предлагало действие, которое гарантированно ничего не изменит. */
+                disabled={withdraw.isPending || !awaiting || signed || !rights.send}
+                aria-describedby={describedBy}
+                onClick={() => withdraw.mutate({ visitObjectId })}
+              >
+                Отозвать с согласования
+              </Button>
+            )}
+          </RightGate>
+          <RightGate
+            reason={
+            !rights.send
+            ? RIGHT_REASON.send
+            : route.length === 0
+            ? "Маршрут согласования пуст."
+            : undefined
             }
-            onClick={() => send.mutate({ visitObjectId })}
           >
-            {send.isPending ? "Отправка…" : "Отправить на согласование"}
-          </Button>
+            {(describedBy) => (
+              <Button
+                type="button"
+                size="sm"
+                disabled={send.isPending || route.length === 0 || !rights.send}
+                aria-describedby={describedBy}
+                onClick={() => send.mutate({ visitObjectId })}
+              >
+                {send.isPending ? "Отправка…" : "Отправить на согласование"}
+              </Button>
+            )}
+          </RightGate>
         </div>
       </div>
 
@@ -1001,36 +1037,44 @@ function ApprovalRoute({
                             кнопок решения нет, как и в эталоне. */}
                         {approver.status === "PENDING" && (
                           <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={decide.isPending || !rights.approve}
-                              title={reasonUnless(rights.approve, "approve")}
-                              onClick={() =>
-                                decide.mutate({
-                                  approverId: approver.id,
-                                  decision: "APPROVED",
-                                  comment: "",
-                                  visitObjectId,
-                                })
-                              }
-                            >
-                              Согласовать
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={!rights.returnBack}
-                              title={reasonUnless(rights.returnBack, "returnBack")}
-                              onClick={() =>
-                                setReturnFor((prev) =>
-                                  prev === approver.id ? null : approver.id
-                                )
-                              }
-                            >
-                              Вернуть
-                            </Button>
+                            <RightGate reason={reasonUnless(rights.approve, "approve")}>
+                              {(describedBy) => (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={decide.isPending || !rights.approve}
+                                  aria-describedby={describedBy}
+                                  onClick={() =>
+                                    decide.mutate({
+                                      approverId: approver.id,
+                                      decision: "APPROVED",
+                                      comment: "",
+                                      visitObjectId,
+                                    })
+                                  }
+                                >
+                                  Согласовать
+                                </Button>
+                              )}
+                            </RightGate>
+                            <RightGate reason={reasonUnless(rights.returnBack, "returnBack")}>
+                              {(describedBy) => (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={!rights.returnBack}
+                                  aria-describedby={describedBy}
+                                  onClick={() =>
+                                    setReturnFor((prev) =>
+                                      prev === approver.id ? null : approver.id
+                                    )
+                                  }
+                                >
+                                  Вернуть
+                                </Button>
+                              )}
+                            </RightGate>
                           </>
                         )}
                       </span>
@@ -1157,28 +1201,32 @@ function ApprovalRoute({
             <Button type="button" variant="outline" onClick={closeReturnDialog}>
               Отмена
             </Button>
-            <Button
-              type="button"
-              // Пустую причину отбивает СЕРВЕР (400 с полем) — кнопка не
-              // выключается: так проба и человек видят одну и ту же причину
-              // отказа, а не молчаливую серую кнопку.
-              disabled={decide.isPending || !rights.returnBack}
-              title={reasonUnless(rights.returnBack, "returnBack")}
-              onClick={() =>
-                returnFor !== null &&
-                decide.mutate({
-                  approverId: returnFor,
-                  decision: "RETURNED",
-                  comment: reason,
-                  remarks: returnRemarks
-                    .filter((r) => r.text.trim() !== "")
-                    .map((r) => ({ text: r.text.trim(), postId: r.postId === "" ? null : r.postId, urgent: r.urgent })),
-                  visitObjectId,
-                })
-              }
-            >
-              {decide.isPending ? "Возвращаем…" : "Подтвердить возврат"}
-            </Button>
+            <RightGate reason={reasonUnless(rights.returnBack, "returnBack")}>
+              {(describedBy) => (
+                <Button
+                  type="button"
+                  // Пустую причину отбивает СЕРВЕР (400 с полем) — кнопка не
+                  // выключается: так проба и человек видят одну и ту же причину
+                  // отказа, а не молчаливую серую кнопку.
+                  disabled={decide.isPending || !rights.returnBack}
+                  aria-describedby={describedBy}
+                  onClick={() =>
+                    returnFor !== null &&
+                    decide.mutate({
+                      approverId: returnFor,
+                      decision: "RETURNED",
+                      comment: reason,
+                      remarks: returnRemarks
+                        .filter((r) => r.text.trim() !== "")
+                        .map((r) => ({ text: r.text.trim(), postId: r.postId === "" ? null : r.postId, urgent: r.urgent })),
+                      visitObjectId,
+                    })
+                  }
+                >
+                  {decide.isPending ? "Возвращаем…" : "Подтвердить возврат"}
+                </Button>
+              )}
+            </RightGate>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1328,54 +1376,66 @@ function ApprovalRemarks({
                 </span>
                 {remarkStatusOf(remark) === "OPEN" ? (
                   <>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={resolve.isPending || !rights.answerRemarks}
-                      title={reasonUnless(rights.answerRemarks, "answerRemarks")}
-                      onClick={() =>
-                        resolve.mutate({
-                          remarkId: remark.id,
-                          decision: "RESOLVED",
-                          visitObjectId: view.visitObjectId,
-                        })
-                      }
-                    >
-                      Устранено
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={!rights.answerRemarks}
-                      title={reasonUnless(rights.answerRemarks, "answerRemarks")}
-                      onClick={() =>
-                        setRespondFor((prev) =>
-                          prev === remark.id ? null : remark.id
-                        )
-                      }
-                    >
-                      Не согласен
-                    </Button>
+                    <RightGate reason={reasonUnless(rights.answerRemarks, "answerRemarks")}>
+                      {(describedBy) => (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={resolve.isPending || !rights.answerRemarks}
+                          aria-describedby={describedBy}
+                          onClick={() =>
+                            resolve.mutate({
+                              remarkId: remark.id,
+                              decision: "RESOLVED",
+                              visitObjectId: view.visitObjectId,
+                            })
+                          }
+                        >
+                          Устранено
+                        </Button>
+                      )}
+                    </RightGate>
+                    <RightGate reason={reasonUnless(rights.answerRemarks, "answerRemarks")}>
+                      {(describedBy) => (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={!rights.answerRemarks}
+                          aria-describedby={describedBy}
+                          onClick={() =>
+                            setRespondFor((prev) =>
+                              prev === remark.id ? null : remark.id
+                            )
+                          }
+                        >
+                          Не согласен
+                        </Button>
+                      )}
+                    </RightGate>
                   </>
                 ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={resolve.isPending || !rights.answerRemarks}
-                    title={reasonUnless(rights.answerRemarks, "answerRemarks")}
-                    onClick={() =>
-                      resolve.mutate({
-                        remarkId: remark.id,
-                        decision: "OPEN",
-                        visitObjectId: view.visitObjectId,
-                      })
-                    }
-                  >
-                    Вернуть в работу
-                  </Button>
+                  <RightGate reason={reasonUnless(rights.answerRemarks, "answerRemarks")}>
+                    {(describedBy) => (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={resolve.isPending || !rights.answerRemarks}
+                        aria-describedby={describedBy}
+                        onClick={() =>
+                          resolve.mutate({
+                            remarkId: remark.id,
+                            decision: "OPEN",
+                            visitObjectId: view.visitObjectId,
+                          })
+                        }
+                      >
+                        Вернуть в работу
+                      </Button>
+                    )}
+                  </RightGate>
                 )}
               </div>
               {respondFor === remark.id && (
@@ -1398,22 +1458,26 @@ function ApprovalRemarks({
                       }))
                     }
                   />
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={resolve.isPending || !rights.answerRemarks}
-                    title={reasonUnless(rights.answerRemarks, "answerRemarks")}
-                    onClick={() =>
-                      resolve.mutate({
-                        remarkId: remark.id,
-                        decision: "DISAGREED",
-                        response: responses[remark.id] ?? "",
-                        visitObjectId: view.visitObjectId,
-                      })
-                    }
-                  >
-                    Подтвердить несогласие
-                  </Button>
+                  <RightGate reason={reasonUnless(rights.answerRemarks, "answerRemarks")}>
+                    {(describedBy) => (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={resolve.isPending || !rights.answerRemarks}
+                        aria-describedby={describedBy}
+                        onClick={() =>
+                          resolve.mutate({
+                            remarkId: remark.id,
+                            decision: "DISAGREED",
+                            response: responses[remark.id] ?? "",
+                            visitObjectId: view.visitObjectId,
+                          })
+                        }
+                      >
+                        Подтвердить несогласие
+                      </Button>
+                    )}
+                  </RightGate>
                 </div>
               )}
           </li>

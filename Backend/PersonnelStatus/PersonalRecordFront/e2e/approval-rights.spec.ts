@@ -21,7 +21,7 @@
  */
 import path from 'node:path'
 import { anyChiefId } from './stand-chief'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { assertStep } from './fixture-step'
 
@@ -159,6 +159,29 @@ async function signIn(page: Page, username: string): Promise<void> {
   })
 }
 
+/**
+ * Причина отказа читается ЧЕРЕЗ КНОПКУ, а не поиском строки по странице.
+ *
+ * Пин через общий локатор `[data-slot="access-note"]` не годится: блок причин
+ * шага (`AccessHints`) печатает по строке на КАЖДОЕ право карточки — их пять,
+ * и локатор падает строгим режимом ещё до сверки текста. А главное, такой пин
+ * не проверял бы того единственного, ради чего правило №801 и заведено: что
+ * причина СВЯЗАНА с этой кнопкой и прозвучит вместе с её именем. Поэтому
+ * берётся `aria-describedby` кнопки и читается ровно та строка, на которую он
+ * указывает.
+ */
+async function expectReasonReads(
+  page: Page,
+  button: Locator,
+  text: RegExp,
+): Promise<void> {
+  const describedBy = await button.getAttribute('aria-describedby')
+  expect(describedBy, 'у выключенной кнопки нет ссылки на причину').toBeTruthy()
+  // Селектор по атрибуту, а не `#id`: `useId` React выдаёт идентификаторы с
+  // угловыми кавычками (`«rn»r0`), а `CSS.escape` в Node не существует вовсе.
+  await expect(page.locator(`[id="${describedBy!}"]`)).toContainText(text)
+}
+
 test.describe(LIVE ? 'права согласования' : 'права согласования (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
   test.skip(PASSWORD === '', 'нужен ACCESS_MATRIX_PASSWORD — тот же, которым заведены учётки')
@@ -174,7 +197,10 @@ test.describe(LIVE ? 'права согласования' : 'права сог�
 
     const send = card.getByRole('button', { name: 'Отправить на согласование' })
     await expect(send).toBeDisabled()
-    await expect(send).toHaveAttribute('title', /старший объекта или ведущий мероприятие/)
+    // 🔴 ПИН ПЕРЕВЕДЁН НА ВИДИМУЮ СТРОКУ (правило №801, найдено ревью №825):
+    // на выключенной кнопке `title` не показывается ни при каком поведении
+    // браузера, и проба пинила подсказку, которой человек не видит.
+    await expectReasonReads(page, send, /старший объекта или ведущий мероприятие/)
     // «+ Добавить согласующего» на объекте НЕТ ни у кого (`[СОГ-05]`, Plane
     // №429): маршрут задаётся в настройках. Пин сменился с «выключена» на
     // «отсутствует» осознанно.
@@ -182,7 +208,7 @@ test.describe(LIVE ? 'права согласования' : 'права сог�
 
     const approve = card.getByRole('button', { name: 'Согласовать', exact: true }).first()
     await expect(approve).toBeDisabled()
-    await expect(approve).toHaveAttribute('title', /утверждающий/)
+    await expectReasonReads(page, approve, /утверждающий/)
     await page.screenshot({
       path: path.join(SHOTS, 'approval-rights-employee-d2.png'),
       fullPage: true,

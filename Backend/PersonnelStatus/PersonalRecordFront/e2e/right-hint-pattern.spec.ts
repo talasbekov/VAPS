@@ -76,7 +76,20 @@ test.describe('причина отказа по праву', () => {
     for (const path of sourceFiles()) {
       const source = readFileSync(path, 'utf8')
       for (const expression of titleExpressions(source)) {
-        if (!expression.includes('access.reason(') && !expression.includes('.reason(')) continue
+        // 🔴 СТОРОЖ ИСКАЛ ТОЛЬКО ОДНО ИМЯ — И ПРОПУСКАЛ ЦЕЛЫЙ ЭКРАН (найдено
+        // ревью №825). Отбор шёл по подстроке `.reason(`, а на экране
+        // согласования та же функция названа `reasonUnless(` — точки перед
+        // `reason` нет, и семь выключенных кнопок с невидимой подсказкой
+        // проходили мимо сторожа молча. Сторож с такой слепой зоной хуже
+        // отсутствия: он зеленеет ровно на том случае, который в неё попал.
+        //
+        // Отбор теперь по СМЫСЛУ выражения, а не по имени вызова: подсказка
+        // виновата, если в ней вычисляется причина отказа по праву — как бы
+        // ни звалась функция. Ложная тревога здесь дешевле пропуска: она
+        // разбирается чтением одной строки, а пропуск живёт годами.
+        const carriesRightReason =
+          /reason[A-Za-z]*\(/i.test(expression) || /RIGHT_REASON|REASON\[/.test(expression)
+        if (!carriesRightReason) continue
         guilty.push(`${path.slice(ROOT.length + 1)}: ${expression.split('\n')[0].trim()}…`)
       }
     }
