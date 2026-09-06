@@ -255,6 +255,44 @@ class TestFilters:
         assert get(api, actor="").status_code == 400
         assert get(api, actor="   ").status_code == 400
 
+    def test_the_actor_filter_finds_the_rows_written_under_his_login(self):
+        """Выборка по человеку находит и старые строки, записанные ЛОГИНОМ
+        (Plane №895).
+
+        🔴 ЧТО ЭТО СТЕРЕЖЁТ. До 06.09.2026 `audit_service` писал в
+        `actor_user_id` значение `str(actor)`, а десять вьюх ОМ передают
+        `actor=request.user` — то есть логин. Запись это уже не производит
+        (приведение живёт в `_build`), но записанное НЕ ИСПРАВИТЬ: журнал
+        дополняется только, и запрет стоит триггером в БД — «правка задним
+        числом делает журнал бесполезным» (миграция `0006`). Значит чинить
+        надо чтение.
+
+        Без этого лента человека молча отдавала половину его действий, а
+        вторая половина выглядела чужой: события настоящие, время настоящее,
+        актор настоящий — опровергнуть такую ленту нечем.
+
+        КРАСНАЯ ПРОБА: верни в селекторе `filter(actor_user_id=actor_user_id)`
+        — строка, записанная логином, из ленты пропадёт.
+        """
+        from organization_management.apps.operations.selectors import (
+            OpsAuditLogSelector,
+        )
+
+        _api, user = client_for("audit-legacy-actor")
+        # Строка «как раньше»: логином. Пишется через сервис, но СТРОКОЙ —
+        # объект учётки он теперь приводит сам, и старое состояние иначе не
+        # воспроизвести.
+        old = write(actor=user.username, action=audit_service.STATUS_CANCELLED)
+        new = write(actor=str(user.pk), action=audit_service.STATUS_CREATED)
+        # Чужая строка в ленту не попадает: проба обязана падать и на «вернуть
+        # всё подряд», а не только на «вернуть половину».
+        alien = write(actor="system:dismissal", action=audit_service.STATUS_CREATED)
+
+        found = {row.pk for row in OpsAuditLogSelector.list(actor_user_id=str(user.pk))}
+
+        assert found == {old.pk, new.pk}, "лента человека неполна или чужая"
+        assert alien.pk not in found
+
     def test_the_selector_refuses_a_blank_actor_too(self):
         from organization_management.apps.operations.selectors import (
             OpsAuditLogSelector,
