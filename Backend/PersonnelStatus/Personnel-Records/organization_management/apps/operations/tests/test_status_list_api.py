@@ -15,6 +15,7 @@ from rest_framework.test import APIClient
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations import clock
 from organization_management.apps.operations.clock import Clock
+from organization_management.apps.operations.api.views import StatusViewSet
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.tests.test_bulk_status_api import (
     TODAY,
@@ -368,3 +369,96 @@ def test_detail_delete_is_not_served(types, division):
     with clock.override(TODAY):
         response = api.delete(detail_url(status_row.pk))
     assert response.status_code == 405
+
+
+# ── Неизвестный параметр отбора (Plane №855) ────────────────────────────────
+#
+# Предмет: ручка отдавала ВЕСЬ список, когда её отбор назвали неверным именем.
+# Замер, из которого карточка родилась: `?employee=45` → count=137,
+# `?employee=999999` → те же 137, без отбора вовсе → снова 137, и только
+# `?employee_id=45` → 3.
+
+
+def test_unknown_filter_param_is_400_and_names_what_is_accepted(types, division):
+    """Опечатка в имени отбора — отказ, а не тихо весь список.
+
+    Сообщение обязано называть ПРИНИМАЕМЫЕ имена: без них 400 отправляет
+    гадать, а угадывать тут нечего — набор закрытый.
+    """
+    api, _ = client_for("lst-unknown-param", "ADMIN", ["*"])
+    employee = make_employee(division)
+    make_status(employee)
+
+    response = get(api, employee=employee.id)
+
+    assert response.status_code == 400, response.data
+    assert "employee" in response.data
+    said = str(response.data["employee"])
+    assert "employee_id" in said, said
+    assert "limit" in said, said
+
+
+def test_unknown_param_does_not_leak_the_whole_list(types, division):
+    """Отказ приходит ВМЕСТО выдачи, а не рядом с ней.
+
+    Проба не про код ответа, а про то, чем этот код заменил: прежнее
+    поведение отдавало 200 со всеми строками, и именно это вводило в
+    заблуждение.
+    """
+    api, _ = client_for("lst-unknown-noleak", "ADMIN", ["*"])
+    mine = make_employee(division)
+    make_status(mine)
+
+    response = get(api, employee=mine.id)
+
+    assert response.status_code == 400
+    assert "results" not in response.data
+
+
+def test_every_declared_filter_is_still_served(types, division):
+    """Все объявленные отборы проходят — вместе, а не по одному.
+
+    Проверка от обратного к предыдущим: сторож имён не должен закрыть ручку
+    самому себе. Значения намеренно те, что дают пустую выдачу, — предмет
+    здесь код ответа, а не строки.
+    """
+    api, _ = client_for("lst-known-params", "ADMIN", ["*"])
+    employee = make_employee(division)
+    make_status(employee)
+
+    response = get(
+        api,
+        business_date=str(TODAY),
+        division_id=division.id,
+        employee_id=employee.id,
+        include_cancelled="false",
+        status_type_code="DUTY",
+        limit=10,
+        offset=0,
+    )
+
+    assert response.status_code == 200, response.data
+
+
+def test_the_declared_list_matches_what_list_actually_reads(types, division):
+    """Список имён и код, который их читает, не имеют права разъехаться.
+
+    🔴 Сторож против ТИХОГО отката: допиши в `list()` новый отбор, забыв
+    внести его в `LIST_QUERY_PARAMS`, — и он начнёт отбиваться четырёхсотым у
+    всех, кто его шлёт. Обратное так же скверно: имя в списке без чтения в
+    коде обещает отбор, которого нет.
+
+    Читается ИСХОДНИК `list()`, а не поведение: перебирать все возможные
+    имена запросами нельзя, а разъехаться эти два места могут только правкой.
+    """
+    import inspect
+    import re
+
+    source = inspect.getsource(StatusViewSet.list)
+    read = set(re.findall(r'request\.query_params\.get\(\s*"([^"]+)"', source))
+    read |= set(re.findall(r'_parse_\w+_param\(\s*request,\s*"([^"]+)"', source))
+
+    assert read == set(StatusViewSet.LIST_QUERY_PARAMS), {
+        "читаются в коде": sorted(read),
+        "объявлены в списке": sorted(StatusViewSet.LIST_QUERY_PARAMS),
+    }
