@@ -1506,3 +1506,169 @@ def test_recon_edit_cannot_strip_a_post_of_a_frozen_object(
         format="json",
     )
     assert allowed.status_code == 200, allowed.content
+
+
+@pytest.fixture
+def one_object_with_unmarked_posts(manager):  # noqa: F811
+    """ОМ с ЕДИНСТВЕННЫМ объектом, чьи посты НЕ размечены `visitObjectId`.
+
+    🔴 ЭТО ОБЫЧНОЕ СОСТОЯНИЕ, А НЕ КРАЕВОЕ (Plane №535, найдено ревью №825).
+    Пост, заведённый на рекогносцировке, разметки не несёт, а
+    `_pin_unmarked_posts_to_the_only_visit` закрепляет неразмеченные строки
+    только ПЕРЕД добавлением ВТОРОГО объекта. Значит у ОМ с одним объектом
+    неразмеченный расчёт живёт сколько угодно долго — и именно так устроены
+    фикстуры стенда (`seed_smoke_fixtures`).
+
+    Фикстура `two_objects_on_approval` до этой ветки НЕ ДОХОДИТ: она заводит
+    посты импортом из паспорта, а импорт всегда пишет `visitObjectId`.
+    """
+    obj = make_object(code="OBJ-ONE-UNMARKED", name="Единственный объект")
+    created = manager.post(
+        URL,
+        {
+            "title": "ОМ с одним объектом и неразмеченным расчётом",
+            "objectId": str(obj.pk),
+            "businessDate": "2026-09-03",
+            "kind": "INTERNAL",
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.content
+    event_id = created.json()["id"]
+    base = f"{URL}{event_id}/"
+    give_chief(manager, event_id)
+    (visit,) = _visits(event_id)
+
+    card = manager.get(base).json()
+    saved = manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": [
+                {**i, "state": "NORMAL"} for i in card["reconChecklist"]
+            ],
+            # Ни у одной строки нет `visitObjectId` — так их заводит экран.
+            "sectorPosts": [
+                {
+                    "id": "unmarked-1",
+                    "sector": "Сектор А",
+                    "post": "Пост 1",
+                    "task": "Наблюдение",
+                    "need": 1,
+                    "requirements": "",
+                    "comment": "",
+                    "minRating": None,
+                }
+            ],
+        },
+        format="json",
+    )
+    assert saved.status_code == 200, saved.content
+    post = manager.get(base).json()["reconSectorPosts"][0]
+    assert post["visitObjectId"] is None, "фикстура разметила пост — проба вакуумна"
+
+    assert manager.post(f"{base}recon/complete/").status_code == 200
+    employee = make_employee(last_name="Единственный")
+    assigned = manager.post(
+        f"{base}placement/assign/",
+        {"postId": post["id"], "employeeId": str(employee.pk)},
+        format="json",
+    )
+    assert assigned.status_code == 200, assigned.content
+    done = manager.post(
+        f"{base}placement/complete/",
+        {"visitObjectId": str(visit.pk)},
+        format="json",
+    )
+    assert done.status_code == 200, done.content
+    return base, event_id, visit, post
+
+
+def test_recon_edit_cannot_strip_an_unmarked_post_of_the_only_object(
+    manager, one_object_with_unmarked_posts  # noqa: F811
+):
+    """🔴 ЗАМОРОЗКА НЕ ВИДЕЛА НЕРАЗМЕЧЕННЫХ ПОСТОВ (Plane №535, ревью №825).
+
+    Гард ключился на `_posts_by_visit`, который строки без `visitObjectId`
+    выбрасывает («они ничьи»). Но у ОМ с ЕДИНСТВЕННЫМ объектом неразмеченный
+    пост — ЕГО пост: так считает `visit_object_posts`, так считает
+    `_visit_of_post`, и по `visit_object_posts` собирается подписываемый
+    снимок. Получалось расхождение внутри одного согласованного документа:
+    `placement/assign/` по этому посту отвечал `PLACEMENT_FROZEN`, а
+    `PATCH /recon/`, снимающий тот же пост, отвечал 200 — то есть репро
+    карточки №535 воспроизводилось дальше.
+    """
+    base, event_id, visit, post = one_object_with_unmarked_posts
+    _add_approver(manager, base, visit, name="Согласующий единственного")
+    sent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(visit.pk)}, format="json"
+    )
+    assert sent.status_code == 200, sent.content
+    visit.refresh_from_db()
+    assert service.placement_frozen(visit), "фикстура не заморозила объект"
+
+    card = manager.get(base).json()
+    refused = manager.patch(
+        f"{base}recon/",
+        {"checklist": card["reconChecklist"], "sectorPosts": []},
+        format="json",
+    )
+
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "PLACEMENT_FROZEN", refused.json()
+    event = service.lock_event(event_id)
+    assert event.recon_sector_posts, "неразмеченный пост замороженного объекта снят"
+
+
+def test_recon_edit_cannot_change_a_field_outside_the_old_fingerprint(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 ОТПЕРАТОК ИЗ ВОСЬМИ ПОЛЕЙ БЫЛ ДЫРОЙ (Plane №535, ревью №825).
+
+    `_POST_FINGERPRINT_FIELDS` перечисляет восемь полей, а строка поста несёт
+    семнадцать, и `_document_snapshot` кладёт строки ЦЕЛИКОМ. Значит у
+    согласованного объекта минимальный балл поста (он правится на этом же
+    экране рекогносцировки) менялся ответом 200, а `document_version_diff`
+    сравнивает только «сектор · пост» и «кто на посту» — расхождение
+    подписанного документа с фактом не отмечалось нигде.
+    """
+    base, event_id, first, second, _ = two_objects_on_approval
+    _add_approver(manager, base, first, name="Согласующий первого")
+    assert (
+        manager.post(
+            f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+        ).status_code
+        == 200
+    )
+
+    card = manager.get(base).json()
+    posts = card["reconSectorPosts"]
+    victim = next(p for p in posts if p["visitObjectId"] == str(first.pk))
+
+    refused = manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": card["reconChecklist"],
+            "sectorPosts": [
+                {**p, "minRating": 5} if p["id"] == victim["id"] else p
+                for p in posts
+            ],
+        },
+        format="json",
+    )
+
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "PLACEMENT_FROZEN", refused.json()
+    event = service.lock_event(event_id)
+    changed = next(
+        p for p in event.recon_sector_posts if str(p.get("id")) == str(victim["id"])
+    )
+    assert changed.get("minRating") != 5, "балл поста замороженного объекта изменён"
+
+    # Сохранение БЕЗ изменений замороженного объекта проходит: иначе один
+    # замороженный объект запер бы весь экран рекогносцировки (болезнь №634).
+    allowed = manager.patch(
+        f"{base}recon/",
+        {"checklist": card["reconChecklist"], "sectorPosts": posts},
+        format="json",
+    )
+    assert allowed.status_code == 200, allowed.content
