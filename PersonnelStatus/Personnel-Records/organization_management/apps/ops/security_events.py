@@ -5169,6 +5169,25 @@ def unassign_placement(event_id, assignment_id, *, deputy=None):
     return event
 
 
+def post_label(post, post_id=None):
+    """Человеческая подпись поста расчёта: «сектор · пост».
+
+    Вынесена из `_detach_remarks_of_post` в общий дом (Plane №865): ту же
+    подпись собирает дело согласования, и второй способ построить её
+    разошёлся бы с первым ровно там, где расхождение труднее заметить — в
+    архивном документе, который читают потом.
+
+    Пустой ответ невозможен: если у поста нет ни сектора, ни номера, остаётся
+    идентификатор. Он бесполезен человеку, но честнее пустой ячейки.
+    """
+    post = post or {}
+    return " · ".join(
+        part
+        for part in (str(post.get("sector") or ""), str(post.get("post") or ""))
+        if part
+    ) or str(post_id if post_id is not None else post.get("id") or "")
+
+
 def _detach_remarks_of_post(event, post_id, post):
     """Отвязать замечания снятого поста от него, сохранив, о чём они были.
 
@@ -5177,11 +5196,7 @@ def _detach_remarks_of_post(event, post_id, post):
     там так же бесполезна. Статус при этом не меняется: закрытие — суждение
     согласующего.
     """
-    label = " · ".join(
-        part
-        for part in (str(post.get("sector") or ""), str(post.get("post") or ""))
-        if part
-    ) or str(post_id)
+    label = post_label(post, post_id)
     for visit in event.visit_objects.all():
         remarks = list(visit.approval_remarks or [])
         touched = False
