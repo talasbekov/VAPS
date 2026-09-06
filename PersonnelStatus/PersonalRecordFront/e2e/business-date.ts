@@ -78,7 +78,31 @@ export function localIsoDate(date: Date = new Date()): string {
  */
 const DAY_MS = 86_400_000
 const RANGE_DAYS = 3650
-const randomBase = Math.floor(Math.random() * RANGE_DAYS)
+
+/**
+ * 🔴 НА ЧЁМ СТОИТ ГАРАНТИЯ, И ПОЧЕМУ ОБ ЭТОМ НАДО СКАЗАТЬ (найдено ревью,
+ * Plane №893). Счётчик и база живут в ОДНОМ процессе. Пока воркер один — а
+ * оба конфига смоука объявляют `workers: 1` — этого довольно: один процесс,
+ * одна база, общий счётчик, совпадений нет по построению.
+ *
+ * Но `workers: 1` стоит там по ДРУГОМУ поводу («параллельные персоны видели бы
+ * правки друг друга»), и кто решит, что тот повод снят, поднимет воркеров и
+ * сломает ЭТУ гарантию молча: у каждого процесса своя база, и отрезки дат
+ * пойдут внахлёст. Симптом будет прежний и уводящий — «ни один сотрудник не
+ * свободен».
+ *
+ * Поэтому воркеры разведены ПО ПОСТРОЕНИЮ: каждому свой блок дней, внутри
+ * блока — случайное начало и счётчик. Пересечься два воркера не могут, пока
+ * каждый выдал меньше `BLOCK_DAYS` дат (228 — на порядок больше, чем
+ * подготовок в самой длинной спеке).
+ */
+const WORKERS_MAX = 16
+const BLOCK_DAYS = Math.floor(RANGE_DAYS / WORKERS_MAX)
+const workerIndex = Number(process.env.TEST_WORKER_INDEX ?? 0) % WORKERS_MAX
+const blockStart = workerIndex * BLOCK_DAYS
+// Случайное начало ВНУТРИ своего блока: разводит одновременные прогоны разных
+// сессий, которые делят один стенд.
+const randomBase = blockStart + Math.floor(Math.random() * BLOCK_DAYS)
 let issued = 0
 
 export function uniqueBusinessDate(): string {
