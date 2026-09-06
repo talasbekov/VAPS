@@ -14,12 +14,13 @@
  *
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { requireFixture } from './fixtures'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { acceptRosterFor } from './stand-roster'
 import { prepareDemandEvent } from './prepare-events'
+import { uniqueBusinessDate } from './business-date'
 import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -48,27 +49,32 @@ async function signIn(page: Page, username = STAND_USERNAME, password = STAND_PA
 }
 
 /**
- * ОМ на «Расстановке» С ПРИНЯТЫМ СОСТАВОМ (Plane №428, `[РАС-04]`): правая
- * колонка показывает только людей, принятых штабом, — кадровой базы там больше
- * нет. Первый попавшийся ОМ без состава проводится через сбор сил общим
- * помощником `stand-roster`, чтобы кликать было по кому.
+ * СВОЁ ОМ на «Расстановке» с принятым составом.
+ *
+ * 🔴 БЫЛО «ПЕРВОЕ ПОДХОДЯЩЕЕ СО СТЕНДА» (Plane №822 Ш-4): `list.results.find(
+ * есть состав)`, иначе `list.results[0]`, и дальше проба ПРАВИЛА эту строку —
+ * назначала людей, снимала посты, переносила между постами. Стенд один на все
+ * сессии, и соседняя ведёт тот же ОМ своим путём.
+ *
+ * Что это стоило, уже записано ниже в этом файле, у переноса между постами:
+ * ЧЕТЫРЕ переписанные редакции, потому что взятое общим помощником ОМ делится
+ * с соседними спеками — «то они разбирают его состав по постам и подготовка
+ * падает „не хватает людей“, то убирают за собой в `finally` и на постах не
+ * стоит никто». Там из этого уже сделали `ownPlacementEvent`; здесь тот же
+ * вывод дошёл позже.
+ *
+ * ДАТА ДАЛЁКАЯ И СВОЯ, и это не косметика: на ближних днях у половины кадров
+ * уже стоят статусы, выделение молча пропускает их (`STATUS_OVERLAP_WARNING`),
+ * и состав выходит меньше запрошенного. `uniqueBusinessDate` даёт день из
+ * 2027 года и разный на каждый вызов — то есть свои свободные люди у КАЖДОЙ
+ * пробы, а не только своё мероприятие (четвёртый подвид №822).
  */
 async function placementEventWithRoster(
-  request: APIRequestContext,
-  auth: Record<string, string>,
   token: string,
 ): Promise<{ id: string; code: string } | undefined> {
-  const list = (await (
-    await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
-      headers: auth,
-    })
-  ).json()) as { results: { id: string; code: string; forceRoster: unknown[] }[] }
-  const ready = list.results.find((row) => (row.forceRoster ?? []).length > 0)
-  if (ready !== undefined) return ready
-  const first = list.results[0]
-  if (first === undefined) return undefined
-  await acceptRosterFor(token, first.id, { count: 3 })
-  return first
+  const { id, code } = await prepareDemandEvent(token, uniqueBusinessDate())
+  await acceptRosterFor(token, id, { count: 3 })
+  return { id, code }
 }
 
 test.describe(LIVE ? 'расстановка' : 'расстановка (скип: нет SMOKE_LIVE=1)', () => {
@@ -88,7 +94,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     // не зависела от того, что осталось в БД от прошлых прогонов.
     // Стадию фильтрует СЕРВЕР: на растущем реестре стенда фикстура уходит со
     // первой страницы, и проба молча превращается в skip.
-    const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
@@ -195,7 +201,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
 
-    const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
@@ -399,7 +405,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     requireFixture(section, 'справочник секций бланка пуст — назначать нечего')
     requireFixture(role, 'справочник ролей наряда пуст — менять роль нечем')
 
-    const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
@@ -505,7 +511,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const role = roles.results[0]
     requireFixture(role, 'справочник ролей наряда пуст — назначать нечего')
 
-    const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
 
@@ -593,8 +599,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
      * экрана теперь дефект, а не признак работы.
      */
     const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
-    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-    const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const asked: string[] = []
     page.on('request', (req) => {
@@ -911,7 +916,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
      */
     const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-    const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
     type Row = { id: string; postId: string }
@@ -967,7 +972,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
      */
     const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-    const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
     requireFixture(target, 'мероприятие на стадии «Расстановка»')
     const eventId = target!.id
     type Row = { id: string; postId: string; employeeId: string }
@@ -1567,8 +1572,8 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       // Состояние подставляется перехватом: ставить второго человека на
       // укомплектованный пост ради одной строки текста значит мутировать стенд.
       const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
-      const auth = { Authorization: `Bearer ${token}` }
-      const target = await placementEventWithRoster(request, auth, token)
+      const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const target = await placementEventWithRoster(token)
       requireFixture(target, 'мероприятие на стадии «Расстановка»')
 
       const REASON = 'Усиление: два входа на объекте'
@@ -1652,8 +1657,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       // объектов значит пройти согласование дважды и оставить после себя ОМ,
       // который не удалить.
       const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
-      const auth = { Authorization: `Bearer ${token}` }
-      const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
       requireFixture(target, 'мероприятие на стадии «Расстановка»')
 
       const MINE = 'МОЯ причина: переставить пост у ворот'
@@ -1701,8 +1705,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       // избыток под заголовком «Выделено на объект штабом». До №410 обе
       // половины были про мероприятие, и фраза была связной.
       const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
-      const auth = { Authorization: `Bearer ${token}` }
-      const target = await placementEventWithRoster(request, auth, token)
+    const target = await placementEventWithRoster(token)
       requireFixture(target, 'мероприятие на стадии «Расстановка»')
 
       const ALLOCATED = 12
