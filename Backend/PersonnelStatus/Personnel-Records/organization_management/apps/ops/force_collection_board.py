@@ -102,8 +102,19 @@ def need_by_object(event):
     """
     rows = []
     visits = list(event.visit_objects.order_by("position", "pk"))
+    # 🔴 «ОДИН ЛИ ОБЪЕКТ» СЧИТАЕТСЯ ЗДЕСЬ, А НЕ ВНУТРИ (Plane №908, третья
+    # дверь к дефекту №480). Без `single=` разрез спрашивает
+    # `event.visit_objects.count()` САМ — по запросу на КАЖДЫЙ объект
+    # посещения. Список объектов уже собран строкой выше, ответ известен
+    # даром. Параметр заведён №480 ровно для этого случая, и обе карточки
+    # (№480, №499) предупреждали, что дверей несколько.
+    #
+    # ЗАМЕРЕНО (карточка сбора, два объекта): было 4 обращения к таблице
+    # объектов, стало 2. Оставшиеся два — законные: список здесь и чтение
+    # сериализатора карточки, они к этому дефекту отношения не имеют.
+    single = len(visits) == 1
     for visit in visits:
-        posts = events.visit_object_posts(event, visit)
+        posts = events.visit_object_posts(event, visit, single=single)
         need = sum(int(p.get("need") or 0) for p in posts)
         assigned = sum(
             1 for a in (event.placement_assignments or [])

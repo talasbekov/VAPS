@@ -729,6 +729,85 @@ def test_the_urgency_threshold_is_read_once_per_listing(manager, hq):  # noqa: F
 
 
 
+def test_the_collection_card_reads_visit_objects_once(manager, hq):  # noqa: F811
+    """Карточка сбора читает объекты посещения ОДИН раз, а не по разу на объект
+    (Plane №908).
+
+    🔴 ТРЕТЬЯ ДВЕРЬ К ДЕФЕКТУ №480. Разрез `visit_object_posts` умеет
+    принимать `single=`, чтобы не спрашивать «один ли объект» самому —
+    параметр заведён №480 ровно для этого, и обе карточки (№480, №499)
+    предупреждали, что мест таких несколько. В `need_by_object` он не
+    передавался, и на каждый объект выходило лишнее `count()`.
+
+    🔴 ГДЕ ЭТО НА САМОМ ДЕЛЕ, А ГДЕ НЕТ. Карточка №908 указывала на ЛИСТИНГ
+    `/forces/collections`, но `need_by_object` оттуда не зовётся вовсе — его
+    единственный вызывающий `detail_extras`, то есть ручка КАРТОЧКИ одного
+    сбора. Замер листинга: 10 запросов на 2 строки, обращений к таблице
+    объектов ровно одно. Проба стоит там, где вызов есть; про листинг
+    заведена своя карточка — у него другой N+1, по участиям и подразделениям.
+
+    Считается ИМЕННО таблица объектов посещения: общий счётчик пришлось бы
+    править при каждой посторонней правке ручки, и проба стерегла бы не свой
+    предмет.
+
+    МУТАЦИЯ, на которой проба обязана краснеть: снять `single=single` —
+    обращений станет 4 вместо 2, по `count()` на каждый объект.
+
+    🔴 ВТОРАЯ НАПРАШИВАВШАЯСЯ ПРАВКА НЕ СДЕЛАНА, И ЭТО РЕШЕНИЕ. Замена
+    `order_by` на сортировку в памяти выглядела очевидной — `order_by` строит
+    новый queryset и идёт мимо `prefetch_related`. Но замер показал, что здесь
+    она не меняет НИЧЕГО: prefetch у этой ручки нет, запрос всё равно один, и
+    мутация «вернуть order_by» оставляла пробу зелёной. Код, который ничего не
+    меняет и ничем не стережётся, — тот же мёртвый рубеж, что снят в №895.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from organization_management.apps.operations.models_event import (
+        OpsSecurityEventVisitObject,
+    )
+    from organization_management.apps.ops.tests.test_ops_security_events_api import (
+        make_object,
+    )
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department, business_date="2026-10-02")
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    event_id = base.rstrip("/").split("/")[-1]
+    # ВТОРОЙ объект посещения — предмет пробы: при единственном объекте ветка
+    # `single` истинна и без параметра, и дефект был бы недостижим.
+    first = OpsSecurityEventVisitObject.objects.filter(event_id=event_id).first()
+    assert first is not None, "у фикстуры нет объекта посещения — мерить нечего"
+    # Свой охраняемый объект: пара «мероприятие + объект» уникальна, и второй
+    # визит на тот же объект база не примет.
+    OpsSecurityEventVisitObject.objects.create(
+        event_id=event_id,
+        security_object=make_object(code="OBJ-СБС-908", name="Второй объект"),
+        object_name="Второй объект",
+        position=first.position + 1,
+        stage=first.stage,
+    )
+
+    with CaptureQueriesContext(connection) as queries:
+        card = hq.get(f"{base}force-collection/")
+
+    assert card.status_code == 200, card.content
+    assert len(card.json()["needByObject"]) >= 2, "в карточке меньше двух строк объектов"
+    visit_reads = [
+        q for q in queries.captured_queries
+        if "ops_security_event_visit_objects" in q["sql"]
+    ]
+    # Порог 2 — ЗАМЕРЕННЫЙ, а не круглый: одно чтение делает сам разрез,
+    # второе — сериализатор карточки, и оба законны. Без параметра
+    # `single=` их становится 4: `count()` добавляется на каждый объект.
+    assert len(visit_reads) <= 2, (
+        f"таблица объектов посещения прочитана {len(visit_reads)} раз(а) при "
+        f"двух объектах — «один ли объект» спрашивается на каждом: "
+        + "; ".join(q["sql"][:120] for q in visit_reads)
+    )
+
+
 def test_headquarters_notification_goes_by_permission_not_by_role_name(
     manager, hq  # noqa: F811
 ):
