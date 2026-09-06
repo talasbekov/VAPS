@@ -33,6 +33,7 @@ import type { VisitEvaluationRow } from "@/entities/security-event";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
+import { AccessHints, RightGate } from "@/shared/ui/right-gate";
 import type {
   JournalEntryType,
   SecurityEvent,
@@ -62,6 +63,10 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
    * этом этапе они те же, что читают панели (`event.reconSectorPosts`).
    */
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
+  // Право читается и здесь: блок причин обязан знать текст, который скажет
+  // ОДИН РАЗ за обе панели. Внутри панелей `useChainAccess` остаётся — он
+  // отвечает на другой вопрос, «включать ли кнопку», и живёт рядом с ней.
+  const access = useChainAccess();
   // Порядок панелей — по шестому шагу прототипа: «Закрытие и итоги» первым,
   // потому что шаг называется закрытием и ради него сюда и приходят. «Контроль
   // постов» идёт вторым — он даёт разрез той же сводки и объясняет, кого
@@ -78,8 +83,26 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
       />
       <EvaluationPanel event={event} />
       <IncidentsPanel event={event} />
-      <VisitObjectClosurePanel event={event} />
-      <ClosurePanel event={event} />
+      {/* 🔴 ПРИЧИНА ОТКАЗА — ОДИН РАЗ НА ПАРУ, А НЕ У КАЖДОЙ КНОПКИ
+          (Plane №913, конвенция №801). Обе панели закрытия рисуются на
+          «Проведении» ОДНОВРЕМЕННО, обе кнопки закрыты ОДНИМ правом, и обе
+          печатали свою копию одной и той же фразы — тот самый «частокол»,
+          ради которого `AccessHints` и появился.
+
+          🔴 БЛОК СТОИТ ЗДЕСЬ, А НЕ НАВЕРХУ ЭТАПА. Карточек в колонке восемь,
+          и общий блок над первой из них оказался бы за два экрана прокрутки
+          от кнопок: человек, доскроллив до серой кнопки, не увидел бы причины
+          ВОВСЕ — это хуже повтора, а не лучше. Панели закрытия идут подряд,
+          поэтому блок охватывает ровно их две и стоит вплотную. Для читалки
+          расстояние безразлично — связь держит `aria-describedby`, — но
+          глазами причина читается там, где стоит.
+
+          Остальные шесть карточек этапа права `event.manage` не спрашивают,
+          и в блок им попадать не с чем. */}
+      <AccessHints reasons={[access.reason(EVENT_MANAGE)]}>
+        <VisitObjectClosurePanel event={event} />
+        <ClosurePanel event={event} />
+      </AccessHints>
       <PostControlPanel event={event} />
       <JournalPanel event={event} />
       <ReplacementPanel event={event} />
@@ -614,14 +637,6 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
     },
   });
   const access = useChainAccess();
-  /** Цель `aria-describedby` у выключенной кнопки «Закрыть объект»
-   * (Plane №777). Ключится мероприятием, хотя карточка этапа на странице
-   * ОДНА (`events/[id]/page.tsx` рисует один `ConductStage`): здесь стояло
-   * обратное утверждение — «карточек бывает несколько», — и это неправда,
-   * снята ревью №825. Ключ оставлен: он ничего не стоит, совпадает с
-   * соседней панелью оценок (№644) и снимает вопрос заранее, если карточка
-   * когда-нибудь начнёт рисоваться по объекту. */
-  const closeVisitHintId = `close-visit-locked-${event.id}`;
   const visit = scope.visit;
   // Сводка оценок — для подтверждения «Оценено K из N, инцидентов N»
   // (`[ЗАК-05]`, Plane №433); неоценённые закрытию не мешают. Ручка закрыта
@@ -702,26 +717,19 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                 виртуальный курсор читалки до подписи доходит. Тем же приёмом
                 закрыта панель оценок выше (№644). */}
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {!access.can(EVENT_MANAGE) && (
-                <p
-                  id={closeVisitHintId}
-                  className="text-sm text-muted-foreground"
-                  data-slot="close-visit-locked"
-                >
-                  {access.reason(EVENT_MANAGE)}
-                </p>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!access.can(EVENT_MANAGE)}
-                aria-describedby={
-                  access.can(EVENT_MANAGE) ? undefined : closeVisitHintId
-                }
-                onClick={() => setOpen(true)}
-              >
-                Закрыть объект
-              </Button>
+              <RightGate reason={access.reason(EVENT_MANAGE)}>
+                {(describedBy) => (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!access.can(EVENT_MANAGE)}
+                    aria-describedby={describedBy}
+                    onClick={() => setOpen(true)}
+                  >
+                    Закрыть объект
+                  </Button>
+                )}
+              </RightGate>
             </div>
             {/* 🔴 ЧЕРНОВИК ЖИВЁТ РОВНО СТОЛЬКО, СКОЛЬКО ОКНО (Plane №610).
                 Закрытие идёт ТРЕМЯ путями — «Отмена», Esc и клик вне окна, — и
@@ -794,9 +802,6 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
 
 function ClosurePanel({ event }: { event: SecurityEvent }) {
   const closeAccess = useChainAccess();
-  /** Цель `aria-describedby` у выключенной кнопки «Закрыть мероприятие»
-   * (Plane №777) — тем же правилом уникальности, что и у объекта выше. */
-  const closeEventHintId = `close-event-locked-${event.id}`;
   const [comment, setComment] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
@@ -841,28 +846,21 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
         {/* Та же правка, что у «Закрыть объект» выше (Plane №777): подсказка
             на выключенной кнопке не показывается никогда. */}
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {!closeAccess.can(EVENT_MANAGE) && (
-            <p
-              id={closeEventHintId}
-              className="text-sm text-muted-foreground"
-              data-slot="close-event-locked"
-            >
-              {closeAccess.reason(EVENT_MANAGE)}
-            </p>
-          )}
-          <Button
-            type="button"
-            disabled={close.isPending || !closeAccess.can(EVENT_MANAGE)}
-            aria-describedby={
-              closeAccess.can(EVENT_MANAGE) ? undefined : closeEventHintId
-            }
-            onClick={() => {
-              setFieldErrors(null);
-              close.mutate({ comment });
-            }}
-          >
-            {close.isPending ? "Закрытие…" : "Закрыть мероприятие"}
-          </Button>
+          <RightGate reason={closeAccess.reason(EVENT_MANAGE)}>
+            {(describedBy) => (
+              <Button
+                type="button"
+                disabled={close.isPending || !closeAccess.can(EVENT_MANAGE)}
+                aria-describedby={describedBy}
+                onClick={() => {
+                  setFieldErrors(null);
+                  close.mutate({ comment });
+                }}
+              >
+                {close.isPending ? "Закрытие…" : "Закрыть мероприятие"}
+              </Button>
+            )}
+          </RightGate>
         </div>
       </CardContent>
     </Card>

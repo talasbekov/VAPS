@@ -252,9 +252,27 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
     await expect(button).toBeVisible({ timeout: 15_000 })
     await expect(button, 'кнопка закрытия открыта тому, у кого нет права').toBeDisabled()
 
-    const hint = page.locator('[data-slot="close-visit-locked"]')
+    // 🔴 ПИН ПЕРЕПИСАН ОСОЗНАННО (Plane №913). Здесь стояли два своих слота —
+    // `close-visit-locked` и `close-event-locked`, — по одному у каждой
+    // кнопки. Панели рисуются на «Проведении» одновременно, право у них одно,
+    // и человек без права читал одну и ту же фразу ДВАЖДЫ: тот самый
+    // «частокол», ради которого в №801 появился общий блок `AccessHints`.
+    // Теперь причина сказана один раз блоком (`data-slot="access-note"`), а
+    // обе кнопки ссылаются на неё `aria-describedby`. Проба следует за этим и
+    // проверяет ровно то, что важно: строка ОДНА, и обе кнопки ведут к ней.
+    // Считается ЛЮБАЯ видимая строка с этим текстом, а не только слот общего
+    // блока: обёртка вне блока рисует свой слот (`right-hint`), и проба,
+    // привязанная к одному имени, на возврате повтора показала бы «0 строк»
+    // вместо «2» — краснела бы, но врала о причине. Проверено мутацией.
+    const hints = page
+      .locator('[data-slot="access-note"], [data-slot="right-hint"]')
+      .filter({ hasText: RIGHT_REASON })
     await expect(
-      hint,
+      hints,
+      'причина отказа напечатана не один раз — экран снова частокол',
+    ).toHaveCount(1)
+    await expect(
+      hints.first(),
       'выключенная кнопка не объясняет, чьё это действие',
     ).toHaveText(RIGHT_REASON)
 
@@ -280,16 +298,18 @@ test.describe(LIVE ? 'оценки на этапе проведения' : 'оц
       closeEvent,
       'кнопка закрытия мероприятия открыта тому, у кого нет права',
     ).toBeDisabled()
-    await expect(
-      page.locator('[data-slot="close-event-locked"]'),
-      'выключенная кнопка закрытия мероприятия не объясняет, чьё это действие',
-    ).toHaveText(RIGHT_REASON)
     const eventDescribedBy = await closeEvent.getAttribute('aria-describedby')
     expect(
       eventDescribedBy,
       'кнопка закрытия мероприятия не связана с подписью через aria-describedby',
     ).not.toBeNull()
     await expect(page.locator(`#${eventDescribedBy}`)).toHaveText(RIGHT_REASON)
+    // И это ТА ЖЕ САМАЯ строка, а не вторая с тем же текстом: иначе повтор
+    // вернулся бы незаметно — с виду проба осталась бы зелёной.
+    expect(
+      eventDescribedBy,
+      'кнопки ссылаются на разные подписи — причина напечатана дважды',
+    ).toBe(describedBy)
     expect(
       await closeEvent.getAttribute('title'),
       'title вернулся на кнопку закрытия мероприятия — подсказка снова мертва',
