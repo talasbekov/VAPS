@@ -2132,7 +2132,19 @@ class ApiClient {
   // же правке в админке.
   async getOpsStatusTypes(): Promise<OpsStatusType[]> {
     const page = await this.getDomainJson<{ results: OpsStatusType[] }>(
-      "/api/operations/status-types/?page_size=200"
+      // 🔴 `limit`, А НЕ `page_size` (Plane №870). Здесь стояло
+      // `?page_size=200`, и раздел ОМ его ИГНОРИРУЕТ: списки раздела
+      // пагинируются `LimitOffsetPagination` с умолчанием в 50 строк.
+      // Замерено 06.09.2026 на живой ручке: `?page_size=5` → 19 строк (все),
+      // `?limit=5` → 5. Сегодня не видно — типов статусов 19; двадцать первый
+      // начал бы пропадать с экранов МОЛЧА, и искать это стали бы в
+      // справочнике, а не в имени параметра.
+      //
+      // Ловушка воспроизводима: `page_size` — правильное имя почти везде, и
+      // разбор этой же беды стоит В ЭТОМ ЖЕ ФАЙЛЕ двумястами строк выше
+      // (`getOpsStatusesFor`, Plane №321) — а вызов всё равно был написан
+      // мимо. Поэтому теперь её стережёт проба `ops-pagination-param`.
+      "/api/operations/status-types/?limit=200"
     );
     return page.results;
   }
