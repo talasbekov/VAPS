@@ -44,6 +44,7 @@ import {
   directorateDenial,
   useStaffUnitsByDirectorate,
 } from "@/hooks/use-staff-units-by-directorate";
+import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import {
@@ -481,6 +482,31 @@ function EmployeesScreen() {
   // вещи, и выход из них разный. Прототип на первом даёт «Сбросить фильтры»,
   // здесь же обе ветки печатали одно «Сотрудники не найдены» и оставляли
   // человека наедине с фильтром, который он мог поставить три экрана назад.
+  // 🔴 ПУНКТЫ ФИЛЬТРА — ИЗ СЕРВЕРНОГО КАТАЛОГА, А ЗНАЧЕНИЕ — КОД (Plane №837).
+  //
+  // Две беды в одном месте, и вторая тяжелее первой.
+  //
+  // 1. Список был жёстким (`EMPLOYEE_STATUS_ITEMS`), хотя каталог типов живёт
+  //    на сервере с №354: тип, заведённый заказчиком в админке, появлялся в
+  //    таблице, в окне правки и в массовой простановке — и НЕ появлялся здесь.
+  //
+  // 2. Пункт отдавал `value={item.label}` — русскую подпись, — а ручка
+  //    отбирает по КОДУ типа (`staff_unit/views.py`, `status_code`). Замерено
+  //    на стенде 06.09.2026: `?status=in_service` — 435 строк, `?status=В
+  //    строю` — НОЛЬ. То есть любой выбор, кроме «Все статусы», давал пустой
+  //    список, и человек читал это как «таких сотрудников нет». Экран при этом
+  //    честно показывал «Ничего не найдено» — то есть врал не он, а значение,
+  //    которое он посылал.
+  //
+  // Запасной путь — прежний зашитый перечень: пока каталог не доехал, фильтр
+  // обязан оставаться рабочим, а не пустым (тот же приём, что в
+  // `components/status-table.tsx`).
+  const { types: catalogStatusTypes } = useEmployeeStatusTypes(false);
+  const statusFilterItems =
+    catalogStatusTypes.length > 0
+      ? catalogStatusTypes.map((item) => ({ code: item.code, label: item.label }))
+      : EMPLOYEE_STATUS_ITEMS.map((item) => ({ code: item.code, label: item.label }));
+
   const filtersApplied =
     searchQuery !== "" || departmentFilter !== "all" || statusFilter !== "all";
 
@@ -1128,12 +1154,16 @@ function EmployeesScreen() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все статусы</SelectItem>
-                {EMPLOYEE_STATUS_ITEMS.map((item) => (
-                  <SelectItem key={item.code} value={item.label}>
+                {statusFilterItems.map((item) => (
+                  <SelectItem key={item.code} value={item.code}>
                     {item.label}
                   </SelectItem>
                 ))}
-                <SelectItem value="Не обновлено">Не обновлено</SelectItem>
+                {/* «Без статуса» сервер называет `none` — это не код типа, а
+                    отдельное значение отбора (`staff_unit/views.py`). Прежде
+                    сюда уходила подпись «Не обновлено», и ручка не понимала
+                    её так же, как не понимала остальные подписи. */}
+                <SelectItem value="none">Не обновлено</SelectItem>
               </SelectContent>
             </Select>
           </div>

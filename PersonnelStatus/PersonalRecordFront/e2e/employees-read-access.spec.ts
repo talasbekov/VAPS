@@ -73,4 +73,60 @@ test.describe(LIVE ? 'кадровый реестр: чтение по прав�
       'кнопка заведения показана тому, у кого нет права правки',
     ).toHaveCount(0)
   })
+
+  test('фильтр по статусу отбирает людей, а не обнуляет список (Plane №837)', async ({
+    page,
+  }) => {
+    // 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Пункт фильтра отдавал `value={item.label}` —
+    // русскую подпись, — а ручка отбирает по КОДУ типа статуса
+    // (`staff_unit/views.py`, `status_code`). Замерено на стенде 06.09.2026:
+    // `?status=in_service` — 435 строк, `?status=В строю` — НОЛЬ. То есть
+    // любой выбор, кроме «Все статусы», давал пустой список, и человек читал
+    // это как «таких сотрудников нет». Экран при этом честно печатал «Ничего
+    // не найдено»: врал не он, а значение, которое он посылал.
+    //
+    // Проба идёт ЧЕРЕЗ ЭКРАН, а не запросом: предмет — то, что кладёт в адрес
+    // сам фильтр. Запрос с готовым кодом проверял бы сервер, который и так
+    // работал.
+    //
+    // КРАСНАЯ ПРОБА: верни `value={item.label}` в `app/employees/page.tsx` —
+    // список опустеет, и проба назовёт это словами.
+    await signInAsOperator(page)
+    await page.goto(`${APP}/employees?view=forces&tab=table`)
+
+    const filter = page.locator('[aria-label="Фильтр по статусу"]').first()
+    await expect(filter, 'фильтра по статусу нет на экране').toBeVisible({
+      timeout: 30_000,
+    })
+    await expect
+      .poll(async () => page.locator('table tbody tr').count(), { timeout: 30_000 })
+      .toBeGreaterThan(0)
+
+    await filter.click()
+    const options = page.getByRole('option')
+    await expect(options.first()).toBeVisible({ timeout: 20_000 })
+    // Пункты приходят из СЕРВЕРНОГО каталога (Plane №354): в зашитом перечне
+    // не было ни «Уточняется», ни «Участие в ОМ» — их появление и означает,
+    // что источник сменился. Если каталог не доехал, фильтр остаётся рабочим
+    // на запасном перечне, поэтому проверка мягкая: хотя бы один такой пункт.
+    const names = await options.allInnerTexts()
+    expect(
+      names.some((name) => /Уточняется|Участие в ОМ/.test(name)),
+      `в фильтре нет статусов серверного каталога: ${names.join(' | ')}`,
+    ).toBe(true)
+
+    await page.getByRole('option', { name: 'В строю', exact: true }).click()
+
+    // Отбор ПРИМЕНИЛСЯ: в адресе код, а не подпись.
+    await expect
+      .poll(async () => new URL(page.url()).searchParams.get('status'), {
+        timeout: 20_000,
+      })
+      .toBe('in_service')
+    // И список НЕ ОПУСТЕЛ — это и есть то, чего не было до правки.
+    await expect(page.getByText('Ничего не найдено')).toHaveCount(0)
+    await expect
+      .poll(async () => page.locator('table tbody tr').count(), { timeout: 30_000 })
+      .toBeGreaterThan(0)
+  })
 })
