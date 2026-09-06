@@ -70,21 +70,18 @@ def _refuse_participation_status(status_type):
     другим клиентом, проверкой не является (тот же довод, что у обязательности
     пункта рекогносцировки, №541).
     """
-    from organization_management.apps.operations.status_service import (
-        PARTICIPATION_STATUS_CODES,
+    # Код и текст отказа — из общего места (`statuses/participation_guard.py`,
+    # Plane №840): №757 закрыл эту дверь здесь, а мимо шли ещё три адреса, и
+    # третий текст одного и того же отказа развёл бы их окончательно. Здесь
+    # остаётся своя ФОРМА ошибки — под ключом `employee_statuses`, как ждёт
+    # эта ручка.
+    from organization_management.apps.statuses.participation_guard import (
+        REFUSAL,
+        is_participation_code,
     )
 
-    code = str(status_type or "").strip()
-    if code.upper() in {c.upper() for c in PARTICIPATION_STATUS_CODES}:
-        raise ValidationError(
-            {
-                "employee_statuses": [
-                    "«Участие в ОМ» ставится в разделе «Сбор сил на ОМ» — по "
-                    "запросу мероприятия, а не кадровой ручкой: иначе человек "
-                    "числится привлечённым неизвестно куда."
-                ]
-            }
-        )
+    if is_participation_code(status_type):
+        raise ValidationError({"employee_statuses": [REFUSAL]})
 
 
 def _as_date(value):

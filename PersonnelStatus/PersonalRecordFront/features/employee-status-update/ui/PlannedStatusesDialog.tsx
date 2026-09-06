@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
+import { EVENT_PARTICIPATION_STATUS_CODES } from "@/entities/daily-grid";
 import { employeeIdOfKey } from "../model/row-key";
 import {
   Dialog,
@@ -107,10 +108,21 @@ export function PlannedStatusesDialog({
   // Каталог типов — с сервера, а не копией в коде (Plane №354): заказчик
   // заводит тип в админке, и список обязан узнать о нём без выкатки клиента.
   const {
-    types: statusTypes,
+    types: catalogTypes,
     isLoading: statusTypesLoading,
     error: statusTypesError,
   } = useEmployeeStatusTypes();
+  // 🔴 «УЧАСТИЕ В ОМ» ЗДЕСЬ НЕ ПРЕДЛАГАЕТСЯ (Plane №757, дозакрыто в №840).
+  // Массовая простановка этот тип уже не показывает, а окно запланированных
+  // показывало — и сохраняло его кадровой ручкой `PATCH /api/statuses/…`,
+  // мимо всех правил раздела ОМ. То есть дефект «привлечён неизвестно куда»
+  // открывался МЫШКОЙ из соседнего окна того же экрана.
+  // Сервер теперь отбивает это сам (`statuses/participation_guard.py`), здесь
+  // же — чтобы не предлагать того, что всё равно отобьётся: список,
+  // обещающий невозможное, хуже короткого.
+  const statusTypes = catalogTypes.filter(
+    (item) => !EVENT_PARTICIPATION_STATUS_CODES.has(item.code)
+  );
   // Штатная единица ОДНОГО сотрудника, и только когда диалог открыт
   // (Plane №234). Прежде здесь звался весь состав подразделения — 2,7 МБ ради
   // одной строки на пяти тысячах человек, и грузился он при открытии ЭКРАНА, а

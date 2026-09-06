@@ -15,6 +15,9 @@ from organization_management.apps.statuses.models import (
     StatusDocument
 )
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.statuses.participation_guard import (
+    refuse_manual_participation,
+)
 from organization_management.apps.statuses.selectors import status_on_date
 from organization_management.apps.divisions.models import Division
 
@@ -52,6 +55,13 @@ class StatusApplicationService:
         Returns:
             EmployeeStatus: Созданный статус
         """
+        # 🔴 «Участие в ОМ» кадровой моделью не заводится (Plane №757, №840).
+        # Сюда сходятся `POST /api/statuses/statuses/`, `bulk_plan` (через
+        # `plan_status`) и откомандирование — то есть все входы, которых не
+        # видел отказ, поставленный во вью кадровой ручки. Разбор — в
+        # `statuses/participation_guard.py`.
+        refuse_manual_participation(status_type)
+
         try:
             employee = Employee.objects.get(pk=employee_id)
         except Employee.DoesNotExist:
