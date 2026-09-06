@@ -22,6 +22,8 @@ participation` отвечает 422 и отсылает к чекбоксам з
 """
 import pytest
 
+from organization_management.apps.divisions.models import Division
+
 from .test_ops_forces_gathering import (  # noqa: F401
     allocated_event,
     event_on_demand,
@@ -61,8 +63,32 @@ def directorate_client(username, role_code, division_id):
 
 
 def notified_request(manager, department):  # noqa: F811
-    """Заявка департаменту, ОПОВЕЩЁННАЯ по управлениям."""
+    """Заявка департаменту, ОПОВЕЩЁННАЯ по управлениям.
+
+    🔴 КВОТА УПРАВЛЕНИЮ ОБЯЗАТЕЛЬНА (Plane №557, найдено ревью №825). Раньше
+    фикстура просто нажимала «Отправить в управления» без разбивки, и запрос
+    считался разосланным ВСЕМ действующим управлениям — включая те, которым
+    письма не уходило. Список запросов отбирает свои строки по `notifiedAt`
+    (`_notified_mine`), и на этом «оповещении никого» держались обе пробы
+    файла: они проверяли баннер запроса, которого управление не получало.
+    Теперь момент ставит только состоявшаяся рассылка, и фикстура обязана
+    разложить квоту — иначе просить некого и списку неоткуда взяться.
+    """
     base, allocation_id = allocated_event(manager, department)
+    mine = list(
+        Division.objects.filter(
+            parent_id=department.pk,
+            division_type=Division.DivisionType.DIRECTORATE,
+            is_active=True,
+        )
+    )
+    if mine:
+        split = manager.post(
+            f"{base}forces/allocation/{allocation_id}/split/",
+            {"rows": [{"divisionId": str(mine[0].pk), "need": 1}]},
+            format="json",
+        )
+        assert split.status_code == 200, split.content
     manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
     return allocation_id
 

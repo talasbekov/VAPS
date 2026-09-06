@@ -271,7 +271,16 @@ def test_notify_reaches_every_directorate_of_the_department(manager):  # noqa: F
     names = {item["name"] for item in row["directorates"]}
     assert names == {first.name, second.name}
     assert foreign.name not in names
-    assert all(item["notifiedAt"] is not None for item in row["directorates"])
+    # 🔴 ПИН ПРАВЛЕН ОСОЗНАННО (Plane №557, найдено ревью №825). Здесь стояло
+    # «момент есть у ВСЕХ управлений» — а рассылка управление без квоты
+    # сознательно пропускает (`forces_notify`: «просить не о чем»). То есть
+    # проба закрепляла ровно то, что карточка называет дефектом: экран печатал
+    # «Запрошено ДД.ММ» тому, кому не отправляли ничего, и разбор «почему не
+    # выделили» уходил по ложному следу. Теперь момент есть у того и только у
+    # того, кому письмо ушло, — а без разбивки не уходит никому.
+    assert all(item["notifiedAt"] is None for item in row["directorates"]), (
+        "момент проставлен управлению без квоты — ему ничего не отправляли"
+    )
 
 
 def test_notify_keeps_the_moment_of_those_already_told(manager):  # noqa: F811
@@ -279,18 +288,29 @@ def test_notify_keeps_the_moment_of_those_already_told(manager):  # noqa: F811
     department = make_department()
     make_directorate(department, "Управление охраны")
     base, allocation_id = allocated_event(manager, department)
+    # Квота у первого управления ОБЯЗАТЕЛЬНА: без неё рассылка его пропускает
+    # и момента не ставит (Plane №557) — проба стерегла бы пустоту.
+    guard = Division.objects.get(name="Управление охраны")
+    split = manager.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": [{"divisionId": str(guard.pk), "need": 1}]},
+        format="json",
+    )
+    assert split.status_code == 200, split.content
     first = manager.post(f"{base}forces/allocation/{allocation_id}/notify/").json()
     told_at = first["forceAllocation"][0]["directorates"][0]["notifiedAt"]
+    assert told_at is not None, "момент не проставлен тому, кому отправили"
 
     # Управление появилось ПОСЛЕ первого оповещения — второе нажатие обязано
-    # добрать его, не трогая момент у прежнего.
+    # добрать его, не трогая момент у прежнего. Квоты у новичка нет, значит и
+    # письма ему нет: момент остаётся пустым (Plane №557, ревью №825).
     make_directorate(department, "Управление сопровождения")
     second = manager.post(f"{base}forces/allocation/{allocation_id}/notify/").json()
 
     rows = {item["name"]: item for item in second["forceAllocation"][0]["directorates"]}
     assert len(rows) == 2
     assert rows["Управление охраны"]["notifiedAt"] == told_at
-    assert rows["Управление сопровождения"]["notifiedAt"] is not None
+    assert rows["Управление сопровождения"]["notifiedAt"] is None
 
 
 def test_notify_refuses_department_without_directorates(manager):  # noqa: F811
@@ -1489,3 +1509,44 @@ def test_dispatch_refuses_a_split_wider_than_the_promise(manager):  # noqa: F811
         manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": 1}]
     ).status_code == 200
     assert manager.post(f"{base}forces/allocation/{allocation_id}/notify/").status_code == 200
+
+
+def test_the_department_answer_also_refuses_a_fractional_number(manager):  # noqa: F811
+    """🔴 ТРЕТЬЕ МЕСТО ЦЕЛОСТИ — ОТВЕТ ДЕПАРТАМЕНТА (Plane №556, найдено
+    ревью №825).
+
+    `_whole_number` починил три места, но пробами были закрыты два —
+    раскладка по управлениям и раскладка штаба. Ровно то место, ради которого
+    карточка заведена («официальный ответ департамента»), не проверял никто:
+    мутация «вернуть `int(allocating)`» оставляла набор зелёным, а департамент,
+    приславший `2.9`, снова получал ответ «2», которого не называл. Путь
+    достижим по-настоящему — вьюха отдаёт `data.get("allocating")` сырым, без
+    сериализатора.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+
+    fractional = manager.post(
+        f"{base}forces/allocation/{allocation_id}/respond/",
+        {"allocating": 2.9, "comment": ""},
+        format="json",
+    )
+    assert fractional.status_code == 400, fractional.content
+    assert "Укажите целое число" in str(fractional.json()["details"]), fractional.json()
+
+    boolean = manager.post(
+        f"{base}forces/allocation/{allocation_id}/respond/",
+        {"allocating": True, "comment": ""},
+        format="json",
+    )
+    assert boolean.status_code == 400, boolean.content
+
+    # Строка целых цифр — законный ввод: формы шлют числа текстом.
+    text = manager.post(
+        f"{base}forces/allocation/{allocation_id}/respond/",
+        {"allocating": "2", "comment": ""},
+        format="json",
+    )
+    assert text.status_code == 200, text.content
+    assert _find_row(manager, base, allocation_id)["allocating"] == 2
