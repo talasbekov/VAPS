@@ -624,47 +624,125 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     )
   })
 
+  /**
+   * Оповещение управлений (Plane №891 — проба переписана под правило №557).
+   *
+   * 🔴 ЧТО ЗДЕСЬ БЫЛО НЕ ТАК. Проба раскладывала потребность на департамент,
+   * жала «Оповестить управления» и требовала момент «оповещено» у ПЕРВОЙ
+   * строки списка. Это правило ОТМЕНЕНО №557: момент ставится только тому
+   * управлению, которому реально отправили, то есть у которого есть КВОТА
+   * (`need > 0`, `security_events.notify_directorates`). Квоту управлениям
+   * назначает департамент отдельным шагом (`.../split/`), а проба этот шаг не
+   * делала вовсе — значит после №557 она стерегла ровно то, что №557 убрал, и
+   * краснела стабильно у всех сессий.
+   *
+   * Карточка №891 предполагала другое: «у управления есть КВОТА, иначе не было
+   * бы кнопки „Выделить людей“». Предположение неверно — кнопка в
+   * `ForcesSplitPanel` рисуется у КАЖДОЙ строки управления безотносительно
+   * квоты. Проверено по данным стенда: департамент, который проба выбирала
+   * первым («Департамент охраны»), имеет ровно одно управление, и квоты у него
+   * не было ни разу за прогон.
+   *
+   * 🔴 ТЕПЕРЬ ПРОБА СТЕРЕЖЁТ ОБЕ ПОЛОВИНЫ ПРАВИЛА №557, а не одну: управлению
+   * С квотой момент ставится, управлению БЕЗ квоты — нет. Ради второй половины
+   * департамент выбирается ПО СОСТАВУ (нужно минимум два управления), а не
+   * «первый в справочнике»: на первом их одно, и отрицательную половину
+   * проверить было бы нечем.
+   */
   test('оповещение управлений видно у заявки и повтор не переписывает момент', async ({
     page,
   }) => {
     const token = await apiToken()
     const { id, total } = await prepareDemandEvent(token)
-    const departments = await get<{ results: { id: number; name: string; type_code: string }[] }>(
-      token,
-      '/api/core/divisions/?page_size=200',
-    )
-    const department = departments.results.find((row) => row.type_code === 'department')
-    expect(department, 'в справочнике стенда нет департамента').toBeTruthy()
-    // Сторож фикстуры: без управлений внутри департамента сервер отвечает
-    // отказом, и проба проверяла бы не оповещение, а его отсутствие.
-    const directorates = departments.results.filter(
-      (row) => row.type_code === 'directorate',
-    )
-    expect(directorates.length, 'у стенда нет управлений — оповещать некого').toBeGreaterThan(0)
+    const divisions = await get<{
+      results: { id: number; name: string; type_code: string; parent: number | null }[]
+    }>(token, '/api/core/divisions/?page_size=300')
+    // Управления берутся СВОИ, по `parent`. Прежде проба брала все управления
+    // справочника подряд и проверяла лишь, что их больше нуля, — то есть
+    // сторож фикстуры был зелёным и на департаменте без единого управления.
+    const candidate = divisions.results
+      .filter((row) => row.type_code === 'department')
+      .map((department) => ({
+        department,
+        units: divisions.results.filter(
+          (row) => row.type_code === 'directorate' && row.parent === department.id,
+        ),
+      }))
+      .find((row) => row.units.length >= 2)
+    expect(
+      candidate,
+      'в справочнике стенда нет департамента с двумя управлениями — ' +
+        'проверить «без квоты момента нет» будет нечем',
+    ).toBeTruthy()
+    const { department, units } = candidate!
+    const [withQuota, withoutQuota] = units
 
     await signIn(page)
     const card = await openSplitPanel(page, id)
 
     await card.getByRole('button', { name: 'Департамент', exact: true }).click()
-    await card.getByLabel('Департамент, строка 1', { exact: true }).selectOption(String(department!.id))
+    await card.getByLabel('Департамент, строка 1', { exact: true }).selectOption(String(department.id))
     await card.getByLabel('Сколько человек, строка 1', { exact: true }).fill(String(total))
     await card.getByRole('button', { name: 'Сохранить раскладку' }).click()
     await expect(card.getByText('Раскладка сохранена')).toBeVisible()
 
-    const state = card.locator('[data-slot="allocation-state"]')
-    await expect(state).toContainText('В департамент не отправлено')
+    // ШАГ ДЕПАРТАМЕНТА, которого пробе не хватало: разбивка квоты по своим
+    // управлениям. Ручкой, а не экраном: экран разбивки — карточка ДЕПАРТАМЕНТА
+    // (`DepartmentRequestCard`), её стережёт свой файл проб, а предмет этой
+    // пробы — что делает оповещение со строками. Квота даётся ОДНОМУ
+    // управлению: второе остаётся без неё намеренно, оно и есть отрицательная
+    // половина правила.
+    const saved = await get<{ forceAllocation: { id: string }[] }>(
+      token,
+      `/api/ops/security-events/${id}/`,
+    )
+    const allocationId = saved.forceAllocation[0]?.id
+    expect(allocationId, 'раскладка не сохранилась — разбивать нечего').toBeTruthy()
+    const split = await send<{ forceAllocation: { directorates?: { divisionId: string; need: number }[] }[] }>(
+      token,
+      'POST',
+      `/api/ops/security-events/${id}/forces/allocation/${encodeURIComponent(allocationId!)}/split/`,
+      { rows: [{ divisionId: String(withQuota.id), need: 1 }] },
+    )
+    expect(
+      (split.forceAllocation[0]?.directorates ?? []).find(
+        (row) => String(row.divisionId) === String(withQuota.id),
+      )?.need,
+      'сервер не сохранил квоту управления — оповещать будет нечего',
+    ).toBe(1)
+
+    // Панель перечитывает заявку с сервера: разбивку она не рисует, но список
+    // управлений после оповещения берётся уже из свежего ответа.
+    await page.reload()
+    const state = page.locator('[data-slot="allocation-state"]')
+    await expect(state).toContainText('В департамент не отправлено', { timeout: 25_000 })
     await state.getByRole('button', { name: 'Оповестить управления' }).click()
     await expect(state).toContainText('Управления оповещены', { timeout: 20_000 })
-    const first = (await state.locator('li').first().textContent()) ?? ''
-    expect(first, 'у оповещённого управления нет момента').toContain('оповещено')
+
+    // Строки ищутся ПО ИМЕНИ управления, а не по номеру: порядок задаёт
+    // сервер (`lft`), и `.first()` молча проверял бы не то управление.
+    const asked = state.locator('li').filter({ hasText: withQuota.name }).first()
+    const silent = state.locator('li').filter({ hasText: withoutQuota.name }).first()
+    const askedText = (await asked.textContent()) ?? ''
+    expect(
+      askedText,
+      `у управления «${withQuota.name}» с квотой нет момента оповещения`,
+    ).toContain('оповещено')
+    expect(
+      (await silent.textContent()) ?? '',
+      `управлению «${withoutQuota.name}» квоты не давали — момент оповещения ` +
+        'ставиться не должен (Plane №557)',
+    ).not.toContain('оповещено')
 
     // Повтор добирает неоповещённых и НЕ переписывает момент уже оповещённым.
     await state.getByRole('button', { name: 'Оповестить ещё раз' }).click()
-    await expect(state.locator('li').first()).toHaveText(first, { timeout: 20_000 })
+    await expect(asked).toHaveText(askedText, { timeout: 20_000 })
 
     // Оповещённый департамент из раскладки больше не снимается — замок
     // ставит сервер, и кнопка снятия у строки погашена.
-    await expect(card.getByRole('button', { name: 'Убрать департамент, строка 1', exact: true })).toBeDisabled()
+    await expect(
+      page.getByRole('button', { name: 'Убрать департамент, строка 1', exact: true }),
+    ).toBeDisabled()
   })
 
   test('цепочка сбора сил доходит до состава мероприятия', async ({
