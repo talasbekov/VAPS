@@ -300,3 +300,32 @@ def test_the_history_is_served_whole_including_superseded(
     ]
     assert rows[0]["supersededAt"] is not None
     assert rows[1]["supersededAt"] is None
+
+
+def test_the_api_and_the_service_answer_the_same_status_without_version_rows(
+    manager, staffed_event  # noqa: F811
+):
+    """Объект БЕЗ строк версий: API отвечает то же, что сервис (Plane №864).
+
+    ЧТО СТЕРЕГУТ ЭТИ ДВЕ ПРОВЕРКИ. Таблица версий появилась в №396/№411, и
+    бэкфилла у неё нет намеренно — история начинается «с этого момента».
+    Поэтому у объекта без строки статус ВЫВОДИТСЯ из его же полей
+    (`document_status_of`). Сериализатор считал его своим способом и в этом
+    состоянии отвечал `null`: карточка объекта показывала
+    `documentStatus: null`, а отказ `placement/assign/` по тому же объекту в
+    том же ответе — `SUBMITTED`. Два ответа на один вопрос.
+
+    🔴 КРАСНОТА НА МУТАЦИИ: верни в `api/serializers.py::_document_status`
+    собственный расчёт (`current.status if current is not None else None`) —
+    первая проверка покраснеет на `None`, вторая на расхождении с сервисом.
+    """
+    from organization_management.apps.ops import security_events as service
+
+    base, event_id, _ = staffed_event
+
+    row = manager.get(base).json()["visitObjects"][0]
+    visit = OpsSecurityEventVisitObject.objects.get(pk=row["id"])
+    assert not visit.document_versions.exists(), "проба вакуумна: строки версий уже есть"
+
+    assert row["documentStatus"] == "DRAFT"
+    assert row["documentStatus"] == service.document_status_of(visit)

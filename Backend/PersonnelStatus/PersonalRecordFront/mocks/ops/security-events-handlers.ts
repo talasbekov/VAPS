@@ -279,7 +279,11 @@ function withVersions(
       return {
         ...visit,
         documentVersions: versions,
-        documentStatus: current?.status ?? null,
+        // Пустой список версий здесь невозможен (сюда приходят только те,
+        // кому версию заводят или правят), но запас — «Черновик», а не
+        // `null`: сервер отвечает `null` только когда объекта нет вовсе
+        // (Plane №864).
+        documentStatus: current?.status ?? "DRAFT",
         documentVersion: current?.number ?? visit.documentVersion,
       };
     }),
@@ -769,8 +773,12 @@ function emptyEvent(
         approvalStale: false,
         documentVersion: 0,
         // История версий документа (`[СОГ-04]`, Plane №398): у свежего
-        // объекта версий нет — расстановка ещё не завершалась.
-        documentStatus: null,
+        // объекта версий нет — расстановка ещё не завершалась. Статус при
+        // этом НЕ `null`, а «Черновик» (Plane №864): сервер выводит его из
+        // полей объекта, потому что бэкфилла у таблицы версий нет, и мок,
+        // отвечавший `null`, врал про контракт — экран на моке шёл запасным
+        // путём, которого на живом бэке нет.
+        documentStatus: "DRAFT",
         documentVersions: [],
       },
     ],
@@ -3581,7 +3589,8 @@ export const securityEventsHandlers = [
             approvalRemarks: [],
             approvalStale: false,
             documentVersion: 0,
-            documentStatus: null,
+            // «Черновик», а не `null` — см. Plane №864 у соседнего объекта.
+            documentStatus: "DRAFT",
             documentVersions: [],
           },
         ],
