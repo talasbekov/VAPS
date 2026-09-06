@@ -209,6 +209,16 @@ def _rows():
                     "path": _readable(path),
                     "action": action,
                     "view": view_class.__name__,
+                    # 🔴 ВИД СТРОКИ НАЗВАН (Plane №902). Раньше обход шёл в
+                    # тот же список и с тем же набором полей, что и гейт, и
+                    # экран «Права» рисовал его как «право ОТКРЫВАЕТ POST
+                    # …/placement/assign/». Это неправда в другую сторону:
+                    # держатель одного `placement.command` без
+                    # `placement.manage` получит 403 — карта прав отвечает
+                    # раньше. Была ошибка «право не открывает ничего», стала
+                    # «право открывает то, чего не открывает», а по этому
+                    # экрану администратор права и раздаёт.
+                    "kind": "widens",
                 }
             code = permission_map.get(action)
             if code is None:
@@ -229,6 +239,8 @@ def _rows():
                 "path": _readable(path),
                 "action": action,
                 "view": view_class.__name__,
+                # Гейт: без этого права ручка ответит отказом.
+                "kind": "gate",
             }
 
 
@@ -247,5 +259,8 @@ def catalog(search=""):
             continue
         grouped.setdefault(row["permission"], []).append(row)
     for rows in grouped.values():
-        rows.sort(key=lambda row: (row["path"], row["method"]))
+        # Гейты идут ПЕРВЫМИ (Plane №902): экран показывает их отдельной
+        # группой, и порядок отвечает на первый вопрос администратора — «что
+        # это право вообще открывает» — раньше, чем на второй.
+        rows.sort(key=lambda row: (row.get("kind") != "gate", row["path"], row["method"]))
     return grouped

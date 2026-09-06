@@ -86,13 +86,32 @@ def test_catalog_sees_a_permission_that_widens_instead_of_closing():
 
     assert ("POST", "/api/ops/security-events/<pk>/placement/assign/") in paths
     assert ("POST", "/api/ops/security-events/<pk>/placement/<assignment_id>/move/") in paths
-    # Действие, где проверки «своё ли» нет, обходом НЕ помечается: каталог
-    # обязан называть настоящую область права, а не все соседние ручки.
-    assert not any("senior" in path for _method, path in paths)
+    # 🔴 СОСТАВ ЦЕЛИКОМ, А НЕ ОТСУТСТВИЕ ОДНОЙ ДОГАДКИ (Plane №903). Здесь
+    # стояло `assert not any("senior" in path …)` — проверка гипотезы, что в
+    # карту обходов по ошибке впишут `placement_sector_senior`. Проба не была
+    # вакуумной (такой путь существует и принадлежит `placement.manage`), но
+    # мутация «дописать в карту ПЯТОЕ действие» её не красила: список рос, а
+    # проба молчала. Пин состава краснеет на любом лишнем и любом пропавшем.
+    assert {row["action"] for row in rows} == {
+        "placement_assign",
+        "placement_unassign",
+        "placement_post_remove",
+        "placement_move",
+    }
     # И основной гейт этих же ручек остался на месте — обход его не заменяет.
     assert ("POST", "/api/ops/security-events/<pk>/placement/assign/") in {
         (row["method"], row["path"]) for row in catalog()["placement.manage"]
     }
+    # 🔴 ВИД СТРОКИ НАЗВАН (Plane №902). Без него экран «Права» рисовал обход
+    # как «право ОТКРЫВАЕТ эту ручку» — неправда в опасную сторону: держатель
+    # одного `placement.command` получит 403, потому что карта прав отвечает
+    # раньше. Администратор раздаёт права именно по этому экрану.
+    assert {row["kind"] for row in rows} == {"widens"}
+    assert {
+        row["kind"]
+        for row in catalog()["placement.manage"]
+        if row["path"].endswith("/placement/assign/")
+    } == {"gate"}
 
 
 def test_catalog_resolves_a_permission_code_given_by_a_constant():

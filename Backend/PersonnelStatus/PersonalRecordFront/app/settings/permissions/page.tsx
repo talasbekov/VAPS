@@ -377,26 +377,76 @@ function PermissionDetails({
               пока ничего не открывает.
             </p>
           ) : (
-            <ul className="space-y-1.5">
-              {catalogEntry.functions.map((fn) => (
-                <li
-                  key={`${fn.method} ${fn.path} ${fn.action}`}
-                  className="flex flex-wrap items-baseline gap-2 rounded-[8px] border px-2.5 py-1.5"
-                >
-                  <span
-                    className={`inline-flex whitespace-nowrap rounded-full px-[7px] py-0.5 font-mono text-[10.5px] font-bold ${accessMethodTone(fn.method)}`}
-                  >
-                    {fn.method}
-                  </span>
-                  <span className="font-mono text-[11.5px] break-all">
-                    {fn.path}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {fn.action}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            /* 🔴 ДВА ВИДА СТРОК РАЗВЕДЕНЫ ГРУППАМИ (Plane №902). Раньше место,
+               где право лишь СНИМАЕТ ограничение внутри чужой ручки, стояло в
+               одном списке с местами, которые оно открывает, — и читалось как
+               второе. Это неправда в опасную сторону: держатель одного такого
+               права всё равно получит отказ, потому что ручку закрывает
+               другое, а администратор раздаёт права именно по этому экрану.
+
+               ГРУППЫ, А НЕ ПОМЕТКА У КАЖДОЙ СТРОКИ: строк у права бывает до
+               пары десятков, и значок в каждой превратил бы список в
+               пестроту. Различие несут ЗАГОЛОВОК и пояснение под ним —
+               словами, а не цветом (правило скилла «не цветом одним»).
+
+               Строка без `kind` — ответ сервера, снятого до этой правки:
+               считается гейтом, то есть ведёт себя как раньше. */
+            <div className="space-y-3">
+              {(
+                [
+                  {
+                    kind: "gate" as const,
+                    title: "Открывает",
+                    note: null,
+                  },
+                  {
+                    kind: "widens" as const,
+                    title: "Снимает ограничение внутри",
+                    note:
+                      "Ручку открывает другое право — с одним этим будет отказ.",
+                  },
+                ]
+              ).map((group) => {
+                const rows = catalogEntry.functions.filter((fn) =>
+                  group.kind === "gate"
+                    ? (fn.kind ?? "gate") === "gate"
+                    : fn.kind === "widens"
+                );
+                if (rows.length === 0) return null;
+                return (
+                  <div key={group.kind} data-slot={`access-group-${group.kind}`}>
+                    <p className="mb-1 text-[12px] font-semibold">
+                      {group.title}
+                    </p>
+                    {group.note !== null && (
+                      <p className="mb-1.5 text-[11.5px] text-muted-foreground">
+                        {group.note}
+                      </p>
+                    )}
+                    <ul className="space-y-1.5">
+                      {rows.map((fn) => (
+                        <li
+                          key={`${fn.method} ${fn.path} ${fn.action}`}
+                          className="flex flex-wrap items-baseline gap-2 rounded-[8px] border px-2.5 py-1.5"
+                        >
+                          <span
+                            className={`inline-flex whitespace-nowrap rounded-full px-[7px] py-0.5 font-mono text-[10.5px] font-bold ${accessMethodTone(fn.method)}`}
+                          >
+                            {fn.method}
+                          </span>
+                          <span className="font-mono text-[11.5px] break-all">
+                            {fn.path}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {fn.action}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </CardContent>

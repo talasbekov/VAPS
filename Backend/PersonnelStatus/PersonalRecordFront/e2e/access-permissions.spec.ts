@@ -73,6 +73,31 @@ test.describe(LIVE ? 'права в настройках' : 'права в на�
       page.getByText('/api/operations/user-roles/', { exact: false }).first(),
     ).toBeVisible()
 
+    // 🔴 ДВА ВИДА СТРОК РАЗВЕДЕНЫ, И ЭТО СКАЗАНО СЛОВАМИ (Plane №902). У
+    // `placement.command` есть только строки-обходы: он не открывает
+    // расстановку (её открывает `placement.manage`), а снимает внутри неё
+    // проверку «своё ли мероприятие». Пока обе группы выглядели одинаково,
+    // экран сообщал, что право ОТКРЫВАЕТ эти ручки, — и администратор,
+    // раздающий права по этому экрану, выдавал одно вместо двух.
+    await page.getByLabel('Поиск по справочнику прав').fill('placement.command')
+    await page.getByRole('button', { name: 'placement.command' }).click()
+    const widens = page.locator('[data-slot="access-group-widens"]')
+    await expect(widens).toBeVisible({ timeout: 15_000 })
+    await expect(widens).toContainText('Снимает ограничение внутри')
+    await expect(
+      widens,
+      'экран не предупреждает, что с одним этим правом будет отказ',
+    ).toContainText('Ручку открывает другое право')
+    // У права-обхода группы «Открывает» нет вовсе: она рисуется, только когда
+    // есть что открывать.
+    await expect(page.locator('[data-slot="access-group-gate"]')).toHaveCount(0)
+
+    // А у права-гейта — наоборот: группа «Открывает» есть, группы обходов нет.
+    await page.getByLabel('Поиск по справочнику прав').fill('admin.roles')
+    await page.getByRole('button', { name: 'admin.roles' }).click()
+    await expect(page.locator('[data-slot="access-group-gate"]')).toBeVisible()
+    await expect(page.locator('[data-slot="access-group-widens"]')).toHaveCount(0)
+
     await page.screenshot({
       path: 'smoke-results/access-permissions.png',
       fullPage: true,

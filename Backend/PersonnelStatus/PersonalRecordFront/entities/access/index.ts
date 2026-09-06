@@ -166,6 +166,18 @@ export interface ListAccessPermissionsResponse {
   results: AccessPermission[];
 }
 
+/**
+ * Как право участвует в этой ручке (Plane №902).
+ *
+ * `gate` — ручку ОТКРЫВАЕТ оно: без права будет отказ.
+ * `widens` — ручку открывает ДРУГОЕ право, а это снимает ограничение внутри
+ * (показывает больше строк, снимает проверку «своё ли мероприятие»).
+ * Держатель только такого права всё равно получит отказ — и об этом экран
+ * обязан сказать словами, иначе администратор раздаёт права шире, чем
+ * собирался.
+ */
+export type AccessFunctionKind = "gate" | "widens";
+
 /** Одно место применения права: метод, адрес, действие вьюсета. */
 export interface AccessFunction {
   permission: string;
@@ -173,6 +185,9 @@ export interface AccessFunction {
   path: string;
   action: string;
   view: string;
+  /** Необязательное: ответы, снятые до №902, поля не несут — читатель
+   *  считает такую строку гейтом, как читал её раньше. */
+  kind?: AccessFunctionKind;
 }
 
 export interface AccessCatalogEntry {
