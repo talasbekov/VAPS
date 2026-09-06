@@ -45,6 +45,15 @@ ROOT = pathlib.Path(__file__).resolve().parents[4]
 APPS = ROOT / "organization_management" / "apps"
 SETTINGS = ROOT / "organization_management" / "config" / "settings"
 
+#: Файлы БОЕВЫХ контуров: только их значения обязаны быть в `base.txt`.
+#: Остальные (`sqlite.py`, `test.py`, `local_postgres.py`) — контуры
+#: разработки, и требовать от них `base.txt` значило бы гнать разработчика в
+#: тот самый дефект, который проба и предотвращает: первое же
+#: `debug_toolbar` в `sqlite.py` пришлось бы либо объявлять в боевых
+#: зависимостях, либо вписывать в храповик (найдено ревью, задача №825; до
+#: этого под `base.txt` сверялись ВСЕ пять файлов).
+PRODUCTION_SETTINGS = frozenset({"base.py", "production.py"})
+
 #: Настройки-СПИСКИ, все значения которых — пути к модулям поставки.
 #: Перечислены поимённо, а не «все строки настроек подряд»: в `DATABASES`
 #: рядом с `ENGINE` лежит `NAME` со значением `db.sqlite3`, которое под форму
@@ -61,11 +70,24 @@ DOTTED_PATH_SETTINGS = frozenset({
     "ROOT_URLCONF",
 })
 
+#: Хвосты имён настроек, чьё значение — тоже путь к модулю поставки.
+#: Список поимённых настроек рос бы вручную и отставал: замерено ревью
+#: (задача №825), что мимо него проходили `EMAIL_BACKEND`, `SESSION_ENGINE`,
+#: `STATICFILES_STORAGE` — все боевые ровно так же, как `CHANNEL_LAYERS`.
+#: Правило по хвосту растёт само.
+DOTTED_PATH_SUFFIXES = re.compile(
+    r"(_BACKEND|_BACKENDS|_ENGINE|_STORAGE|_STORAGES|_CLASS|_CLASSES)$"
+)
+
 #: Ключи ВНУТРИ словарей настроек, чьё значение — путь к модулю поставки:
 #: `CACHES`/`CHANNEL_LAYERS`/`TEMPLATES` → `BACKEND`, `DATABASES` → `ENGINE`.
 #: Ищутся в любом словаре на любой глубине: у `CACHES` это второй уровень, у
 #: `TEMPLATES` — элемент списка.
-DOTTED_PATH_KEYS = frozenset({"BACKEND", "ENGINE"})
+#: `class` — строчными: так называется ключ обработчика в `LOGGING`.
+#: `NAME` сюда НЕ добавлен намеренно: в `AUTH_PASSWORD_VALIDATORS` он путь к
+#: модулю, а в `DATABASES` — имя файла `db.sqlite3`, и различить их по ключу
+#: нечем. Правило «`NAME` — это путь» дало бы ложную красноту на sqlite.
+DOTTED_PATH_KEYS = frozenset({"BACKEND", "ENGINE", "class"})
 
 #: Форма пути к модулю: сегменты-идентификаторы, точки необязательны.
 #: 🔴 БЕЗ ТОЧКИ — ТОЖЕ ПАКЕТ, И ИМЕННО ТАКИЕ СТРОКИ ОПАСНЕЕ ВСЕГО. В
@@ -168,6 +190,102 @@ def _undeclared_imports():
     return found
 
 
+def _is_settings_name(name):
+    """Настройка, чьи строки — пути к модулям: поимённо или по хвосту имени."""
+    return name in DOTTED_PATH_SETTINGS or DOTTED_PATH_SUFFIXES.search(name) is not None
+
+
+def _env_lookup(func):
+    """`os.getenv(...)` или `os.environ.get(...)` — и ничто другое."""
+    if isinstance(func, ast.Attribute) and func.attr == "getenv":
+        return True
+    if isinstance(func, ast.Attribute) and func.attr == "get":
+        value = func.value
+        return isinstance(value, ast.Attribute) and value.attr == "environ"
+    return False
+
+
+def _string_constants(node):
+    """Строковые ЗНАЧЕНИЯ настройки — без аргументов вызовов.
+
+    🔴 ЗАЧЕМ РАЗБОР ПО УЗЛАМ, А НЕ `ast.walk` (найдено ревью, задача №825).
+    Прежняя версия забирала любую строку из поддерева, включая ПЕРВЫЙ аргумент
+    `os.getenv` — имя переменной окружения. Замерено:
+    `{"BACKEND": os.getenv("CACHE_BACKEND", "django_redis.cache.RedisCache")}`
+    давало `{"CACHE_BACKEND", "django_redis.cache.RedisCache"}`, и
+    `CACHE_BACKEND` становился «нарушителем»: пакета с таким именем не
+    существует, дистрибутива нет, — сторож краснел бы на ВЫДУМАННОМ имени при
+    совершенно правильной правке. В `production.py` через `os.getenv`
+    параметризованы уже все значения `DATABASES`.
+
+    От вызова берётся ТОЛЬКО значение по умолчанию у чтения окружения; от
+    любого другого вызова — ничего: молчать честнее, чем гадать.
+    """
+    if isinstance(node, ast.Constant):
+        return {node.value} if isinstance(node.value, str) else set()
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        found = set()
+        for element in node.elts:
+            found |= _string_constants(element)
+        return found
+    if isinstance(node, ast.Dict):
+        found = set()
+        for key, value in zip(node.keys, node.values):
+            if isinstance(key, ast.Constant) and key.value in DOTTED_PATH_KEYS:
+                found |= _string_constants(value)
+        return found
+    if isinstance(node, ast.BinOp):
+        return _string_constants(node.left) | _string_constants(node.right)
+    if isinstance(node, ast.IfExp):
+        return _string_constants(node.body) | _string_constants(node.orelse)
+    if isinstance(node, ast.Call):
+        if _env_lookup(node.func) and len(node.args) >= 2:
+            return _string_constants(node.args[1])
+        return set()
+    return set()
+
+
+def _paths_in_source(source, filename="<строка>"):
+    """Точечные пути, названные строками в тексте файла настроек.
+
+    🔴 РАЗБИРАЮТСЯ ТРИ ФОРМЫ, А НЕ ОДНА (найдено ревью, задача №825). Прежняя
+    версия знала только присваивание. Замерено, что мимо неё проходили
+    `INSTALLED_APPS += ["debug_toolbar"]` и
+    `MIDDLEWARE.insert(0, "whitenoise.middleware.WhiteNoiseMiddleware")` —
+    а наслоение через `+=` и `.insert()` есть обычная форма `production.py`,
+    который надстраивается над `base.py`, и этот файл именно такой. Пакет,
+    введённый так, сторож не видел ВОВСЕ: его собственный отказ.
+    """
+    tree = ast.parse(source, filename=filename)
+    strings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and _is_settings_name(target.id)
+            for target in node.targets
+        ):
+            strings |= _string_constants(node.value)
+        elif (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and _is_settings_name(node.target.id)
+        ):
+            strings |= _string_constants(node.value)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"insert", "append", "extend"}
+            and isinstance(node.func.value, ast.Name)
+            and _is_settings_name(node.func.value.id)
+        ):
+            for argument in node.args:
+                strings |= _string_constants(argument)
+        elif isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if isinstance(key, ast.Constant) and key.value in DOTTED_PATH_KEYS:
+                    strings |= _string_constants(value)
+    return {text for text in strings if DOTTED_PATH.match(text)}
+
+
 def _module_paths_named_in_settings():
     """Пары «файл настроек → точечный путь», названные строкой.
 
@@ -179,60 +297,59 @@ def _module_paths_named_in_settings():
     """
     found = set()
     for source in sorted(SETTINGS.glob("*.py")):
-        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
-        strings = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and any(
-                isinstance(target, ast.Name) and target.id in DOTTED_PATH_SETTINGS
-                for target in node.targets
-            ):
-                strings |= _string_constants(node.value)
-            if isinstance(node, ast.Dict):
-                for key, value in zip(node.keys, node.values):
-                    if isinstance(key, ast.Constant) and key.value in DOTTED_PATH_KEYS:
-                        strings |= _string_constants(value)
-        for text in strings:
-            if DOTTED_PATH.match(text):
-                found.add((source.relative_to(ROOT), text))
+        text = source.read_text(encoding="utf-8")
+        for dotted in _paths_in_source(text, filename=str(source)):
+            found.add((source.relative_to(ROOT), dotted))
     return found
 
 
-def _string_constants(node):
-    return {
-        inner.value
-        for inner in ast.walk(node)
-        if isinstance(inner, ast.Constant) and isinstance(inner.value, str)
-    }
-
-
 def _undeclared_in_settings():
-    """Модули верхнего уровня из настроек, не объявленные в `base.txt`.
+    """Модули из настроек, не объявленные там, где положено: модуль → места.
 
     ПРАВИЛО МЯГЧЕ, ЧЕМ У ИМПОРТОВ, И НАМЕРЕННО. Пакет, названный строкой, может
     быть объявлен и при этом не установлен в этом окружении — тогда
     `packages_distributions` о нём не знает вовсе, и сопоставить модуль с
     дистрибутивом нечем. В таком случае имя модуля сравнивается с объявленными
-    напрямую (PEP 503: `django_redis` ↔ `django-redis`). Иначе проба нашла бы
-    `django_redis`, объявленный в `base.txt` и просто не поставленный здесь, —
-    то есть повторила бы находку соседней карточки №790 и краснела бы не о
-    своём предмете.
+    напрямую. Иначе проба нашла бы `django_redis`, объявленный в `base.txt` и
+    просто не поставленный здесь, — то есть повторила бы находку соседней
+    карточки №790 и краснела бы не о своём предмете.
+
+    🔴 У ЭТОГО СМЯГЧЕНИЯ ЕСТЬ ЦЕНА, И ОНА НАЗВАНА (ревью, задача №825).
+    Совпадение «имя модуля = имя дистрибутива с дефисами» верно лишь для части
+    пакетов: `channels_redis` ↔ `channels-redis` и `django_redis` ↔
+    `django-redis` — да, но `corsheaders` ставится `django-cors-headers`,
+    `mptt` — `django-mptt`, `rest_framework` — `djangorestframework`. Любой из
+    них, объявленный правильно и НЕ УСТАНОВЛЕННЫЙ, пройдёт мимо мягкого
+    правила и будет назван нарушителем. Поэтому имя сверяется в двух видах —
+    как есть и с приставкой `django-`, — а остаток случаев остаётся известной
+    границей: сторож здесь может ошибиться в сторону лишней красноты, но не в
+    сторону молчания.
+
+    🔴 БОЕВЫЕ КОНТУРЫ СВЕРЯЮТСЯ С `base.txt`, ОСТАЛЬНЫЕ — С `development.txt`
+    (ревью, задача №825). Требовать `base.txt` от `sqlite.py` и `test.py`
+    значило бы толкать разработчика объявить инструмент разработки в боевых
+    зависимостях — ровно тот дефект, ради которого проба и написана.
     """
     base = _declared(ROOT / "requirements" / "base.txt")
     assert "django" in base, "предусловие: base.txt разобран"
+    development = base | _declared(ROOT / "requirements" / "development.txt")
     distributions_of = packages_distributions()
 
-    found = set()
+    found = {}
     for path, dotted in sorted(_module_paths_named_in_settings()):
         module = dotted.split(".", 1)[0]
         if module in sys.stdlib_module_names or module == "organization_management":
             continue
+        allowed = base if path.name in PRODUCTION_SETTINGS else development
         owners = {name.lower().replace("_", "-") for name in distributions_of.get(module, [])}
         if owners:
-            if owners & base:
+            if owners & allowed:
                 continue
-        elif module.lower().replace("_", "-") in base:
-            continue
-        found.add(module)
+        else:
+            bare = module.lower().replace("_", "-")
+            if bare in allowed or f"django-{bare}" in allowed:
+                continue
+        found.setdefault(module, set()).add(f"{path} → {dotted}")
     return found
 
 
@@ -246,19 +363,25 @@ def test_settings_name_only_packages_that_base_requirements_declare():
     Мутация, на которой проба обязана краснеть: вписать в `CACHES` `BACKEND`
     несуществующий пакет.
     """
-    offenders = sorted(_undeclared_in_settings() - KNOWN_UNDECLARED_IN_SETTINGS)
+    places = _undeclared_in_settings()
+    offenders = sorted(set(places) - KNOWN_UNDECLARED_IN_SETTINGS)
 
+    # 🔴 В СООБЩЕНИИ — ФАЙЛ И ПОЛНЫЙ ПУТЬ, а не голое имя модуля (ревью,
+    #    задача №825). Проба импортов рядом печатает «файл → модуль», а эта
+    #    печатала `channels_redis` без единой подсказки, где искать.
     assert offenders == [], (
         "настройки называют пакеты, не объявленные в requirements/base.txt — "
         "в бою Django поднимает их по строке и не стартует вовсе:\n  "
-        + "\n  ".join(offenders)
+        + "\n  ".join(
+            f"{module}: " + "; ".join(sorted(places[module])) for module in offenders
+        )
     )
 
 
 def test_the_settings_debt_list_does_not_rot():
     """Храповик настроек не переживает починку — по тому же доводу, что и
     храповик импортов: мёртвая строка тихо ослабляет пробу."""
-    stale = sorted(KNOWN_UNDECLARED_IN_SETTINGS - _undeclared_in_settings())
+    stale = sorted(KNOWN_UNDECLARED_IN_SETTINGS - set(_undeclared_in_settings()))
     assert stale == [], (
         "в списке известного долга настроек остались строки, которые больше не "
         "нарушения (пакет объявлен или строка снята из настроек) — уберите "
@@ -344,3 +467,76 @@ def test_the_pinned_file_pins_everything_base_requires():
         "requirements.txt — сборка по пину не поставит их вовсе:\n  "
         + "\n  ".join(missing)
     )
+
+
+def test_the_scan_sees_the_two_shapes_it_used_to_miss():
+    """🔴 ДВЕ ФОРМЫ, МИМО КОТОРЫХ СТОРОЖ ПРОХОДИЛ МОЛЧА (ревью, задача №825).
+
+    Обе — обычная запись `production.py`, который надстраивается над `base.py`.
+    Проба разбирает СИНТЕТИЧЕСКИЙ текст, а не живые настройки: живой файл
+    завтра изменят, и вместе с ним тихо изменится предмет проверки.
+    """
+    augmented = _paths_in_source("INSTALLED_APPS += ['debug_toolbar']\n")
+    assert "debug_toolbar" in augmented, augmented
+
+    inserted = _paths_in_source(
+        "MIDDLEWARE.insert(0, 'whitenoise.middleware.WhiteNoiseMiddleware')\n"
+    )
+    assert "whitenoise.middleware.WhiteNoiseMiddleware" in inserted, inserted
+
+    appended = _paths_in_source("AUTHENTICATION_BACKENDS.append('axes.backends.AxesBackend')\n")
+    assert "axes.backends.AxesBackend" in appended, appended
+
+
+def test_the_scan_does_not_invent_packages_out_of_env_variable_names():
+    """🔴 ЛОЖНАЯ КРАСНОТА НА ВЫДУМАННОМ ИМЕНИ (ревью, задача №825).
+
+    Значение, параметризованное через окружение, — правильная правка, и
+    сторож обязан промолчать о ней. Прежний разбор забирал ПЕРВЫЙ аргумент
+    `os.getenv` (имя переменной окружения) и объявлял его пакетом: такого
+    пакета не существует, дистрибутива нет — красная проба на ровном месте.
+    """
+    parametrized = _paths_in_source(
+        "CACHES = {'default': {'BACKEND': os.getenv('CACHE_BACKEND', "
+        "'django_redis.cache.RedisCache')}}\n"
+    )
+    assert "django_redis.cache.RedisCache" in parametrized, parametrized
+    assert "CACHE_BACKEND" not in parametrized, parametrized
+
+    through_environ = _paths_in_source(
+        "SESSION_ENGINE = os.environ.get('SESSION_ENGINE_PATH', 'redis_sessions.session')\n"
+    )
+    assert "redis_sessions.session" in through_environ, through_environ
+    assert "SESSION_ENGINE_PATH" not in through_environ, through_environ
+
+
+def test_the_scan_does_not_take_a_database_file_name_for_a_package():
+    """`NAME` в `DATABASES` — имя файла, а не путь к модулю.
+
+    Ловушка названа в самой карточке №805: `db.sqlite3` подходит под форму
+    точечного пути идеально. Держится она тем, что `NAME` не входит в список
+    ключей, — и держаться обязана пробой, а не памятью.
+    """
+    databases = _paths_in_source(
+        "DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', "
+        "'NAME': 'db.sqlite3'}}\n"
+    )
+    assert "django.db.backends.sqlite3" in databases, databases
+    assert "db.sqlite3" not in databases, databases
+
+
+def test_the_scan_reads_settings_named_by_their_suffix():
+    """Список поимённых настроек рос бы руками и отставал.
+
+    Замерено ревью (задача №825): мимо него проходили `EMAIL_BACKEND`,
+    `SESSION_ENGINE`, `STATICFILES_STORAGE` — все боевые ровно так же, как
+    `CHANNEL_LAYERS`, и любой из них поднимает пакет по строке.
+    """
+    for line, expected in (
+        ("EMAIL_BACKEND = 'anymail.backends.mailgun.EmailBackend'", "anymail.backends.mailgun.EmailBackend"),
+        ("SESSION_ENGINE = 'redis_sessions.session'", "redis_sessions.session"),
+        ("STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'",
+         "whitenoise.storage.CompressedManifestStaticFilesStorage"),
+    ):
+        seen = _paths_in_source(line + "\n")
+        assert expected in seen, (line, seen)
