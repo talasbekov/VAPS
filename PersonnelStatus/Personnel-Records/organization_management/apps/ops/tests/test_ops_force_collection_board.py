@@ -635,3 +635,55 @@ def test_the_urgency_threshold_is_read_once_per_listing(manager, hq):  # noqa: F
         + "; ".join(q["sql"][:120] for q in settings_reads)
     )
 
+
+
+def test_headquarters_notification_goes_by_permission_not_by_role_name(
+    manager, hq  # noqa: F811
+):
+    """🔴 УВЕДОМЛЕНИЕ ШЛА РОЛИ, А ЦЕЛЬ ЗАКРЫТА ПРАВОМ (Plane №779, решение
+    заказчика 06.09.2026; найдено ревью №825).
+
+    Круг получателей брался по имени роли `HEAD_OPS_UNIT`, а обе ручки сбора
+    закрыты правом `forces.command`, которого у этой роли в боевом профиле НЕТ
+    намеренно (матрица заказчика №348 против спецификации `[СБС-10]`,
+    расхождение вынесено карточкой №421). Расхождение было полным: кто получал
+    уведомление — не мог открыть цель; кто мог открыть — уведомления не
+    получал. Пока у уведомления не было ссылки, это было незаметно; №779
+    ссылку добавила, и «обещания нет» стало «обещание сломано».
+
+    Проба различает роль и право прямо: носитель ДРУГОЙ роли с `forces.command`
+    уведомление получает, а носитель `HEAD_OPS_UNIT` без этого права — нет.
+    """
+    from organization_management.apps.operations.tests.test_bulk_status_api import (
+        client_for as make_client,
+    )
+
+    # Другая роль, но с правом — обязан получить.
+    _, gatherer = make_client(
+        "forces-gatherer-779", "FORCES_GATHERING_OFFICER_779",
+        perms=("forces.command", "event.view"),
+    )
+    # Имя роли похоже на прежний адрес, но права нет — не обязан.
+    _, nameless = make_client(
+        "hq-without-right-779", "HEAD_OPS_UNIT_NO_RIGHT", perms=("event.view",),
+    )
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    service.respond_allocation(
+        _event_id(base), allocation_id, allocating=2, comment="", actor="user:dep"
+    )
+
+    def notified(user):
+        return OpsNotification.objects.filter(
+            kind="FORCES_RESPONSE", recipient=str(user.pk)
+        ).exists()
+
+    assert notified(gatherer), (
+        "носитель `forces.command` не получил уведомление — ссылка вести некуда"
+    )
+    assert not notified(nameless), (
+        "уведомление ушло тому, кто цель открыть не может"
+    )

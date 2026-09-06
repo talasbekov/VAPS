@@ -126,6 +126,48 @@ function eventForceTotals(event: SecurityEvent): {
  * сужается правами, поиском и фильтром. Без этой строки человек видел бы
  * «осталось 10» рядом со списком из семи и не знал бы, кому верить.
  */
+/**
+ * Вкладка, закрытая правом, — СЛОВАМИ, а не вечным скелетом (Plane №779,
+ * найдено ревью №825).
+ *
+ * Кнопка вкладки гейтится правом, а её содержимое рисуется Radix-ом по
+ * совпадению значения — то есть, с переездом вкладки в адрес (№779), по URL.
+ * Прямая ссылка открывала содержимое у того, у кого кнопки нет: запрос уходил
+ * выключенным, TanStack Query оставался в `pending`, и на экране висели
+ * пульсирующие скелет-строки, которые не сменятся никогда.
+ *
+ * Заголовок — тот же, что у закрытого экрана раздела (`OpsAccessDenied`,
+ * `[РЕЕ-09]`): человек, пришедший по ссылке из уведомления, читает то же
+ * слово, что и везде. Строка под ним — причина из `chain-access`: она
+ * называет, ЧЬЁ это действие, а не «недостаточно прав», и потому отвечает на
+ * вопрос «к кому идти».
+ */
+/** Значения вкладок экрана — ровно те, что есть у `TabsContent` (Plane №779). */
+const KNOWN_TABS = [
+  "table",
+  "collections",
+  "requests",
+  "assigned",
+  "in-service",
+  "cards",
+  "profile",
+];
+
+function ClosedByRight({ reason }: { reason: string }) {
+  return (
+    <Card>
+      <CardContent className="p-9 text-center">
+        <p className="text-base font-semibold" role="heading" aria-level={2}>
+          Доступ закрыт
+        </p>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {reason || "Действие закрыто правом"}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ScopeNotice({ shown, total }: { shown: number; total: number }) {
   if (total === 0) return null;
   if (shown === total) {
@@ -239,6 +281,12 @@ function EmployeesScreen() {
       // Смена отбора возвращает на первую страницу: остаться на седьмой при
       // новом поиске значит показать пустоту там, где результаты есть.
       if (key !== "page") next.delete("page");
+      // 🔴 ОТКРЫТЫЙ СБОР ПРИНАДЛЕЖИТ СВОЕЙ ВКЛАДКЕ (найдено ревью №825 по
+      // задаче №779). `?collection=` переживал смену вкладки и вида: уйдя на
+      // «Заявки» и вернувшись на «Сборы», человек снова попадал в карточку
+      // вместо списка, а ссылка, отправленная со словами «вот список сборов»,
+      // открывала коллеге чужой сбор. Тем же правилом, что и `page`.
+      if (key === "tab" || key === "view") next.delete("collection");
       const query = next.toString();
       router.replace(query === "" ? pathname : `${pathname}?${query}`, {
         scroll: false,
@@ -265,7 +313,21 @@ function EmployeesScreen() {
   //
   // Умолчание в адрес не пишется — тем же правилом, что у отбора выше:
   // ссылка на нетронутый экран остаётся чистой.
-  const activeTab = searchParams.get("tab") ?? "table";
+  // 🔴 АДРЕС ЧИНИТСЯ, А НЕ ДОВЕРЯЕТСЯ (найдено ревью №825 по задаче №779).
+  // Вкладка переехала в URL, а `TabsContent` рисуется Radix-ом по совпадению
+  // значения — то есть теперь по адресу. Неизвестное значение (`?tab=zzz`,
+  // чужая ссылка, опечатка) не совпадало ни с одним `TabsContent`, и человек
+  // получал пустую область под шапкой вкладок без единого слова о том, что
+  // произошло. Неизвестное сводится к «Списку сотрудников» — экрану, который
+  // раздел показывает по умолчанию.
+  //
+  // ⚠️ СПИСОК ВЕДЁТСЯ РУКАМИ И ОБЯЗАН СОВПАДАТЬ С `TabsContent` НИЖЕ. Забытое
+  // значение не даёт ошибки — оно тихо уводит человека на «Список
+  // сотрудников», то есть ломает ровно ту ссылку, ради которой вкладка и
+  // переехала в адрес. Первый же заход это и показал: в списке не оказалось
+  // `in-service` и `cards`, и обе вкладки открывались бы «списком».
+  const tabParam = searchParams.get("tab") ?? "table";
+  const activeTab = KNOWN_TABS.includes(tabParam) ? tabParam : "table";
   const setActiveTab = useCallback(
     (value: string) => setFilter("tab", value, "table"),
     [setFilter]
@@ -1090,12 +1152,32 @@ function EmployeesScreen() {
           </>
           )}
 
+          {/* 🔴 СОДЕРЖИМОЕ ГЕЙТИТСЯ ТЕМ ЖЕ ПРАВОМ, ЧТО И КНОПКА ВКЛАДКИ
+              (найдено ревью №825 по задаче №779). Триггер завёрнут в
+              `chainAccess.can(...)`, а содержимое — нет; пока вкладка жила в
+              `useState`, состояние «collections» было недостижимо без нажатия
+              на кнопку, которой у бесправного нет. С переездом в адрес оно
+              стало достижимо ссылкой, и `enabled={false}` давал не отказ, а
+              ВЕЧНЫЙ СКЕЛЕТ: у выключенного запроса TanStack Query остаётся в
+              `pending`, и три пульсирующие строки висели без объяснения.
+
+              Причина говорится словами и теми же, что у выключенных кнопок
+              раздела (`chain-access.ts`): человеку нужно знать, ЧЬЁ это
+              действие, а не «недостаточно прав». */}
           <TabsContent value="collections" className="space-y-6">
-            <ForceCollectionsTable enabled={chainAccess.can(FORCES_COMMAND)} />
+            {chainAccess.can(FORCES_COMMAND) ? (
+              <ForceCollectionsTable enabled />
+            ) : (
+              <ClosedByRight reason={chainAccess.reason(FORCES_COMMAND)} />
+            )}
           </TabsContent>
 
           <TabsContent value="requests" className="space-y-6">
-            <DepartmentRequestsTable enabled={chainAccess.can(FORCES_ALLOCATE)} />
+            {chainAccess.can(FORCES_ALLOCATE) ? (
+              <DepartmentRequestsTable enabled />
+            ) : (
+              <ClosedByRight reason={chainAccess.reason(FORCES_ALLOCATE)} />
+            )}
           </TabsContent>
 
           <TabsContent value="table" className="space-y-6">

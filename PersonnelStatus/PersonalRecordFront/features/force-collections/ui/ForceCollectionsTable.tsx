@@ -86,7 +86,12 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
    * после трёх сборов обязано вернуть туда, откуда пришли, а не пройти их в
    * обратном порядке. То же решение, что у выбора объекта посещения (№388).
    */
-  const opened = searchParams.get("collection");
+  //
+  // 🔴 ПУСТОЕ ЗНАЧЕНИЕ — ЭТО «НЕ ОТКРЫТО» (найдено ревью №825). `?collection=`
+  // (без значения) даёт `""`, а не `null`: проверка `opened !== null` его
+  // пропускала, карточка монтировалась с пустым `eventId` и просила у сервера
+  // `…/forces/collection//`.
+  const opened = searchParams.get("collection") || null;
   const setOpened = useCallback(
     (value: string | null) => {
       const next = new URLSearchParams(searchParams);
@@ -101,7 +106,18 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
   );
 
   if (opened !== null) {
-    return <ForceCollectionCard eventId={opened} onBack={() => setOpened(null)} />;
+    // `enabled` доезжает и до карточки (найдено ревью №825): раньше её можно
+    // было открыть только нажатием по строке загруженного списка, то есть
+    // выключённый список молчал за обоих. С переездом в адрес карточка
+    // открывается прямой ссылкой, и без этой передачи она уходила на сервер
+    // в обход собственного гарда экрана.
+    return (
+      <ForceCollectionCard
+        eventId={opened}
+        enabled={enabled}
+        onBack={() => setOpened(null)}
+      />
+    );
   }
 
   return (
