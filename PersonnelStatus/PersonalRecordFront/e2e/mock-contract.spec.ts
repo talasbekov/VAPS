@@ -1983,5 +1983,160 @@ test.describe(
       expect(refusal.body?.message).toContain('Объект закрыт')
       expect(refusal.body?.details?.closed).toBe(true)
     })
+
+    test('мок рекогносцировки живёт по правилам сервера (Plane №877)', async ({
+      page,
+    }) => {
+      // 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Мок отстал от сервера на ТРИ снятых правила, и не
+      // заметил этого никто: про рекогносцировку эта спека не проверяла
+      // НИЧЕГО. Расхождение молчаливое — мок зелен там, где живой стек
+      // отвечает иначе, то есть перестаёт быть проверкой контракта.
+      //
+      // №538 — явное состояние побеждает: экран мержит патч на существующий
+      //   пункт, и вместе со `state: "UNCHECKED"` наверх уезжают
+      //   унаследованные `done: true` / `result: "MATCHES"`. Оговорка «верим
+      //   старым ключам» переписывала состояние обратно, и кнопка «Не
+      //   проверено» не действовала вовсе.
+      // №541 — обязательность берётся у ШАБЛОНА, а не из тела: признак,
+      //   который клиент может выключить прислав `required: false`, снимал
+      //   правило `[РЕК-07]` целиком.
+      // №634/№862 — состав расчёта у ЕДИНСТВЕННОГО объекта включает
+      //   неразмеченные строки, и такой объект без старшего правку постов
+      //   отбивает.
+      //
+      // ЧЕГО ЗДЕСЬ НЕТ И ПОЧЕМУ. Вторая половина №634 — «соседний объект без
+      // старшего не запирает чужую правку» — требует объекта, который НЕ
+      // имеет старшего, но ВЛАДЕЕТ строкой поста. Через API мока это
+      // состояние недостижимо: снятия старшего объекта мок не обслуживает
+      // вовсе, а строку чужому объекту не завести, не пройдя тот же гард.
+      // Написать проверку, которая этого не проверяет, было бы хуже её
+      // отсутствия, поэтому здесь закреплена достижимая половина правила.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      // Запрос идёт ИЗ СТРАНИЦЫ: перехватывает мок service worker.
+      await page.goto(`${MOCK_APP}/security-ops/events/`)
+      await expect(
+        page.getByRole('heading', { name: 'Реестр ОМ' })
+      ).toBeVisible({ timeout: 30_000 })
+
+      const result = await page.evaluate(async () => {
+        const post = (url: string, body: unknown) =>
+          fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+        const seed = await (
+          await fetch('/api/ops/security-events/se-1/')
+        ).json()
+        const objectId =
+          seed.objectId ?? seed.visitObjects?.[0]?.objectId ?? ''
+        // ОМ заводится БЕЗ старшего объекта — это и делает объект чиновным
+        // предметом третьей проверки.
+        const createRes = await post('/api/ops/security-events/', {
+          title: `Мок рекогносцировки ${Date.now()}`,
+          kind: 'INTERNAL',
+          businessDate: '2026-09-20',
+          businessDateEnd: '2026-09-20',
+          objectId,
+          protectedPersonIds: [],
+        })
+        const created = await createRes.json()
+        if (createRes.status >= 400) {
+          return { createStatus: createRes.status, created }
+        }
+        const id = created.id
+        const patch = (body: unknown) =>
+          fetch(`/api/ops/security-events/${id}/recon/`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+
+        // ── №538 и №541: чек-лист, посты НЕ трогаем ──────────────────────
+        const template = created.reconChecklist[0]
+        const merged = await patch({
+          checklist: [
+            {
+              ...template,
+              // Явное «Не проверено» ПОВЕРХ унаследованных ключей — ровно то,
+              // что шлёт экран, нажав «Не проверено» на отмеченном пункте.
+              state: 'UNCHECKED',
+              done: true,
+              result: 'MATCHES',
+              // И попытка выключить обязательность снаружи.
+              required: false,
+            },
+            ...created.reconChecklist.slice(1),
+          ],
+        })
+        const mergedBody = await merged.json()
+
+        // ── №634/№862: состав расчёта единственного объекта ──────────────
+        const withPost = await patch({
+          checklist: created.reconChecklist,
+          sectorPosts: [
+            {
+              id: '',
+              // Неразмеченная строка: у ЕДИНСТВЕННОГО объекта она ЕГО.
+              visitObjectId: null,
+              sector: 'Сектор пробы 877',
+              post: 'Пост пробы',
+              task: '',
+              need: 1,
+              kind: null,
+              weapon: '',
+              uniform: '',
+              requirements: '',
+              minRating: null,
+              comment: '',
+              shift: '',
+            },
+          ],
+        })
+        return {
+          createStatus: createRes.status,
+          chiefless: (created.visitObjects?.[0]?.chiefEmployeeId ?? null) === null,
+          visitCount: created.visitObjects?.length ?? 0,
+          mergedStatus: merged.status,
+          item: mergedBody?.reconChecklist?.[0] ?? null,
+          postStatus: withPost.status,
+          postBody: await withPost.json().catch(() => null),
+        }
+      })
+
+      expect(result.createStatus, JSON.stringify(result)).toBeLessThan(400)
+      // Предпосылки названы вслух: без них проба вакуумна.
+      expect(result.visitCount, 'у созданного ОМ нет объекта посещения').toBe(1)
+      expect(result.chiefless, 'у объекта неожиданно есть старший').toBe(true)
+
+      // №538: явное состояние победило унаследованные ключи.
+      expect(result.mergedStatus, JSON.stringify(result.item)).toBe(200)
+      expect(result.item?.state, 'явное «Не проверено» переписано выводом').toBe(
+        'UNCHECKED'
+      )
+      expect(result.item?.done).toBe(false)
+      expect(result.item?.result).toBeNull()
+      // №541: обязательность шаблонного пункта снаружи не выключается.
+      expect(
+        result.item?.required,
+        'клиент выключил обязательность пункта шаблона'
+      ).toBe(true)
+
+      // №634/№862: объект без старшего правку СВОЕГО расчёта отбивает, и
+      // неразмеченная строка у единственного объекта — его.
+      expect(result.postStatus, JSON.stringify(result.postBody)).toBe(422)
+      expect(result.postBody?.error_code).toBe('VISIT_CHIEF_REQUIRED')
+    })
   },
 )

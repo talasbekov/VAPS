@@ -400,6 +400,77 @@ function visitStatusLabel(stage: string, assigned: number | null): string {
   return VISIT_STATUS_LABELS[stage] ?? stage;
 }
 
+/**
+ * Отпечаток строки поста ЦЕЛИКОМ — зеркало `_row_fingerprint` (Plane №535,
+ * №634).
+ *
+ * Считаются ВСЕ поля строки, а не список из восьми: строка несёт ещё
+ * `minRating`, `postType`, `weapon`, `uniform` и другие, и правка любого из
+ * них — правка расчёта. Пустые значения и `null` выброшены, значения приведены
+ * к строке со `strip`: `need` приходит и числом, и строкой, а сохранение,
+ * ничего не меняющее, не должно выглядеть правкой.
+ *
+ * `visitObjectId` ВНЕ сравнения намеренно: принадлежность несёт ключ
+ * группировки, и сравнивать её ещё и внутри строки значило бы объявлять
+ * правкой саму разметку.
+ */
+const ROW_FINGERPRINT_SKIP = new Set(["visitObjectId"]);
+
+function rowFingerprint(row: Record<string, unknown>): string {
+  return JSON.stringify(
+    Object.entries(row ?? {})
+      .filter(([key, value]) =>
+        !ROW_FINGERPRINT_SKIP.has(key) && value !== null && value !== undefined && String(value).trim() !== ""
+      )
+      .map(([key, value]) => [key, String(value).trim()])
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+  );
+}
+
+/**
+ * {объект → отпечатки его строк} — зеркало `_rows_by_visit`.
+ *
+ * Неразмеченная строка принадлежит ЕДИНСТВЕННОМУ объекту (`only`): так считает
+ * `visitPostsOf`, так считает сервер (`visit_object_posts`). При нескольких
+ * объектах она по-прежнему ничья — отнести её не к чему.
+ */
+function rowsByVisit(rows: ReconSectorPost[], only: string | null): Map<string, string[]> {
+  const grouped = new Map<string, string[]>();
+  for (const row of rows ?? []) {
+    const key = String(row.visitObjectId ?? "").trim() || (only ?? "");
+    if (key === "") continue;
+    const list = grouped.get(key) ?? [];
+    list.push(rowFingerprint(row as unknown as Record<string, unknown>));
+    grouped.set(key, list);
+  }
+  for (const [key, list] of grouped) grouped.set(key, list.sort());
+  return grouped;
+}
+
+/**
+ * Объекты, чьи строки расчёта запрос МЕНЯЕТ.
+ *
+ * 🔴 ОДИН ПОМОЩНИК, ДВА ВОПРОСА — так же, как на сервере. Гард старшего
+ * (`[РЕК-02]`, Plane №634) спрашивает «изменился ли состав расчёта»;
+ * заморозка (`[СОГ-04]`, Plane №535) — «изменилась ли хоть одна строка
+ * подписанного». СЕГОДНЯ ответы совпадают, потому что отпечаток строки
+ * считается целиком, и сервер это прямо оговаривает: совпадение — не повод
+ * сливать вопросы в один. Стоит сузить один — наборы разойдутся, и разойдутся
+ * ОСОЗНАННО, а не молча.
+ */
+function visitsWithChangedRows(event: SecurityEvent, incomingPosts: ReconSectorPost[]): Set<string> {
+  const only = event.visitObjects.length === 1 ? event.visitObjects[0].id : null;
+  const before = rowsByVisit(event.reconSectorPosts, only);
+  const after = rowsByVisit(incomingPosts, only);
+  const touched = new Set<string>();
+  for (const key of new Set([...before.keys(), ...after.keys()])) {
+    const a = before.get(key) ?? [];
+    const b = after.get(key) ?? [];
+    if (a.length !== b.length || a.some((value, index) => value !== b[index])) touched.add(key);
+  }
+  return touched;
+}
+
 // `[РЕК-02]`/`[РЕК-07]` (Plane №424): без старшего объекта рекогносцировка
 // закрыта — зеркало `_require_visit_chief` сервера.
 function visitChiefRequired(objectName: string) {
@@ -481,16 +552,56 @@ function evaluationSummary(event: SecurityEvent, visitObjectId: string): VisitEv
 }
 
 // Чек-лист одним состоянием (Plane №443) — зеркало `normalize_check_item`.
+/**
+ * Пункт ШАБЛОНА `[РЕК-07]` — зеркало серверного `TEMPLATE_CHECK_IDS`.
+ *
+ * Сервер держит шаблонные идентификаторы точным набором `checklist-<индекс>`.
+ * Мок выдаёт их с приставкой мероприятия (`${id}-checklist-<индекс>`), поэтому
+ * сравнивать МНОЖЕСТВА нечего — сравнивается ХВОСТ, и только для индексов
+ * внутри шаблона. Пункт, дописанный человеком, получает свой `id` и под
+ * правило не попадает — ровно как на сервере.
+ */
+function isTemplateCheckId(id: string | undefined): boolean {
+  const match = /(?:^|-)checklist-(\d+)$/.exec(String(id ?? ""));
+  return match !== null && Number(match[1]) < RECON_CHECKLIST_TEMPLATE.length;
+}
+
+/**
+ * Обязателен ли пункт — по ШАБЛОНУ, а не по телу запроса (Plane №541,
+ * зеркало `_required_of`).
+ *
+ * 🔴 ПРОВЕРКА, КОТОРУЮ МОЖНО ВЫКЛЮЧИТЬ СНАРУЖИ, ПРОВЕРКОЙ НЕ ЯВЛЯЕТСЯ. Здесь
+ * стояло `item.required ?? true` — признак брался прямо из присланного, а
+ * завершение этапа отказывает только из-за обязательных пунктов. Значит любой
+ * клиент, вернувший чек-лист с `required: false`, снимал правило `[РЕК-07]`
+ * целиком, и для этого не нужен злой умысел — довольно клиента, теряющего
+ * поле при сериализации.
+ */
+function requiredOf(item: ReconChecklistItem): boolean {
+  if (isTemplateCheckId(item.id)) return true;
+  return item.required ?? true;
+}
+
 function normalizeCheckItem(item: ReconChecklistItem): ReconChecklistItem {
   const derived: ReconCheckState =
     item.result === "NEEDS_CHANGES" ? "REMARK" : item.done || item.result === "MATCHES" ? "NORMAL" : "UNCHECKED";
   const explicit = item.state as ReconCheckState | undefined;
-  const state =
-    explicit === undefined || (explicit === "UNCHECKED" && derived !== "UNCHECKED") ? derived : explicit;
+  // 🔴 ЯВНОЕ СОСТОЯНИЕ ПОБЕЖДАЕТ ВСЕГДА (Plane №538, зеркало
+  // `normalize_check_item`). Здесь стояла оговорка «кроме случая, когда
+  // пришёл `state: "UNCHECKED"` поверх выводимого „проверено“ — тогда верим
+  // старым ключам». Писалась она под клиента, который про `state` не знает
+  // вовсе, а попадал под неё ТЕКУЩИЙ: экран мержит патч на существующий
+  // пункт, и вместе с `state: "UNCHECKED"` наверх уезжают унаследованные
+  // `done: true` и `result: "MATCHES"`. Кнопка «Не проверено» не действовала
+  // вовсе, счётчик «Проверено K из N» не уменьшался.
+  //
+  // Старый клиент по-прежнему обслужен первым условием: он `state` не
+  // присылает, значит состояние выводится из `done`/`result`, как и раньше.
+  const state = explicit === undefined ? derived : explicit;
   return {
     ...item,
     state,
-    required: item.required ?? true,
+    required: requiredOf(item),
     done: state !== "UNCHECKED",
     result: state === "NORMAL" ? "MATCHES" : state === "REMARK" ? "NEEDS_CHANGES" : null,
     comment: (item.comment ?? "").trim(),
@@ -1828,10 +1939,20 @@ export const securityEventsHandlers = [
     });
     // «Ключа нет» ≠ «пусто» (Plane №416/№424): без sectorPosts посты остаются.
     const incomingPosts = body.sectorPosts ?? event.reconSectorPosts;
+    // 🔴 ГАРД СТАРШЕГО ДЕРЖИТ ОБЪЕКТЫ, ЧЕЙ СОСТАВ РАСЧЁТА ИЗМЕНЁН, А НЕ
+    // УПОМЯНУТЫЕ В ЗАПРОСЕ (Plane №634, зеркало `_visits_with_changed_posts`).
+    // Здесь стоял отбор по `incomingPosts.some((row) => row.visitObjectId ===
+    // visit.id)`, то есть по объектам, ПРИСУТСТВУЮЩИМ в теле. А экран шлёт
+    // расчёт целиком, и в теле присутствуют все объекты сразу — поэтому
+    // сохранение ОДНОЙ ГАЛОЧКИ чек-листа отбивалось `VISIT_CHIEF_REQUIRED`
+    // из-за соседнего объекта без старшего. Ровно репро карточки №634, и в
+    // мок-режиме оно воспроизводилось после того, как сервер его закрыл.
+    //
+    // Перенос строки между объектами меняет ОБА набора — оба и требуют
+    // старшего: пост уходит из одного расчёта и приходит в другой.
+    const touchedVisits = visitsWithChangedRows(event, incomingPosts);
     const chiefless = event.visitObjects.find(
-      (visit) =>
-        visit.chiefEmployeeId === null &&
-        incomingPosts.some((row) => row.visitObjectId === visit.id)
+      (visit) => visit.chiefEmployeeId === null && touchedVisits.has(visit.id)
     );
     if (chiefless !== undefined) return visitChiefRequired(chiefless.objectName);
     // 🔴 ЗАМОРОЗКА ДЕРЖИТ ТОЛЬКО ТЕ ОБЪЕКТЫ, ЧЬИ СТРОКИ ДЕЙСТВИТЕЛЬНО ПРАВЯТ
@@ -1839,34 +1960,12 @@ export const securityEventsHandlers = [
     // мероприятия значило бы, что один замороженный запирает правку чужих
     // постов и даже галочку в чек-листе — ровно болезнь №634.
     //
-    // Строка сравнивается ЦЕЛИКОМ, а не по части полей: у гарда старшего
-    // сравнение частичное, и сервер отдельно оговаривает, что заморозке оно
-    // не годится — вне сравнения остаётся в том числе `minRating`, который
-    // правится на этом же экране и уезжает в подписываемый снимок.
-    const previousRows = new Map(event.reconSectorPosts.map((row) => [row.id, row]));
-    const editedVisits = new Set<string>();
-    for (const row of incomingPosts) {
-      const before = previousRows.get(row.id);
-      if (before === undefined || JSON.stringify(before) !== JSON.stringify(row)) {
-        const visit = row.visitObjectId ?? (event.visitObjects.length === 1
-          ? event.visitObjects[0].id
-          : null);
-        if (visit !== null && visit !== "") editedVisits.add(visit);
-      }
-    }
-    // Снятые строки — тоже правка расчёта того объекта, которому они
-    // принадлежали: «Удалить пост» на экране рекогносцировки идёт этой же
-    // ручкой.
-    const incomingIds = new Set(incomingPosts.map((row) => row.id));
-    for (const row of event.reconSectorPosts) {
-      if (incomingIds.has(row.id)) continue;
-      const visit = row.visitObjectId ?? (event.visitObjects.length === 1
-        ? event.visitObjects[0].id
-        : null);
-      if (visit !== null && visit !== "") editedVisits.add(visit);
-    }
+    // Набор тот же, что у гарда выше, и это НЕ повод звать его один раз на
+    // двоих: вопросы разные (`[РЕК-02]` про автора правки, `[СОГ-04]` про
+    // подписанный документ), общий у них помощник, а не строка кода. Сервер
+    // держит их двумя функциями с одним телом ровно по этой причине.
     for (const visit of event.visitObjects) {
-      if (editedVisits.has(visit.id) && placementFrozen(visit)) {
+      if (touchedVisits.has(visit.id) && placementFrozen(visit)) {
         return refuseFrozenPlacement(visit, "Расчёт постов объекта");
       }
     }
@@ -2028,7 +2127,13 @@ export const securityEventsHandlers = [
         "Рекогносцировку можно завершить только на этапе «Рекогносцировка»."
       );
     }
-    if (event.reconChecklist.some((item) => (item.required ?? true) && normalizeCheckItem(item).state === "UNCHECKED")) {
+    // Обязательность спрашивается у нормализатора (Plane №541): `item.required`
+    // здесь — присланное значение, и чтение его напрямую вернуло бы дыру,
+    // закрытую в `requiredOf`.
+    if (event.reconChecklist.some((item) => {
+      const normalized = normalizeCheckItem(item);
+      return normalized.required && normalized.state === "UNCHECKED";
+    })) {
       return businessRuleError(
         "RECON_CHECKLIST_INCOMPLETE",
         "Обязательные пункты чек-листа остались в «Не проверено»."
