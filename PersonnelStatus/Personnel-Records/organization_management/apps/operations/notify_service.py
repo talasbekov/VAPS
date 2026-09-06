@@ -360,6 +360,13 @@ class DeliveryTally:
         #: Кому не дошло — ПОИМЁННО. «Двоим не дошло» не говорит, кому, и
         #: чинить это некому.
         self.undelivered = []
+        #: Кому ДОШЛО — той же подписью (Plane №921). Число рядом остаётся:
+        #: оно отвечает на «сколько», а список — на «кому именно», и это
+        #: разные вопросы. Разбор «почему у нас никого не запросили» ведут по
+        #: журналу, и `notifiedHeads: 3` не говорит, дошло ли до НУЖНОГО
+        #: человека: у управления может быть несколько учёток с областью,
+        #: и три доставки — это, возможно, три чужих.
+        self.delivered = []
         #: Уволенные: слать было НЕ НАДО. Третья графа, а не строка в
         #: `unlinked` (Plane №900) — см. `skip_dismissed`.
         self.dismissed = []
@@ -394,4 +401,5 @@ class DeliveryTally:
             self.undelivered.append(f"{label} · {recipient}")
             return False
         self.notified += 1
+        self.delivered.append(f"{label} · {recipient}")
         return True
