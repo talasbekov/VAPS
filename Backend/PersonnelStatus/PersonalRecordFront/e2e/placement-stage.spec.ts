@@ -793,6 +793,100 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       .catch(() => undefined)
   })
 
+  // Воркер MSW блокируется, иначе `page.route` не перехватывает запрос
+  // карточки, подмена молча не применяется, и проба ищет элемент, которого
+  // нет (проверено запуском: первый ассерт проходил на НЕПОДМЕНЁННОМ ответе,
+  // а имя второго объекта оставалось пустым). Тот же приём и тот же довод,
+  // что у соседнего `describe` ниже и в `approval-stage.spec.ts`.
+  test.describe('разрез без объекта', () => {
+    test.use({ serviceWorkers: 'block' })
+
+    test('разрез «не отнесены» называет СВОЮ потребность, а не одну лишь потребность ОМ', async ({
+      page,
+    }) => {
+      /**
+       * Plane №899. Строка потребности у пула («Выделено на объект штабом»)
+       * рисовалась по условию `scope.visit !== null`. На ОМ с несколькими
+       * объектами разрез «не отнесены» объекта не имеет — и оператор, разбирающий
+       * неразмеченные посты, оставался в этой колонке с одним лишь «Выделено N из
+       * потребности МЕРОПРИЯТИЯ M», то есть без ответа на вопрос «сколько
+       * закрывает то, что я сейчас вижу».
+       *
+       * 🔴 ПОДМЕНА ОТВЕТА, А НЕ ЖИВАЯ ЦЕПОЧКА — тем же приёмом и по той же
+       * причине, что у соседней пробы этого блока («выделено штабом»
+       * сравнивается с потребностью МЕРОПРИЯТИЯ). Предмет здесь — правило
+       * ЭКРАНА: какой разрез показан и какое число он называет. Собирать ради
+       * этого живой ОМ с двумя объектами, неразмеченным постом И принятым
+       * составом значило бы поставить проверку одной строки в зависимость от
+       * пяти серверных переходов. Состав нужен настоящий (без него колонка
+       * показывает пустое состояние), поэтому он берётся живым, а два объекта и
+       * неразмеченный пост дописываются в ответ.
+       *
+       * 🔴 ЧИСЛО ПРОВЕРЯЕТСЯ, А НЕ ПОДПИСЬ: ассерт на слова зеленел бы и на
+       * нуле, и на числе соседнего объекта. Неразмеченному посту даётся заведомо
+       * своё значение, и сверяется именно оно.
+       */
+      const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+      const target = await placementEventWithRoster(token)
+      requireFixture(target, 'мероприятие на стадии «Расстановка» с принятым составом')
+
+      const UNASSIGNED_NEED = 7
+      let secondObjectName = ''
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (route) => {
+          const response = await route.fetch()
+          const body = await response.json()
+          const visits = (body.visitObjects ?? []) as Record<string, unknown>[]
+          if (visits.length === 0) {
+            await route.fulfill({ response, json: body })
+            return
+          }
+          // Второй объект — копия первого с другим ключом: разрез «не отнесены»
+          // появляется в выборщике только при ДВУХ объектах (`№488`), а состав
+          // полей у копии заведомо тот же, что ждёт экран.
+          const first = visits[0]!
+          secondObjectName = `Второй объект пробы ${Date.now()}`
+          body.visitObjects = [
+            first,
+            { ...first, id: `probe-second-${Date.now()}`, objectName: secondObjectName },
+          ]
+          // Один пост — ничей, с собственной потребностью; остальные у первого
+          // объекта, иначе «не отнесены» собрал бы их все и число совпало бы с
+          // объектным.
+          const posts = (body.reconSectorPosts ?? []) as Record<string, unknown>[]
+          body.reconSectorPosts = posts.map((row, index) =>
+            index === 0
+              ? { ...row, visitObjectId: null, need: UNASSIGNED_NEED }
+              : { ...row, visitObjectId: first.id },
+          )
+          await route.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+      const main = page.getByRole('main')
+      await expect(main).toBeVisible({ timeout: 25_000 })
+
+      // Показан объект — строка про него (прежнее поведение цело).
+      const need = main.locator('[data-slot="object-need"]')
+      await expect(need).toContainText('Потребность объекта', { timeout: 25_000 })
+      expect(secondObjectName, 'подмена не увидела объектов посещения').not.toBe('')
+
+      // Переключились на «не отнесены» — строка обязана остаться и назвать
+      // ЧИСЛО РАЗРЕЗА.
+      const picker = page.getByRole('combobox', { name: 'Объект посещения' })
+      await picker.selectOption('__unassigned__')
+      await expect(
+        need,
+        'в разрезе «не отнесены» потребность пропала из колонки пула',
+      ).toHaveText(`Потребность неотнесённых постов: ${UNASSIGNED_NEED}`)
+    })
+  })
+
+
+
 
   /**
    * Завершение расстановки с недобором (`[РАС-06]`, Plane №396).
