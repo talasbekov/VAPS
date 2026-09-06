@@ -8,13 +8,18 @@ broadcast real-time messages over WebSocket so that clients can
 immediately reflect state changes without polling.
 """
 
+import logging
+
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.contrib.auth.models import User
 from organization_management.apps.secondments.models import SecondmentRequest
 from organization_management.apps.statuses.models import EmployeeStatusLog
 from organization_management.apps.employees.models import Employee
+from .groups import NOTIFY_MESSAGE_TYPE, group_name_for
 from .models import Notification
+
+logger = logging.getLogger(__name__)
 
 # Attempt Channels import
 try:
@@ -70,9 +75,16 @@ def create_status_update_notification(sender, instance, created, **kwargs):
         try:
             channel_layer = get_channel_layer()
             async_to_sync(channel_layer.group_send)(
-                f"user_{instance.employee.user.id}_notifications",
+                # 🔴 БЫЛО `f"user_{...}_notifications"` — ГРУППА, В КОТОРУЮ НЕ
+                # ЗАХОДИТ НИКТО (Plane №824). Потребитель слушает `user_<id>`,
+                # и уведомление о смене статуса не приходило в браузер ВООБЩЕ:
+                # строка в таблице создавалась, поэтому после перезагрузки
+                # страницы оно было видно, а живым сокетом — никогда. Симптом
+                # читался как «сокет отвалился», а не как ошибка адреса.
+                # Теперь имя берётся из общего договора, где оно одно на всех.
+                group_name_for(instance.employee.user.id),
                 {
-                    "type": "notification.message",
+                    "type": NOTIFY_MESSAGE_TYPE,
                     "message": {
                         "type": "status_update",
                         "employee_id": instance.employee.id,
@@ -81,7 +93,18 @@ def create_status_update_notification(sender, instance, created, **kwargs):
                 },
             )
         except Exception:
-            pass
+            # 🔴 ГЛУХОЙ `pass` ЗАМЕНЁН НА ЗАПИСЬ В ЖУРНАЛ (Plane №824).
+            # Проглатывать отказ здесь по-прежнему правильно: смена статуса
+            # сотрудника не должна падать из-за недоступного слоя каналов.
+            # Но МОЛЧАТЬ о нём нельзя — пока молчали, отказ слоя и ошибка
+            # адреса выглядели одинаково: «уведомление не пришло», и ни одна
+            # из двух причин не оставляла следа. `exception` пишет и трассу.
+            logger.exception(
+                "уведомление о смене статуса не ушло в канальный слой: "
+                "сотрудник %s, статус %s",
+                instance.employee_id,
+                instance.status,
+            )
 
 
 # ✅ Сигнал только на Employee

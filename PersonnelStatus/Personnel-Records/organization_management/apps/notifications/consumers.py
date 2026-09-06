@@ -1,5 +1,7 @@
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
+from organization_management.apps.notifications.groups import group_name_for
+
 class NotificationConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         self.user = self.scope['user']
@@ -7,7 +9,9 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
             return
 
-        self.user_group = f"user_{self.user.id}"
+        # Имя группы — из общего договора (Plane №824): три копии этой строки
+        # разошлись, и одна доставляла в пустоту.
+        self.user_group = group_name_for(self.user.id)
 
         await self.channel_layer.group_add(
             self.user_group,
