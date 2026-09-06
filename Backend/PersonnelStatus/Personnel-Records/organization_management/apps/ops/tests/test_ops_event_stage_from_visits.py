@@ -299,7 +299,9 @@ def test_the_override_clears_a_closed_stamp_of_a_single_object(
     # Закрыт ОДИН объект, мероприятие при этом живо — ровно тот случай, что
     # условие по `old_stage` не покрывало.
     OpsSecurityEventVisitObject.objects.filter(pk=first.pk).update(
-        stage="CLOSED", closed_at=timezone.now()
+        stage="CLOSED",
+        closed_at=timezone.now(),
+        closing_comment="объект сдан, замечаний нет",
     )
     event = service.lock_event(event_id)
     assert event.stage != "CLOSED", "предусловие: мероприятие не закрыто"
@@ -309,6 +311,14 @@ def test_the_override_clears_a_closed_stamp_of_a_single_object(
     first.refresh_from_db()
     assert first.stage == "PLACEMENT"
     assert first.closed_at is None, "объект «закрыт и одновременно в работе»"
+    # 🔴 И ИТОГ ЗАКРЫТИЯ СНЯТ (доводка по ревью №825). `closingComment`
+    # отдаётся полем API безусловно; оставленный у живого объекта, он
+    # приписывает ему решение, которое отменено. Мутация: убрать
+    # `visit.closing_comment = ""` из `override_stage`.
+    assert first.closing_comment == "", (
+        "у живого объекта остался итог закрытия — карточка отменена, "
+        "а её комментарий нет"
+    )
 
 
 def test_closing_is_not_an_override_target_at_all():
@@ -346,8 +356,11 @@ def test_removing_an_object_recomputes_the_event_stage(
     service.recompute_event_stage(service.lock_event(event_id))
     assert service.lock_event(event_id).stage == "PLACEMENT", "предусловие: минимум"
 
-    # Посты первого объекта мешают снятию — снимаем их разметку, как это
-    # делает человек перед удалением объекта.
+    # Расчёт первого объекта мешает снятию. Его строки ВЫБРАСЫВАЮТСЯ из
+    # расчёта целиком, а у оставшихся снимается разметка объекта — так же
+    # выглядит расчёт, из которого человек убрал посты снимаемого объекта.
+    # (Прежний комментарий говорил «снимаем их разметку» — это описывало не то
+    # действие, что делает код; уточнено ревью №825.)
     event = service.lock_event(event_id)
     event.recon_sector_posts = [
         {**post, "visitObjectId": None}
@@ -361,3 +374,13 @@ def test_removing_an_object_recomputes_the_event_stage(
     assert service.lock_event(event_id).stage == "ACKNOWLEDGEMENT", (
         "этап мероприятия остался ниже нового минимума — карточка заперта"
     )
+    # 🔴 И ПЕРЕХОД ЗАПИСАН (доводка по ревью №825). `recompute_event_stage`
+    # стадию меняет, а журнал не ведёт — в отличие от всех прочих путей. Пока
+    # этого ассерта не было, мероприятие двигалось молча: лента переходов
+    # пуста, воронка `analytics` недосчитывает FORWARD.
+    moves = list(
+        OpsSecurityEventTransition.objects.filter(event_id=event_id).order_by("pk")
+    )
+    assert [(m.from_stage, m.to_stage, m.kind) for m in moves][-1:] == [
+        ("PLACEMENT", "ACKNOWLEDGEMENT", "FORWARD")
+    ], f"переход не записан или записан не тот: {[(m.from_stage, m.to_stage) for m in moves]}"

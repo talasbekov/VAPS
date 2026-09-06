@@ -115,11 +115,84 @@ def _run(events):
     return apps
 
 
+#: Канон переносимых пар — ЗАКРЕПЛЁН ОТДЕЛЬНО ОТ `_CARRIED`.
+#:
+#: 🔴 ПОЧЕМУ ОТДЕЛЬНО (найдено ревью №825). Проба вела ОБЕ стороны от одного
+#: и того же кортежа: `FakeEvent` расставлял поля `for source, _ in _CARRIED`,
+#: а утверждение перебирало `for source, target in _CARRIED`. Убрать из
+#: `_CARRIED` любую пару, кроме `stage`, — `FakeEvent` её не поставит,
+#: миграция не скопирует, утверждение не проверит: ЗЕЛЁНАЯ. При этом докстрока
+#: обещала обратное — «убрать любую пару, и соответствующее поле не доедет».
+#: `_CARRIED` — первое, что карточка №529 называет оставшимся без надзора, и
+#: надзора у него как раз и не было.
+#:
+#: Канон здесь — не дубль ради дубля: изъятие пары становится ОСОЗНАННОЙ
+#: правкой двух мест, а не тихой пропажей одного.
+_CANON = (
+    ("stage", "stage"),
+    ("recon_checklist", "recon_checklist"),
+    ("recon_sector_posts", "recon_sector_posts"),
+    ("force_need", "force_need"),
+    ("placement_assignments", "placement_assignments"),
+    ("approval_status", "approval_status"),
+    ("approval_route", "approval_route"),
+    ("approval_remarks", "approval_remarks"),
+    ("approval_snapshot", "approval_snapshot"),
+    ("journal_entries", "journal_entries"),
+    ("closed_at", "closed_at"),
+)
+
+
+def test_the_carried_list_keeps_its_canon():
+    """Состав `_CARRIED` не меняется молча (Plane №529).
+
+    Красная на мутации «убрать пару из `_CARRIED`» и на мутации «дописать
+    пару»: обе — правки канона переноса, и обе обязаны быть замечены.
+    """
+    assert tuple(migration._CARRIED) == _CANON
+
+
+def test_every_carried_field_exists_in_the_historical_models():
+    """Каждое имя пары есть у моделей ФОРМЫ 0068 (Plane №529).
+
+    🔴 БЕЗ БАЗЫ. Историческое состояние читается `MigrationLoader(None)` прямо
+    с диска — подключение и прогон схемы не нужны, а значит и чужой прогон по
+    общей тестовой базе не страдает. Именно этого не хватало снятой пятой
+    пробе: она сверялась с СЕГОДНЯШНЕЙ моделью, у которой четырёх колонок уже
+    нет по решению №413, — и потому опровергла сама себя. Вопрос был задан не
+    тому состоянию, а не бессмыслен.
+
+    Красная на мутации: опечатка в любом имени внутри `_CARRIED`.
+    """
+    from django.db.migrations.loader import MigrationLoader
+
+    state = MigrationLoader(None).project_state(
+        ("operations", "0068_visit_object_stage_fields")
+    )
+    # `fields` исторической модели — пары «имя → поле», а не список полей.
+    event = set(dict(state.models["operations", "opssecurityevent"].fields))
+    visit = set(
+        dict(state.models["operations", "opssecurityeventvisitobject"].fields)
+    )
+    assert event, "историческое состояние пусто — проба вакуумна"
+    missing = [
+        f"{source}→{target}"
+        for source, target in migration._CARRIED
+        if source not in event or target not in visit
+    ]
+    assert missing == [], (
+        "пара переноса называет поле, которого у моделей формы 0068 нет: "
+        + ", ".join(missing)
+    )
+
+
 def test_the_only_object_receives_the_whole_progress():
     """Объект ровно один — прямая копия ВСЕХ перечисленных полей.
 
-    Мутация, на которой проба обязана краснеть: убрать любую пару из
-    `_CARRIED` — соответствующее поле не доедет.
+    Мутация, на которой проба обязана краснеть: сломать копирование любого
+    поля в `_carry_stages`. Изъятие пары из `_CARRIED` стережёт СОСЕДНЯЯ проба
+    (`test_the_carried_list_keeps_its_canon`) — здесь оно невидимо по
+    построению: обе стороны читают один и тот же кортеж.
     """
     visit = FakeVisit(pk=10, position=1)
     _run([FakeEvent([visit])])
@@ -177,7 +250,14 @@ def test_a_nameless_event_gets_an_honest_placeholder():
     assert apps.created[0].object_name == "Объект не указан"
 
 
-# 🔴 ПЯТАЯ ПРОБА БЫЛА НАПИСАНА И СНЯТА — ЗАПИСЬ О ТОМ, ЧЕГО ПРОВЕРЯТЬ НЕ НАДО.
+# 🔴 ПЯТАЯ ПРОБА БЫЛА НАПИСАНА И СНЯТА — И СНЯТА НАПОЛОВИНУ ЗРЯ.
+#
+# Наблюдение ниже верно, вывод из него — нет (уточнено ревью №825). Проверять
+# надо было не по сегодняшней модели, а по ИСТОРИЧЕСКОЙ, и добывается она без
+# базы: `MigrationLoader(None).project_state(...)` читает файлы миграций с
+# диска. Проба заведена выше — `test_every_carried_field_exists_in_the_historical_models`.
+# Прежняя редакция этого послесловия отговаривала следующего от починки, и это
+# хуже, чем отсутствие пробы: сторож выглядел закрытым вопросом.
 #
 # Я написала сторож «список `_CARRIED` не переносит в поля, которых у объекта
 # посещения больше нет», рассудив, что опечатка в целевом имени уронила бы

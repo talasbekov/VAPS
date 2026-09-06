@@ -841,6 +841,34 @@ test.describe(LIVE ? 'ознакомление: этап мероприятия 
     // состояние, и молчать о нём нельзя.
     await expect(complete).toHaveAttribute('title', /по всему мероприятию/)
 
+    // 🔴 ОБЕ «НАПОМНИТЬ» — ТЕМ ЖЕ ГВАРДОМ (доводка по ревью №825). Сервер
+    // сторожит `remind_pending` и `remind_assignment` тем же самым
+    // `_require_stage(event, "ACKNOWLEDGEMENT")`, что и завершение
+    // (`acknowledgement_stage.py:108, 141, 168`). Пока гасла одна кнопка из
+    // трёх, человек видел худшее из возможного: одна погашена и объясняет
+    // почему, а две соседние молча отвечают 422.
+    const remindAll = page.getByRole('button', { name: /Напомнить всем/ })
+    await expect(remindAll).toBeDisabled()
+    const remindAllHint = await remindAll.getAttribute('aria-describedby')
+    expect(
+      remindAllHint,
+      '«Напомнить всем» погашена молча — причина не связана с кнопкой',
+    ).not.toBeNull()
+    await expect(page.locator(`#${remindAllHint}`)).toContainText(
+      'Этап ведётся по всему мероприятию',
+    )
+
+    const remindOne = page.getByRole('button', { name: /^Напомнить: / }).first()
+    await expect(remindOne).toBeDisabled()
+    const remindOneHint = await remindOne.getAttribute('aria-describedby')
+    expect(
+      remindOneHint,
+      'построчная «Напомнить» погашена молча — причина не связана с кнопкой',
+    ).not.toBeNull()
+    await expect(page.locator(`#${remindOneHint}`)).toContainText(
+      'Этап ведётся по всему мероприятию',
+    )
+
     // И обратная сторона: когда мероприятие ДОШЛО до этапа, кнопка живая —
     // иначе проба доказывала бы «кнопка всегда выключена».
     await page.unroute(new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`))
@@ -861,5 +889,8 @@ test.describe(LIVE ? 'ознакомление: этап мероприятия 
     await expect(page.getByRole('button', { name: 'Завершить ознакомление' })).toBeEnabled({
       timeout: 20_000,
     })
+    // Обратная сторона и для напоминаний: иначе проба доказывала бы «кнопки
+    // всегда выключены».
+    await expect(page.getByRole('button', { name: /^Напомнить: / }).first()).toBeEnabled()
   })
 })
