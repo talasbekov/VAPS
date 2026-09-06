@@ -176,7 +176,16 @@ test.describe(LIVE ? 'пул штаба на расстановке' : 'пул �
       ),
     )
     await expect(empty, 'вернулось «прислано X из N»').not.toContainText('прислано')
-    await expect(empty.getByRole('link', { name: 'Сбор сил на ОМ →' })).toBeVisible()
+    const toCollections = empty.getByRole('link', { name: 'Сбор сил на ОМ →' })
+    await expect(toCollections).toBeVisible()
+    // 🔴 ССЫЛКА ВЕДЁТ НА «СБОРЫ», А НЕ НА СПИСОК СОТРУДНИКОВ (Plane №931).
+    // До №928 по `?view=forces` открывался экран, где лента входящих была
+    // видна сразу; теперь того блока нет, и адрес без вкладки приводит на
+    // кадровый реестр. Ошибки при этом нет — экран открылся, просто не тот,
+    // и человек, спросивший «сколько выделили департаменты», доклацывает
+    // сам. Проверяется АДРЕС, а не переход: щелчок увёл бы пробу с карточки,
+    // ради которой она и заведена.
+    await expect(toCollections).toHaveAttribute('href', /tab=collections/)
     await expect(card.getByLabel('Поиск кандидатов')).toHaveCount(0)
     await page.waitForLoadState('networkidle').catch(() => {})
     expect(personnelCalls, 'кадровая база не должна спрашиваться без состава').toEqual([])
