@@ -1225,27 +1225,23 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       //    дальше молча, и проба упала бы ниже и в другом месте — «в дереве
       //    нет назначенного», — а код и тело отказа не напечатались бы нигде.
       const assignTo = async (postId: string, employeeId: string) => {
-        // Адрес подставлен ЦЕЛИКОМ, а не через переменную, и это не
-        // косметика: сторож молчащих шагов (`fixture-steps-checked`) ищет путь
-        // перехода в тексте ВЫЗОВА, и спрятанный в переменную путь делает шаг
-        // невидимым для него — проверено мутацией 06.09.2026.
-        const res = await request.post(
-          `${API}/api/ops/security-events/${eventId}/placement/assign/`,
-          {
-            headers: auth,
-            data: {
-              postId,
-              employeeId,
-              override: true,
-              override_reason: 'Подготовка пробы переноса: расстановка до отказа',
-            },
+        // Путь в переменной — и это ТЕПЕРЬ безопасно (Plane №857). Сутки назад
+        // такая запись прятала шаг от сторожа молчащих шагов: путь и вызов
+        // оказывались в разных операторах, и он не видел ни строки. Сторож
+        // научился подставлять однострочные объявления строк, и мутация «убрать
+        // проверку у такого вызова» краснит его. Пока этого не было, адрес
+        // приходилось повторять дважды.
+        const path = `/api/ops/security-events/${eventId}/placement/assign/`
+        const res = await request.post(`${API}${path}`, {
+          headers: auth,
+          data: {
+            postId,
+            employeeId,
+            override: true,
+            override_reason: 'Подготовка пробы переноса: расстановка до отказа',
           },
-        )
-        await assertStep(
-          res,
-          'POST',
-          `/api/ops/security-events/${eventId}/placement/assign/`,
-        )
+        })
+        await assertStep(res, 'POST', path)
         return res
       }
 
@@ -1436,27 +1432,23 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       //    дальше молча, и проба упала бы ниже и в другом месте — «в дереве
       //    нет назначенного», — а код и тело отказа не напечатались бы нигде.
       const assignTo = async (postId: string, employeeId: string) => {
-        // Адрес подставлен ЦЕЛИКОМ, а не через переменную, и это не
-        // косметика: сторож молчащих шагов (`fixture-steps-checked`) ищет путь
-        // перехода в тексте ВЫЗОВА, и спрятанный в переменную путь делает шаг
-        // невидимым для него — проверено мутацией 06.09.2026.
-        const res = await request.post(
-          `${API}/api/ops/security-events/${eventId}/placement/assign/`,
-          {
-            headers: auth,
-            data: {
-              postId,
-              employeeId,
-              override: true,
-              override_reason: 'Подготовка пробы переноса: расстановка до отказа',
-            },
+        // Путь в переменной — и это ТЕПЕРЬ безопасно (Plane №857). Сутки назад
+        // такая запись прятала шаг от сторожа молчащих шагов: путь и вызов
+        // оказывались в разных операторах, и он не видел ни строки. Сторож
+        // научился подставлять однострочные объявления строк, и мутация «убрать
+        // проверку у такого вызова» краснит его. Пока этого не было, адрес
+        // приходилось повторять дважды.
+        const path = `/api/ops/security-events/${eventId}/placement/assign/`
+        const res = await request.post(`${API}${path}`, {
+          headers: auth,
+          data: {
+            postId,
+            employeeId,
+            override: true,
+            override_reason: 'Подготовка пробы переноса: расстановка до отказа',
           },
-        )
-        await assertStep(
-          res,
-          'POST',
-          `/api/ops/security-events/${eventId}/placement/assign/`,
-        )
+        })
+        await assertStep(res, 'POST', path)
         return res
       }
 
