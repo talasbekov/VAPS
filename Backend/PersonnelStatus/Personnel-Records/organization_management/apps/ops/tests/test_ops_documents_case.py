@@ -277,3 +277,79 @@ def test_the_sheet_is_still_absent_before_acknowledgement_without_objects(
     text = _text(render_placement(event.code, fmt="docx"))
 
     assert "Приложение. Лист ознакомления" not in text
+
+
+def test_the_case_names_the_post_of_a_remark_instead_of_its_id(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """Колонка «Привязка» печатает «сектор · пост», а не `post-…` (Plane №865).
+
+    ЧТО СТЕРЕЖЁТСЯ. Подпись бралась из ключа `postName`, которого замечанию не
+    пишет НИКТО, поэтому ветка была мертва и в дело уезжал сырой
+    идентификатор. Экранная половина при этом была в порядке — расхождение
+    видел только тот, кто открывал файл, а проб на содержимое колонки не было
+    вовсе.
+
+    🔴 КРАСНОТА НА МУТАЦИИ: верни в `_remark_attachment` строку
+    `named = remark.get("postName") or remark.get("postId")` — в тексте дела
+    появится идентификатор, и обе проверки ниже покраснеют.
+    """
+    from organization_management.apps.ops import security_events as service
+
+    _, event_id, first, _, _ = two_objects_on_approval
+    event = service.lock_event(event_id)
+    post = next(
+        p for p in event.recon_sector_posts if str(p.get("visitObjectId")) == str(first.pk)
+    )
+    first.approval_remarks = [
+        {
+            "id": "rem-1",
+            "text": "Пост просматривается не полностью",
+            "authorName": "Согласующий",
+            "status": "OPEN",
+            "postId": post["id"],
+        }
+    ]
+    first.save(update_fields=["approval_remarks", "updated_at"])
+
+    text = _text(
+        documents_case.render_case(
+            event.code, visit_object_id=str(first.pk), fmt="docx"
+        )
+    )
+
+    assert service.post_label(post) in text, "дело не назвало пост замечания"
+    assert str(post["id"]) not in text, "в дело уехал идентификатор поста"
+
+
+def test_the_case_still_names_a_post_taken_off_the_calculation(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """Отвязанное замечание по-прежнему называет снятый пост (Plane №510).
+
+    Вторая половина той же ячейки, и она проверяется вместе с первой
+    намеренно: правка №865 трогает порядок веток, а именно в порядке и живёт
+    поведение «снятый пост называется, а не превращается в „общее“».
+    """
+    _, event_id, first, _, _ = two_objects_on_approval
+    from organization_management.apps.ops import security_events as service
+
+    event = service.lock_event(event_id)
+    first.approval_remarks = [
+        {
+            "id": "rem-2",
+            "text": "Замечание по снятому посту",
+            "status": "OPEN",
+            "postId": None,
+            "detachedPost": "Сектор А · Пост 7",
+        }
+    ]
+    first.save(update_fields=["approval_remarks", "updated_at"])
+
+    text = _text(
+        documents_case.render_case(
+            event.code, visit_object_id=str(first.pk), fmt="docx"
+        )
+    )
+
+    assert "Сектор А · Пост 7 (пост снят с расчёта)" in text

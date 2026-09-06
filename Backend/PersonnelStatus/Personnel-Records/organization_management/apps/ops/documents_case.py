@@ -129,7 +129,23 @@ def _versions(document, event, visit):
         )
 
 
-def _remark_attachment(remark):
+def _post_labels(event):
+    """`{id поста → «сектор · пост»}` по расчёту мероприятия.
+
+    Считается ОДИН раз на объект, а не на замечание: расчёт лежит полем
+    строки, и перебирать его в цикле по замечаниям значило бы делать ту же
+    работу столько раз, сколько замечаний.
+    """
+    from organization_management.apps.ops.security_events import post_label
+
+    return {
+        str(post.get("id")): post_label(post)
+        for post in event.recon_sector_posts or []
+        if post.get("id")
+    }
+
+
+def _remark_attachment(remark, labels):
     """Привязка замечания для колонки «Привязка» дела.
 
     🔴 СНЯТЫЙ ПОСТ НАЗЫВАЕТСЯ, А НЕ ПРЕВРАЩАЕТСЯ В «ОБЩЕЕ» (Plane №510). При
@@ -137,9 +153,23 @@ def _remark_attachment(remark):
     несуществующий пост и невидимо держало бы согласование), но согласующий
     писал про КОНКРЕТНЫЙ пост — и в деле, которое читают потом, «общее»
     сказало бы неправду.
+
+    🔴 ПОСТ НАЗЫВАЕТСЯ ПОДПИСЬЮ, А НЕ ИДЕНТИФИКАТОРОМ (Plane №865). Здесь
+    стояло `remark.get("postName") or remark.get("postId")`, а ключ
+    `postName` замечанию не пишет НИКТО: `new_remark` его не заводит. То есть
+    ветка была мертва, и колонка «Привязка» подписываемого и рассылаемого
+    дела печатала `post-4f2a9c1b8e30` у каждого привязанного замечания.
+    Экранная половина при этом была в порядке — `ApprovalStage` разрешает id
+    в «сектор · пост», — и расхождение видел только тот, кто открывал файл.
+
+    `postName` оставлен первым по счёту намеренно: если замечание однажды
+    начнут писать с готовой подписью, она победит расчёт, а не наоборот.
+    Идентификатор остаётся последним запасом — на пост, которого в расчёте
+    уже нет, а отвязать его забыли.
     """
     detached = str(remark.get("detachedPost") or "")
-    named = remark.get("postName") or remark.get("postId")
+    post_id = remark.get("postId")
+    named = remark.get("postName") or (labels.get(str(post_id)) if post_id else None) or post_id
     if named:
         return str(named)
     if detached:
@@ -147,7 +177,8 @@ def _remark_attachment(remark):
     return "общее"
 
 
-def _remarks(document, visit):
+def _remarks(document, visit, event):
+    labels = _post_labels(event)
     rows = []
     for r in visit.approval_remarks or []:
         status = {"OPEN": "открыто", "RESOLVED": "устранено", "DISAGREED": "не согласен"}.get(r.get("status"), r.get("status") or "—")
@@ -155,7 +186,7 @@ def _remarks(document, visit):
             r.get("text") or "",
             r.get("authorName") or r.get("author") or "",
             _fmt_dt(r.get("createdAt")),
-            _remark_attachment(r),
+            _remark_attachment(r, labels),
             ("срочно, " if r.get("urgent") else "") + status,
             (r.get("response") or "") + (f" ({_fmt_dt(r.get('respondedAt'))})" if r.get("respondedAt") else ""),
             # Замечания, поставленные до версий документа (№398), номера не несут.
@@ -259,7 +290,7 @@ def render_case(event_code, *, visit_object_id=None, fmt="pdf", permissions=None
         if visit is None:
             document.add_paragraph("Замечаний не было.")
         else:
-            _remarks(document, visit)
+            _remarks(document, visit, event)
         document.add_heading("4. Оценки сотрудников", level=2)
         if visit is None:
             document.add_paragraph("Оценивать было некого.")
