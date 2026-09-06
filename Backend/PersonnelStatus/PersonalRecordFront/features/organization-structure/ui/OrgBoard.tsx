@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { StaffUnit, StaffUnitEmployee, StaffUnitStatistics } from "@/lib/api";
@@ -285,14 +285,15 @@ export default function OrgBoard() {
   // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
   // в админке, иначе читается как «Не обновлено».
   const naming = useStatusNaming();
-  // 🔴 ПОДСВЕТКА СТАТУСА МЕРТВА, И ЭТО НАЗВАНО ВСЛУХ (Plane №767 → карточка
-  // «подсветка статуса на доске оргструктуры не включается ниоткуда»).
-  // Значение читают четыре места ниже, а МЕНЯТЬ его было некому: setter не
-  // звали ни клик, ни фильтр, ни адрес. То есть условия подсветки всегда
-  // ложны, и код, который их проверяет, выглядит работающим, не будучи им.
-  // Setter снят, чтобы это было видно; сама подсветка либо подключается
-  // отдельной задачей, либо снимается целиком — это решение заказчика.
-  const [highlightedStatus] = useState<string | null>(null);
+  // 🔴 ПОДСВЕТКА СТАТУСА СНЯТА ЦЕЛИКОМ (Plane №815, решение заказчика
+  // 06.09.2026). Здесь стояло состояние `highlightedStatus`, которое читали
+  // четыре ветки ниже — строка заместителя, шапка управления и две ячейки
+  // сотрудника (`!bg-red-400`), — а МЕНЯТЬ его было некому: setter не звали
+  // ни клик, ни фильтр, ни адрес, ни родитель. Значит все четыре условия
+  // были ложны всегда, и код выглядел работающим, не будучи им (найдено
+  // включением `noUnusedLocals` по №767). Заказчик выбрал снять, а не
+  // подключать: подсветка по клику — это новое поведение экрана, и заводить
+  // его следом за чисткой мёртвого кода было бы уже другой задачей.
 
   // Используем React Query для загрузки данных
   const {
@@ -433,17 +434,7 @@ export default function OrgBoard() {
                     <th
                       key={`deputy-${deputy.employee?.id ?? index}-${index}`}
                       colSpan={totalCols / 2}
-                      className={`border-2 text-white !text-lg border-zinc-700 bg-zinc-500 px-4 py-2 ${
-                        (() => {
-                          const deputyEmp = deputy.employee;
-                          return (
-                            deputyEmp?.current_status?.status_type ===
-                            highlightedStatus
-                          );
-                        })()
-                          ? "!bg-red-400"
-                          : ""
-                      }`}
+                      className="border-2 text-white !text-lg border-zinc-700 bg-zinc-500 px-4 py-2"
                     >
                       <b>
                         {(() => {
@@ -481,14 +472,11 @@ export default function OrgBoard() {
                         .toUpperCase()
                         .includes("НАЧАЛЬНИК УПРАВЛЕНИЯ")
                   )?.employee;
-                  const status = managementHead?.current_status?.status_type;
                   return (
                     <th
                       key={management.unit.id}
                       colSpan={divisionsCount}
-                      className={`border-2 border-border bg-muted px-4 py-2 text-foreground ${
-                        status === highlightedStatus ? "!bg-red-400 !text-black" : ""
-                      }`}
+                      className="border-2 border-border bg-muted px-4 py-2 text-foreground"
                     >
                       {management.unit.division.name}
                       {managementHead && (
@@ -559,16 +547,11 @@ export default function OrgBoard() {
                         (a, b) => a.position.level - b.position.level
                       );
                       const employeeData = allEmployees[rowIndex];
-                      const status =
-                        employeeData?.employee?.current_status?.status_type;
-                      const isHighlighted = status === highlightedStatus;
 
                       return (
                         <td
                           key={`${management.unit.id}-${rowIndex}`}
-                          className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
-                            isHighlighted ? "!bg-red-400" : ""
-                          }`}
+                          className="border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300"
                         >
                           {employeeData ? (
                             <div className="flex flex-col items-center justify-between text-center cursor-pointer">
@@ -645,16 +628,11 @@ export default function OrgBoard() {
                       return divisions.map((division) => {
                         // division.employees теперь это массив StaffUnitEmployee[]
                         const employeeData = division.employees[rowIndex];
-                        const status =
-                          employeeData?.employee?.current_status?.status_type;
-                        const isHighlighted = status === highlightedStatus;
 
                         return (
                           <td
                             key={`${management.unit.id}-${division.unit.id}-${rowIndex}`}
-                            className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
-                              isHighlighted ? "!bg-red-400" : ""
-                            }`}
+                            className="border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300"
                           >
                             {employeeData ? (
                               <div className="flex flex-col items-center justify-between text-center cursor-pointer">
