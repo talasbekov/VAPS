@@ -58,9 +58,16 @@ const REFRESH_TOKEN_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
  * помечается `retryAfter`: повтор будет, но не чаще раза в
  * `REFRESH_RETRY_MS`.
  */
-/** Чем кончилось ОДНО обращение к `/api/token/refresh/`. */
+/** Чем кончилось ОДНО обращение к `/api/token/refresh/`.
+ *
+ * `refresh` приходит, только когда бэкенд ротирует токены
+ * (`ROTATE_REFRESH_TOKENS`, Plane №787): тогда старый обязан быть ЗАМЕНЁН на
+ * новый, иначе следующее продление уйдёт со сроком от прежнего входа и
+ * семисуточный потолок вернётся на место. Поле необязательное намеренно —
+ * при выключенной ротации сервер его не присылает вовсе, и клиент обязан
+ * работать в обоих режимах, а не падать от отсутствия ключа. */
 type RefreshOutcome =
-  | { kind: "ok"; access: string }
+  | { kind: "ok"; access: string; refresh?: string }
   | { kind: "rejected" }
   | { kind: "retry"; why: string };
 
@@ -101,13 +108,15 @@ async function askBackend(refreshToken: string): Promise<RefreshOutcome> {
       console.error("Token refresh failed:", response.status);
       return { kind: "rejected" };
     }
-    const data = (await response.json()) as { access?: string };
+    const data = (await response.json()) as { access?: string; refresh?: string };
     if (typeof data.access !== "string" || data.access === "") {
       // Сервер ответил 200, но без токена — это его беда, а не мёртвый
       // refresh: жечь сессию не за что.
       return { kind: "retry", why: "200 без поля access" };
     }
-    return { kind: "ok", access: data.access };
+    const rotated =
+      typeof data.refresh === "string" && data.refresh !== "" ? data.refresh : undefined;
+    return { kind: "ok", access: data.access, refresh: rotated };
   } catch (error) {
     // Сюда попадают сетевые беды: сервер не ответил вовсе. Прежний код и
     // здесь говорил «войдите заново» — это и есть дефект №459.
@@ -127,6 +136,14 @@ async function refreshed(token: JWT): Promise<JWT> {
       ...token,
       accessToken: outcome.access,
       accessTokenExpires: accessExpiryMs(outcome.access),
+      // 🔴 РОТИРОВАННЫЙ REFRESH СОХРАНЯЕТСЯ (Plane №787). Без этой строки
+      // включённая на бэкенде ротация не даёт НИЧЕГО: сессия продолжала бы
+      // носить токен, выданный при входе, и на седьмые сутки непрерывной
+      // работы человека по-прежнему уводило бы на форму входа посреди
+      // экрана. А если когда-нибудь включат и список отозванных
+      // (`BLACKLIST_AFTER_ROTATION`), она стала бы прямой поломкой: старый
+      // токен отозван, а клиент шлёт именно его.
+      refreshToken: outcome.refresh ?? refreshToken,
     };
     delete next.error;
     return next;
