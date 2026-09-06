@@ -26,7 +26,7 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { FilterBar } from "@/components/filter-bar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatIsoDate } from "@/shared/lib/date";
+import { formatIsoDate, localIsoDate } from "@/shared/lib/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -1515,7 +1515,10 @@ function EventsCalendar({
   // месяц ближайшего к сегодня. Брать просто самое раннее было ошибкой —
   // реестр открывался на июле, когда все живые мероприятия в августе.
   const dates = events.map((event) => event.businessDate).sort();
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Местная дата, а не срез UTC (Plane №927): `toISOString` в поясе +05
+  // между 00:00 и 05:00 отдаёт вчерашний день, и календарь открывался бы не
+  // на том месяце. Разбор — в `shared/lib/date.ts`.
+  const todayIso = localIsoDate();
   const thisMonth = todayIso.slice(0, 7);
   const anchor =
     dates.find((date) => date.slice(0, 7) === thisMonth) ??

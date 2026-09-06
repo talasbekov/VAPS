@@ -265,3 +265,36 @@ def test_the_page_does_not_pull_the_whole_table(manager):  # noqa: F811
         "страница читается без LIMIT — значит в память тянется весь реестр: "
         + row_reads[0][:200]
     )
+
+
+def test_the_owner_filter_offers_each_name_once(manager):  # noqa: F811
+    """Список «Ведущий» не повторяет имя (Plane №910).
+
+    🔴 ПОЙМАНО ЖИВОЙ ПРОБОЙ, А НЕ ЧТЕНИЕМ. Перевод листинга на queryset
+    заменил сбор имён множеством на `values_list(...).distinct()` — и это
+    молча сломалось: у модели есть `Meta.ordering`, Django добавляет поля
+    сортировки в SELECT, и уникальность считается по тройке «имя +
+    created_at + id», то есть не считается вовсе. На стенде в списке
+    «Ведущий» имя `stand-seed` стояло ЧЕТЫРЕ раза, а всего вариантов
+    показывалось 21 вместо 3.
+
+    Лечится пустым `order_by()` перед `distinct()`; проба стережёт именно
+    это, а не число вариантов: их состав зависит от данных.
+    """
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    first = _event_with_two_objects(manager, 21)
+    second = _event_with_two_objects(manager, 22)
+    # ОДИН владелец у ДВУХ мероприятий — иначе проба вакуумна: без повторов
+    # уникальность не проверить, и мутация «снять order_by()» её не красит
+    # (проверено запуском — так и вышло с первой версией).
+    OpsSecurityEvent.objects.filter(pk__in=[first, second]).update(
+        owner_name="Повторов П."
+    )
+
+    owners = manager.get(f"{URL}?page_size=1").json()["owners"]
+
+    assert "Повторов П." in owners, "имя не попало в список — проверять нечего"
+    assert owners == sorted(set(owners)), (
+        f"список ответственных повторяет имена: {owners}"
+    )

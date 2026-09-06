@@ -540,9 +540,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # собранный по странице список предлагал бы не всех. Берётся ОДНА
         # КОЛОНКА, а не строки целиком (Plane №910): прежний вариант тащил в
         # память всю таблицу объектами ради одного поля.
+        # 🔴 `order_by()` ПЕРЕД `distinct()` — НЕ УКРАШЕНИЕ (Plane №910).
+        # У модели есть `Meta.ordering`, и Django добавляет поля сортировки в
+        # SELECT: уникальность считается по тройке «имя + created_at + id», то
+        # есть не считается вовсе. Поймано живой пробой реестра: в списке
+        # «Ведущий» имя `stand-seed` стояло ЧЕТЫРЕ раза. Пустой `order_by()`
+        # снимает сортировку модели, и `distinct()` работает по одному полю.
         owners = sorted(
             name
             for name in OpsSecurityEvent.objects.exclude(owner_name="")
+            .order_by()
             .values_list("owner_name", flat=True)
             .distinct()
             if name
