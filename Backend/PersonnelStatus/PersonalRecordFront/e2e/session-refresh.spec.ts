@@ -22,7 +22,7 @@
  *   3. человек оказался на форме входа после (2) → форма говорит, почему.
  */
 import { expect, test } from '@playwright/test'
-import { encode } from 'next-auth/jwt'
+import { decode, encode } from 'next-auth/jwt'
 import fs from 'node:fs'
 import path from 'node:path'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
@@ -138,6 +138,30 @@ async function sessionWith(cookie: string): Promise<{
   return body
 }
 
+/**
+ * Обновлённая cookie сессии из ответа `/api/auth/session`.
+ *
+ * NextAuth перевыпускает её на КАЖДОМ чтении сессии, и именно в ней лежит то,
+ * что колбэк `jwt` записал: без разбора этой cookie снаружи не видно, сохранил
+ * ли клиент ротированный refresh-токен (`/api/auth/session` его не отдаёт и
+ * отдавать не должен).
+ */
+async function sessionCookieAfter(cookie: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${APP}/api/auth/session/`, {
+    headers: { cookie: `${SESSION_COOKIE}=${cookie}` },
+  })
+  const raw = res.headers.getSetCookie?.() ?? []
+  const line = raw.find((c) => c.startsWith(`${SESSION_COOKIE}=`))
+  if (line === undefined) {
+    throw new Error('ответ не перевыпустил cookie сессии — разбирать нечего')
+  }
+  const value = line.slice(`${SESSION_COOKIE}=`.length).split(';')[0]
+  const secret = sessionSecret()
+  const token = await decode({ secret: secret!, token: value })
+  if (token === null) throw new Error('cookie сессии не разобралась тем же секретом')
+  return token as unknown as Record<string, unknown>
+}
+
 test.describe(LIVE ? 'продление сессии' : 'продление сессии (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
@@ -153,6 +177,34 @@ test.describe(LIVE ? 'продление сессии' : 'продление с�
     // Именно ЗАМЕНА, а не «токен на месте»: до правки здесь лежал бы тот же
     // протухший токен, и проба, проверяющая только наличие, зеленела бы.
     expect(got, 'токен не заменён — продления не было').not.toBe(pair.access)
+  })
+
+  test('ротированный refresh-токен сохраняется в сессии', async () => {
+    // 🔴 ЧТО ЭТО СТЕРЕЖЁТ (Plane №787, решение заказчика 06.09.2026).
+    // Бэкенд теперь РОТИРУЕТ refresh: каждое продление выдаёт новый токен с
+    // новым семисуточным окном, и непрерывная работа не упирается в потолок
+    // «семь суток от входа». Но ротация не значит ничего, пока клиент новый
+    // токен не сохранил: сессия продолжала бы носить выданный при входе, и
+    // человека по-прежнему уводило бы на форму входа посреди экрана — только
+    // теперь уже при включённой ротации, то есть совсем необъяснимо.
+    //
+    // Проба разбирает ПЕРЕВЫПУЩЕННУЮ cookie, а не ответ сессии: наружу
+    // refresh-токен не отдаётся и отдавать его незачем.
+    //
+    // КРАСНОТА НА МУТАЦИИ: убери `refreshToken: outcome.refresh ?? …` в
+    // `lib/auth-config.ts` — в cookie останется прежний токен, и проба
+    // покраснеет строкой «refresh не заменён».
+    const secret = sessionSecret()
+    expect(secret, 'NEXTAUTH_SECRET не найден — подписать cookie нечем').not.toBeNull()
+    const pair = await tokenPair()
+    const stored = await sessionCookieAfter(
+      await expiredSessionCookie(secret!, pair.access, pair.refresh),
+    )
+
+    expect(typeof stored.refreshToken, 'refresh-токен пропал из сессии').toBe('string')
+    expect(stored.refreshToken, 'refresh не заменён — ротация ушла в никуда').not.toBe(
+      pair.refresh,
+    )
   })
 
   test('мёртвый refresh отдаёт ошибку вместо токена', async () => {
