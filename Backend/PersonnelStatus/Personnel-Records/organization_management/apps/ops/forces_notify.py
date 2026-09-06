@@ -102,6 +102,7 @@ def _directorate_heads(division_ids):
         TemporaryDutyPermission,
         UserRole,
     )
+    from organization_management.apps.operations.selectors import DivisionTreeSelector
 
     heads = {str(pk): set() for pk in division_ids}
     if not division_ids:
@@ -115,17 +116,46 @@ def _directorate_heads(division_ids):
         role_code_id__in=roles,
     ).values_list("scope_division_id", "user_id")
 
+    for division_id, user_id in rows:
+        heads.setdefault(str(division_id), set()).add(str(user_id))
+
+    # 🔴 ОБЛАСТЬ ДЕЖУРСТВА ЧИТАЕТСЯ ТАК ЖЕ, КАК ЕЁ ЧИТАЕТ ГЕЙТ (Plane №882,
+    # найдено ревью). Первая редакция брала `scope_division_id__in=ids` —
+    # ТОЧНОЕ совпадение с управлением, — а `PermissionService._scope_matches`
+    # трактует область шире в двух местах:
+    #   • грант БЕЗ области (`scope_division_id is None`) считается
+    #     ГЛОБАЛЬНЫМ и проходит куда угодно;
+    #   • грант на ПРЕДКА (департамент) накрывает все его управления через
+    #     `subtree_ids`.
+    # То есть дежурный без области или с областью на департамент выделить
+    # людей мог, а уведомления по-прежнему не получал — ровно то расхождение,
+    # которое карточка №800 объявляла закрытым. Фильтр строже гейта — это не
+    # «осторожнее», это другая беда с тем же симптомом.
+    #
+    # Точная область у ПОСТОЯННЫХ ролей оставлена намеренно (см. шапку
+    # функции): запрос адресован управлению, и ответственный за департамент
+    # его и отправляет. У дежурства такого довода нет: оно даёт ПРАВО, и
+    # спрашивать его надо тем же вопросом, что и гейт.
     now = Clock.now()
-    duty_rows = TemporaryDutyPermission.objects.filter(
+    duties = TemporaryDutyPermission.objects.filter(
         is_active=True,
-        scope_division_id__in=ids,
         duty_role_code__in=roles,
         starts_at__lte=now,
         ends_at__gte=now,
     ).values_list("scope_division_id", "user_id")
 
-    for division_id, user_id in list(rows) + list(duty_rows):
-        heads.setdefault(str(division_id), set()).add(str(user_id))
+    wanted = {int(pk) for pk in ids}
+    # Один скан дерева на весь вызов, а не на каждое дежурство.
+    children_map = DivisionTreeSelector.children_map()
+    for scope_division_id, user_id in duties:
+        if scope_division_id is None:
+            covered = wanted
+        else:
+            covered = wanted & DivisionTreeSelector.subtree_ids(
+                scope_division_id, children_map=children_map
+            )
+        for division_id in covered:
+            heads.setdefault(str(division_id), set()).add(str(user_id))
     return heads
 
 
