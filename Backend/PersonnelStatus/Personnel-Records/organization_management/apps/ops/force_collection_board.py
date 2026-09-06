@@ -171,18 +171,29 @@ def _responsibles(department_ids):
     за расход департамента», и «Ответственный за сбор сил», а завтра появится
     третья роль — перечисление кодов разошлось бы с правами молча, а право
     одно и проверяется тем же ключом, что и сама ручка ответа.
+
+    🔴 ВОПРОС «КАКИЕ РОЛИ ДЕРЖАТ ПРАВО» ЗАДАЁТСЯ ДОГОВОРУ (Plane №923). Здесь
+    стояло точное совпадение `permission_code_id=RESPONSIBLE_PERMISSION`, и
+    грант «*» терялся: роль `ADMIN`, чьё право задано именно звёздочкой
+    (`seed_operations.py`), в колонку «Ответственный» не попадала НИКОГДА.
+    На стенде это не видно — у персоны `admin` область `none`, и её отсекает
+    совпадение области, — поэтому дефект и дожил до ревью.
+
+    Это была КОПИЯ НОМЕР ЧЕТЫРЕ того же вопроса: три предыдущие сведены в
+    `PermissionService.roles_holding` по №880, и там же записано, почему
+    wildcard нельзя забывать. Ровно этот случай №880 и предсказывал — копия,
+    оставшаяся в стороне, разошлась с остальными тремя.
     """
-    from organization_management.apps.operations.models import RolePermission, UserRole
+    from organization_management.apps.operations.models import UserRole
+    from organization_management.apps.operations.services import PermissionService
 
     ids = [int(x) for x in department_ids if str(x).isdigit()]
     out = {str(pk): "" for pk in ids}
     if not ids:
         return out
-    allowed_roles = list(
-        RolePermission.objects.filter(
-            permission_code_id=RESPONSIBLE_PERMISSION
-        ).values_list("role_code_id", flat=True)
-    )
+    # Пустой набор — законный ответ («права не держит никто»), и тогда строка
+    # остаётся без ответственного: fail-closed, как у остальных читателей.
+    allowed_roles = PermissionService.roles_holding(RESPONSIBLE_PERMISSION)
     rows = list(
         UserRole.objects.filter(
             is_active=True,

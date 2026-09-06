@@ -574,6 +574,47 @@ def test_responsible_is_the_account_that_can_answer_the_request(manager, hq):  #
     )
 
 
+def test_a_wildcard_role_is_a_responsible_too(manager, hq):  # noqa: F811
+    """🔴 Plane №923: роль с грантом «*» держит и `forces.allocate`.
+
+    Отбор ролей шёл по `permission_code_id=RESPONSIBLE_PERMISSION` — точным
+    совпадением кода права, без гранта «*». Роль `ADMIN`, чьё право задано
+    именно звёздочкой (`seed_operations.py`), в колонку «Ответственный» не
+    попадала НИКОГДА.
+
+    На стенде дефект не виден: у персоны `admin` область `none`, и её
+    отсекает второе условие запроса — совпадение области с департаментом.
+    Поэтому проба заводит держателя «*» С ОБЛАСТЬЮ РОВНО НА ДЕПАРТАМЕНТ: у
+    него всё то же, что у обычного ответственного, кроме способа записи
+    права. Только так она отличает «отбор учитывает wildcard» от «отбор
+    учитывает область».
+
+    Держатель «*» здесь ЕДИНСТВЕННЫЙ кандидат нарочно. Будь рядом обычный
+    держатель `forces.allocate`, проба говорила бы о порядке строк
+    (`setdefault` берёт первую), а не о wildcard, и осталась бы зелёной с
+    дефектом.
+
+    Мутация: вернуть `permission_code_id=RESPONSIBLE_PERMISSION` вместо
+    договора — колонка отдаст пустую строку вместо имени.
+    """
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    _, admin_like = client_for(
+        "dep-admin",
+        "ADMIN_LIKE",
+        perms=("*",),
+        scope_division_id=department.pk,
+    )
+
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    row = hq.get(f"{base}force-collection/").json()["allocations"][0]
+
+    assert row["responsibleName"] == admin_like.get_username(), (
+        "держатель гранта «*» не назван ответственным: отбор ролей потерял wildcard"
+    )
+
+
 def test_the_responsible_name_does_not_change_between_identical_requests(manager, hq):  # noqa: F811
     """Одинаковые запросы дают ОДНО И ТО ЖЕ имя.
 
