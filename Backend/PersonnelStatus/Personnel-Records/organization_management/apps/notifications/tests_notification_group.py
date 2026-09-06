@@ -63,7 +63,12 @@ def _without_comments(text: str) -> str:
     неверное имя дословно.
     Первый прогон этой пробы так и покраснел — на собственной документации.
     """
+    # 🔴 ОБА ВИДА ДОКСТРОК, А НЕ ОДИН (найдено ревью, Plane №917).
+    # Снималась только тройная ДВОЙНАЯ кавычка; докстрока в тройной ОДИНАРНОЙ
+    # оставалась в разборе — и сторож обвинил бы собственную документацию,
+    # напиши её кто-нибудь так. Проверено на образце.
     text = re.sub(r'"""[\s\S]*?"""', "", text)
+    text = re.sub(r"'''[\s\S]*?'''", "", text)
     return re.sub(r"#[^\n]*", "", text)
 
 
@@ -84,7 +89,14 @@ def test_no_module_builds_the_group_name_by_hand():
     Красная мутация — вернуть `f"user_{...}"` куда угодно в разделе: проба
     назовёт файл и строку. Ровно эта мутация и была дефектом №824.
     """
-    handmade = re.compile(r"""["'f]?["']user_\{|["']user_["']\s*\+""")
+    # 🔴 ЗАПРЕЩЁН САМ ПРЕФИКС В СТРОКЕ, А НЕ ПЕРЕЧЕНЬ СПОСОБОВ СКЛЕЙКИ
+    # (найдено ревью, Plane №917). Прежняя регулярка перечисляла формы —
+    # f-строку и склейку плюсом, — и мимо проходили `"user_%s" % uid` и
+    # `"".join(["user_", …])`: замерено, обе НЕ ловились. Перечень способов
+    # склеить строку в питоне закончить нельзя, а законное место у литерала
+    # `user_` ровно одно — `groups.py`, и оно из обхода исключено. Значит
+    # правильный вопрос не «как склеили», а «откуда взялся префикс».
+    handmade = re.compile(r"""["']user_""")
     offenders = [
         f"{path.relative_to(APP_DIR)}:{index}"
         for path in _sources()
@@ -112,7 +124,11 @@ def test_every_channel_call_takes_its_group_from_the_contract():
         text = _without_comments(path.read_text(encoding="utf-8"))
         for match in call.finditer(text):
             first = match.group(1).strip()
-            if "group_name_for(" in first or first.endswith("user_group"):
+            # 🔴 ТОЧНОЕ ИМЯ, А НЕ ХВОСТ (найдено ревью, Plane №917):
+            # `endswith("user_group")` освобождал заодно `wrong_user_group` и
+            # любую переменную с таким окончанием. Освобождается ровно поле
+            # потребителя, которое он сам получил из договора.
+            if "group_name_for(" in first or first in {"self.user_group", "user_group"}:
                 continue
             line = text[: match.start()].count("\n") + 1
             offenders.append(f"{path.relative_to(APP_DIR)}:{line} → {first[:40]}")
