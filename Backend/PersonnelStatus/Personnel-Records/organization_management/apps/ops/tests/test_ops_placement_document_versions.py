@@ -413,3 +413,55 @@ def test_the_version_names_the_author_by_surname_not_by_login(
     )
     # И то же самое в хранилище, а не только в ответе ручки.
     assert _versions(event_id)[0].created_by == "Ниязов П."
+
+
+def test_import_from_passport_is_refused_on_a_frozen_object(manager):  # noqa: F811
+    """Импорт постов из паспорта тоже держит заморозку (Plane №868).
+
+    ЗАЩИТА ВГЛУБЬ, А НЕ ЗАКРЫТИЕ ИЗВЕСТНОЙ ДЫРЫ. Из четырёх писателей
+    `recon_sector_posts` гарда не было только у импорта: он проверял лишь
+    стадию МЕРОПРИЯТИЯ. Сценарий узкий — «RECON при замороженном объекте»
+    получается по сути только после админского обхода этапов, — но правило
+    «состав объекта после отправки документа не меняется» держится тем, что
+    его соблюдают ВСЕ входы, а не тем, что к последнему трудно подойти.
+
+    Заморозка здесь ставится ЗАКРЫТИЕМ объекта (`[ЗАК-05]`): это самое позднее
+    основание, у закрытого объекта статус документа может быть любым, и
+    правило «заморожен по документу» его бы не покрыло.
+
+    🔴 КРАСНАЯ ПРОБА: убери `_require_visit_placement_editable(target)` из
+    `import_recon_from_passport` — импорт пройдёт и допишет посты в закрытый
+    объект.
+    """
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.ops import security_events as service
+
+    obj = make_object(with_passport=True)
+    created = manager.post(
+        URL,
+        {
+            "title": "Проба заморозки импорта",
+            "objectId": str(obj.pk),
+            "businessDate": "2026-12-30",
+            "kind": "INTERNAL",
+            "chiefEmployeeId": str(chief_for(manager).pk),
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.content
+    event_id = created.json()["id"]
+    base = f"{URL}{event_id}/"
+
+    event = service.lock_event(event_id)
+    assert event.stage == "RECON", f"проба вакуумна: стадия {event.stage}"
+    visit = event.visit_objects.first()
+    visit.closed_at = Clock.now()
+    visit.stage = "CLOSED"
+    visit.save(update_fields=["closed_at", "stage", "updated_at"])
+
+    refused = manager.post(f"{base}recon/import-from-passport/")
+
+    assert refused.status_code == 422, refused.content
+    body = refused.json()
+    assert body["error_code"] == "PLACEMENT_FROZEN", body
+    assert "закрыт" in body["message"], body["message"]
