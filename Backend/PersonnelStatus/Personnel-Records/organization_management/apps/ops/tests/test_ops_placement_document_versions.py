@@ -465,3 +465,69 @@ def test_import_from_passport_is_refused_on_a_frozen_object(manager):  # noqa: F
     body = refused.json()
     assert body["error_code"] == "PLACEMENT_FROZEN", body
     assert "закрыт" in body["message"], body["message"]
+
+
+def test_the_chief_guard_sees_unmarked_posts_of_a_single_object(manager):  # noqa: F811
+    """У ОМ с ЕДИНСТВЕННЫМ объектом посты правит его старший (Plane №862).
+
+    Решение заказчика 06.09.2026 («требовать старшего и здесь») закрыло
+    расхождение двух правил на одних данных: заморозка (№535) считала
+    неразмеченную строку принадлежащей единственному объекту, а гард старшего
+    выбрасывал её как ничью — и правило `[РЕК-02]`/№424 «посты объекта пишет
+    его старший» не работало для одиночных мероприятий ВОВСЕ. Состояние
+    обычное: посты заводятся неразмеченными, разметку проставляет только
+    добавление второго объекта.
+
+    🔴 ВТОРАЯ ПОЛОВИНА ПРОБЫ ВАЖНЕЕ ПЕРВОЙ — она стережёт болезнь №634,
+    которую расширение набора могло вернуть: правка ТОЛЬКО чек-листа обязана
+    сохраняться и без старшего. Пункты осмотра живут в отдельном поле, и
+    запрос, не трогающий посты, гард звать не должен.
+
+    КРАСНАЯ ПРОБА: верни в `_visits_with_changed_posts` группировку без
+    `only` — первая половина покраснеет.
+    """
+    obj = make_object(with_passport=True)
+    created = manager.post(
+        URL,
+        {
+            "title": "Проба гарда старшего",
+            "objectId": str(obj.pk),
+            "businessDate": "2026-12-29",
+            "kind": "INTERNAL",
+        },
+        format="json",
+    )
+    assert created.status_code == 201, created.content
+    event_id = created.json()["id"]
+    base = f"{URL}{event_id}/"
+
+    data = manager.get(base).json()
+    assert data["visitObjects"][0]["chiefEmployeeId"] is None, (
+        "фикстура назначила старшего — проба стала бы вакуумной"
+    )
+    posts = [
+        {
+            "id": "",
+            "sector": "Сектор 862",
+            "post": "Пост 862",
+            "task": "",
+            "need": 1,
+            "shift": "",
+            "requirements": "",
+            "comment": "",
+        }
+    ]
+
+    refused = manager.patch(
+        f"{base}recon/",
+        {"checklist": data["reconChecklist"], "sectorPosts": posts},
+        format="json",
+    )
+
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "VISIT_CHIEF_REQUIRED", refused.json()
+
+    # А чек-лист без старшего сохраняется — иначе вернулась бы №634.
+    checklist = [{**item, "state": "NORMAL"} for item in data["reconChecklist"]]
+    saved = manager.patch(f"{base}recon/", {"checklist": checklist}, format="json")
+    assert saved.status_code == 200, saved.content

@@ -789,6 +789,17 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.override_stage(om.pk, stage="ACKNOWLEDGEMENT", actor=ACTOR)
     event_service.override_stage(om.pk, stage="RECON", actor=ACTOR)
     om.refresh_from_db()
+    # 🔴 СТАРШИЙ НАЗНАЧАЕТСЯ ДО ПРАВКИ РАСЧЁТА (Plane №862, решение заказчика
+    # 06.09.2026). Он и раньше был обязателен для ЗАВЕРШЕНИЯ рекогносцировки
+    # (ниже по сценарию), но не для самой правки: у ОМ с единственным объектом
+    # посты заводятся неразмеченными, и гард старшего их не видел. После
+    # сужения исключения (`[РЕК-02]`: неразмеченная строка одиночного ОМ — его
+    # строка) правка требует старшего, и назначение переехало сюда. Сценарий
+    # от этого не изменился: тот же сотрудник, тот же вызов, только раньше.
+    for _visit in om.visit_objects.all():
+        event_service.assign_visit_object_chief(
+            om.pk, _visit.pk, employee_id=str(employee.pk), actor="system:audit"
+        )
     # Id строке расчёта выдаёт СЕРВЕР (Plane №30) — «row-1» это пометка
     # черновика клиента, в сохранённом расчёте её нет. Берём выданный.
     recon_post_id = event_service.update_recon(
@@ -816,11 +827,8 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         force_request=12,
     ).recon_sector_posts[0]["id"]
     # `[РЕК-02]`/`[РЕК-07]` (Plane №424): без старшего объекта рекогносцировку
-    # не завершить — сценарий называет его тем же сотрудником, что и выше.
-    for _visit in om.visit_objects.all():
-        event_service.assign_visit_object_chief(
-            om.pk, _visit.pk, employee_id=str(employee.pk), actor="system:audit"
-        )
+    # не завершить. Назначение переехало ВЫШЕ, к первой правке расчёта (№862),
+    # и повторять его здесь незачем — сценарий и так идёт со старшим.
     event_service.complete_recon(om.pk)
     # Стадии «Потребность» и «Запрос сил» проходит сервер сам (Plane №110):
     # завершение рекогносцировки оставляет ОМ уже на «Расстановке», и ручное
