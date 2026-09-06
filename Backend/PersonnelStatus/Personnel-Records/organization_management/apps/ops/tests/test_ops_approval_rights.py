@@ -377,6 +377,50 @@ def test_the_owner_of_the_permission_leaves_no_object_lead_trace(
     ).exists()
 
 
+def test_the_permission_holder_who_is_also_the_object_chief_leaves_no_trace(
+    manager, two_objects_on_approval  # noqa: F811
+):
+    """🔴 СЛУЧАЙ ПЕРЕСЕЧЕНИЯ, КОТОРЫЙ НЕ ПРОВЕРЯЛСЯ НИЧЕМ (дописано по ревью,
+    задача №825).
+
+    Соседняя отрицательная проба делает старшего объекта ПОСТОРОННИМ — её
+    собственный комментарий это признаёт: «иначе отправляющий оказался бы и
+    правообладателем, и старшим сразу». Но именно этот случай и был сломан:
+    `permission_override` зовётся ДО `require_permission`, поэтому ведущий ОМ,
+    который заодно старший объекта, уходил в ветку обхода, и в журнал ложилась
+    запись «Согласование ведёт старший объекта» о человеке, действовавшем ПО
+    ПРАВУ. Требование карточки прямо обратное.
+
+    Мутация: убрать `_acts_by_permission` из `_object_lead_override` — запись
+    появится, и проба покраснеет.
+    """
+    from organization_management.apps.operations import audit_service
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    base, event_id, first, _second, _ = two_objects_on_approval
+    # Старший объекта — САМ отправляющий, у которого есть и право `event.manage`.
+    me = manager.get("/api/operations/my-employee/").json()["employee"]
+    manager.post(
+        f"{base}visit-objects/{first.pk}/chief/",
+        {"employeeId": str(me["id"])},
+        format="json",
+    )
+    _add_approver(manager, base, first)
+
+    sent = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert sent.status_code == 200, sent.content
+    assert not OpsAuditLog.objects.filter(
+        action=audit_service.SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD,
+        entity_id=event_id,
+    ).exists(), (
+        "журнал назвал старшим объекта человека, действовавшего по праву: "
+        "запись отвечает на вопрос «по роли, а не по праву», и пересечение "
+        "делает её ложной"
+    )
+
+
 # ── Ревью 9dcdcf1f/c9691422: обход этапа не шире своего обоснования (№613) ──
 
 
