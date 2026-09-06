@@ -4573,8 +4573,26 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
         with transaction.atomic():
             from organization_management.apps.ops import forces_notify
 
-            forces_notify.notify_headquarters_response(
+            report = forces_notify.notify_headquarters_response(
                 event, target, allocating=count
+            )
+        # 🔴 ОТЧЁТ РАССЫЛКИ ЧИТАЕТСЯ, А НЕ ОТБРАСЫВАЕТСЯ (Plane №883).
+        # Функция считает доставленное честно, но её отчёт здесь уходил в
+        # никуда — а честное число, которого никто не видит, отличается от
+        # нечестного только на бумаге. Отказ вставки уведомления не оставляет
+        # НИ ОДНОГО другого следа: `notify()` глотает своё исключение сам, а
+        # `except` ниже ловит только ошибку чтения ролей. Значит либо здесь,
+        # либо нигде.
+        #
+        # Вне `atomic`, а не внутри: строка журнала — не часть транзакции, и
+        # писать её надо после того, как точка сохранения закрыта успешно.
+        if report["undelivered"]:
+            logger.warning(
+                "уведомление штабу об ответе департамента не легло: "
+                "ОМ=%r заявка=%r не дошло=%s",
+                event.code,
+                allocation_id,
+                report["undelivered"],
             )
     except Exception:  # noqa: BLE001 — уведомление не должно ронять ответ
         # Глотать МОЛЧА тоже нельзя: побочный канал отвалился, и об этом
