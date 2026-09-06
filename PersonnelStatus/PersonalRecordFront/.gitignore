@@ -11,6 +11,8 @@
 /.next-prod/
 # каталог мок-стенда (NEXT_PUBLIC_OPS_MOCK_DOMAINS на :3107)
 /.next-mock/
+# каталог стенда против ОТДЕЛЬНОГО бэкенда :8101 (npm run stand:isolated, Plane №843)
+/.next-isolated/
 /out/
 
 # production
