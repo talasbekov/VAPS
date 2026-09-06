@@ -303,8 +303,14 @@ def test_the_second_department_employee_reads_everything_and_writes_a_bulletin(s
         "event.manage", "event.delete", "event.stage_override", "gvo.manage",
         # `placement.command` рядом с `placement.manage` (Plane №603): пин был
         # поимённым, а более СИЛЬНОЕ право (расстановка на любом объекте, а не
-        # только на своём) в перечне отсутствовало. Выдача его этой персоне
-        # оставила бы весь набор зелёным — сторож на месте, но стережёт не то.
+        # только на своём) в перечне отсутствовало.
+        # 🔴 ОБОСНОВАНИЕ БЫЛО СИЛЬНЕЕ ФАКТА (уточнено ревью №825). Здесь
+        # стояло «выдача его этой персоне оставила бы весь набор зелёным» —
+        # неправда: пин держателей выше (`holders("placement.command") ==
+        # {"HEAD_OPS_UNIT"}`) покраснел бы от любой выдачи. Правда скромнее и
+        # всё равно стоит правки: сторож был ОДИН, а теперь мутация «выдать
+        # `placement.command` персоне `EMPLOYEE_OPS_D2`» краснит две пробы —
+        # и ту, что перечисляет держателей, и эту, что читает набор персоны.
         "placement.manage", "placement.command",
         "assignment.approve", "assignment.return",
         "status.manage", "object.manage", "orgstructure.manage",
