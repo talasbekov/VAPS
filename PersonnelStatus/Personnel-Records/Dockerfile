@@ -33,4 +33,4 @@ RUN python manage.py collectstatic --noinput
 # до ASGI-приложения не доходил. Воркер uvicorn даёт протокол, gunicorn
 # остаётся управлять процессами.
 CMD ["gunicorn", "organization_management.config.asgi:application", \
-     "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+     "-k", "uvicorn_worker.UvicornWorker", "--bind", "0.0.0.0:8000"]

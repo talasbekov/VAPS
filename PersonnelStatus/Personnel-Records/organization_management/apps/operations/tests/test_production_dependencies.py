@@ -570,16 +570,33 @@ LAUNCHERS = {
 
 
 def _launch_commands():
-    """Строки запуска из `Dockerfile` (CMD/ENTRYPOINT) и `docker-compose.yml`."""
+    """Строки запуска из `Dockerfile` (CMD/ENTRYPOINT) и `docker-compose.yml`.
+
+    🔴 ПРОДОЛЖЕНИЕ СТРОКИ СКЛЕИВАЕТСЯ (найдено мутацией, Plane №888). Первая
+    редакция брала ровно ту строку, что начинается с `CMD`, — а команда в
+    `Dockerfile` перенесена обратным слэшем, и `-k <класс воркера>` стоит на
+    ВТОРОЙ строке. Сторож её не видел вовсе: мутация «вернуть устаревший
+    `uvicorn.workers` при снятом `uvicorn`» прошла ЗЕЛЁНОЙ, хотя обязана была
+    покраснеть. Слепота тихая — сторож при этом «работает» и проверяет
+    docker-compose, где команда однострочная.
+    """
     for path in LAUNCH_FILES:
         if not path.exists():
             continue
-        for index, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            line = raw.strip()
+        lines = path.read_text(encoding="utf-8").splitlines()
+        index = 0
+        while index < len(lines):
+            start = index
+            line = lines[index].strip()
+            index += 1
             if line.startswith("#"):
                 continue
-            if line.startswith(("CMD", "ENTRYPOINT", "command:")):
-                yield f"{path.name}:{index}", line
+            if not line.startswith(("CMD", "ENTRYPOINT", "command:")):
+                continue
+            while line.endswith("\\") and index < len(lines):
+                line = line[:-1].rstrip() + " " + lines[index].strip()
+                index += 1
+            yield f"{path.name}:{start + 1}", line
 
 
 def test_the_launch_command_names_only_declared_executables():
@@ -598,6 +615,49 @@ def test_the_launch_command_names_only_declared_executables():
     assert offenders == [], (
         "команда запуска боевого контейнера зовёт то, чего нет в "
         f"requirements/base.txt: {offenders}"
+    )
+
+
+def test_the_worker_class_comes_from_a_declared_package():
+    """Класс воркера в команде запуска — из ОБЪЯВЛЕННОГО пакета (Plane №888).
+
+    🔴 ЧТО СТЕРЕЖЁТСЯ И ПОЧЕМУ ЭТОГО НЕ СТЕРЕГЛО НИЧТО. `-k <модуль>.<Класс>`
+    — третья строка, поднимающая боевой контур: не импорт кода, не настройка и
+    не имя исполняемого файла. Соседние проверки её не видят: одна смотрит
+    ИСПОЛНЯЕМЫЕ имена команды, другая — приложение (`asgi`/`wsgi`).
+
+    Так и вышло с №888: команда звала `uvicorn.workers.UvicornWorker`, а этот
+    модуль объявлен upstream устаревшим, и `uvicorn>=0.30` разрешает любую
+    версию новее — в день удаления модуля контейнер не стартует. Локально это
+    не ловится вовсе: образ здесь не собирается, `uvicorn` в `.venv` не стоит.
+
+    Проба спрашивает не «существует ли класс» (нечем — пакета в окружении
+    нет), а «объявлен ли пакет, из которого он берётся». Это ровно то, что
+    проверяемо на нашей стороне, и ровно то, чего не хватало.
+
+    КРАСНАЯ ПРОБА: верни `-k uvicorn.workers.UvicornWorker` при объявленном
+    `uvicorn-worker` — покраснеет, если `uvicorn` не объявлен; убери
+    `uvicorn-worker` из `base.txt` — покраснеет на нынешней команде.
+    """
+    declared = _declared(ROOT / "requirements" / "base.txt")
+    offenders = []
+    for where, line in _launch_commands():
+        # 🔴 РАЗДЕЛИТЕЛЬ — НЕ ТОЛЬКО ПРОБЕЛ (вторая слепота, найденная мутацией).
+        # В `Dockerfile` команда записана JSON-массивом: `"-k",
+        # "uvicorn_worker.UvicornWorker"`, то есть между флагом и значением
+        # стоят кавычка и запятая. Регулярка с `\s+` находила класс ТОЛЬКО в
+        # `docker-compose.yml`, и мутация «вернуть устаревший модуль в
+        # Dockerfile» проходила зелёной — при уже починенной склейке строк.
+        for match in re.finditer(r"-k[\"'\s,]+([A-Za-z0-9_.]+)\.[A-Za-z0-9_]+", line):
+            module = match.group(1)
+            # Дистрибутив — по ВЕРХНЕМУ модулю: `uvicorn_worker` приносит
+            # `uvicorn-worker`, `uvicorn.workers` — `uvicorn`.
+            distribution = module.split(".")[0].replace("_", "-").lower()
+            if distribution not in declared:
+                offenders.append(f"{where}: -k {module} → {distribution}")
+    assert offenders == [], (
+        "класс воркера взят из пакета, которого нет в requirements/base.txt: "
+        f"{offenders}"
     )
 
 
