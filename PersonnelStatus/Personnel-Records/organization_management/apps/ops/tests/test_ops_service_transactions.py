@@ -95,13 +95,21 @@ def _calls(node):
     }
 
 
+def _atomic_decorators(node):
+    return [ast.unparse(d) for d in node.decorator_list].count("transaction.atomic")
+
+
 def _has_atomic_decorator(node):
     """Декоратор `@transaction.atomic` накрывает ВСЮ функцию.
 
-    Ровно один: два декоратора подряд — это уже дефект №509, и его стережёт
-    своя проба.
+    Ровно один: два декоратора подряд — дефект №485/№509, и его стережёт
+    `test_no_function_carries_the_atomic_decorator_twice` НИЖЕ В ЭТОМ ФАЙЛЕ.
+    🔴 Здесь стояло «его стережёт своя проба» — и такой пробы не существовало
+    вовсе (найдено ревью №825): дубль ловился только здесь, побочно, и только
+    у функций, берущих замок. Обещание закрыто пробой, а не снято: сторож на
+    один класс дешевле, чем разбираться, почему «своя проба» ничего не нашла.
     """
-    return [ast.unparse(d) for d in node.decorator_list].count("transaction.atomic") == 1
+    return _atomic_decorators(node) == 1
 
 
 def _atomic_block_calls(node):
@@ -349,4 +357,31 @@ def test_no_lock_lives_outside_the_packages_the_guard_reads():
         "замок берут разделы, которых сторож не читает: "
         f"{sorted(owners - set(SERVICE_PACKAGES))}. Допишите их в "
         "SERVICE_PACKAGES — иначе проверка молча их пропускает."
+    )
+
+
+def test_no_function_carries_the_atomic_decorator_twice():
+    """Два `@transaction.atomic` подряд — след склейки (Plane №485, №509).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. Поведение от дубля не меняется — вложенная транзакция
+    становится точкой сохранения, — и потому он живёт незамеченным. Цена не в
+    поведении: читатель начинает искать во втором декораторе смысл, и следующая
+    правка транзакций делается наугад. Так дубль на `complete_placement` прожил
+    от склейки №390/№396 до №479.
+
+    Побочно дубль ловил `_has_atomic_decorator` (`== 1`), но ТОЛЬКО у функций,
+    берущих замок, и с сообщением не про то: «зовёт помощника вне транзакции».
+    Здесь он назван прямо и ловится у любой функции разделов сторожа.
+
+    КРАСНАЯ НА МУТАЦИИ: поставь второй `@transaction.atomic` над любой функцией
+    в `ops`/`operations`/`statuses`/`employees` — проба назовёт её поимённо.
+    """
+    doubled = []
+    for path in _service_sources():
+        for full_name, _simple, node in _module_functions(path):
+            if _atomic_decorators(node) > 1:
+                doubled.append(f"{path.name}:{node.lineno} {full_name}")
+    assert doubled == [], (
+        "функция несёт `@transaction.atomic` дважды — это след склейки, а не "
+        "вложенная транзакция ради точки сохранения: " + ", ".join(sorted(doubled))
     )
