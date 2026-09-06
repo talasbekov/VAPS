@@ -329,3 +329,44 @@ def test_the_api_and_the_service_answer_the_same_status_without_version_rows(
 
     assert row["documentStatus"] == "DRAFT"
     assert row["documentStatus"] == service.document_status_of(visit)
+
+
+def test_the_version_diff_names_a_post_the_same_way_everywhere():
+    """История версий печатает подпись поста ОБЩЕЙ функцией (Plane №875).
+
+    ЧТО БЫЛО. `document_version_diff` собирал «сектор · пост» ТРЕТЬЕЙ копией
+    склейки, и она расходилась с общей `post_label` на трёх входах из
+    четырёх: у поста без номера давала «Периметр · », без сектора — « · Пост
+    3», без обоих — « · », то есть разделитель без сторон. Читает эту строку
+    человек — в истории версий документа (`[ВОЗ-06]`) и в деле согласования.
+
+    🔴 ЧТО ПРОВЕРЯЕТСЯ, А ЧТО НЕТ. Проверяется ПЕЧАТЬ. Сравнение версий
+    подписью не управляется — ключом там идёт идентификатор поста, — и
+    отдельной пробы на «пост не потерял сам себя между версиями» здесь не
+    нужно: она проверяла бы не эту правку.
+
+    КРАСНАЯ ПРОБА: верни в `posts_of` склейку
+    `f"{p.get('sector','')} · {p.get('post','')}"` — покраснеют все три
+    вырожденных случая разом.
+    """
+    from organization_management.apps.ops import security_events as service
+
+    previous = {"posts": [], "assignments": []}
+    current = {
+        "posts": [
+            {"id": "p1", "sector": "Периметр", "post": "Пост 1"},
+            {"id": "p2", "sector": "Периметр", "post": ""},
+            {"id": "p3", "sector": "", "post": "Пост 3"},
+            {"id": "p4", "sector": "", "post": ""},
+        ],
+        "assignments": [],
+    }
+
+    added = service.document_version_diff(previous, current)["addedPosts"]
+
+    assert added == ["Периметр · Пост 1", "Периметр", "Пост 3", "p4"], added
+    # И то же самое — общей функцией: подпись обязана быть ОДНОЙ, а не
+    # «похожей».
+    assert added == [
+        service.post_label(post) for post in current["posts"]
+    ]
