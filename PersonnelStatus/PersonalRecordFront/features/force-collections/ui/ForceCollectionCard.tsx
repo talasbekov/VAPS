@@ -207,7 +207,10 @@ function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: str
                       №{item.sequence} · запрошено {item.requested}
                       {item.allocating !== null ? ` · выделяют ${item.allocating}` : ""} ·{" "}
                       {ALLOCATION_STATUS[item.status] ?? item.status} ·{" "}
-                      {new Date(item.recordedAt).toLocaleString("ru-RU")}
+                      {/* Через общий модуль (Plane №932): инлайн терял
+                          защиту от `Invalid Date`, и в строке истории вместо
+                          момента вставало бы это слово. */}
+                      {formatIsoDateTime(item.recordedAt)}
                     </li>
                   ))}
                 </ul>

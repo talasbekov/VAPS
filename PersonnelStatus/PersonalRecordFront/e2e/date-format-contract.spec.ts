@@ -122,6 +122,125 @@ test.describe('формат даты соответствует форме по�
  * возвращает их же — таких мест в разделе шесть, и у каждого стоит свой
  * комментарий.
  */
+/**
+ * Метка момента печатается ЧЕРЕЗ ОБЩИЙ МОДУЛЬ, а не инлайном (Plane №932).
+ *
+ * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Соседний блок этого файла ловит виновных ПО ВЫЗОВАМ
+ * `formatIsoDate*` с аргументом на `At`. В обходном варианте таких вызовов
+ * нет вовсе: момент печатается `new Date(<поле>).toLocaleString(...)`, формат
+ * при этом совпадает — и правка выглядит косметической. Но обход модуля
+ * теряет ЗАЩИТУ: `new Date` от неразбираемой строки даёт `Invalid Date`, и
+ * `toLocaleString` печатает её человеку буквально. `formatIsoDateTime` и
+ * `formatIsoDayTime` заведены по №730 ровно от этого и отдают «—».
+ *
+ * Класс подтверждён делом: №926 закрыла одно такое место в `ConductStage`, а
+ * на 170 строк ниже в ТОМ ЖЕ файле жило второе — то есть сторож давал зелень
+ * и читался как «класс закрыт», пока мимо него проходил целый способ записи.
+ *
+ * ГРАНИЦА ОТБОРА НАЗВАНА ЧЕСТНО. Виноват `new Date(<имя на At>).toLocale*` —
+ * то есть СЕРВЕРНОЕ поле-момент. Числовые метки клиента исключены поимённо:
+ * `dataUpdatedAt` у React Query это `number` (проверено по типам пакета), и
+ * `Invalid Date` из числа не получается — требовать для них модуль значило бы
+ * ловить исправный код.
+ *
+ * ЧЕГО НЕ ЛОВИТ И НЕ ОБЕЩАЕТ: поле-момент, названное не на `At`, и значение,
+ * положенное в переменную выше по телу, — разбор без AST дотуда не достаёт.
+ */
+test.describe('метка момента', () => {
+  const ROOT = path.join(__dirname, '..')
+  const files = sourceFiles(ROOT)
+
+  /** Имена, которые НЕ являются серверной меткой момента, — поимённо. */
+  const NOT_A_SERVER_MOMENT = new Map<string, string>([
+    ['dataUpdatedAt', 'React Query: число миллисекунд, не ISO-строка'],
+    ['updatedAt', 'в командном центре это Math.max(dataUpdatedAt, …) — тоже число'],
+  ])
+
+  test('момент не печатается инлайном мимо общего модуля', () => {
+    const guilty: string[] = []
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8')
+      for (const hit of text.matchAll(
+        /new Date\(\s*([A-Za-z_$][\w$.]*At)\s*\)\s*\.\s*toLocale/g,
+      )) {
+        const name = (hit[1] ?? '').split('.').pop() ?? ''
+        if (NOT_A_SERVER_MOMENT.has(name)) continue
+        const line = text.slice(0, hit.index).split('\n').length
+        guilty.push(`${path.relative(ROOT, file)}:${line}: ${hit[1]}`)
+      }
+    }
+    expect(
+      guilty.sort(),
+      'метка момента печатается инлайном: обход модуля теряет защиту от ' +
+        'Invalid Date — зовите formatIsoDateTime или formatIsoDayTime',
+    ).toEqual([])
+  })
+
+  /**
+   * Файлы со СВОЕЙ копией форматера момента — поимённо и с причиной.
+   *
+   * 🔴 ПОЧЕМУ ОНИ ЗДЕСЬ, А НЕ ПОЧИНЕНЫ ТЕМ ЖЕ ЗАХОДОМ. Копия
+   * (`Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU")`)
+   * от `Invalid Date` ЗАЩИЩАЕТ — то есть боевого дефекта тут нет, — но
+   * отдаёт человеку СЫРУЮ ISO-строку вместо «—», и печатает секунды, которых
+   * у модуля нет. Свод к модулю меняет ВИД на восьми экранах сразу: это
+   * правка вида, ей нужен свой заход со снимками, а не прицеп к стерегущей
+   * пробе. Заведена отдельной карточкой.
+   *
+   * Список закрыт: НОВАЯ копия сторожем не пройдёт.
+   */
+  const OWN_FORMATTER_COPIES = new Map<string, string>([
+    ['app/security-ops/ratings/audit/page.tsx', 'сводится отдельной карточкой'],
+    ['app/security-ops/ratings/export/page.tsx', 'сводится отдельной карточкой'],
+    ['app/security-ops/ratings/workspace/page.tsx', 'сводится отдельной карточкой'],
+    ['features/daily-expense/ui/SummaryVersions.tsx', 'сводится отдельной карточкой'],
+    ['features/ops-daily/day-submission-panel.tsx', 'сводится отдельной карточкой'],
+    ['features/ops-ratings/submitted-evaluation-card.tsx', 'сводится отдельной карточкой'],
+    ['features/ops-ratings/rating-notifications-section.tsx', 'сводится отдельной карточкой'],
+    ['features/ops-notifications/notification-bell.tsx', 'сводится отдельной карточкой'],
+  ])
+
+  test('новая копия форматера момента не заводится', () => {
+    const guilty: string[] = []
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8')
+      if (!/Number\.isNaN\(\s*parsed\.getTime\(\)\s*\)/.test(text)) continue
+      const relative = path.relative(ROOT, file)
+      if (OWN_FORMATTER_COPIES.has(relative)) continue
+      guilty.push(relative)
+    }
+    expect(
+      guilty.sort(),
+      'заведена ЕЩЁ ОДНА копия форматера момента: она отдаёт сырую ISO-строку ' +
+        'вместо «—» и печатает секунды — зовите formatIsoDateTime',
+    ).toEqual([])
+  })
+
+  test('перечисленные копии всё ещё на месте', () => {
+    // Храповик: свели копию к модулю — строка обязана уйти из списка, иначе
+    // он через полгода описывает то, чего нет.
+    for (const [relative, why] of OWN_FORMATTER_COPIES) {
+      const text = readFileSync(path.join(ROOT, relative), 'utf8')
+      expect(
+        /Number\.isNaN\(\s*parsed\.getTime\(\)\s*\)/.test(text),
+        `${relative} (${why}) больше не держит своей копии — снимите строку`,
+      ).toBe(true)
+    }
+  })
+
+  test('исключения ВСЁ ЕЩЁ существуют и всё ещё не серверные', () => {
+    // Храповик: имя, которое перестало встречаться, обязано уйти из списка,
+    // иначе он через полгода читается как «эти места сломаны, но их не чинят».
+    const all = files.map((file) => readFileSync(file, 'utf8')).join('\n')
+    for (const [name, why] of NOT_A_SERVER_MOMENT) {
+      expect(
+        new RegExp(`new Date\\(\\s*[\\w$.]*\\b${name}\\b`).test(all),
+        `исключение «${name}» (${why}) больше не встречается — снимите его`,
+      ).toBe(true)
+    }
+  })
+})
+
 test.describe('местная дата', () => {
   // Свой обход исходников:  соседнего блока живёт в его области
   // видимости, а тащить его наружу значило бы связать два разных правила.

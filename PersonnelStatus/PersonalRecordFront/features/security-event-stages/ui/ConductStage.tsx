@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatIsoDayTime } from "@/shared/lib/date";
+import { formatIsoDateTime, formatIsoDayTime } from "@/shared/lib/date";
 import { useVisitObjectScope, VisitObjectPicker } from "./useVisitObjectScope";
 import type { VisitEvaluationRow } from "@/entities/security-event";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
@@ -704,8 +704,14 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
         {visit.stage === "CLOSED" ? (
           <p className="text-sm">
             Объект закрыт
+            {/* Момент закрытия — ЧЕРЕЗ ОБЩИЙ МОДУЛЬ (Plane №932). Здесь стоял
+                инлайновый `new Date(...).toLocaleString(...)` — тот же класс,
+                что чинила №926 на 170 строк выше, то есть в файле-
+                первоисточнике он не был закрыт. Обход модуля теряет защиту:
+                `new Date` от неразбираемой строки даёт `Invalid Date`, и
+                `toLocaleString` печатает её человеку буквально. */}
             {visit.closedAt !== null
-              ? ` · ${new Date(visit.closedAt).toLocaleString("ru-RU")}`
+              ? ` · ${formatIsoDateTime(visit.closedAt)}`
               : ""}
             {visit.closingComment !== "" ? ` · ${visit.closingComment}` : ""}
             . Изменения по объекту невозможны.
