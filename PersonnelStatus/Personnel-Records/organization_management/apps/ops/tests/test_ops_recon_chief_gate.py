@@ -2,9 +2,21 @@
 Plane №424) и «ключа нет ≠ пусто» для постов (Plane №416).
 
 Правило серверное: импорт постов, сохранение расчёта объекта и «Завершить»
-отвечают 422 `VISIT_CHIEF_REQUIRED`, пока у объекта нет старшего. Строки без
-`visitObjectId` (заведённые до разметки №408) гард не трогает — иначе их
-нельзя было бы отнести к объекту.
+отвечают 422 `VISIT_CHIEF_REQUIRED`, пока у объекта нет старшего.
+
+🔴 ИСКЛЮЧЕНИЕ ДЛЯ НЕРАЗМЕЧЕННЫХ СТРОК СУЖЕНО ДО МЕРОПРИЯТИЙ С НЕСКОЛЬКИМИ
+ОБЪЕКТАМИ (Plane №862, решение заказчика 06.09.2026). Здесь стояло «строки без
+`visitObjectId` гард не трогает» — без оговорки, и это отключало правило
+`[РЕК-02]` для ОДИНОЧНЫХ мероприятий целиком: у них неразмеченными заводятся
+ВСЕ посты, разметку проставляет только добавление второго объекта. Заморозка
+(№535) тот же случай трактует наоборот, и заказчик закрыл расхождение в пользу
+старшего: у ОМ с единственным объектом неразмеченная строка — ЕГО строка. При
+нескольких объектах отнести её по-прежнему не к чему, и там исключение живо.
+
+Пины ниже переписаны ОСОЗНАННО под это решение, а не подогнаны под новый
+вывод: там, где проба стерегла «неразмеченную строку сохраняем без старшего»,
+теперь стоит тот же случай на ОМ С ДВУМЯ объектами — то есть ровно то, ради
+чего исключение и заводилось (№408/№416).
 """
 import pytest
 
@@ -40,9 +52,8 @@ def test_import_refused_without_chief(manager, chiefless_on_recon):  # noqa: F81
     assert "старшего объекта" in resp.json()["message"]
 
 
-def test_save_refuses_rows_of_chiefless_object_but_keeps_unassigned(
-    manager, chiefless_on_recon  # noqa: F811
-):
+def test_save_refuses_rows_of_chiefless_object(manager, chiefless_on_recon):  # noqa: F811
+    """Размеченная строка объекта без старшего не сохраняется (`[РЕК-02]`)."""
     event_id, visit = chiefless_on_recon
     row = {"sector": "Периметр", "post": "Пост 1", "task": "Охрана", "need": 1}
     refused = manager.patch(
@@ -52,11 +63,60 @@ def test_save_refuses_rows_of_chiefless_object_but_keeps_unassigned(
     )
     assert refused.status_code == 422, refused.content
     assert refused.json()["error_code"] == "VISIT_CHIEF_REQUIRED"
-    allowed = manager.patch(
+
+
+def test_unmarked_row_of_a_single_object_event_also_needs_a_chief(
+    manager, chiefless_on_recon  # noqa: F811
+):
+    """У ОМ с ОДНИМ объектом неразмеченная строка — ЕГО строка (Plane №862).
+
+    🔴 ПИН ПЕРЕПИСАН ОСОЗНАННО, решением заказчика 06.09.2026. Здесь стояло
+    обратное утверждение: «строка без `visitObjectId` сохраняется без
+    старшего». Оно опиралось на довод №408/№416 «такую строку не к чему
+    отнести» — верный при НЕСКОЛЬКИХ объектах и неверный при одном: там
+    неразмеченными заводятся все посты, и правило `[РЕК-02]` не работало
+    вовсе. Заморозка (№535) уже считала такую строку принадлежащей
+    единственному объекту, то есть два правила расходились на одних данных.
+    """
+    event_id, _visit = chiefless_on_recon
+    row = {"sector": "Периметр", "post": "Пост 1", "task": "Охрана", "need": 1}
+
+    refused = manager.patch(
         f"{URL}{event_id}/recon/",
         {"checklist": [], "sectorPosts": [row]},
         format="json",
     )
+
+    assert refused.status_code == 422, refused.content
+    assert refused.json()["error_code"] == "VISIT_CHIEF_REQUIRED"
+
+
+def test_unmarked_row_stays_nobodys_when_there_are_two_objects(manager):  # noqa: F811
+    """При ДВУХ объектах неразмеченная строка по-прежнему ничья (№408/№416).
+
+    Ровно тот случай, ради которого исключение заводилось: отнести строку не к
+    чему, и запирать её старшим было бы неверно. Проба держит вторую половину
+    решения №862 — сужение исключения, а не его отмену.
+    """
+    first = make_object(with_passport=True)
+    event_id = create_event(manager, first, chiefEmployeeId=None).json()["id"]
+    second = make_object(code="OBJ-862-2", name="Второй объект", with_passport=True)
+    added = manager.post(
+        f"{URL}{event_id}/visit-objects/", {"objectId": str(second.pk)}, format="json"
+    )
+    assert added.status_code in (200, 201), added.content
+
+    allowed = manager.patch(
+        f"{URL}{event_id}/recon/",
+        {
+            "checklist": [],
+            "sectorPosts": [
+                {"sector": "Периметр", "post": "Пост 1", "task": "Охрана", "need": 1}
+            ],
+        },
+        format="json",
+    )
+
     assert allowed.status_code == 200, allowed.content
     assert len(allowed.json()["reconSectorPosts"]) == 1
 
@@ -71,18 +131,36 @@ def test_complete_refused_without_chief_and_allowed_after(manager, chiefless_on_
     card = manager.get(f"{URL}{event_id}/").json()
     checked = [{**item, "state": "NORMAL"} for item in card["reconChecklist"]]
     assert checked, "у мероприятия нет чек-листа — проба стерегла бы не то"
-    manager.patch(
+    # 🔴 ЧЕК-ЛИСТ СОХРАНЯЕТСЯ БЕЗ ПОСТОВ (Plane №862). Прежде тот же вызов нёс
+    # и новый пост, и после сужения исключения (неразмеченная строка у ОМ с
+    # одним объектом — его строка) он стал отбиваться гардом старшего: пункты
+    # не сохранялись, а «Завершить» падал уже на неполном чек-листе — то есть
+    # проба краснела не тем, что стережёт. Пункты отмечаются отдельным
+    # запросом, а посты этому предмету не нужны вовсе.
+    saved = manager.patch(
         f"{URL}{event_id}/recon/",
-        {
-            "checklist": checked,
-            "sectorPosts": [{"sector": "Периметр", "post": "Пост 1", "task": "Охрана", "need": 1}],
-        },
+        {"checklist": checked},
         format="json",
     )
+    assert saved.status_code == 200, saved.content
     refused = manager.post(f"{URL}{event_id}/recon/complete/")
     assert refused.status_code == 422, refused.content
     assert refused.json()["error_code"] == "VISIT_CHIEF_REQUIRED"
     give_chief(manager, event_id)
+    # Посты добавляются ПОСЛЕ старшего — теперь это единственный законный
+    # порядок для ОМ с одним объектом (Plane №862), и он же проверяет вторую
+    # половину правила: со старшим та же правка проходит.
+    with_posts = manager.patch(
+        f"{URL}{event_id}/recon/",
+        {
+            "checklist": checked,
+            "sectorPosts": [
+                {"sector": "Периметр", "post": "Пост 1", "task": "Охрана", "need": 1}
+            ],
+        },
+        format="json",
+    )
+    assert with_posts.status_code == 200, with_posts.content
     done = manager.post(f"{URL}{event_id}/recon/complete/")
     assert done.status_code == 200, done.content
     assert done.json()["stage"] != "RECON"
