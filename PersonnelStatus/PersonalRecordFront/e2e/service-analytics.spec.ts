@@ -206,6 +206,95 @@ const SYNTHETIC_TREE_MIXED_SUBMISSION = {
   ],
 }
 
+/**
+ * §22.26 «персональная детализация подавлена» — синтетическая фикстура через
+ * `page.route` (Plane №839).
+ *
+ * ПОЧЕМУ СИНТЕТИКА, А НЕ ЖИВОЙ ОТВЕТ. Ветку решает ПРАВО
+ * `analytics.personal_detail`, а учётка стенда — администратор с `*`, то есть
+ * живой ответ этой ветки не даёт никогда. Заводить ради одной пробы персону
+ * без права значило бы менять матрицу доступа заказчика (№348) — решение не
+ * моё. Снимок подменяется вместе с выборкой, чтобы проба не зависела от того,
+ * рассчитан ли сегодня на стенде хоть один показатель.
+ *
+ * ЧТО ИМЕННО СТЕРЕЖЁТСЯ. Экран печатает причину подавления и НЕ печатает ФИО.
+ * Вторая половина — не украшение: сервер сотрудника не присылает вовсе
+ * (`employeeLabel: null`), и колонка обязана оставаться пустой, а не подставлять
+ * прочерк из другого места.
+ */
+const SUPPRESSED_SNAPSHOT_ID = 'proba-839-suppressed'
+
+const SUPPRESSION_REASON =
+  'У вас нет права на персональную детализацию: строки показаны без ' +
+  'сотрудника (§22.26). Сервер их не присылает — скрывать ФИО в вёрстке ' +
+  'значило бы всё равно отдать его браузеру.'
+
+const SYNTHETIC_ANALYTICS_ENVELOPE = {
+  snapshotId: SUPPRESSED_SNAPSHOT_ID,
+  businessDate: '2026-09-06',
+  timezone: 'Asia/Almaty',
+  period: { from: '2026-08-31', to: '2026-09-06', presetCode: 'CURRENT_WEEK' },
+  scope: { scopeType: 'ORGANISATION', scopeId: 'org', safeLabel: 'Организация' },
+  generatedAt: '2026-09-06T00:00:00Z',
+  sourceUpdatedAt: null,
+  sourceWatermark: null,
+  freshnessState: 'CURRENT',
+  completenessState: 'COMPLETE',
+  calculationVersion: 'proba',
+  policyVersion: 'proba',
+}
+
+const SYNTHETIC_SNAPSHOT_WITH_DRILLDOWN = {
+  ...SYNTHETIC_ANALYTICS_ENVELOPE,
+  data: {
+    metrics: [
+      {
+        metricCode: 'PROBA_839',
+        safeLabel: 'Показатель пробы 839',
+        value: 2,
+        displayValue: '2',
+        unit: 'COUNT',
+        state: 'NORMAL',
+        drilldownAvailable: true,
+        metricDefinitionVersion: 'proba',
+      },
+    ],
+    unavailableMetrics: [],
+  },
+  unavailableHeaderBlocks: [],
+  // Раскрытие РАЗРЕШЕНО — иначе проба проверяла бы отказ в раскрытии, а не
+  // подавление персональной детализации внутри разрешённой выборки.
+  drilldownAllowed: true,
+  drilldownDeniedReason: null,
+}
+
+const SYNTHETIC_DRILLDOWN_SUPPRESSED = {
+  ...SYNTHETIC_ANALYTICS_ENVELOPE,
+  data: {
+    metricCode: 'PROBA_839',
+    rows: [
+      {
+        rowId: 'proba-row-1',
+        businessDate: '2026-09-05',
+        objectLabel: 'Объект пробы',
+        stateLabel: 'Проведена',
+        employeeLabel: null,
+      },
+      {
+        rowId: 'proba-row-2',
+        businessDate: '2026-09-06',
+        objectLabel: 'Объект пробы 2',
+        stateLabel: 'Запланирована',
+        employeeLabel: null,
+      },
+    ],
+    nextCursor: null,
+    totalCount: 2,
+    personalDetailSuppressed: true,
+    personalDetailReason: SUPPRESSION_REASON,
+  },
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'аналитика службы' : 'аналитика службы (скип: нет SMOKE_LIVE=1)', () => {
@@ -629,5 +718,46 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     const analyticsSubmitted = /сдали (\d+)/.exec(await counters.innerText())?.[1] ?? null
     expect(analyticsSubmitted, 'в строке счётчиков нет числа «сдали»').not.toBeNull()
     expect(analyticsSubmitted).toBe(cardSubmitted)
+  })
+
+  test('подавленная персональная детализация названа причиной, а сотрудник не показан (§22.26; живой ответ этой ветки не даёт — админ стенда с «*», синтетическая фикстура через page.route)', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/api/ops/service-analytics/'),
+      (route) => route.fulfill({ json: SYNTHETIC_SNAPSHOT_WITH_DRILLDOWN }),
+    )
+    await page.route(
+      (url) => url.pathname.endsWith('/api/ops/service-analytics-drilldown/'),
+      (route) => route.fulfill({ json: SYNTHETIC_DRILLDOWN_SUPPRESSED }),
+    )
+    await page.goto(`${APP}${SCREEN}`)
+
+    const card = page.getByLabel('Показатель пробы 839')
+    await expect(card).toBeVisible({ timeout: 20_000 })
+    await card.getByRole('button', { name: 'Показать строки' }).click()
+
+    const selection = page.getByLabel('Выборка показателя')
+    await expect(selection).toBeVisible({ timeout: 20_000 })
+    // 1) Причина названа ДОСЛОВНО той, что прислал сервер: экран печатает
+    //    `personalDetailReason` как есть, своего текста у него нет и быть не
+    //    должно — иначе два источника правды на одну фразу.
+    await expect(selection.getByText(SUPPRESSION_REASON)).toBeVisible()
+    // 2) Строки на месте — подавляется СОТРУДНИК, а не выборка целиком.
+    const rows = selection.locator('tbody tr')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.first()).toContainText('Объект пробы')
+    // 3) В колонке сотрудника у КАЖДОЙ строки стоит слово «скрыт» — не ФИО и
+    //    не пустая ячейка. Пустая читалась бы как «данных нет», а разница
+    //    между «нет данных» и «вам не показывают» — ровно то, о чём §22.26.
+    //    Пин дословный: слово печатает экран (`row.employeeLabel ?? "скрыт"`),
+    //    и подмена его на прочерк прошла бы незамеченной.
+    for (let index = 0; index < 2; index += 1) {
+      await expect(rows.nth(index).locator('td').nth(3)).toHaveText('скрыт')
+    }
+    // И ни одной живой фамилии в выборке: сервер ФИО не присылает вовсе, а не
+    // «скрывает вёрсткой».
+    await expect(selection).not.toContainText('Ерланов')
   })
 })
