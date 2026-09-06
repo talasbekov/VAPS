@@ -420,3 +420,20 @@ def test_the_delivery_report_reaches_the_audit(manager, approver, django_user_mo
     assert payload["undelivered"], "недоставленное не названо — чинить некому"
     assert payload["visitObjectId"] == str(visit.pk)
     assert payload["comment"] == "Перепишите расчёт"
+    # 🔴 КТО ВЕРНУЛ — ПЕРВЫЙ ВОПРОС К ЗАПИСИ О РЕШЕНИИ (дописано по ревью,
+    #    задача №825). Актор был постоянной строкой «system:approval-return»:
+    #    журнал отвечал «возврат был и вот отчёт рассылки», но не «кто решил»,
+    #    — при том что у соседней записи «Согласовано» актор настоящий.
+    #    Мутация «вернуть постоянную строку» краснит этот ассерт.
+    assert rows[0].actor_user_id and not str(rows[0].actor_user_id).startswith("system"), (
+        f"запись о возврате обезличена: actor={rows[0].actor_user_id!r}"
+    )
+    # 🔴 «СЛАТЬ БЫЛО НЕКОМУ» И «РАССЫЛКА ОТКАЗАЛА» РАЗЛИЧИМЫ. Раньше обе беды
+    #    давали одинаковую запись `notified: 0, unlinked: [], undelivered: []`.
+    #    Здесь адресат ЕСТЬ и вставка отказала — значит `nobody` ложь.
+    assert payload.get("nobody") is False, (
+        "запись выдаёт отказ рассылки за «слать было некому»"
+    )
+    assert payload.get("dispatchFailed") is False, (
+        "запись выдаёт отказ вставки за падение самой рассылки"
+    )

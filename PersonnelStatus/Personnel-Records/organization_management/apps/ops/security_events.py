@@ -6178,7 +6178,7 @@ def decide_approver(
     # этап сама (`[СОГ-09]`). Отдельных кнопок для того же у согласующего нет
     # (`[СОГ-11]`) — иначе одно решение принималось бы в двух местах.
     if decision == "RETURNED":
-        return _return_visit(event, visit, clean_comment)
+        return _return_visit(event, visit, clean_comment, actor=actor_login or "system")
     return _autocomplete_approval(event, visit)
 
 
@@ -6648,7 +6648,7 @@ def approve_placement(event_id, *, visit_object_id=None):
     return _approve_visit(event, visit)
 
 
-def _return_visit(event, visit, comment):
+def _return_visit(event, visit, comment, *, actor="system:approval-return"):
     """Возврат ОБЪЕКТА на доработку: статус, версия документа, стадия.
 
     Общее тело для ручки `approval/return/` и для решения согласующего
@@ -6724,10 +6724,13 @@ def _return_visit(event, visit, comment):
         )
     except (DomainError, ValueError):
         # Сбой рассылки не откатывает возврат (см. выше), но и не остаётся
-        # без следа: отчёт уходит в журнал таким, каким собрался.
-        pass
+        # без следа. 🔴 И он ОТЛИЧИМ от «слать было некому» (найдено ревью,
+        # задача №825): раньше обе беды давали в журнале одну и ту же запись
+        # `notified: 0, unlinked: [], undelivered: []`, а это разные беды и
+        # разная починка — как `unlinked` и `undelivered` между собой.
+        delivery["dispatchFailed"] = True
     audit_service.record(
-        actor="system:approval-return",
+        actor=actor,
         action=audit_service.SECURITY_EVENT_PLACEMENT_RETURNED,
         entity_type=audit_service.ENTITY_SECURITY_EVENT,
         entity_id=event.pk,
@@ -6742,6 +6745,11 @@ def _return_visit(event, visit, comment):
             "notified": delivery.get("notified", 0),
             "unlinked": delivery.get("unlinked", []),
             "undelivered": delivery.get("undelivered", []),
+            # «Некому было слать» и «рассылка отказала» — разные беды: первая
+            # значит, что у объекта нет ни старшего, ни замещающих, вторая —
+            # что вызов упал. Без этих двух ключей запись у обеих одинакова.
+            "nobody": bool(delivery.get("nobody", False)),
+            "dispatchFailed": bool(delivery.get("dispatchFailed", False)),
         },
     )
     # ВОЗВРАТ ОДНОГО ОБЪЕКТА ВОЗВРАЩАЕТ МЕРОПРИЯТИЕ. Здесь правило обратное
@@ -6756,7 +6764,7 @@ def _return_visit(event, visit, comment):
 
 
 @transaction.atomic
-def return_placement(event_id, *, comment, visit_object_id=None):
+def return_placement(event_id, *, comment, visit_object_id=None, actor=None):
     event = lock_event(event_id)
     visit = _approval_target(event, visit_object_id)
     comment = str(comment or "").strip()
@@ -6767,7 +6775,7 @@ def return_placement(event_id, *, comment, visit_object_id=None):
         "APPROVAL",
         "Вернуть на доработку можно только на этапе «Согласование».",
     )
-    return _return_visit(event, visit, comment)
+    return _return_visit(event, visit, comment, actor=actor or "system:approval-return")
 
 
 # ── Ознакомление ────────────────────────────────────────────────────────────

@@ -183,9 +183,19 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
    * отказывается намеренно, и заводить их там значило бы завести вторую
    * правду об авторизации.
    *
-   * ЗАМЕЩАЮЩЕГО здесь НЕТ, и это не забывчивость: `may_manage_stage` его пока
-   * не пускает (расширение — отдельная карточка №453), и дать ему кнопки на
-   * экране значило бы обещать действие, которое сервер отобьёт.
+   * ЗАМЕЩАЮЩИЙ, ВЕДУЩИЙ ОБЪЕКТ, ЗДЕСЬ ЕСТЬ (Plane №453; экранная половина
+   * дописана по ревью, задача №825). Здесь стояло обратное — «замещающего
+   * нет, `may_manage_stage` его не пускает», — и это было верно РОВНО ДО
+   * коммита самой №453: сервер его пустил, а экран остался прежним. То есть
+   * карточка закрылась наполовину, а комментарий стал утверждать
+   * противоположное тому, что делает сервер, — и следующий читатель поверил
+   * бы ему. Спецификация `[ОЗН-09]` даёт замещающему ту же работу, что
+   * старшему объекта, КРОМЕ «Завершить».
+   *
+   * Наблюдатель — не замещающий: флаг `canEditPlacement` отличает того, кто
+   * ВЕДЁТ объект, от внесённого «в список», и сервер спрашивает его же
+   * (`_replaces_own_post`, `_leads_as_deputy`). Отсутствие ключа у старых
+   * строк значит «ведёт» — умолчание модели, а не «наблюдает».
    *
    * Пока права и кадровая запись едут, действие считается доступным — та же
    * договорённость, что в `useChainAccess`: мигание «нельзя → можно» вводит в
@@ -197,10 +207,33 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
     me.data?.employee != null ? String(me.data.employee.id) : null;
   const isStageLead =
     myEmployeeId !== null &&
-    [event.chiefEmployeeId, ...event.visitObjects.map((v) => v.chiefEmployeeId)].some(
+    ([event.chiefEmployeeId, ...event.visitObjects.map((v) => v.chiefEmployeeId)].some(
       (chief) => chief !== null && String(chief) === myEmployeeId
-    );
+    ) ||
+      event.visitObjects.some((visit) =>
+        (visit.deputies ?? []).some(
+          (deputy) =>
+            String(deputy.employeeId) === myEmployeeId &&
+            deputy.canEditPlacement !== false
+        )
+      ));
   const canManage = access.can(EVENT_MANAGE) || isStageLead;
+  // 🔴 «ЗАВЕРШИТЬ» — ОПЕРАЦИЯ МЕРОПРИЯТИЯ, И ГЕЙТ У НЕЁ СВОЙ (Plane №453,
+  //    вторая половина ревью задачи №825). Сервер держит
+  //    `acknowledgement_complete` в `_EVENT_LEAD_ONLY_ACTIONS`: ни старший
+  //    ОБЪЕКТА, ни его замещающий её не выполнят — она переводит на
+  //    «Проведение» ВСЁ мероприятие. До сих пор кнопка гейтилась общим
+  //    `canManage`, то есть у старшего объекта светилась включённой и
+  //    отвечала 403 — обещание действия, которого не будет. Расширение на
+  //    замещающих распространило бы это обещание и на них.
+  const isEventLead =
+    access.can(EVENT_MANAGE) ||
+    (myEmployeeId !== null &&
+      event.chiefEmployeeId !== null &&
+      String(event.chiefEmployeeId) === myEmployeeId);
+  const completeReason = isEventLead
+    ? ""
+    : "Завершает ознакомление ведущий мероприятие или старший ОМ: этап переводит на «Проведение» всё мероприятие.";
   const allConfirmed = total > 0 && confirmed.length === total;
 
   return (
@@ -230,7 +263,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
               вовсе, браузер подавляет на ней указательные события. Связь
               кнопки с причиной держит `aria-describedby`. */}
           <div className="flex flex-col items-start gap-2">
-          <AccessHints reasons={[access.reason(EVENT_MANAGE)]}>
+          <AccessHints reasons={[access.reason(EVENT_MANAGE), completeReason]}>
           <div className="flex flex-wrap gap-2">
             <RightGate reason={access.reason(EVENT_MANAGE)}>
               {(describedBy) => (
@@ -268,12 +301,12 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                 Кнопка гаснет и НАЗЫВАЕТ причину — сколько объектов ещё не
                 дошло. Это не «нет прав» и не «не все подтвердили», а третье
                 состояние, и молчать о нём нельзя. */}
-            <RightGate reason={access.reason(EVENT_MANAGE)}>
+            <RightGate reason={completeReason || access.reason(EVENT_MANAGE)}>
               {(describedBy) => (
             <Button
               type="button"
               disabled={
-                complete.isPending || !canManage || total === 0 || !eventOnStage
+                complete.isPending || !isEventLead || total === 0 || !eventOnStage
               }
               aria-describedby={describedBy}
               title={

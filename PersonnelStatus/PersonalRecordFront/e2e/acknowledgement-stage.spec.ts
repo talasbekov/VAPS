@@ -340,6 +340,112 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
         'действия этапа открыты тому, кто ни старший, ни ведущий ОМ',
       ).toBeDisabled()
     })
+
+    test('замещающий ВЕДЁТ этап, но не завершает его (Plane №453)', async ({ page }) => {
+      /**
+       * 🔴 ВТОРАЯ ПОЛОВИНА №453, ДОПИСАННАЯ ПО РЕВЮ (задача №825). Сервер
+       * пустил замещающего, ведущего объект, в действия этапа тем же
+       * коммитом, — а экран остался прежним и продолжал гасить ему всё.
+       * Хуже: в коде экрана стоял комментарий «замещающего здесь нет,
+       * `may_manage_stage` его не пускает», то есть код утверждал
+       * противоположное тому, что делает сервер. Карточка закрылась
+       * наполовину, и симптом, ради устранения которого она заведена
+       * («замещающий видит отказ, но заменить или напомнить не может»),
+       * остался на месте.
+       *
+       * И вторая проверка того же теста: «Завершить ознакомление» замещающему
+       * НЕ даётся. Сервер держит это действие в `_EVENT_LEAD_ONLY_ACTIONS` —
+       * оно переводит на «Проведение» ВСЁ мероприятие, — и включённая кнопка
+       * была бы обещанием голого 403.
+       *
+       * МУТАЦИИ, которые проба обязана краснить: (1) убрать замещающих из
+       * `isStageLead` — «Напомнить всем» гаснет; (2) вернуть «Завершить» под
+       * общий `canManage` — кнопка включается тому, кому сервер откажет.
+       */
+      const token = await apiToken()
+      const businessDate = uniqueBusinessDate(Date.now())
+      const code = await prepareEvent(token, { businessDate })
+      const event = (await events(token)).find((e) => e.code === code)
+      expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+
+      const full = (await (
+        await fetch(`${API}/api/ops/security-events/${event!.id}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).json()) as {
+        visitObjects: { id: string; chiefEmployeeId: string | null }[]
+        placementAssignments: { employeeId: string }[]
+      }
+      const visit = full.visitObjects[0]
+      expect(visit, 'у фикстуры нет объекта посещения').toBeDefined()
+      // Замещающим ставим человека, который на этом ОМ уже есть и точно не
+      // старший: свой ОМ, свои люди — чужого состава проба не трогает.
+      const deputyId = full.placementAssignments
+        .map((a) => String(a.employeeId))
+        .find((id) => id !== String(visit!.chiefEmployeeId))
+      expect(deputyId, 'в составе некого сделать замещающим').toBeDefined()
+
+      const added = await fetch(
+        `${API}/api/ops/security-events/${event!.id}/visit-objects/${visit!.id}/deputies/`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ employeeId: deputyId, canEditPlacement: true }),
+        },
+      )
+      expect(added.status, 'замещающий не завёлся — проверять нечего').toBe(201)
+
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-permissions/'),
+        async (route) =>
+          route.fulfill({
+            json: { permissions: ['event.view', 'status.view', 'personnel.view'], roles: [] },
+          }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-employee/'),
+        async (route) =>
+          route.fulfill({
+            json: {
+              employee: {
+                id: Number(deputyId),
+                full_name: 'Замещающий (проба №453)',
+                rank_code: null,
+                position_code: null,
+                division: null,
+                personnel_number: null,
+                hire_date: null,
+              },
+              unlinked_reason: null,
+            },
+          }),
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+      const card = page.locator('[data-slot="card"]', {
+        has: page.locator('[data-slot="card-title"]', { hasText: 'Ознакомление' }),
+      })
+      await expect(card).toBeVisible({ timeout: 20_000 })
+
+      await expect(
+        card.getByRole('button', { name: /Напомнить всем, кто не подтвердил/ }),
+        'замещающий, ведущий объект, не может напомнить — путь [ОЗН-09] мёртв со стороны экрана',
+      ).toBeEnabled()
+
+      const finish = card.getByRole('button', { name: 'Завершить ознакомление' })
+      await expect(
+        finish,
+        'замещающему предложено завершить этап — сервер ответит 403',
+      ).toBeDisabled()
+      // Причина сказана словами и связана с кнопкой (Plane №801): у
+      // выключенной кнопки подсказки не видно НИ ПРИ КАКОМ поведении браузера.
+      const hintId = await finish.getAttribute('aria-describedby')
+      expect(hintId, 'у выключенного «Завершить» нет связи с причиной').toBeTruthy()
+      await expect(page.locator(`[id="${hintId}"]`)).toContainText(
+        /ведущий мероприятие или старший ОМ/,
+      )
+    })
   })
 
   test('отказ показан красным и заменяется прямо на этапе; завершение с комментарием уходит в журнал (Plane №432)', async ({
