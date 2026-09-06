@@ -83,15 +83,8 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
 
   test('сведения об объекте живые, осмотр поста доходит до сервера', async ({ page }) => {
     const token = await apiToken()
-    const suitable = (rows: EventRow[]): EventRow | undefined =>
-      rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
-    let event = suitable(await events(token))
-    if (event === undefined) {
-      await prepareEvent(token)
-      event = suitable(await events(token))
-      expect(event, 'не удалось подготовить фикстуру').toBeDefined()
-    }
-    const target = event!
+    // Своё безусловно (Plane №853): разбор — в шапке `ownEventOnRecon`.
+    const target = await ownEventOnRecon(token)
     const card = await objectCard(token, target.objectId!)
 
     await signIn(page)
@@ -594,15 +587,8 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       // рендер, подменой в ответе её не сдвинуть (проверено — панель не
       // появлялась). Фикстура готовится тем же помощником, что и у соседней
       // пробы, если готовой нет.
-      const suitable = (rows: EventRow[]): EventRow | undefined =>
-        rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
-      let found = suitable(await events(token))
-      if (found === undefined) {
-        await prepareEvent(token)
-        found = suitable(await events(token))
-      }
-      expect(found, 'не удалось подготовить ОМ на «Рекогносцировке»').toBeDefined()
-      const target = found
+      // Своё безусловно (Plane №853): разбор — в шапке `ownEventOnRecon`.
+      const target = await ownEventOnRecon(token)
 
       await page.route(
         new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
@@ -641,15 +627,8 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       // объекте без постов, человек видел выключенную кнопку с неверной
       // причиной, хотя завершение прошло бы.
       const token = await apiToken()
-      const suitable = (rows: EventRow[]): EventRow | undefined =>
-        rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
-      let found = suitable(await events(token))
-      if (found === undefined) {
-        await prepareEvent(token)
-        found = suitable(await events(token))
-      }
-      expect(found, 'не удалось подготовить ОМ на «Рекогносцировке»').toBeDefined()
-      const target = found
+      // Своё безусловно (Plane №853): разбор — в шапке `ownEventOnRecon`.
+      const target = await ownEventOnRecon(token)
 
       await page.route(
         new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
@@ -693,15 +672,8 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       // Красная проверка — вернуть условие по активному объекту: подпись
       // станет `null`, кнопка включится, и `toHaveAttribute` не найдёт текста.
       const token = await apiToken()
-      const suitable = (rows: EventRow[]): EventRow | undefined =>
-        rows.find((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
-      let found = suitable(await events(token))
-      if (found === undefined) {
-        await prepareEvent(token)
-        found = suitable(await events(token))
-      }
-      expect(found, 'не удалось подготовить ОМ на «Рекогносцировке»').toBeDefined()
-      const target = found
+      // Своё безусловно (Plane №853): разбор — в шапке `ownEventOnRecon`.
+      const target = await ownEventOnRecon(token)
 
       await page.route(
         new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
@@ -763,13 +735,18 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
  * Читающим пробам первый подходящий по-прежнему годится: они ничего не меняют.
  */
 async function ownEventOnRecon(token: string): Promise<EventRow> {
-  await prepareEvent(token)
+  const id = await prepareEvent(token)
   const rows = await events(token)
-  const mine = rows
-    .filter((e) => e.stage === 'RECON' && e.reconSectorPosts.length > 0)
-    .sort((a, b) => Number(b.id) - Number(a.id))[0]
-  expect(mine, 'не удалось завести свой ОМ на «Рекогносцировке»').toBeDefined()
-  return mine
+  // По СВОЕМУ id, а не «самое новое по номеру» (Plane №853): стенд общий, и
+  // между заведением и чтением соседняя сессия успевает завести своё. Разница
+  // не теоретическая — именно так «своя» фикстура и становится чужой.
+  const mine = rows.find((e) => e.id === id)
+  expect(mine, `не удалось завести свой ОМ на «Рекогносцировке» (${id})`).toBeDefined()
+  expect(
+    mine!.reconSectorPosts.length,
+    'у своей фикстуры нет постов расчёта — проверять нечего',
+  ).toBeGreaterThan(0)
+  return mine!
 }
 
 /** Заводит ОМ и доводит до «Рекогносцировки» с постами из паспорта.
@@ -777,7 +754,7 @@ async function ownEventOnRecon(token: string): Promise<EventRow> {
  * Заведение живёт в общем `prepare-events.ts` (Plane №822 Ш-1): своя копия
  * была одной из шестнадцати, и контракт заведения они держали вразнобой.
  * Здесь остаётся только то, что своё, — доведение до рекогносцировки. */
-async function prepareEvent(token: string): Promise<void> {
+async function prepareEvent(token: string): Promise<string> {
   const call = standCall(token)
   const created = await createOwnEvent(call, token, {
     name: 'Проба рекогносцировки',
@@ -794,6 +771,11 @@ async function prepareEvent(token: string): Promise<void> {
   // рекогносцировке (Plane «Реестр ОМ-5»), и `bulletin/complete/` ответил бы
   // отказом «не на этом этапе».
   await call('POST', `${base}/recon/import-from-passport/`)
+  // Возвращается id СВОЕЙ фикстуры (Plane №853). Пока подготовка отдавала
+  // `void`, найти собственное мероприятие было НЕЧЕМ — и вызывающим не
+  // оставалось ничего, кроме поиска «подходящего» по стенду. Это и есть корень
+  // антишаблона, а не невнимательность автора.
+  return created.id
 }
 
 /** Заводит ОМ С ОБЪЕКТОМ и возвращает ответ сервера — предмет пробы именно

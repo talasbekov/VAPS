@@ -55,7 +55,7 @@ async function signIn(page: Page): Promise<void> {
   })
 }
 
-async function prepareOnApproval(tok: string): Promise<void> {
+async function prepareOnApproval(tok: string): Promise<string> {
   const headers = { Authorization: `Bearer ${tok}`, 'content-type': 'application/json' }
   const call = async (method: string, p: string, body?: unknown): Promise<any> => {
     const res = await fetch(`${API}${p}`, {
@@ -100,6 +100,9 @@ async function prepareOnApproval(tok: string): Promise<void> {
     }
   }
   await call('POST', `${base}/placement/complete/`)
+  // id СВОЕЙ фикстуры (Plane №853): пока подготовка отдавала `void`, найти её
+  // после было нечем, и оставался только поиск «подходящего» по стенду.
+  return String(created.id)
 }
 
 test.describe(LIVE ? 'печатный вид расстановки' : 'печатный вид расстановки (скип: нет SMOKE_LIVE=1)', () => {
@@ -107,12 +110,13 @@ test.describe(LIVE ? 'печатный вид расстановки' : 'печ�
 
   test('на согласовании — документ в печатном виде, «Скачать PDF» и знак «Проект»', async ({ page }) => {
     const tok = await token()
-    let target = (await events(tok)).find((e) => e.stage === 'APPROVAL')
-    if (target === undefined) {
-      await prepareOnApproval(tok)
-      target = (await events(tok)).find((e) => e.stage === 'APPROVAL')
-    }
-    expect(target, 'не удалось подготовить ОМ на «Согласовании»').toBeDefined()
+    // 🔴 СВОЁ БЕЗУСЛОВНО (Plane №853). Здесь стояло «возьми первое на
+    // „Согласовании", а заведи своё только если такого нет»: на живом стенде
+    // это чужой ОМ, который соседняя сессия ведёт своим путём.
+    const id = await prepareOnApproval(tok)
+    const target = (await events(tok)).find((e) => e.id === id)
+    expect(target, `не удалось подготовить ОМ на «Согласовании» (${id})`).toBeDefined()
+    expect(target!.stage, 'своя фикстура не дошла до «Согласования»').toBe('APPROVAL')
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)

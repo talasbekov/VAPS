@@ -22,6 +22,8 @@
  * этом правится на любой стадии, кроме закрытой: у ОМ, стартовавшего с
  * рекогносцировки, это единственное место, где описание и задачи вписывают.
  */
+import { uniqueBusinessDate } from './business-date'
+import { assertStep } from './fixture-step'
 import { expect, test, type Page } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
@@ -105,16 +107,16 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
           e.objectId === null &&
           (e.briefDescription.trim() === '' || e.initialTasks.trim() === ''),
       )
-    let event = suitable(await events(token))
-    if (event === undefined) {
-      await prepareEvent(token)
-      // Ищем СВОЮ фикстуру запросом, а не на первой странице: реестр стенда
-      // перевалил за page_size, и только что созданное ОМ в первые 50 строк
-      // не попадало — проба падала на «не удалось подготовить фикстуру»,
-      // хотя фикстура была создана.
-      event = suitable(await events(token, BULLETIN_TITLE))
-      expect(event, 'не удалось подготовить фикстуру').toBeDefined()
-    }
+    // 🔴 СВОЁ БЕЗУСЛОВНО (Plane №853). Здесь стояло «возьми подходящее, а заведи
+    // своё только если не нашлось» — на живом стенде это значит править чужой
+    // бюллетень, который соседняя сессия ведёт своим путём.
+    // Фикстура ищется ЗАПРОСОМ по названию, а не на первой странице реестра:
+    // он перевалил за `page_size`, и только что созданное ОМ в первые 50 строк
+    // не попадает.
+    const id = await prepareEvent(token)
+    const event = (await events(token, BULLETIN_TITLE)).find((e) => e.id === id)
+    expect(event, `не удалось подготовить фикстуру (${id})`).toBeDefined()
+    expect(suitable([event!]), 'своя фикстура не на «Бюллетене» без объекта').toBeDefined()
     const target = event!
 
     await signIn(page)
@@ -148,12 +150,12 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     const token = await apiToken()
     const suitable = (rows: EventRow[]): EventRow | undefined =>
       rows.find((e) => e.stage === 'BULLETIN' && e.objectId === null)
-    let event = suitable(await events(token))
-    if (event === undefined) {
-      await prepareEvent(token)
-      event = suitable(await events(token, BULLETIN_TITLE))
-    }
-    expect(event, 'на стенде нет ОМ на стадии «Бюллетень»').toBeDefined()
+    // Своё безусловно и УЖЕ ЗАПОЛНЕННОЕ (Plane №853): проба начинает с того,
+    // что кнопка перехода включена, а включена она только у полного бюллетеня.
+    const id = await prepareFilledBulletin(token)
+    const event = (await events(token, BULLETIN_TITLE)).find((e) => e.id === id)
+    expect(event, `не удалось подготовить фикстуру (${id})`).toBeDefined()
+    expect(suitable([event!]), 'своя фикстура не на «Бюллетене» без объекта').toBeDefined()
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${event!.id}/`)
@@ -161,11 +163,11 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     await expect(open).toBeEnabled({ timeout: 15_000 })
 
     // Набранное, но НЕ сохранённое запирает переход и говорит почему.
-    // Текст черновика УНИКАЛЕН на прогон: фикстура переиспользуется, и в
-    // прошлый раз проба СОХРАНИЛА в неё свой же черновик — повтор той же
-    // строки не менял бы поле, признак `dirty` не вставал, и замок «не
-    // сработал» по причине, не имеющей к нему отношения. В одиночку проба
-    // при этом зеленела: там ей доставалась свежая фикстура.
+    // Текст черновика уникален на прогон. Прежде это было ОБЯЗАТЕЛЬНО и
+    // объяснялось так: «фикстура переиспользуется, и в прошлый раз проба
+    // СОХРАНИЛА в неё свой же черновик». То есть проба опиралась на чужое
+    // прошлое — ровно болезнь №853. Теперь фикстура своя, и уникальность
+    // осталась лишь как страховка.
     const panel = page.getByTestId('bulletin-panel')
     const draft = `Черновик, который нельзя потерять. ${Date.now()}`
     await panel.getByLabel('Краткое описание *').fill(draft)
@@ -348,10 +350,34 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
 
 /** Заводит пустое ОМ на этапе «Бюллетень» — БЕЗ объекта: с объектом сервер
  * ставит ОМ сразу на рекогносцировку, и стадии «Бюллетень» у него не бывает. */
-async function prepareEvent(token: string): Promise<void> {
-  await createEvent(token, {
+/**
+ * СВОЙ бюллетень, УЖЕ ЗАПОЛНЕННЫЙ и сохранённый (Plane №853).
+ *
+ * Нужен пробе, которая проверяет замок перехода: она начинает с того, что
+ * кнопка «Открыть рекогносцировку» ВКЛЮЧЕНА, а включена она только у полного
+ * бюллетеня. Раньше проба брала фикстуру со стенда и полагалась на то, что её
+ * заполнил ПРЕДЫДУЩИЙ ПРОГОН, — это прямо записано было в её комментарии как
+ * приём. Своя фикстура снимает зависимость от чужого прошлого.
+ */
+async function prepareFilledBulletin(token: string): Promise<string> {
+  const id = await prepareEvent(token)
+  const res = await fetch(`${API}/api/ops/security-events/${id}/bulletin/`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      briefDescription: 'Проба замка перехода.',
+      initialTasks: 'Проба задач.',
+    }),
+  })
+  await assertStep(res, 'PATCH', `/api/ops/security-events/${id}/bulletin/`)
+  return id
+}
+
+async function prepareEvent(token: string): Promise<string> {
+  return createEvent(token, {
     title: BULLETIN_TITLE,
-    businessDate: '2026-08-25',
+    // Своя деловая дата на каждую подготовку (Plane №853).
+    businessDate: uniqueBusinessDate(),
     withObject: false,
   })
 }
@@ -413,7 +439,10 @@ async function createEvent(
     /** Без объекта ОМ остаётся на «Бюллетене»; с объектом — сразу RECON. */
     withObject?: boolean
   },
-): Promise<void> {
+  // Возвращается id ЗАВЕДЁННОГО мероприятия (Plane №853). Пока помощник отдавал
+  // `void`, найти своё после подготовки было НЕЧЕМ — и вызывающим не оставалось
+  // ничего, кроме поиска «подходящего» по реестру стенда.
+): Promise<string> {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
   const call = async (method: string, path: string, payload?: unknown): Promise<any> => {
     const res = await fetch(`${API}${path}`, {
@@ -425,17 +454,21 @@ async function createEvent(
   }
   const { withObject = true, ...payload } = body
   if (!withObject) {
-    await call('POST', '/api/ops/security-events/', { ...payload, kind: 'INTERNAL' })
-    return
+    const bare = await call('POST', '/api/ops/security-events/', {
+      ...payload,
+      kind: 'INTERNAL',
+    })
+    return String(bare.id)
   }
   const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
   const object = objects.results.find(
     (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
   )
   if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
-  await call('POST', '/api/ops/security-events/', {
+  const created = await call('POST', '/api/ops/security-events/', {
     ...payload,
     kind: 'INTERNAL',
     objectId: object.id,
   })
+  return String(created.id)
 }

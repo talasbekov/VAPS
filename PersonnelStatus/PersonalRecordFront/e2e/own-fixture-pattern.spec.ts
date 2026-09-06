@@ -50,11 +50,8 @@ const E2E = __dirname
  * файл, и спутать их легко).
  */
 const KNOWN_LAZY_PREPARATION = new Map<string, number>([
-  ['approval-print.spec.ts', 1],
-  ['approval-rights.spec.ts', 1],
-  ['bulletin-stage.spec.ts', 2],
-  ['placement-pool.spec.ts', 4],
-  ['recon-stage.spec.ts', 4],
+  // ПУСТ с 06.09.2026 (Plane №853): последние шесть файлов переведены на своё.
+  // Пустым и обязан остаться — новая строка сюда не дописывается, она чинится.
 ])
 
 /**
