@@ -9,10 +9,10 @@ from datetime import timedelta
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.operations.clock import Clock
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.secondments.models import SecondmentRequest
 from organization_management.apps.staff_unit.models import StaffUnit
@@ -49,19 +49,29 @@ def scene(db, actor):
         personnel_number="sec-1", last_name="Петров", first_name="Пётр"
     )
     StaffUnit.objects.create(division=home, index=1, employee=employee)
-    # 🔴 ДЕНЬ БЕРЁТСЯ ТОТ ЖЕ, ЧТО У СЕРВИСА (Plane №816). Здесь стояло
+    # 🔴 ДЕНЬ БЕРЁТСЯ ТЕМ ЖЕ ВЫЗОВОМ, ЧТО У СЕРВИСА (Plane №816). Здесь стояло
     # `timezone.now().date()` — календарный день по UTC, — а возврат штампует
-    # `actual_end_date` днём РАЗДЕЛА (`Clock.today_local()`, зона +05). С
-    # 19:00 до 24:00 UTC это РАЗНЫЕ даты, и две пробы файла краснели пять
-    # часов в сутки: «assert date(2026, 9, 6) == date(2026, 9, 5)» и «assert
-    # 0 == 1» (строка искалась не в том дне).
+    # `actual_end_date` МЕСТНЫМ днём: `secondments/api/views.py` зовёт
+    # `timezone.localdate()`. С 19:00 до 24:00 UTC это РАЗНЫЕ даты, и две
+    # пробы файла краснели пять часов в сутки: «assert date(2026, 9, 6) ==
+    # date(2026, 9, 5)» и «assert 0 == 1» (строка искалась не в том дне).
+    #
+    # 🔴 И ВЫЗОВ ИМЕННО `timezone.localdate()`, А НЕ `Clock.today_local()`
+    # (уточнено ревью). Первая правка звала `Clock` — день РАЗДЕЛА ОМ, — и
+    # совпадали они лишь по случайности: `Clock` читает `OPS_LOCAL_TIMEZONE` с
+    # фолбэком на `settings.TIME_ZONE`, а настройка не объявлена. Объяви её
+    # раздел ОМ (ради чего она и заведена) — и проба разъехалась бы с сервисом
+    # снова, то есть тот же дефект вернулся бы через другую дверь. Кадровая
+    # половина живёт на `timezone.localdate()` сознательно (довод записан в
+    # `staff_unit/views.py`: тащить сюда зависимость от `operations` значило бы
+    # связать слои без нужды), и тест обязан звать то же, что код под ним.
     #
     # Цена была не в самих пробах, а в доверии к гейту: краснота по часам
     # приучает считать, что «оно всегда такое», и настоящую поломку в это
     # время суток пропустили бы. Тот же класс, что №696 (голый `astimezone()`
     # брал зону ОС) и №581 (дата передачи печаталась в UTC): два источника
-    # одного дня обязаны быть одним источником.
-    today = Clock.today_local()
+    # одного дня обязаны быть ОДНИМ ВЫЗОВОМ.
+    today = timezone.localdate()
     # Действующий статус, поверх которого ляжет откомандирование: именно на
     # пересечении с ним падало одобрение.
     EmployeeStatus.objects.create(
