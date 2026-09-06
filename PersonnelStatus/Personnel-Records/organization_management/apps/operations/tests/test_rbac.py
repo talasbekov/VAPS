@@ -66,6 +66,46 @@ class TestPermissionService:
         RoleAdminService.assign_role("77", "VIEWER", actor="test")
         assert PermissionService.effective_permissions("77") == {"status.view"}
 
+    def test_disabled_role_answers_the_same_to_the_gate_and_to_the_dispatch(self):
+        """Выключенная роль ведёт себя ОДИНАКОВО у гейта и у рассылок
+        (Plane №924).
+
+        🔴 ЧТО ЭТО ЗАКРЕПЛЯЕТ. Ни `effective_permissions` (гейт), ни
+        `roles_holding` (общий договор, по которому рассылки раздела считают
+        адресатов) не смотрят `Role.is_active` и `Permission.is_active`.
+        Дефекта сегодня нет ИМЕННО ПОТОМУ, что оба ведут себя одинаково: кому
+        ручка откроется, тому и уведомление придёт.
+
+        Но совпадение это СЛУЧАЙНОЕ и до сих пор нигде не было названо.
+        «Выключенная роль всё ещё даёт право» выглядит как дефект, который
+        однажды заведут карточкой, — и починка ОДНОГО из двух мест молча
+        развела бы доступ и рассылку: человек получал бы «Выделите N
+        сотрудников», не имея входа, либо переставал получать, имея его.
+        Ровно эта беда разбиралась в №481, только с другого конца.
+
+        Проба не утверждает, что игнорировать `is_active` правильно. Она
+        утверждает ровно то, что верно: ответ у обоих ОДИН. Починят гейт —
+        она покраснеет и потребует поправить второе место тем же заходом.
+        """
+        role = seed_role("DISABLED_ROLE", ["status.manage"])
+        RoleAdminService.assign_role("910", "DISABLED_ROLE", actor="test")
+
+        role.is_active = False
+        role.save(update_fields=["is_active"])
+        Permission.objects.filter(code="status.manage").update(is_active=False)
+
+        gate_sees = "status.manage" in PermissionService.effective_permissions("910")
+        dispatch_sees = "DISABLED_ROLE" in PermissionService.roles_holding(
+            "status.manage"
+        )
+
+        assert gate_sees == dispatch_sees, (
+            "гейт и рассылка разошлись на выключенной роли: одному человеку "
+            f"ручка {'открыта' if gate_sees else 'закрыта'}, а уведомление "
+            f"{'идёт' if dispatch_sees else 'не идёт'} — это и есть дефект "
+            "№481 наоборот"
+        )
+
     def test_wildcard_short_circuits(self):
         seed_role("ADMIN", ["*"])
         RoleAdminService.assign_role("77", "ADMIN", actor="test")
