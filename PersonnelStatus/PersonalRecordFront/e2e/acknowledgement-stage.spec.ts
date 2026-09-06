@@ -26,6 +26,31 @@ import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { assertStep } from './fixture-step'
 
+/**
+ * Деловая дата, уникальная на прогон.
+ *
+ * 🔴 ДАТА ОБЯЗАНА БЫТЬ УНИКАЛЬНОЙ, А НЕ «ПОЧТИ» (Plane №567). Стояло `эпоха в
+ * СЕКУНДАХ mod 300` дней — то есть цикл длиной ровно ПЯТЬ МИНУТ: прогон и его
+ * повтор через пять минут брали ОДНУ И ТУ ЖЕ деловую дату. Уведомление
+ * ключится (получатель, вид, деловая дата), уборка только помечает
+ * прочитанным, — и `notify` во втором прогоне становился холостым: опрос падал
+ * по таймауту на ИНФРАСТРУКТУРЕ, ничего не сказав о коде.
+ *
+ * Шаг считается по МИЛЛИСЕКУНДАМ, окно — десять лет (≈3650 дней): повтор
+ * требует совпадения с точностью до миллисекунды. Дата остаётся валидной и
+ * заведомо будущей — этап ознакомления открывается только у предстоящего
+ * мероприятия.
+ *
+ * 🔴 ПОДНЯТА НА УРОВЕНЬ ФАЙЛА (Plane №822 Ш-2). Формула жила внутри ОДНОЙ
+ * пробы, а нужна КАЖДОЙ подготовке этого файла: своя деловая дата — это и есть
+ * лечение четвёртого подвида №822. Пробы делят не только мероприятия, но и
+ * ЛЮДЕЙ: занятость считается по дате, и две подготовки на одну дату вычерпывают
+ * друг у друга свободных сотрудников. Замер 06.09.2026 дал этому два падения
+ * чистого прогона — «ни один сотрудник страницы не свободен на этот день».
+ */
+const uniqueBusinessDate = (at: number): string =>
+  new Date(Date.UTC(2027, 1, 1) + (at % 3650) * 86_400_000).toISOString().slice(0, 10)
+
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
@@ -85,20 +110,25 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
      * и кнопки «Отправить уведомления» на этапе больше нет.
      */
     const token = await apiToken()
-    const suitable = (rows: EventRow[]): EventRow | undefined =>
-      rows.find(
-        (e) =>
-          e.stage === 'ACKNOWLEDGEMENT' &&
-          e.placementAssignments.filter(
-            (a) => a.acknowledgedAt === null && (a.declinedAt ?? null) === null,
-          ).length >= 2,
-      )
-    let event = suitable(await events(token))
-    if (event === undefined) {
-      const prepared = await prepareEvent(token)
-      event = suitable(await events(token))
-      expect(event, `не удалось подготовить фикстуру (${prepared})`).toBeDefined()
-    }
+    // 🔴 СВОЁ БЕЗУСЛОВНО, а не «первое подходящее со стенда» (Plane №822 Ш-2).
+    // Здесь стояло `возьми подходящее, а заведи своё только если не нашлось`.
+    // На чистой базе такой код заводит своё и зелен; на живом стенде он берёт
+    // ЧУЖОЕ мероприятие и правит его — а проба ПРАВИТ состояние: напоминает,
+    // завершает ознакомление. Соседняя сессия ведёт тот же ОМ своим путём, и
+    // падение выглядит ровно тем симптомом, который проба стережёт, то есть
+    // врёт про дефект.
+    const businessDate = uniqueBusinessDate(Date.now())
+    const code = await prepareEvent(token, { businessDate })
+    let event = (await events(token)).find((e) => e.code === code)
+    expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+    // Фикстура обязана дать то, ради чего заведена: своя она или нет, а пустой
+    // список назначений сделал бы пробу вакуумной.
+    expect(
+      event!.placementAssignments.filter(
+        (a) => a.acknowledgedAt === null && (a.declinedAt ?? null) === null,
+      ).length,
+      'у своей фикстуры меньше двух неподтверждённых — напоминать некому',
+    ).toBeGreaterThanOrEqual(2)
     event = event!
     const total = event.placementAssignments.length
     // «Ожидают» — без отказавшихся: им не напоминают, их заменяют.
@@ -251,19 +281,18 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
        * проверки экрана.
        */
       const token = await apiToken()
-      const suitable = (rows: EventRow[]) =>
-        rows.find(
-          (e) => e.stage === 'ACKNOWLEDGEMENT' && e.placementAssignments.length > 0,
-        )
-      let event = suitable(await events(token))
-      if (event === undefined) {
-        // Фикстура готовится САМА, как и в соседних пробах этого файла: ОМ на
-        // «Ознакомлении» на стенде может не быть вовсе, и проба иначе
-        // выродилась бы в отказ «нечего проверять».
-        const prepared = await prepareEvent(token)
-        event = suitable(await events(token))
-        expect(event, `не удалось подготовить фикстуру (${prepared})`).toBeDefined()
-      }
+      // Своё безусловно и на СВОЕЙ деловой дате (Plane №822 Ш-2) — см. разбор
+      // у соседней пробы этого файла. Дата своя не для порядка: занятость
+      // сотрудников считается по дате, и подготовка на общую дату вычерпывает
+      // свободных людей у соседней пробы того же прогона.
+      const businessDate = uniqueBusinessDate(Date.now())
+      const code = await prepareEvent(token, { businessDate })
+      const event = (await events(token)).find((e) => e.code === code)
+      expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+      expect(
+        event!.placementAssignments.length,
+        'у своей фикстуры нет назначений — проверять нечего',
+      ).toBeGreaterThan(0)
       const full = (await (
         await fetch(`${API}/api/ops/security-events/${event!.id}/`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -340,7 +369,9 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     page,
   }) => {
     const token = await apiToken()
-    const code = await prepareEvent(token)
+    // Своя дата и здесь: без неё эта подготовка делила бы кадровый пул с двумя
+    // соседними пробами файла, переведёнными на своё в Ш-2.
+    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate(Date.now()) })
     const event = (await events(token)).find((e) => e.code === code)!
     const target = event.placementAssignments[0]!
     // Отказ — от имени сотрудника не завести (учётки нет), поэтому по API
@@ -449,20 +480,6 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     expect(found.results.length, 'на стенде нет сотрудника «Токтаров»').toBeGreaterThan(0)
     const linkedEmployeeId = found.results[0].id
 
-    // 🔴 ДАТА ОБЯЗАНА БЫТЬ УНИКАЛЬНОЙ, А НЕ «ПОЧТИ» (Plane №567). Стояло
-    // `эпоха в СЕКУНДАХ mod 300` дней — то есть цикл длиной ровно ПЯТЬ МИНУТ:
-    // прогон и его повтор через пять минут брали ОДНУ И ТУ ЖЕ деловую дату.
-    // Уведомление ключится (получатель, вид, деловая дата), уборка только
-    // помечает прочитанным, — и `notify` во втором прогоне становился
-    // холостым: опрос падал по таймауту на ИНФРАСТРУКТУРЕ, ничего не сказав о
-    // коде.
-    //
-    // Теперь шаг считается по МИЛЛИСЕКУНДАМ, а окно — десять лет (≈3650 дней):
-    // повтор требует совпадения с точностью до миллисекунды. Дата остаётся
-    // валидной и заведомо будущей — этап ознакомления открывается только у
-    // предстоящего мероприятия.
-    const uniqueBusinessDate = (at: number) =>
-      new Date(Date.UTC(2027, 1, 1) + (at % 3650) * 86_400_000).toISOString().slice(0, 10)
     // Свойство, ради которого формула именно такая, проверяется ЗДЕСЬ, а не
     // ожиданием повтора через пять минут: прежняя формула на этой строке
     // краснеет (300 000 мс — ровно её период), новая проходит.
