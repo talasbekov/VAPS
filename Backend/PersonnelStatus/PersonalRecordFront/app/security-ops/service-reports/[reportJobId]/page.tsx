@@ -198,7 +198,6 @@ export default function ReportJobPage() {
                   type="button"
                   className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
                   disabled={!action.available || download.isPending || rerun.isPending}
-                  title={action.reason ?? undefined}
                   onClick={() => {
                     if (action.code === "DOWNLOAD" && artifact !== null) {
                       download.mutate({ artifactId: artifact.artifactId });

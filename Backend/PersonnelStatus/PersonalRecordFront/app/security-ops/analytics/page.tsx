@@ -17,6 +17,7 @@
 // Сдача дня по подразделениям берётся у светофора — тем же ответом, что
 // питает его собственный экран: свой счёт «сдали / не сдали» разошёлся бы с
 // ним, а сличают их как раз тогда, когда что-то пошло не так.
+import { RightGate } from "@/shared/ui/right-gate";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -684,21 +685,37 @@ function MetricCard({
       <div className="mt-1 text-[11px] font-semibold text-muted-foreground">
         {STATE_LABEL[metric.state]}
       </div>
-      <button
-        type="button"
-        className="mt-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-        disabled={!canOpen}
-        title={
+      {/* 🔴 ПРИЧИНА ВИДИМОЙ СТРОКОЙ, А НЕ В `title` (Plane №912, решение —
+          №714/№777/№801). Браузер подавляет на ВЫКЛЮЧЕННОЙ кнопке
+          указательные события, а с ними и всплывающую подсказку: `title`
+          показался бы ровно тогда, когда показаться не может. Человек без
+          права видел серую кнопку и ничего больше.
+
+          Сторож `right-hint-pattern` этого места не видел: он отбирал
+          подозрительные `title` по ВЫЗОВУ функции причины (`reason(`), а
+          здесь причина берётся СВОЙСТВОМ. Сторож расширен тем же заходом. */}
+      <RightGate
+        reason={
           canOpen
-            ? undefined
+            ? null
             : !drilldownAllowed
-              ? (deniedReason ?? undefined)
+              ? deniedReason
               : "Показатель не рассчитан — раскрывать нечего."
         }
-        onClick={onToggle}
+        className="mt-2"
       >
-        {open ? "Свернуть строки" : "Показать строки"}
-      </button>
+        {(describedBy) => (
+          <button
+            type="button"
+            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+            disabled={!canOpen}
+            aria-describedby={describedBy}
+            onClick={onToggle}
+          >
+            {open ? "Свернуть строки" : "Показать строки"}
+          </button>
+        )}
+      </RightGate>
     </div>
   );
 }

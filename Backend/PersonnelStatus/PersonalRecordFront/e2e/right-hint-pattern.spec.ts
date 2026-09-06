@@ -52,10 +52,36 @@ function sourceFiles(): string[] {
  * регулярке: выражение внутри бывает в несколько строк, с тернарником и с
  * вложенными `{}` (шаблонные строки, объекты стилей).
  */
+/**
+ * Стоит ли `title` внутри тега, у которого есть `disabled` (Plane №912).
+ *
+ * Границы тега берутся от ближайшего `<` слева до закрывающей `>` справа с
+ * учётом вложенных `{…}`: атрибуты бывают многострочными и с выражениями.
+ */
+function withinDisabledTag(source: string, at: number): boolean {
+  const open = source.lastIndexOf('<', at)
+  if (open === -1) return false
+  let depth = 0
+  let end = open
+  for (; end < source.length; end += 1) {
+    const ch = source[end]
+    if (ch === '{') depth += 1
+    else if (ch === '}') depth -= 1
+    else if (ch === '>' && depth === 0) break
+  }
+  return /\bdisabled\b/.test(source.slice(open, end))
+}
+
 function titleExpressions(source: string): string[] {
   const found: string[] = []
   const marker = 'title={'
   for (let at = source.indexOf(marker); at !== -1; at = source.indexOf(marker, at + 1)) {
+    // 🔴 ВИНОВАТ ТОЛЬКО `title` НА ВЫКЛЮЧАЕМОМ ЭЛЕМЕНТЕ (Plane №912).
+    // Правило №777 про то, что браузер подавляет подсказку на ВЫКЛЮЧЕННОЙ
+    // кнопке. У обычного `<span>` подсказка работает, и требовать от него
+    // видимой строки значило бы чинить то, что не сломано: проверено на
+    // `analytics/operations` — там `title` висит на подписи «нет данных».
+    if (!withinDisabledTag(source, at)) continue
     let depth = 0
     let end = at + marker.length - 1
     for (; end < source.length; end += 1) {
@@ -87,8 +113,19 @@ test.describe('причина отказа по праву', () => {
         // виновата, если в ней вычисляется причина отказа по праву — как бы
         // ни звалась функция. Ложная тревога здесь дешевле пропуска: она
         // разбирается чтением одной строки, а пропуск живёт годами.
+        // 🔴 ПРИЧИНА БЫВАЕТ СВОЙСТВОМ, А НЕ ВЫЗОВОМ (Plane №912). Отбор шёл
+        // по `reason(` — то есть по ВЫЗОВУ функции, — и обращение к полю
+        // (`deniedReason`, `action.reason`) сторож пропускал целиком. Два
+        // места жили дефектом №777 при полностью зелёном стороже: кнопка
+        // раскрытия показателя в аналитике и кнопки действий в истории
+        // отчётов. Это ровно та же слепая зона, из-за которой сторож уже
+        // расширяли в №825 — тогда причина звалась `reasonUnless(`.
+        //
+        // Теперь виновато любое `title`, где встречается слово `reason` в
+        // любом написании: и вызов, и свойство, и константа. Ложная тревога
+        // здесь дешевле пропуска — она разбирается чтением одной строки.
         const carriesRightReason =
-          /reason[A-Za-z]*\(/i.test(expression) || /RIGHT_REASON|REASON\[/.test(expression)
+          /reason/i.test(expression) || /RIGHT_REASON|REASON\[/.test(expression)
         if (!carriesRightReason) continue
         guilty.push(`${path.slice(ROOT.length + 1)}: ${expression.split('\n')[0].trim()}…`)
       }
