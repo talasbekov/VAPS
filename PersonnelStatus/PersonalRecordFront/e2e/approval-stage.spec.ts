@@ -22,6 +22,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
+import { uniqueBusinessDate } from './business-date'
 import { assertStep } from './fixture-step'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -95,19 +96,19 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     page,
   }) => {
     const token = await apiToken()
-    const suitable = (rows: EventRow[]): EventRow | undefined =>
-      rows.find(
-        (e) =>
-          e.stage === 'APPROVAL' &&
-          e.placementAssignments.some((a) => a.ratingOverrideReason !== null),
-      )
-    let event = suitable(await events(token))
-    if (event === undefined) {
-      await prepareEvent(token)
-      event = suitable(await events(token))
-      expect(event, 'не удалось подготовить фикстуру').toBeDefined()
-    }
-    const target = event!
+    // 🔴 СВОЁ БЕЗУСЛОВНО (Plane №822 Ш-3). Здесь стояло «возьми первое
+    // подходящее со стенда, а заведи своё только если не нашлось». Проба
+    // ПРАВИТ состояние — подписывает обход, возвращает документ, — и на живом
+    // стенде правила чужое мероприятие, которое соседняя сессия ведёт своим
+    // путём. Стережёт это `own-fixture-pattern.spec.ts`.
+    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate(Date.now()) })
+    const own = (await events(token)).find((e) => e.code === code)
+    expect(own, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+    const target = own!
+    expect(
+      target.placementAssignments.some((a) => a.ratingOverrideReason !== null),
+      'у своей фикстуры нет назначения с обоснованием — проверять нечего',
+    ).toBe(true)
     const override = target.placementAssignments.find(
       (a) => a.ratingOverrideReason !== null,
     )!
@@ -281,15 +282,15 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     page,
   }) => {
     const token = await apiToken()
-    const onApproval = (rows: EventRow[]): EventRow | undefined =>
-      rows.find((e) => e.stage === 'APPROVAL' && e.visitObjects.length > 0)
-    let event = onApproval(await events(token))
-    if (event === undefined) {
-      await prepareEvent(token)
-      event = onApproval(await events(token))
-      expect(event, 'не удалось подготовить фикстуру').toBeDefined()
-    }
-    const target = event!
+    // Своё безусловно и на своей деловой дате — разбор у первой пробы файла.
+    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate(Date.now()) })
+    const own = (await events(token)).find((e) => e.code === code)
+    expect(own, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+    const target = own!
+    expect(
+      target.visitObjects.length,
+      'у своей фикстуры нет объектов посещения — версию документа считать не у чего',
+    ).toBeGreaterThan(0)
     const before = target.visitObjects[0].documentVersion
     // `[СОГ-01]`/`[ВОЗ-06]` (Plane №398): первая отправка НЕ меняет номер —
     // черновик становится «на согласовании»; номер растёт только повторной
@@ -572,15 +573,15 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     // который через интерфейс на этом этапе не собрать (сервер отбивает
     // отправку такого ОМ отдельным кодом, Plane №477).
     const token = await apiToken()
-    const suitable = (rows: EventRow[]): EventRow | undefined =>
-      rows.find((e) => e.stage === 'APPROVAL' && e.visitObjects.length > 0)
-    let event = suitable(await events(token))
-    if (event === undefined) {
-      await prepareEvent(token)
-      event = suitable(await events(token))
-      expect(event, 'не удалось подготовить фикстуру').toBeDefined()
-    }
-    const target = event!
+    // Своё безусловно и на своей деловой дате — разбор у первой пробы файла.
+    const code = await prepareEvent(token, { businessDate: uniqueBusinessDate(Date.now()) })
+    const own = (await events(token)).find((e) => e.code === code)
+    expect(own, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+    const target = own!
+    expect(
+      target.visitObjects.length,
+      'у своей фикстуры нет объектов посещения — раскрывать нечего',
+    ).toBeGreaterThan(0)
     const first = target.visitObjects[0]!
 
     await signIn(page)
@@ -605,7 +606,10 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
  * прошло через мягкий конфликт: посту выставляется minRating, и назначение
  * уходит с override + обоснованием.
  */
-async function prepareEvent(token: string): Promise<void> {
+async function prepareEvent(
+  token: string,
+  { businessDate }: { businessDate: string },
+): Promise<string> {
   const headers = {
     Authorization: `Bearer ${token}`,
     'content-type': 'application/json',
@@ -629,7 +633,10 @@ async function prepareEvent(token: string): Promise<void> {
   const created = await call('POST', '/api/ops/security-events/', {
     title: 'Проба согласования (e2e)',
     objectId: object.id,
-    businessDate: '2026-08-23',
+    // Своя деловая дата на КАЖДУЮ подготовку (Plane №822 Ш-3): занятость
+    // сотрудников считается по дате, и общая дата у двух подготовок означает,
+    // что вторая не найдёт свободных людей.
+    businessDate,
     chiefEmployeeId: await anyChiefId(token),
     // См. recon-stage: без обязательного `kind` создание отбивается 400.
     kind: 'INTERNAL',
@@ -685,4 +692,7 @@ async function prepareEvent(token: string): Promise<void> {
     })
   }
   await call('POST', `${base}/placement/complete/`)
+  // Код СВОЕЙ фикстуры: по нему её и находят вызывающие. Искать «первое
+  // подходящее» после подготовки значило бы вернуть ту самую беду (№822).
+  return created.code as string
 }
