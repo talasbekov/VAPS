@@ -136,6 +136,52 @@ def test_a_directorate_without_a_head_is_named_not_swallowed(chain):
     assert report["headlessDirectorates"] == ["Второе управление"]
 
 
+def test_a_global_grant_is_not_asked_to_select_for_every_directorate(chain, django_user_model):
+    """Держатель права БЕЗ области не получает запрос по каждому управлению
+    (Plane №922).
+
+    🔴 ЧТО ЭТО ЗАКРЕПЛЯЕТ — И ПОЧЕМУ ЭТО НЕ ДЕФЕКТ. Гейт ручки считает грант
+    без области ГЛОБАЛЬНЫМ, а грант на предка — накрывающим всё поддерево
+    (`PermissionService.scope_matches`). Рассылка запроса сил читает область
+    постоянных ролей ТОЧНО — и это осознанное сужение, а не отставание
+    фильтра от гейта.
+
+    Довод — в АДРЕСАТЕ, а не в том, кто нажал кнопку: рассылка спрашивает
+    «кому ИСПОЛНЯТЬ запрос по ЭТОМУ управлению», и исполняет его тот, чья
+    область — само управление. Глобальный грант — это штаб и админ: они делят
+    раскладку целиком, а не набирают людей по каждому управлению; требование
+    «Выделите N сотрудников» им не адресовано, а с ним они получили бы его по
+    КАЖДОМУ управлению каждой заявки.
+
+    Соседняя проба закрепляет ту же мысль для области на департамент. Вместе
+    они и есть то правило раздела, которое ревью №922 приняло за отставание
+    фильтра: расширение отбора на `scope_matches` краснит их обе.
+
+    КРАСНАЯ ПРОБА: примени `scope_matches` к `UserRole` в `_directorate_heads`
+    — глобальный держатель окажется в получателях.
+    """
+    from organization_management.apps.operations.models import UserRole
+
+    event, allocation, directorates, _head, _officer, _watcher = chain
+    everywhere = django_user_model.objects.create_user(
+        username="fr-global", password="x"
+    )
+    # Роль с правом та же, что у начальника управления; отличие ровно одно —
+    # области нет вовсе.
+    UserRole.objects.create(
+        user_id=str(everywhere.pk), role_code_id="FR_HEAD", scope_division_id=None
+    )
+
+    notify_directorate_heads(event, allocation, directorates)
+
+    assert not OpsNotification.objects.filter(
+        recipient=str(everywhere.pk), kind=KIND
+    ).exists(), (
+        "держатель права без области получил запрос «выделите N» — он делит "
+        "раскладку, а не набирает людей по управлениям"
+    )
+
+
 def test_the_department_officer_does_not_get_his_own_request(chain):
     """Область департамента — выше управления; свой запрос ответственному не
     шлётся: он его и отправил. Это отличие от заступления, где уведомляются
