@@ -33,8 +33,20 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
-/** Код каталога БЕЗ legacy-пары — ровно тот случай, на который жаловались. */
-const CATALOG_ONLY_CODE = 'IN_EVENT'
+/** Код каталога БЕЗ legacy-пары — ровно тот случай, на который жаловались.
+ *
+ * 🔴 БЫЛ `IN_EVENT`, СТАЛ `BEFORE_DUTY` (Plane №840, 06.09.2026). Предмет
+ * пробы — «тип, живущий ТОЛЬКО в справочнике, подписан справочником, а не
+ * „Не обновлено“», и участие было для неё просто представителем этого класса.
+ * Но с №840 кадровая ручка `POST /api/statuses/statuses/` участие больше не
+ * принимает НИ ОДНИМ входом — правила «Участия в ОМ» живут в разделе ОМ, — и
+ * фикстура пробы упиралась в собственный запрет: 400 вместо 201.
+ * `BEFORE_DUTY` — тот же класс (в `LEGACY_CODE_BY_CODE` его нет, значит
+ * legacy-пары у него тоже нет) и без своих правил, поэтому проба стережёт ту
+ * же суть, а не соседний запрет. Учить её ходить через раздел ОМ было бы
+ * дороже и увело бы от предмета.
+ */
+const CATALOG_ONLY_CODE = 'BEFORE_DUTY'
 
 async function tokenFor(username: string, password: string): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
