@@ -248,11 +248,17 @@ function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: str
 export function ForceCollectionCard({
   eventId,
   onBack,
+  enabled = true,
 }: {
   eventId: string;
   onBack: () => void;
+  /** Гард экрана. До №779 карточка открывалась только нажатием по строке
+   *  загруженного списка, и выключенный список молчал за обоих; с переездом
+   *  открытого сбора в адрес (`?collection=`) карточка стала достижима прямой
+   *  ссылкой — и уходила на сервер мимо гарда (найдено ревью №825). */
+  enabled?: boolean;
 }) {
-  const collection = useForceCollection(eventId);
+  const collection = useForceCollection(eventId, { enabled });
   const data = collection.data;
 
   if (collection.isPending) {
