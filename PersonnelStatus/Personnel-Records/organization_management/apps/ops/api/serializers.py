@@ -378,9 +378,21 @@ def _with_previous(rows):
 
 
 def _document_status(visit):
-    """Статус текущей версии документа объекта; `None` — версий ещё нет."""
-    current = max(visit.document_versions.all(), key=lambda r: r.number, default=None)
-    return current.status if current is not None else None
+    """Статус документа объекта — ТЕМ ЖЕ вызовом, что у сервиса (Plane №864).
+
+    Здесь стоял свой расчёт, и он отвечал `None`, когда строк версий нет, —
+    а `security_events.document_status_of` в том же состоянии выводит статус
+    из полей объекта (`DRAFT` / `SUBMITTED` / `APPROVED` / `RETURNED`).
+    Фолбэк заведён намеренно: таблица версий появилась в №396/№411 и бэкфилла
+    не имеет. Итог расхождения был виден в одном ответе: карточка объекта без
+    строк версий несла `documentStatus: null`, а отказ `placement/assign/` по
+    тому же объекту — `documentStatus: SUBMITTED`. Два ответа на один вопрос —
+    ровно то, против чего фолбэк и заведён.
+
+    Лишних запросов вызов не стоит: `_current_document_version` читает кэш
+    `prefetch_related("document_versions")` набора реестра.
+    """
+    return security_events.document_status_of(visit)
 
 
 def visit_objects_of(event):

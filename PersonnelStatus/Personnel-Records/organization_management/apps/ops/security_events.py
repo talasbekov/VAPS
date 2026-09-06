@@ -5653,7 +5653,21 @@ def _document_snapshot(event, visit):
 
 
 def _current_document_version(visit):
-    return visit.document_versions.order_by("-number").first()
+    """Текущая версия документа объекта — старшая по номеру.
+
+    🔴 ЧИТАЕТСЯ КЭШ PREFETCH, А НЕ НОВЫЙ ЗАПРОС (Plane №864). Здесь стояло
+    `visit.document_versions.order_by("-number").first()`, а это НОВЫЙ
+    queryset: он игнорирует `prefetch_related("document_versions")` набора
+    реестра и уходит в базу на каждую строку — та самая N+1, против которой
+    заведён №480. Из-за неё сериализатор считал статус своим способом, и на
+    объекте без строк версий API отвечал `null` там, где сервис отвечает
+    `DRAFT`.
+
+    `max(...)` по `all()` даёт тот же ответ: при живом кэше берёт готовый
+    список, без него делает ОДИН запрос. Версий у объекта единицы — это не
+    та таблица, где «взять все» дороже «взять первую».
+    """
+    return max(visit.document_versions.all(), key=lambda r: r.number, default=None)
 
 
 def document_version_diff(previous, current):
