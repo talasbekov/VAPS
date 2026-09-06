@@ -20,7 +20,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatIsoDate } from "@/shared/lib/date";
+import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 // Арифметика дат берётся у расхода, а не пишется здесь второй раз: там же
 // живёт правило «полуинтервал бэка ↔ включительный день на экране», и второй
 // его экземпляр разошёлся бы с первым молча (Plane №657).
@@ -911,9 +911,15 @@ function HistoryTab({
                     {item.postLabel}
                   </span>
                   <span className="text-xs tabular-nums text-muted-foreground">
+                    {/* 🔴 МОМЕНТ, А НЕ ДАТА (Plane №560, найдено ревью №825).
+                        `acknowledgedAt` пишется `_now_iso()` — это UTC-момент,
+                        и `.slice(0, 10)` срезал у него ПРЕФИКС ПО UTC: в поясе
+                        +05 подтверждение в 03:00 показывалось вчерашним днём.
+                        Тот же дефект, что чинили в №560 и №581, только срез
+                        записан руками, а не спрятан внутри `formatIsoDate`. */}
                     {item.acknowledgedAt === null
                       ? "—"
-                      : formatIsoDate(item.acknowledgedAt.slice(0, 10))}
+                      : formatIsoDateTime(item.acknowledgedAt)}
                   </span>
                   <ScoreCell
                     evaluated={evaluatedEvents.has(item.event.code)}
@@ -1077,7 +1083,8 @@ function AckBadge({
       }
     >
       Ознакомлен{acknowledgedVia === "personal" ? " лично" : ""}:{" "}
-      {formatIsoDate(acknowledgedAt.slice(0, 10))}
+      {/* Момент, а не дата: см. разбор у колонки прошедших назначений. */}
+      {formatIsoDateTime(acknowledgedAt)}
     </span>
   );
 }

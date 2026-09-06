@@ -66,7 +66,11 @@ def forwards(apps, schema_editor):
             visit.approval_remarks = rebuilt
             visit.save(update_fields=["approval_remarks"])
             touched += 1
-    print(f"  замечаний согласования дополнено: объектов посещения — {touched}")
+    # Печатать только когда есть что сказать: миграция отрабатывает на КАЖДОМ
+    # создании тестовой базы, и безусловная строка шумела в каждом прогоне
+    # `pytest` (уточнено ревью №825).
+    if touched:
+        print(f"  замечаний согласования дополнено: объектов посещения — {touched}")
 
 
 def backwards(apps, schema_editor):

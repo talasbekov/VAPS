@@ -20,7 +20,7 @@ import {
   useEvaluationRegistry,
   useRatingEmployeeDetail,
 } from "@/hooks/use-ops-ratings";
-import { formatIsoDate } from "@/shared/lib/date";
+import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 const DIRECTION_LABEL: Record<string, string> = {
   SELF: "самооценка",
@@ -108,7 +108,10 @@ export function RatingBriefDialog({
             <Fact k="Методика" v={summary?.calculationPolicyVersion ?? "—"} />
             <Fact
               k="Посчитан"
-              v={summary == null ? "—" : formatIsoDate(summary.calculatedAt)}
+              // `calculatedAt` — `Clock.now().isoformat()`, то есть
+              // UTC-МОМЕНТ: после 19:00 по местному `formatIsoDate` печатал
+              // вчерашний день (Plane №560, найдено ревью №825).
+              v={summary == null ? "—" : formatIsoDateTime(summary.calculatedAt)}
             />
             <Fact k="Состояние данных" v={dataStateLabel(summary?.dataState)} />
           </dl>

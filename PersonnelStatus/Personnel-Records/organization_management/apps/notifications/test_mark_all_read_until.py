@@ -75,6 +75,55 @@ class MarkAllReadBoundaryTest(APITestCase):
         self.assertTrue(self.seen.is_read)
         self.assertTrue(self.fresh.is_read)
 
+    def test_the_boundary_includes_the_moment_itself(self):
+        """Граница ВКЛЮЧИТЕЛЬНАЯ — `__lte`, а не `__lt` (Plane №784).
+
+        🔴 ЭТА ПРОБА ВЫПАЛА ПРИ КОПИРОВАНИИ НАБОРА С ОБРАЗЦА (найдено ревью
+        №825). У ленты раздела ОМ она есть — `operations/tests/`
+        `test_notification_api.py::test_the_boundary_includes_the_moment_itself`,
+        — а здесь её не было, и мутация `created_at__lte` → `created_at__lt`
+        проходила гейт зелёной.
+
+        Ошибка на единицу тут не теоретическая: клиент берёт границей
+        `created_at` САМОЙ СВЕЖЕЙ ПОКАЗАННОЙ строки (`seenUntil`), то есть
+        граница ВСЕГДА совпадает с моментом существующей строки. При `__lt`
+        именно она осталась бы непрочитанной после «Прочитать все» — кнопка
+        переставала бы делать своё дело ровно на той строке, по которой взяли
+        границу.
+        """
+        self.client.force_authenticate(user=self.user)
+        moment = timezone.now() - timezone.timedelta(minutes=2)
+        Notification.objects.filter(pk=self.seen.pk).update(created_at=moment)
+
+        response = self.client.post(
+            self.URL, {'until': moment.isoformat()}, format='json'
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.seen.refresh_from_db()
+        self.assertTrue(
+            self.seen.is_read,
+            'строка, стоящая РОВНО на границе, осталась непрочитанной — '
+            'граница исключающая, а клиент берёт её моментом показанной строки',
+        )
+
+    def test_a_body_less_post_still_marks_everything(self):
+        """Старый клиент шлёт POST БЕЗ тела и без заголовка — так и работает.
+
+        Правка №784 не имеет права ломать тех, кто ещё не обновился. Проба
+        рядом (`test_without_until_everything_is_marked`) шлёт `{}` с
+        `Content-Type: application/json` — это НЕ тот запрос: у старого бандла
+        нулевая длина тела и заголовка нет вовсе (найдено ревью №825).
+        """
+        self.client.force_authenticate(user=self.user)
+
+        self.assertEqual(self.client.post(self.URL).status_code, 204)
+
+        self.seen.refresh_from_db()
+        self.fresh.refresh_from_db()
+        self.assertTrue(self.seen.is_read)
+        self.assertTrue(self.fresh.is_read)
+
     def test_naive_boundary_is_refused(self):
         """Момент без зоны отбивается: в поясе +05 он сдвинул бы границу на
         пять часов, и человек отметил бы прочитанным то, чего не видел."""

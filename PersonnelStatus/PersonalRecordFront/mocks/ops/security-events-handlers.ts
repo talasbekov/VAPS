@@ -55,7 +55,7 @@ import {
   type VisitEvaluationRow,
   type VisitEvaluationSummary,
 } from "@/entities/security-event";
-import { SECURITY_EVENT_STAGES } from "@/entities/security-event";
+import { SECURITY_EVENT_STAGES, remarkIsOpen } from "@/entities/security-event";
 import type {
   AddApproverRequest,
   AddJournalEntryRequest,
@@ -3601,7 +3601,14 @@ export const securityEventsHandlers = [
     }
     // Блокирует только ОТКРЫТОЕ (`[ВОЗ-05]`): «Не согласен» с ответом не
     // хуже «Устранено».
-    if (event.approvalRemarks.some((remark) => remark.status === "OPEN")) {
+    //
+    // 🔴 ЧЕРЕЗ ОБЩЕЕ ПРАВИЛО, А НЕ СРАВНЕНИЕМ ПОЛЯ (Plane №502, найдено ревью
+    // №825). Сервер с №502 считает открытым и замечание СТАРОЙ формы, у
+    // которого ключа `status` нет вовсе; мок сравнивал сырое поле и такое
+    // замечание пропускал. Фикстуры мока новой формы, так что практических
+    // последствий сегодня нет, — но расхождение мок-слоя с сервером правило
+    // проекта требует закрывать в тот же заход, а не когда оно выстрелит.
+    if (event.approvalRemarks.some(remarkIsOpen)) {
       return businessRuleError(
         "APPROVAL_REMARKS_OPEN",
         "Есть замечания без ответа — ответьте на них перед завершением этапа."

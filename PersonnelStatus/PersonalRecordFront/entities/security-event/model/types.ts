@@ -407,6 +407,51 @@ export interface ApprovalSignature {
  */
 export type ApprovalRemarkStatus = "OPEN" | "RESOLVED" | "DISAGREED";
 
+/** Те же значения списком — чтобы `remarkStatusOf` мог отличить знакомый код
+ *  от незнакомого, не заводя третьего перечня. */
+export const REMARK_STATUS_VALUES: readonly ApprovalRemarkStatus[] = [
+  "OPEN",
+  "RESOLVED",
+  "DISAGREED",
+];
+
+/**
+ * Состояние замечания, ПОНЯТНОЕ даже у строки старой формы (Plane №502/№503).
+ *
+ * 🔴 ПОЧЕМУ ЭТО ЖИВЁТ В СУЩНОСТИ, А НЕ НА ЭКРАНЕ (переезд по ревью №825).
+ * До №386 у замечания было булево `resolved`, а не тройственный `status`, и
+ * такие строки приходят с сервера БЕЗ `status` вовсе (миграции чинят данные,
+ * но базу поднимают и из старых дампов). Правило «как это читать» было
+ * написано ВНУТРИ `ApprovalStage` — и потому знал его один экран из четырёх.
+ * Остальные три сравнивали сырой `status` с `"OPEN"`:
+ *
+ *   • реестр ОМ — счётчик бейджа «Возвращено · N замечаний»: у старой строки
+ *     N выходил нулём, то есть на экране стояло буквально «Возвращено ·
+ *     0 замечаний» — тот самый вырожденный бейдж, о котором говорит №584;
+ *   • реестр ОМ — бейдж «Срочно»;
+ *   • «Расстановка» — «N без ответа» у объекта и у поста: старший чинит
+ *     замечание, которого его экран не показывает.
+ *
+ * Место правила — граница данных, а не компонент: у сервера форма сырая, и
+ * нормализовать её обязан тот, кто эту форму знает.
+ */
+export function remarkStatusOf(
+  remark: Pick<ApprovalRemark, "status"> & { resolved?: boolean }
+): ApprovalRemarkStatus {
+  if (remark.status === undefined || remark.status === null) {
+    // Прежний смысл: не устранено — значит открыто.
+    return remark.resolved ? "RESOLVED" : "OPEN";
+  }
+  return REMARK_STATUS_VALUES.includes(remark.status) ? remark.status : "OPEN";
+}
+
+/** Замечание ЖДЁТ работы — единственный вопрос, который задают счётчики. */
+export function remarkIsOpen(
+  remark: Pick<ApprovalRemark, "status"> & { resolved?: boolean }
+): boolean {
+  return remarkStatusOf(remark) === "OPEN";
+}
+
 /**
  * Замечание, порождённое ВОЗВРАТОМ согласующего. Отдельный список, а не поле
  * у согласующего: один человек возвращает дважды по разным поводам, и вторая
