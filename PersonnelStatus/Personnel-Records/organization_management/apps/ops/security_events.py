@@ -4960,6 +4960,19 @@ def actor_display_name(actor):
     """
     if actor is None:
         return ""
+    # 🔴 АНОНИМ ПОДПИСЫВАЛСЯ СЛОВОМ «AnonymousUser» (Plane №897). Он не
+    # проходит `isinstance(actor, User)` — это отдельный класс, — дальше идёт
+    # `str(actor)`, `.isdigit()` ложь, и строка уходит в поле КАК ЕСТЬ.
+    # Гарды вызывающих проверяют `actor is not None`, а не «аноним», и от
+    # этого не защищают: `AnonymousUser` не `None`, он истинный объект.
+    #
+    # Практически недостижимо — ручки закрыты правами, — но цена пропуска
+    # несоразмерна цене строки: «AnonymousUser» в подписи документа, который
+    # печатают и рассылают. Пусто здесь честнее: пустое поле читается как
+    # «автор не назван», а выдуманное слово — как факт (тот же довод, что у
+    # `document_values`, где ненайденное отдаётся пустым, а не «уточняется»).
+    if not getattr(actor, "is_authenticated", True):
+        return ""
     from django.contrib.auth import get_user_model
 
     from organization_management.apps.employees.models import Employee
