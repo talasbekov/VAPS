@@ -8,6 +8,7 @@ Plane №424) и «ключа нет ≠ пусто» для постов (Plane
 """
 import pytest
 
+from organization_management.apps.ops import security_events as service
 from organization_management.apps.operations.models_event import (
     OpsSecurityEventVisitObject,
 )
@@ -62,10 +63,18 @@ def test_save_refuses_rows_of_chiefless_object_but_keeps_unassigned(
 
 def test_complete_refused_without_chief_and_allowed_after(manager, chiefless_on_recon):  # noqa: F811
     event_id, _ = chiefless_on_recon
+    # 🔴 ЧЕК-ЛИСТ ЗАПОЛНЯЕТСЯ, А НЕ СТИРАЕТСЯ (Plane №541, доведено ревью
+    # №825). Здесь стояло `"checklist": []`, и проба проходила ровно потому,
+    # что пустой список снимал `[РЕК-07]` целиком — то есть опиралась на ту
+    # самую дыру, которую №541 и закрывает. Предмет пробы — гард старшего, а
+    # не чек-лист, поэтому пункты просто отмечаются проверенными.
+    card = manager.get(f"{URL}{event_id}/").json()
+    checked = [{**item, "state": "NORMAL"} for item in card["reconChecklist"]]
+    assert checked, "у мероприятия нет чек-листа — проба стерегла бы не то"
     manager.patch(
         f"{URL}{event_id}/recon/",
         {
-            "checklist": [],
+            "checklist": checked,
             "sectorPosts": [{"sector": "Периметр", "post": "Пост 1", "task": "Охрана", "need": 1}],
         },
         format="json",
@@ -221,3 +230,59 @@ def test_completion_still_demands_a_chief_for_every_object(manager):  # noqa: F8
 
     assert refused.status_code == 422, refused.content
     assert refused.json()["error_code"] == "VISIT_CHIEF_REQUIRED"
+
+
+def test_the_guard_sees_a_change_in_any_field_of_the_post(
+    manager, chiefless_on_recon  # noqa: F811
+):
+    """🔴 ГАРД СЧИТАЛ ВОСЕМЬ ПОЛЕЙ ИЗ СЕМНАДЦАТИ (Plane №634, найдено ревью
+    №825).
+
+    «Тронут» определялось отпечатком по белому списку — `id`, `sector`,
+    `post`, `task`, `need`, `shift`, `requirements`, `comment`. Вне списка
+    оставались `postType`, `weapon`, `uniform`, `minRating`, `parentPostId` и
+    `result`, а первые четыре правятся прямо на экране рекогносцировки. Значит
+    правка ТОЛЬКО этих полей у поста объекта без старшего отпечатка не меняла,
+    гард не срабатывал — и посты объекта правились без его старшего, против
+    правила `[РЕК-02]`/№424 «посты объекта пишет его старший».
+
+    Список был ещё и закрытым, а сервер пропускает незнакомые ключи как есть:
+    каждая новая колонка расчёта попадала бы в ту же щель молча.
+    """
+    event_id, visit = chiefless_on_recon
+    row = {
+        "id": "post-guard-1",
+        "sector": "Периметр",
+        "post": "Пост 1",
+        "task": "Охрана",
+        "need": 1,
+        "minRating": None,
+        "weapon": "",
+    }
+    # Заводим пост объекту в обход гарда — предмет пробы следующий запрос.
+    event = service.lock_event(event_id)
+    event.recon_sector_posts = [{**row, "visitObjectId": str(visit.pk)}]
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+
+    for field, value in (("minRating", 5), ("weapon", "АКС-74У"), ("uniform", "Летняя")):
+        refused = manager.patch(
+            f"{URL}{event_id}/recon/",
+            {
+                "checklist": [],
+                "sectorPosts": [
+                    {**row, field: value, "visitObjectId": str(visit.pk)}
+                ],
+            },
+            format="json",
+        )
+        assert refused.status_code == 422, (field, refused.content)
+        assert refused.json()["error_code"] == "VISIT_CHIEF_REQUIRED", field
+
+    # А сохранение БЕЗ изменений проходит: гард держит правку, а не всякое
+    # касание (иначе вернулась бы болезнь №634 — «один объект запирает всё»).
+    same = manager.patch(
+        f"{URL}{event_id}/recon/",
+        {"checklist": [], "sectorPosts": [{**row, "visitObjectId": str(visit.pk)}]},
+        format="json",
+    )
+    assert same.status_code == 200, same.content

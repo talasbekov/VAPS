@@ -61,7 +61,13 @@ def event_with_two_posts(manager):  # noqa: F811
     manager.patch(
         f"{URL}{event_id}/recon/",
         {
-            "checklist": [],
+            # Чек-лист отмечается, а не стирается (Plane №541, доведено ревью
+            # №825): пустой список снимал `[РЕК-07]` целиком, и фикстура
+            # опиралась на эту дыру, чтобы закрыть этап.
+            "checklist": [
+                {**item, "state": "NORMAL"}
+                for item in manager.get(f"/api/ops/security-events/{event_id}/").json()["reconChecklist"]
+            ],
             "sectorPosts": [
                 {
                     "sector": "Сектор A",

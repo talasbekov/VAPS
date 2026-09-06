@@ -1485,25 +1485,26 @@ def _require_visit_chief(visit):
         )
 
 
-#: Поля поста, по которым видно, что расчёт объекта изменился (Plane №634).
-#: Служебные ключи (`id` сохраняется, порядок) в отпечаток не входят: правка
-#: — это другой СОСТАВ постов, а не другой их порядок в списке.
-_POST_FINGERPRINT_FIELDS = (
-    "id", "sector", "post", "task", "need", "shift", "requirements", "comment",
-)
-
-
 def _posts_by_visit(rows):
     """{объект посещения → отпечаток его постов}. Строки без объекта не
-    считаются: они ничьи, и гард старшего их не касается."""
+    считаются: они ничьи, и гард старшего их не касается.
+
+    🔴 ОТПЕЧАТОК — СТРОКА ЦЕЛИКОМ, А НЕ СПИСОК ИЗ ВОСЬМИ ПОЛЕЙ (Plane №634,
+    доведено ревью №825). Белый список `_POST_FINGERPRINT_FIELDS` не знал про
+    `postType`, `weapon`, `uniform`, `minRating`, `parentPostId` и `result`, а
+    первые четыре правятся прямо на экране рекогносцировки. Значит правка
+    ТОЛЬКО этих полей у поста чужого объекта отпечатка не меняла — гард
+    старшего не срабатывал, и посты объекта правились без его старшего, против
+    правила `[РЕК-02]`/№424 «посты объекта пишет его старший». Хуже, что список
+    закрытый, а файл сам пишет «сервер пропускает незнакомые ключи как есть»:
+    каждая новая колонка попадала бы в ту же щель молча.
+    """
     grouped = {}
     for row in rows or []:
         key = str(row.get("visitObjectId") or "").strip()
         if not key:
             continue
-        grouped.setdefault(key, []).append(
-            tuple(str(row.get(field, "") or "").strip() for field in _POST_FINGERPRINT_FIELDS)
-        )
+        grouped.setdefault(key, []).append(_row_fingerprint(row))
     return {key: sorted(items) for key, items in grouped.items()}
 
 
@@ -1527,11 +1528,13 @@ _ROW_FINGERPRINT_SKIP = ("visitObjectId",)
 def _row_fingerprint(row):
     """Отпечаток строки поста ЦЕЛИКОМ, а не по списку полей.
 
-    🔴 СПИСОК ПОЛЕЙ ЗДЕСЬ БЫЛ ДЫРОЙ (Plane №535, найдено ревью №825).
-    `_POST_FINGERPRINT_FIELDS` перечисляет восемь полей, а строка поста несёт
-    ещё `minRating`, `postType`, `weapon`, `uniform`, `parentPostId`,
-    `sourceSectorId`, `sourcePostId`, `result` — и все они попадают в снимок
-    подписываемого документа (`_document_snapshot` кладёт строки целиком).
+    🔴 СПИСОК ПОЛЕЙ БЫЛ ДЫРОЙ (Plane №535 и №634, найдено ревью №825). Прежний
+    `_POST_FINGERPRINT_FIELDS` перечислял восемь полей — `id`, `sector`,
+    `post`, `task`, `need`, `shift`, `requirements`, `comment`, — а строка
+    поста несёт ещё `minRating`, `postType`, `weapon`, `uniform`,
+    `parentPostId`, `sourceSectorId`, `sourcePostId`, `result`; и все они
+    попадают в снимок подписываемого документа (`_document_snapshot` кладёт
+    строки целиком).
     Значит у СОГЛАСОВАННОГО объекта минимальный балл поста менялся ответом
     200: заморозка молчала, `document_version_diff` сравнивает только пары
     «сектор · пост» и «кто на посту» — и расхождение подписанного документа с
@@ -2452,10 +2455,36 @@ def complete_recon(event_id):
             _require_visit_chief(visit)
     # `[РЕК-04]`/`[РЕК-07]` (Plane №443): обязательные пункты не могут остаться
     # в «Не проверено»; «Замечание» — проверено, и завершать не мешает.
-    if any(
-        normalize_check_item(item)["required"] and normalize_check_item(item)["state"] == "UNCHECKED"
-        for item in event.recon_checklist
-    ):
+    #
+    # 🔴 СЧИТАЕТСЯ ПО ШАБЛОНУ, А НЕ ПО ПРИСЛАННОМУ (Plane №541, доведено ревью
+    # №825). Признак обязательности уже брался из шаблона (`_required_of`), но
+    # сам ПЕРЕЧЕНЬ по-прежнему приходил снаружи: цикл шёл по
+    # `event.recon_checklist`, а его целиком заменяет тело `PATCH /recon/`.
+    # Значит `{"checklist": []}` снимало `[РЕК-07]` полностью, и то же давало
+    # переименование `id` шаблонного пункта — проверять становилось нечего.
+    # Дыра та же, что закрывал `_required_of`, только другим входом: правило,
+    # которое можно выключить снаружи, правилом не является.
+    #
+    # ОТСУТСТВУЮЩИЙ пункт шаблона считается «Не проверено»: он и не проверен —
+    # его нет. Отказать по нему честнее, чем промолчать; вернуть его в список
+    # человек может тем же сохранением.
+    stored = {
+        str(item.get("id") or ""): normalize_check_item(item)
+        for item in (event.recon_checklist or [])
+    }
+    unchecked = [
+        check_id
+        for check_id in sorted(TEMPLATE_CHECK_IDS)
+        if stored.get(check_id, {"state": "UNCHECKED"})["state"] == "UNCHECKED"
+    ]
+    unchecked += [
+        str(item.get("id") or "")
+        for item in (event.recon_checklist or [])
+        if str(item.get("id") or "") not in TEMPLATE_CHECK_IDS
+        and normalize_check_item(item)["required"]
+        and normalize_check_item(item)["state"] == "UNCHECKED"
+    ]
+    if unchecked:
         raise DomainError("RECON_CHECKLIST_INCOMPLETE", 422, message=
             "Обязательные пункты чек-листа остались в «Не проверено».",
         )

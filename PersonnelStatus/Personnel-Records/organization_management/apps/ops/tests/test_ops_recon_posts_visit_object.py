@@ -555,7 +555,15 @@ def _complete_recon_with(api, event_id, visit, marked_need, unmarked_need):
     saved = api.patch(
         f"/api/ops/security-events/{event_id}/recon/",
         {
-            "checklist": [],
+            # Чек-лист отмечается, а не стирается (Plane №541, доведено ревью
+            # №825): пустой список снимал `[РЕК-07]` целиком, и помощник
+            # опирался на эту дыру, чтобы закрыть этап.
+            "checklist": [
+                {**item, "state": "NORMAL"}
+                for item in api.get(
+                    f"/api/ops/security-events/{event_id}/"
+                ).json()["reconChecklist"]
+            ],
             "sectorPosts": [
                 {
                     "sector": "Сектор 1",
