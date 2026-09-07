@@ -189,6 +189,47 @@ test.describe(
       ).toHaveAttribute('aria-pressed', 'true')
     })
     /**
+     * Подпись адресата — по слову сервера (Plane №941, слово заказчика
+     * 07.09.2026): начальнику ДЕПАРТАМЕНТА баннер говорил «Вашему управлению
+     * адресованы запросы…», хотя строки у него по всем управлениям
+     * департамента. Уровень считает сервер по области `status.manage`
+     * (`addressee`); экран только подставляет слово. Ответ подменяется —
+     * предмет пробы поведение экрана при разных словах сервера, а не то, у
+     * кого на стенде какая область (это стережёт серверная проба).
+     *
+     * Красная до правки: слово было зашито, и поле ответа экран не читал.
+     */
+    test('подпись баннера следует адресату из ответа сервера', async ({ page }) => {
+      const rows = [1, 2].map((n) => ({
+        eventId: `90000${n}`,
+        code: `ОМ-СИНТ-${n}`,
+        title: `Синтетическое мероприятие ${n}`,
+        businessDate: `2026-09-1${n}`,
+        allocationId: `synthetic-allocation-${n}`,
+        departmentName: 'Синт. департамент',
+        status: 'NOTIFIED',
+        dueAt: null,
+        directorates: [
+          { divisionId: '9101', name: 'Синт. управление', need: 2, assigned: 0, notifiedAt: '2026-09-05T06:00:00Z' },
+        ],
+      }))
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) => route.fulfill({ json: { results: rows, addressee: 'department' } }),
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+
+      const chooser = page.locator('[data-slot="forces-request-chooser"]')
+      await expect(
+        chooser.getByText('Вашему департаменту адресованы запросы на сбор сил: 2'),
+        'начальник департамента читает подпись про управление',
+      ).toBeVisible({ timeout: 20_000 })
+      await expect(chooser.getByText('Вашему управлению', { exact: false })).toHaveCount(0)
+    })
+
+    /**
      * Счётчик кнопки и «Выбрано» в таблице расходятся ОБЪЯСНИМО (Plane №547).
      *
      * Таблица считает выбранные СТРОКИ, а выделить можно только сотрудников:

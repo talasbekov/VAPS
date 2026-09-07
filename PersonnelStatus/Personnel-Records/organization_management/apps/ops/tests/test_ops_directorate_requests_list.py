@@ -237,3 +237,28 @@ def test_foreign_events_do_not_cost_a_query_each():
         "цена ответа выросла с числом ЧУЖИХ мероприятий: "
         f"{len(few)} → {len(many)} запросов"
     )
+
+
+def test_the_list_names_its_addressee_by_the_scope():
+    """«Вашему управлению адресованы запросы…» говорилось и начальнику
+    ДЕПАРТАМЕНТА (Plane №941). Уровень адресата считает сервер по области
+    `status.manage`: у начальника департамента в области есть департамент,
+    у начальника управления — нет, у администратора области нет вовсе.
+
+    КРАСНАЯ ПРОБА: верни в ответ одно `results` — упадёт первый же ассерт;
+    посчитай уровень по числу строк — начальник департамента с одним
+    управлением станет «управлением».
+    """
+    department = make_department("Департамент-941")
+    directorate = make_directorate(department, "Управление-941")
+    make_directorate(department, "Управление-941-б")
+
+    head = directorate_client("dept-head-941", "DEPT_HEAD_941", department.pk)
+    assert head.get(LIST_URL).json()["addressee"] == "department"
+
+    lead = directorate_client("dir-head-941", "DIR_HEAD_941", directorate.pk)
+    assert lead.get(LIST_URL).json()["addressee"] == "directorate"
+
+    # Роль без области — служба целиком (`allowed is None`).
+    whole = directorate_client("org-head-941", "ORG_HEAD_941", None)
+    assert whole.get(LIST_URL).json()["addressee"] == "organization"
