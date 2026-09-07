@@ -800,6 +800,16 @@ test.describe(
 
       await page.setViewportSize({ width: 420, height: 1000 })
       await signIn(page)
+      // 🔴 ПРОГРЕВ МАРШРУТА ДО ЗАМЕРА (Plane №869). Проба мигала ✘ ✓ ✓ на одном
+      // коде: первый заход на `/statuses` после перезапуска dev-стенда
+      // компилирует страницу и её клиентские чанки на лету (`next dev`), и
+      // баннер — клиентский, он появляется только после гидратации, — не
+      // успевал за 20 с на занятой машине. Замер 07.09.2026: пять одиночных
+      // прогонов зелёные, первый 11,1 с против 6,6 с у остальных — разница и
+      // есть компиляция. Предмет пробы — ширина документа, а не скорость компилятора:
+      // первый заход прогревает, второй — меряется. Порог не поднят.
+      await page.goto(`${APP}/statuses/`)
+      await page.waitForLoadState('networkidle').catch(() => undefined)
       await page.goto(`${APP}/statuses/`)
       await expect(page.locator('[data-slot="forces-request-banner"]')).toBeVisible({
         timeout: 20_000,
