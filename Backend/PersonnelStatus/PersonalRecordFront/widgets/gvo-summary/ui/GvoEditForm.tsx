@@ -4,16 +4,19 @@
 // кнопка «Редактировать» на страницу → все поля инпутами → «Сохранить /
 // Отмена». Отдельных окон и кнопок «Изменить» по блокам больше нет.
 //
-// Разделы остаются разделами КОНТРАКТА: сервер принимает патч по одному
-// разделу за раз, поэтому «Сохранить» отправляет по патчу на каждый раздел,
-// в котором что-то изменилось, по очереди, и флаги «уточняется» — с
-// последним. Разбор текста в патч — тот же `gvoPatchFromForm`, что и у
-// прежних окон: формат «Фамилия | позывной | роль» не менялся.
+// Разделы остаются разделами КОНТРАКТА: сервер принимает патч по ключам
+// разделов, поэтому «Сохранить» собирает по патчу на каждый раздел, в котором
+// что-то изменилось, и шлёт их одним запросом (№694). Разбор текста в патч —
+// `gvoPatchFromForm`, как и у прежних окон.
 //
-// Списки лиц и групп правятся ПОЭЛЕМЕНТНО (ФИО / должность / данные у
-// каждого лица; название и состав у каждой группы) — так их правили окна
-// «person:N» / «group:N», и проба разделов идёт по тем же подписям.
-import { useEffect, useId, useState } from "react";
+// СПРАВОЧНИКИ, А НЕ ТЕКСТ (Plane №951, задача заказчика). Состав ГВО
+// набирается из кадрового списка (`GvoMemberPickerDialog`): участник несёт
+// `employeeId`, фамилию и позывной по нему подставляет сервер. Охраняемое лицо
+// — из справочника лиц (`ProtectedPersonPickDialog`, там же заводится новое):
+// карточка несёт `personId`, код и снимок. Машины — из реестра ГОН
+// (`AllocateVehicleDialog`), как в режиме просмотра. Строки, набранные
+// текстом до этой задачи, остаются редактируемыми как были.
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,12 +28,21 @@ import {
 } from "@/entities/gvo-summary";
 import type {
   GvoFieldSpec,
+  GvoGroup,
+  GvoMember,
+  GvoPerson,
   GvoSection,
   GvoSectionForm,
   GvoSummary,
   GvoSummaryPatch,
 } from "@/entities/gvo-summary";
+import type { SecurityEvent } from "@/entities/security-event";
 import { useResetGvoSection, useSaveGvoSection } from "@/hooks/use-gvo-summaries";
+import { useUploadProtectedPersonPhoto } from "@/hooks/use-protected-persons";
+import { GvoMemberPickerDialog, ProtectedPersonPickDialog } from "@/features/gvo-section-edit";
+import { AllocateVehicleDialog } from "@/features/event-vehicles";
+import { mediaSrc } from "@/shared/lib/media";
+import { RegistryVehicles } from "./RegistryVehicles";
 
 /** Разделы, которые правятся целиком — в порядке печатного документа. */
 const WHOLE_SECTIONS: GvoSection[] = [
@@ -42,11 +54,34 @@ const WHOLE_SECTIONS: GvoSection[] = [
   "transport",
 ];
 
+/** Лицо в форме: текстовые поля прежнего разбора плюс ссылка на справочник. */
+interface PersonDraft {
+  form: GvoSectionForm;
+  personId: string | null;
+  code: string;
+  photoUrl: string | null;
+}
+
+/** Группа в форме: участники — строками, а не текстом (Plane №951). */
+interface GroupDraft {
+  name: string;
+  members: GvoMember[];
+}
+
 interface Draft {
   whole: Record<string, GvoSectionForm>;
-  persons: GvoSectionForm[];
-  groups: GvoSectionForm[];
+  persons: PersonDraft[];
+  groups: GroupDraft[];
   flags: string[];
+}
+
+function personDraft(person: GvoPerson, form: GvoSectionForm): PersonDraft {
+  return {
+    form,
+    personId: person.personId ?? null,
+    code: person.code ?? "",
+    photoUrl: person.photoUrl ?? null,
+  };
 }
 
 function draftOf(summary: GvoSummary, unspecified: string[]): Draft {
@@ -54,13 +89,26 @@ function draftOf(summary: GvoSummary, unspecified: string[]): Draft {
     whole: Object.fromEntries(
       WHOLE_SECTIONS.map((section) => [section, gvoFormFromSummary(section, summary)])
     ),
-    persons: summary.persons.map((_, index) =>
-      gvoFormFromSummary(`person:${index}` as GvoSection, summary)
+    persons: summary.persons.map((person, index) =>
+      personDraft(person, gvoFormFromSummary(`person:${index}` as GvoSection, summary))
     ),
-    groups: summary.groups.map((_, index) =>
-      gvoFormFromSummary(`group:${index}` as GvoSection, summary)
-    ),
+    groups: summary.groups.map((group) => ({
+      name: group.name,
+      members: group.members.map((member) => ({ ...member })),
+    })),
     flags: [...unspecified].sort(),
+  };
+}
+
+function groupPatch(group: GroupDraft): GvoGroup {
+  return {
+    name: group.name.trim() === "" ? "ГВО (без названия)" : group.name.trim(),
+    members: group.members.map((member) => ({
+      name: member.name.trim(),
+      callsign: member.callsign.trim(),
+      role: member.role.trim(),
+      ...(member.employeeId ? { employeeId: member.employeeId } : {}),
+    })),
   };
 }
 
@@ -68,6 +116,9 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 export interface GvoEditFormProps {
   omCode: string;
+  /** Мероприятие — ради машин реестра (Plane №951): их выделяют и снимают
+   * прямо из формы, отдельными запросами, а не патчем сводки. */
+  event: SecurityEvent;
   summary: GvoSummary;
   unspecified: string[];
   /** Сообщить наружу, что набранное ещё не сохранено (Plane №693). */
@@ -77,6 +128,7 @@ export interface GvoEditFormProps {
 
 export function GvoEditForm({
   omCode,
+  event,
   summary,
   unspecified,
   onDirtyChange,
@@ -109,21 +161,74 @@ export function GvoEditForm({
       ...prev,
       whole: { ...prev.whole, [section]: { ...prev.whole[section], [key]: value } },
     }));
-  const setListItem = (list: "persons" | "groups", index: number, key: string, value: string) =>
+  const setPersonField = (index: number, key: string, value: string) =>
     setDraft((prev) => ({
       ...prev,
-      [list]: prev[list].map((item, i) => (i === index ? { ...item, [key]: value } : item)),
+      persons: prev.persons.map((item, i) =>
+        i === index ? { ...item, form: { ...item.form, [key]: value } } : item
+      ),
     }));
-  const addListItem = (list: "persons" | "groups") =>
+  const setPersonPhoto = (index: number, photoUrl: string | null) =>
     setDraft((prev) => ({
       ...prev,
-      [list]: [
-        ...prev[list],
-        gvoFormFromSummary(list === "persons" ? "person:new" : "group:new", summary),
-      ],
+      persons: prev.persons.map((item, i) => (i === index ? { ...item, photoUrl } : item)),
     }));
-  const removeListItem = (list: "persons" | "groups", index: number) =>
-    setDraft((prev) => ({ ...prev, [list]: prev[list].filter((_, i) => i !== index) }));
+  const addPerson = (person: PersonDraft) =>
+    setDraft((prev) => ({ ...prev, persons: [...prev.persons, person] }));
+  const removePerson = (index: number) =>
+    setDraft((prev) => ({ ...prev, persons: prev.persons.filter((_, i) => i !== index) }));
+  const setGroupName = (index: number, name: string) =>
+    setDraft((prev) => ({
+      ...prev,
+      groups: prev.groups.map((group, i) => (i === index ? { ...group, name } : group)),
+    }));
+  const addGroup = () =>
+    setDraft((prev) => ({ ...prev, groups: [...prev.groups, { name: "", members: [] }] }));
+  const removeGroup = (index: number) =>
+    setDraft((prev) => ({ ...prev, groups: prev.groups.filter((_, i) => i !== index) }));
+  const setMember = (groupIndex: number, memberIndex: number, patch: Partial<GvoMember>) =>
+    setDraft((prev) => ({
+      ...prev,
+      groups: prev.groups.map((group, g) =>
+        g === groupIndex
+          ? {
+              ...group,
+              members: group.members.map((member, m) =>
+                m === memberIndex ? { ...member, ...patch } : member
+              ),
+            }
+          : group
+      ),
+    }));
+  const addMember = (groupIndex: number, member: GvoMember) =>
+    setDraft((prev) => ({
+      ...prev,
+      groups: prev.groups.map((group, g) =>
+        g === groupIndex ? { ...group, members: [...group.members, member] } : group
+      ),
+    }));
+  const removeMember = (groupIndex: number, memberIndex: number) =>
+    setDraft((prev) => ({
+      ...prev,
+      groups: prev.groups.map((group, g) =>
+        g === groupIndex
+          ? { ...group, members: group.members.filter((_, m) => m !== memberIndex) }
+          : group
+      ),
+    }));
+  // Окна справочников: какой группе подбирается сотрудник; открыт ли выбор
+  // лица; открыт ли реестр машин.
+  const [memberPickerFor, setMemberPickerFor] = useState<number | null>(null);
+  const [personPickerOpen, setPersonPickerOpen] = useState(false);
+  const [vehiclesOpen, setVehiclesOpen] = useState(false);
+  const takenEmployeeIds = new Set(
+    draft.groups.flatMap((group) =>
+      group.members.map((member) => member.employeeId ?? "").filter((id) => id !== "")
+    )
+  );
+  const takenPersonIds = new Set(
+    draft.persons.map((person) => person.personId ?? "").filter((id) => id !== "")
+  );
   const setFlag = (key: string, on: boolean) =>
     setDraft((prev) => ({
       ...prev,
@@ -146,21 +251,24 @@ export function GvoEditForm({
       calls.push({
         section: "persons",
         values: {
-          persons: draft.persons.map(
-            (form) => gvoPatchFromForm("person:new", form, empty).persons?.[0]
-          ).filter((person) => person !== undefined),
+          persons: draft.persons
+            .map((person) => {
+              const parsed = gvoPatchFromForm("person:new", person.form, empty).persons?.[0];
+              if (parsed === undefined) return undefined;
+              // Ссылка на справочник едет с лицом (Plane №951): по ней сервер
+              // подставит код и снимок; снимок сам в патч не пишется.
+              return person.personId === null
+                ? parsed
+                : { ...parsed, personId: person.personId };
+            })
+            .filter((person): person is GvoPerson => person !== undefined),
         },
       });
     }
     if (!same(draft.groups, initial.groups)) {
-      const empty = { ...summary, groups: [] };
       calls.push({
         section: "groups",
-        values: {
-          groups: draft.groups.map(
-            (form) => gvoPatchFromForm("group:new", form, empty).groups?.[0]
-          ).filter((group) => group !== undefined),
-        },
+        values: { groups: draft.groups.map(groupPatch) },
       });
     }
     return calls;
@@ -297,35 +405,53 @@ export function GvoEditForm({
             {/* ФЛАГ НА БЛОК, А НЕ НА ПОЛЕ (Plane №687). «Охраняемые лица» —
                 обязательное поле сводки (`REQUIRED_VISIT_FIELDS`), но правится
                 оно СПИСКОМ карточек, и своего однострочного поля, к которому
-                можно приткнуть галочку, у него нет. У FOREIGN ОМ без названного
-                лица список приходит пустым, экран говорит «Обязательные поля
-                без данных: Охраняемые лица» и обещает «пустое поле можно
-                пометить „уточняется“» — а галочки, дающей этот флаг, не было
-                нигде. */}
+                можно приткнуть галочку, у него нет. */}
             <FlagBox
               label="Охраняемые лица"
               checked={draft.flags.includes("persons")}
               onChange={(on) => setFlag("persons", on)}
             />
-            <Button type="button" variant="outline" size="sm" className="h-[30px]" onClick={() => addListItem("persons")}>
-              ＋ Добавить лицо
+            {/* Лицо — ИЗ СПРАВОЧНИКА (Plane №951): окно выбирает запись
+                каталога или заводит новую там же. Текстом лицо больше не
+                добавляется — иначе снова родилась бы карточка без кода и
+                снимка. Набранные раньше остаются редактируемыми. */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-[30px]"
+              onClick={() => setPersonPickerOpen(true)}
+            >
+              ＋ Лицо из справочника
             </Button>
           </>
         }
       >
         {draft.persons.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Лиц нет — добавьте первое.</p>
+          <p className="text-xs text-muted-foreground">Лиц нет — выберите первое из справочника.</p>
         ) : (
           <div className="space-y-3">
             {draft.persons.map((person, index) => (
-              <fieldset key={index} className="space-y-2 rounded-[12px] border p-3">
+              <fieldset key={`${person.personId ?? "text"}-${index}`} className="space-y-2 rounded-[12px] border p-3" data-slot="gvo-person">
                 <legend className="px-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
                   Лицо {index + 1}
+                  {person.code !== "" ? ` · ${person.code}` : ""}
                 </legend>
+                {person.personId !== null && (
+                  <PersonHead
+                    personId={person.personId}
+                    name={person.form.name ?? ""}
+                    photoUrl={person.photoUrl}
+                    onPhoto={(url) => setPersonPhoto(index, url)}
+                  />
+                )}
                 <Fields
-                  fields={spec("person:new").fields}
-                  values={person}
-                  onChange={(key, value) => setListItem("persons", index, key, value)}
+                  // У лица из справочника ФИО — из записи, здесь не правится.
+                  fields={spec("person:new").fields.filter(
+                    (field) => person.personId === null || field.key !== "name"
+                  )}
+                  values={person.form}
+                  onChange={(key, value) => setPersonField(index, key, value)}
                   flags={draft.flags}
                   onFlag={setFlag}
                   noFlags
@@ -336,7 +462,7 @@ export function GvoEditForm({
                   size="sm"
                   className="border-red-200 text-red-700 hover:bg-red-50"
                   aria-label={`Удалить лицо ${index + 1}`}
-                  onClick={() => removeListItem("persons", index)}
+                  onClick={() => removePerson(index)}
                 >
                   Удалить лицо
                 </Button>
@@ -374,17 +500,13 @@ export function GvoEditForm({
       <Block
         title="Состав ГВО СГО РК"
         action={
-          <Button type="button" variant="outline" size="sm" className="h-[30px]" onClick={() => addListItem("groups")}>
+          <Button type="button" variant="outline" size="sm" className="h-[30px]" onClick={addGroup}>
             ＋ Группа
           </Button>
         }
       >
         {/* `noFlags` СНЯТ (Plane №687): «Ответственный» — обычное однострочное
-            поле, а не элемент списка, и он ОБЯЗАТЕЛЕН для утверждения
-            (`REQUIRED_VISIT_FIELDS`). Без галочки пометить его «уточняется»
-            было нечем, и «Утвердить» не разблокировался ничем, кроме ручного
-            PATCH по API. Ниже, у групп, `noFlags` остаётся: там ключи полей
-            повторяются на каждом элементе списка. */}
+            поле, и он ОБЯЗАТЕЛЕН для утверждения (`REQUIRED_VISIT_FIELDS`). */}
         <Fields
           fields={spec("resp").fields}
           values={draft.whole.resp}
@@ -394,45 +516,240 @@ export function GvoEditForm({
         />
         {draft.groups.length > 0 && (
           <div className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(330px,1fr))]">
-            {draft.groups.map((group, index) => (
-              <fieldset key={index} className="space-y-2 rounded-[12px] border p-3">
+            {draft.groups.map((group, groupIndex) => (
+              <fieldset key={groupIndex} className="space-y-2 rounded-[12px] border p-3" data-slot="gvo-group">
                 <legend className="px-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                  Группа {index + 1}
+                  Группа {groupIndex + 1}
                 </legend>
-                <Fields
-                  fields={spec("group:new").fields}
-                  values={group}
-                  onChange={(key, value) => setListItem("groups", index, key, value)}
-                  flags={draft.flags}
-                  onFlag={setFlag}
-                  noFlags
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-red-200 text-red-700 hover:bg-red-50"
-                  aria-label={`Удалить группу ${index + 1}`}
-                  onClick={() => removeListItem("groups", index)}
-                >
-                  Удалить группу
-                </Button>
+                <div className="space-y-1">
+                  <label
+                    htmlFor={`gvo-group-name-${groupIndex}`}
+                    className="block text-[11.5px] font-bold text-[hsl(215.4_16.3%_36.9%)]"
+                  >
+                    Название группы
+                  </label>
+                  <Input
+                    id={`gvo-group-name-${groupIndex}`}
+                    className="h-[38px] text-[13px]"
+                    placeholder="ГВО «Черногория»"
+                    value={group.name}
+                    onChange={(e) => setGroupName(groupIndex, e.target.value)}
+                  />
+                </div>
+                {/* Состав — СТРОКАМИ ИЗ КАДРОВ (Plane №951), а не текстом
+                    «Фамилия | позывной | роль»: у участника из списка фамилия
+                    и позывной — из записи и здесь не правятся, роль — своя.
+                    Строка, набранная текстом раньше, остаётся с тремя полями. */}
+                <div className="space-y-1">
+                  <p className="text-[11.5px] font-bold text-[hsl(215.4_16.3%_36.9%)]">Состав группы</p>
+                  {group.members.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Состав не назначен.</p>
+                  ) : (
+                    <ul className="space-y-1.5" data-slot="gvo-members">
+                      {group.members.map((member, memberIndex) => (
+                        <li key={`${member.employeeId ?? "text"}-${memberIndex}`} className="flex flex-wrap items-center gap-1.5">
+                          {member.employeeId ? (
+                            <span className="min-w-0 flex-1 text-[12.5px]">
+                              <span className="font-semibold">{member.name}</span>
+                              {member.callsign !== "" && (
+                                <span className="tabular-nums text-muted-foreground"> · {member.callsign}</span>
+                              )}
+                              <span className="text-[11px] text-muted-foreground"> · из кадров</span>
+                            </span>
+                          ) : (
+                            <>
+                              <Input
+                                className="h-9 w-[9.5rem] text-[12.5px]"
+                                aria-label={`Фамилия, участник ${memberIndex + 1} группы ${groupIndex + 1}`}
+                                placeholder="Фамилия"
+                                value={member.name}
+                                onChange={(e) => setMember(groupIndex, memberIndex, { name: e.target.value })}
+                              />
+                              <Input
+                                className="h-9 w-[5.5rem] text-[12.5px]"
+                                aria-label={`Позывной, участник ${memberIndex + 1} группы ${groupIndex + 1}`}
+                                placeholder="позывной"
+                                value={member.callsign}
+                                onChange={(e) => setMember(groupIndex, memberIndex, { callsign: e.target.value })}
+                              />
+                            </>
+                          )}
+                          <Input
+                            className="h-9 w-[10rem] text-[12.5px]"
+                            aria-label={`Роль, участник ${memberIndex + 1} группы ${groupIndex + 1}`}
+                            placeholder="роль"
+                            value={member.role}
+                            onChange={(e) => setMember(groupIndex, memberIndex, { role: e.target.value })}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 px-2 text-[11.5px] text-red-700"
+                            aria-label={`Убрать участника ${memberIndex + 1} из группы ${groupIndex + 1}`}
+                            onClick={() => removeMember(groupIndex, memberIndex)}
+                          >
+                            Убрать
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-[30px]"
+                    onClick={() => setMemberPickerFor(groupIndex)}
+                  >
+                    ＋ Сотрудник из списка
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-red-200 text-red-700 hover:bg-red-50"
+                    aria-label={`Удалить группу ${groupIndex + 1}`}
+                    onClick={() => removeGroup(groupIndex)}
+                  >
+                    Удалить группу
+                  </Button>
+                </div>
               </fieldset>
             ))}
           </div>
         )}
       </Block>
 
-      <Block title={spec("transport").title}>
-        <Fields
-          fields={spec("transport").fields}
-          values={draft.whole.transport}
-          onChange={(key, value) => setWhole("transport", key, value)}
-          flags={draft.flags}
-          onFlag={setFlag}
-        />
+      <Block
+        title={spec("transport").title}
+        action={
+          // Машина ИЗ РЕЕСТРА выделяется и в форме правки (Plane №951): до
+          // этого кнопка жила только в просмотре, и в форме человек видел
+          // один свободный текст. Выделение — свой запрос, не патч сводки.
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-[30px] text-[12px]"
+            onClick={() => setVehiclesOpen(true)}
+          >
+            + Машина из реестра
+          </Button>
+        }
+      >
+        <RegistryVehicles event={event} canEdit />
+        <div className={event.vehicles.length > 0 ? "mt-3" : ""}>
+          <Fields
+            fields={spec("transport").fields}
+            values={draft.whole.transport}
+            onChange={(key, value) => setWhole("transport", key, value)}
+            flags={draft.flags}
+            onFlag={setFlag}
+          />
+        </div>
       </Block>
+
+      <GvoMemberPickerDialog
+        open={memberPickerFor !== null}
+        groupName={memberPickerFor === null ? "" : (draft.groups[memberPickerFor]?.name ?? "")}
+        takenIds={takenEmployeeIds}
+        onPick={(member) => {
+          if (memberPickerFor !== null) addMember(memberPickerFor, member);
+        }}
+        onClose={() => setMemberPickerFor(null)}
+      />
+      <ProtectedPersonPickDialog
+        open={personPickerOpen}
+        takenIds={takenPersonIds}
+        onPick={(person) =>
+          addPerson({
+            form: { name: person.name, role: "", facts: "" },
+            personId: person.id,
+            code: person.code,
+            photoUrl: person.photoUrl,
+          })
+        }
+        onClose={() => setPersonPickerOpen(false)}
+      />
+      <AllocateVehicleDialog event={event} open={vehiclesOpen} onClose={() => setVehiclesOpen(false)} />
     </form>
+  );
+}
+
+/** Шапка лица из справочника: снимок и его загрузка (Plane №951). Загрузка
+ * идёт СРАЗУ, отдельным запросом: снимок принадлежит записи справочника, а не
+ * черновику сводки, и терять его вместе с «Отменой» было бы неправильно. */
+function PersonHead({
+  personId,
+  name,
+  photoUrl,
+  onPhoto,
+}: {
+  personId: string;
+  name: string;
+  photoUrl: string | null;
+  onPhoto: (url: string | null) => void;
+}) {
+  const id = useId();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const upload = useUploadProtectedPersonPhoto();
+  const { toast } = useToast();
+  const src = mediaSrc(photoUrl);
+  return (
+    <div className="flex flex-wrap items-center gap-3" data-slot="gvo-person-head">
+      {src === null ? (
+        <span className="flex h-[72px] w-[56px] items-center justify-center rounded-[8px] bg-muted text-[10px] text-muted-foreground">
+          нет фото
+        </span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={`Фото: ${name}`} className="h-[72px] w-[56px] rounded-[8px] object-cover" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold">{name}</p>
+        <p className="text-[11px] text-muted-foreground">из справочника «Охраняемые лица»</p>
+      </div>
+      <input
+        id={id}
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file === undefined) return;
+          upload.mutate(
+            { id: personId, file },
+            {
+              onSuccess: (person) => {
+                onPhoto(person.photoUrl);
+                toast({ description: "Снимок загружен" });
+              },
+              onError: (error) =>
+                toast({
+                  title: "Снимок не загружен",
+                  description: error.message === "" ? "Попробуйте ещё раз." : error.message,
+                  variant: "destructive",
+                }),
+            }
+          );
+          e.target.value = "";
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-[30px]"
+        disabled={upload.isPending}
+        onClick={() => fileRef.current?.click()}
+      >
+        {upload.isPending ? "Загрузка…" : src === null ? "Загрузить фото" : "Заменить фото"}
+      </Button>
+    </div>
   );
 }
 

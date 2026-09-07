@@ -28,6 +28,21 @@ export interface ProtectedPerson {
   callsign: string;
   category: ProtectedPersonCategory;
   bio: string;
+  /** Снимок лица под `/media/` (Plane №951); null — не загружен. */
+  photoUrl: string | null;
+}
+
+/** Заведение лица с экрана (Plane №951): `POST /protected-persons/`. */
+export interface CreateProtectedPersonRequest extends Record<string, unknown> {
+  name: string;
+  category: ProtectedPersonCategory;
+  callsign?: string;
+  bio?: string;
+}
+
+/** Снимок лица (Plane №951): `POST /protected-persons/{id}/photo/`, multipart, поле `photo`. */
+export function protectedPersonPhotoPath(id: string): string {
+  return `${PROTECTED_PERSONS_PATH}${encodeURIComponent(id)}/photo/`;
 }
 
 // ── Контракты API (реального бэка нет — см. lib/api-gaps.ts) ─────────────

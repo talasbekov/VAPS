@@ -291,6 +291,11 @@ DICTIONARY_ENTRY_UPDATED = "DICTIONARY_ENTRY_UPDATED"
 # она производная бюллетеня мероприятия.
 GVO_SUMMARY_PATCHED = "GVO_SUMMARY_PATCHED"
 GVO_SUMMARY_RESET = "GVO_SUMMARY_RESET"
+# Справочник охраняемых лиц с экрана (Plane №951): заведение лица и его
+# фотография — правки справочника, по которым спрашивают «кто завёл»; до этого
+# каталог правился только через Django Admin, и своего следа у него не было.
+PROTECTED_PERSON_CREATED = "PROTECTED_PERSON_CREATED"
+PROTECTED_PERSON_PHOTO_SET = "PROTECTED_PERSON_PHOTO_SET"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -367,6 +372,8 @@ ACTIONS = frozenset(
         DICTIONARY_ENTRY_UPDATED,
         GVO_SUMMARY_PATCHED,
         GVO_SUMMARY_RESET,
+        PROTECTED_PERSON_CREATED,
+        PROTECTED_PERSON_PHOTO_SET,
     }
 )
 
@@ -396,6 +403,7 @@ ENTITY_SECURITY_EVENT = "security_event"
 ENTITY_DUTY_SHIFT = "duty_shift"
 ENTITY_POLICY_SETTING = "policy_setting"
 ENTITY_DICTIONARY_ENTRY = "dictionary_entry"
+ENTITY_PROTECTED_PERSON = "protected_person"
 # Справочники доступа (Plane №36): право и роль. Правка доступа — именное
 # решение, по которому потом спрашивают «кто и когда открыл эту ручку».
 ENTITY_PERMISSION = "access_permission"
@@ -419,6 +427,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_DUTY_SHIFT,
         ENTITY_POLICY_SETTING,
         ENTITY_DICTIONARY_ENTRY,
+        ENTITY_PROTECTED_PERSON,
         ENTITY_PERMISSION,
         ENTITY_ROLE,
         ENTITY_ACCOUNT,

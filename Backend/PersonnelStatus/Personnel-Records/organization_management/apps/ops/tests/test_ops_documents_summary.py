@@ -220,7 +220,13 @@ def test_the_row_assembles_the_summary_once(django_assert_num_queries):
     # `_find_personnel` не её предмет; предмет — что сборка ОДНА. Мутация
     # «вернуть повторную сборку в `_required_progress`» даёт 12 и краснит
     # здесь (проверено запуском).
-    with django_assert_num_queries(7):
+    #
+    # 8, а не 7 — с 07.09.2026 (Plane №951): лица сводки строятся карточками
+    # справочника, и одиночная сборка читает связи бюллетеня с лицами ОДНИМ
+    # запросом (`person_links` + `select_related("person")`). Реестр этот
+    # запрос не платит — `assembled_summaries` подтягивает связи заранее, и
+    # проба «число запросов не растёт с числом мероприятий» это стережёт.
+    with django_assert_num_queries(8):
         row = summary.summary_row(event)
 
     assert [ref["id"] for ref in row["summary"]["meetRefs"]] == [

@@ -98,16 +98,31 @@ def test_the_same_employee_may_not_edit_or_delete_the_event(employee_d2):
     Проверяются РАЗНЫЕ виды правки, а не одна ручка: заказчик запретил
     редактирование и удаление целиком, и каждая из этих ручек вернула бы
     запрет с другой стороны.
+
+    УТОЧНЕНО 07.09.2026 (Plane №951): «добавить возможность редактировать
+    Бюллетень тем, у кого есть возможность создавать бюллетень». Сведения
+    бюллетеня и объекты посещения СВОЕГО ОМ создатель теперь правит по роли
+    в данных — здесь это ветка «свой ОМ» ниже; чужой ОМ, переходы этапов,
+    закрытие и удаление остаются под запретом, и их пробы не менялись.
     """
     event_id = create_event(employee_d2).json()["id"]
     base = f"{URL}{event_id}/"
     obj = make_object()
 
+    # Свой бюллетень (Plane №951): сведения и объект посещения — можно.
     assert employee_d2.patch(
         f"{base}details/", {"title": "Другое имя"}, format="json"
-    ).status_code == 403
+    ).status_code == 200
     assert employee_d2.post(
         f"{base}visit-objects/", {"objectId": str(obj.pk)}, format="json"
+    ).status_code in (200, 201)
+    # Чужой ОМ — по-прежнему 403: «я где-то создатель» права на соседний не даёт.
+    other = create_event(employee_d2, title="Чужое ОМ").json()["id"]
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    OpsSecurityEvent.objects.filter(pk=other).update(owner_actor_id="someone-else")
+    assert employee_d2.patch(
+        f"{URL}{other}/details/", {"title": "Другое имя"}, format="json"
     ).status_code == 403
     assert employee_d2.post(f"{base}placement/complete/").status_code == 403
     assert employee_d2.post(f"{base}approval/send/").status_code == 403

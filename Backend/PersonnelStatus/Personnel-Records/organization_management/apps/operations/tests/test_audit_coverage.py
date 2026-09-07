@@ -1297,5 +1297,25 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     purge_orphan_participations(actor=ACTOR)
 
+    # Справочник охраняемых лиц с экрана (Plane №951): заведение и снимок.
+    import io as _io
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
+
+    from organization_management.apps.ops import gvo as gvo_service
+
+    person = gvo_service.create_person(
+        name="Лицо покрытия журнала", category="FOREIGN", actor=ACTOR
+    )
+    png = _io.BytesIO()
+    Image.new("RGB", (2, 2), (1, 2, 3)).save(png, format="PNG")
+    with override_settings(MEDIA_ROOT=str(tmp_path / "media")):
+        gvo_service.set_person_photo(
+            person["id"],
+            SimpleUploadedFile("c.png", png.getvalue(), content_type="image/png"),
+            actor=ACTOR,
+        )
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

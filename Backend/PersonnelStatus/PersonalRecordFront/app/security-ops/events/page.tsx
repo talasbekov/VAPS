@@ -490,6 +490,12 @@ function EventRow({
   // кнопка, которая гарантированно получит отказ, — обещание, а не действие.
   const canEditObjects =
     hasPermission("event.manage") && event.stage !== "CLOSED";
+  // Сведения бюллетеня правит и СОЗДАТЕЛЬ ОМ (Plane №951) — по слову сервера
+  // (`canEditBulletin`, то же правило, что гейт `details`): создателя клиент
+  // сам посчитать не может. Старый сервер поля не несёт — тогда по праву.
+  const canEditBulletin =
+    (event.canEditBulletin ?? hasPermission("event.manage")) &&
+    event.stage !== "CLOSED";
   // Закрытое ОМ сервер удалять отказывается по той же причине.
   const canDeleteEvent =
     hasPermission("event.delete") && event.stage !== "CLOSED";
@@ -814,7 +820,7 @@ function EventRow({
                     <Plus className="h-4 w-4" aria-hidden="true" /> Добавить объект
                   </DropdownMenuItem>
                 )}
-                {canEditObjects && (
+                {canEditBulletin && (
                   <DropdownMenuItem
                     onSelect={() => setEditOpen(true)}
                     aria-label={`Редактировать бюллетень ${event.code}`}

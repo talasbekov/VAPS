@@ -437,10 +437,56 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             resolve_actor_id(self.request)
         )
         with_phone = by_right or mine.may_manage_stage(event, viewer)
-        return Response(
-            serialize_security_event(event, with_phone=with_phone),
-            status=status,
+        row = serialize_security_event(event, with_phone=with_phone)
+        row["canEditBulletin"] = self._may_edit_bulletin(event, perms=perms)
+        return Response(row, status=status)
+
+    #: Действия над СОСТАВОМ бюллетеня, которые создатель ОМ выполняет по роли
+    #: в данных без `event.manage` (Plane №951): сведения бюллетеня, объекты
+    #: посещения (добавить, править день и примечание), транспорт из реестра.
+    _CREATOR_ACTIONS = frozenset(
+        {
+            "details",
+            "visit_object_add",
+            "visit_object_detail",
+            "vehicle_allocate",
+            "vehicle_release",
+        }
+    )
+
+    def _is_creator(self, request, event):
+        """Создатель — по идентификатору учётки (`owner_actor_id`), как в
+        сводке ГВО (№947): пустой идентификатор старой строки не совпадает ни
+        с кем — «ничей» не значит «любой»."""
+        actor_id = resolve_actor_id(request)
+        return bool(
+            actor_id and event.owner_actor_id and event.owner_actor_id == actor_id
         )
+
+    def _may_edit_bulletin(self, event, *, perms=None):
+        """Может ли вызывающий править бюллетень — ТЕМ ЖЕ правилом, что гейт
+        `details` (Plane №951): право ведения либо создание этого ОМ. Уходит
+        экрану полем `canEditBulletin`: реестр и страница визита рисуют
+        «Редактировать бюллетень» по нему, а не по своей копии правила —
+        создателя клиент посчитать не может."""
+        perms = effective_permissions(self.request) if perms is None else perms
+        if perms & {_MANAGE_EVENT_PERMISSION, "*"}:
+            return True
+        return self._is_creator(self.request, event)
+
+    def _creator_override(self, request):
+        """Создатель бюллетеня правит его состав без `event.manage`
+        (Plane №951, задача заказчика: «редактировать Бюллетень тем, у кого
+        есть возможность создавать бюллетень»).
+
+        Только СВОЁ ОМ: мероприятие берётся из адреса, и «я где-то создатель»
+        права на чужой бюллетень не даёт. Закрытое ОМ отбивает сам сервис —
+        роль в данных гейт открывает, а правило стадии не обходит.
+        """
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None:
+            return False
+        return self._is_creator(request, event)
 
     def list(self, request):
         from organization_management.apps.operations.models_event import (
@@ -599,6 +645,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
         read_context = registry_reads.RegistryReadContext()
+        # Право ведения считается ОДИН раз на страницу: `canEditBulletin`
+        # (Plane №951) у каждой строки сравнивает создателя с вызывающим, а
+        # набор прав у вызывающего один.
+        perms = effective_permissions(request)
         by_date = {}
         everyone = set()
         for event in page_rows:
@@ -626,7 +676,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "next": str(page + 1) if start + page_size < total else None,
                 "previous": str(page - 1) if page > 1 else None,
                 "results": [
-                    serialize_security_event(e, read_context=read_context)
+                    {
+                        **serialize_security_event(e, read_context=read_context),
+                        "canEditBulletin": self._may_edit_bulletin(e, perms=perms),
+                    }
                     for e in page_rows
                 ],
             }
@@ -1673,6 +1726,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
         self._object_lead_employee = None
+        if self.action in self._CREATOR_ACTIONS and self._creator_override(request):
+            return True
         if self.action in ("my_assignments", "acknowledge", "decline"):
             return self._my_assignments_override(request)
         if self.action in self._STAGE_LEAD_ACTIONS:
@@ -4780,10 +4835,61 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     выдать одно без другого было нельзя.
     """
 
-    permission_map = {"list": _CATALOG_PERMISSION, "history": _CATALOG_PERMISSION}
+    permission_map = {
+        "list": _CATALOG_PERMISSION,
+        "history": _CATALOG_PERMISSION,
+        # Заведение лица и его фотография С ЭКРАНА (Plane №951): заказчик
+        # просит кнопку «добавить ОЛ» на сводных данных ГВО. Открыто тем, кто
+        # заполняет сводку или заводит бюллетень, — им лицо и нужно; своё
+        # право под справочник заводить не стали: одну кнопку одного экрана
+        # защищали бы иначе, чем всё вокруг неё.
+        "create": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+        "photo": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+    }
 
     def list(self, request):
         return Response({"results": gvo_service.list_persons()})
+
+    def create(self, request):
+        """POST /protected-persons/ — новое лицо справочника (Plane №951)."""
+        data = request.data or {}
+        try:
+            row = gvo_service.create_person(
+                name=data.get("name"),
+                category=data.get("category"),
+                callsign=data.get("callsign") or "",
+                bio=data.get("bio") or "",
+                actor=resolve_actor_id(request) or request.user,
+            )
+        except ValidationError as exc:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail=exc.message_dict,
+                message="Проверьте поля лица.",
+            )
+        return Response(row, status=201)
+
+    @action(detail=True, methods=["post"], url_path="photo")
+    def photo(self, request, pk=None):
+        """POST /protected-persons/{id}/photo/ — снимок лица (multipart,
+        поле `photo`; Plane №951). Прежний снимок заменяется."""
+        try:
+            row = gvo_service.set_person_photo(
+                pk,
+                request.FILES.get("photo"),
+                actor=resolve_actor_id(request) or request.user,
+            )
+        except ValidationError as exc:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail=exc.message_dict,
+                message="Проверьте файл снимка.",
+            )
+        if row is None:
+            raise NotFound("Охраняемое лицо не найдено.")
+        return Response(row)
 
     @action(detail=True, methods=["get"], url_path="history")
     def history(self, request, pk=None):

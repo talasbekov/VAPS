@@ -807,6 +807,11 @@ export interface SecurityEvent {
   chiefEmployeeId: string | null;
   /** Снимок подписи старшего — как ownerName. */
   chiefName: string;
+  /** Может ли ВЫЗЫВАЮЩИЙ править сведения бюллетеня — считает сервер тем же
+   * правилом, что гейт `PATCH …/details/` (Plane №951): право ведения либо
+   * создание этого ОМ. Старый сервер поля не несёт — тогда экран считает по
+   * праву, как раньше. */
+  canEditBulletin?: boolean;
   stage: SecurityEventStage;
   /** Готовность текущей стадии, 0–100 (демонстрационная метрика). */
   readinessPercent: number;

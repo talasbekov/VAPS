@@ -12,6 +12,7 @@
 import type { SecurityEvent } from "@/entities/security-event";
 import { ruDate, ruWeekdayName } from "@/lib/ru-date";
 import { UNSPECIFIED } from "@/entities/gvo-summary";
+import { PROTECTED_PERSONS_CATALOG } from "./protected-persons-handlers";
 import type {
   GvoGroup,
   GvoSummary,
@@ -55,6 +56,8 @@ export function deriveGvoSummary(event: SecurityEvent): GvoSummary {
     country: "",
     // Лицо, выбранное в окне создания ОМ. Пусто — в бюллетене его не назвали:
     // подставлять сюда «уточняется» вместо человека нечем.
+    // Лицо — карточкой справочника (Plane №951): ссылка и снимок, как на
+    // сервере; снимок берётся из каталога мока по ссылке.
     persons:
       event.protectedPersonName.trim() === ""
         ? []
@@ -63,6 +66,10 @@ export function deriveGvoSummary(event: SecurityEvent): GvoSummary {
               name: event.protectedPersonName,
               role: "охраняемое лицо",
               facts: [],
+              personId: event.protectedPersonId,
+              photoUrl:
+                PROTECTED_PERSONS_CATALOG.find((row) => row.id === event.protectedPersonId)
+                  ?.photoUrl ?? null,
             },
           ],
     arrival: { date: day, time: "", route: "", flight: "", dur: "" },

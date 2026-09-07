@@ -93,25 +93,66 @@ def visit_days(event):
     ]
 
 
+def _person_card(person, *, name=None):
+    from organization_management.apps.ops.gvo import person_photo_url
+
+    return {
+        "personId": str(person.pk),
+        "code": person.display_code,
+        "name": name or person.name,
+        "role": "охраняемое лицо",
+        "facts": [],
+        "photoUrl": person_photo_url(person),
+    }
+
+
+def _derived_persons(event):
+    """Лица бюллетеня карточками справочника; главное — первым (Plane №951).
+
+    Раньше здесь было ОДНО лицо и только именем (`protected_person_name`) —
+    «сводные данные строятся по одному лицу, как образец заказчика». Образец
+    документа таким и остаётся (`document_values` печатает первые два), а
+    ЭКРАН показывает всех, кого назвал бюллетень: заказчик просит подтягивать
+    ОЛ из справочника, а не переписывать имя.
+
+    Снимок имени (`protected_person_name`) по-прежнему главнее записи: имя в
+    бюллетене могли править после выбора, и карточка обязана показывать то,
+    что напечатано в бланке. Лицо без записи каталога (строка до появления
+    справочника) остаётся текстом, как и было.
+    """
+    cards = []
+    main = event.protected_person
+    main_name = (event.protected_person_name or "").strip()
+    if main is not None:
+        cards.append(_person_card(main, name=main_name or None))
+    elif main_name:
+        cards.append({"name": main_name, "role": "охраняемое лицо", "facts": []})
+    links = (
+        event.person_links.all()
+        if "person_links" in getattr(event, "_prefetched_objects_cache", {})
+        else event.person_links.select_related("person").all()
+    )
+    seen = {main.pk} if main is not None else set()
+    for link in sorted(links, key=lambda row: (row.person.name, row.person_id)):
+        if link.person_id in seen:
+            continue
+        seen.add(link.person_id)
+        cards.append(_person_card(link.person))
+    return cards
+
+
 def derive_summary(event):
     """База сводки из мероприятия. Порт клиентского `deriveGvoSummary`."""
     day = _ru_date(event.business_date)
-    person = (event.protected_person_name or "").strip()
-    # Сводные данные строятся ПО ОДНОМУ лицу — так устроен образец заказчика:
-    # страна, антропометрия, группа крови у каждого свои, и в одну карточку
-    # двоих не положить. Поэтому список лиц (Plane №188) сюда НЕ раскрывается:
-    # берётся главное, остальные попадут в свои сводки, когда документ научится
-    # собираться на каждого. Это осознанная граница, а не пропуск.
     owner = (event.owner_name or "").strip()
     return {
         "country": "",
-        # Пусто, если в бюллетене лицо не назвали: подставлять сюда
+        # Лица — ИЗ СПРАВОЧНИКА, а не снимком имени (Plane №951): у каждого
+        # ссылка на запись каталога (`personId`), код и фотография. Главное
+        # лицо бланка — первым; остальные лица бюллетеня (Plane №188) — за
+        # ним. Пусто, если в бюллетене лицо не назвали: подставлять сюда
         # «уточняется» вместо человека нечем.
-        "persons": (
-            [{"name": person, "role": "охраняемое лицо", "facts": []}]
-            if person
-            else []
-        ),
+        "persons": _derived_persons(event),
         "arrival": {"date": day, "time": "", "route": "", "flight": "", "dur": ""},
         "departure": {"date": day, "time": "", "route": "", "flight": "", "dur": ""},
         "meet": [],
@@ -192,11 +233,83 @@ def _employee_refs(ids):
     return refs
 
 
+def _resolve_member(member):
+    """Участник состава ГВО со ссылкой на кадровую запись (Plane №951).
+
+    Заказчик: «Состав ГВО должен выбираться из списка сотрудников». Участник с
+    `employeeId` берёт фамилию и позывной ИЗ СПРАВОЧНИКА при каждой сборке —
+    смена позывного в кадрах доезжает до сводки сама, а текст, записанный в
+    момент выбора, служит только запасом на случай, если запись снята.
+    Участник без ссылки (строка, набранная до этой задачи) остаётся текстом.
+    """
+    from organization_management.apps.ops.security_events import (
+        _find_personnel,
+        personnel_display_name,
+    )
+
+    if not isinstance(member, dict):
+        return member
+    raw = member.get("employeeId")
+    if not raw:
+        return member
+    employee = _find_personnel(raw)
+    if employee is None:
+        return member
+    return {
+        **member,
+        "employeeId": str(raw),
+        "name": personnel_display_name(employee),
+        "callsign": employee.callsign or "",
+    }
+
+
+def _resolve_person(person):
+    """Охраняемое лицо со ссылкой на справочник (Plane №951): код и снимок —
+    из записи; имя — из записи, если в патче его не переписали."""
+    from organization_management.apps.operations.models_gvo import OpsProtectedPerson
+    from organization_management.apps.ops.gvo import person_photo_url
+
+    if not isinstance(person, dict):
+        return person
+    raw = person.get("personId")
+    if not raw or not str(raw).isdigit():
+        return person
+    record = OpsProtectedPerson.objects.filter(pk=raw).first()
+    if record is None:
+        return person
+    return {
+        **person,
+        "personId": str(raw),
+        "code": record.display_code,
+        "name": (person.get("name") or "").strip() or record.name,
+        "photoUrl": person_photo_url(record),
+    }
+
+
 def _with_refs(summary):
     for key in ("meet", "farewell", "delegation"):
         ids = summary.get(f"{key}EmployeeIds")
         if ids:
             summary[f"{key}Refs"] = _employee_refs(ids)
+    groups = summary.get("groups")
+    if isinstance(groups, list):
+        summary["groups"] = [
+            {
+                **group,
+                "members": [
+                    _resolve_member(member) for member in (group.get("members") or [])
+                ],
+            }
+            if isinstance(group, dict)
+            else group
+            for group in groups
+        ]
+    responsible = summary.get("responsible")
+    if isinstance(responsible, dict):
+        summary["responsible"] = _resolve_member(responsible)
+    persons = summary.get("persons")
+    if isinstance(persons, list):
+        summary["persons"] = [_resolve_person(person) for person in persons]
     return summary
 
 
@@ -320,9 +433,15 @@ def assembled_summaries():
         for record in OpsGvoSummaryPatch.objects.all()
     }
     visits = {v.event_id: v for v in OpsForeignVisit.objects.all()}
-    events = OpsSecurityEvent.objects.prefetch_related(
-        "visit_objects", "vehicles__vehicle"
-    ).order_by("code")
+    # Лица — из справочника (Plane №951): главное лицо и связи бюллетеня
+    # подтягиваются ОДНИМ проходом, иначе `_derived_persons` ходил бы в базу
+    # за каждым мероприятием — ровно то, что стережёт проба «число запросов
+    # не растёт с числом мероприятий».
+    events = (
+        OpsSecurityEvent.objects.select_related("protected_person")
+        .prefetch_related("visit_objects", "vehicles__vehicle", "person_links__person")
+        .order_by("code")
+    )
     rows = []
     for event in events:
         event._visit_cache = visits.get(event.pk)

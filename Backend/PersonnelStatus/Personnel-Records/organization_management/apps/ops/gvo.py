@@ -54,19 +54,88 @@ ALLOWED_PATCH_KEYS = (
 # следующий заход не вернул его «за компанию» с новой секцией.
 
 
+def person_photo_url(person):
+    """Адрес снимка под `MEDIA_URL`; None — снимка нет (Plane №951)."""
+    return person.photo.url if person.photo else None
+
+
+def person_view(p):
+    return {
+        "id": str(p.id),
+        # Код `OL-N` (Plane №417) — печатается в бюллетене и сводках.
+        "code": p.display_code,
+        "name": p.name,
+        "callsign": p.callsign,
+        "category": p.category,
+        "bio": p.bio,
+        # Фотография (Plane №951): экран сводки ГВО рисует её карточкой лица.
+        "photoUrl": person_photo_url(p),
+    }
+
+
 def list_persons():
-    return [
-        {
-            "id": str(p.id),
-            # Код `OL-N` (Plane №417) — печатается в бюллетене и сводках.
-            "code": p.display_code,
-            "name": p.name,
-            "callsign": p.callsign,
-            "category": p.category,
-            "bio": p.bio,
-        }
-        for p in OpsProtectedPerson.objects.filter(is_active=True)
-    ]
+    return [person_view(p) for p in OpsProtectedPerson.objects.filter(is_active=True)]
+
+
+# ── Заведение лица и фотография с экрана (Plane №951) ───────────────────────
+#
+# Заказчик: «со справочника ОЛ нужно подтягивать ОЛ и здесь же должна быть
+# кнопка добавить ОЛ». До этого справочник правился только в Django Admin, и
+# лицо, которого там нет, в сводку попадало ТЕКСТОМ — без ссылки на запись
+# каталога, без кода и без фотографии.
+
+PERSON_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+PERSON_PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp")
+
+
+def create_person(*, name, category, callsign="", bio="", actor=None):
+    name = str(name or "").strip()
+    field_errors = {}
+    if name == "":
+        field_errors["name"] = ["Обязательное поле."]
+    if category not in OpsProtectedPerson.Category.values:
+        field_errors["category"] = ["Категория — «Наши» или «Иностранные»."]
+    if field_errors:
+        raise ValidationError(field_errors)
+    person = OpsProtectedPerson.objects.create(
+        name=name,
+        category=category,
+        callsign=str(callsign or "").strip(),
+        bio=str(bio or "").strip(),
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.PROTECTED_PERSON_CREATED,
+        entity_type=audit_service.ENTITY_PROTECTED_PERSON,
+        entity_id=person.pk,
+        new_value={"code": person.display_code, "name": person.name},
+    )
+    return person_view(person)
+
+
+def set_person_photo(person_id, upload, *, actor=None):
+    """Положить снимок лицу. None — лица нет (404 решает вьюха)."""
+    person = OpsProtectedPerson.objects.filter(pk=person_id, is_active=True).first()
+    if person is None:
+        return None
+    if upload is None:
+        raise ValidationError({"photo": ["Приложите файл изображения."]})
+    content_type = getattr(upload, "content_type", "") or ""
+    if content_type not in PERSON_PHOTO_TYPES:
+        raise ValidationError({"photo": ["Допустимы JPEG, PNG или WebP."]})
+    if upload.size > PERSON_PHOTO_MAX_BYTES:
+        raise ValidationError({"photo": ["Файл больше 5 МБ."]})
+    if person.photo:
+        person.photo.delete(save=False)
+    person.photo.save(upload.name, upload, save=True)
+    audit_service.record(
+        actor=actor,
+        action=audit_service.PROTECTED_PERSON_PHOTO_SET,
+        entity_type=audit_service.ENTITY_PROTECTED_PERSON,
+        entity_id=person.pk,
+        new_value={"code": person.display_code, "photo": person.photo.name},
+    )
+    return person_view(person)
 
 
 # ── История мероприятий (задача заказчика Plane №38) ────────────────────────
