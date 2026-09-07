@@ -26,6 +26,7 @@ import type {
   DaySubmission,
   DaySubmissionCreateBody,
 } from "@/entities/daily-grid";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 /** Одна строка локального расхождения: кого правили после сдачи и на что. */
 export interface DriftEntry {
@@ -52,11 +53,9 @@ export interface DaySubmissionPanelProps {
 const SUBMIT_LABEL = "Сдать день";
 const AMEND_LABEL = "Исправить сдачу";
 
-function formatSubmittedAt(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("ru-RU");
-}
+// Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
+// отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
+// нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
 export function DaySubmissionPanel({
   divisionId,
@@ -266,7 +265,7 @@ export function DaySubmissionPanel({
               День сдан: v{current.version} · {EVENT_LABELS[current.event]}
             </span>
             <span>
-              {formatSubmittedAt(current.submitted_at)} · {current.submitted_by}
+              {formatIsoDateTime(current.submitted_at)} · {current.submitted_by}
             </span>
             {current.late && <span>сдано с опозданием (после контрольного часа)</span>}
           </div>
@@ -326,7 +325,7 @@ export function DaySubmissionPanel({
                 >
                   <span>
                     v{version.version} · {EVENT_LABELS[version.event]} ·{" "}
-                    {formatSubmittedAt(version.submitted_at)} · {version.submitted_by}
+                    {formatIsoDateTime(version.submitted_at)} · {version.submitted_by}
                   </span>
                   {version.is_current && (
                     <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">

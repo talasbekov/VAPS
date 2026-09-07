@@ -6,13 +6,13 @@
 import Link from "next/link";
 import { useRatingNotifications } from "@/hooks/use-ops-ratings";
 import { RATING_NOTIFICATION_TEXT } from "@/entities/operational-rating";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 const NOTIFICATION_TEXT = RATING_NOTIFICATION_TEXT;
 
-function dateTime(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU");
-}
+// Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
+// отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
+// нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
 export function RatingNotificationsSection() {
   const query = useRatingNotifications();
@@ -35,7 +35,7 @@ export function RatingNotificationsSection() {
                 {NOTIFICATION_TEXT[item.code]}
               </Link>
               <span className="ml-2 text-muted-foreground">
-                {dateTime(item.createdAt)}
+                {formatIsoDateTime(item.createdAt)}
               </span>
             </li>
           ))}

@@ -30,6 +30,7 @@ import type {
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 const STATE_LABEL: Record<RatingExportJob["state"], string> = {
   QUEUED: "В очереди",
@@ -55,10 +56,9 @@ function saveFile(fileName: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-function dateTime(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU");
-}
+// Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
+// отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
+// нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
 export default function RatingExportPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
@@ -168,7 +168,7 @@ export default function RatingExportPage() {
                     return (
                       <TableRow key={job.exportJobId}>
                         <TableCell className="tabular-nums">
-                          {dateTime(job.createdAt)}
+                          {formatIsoDateTime(job.createdAt)}
                         </TableCell>
                         <TableCell>{SCOPE_LABEL[job.scope]}</TableCell>
                         <TableCell>{job.format}</TableCell>

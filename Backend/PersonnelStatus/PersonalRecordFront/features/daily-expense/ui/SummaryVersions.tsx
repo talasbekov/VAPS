@@ -72,6 +72,7 @@ import {
 import { useTrafficLightTree } from "@/hooks/use-strength-report";
 import { DAILY_SUBMISSIONS_PATH, parseSubmissionList } from "@/entities/daily-grid";
 import type { DaySubmission } from "@/entities/daily-grid";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 /** Строка «Суточного свода» — эмпирически ТА ЖЕ форма, что и строка обычной
  * сдачи (общая модель и сериализатор на бэке, см. заголовок файла). Алиас,
@@ -266,11 +267,9 @@ function resolveSummary(
   };
 }
 
-function formatSubmittedAt(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("ru-RU");
-}
+// Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
+// отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
+// нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
 interface SnapshotBody {
   rosterCount: number;
@@ -600,7 +599,7 @@ export function SummaryVersions({
                   <span className="font-medium">Версия {version.version}</span>
                   {version.is_current && <Badge variant="secondary">Текущая</Badge>}
                   <span className="text-muted-foreground">
-                    {formatSubmittedAt(version.submitted_at)} · {version.submitted_by}
+                    {formatIsoDateTime(version.submitted_at)} · {version.submitted_by}
                   </span>
                   <button
                     type="button"

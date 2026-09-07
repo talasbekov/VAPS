@@ -189,16 +189,10 @@ test.describe('метка момента', () => {
    *
    * Список закрыт: НОВАЯ копия сторожем не пройдёт.
    */
-  const OWN_FORMATTER_COPIES = new Map<string, string>([
-    ['app/security-ops/ratings/audit/page.tsx', 'сводится отдельной карточкой'],
-    ['app/security-ops/ratings/export/page.tsx', 'сводится отдельной карточкой'],
-    ['app/security-ops/ratings/workspace/page.tsx', 'сводится отдельной карточкой'],
-    ['features/daily-expense/ui/SummaryVersions.tsx', 'сводится отдельной карточкой'],
-    ['features/ops-daily/day-submission-panel.tsx', 'сводится отдельной карточкой'],
-    ['features/ops-ratings/submitted-evaluation-card.tsx', 'сводится отдельной карточкой'],
-    ['features/ops-ratings/rating-notifications-section.tsx', 'сводится отдельной карточкой'],
-    ['features/ops-notifications/notification-bell.tsx', 'сводится отдельной карточкой'],
-  ])
+  // Все восемь копий сведены к модулю (Plane №935, 07.09.2026): список пуст,
+  // и первая же новая копия — красная. Храповик ниже при пустом списке
+  // ничего не проверяет, и это правильно: проверять нечего.
+  const OWN_FORMATTER_COPIES = new Map<string, string>([])
 
   test('новая копия форматера момента не заводится', () => {
     const guilty: string[] = []

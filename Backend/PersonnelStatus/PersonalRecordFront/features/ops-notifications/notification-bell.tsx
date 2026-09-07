@@ -20,6 +20,7 @@ import type { OpsConnectionStatus } from "@/lib/ops-ws";
 import { useRatingNotifications } from "@/hooks/use-ops-ratings";
 import { RATING_NOTIFICATION_TEXT } from "@/entities/operational-rating";
 import type { RatingNotificationCode } from "@/entities/operational-rating";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 const STATUS_LABEL: Record<OpsConnectionStatus, string> = {
   idle: "канал не запущен",
@@ -42,10 +43,9 @@ function notificationText(code: string): string {
   );
 }
 
-function dateTime(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU");
-}
+// Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
+// отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
+// нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
 export function OpsNotificationBell() {
   const queryClient = useQueryClient();
@@ -111,7 +111,7 @@ export function OpsNotificationBell() {
                     </Link>
                   )}
                   <span className="ml-2 text-muted-foreground">
-                    {dateTime(row.createdAt)}
+                    {formatIsoDateTime(row.createdAt)}
                   </span>
                 </li>
               ))}

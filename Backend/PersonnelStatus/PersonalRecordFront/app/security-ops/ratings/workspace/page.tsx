@@ -36,6 +36,7 @@ import type {
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 type TabKey = "pending" | "submitted" | "progress";
 
@@ -51,10 +52,9 @@ const SCALE = Array.from(
   (_value, index) => RATING_SCALE_MIN + index
 );
 
-function dateTime(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU");
-}
+// Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
+// отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
+// нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
 /** Ошибка сервера ставится рядом с тем же полем, что и клиентская, ПО КОДУ. */
 const SERVER_ERROR_FIELD: Record<string, SubmissionField> = {
@@ -135,8 +135,8 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
         <span>Пост или роль: {item.postLabel}</span>
         <span>Направление: {DIRECTION_LABEL[item.evaluationDirection]}</span>
         <span>
-          Фактический интервал: {dateTime(item.actualStartsAt)} —{" "}
-          {dateTime(item.actualEndsAt)}
+          Фактический интервал: {formatIsoDateTime(item.actualStartsAt)} —{" "}
+          {formatIsoDateTime(item.actualEndsAt)}
         </span>
         <span>
           Факт участия: {item.participated ? "участвовал" : "не участвовал"}
@@ -373,9 +373,9 @@ export default function EvaluationWorkspacePage() {
                   <dt className="font-semibold">Состояние</dt>
                   <dd>{data.selectedEvent.stateLabel}</dd>
                   <dt className="font-semibold">Фактическое начало</dt>
-                  <dd>{dateTime(data.selectedEvent.actualStartsAt)}</dd>
+                  <dd>{formatIsoDateTime(data.selectedEvent.actualStartsAt)}</dd>
                   <dt className="font-semibold">Фактическое завершение</dt>
-                  <dd>{dateTime(data.selectedEvent.actualEndsAt)}</dd>
+                  <dd>{formatIsoDateTime(data.selectedEvent.actualEndsAt)}</dd>
                   {/* Счётчики шапки — МОИ задания. Работа других оценщиков —
                       во вкладке «Сводка мероприятия». */}
                   <dt className="font-semibold">Моих заданий</dt>
@@ -392,7 +392,7 @@ export default function EvaluationWorkspacePage() {
                   <dd>
                     {query.isFetching
                       ? "Обновление…"
-                      : `Данные на ${dateTime(data.loadedAt)}`}
+                      : `Данные на ${formatIsoDateTime(data.loadedAt)}`}
                   </dd>
                 </dl>
               </section>
@@ -510,7 +510,7 @@ export default function EvaluationWorkspacePage() {
                           </p>
                         )}
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Отправлено: {dateTime(entry.submittedAt)} · Редакция{" "}
+                          Отправлено: {formatIsoDateTime(entry.submittedAt)} · Редакция{" "}
                           {entry.revision}
                         </p>
                         {openSubmittedId === entry.workItemId ? (
