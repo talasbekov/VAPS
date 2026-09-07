@@ -55,70 +55,13 @@ async function hydrated(page: Page): Promise<void> {
   })
 }
 
-/** Текст ошибки, связанный С ЭТИМ полем: читается через aria-describedby. */
-async function errorTextOf(page: Page, fieldId: string): Promise<string | null> {
-  return page.evaluate((id) => {
-    const field = document.getElementById(id)
-    if (field === null) return null
-    const describedBy = field.getAttribute('aria-describedby')
-    if (describedBy === null) return null
-    return document.getElementById(describedBy)?.textContent ?? null
-  }, fieldId)
-}
-
-
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стенд: SMOKE_LIVE=1')
 
-  test('добавление сотрудника: правило на blur, связка с полем, фокус на первой ошибке', async ({
-    page,
-  }) => {
-    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
-    // 🔴 АДРЕС С `?view=forces` ЯВНО (Plane №273). Вид по умолчанию сменился на
-    // «Ежедневный расход организации» — решение заказчика о порядке вкладок; без
-    // параметра эта проба открывала бы борд расхода, а проверяет она реестр.
-    await page.goto('/employees?view=forces')
-    await hydrated(page)
-
-    await page.getByRole('button', { name: 'Добавить сотрудника' }).first().click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog.getByText('Добавить нового сотрудника')).toBeVisible()
-
-    // 1. Ошибка на уходе фокуса — «Сохранить» ещё не нажимали.
-    const iin = dialog.locator('#iin')
-    await iin.fill('12345678901')
-    await iin.blur()
-    await expect(dialog.locator('#iin-error')).toHaveText('ИИН должен состоять из 12 цифр.')
-    expect(await iin.getAttribute('aria-invalid')).toBe('true')
-
-    // Правило из схемы, а не «поле пустое»: у пустого ИИН текст ДРУГОЙ.
-    await iin.fill('')
-    await iin.blur()
-    await expect(dialog.locator('#iin-error')).toHaveText('Введите ИИН сотрудника.')
-
-    // 2. Текст связан именно с этим полем.
-    expect(await errorTextOf(page, 'iin')).toBe('Введите ИИН сотрудника.')
-
-    // 3. Сабмит пустой формы уводит фокус на ВЕРХНЕЕ неверное поле.
-    await dialog.getByRole('button', { name: /Добавить сотрудника/ }).click()
-    await expect(dialog.locator('#lastName-error')).toBeVisible()
-    expect(await page.evaluate(() => document.activeElement?.id)).toBe('lastName')
-
-    // 4. Выправленное поле перестаёт быть неверным без перезагрузки формы.
-    await dialog.locator('#lastName').fill('Петров')
-    await expect(dialog.locator('#lastName-error')).toHaveCount(0)
-    expect(await dialog.locator('#lastName').getAttribute('aria-invalid')).toBeNull()
-
-    // 5. Фокус доходит до Radix-триггера: он кнопка без ref, и штатный
-    //    механизм RHF его не видит.
-    await dialog.locator('#firstName').fill('Владимир')
-    await dialog.locator('#iin').fill('971126300673')
-    await dialog.getByRole('button', { name: /Добавить сотрудника/ }).click()
-    await expect(dialog.locator('#divisionId-error')).toBeVisible()
-    expect(await page.evaluate(() => document.activeElement?.id)).toBe('divisionId')
-  })
+  // Проба «добавление сотрудника» снята вместе с окном заведения (Plane
+  // №940, слово заказчика 07.09.2026): формы на экране больше нет.
 
   test('статусы сотрудника: наряд проверяется по полям, «В строю» дат не требует', async ({
     page,

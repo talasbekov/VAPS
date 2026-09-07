@@ -10,7 +10,6 @@ import { Pager } from "@/components/pager";
 import { DivisionPicker } from "@/components/division-picker";
 import { EmployeeTable } from "@/entities/employee/ui/EmployeeTable";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
-import { AddEmployeeDialog } from "@/features/add-employee";
 import { DailyExpenseBoard } from "@/features/daily-expense";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
@@ -27,7 +26,6 @@ import {
 } from "@/components/ui/select";
 import {
   Users,
-  UserPlus,
   Search,
   Download,
   RefreshCw,
@@ -257,7 +255,6 @@ function EmployeesScreen() {
     searchQuery,
     (value) => setFilter("search", value, "")
   );
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   // Вкладка стала управляемой: по ней решается, грузить ли ВЕСЬ состав
   // подразделения (вкладки сбора сил) или хватит страницы (Plane №228).
   //
@@ -511,10 +508,12 @@ function EmployeesScreen() {
   // ключ здесь значило бы описывать ветку, в которую попасть нельзя.
   const canSeeOwnDepartment = hasOpsPermission("forces.select");
 
-  /** Право ПРАВИТЬ кадровую запись — то же, которым закрыты правка и удаление
-   *  в карточке сотрудника (`entities/employee`). Без него экран остаётся
-   *  читаемым, но заводить людей с него нельзя. */
-  const canEditPersonnel = hasOpsPermission("orgstructure.manage");
+  // Заведения сотрудника с этого экрана БОЛЬШЕ НЕТ (Plane №940, слово
+  // заказчика 07.09.2026: «убрать кнопку „Добавить сотрудника“, а также её
+  // функционал»). Кнопка, окно `features/add-employee` и право под ней
+  // сняты целиком; кадровая запись заводится кадровым контуром, а не сбором
+  // сил. Правка и удаление в карточке сотрудника живут на своём праве
+  // (`entities/employee`) и этим решением не тронуты.
 
   // ПРАВА — единственный отбор, оставшийся на клиенте (Plane №228). Поиск,
   // отдел и статус теперь считает сервер: клиентский поиск по загруженной
@@ -723,19 +722,6 @@ function EmployeesScreen() {
                 />
                 Обновить
               </Button>
-              {/* Заведение сотрудника — ПРАВО, а не вид экрана (Plane №375).
-                  Кнопка показывалась всякому, кто открыл вкладку сбора сил, и
-                  после того как экран открылся читателям, она предлагала бы
-                  им действие, на которое сервер отвечает отказом. */}
-              {view === "forces" && canEditPersonnel && (
-                <Button
-                  className="bg-blue-600 hover:bg-blue-700"
-                  onClick={() => setIsAddDialogOpen(true)}
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Добавить сотрудника
-                </Button>
-              )}
             </div>
           }
         />
@@ -1271,10 +1257,6 @@ function EmployeesScreen() {
         </>
         )}
 
-        <AddEmployeeDialog
-          open={isAddDialogOpen}
-          onOpenChange={setIsAddDialogOpen}
-        />
       </div>
     </DashboardLayout>
   );
