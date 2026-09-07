@@ -121,7 +121,8 @@ def require_scoped_permission(request, permission_code, division_id):
 class RequirePermissionMixin:
     """ViewSet-миксин: каждое действие гейтится кодом права нового RBAC.
 
-    Подклассы задают permission_map = {action: permission_code}. Гейт
+    Подклассы задают permission_map = {action: permission_code}; значение
+    может быть и кортежем кодов — тогда достаточно любого из них. Гейт
     выполняется в initial() ПОСЛЕ super().initial() — после аутентификации
     DRF. Действие вне карты запрещено (fail-closed). Миксин ставить ПЕРВЫМ
     в MRO: class FooViewSet(RequirePermissionMixin, viewsets.ModelViewSet).
@@ -151,6 +152,15 @@ class RequirePermissionMixin:
         # Хук НЕ ослабляет карту: действие вне карты по-прежнему запрещено, а
         # исключение видно поимённо в том вьюсете, который его выдаёт.
         if self.permission_override(request):
+            return
+        # Несколько кодов — ЛЮБОЙ из них (Plane №946). Первое такое место —
+        # списки для окна «Создать бюллетень»: их читает и тот, кто ведёт
+        # мероприятие (`event.manage`), и тот, кто его только заводит
+        # (`event.create`). Каталог прав (`ops/access_catalog.py`) показывает
+        # каждый код своей строкой-гейтом — иначе второй ключ выглядел бы
+        # ничего не открывающим.
+        if isinstance(code, (tuple, list, frozenset, set)):
+            require_any_permission(request, *code)
             return
         require_permission(request, code)
 

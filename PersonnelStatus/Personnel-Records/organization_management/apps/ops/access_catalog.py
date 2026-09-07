@@ -233,15 +233,20 @@ def _rows():
                 code = service_map.get(action)
             if code is None:
                 continue
-            yield {
-                "permission": code,
-                "method": method.upper(),
-                "path": _readable(path),
-                "action": action,
-                "view": view_class.__name__,
-                # Гейт: без этого права ручка ответит отказом.
-                "kind": "gate",
-            }
+            # Кортеж кодов в карте — «любой из» (Plane №946): каждый код —
+            # своя строка-гейт, потому что каждый из них ручку и правда
+            # открывает. Показать один значило бы сказать администратору,
+            # что второй не открывает ничего.
+            for gate in _as_codes(code):
+                yield {
+                    "permission": gate,
+                    "method": method.upper(),
+                    "path": _readable(path),
+                    "action": action,
+                    "view": view_class.__name__,
+                    # Гейт: без этого права ручка ответит отказом.
+                    "kind": "gate",
+                }
 
 
 def catalog(search=""):
