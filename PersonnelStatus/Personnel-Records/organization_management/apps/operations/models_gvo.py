@@ -30,6 +30,15 @@ class OpsProtectedPerson(TimeStampedModel):
     # Без дефолта: категорию обязан назвать тот, кто заводит запись.
     category = models.CharField(max_length=10, choices=Category.choices)
     bio = models.TextField(blank=True)
+    # Фотография лица (Plane №951): печатается карточкой в сводных данных ГВО
+    # на месте прежней заглушки «Фото ОЛ». Файл — под MEDIA_ROOT, как у
+    # `Employee.photo`: карточка сводки и так показывает имя и биографию лица,
+    # и прятать снимок под приватное хранилище с проверкой права значило бы
+    # защищать одну колонку карточки иначе, чем остальные. Загружается
+    # ручкой `POST /protected-persons/{id}/photo/`.
+    photo = models.ImageField(
+        upload_to="protected-persons/photos/", null=True, blank=True
+    )
     # Мягкое скрытие: каталог показывается в живом реестре, удаление строки
     # стёрло бы её из истории мероприятий, где лицо уже упомянуто.
     is_active = models.BooleanField(default=True)

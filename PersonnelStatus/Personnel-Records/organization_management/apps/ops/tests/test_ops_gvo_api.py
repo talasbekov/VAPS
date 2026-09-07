@@ -100,7 +100,10 @@ def test_persons_list_active_only_ordered_ids_are_strings():
     assert all(isinstance(p["id"], str) for p in rows)
     # `code` дописан 04.09.2026 (Plane №417): код `OL-N` — часть контракта
     # каталога, печатается в бюллетене и на карточке.
-    assert set(rows[0]) == {"id", "code", "name", "callsign", "category", "bio"}
+    # `photoUrl` дописан 07.09.2026 (Plane №951): снимок лица — часть карточки
+    # сводных данных ГВО; у лица без снимка приезжает `None`, а не пропуск.
+    assert set(rows[0]) == {"id", "code", "name", "callsign", "category", "bio", "photoUrl"}
+    assert rows[0]["photoUrl"] is None
     # Строки заведены `bulk_create` — мимо `save()`, кода в базе нет, но в
     # ответе он выводим из идентификатора и пустым не приезжает.
     assert all(p["code"] == f"OL-{p['id']}" for p in rows)

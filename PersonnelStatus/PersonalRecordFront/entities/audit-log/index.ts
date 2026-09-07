@@ -113,6 +113,9 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   FORCE_ALLOCATION_ACCEPTED: "Штаб принял список и передал людей мероприятию",
   FORCE_ALLOCATION_RETURNED: "Штаб вернул список департаменту",
   GVO_SUMMARY_RESET: "Ручная правка сводки ГВО сброшена",
+  // Справочник охраняемых лиц с экрана (Plane №951).
+  PROTECTED_PERSON_CREATED: "Охраняемое лицо заведено",
+  PROTECTED_PERSON_PHOTO_SET: "Снимок охраняемого лица загружен",
 };
 
 /**
@@ -136,6 +139,7 @@ export const AUDIT_ENTITY_LABEL: Record<string, string> = {
   duty_shift: "Смена дежурства",
   policy_setting: "Правило настроек",
   dictionary_entry: "Значение справочника",
+  protected_person: "Охраняемое лицо",
   access_permission: "Право доступа",
   access_role: "Роль",
   access_account: "Учётная запись",

@@ -76,18 +76,18 @@ test.describe(LIVE ? 'сводка ГВО: кто правит' : 'сводка 
 
     await page.goto(`${APP}/security-ops/visits/${ownId}/`)
     const main = page.getByRole('main')
-    await expect(main.getByRole('button', { name: 'Редактировать' }), 'создатель не видит правку своего визита').toBeVisible({ timeout: 30_000 })
+    await expect(main.getByRole('button', { name: 'Редактировать', exact: true }), 'создатель не видит правку своего визита').toBeVisible({ timeout: 30_000 })
 
     await page.goto(`${APP}/security-ops/visits/${foreignId}/`)
     // Сначала — что сводка ВООБЩЕ пришла: «кнопки нет» на пустом экране
     // зелено всегда.
     await expect(main.getByText(/Сводные данные ГВО/).first()).toBeVisible({ timeout: 30_000 })
-    await expect(main.getByRole('button', { name: 'Редактировать' }), 'создатель правит ЧУЖОЙ визит').toHaveCount(0)
+    await expect(main.getByRole('button', { name: 'Редактировать', exact: true }), 'создатель правит ЧУЖОЙ визит').toHaveCount(0)
   })
 
   test('начальник управления второго департамента правит и чужой', async ({ page }) => {
     await signIn(page, 'acc_dir_head_d2', PASSWORD)
     await page.goto(`${APP}/security-ops/visits/${foreignId}/`)
-    await expect(page.getByRole('main').getByRole('button', { name: 'Редактировать' }), 'штаб без правки сводки').toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('main').getByRole('button', { name: 'Редактировать', exact: true }), 'штаб без правки сводки').toBeVisible({ timeout: 30_000 })
   })
 })

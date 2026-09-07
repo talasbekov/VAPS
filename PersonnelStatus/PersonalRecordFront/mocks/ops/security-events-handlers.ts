@@ -951,6 +951,9 @@ function emptyEvent(
     address: "",
     chiefEmployeeId: null,
     chiefName: "",
+    // Слово сервера о правке бюллетеня (Plane №951): у мока один
+    // демо-админ, и он правит всё.
+    canEditBulletin: true,
     stage: "BULLETIN",
     readinessPercent: 0,
     forceNeed: 0,

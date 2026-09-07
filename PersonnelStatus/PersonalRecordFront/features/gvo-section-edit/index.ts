@@ -10,3 +10,5 @@
 // `widgets/gvo-summary/ui/GvoSummaryPanel.tsx`.
 export { GvoVisitsDialog } from "./ui/GvoVisitsDialog";
 export type { GvoVisitsDialogProps } from "./ui/GvoVisitsDialog";
+export { GvoMemberPickerDialog } from "./ui/GvoMemberPickerDialog";
+export { ProtectedPersonPickDialog } from "./ui/ProtectedPersonPickDialog";

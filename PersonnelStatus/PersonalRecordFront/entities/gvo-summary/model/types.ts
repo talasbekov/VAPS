@@ -19,6 +19,12 @@ export interface GvoPerson {
   name: string;
   role: string;
   facts: GvoFact[];
+  /** Ссылка на запись справочника «Охраняемые лица» (Plane №951); нет —
+   * лицо набрано текстом. Код и снимок по ссылке подставляет сервер. */
+  personId?: string | null;
+  code?: string;
+  /** Адрес снимка под `/media/`; null — снимка нет. */
+  photoUrl?: string | null;
 }
 
 /** Борт прибытия/убытия. dur — «время в полёте 5:40 часа» целой строкой. */
@@ -34,6 +40,10 @@ export interface GvoMember {
   name: string;
   callsign: string;
   role: string;
+  /** Ссылка на кадровую запись (Plane №951): фамилию и позывной по ней
+   * подставляет сервер при каждой сборке; текст рядом — запас на случай,
+   * если запись снята. Нет — строка набрана руками до этой задачи. */
+  employeeId?: string | null;
 }
 
 export interface GvoGroup {
