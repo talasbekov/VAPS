@@ -573,3 +573,10 @@ def test_reviving_a_closed_event_does_not_leave_the_task_marked_finished(
         "оживлённое мероприятие оставило оценщику задание с меткой «Завершено»"
     )
     assert service.lock_event(event_id).closed_at is None
+    # И ВРЕМЯ, а не только подпись (Plane №860, п. 2). Частичный регресс —
+    # вызов вернули после присваивания этапа, но ДО очистки `closed_at` —
+    # оставляет подпись «Проведение» верной, а `actual_starts_at` равным
+    # моменту закрытия; без этой строки проба такой регресс пропускала.
+    assert row.actual_starts_at != closed.closed_at, (
+        "время начала задания осталось моментом закрытия мероприятия"
+    )

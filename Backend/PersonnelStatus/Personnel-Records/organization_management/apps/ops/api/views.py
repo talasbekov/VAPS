@@ -1868,8 +1868,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return False
         owner = event_service._visit_of_post(event, assignment.get("postId"))
         if owner is None:
-            # У ОМ без объектов посещения объектных старших не бывает вовсе:
-            # сюда доходит только старший мероприятия, а он обработан выше.
+            # Объекта у поста нет — в ДВУХ случаях (Plane №860, п. 3): у ОМ
+            # без объектов посещения (объектных старших там нет вовсе, а
+            # старший мероприятия обработан выше) и у МНОГООБЪЕКТНОГО ОМ с
+            # неразмеченным постом (`visitObjectId` пуст — такие посты
+            # собирает `_unattributed_posts`). Во втором случае старший
+            # объекта получает закрытый отказ: неразмеченный пост ничей, и
+            # выдать его «своим» какому-то объекту гейт не имеет права.
             return False
         if (
             owner.chief_employee_id is not None

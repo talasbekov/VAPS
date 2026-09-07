@@ -162,6 +162,13 @@ export function isKnownAuditEntity(entityType: string): boolean {
  * странно (та же конвенция, что у неизвестного действия).
  */
 export const AUDIT_FIELD_LABEL: Record<string, string> = {
+  // Запись «действие старшего объекта» (`SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD`,
+  // Plane №860, п. 5): заказчику обещана запись «с именем человека, кодом ОМ
+  // и объектом», а без подписей экран печатал `leadName Иванов И.И.`.
+  leadId: "Старший объекта (id)",
+  leadName: "Старший объекта",
+  visitObjectId: "Объект посещения (id)",
+  objectName: "Объект",
   is_active: "Действует",
   code: "Код",
   name: "Название",
