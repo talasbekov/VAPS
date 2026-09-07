@@ -79,10 +79,6 @@ function SecurityEventScreen() {
   // текущей вкладки.
   const visitParam = searchParams.get("visit");
   const query = useSecurityEvent(id);
-  // Несохранённый бюллетень: панель стоит НАД этапами, а кнопка «Открыть
-  // рекогносцировку» — в области этапа, и без этого сигнала переход стирал бы
-  // набранный текст (после смены стадии сервер правку бюллетеня не примет).
-  const [bulletinDirty, setBulletinDirty] = useState(false);
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   // Объекты посещения и выбранный из них считаются ДО ранних веток: ниже
@@ -387,26 +383,13 @@ function SecurityEventScreen() {
           задачи — их читает только сам бюллетень; ссылка «Карточка визита →»
           восстановлена в шапке ниже (иначе входа в визит из карточки не
           осталось бы вовсе — см. `Реестр ОМ-35.8`). */}
-      {/* 🔴 ПАНЕЛЬ ВЕРНУЛАСЬ НА ВСЕ НЕЗАКРЫТЫЕ СТАДИИ (Plane №748), и это НЕ
-          отмена №468, а починка его побочного следствия. Панель — ЕДИНСТВЕННЫЙ
-          редактор `briefDescription` и `initialTasks`, а ОМ с объектом
-          заводится сразу на «Рекогносцировке»: при условии `stage ===
-          'BULLETIN'` эти поля нельзя было вписать НИ ОДНОМУ такому
-          мероприятию — никогда. Сам `BulletinPanel` это и объявляет в своей
-          шапке («правка возможна на любой стадии, кроме закрытой»), то есть
-          экран противоречил панели, которую рисует.
-
-          То, ради чего №468 её убирал, сохранено: панель больше не
-          раскрывается сама вне стадии «Бюллетень» (правка в самом
-          `BulletinPanel`), поэтому работу вниз она не отжимает — свёрнутая
-          строка заголовка занимает одну строку. У закрытого ОМ панели
-          по-прежнему нет. */}
+      {/* Панель стоит на всех незакрытых стадиях (Plane №748) и не
+          раскрывается сама вне «Бюллетеня» (Plane №468) — свёрнутая строка
+          заголовка работу вниз не отжимает. С 07.09.2026 (Plane №943) панель
+          — только справка «Сведения об ОМ»: текста бюллетеня в проекте нет.
+          У закрытого ОМ панели по-прежнему нет. */}
       {event.stage !== "CLOSED" && (
-        <BulletinPanel
-          key={`bulletin-${objectStage}`}
-          event={event}
-          onDirtyChange={setBulletinDirty}
-        />
+        <BulletinPanel key={`bulletin-${objectStage}`} event={event} />
       )}
       {/* Панели «Информация по ГВО» в карточке БОЛЬШЕ НЕТ (`[ГВО-03]`, Plane
           №441): сводка визита живёт своей страницей, на этапах — только
@@ -439,12 +422,7 @@ function SecurityEventScreen() {
           viewingOtherStep && !editingReopenedPlacement ? "opacity-60" : undefined
         }
       >
-        <ActiveStage
-          key={viewedStage}
-          event={event}
-          stage={viewedStage}
-          bulletinDirty={bulletinDirty}
-        />
+        <ActiveStage key={viewedStage} event={event} stage={viewedStage} />
       </div>
     </DashboardLayout>
   );
@@ -699,16 +677,14 @@ function StageViewNotice({
 function ActiveStage({
   event,
   stage,
-  bulletinDirty,
 }: {
   event: SecurityEvent;
   /** Показываемая стадия: своя у мероприятия либо выбранная админом к просмотру. */
   stage: SecurityEventStage;
-  bulletinDirty: boolean;
 }) {
   switch (stage) {
     case "BULLETIN":
-      return <AwaitingReconStage event={event} bulletinDirty={bulletinDirty} />;
+      return <AwaitingReconStage event={event} />;
     case "RECON":
       return <ReconStage event={event} />;
     // Сбор группы и выделение сил живут ВНУТРИ шага «Расстановка» — своих

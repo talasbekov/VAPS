@@ -10,26 +10,20 @@
 // раскрыта; дальше это справка о мероприятии — свёрнута, чтобы не отжимать
 // активный этап вниз.
 //
-// Правка полей возможна на ЛЮБОЙ стадии, кроме закрытой: PATCH бюллетеня
-// сервер принимает всегда, а с 25.08.2026 ОМ с объектом заводится сразу на
-// рекогносцировке (Plane «Реестр ОМ-5») — привязка правки к стадии
-// «Бюллетень» означала бы, что описание и задачи такому ОМ уже НИКОГДА не
-// вписать. У закрытого ОМ панель — справка: закрытое дело не правят.
+// 🔴 ТЕКСТА БЮЛЛЕТЕНЯ В ПАНЕЛИ БОЛЬШЕ НЕТ (Plane №943, слово заказчика
+// 07.09.2026: «вот эту часть полностью со всего проекта убери» — на картинке
+// «Краткое описание», «Первичные задачи направлениям», строка «сохранено»,
+// врезка «Документы к подготовке» и «Сохранить бюллетень»). В бланке «Орда-4»
+// (`[БЛН-01]`…`[БЛН-04]`) этих полей нет — прототипный остаток. Панель —
+// справка о мероприятии («Сведения об ОМ»), сервер описания и задач для
+// перехода не требует.
 //
-// СОЗНАТЕЛЬНО не перенесено из прототипа:
-// * «Редактировать ОМ» — правки названия, даты и объекта бэк не принимает:
-//   PATCH этапа принимает только описание и задачи;
-// * «Документы к подготовке» — в прототипе эта таблица набрана литералом
-//   (две строки прямо в разметке). Модели документов с ответственными и
-//   сроками нет ни у бэка, ни в контракте, и выдумывать её на экране нельзя.
-import { useEffect, useState } from "react";
+// СОЗНАТЕЛЬНО не перенесено из прототипа: «Редактировать ОМ» — правки
+// названия, даты и объекта бэк не принимает.
+import { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { useUpdateBulletin } from "@/hooks/use-security-event-stages";
 import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
@@ -46,46 +40,10 @@ import {
   gvoStaffCount,
 } from "@/entities/gvo-summary";
 import { Fact } from "./Fact";
-import { FieldErrors, StageError } from "./StageErrors";
 
-export function BulletinPanel({
-  event,
-  onDirtyChange,
-}: {
-  event: SecurityEvent;
-  /** Несохранённый черновик виден СНАРУЖИ: кнопка «Открыть рекогносцировку»
-   * живёт в области этапа, а завершённый бюллетень правку уже не примет —
-   * без этого сигнала набранный текст молча пропадал бы вместе с формой. */
-  onDirtyChange?: (dirty: boolean) => void;
-}) {
-  const editable = event.stage !== "CLOSED";
-  // Рекогносцировка ещё не открыта — бюллетень сейчас ЗАПОЛНЯЮТ.
+export function BulletinPanel({ event }: { event: SecurityEvent }) {
+  // Рекогносцировка ещё не открыта — сведения сейчас и читают.
   const awaitingRecon = event.stage === "BULLETIN";
-  const [briefDescription, setBriefDescription] = useState(event.briefDescription);
-  const [initialTasks, setInitialTasks] = useState(event.initialTasks);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
-    null
-  );
-
-  const update = useUpdateBulletin(event.id, {
-    onFormError: (details) => setFieldErrors(details),
-  });
-
-  const dirty =
-    briefDescription !== event.briefDescription ||
-    initialTasks !== event.initialTasks;
-
-  // Готовность считается по СОХРАНЁННОМУ бюллетеню, а не по полям формы:
-  // сервер смотрит на своё состояние, и набранный, но не сохранённый текст
-  // этап не откроет.
-  useEffect(() => {
-    onDirtyChange?.(dirty);
-  }, [dirty, onDirtyChange]);
-
-  const savedBrief = event.briefDescription.trim() !== "";
-  const savedTasks = event.initialTasks.trim() !== "";
-  const ready = savedBrief && savedTasks;
-
   // Раскрыта ТОЛЬКО пока ОМ на стадии «Бюллетень» — там он и есть предмет
   // работы. Дальше по цепочке панель свёрнута ВСЕГДА, даже незаполненная.
   //
@@ -125,13 +83,7 @@ export function BulletinPanel({
               />
             )}
             <span className="text-sm font-semibold">Бюллетень мероприятия</span>
-            <span className="text-xs text-muted-foreground">
-              {!editable
-                ? "сведения об ОМ"
-                : ready
-                  ? "заполнен"
-                  : "заполнен не полностью"}
-            </span>
+            <span className="text-xs text-muted-foreground">сведения об ОМ</span>
           </button>
 
           {/* Ссылка на карточку визита стоит НА БЮЛЛЕТЕНЕ (Plane №193 —
@@ -152,8 +104,7 @@ export function BulletinPanel({
 
         {/* Тело не снимается со страницы, а прячется: `aria-controls`
             обязан указывать на существующий узел именно в свёрнутом
-            состоянии, а набранный черновик не должен умирать от того, что
-            панель свернули. */}
+            состоянии. */}
         <div
           id="bulletin-panel-body"
           hidden={!open}
@@ -161,125 +112,6 @@ export function BulletinPanel({
         >
             <EventFacts event={event} />
 
-            {editable ? (
-              <>
-                <div className="space-y-1">
-                  <Label htmlFor="bulletin-brief">Краткое описание *</Label>
-                  <Textarea
-                    id="bulletin-brief"
-                    value={briefDescription}
-                    onChange={(e) => setBriefDescription(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="bulletin-tasks">
-                    Первичные задачи направлениям *
-                  </Label>
-                  <Textarea
-                    id="bulletin-tasks"
-                    value={initialTasks}
-                    onChange={(e) => setInitialTasks(e.target.value)}
-                  />
-                </div>
-                {/* Кнопка завершения живёт в области этапа и НЕ блокируется по
-                    этим признакам: правило «описание и задачи заполнены»
-                    держит сервер, и второй гард рядом маскировал бы его
-                    отказ. Здесь только видимое состояние. */}
-                <div className="rounded-md border px-3 py-2 text-xs">
-                  {/* Строка готовности — про переход, поэтому она стоит
-                      только там, где переход есть: на рекогносцировке и
-                      дальше «можно открывать рекогносцировку» было бы
-                      обещанием уже случившегося. */}
-                  {awaitingRecon && (
-                    <p className="mb-1 font-semibold">
-                      Готовность бюллетеня:{" "}
-                      <span className={ready ? "text-green-700" : "text-amber-700"}>
-                        {ready
-                          ? "можно открывать рекогносцировку"
-                          : "заполнено не всё"}
-                      </span>
-                    </p>
-                  )}
-                  <ul className="space-y-0.5 text-muted-foreground">
-                    <li>
-                      Краткое описание — {savedBrief ? "сохранено" : "не заполнено"}
-                    </li>
-                    <li>
-                      Первичные задачи — {savedTasks ? "сохранены" : "не заполнены"}
-                    </li>
-                  </ul>
-                  {dirty && (
-                    <p className="mt-1 text-amber-700">
-                      Есть несохранённые правки — сервер их пока не видит.
-                    </p>
-                  )}
-                </div>
-              </>
-            ) : (
-              /* Переносы строк сохраняются: задачи направлениям набирают
-                 списком, и `Fact` со своим `dd.inline` склеивал бы их в одну
-                 строку. */
-              <dl className="space-y-2 text-xs">
-                <div>
-                  <dt className="font-semibold text-muted-foreground">
-                    Краткое описание
-                  </dt>
-                  <dd className="whitespace-pre-line">
-                    {savedBrief ? event.briefDescription : "не заполнено"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-semibold text-muted-foreground">
-                    Первичные задачи направлениям
-                  </dt>
-                  <dd className="whitespace-pre-line">
-                    {savedTasks ? event.initialTasks : "не заполнены"}
-                  </dd>
-                </div>
-              </dl>
-            )}
-
-            {/* «Документы к подготовке» — блок эталона (таблица Документ /
-                Ответственный / Срок). Перечня документов и их сроков модель
-                не хранит вовсе: у мероприятия есть описание, задачи и расчёт,
-                но списка бумаг с ответственными нет. Пустая таблица с тремя
-                колонками выглядела бы поломкой, поэтому блок несёт причину и
-                отправляет туда, где документы действительно лежат. */}
-            <div className="rounded-lg border border-dashed p-3.5">
-              <p className="text-sm font-semibold">Документы к подготовке</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Перечня документов с ответственными и сроками система не ведёт —
-                ни в мероприятии, ни в справочниках. Нормативные документы, по
-                которым готовят ОМ, лежат в разделе{" "}
-                <Link
-                  href="/security-ops/laws"
-                  className="font-semibold text-primary-ink"
-                >
-                  «Законы об ОМ»
-                </Link>
-                , а расчёт сил появляется на этапах ниже.
-              </p>
-            </div>
-
-            {editable && (
-              <>
-                <FieldErrors errors={fieldErrors} />
-                <StageError error={update.error} />
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!dirty || update.isPending}
-                    onClick={() => {
-                      setFieldErrors(null);
-                      update.mutate({ briefDescription, initialTasks });
-                    }}
-                  >
-                    {update.isPending ? "Сохранение…" : "Сохранить бюллетень"}
-                  </Button>
-                </div>
-              </>
-            )}
         </div>
       </CardContent>
     </Card>

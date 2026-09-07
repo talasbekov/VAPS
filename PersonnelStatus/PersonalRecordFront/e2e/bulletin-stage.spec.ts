@@ -3,11 +3,11 @@
  * бюллетень быть перестал 24.08.2026 — он стоит НАД цепочкой этапов, и проба
  * ходит в панель, а не в карточку активного этапа.
  *
- * Первая проба отвечает на один вопрос: готовность считается по
- * СОХРАНЁННОМУ бюллетеню, а не по набранному в полях. Разница не
- * косметическая: сервер смотрит на своё состояние, и набранный, но не
- * сохранённый текст этап не откроет — экран, считающий по форме, обещал бы
- * завершение, которого не будет.
+ * 🔴 ТЕКСТА БЮЛЛЕТЕНЯ В ПАНЕЛИ НЕТ (Plane №943, слово заказчика 07.09.2026):
+ * «Краткое описание», «Первичные задачи направлениям», «Документы к
+ * подготовке» и «Сохранить бюллетень» сняты со всего проекта, а сервер их для
+ * перехода не требует. Первая проба стережёт именно это: полей нет, а
+ * «Открыть рекогносцировку» у ОМ без объекта проходит без них.
  *
  * Вторая — что «Сведения об ОМ» собраны из ответов сервера, а не из вёрстки:
  * адрес приходит из КАРТОЧКИ ОБЪЕКТА (отдельный запрос), продолжительность
@@ -95,87 +95,38 @@ test.use({ serviceWorkers: 'block' })
 test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('готовность считается по сохранённому, а не по набранному', async ({ page }) => {
+  test('текста бюллетеня нет, а рекогносцировка открывается без него', async ({ page }) => {
     const token = await apiToken()
-    const suitable = (rows: EventRow[]): EventRow | undefined =>
-      rows.find(
-        (e) =>
-          e.stage === 'BULLETIN' &&
-          // Без объекта: строка готовности «можно открывать рекогносцировку»
-          // живёт только там, где переход ещё предстоит.
-          e.objectId === null &&
-          (e.briefDescription.trim() === '' || e.initialTasks.trim() === ''),
-      )
-    // 🔴 СВОЁ БЕЗУСЛОВНО (Plane №853). Здесь стояло «возьми подходящее, а заведи
-    // своё только если не нашлось» — на живом стенде это значит править чужой
-    // бюллетень, который соседняя сессия ведёт своим путём.
-    // Фикстура ищется ЗАПРОСОМ по названию, а не на первой странице реестра:
-    // он перевалил за `page_size`, и только что созданное ОМ в первые 50 строк
-    // не попадает.
+    // Своё безусловно (Plane №853): ОМ без объекта на «Бюллетене», описание и
+    // задачи пустые — именно та строка, которую до №943 сервер отбивал
+    // «BULLETIN_INCOMPLETE».
     const id = await prepareEvent(token)
     const event = (await events(token, BULLETIN_TITLE)).find((e) => e.id === id)
     expect(event, `не удалось подготовить фикстуру (${id})`).toBeDefined()
-    expect(suitable([event!]), 'своя фикстура не на «Бюллетене» без объекта').toBeDefined()
-    const target = event!
-
-    await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${target.id}/`)
-    const card = page.getByTestId('bulletin-panel')
-    await expect(card).toBeVisible({ timeout: 15_000 })
-    await expect(card).toContainText('заполнено не всё')
-    await expect(card).toContainText('Краткое описание — не заполнено')
-
-    // Набранное, но НЕ сохранённое готовность не меняет — меняет предупреждение
-    await card.getByLabel('Краткое описание *').fill('Проба бюллетеня.')
-    await card.getByLabel('Первичные задачи направлениям *').fill('Проба задач.')
-    await expect(card).toContainText('Есть несохранённые правки')
-    await expect(card).toContainText('заполнено не всё')
-    await expect(card).toContainText('Краткое описание — не заполнено')
-
-    // Сохранение открывает рекогносцировку, и это видит бэк
-    await card.getByRole('button', { name: 'Сохранить бюллетень' }).click()
-    await expect(card).toContainText('можно открывать рекогносцировку', {
-      timeout: 15_000,
-    })
-    await expect(card).toContainText('Краткое описание — сохранено')
-    const fresh = (await events(token)).find((e) => e.id === target.id)
-    expect(fresh?.briefDescription).toBe('Проба бюллетеня.')
-  })
-
-  test('несохранённый бюллетень не даёт открыть рекогносцировку', async ({ page }) => {
-    // Панель бюллетеня стоит НАД этапами, а кнопка перехода — в области
-    // этапа: без переданного наружу признака черновика переход уносил бы
-    // набранный текст молча (после смены стадии сервер правку не примет).
-    const token = await apiToken()
-    const suitable = (rows: EventRow[]): EventRow | undefined =>
-      rows.find((e) => e.stage === 'BULLETIN' && e.objectId === null)
-    // Своё безусловно и УЖЕ ЗАПОЛНЕННОЕ (Plane №853): проба начинает с того,
-    // что кнопка перехода включена, а включена она только у полного бюллетеня.
-    const id = await prepareFilledBulletin(token)
-    const event = (await events(token, BULLETIN_TITLE)).find((e) => e.id === id)
-    expect(event, `не удалось подготовить фикстуру (${id})`).toBeDefined()
-    expect(suitable([event!]), 'своя фикстура не на «Бюллетене» без объекта').toBeDefined()
+    expect(event!.stage, 'своя фикстура не на «Бюллетене»').toBe('BULLETIN')
+    expect(event!.objectId, 'своя фикстура с объектом — переход открыт и без №943').toBeNull()
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+    const card = page.getByTestId('bulletin-panel')
+    await expect(card).toBeVisible({ timeout: 15_000 })
+    // Сначала — что панель ВООБЩЕ раскрыта и несёт сведения: «поля нет» на
+    // пустой панели зелено всегда.
+    await expect(card.getByText('Сведения об ОМ', { exact: false }).first()).toBeVisible()
+    for (const gone of ['Краткое описание', 'Первичные задачи', 'Документы к подготовке', 'Сохранить бюллетень']) {
+      await expect(card.getByText(gone, { exact: false }), `«${gone}» снят со всего проекта (№943)`).toHaveCount(0)
+    }
+    await expect(card.locator('textarea')).toHaveCount(0)
+
+    // Переход открыт без текста — и это видит бэк.
     const open = page.getByRole('button', { name: 'Открыть рекогносцировку' })
     await expect(open).toBeEnabled({ timeout: 15_000 })
-
-    // Набранное, но НЕ сохранённое запирает переход и говорит почему.
-    // Текст черновика уникален на прогон. Прежде это было ОБЯЗАТЕЛЬНО и
-    // объяснялось так: «фикстура переиспользуется, и в прошлый раз проба
-    // СОХРАНИЛА в неё свой же черновик». То есть проба опиралась на чужое
-    // прошлое — ровно болезнь №853. Теперь фикстура своя, и уникальность
-    // осталась лишь как страховка.
-    const panel = page.getByTestId('bulletin-panel')
-    const draft = `Черновик, который нельзя потерять. ${Date.now()}`
-    await panel.getByLabel('Краткое описание *').fill(draft)
-    await expect(open).toBeDisabled()
-    await expect(page.getByText('иначе переход их потеряет')).toBeVisible()
-
-    // Сохранение снимает замок
-    await panel.getByRole('button', { name: 'Сохранить бюллетень' }).click()
-    await expect(open).toBeEnabled({ timeout: 15_000 })
+    await open.click()
+    await expect
+      .poll(async () => (await events(token, BULLETIN_TITLE)).find((e) => e.id === id)?.stage, {
+        timeout: 20_000,
+      })
+      .toBe('RECON')
   })
 
   test('«Сведения об ОМ» собраны из ответов сервера', async ({ page }) => {
@@ -274,36 +225,6 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
   })
 
 
-  test('описание и задачи правятся у ОМ, заведённого сразу с рекогносцировки', async ({
-    page,
-  }) => {
-    // Панель бюллетеня — ЕДИНСТВЕННЫЙ редактор `briefDescription` и
-    // `initialTasks`, а ОМ с объектом заводится сразу на «Рекогносцировке».
-    // Пока панель рисовалась только при `stage === 'BULLETIN'`, этим полям
-    // не было входа НИКОГДА (Plane №748) — при том что сервер PATCH принимает
-    // на любой стадии, а сама панель это в своей шапке и объявляет.
-    const token = await apiToken()
-    const target = (await events(token)).find(
-      (e) => e.stage !== 'BULLETIN' && e.stage !== 'CLOSED',
-    )
-    test.skip(target === undefined, 'нужен ОМ дальше «Бюллетеня» и не закрытый')
-
-    await signIn(page)
-    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
-    const panel = page.getByTestId('bulletin-panel')
-    await expect(panel).toBeVisible({ timeout: 15_000 })
-
-    // Свёрнута: №468 убирал панель именно за то, что она отжимала работу вниз.
-    const toggle = panel.getByRole('button', { expanded: false }).first()
-    await expect(toggle).toBeVisible()
-    await toggle.click()
-
-    // Раскрыв — можно править: поля на месте и не выключены.
-    const brief = panel.getByLabel(/Краткое описание/i)
-    await expect(brief).toBeVisible({ timeout: 10_000 })
-    await expect(brief).toBeEditable()
-  })
-
   test('у внутреннего ОМ без объектов посещения реквизиты видны и после «Бюллетеня»', async ({
     page,
   }) => {
@@ -358,30 +279,6 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
  * заполнил ПРЕДЫДУЩИЙ ПРОГОН, — это прямо записано было в её комментарии как
  * приём. Своя фикстура снимает зависимость от чужого прошлого.
  */
-async function prepareFilledBulletin(token: string): Promise<string> {
-  const id = await prepareEvent(token)
-  const res = await fetch(`${API}/api/ops/security-events/${id}/bulletin/`, {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      briefDescription: 'Проба замка перехода.',
-      initialTasks: 'Проба задач.',
-    }),
-  })
-  // 🔴 `assertStep` ЗДЕСЬ НЕ СРАБАТЫВАЛ НИКОГДА (найдено ревью, №892): он
-  // освобождает шаг по списку `TRANSITION_STEPS`, где есть
-  // `bulletin/complete/`, но нет `bulletin/`. Отбитый PATCH оставался
-  // молчаливым, и проба падала позже на «кнопка не включилась» — вместо кода и
-  // тела отказа. Проверяем прямо.
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(
-      `PATCH /api/ops/security-events/${id}/bulletin/ → ${res.status}: ${body.slice(0, 300)}`,
-    )
-  }
-  return id
-}
-
 async function prepareEvent(token: string): Promise<string> {
   return createEvent(token, {
     title: BULLETIN_TITLE,
