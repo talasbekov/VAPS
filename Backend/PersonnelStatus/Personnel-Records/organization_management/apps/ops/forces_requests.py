@@ -146,6 +146,34 @@ def requested_event_ids(allowed_division_ids):
     return found
 
 
+def addressee_level(allowed_division_ids):
+    """Кому адресован список: «управлению», «департаменту» или «службе»
+    (Plane №941, слово заказчика 07.09.2026).
+
+    Баннер на «Статусах сотрудников» говорил «Вашему управлению адресованы
+    запросы…» всем подряд — и начальнику ДЕПАРТАМЕНТА тоже, хотя строки у него
+    по всем управлениям департамента. Уровень считается по ОБЛАСТИ
+    `status.manage`: область без границ (администратор) — служба; в области
+    есть департамент — департамент; иначе — управление. Считает сервер, а не
+    экран: экран знает только строки, а строки одного управления и строки
+    целого департамента из одной заявки выглядят одинаково.
+    """
+    from organization_management.apps.divisions.models import Division
+
+    if allowed_division_ids is None:
+        return "organization"
+    types = set(
+        Division.objects.filter(id__in=allowed_division_ids).values_list(
+            "division_type", flat=True
+        )
+    )
+    if Division.DivisionType.ORGANIZATION in types:
+        return "organization"
+    if Division.DivisionType.DEPARTMENT in types:
+        return "department"
+    return "directorate"
+
+
 def directorate_requests_view(allowed_division_ids):
     """Все ОПОВЕЩЁННЫЕ запросы, адресованные управлениям актора (Plane №487).
 

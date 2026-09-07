@@ -51,6 +51,15 @@ import {
 import { employeeIdOfKey } from "@/features/employee-status-update/model/row-key";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
+/** Подпись адресата списка (Plane №941): слово берётся у сервера — он один
+ * знает, чья это область; экран видит только строки. Нет поля — «управлению»,
+ * как было до №941. */
+const ADDRESSEE_LABEL = {
+  directorate: "Вашему управлению",
+  department: "Вашему департаменту",
+  organization: "Службе",
+} as const;
+
 export function ForcesRequestBanner({
   selectedEmployees = [],
   onSelected,
@@ -196,7 +205,8 @@ export function ForcesRequestBanner({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <Megaphone className="text-primary-ink h-4 w-4" aria-hidden="true" />
           <span className="font-semibold">
-            Вашему управлению адресованы запросы на сбор сил: {rows.length}
+            {ADDRESSEE_LABEL[mine.data?.addressee ?? "directorate"]} адресованы
+            запросы на сбор сил: {rows.length}
           </span>
         </div>
         {chooser}

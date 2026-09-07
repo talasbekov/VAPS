@@ -1256,13 +1256,21 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             PermissionService,
         )
         from organization_management.apps.ops.forces_requests import (
+            addressee_level,
             directorate_requests_view,
         )
 
         allowed = PermissionService.visible_division_ids(
             resolve_actor_id(request), _STATUS_MANAGE_PERMISSION
         )
-        return Response({"results": directorate_requests_view(allowed)})
+        return Response(
+            {
+                "results": directorate_requests_view(allowed),
+                # Кому адресовано — «управлению», «департаменту», «службе»
+                # (Plane №941): баннер подписывает список по этому слову.
+                "addressee": addressee_level(allowed),
+            }
+        )
 
     @action(
         detail=False,

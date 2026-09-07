@@ -52,11 +52,22 @@ export function directorateForcesRequestsPath(): string {
  * адреса `?forcesRequest=…`, который кладёт только уведомление. Открывший
  * раздел из меню не мог поставить статус ничем.
  */
+/** Кому адресован список — считает сервер по области `status.manage`
+ * (Plane №941): начальник департамента видит строки всех своих управлений, и
+ * подпись «вашему управлению» была ему неправдой. Старый сервер поля не несёт
+ * — тогда подпись прежняя, про управление. */
+export type ForcesRequestsAddressee = "directorate" | "department" | "organization";
+
+export interface DirectorateForcesRequestsResponse {
+  results: DirectorateForcesRequest[];
+  addressee?: ForcesRequestsAddressee;
+}
+
 export function useDirectorateForcesRequests(options: { enabled?: boolean } = {}) {
-  return useQuery<{ results: DirectorateForcesRequest[] }, OpsApiFailure>({
+  return useQuery<DirectorateForcesRequestsResponse, OpsApiFailure>({
     queryKey: DIRECTORATE_FORCES_REQUESTS_KEY,
     queryFn: () =>
-      opsApiClient.get<{ results: DirectorateForcesRequest[] }>(
+      opsApiClient.get<DirectorateForcesRequestsResponse>(
         directorateForcesRequestsPath()
       ),
     enabled: options.enabled ?? true,
