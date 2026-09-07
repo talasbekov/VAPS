@@ -52,8 +52,10 @@ export function ruWeekday(isoDate: string): string {
 export function deriveGvoSummary(event: SecurityEvent): GvoSummary {
   const day = formatRuDate(event.businessDate);
   const emptyGroup: GvoGroup = { name: "ГВО", members: [] };
+  const mainPerson = PROTECTED_PERSONS_CATALOG.find((row) => row.id === event.protectedPersonId);
   return {
-    country: "",
+    // Страна — из карточки лица (Plane №952), как на сервере.
+    country: mainPerson?.country ?? "",
     // Лицо, выбранное в окне создания ОМ. Пусто — в бюллетене его не назвали:
     // подставлять сюда «уточняется» вместо человека нечем.
     // Лицо — карточкой справочника (Plane №951): ссылка и снимок, как на
@@ -64,8 +66,9 @@ export function deriveGvoSummary(event: SecurityEvent): GvoSummary {
         : [
             {
               name: event.protectedPersonName,
-              role: "охраняемое лицо",
-              facts: [],
+              // Должность и данные — из записи справочника (Plane №952).
+              role: mainPerson?.position || "охраняемое лицо",
+              facts: mainPerson?.facts ?? [],
               personId: event.protectedPersonId,
               photoUrl:
                 PROTECTED_PERSONS_CATALOG.find((row) => row.id === event.protectedPersonId)
@@ -87,6 +90,16 @@ export function deriveGvoSummary(event: SecurityEvent): GvoSummary {
       event.ownerName === ""
         ? null
         : { name: event.ownerName, callsign: "", role: "ответственный" },
+    // Старший ГВО — старший мероприятия из бюллетеня (Plane №952).
+    senior:
+      event.chiefName.trim() === ""
+        ? null
+        : {
+            employeeId: event.chiefEmployeeId,
+            name: event.chiefName,
+            callsign: "",
+            role: "старший ГВО",
+          },
     groups: [emptyGroup],
     transport: [],
     visits: gvoVisitDays(event),

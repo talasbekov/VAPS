@@ -49,6 +49,8 @@ const DERIVED_SUMMARY = {
   arrival: { date: '2026-12-31', time: '', route: '', flight: '', dur: '' },
   departure: { date: '2026-12-31', time: '', route: '', flight: '', dur: '' },
   responsible: 'Абаев А.',
+  // Старший ГВО — своё обязательное поле с Plane №952.
+  senior: 'Мамаев Б.',
 } as unknown as GvoSummary
 
 test.describe('выводимые умолчания сводки ГВО', () => {

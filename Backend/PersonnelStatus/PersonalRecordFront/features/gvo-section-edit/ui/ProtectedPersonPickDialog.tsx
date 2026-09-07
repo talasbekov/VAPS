@@ -31,6 +31,7 @@ import {
 import {
   PROTECTED_PERSON_CATEGORIES,
   PROTECTED_PERSON_CATEGORY_LABEL,
+  PROTECTED_PERSON_FACT_KEYS,
 } from "@/entities/protected-person";
 import type { ProtectedPerson, ProtectedPersonCategory } from "@/entities/protected-person";
 import { mediaSrc } from "@/shared/lib/media";
@@ -59,7 +60,7 @@ export function ProtectedPersonPickDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         {mode === "pick" ? (
           <PickFromCatalog
             takenIds={takenIds}
@@ -213,6 +214,11 @@ function CreatePerson({
   const [category, setCategory] = useState<ProtectedPersonCategory>("FOREIGN");
   const [callsign, setCallsign] = useState("");
   const [bio, setBio] = useState("");
+  // Данные образца (Plane №952): страна, должность и параметры «ключ =
+  // значение» — по одному полю на параметр образца, пустые не уезжают.
+  const [country, setCountry] = useState("");
+  const [position, setPosition] = useState("");
+  const [facts, setFacts] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -230,6 +236,12 @@ function CreatePerson({
         category,
         callsign: callsign.trim(),
         bio: bio.trim(),
+        country: country.trim(),
+        position: position.trim(),
+        facts: PROTECTED_PERSON_FACT_KEYS.map((key) => ({
+          key,
+          value: (facts[key] ?? "").trim(),
+        })).filter((fact) => fact.value !== ""),
       });
       if (file !== null) {
         // Лицо уже заведено — отказ снимка не должен читаться как «лицо не
@@ -313,6 +325,49 @@ function CreatePerson({
           <Input id={`${ids}-callsign`} value={callsign} onChange={(e) => setCallsign(e.target.value)} />
         </div>
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label htmlFor={`${ids}-position`} className={LABEL_CLASS}>
+            Должность
+          </label>
+          <Input
+            id={`${ids}-position`}
+            placeholder="Президент Черногории"
+            value={position}
+            onChange={(e) => setPosition(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor={`${ids}-country`} className={LABEL_CLASS}>
+            Страна
+          </label>
+          <Input
+            id={`${ids}-country`}
+            placeholder="Черногория"
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+          />
+          <p className="text-[11px] text-muted-foreground">Подставится в «Страну» сводки при выборе лица.</p>
+        </div>
+      </div>
+      <fieldset className="space-y-2 rounded-lg border p-3">
+        <legend className={`${LABEL_CLASS} px-1`}>Данные образца</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {PROTECTED_PERSON_FACT_KEYS.map((key, index) => (
+            <div key={key} className="space-y-1">
+              <label htmlFor={`${ids}-fact-${index}`} className="block text-[11px] text-muted-foreground">
+                {key}
+              </label>
+              <Input
+                id={`${ids}-fact-${index}`}
+                className="h-9 text-[12.5px]"
+                value={facts[key] ?? ""}
+                onChange={(e) => setFacts((prev) => ({ ...prev, [key]: e.target.value }))}
+              />
+            </div>
+          ))}
+        </div>
+      </fieldset>
       <div className="space-y-1">
         <label htmlFor={`${ids}-bio`} className={LABEL_CLASS}>
           Биография

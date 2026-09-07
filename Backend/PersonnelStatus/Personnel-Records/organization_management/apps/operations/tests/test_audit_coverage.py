@@ -1209,7 +1209,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     gvo_service.apply_patch(
         om.code,
         {"section": "head", "values": {"country": "Черногория"},
-         "unspecified": ["persons", "arrival.date", "departure.date", "responsible"]},
+         "unspecified": ["persons", "arrival.date", "departure.date", "responsible", "senior"]},  # `senior` — обязательное поле с Plane №952
         None, actor=ACTOR,
     )
     gvo_service.approve_visit(om.code, actor=ACTOR)

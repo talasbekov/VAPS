@@ -89,6 +89,11 @@ export interface GvoSummary {
   radio: string;
   /** null — ответственный не назначен (не то же, что «уточняется»). */
   responsible: GvoMember | null;
+  /** Старший ГВО (Plane №952) — ОТДЕЛЬНО от ответственного: база — старший
+   * мероприятия из бюллетеня, выбор в сводке переписывает его же. Прежде
+   * одно поле `responsible` подписывалось «Старший ГВО», и назначить
+   * старшего было негде. */
+  senior: GvoMember | null;
   groups: GvoGroup[];
   transport: GvoTransportRow[];
   visits: GvoVisitDay[];

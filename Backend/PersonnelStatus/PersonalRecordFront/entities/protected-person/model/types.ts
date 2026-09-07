@@ -30,7 +30,30 @@ export interface ProtectedPerson {
   bio: string;
   /** Снимок лица под `/media/` (Plane №951); null — не загружен. */
   photoUrl: string | null;
+  /** Данные образца заказчика (Plane №952): страна, должность и строки
+   * «параметр = значение». Сводка ГВО подставляет их при выборе лица;
+   * страна лица становится страной сводки. */
+  country: string;
+  position: string;
+  facts: ProtectedPersonFact[];
 }
+
+export interface ProtectedPersonFact {
+  key: string;
+  value: string;
+}
+
+/** Параметры образца «Сводные данные» — в порядке печати. Форма заведения
+ * лица предлагает ровно их; пустые не сохраняются. */
+export const PROTECTED_PERSON_FACT_KEYS = [
+  "Дата и место рождения",
+  "Группа крови",
+  "Рост",
+  "Размер обуви",
+  "Ограничения в питании",
+  "Предпочтения в питании",
+  "Аллергии",
+] as const;
 
 /** Заведение лица с экрана (Plane №951): `POST /protected-persons/`. */
 export interface CreateProtectedPersonRequest extends Record<string, unknown> {
@@ -38,6 +61,9 @@ export interface CreateProtectedPersonRequest extends Record<string, unknown> {
   category: ProtectedPersonCategory;
   callsign?: string;
   bio?: string;
+  country?: string;
+  position?: string;
+  facts?: ProtectedPersonFact[];
 }
 
 /** Снимок лица (Plane №951): `POST /protected-persons/{id}/photo/`, multipart, поле `photo`. */

@@ -122,6 +122,7 @@ const MONTENEGRO_PATCH: GvoSummaryPatch = {
   obVariant: "трасса № 2, объекты № 1",
   radio: "В-1 / В-12 / С-12",
   responsible: { name: "Шитов", callsign: "2-9", role: "ответственный" },
+  senior: { name: "Булатаев", callsign: "2-27", role: "старший ГВО" },
   groups: [
     {
       name: "ГВО «Черногория»",

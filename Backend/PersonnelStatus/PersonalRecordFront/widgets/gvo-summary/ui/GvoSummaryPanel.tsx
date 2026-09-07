@@ -39,7 +39,7 @@ import {
   gvoStaffCount,
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
-import type { GvoFlight } from "@/entities/gvo-summary";
+import type { GvoFlight, GvoMember } from "@/entities/gvo-summary";
 import { mediaSrc } from "@/shared/lib/media";
 
 // Строка «С реестром „Охраняемые лица“ эти карточки не связаны…» СНЯТА
@@ -369,13 +369,21 @@ export function GvoSummaryPanel({
         <Section
           title="Состав ГВО СГО РК"
           action={
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {/* Два человека (Plane №952): ответственный за ГВО и старший
+                  ГВО — подписи разные, и обе печатаются, даже когда кого-то
+                  не назначили: пустая подпись читалась бы как «его не
+                  бывает», а не как «не назначен». */}
               <span className="text-[12px] text-muted-foreground">
-                Ответственный:{" "}
-                <span className="font-semibold text-foreground">
-                  {summary.responsible === null
-                    ? UNSPECIFIED
-                    : `${summary.responsible.name} · позывной ${summary.responsible.callsign} — ${summary.responsible.role}`}
+                Ответственный за ГВО:{" "}
+                <span className="font-semibold text-foreground" data-slot="gvo-responsible">
+                  {memberLine(summary.responsible)}
+                </span>
+              </span>
+              <span className="text-[12px] text-muted-foreground">
+                Старший ГВО:{" "}
+                <span className="font-semibold text-foreground" data-slot="gvo-senior">
+                  {memberLine(summary.senior ?? null)}
                 </span>
               </span>
             </div>
@@ -560,6 +568,15 @@ export function GvoSummaryPanel({
       />
     </>
   );
+}
+
+/** Подпись человека в шапке состава: «Фамилия · позывной N»; без позывного —
+ * одна фамилия (у ведущего бюллетеня позывного в сводке нет). */
+function memberLine(member: GvoMember | null): string {
+  if (member === null || member.name.trim() === "") return UNSPECIFIED;
+  return member.callsign === "" || member.callsign === UNSPECIFIED
+    ? member.name
+    : `${member.name} · позывной ${member.callsign}`;
 }
 
 function Section({

@@ -25,6 +25,9 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     category: "OURS",
     bio: "Государственный служащий высшего звена, куратор международных визитов. Под охраной с 2019 года.",
     photoUrl: null,
+    country: "Казахстан",
+    position: "",
+    facts: [],
   },
   {
     id: "pp-2",
@@ -34,6 +37,9 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     category: "OURS",
     bio: "Руководитель аппарата, регулярный участник протокольных мероприятий республиканского уровня.",
     photoUrl: null,
+    country: "Казахстан",
+    position: "",
+    facts: [],
   },
   {
     id: "pp-3",
@@ -43,6 +49,9 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     category: "OURS",
     bio: "Член правительственной делегации, курирует вопросы регионального взаимодействия.",
     photoUrl: null,
+    country: "Казахстан",
+    position: "",
+    facts: [],
   },
   {
     id: "pp-4",
@@ -52,6 +61,9 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     category: "FOREIGN",
     bio: "Глава иностранной делегации. Визит согласован по линии МИД, повышенные требования к сопровождению.",
     photoUrl: null,
+    country: "США",
+    position: "Глава делегации",
+    facts: [],
   },
   {
     id: "pp-5",
@@ -61,6 +73,9 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     category: "FOREIGN",
     bio: "Официальный представитель иностранного государства, прибывает с собственной группой сопровождения.",
     photoUrl: null,
+    country: "Оман",
+    position: "Заместитель Премьер-министра по экономическим вопросам",
+    facts: [],
   },
 ];
 
@@ -144,6 +159,13 @@ export const protectedPersonsHandlers = [
       category: body.category,
       bio: (body.bio ?? "").trim(),
       photoUrl: null,
+      // Данные образца (Plane №952) — паритет с сервером: пустые строки
+      // отбрасываются.
+      country: (body.country ?? "").trim(),
+      position: (body.position ?? "").trim(),
+      facts: (body.facts ?? [])
+        .map((row) => ({ key: row.key.trim(), value: row.value.trim() }))
+        .filter((row) => row.key !== ""),
     };
     PROTECTED_PERSONS_CATALOG.push(person);
     return HttpResponse.json(person, { status: 201 });

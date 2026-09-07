@@ -222,10 +222,9 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     }
     expect(pickedMembers[0]).not.toEqual(pickedMembers[1])
 
-    // Транспорт: «код | марка | примечание»
-    await form
-      .getByRole('textbox', { name: 'Транспорт' })
-      .fill('VIP | Mercedes-Benz Pullman S600 W222, 2019 г.в. | бронь, гостевой парк')
+    // Текстового поля «Транспорт» в форме больше НЕТ (Plane №952): машины
+    // выделяются из реестра (`gvo-catalog-refs.spec.ts`), и проба это стережёт.
+    await expect(form.getByRole('textbox', { name: 'Транспорт' })).toHaveCount(0)
 
     // Одно «Сохранить» на всё: разделы уезжают по очереди, форма закрывается
     // после последнего ответа.
@@ -242,10 +241,6 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await expect(main.getByText(pickedMembers[0].split(' ')[0]).first()).toBeVisible({ timeout: 10_000 })
     await expect(main.getByText('старший ГВО').first()).toBeVisible()
     await expect(main.getByText('2 чел.').first()).toBeVisible()
-    await expect(
-      main.getByText('Mercedes-Benz Pullman S600 W222, 2019 г.в.'),
-    ).toBeVisible({ timeout: 10_000 })
-    await expect(main.getByText('бронь, гостевой парк')).toBeVisible()
 
     // Объекты посещения: НЕ текст патча, а строки объектов мероприятия
     // («Реестр ОМ-35.1»). Правятся день и примечание КОНКРЕТНОГО объекта —
@@ -472,12 +467,22 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
       'флаг «Прибытия» поставился заодно и «Убытию» — ключ у них общий',
     ).not.toBeChecked()
 
-    // «Ответственный» — обязательное поле, и галочка у него была выключена
-    // вовсе (`noFlags`), то есть пометить его было нечем.
-    const respFlag = form.getByRole('checkbox', { name: 'Уточняется: Ответственный' })
-    await expect(respFlag, 'у «Ответственного» нет галочки «уточняется»').toBeVisible()
-    await form.getByRole('textbox', { name: 'Ответственный' }).fill('')
+    // «Ответственный за ГВО» — обязательное поле, и галочка у него была
+    // выключена вовсе (`noFlags`), то есть пометить его было нечем. С Plane
+    // №952 он выбирается из кадров, а не вписывается: снимается кнопкой.
+    const respFlag = form.getByRole('checkbox', { name: 'Уточняется: Ответственный за ГВО' })
+    await expect(respFlag, 'у «Ответственного за ГВО» нет галочки «уточняется»').toBeVisible()
+    const clearResp = form.getByRole('button', { name: 'Убрать: Ответственный за ГВО' })
+    if (await clearResp.count()) await clearResp.click()
     await respFlag.check()
+    // Старший ГВО — своё поле и свой флаг (Plane №952); проба стережёт, что
+    // флаги двух людей не делят ключ, как когда-то «Прибытие» и «Убытие».
+    const seniorFlag = form.getByRole('checkbox', { name: 'Уточняется: Старший ГВО' })
+    await expect(seniorFlag).not.toBeChecked()
+    const clearSenior = form.getByRole('button', { name: 'Убрать: Старший ГВО' })
+    if (await clearSenior.count()) await clearSenior.click()
+    await seniorFlag.check()
+    await expect(respFlag).toBeChecked()
 
     // «Охраняемые лица» правятся карточками, и своего поля у списка нет —
     // флаг у него на БЛОКЕ.
@@ -495,9 +500,11 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // из списка недостающих, «Дата убытия» осталась нетронутой.
     expect(after.unspecified).toContain('arrival.date')
     expect(after.unspecified).toContain('responsible')
+    expect(after.unspecified).toContain('senior')
     expect(after.unspecified, 'флаг убытия поставился сам').not.toContain('departure.date')
     expect(after.unspecified, 'в списке осталось голое имя поля формы').not.toContain('date')
     expect(after.missingRequired).not.toContain('Дата прибытия')
+    expect(after.missingRequired).not.toContain('Ответственный за ГВО')
     expect(after.missingRequired).not.toContain('Старший ГВО')
 
     // Уборка: снимаем флаги, чтобы соседние пробы читали чистую сводку.

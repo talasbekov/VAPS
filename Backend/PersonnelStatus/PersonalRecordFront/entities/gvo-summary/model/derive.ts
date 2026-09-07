@@ -9,8 +9,13 @@ import type { SecurityEvent } from "@/entities/security-event";
 import { UNSPECIFIED } from "./types";
 import type { GvoSummary } from "./types";
 
-/** Старший ГВО — первый участник, чья роль названа «старший». */
+/** Старший ГВО — своё поле сводки (Plane №952); у сводок до него — первый
+ * участник состава, чья роль названа «старший». */
 export function gvoSenior(summary: GvoSummary): string {
+  const senior = summary.senior ?? null;
+  if (senior !== null && senior.name.trim() !== "") {
+    return senior.callsign === "" ? senior.name : `${senior.name} · ${senior.callsign}`;
+  }
   for (const group of summary.groups) {
     const senior = group.members.find((member) => /старший/i.test(member.role));
     if (senior !== undefined) return `${senior.name} · ${senior.callsign}`;

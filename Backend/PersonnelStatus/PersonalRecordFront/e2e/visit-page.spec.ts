@@ -94,7 +94,8 @@ test.describe(LIVE ? 'страница визита' : 'страница виз�
     const patched = await admin('PATCH', `/api/ops/gvo-summaries/${encodeURIComponent(created.code)}/`, {
       section: 'head',
       values: { country: 'Черногория' },
-      unspecified: ['persons', 'arrival.date', 'departure.date', 'responsible'],
+      // `senior` — тоже обязательное поле с Plane №952 («Старший ГВО»).
+      unspecified: ['persons', 'arrival.date', 'departure.date', 'responsible', 'senior'],
     })
     expect(patched.status, JSON.stringify(patched).slice(0, 200)).toBe(200)
     await page.reload()

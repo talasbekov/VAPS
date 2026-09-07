@@ -4859,6 +4859,11 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 category=data.get("category"),
                 callsign=data.get("callsign") or "",
                 bio=data.get("bio") or "",
+                # Данные образца (Plane №952): должность, страна, строки
+                # «параметр = значение».
+                country=data.get("country") or "",
+                position=data.get("position") or "",
+                facts=data.get("facts"),
                 actor=resolve_actor_id(request) or request.user,
             )
         except ValidationError as exc:

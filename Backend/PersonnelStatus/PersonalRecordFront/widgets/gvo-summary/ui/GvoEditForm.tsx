@@ -44,15 +44,19 @@ import { AllocateVehicleDialog } from "@/features/event-vehicles";
 import { mediaSrc } from "@/shared/lib/media";
 import { RegistryVehicles } from "./RegistryVehicles";
 
-/** Разделы, которые правятся целиком — в порядке печатного документа. */
-const WHOLE_SECTIONS: GvoSection[] = [
-  "head",
-  "arrival",
-  "departure",
-  "org",
-  "resp",
-  "transport",
-];
+// ОТВЕТСТВЕННЫЙ И СТАРШИЙ ГВО — ИЗ КАДРОВ (Plane №952, задача заказчика).
+// «Нет возможности назначить старшего ГВО … после ответственного за ГВО
+// сделать старший ГВО, и обе должны выбираться со списка сотрудников с
+// поиском в боксе Состав ГВО». Оба — `MemberField`: подпись, выбранный
+// человек и кнопки «Выбрать из списка / Заменить / Убрать»; окно выбора — то
+// же, что у состава группы, с заданной ролью. Текстовое поле «Транспорт» в
+// блоке «Выделяемый транспорт» снято по тому же слову заказчика: машины
+// выделяются из реестра. Страна подтягивается из карточки выбранного лица.
+
+/** Разделы, которые правятся целиком — в порядке печатного документа.
+ * `resp` и `transport` здесь больше нет (Plane №952): люди правятся выбором,
+ * транспорт — реестром. */
+const WHOLE_SECTIONS: GvoSection[] = ["head", "arrival", "departure", "org"];
 
 /** Лицо в форме: текстовые поля прежнего разбора плюс ссылка на справочник. */
 interface PersonDraft {
@@ -72,7 +76,21 @@ interface Draft {
   whole: Record<string, GvoSectionForm>;
   persons: PersonDraft[];
   groups: GroupDraft[];
+  /** Ответственный за ГВО и старший ГВО (Plane №952) — людьми, не текстом. */
+  responsible: GvoMember | null;
+  senior: GvoMember | null;
   flags: string[];
+}
+
+function memberDraft(member: GvoMember | null | undefined): GvoMember | null {
+  if (member === null || member === undefined) return null;
+  const clean = (value: string) => (value === "уточняется" ? "" : value);
+  return {
+    ...member,
+    name: clean(member.name),
+    callsign: clean(member.callsign),
+    role: clean(member.role),
+  };
 }
 
 function personDraft(person: GvoPerson, form: GvoSectionForm): PersonDraft {
@@ -96,7 +114,19 @@ function draftOf(summary: GvoSummary, unspecified: string[]): Draft {
       name: group.name,
       members: group.members.map((member) => ({ ...member })),
     })),
+    responsible: memberDraft(summary.responsible),
+    senior: memberDraft(summary.senior),
     flags: [...unspecified].sort(),
+  };
+}
+
+function memberPatch(member: GvoMember | null, defaultRole: string): GvoMember | null {
+  if (member === null || member.name.trim() === "") return null;
+  return {
+    name: member.name.trim(),
+    callsign: member.callsign.trim(),
+    role: member.role.trim() === "" ? defaultRole : member.role.trim(),
+    ...(member.employeeId ? { employeeId: member.employeeId } : {}),
   };
 }
 
@@ -147,6 +177,8 @@ export function GvoEditForm({
     !same(draft.whole, initial.whole) ||
     !same(draft.persons, initial.persons) ||
     !same(draft.groups, initial.groups) ||
+    !same(draft.responsible, initial.responsible) ||
+    !same(draft.senior, initial.senior) ||
     !same(draft.flags, initial.flags);
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -219,6 +251,8 @@ export function GvoEditForm({
   // Окна справочников: какой группе подбирается сотрудник; открыт ли выбор
   // лица; открыт ли реестр машин.
   const [memberPickerFor, setMemberPickerFor] = useState<number | null>(null);
+  // Кому подбирается человек из кадров (Plane №952): ответственному или старшему.
+  const [rolePickerFor, setRolePickerFor] = useState<"responsible" | "senior" | null>(null);
   const [personPickerOpen, setPersonPickerOpen] = useState(false);
   const [vehiclesOpen, setVehiclesOpen] = useState(false);
   const takenEmployeeIds = new Set(
@@ -271,6 +305,16 @@ export function GvoEditForm({
         values: { groups: draft.groups.map(groupPatch) },
       });
     }
+    // Люди — своим разделом (Plane №952): сервер узнаёт `resp` и знает, что
+    // старший с `employeeId` переписывает старшего мероприятия.
+    const people: GvoSummaryPatch = {};
+    if (!same(draft.responsible, initial.responsible)) {
+      people.responsible = memberPatch(draft.responsible, "ответственный");
+    }
+    if (!same(draft.senior, initial.senior)) {
+      people.senior = memberPatch(draft.senior, "старший ГВО");
+    }
+    if (Object.keys(people).length > 0) calls.push({ section: "resp", values: people });
     return calls;
   }
 
@@ -505,15 +549,28 @@ export function GvoEditForm({
           </Button>
         }
       >
-        {/* `noFlags` СНЯТ (Plane №687): «Ответственный» — обычное однострочное
-            поле, и он ОБЯЗАТЕЛЕН для утверждения (`REQUIRED_VISIT_FIELDS`). */}
-        <Fields
-          fields={spec("resp").fields}
-          values={draft.whole.resp}
-          onChange={(key, value) => setWhole("resp", key, value)}
-          flags={draft.flags}
-          onFlag={setFlag}
-        />
+        {/* Ответственный и старший ГВО — ВЫБОРОМ ИЗ КАДРОВ, а не строкой
+            «Фамилия | позывной | роль» (Plane №952). Оба обязательны для
+            утверждения (`REQUIRED_VISIT_FIELDS`), поэтому у каждого — своя
+            галочка «уточняется» по ПУТИ поля (№687). */}
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+          <MemberField
+            label="Ответственный за ГВО"
+            member={draft.responsible}
+            flagged={draft.flags.includes("responsible")}
+            onFlag={(on) => setFlag("responsible", on)}
+            onPick={() => setRolePickerFor("responsible")}
+            onClear={() => setDraft((prev) => ({ ...prev, responsible: null }))}
+          />
+          <MemberField
+            label="Старший ГВО"
+            member={draft.senior}
+            flagged={draft.flags.includes("senior")}
+            onFlag={(on) => setFlag("senior", on)}
+            onPick={() => setRolePickerFor("senior")}
+            onClear={() => setDraft((prev) => ({ ...prev, senior: null }))}
+          />
+        </div>
         {draft.groups.length > 0 && (
           <div className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(330px,1fr))]">
             {draft.groups.map((group, groupIndex) => (
@@ -640,16 +697,25 @@ export function GvoEditForm({
           </Button>
         }
       >
+        {/* Текстового поля «Транспорт» здесь больше нет (Plane №952): машины
+            выделяются из реестра. Строки, набранные текстом до этого,
+            показываются как есть — их печатает документ, и молча терять их
+            нельзя; правятся они снятием через «Вернуть исходные». */}
         <RegistryVehicles event={event} canEdit />
-        <div className={event.vehicles.length > 0 ? "mt-3" : ""}>
-          <Fields
-            fields={spec("transport").fields}
-            values={draft.whole.transport}
-            onChange={(key, value) => setWhole("transport", key, value)}
-            flags={draft.flags}
-            onFlag={setFlag}
-          />
-        </div>
+        {summary.transport.length > 0 && (
+          <ul className="mt-3 space-y-1 text-[12.5px]" data-slot="gvo-transport-text">
+            {summary.transport.map((row, index) => (
+              <li key={`${row.code}-${index}`} className="text-muted-foreground">
+                <span className="font-semibold text-foreground">{row.code}</span> · {row.car}
+                {row.note !== "" && ` · ${row.note}`}
+                <span className="text-[11px]"> · набрано текстом ранее</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {event.vehicles.length === 0 && summary.transport.length === 0 && (
+          <p className="text-xs text-muted-foreground">Транспорт не выделен — выберите машину из реестра.</p>
+        )}
       </Block>
 
       <GvoMemberPickerDialog
@@ -661,17 +727,43 @@ export function GvoEditForm({
         }}
         onClose={() => setMemberPickerFor(null)}
       />
+      <GvoMemberPickerDialog
+        open={rolePickerFor !== null}
+        groupName=""
+        title={rolePickerFor === "senior" ? "Старший ГВО из списка сотрудников" : "Ответственный за ГВО из списка сотрудников"}
+        fixedRole={rolePickerFor === "senior" ? "старший ГВО" : "ответственный"}
+        takenIds={new Set<string>()}
+        onPick={(member) => {
+          if (rolePickerFor === null) return;
+          setDraft((prev) => ({ ...prev, [rolePickerFor]: member }));
+        }}
+        onClose={() => setRolePickerFor(null)}
+      />
       <ProtectedPersonPickDialog
         open={personPickerOpen}
         takenIds={takenPersonIds}
-        onPick={(person) =>
+        onPick={(person) => {
+          // Должность и данные — из записи справочника (Plane №952): образец
+          // заказчика печатает их у лица, и набирать их заново незачем.
+          // Остаются правимыми: у ЭТОГО визита должность может звучать иначе.
           addPerson({
-            form: { name: person.name, role: "", facts: "" },
+            form: {
+              name: person.name,
+              role: person.position,
+              facts: person.facts.map((fact) => `${fact.key} = ${fact.value}`).join("\n"),
+            },
             personId: person.id,
             code: person.code,
             photoUrl: person.photoUrl,
-          })
-        }
+          });
+          // Страна подтягивается из карточки лица (Plane №952): «если выбрал
+          // ОЛ со справочника, тогда страна автоматически должна
+          // подтянуться». Только в ПУСТОЕ поле: вписанную руками страну
+          // второе лицо (супруга, член делегации) перетирать не должно.
+          if (person.country !== "" && (draft.whole.head?.country ?? "").trim() === "") {
+            setWhole("head", "country", person.country);
+          }
+        }}
         onClose={() => setPersonPickerOpen(false)}
       />
       <AllocateVehicleDialog event={event} open={vehiclesOpen} onClose={() => setVehiclesOpen(false)} />
@@ -749,6 +841,67 @@ function PersonHead({
       >
         {upload.isPending ? "Загрузка…" : src === null ? "Загрузить фото" : "Заменить фото"}
       </Button>
+    </div>
+  );
+}
+
+/** Человек из кадров у одной подписи (Plane №952): ответственный за ГВО,
+ * старший ГВО. Кнопки — с текстом, не иконками; цель ≥ 30px по высоте в
+ * плотной форме, подпись поля видима всегда. Человек, набранный текстом до
+ * этой задачи, показывается как есть с пометкой — заменить его можно только
+ * выбором из списка. */
+function MemberField({
+  label,
+  member,
+  flagged,
+  onFlag,
+  onPick,
+  onClear,
+}: {
+  label: string;
+  member: GvoMember | null;
+  flagged: boolean;
+  onFlag: (on: boolean) => void;
+  onPick: () => void;
+  onClear: () => void;
+}) {
+  const empty = member === null || member.name.trim() === "";
+  return (
+    <div className="space-y-1" data-slot="gvo-member-field" aria-label={label}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11.5px] font-bold text-[hsl(215.4_16.3%_36.9%)]">{label}</p>
+        <FlagBox label={label} checked={flagged} onChange={onFlag} />
+      </div>
+      <div className="flex min-h-[38px] flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-1.5">
+        {empty ? (
+          <span className="flex-1 text-[12.5px] text-muted-foreground">Не назначен</span>
+        ) : (
+          <span className="min-w-0 flex-1 text-[12.5px]">
+            <span className="font-semibold">{member.name}</span>
+            {member.callsign !== "" && (
+              <span className="tabular-nums text-muted-foreground"> · {member.callsign}</span>
+            )}
+            <span className="text-[11px] text-muted-foreground">
+              {member.employeeId ? " · из кадров" : " · набран текстом"}
+            </span>
+          </span>
+        )}
+        <Button type="button" variant="outline" size="sm" className="h-[30px]" onClick={onPick}>
+          {empty ? "Выбрать из списка" : "Заменить"}
+        </Button>
+        {!empty && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-[30px] px-2 text-[11.5px] text-red-700"
+            aria-label={`Убрать: ${label}`}
+            onClick={onClear}
+          >
+            Убрать
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

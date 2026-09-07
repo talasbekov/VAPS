@@ -32,6 +32,8 @@ export function GvoMemberPickerDialog({
   takenIds,
   onPick,
   onClose,
+  fixedRole,
+  title,
 }: {
   open: boolean;
   groupName: string;
@@ -39,6 +41,14 @@ export function GvoMemberPickerDialog({
   takenIds: Set<string>;
   onPick: (member: GvoMember) => void;
   onClose: () => void;
+  /**
+   * Роль задана окном, а не человеком (Plane №952): ответственный за ГВО и
+   * старший ГВО выбираются тем же кадровым списком с поиском, но роль у них
+   * одна и спрашивать её — лишний ввод. Поле роли тогда не рисуется.
+   */
+  fixedRole?: string;
+  /** Заголовок окна; по умолчанию — про состав группы. */
+  title?: string;
 }) {
   const [picked, setPicked] = useState<PersonnelSummarySnapshot | null>(null);
   const [role, setRole] = useState("");
@@ -48,15 +58,17 @@ export function GvoMemberPickerDialog({
       setRole("");
     }
   }, [open]);
+  const single = fixedRole !== undefined;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Сотрудник в состав ГВО</DialogTitle>
+          <DialogTitle>{title ?? "Сотрудник в состав ГВО"}</DialogTitle>
           <DialogDescription>
-            {groupName === "" ? "Группа ГВО" : groupName}. Фамилия и позывной берутся
-            из кадровой записи; роль в группе — ниже.
+            {single
+              ? "Фамилия и позывной берутся из кадровой записи."
+              : `${groupName === "" ? "Группа ГВО" : groupName}. Фамилия и позывной берутся из кадровой записи; роль в группе — ниже.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -69,17 +81,19 @@ export function GvoMemberPickerDialog({
           resetKey={open}
         />
 
-        <div className="space-y-1">
-          <label htmlFor="gvo-member-role" className="text-[11.5px] font-bold text-muted-foreground">
-            Роль в группе
-          </label>
-          <Input
-            id="gvo-member-role"
-            placeholder="старший ГВО, прикреплённый, водитель…"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          />
-        </div>
+        {!single && (
+          <div className="space-y-1">
+            <label htmlFor="gvo-member-role" className="text-[11.5px] font-bold text-muted-foreground">
+              Роль в группе
+            </label>
+            <Input
+              id="gvo-member-role"
+              placeholder="старший ГВО, прикреплённый, водитель…"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+            />
+          </div>
+        )}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -94,12 +108,12 @@ export function GvoMemberPickerDialog({
                 employeeId: picked.id,
                 name: picked.name,
                 callsign: picked.callsign ?? "",
-                role: role.trim(),
+                role: single ? fixedRole : role.trim(),
               });
               onClose();
             }}
           >
-            Добавить в состав
+            {single ? "Назначить" : "Добавить в состав"}
           </Button>
         </DialogFooter>
       </DialogContent>

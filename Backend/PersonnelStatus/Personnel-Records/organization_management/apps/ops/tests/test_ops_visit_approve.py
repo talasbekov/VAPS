@@ -46,7 +46,8 @@ def staff():
 def test_summary_reports_required_progress_and_approve_refuses_until_filled(staff):
     make_event("ОМ-Т-41")
     row = staff.get(f"{GVO_URL}ОМ-Т-41/").json()
-    assert row["requiredTotal"] == 5
+    # Шесть, а не пять (Plane №952): старший ГВО — своё обязательное поле.
+    assert row["requiredTotal"] == 6
     assert "Страна" in row["missingRequired"]
     assert row["requiredFilled"] == row["requiredTotal"] - len(row["missingRequired"])
 
@@ -61,7 +62,7 @@ def test_summary_reports_required_progress_and_approve_refuses_until_filled(staf
         {
             "section": "head",
             "values": {"country": "Черногория"},
-            "unspecified": ["persons", "arrival.date", "departure.date", "responsible"],
+            "unspecified": ["persons", "arrival.date", "departure.date", "responsible", "senior"],
         },
         format="json",
     )
@@ -438,7 +439,7 @@ def _approve(staff, code):
         {
             "section": "head",
             "values": {"country": "Черногория"},
-            "unspecified": ["persons", "arrival.date", "departure.date", "responsible"],
+            "unspecified": ["persons", "arrival.date", "departure.date", "responsible", "senior"],
         },
         format="json",
     )

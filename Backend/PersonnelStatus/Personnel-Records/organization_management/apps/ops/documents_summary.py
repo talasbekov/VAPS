@@ -96,13 +96,55 @@ def visit_days(event):
 def _person_card(person, *, name=None):
     from organization_management.apps.ops.gvo import person_photo_url
 
+    from organization_management.apps.ops.gvo import person_facts
+
     return {
         "personId": str(person.pk),
         "code": person.display_code,
         "name": name or person.name,
-        "role": "охраняемое лицо",
-        "facts": [],
+        # Должность и данные — ИЗ ЗАПИСИ справочника (Plane №952): образец
+        # заказчика печатает у лица должность и строки «параметр = значение»,
+        # и набирать их текстом при каждом ОМ он больше не хочет.
+        "role": person.position or "охраняемое лицо",
+        "facts": person_facts(person),
         "photoUrl": person_photo_url(person),
+    }
+
+
+def _derived_country(event, persons):
+    """Страна сводки — из карточки главного лица (Plane №952): «если выбрал
+    ОЛ со справочника, тогда страна автоматически должна подтянуться».
+    Главное лицо — первое; у лица без страны в записи сводка остаётся без
+    страны, как раньше, и её вписывают руками."""
+    main = event.protected_person
+    if main is not None and (main.country or "").strip():
+        return main.country.strip()
+    for card in persons:
+        raw = card.get("personId")
+        if not raw:
+            continue
+        from organization_management.apps.operations.models_gvo import OpsProtectedPerson
+
+        record = OpsProtectedPerson.objects.filter(pk=raw).only("country").first()
+        if record is not None and (record.country or "").strip():
+            return record.country.strip()
+    return ""
+
+
+def _derived_senior(event):
+    """Старший ГВО базы — старший мероприятия из бюллетеня (Plane №952):
+    у визита иностранного ОЛ это тот, кого окно создания зовёт «Старший
+    ГВО». Позывной подставит `_resolve_member` по `employeeId`."""
+    name = (event.chief_name or "").strip()
+    if event.chief_employee_id is None and not name:
+        return None
+    return {
+        "employeeId": (
+            str(event.chief_employee_id) if event.chief_employee_id is not None else None
+        ),
+        "name": name,
+        "callsign": "",
+        "role": "старший ГВО",
     }
 
 
@@ -145,14 +187,15 @@ def derive_summary(event):
     """База сводки из мероприятия. Порт клиентского `deriveGvoSummary`."""
     day = _ru_date(event.business_date)
     owner = (event.owner_name or "").strip()
+    persons = _derived_persons(event)
     return {
-        "country": "",
+        "country": _derived_country(event, persons),
         # Лица — ИЗ СПРАВОЧНИКА, а не снимком имени (Plane №951): у каждого
         # ссылка на запись каталога (`personId`), код и фотография. Главное
         # лицо бланка — первым; остальные лица бюллетеня (Plane №188) — за
         # ним. Пусто, если в бюллетене лицо не назвали: подставлять сюда
         # «уточняется» вместо человека нечем.
-        "persons": _derived_persons(event),
+        "persons": persons,
         "arrival": {"date": day, "time": "", "route": "", "flight": "", "dur": ""},
         "departure": {"date": day, "time": "", "route": "", "flight": "", "dur": ""},
         "meet": [],
@@ -169,6 +212,7 @@ def derive_summary(event):
             if owner
             else None
         ),
+        "senior": _derived_senior(event),
         "groups": [{"name": "ГВО", "members": []}],
         # Свободный текст «Выделяемый транспорт»: его набирает человек в
         # разделе сводки. ОСТАЁТСЯ пустым в базе и наполняется патчем — так
@@ -277,11 +321,18 @@ def _resolve_person(person):
     record = OpsProtectedPerson.objects.filter(pk=raw).first()
     if record is None:
         return person
+    from organization_management.apps.ops.gvo import person_facts
+
     return {
         **person,
         "personId": str(raw),
         "code": record.display_code,
         "name": (person.get("name") or "").strip() or record.name,
+        # Должность и данные из записи — там, где в патче их не вписали
+        # (Plane №952): лицо, выбранное до этой задачи, получает данные
+        # справочника без повторного выбора; вписанное руками остаётся.
+        "role": (person.get("role") or "").strip() or record.position or "охраняемое лицо",
+        "facts": person.get("facts") or person_facts(record),
         "photoUrl": person_photo_url(record),
     }
 
@@ -304,9 +355,10 @@ def _with_refs(summary):
             else group
             for group in groups
         ]
-    responsible = summary.get("responsible")
-    if isinstance(responsible, dict):
-        summary["responsible"] = _resolve_member(responsible)
+    for key in ("responsible", "senior"):
+        member = summary.get(key)
+        if isinstance(member, dict):
+            summary[key] = _resolve_member(member)
     persons = summary.get("persons")
     if isinstance(persons, list):
         summary["persons"] = [_resolve_person(person) for person in persons]
