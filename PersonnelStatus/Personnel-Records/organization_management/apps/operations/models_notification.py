@@ -88,6 +88,11 @@ class OpsNotification(TimeStampedModel):
         # отказ был виден, только если старший сам откроет этап
         # «Ознакомление» в карточке ОМ, — а замену ищут в день мероприятия.
         ASSIGNMENT_DECLINED = "ASSIGNMENT_DECLINED", "Отказ сотрудника заступить"
+        # Штаб нажал «Отправить запросы» (`[СБС-12]`, Plane №944): ответственный
+        # за сбор сил в департаменте получает запрос со ссылкой в карточку
+        # заявки. Свой вид: `FORCES_REQUEST_DEPARTMENT` — СВОДКА начальнику
+        # департамента по управлениям (№922), другой адресат и другой текст.
+        FORCES_REQUEST_SENT = "FORCES_REQUEST_SENT", "Запрос сил департаменту от штаба"
 
     # Получатель строкой: str(User.pk) для человека, метка — для роли/службы.
     recipient = models.CharField(max_length=100)
@@ -154,6 +159,7 @@ class OpsNotification(TimeStampedModel):
                         "ACKNOWLEDGEMENT_DUE_SOON",
                         "FORCES_RESPONSE",
                         "ASSIGNMENT_DECLINED",
+                        "FORCES_REQUEST_SENT",
                     ]
                 ),
                 name="chk_ops_notif_kind",

@@ -9,10 +9,10 @@
 фикстуре: проба отвечает «персона заказчика умеет ровно это», и мутация
 раскладки в сиде обязана её красить.
 
-`forces.command` штабу НЕ выдан: матрица заказчика №348 назвала «Сбор сил»
-недоступным начальнику второго департамента, а спецификация `[СБС-10]` отдаёт
-заявки ему — конфликт двух решений задан вопросом в карточке. Проба это
-стережёт: появится право без ответа заказчика — красна.
+`forces.command` штабу ВЫДАН (Plane №944, 07.09.2026): конфликт матрицы №348
+(«Сбор сил» закрыт) и спецификации `[СБС-10]`/7.1 (штаб делит заявки) три дня
+ждал ответа в карточке №421; ответом стала задача заказчика №944 «привести
+сбор сил к документации». Проба стережёт уже это: пропадёт право — красна.
 """
 import pytest
 from django.core.management import call_command
@@ -131,12 +131,15 @@ def test_the_staff_edits_the_visit_summary_of_any_event(staff):
     assert r.json()["patch"]["country"] == "Черногория"
 
 
-def test_forces_command_is_not_granted_until_the_customer_answers(staff):
+def test_forces_command_is_granted_to_the_staff_by_the_specification(staff):
+    """Раздел 7.1 спецификации: штаб — `acc_dir_head_d2` и `acc_dept_head_d2`
+    (Plane №944). Право штаба — `forces.command`; звенья департамента и
+    управлений (`forces.allocate`, `forces.select`) штабу по-прежнему не
+    положены: «делит по департаментам» ≠ «выделяет людей»."""
     codes = set(RoleAdminService.role_permission_codes("HEAD_OPS_UNIT"))
     assert {"event.create", "event.bulletin", "placement.manage"} <= codes
-    assert not codes & {"forces.command", "forces.allocate", "forces.select"}, (
-        "«Сбор сил» штабу — открытый вопрос заказчику (№421), право не выдаётся молча"
-    )
+    assert "forces.command" in codes, "«Сбор сил» штабу — по разделу 7.1 спецификации (№944)"
+    assert not codes & {"forces.allocate", "forces.select"}
 
 
 def test_the_staff_powers_left_the_profile_for_an_add_on_role(staff):

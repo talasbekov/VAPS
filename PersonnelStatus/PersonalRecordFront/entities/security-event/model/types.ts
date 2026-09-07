@@ -227,6 +227,10 @@ export interface ForceAllocationRow {
   decisionComment: string;
   directorates: ForceAllocationDirectorate[];
   members: ForceAllocationMember[];
+  /** Момент «Отправить запросы» штаба (`[СБС-12]`, Plane №944). Пусто —
+   *  черновик: департамент строки не видит, цифра правится; есть — цифра
+   *  заперта, менять её можно только «Довыделить недобор →». */
+  sentAt?: string | null;
 }
 
 /** Человек в СОСТАВЕ мероприятия: штаб принял его и отдал ОМ (шаг СС-5).
@@ -531,10 +535,18 @@ export interface PersonnelSummarySnapshot {
   rankLabel: string;
   /** Позывной (`[МД-10]`, Plane №456); пустая строка — не вписан.
    *
-   * Поле приезжает с кадрового снимка с №456. Экрана, который его читает,
-   * пока нет: бюллетень печатает позывной САМ, документом сервера. Тип
-   * дописан всё равно — иначе первый же читатель начал бы с вопроса «а
-   * приходит ли оно вообще», а мок-слой разошёлся бы с ответом молча. */
+   * 🔴 ЗНАК ВОПРОСА ЗДЕСЬ НЕ НЕБРЕЖНОСТЬ, А ФАКТ О ДВУХ РУЧКАХ (Plane №878).
+   * Кадровый каталог (`/api/ops/personnel/`) шлёт поле ВСЕГДА — `"callsign":
+   * employee.callsign or ""`, то есть «нет позывного» выражено пустой
+   * строкой. А состав сил (`force_roster_view`) отдаёт СОХРАНЁННЫЕ строки
+   * выделения, и позывного в них нет вовсе. Этим же типом описаны обе
+   * выдачи, поэтому обязательное поле было бы неправдой про вторую.
+   *
+   * Проверено попыткой: `callsign: string` роняет `tsc` на пяти местах
+   * `PlacementStage`, где строка состава собирается без него. Это не повод
+   * дописать поле в состав — это признак того, что один тип обслуживает два
+   * разных ответа. Разведение типов заведено отдельной карточкой; до неё
+   * читатель обязан писать `person.callsign ?? ""`. */
   callsign?: string;
   unit: string;
   /** Статус на дату, СПРОШЕННУЮ клиентом (`business_date`). null — либо даты
@@ -1069,6 +1081,9 @@ export interface SplitForceDemandRequest extends Record<string, unknown> {
      *  неразбираемое значение он отбивает 400, а не подменяет умолчанием. */
     dueAt?: string;
   }[];
+  /** `true` — «Сохранить черновик»: строки без момента отправки. Без флага
+   *  раскладка ОТПРАВЛЯЕТСЯ департаментам (`[СБС-12]`, Plane №944). */
+  draft?: boolean;
 }
 
 export interface AssignPlacementRequest extends Record<string, unknown> {
@@ -1439,6 +1454,12 @@ export interface DepartmentRequestDetail {
   location: string;
   stage: SecurityEventStage;
   allocation: ForceAllocationRow;
+  /** «В строю» по КАЖДОМУ действующему управлению департамента на деловую
+   *  дату ОМ (`[СБС-22]`, Plane №944): `{divisionId: n}`. Считает сервер. */
+  inServiceByDirectorate?: Record<string, number>;
+  /** Управление каждого выделенного — для групп списка (`[СБС-23]`):
+   *  `{employeeId: divisionId | null}`; `null` — вне управлений заявки. */
+  memberDirectorateById?: Record<string, string | null>;
 }
 
 export function securityEventDepartmentRequestPath(allocationId: string): string {

@@ -15,7 +15,9 @@ import {
   type ForceCollectionRow,
   type ForceRosterMember,
   securityEventForceTopUpPath,
+  securityEventForcesSplitPath,
   type SecurityEvent,
+  type SplitForceDemandRequest,
   type TopUpAllocationRequest,
 } from "@/entities/security-event";
 import { opsApiClient } from "@/lib/ops-api";
@@ -112,6 +114,23 @@ export function useHandOverToPlacement(eventId: string) {
   });
 }
 
+
+/** Раскладка по департаментам с карточки сбора (`[СБС-12]`, Plane №944):
+ *  «Сохранить черновик» (`draft: true`) или «Отправить запросы» (без флага —
+ *  сервер ставит момент отправки и шлёт письма ответственным). Отвечает
+ *  карточкой ОМ, сбор перечитывается. */
+export function useSplitCollection(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<SecurityEvent, OpsApiFailure, SplitForceDemandRequest>({
+    mutationFn: (body) =>
+      opsApiClient.post<SecurityEvent>(securityEventForcesSplitPath(eventId), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-force-collection", eventId] });
+      void queryClient.invalidateQueries({ queryKey: ["ops-force-collections"] });
+      void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+    },
+  });
+}
 
 /** «Довыделить недобор → …» (`[СБС-12]`, Plane №426): новая строка запроса
  *  тому же департаменту; отвечает карточкой ОМ, сбор перечитывается. */

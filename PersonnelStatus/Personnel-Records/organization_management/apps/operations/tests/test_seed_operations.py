@@ -256,9 +256,15 @@ def test_the_customer_profiles_see_exactly_the_modules_he_named(seeded):
     assert "report.generate" not in granted("HEAD_DEPARTMENT_LINE")
     assert "report.generate" not in granted("FORCES_GATHERING_OFFICER")
 
-    # Сбор сил ведёт ровно один из семи профилей.
-    assert "forces.command" in granted("FORCES_GATHERING_OFFICER")
-    for code in ("HEAD_DIRECTORATE_LINE", "HEAD_DEPARTMENT_LINE", "HEAD_OPS_UNIT"):
+    # Сбор сил — по разделу 7 спецификации (Plane №944): штаб (`HEAD_OPS_UNIT`)
+    # делит потребность (`forces.command`), ответственный департамента отвечает
+    # на запрос (`forces.allocate`) и ТОЛЬКО он; штабного права у него нет —
+    # иначе он видел бы список заявок по всем департаментам (`[СБС-20]`).
+    assert "forces.allocate" in granted("FORCES_GATHERING_OFFICER")
+    assert "forces.command" not in granted("FORCES_GATHERING_OFFICER")
+    assert "forces.command" in granted("HEAD_OPS_UNIT")
+    assert not {"forces.allocate", "forces.select"} & granted("HEAD_OPS_UNIT")
+    for code in ("HEAD_DIRECTORATE_LINE", "HEAD_DEPARTMENT_LINE"):
         assert not {"forces.command", "forces.allocate", "forces.select"} & granted(code)
 
     # «Система» закрыта у всех шести неадминистраторских профилей.

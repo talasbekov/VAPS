@@ -1,28 +1,34 @@
 "use client";
 
 /**
- * Карточка сбора — вид ШТАБА (Plane №271, Ш-2).
+ * Карточка сбора — вид ШТАБА (Plane №271, Ш-2; по документации — Plane №944).
  *
- * Состав из эталона: четыре плитки, общий прогресс и распределение по
- * департаментам, где строка РАСКРЫВАЕТСЯ до списка выделенных.
+ * Три блока спецификации `RAW/README.md`, раздел 7.1:
+ *   1. «Потребность» по объектам (`[СБС-11]`);
+ *   2. «Разбивка по департаментам» (`[СБС-12]`) — таблица с полем «Запрошено»
+ *      В СТРОКЕ, «Отправить запросы», после отправки цифры заперты и меняются
+ *      только «Довыделить недобор →»;
+ *   3. «Собранные сотрудники → объекты» (`[СБС-13]`) — с первым присланным
+ *      списком.
  *
- * ДЕЙСТВИЯ ЗДЕСЬ — с Plane №928 (задача заказчика). Та самая «отдельная
- * работа», которую обещал прежний текст этой докстроки: лента входящих
- * «Запрос сил по мероприятиям» над вкладками `/employees` снята, а
- * `ForcesSplitPanel` переехал сюда — ТЕМ ЖЕ компонентом, не второй
- * реализацией (вторая разошлась бы с первой при первой же правке, и это
- * по-прежнему верно).
+ * 🔴 ЧУЖИХ ЗВЕНЬЕВ НА ЭКРАНЕ ШТАБА БОЛЬШЕ НЕТ (Plane №944). До этого под
+ * таблицей стояла форма «Правка раскладки» (`ForcesSplitPanel`) с кнопками
+ * «Оповестить управления», «Выделить людей», «Отправить список в штаб»,
+ * «Принять в мероприятие» — действия ДЕПАРТАМЕНТА и УПРАВЛЕНИЙ, у штаба
+ * выключенные с пояснениями. Заказчик проверил цепочку под своими учётками
+ * и вернул её словами «полностью неправильно работает»: экран показывал
+ * кнопки не того, кто на нём работает, а шага «Отправить запросы» не было
+ * вовсе — черновик уходил департаменту в момент сохранения. Теперь штаб
+ * делает ровно три вещи спецификации, а звенья департамента живут в его
+ * карточке (`DepartmentRequestCard`).
  *
- * Разделение труда внутри карточки: таблица `[СБС-12]` отвечает «как идёт
- * сбор» (раскрытие до фамилий, история запросов, довыделение), форма под ней
- * — «кому сколько и к какому сроку».
- *
- * РАСКРЫТИЕ — деталь не косметическая. Заказчик просит видеть поимённо, кого
- * департамент уже отдал; без этого «5 из 46» остаётся числом, за которым
- * нельзя проверить, тех ли людей прислали.
+ * РАСКРЫТИЕ строки — деталь не косметическая: заказчик просит видеть
+ * поимённо, кого департамент уже отдал; без этого «5 из 46» остаётся числом,
+ * за которым нельзя проверить, тех ли людей прислали.
  */
-import { Fragment, useState } from "react";
-import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -48,14 +54,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { ForceAllocationRow } from "@/entities/security-event";
-import { ForcesSplitPanel } from "@/features/forces-split/ui/ForcesSplitPanel";
+import {
+  FieldErrors,
+  StageError,
+} from "@/features/security-event-stages/ui/StageErrors";
+import { FORCES_COMMAND, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import {
   useAssignRosterObjects,
   useForceCollection,
   useHandOverToPlacement,
+  useSplitCollection,
   useTopUpAllocation,
   type ForceCollectionWithObjects,
 } from "@/hooks/use-force-collections";
+import { useReturnAllocation } from "@/hooks/use-security-event-stages";
+import { apiClient, type CoreDivision } from "@/lib/api";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 
@@ -74,7 +87,10 @@ import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 const SPLIT_STAGES = ["DEMAND", "FORCES", "PLACEMENT"];
 
 const ALLOCATION_STATUS: Record<string, string> = {
-  DRAFT: "Не отправлен",
+  // Отправленная строка без ответа департамента — «Запрос отправлен»; сам
+  // черновик штаба до отправки строкой этой таблицы не является (см.
+  // `DraftRow` ниже).
+  DRAFT: "Запрос отправлен",
   NOTIFIED: "Отправлен",
   SUBMITTED: "Список прислан",
   ACCEPTED: "Принят",
@@ -88,11 +104,27 @@ const ALLOCATION_STATUS: Record<string, string> = {
  * запроса из таблиц `[МД-06]`; «Довыделить недобор → …» — новая строка
  * запроса тому же департаменту (старая не правится).
  */
-function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: string }) {
+function DepartmentRow({
+  row,
+  eventId,
+  canCommand,
+}: {
+  row: ForceAllocationRow;
+  eventId: string;
+  canCommand: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [count, setCount] = useState("");
   const topUp = useTopUpAllocation(eventId);
+  // Возврат присланного списка с ПРИЧИНОЙ — единственное решение штаба по
+  // строке, которое осталось на этом экране: принимать список не надо
+  // (присланные люди уже в составе, `[СБС-13]`), а вернуть с замечанием
+  // бывает нужно. Спецификация о возврате молчит; действие живое и
+  // проверенное, оставлено.
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const back = useReturnAllocation(eventId, row.id);
   const members = row.members ?? [];
   const need = row.need ?? 0;
   const sent = row.sent ?? members.length;
@@ -114,7 +146,9 @@ function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: str
    * Довыделять нечего, и кнопки нет.
    */
   const shortage = allocating === null ? 0 : Math.max(0, need - allocating);
-  const canTopUp = row.status !== "DRAFT" && shortage > 0;
+  // Довыделять можно по ОТПРАВЛЕННОМУ запросу (сервер: `top_up` смотрит
+  // `sentAt`, Plane №944); в этой таблице все строки отправлены.
+  const canTopUp = canCommand && shortage > 0;
   return (
     <>
       <TableRow data-slot="department-row" data-top-up-of={row.topUpOf ?? ""}>
@@ -132,9 +166,11 @@ function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: str
             )}
             {row.departmentName || `Департамент ${row.departmentId}`}
           </button>
-          {row.topUpOf && (
-            <p className="text-muted-foreground text-xs">довыделение</p>
-          )}
+          <p className="text-muted-foreground text-xs">
+            {row.topUpOf ? "довыделение · " : ""}
+            {row.sentAt ? `отправлен ${formatIsoDateTime(row.sentAt)}` : ""}
+            {row.dueAt ? ` · срок ${formatIsoDateTime(row.dueAt)}` : ""}
+          </p>
         </TableCell>
         <TableCell className="text-right font-semibold tabular-nums">{need}</TableCell>
         <TableCell className="text-right tabular-nums" data-slot="department-allocating">
@@ -153,18 +189,35 @@ function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: str
           {row.responsibleName || <span className="text-muted-foreground">не назначен</span>}
         </TableCell>
         <TableCell>
-          {canTopUp && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setCount(String(shortage));
-                setTopUpOpen(true);
-              }}
-            >
-              Довыделить недобор →
-            </Button>
+          <div className="flex flex-wrap items-center gap-1">
+            {canTopUp && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCount(String(shortage));
+                  setTopUpOpen(true);
+                }}
+              >
+                Довыделить недобор →
+              </Button>
+            )}
+            {canCommand && row.status === "SUBMITTED" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setReturnOpen(true)}
+              >
+                Вернуть департаменту
+              </Button>
+            )}
+          </div>
+          {row.status === "RETURNED" && row.decisionComment !== "" && (
+            <p className="text-destructive-ink mt-1 text-xs">
+              Возвращено: {row.decisionComment}
+            </p>
           )}
         </TableCell>
       </TableRow>
@@ -262,6 +315,380 @@ function DepartmentRow({ row, eventId }: { row: ForceAllocationRow; eventId: str
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Вернуть список департаменту — {row.departmentName}</DialogTitle>
+            <DialogDescription>
+              Люди уйдут из состава мероприятия, департамент соберёт список
+              заново. Причина обязательна: без неё возврат читается как
+              «сделай то же самое ещё раз».
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1">
+            <Label htmlFor={`return-${row.id}`}>Причина возврата</Label>
+            <Input
+              id={`return-${row.id}`}
+              value={reason}
+              placeholder="Например: нужны люди с допуском"
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+          <StageError error={back.error} />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setReturnOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={back.isPending || reason.trim() === ""}
+              onClick={() => {
+                void back
+                  .mutateAsync({ reason })
+                  .then(() => setReturnOpen(false))
+                  .catch(() => undefined);
+              }}
+            >
+              {back.isPending ? "Возвращаю…" : "Вернуть"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/** Строка ЧЕРНОВИКА штаба — ещё не отправлена департаменту (`[СБС-12]`).
+ *  `key` своя: департамент у новой строки ещё не выбран. Срок — в виде
+ *  `datetime-local` («ГГГГ-ММ-ДДTЧЧ:ММ», без зоны), как его вводит человек. */
+interface DraftRow {
+  key: string;
+  departmentId: string;
+  need: string;
+  dueAt: string;
+}
+
+/** ISO-момент сервера → значение для `datetime-local`: секунды и зона
+ *  отбрасываются намеренно (поле их не принимает), время — местное того, кто
+ *  смотрит; обратно уходит момент со смещением (`toISOString`). */
+function toLocalInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return (
+    `${moment.getFullYear()}-${pad(moment.getMonth() + 1)}-${pad(moment.getDate())}` +
+    `T${pad(moment.getHours())}:${pad(moment.getMinutes())}`
+  );
+}
+
+/** Пустое поле — ноль, а не NaN: сервер сам скажет «не меньше 1». */
+function toCount(value: string): number {
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Департаменты справочника — только они бывают адресатом. Ключ запроса тот
+ *  же, что у карточки профиля (`core-divisions`): справочник один. */
+function useDepartments() {
+  const divisions = useQuery<CoreDivision[]>({
+    queryKey: ["core-divisions"],
+    queryFn: () => apiClient.getCoreDivisions(),
+    staleTime: 10 * 60_000,
+  });
+  const departments = useMemo(
+    () => (divisions.data ?? []).filter((division) => division.type_code === "department"),
+    [divisions.data]
+  );
+  return { departments, isLoading: divisions.isPending };
+}
+
+const isSent = (row: ForceAllocationRow) => Boolean(row.sentAt);
+
+/**
+ * Редактируемая часть таблицы `[СБС-12]`: черновые строки штаба с полем
+ * «Запрошено», «+ Департамент», «Сохранить черновик» и «Отправить запросы».
+ *
+ * ОТПРАВКА — С ПОДТВЕРЖДЕНИЕМ: после неё цифры заперты навсегда (только
+ * довыделение), и один случайный щелчок отбирал бы у штаба право поправить
+ * число. Черновик сохраняется без вопросов — он обратим.
+ */
+function SplitEditor({
+  data,
+  sentRows,
+}: {
+  data: ForceCollectionWithObjects;
+  sentRows: ForceAllocationRow[];
+}) {
+  const unsent = useMemo(
+    () => data.allocations.filter((row) => !isSent(row) && !row.topUpOf),
+    [data.allocations]
+  );
+  const seed = (): DraftRow[] =>
+    unsent.map((row) => ({
+      key: row.id,
+      departmentId: row.departmentId,
+      need: String(row.need),
+      dueAt: toLocalInput(row.dueAt),
+    }));
+  const [rows, setRows] = useState<DraftRow[]>(seed);
+  // Черновик перечитывается ИЗ ОТВЕТА, когда сервер прислал другие строки, а
+  // не при каждом рефетче: подпись собрана по значениям (тот же приём, что у
+  // карточки департамента, №555) — иначе набранное исчезало бы молча.
+  const signature = unsent
+    .map((row) => `${row.id}:${row.departmentId}:${row.need}:${row.dueAt ?? ""}`)
+    .join("|");
+  useEffect(() => {
+    setRows(seed());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(null);
+  const [notice, setNotice] = useState<string>("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const { departments, isLoading } = useDepartments();
+  const split = useSplitCollection(data.eventId);
+
+  const taken = new Set([
+    ...sentRows.map((row) => row.departmentId),
+    ...rows.map((row) => row.departmentId).filter(Boolean),
+  ]);
+  const departmentName = (id: string) =>
+    departments.find((d) => String(d.id) === id)?.name ?? `Департамент ${id}`;
+  const drafted = rows.reduce((sum, row) => sum + toCount(row.need), 0);
+  const sentTotal = sentRows.reduce((sum, row) => sum + (row.need ?? 0), 0);
+  const requestedTotal = drafted + sentTotal;
+  const patch = (key: string, next: Partial<DraftRow>) => {
+    setNotice("");
+    setRows((current) => current.map((row) => (row.key === key ? { ...row, ...next } : row)));
+  };
+
+  // Тело запроса: отправленные строки — КАК ЕСТЬ (сервер сверяет, что их
+  // цифры не тронуты), черновые — из формы. Пустой срок не отправляется:
+  // сервер сохранит прежний либо поставит «за сутки до ОМ».
+  const body = (draft: boolean) => ({
+    draft,
+    rows: [
+      ...sentRows
+        .filter((row) => !row.topUpOf)
+        .map((row) => ({ departmentId: row.departmentId, need: row.need })),
+      ...rows.map((row) => ({
+        departmentId: row.departmentId,
+        need: toCount(row.need),
+        ...(row.dueAt === "" ? {} : { dueAt: new Date(row.dueAt).toISOString() }),
+      })),
+    ],
+  });
+  const save = (draft: boolean) => {
+    setFieldErrors(null);
+    setNotice("");
+    split.mutate(body(draft), {
+      onSuccess: () => {
+        setConfirmOpen(false);
+        setNotice(draft ? "Черновик сохранён" : "Запросы отправлены департаментам");
+      },
+      onError: (error) => {
+        if (error.kind === "validation") setFieldErrors(error.details);
+      },
+    });
+  };
+  // Индекс строки в ТЕЛЕ запроса (после отправленных) — для ошибок формы
+  // `rows.<i>.need`, которые сервер адресует по позиции.
+  const offset = sentRows.filter((row) => !row.topUpOf).length;
+
+  return (
+    <>
+      {rows.map((row, index) => (
+        <TableRow key={row.key} data-slot="draft-row">
+          <TableCell>
+            <Label className="sr-only" htmlFor={`draft-department-${row.key}`}>
+              Департамент, строка {index + 1}
+            </Label>
+            <select
+              id={`draft-department-${row.key}`}
+              aria-label={`Департамент, строка ${index + 1}`}
+              className="border-input bg-background h-9 w-full min-w-[12rem] rounded-md border px-2 text-sm"
+              value={row.departmentId}
+              onChange={(e) => patch(row.key, { departmentId: e.target.value })}
+            >
+              <option value="">
+                {isLoading ? "Загрузка справочника…" : "Выберите департамент"}
+              </option>
+              {departments
+                .filter(
+                  (department) =>
+                    !taken.has(String(department.id)) || String(department.id) === row.departmentId
+                )
+                .map((department) => (
+                  <option key={department.id} value={String(department.id)}>
+                    {department.name}
+                  </option>
+                ))}
+            </select>
+            <div className="mt-1 flex items-center gap-1">
+              <Label htmlFor={`draft-due-${row.key}`} className="text-muted-foreground text-xs">
+                срок
+              </Label>
+              <Input
+                id={`draft-due-${row.key}`}
+                type="datetime-local"
+                aria-label={`Срок сдачи списка, строка ${index + 1}`}
+                title="Срок сдачи списка. Пусто — за сутки до начала мероприятия"
+                className="h-8 w-48 text-xs"
+                value={row.dueAt}
+                onChange={(e) => patch(row.key, { dueAt: e.target.value })}
+              />
+            </div>
+          </TableCell>
+          <TableCell className="text-right">
+            <Label className="sr-only" htmlFor={`draft-need-${row.key}`}>
+              Сколько человек, строка {index + 1}
+            </Label>
+            <Input
+              id={`draft-need-${row.key}`}
+              aria-label={`Сколько человек, строка ${index + 1}`}
+              className="ml-auto h-9 w-24 text-right tabular-nums"
+              inputMode="numeric"
+              value={row.need}
+              onChange={(e) => patch(row.key, { need: e.target.value })}
+            />
+          </TableCell>
+          <TableCell className="text-muted-foreground text-right">—</TableCell>
+          <TableCell className="text-muted-foreground">—</TableCell>
+          <TableCell className="text-muted-foreground">—</TableCell>
+          <TableCell className="text-sm" data-slot="department-status">
+            Черновик
+          </TableCell>
+          <TableCell className="text-muted-foreground text-sm">—</TableCell>
+          <TableCell>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              aria-label={`Убрать департамент, строка ${index + 1}`}
+              title="Убрать департамент из черновика"
+              onClick={() => {
+                setNotice("");
+                setRows((current) => current.filter((r) => r.key !== row.key));
+              }}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </TableCell>
+        </TableRow>
+      ))}
+      <TableRow data-slot="split-editor">
+        <TableCell colSpan={8} className="whitespace-normal">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setNotice("");
+                const remainder = data.need - requestedTotal;
+                setRows((current) => [
+                  ...current,
+                  {
+                    key: `draft-${current.length}-${Date.now()}`,
+                    departmentId: "",
+                    need: remainder > 0 ? String(remainder) : "1",
+                    dueAt: "",
+                  },
+                ]);
+              }}
+            >
+              <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+              Департамент
+            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              {notice !== "" && !split.isPending && (
+                <span className="text-muted-foreground text-xs" role="status">
+                  {notice}
+                </span>
+              )}
+              <span className="text-muted-foreground text-xs tabular-nums" data-slot="forces-split-total">
+                запрошено <b className="text-foreground">{requestedTotal}</b> из {data.need}
+                {requestedTotal < data.need && <> · не разложено {data.need - requestedTotal}</>}
+                {requestedTotal > data.need && (
+                  /* Сверх потребности — НЕ ошибка (`[СБС-12]`: «Блокировки на
+                     сумму нет»), но факт, который штаб должен видеть. */
+                  <span className="text-amber-800"> · сверх потребности {requestedTotal - data.need}</span>
+                )}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={split.isPending || rows.length === 0}
+                onClick={() => save(true)}
+              >
+                Сохранить черновик
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={split.isPending || rows.length === 0}
+                onClick={() => setConfirmOpen(true)}
+              >
+                Отправить запросы
+              </Button>
+            </div>
+          </div>
+          <div className="mt-2 space-y-1">
+            <StageError error={split.error?.kind === "validation" ? null : split.error ?? null} />
+            <FieldErrors
+              errors={
+                fieldErrors === null
+                  ? null
+                  : Object.fromEntries(
+                      Object.entries(fieldErrors).map(([path, value]) => {
+                        // Позиция в теле → номер черновой строки на экране.
+                        const match = /^rows\.(\d+)\.(.+)$/.exec(path);
+                        if (match === null) return [path, value];
+                        const local = Number(match[1]) - offset + 1;
+                        return [`строка ${local > 0 ? local : Number(match[1]) + 1}: ${match[2]}`, value];
+                      })
+                    )
+              }
+            />
+          </div>
+        </TableCell>
+      </TableRow>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Отправить запросы департаментам?</DialogTitle>
+            <DialogDescription>
+              Ответственные за сбор сил получат уведомление и ответят «Выделяем».
+              После отправки цифры заперты: изменить их можно только
+              довыделением недобора — новой строкой запроса.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1 text-sm">
+            {rows.map((row) => (
+              <li key={row.key} className="flex justify-between gap-3">
+                <span>{row.departmentId === "" ? "— департамент не выбран —" : departmentName(row.departmentId)}</span>
+                <b className="tabular-nums">{toCount(row.need)}</b>
+              </li>
+            ))}
+          </ul>
+          <p className="text-muted-foreground text-sm">
+            Запрошено {requestedTotal} при потребности {data.need}
+          </p>
+          <StageError error={split.error?.kind === "validation" ? null : split.error ?? null} />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)}>
+              Отмена
+            </Button>
+            <Button type="button" disabled={split.isPending} onClick={() => save(false)}>
+              {split.isPending ? "Отправляю…" : "Отправить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -281,6 +708,7 @@ export function ForceCollectionCard({
 }) {
   const collection = useForceCollection(eventId, { enabled });
   const data = collection.data;
+  const access = useChainAccess();
 
   if (collection.isPending) {
     return (
@@ -311,6 +739,10 @@ export function ForceCollectionCard({
   // после правки расчёта расходится с живой суммой.
   const shownNeed = data.needByObject.reduce((sum, item) => sum + item.need, 0);
   const needDiffers = data.needByObject.length > 0 && shownNeed !== data.need;
+  // Таблица `[СБС-12]` показывает ОТПРАВЛЕННЫЕ запросы; черновик штаба живёт
+  // строками редактора ниже, и департаменту его не видно (Plane №944).
+  const sentRows = data.allocations.filter(isSent);
+  const editable = SPLIT_STAGES.includes(data.stage) && access.can(FORCES_COMMAND);
 
   return (
     <div className="space-y-6">
@@ -430,7 +862,9 @@ export function ForceCollectionCard({
             Распределение по департаментам
           </h3>
           <p className="text-muted-foreground text-sm">
-            Строка раскрывается — видно поимённо, кого департамент уже отдал
+            Запрошено [ввод] у черновых строк; после «Отправить запросы» цифры
+            заперты, недобор довыделяется новой строкой. Строка раскрывается —
+            видно поимённо, кого департамент уже отдал.
           </p>
         </div>
 
@@ -450,23 +884,23 @@ export function ForceCollectionCard({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.allocations.length === 0 && (
+              {sentRows.length === 0 && !editable && (
                 <TableRow>
                   <TableCell colSpan={8} className="whitespace-normal">
-                    {/* Адрес правки назван ТОЧНО (Plane №928). Здесь стояло
-                        «в ленте входящих на этом же экране» — ленту сняли, и
-                        подсказка отправляла бы человека к блоку, которого
-                        больше нет. */}
                     <p className="text-muted-foreground text-sm">
-                      Раскладки нет — штаб ещё не решил, кому сколько.
-                      Разложить — в форме «Правка раскладки» ниже.
+                      Запросы департаментам ещё не отправлены.
                     </p>
                   </TableCell>
                 </TableRow>
               )}
-              {data.allocations.map((row) => (
-                <DepartmentRow key={row.id} row={row} eventId={data.eventId} />
+              {sentRows.map((row) => (
+                <DepartmentRow key={row.id} row={row} eventId={data.eventId} canCommand={access.can(FORCES_COMMAND)} />
               ))}
+              {/* Черновые строки и кнопки — В ТОЙ ЖЕ ТАБЛИЦЕ (`[СБС-12]`:
+                  «Запрошено [ввод]»): раскладка — продолжение той строки, в
+                  которой показана. Редактор монтируется по ключу сбора, чтобы
+                  черновик одного ОМ не пережил переход к другому. */}
+              {editable && <SplitEditor key={data.eventId} data={data} sentRows={sentRows} />}
             </TableBody>
           </Table>
         </div>
@@ -478,24 +912,7 @@ export function ForceCollectionCard({
             {data.totals.shortage}
           </b>
         </p>
-
-        {/* Форма правки — ПОД таблицей состояния, в той же секции (Plane
-            №928). Панель принимает не карточку ОМ, а четыре поля
-            (`ForcesSplitSubject`): подставляются они отсюда же, из ответа
-            `force-collection/`, — сервер собирает обе стороны одними и теми
-            же функциями (`force_demand_total`, `allocation_members_view`,
-            `force_roster_view`). Так карточка не заводит зависимость от
-            права `event.view`, которого цепочка сбора избегает намеренно. */}
-        {SPLIT_STAGES.includes(data.stage) ? (
-          <ForcesSplitPanel
-            event={{
-              id: data.eventId,
-              forceDemandTotal: data.need,
-              forceAllocation: data.allocations,
-              forceRoster: data.roster,
-            }}
-          />
-        ) : (
+        {!SPLIT_STAGES.includes(data.stage) && (
           <p className="text-muted-foreground border-t pt-3 text-xs" data-slot="split-closed">
             Раскладку правят после рекогносцировки и до согласования
             расстановки — на этой стадии мероприятия сервер правку уже не

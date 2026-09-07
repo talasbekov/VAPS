@@ -569,7 +569,8 @@ export interface OpsNotification {
     | "PLACEMENT_RETURNED"
     | "ACKNOWLEDGEMENT_DUE_SOON"
     | "FORCES_RESPONSE"
-    | "ASSIGNMENT_DECLINED";
+    | "ASSIGNMENT_DECLINED"
+    | "FORCES_REQUEST_SENT";
   business_date: string;
   /** `laggard_division_ids` — только у `SUBMISSION_LAGGING`; остальные поля —
    *  у `EVENT_ACKNOWLEDGEMENT` (Plane №402, `acknowledgement_notify.py`).
@@ -586,6 +587,9 @@ export interface OpsNotification {
     /** `FORCES_REQUEST` (Plane №392): запрос сил управлению. */
     allocationId?: string;
     departmentName?: string;
+    /** `FORCES_REQUEST_SENT` (Plane №944, `[СБС-12]`): штаб отправил запрос
+     *  департаменту — ответственному за сбор сил, со ссылкой в заявку. */
+    departmentId?: string;
     directorateId?: string;
     directorateName?: string;
     need?: number;

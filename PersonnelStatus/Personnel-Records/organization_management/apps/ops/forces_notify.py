@@ -482,3 +482,110 @@ def notify_headquarters_response(event, allocation, *, allocating):
             label="штаб",
         )
     return {"notified": tally.notified, "undelivered": tally.undelivered}
+
+
+# ── Ответственному департамента: штаб отправил запрос (`[СБС-12]`, №944) ────
+SENT_KIND = "FORCES_REQUEST_SENT"
+
+#: Право, под которым ответственный отвечает на запрос (`forces_respond`,
+#: `forces_directorate_split`, `forces_notify` в `api/views.py`).
+ALLOCATE_PERMISSION = "forces.allocate"
+
+
+def _department_officers(department_ids):
+    """Учётки, которые МОГУТ ответить на запрос департамента:
+    {department_id → {user_id, …}}.
+
+    По ПРАВУ `forces.allocate` и по области — тем же договором, которым гейт
+    ручек ответа пропускает человека (`require_scoped_permission` →
+    `PermissionService.scope_matches`): грант на сам департамент, на его
+    предка или без области. Уведомить того, кто ответить не может, значило бы
+    послать требование, которое некому исполнить (тот же довод, что у
+    начальников управлений, №481); не уведомить того, кто может, — оставить
+    запрос без ответа. Оба источника грантов — назначения и дежурства (№800).
+
+    🔴 ГЛОБАЛЬНЫЙ ГРАНТ ЗДЕСЬ ПОЛУЧАЕТ ПИСЬМО, в отличие от сводки начальнику
+    департамента (№922): там адресат — «кто отвечает за департамент», здесь —
+    «кто ответит на запрос», а без области `forces.allocate` носит администратор
+    и ответственный по всей организации, которые на запрос и отвечают.
+    """
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models import (
+        TemporaryDutyPermission,
+        UserRole,
+    )
+    from organization_management.apps.operations.selectors import DivisionTreeSelector
+
+    officers = {str(pk): set() for pk in department_ids}
+    ids = [int(pk) for pk in department_ids if str(pk).isdigit()]
+    if not ids:
+        return officers
+    roles = PermissionService.roles_holding(ALLOCATE_PERMISSION)
+    if not roles:
+        return officers
+    children_map = DivisionTreeSelector.children_map()
+    now = Clock.now()
+    grants = list(
+        UserRole.objects.filter(is_active=True, role_code_id__in=roles).values_list(
+            "scope_division_id", "user_id"
+        )
+    ) + list(
+        TemporaryDutyPermission.objects.filter(
+            is_active=True,
+            duty_role_code__in=roles,
+            starts_at__lte=now,
+            ends_at__gte=now,
+        ).values_list("scope_division_id", "user_id")
+    )
+    for scope_division_id, user_id in grants:
+        for department_id in ids:
+            if PermissionService.scope_matches(
+                scope_division_id, department_id, children_map=children_map
+            ):
+                officers[str(department_id)].add(str(user_id))
+    return officers
+
+
+def notify_department_officers(event, rows):
+    """Штаб нажал «Отправить запросы» — ответственные департаментов узнают.
+
+    `rows` — ТОЛЬКО что отправленные строки раскладки. Ключ уведомления —
+    одна строка на запрос (`dedupe_key` = id строки): повторная отправка того
+    же запроса в тот же день второго письма не даёт, а два запроса разным
+    департаментам — два письма. Отчёт — доставленное, а не попытки (№561).
+    """
+    ids = [str(row.get("departmentId")) for row in rows if row.get("departmentId")]
+    officers = _department_officers(ids)
+    tally = notify_service.DeliveryTally()
+    unaddressed = []
+    for row in rows:
+        key = str(row.get("departmentId"))
+        users = officers.get(key, set())
+        if not users:
+            unaddressed.append(row.get("departmentName") or key)
+            continue
+        payload = {
+            "eventId": str(event.pk),
+            "eventCode": event.code,
+            "eventTitle": event.title,
+            "businessDate": event.business_date.isoformat(),
+            "allocationId": row.get("id"),
+            "departmentId": key,
+            "departmentName": row.get("departmentName", ""),
+            "need": int(row.get("need") or 0),
+            "dueAt": row.get("dueAt"),
+        }
+        for user_id in users:
+            tally.deliver(
+                user_id,
+                SENT_KIND,
+                event.business_date,
+                payload,
+                dedupe_key=str(row.get("id") or "")[:100],
+                label=row.get("departmentName") or key,
+            )
+    return {
+        "notifiedOfficers": tally.notified,
+        "unaddressed": unaddressed,
+        "undelivered": tally.undelivered,
+    }

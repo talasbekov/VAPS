@@ -372,7 +372,7 @@ def test_the_requests_list_shows_only_my_department(manager):  # noqa: F811
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(mine.pk), "need": 1},
+                {"departmentId": str(mine.pk), "need": _need_of(manager, base, mine)},
                 {"departmentId": str(theirs.pk), "need": 1},
             ]
         },
@@ -401,7 +401,7 @@ def test_an_unscoped_operator_sees_every_request(manager):  # noqa: F811
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(first.pk), "need": _need_of(manager, base, first)},
                 {"departmentId": str(second.pk), "need": 1},
             ]
         },
@@ -536,7 +536,7 @@ def test_a_foreign_request_card_is_not_found(manager):  # noqa: F811
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(mine.pk), "need": 1},
+                {"departmentId": str(mine.pk), "need": _need_of(manager, base, mine)},
                 {"departmentId": str(theirs.pk), "need": 1},
             ]
         },
@@ -573,7 +573,7 @@ def test_splitting_a_foreign_department_quota_is_refused(manager):  # noqa: F811
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(own.pk), "need": 1},
+                {"departmentId": str(own.pk), "need": _need_of(manager, base, own)},
                 {"departmentId": str(foreign.pk), "need": 1},
             ]
         },
@@ -636,7 +636,7 @@ def test_the_collections_list_sums_every_department(manager):  # noqa: F811
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(first.pk), "need": _need_of(manager, base, first)},
                 {"departmentId": str(second.pk), "need": 1},
             ]
         },
@@ -709,7 +709,7 @@ def test_the_collection_status_follows_the_whole_split(manager):  # noqa: F811
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(first.pk), "need": _need_of(manager, base, first)},
                 {"departmentId": str(second.pk), "need": 1},
             ]
         },
@@ -778,7 +778,7 @@ def test_the_collection_card_carries_every_department_with_people(manager):  # n
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(first.pk), "need": 1},
+                {"departmentId": str(first.pk), "need": _need_of(manager, base, first)},
                 {"departmentId": str(second.pk), "need": 1},
             ]
         },
@@ -1026,6 +1026,16 @@ def test_the_split_is_capped_by_the_department_answer_not_the_staff_request(mana
 
 
 # ── Запрос сил глазами управления (Plane №394, `[СБС-30]`) ───────────────────
+
+
+def _need_of(manager, base, department):  # noqa: F811
+    """Цифра УЖЕ ОТПРАВЛЕННОЙ строки департамента — она заперта (`[СБС-12]`,
+    Plane №944), и пересохранять раскладку ради соседа можно только с ней."""
+    return next(
+        int(row["need"])
+        for row in manager.get(base).json()["forceAllocation"]
+        if row["departmentId"] == str(department.pk)
+    )
 
 
 def _split_first(manager, base, allocation_id, directorate, need=2):  # noqa: F811

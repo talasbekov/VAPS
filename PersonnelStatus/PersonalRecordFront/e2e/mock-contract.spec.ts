@@ -262,35 +262,44 @@ test.describe(
         'мок-фикстура без потребности — делить нечего',
       ).toBeGreaterThan(1)
 
+      // Контракт раскладки по документации (Plane №944, `[СБС-12]`): суммы
+      // сверх потребности НЕ отбиваются («Блокировки на сумму нет»);
+      // черновик (`draft: true`) не отправляется и правится; раскладка без
+      // флага ОТПРАВЛЯЕТСЯ (момент `sentAt`), и после этого цифра заперта.
       const outcome = await page.evaluate(async (total: number) => {
-        const post = async (rows: unknown) => {
+        const post = async (rows: unknown, draft = false) => {
           const res = await fetch('/api/ops/security-events/se-1/forces/allocation/', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ rows }),
+            body: JSON.stringify(draft ? { rows, draft: true } : { rows }),
           })
           return { status: res.status, body: await res.json() }
         }
         return {
-          over: await post([{ departmentId: '2', need: total + 1 }]),
+          over: await post([{ departmentId: '2', need: total + 1 }], true),
           repeated: await post([
             { departmentId: '2', need: 1 },
             { departmentId: '2', need: 1 },
           ]),
           saved: await post([{ departmentId: '2', need: total - 1 }]),
+          locked: await post([{ departmentId: '2', need: total - 2 }]),
         }
       }, prepared.forceDemandTotal)
 
-      expect(outcome.over.status).toBe(422)
-      expect(outcome.over.body.error_code).toBe('ALLOCATION_OVER_DEMAND')
+      expect(outcome.over.status).toBe(200)
+      expect(outcome.over.body.forceAllocation[0].need).toBe(prepared.forceDemandTotal + 1)
+      expect(outcome.over.body.forceAllocation[0].sentAt ?? null).toBeNull()
       expect(outcome.repeated.status).toBe(400)
       expect(outcome.repeated.body.details['rows.1.departmentId']).toBeTruthy()
       expect(outcome.saved.status).toBe(200)
       expect(outcome.saved.body.forceAllocation).toHaveLength(1)
       expect(outcome.saved.body.forceAllocation[0].status).toBe('DRAFT')
+      expect(outcome.saved.body.forceAllocation[0].sentAt).toBeTruthy()
       expect(outcome.saved.body.forceAllocation[0].need).toBe(
         prepared.forceDemandTotal - 1,
       )
+      expect(outcome.locked.status).toBe(400)
+      expect(outcome.locked.body.details['rows.0.need']).toBeTruthy()
 
       // Оповещение управлений (СС-2): незнакомая заявка — 404, своя переводит
       // заявку в «оповещено», а повтор НЕ переписывает момент уже оповещённым.

@@ -3081,17 +3081,12 @@ def split_force_demand(event_id, *, rows):
     if field_errors:
         raise _validation(field_errors)
 
-    total = force_demand_total(event)
-    requested = sum(_whole_number(row.get("need", 0), "need") for row in rows)
-    if total and requested > total:
-        raise DomainError(
-            "ALLOCATION_OVER_DEMAND",
-            422,
-            message=(
-                f"Разложено {requested} человек при потребности {total} — "
-                "уберите лишних."
-            ),
-        )
+    # 🔴 БЛОКИРОВКИ НА СУММУ НЕТ (`[СБС-12]`, Plane №944). Здесь стоял отказ
+    # `ALLOCATION_OVER_DEMAND` при сумме сверх потребности; спецификация
+    # говорит прямо: «Блокировки на сумму нет» — запрос штаба пожелание, не
+    # наряд (`[СБС-01]`), департамент отвечает своей цифрой, и штаб вправе
+    # просить с запасом. Перебор виден в «Итоге» карточки словами, а не
+    # отбивается.
 
     # 🔴 У ДЕПАРТАМЕНТА БЫВАЕТ БОЛЬШЕ ОДНОЙ СТРОКИ (Plane №675). Довыделение
     # недобора (`[СБС-12]`, №426) дописывает департаменту ВТОРУЮ строку с
@@ -4158,6 +4153,10 @@ def department_requests_view(allowed_division_ids):
                     "dueAt": allocation.get("dueAt"),
                     "overdue": bool(allocation.get("overdue")),
                     "submittedLate": bool(allocation.get("submittedLate")),
+                    # Момент «Отправить запросы» штаба (`[СБС-12]`, Plane №944):
+                    # по нему вьюха отсеивает черновики — департамент видит
+                    # только отправленное.
+                    "sentAt": allocation.get("sentAt"),
                 }
             )
     return rows
