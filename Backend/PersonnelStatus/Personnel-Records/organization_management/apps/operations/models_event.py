@@ -150,6 +150,12 @@ class OpsSecurityEvent(TimeStampedModel):
     force_need = models.PositiveIntegerField()
     conflicts_count = models.PositiveIntegerField()
     owner_name = models.CharField(max_length=255)
+    # Идентификатор учётки создателя (Plane №947) — рядом с подписью, как
+    # `chief_employee_id` рядом с `chief_name`: подпись для экрана, id для
+    # права. Создатель правит сводку ГВО своего ОМ по роли в данных; по
+    # подписи право не выдаётся — тёзка получил бы чужую сводку. Пусто у
+    # строк, чьё создание не нашлось в журнале аудита (миграция 0104).
+    owner_actor_id = models.CharField(max_length=255, blank=True, default="")
     brief_description = models.TextField(blank=True)
     initial_tasks = models.TextField(blank=True)
     recon_checklist = models.JSONField()

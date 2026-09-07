@@ -192,9 +192,12 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # роль осознанно и стережёт ОБЕ стороны переезда: право появилось у
     # добавки И пропало у профиля.
     assert holders("placement.command") == {"OPS_STAFF_COMMAND"}
-    # Два соседних обхода уехали туда же и той же причиной. `gvo.manage`
-    # остаётся и у `GVO_LEAD`: старший ГВО правит сводку СВОЕГО мероприятия.
-    assert holders("gvo.manage") == {"GVO_LEAD", "OPS_STAFF_COMMAND"}
+    # `event.stage_override` уехал туда же и той же причиной. `gvo.manage`
+    # остаётся и у `GVO_LEAD` (старший ГВО правит сводку СВОЕГО мероприятия),
+    # а с №947 (слово заказчика 07.09.2026) снова и у профиля штаба
+    # `HEAD_OPS_UNIT`: сводку правит и начальник управления второго
+    # департамента. Пин поднят осознанно, миграция 0105.
+    assert holders("gvo.manage") == {"GVO_LEAD", "OPS_STAFF_COMMAND", "HEAD_OPS_UNIT"}
     assert holders("event.stage_override") == {"OPS_STAFF_COMMAND"}
     # Персональная детализация и выгрузка со скрытыми полями — «пока только
     # администратор» (решение №267), то есть ни одной роли, кроме «*».
