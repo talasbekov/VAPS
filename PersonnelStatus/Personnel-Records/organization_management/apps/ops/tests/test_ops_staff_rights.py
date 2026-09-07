@@ -143,16 +143,22 @@ def test_forces_command_is_granted_to_the_staff_by_the_specification(staff):
 
 
 def test_the_staff_powers_left_the_profile_for_an_add_on_role(staff):
-    """Три обхода лежат в роли-добавке, а не в профиле (Plane №601).
+    """Два обхода лежат в роли-добавке, а не в профиле (Plane №601).
 
-    🔴 КРАСНОТА НА МУТАЦИИ: верни любое из трёх обратно в раскладку
+    Было три: `gvo.manage` вернулся в профиль штаба по слову заказчика
+    07.09.2026 (Plane №947 — сводку ГВО правит и начальник управления второго
+    департамента; `[ГВО-09]` называет штабом обе персоны). Для расстановки и
+    переходов №601 в силе. Пин правлен осознанно; добавка право сохраняет.
+
+    🔴 КРАСНОТА НА МУТАЦИИ: верни любой из двух обратно в раскладку
     `HEAD_OPS_UNIT` в `seed_operations` — покраснеет первый набор, а следом
     проба ниже, которая спрашивает то же самое поведением.
     """
     profile = set(RoleAdminService.role_permission_codes("HEAD_OPS_UNIT"))
     add_on = set(RoleAdminService.role_permission_codes("OPS_STAFF_COMMAND"))
 
-    assert not profile & {"placement.command", "gvo.manage", "event.stage_override"}
+    assert not profile & {"placement.command", "event.stage_override"}
+    assert "gvo.manage" in profile
     assert add_on == {"placement.command", "gvo.manage", "event.stage_override"}
 
 

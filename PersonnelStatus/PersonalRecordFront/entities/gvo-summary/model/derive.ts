@@ -48,7 +48,13 @@ export function canManageGvoSummary(params: {
   /** Кадровая запись текущей учётки; null — привязки нет (сид её не делает). */
   myEmployeeId: string | null;
   event: SecurityEvent;
+  /** Слово сервера (`GvoSummaryRow.canEdit`, Plane №947). Есть — оно и
+   * решает: третью половину правила, «создатель ОМ», клиент посчитать не
+   * может (идентификатор создателя экран не получает), а сервер считает все
+   * три одной функцией с гейтом. `undefined` — старый сервер, считаем сами. */
+  serverCanEdit?: boolean;
 }): boolean {
+  if (params.serverCanEdit !== undefined) return params.serverCanEdit;
   if (params.hasPermission("gvo.manage")) return true;
   return (
     params.myEmployeeId !== null &&

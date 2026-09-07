@@ -288,6 +288,9 @@ function assembledRow(event: { code: string }): GvoSummaryRow {
     omCode: event.code,
     summary,
     filled: Object.keys(patch).length > 0,
+    // Слово сервера о правке (Plane №947). Мок правит всякому: границу прав
+    // стерегут живые пробы, а мок-контракт — форму ответа.
+    canEdit: true,
     // Визит (Plane №435): мок держит его у каждой строки — черновик/заполнен.
     visit: {
       status:

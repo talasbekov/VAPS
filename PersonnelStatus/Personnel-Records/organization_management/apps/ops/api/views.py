@@ -683,6 +683,14 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             chief_employee_id=data.get("chiefEmployeeId"),
             actor=resolve_actor_id(request),
         )
+        # Идентификатор создателя (Plane №947) — здесь, а не в сервисе: тот
+        # пишет подпись `owner_name` для экрана, а право «создатель правит
+        # сводку ГВО» считается по учётке. Отдельным `update_fields`, чтобы
+        # не трогать сборку мероприятия в `security_events.create_event`.
+        actor_id = resolve_actor_id(request) or ""
+        if actor_id:
+            event.owner_actor_id = actor_id
+            event.save(update_fields=["owner_actor_id"])
         return self._event_response(event, status=201)
 
     # bindable-objects раньше детали в роутере не нужен: у DRF detail-роут
@@ -4947,13 +4955,36 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """
         if self.action not in self._CHIEF_ACTIONS:
             return False
-        employee = getattr(request.user, "employee", None)
-        if employee is None or not employee.is_active:
-            return False
         event = OpsSecurityEvent.objects.filter(code=self.kwargs.get("pk")).first()
         if event is None:
             return False
+        return self._is_chief_or_creator(request, event)
+
+    @staticmethod
+    def _is_chief_or_creator(request, event):
+        """Роль В ДАННЫХ: старший этого ОМ либо его создатель (Plane №947).
+
+        Создатель — по идентификатору учётки (`owner_actor_id`), не по
+        подписи `owner_name`; пустой идентификатор старой строки не совпадает
+        ни с кем — «ничей» не значит «любой».
+        """
+        actor_id = resolve_actor_id(request)
+        if actor_id and event.owner_actor_id and event.owner_actor_id == actor_id:
+            return True
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
         return event.chief_employee_id == employee.pk
+
+    def _may_edit(self, request, event):
+        """Может ли вызывающий править сводку — ТЕМ ЖЕ правилом, что гейт
+        `partial_update`: код права либо роль в данных. Уходит экрану полем
+        `canEdit`, чтобы кнопка «Редактировать» не держала свою копию правила
+        (третью половину — создателя — клиент посчитать не может)."""
+        perms = effective_permissions(request)
+        if "*" in perms or self.permission_map["partial_update"] in perms:
+            return True
+        return self._is_chief_or_creator(request, event)
 
     def list(self, request):
         return Response({"results": gvo_service.list_patches()})
@@ -4991,7 +5022,9 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 404,
                 message="Мероприятие с таким кодом не найдено.",
             )
-        return Response(documents_summary.summary_row(event))
+        row = documents_summary.summary_row(event)
+        row["canEdit"] = self._may_edit(request, event)
+        return Response(row)
 
     def partial_update(self, request, pk=None):
         try:

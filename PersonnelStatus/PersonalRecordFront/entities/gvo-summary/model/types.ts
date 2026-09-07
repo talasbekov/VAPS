@@ -186,6 +186,11 @@ export interface GvoSummaryRow {
   missingRequired?: string[];
   requiredTotal?: number;
   requiredFilled?: number;
+  /** Может ли ВЫЗЫВАЮЩИЙ править сводку — считает сервер тем же правилом,
+   * что гейт правки (Plane №947): право `gvo.manage`, старший этого ОМ или
+   * его создатель. Старый сервер поля не несёт — тогда экран считает сам
+   * (`canManageGvoSummary`), без создателя. */
+  canEdit?: boolean;
 }
 
 export interface ListGvoSummariesResponse {
