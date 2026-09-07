@@ -2233,29 +2233,37 @@ export const securityEventsHandlers = [
       });
       if (Object.keys(fieldErrors).length > 0) return validationError(fieldErrors);
 
-      const total = event.reconForceRequest || event.forceNeed;
-      const requested = rows.reduce((sum, row) => sum + row.need, 0);
-      if (total > 0 && requested > total) {
-        return businessRuleError(
-          "ALLOCATION_OVER_DEMAND",
-          `Разложено ${requested} человек при потребности ${total} — уберите лишних.`
-        );
-      }
+      // «Блокировки на сумму нет» (`[СБС-12]`, Plane №944): отказ
+      // `ALLOCATION_OVER_DEMAND` снят и здесь, и на сервере.
 
       const previous = new Map(
         event.forceAllocation.map((row) => [row.departmentId, row])
       );
+      // Отправленную строку не снимают и её цифру не правят — порт
+      // `forces_send._frozen_rows_changed` (Plane №944).
       const dropped = event.forceAllocation.filter(
-        (row) => !seen.has(row.departmentId) && row.status !== "DRAFT"
+        (row) => !seen.has(row.departmentId) && Boolean(row.sentAt)
       );
       if (dropped.length > 0) {
         return businessRuleError(
           "ALLOCATION_LOCKED",
-          `Заявка уже ушла в департамент (${dropped
+          `Запрос департаменту «${dropped
             .map((row) => row.departmentName || "—")
-            .join(", ")}) — снять его из раскладки нельзя.`
+            .join(", ")}» уже отправлен — снять его из раскладки нельзя.`
         );
       }
+      const frozen: Record<string, string[]> = {};
+      rows.forEach((row, index) => {
+        const kept = previous.get(String(row.departmentId).trim());
+        if (kept?.sentAt && kept.need !== row.need) {
+          frozen[`rows.${index}.need`] = [
+            "Запрос уже отправлен — цифра заперта. Недобор довыделяется отдельной строкой («Довыделить недобор →»).",
+          ];
+        }
+      });
+      if (Object.keys(frozen).length > 0) return validationError(frozen);
+      // Без `draft` раскладка ОТПРАВЛЯЕТСЯ: момент у всех неотправленных.
+      const sentNow = body.draft === true ? null : nowIso();
 
       const forceAllocation: ForceAllocationRow[] = rows.map((row) => {
         const key = String(row.departmentId).trim();
@@ -2288,6 +2296,7 @@ export const securityEventsHandlers = [
           decisionComment: kept?.decisionComment ?? "",
           directorates: kept?.directorates ?? [],
           members: kept?.members ?? [],
+          sentAt: kept?.sentAt ?? sentNow,
         };
       });
       return HttpResponse.json(
@@ -2340,6 +2349,12 @@ export const securityEventsHandlers = [
           "Заявка департаменту не найдена.",
           { id: allocationId },
           404
+        );
+      }
+      if (!target.sentAt) {
+        return businessRuleError(
+          "ALLOCATION_NOT_SENT",
+          "Штаб ещё не отправил запрос этому департаменту — отвечать не на что."
         );
       }
       if (target.status !== "DRAFT") {
@@ -2402,6 +2417,14 @@ export const securityEventsHandlers = [
           "Заявка департаменту не найдена.",
           { id: allocationId },
           404
+        );
+      }
+      // Действие департамента — только по ОТПРАВЛЕННОМУ запросу (порт
+      // `forces_send.require_sent`, Plane №944).
+      if (!target.sentAt) {
+        return businessRuleError(
+          "ALLOCATION_NOT_SENT",
+          "Штаб ещё не отправил запрос этому департаменту — отвечать не на что."
         );
       }
       const now = nowIso();
@@ -2582,15 +2605,36 @@ export const securityEventsHandlers = [
           "Никто не выделен — отправлять нечего."
         );
       }
+      // Присланный список сразу в составе (`[СБС-13]`, Plane №944) — порт
+      // `forces_send.submit_allocation`; приём остаётся идемпотентным.
+      const now = nowIso();
+      const known = new Set(event.forceRoster.map((row) => row.employeeId));
+      const roster = [
+        ...event.forceRoster,
+        ...target.members
+          .filter((member) => !known.has(member.employeeId))
+          .map((member) => ({
+            employeeId: member.employeeId,
+            name: member.name,
+            divisionId: member.divisionId,
+            divisionName: member.divisionName,
+            departmentId: target.departmentId,
+            departmentName: target.departmentName,
+            acceptedAt: now,
+            ...personnelDayStatus(member.employeeId),
+          })),
+      ];
       return HttpResponse.json(
         saveEvent({
           ...event,
+          forceRoster: roster,
           forceAllocation: event.forceAllocation.map((row) =>
             row.id === target.id
-              ? { ...row, status: "SUBMITTED", submittedAt: nowIso() }
+              ? { ...row, status: "SUBMITTED", submittedAt: now }
               : row
           ),
-          updatedAt: nowIso(),
+          forceRequests: syncAutoForceRequest(event.forceRequests, roster.length),
+          updatedAt: now,
         })
       );
     }
@@ -2618,14 +2662,20 @@ export const securityEventsHandlers = [
           "Отозвать можно только отправленный и ещё не решённый список."
         );
       }
+      // Отзыв забирает людей из состава (Plane №944) — порт
+      // `forces_send._drop_from_roster`.
+      const gone = new Set(target.members.map((member) => member.employeeId));
+      const roster = event.forceRoster.filter((row) => !gone.has(row.employeeId));
       return HttpResponse.json(
         saveEvent({
           ...event,
+          forceRoster: roster,
           forceAllocation: event.forceAllocation.map((row) =>
             row.id === target.id
               ? { ...row, status: "NOTIFIED", submittedAt: null }
               : row
           ),
+          forceRequests: syncAutoForceRequest(event.forceRequests, roster.length),
           updatedAt: nowIso(),
         })
       );
@@ -2724,9 +2774,14 @@ export const securityEventsHandlers = [
         );
       }
       const now = nowIso();
+      // Возврат забирает людей из состава (Plane №944) — порт
+      // `forces_send._drop_from_roster`.
+      const gone = new Set(target.members.map((member) => member.employeeId));
+      const roster = event.forceRoster.filter((row) => !gone.has(row.employeeId));
       return HttpResponse.json(
         saveEvent({
           ...event,
+          forceRoster: roster,
           forceAllocation: event.forceAllocation.map((row) =>
             row.id === target.id
               ? {
@@ -2738,6 +2793,7 @@ export const securityEventsHandlers = [
                 }
               : row
           ),
+          forceRequests: syncAutoForceRequest(event.forceRequests, roster.length),
           updatedAt: now,
         })
       );

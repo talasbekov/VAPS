@@ -18,7 +18,7 @@
  * Выключить без объяснения значит оставить человека гадать, что он сделал не
  * так.
  */
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 
@@ -286,6 +286,27 @@ export function DepartmentRequestCard({
     0
   );
   const assigned = allocation.members.length;
+  // Своя цифра департамента (`[СБС-21]`/`[СБС-23]`): против неё считается
+  // подтверждение отправки. Ответа нет — запрос штаба.
+  const ownFigure = splitCap;
+  // Группы списка по управлениям (`[СБС-23]`): порядок — как в таблице
+  // управлений; люди вне управлений заявки — последней группой, названной
+  // словами, а не молча выброшенной.
+  const memberGroups = (() => {
+    const map = detail.memberDirectorateById ?? {};
+    const groups = directorateRows.map((row) => ({
+      divisionId: row.divisionId as string | null,
+      name: row.name,
+      need: row.need ?? 0,
+      members: allocation.members.filter((m) => map[m.employeeId] === row.divisionId),
+    }));
+    const placed = new Set(groups.flatMap((g) => g.members.map((m) => m.employeeId)));
+    const rest = allocation.members.filter((m) => !placed.has(m.employeeId));
+    if (rest.length > 0) {
+      groups.push({ divisionId: null, name: "Вне управлений заявки", need: 0, members: rest });
+    }
+    return groups.filter((g) => g.members.length > 0);
+  })();
   const draftTotal = Object.values(draft).reduce(
     (sum, value) => sum + (Number(value) || 0),
     0
@@ -554,12 +575,14 @@ export function DepartmentRequestCard({
           <Table>
             <TableHeader>
               <TableRow>
-                {/* Колонки — эталон `[СБС-22]`: «Управление | Запрошено |
-                    Проставлено „Участие в ОМ“ | Статус». «В строю» из эталона
-                    здесь нет намеренно: строевой численности управления у
-                    заявки нет, а тянуть расход дня ради колонки — второй
-                    источник числа, который разошёлся бы с экраном расхода. */}
+                {/* Колонки — эталон `[СБС-22]`: «Управление | В строю |
+                    Запрошено | Проставлено „Участие в ОМ“ | Статус». «В
+                    строю» считает СЕРВЕР на деловую дату ОМ
+                    (`inServiceByDirectorate`, Plane №944) тем же правилом,
+                    что и разрез сбора на экране: без статуса или со статусом
+                    колонки «В строю» расхода, кроме участия в ОМ. */}
                 <TableHead>Управление</TableHead>
+                <TableHead className="text-right">В строю</TableHead>
                 <TableHead className="w-32">Запрошено</TableHead>
                 <TableHead>Проставлено «Участие в ОМ»</TableHead>
                 <TableHead>Статус</TableHead>
@@ -568,7 +591,7 @@ export function DepartmentRequestCard({
             <TableBody>
               {directorateRows.length === 0 && orgLoading && (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     {/* Справочник ещё едет — сказать это, а не выдать ожидание
                         за ответ (Plane №531). */}
                     <div
@@ -580,7 +603,7 @@ export function DepartmentRequestCard({
               )}
               {directorateRows.length === 0 && orgFailed && (
                 <TableRow>
-                  <TableCell colSpan={4} className="whitespace-normal">
+                  <TableCell colSpan={5} className="whitespace-normal">
                     {/* 🔴 ОТКАЗ НАЗВАН ОТКАЗОМ (Plane №531). Здесь стояло
                         «нет действующих управлений» — утверждение об
                         оргструктуре, сделанное по молчанию сети. Причина
@@ -605,7 +628,7 @@ export function DepartmentRequestCard({
               )}
               {directorateRows.length === 0 && !orgLoading && !orgFailed && (
                 <TableRow>
-                  <TableCell colSpan={4} className="whitespace-normal">
+                  <TableCell colSpan={5} className="whitespace-normal">
                     <p className="text-muted-foreground text-sm">
                       {/* Пусто означает РОВНО ОДНО: справочник ответил, и в
                           дереве оргструктуры у департамента нет ни одного
@@ -620,6 +643,11 @@ export function DepartmentRequestCard({
               {directorateRows.map((row: ForceAllocationDirectorate) => (
                 <TableRow key={row.divisionId}>
                   <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="text-right tabular-nums" data-slot="directorate-in-service">
+                    {detail.inServiceByDirectorate?.[row.divisionId] ?? (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {orgIds.has(row.divisionId) ? (
                       <>
@@ -717,6 +745,11 @@ export function DepartmentRequestCard({
           </p>
         </div>
 
+        {/* `[СБС-23]`: ГРУППЫ ПО УПРАВЛЕНИЯМ с чипами «N из M» (Plane №944).
+            Человек числится в отделе; к управлению его относит сервер по
+            поддереву (`memberDirectorateById`) — тем же правилом, что и
+            «выделено N из M» в таблице выше. Чип в одну строку: число — не
+            текст, переноситься ему нечего. */}
         <div className="overflow-x-auto rounded-lg border">
           <Table>
             <TableHeader>
@@ -737,21 +770,42 @@ export function DepartmentRequestCard({
                   </TableCell>
                 </TableRow>
               )}
-              {allocation.members.map((member) => (
-                <TableRow key={member.employeeId}>
-                  <TableCell className="font-medium">{member.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {member.divisionName || "—"}
-                  </TableCell>
-                  <TableCell>
-                    {/* Источник назван словом: у строки «из статуса» нет
-                        записи штаба, и снять её как выделение нельзя —
-                        кнопка обещала бы то, чего не может. */}
-                    <Badge variant={member.source === "STATUS" ? "secondary" : "outline"}>
-                      {member.source === "STATUS" ? "По статусу" : "Выделен штабом"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
+              {memberGroups.map((group) => (
+                <Fragment key={`group-${group.divisionId ?? "none"}`}>
+                  <TableRow data-slot="member-group">
+                    <TableCell
+                      colSpan={3}
+                      className="text-muted-foreground bg-muted/30 text-xs font-semibold uppercase tracking-wide"
+                    >
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        {group.name}
+                        <Badge
+                          variant={group.need > 0 && group.members.length >= group.need ? "secondary" : "outline"}
+                          className="whitespace-nowrap normal-case tabular-nums"
+                          data-slot="member-group-chip"
+                        >
+                          {group.members.length} из {group.need}
+                        </Badge>
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                  {group.members.map((member) => (
+                    <TableRow key={member.employeeId}>
+                      <TableCell className="font-medium">{member.name}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {member.divisionName || "—"}
+                      </TableCell>
+                      <TableCell>
+                        {/* Источник назван словом: у строки «из статуса» нет
+                            записи штаба, и снять её как выделение нельзя —
+                            кнопка обещала бы то, чего не может. */}
+                        <Badge variant={member.source === "STATUS" ? "secondary" : "outline"}>
+                          {member.source === "STATUS" ? "По статусу" : "Выделен штабом"}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </Fragment>
               ))}
             </TableBody>
           </Table>
@@ -771,10 +825,10 @@ export function DepartmentRequestCard({
             >
               Отправить список в штаб
             </Button>
-            {assigned < quota && (
+            {assigned < ownFigure && (
               <p className="text-muted-foreground text-sm">
-                Недобор {quota - assigned} — список можно отправить и так,
-                штаб решит, довыделять или принять как есть.
+                Собрано {assigned} из {ownFigure} — список можно отправить и
+                так, штаб решит, довыделять или принять как есть.
               </p>
             )}
           </div>
@@ -949,11 +1003,15 @@ export function DepartmentRequestCard({
                   («Никто не выделен — отправлять нечего»), пока недобор
                   1..N-1 отправить можно — решает штаб. Формулировка не
                   обещает то, чего действие не сделает. */}
+              {/* `[СБС-23]`: подтверждение — ПРОТИВ СВОЕЙ ЦИФРЫ «Выделяем»
+                  («Отправить 2 из 3?»), а не против запроса штаба: сколько
+                  департамент обещал, столько и должен сдать (Plane №944).
+                  Пока ответа нет — запрос штаба. */}
               {assigned === 0
                 ? "Никто ещё не выделен — штаб получит пустой список. Отправить всё равно?"
-                : assigned < quota
-                  ? `Выделено ${assigned} из ${quota} — отправить список с недобором ${quota - assigned}?`
-                  : `Выделено ${assigned} из ${quota} — список полный, отправить штабу?`}
+                : assigned < ownFigure
+                  ? `Отправить ${assigned} из ${ownFigure}? Обещано «Выделяем: ${ownFigure}», собрано меньше на ${ownFigure - assigned}.`
+                  : `Выделено ${assigned} из ${ownFigure} — список полный, отправить штабу?`}
               {" "}Раскладку по управлениям после отправки не поправить:
               отзыв возвращает список в работу, но квоты управлений остаются
               прежними.

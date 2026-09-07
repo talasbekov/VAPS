@@ -499,10 +499,10 @@ test.describe('заявки департаменту', () => {
         `/api/ops/security-events/${fixture.eventId}/forces/allocation/${fixture.allocationId}/members/`,
         { employeeId: employees.results[0].id },
       )
-      // Перезаход на список и повторное открытие: `reload()` сбрасывает
-      // локальное состояние `opened` карточки в `DepartmentRequestsTable`
-      // (адреса у карточки нет — она открывается кликом, а не маршрутом).
-      await page.reload()
+      // Перезаход на СПИСОК и повторное открытие. Открытая заявка теперь живёт
+      // в адресе (`?request=`, Plane №944): `reload()` вернул бы ту же
+      // карточку, а не список, — поэтому идём на вкладку без параметра.
+      await page.goto(`${APP}/employees?view=forces&tab=requests`)
       await tab.click()
       await page
         .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
@@ -1143,7 +1143,12 @@ test.describe('заявки департаменту', () => {
         await fetch(`${API}/api/token/`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ username: 'acc_forces_officer', password: bossPassword }),
+          // Штаб — начальник второго департамента (`HEAD_OPS_UNIT`, раздел 7.1
+          // спецификации; право `forces.command` у него с Plane №944). До
+          // этого пробa ходила под `acc_forces_officer`, который носил
+          // штабное право по ошибке матрицы и по спецификации штабом не
+          // является.
+          body: JSON.stringify({ username: 'acc_dept_head_d2', password: bossPassword }),
         })
       ).json()) as { access: string }
     ).access
@@ -1221,7 +1226,7 @@ test.describe('заявки департаменту', () => {
       await ctx.request.post(`${APP}/api/auth/callback/credentials/`, {
         // Тот же адресат, что и у ленты выше (Plane №930): экран смотрит
         // ЕЁ уведомления, и войти надо тем, кому они пришли.
-        form: { csrfToken: csrf.csrfToken, username: 'acc_forces_officer', password: bossPassword, json: 'true' },
+        form: { csrfToken: csrf.csrfToken, username: 'acc_dept_head_d2', password: bossPassword, json: 'true' },
       })
       await hq.goto(`${APP}/dashboard`)
       await hq.getByRole('button', { name: 'Уведомления' }).click()

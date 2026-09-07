@@ -1007,13 +1007,25 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="forces/allocation")
     def forces_split(self, request, pk=None):
-        """Раскладка потребности по департаментам (Plane №73, шаг «СС-1»).
+        """Раскладка потребности по департаментам (Plane №73, шаг «СС-1») и
+        «Отправить запросы» (`[СБС-12]`, Plane №944).
 
         Список целиком, а не строка: «кому сколько» — одно решение штаба.
+        Тело: `{"rows": [...], "draft": false}`. Без `draft` строки после
+        сохранения ОТПРАВЛЯЮТСЯ департаментам (момент `sentAt`, уведомление
+        ответственным); `draft: true` — черновик штаба, департамент его не
+        видит. Отправленная цифра заперта — 422 по полю строки.
         """
+        from organization_management.apps.ops import forces_send
+
         data = request.data or {}
         return self._event_response(
-            event_service.split_force_demand(pk, rows=data.get("rows"))
+            forces_send.split_and_send(
+                pk,
+                rows=data.get("rows"),
+                draft=bool(data.get("draft")),
+                actor=resolve_actor_id(request),
+            )
         )
 
     @action(detail=False, methods=["get"], url_path="forces/collections")
@@ -1170,10 +1182,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             PermissionService,
         )
 
+        from organization_management.apps.ops import forces_send
+
         allowed = PermissionService.visible_division_ids(
             resolve_actor_id(request), _FORCES_ALLOCATE_PERMISSION
         )
-        return Response({"results": event_service.department_requests_view(allowed)})
+        # Департамент видит ТОЛЬКО отправленные штабом запросы (`[СБС-12]`,
+        # Plane №944): черновик штаба — ещё не запрос.
+        return Response(
+            {"results": forces_send.sent_rows(event_service.department_requests_view(allowed))}
+        )
 
     @action(
         detail=False,
@@ -1191,12 +1209,18 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             PermissionService,
         )
 
+        from organization_management.apps.ops import forces_send
+
         allowed = PermissionService.visible_division_ids(
             resolve_actor_id(request), _FORCES_ALLOCATE_PERMISSION
         )
-        return Response(
-            event_service.department_request_detail(allocation_id, allowed)
-        )
+        detail = event_service.department_request_detail(allocation_id, allowed)
+        # Неотправленный черновик штаба для департамента не существует —
+        # тот же 404, что и у чужой заявки (`[СБС-12]`, Plane №944).
+        if not forces_send.is_sent(detail.get("allocation") or {}):
+            raise event_service._not_found("Заявка департаменту не найдена.", allocation_id)
+        # «В строю» по управлениям (`[СБС-22]`) — считает сервер на деловую дату.
+        return Response(forces_send.with_in_service(detail))
 
     @action(
         detail=False,
@@ -1334,11 +1358,14 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         построчное сохранение позволяло бы сумме уехать за квоту между двумя
         запросами. 422 — перебор, чужое управление, дубль, уже запрошено.
         """
+        from organization_management.apps.ops import forces_send
+
         require_scoped_permission(
             request,
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        forces_send.require_sent(pk, allocation_id)
         return self._event_response(
             event_service.split_directorate_quotas(
                 pk,
@@ -1360,11 +1387,14 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         управления вправе ответственный за выделение в этом департаменте, а не
         в чужом.
         """
+        from organization_management.apps.ops import forces_send
+
         require_scoped_permission(
             request,
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        forces_send.require_sent(pk, allocation_id)
         return self._event_response(
             event_service.notify_directorates(
                 pk, allocation_id, actor=resolve_actor_id(request)
@@ -1442,12 +1472,15 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         цифру ставит только ответственный, штаб читает. Тело:
         `{"allocating": 3, "comment": "…"}`; 0 — отказ.
         """
+        from organization_management.apps.ops import forces_send
+
         data = request.data or {}
         require_scoped_permission(
             request,
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        forces_send.require_sent(pk, allocation_id)
         return self._event_response(
             event_service.respond_allocation(
                 pk,
@@ -1469,13 +1502,18 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         Область — департамент строки раскладки (Plane №74): отправляет свой
         список тот, кто за него отвечает.
         """
+        from organization_management.apps.ops import forces_send
+
         require_scoped_permission(
             request,
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        forces_send.require_sent(pk, allocation_id)
+        # Присланный список сразу в составе мероприятия (`[СБС-13]`, №944):
+        # блок «Собранные → объекты» появляется с первым присланным списком.
         return self._event_response(
-            event_service.submit_allocation(
+            forces_send.submit_allocation(
                 pk, allocation_id, actor=resolve_actor_id(request)
             )
         )
@@ -1493,8 +1531,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        from organization_management.apps.ops import forces_send
+
+        # Отзыв забирает людей из состава — пока их не отдали объектам (№944).
         return self._event_response(
-            event_service.withdraw_allocation(
+            forces_send.withdraw_allocation(
                 pk, allocation_id, actor=resolve_actor_id(request)
             )
         )
@@ -1518,9 +1559,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/return",
     )
     def forces_return(self, request, pk=None, allocation_id=None):
+        from organization_management.apps.ops import forces_send
+
         data = request.data or {}
+        # Возврат забирает людей из состава — пока их не отдали объектам (№944).
         return self._event_response(
-            event_service.return_allocation(
+            forces_send.return_allocation(
                 pk,
                 allocation_id,
                 reason=data.get("reason"),

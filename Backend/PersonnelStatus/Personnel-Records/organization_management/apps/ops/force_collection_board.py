@@ -29,7 +29,14 @@ _FORCES_DEPT = "HEAD_OPS_UNIT"
 
 
 def _sent_rows(allocations):
-    return [r for r in allocations if r.get("status") != events._ALLOCATION_DRAFT]
+    # «Запросы отправлены» — это момент `sentAt` шага штаба «Отправить
+    # запросы» (`[СБС-12]`, Plane №944), а не «департамент что-то сделал»:
+    # здесь стояло `status != DRAFT`, и статус доски менялся действием
+    # ДЕПАРТАМЕНТА (оповещением управлений), тогда как спецификация описывает
+    # шаг штаба.
+    from organization_management.apps.ops import forces_send
+
+    return forces_send.sent_rows(allocations)
 
 
 def _answered(row):
@@ -310,9 +317,13 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
     """«Довыделить недобор → …» (`[СБС-12]`): НОВАЯ строка запроса тому же
     департаменту; отправленные цифры не правятся и не удаляются. Строка
     сразу отправляется (оповещение управлений тем же путём, что и первая)."""
+    from organization_management.apps.ops import forces_send
+
     event = events.lock_event(event_id)
     source = events._find_allocation(event, allocation_id)
-    if source.get("status") == events._ALLOCATION_DRAFT:
+    # «Отправленный» — по моменту `sentAt` (№944), а не по статусу: черновик
+    # штаба, который тот ещё не отправил, правится на месте.
+    if not forces_send.is_sent(source):
         raise DomainError(
             "ALLOCATION_NOT_SENT", 422,
             message="Довыделить можно только по отправленному запросу — черновик правится на месте.",
@@ -357,9 +368,16 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
         ],
         "topUpOf": source.get("id"),
         "createdAt": now.isoformat(),
+        # Довыделение отправляется сразу (`[СБС-12]`): момент тот же, что
+        # ставит «Отправить запросы» (Plane №944), и ответственный департамента
+        # узнаёт о нём тем же письмом.
+        "sentAt": now.astimezone(dt.timezone.utc).isoformat(),
     }
     event.force_allocation = [*event.force_allocation, row]
     event.save(update_fields=["force_allocation", "updated_at"])
+    from organization_management.apps.ops import forces_notify
+
+    forces_notify.notify_department_officers(event, [row])
     if row["directorates"]:
         event = events.notify_directorates(event.pk, key, actor=actor)
     return event

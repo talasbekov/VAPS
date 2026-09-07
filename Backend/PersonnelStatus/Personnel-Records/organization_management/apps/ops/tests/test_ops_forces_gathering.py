@@ -97,20 +97,24 @@ def test_split_addresses_departments(manager):  # noqa: F811
     assert manager.get(base).json()["forceAllocation"] == data["forceAllocation"]
 
 
-def test_split_refuses_more_than_demanded(manager):  # noqa: F811
-    """Разложить больше, чем просили, нельзя — это ошибка ввода."""
+def test_split_accepts_more_than_demanded(manager):  # noqa: F811
+    """«Блокировки на сумму нет» (`[СБС-12]`, Plane №944).
+
+    Здесь стоял отказ `ALLOCATION_OVER_DEMAND`; спецификация говорит обратное:
+    запрос штаба — пожелание, департамент отвечает своей цифрой, и штаб вправе
+    просить с запасом. Перебор виден в «Итоге» карточки, а не отбивается.
+    """
     base, total = event_on_demand(manager)
     department = make_department()
 
     resp = manager.post(
         f"{base}forces/allocation/",
-        {"rows": [{"departmentId": str(department.pk), "need": total + 1}]},
+        {"rows": [{"departmentId": str(department.pk), "need": total + 1}], "draft": True},
         format="json",
     )
 
-    assert resp.status_code == 422
-    assert resp.json()["error_code"] == "ALLOCATION_OVER_DEMAND"
-    assert str(total) in resp.json()["message"]
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["forceAllocation"][0]["need"] == total + 1
     # Недобор — не ошибка: штаб раскладывает в несколько заходов.
     ok = manager.post(
         f"{base}forces/allocation/",
@@ -193,11 +197,14 @@ def test_split_keeps_started_department_state(manager):  # noqa: F811
     assert dropped.json()["error_code"] == "ALLOCATION_LOCKED"
     assert first.name in dropped.json()["message"]
 
+    # Цифры ОТПРАВЛЕННЫХ строк заперты (`[СБС-12]`, Plane №944): штаб
+    # пересохраняет раскладку с теми же числами — состояние первого
+    # департамента обязано пережить и это.
     kept = manager.post(
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(first.pk), "need": 2},
+                {"departmentId": str(first.pk), "need": 1},
                 {"departmentId": str(second.pk), "need": 1},
             ]
         },
@@ -208,7 +215,7 @@ def test_split_keeps_started_department_state(manager):  # noqa: F811
         for row in kept["forceAllocation"]
         if row["departmentId"] == str(first.pk)
     )
-    assert (started["status"], started["need"]) == ("NOTIFIED", 2)
+    assert (started["status"], started["need"]) == ("NOTIFIED", 1)
     assert started["members"] == [{"employeeId": "1"}]
 
 

@@ -53,12 +53,11 @@ URL = "/api/ops/security-events/"
 EVENT_DATE = "2027-06-01"
 
 
-def split(manager, base, department, **row):  # noqa: F811
-    return manager.post(
-        f"{base}forces/allocation/",
-        {"rows": [{"departmentId": str(department.pk), "need": 1, **row}]},
-        format="json",
-    )
+def split(manager, base, department, draft=False, **row):  # noqa: F811
+    body = {"rows": [{"departmentId": str(department.pk), "need": 1, **row}]}
+    if draft:
+        body["draft"] = True
+    return manager.post(f"{base}forces/allocation/", body, format="json")
 
 
 def allocation_of(manager, base):  # noqa: F811
@@ -100,7 +99,9 @@ def test_a_saved_due_at_survives_the_next_split(manager):  # noqa: F811
     """
     base, _total = event_on_demand(manager, business_date=EVENT_DATE)
     department = make_department()
-    split(manager, base, department, dueAt="2027-05-20T18:30")
+    # Черновик: цифра отправленной строки заперта (`[СБС-12]`, №944), а
+    # проба — про срок, который переживает правку числа.
+    split(manager, base, department, dueAt="2027-05-20T18:30", draft=True)
 
     # Второе сохранение — БЕЗ срока в теле, меняется только число людей.
     row = split(manager, base, department, need=2).json()["forceAllocation"][0]
