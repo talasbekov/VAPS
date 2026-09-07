@@ -474,6 +474,32 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return True
         return self._is_creator(self.request, event)
 
+    #: Действия над СОСТАВОМ СВОДКИ ГВО — объекты посещения и транспорт из
+    #: реестра — открыты редактору сводки (Plane №964, задача заказчика
+    #: 07.09.2026: «этот пользователь должен уметь редактировать или добавлять
+    #: какую то информацию в сводные данные»). Панель сводки рисует эти кнопки
+    #: по слову сервера `canEdit` (№947: `gvo.manage`, старший ГВО, создатель),
+    #: а ручки жили под `event.manage` с обходом только для создателя (№951):
+    #: штаб с `gvo.manage` видел кнопку и получал 403. Правило здесь то же,
+    #: что у `partial_update` сводки, и только у визита иностранного ОЛ — у
+    #: внутреннего ОМ сводки нет, и право на неё ничего не открывает.
+    _GVO_EDITOR_ACTIONS = frozenset(
+        {"visit_object_add", "visit_object_detail", "vehicle_allocate", "vehicle_release"}
+    )
+
+    def _gvo_editor_override(self, request):
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None or event.kind != "FOREIGN":
+            return False
+        if "gvo.manage" in effective_permissions(request):
+            return True
+        if self._is_creator(request, event):
+            return True
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
+        return event.chief_employee_id == employee.pk
+
     def _creator_override(self, request):
         """Создатель бюллетеня правит его состав без `event.manage`
         (Plane №951, задача заказчика: «редактировать Бюллетень тем, у кого
@@ -1727,6 +1753,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_object_lead = False
         self._object_lead_employee = None
         if self.action in self._CREATOR_ACTIONS and self._creator_override(request):
+            return True
+        if self.action in self._GVO_EDITOR_ACTIONS and self._gvo_editor_override(request):
             return True
         if self.action in ("my_assignments", "acknowledge", "decline"):
             return self._my_assignments_override(request)
