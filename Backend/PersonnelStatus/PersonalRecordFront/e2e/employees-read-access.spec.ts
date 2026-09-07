@@ -1,29 +1,29 @@
 /**
- * Кадровый реестр открыт на ЧТЕНИЕ тому, у кого есть право на личный состав
- * (Plane №375, решение заказчика 02.09.2026).
+ * «Сбор сил на ОМ» (`/employees`) закрыт держателю ОДНОГО права на личный
+ * состав (Plane №939, решение заказчика 07.09.2026).
  *
- * ЕГО СЛОВА: «для всех сотрудников свои управления видны без возможности
- * редактировать или менять статусы, строго ознакомление, но редактировать
- * могут те, у кого есть права».
+ * ЕГО СЛОВА: «acc_dir_head, acc_dir_head_d2, acc_dept_head, acc_dept_head_d2
+ * не должны иметь доступ к модулю Сбор сил на ОМ». Раньше (№375, 02.09.2026)
+ * здесь стояло обратное: экран открыт читателю по `personnel.view`, чтобы
+ * оператор подразделения видел своих людей. Заказчик тогда же ответил, что
+ * список людей для него — «модуль Статусы сотрудников», а 07.09 снял пункт у
+ * руководителей. Пропуск на `/employees` снова спрашивает только права сбора
+ * сил (`forces.*`); `personnel.view` остаётся правом поиска и карточки.
  *
- * ЧТО БЫЛО. Экран `/employees` объединяет кадровый реестр и «Сбор сил на ОМ»
- * (слиты 21.08.2026), а пропуск на него спрашивал ТОЛЬКО права сбора сил.
- * У роли «Оператор подразделения» их нет ни одного, поэтому вместе со сбором
- * ему закрывался и список своих людей — при том что статусы им он ставит.
- * Найдено ручным тестированием (№377), подтверждено красной пробой смоука.
- *
- * ЧТО СТЕРЕЖЁТ ПРОБА — две половины решения сразу:
- *   1. экран ОТКРЫТ читателю (иначе первая половина потеряна);
- *   2. заведение сотрудника ему НЕ предлагается (иначе потеряна вторая:
- *      кнопка звала бы на действие, которое сервер отобьёт).
+ * ЧТО СТЕРЕЖЁТ ПРОБА — обе половины решения:
+ *   1. экран ЗАКРЫТ читателю без прав сбора сил, и пункта в меню у него нет
+ *      (иначе гейт снова расширили);
+ *   2. своих людей он ПО-ПРЕЖНЕМУ видит — в «Статусах сотрудников» (иначе
+ *      закрыли больше, чем просили: заказчик просил снять модуль, а не
+ *      список).
  *
  * Учётка `erda` — «Оператор подразделения»: право `personnel.view` есть,
- * `orgstructure.manage` и прав сбора сил нет. Под администратором проба была
- * бы вакуумной: у него не гаснет ничего.
+ * прав сбора сил нет. Под администратором проба была бы вакуумной.
  *
  * Без SMOKE_LIVE=1 скипается: нужен стек Django :8100 + Next :3106.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -44,34 +44,56 @@ async function signInAsOperator(page: Page): Promise<void> {
   expect(res.status(), 'учётка оператора подразделения не пустила').toBe(200)
 }
 
-test.describe(LIVE ? 'кадровый реестр: чтение по праву личного состава' : 'кадровый реестр: чтение по праву личного состава (скип: нет SMOKE_LIVE=1)', () => {
+async function signInAsAdmin(page: Page): Promise<void> {
+  const api = page.context().request
+  const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as {
+    csrfToken: string
+  }
+  const res = await api.post(`${APP}/api/auth/callback/credentials/`, {
+    form: {
+      csrfToken: csrf.csrfToken,
+      username: STAND_USERNAME,
+      password: STAND_PASSWORD,
+      json: 'true',
+    },
+  })
+  expect(res.status(), 'учётка стенда не пустила').toBe(200)
+}
+
+test.describe(LIVE ? 'сбор сил: пропуск только по правам сбора сил' : 'сбор сил: пропуск только по правам сбора сил (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('оператор подразделения видит экран, но завести сотрудника ему не предлагают', async ({
+  test('оператор без прав сбора сил экрана не видит, а своих людей читает в статусах', async ({
     page,
   }) => {
     await signInAsOperator(page)
-    await page.goto(`${APP}/employees?view=forces`)
 
-    // Экран ОТКРЫТ: вкладки на месте, отказа нет.
+    // Половина 1: пункта в меню нет, прямой адрес отвечает отказом раздела.
+    await page.goto(`${APP}/statuses`)
+    const menu = page.locator('aside')
+    await expect(menu.getByRole('link', { name: 'Статусы сотрудников', exact: true })).toBeVisible({
+      timeout: 30_000,
+    })
     await expect(
-      page.getByRole('tab', { name: 'Список сотрудников' }),
-      'экран закрыт читателю — гейт снова спрашивает только права сбора сил',
-    ).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText(/Недостаточно прав|Доступ закрыт/)).toHaveCount(0)
-
-    // И в нём есть люди: пустой список прошёл бы проверку «экран открыт»,
-    // ничего не показав.
-    await page.getByRole('tab', { name: 'Список сотрудников' }).click()
-    await expect
-      .poll(async () => page.getByRole('row').count(), { timeout: 30_000 })
-      .toBeGreaterThan(1)
-
-    // А правка НЕ предлагается: заведение сотрудника закрыто своим правом.
-    await expect(
-      page.getByRole('button', { name: /Добавить сотрудника/ }),
-      'кнопка заведения показана тому, у кого нет права правки',
+      menu.getByRole('link', { name: 'Сбор сил на ОМ', exact: true }),
+      'пункт «Сбор сил на ОМ» показан тому, у кого нет прав сбора сил',
     ).toHaveCount(0)
+
+    await page.goto(`${APP}/employees?view=forces`)
+    await expect(
+      page.getByText('Недостаточно прав для просмотра сбора сил на ОМ'),
+      'экран открыт читателю — гейт снова пускает по personnel.view',
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('tab', { name: 'Список сотрудников' })).toHaveCount(0)
+
+    // Половина 2: люди своего подразделения видны в «Статусах сотрудников».
+    await page.goto(`${APP}/statuses`)
+    await expect(page.getByRole('heading', { name: 'Управление статусами' })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect
+      .poll(async () => page.locator('table tbody tr').count(), { timeout: 30_000 })
+      .toBeGreaterThan(0)
   })
 
   test('фильтр по статусу отбирает людей, а не обнуляет список (Plane №837)', async ({
@@ -91,7 +113,9 @@ test.describe(LIVE ? 'кадровый реестр: чтение по прав�
     //
     // КРАСНАЯ ПРОБА: верни `value={item.label}` в `app/employees/page.tsx` —
     // список опустеет, и проба назовёт это словами.
-    await signInAsOperator(page)
+    // Под администратором: проба про фильтр, а не про права, а оператору
+    // подразделения экран с №939 закрыт.
+    await signInAsAdmin(page)
     await page.goto(`${APP}/employees?view=forces&tab=table`)
 
     const filter = page.locator('[aria-label="Фильтр по статусу"]').first()

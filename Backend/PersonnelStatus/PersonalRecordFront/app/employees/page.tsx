@@ -503,13 +503,13 @@ function EmployeesScreen() {
   const canSeeAll =
     hasOpsPermission("forces.command") || hasOpsPermission("forces.allocate");
 
-  // Своё подразделение видит и тот, кто выделяет людей на ОМ
-  // (`forces.select`), и тот, у кого есть просто право на личный состав
-  // (`personnel.view`) — второй пришёл с решением заказчика 02.09.2026
-  // (Plane №375): «свои управления видны всем, строго на ознакомление».
-  // Правка от этого не открывается: кнопки живут на своих правах.
-  const canSeeOwnDepartment =
-    hasOpsPermission("forces.select") || hasOpsPermission("personnel.view");
+  // Своё подразделение видит тот, кто выделяет людей на ОМ (`forces.select`).
+  // С 02.09.2026 (№375) вторым ключом здесь стояло право на личный состав
+  // (`personnel.view`); с 07.09.2026 (№939) оно экран не открывает вовсе —
+  // пропуск на модуль (`entities/portal-access`) спрашивает только права
+  // сбора сил, и держатель одного `personnel.view` сюда не доходит. Оставить
+  // ключ здесь значило бы описывать ветку, в которую попасть нельзя.
+  const canSeeOwnDepartment = hasOpsPermission("forces.select");
 
   /** Право ПРАВИТЬ кадровую запись — то же, которым закрыты правка и удаление
    *  в карточке сотрудника (`entities/employee`). Без него экран остаётся
