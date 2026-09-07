@@ -26,6 +26,7 @@ from datetime import date, timedelta
 
 import pytest
 from django.contrib.auth.models import User
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from organization_management.apps.dictionaries.models import Position
@@ -111,7 +112,8 @@ def head(world):
 
 
 def _planned(employee, days_ahead=10):
-    start = date.today() + timedelta(days=days_ahead)
+    # «Сегодня» — `timezone.localdate()`, как у кадрового сервиса (сторож №842).
+    start = timezone.localdate() + timedelta(days=days_ahead)
     return EmployeeStatus.objects.create(
         employee=employee, status_type=VACATION,
         start_date=start, end_date=start + timedelta(days=5),
@@ -120,7 +122,7 @@ def _planned(employee, days_ahead=10):
 
 
 def _body(employee, days_ahead=10):
-    start = date.today() + timedelta(days=days_ahead)
+    start = timezone.localdate() + timedelta(days=days_ahead)
     return {
         "employee": employee.pk, "status_type": VACATION,
         "start_date": start.isoformat(),
