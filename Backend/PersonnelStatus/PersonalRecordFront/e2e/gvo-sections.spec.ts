@@ -241,6 +241,9 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await expect(main.getByText(pickedMembers[0].split(' ')[0]).first()).toBeVisible({ timeout: 10_000 })
     await expect(main.getByText('старший ГВО').first()).toBeVisible()
     await expect(main.getByText('2 чел.').first()).toBeVisible()
+    // Старший ГВО панели (поле `senior`, Plane №952) — его же печатает реестр.
+    const seniorShown = (await main.locator('[data-slot="gvo-senior"]').innerText()).trim()
+    expect(seniorShown, 'старший ГВО в панели не назван').not.toEqual('уточняется')
 
     // Объекты посещения: НЕ текст патча, а строки объектов мероприятия
     // («Реестр ОМ-35.1»). Правятся день и примечание КОНКРЕТНОГО объекта —
@@ -289,8 +292,12 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await expect(row).toContainText(/Черновик · заполнено \d+ из \d+|Утверждено/, {
       timeout: 10_000,
     })
-    // Старший ГВО и лицо — те, кого выбрали из справочников выше (Plane №951).
-    await expect(row).toContainText(pickedMembers[0].split(' ')[0])
+    // Старший ГВО в реестре — СВОЁ поле сводки (Plane №952), а не участник
+    // группы с ролью «старший» (так было в №951): читаем его из шапки состава
+    // панели и ждём в строке реестра ту же фамилию. Полный прогон по
+    // прод-стенду 07.09.2026 поймал здесь расхождение: у ОМ со старшим из
+    // бюллетеня реестр печатал его, а проба ждала участника группы.
+    await expect(row).toContainText(seniorShown.split(' ')[0])
     await expect(row).toContainText(pickedPersonName)
 
     // Удаление ЭЛЕМЕНТА списка возвращает раздел в пустое состояние.
