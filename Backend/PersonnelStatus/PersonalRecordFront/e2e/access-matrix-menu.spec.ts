@@ -19,6 +19,7 @@ import { expect, test, type Page } from '@playwright/test'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
 /** Пункты, которые прячутся правами. Остальные в меню стоят у всех. */
 const GATED = ['Обзор', 'Статусы сотрудников', 'Сбор сил на ОМ', 'Ежедневный отчет'] as const
@@ -57,6 +58,16 @@ const EXPECTED: Record<string, readonly string[]> = {
   acc_dept_head_d2: ['Обзор', 'Статусы сотрудников', 'Сбор сил на ОМ'],
   acc_forces_officer: ['Обзор', 'Статусы сотрудников', 'Сбор сил на ОМ', 'Ежедневный отчет'],
   acc_admin: ['Обзор', 'Статусы сотрудников', 'Сбор сил на ОМ', 'Ежедневный отчет'],
+}
+
+async function tokenFor(username: string): Promise<string> {
+  const res = await fetch(`${API}/api/token/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password: PASSWORD }),
+  })
+  if (!res.ok) throw new Error(`токен для ${username}: ${res.status}`)
+  return ((await res.json()) as { access: string }).access
 }
 
 async function signIn(page: Page, username: string): Promise<void> {
@@ -112,6 +123,32 @@ test.describe(LIVE ? 'матрица доступа: меню' : 'матрица
     await expect(page.getByRole('checkbox')).toHaveCount(0)
     // Чтение остаётся: «Экспорт» — не правка.
     await expect(page.getByRole('button', { name: 'Экспорт' })).toBeVisible()
+  })
+
+  test('acc_employee: сервер отбивает запись статуса, а не только экран (Plane №938)', async () => {
+    // Экран правку прятал и раньше (проба выше), а кадровая ручка
+    // `/api/statuses/statuses/` принимала её от любого вошедшего: сотрудник
+    // получал 400 по форме, то есть дверь была открыта, не хватало полей.
+    // Проверка, которую обходят другим клиентом, проверкой не является —
+    // поэтому проба идёт МИМО экрана, прямо в ручку.
+    const employee = await tokenFor('acc_employee')
+    const refused = await fetch(`${API}/api/statuses/statuses/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${employee}` },
+      body: JSON.stringify({}),
+    })
+    expect(refused.status, 'сотрудник без status.manage: отказ по праву, а не по форме').toBe(403)
+
+    // Обратная половина: у начальника управления дверь открыта — пустое тело
+    // отбивается ФОРМОЙ (400), а не правом. Без неё проба зеленела бы и на
+    // ручке, закрытой для всех.
+    const head = await tokenFor('acc_dir_head')
+    const allowed = await fetch(`${API}/api/statuses/statuses/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${head}` },
+      body: JSON.stringify({}),
+    })
+    expect(allowed.status, 'начальник управления: правку не закрыли всем разом').toBe(400)
   })
 
   test('acc_dir_head: те же элементы на месте — правку сняли не у всех', async ({ page }) => {
