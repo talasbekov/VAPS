@@ -257,7 +257,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Удаление — СВОЁ право: ведущий мероприятие его правит, стирает из
         # реестра администратор (та же мерка, что у stage_override).
         "destroy": _DELETE_EVENT_PERMISSION,
-        "bindable_objects": _MANAGE_EVENT_PERMISSION,
+        # Список объектов для привязки читает и тот, кто мероприятие только
+        # ЗАВОДИТ (Plane №946): окно «Создать бюллетень» берёт объект
+        # посещения отсюда, а создатель по `[БЛН-10]` носит `event.create`
+        # без `event.manage` — и поле отвечало ему «Реестр объектов
+        # недоступен».
+        "bindable_objects": (_MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_detail": _MANAGE_EVENT_PERMISSION,
         "visit_object_chief": _MANAGE_EVENT_PERMISSION,
@@ -2578,7 +2583,10 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # автоопределение, которое для нестандартного имени возвращает None, то
     # есть ручка осталась бы без права вовсе.
     permission_map = {
-        "list": _MANAGE_EVENT_PERMISSION,
+        # Старшего наряда / ГВО в окне «Создать бюллетень» ищет и тот, кто
+        # мероприятие только заводит (`event.create`, Plane №946): без этого
+        # комбобокс отвечал создателю «Кадровый список сейчас недоступен».
+        "list": (_MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
         "me": _READ_EVENT_PERMISSION,
     }
 
