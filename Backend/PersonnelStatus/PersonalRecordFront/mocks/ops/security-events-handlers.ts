@@ -1906,19 +1906,8 @@ export const securityEventsHandlers = [
         "Бюллетень можно завершить только на этапе «Бюллетень»."
       );
     }
-    // гейт держит ОБЪЕКТ, а не текст: осматривать нечего ровно тогда, когда
-    // объекта нет (порт правила бэка, Plane «Реестр ОМ-5»)
-    const hasObject =
-      event.objectId !== null || (event.visitObjects ?? []).length > 0;
-    if (
-      !hasObject &&
-      (event.briefDescription.trim() === "" || event.initialTasks.trim() === "")
-    ) {
-      return businessRuleError(
-        "BULLETIN_INCOMPLETE",
-        "Заполните и сохраните описание и первичные задачи либо добавьте объект посещения, прежде чем открывать рекогносцировку."
-      );
-    }
+    // Текста бюллетеня переход не требует (Plane №943): блок описания и задач
+    // снят со всего проекта, гейта `BULLETIN_INCOMPLETE` у сервера больше нет.
     return HttpResponse.json(
       saveEvent({ ...advanceVisits(event, "RECON"), readinessPercent: 15, updatedAt: nowIso() })
     );

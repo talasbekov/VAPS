@@ -1710,15 +1710,19 @@ def test_event_with_object_opens_on_recon(manager):
     assert [row["post"] for row in saved.json()["reconSectorPosts"]] == ["Пост 1"]
 
 
-def test_bulletin_complete_opens_recon_when_object_present(manager):
-    """ОМ, заведённые ДО правила (стадия «Бюллетень») и имеющие объект, тоже
-    открывают рекогносцировку без заполненного бюллетеня: гейт держит объект,
-    а не текст. Без объекта текст остаётся условием — старшему наряда больше
-    ничего не приходит до выезда."""
+def test_bulletin_complete_opens_recon_without_bulletin_text(manager):
+    """Рекогносцировка открывается БЕЗ описания и задач — и с объектом, и без
+    (Plane №943, слово заказчика 07.09.2026: блок текста бюллетеня снят «со
+    всего проекта»). До этого ОМ без объекта отбивался `BULLETIN_INCOMPLETE`
+    — пин перевёрнут осознанно: в бланке «Орда-4» таких полей нет.
+
+    КРАСНАЯ ПРОБА: верни гейт по тексту в `complete_bulletin` — вторая
+    половина ответит 422.
+    """
     obj = make_object(with_passport=True)
     event_id = create_event(manager, obj).json()["id"]
-    # Возвращаем ОМ в состояние «до правила» напрямую: сервисом такой стадии
-    # у ОМ с объектом больше не получить.
+    # ОМ с объектом стартует рекогносцировкой; возвращаем его на «Бюллетень»
+    # напрямую — сервисом такой стадии у ОМ с объектом не получить.
     OpsSecurityEvent.objects.filter(pk=event_id).update(
         stage="BULLETIN", brief_description="", initial_tasks=""
     )
@@ -1726,15 +1730,14 @@ def test_bulletin_complete_opens_recon_when_object_present(manager):
     assert resp.status_code == 200
     assert resp.json()["stage"] == "RECON"
 
-    # А ОМ без объекта — по-прежнему через заполненный бюллетень.
     bare = manager.post(
         URL,
         {"title": "Без маршрута", "businessDate": "2026-08-10", "kind": "INTERNAL"},
         format="json",
     ).json()
-    refused = manager.post(f"{URL}{bare['id']}/bulletin/complete/")
-    assert refused.status_code == 422
-    assert refused.json()["error_code"] == "BULLETIN_INCOMPLETE"
+    opened = manager.post(f"{URL}{bare['id']}/bulletin/complete/")
+    assert opened.status_code == 200, opened.content
+    assert opened.json()["stage"] == "RECON"
 
 
 def test_recon_force_request_survives_saves_without_the_field(manager):

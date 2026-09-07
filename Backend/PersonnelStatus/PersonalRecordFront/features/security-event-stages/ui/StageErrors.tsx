@@ -34,8 +34,6 @@ const FIELD_LABEL: Record<string, string> = {
   summary: "Итог",
   hours: "Часы",
   incidents: "Инциденты",
-  briefDescription: "Краткое описание",
-  initialTasks: "Первичные задачи",
   allocatedCount: "Выделено",
   reason: "Причина",
   title: "Заголовок",
