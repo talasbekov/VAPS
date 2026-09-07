@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsAnalyticsLive, isOpsAuditLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import { isOpsAnalyticsLive, isOpsAuditLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsGvoLive, isOpsLegalDocumentsLive, isOpsObjectsLive, isOpsProtectedPersonsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -23,9 +23,6 @@ export interface ApiGap {
   /** Уточнение: чем экран наполнен вместо живых данных. */
   readonly note?: string;
 }
-
-const MOCK_NOTE =
-  "Всё, что показано ниже, отдаёт браузерный мок-слой MSW, а не сервер.";
 
 // Ключ — префикс маршрута. Совпадение ищется от самого длинного к самому
 // короткому, поэтому вложенные экраны могут уточнять родительскую запись.
@@ -39,11 +36,16 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   // /security-ops/*; адреса /ops/* редиректят на них
   // (app/ops/[[...slug]]/page.tsx) — экрана, требующего пометки, больше нет.
 
-  "/security-ops": {
-    subject: "Раздел «Охранные мероприятия»",
-    paths: ["/api/ops/*"],
-    note: MOCK_NOTE,
-  },
+  // 🔴 ОБЩЕЙ ЗАПИСИ «/security-ops → на бэке нет /api/ops/*» ЗДЕСЬ БОЛЬШЕ НЕТ
+  // (Plane №948). Она была написана, когда бэка раздела не существовало, и
+  // осталась ПОДСТИЛКОЙ ПО УМОЛЧАНИЮ: каждый новый экран раздела, пока ему не
+  // выписали своё правило в `findApiGap`, получал жёлтую врезку «не
+  // подключено» — над живыми данными. Так над сводкой ГВО (`/security-ops/
+  // visits/[id]`), справочником лиц и законами висело утверждение, что бэка
+  // нет, а заказчик спрашивал, не мок ли это. Умолчание теперь обратное:
+  // раздел без записи — раздел без врезки; каждый экран раздела обязан иметь
+  // СВОЁ решение ниже, и проба `e2e/api-gap-rules.spec.ts` стережёт, что ни
+  // одна страница `app/security-ops/**` не осталась без него.
   // Командный центр и Реестр ОМ: бэк ГОТОВ (срез B1 — реестр, карточка,
   // жизненный цикл всех девяти стадий, кадровый снимок). Записи собираются в
   // findApiGap — как у объектов, они зависят от режима.
@@ -119,6 +121,67 @@ const SECURITY_EVENT_ROUTES = [
   "/security-ops/command-center",
   "/security-ops/events",
 ];
+
+// Страница визита (Plane №948): мероприятие — домен security-events, сводка
+// ГВО — домен gvo; врезка только когда хотя бы один из них переведён на мок.
+const VISITS_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Визит иностранного ОЛ и сводные данные ГВО",
+  paths: [],
+  note:
+    "Бэкенд готов (/api/ops/security-events/ — карточка ОМ; " +
+    "/api/ops/gvo-summaries/ — сводка, правка, утверждение визита); экран " +
+    "на MSW по конфигурации. Живой режим: " +
+    "NEXT_PUBLIC_OPS_LIVE_DOMAINS=security-events,gvo.",
+};
+
+const PERSONS_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Охраняемые лица",
+  paths: [],
+  note:
+    "Бэкенд справочника готов (/api/ops/protected-persons/ — каталог, " +
+    "заведение, снимок, история ОМ лица); экран на MSW по конфигурации. " +
+    "Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=protected-persons.",
+};
+
+const LAWS_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Законы об охранных мероприятиях",
+  paths: [],
+  note:
+    "Бэкенд готов (/api/ops/legal-documents/); экран на MSW по " +
+    "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=legal-documents.",
+};
+
+/**
+ * Префиксы раздела ОМ, у которых в `findApiGap` есть СВОЁ решение (Plane
+ * №948). Список — для пробы `e2e/api-gap-rules.spec.ts`: каждая страница
+ * `app/security-ops/**` обязана попадать под один из них, иначе экран живёт
+ * без решения о врезке — а именно так над живой сводкой ГВО оказалась
+ * надпись «на бэке нет /api/ops/*».
+ */
+export const SECURITY_OPS_RULED_PREFIXES: readonly string[] = [
+  "/security-ops/objects",
+  "/security-ops/profile",
+  ...SECURITY_EVENT_ROUTES,
+  "/security-ops/visits",
+  "/security-ops/persons",
+  "/security-ops/laws",
+  "/security-ops/vehicles",
+  "/security-ops/ratings",
+  "/security-ops/service-reports",
+  "/security-ops/analytics",
+  "/security-ops/dictionaries",
+  "/security-ops/settings",
+  "/security-ops/audit",
+  "/security-ops/feedback",
+  "/security-ops/changelog",
+];
+
+export function hasApiGapRule(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  return SECURITY_OPS_RULED_PREFIXES.some(
+    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`)
+  );
+}
 
 const SIMPLE_MOCK_BY_CONFIG: Record<string, ApiGap> = {
   "/security-ops/dictionaries": {
@@ -240,6 +303,24 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       )
     ) {
       return isOpsSecurityEventsLive() ? null : SECURITY_EVENTS_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/visits" ||
+      normalized.startsWith("/security-ops/visits/")
+    ) {
+      return isOpsSecurityEventsLive() && isOpsGvoLive() ? null : VISITS_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/persons" ||
+      normalized.startsWith("/security-ops/persons/")
+    ) {
+      return isOpsProtectedPersonsLive() ? null : PERSONS_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/laws" ||
+      normalized.startsWith("/security-ops/laws/")
+    ) {
+      return isOpsLegalDocumentsLive() ? null : LAWS_MOCK_BY_CONFIG;
     }
     if (
       normalized === "/security-ops/vehicles" ||

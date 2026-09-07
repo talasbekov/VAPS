@@ -88,6 +88,9 @@ test.describe(LIVE ? 'страница визита' : 'страница виз�
     await expect(page.getByRole('tab')).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Сводные данные ГВО' })).toBeVisible()
     await expect(head.getByRole('button', { name: 'Редактировать бюллетень' })).toBeVisible()
+    // Врезки «Не подключено — на бэке нет /api/ops/*» над живой сводкой НЕТ
+    // (Plane №948): данные пришли с сервера, и надпись про мок была ложью.
+    await expect(page.getByTestId('api-gap-notice')).toHaveCount(0)
     await page.screenshot({ path: path.join(SHOTS, 'visit-page-draft.png') })
 
     // Заполняем страну, остальное — «уточняется»: этого достаточно (ГВО-06/07).
