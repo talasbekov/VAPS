@@ -412,14 +412,25 @@ def test_the_paths_the_document_reads_are_derived_not_pinned(staff):
         / "e2e"
         / "gvo-unspecified-flags.spec.ts"
     )
-    assert spec.exists(), f"не найден исходник клиентской пробы: {spec}"
+    if not spec.exists():
+        # Бэкенд, собранный без фронтового дерева (отдельный checkout, образ
+        # CI), не должен краснеть по причине, не связанной с его кодом
+        # (ревью №825 по №905). Скип — вслух, с адресом.
+        pytest.skip(f"клиентской пробы нет рядом — сверять не с чем: {spec}")
     block = re.search(
         r"PATHS_THE_SERVER_READS = new Set<string>\(\[(.*?)\]\)",
         spec.read_text(encoding="utf-8"),
         re.S,
     )
     assert block is not None, "в клиентской пробе не найден пин PATHS_THE_SERVER_READS"
-    pinned = set(re.findall(r"'([^']+)'", block.group(1)))
+    # Построчно и без комментариев: апостроф внутри `//`-пояснения не должен
+    # читаться как «путь» (ревью №825 по №905).
+    pinned = {
+        m.group(1)
+        for line in block.group(1).splitlines()
+        for m in [re.match(r"^\s*'([^']+)',?\s*(//.*)?$", line)]
+        if m is not None
+    }
     expected = derived | required
     assert pinned == expected, (
         "пин клиента разошёлся с тем, что сервер читает на самом деле "
