@@ -177,7 +177,27 @@ const USER_ROLES: AccessUserRole[] = [
 /** Каталог применения СОБИРАЕТСЯ из карт гейтов на сервере; мок повторяет
  * форму на нескольких настоящих ручках — выдумывать сюда правдоподобные
  * адреса значило бы учить экран несуществующему API. */
+// `kind` — третье звено контракта №902 (ревью №825, 08.09.2026): без него мок
+// показывал только группу «Открывает», и «Снимает ограничение внутри» на
+// мок-стенде увидеть было нельзя. Умолчание `gate` ставится ниже одним
+// проходом; строка обхода объявлена явно.
 const CATALOG: AccessCatalogEntry[] = [
+  {
+    code: "placement.command",
+    name: "Расстановка на любом объекте",
+    isKnown: true,
+    isActive: true,
+    functions: [
+      {
+        permission: "placement.command",
+        method: "POST",
+        path: "/api/ops/security-events/<pk>/placement/assign/",
+        action: "placement_assign",
+        view: "SecurityEventViewSet",
+        kind: "widens",
+      },
+    ],
+  },
   {
     code: "admin.roles",
     name: "Управление доступом",
@@ -253,6 +273,10 @@ const CATALOG: AccessCatalogEntry[] = [
     ],
   },
 ];
+for (const entry of CATALOG) {
+  for (const fn of entry.functions) fn.kind ??= "gate";
+}
+
 
 let nextUserRoleId = USER_ROLES.length + 1;
 let nextAccountId = ACCOUNTS.length + 1;
