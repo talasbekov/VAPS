@@ -23,7 +23,7 @@
 // ЧАСТИЧНАЯ ручка, но окно шлёт ВСЕ поля, включая пустые: сервер понимает
 // «ключа нет» как «не трогай», а пустую строку — как «очисти», и человек,
 // стерший локацию, ждёт, что она сотрётся.
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { z } from "zod";
 import {
   Dialog,
@@ -150,7 +150,7 @@ export function EditBulletinDialog({
     setError,
     setValue,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = form;
 
   // Открыли окно — начинаем с ТЕКУЩИХ значений мероприятия. Без этого второе
@@ -177,15 +177,29 @@ export function EditBulletinDialog({
     valuesOf(event),
     detailsOf(event.protectedPersons),
   ]);
+  // 🔴 НАБРАННОЕ НЕ ЗАТИРАЕТСЯ (ревью №825 по №925, 08.09.2026). Подпись
+  // значений защищала от рефетча с ТЕМИ ЖЕ данными; рефетч с НОВЫМИ данными
+  // (кто-то поправил ОМ, пока окно открыто) по-прежнему сбрасывал бы форму
+  // серверным — та же болезнь по другому поводу. Решение: пока форма не
+  // тронута — берём серверные значения; тронута — оставляем набранное, и
+  // сервер ответит на сохранение по своим правилам. Открытие окна и переход
+  // на другое ОМ сбрасывают всегда.
+  const appliedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (open) {
+    if (!open) {
+      appliedFor.current = null;
+      return;
+    }
+    const freshDialog = appliedFor.current !== event.id;
+    if (freshDialog || !isDirty) {
       reset(valuesOf(event));
       setPersonDetails(detailsOf(event.protectedPersons));
+      appliedFor.current = event.id;
     }
     // `event` намеренно НЕ в списке: его подпись — `formPrint`, а `id` держит
     // переход между строками реестра, у которых значения могут совпасть.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, event.id, formPrint, reset]);
+  }, [open, event.id, formPrint, reset, isDirty]);
 
   // Окно закрывается ОТВЕТОМ сервера, а не кликом: отказ («закрытое
   // мероприятие», «лицо не найдено») человек должен увидеть здесь же.

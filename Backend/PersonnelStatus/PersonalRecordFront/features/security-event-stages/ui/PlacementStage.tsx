@@ -407,6 +407,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // Причина возврата берётся у ПОКАЗАННОГО объекта (Plane №491); поля
   // мероприятия остаются ответом только там, где объектов нет вовсе.
   const returnedFrom = scope.visit ?? event;
+  /** Объект уже прошёл расстановку (шаг открыт назад с «Согласования», №861). */
+  const placementAlreadyCompleted = scope.visit !== null && scope.visit.stage !== "PLACEMENT";
   const returnedComment =
     returnedFrom.approvalStatus === "RETURNED"
       ? (returnedFrom.approvalComment ?? "")
@@ -994,12 +996,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 </Button>
               )}
             </RightGate>
-            <RightGate reason={access.reason(EVENT_MANAGE)}>
+            <RightGate
+              reason={
+                placementAlreadyCompleted
+                  ? "Расстановка уже завершена — вернитесь к согласованию"
+                  : access.reason(EVENT_MANAGE)
+              }
+            >
               {(describedBy) => (
                 <Button
                   type="button"
                   size="sm"
-                  disabled={complete.isPending || !access.can(EVENT_MANAGE)}
+                  // На шаге, открытом назад с «Согласования» (№861), сервер
+                  // отобьёт повторное завершение (`_require_visit_stage`);
+                  // обещать кнопкой то, что отобьют, нельзя (ревью №825).
+                  disabled={complete.isPending || !access.can(EVENT_MANAGE) || placementAlreadyCompleted}
                   aria-describedby={describedBy}
                   onClick={() =>
                     complete.mutate({ visitObjectId: scope.visit?.id })

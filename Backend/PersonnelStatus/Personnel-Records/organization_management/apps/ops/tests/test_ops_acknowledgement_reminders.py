@@ -326,3 +326,42 @@ def test_a_swallowed_failure_is_not_counted_as_a_notified_supervisor(
     assert report["supervisors"] == 0, (
         "отчёт считает уведомлённым того, кому уведомление не дошло"
     )
+
+
+def test_a_duty_grant_with_the_right_gets_the_names_too(two_directorates, django_user_model):
+    """Второй источник грантов — ДЕЖУРСТВА (`TemporaryDutyPermission`): решение
+    заказчика по №800 («слать ОБОИМ»), исполненное в рассылке сбора сил и
+    пропущенное здесь (ревью №825 по №880, 08.09.2026). Заступивший дежурным
+    с `status.manage` на управление распоряжаться людьми может — гейт его
+    видит, — а поимённый список за час до заступления не получал.
+
+    Мутация: убери ветку дежурств из `supervisors_by_division` — дежурный
+    список не получит.
+    """
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models import TemporaryDutyPermission
+
+    event, boss_a, _boss_b, ours, _theirs = two_directorates
+    duty_user = django_user_model.objects.create_user(username="rem-duty", password="x")
+    role, _ = Role.objects.get_or_create(code="REM_DUTY", defaults={"name": "Дежурный пробы"})
+    permission, _ = Permission.objects.get_or_create(
+        code=SUPERVISE_PERMISSION, defaults={"name": "Распоряжаться личным составом"}
+    )
+    RolePermission.objects.get_or_create(role_code=role, permission_code=permission)
+    now = Clock.now()
+    TemporaryDutyPermission.objects.create(
+        user_id=str(duty_user.pk),
+        duty_role_code="REM_DUTY",
+        scope_division_id=Division.objects.get(code="DIR-REM-A").pk,
+        starts_at=now - dt.timedelta(days=1),
+        ends_at=now + dt.timedelta(days=1),
+    )
+
+    remind_supervisors_before_start(_in_window())
+
+    assert {row["employeeId"] for row in _payload_of(duty_user)["unconfirmed"]} == {
+        str(ours.pk)
+    }, "дежурный с правом на управление не получил поимённый список"
+    # Постоянный начальник — по-прежнему получает: источники складываются.
+    assert {row["employeeId"] for row in _payload_of(boss_a)["unconfirmed"]} == {str(ours.pk)}
+

@@ -471,3 +471,29 @@ def test_journal_of_another_actor_is_visible():
     assert response.data["count"] == 1
     assert response.data["results"][0]["actor_user_id"] == "system:dismissal"
     assert OpsAuditLog.objects.count() == 1
+
+
+def test_a_numeric_login_does_not_pull_another_accounts_rows_into_the_feed():
+    """Коллизия «логин одного — цифры pk другого» (ревью №825 по №895).
+
+    Для `?actor=<pk>` селектор добавляет `OR actor_user_id=<логин учётки pk>`,
+    чтобы поднять её дореформенные строки, записанные логином. Если логин —
+    цифры, совпадающие с pk ДРУГОЙ учётки, OR-ветка подмешала бы в ленту все
+    новые строки той учётки. Цифровой логин в OR-ветку не берётся.
+
+    Мутация: убери `not username.isdigit()` — чужая строка появится.
+    """
+    from organization_management.apps.operations.selectors import OpsAuditLogSelector
+
+    _api, other = client_for("audit-other-895")
+    _api2, owner = client_for("audit-owner-895")
+    owner.username = str(other.pk)
+    owner.save(update_fields=["username"])
+
+    own = write(actor=str(owner.pk), action=audit_service.STATUS_CREATED)
+    alien = write(actor=str(other.pk), action=audit_service.STATUS_CANCELLED)
+
+    found = {row.pk for row in OpsAuditLogSelector.list(actor_user_id=str(owner.pk))}
+    assert own.pk in found
+    assert alien.pk not in found, "лента владельца с цифровым логином показала чужие строки"
+

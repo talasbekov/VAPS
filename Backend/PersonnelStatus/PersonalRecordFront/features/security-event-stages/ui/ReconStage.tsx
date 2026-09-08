@@ -974,7 +974,12 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                 ? "уйдёт в "
                 : ""}
               {forcesOpen ? (
-                <Link href="/employees?view=forces" className="font-semibold text-primary-ink">
+                <Link
+                  // Прямо на вкладку «Сборы» (№931; ревью №825 нашло тот же
+                  // адрес здесь): без `tab=` открывался «Список сотрудников».
+                  href="/employees?view=forces&tab=collections"
+                  className="font-semibold text-primary-ink"
+                >
                   «Сбор сил на ОМ»
                 </Link>
               ) : (

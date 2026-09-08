@@ -36,6 +36,23 @@ test.describe('журнал действий: подписи записи ста
     expect(byKey.action.label).toBe('Действие')
   })
 
+  test('графы доставки записи «оповещение управлений» подписаны (№921)', () => {
+    const rows = auditChanges(
+      {},
+      {
+        notifiedHeads: 2,
+        notifiedHeadsList: ['Первое управление · 15'],
+        undeliveredHeads: [],
+        headlessDirectorates: [],
+        directoratesWithoutQuota: ['Второе управление'],
+      },
+    )
+    for (const row of rows) {
+      expect(row.isKnownField, `ключ «${row.key}» без подписи`).toBe(true)
+    }
+    expect(rows.find((row) => row.key === 'notifiedHeadsList')!.label).toBe('Кому дошло')
+  })
+
   test('код действия переведён, неизвестный код остаётся как есть', () => {
     const label = (action: string) =>
       auditChanges({}, { action }).find((row) => row.key === 'action')!.after

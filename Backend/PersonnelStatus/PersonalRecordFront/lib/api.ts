@@ -625,6 +625,8 @@ export interface OpsNotification {
     unconfirmed?: { employeeId: string; employeeName: string }[];
     /** Признак того самого часа — сервер ставит его тем же payload'ом. */
     oneHourBefore?: boolean;
+    /** `FORCES_RESPONSE`: департамент ОТОЗВАЛ присланный список (`[СБС-12]`, ревью №825 по №944). */
+    withdrawn?: boolean;
   };
   read_at: string | null;
   created_at: string;

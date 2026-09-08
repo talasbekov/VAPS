@@ -3628,33 +3628,22 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(
         detail=False,
-        methods=["get", "post"],
+        methods=["get"],
         url_path=r"(?P<code>[A-Z_]+)/entries",
     )
     def entries(self, request, code=None):
-        if request.method == "GET":
-            return Response({"results": dict_service.list_entries(code)})
-        # POST — заведение значения: гейт правки строже гейта чтения, и его
-        # держит карта прав через отдельное имя действия ниже.
-        return self.create_entry(request, code=code)
+        return Response({"results": dict_service.list_entries(code)})
 
+    # 🔴 POST — ОТДЕЛЬНОЕ ДЕЙСТВИЕ `create_entry` на том же адресе
+    # (`@entries.mapping.post`; ревью №825 по №901, 08.09.2026). Пока оба
+    # метода жили в одном действии `entries`, миксин гейтил POST правом
+    # ЧТЕНИЯ, а каталог прав показывал заведение значения под
+    # `dictionary.view` — ключ `create_entry` в карте был мёртвым: такого
+    # действия у DRF не существовало. Теперь у POST своё имя действия, карта
+    # и каталог читают его напрямую, а построчный `require_permission` не
+    # нужен вовсе: право одно и держится в одном месте — карте.
+    @entries.mapping.post
     def create_entry(self, request, code=None):
-        # RequirePermissionMixin гейтит по self.action="entries" (см. выше),
-        # поэтому право правки проверяется здесь явно.
-        #
-        # 🔴 ЧЕРЕЗ `require_permission`, А НЕ СВОИМ `in perms` (Plane №901).
-        # Каталог прав читает построчные гейты РАЗБОРОМ ИСХОДНИКА и знает
-        # ровно два имени — `require_permission` и `require_scoped_permission`.
-        # Своя проверка членством ему невидима, и заведение значения
-        # справочника показывалось в каталоге под правом ЧТЕНИЯ
-        # (`dictionary.view`, которым закрыто маршрутное действие `entries`).
-        # Это опаснее пропуска: администратор читает, что запись открывается
-        # правом чтения, и раздаёт его шире, чем собирался.
-        #
-        # Сообщение стало общим («PERMISSION_DENIED» без своего текста) — цена
-        # известная и небольшая: гейт один на весь раздел, и различать его
-        # формулировкой значило бы держать два способа отвечать одно и то же.
-        require_permission(request, "dictionary.manage")
         data = request.data or {}
         entry = dict_service.create_entry(
             code,
@@ -3869,6 +3858,10 @@ class EvaluationWorkItemViewSet(viewsets.ViewSet):
     permission_service_map = {
         "submit": ratings_service.EVALUATE_PERMISSION,
         "correct": ratings_service.CORRECT_PERMISSION,
+        # Карточка задания: сервис `submitted_evaluation_detail` первым делом
+        # требует `rating.evaluate` (ревью №825 по №901) — без этой строки
+        # каталог показывал у `GET …/detail/` только обход, не называя гейта.
+        "detail_view": ratings_service.EVALUATE_PERMISSION,
     }
 
     #: `rating.view_correction_chain` карточку задания не закрывает — он

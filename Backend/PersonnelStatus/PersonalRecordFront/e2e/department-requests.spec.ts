@@ -244,18 +244,18 @@ test.describe('заявки департаменту', () => {
     await open.click()
 
     await expect(
-    page.getByRole('button', { name: 'Назад к заявкам' }),
-    'карточка открылась на месте таблицы, а не увела на другой экран',
+      page.getByRole('button', { name: 'Назад к заявкам' }),
+      'карточка открылась на месте таблицы, а не увела на другой экран',
     ).toBeVisible({ timeout: 20_000 })
 
     // Четыре плитки эталона.
     for (const label of [
-    'Квота департамента',
-    'Разложено по управлениям',
-    'Выделено',
-    'Осталось',
+      'Квота департамента',
+      'Разложено по управлениям',
+      'Выделено',
+      'Осталось',
     ]) {
-    await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
     }
 
     // Распределение по управлениям — с полем квоты у строки.
@@ -271,20 +271,20 @@ test.describe('заявки департаменту', () => {
       timeout: 20_000,
     })
 
-      // Ключевая строка эталона: она объясняет, откуда берутся люди.
-      await expect(
+    // Ключевая строка эталона: она объясняет, откуда берутся люди.
+    await expect(
       page.getByText(
         'выделенные сотрудники появляются здесь автоматически',
         { exact: false },
       ),
       'подпись о том, откуда берутся выделенные, не показана',
-      ).toBeVisible()
+    ).toBeVisible()
 
-      // Возврат работает: человек не заперт в карточке.
-      await page.getByRole('button', { name: 'Назад к заявкам' }).click()
-      await expect(
-        page.getByRole('heading', { name: 'Заявки департаменту' }),
-      ).toBeVisible()
+    // Возврат работает: человек не заперт в карточке.
+    await page.getByRole('button', { name: 'Назад к заявкам' }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Заявки департаменту' }),
+    ).toBeVisible()
   })
 
   test('без права департамента вкладки «Заявки» нет вовсе', async ({ page }) => {
@@ -535,6 +535,61 @@ test.describe('заявки департаменту', () => {
       await expect(
         splitSection.getByText('Управления уже запрошены', { exact: false }),
       ).toBeVisible()
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
+
+  test('раскладка без рассылки: экран не утверждает, что управления запрошены (Plane №891)', async ({
+    page,
+  }) => {
+    /**
+     * Предмет №891, оставшийся без пробы после №944 (ревью №825, 08.09.2026):
+     * прежняя панель говорила «Управления оповещены», как только у заявки
+     * появились строки управлений — а строки заводит РАЗБИВКА КВОТЫ, не
+     * рассылка. Панель снята №944; правда теперь держится на `notifiedAt`
+     * (`locked` в карточке заявки), и ровно это здесь стережётся: после одной
+     * лишь разбивки кнопка «Отправить в управления» на месте, у строк —
+     * «Не запрошено», и ни одного «Запрошено <момент>».
+     *
+     * КРАСНАЯ ПРОБА: считай `locked` по `directorates.length > 0` — кнопка
+     * пропадёт.
+     */
+    const token = await apiToken()
+    const fixture = await createDepartmentAllocationFixture(token)
+
+    try {
+      const departments = (await apiCall(token, 'GET', '/api/core/divisions/?page_size=200')) as {
+        results: { id: number; type_code: string; parent: number | null }[]
+      }
+      const directorate = departments.results.find(
+        (d) => d.type_code === 'directorate' && String(d.parent) === fixture.departmentId,
+      )
+      expect(directorate, 'у департамента фикстуры нет управления').toBeTruthy()
+      await apiCall(
+        token,
+        'POST',
+        `/api/ops/security-events/${fixture.eventId}/forces/allocation/${fixture.allocationId}/split/`,
+        { rows: [{ divisionId: String(directorate!.id), need: 1 }] },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      await page.getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) }).click()
+
+      const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+      await expect(splitSection.locator('input[id^="quota-"]').first()).toBeVisible({ timeout: 20_000 })
+      await expect(
+        splitSection.getByRole('button', { name: 'Отправить в управления' }),
+        'после разбивки без рассылки кнопка отправки пропала — экран считает рассылку состоявшейся',
+      ).toBeVisible()
+      await expect(splitSection.getByText('Не запрошено', { exact: true }).first()).toBeVisible()
+      await expect(splitSection.getByText(/^Запрошено \d/)).toHaveCount(0)
+      await expect(splitSection.getByText('Управления уже запрошены', { exact: false })).toHaveCount(0)
     } finally {
       await dropEvent(token, fixture.eventId)
     }

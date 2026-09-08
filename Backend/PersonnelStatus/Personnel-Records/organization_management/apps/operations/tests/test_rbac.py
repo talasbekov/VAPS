@@ -66,9 +66,21 @@ class TestPermissionService:
         RoleAdminService.assign_role("77", "VIEWER", actor="test")
         assert PermissionService.effective_permissions("77") == {"status.view"}
 
-    def test_disabled_role_answers_the_same_to_the_gate_and_to_the_dispatch(self):
+    @pytest.mark.parametrize(
+        "disable_role, disable_permission",
+        [(True, False), (False, True), (True, True)],
+        ids=["role", "permission", "both"],
+    )
+    def test_disabled_role_answers_the_same_to_the_gate_and_to_the_dispatch(
+        self, disable_role, disable_permission
+    ):
         """Выключенная роль ведёт себя ОДИНАКОВО у гейта и у рассылок
         (Plane №924).
+
+        🔴 ТРИ СЛУЧАЯ, А НЕ ОДИН (ревью №825, 08.09.2026): при выключении
+        обоих флагов разом частичная починка (гейт смотрит `Permission.is_active`,
+        рассылка — только `Role.is_active`) оставалась бы зелёной — обе стороны
+        дали бы `False`. Роль и право выключаются порознь.
 
         🔴 ЧТО ЭТО ЗАКРЕПЛЯЕТ. Ни `effective_permissions` (гейт), ни
         `roles_holding` (общий договор, по которому рассылки раздела считают
@@ -90,9 +102,11 @@ class TestPermissionService:
         role = seed_role("DISABLED_ROLE", ["status.manage"])
         RoleAdminService.assign_role("910", "DISABLED_ROLE", actor="test")
 
-        role.is_active = False
-        role.save(update_fields=["is_active"])
-        Permission.objects.filter(code="status.manage").update(is_active=False)
+        if disable_role:
+            role.is_active = False
+            role.save(update_fields=["is_active"])
+        if disable_permission:
+            Permission.objects.filter(code="status.manage").update(is_active=False)
 
         gate_sees = "status.manage" in PermissionService.effective_permissions("910")
         dispatch_sees = "DISABLED_ROLE" in PermissionService.roles_holding(

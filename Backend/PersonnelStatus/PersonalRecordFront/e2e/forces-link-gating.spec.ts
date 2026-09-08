@@ -63,4 +63,18 @@ test.describe('ссылки в «Сбор сил» по ключу модуля'
     expect(guarded, 'ни одной ссылки под гейтом не найдено — проба вакуумна').toBeGreaterThanOrEqual(4)
     expect(unguarded, 'ссылки в «Сбор сил» без гейта forcesOpen (№939)').toEqual([])
   })
+
+  test('ссылки с этапов ОМ ведут прямо на вкладку «Сборы» (№931)', () => {
+    // Без `tab=collections` адрес открывает «Список сотрудников» (№928/№931);
+    // ревью №825 нашло тот же адрес в ReconStage после правки PlacementStage.
+    const wrong: string[] = []
+    for (const file of tsxFiles(path.join(ROOT, 'features/security-event-stages'))) {
+      readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
+        if (/href=["'`]\/employees\?view=forces/.test(line) && !/tab=collections/.test(line)) {
+          wrong.push(`${path.relative(ROOT, file)}:${index + 1}`)
+        }
+      })
+    }
+    expect(wrong, 'ссылка с этапа ведёт на «Список сотрудников», а не на «Сборы»').toEqual([])
+  })
 })

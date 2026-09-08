@@ -17,7 +17,7 @@
 // Сдача дня по подразделениям берётся у светофора — тем же ответом, что
 // питает его собственный экран: свой счёт «сдали / не сдали» разошёлся бы с
 // ним, а сличают их как раз тогда, когда что-то пошло не так.
-import { RightGate } from "@/shared/ui/right-gate";
+import { AccessHints, RightGate } from "@/shared/ui/right-gate";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -460,6 +460,12 @@ export default function ServiceAnalyticsPage() {
 
         {snapshot !== undefined && (
           <>
+            {/* Одна причина на ВСЕ карточки, а не частокол у каждой (№801;
+                ревью №825 по №912): `RightGate` внутри цикла без `AccessHints`
+                печатал бы одинаковую фразу N раз. */}
+            <AccessHints
+              reasons={[snapshot.drilldownAllowed ? null : snapshot.drilldownDeniedReason]}
+            >
             <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {snapshot.data.metrics.map((metric) => (
                 <MetricCard
@@ -482,6 +488,7 @@ export default function ServiceAnalyticsPage() {
                 />
               ))}
             </section>
+            </AccessHints>
 
             {active !== null && (
               <section

@@ -27,12 +27,15 @@
 функциями, а не их правка.
 """
 import datetime as dt
+import logging
 
 from django.db import transaction
 
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.ops import security_events as events
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso():
@@ -279,7 +282,23 @@ def withdraw_allocation(event_id, allocation_id, *, actor):
     target = events._find_allocation(current, allocation_id)
     if target.get("status") == "SUBMITTED":
         _drop_from_roster(current, target)
-    return events.withdraw_allocation(event_id, allocation_id, actor=actor)
+    event = events.withdraw_allocation(event_id, allocation_id, actor=actor)
+    # Штаб узнаёт об отзыве (`[СБС-12]`; ревью №825 по №944): своей точкой
+    # сохранения, как у ответа «Выделяем» в `respond_allocation`, — отказ
+    # вставки уведомления не должен откатить сам отзыв.
+    from organization_management.apps.ops import forces_notify
+
+    try:
+        with transaction.atomic():
+            report = forces_notify.notify_headquarters_withdrawal(event, target)
+        if report["undelivered"]:
+            logger.warning(
+                "уведомление штабу об отзыве списка не легло: ОМ=%r заявка=%r не дошло=%s",
+                event.code, allocation_id, report["undelivered"],
+            )
+    except Exception:  # noqa: BLE001 — рассылка не роняет отзыв
+        logger.exception("рассылка штабу об отзыве списка упала: ОМ=%r", event.code)
+    return event
 
 
 @transaction.atomic

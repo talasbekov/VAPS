@@ -173,6 +173,15 @@ export const AUDIT_FIELD_LABEL: Record<string, string> = {
   // Без подписи и перевода кода строка читалась «action approval_send»
   // (ревью №825 по №860, 08.09.2026).
   action: "Действие",
+  // Запись «оповещение управлений» (`FORCE_ALLOCATION_NOTIFIED`, №481/№921):
+  // графы доставки читают вслух при разборе «почему никого не запросили».
+  notifiedHeads: "Оповещено начальников",
+  notifiedHeadsList: "Кому дошло",
+  undeliveredHeads: "Кому не дошло",
+  headlessDirectorates: "Управления без начальника",
+  directoratesWithoutQuota: "Управления без квоты",
+  departmentName: "Департамент",
+  need: "Запрошено",
   is_active: "Действует",
   code: "Код",
   name: "Название",

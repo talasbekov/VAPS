@@ -61,6 +61,7 @@ import {
   type VisitObjectScope,
 } from "./useVisitObjectScope";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { PLACEMENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import { useMyEmployee } from "@/hooks/use-my-employee";
 import { useRenderEventDocument } from "@/hooks/use-ops-reports";
 import { saveBinaryFile } from "@/features/ops-reports/report-shared";
@@ -830,7 +831,12 @@ function ApprovalRoute({
    */
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const canFixPlacement = view.canFixPlacement;
+  // По ПРАВУ, а не только по статусу документа (ревью №825 по №861,
+  // 08.09.2026): согласующий и наблюдатель без `placement.manage` проходили
+  // по ссылке, видели баннер «правка расстановки открыта» — а кнопки панели
+  // были выключены. Баннер утверждал то, что для них неправда.
+  const chainAccess = useChainAccess();
+  const canFixPlacement = view.canFixPlacement && chainAccess.can(PLACEMENT_MANAGE);
   const placementStepHref = (() => {
     const next = new URLSearchParams(searchParams.toString());
     next.set(
