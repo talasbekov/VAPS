@@ -88,6 +88,37 @@ def test_gvo_manager_adds_a_visit_object_of_a_foreign_visit():
     assert r.status_code in (200, 201), r.content
 
 
+def test_gvo_manager_edits_and_removes_a_visit_object_of_a_foreign_visit():
+    """Правка и удаление объекта посещения — тем же правилом (`visit_object_detail`).
+
+    Именно на правке дня объекта заказчик получал один из 403 (№964); проба
+    добавлена по ревью №825: без неё мутация «убрать `visit_object_detail`
+    из `_GVO_EDITOR_ACTIONS`» оставалась зелёной.
+    """
+    api, _ = staff("gvo-staff-object-edit")
+    event = make_event("ОМ-Т-966")
+    obj = make_object("OBJ-966")
+    created = api.post(
+        f"{EVENTS_URL}{event.pk}/visit-objects/", {"objectId": str(obj.pk)}, format="json"
+    )
+    assert created.status_code == 201, created.content
+    # Ручка отвечает целым мероприятием; объект посещения — в его списке.
+    visit = next(
+        row for row in created.json()["visitObjects"] if str(row["objectId"]) == str(obj.pk)
+    )
+    visit_id = visit["id"]
+
+    edited = api.patch(
+        f"{EVENTS_URL}{event.pk}/visit-objects/{visit_id}/",
+        {"note": "Проверить въезд"},
+        format="json",
+    )
+    assert edited.status_code == 200, edited.content
+
+    removed = api.delete(f"{EVENTS_URL}{event.pk}/visit-objects/{visit_id}/")
+    assert removed.status_code in (200, 204), removed.content
+
+
 def test_gvo_manage_opens_nothing_on_an_internal_event():
     """У внутреннего ОМ сводки ГВО нет — право на сводку туда не переносится."""
     api, _ = staff("gvo-staff-internal")
