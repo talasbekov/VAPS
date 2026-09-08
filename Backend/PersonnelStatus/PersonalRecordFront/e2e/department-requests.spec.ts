@@ -244,18 +244,18 @@ test.describe('заявки департаменту', () => {
     await open.click()
 
     await expect(
-    page.getByRole('button', { name: 'Назад к заявкам' }),
-    'карточка открылась на месте таблицы, а не увела на другой экран',
+      page.getByRole('button', { name: 'Назад к заявкам' }),
+      'карточка открылась на месте таблицы, а не увела на другой экран',
     ).toBeVisible({ timeout: 20_000 })
 
     // Четыре плитки эталона.
     for (const label of [
-    'Квота департамента',
-    'Разложено по управлениям',
-    'Выделено',
-    'Осталось',
+      'Квота департамента',
+      'Разложено по управлениям',
+      'Выделено',
+      'Осталось',
     ]) {
-    await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
     }
 
     // Распределение по управлениям — с полем квоты у строки.
@@ -271,20 +271,20 @@ test.describe('заявки департаменту', () => {
       timeout: 20_000,
     })
 
-      // Ключевая строка эталона: она объясняет, откуда берутся люди.
-      await expect(
+    // Ключевая строка эталона: она объясняет, откуда берутся люди.
+    await expect(
       page.getByText(
         'выделенные сотрудники появляются здесь автоматически',
         { exact: false },
       ),
       'подпись о том, откуда берутся выделенные, не показана',
-      ).toBeVisible()
+    ).toBeVisible()
 
-      // Возврат работает: человек не заперт в карточке.
-      await page.getByRole('button', { name: 'Назад к заявкам' }).click()
-      await expect(
-        page.getByRole('heading', { name: 'Заявки департаменту' }),
-      ).toBeVisible()
+    // Возврат работает: человек не заперт в карточке.
+    await page.getByRole('button', { name: 'Назад к заявкам' }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Заявки департаменту' }),
+    ).toBeVisible()
   })
 
   test('без права департамента вкладки «Заявки» нет вовсе', async ({ page }) => {
