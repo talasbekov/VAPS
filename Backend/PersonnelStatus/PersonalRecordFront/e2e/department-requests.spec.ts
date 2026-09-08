@@ -19,6 +19,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { assertStep } from './fixture-step'
+import { uniqueBusinessDate } from './business-date'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -945,8 +946,10 @@ test.describe('заявки департаменту', () => {
     test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
 
     const token = await apiToken()
-    const day = new Date(Date.UTC(2027, 3, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
-    const businessDate = day.toISOString().slice(0, 10)
+    // 🔴 БЫЛ Ш-3 №567 (доводка №881 по ревью №825): `Math.floor(Date.now() /
+    // 1000) % 300` цикличен с периодом 300 с реального времени — та же
+    // болезнь, что №881 закрыла в `business-date.ts`, но не заметила здесь.
+    const businessDate = uniqueBusinessDate()
     const fixture = await createDepartmentAllocationFixture(token, { businessDate })
 
     try {
@@ -1103,9 +1106,10 @@ test.describe('заявки департаменту', () => {
     test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
 
     const token = await apiToken()
-    const day = new Date(Date.UTC(2027, 5, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
+    // 🔴 БЫЛ Ш-3 №567 (доводка №881 по ревью №825): период 300 с реального
+    // времени, та же болезнь, что №881 закрыла в `business-date.ts`.
     const fixture = await createDepartmentAllocationFixture(token, {
-      businessDate: day.toISOString().slice(0, 10),
+      businessDate: uniqueBusinessDate(),
     })
     try {
       const divisions = (await apiCall(token, 'GET', '/api/core/divisions/?page_size=200')) as {

@@ -17,6 +17,7 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 // стадий (см. шапку `prepare-events.ts`).
 import { prepareDemandEvent } from './prepare-events'
 import { assertStep } from './fixture-step'
+import { uniqueBusinessDate } from './business-date'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -409,8 +410,12 @@ test.describe('сборы сил (вид штаба)', () => {
       await assertStep(res, method, path)
       return res.json().catch(() => ({}))
     }
-    const day = new Date(Date.UTC(2027, 7, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
-    const own = await prepareDemandEvent(token, day.toISOString().slice(0, 10))
+    // 🔴 БЫЛ Ш-3 №567 (доводка №881 по ревью №825): `Math.floor(Date.now() /
+    // 1000) % 300` цикличен ровно с периодом 300 с (5 мин) реального времени
+    // — та же болезнь, которую №881 закрыла в `business-date.ts`, но не
+    // заметила здесь. `uniqueBusinessDate()` не повторяется в пределах
+    // процесса и разведена по воркерам (Plane №893).
+    const own = await prepareDemandEvent(token, uniqueBusinessDate())
     const list = (await call('GET', '/api/ops/security-events/forces/collections/')) as {
       results: { code: string; eventId: string }[]
     }
