@@ -171,6 +171,11 @@ function DepartmentRow({
             {row.sentAt ? `отправлен ${formatIsoDateTime(row.sentAt)}` : ""}
             {row.dueAt ? ` · срок ${formatIsoDateTime(row.dueAt)}` : ""}
           </p>
+          {(row.groupDemands ?? []).map((demand) => (
+            <p key={demand.id} className="text-muted-foreground mt-1 text-xs">
+              {demand.specification || demand.kindCode} · {demand.need} · {demand.place}
+            </p>
+          ))}
         </TableCell>
         <TableCell className="text-right font-semibold tabular-nums">{need}</TableCell>
         <TableCell className="text-right tabular-nums" data-slot="department-allocating">
@@ -367,6 +372,7 @@ interface DraftRow {
   departmentId: string;
   need: string;
   dueAt: string;
+  groupDemandIds: string[];
 }
 
 /** ISO-момент сервера → значение для `datetime-local`: секунды и зона
@@ -431,13 +437,14 @@ function SplitEditor({
       departmentId: row.departmentId,
       need: String(row.need),
       dueAt: toLocalInput(row.dueAt),
+      groupDemandIds: (row.groupDemands ?? []).map((demand) => demand.id),
     }));
   const [rows, setRows] = useState<DraftRow[]>(seed);
   // Черновик перечитывается ИЗ ОТВЕТА, когда сервер прислал другие строки, а
   // не при каждом рефетче: подпись собрана по значениям (тот же приём, что у
   // карточки департамента, №555) — иначе набранное исчезало бы молча.
   const signature = unsent
-    .map((row) => `${row.id}:${row.departmentId}:${row.need}:${row.dueAt ?? ""}`)
+    .map((row) => `${row.id}:${row.departmentId}:${row.need}:${row.dueAt ?? ""}:${(row.groupDemands ?? []).map((demand) => demand.id).join(",")}`)
     .join("|");
   useEffect(() => {
     setRows(seed());
@@ -448,6 +455,9 @@ function SplitEditor({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const { departments, isLoading } = useDepartments();
   const split = useSplitCollection(data.eventId);
+  const groupDemands = (data.demandRows ?? []).filter(
+    (row) => (row.kindCode ?? "PHYSICAL_SQUAD") !== "PHYSICAL_SQUAD"
+  );
 
   const taken = new Set([
     ...sentRows.map((row) => row.departmentId),
@@ -471,10 +481,15 @@ function SplitEditor({
     rows: [
       ...sentRows
         .filter((row) => !row.topUpOf)
-        .map((row) => ({ departmentId: row.departmentId, need: row.need })),
+        .map((row) => ({
+          departmentId: row.departmentId,
+          need: row.need,
+          groupDemandIds: (row.groupDemands ?? []).map((demand) => demand.id),
+        })),
       ...rows.map((row) => ({
         departmentId: row.departmentId,
         need: toCount(row.need),
+        groupDemandIds: row.groupDemandIds,
         ...(row.dueAt === "" ? {} : { dueAt: new Date(row.dueAt).toISOString() }),
       })),
     ],
@@ -547,6 +562,29 @@ function SplitEditor({
                 onChange={(e) => patch(row.key, { dueAt: e.target.value })}
               />
             </div>
+            {groupDemands.length > 0 && (
+              <fieldset className="mt-2 space-y-1">
+                <legend className="text-muted-foreground text-xs">Специальные группы</legend>
+                {groupDemands.map((demand) => (
+                  <label key={demand.id} className="flex items-start gap-2 text-xs">
+                    <Checkbox
+                      checked={row.groupDemandIds.includes(demand.id)}
+                      onCheckedChange={(checked) =>
+                        patch(row.key, {
+                          groupDemandIds:
+                            checked === true
+                              ? [...row.groupDemandIds, demand.id]
+                              : row.groupDemandIds.filter((id) => id !== demand.id),
+                        })
+                      }
+                    />
+                    <span>
+                      {demand.specification || demand.kindCode} · {demand.need} · {demand.place}
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
           </TableCell>
           <TableCell className="text-right">
             <Label className="sr-only" htmlFor={`draft-need-${row.key}`}>
@@ -603,6 +641,7 @@ function SplitEditor({
                     departmentId: "",
                     need: remainder > 0 ? String(remainder) : "1",
                     dueAt: "",
+                    groupDemandIds: [],
                   },
                 ]);
               }}

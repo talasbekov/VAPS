@@ -125,6 +125,16 @@ def _frozen_rows_changed(event, rows):
                 "Запрос уже отправлен — цифра заперта. Недобор довыделяется "
                 "отдельной строкой («Довыделить недобор →»)."
             ]
+        incoming_group_ids = {
+            str(value) for value in row.get("groupDemandIds", [])
+        }
+        stored_group_ids = {
+            str(value.get("id")) for value in item.get("groupDemands", [])
+        }
+        if incoming_group_ids != stored_group_ids:
+            errors[f"rows.{index}.groupDemandIds"] = [
+                "Запрос уже отправлен — перечень специальных групп заперт."
+            ]
     return errors
 
 

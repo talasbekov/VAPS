@@ -287,10 +287,16 @@ def notify_directorate_heads(event, allocation, directorates):
     # остаются СВОИМИ — это не отказ доставки, а «просить некого» и «не о чем»,
     # и в общий отчёт их сводить было бы неправдой.
     tally = notify_service.DeliveryTally()
+    group_demands = {
+        str(row.get("id")): row for row in allocation.get("groupDemands", [])
+    }
+    has_work = lambda row: int(row.get("need") or 0) > 0 or bool(
+        row.get("groupDemandIds")
+    )
     headless, without_quota = [], []
     for row in directorates:
         key = str(row.get("divisionId"))
-        if int(row.get("need") or 0) <= 0:
+        if not has_work(row):
             without_quota.append(row.get("name") or key)
             continue
         users = heads.get(key, set())
@@ -308,6 +314,11 @@ def notify_directorate_heads(event, allocation, directorates):
             "directorateName": row.get("name", ""),
             # Сколько просят с ЭТОГО управления — цифра раскладки департамента.
             "need": int(row.get("need") or 0),
+            "groupDemands": [
+                group_demands[str(group_id)]
+                for group_id in row.get("groupDemandIds", [])
+                if str(group_id) in group_demands
+            ],
             "dueAt": allocation.get("dueAt"),
         }
         for user_id in users:
@@ -331,7 +342,7 @@ def notify_directorate_heads(event, allocation, directorates):
     asked = {
         str(row.get("divisionId")): row
         for row in directorates
-        if int(row.get("need") or 0) > 0
+        if has_work(row)
     }
     for user_id, covered in _department_heads_over(
         [int(key) for key in asked if key.isdigit()]

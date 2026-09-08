@@ -1933,7 +1933,7 @@ def event_force_need(event, visits=None):
         visits = list(event.visit_objects.all())
     posts = event.recon_sector_posts or []
     if not visits:
-        return sum(max(int(post.get("need") or 0), 0) for post in posts)
+        return _physical_need(posts)
     need = sum(int(visit.force_need or 0) for visit in visits)
     if len(visits) > 1:
         # 🔴 «НИЧЕЙ» — ЭТО И ПУСТАЯ РАЗМЕТКА, И ССЫЛКА В ПУСТОТУ (Plane №759).
@@ -1952,8 +1952,8 @@ def event_force_need(event, visits=None):
         # требует миграции для уже накопленных строк; он остаётся доступен
         # отдельным шагом и этой правке не мешает.
         alive = {str(visit.pk) for visit in visits}
-        need += sum(
-            int(post.get("need") or 0)
+        need += _physical_need(
+            post
             for post in posts
             if str(post.get("visitObjectId") or "").strip() not in alive
         )
@@ -2228,6 +2228,14 @@ def update_recon(
         for row in (event.recon_sector_posts or [])
         if str(row.get("id") or "").strip()
     }
+    from organization_management.apps.operations.models_settings import OpsDictionaryEntry
+
+    participation_kinds = set(
+        OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_PARTICIPATION_KINDS", is_active=True
+        ).values_list("code", flat=True)
+    )
+    participation_kinds.add(PHYSICAL_SQUAD_KIND)
     seen_known_ids = set()
     for index, row in enumerate(sector_posts):
         if not str(row.get("sector", "")).strip():
@@ -2241,6 +2249,11 @@ def update_recon(
         else:
             if row_need < 1:
                 field_errors[f"sectorPosts.{index}.need"] = ["Должно быть не меньше 1."]
+        kind_code = _demand_kind_of(row)
+        if kind_code not in participation_kinds:
+            field_errors[f"sectorPosts.{index}.demandKindCode"] = [
+                "Выберите действующий вид участия."
+            ]
         visit_id = str(row.get("visitObjectId") or "").strip()
         if visit_id and visit_id not in own_visit_ids:
             field_errors[f"sectorPosts.{index}.visitObjectId"] = [
@@ -2351,6 +2364,10 @@ def update_recon(
                 "sector": str(row.get("sector", "")).strip(),
                 "post": str(row.get("post", "")).strip(),
                 "task": str(row.get("task", "")).strip(),
+                "demandKindCode": _demand_kind_of(row),
+                "demandSpecification": str(
+                    row.get("demandSpecification", "")
+                ).strip(),
                 # Смена — свойство ПОСТА, как в эталоне (`posts[].shift`:
                 # «Сектор A · смена 07:00–15:00»). До Plane №123 её вводили в
                 # строке потребности, а когда бокс потребности сняли (№110),
@@ -2708,10 +2725,7 @@ def complete_recon(event_id, *, visit_object_id=None):
     # подменять его расчётом значило бы переписать чужое решение.
     if target is None:
         if event.recon_force_request < 1:
-            event.recon_force_request = sum(
-                max(int(row.get("need") or 0), 0)
-                for row in event.recon_sector_posts
-            )
+            event.recon_force_request = _physical_need(event.recon_sector_posts)
         event.recon_force_requested_at = Clock.now()
         event.save(
             update_fields=[
@@ -2727,9 +2741,7 @@ def complete_recon(event_id, *, visit_object_id=None):
     # минимум по объектам, поэтому сосед продолжает работу, а карточка ОМ
     # остаётся на RECON до последнего объекта.
     if target.recon_force_request < 1:
-        target.recon_force_request = sum(
-            max(int(row.get("need") or 0), 0) for row in target_posts
-        )
+        target.recon_force_request = _physical_need(target_posts)
         target.save(update_fields=["recon_force_request", "updated_at"])
 
     old_event_stage = event.stage
@@ -2795,6 +2807,24 @@ def complete_recon(event_id, *, visit_object_id=None):
 # Подпись автозаявки на силы. Не название пула — его никто больше не вводит, —
 # а источник числа: заявка одна на мероприятие и говорит, откуда взялась.
 AUTO_FORCE_REQUEST_GROUP = "По расчёту рекогносцировки"
+PHYSICAL_SQUAD_KIND = "PHYSICAL_SQUAD"
+
+
+def _demand_kind_of(row):
+    """Вид потребности; старые строки расчёта были только физнарядом."""
+    return str(
+        row.get("demandKindCode")
+        or row.get("kindCode")
+        or PHYSICAL_SQUAD_KIND
+    ).strip()
+
+
+def _physical_need(rows):
+    return sum(
+        max(int(row.get("need") or 0), 0)
+        for row in (rows or [])
+        if _demand_kind_of(row) == PHYSICAL_SQUAD_KIND
+    )
 
 
 def _sync_auto_force_request(event):
@@ -2840,10 +2870,7 @@ def recompute_visit_needs(event):
     assignments = event.placement_assignments or []
     for visit in event.visit_objects.all():
         post_ids = {str(p.get("id")) for p in visit_object_posts(event, visit)}
-        need = sum(
-            int(p.get("need") or 0)
-            for p in visit_object_posts(event, visit)
-        )
+        need = _physical_need(visit_object_posts(event, visit))
         assigned = sum(
             1 for a in assignments if str(a.get("postId")) in post_ids
         )
@@ -2863,19 +2890,28 @@ def _demand_rows_of(posts):
     Второй способ построить строку разошёлся бы с первым — и разошёлся бы
     именно в числе, по которому собирают людей.
     """
-    return [
-        {
-            "id": f"demand-{index}",
-            "sector": str(post.get("sector") or "").strip(),
-            "task": str(post.get("task") or post.get("post") or "").strip(),
-            "shift": "",
-            "need": max(int(post.get("need") or 0), 0),
-            "group": "",
-            "requirements": str(post.get("requirements") or "").strip(),
-            "comment": "",
-        }
-        for index, post in enumerate(posts or [], start=1)
-    ]
+    rows = []
+    for index, post in enumerate(posts or [], start=1):
+        source_id = str(post.get("id") or "").strip()
+        sector = str(post.get("sector") or "").strip()
+        post_name = str(post.get("post") or "").strip()
+        rows.append(
+            {
+                "id": f"demand-{source_id}" if source_id else f"demand-{index}",
+                "sourcePostId": source_id or None,
+                "visitObjectId": str(post.get("visitObjectId") or "").strip() or None,
+                "sector": sector,
+                "task": str(post.get("task") or post_name).strip(),
+                "place": " · ".join(part for part in (sector, post_name) if part),
+                "shift": str(post.get("shift") or "").strip(),
+                "need": max(int(post.get("need") or 0), 0),
+                "kindCode": _demand_kind_of(post),
+                "specification": str(post.get("demandSpecification") or "").strip(),
+                "requirements": str(post.get("requirements") or "").strip(),
+                "comment": "",
+            }
+        )
+    return rows
 
 
 def _autopass_demand_and_forces(event):
@@ -3224,6 +3260,12 @@ def split_force_demand(event_id, *, rows):
         )
     rows = rows or []
     field_errors = {}
+    group_demands = {
+        str(row.get("id")): row
+        for row in (event.demand_rows or [])
+        if row.get("id") and _demand_kind_of(row) != PHYSICAL_SQUAD_KIND
+    }
+    assigned_group_ids = set()
     for index, row in enumerate(rows):
         if not str(row.get("departmentId", "")).strip():
             field_errors[f"rows.{index}.departmentId"] = ["Выберите департамент."]
@@ -3249,6 +3291,26 @@ def split_force_demand(event_id, *, rows):
                 field_errors[f"rows.{index}.dueAt"] = [
                     "Укажите момент в формате ГГГГ-ММ-ДДTЧЧ:ММ."
                 ]
+        raw_group_ids = row.get("groupDemandIds", [])
+        if not isinstance(raw_group_ids, list):
+            field_errors[f"rows.{index}.groupDemandIds"] = [
+                "Ожидается список строк потребности."
+            ]
+        else:
+            normalized_group_ids = [str(value).strip() for value in raw_group_ids]
+            if len(normalized_group_ids) != len(set(normalized_group_ids)):
+                field_errors[f"rows.{index}.groupDemandIds"] = [
+                    "Строка потребности указана дважды."
+                ]
+            elif any(value not in group_demands for value in normalized_group_ids):
+                field_errors[f"rows.{index}.groupDemandIds"] = [
+                    "Строка специальной группы не найдена в потребности ОМ."
+                ]
+            elif assigned_group_ids.intersection(normalized_group_ids):
+                field_errors[f"rows.{index}.groupDemandIds"] = [
+                    "Строка потребности уже адресована другому департаменту."
+                ]
+            assigned_group_ids.update(normalized_group_ids)
     if field_errors:
         raise _validation(field_errors)
 
@@ -3361,6 +3423,19 @@ def split_force_demand(event_id, *, rows):
                 "decisionComment": kept.get("decisionComment", ""),
                 "directorates": kept.get("directorates", []),
                 "members": kept.get("members", []),
+                "groupDemands": [
+                    group_demands[group_id]
+                    for group_id in (
+                        [str(value).strip() for value in row.get("groupDemandIds", [])]
+                        if "groupDemandIds" in row
+                        else [
+                            str(item.get("id"))
+                            for item in kept.get("groupDemands", [])
+                            if str(item.get("id")) in group_demands
+                        ]
+                    )
+                ],
+                "groupOffers": kept.get("groupOffers", []),
                 # Ответ департамента «Выделяем: X» (Plane №391, `[СБС-21]`)
                 # переносится по тому же правилу, что и опоздание выше: строка
                 # пересобирается явным перечнем, и забытый ключ — стёртый
@@ -3482,6 +3557,10 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
         raise _validation({"rows": ["Ожидается список строк."]})
     incoming = list(rows or [])
     seen = set()
+    assigned_group_ids = set()
+    allowed_group_ids = {
+        str(row.get("id")) for row in target.get("groupDemands", []) if row.get("id")
+    }
     prepared = []
     for index, row in enumerate(incoming):
         key = str(row.get("divisionId") or "").strip()
@@ -3499,7 +3578,27 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
         need = _whole_number(row.get("need", 0), f"rows.{index}.need")
         if need < 0:
             raise _validation({f"rows.{index}.need": ["Число не может быть меньше нуля."]})
-        prepared.append((key, need))
+        raw_group_ids = row.get("groupDemandIds", [])
+        if not isinstance(raw_group_ids, list):
+            raise _validation(
+                {f"rows.{index}.groupDemandIds": ["Ожидается список строк потребности."]}
+            )
+        group_ids = [str(value).strip() for value in raw_group_ids]
+        if len(group_ids) != len(set(group_ids)):
+            raise _validation(
+                {f"rows.{index}.groupDemandIds": ["Строка потребности указана дважды."]}
+            )
+        if any(value not in allowed_group_ids for value in group_ids):
+            raise _validation(
+                {f"rows.{index}.groupDemandIds": ["Группа не адресована департаменту."]}
+            )
+        repeated = assigned_group_ids.intersection(group_ids)
+        if repeated:
+            raise _validation(
+                {f"rows.{index}.groupDemandIds": ["Группа уже назначена другому управлению."]}
+            )
+        assigned_group_ids.update(group_ids)
+        prepared.append((key, need, group_ids))
 
     # ПРЕДЕЛ — ОТ «ВЫДЕЛЯЕМ» (Plane №392, `[СБС-22]`: «разбивка по
     # управлениям — от цифры „Выделяем“»). Пока департамент не ответил —
@@ -3513,10 +3612,27 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
     # 2, управления A и B; `{rows:[{A,2}]}` принято, затем `{rows:[{B,2}]}`
     # тоже принято — и сохранено A=2 И B=2 при квоте 2. Докстринг выше прямо
     # утверждает, что этого быть не может.
-    need_of = dict(prepared)
+    need_of = {key: need for key, need, _group_ids in prepared}
+    groups_of = {key: group_ids for key, _need, group_ids in prepared}
     kept_rows = {
         str(row.get("divisionId")): row for row in target.get("directorates", [])
     }
+    resulting_groups = {
+        key: groups_of.get(key, list(kept_rows.get(key, {}).get("groupDemandIds", [])))
+        for key in known
+    }
+    for key, kept in kept_rows.items():
+        if key not in resulting_groups:
+            resulting_groups[key] = list(kept.get("groupDemandIds", []))
+    group_owner = {}
+    for key, group_ids in resulting_groups.items():
+        for group_id in group_ids:
+            previous_owner = group_owner.get(group_id)
+            if previous_owner is not None and previous_owner != key:
+                raise _validation(
+                    {"rows": ["Группа уже назначена другому управлению."]}
+                )
+            group_owner[group_id] = key
     resulting = {
         key: need_of.get(key, int(kept_rows.get(key, {}).get("need") or 0))
         for key in known
@@ -3557,6 +3673,7 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
                 # касался, остаётся как была. Именно поэтому предел выше
                 # считается по `resulting`, а не по `prepared`.
                 "need": resulting[key],
+                "groupDemandIds": resulting_groups[key],
                 "notifiedAt": kept.get("notifiedAt"),
             }
         )
@@ -3581,7 +3698,10 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
             "departmentName": target.get("departmentName"),
             "quota": quota,
             "split": total,
-            "rows": [{"divisionId": key, "need": need} for key, need in prepared],
+            "rows": [
+                {"divisionId": key, "need": need, "groupDemandIds": group_ids}
+                for key, need, group_ids in prepared
+            ],
         },
     )
     return event
@@ -3669,6 +3789,8 @@ def notify_directorates(event_id, allocation_id, *, actor):
         key = str(pk)
         kept = known.get(key)
         need = int((kept or {}).get("need") or 0)
+        group_demand_ids = list((kept or {}).get("groupDemandIds", []))
+        has_work = need > 0 or bool(group_demand_ids)
         rows.append(
             {
                 "id": (kept or {}).get("id") or f"force-directorate-{key}",
@@ -3680,6 +3802,7 @@ def notify_directorates(event_id, allocation_id, *, actor):
                 # бы раскладку в момент рассылки — то есть ровно тогда, когда
                 # число впервые становится нужным.
                 "need": need,
+                "groupDemandIds": group_demand_ids,
                 # Уже оповещённому момент НЕ переписывается: повторное нажатие
                 # добирает тех, кому не сказали, а не объявляет всех
                 # оповещёнными заново — иначе «когда сказали» стало бы
@@ -3696,7 +3819,7 @@ def notify_directorates(event_id, allocation_id, *, actor):
                 # ввела соседняя №551: «разослана» — это `notifiedAt`, и ставит
                 # его только состоявшаяся рассылка.
                 "notifiedAt": (
-                    ((kept or {}).get("notifiedAt") or now) if need > 0
+                    ((kept or {}).get("notifiedAt") or now) if has_work
                     else (kept or {}).get("notifiedAt")
                 ),
             }
@@ -4336,6 +4459,8 @@ def department_requests_view(allowed_division_ids):
                     "departmentId": str(department_id),
                     "departmentName": allocation.get("departmentName") or "",
                     "need": int(allocation.get("need") or 0),
+                    "groupDemands": allocation.get("groupDemands", []),
+                    "groupOffers": allocation.get("groupOffers", []),
                     # Ответ департамента «Выделяем: X» (Plane №391) — колонка
                     # «выделяем» строки `[СБС-20]` (Plane №444); None — ответа
                     # ещё нет.
@@ -4852,7 +4977,9 @@ _ALLOCATION_DECLINED = "DECLINED"
 
 
 @transaction.atomic
-def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
+def respond_allocation(
+    event_id, allocation_id, *, allocating, comment, group_offers=None, actor
+):
     """Ответ департамента на запрос штаба: «Выделяем: X · Комментарий»
     (Plane №391, `[СБС-21]`).
 
@@ -4900,6 +5027,63 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
     if count < 0:
         raise _validation({"allocating": ["Число не может быть меньше нуля."]})
 
+    raw_offers = [] if group_offers is None else group_offers
+    if not isinstance(raw_offers, list):
+        raise _validation({"groupOffers": ["Ожидается список групп."]})
+    from organization_management.apps.operations.models_settings import OpsDictionaryEntry
+
+    known_kinds = set(
+        OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_PARTICIPATION_KINDS", is_active=True
+        ).values_list("code", flat=True)
+    )
+    known_kinds.update(
+        _demand_kind_of(row) for row in target.get("groupDemands", [])
+    )
+    allowed_demand_ids = {
+        str(row.get("id")) for row in target.get("groupDemands", []) if row.get("id")
+    }
+    prepared_offers = []
+    offer_errors = {}
+    for index, offer in enumerate(raw_offers):
+        if not isinstance(offer, dict):
+            offer_errors[f"groupOffers.{index}"] = ["Ожидается строка группы."]
+            continue
+        kind_code = str(offer.get("kindCode") or "").strip()
+        demand_row_id = str(offer.get("demandRowId") or "").strip()
+        place = str(offer.get("place") or "").strip()
+        try:
+            offer_count = _whole_number(offer.get("count", 0), "count")
+        except DomainError:
+            offer_errors[f"groupOffers.{index}.count"] = ["Укажите целое число."]
+            offer_count = 0
+        if offer_count < 0:
+            offer_errors[f"groupOffers.{index}.count"] = [
+                "Число не может быть меньше нуля."
+            ]
+        if kind_code == PHYSICAL_SQUAD_KIND or kind_code not in known_kinds:
+            offer_errors[f"groupOffers.{index}.kindCode"] = [
+                "Выберите действующий вид специальной группы."
+            ]
+        if demand_row_id and demand_row_id not in allowed_demand_ids:
+            offer_errors[f"groupOffers.{index}.demandRowId"] = [
+                "Строка потребности не адресована этому департаменту."
+            ]
+        if not place:
+            offer_errors[f"groupOffers.{index}.place"] = ["Укажите место."]
+        prepared_offers.append(
+            {
+                "demandRowId": demand_row_id or None,
+                "kindCode": kind_code,
+                "count": offer_count,
+                "place": place,
+                "specification": str(offer.get("specification") or "").strip(),
+                "comment": str(offer.get("comment") or "").strip(),
+            }
+        )
+    if offer_errors:
+        raise _validation(offer_errors)
+
 
     # СВОЙ ключ, а не `comment`: тот — комментарий ШТАБА к строке раскладки
     # (приходит с `forces/allocation/` и пересохраняется им же). Пиши ответ
@@ -4908,6 +5092,7 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
     patch = {
         "allocating": count,
         "answerComment": str(comment or "").strip(),
+        "groupOffers": prepared_offers,
     }
     if count == 0:
         # Статус ДО отказа запоминается (Plane №552). Повторный «0» его не

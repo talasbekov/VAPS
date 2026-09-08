@@ -424,7 +424,13 @@ function readOpsSource(): OpsSourceEvent[] | null {
       readinessPercent: event.readinessPercent ?? null,
       conflictsCount: event.conflictsCount,
       demandApproved: event.demandApproved === true,
-      demandNeedTotal: event.demandRows.reduce((total, row) => total + row.need, 0),
+      demandNeedTotal: event.demandRows.reduce(
+        (total, row) =>
+          (row.kindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD"
+            ? total + row.need
+            : total,
+        0
+      ),
       requestedTotal: event.forceRequests.reduce(
         (total, request) => total + request.requestedCount,
         0

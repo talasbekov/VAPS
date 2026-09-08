@@ -45,6 +45,7 @@ import {
 } from "@/hooks/use-security-event-stages";
 import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
 import { useChainAccess } from "@/features/forces-split/ui/chain-access";
 import { moduleOpenFor } from "@/entities/portal-access";
 import { mayManageRecon } from "@/entities/security-event/model/capabilities";
@@ -89,6 +90,7 @@ interface SectorGroup {
 }
 
 export function ReconStage({ event }: { event: SecurityEvent }) {
+  const participationCatalog = useParticipationCatalog();
   const [checklist, setChecklist] = useState<ReconChecklistItem[]>(
     event.reconChecklist
   );
@@ -215,7 +217,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   /** Расчёт по постам — то самое число, которое завершение этапа отправит
    * штабу 2-го департамента. Считает его СЕРВЕР; здесь оно показывается,
    * чтобы старший наряда видел, что уходит. */
-  const needFromPosts = rows.reduce((sum, row) => sum + (row.need || 0), 0);
+  const needFromPosts = rows.reduce(
+    (sum, row) =>
+      (row.demandKindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD"
+        ? sum + (row.need || 0)
+        : sum,
+    0
+  );
 
   /** Паспорт, из которого пойдёт импорт: у объекта СВОЙ снимок версии
    *  (`[РЕК-05]` — «импорт из паспорта объекта посещения»).
@@ -236,7 +244,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
 
   /** Потребность ПОКАЗАННОГО объекта — то, что просит подвал `[РЕК-07]`.
    *  Общее число остаётся рядом: штабу уходит сумма по мероприятию. */
-  const needOfVisit = visibleRows.reduce((sum, row) => sum + (row.need || 0), 0);
+  const needOfVisit = visibleRows.reduce(
+    (sum, row) =>
+      (row.demandKindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD"
+        ? sum + (row.need || 0)
+        : sum,
+    0
+  );
 
   /** Группы «сектор → строки» в порядке появления строк. Пустые секторы
    * дописываются в хвост. */
@@ -859,7 +873,49 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                                 <tr id={`recon-post-details-${row.id}`} className="bg-muted/20">
                                   <td />
                                   <td className="py-2 pr-2" colSpan={6}>
-                                    <div className="grid gap-2 md:grid-cols-5">
+                                    <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-7">
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Вид потребности</span>
+                                        <select
+                                          className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                                          aria-label={`Вид потребности: ${name}`}
+                                          value={row.demandKindCode ?? "PHYSICAL_SQUAD"}
+                                          onChange={(event) =>
+                                            patchRow(row.id, {
+                                              demandKindCode: event.target.value,
+                                            })
+                                          }
+                                        >
+                                          {(participationCatalog.data ?? []).map((kind) => (
+                                            <option key={kind.code} value={kind.code}>
+                                              {kind.label}
+                                            </option>
+                                          ))}
+                                          {(participationCatalog.data ?? []).every(
+                                            (kind) => kind.code !== (row.demandKindCode ?? "PHYSICAL_SQUAD")
+                                          ) && (
+                                            <option value={row.demandKindCode ?? "PHYSICAL_SQUAD"}>
+                                              {(row.demandKindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD"
+                                                ? "Физический наряд"
+                                                : row.demandKindCode}
+                                            </option>
+                                          )}
+                                        </select>
+                                      </label>
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Спецификация</span>
+                                        <Input
+                                          className="h-8 text-xs"
+                                          placeholder="Состав или квалификация"
+                                          aria-label={`Спецификация потребности: ${name}`}
+                                          value={row.demandSpecification ?? ""}
+                                          onChange={(event) =>
+                                            patchRow(row.id, {
+                                              demandSpecification: event.target.value,
+                                            })
+                                          }
+                                        />
+                                      </label>
                                       <label className="space-y-1 text-[11px] text-muted-foreground">
                                         <span>Тип</span>
                                         <select

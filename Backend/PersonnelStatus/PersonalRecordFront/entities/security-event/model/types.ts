@@ -100,17 +100,36 @@ export interface ReconSectorPost {
    * проставила миграция.
    */
   visitObjectId?: string | null;
+  /** Вид строки потребности; отсутствие у старых постов означает физнаряд. */
+  demandKindCode?: string;
+  /** Уточнение состава/квалификации строки потребности. */
+  demandSpecification?: string;
 }
 
 /** Строка потребности в силах. */
 export interface StaffingDemandRow {
   id: string;
+  sourcePostId?: string | null;
+  visitObjectId?: string | null;
   sector: string;
   task: string;
+  place?: string;
   shift: string;
   need: number;
-  group: string;
+  kindCode?: string;
+  specification?: string;
+  /** Старое поле ручной формы; остаётся для чтения исторических строк. */
+  group?: string;
   requirements: string;
+  comment: string;
+}
+
+export interface ForceGroupOffer {
+  demandRowId: string | null;
+  kindCode: string;
+  count: number;
+  place: string;
+  specification: string;
   comment: string;
 }
 
@@ -164,6 +183,7 @@ export interface ForceAllocationDirectorate {
    * разошёлся бы с сервером при первом же переводе. */
   assigned: number;
   notifiedAt: string | null;
+  groupDemandIds?: string[];
 }
 
 /** Выделенный управлением сотрудник (заполняется СС-3). */
@@ -227,6 +247,8 @@ export interface ForceAllocationRow {
   decisionComment: string;
   directorates: ForceAllocationDirectorate[];
   members: ForceAllocationMember[];
+  groupDemands?: StaffingDemandRow[];
+  groupOffers?: ForceGroupOffer[];
   /** Момент «Отправить запросы» штаба (`[СБС-12]`, Plane №944). Пусто —
    *  черновик: департамент строки не видит, цифра правится; есть — цифра
    *  заперта, менять её можно только «Довыделить недобор →». */
@@ -1097,6 +1119,7 @@ export interface SplitForceDemandRequest extends Record<string, unknown> {
      *  сохранит прежний срок либо поставит умолчание «за сутки до ОМ»;
      *  неразбираемое значение он отбивает 400, а не подменяет умолчанием. */
     dueAt?: string;
+    groupDemandIds?: string[];
   }[];
   /** `true` — «Сохранить черновик»: строки без момента отправки. Без флага
    *  раскладка ОТПРАВЛЯЕТСЯ департаментам (`[СБС-12]`, Plane №944). */
@@ -1347,6 +1370,8 @@ export interface DepartmentRequestRow {
   /** Список отправлен ПОСЛЕ срока. Отправку опоздание не запрещает — оно её
    * помечает. */
   submittedLate: boolean;
+  groupDemands?: StaffingDemandRow[];
+  groupOffers?: ForceGroupOffer[];
 }
 
 /** Состояние сбора по МЕРОПРИЯТИЮ (Plane №271, Ш-1/Ш-3).
@@ -1449,6 +1474,7 @@ export interface ForceCollectionDetail {
   remaining: number;
   collectionStatus: ForceCollectionStatus;
   allocations: ForceAllocationRow[];
+  demandRows?: StaffingDemandRow[];
 }
 
 /** 🔴 `force-collection`, а не `forces/collection`: второй попадал бы в уже

@@ -1242,7 +1242,9 @@ def _project_event(event):
     projected.conflicts_count = event.conflicts_count
     projected.demand_approved = event.demand_approved
     projected.demand_need_total = sum(
-        int(row.get("need") or 0) for row in (event.demand_rows or [])
+        int(row.get("need") or 0)
+        for row in (event.demand_rows or [])
+        if str(row.get("kindCode") or "PHYSICAL_SQUAD") == "PHYSICAL_SQUAD"
     )
     requests = event.force_requests or []
     projected.requested_total = sum(

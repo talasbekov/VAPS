@@ -37,6 +37,14 @@ def _directorate_row_view(event, allocation, mine, allocation_id):
     показывал бы разные поля в зависимости от того, пришёл человек по ссылке
     из уведомления или открыл раздел из меню.
     """
+    group_demands = {
+        str(row.get("id")): row for row in allocation.get("groupDemands", [])
+    }
+    selected_group_ids = {
+        str(group_id)
+        for row in mine
+        for group_id in row.get("groupDemandIds", [])
+    }
     return {
         "eventId": str(event.pk),
         "code": event.code,
@@ -46,6 +54,11 @@ def _directorate_row_view(event, allocation, mine, allocation_id):
         "departmentName": allocation.get("departmentName", ""),
         "status": allocation.get("status"),
         "dueAt": allocation.get("dueAt"),
+        "groupDemands": [
+            row
+            for group_id, row in group_demands.items()
+            if group_id in selected_group_ids
+        ],
         # Обычно одна строка; несколько — у роли с областью на
         # департамент (она видит все его управления).
         "directorates": [

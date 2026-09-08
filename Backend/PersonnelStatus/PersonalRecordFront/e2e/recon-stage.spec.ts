@@ -41,6 +41,8 @@ interface EventRow {
     weapon?: string
     uniform?: string
     parentPostId?: string
+    demandKindCode?: string
+    demandSpecification?: string
     comment: string
   }[]
 }
@@ -120,6 +122,12 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     await stage
       .getByLabel(`Тип поста: ${post.post}`, { exact: true })
       .selectOption('Группа досмотра')
+    await stage
+      .getByLabel(`Вид потребности: ${post.post}`, { exact: true })
+      .selectOption('SCREENING_GROUP')
+    await stage
+      .getByLabel(`Спецификация потребности: ${post.post}`, { exact: true })
+      .fill('Две группы досмотра')
     await stage.getByLabel(`Вооружение: ${post.post}`, { exact: true }).fill('АКС-74У')
     await stage.getByLabel(`Форма одежды: ${post.post}`, { exact: true }).fill('Повседневная')
     await stage.getByLabel(`Примечание к посту: ${post.post}`, { exact: true }).fill(note)
@@ -130,11 +138,18 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
         async () => {
           const fresh = (await events(token)).find((e) => e.id === target.id)
           const row = fresh?.reconSectorPosts.find((r) => r.id === post.id)
-          return [row?.postType, row?.weapon, row?.uniform, row?.comment].join('|')
+          return [
+            row?.postType,
+            row?.demandKindCode,
+            row?.demandSpecification,
+            row?.weapon,
+            row?.uniform,
+            row?.comment,
+          ].join('|')
         },
         { timeout: 15_000 },
       )
-      .toBe(`Группа досмотра|АКС-74У|Повседневная|${note}`)
+      .toBe(`Группа досмотра|SCREENING_GROUP|Две группы досмотра|АКС-74У|Повседневная|${note}`)
 
     // Подпост из прототипа: строка встаёт за родителем и доезжает до сервера.
     // Ожидание считается ОТ ИСХОДНОГО состояния фикстуры: проба добавляет

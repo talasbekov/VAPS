@@ -2244,16 +2244,23 @@ export const securityEventsHandlers = [
     // форм у них больше нет, и завершение осмотра выводит ОМ на «Расстановку».
     // Потребность собирается из расчёта постов, заявка на силы — одна.
     const demandRows = completed.reconSectorPosts.map((post, index) => ({
-      id: `demand-${index + 1}`,
+      id: post.id ? `demand-${post.id}` : `demand-${index + 1}`,
+      sourcePostId: post.id || null,
+      visitObjectId: post.visitObjectId ?? null,
       sector: post.sector,
       task: post.task !== "" ? post.task : post.post,
-      shift: "",
+      place: [post.sector, post.post].filter(Boolean).join(" · "),
+      shift: post.shift ?? "",
       need: Math.max(post.need || 0, 0),
-      group: "",
+      kindCode: post.demandKindCode ?? "PHYSICAL_SQUAD",
+      specification: post.demandSpecification ?? "",
       requirements: post.requirements,
       comment: "",
     }));
-    const forceNeed = demandRows.reduce((sum, row) => sum + row.need, 0);
+    const forceNeed = demandRows.reduce(
+      (sum, row) => row.kindCode === "PHYSICAL_SQUAD" ? sum + row.need : sum,
+      0
+    );
     return HttpResponse.json(
       saveEvent({
         ...advanceVisits(completed, "PLACEMENT"),
@@ -2391,6 +2398,10 @@ export const securityEventsHandlers = [
           decisionComment: kept?.decisionComment ?? "",
           directorates: kept?.directorates ?? [],
           members: kept?.members ?? [],
+          groupDemands: (row.groupDemandIds ?? [])
+            .map((id) => event.demandRows.find((demand) => demand.id === id))
+            .filter((demand): demand is NonNullable<typeof demand> => demand !== undefined),
+          groupOffers: kept?.groupOffers ?? [],
           sentAt: kept?.sentAt ?? sentNow,
         };
       });

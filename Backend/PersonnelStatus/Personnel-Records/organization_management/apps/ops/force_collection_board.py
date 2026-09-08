@@ -284,6 +284,7 @@ def detail_extras(event, allocations):
     """Дополнение к `force_collection_detail` (Ш-2 №271) полями `[СБС-11]`/`[СБС-12]`."""
     return {
         "needByObject": need_by_object(event),
+        "demandRows": event.demand_rows or [],
         "totals": totals(event, allocations),
         "boardStatus": collection_status(event, allocations),
         "urgent": is_urgent(event, allocations),

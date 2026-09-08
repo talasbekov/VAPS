@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
+import type { StaffingDemandRow } from "@/entities/security-event";
 
 export interface DirectorateForcesRequest {
   eventId: string;
@@ -20,6 +21,7 @@ export interface DirectorateForcesRequest {
   departmentName: string;
   status: string;
   dueAt: string | null;
+  groupDemands?: StaffingDemandRow[];
   directorates: {
     divisionId: string;
     name: string;

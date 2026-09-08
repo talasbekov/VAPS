@@ -23,6 +23,7 @@ import {
   securityEventForcesWithdrawPath,
   type DepartmentRequestDetail,
   type DepartmentRequestRow,
+  type ForceGroupOffer,
 } from "@/entities/security-event";
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
@@ -65,7 +66,7 @@ export function useSplitDirectorateQuotas(eventId: string, allocationId: string)
   return useMutation<
     unknown,
     OpsApiFailure,
-    { rows: { divisionId: string; need: number }[] }
+    { rows: { divisionId: string; need: number; groupDemandIds?: string[] }[] }
   >({
     mutationFn: (body) =>
       opsApiClient.post(
@@ -160,7 +161,11 @@ export function useWithdrawDepartmentAllocation(eventId: string, allocationId: s
  */
 export function useRespondDepartmentAllocation(eventId: string, allocationId: string) {
   const client = useQueryClient();
-  return useMutation<unknown, OpsApiFailure, { allocating: number; comment: string }>({
+  return useMutation<
+    unknown,
+    OpsApiFailure,
+    { allocating: number; comment: string; groupOffers: ForceGroupOffer[] }
+  >({
     mutationFn: (body) =>
       opsApiClient.post(securityEventForcesRespondPath(eventId, allocationId), body),
     onSuccess: () => {

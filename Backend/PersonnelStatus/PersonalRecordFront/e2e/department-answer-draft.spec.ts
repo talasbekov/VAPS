@@ -146,6 +146,18 @@ test.describe(
                 // набрал человек.
                 allocating: null,
                 answerComment: '',
+                groupDemands: [
+                  {
+                    id: 'demand-screening-555',
+                    kindCode: 'SCREENING_GROUP',
+                    need: 2,
+                    place: 'КПП · Зона досмотра',
+                    specification: 'Группа досмотра',
+                    requirements: 'Ручной металлодетектор',
+                    shift: '09:00–18:00',
+                  },
+                ],
+                groupOffers: [],
                 notifiedAt: null,
                 submittedAt: null,
                 decidedAt: null,
@@ -180,6 +192,10 @@ test.describe(
       await expect(tab).toBeVisible({ timeout: 30_000 })
       await tab.click()
       await page.getByRole('button', { name: new RegExp(`^Открыть заявку ${CODE} `) }).click()
+
+      await expect(page.getByRole('region', { name: 'Специальные группы' })).toContainText(
+        'Группа досмотра · 2 · КПП · Зона досмотра',
+      )
 
       // Адрес — id полей, а не подпись: «Выделяем» стоит и в метке «В
       // разработке» бокового меню, и `getByLabel` ловит два элемента разом.

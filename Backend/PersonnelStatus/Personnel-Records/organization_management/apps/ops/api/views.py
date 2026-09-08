@@ -1803,6 +1803,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 allocation_id,
                 allocating=data.get("allocating"),
                 comment=data.get("comment"),
+                group_offers=data.get("groupOffers"),
                 actor=resolve_actor_id(request),
             )
         )

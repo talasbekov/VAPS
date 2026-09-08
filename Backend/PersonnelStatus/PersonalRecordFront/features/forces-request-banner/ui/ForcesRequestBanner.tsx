@@ -308,6 +308,21 @@ export function ForcesRequestBanner({
           );
         })}
       </ul>
+      {(data.groupDemands ?? []).length > 0 && (
+        <div className="rounded-md border border-primary/20 bg-background/70 p-2 text-sm">
+          <p className="font-medium">Специальные группы по запросу</p>
+          <ul className="mt-1 space-y-1">
+            {(data.groupDemands ?? []).map((demand) => (
+              <li key={demand.id}>
+                {demand.specification || demand.kindCode} · {demand.need} · {demand.place}
+                {[demand.requirements, demand.shift].filter(Boolean).length > 0
+                  ? ` · ${[demand.requirements, demand.shift].filter(Boolean).join(" · ")}`
+                  : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {/* ЧЕКБОКСЫ → «УЧАСТИЕ В ОМ» (`[СБС-31]`, Plane №395). Кнопка живёт в
           баннере, а не в диалоге статуса: человек не выбирает мероприятие и
           дат не вводит — всё это даёт запрос. Отказы приходят построчно и
