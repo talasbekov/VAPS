@@ -150,7 +150,17 @@ test.describe('метка момента', () => {
   const ROOT = path.join(__dirname, '..')
   const files = sourceFiles(ROOT)
 
-  /** Имена, которые НЕ являются серверной меткой момента, — поимённо. */
+  /**
+   * Имена, которые НЕ являются серверной меткой момента, — поимённо.
+   *
+   * 🔴 ИСКЛЮЧЕНИЕ ДЕЙСТВУЕТ ТОЛЬКО НА ГОЛЫЙ ИДЕНТИФИКАТОР (ревью №825 по
+   * №932, 08.09.2026): `updatedAt` как локальная переменная командного
+   * центра — число; `event.updatedAt`, `object.updatedAt` и ещё шесть
+   * сущностей носят его серверной ISO-строкой, и завтрашний
+   * `new Date(event.updatedAt).toLocaleString(...)` — ровно тот дефект, ради
+   * которого сторож заведён. Раньше сравнение шло по последнему сегменту
+   * пути и стирало это различие.
+   */
   const NOT_A_SERVER_MOMENT = new Map<string, string>([
     ['dataUpdatedAt', 'React Query: число миллисекунд, не ISO-строка'],
     ['updatedAt', 'в командном центре это Math.max(dataUpdatedAt, …) — тоже число'],
@@ -163,8 +173,9 @@ test.describe('метка момента', () => {
       for (const hit of text.matchAll(
         /new Date\(\s*([A-Za-z_$][\w$.]*At)\s*\)\s*\.\s*toLocale/g,
       )) {
-        const name = (hit[1] ?? '').split('.').pop() ?? ''
-        if (NOT_A_SERVER_MOMENT.has(name)) continue
+        const ident = hit[1] ?? ''
+        // Только голое имя: `x.updatedAt` — поле сущности, а не локальное число.
+        if (!ident.includes('.') && NOT_A_SERVER_MOMENT.has(ident)) continue
         const line = text.slice(0, hit.index).split('\n').length
         guilty.push(`${path.relative(ROOT, file)}:${line}: ${hit[1]}`)
       }
