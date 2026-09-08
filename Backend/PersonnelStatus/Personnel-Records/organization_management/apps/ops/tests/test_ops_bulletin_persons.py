@@ -113,6 +113,30 @@ def test_an_unknown_person_in_the_list_is_refused(alpha):
     assert "protectedPersonIds" in raised.value.detail
 
 
+def test_a_bare_string_is_not_iterated_by_character(alpha, beta):
+    """`protectedPersonIds` — список скаляров, а не последовательность (доводка
+    №544 по ревью №825): `for raw in raw_ids or []` без проверки типа шёл ПО
+    СИМВОЛАМ строки. Тот же класс дефекта уже чинили для `employeeIds`
+    (Plane №544) — `resolve_protected_persons` его унаследовал нетронутым.
+
+    🔴 ЧЕМ ЭТО ГРОЗИЛО, И ПОЧЕМУ ФИКСТУРА ИМЕННО ТАКАЯ. Однозначные pk двух
+    лиц `alpha`/`beta` СКЛЕЕНЫ в одну строку без разделителя — ровно то, что
+    придёт при опечатке клиента (`str(id)` вместо `[str(id)]`). Строка
+    иначе неотличима от «неизвестного» отказа: если бы символы не совпали ни
+    с одним реальным pk, проба зеленела бы и без починки — на общем пути
+    «не нашлось». Здесь оба символа — НАСТОЯЩИЕ pk настоящих лиц, и без
+    проверки типа они молча попали бы в список ОХРАНЯЕМЫХ ЛИЦ БЮЛЛЕТЕНЯ —
+    не тех, кого назвали.
+    """
+    glued = f"{alpha.pk}{beta.pk}"
+    assert glued.isdigit() and len(glued) > 1, "фикстура не даёт склеенную строку — проверять нечего"
+
+    with pytest.raises(DomainError) as raised:
+        make_event(protected_person_ids=glued)
+
+    assert "protectedPersonIds" in raised.value.detail
+
+
 def test_the_old_single_field_still_works(alpha):
     """КРАСНАЯ ПРОБА СОВМЕСТИМОСТИ. Старое поле шлют мок-слой, сиды и всё,
     написанное до №188; починить окно и сломать остальное — не выполнение."""
