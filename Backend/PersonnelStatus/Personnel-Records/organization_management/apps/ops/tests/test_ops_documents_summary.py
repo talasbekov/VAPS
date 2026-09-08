@@ -236,3 +236,38 @@ def test_the_row_assembles_the_summary_once(django_assert_num_queries):
     # обернулась бы вторым, расходящимся ответом.
     assert row["requiredTotal"] > 0
     assert isinstance(row["missingRequired"], list)
+
+
+def test_person_facts_print_as_key_equals_value_not_as_python_dicts():
+    """Данные ОЛ из справочника — список `{key, value}` (№952). Документ
+    печатал их `str(fact)`, то есть `{'key': 'Группа крови', 'value': …}` —
+    Python-словарём в PDF, ровно на том сценарии, ради которого №952
+    ставилась. Пины до сих пор давали `facts: []` и дефекта не видели
+    (ревью №825, 08.09.2026).
+
+    КРАСНАЯ ПРОБА: верни `str(fact)` — первая же строка станет словарём.
+    """
+    event = make_event(code="ОМ-Д-9")
+    OpsGvoSummaryPatch.objects.create(
+        event=event,
+        patch={
+            "persons": [
+                {
+                    "name": "Яков Милатович",
+                    "role": "Президент",
+                    "facts": [
+                        {"key": "Группа крови", "value": "А (II) Rh +"},
+                        {"key": "Рост", "value": "181 см"},
+                        "Строка старого образца",
+                    ],
+                }
+            ]
+        },
+    )
+
+    values = summary.document_values(event)
+
+    assert values["person1_data_1"] == "Группа крови = А (II) Rh +"
+    assert values["person1_data_2"] == "Рост = 181 см"
+    assert values["person1_data_3"] == "Строка старого образца"
+

@@ -502,9 +502,23 @@ def assembled_summaries():
 
 
 def _person_lines(person):
-    """Строки антропометрии одного лица — в порядке образца."""
+    """Строки антропометрии одного лица — в порядке образца.
+
+    Данные лица из справочника (№952) — список `{key, value}`; в документ
+    они идут строкой «параметр = значение», как в образце. Здесь стояло
+    `str(fact)`, и в PDF уезжал Python-словарь — ревью №825 (08.09.2026).
+    Строка старого образца (голый текст) печатается как есть.
+    """
     facts = person.get("facts") or []
-    return [str(fact) for fact in facts]
+    lines = []
+    for fact in facts:
+        if isinstance(fact, dict):
+            key = str(fact.get("key", "")).strip()
+            value = str(fact.get("value", "")).strip()
+            lines.append(f"{key} = {value}" if key else value)
+        else:
+            lines.append(str(fact))
+    return lines
 
 
 def flaggable_paths(event):
