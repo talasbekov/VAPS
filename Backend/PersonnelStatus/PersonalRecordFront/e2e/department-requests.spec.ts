@@ -1124,31 +1124,24 @@ test.describe('заявки департаменту', () => {
     const token = await apiToken()
 
     // 🔴 АДРЕСАТ — ДЕРЖАТЕЛЬ ПРАВА, А НЕ РОЛЬ С ПОХОЖИМ ИМЕНЕМ (Plane №930,
-    // следствие решения заказчика по №779 от 06.09.2026). Здесь стояла
-    // учётка `acc_dept_head_d2` (роль `HEAD_OPS_UNIT`), и проба падала на
-    // чистом дереве: 0 записей вместо 2. Дефекта в коде нет — рассылка штабу
-    // перешла с ИМЕНИ РОЛИ на ПРАВО `forces.command`, а у `HEAD_OPS_UNIT`
-    // его нет намеренно (матрица заказчика №348 против спецификации
-    // `[СБС-10]`, расхождение вынесено карточкой №421 и до ответа право не
-    // выдано). Разбор №779 прямо называет это следствие: «начальник второго
-    // департамента об ответах управлений больше не узнаёт».
+    // следствие решения заказчика по №779 от 06.09.2026): рассылка штабу
+    // идёт по ПРАВУ `forces.command`, и входить надо тем, у кого оно есть.
     //
-    // То есть проба стерегла адрес, который система больше не обещает.
-    // Взята персона `forces_officer` (роль `FORCES_GATHERING_OFFICER`) — у
-    // неё `forces.command` есть, и она же может открыть доску сбора, куда
-    // ведёт ссылка уведомления. Предмет пробы от этого не изменился: два
-    // ответа за день — две строки ленты, а не одна.
+    // ИСТОРИЯ АДРЕСА. Сперва здесь стояла `acc_dept_head_d2` (`HEAD_OPS_UNIT`)
+    // — и проба падала: права у профиля не было (№421). Потом
+    // `acc_forces_officer` — он носил штабное право по ошибке матрицы. Потом
+    // снова `acc_dept_head_d2`: №944 выдала профилю `forces.command`, прочитав
+    // раздел 7.1 так, будто штаб — обе руководящие персоны второго
+    // департамента. Заказчик это отменил (№972, 08.09.2026, `[ШТБ-01]`):
+    // Штаб — ОТДЕЛЬНАЯ персона `acc_ops_staff` с ролью `OPS_STAFF`, и только
+    // у неё право есть. Предмет пробы от переездов не менялся: два ответа за
+    // день — две строки ленты, а не одна.
     const hqToken = (
       (await (
         await fetch(`${API}/api/token/`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          // Штаб — начальник второго департамента (`HEAD_OPS_UNIT`, раздел 7.1
-          // спецификации; право `forces.command` у него с Plane №944). До
-          // этого пробa ходила под `acc_forces_officer`, который носил
-          // штабное право по ошибке матрицы и по спецификации штабом не
-          // является.
-          body: JSON.stringify({ username: 'acc_dept_head_d2', password: bossPassword }),
+          body: JSON.stringify({ username: 'acc_ops_staff', password: bossPassword }),
         })
       ).json()) as { access: string }
     ).access
@@ -1224,9 +1217,9 @@ test.describe('заявки департаменту', () => {
       const hq = await ctx.newPage()
       const csrf = (await (await ctx.request.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
       await ctx.request.post(`${APP}/api/auth/callback/credentials/`, {
-        // Тот же адресат, что и у ленты выше (Plane №930): экран смотрит
-        // ЕЁ уведомления, и войти надо тем, кому они пришли.
-        form: { csrfToken: csrf.csrfToken, username: 'acc_dept_head_d2', password: bossPassword, json: 'true' },
+        // Тот же адресат, что и у ленты выше (Plane №930, №972): экран смотрит
+        // ЕГО уведомления, и войти надо тем, кому они пришли, — Штабу.
+        form: { csrfToken: csrf.csrfToken, username: 'acc_ops_staff', password: bossPassword, json: 'true' },
       })
       await hq.goto(`${APP}/dashboard`)
       await hq.getByRole('button', { name: 'Уведомления' }).click()

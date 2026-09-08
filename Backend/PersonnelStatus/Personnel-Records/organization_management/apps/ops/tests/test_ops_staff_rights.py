@@ -9,10 +9,12 @@
 фикстуре: проба отвечает «персона заказчика умеет ровно это», и мутация
 раскладки в сиде обязана её красить.
 
-`forces.command` штабу ВЫДАН (Plane №944, 07.09.2026): конфликт матрицы №348
-(«Сбор сил» закрыт) и спецификации `[СБС-10]`/7.1 (штаб делит заявки) три дня
-ждал ответа в карточке №421; ответом стала задача заказчика №944 «привести
-сбор сил к документации». Проба стережёт уже это: пропадёт право — красна.
+`forces.command` У ПРОФИЛЯ БОЛЬШЕ НЕТ (Plane №972, 08.09.2026). Конфликт
+матрицы №348 («Сбор сил» закрыт) и спецификации `[СБС-10]`/7.1 (штаб делит
+заявки) три дня ждал ответа в карточке №421; №944 выдала право профилю,
+прочитав 7.1 так, будто штаб — обе руководящие персоны второго департамента;
+разделом 21 заказчик назвал Штаб ОТДЕЛЬНЫМ актором `OPS_STAFF`. Проба стережёт
+уже это: вернётся право в профиль — красна.
 """
 import pytest
 from django.core.management import call_command
@@ -131,15 +133,25 @@ def test_the_staff_edits_the_visit_summary_of_any_event(staff):
     assert r.json()["patch"]["country"] == "Черногория"
 
 
-def test_forces_command_is_granted_to_the_staff_by_the_specification(staff):
-    """Раздел 7.1 спецификации: штаб — `acc_dir_head_d2` и `acc_dept_head_d2`
-    (Plane №944). Право штаба — `forces.command`; звенья департамента и
-    управлений (`forces.allocate`, `forces.select`) штабу по-прежнему не
-    положены: «делит по департаментам» ≠ «выделяет людей»."""
+def test_forces_command_belongs_to_the_separate_staff_actor_not_to_the_profile(staff):
+    """`[ШТБ-01]`–`[ШТБ-04]` (Plane №972, решение заказчика 08.09.2026): Штаб
+    сбора сил — отдельный актор `OPS_STAFF`, а начальники второго департамента
+    (`HEAD_OPS_UNIT`) Штабом не являются. №944 выдала `forces.command` профилю,
+    и «Сбор сил» открылся тем, кому заказчик его закрыл (№939); это отменено.
+    Звенья департамента и управлений (`forces.allocate`, `forces.select`)
+    Штабу по-прежнему не положены: «делит по департаментам» ≠ «выделяет
+    людей»; штабные обходы `OPS_STAFF_COMMAND` ему автоматически не даются
+    (`[ШТБ-05]`)."""
     codes = set(RoleAdminService.role_permission_codes("HEAD_OPS_UNIT"))
     assert {"event.create", "event.bulletin", "placement.manage"} <= codes
-    assert "forces.command" in codes, "«Сбор сил» штабу — по разделу 7.1 спецификации (№944)"
+    assert "forces.command" not in codes, "начальник второго департамента снова Штаб (№972)"
     assert not codes & {"forces.allocate", "forces.select"}
+
+    staff_codes = set(RoleAdminService.role_permission_codes("OPS_STAFF"))
+    assert "forces.command" in staff_codes, "«Сбор сил» Штабу — `[ШТБ-04]` (№972)"
+    assert not staff_codes & {
+        "forces.allocate", "forces.select", "placement.command", "event.stage_override",
+    }
 
 
 def test_the_staff_powers_left_the_profile_for_an_add_on_role(staff):

@@ -100,6 +100,8 @@ def test_the_eight_accounts_are_complete(stand):
     assert usernames == {
         "acc_employee", "acc_dir_head", "acc_dir_head_d2", "acc_dept_head",
         "acc_dept_head_d2", "acc_forces_officer", "acc_employee_d2", "acc_admin",
+        # Девятая — Штаб второго департамента, отдельный актор (Plane №972).
+        "acc_ops_staff",
     }
     for username in usernames:
         user = User.objects.get(username=username)
@@ -182,6 +184,30 @@ def test_only_the_department_head_commands_the_placement_everywhere(stand):
     ), "начальник управления снова командует расстановкой по всей организации"
 
 
+def test_the_staff_is_a_separate_actor_and_the_second_department_heads_are_not(stand):
+    """Штаб второго департамента — отдельная персона с ролью `OPS_STAFF`
+    (`[ШТБ-01]`–`[ШТБ-05]`, Plane №972, решение заказчика 08.09.2026).
+
+    До №972 штабом считались ОБЕ руководящие персоны второго департамента:
+    №944 выдала их профилю `HEAD_OPS_UNIT` право `forces.command`, и «Сбор
+    сил» открылся тем, кому заказчик его закрыл (№939). Проба стережёт три
+    вещи сразу: (1) у Штаба ровно один грант — `OPS_STAFF` на всю
+    организацию, (2) `OPS_STAFF_COMMAND` ему автоматически не выдана
+    (`[ШТБ-05]`), (3) у начальников второго департамента штабного права нет.
+    """
+    call_command("seed_access_matrix", "--password", PASSWORD)
+
+    assert grants("acc_ops_staff") == {("OPS_STAFF", None)}
+    assert "forces.command" in modules("acc_ops_staff")
+    for username in ("acc_dir_head_d2", "acc_dept_head_d2"):
+        assert "forces.command" not in modules(username), (
+            f"{username} снова Штаб: «Сбор сил» открыт тому, кому заказчик его закрыл"
+        )
+    # Ответственный за сбор сил Штабом не стал (`[ШТБ-03]`).
+    assert "forces.command" not in modules("acc_forces_officer")
+    assert "forces.allocate" in modules("acc_forces_officer")
+
+
 def test_the_system_section_is_closed_to_everyone_but_the_admin(stand):
     call_command("seed_access_matrix", "--password", PASSWORD)
 
@@ -189,7 +215,7 @@ def test_the_system_section_is_closed_to_everyone_but_the_admin(stand):
     for username in (
         "acc_employee", "acc_dir_head", "acc_dir_head_d2",
         "acc_dept_head", "acc_dept_head_d2", "acc_forces_officer",
-        "acc_employee_d2",
+        "acc_employee_d2", "acc_ops_staff",
     ):
         assert modules(username) & system == set(), f"{username} видит «Систему»"
     assert "*" in modules("acc_admin")
@@ -266,7 +292,8 @@ def test_a_repeat_run_neither_multiplies_nor_widens(stand):
 
     call_command("seed_access_matrix", "--password", PASSWORD)
 
-    assert User.objects.filter(username__startswith="acc_").count() == 8
+    # Девять с №972: восемь персон №348/№382 плюс отдельный Штаб `OPS_STAFF`.
+    assert User.objects.filter(username__startswith="acc_").count() == 9
     assert grants("acc_dept_head_d2") == before
 
 

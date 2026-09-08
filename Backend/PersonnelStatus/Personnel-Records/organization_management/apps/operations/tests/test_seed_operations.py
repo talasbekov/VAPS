@@ -259,14 +259,19 @@ def test_the_customer_profiles_see_exactly_the_modules_he_named(seeded):
     assert "report.generate" not in granted("HEAD_DEPARTMENT_LINE")
     assert "report.generate" not in granted("FORCES_GATHERING_OFFICER")
 
-    # Сбор сил — по разделу 7 спецификации (Plane №944): штаб (`HEAD_OPS_UNIT`)
-    # делит потребность (`forces.command`), ответственный департамента отвечает
-    # на запрос (`forces.allocate`) и ТОЛЬКО он; штабного права у него нет —
-    # иначе он видел бы список заявок по всем департаментам (`[СБС-20]`).
+    # Сбор сил — по разделу 7 спецификации и `[ШТБ-01]`–`[ШТБ-04]` (Plane
+    # №972, решение заказчика 08.09.2026): штаб — ОТДЕЛЬНЫЙ актор `OPS_STAFF`,
+    # и только он делит потребность (`forces.command`). Начальники второго
+    # департамента (`HEAD_OPS_UNIT`) штабом НЕ являются — №944 выдала право им,
+    # и заказчик это отменил. Ответственный департамента отвечает на запрос
+    # (`forces.allocate`) и ТОЛЬКО он; штабного права у него нет — иначе он
+    # видел бы список заявок по всем департаментам (`[СБС-20]`).
     assert "forces.allocate" in granted("FORCES_GATHERING_OFFICER")
     assert "forces.command" not in granted("FORCES_GATHERING_OFFICER")
-    assert "forces.command" in granted("HEAD_OPS_UNIT")
+    assert "forces.command" in granted("OPS_STAFF")
+    assert "forces.command" not in granted("HEAD_OPS_UNIT")
     assert not {"forces.allocate", "forces.select"} & granted("HEAD_OPS_UNIT")
+    assert holders("forces.command") == {"OPS_STAFF"}
     for code in ("HEAD_DIRECTORATE_LINE", "HEAD_DEPARTMENT_LINE"):
         assert not {"forces.command", "forces.allocate", "forces.select"} & granted(code)
 

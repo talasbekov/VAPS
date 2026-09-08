@@ -36,8 +36,12 @@ def _event_id(base):
 
 @pytest.fixture
 def hq():
-    """Штаб: список сборов и карточка — под `forces.command`."""
-    api, user = client_for("hq-officer", "HEAD_OPS_UNIT", perms=("forces.command", "event.view"))
+    """Штаб: список сборов и карточка — под `forces.command`.
+
+    Роль — `OPS_STAFF`, отдельный актор Штаба (Plane №972, `[ШТБ-01]`); до
+    этого фикстура звалась `HEAD_OPS_UNIT`, а у этого профиля права больше нет.
+    """
+    api, user = client_for("hq-officer", "OPS_STAFF", perms=("forces.command", "event.view"))
     api.user = user
     return api
 
