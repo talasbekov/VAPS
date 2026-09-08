@@ -2166,8 +2166,13 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
             field_errors[f"sectorPosts.{index}.sector"] = ["Обязательное поле."]
         if not str(row.get("post", "")).strip():
             field_errors[f"sectorPosts.{index}.post"] = ["Обязательное поле."]
-        if int(row.get("need", 0)) < 1:
-            field_errors[f"sectorPosts.{index}.need"] = ["Должно быть не меньше 1."]
+        try:
+            row_need = int(row.get("need", 0))
+        except (TypeError, ValueError):
+            field_errors[f"sectorPosts.{index}.need"] = ["Должно быть целым числом не меньше 1."]
+        else:
+            if row_need < 1:
+                field_errors[f"sectorPosts.{index}.need"] = ["Должно быть не меньше 1."]
         visit_id = str(row.get("visitObjectId") or "").strip()
         if visit_id and visit_id not in own_visit_ids:
             field_errors[f"sectorPosts.{index}.visitObjectId"] = [
