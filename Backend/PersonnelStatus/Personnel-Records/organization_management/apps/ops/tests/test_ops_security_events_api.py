@@ -451,6 +451,19 @@ def test_list_filters_and_pages(manager, viewer):
     assert data["results"][0]["title"] == "ОМ номер 2"
     data = viewer.get(URL, {"search": "номер 1"}).json()
     assert data["count"] == 1
+    # 🔴 ПИНЫ ПЕРЕНОСА ОТБОРА В БАЗУ (№910; ревью №825, 08.09.2026): ровно
+    # те места, где буквальный перенос сузил бы поведение. Регистр: поиск
+    # без учёта регистра. Граница полей: склейка `title code object owner`
+    # ищется как одна строка — «ОМ номер 1» находится по хвосту названия и
+    # началу кода. Период — включительно с обеих сторон. Владелец — точное имя.
+    assert viewer.get(URL, {"search": "НОМЕР 1"}).json()["count"] == 1
+    first = viewer.get(URL, {"search": "номер 1"}).json()["results"][0]
+    across = f"{first['title'][-5:]} {first['code'][:3]}"
+    assert viewer.get(URL, {"search": across}).json()["count"] == 1, across
+    day = first["businessDate"]
+    assert viewer.get(URL, {"from": day, "to": day}).json()["count"] == 3
+    assert viewer.get(URL, {"owner": first["ownerName"]}).json()["count"] == 3
+    assert viewer.get(URL, {"owner": "Никто Такой"}).json()["count"] == 0
     data = viewer.get(URL, {"page": "2", "page_size": "2"}).json()
     assert data["count"] == 3
     assert len(data["results"]) == 1
