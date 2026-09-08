@@ -645,7 +645,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     const send = section.getByRole('button', { name: 'Отправить запросы' })
     await expect(send, 'строка без департамента, а «Отправить запросы» активна').toBeDisabled()
     await expect(send).toHaveAttribute('title', /департамент/)
-    await page.screenshot({ path: '.shot-tmp-944/split-incomplete-row.png', fullPage: true })
+    await page.screenshot({ path: 'smoke-results/split-incomplete-row.png', fullPage: true })
 
     await section.getByLabel('Департамент, строка 1', { exact: true }).selectOption({ index: 1 })
     await section.getByLabel('Сколько человек, строка 1', { exact: true }).fill('0')
