@@ -69,6 +69,7 @@ import type {
   SecurityEventStage,
   VisitObject,
 } from "@/entities/security-event";
+import { mayManageVisitObjects } from "@/entities/security-event/model/capabilities";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 import { REMARKS, ruCount } from "@/lib/ru-plural";
@@ -486,9 +487,15 @@ function EventRow({
   const { hasPermission } = useOpsPermissions();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  // Закрытое мероприятие — история: сервер маршрут в нём менять не даст, и
-  // кнопка, которая гарантированно получит отказ, — обещание, а не действие.
-  const canEditObjects =
+  // Назначение старшим ОМ хранится в данных конкретного мероприятия и не
+  // выражается глобальным кодом права: кнопки следуют capability сервера.
+  const canManageVisitObjects = mayManageVisitObjects(
+    event,
+    hasPermission("event.manage"),
+  );
+  // Назначение старшего всего ОМ и управление замещающими остаются у
+  // ведущего/администратора: capability объектов их не расширяет (№981).
+  const canManageEvent =
     hasPermission("event.manage") && event.stage !== "CLOSED";
   // Сведения бюллетеня правит и СОЗДАТЕЛЬ ОМ (Plane №951) — по слову сервера
   // (`canEditBulletin`, то же правило, что гейт `details`): создателя клиент
@@ -751,7 +758,7 @@ function EventRow({
                       написан. Кнопки нет у того, кто не может вести
                       мероприятие, и у закрытого ОМ: кнопка, обречённая на
                       отказ, — обещание. */}
-                  {canEditObjects && (
+                  {canManageEvent && (
                     <button
                       type="button"
                       onClick={() => setChiefOpen(true)}
@@ -780,7 +787,7 @@ function EventRow({
             значило бы сделать половину цикла недостижимой. «›» скринридеру
             ничего не говорит — имя называет и действие, и адресата. */}
         <TableCell className="text-center text-muted-foreground">
-          {(canEditObjects || canDeleteEvent) && (
+          {(canManageVisitObjects || canDeleteEvent) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -809,7 +816,7 @@ function EventRow({
                 // четырёх воспроизвёл бы дефект в трудноуловимом виде.
                 onClick={(clickEvent) => clickEvent.stopPropagation()}
               >
-                {canEditObjects && (
+                {canManageVisitObjects && (
                   <DropdownMenuItem
                     onSelect={() => {
                       setExpanded(true);
@@ -857,7 +864,8 @@ function EventRow({
             <VisitObjectList
               event={event}
               visits={visits}
-              canEdit={canEditObjects}
+              canManageObjects={canManageVisitObjects}
+              canManageDeputies={canManageEvent}
               backSuffix={backSuffix}
               onAdd={() => setAddOpen(true)}
             />
@@ -947,13 +955,15 @@ function EventRow({
 function VisitObjectList({
   event,
   visits,
-  canEdit,
+  canManageObjects,
+  canManageDeputies,
   backSuffix,
   onAdd,
 }: {
   event: SecurityEvent;
   visits: VisitObject[];
-  canEdit: boolean;
+  canManageObjects: boolean;
+  canManageDeputies: boolean;
   backSuffix: string;
   onAdd: () => void;
 }) {
@@ -991,7 +1001,7 @@ function VisitObjectList({
             (`[РЕЕ-04]`): человек ищет действие по названию, и «Добавить
             объекты» в пустом состоянии против «+ Добавить объект» в шапке
             читались бы как два разных действия. */}
-        {canEdit && (
+        {canManageObjects && (
           <Button
             size="sm"
             variant="outline"
@@ -1032,7 +1042,7 @@ function VisitObjectList({
         <p className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
           Объекты посещения · {visits.length}
         </p>
-        {canEdit && (
+        {canManageObjects && (
           <button
             type="button"
             onClick={onAdd}
@@ -1059,7 +1069,10 @@ function VisitObjectList({
           // (`VISIT_OBJECT_ALREADY_CLOSED`), и довод здесь тот же, которым
           // выше объяснён `canEdit` для закрытого ОМ: кнопка, которая
           // гарантированно получит отказ, — обещание, а не действие.
-          const canEditVisit = canEdit && visit.stage !== "CLOSED";
+          const canEditVisit =
+            canManageObjects && visit.stage !== "CLOSED";
+          const canEditDeputies =
+            canManageDeputies && visit.stage !== "CLOSED";
           return (
             // Своя карточка на объект, а не строка сплошного текста: три
             // объекта раскрытия читались одной нерасчленимой лентой, и
@@ -1260,7 +1273,7 @@ function VisitObjectList({
                 <DeputyLine
                   event={event}
                   visit={visit}
-                  canEdit={canEditVisit}
+                  canEdit={canEditDeputies}
                 />
               </div>
             </li>

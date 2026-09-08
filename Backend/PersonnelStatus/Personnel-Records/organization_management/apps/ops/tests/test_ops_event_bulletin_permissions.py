@@ -117,13 +117,14 @@ def test_the_same_employee_may_not_edit_or_delete_the_event(employee_d2):
     base = f"{URL}{event_id}/"
     obj = make_object()
 
-    # Свой бюллетень (Plane №951): сведения и объект посещения — можно.
+    # Свой бюллетень: сведения можно. Объектами по последнему `[ОМ-РШ-06]`
+    # управляет назначенный старший мероприятия, а не его создатель.
     assert employee_d2.patch(
         f"{base}details/", {"title": "Другое имя"}, format="json"
     ).status_code == 200
     assert employee_d2.post(
         f"{base}visit-objects/", {"objectId": str(obj.pk)}, format="json"
-    ).status_code in (200, 201)
+    ).status_code == 403
     # Чужой ОМ — по-прежнему 403: «я где-то создатель» права на соседний не даёт.
     other = create_event(employee_d2, title="Чужое ОМ").json()["id"]
     from organization_management.apps.operations.models_event import OpsSecurityEvent
