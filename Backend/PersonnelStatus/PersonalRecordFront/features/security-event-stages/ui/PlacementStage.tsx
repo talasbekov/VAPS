@@ -58,6 +58,7 @@ import {
   useChainAccess,
   EVENT_MANAGE,
 } from "@/features/forces-split/ui/chain-access";
+import { moduleOpenFor } from "@/entities/portal-access";
 import {
   useAssignPlacement,
   useMovePlacement,
@@ -294,6 +295,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // Клиент гейтит по КОДУ права; «его ли это мероприятие» знает сервер — он же
   // и отвечает словами, если нет.
   const access = useChainAccess();
+  // Ссылки в «Сбор сил» — по ключу модуля, как пункт меню (№939, ревью №825).
+  const forcesOpen = moduleOpenFor("/employees", access.can);
   const assign = useAssignPlacement(event.id);
   const unassign = useUnassignPlacement(event.id);
   // Перенос — ОДНА операция сервера (Plane №762), а не пара «снять + назначить».
@@ -1636,7 +1639,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 {/* Без состава ссылка стоит в пустом состоянии ниже, а не
                     дважды: две одинаковые ссылки в одной колонке — шум, и
                     пробы карточки читают её как одну. */}
-                {fromRoster && (
+                {fromRoster && forcesOpen && (
                   <Link
                     // 🔴 ВКЛАДКА НАЗВАНА В АДРЕСЕ (Plane №931). До №928 по
                     // `?view=forces` открывался экран, где лента входящих
@@ -1675,14 +1678,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       ? `Заявки на силы по ${event.code} ещё нет.`
                       : `Заявка ${event.code}: запрошено ${requestedTotal} чел. В состав штаб пока никого не принял.`}
                   </p>
-                  <Link
-                    // Та же вкладка, что и у ссылки выше (Plane №931): обе
-                    // отвечают на вопрос «сколько выделили департаменты».
-                    href="/employees?view=forces&tab=collections"
-                    className="mt-1.5 inline-block font-semibold text-primary-ink"
-                  >
-                    Сбор сил на ОМ →
-                  </Link>
+                  {forcesOpen && (
+                    <Link
+                      // Та же вкладка, что и у ссылки выше (Plane №931): обе
+                      // отвечают на вопрос «сколько выделили департаменты».
+                      href="/employees?view=forces&tab=collections"
+                      className="mt-1.5 inline-block font-semibold text-primary-ink"
+                    >
+                      Сбор сил на ОМ →
+                    </Link>
+                  )}
                 </div>
               ) : (
               <div className="space-y-2 p-2">

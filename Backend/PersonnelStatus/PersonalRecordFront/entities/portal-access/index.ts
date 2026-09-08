@@ -95,3 +95,16 @@ export function modulePermissionsOf(href: string): readonly string[] {
   if (value === undefined || value === null) return [];
   return typeof value === "string" ? [value] : value;
 }
+
+/**
+ * Открыт ли модуль этому человеку — ТЕМ ЖЕ ключом, что и пункт меню.
+ *
+ * Глубокие ссылки «Открыть „Сбор сил на ОМ“ →» на этапах ОМ и в «Статусах»
+ * вели персон, у которых модуль снят (№939), на «Доступ закрыт» — ровно тот
+ * дефект, что №350 чинил для меню (ревью №825 по №939, 08.09.2026). Ссылка
+ * спрашивает здесь, а не держит свою копию списка прав.
+ */
+export function moduleOpenFor(href: string, hasPermission: (code: string) => boolean): boolean {
+  const codes = modulePermissionsOf(href);
+  return codes.length === 0 || codes.some(hasPermission);
+}

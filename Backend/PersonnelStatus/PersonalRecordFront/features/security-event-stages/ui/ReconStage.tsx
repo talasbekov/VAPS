@@ -46,6 +46,7 @@ import {
 import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
+import { moduleOpenFor } from "@/entities/portal-access";
 import type {
   ReconCheckState,
   ReconChecklistItem,
@@ -134,6 +135,8 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   });
   const complete = useCompleteRecon(event.id);
   const access = useChainAccess();
+  // Ссылка в «Сбор сил» — по ключу модуля, как пункт меню (№939, ревью №825).
+  const forcesOpen = moduleOpenFor("/employees", access.can);
 
   /* ── Принадлежность расчёта объекту посещения (Plane №409) ──────────────
    *
@@ -970,9 +973,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               {needOfVisit === needFromPosts || activeVisitObject === null
                 ? "уйдёт в "
                 : ""}
-              <Link href="/employees?view=forces" className="font-semibold text-primary-ink">
-                «Сбор сил на ОМ»
-              </Link>
+              {forcesOpen ? (
+                <Link href="/employees?view=forces" className="font-semibold text-primary-ink">
+                  «Сбор сил на ОМ»
+                </Link>
+              ) : (
+                <span className="font-semibold text-foreground">«Сбор сил на ОМ»</span>
+              )}
             </span>
           </p>
           <div className="flex gap-2">

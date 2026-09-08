@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect} from "react";
 import Link from "next/link";
 import { useStaffUnitsPage } from "@/hooks/use-staff-units-page";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { moduleOpenFor } from "@/entities/portal-access";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { Pager } from "@/components/pager";
 import { DivisionPicker } from "@/components/division-picker";
@@ -174,7 +175,10 @@ function SectionAccountCell({
   participations,
   loading,
   legacyHint,
+  forcesOpen,
 }: {
+  /** Открыт ли человеку модуль «Сбор сил» (ключ пункта меню, №939). */
+  forcesOpen: boolean;
   status: { code: string; name: string } | null;
   participations: {
     event_id: number;
@@ -198,12 +202,16 @@ function SectionAccountCell({
     if (legacyHint) {
       return (
         <div className="flex max-w-[170px] flex-col items-start gap-0.5">
-          <Link
-            href="/employees?view=forces"
-            className="text-primary-ink text-xs font-medium hover:underline"
-          >
-            → Сбор сил
-          </Link>
+          {forcesOpen ? (
+            <Link
+              href="/employees?view=forces"
+              className="text-primary-ink text-xs font-medium hover:underline"
+            >
+              → Сбор сил
+            </Link>
+          ) : (
+            <span className="text-foreground text-xs font-medium">Сбор сил</span>
+          )}
           <span className="text-muted-foreground text-[11px] leading-tight">
             Мероприятие у статуса не указано
           </span>
@@ -290,6 +298,9 @@ export function StatusTable({
   // Право РАЗДЕЛА (Plane №352, Ш-1): портальный набор `statuses/update` снят
   // вместе со старой системой ролей.
   const { hasPermission: hasOpsPermission } = useOpsPermissions();
+  // Ссылка «→ Сбор сил» в колонке раздела — по ключу модуля, как пункт меню
+  // (№939, ревью №825): персоне без прав сбора сил ссылка вела на «Доступ закрыт».
+  const forcesOpen = moduleOpenFor("/employees", hasOpsPermission);
   const canEdit = hasOpsPermission("status.manage");
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
@@ -921,6 +932,7 @@ export function StatusTable({
                       <span className="text-muted-foreground text-xs">—</span>
                     ) : (
                       <SectionAccountCell
+                        forcesOpen={forcesOpen}
                         status={sectionStatusOf(employee)}
                         participations={eventsOf(employee)}
                         loading={sectionStatuses.loading}
