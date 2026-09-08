@@ -17,10 +17,18 @@
 """
 import pytest
 from django.core.management import call_command
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
+from organization_management.apps.divisions.models import Division
+from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_object import OpsSecurityObject
+from organization_management.apps.operations.models_vehicle import OpsVehicle
 from organization_management.apps.operations.tests.test_bulk_status_api import (
     client_for,
+)
+from organization_management.apps.ops.tests.test_ops_security_events_api import (
+    make_employee,
 )
 
 pytestmark = pytest.mark.django_db
@@ -142,3 +150,333 @@ def test_the_event_officer_kept_what_he_could_do_before(event_officer):
         {"briefDescription": "текст", "initialTasks": "задачи"},
         format="json",
     ).status_code == 200
+
+
+def bulletin_tree():
+    department = Division.objects.create(
+        name="Второй департамент",
+        code="DEP-BULLETIN-SCOPE",
+        division_type=Division.DivisionType.DEPARTMENT,
+    )
+    own = Division.objects.create(
+        name="Первое управление",
+        code="DIR-BULLETIN-OWN",
+        division_type=Division.DivisionType.DIRECTORATE,
+        parent=department,
+    )
+    sibling = Division.objects.create(
+        name="Второе управление",
+        code="DIR-BULLETIN-SIBLING",
+        division_type=Division.DivisionType.DIRECTORATE,
+        parent=department,
+    )
+    return department, own, sibling
+
+
+def test_a_plain_bulletin_holder_cannot_edit_another_creators_event():
+    """Ломается, если код `event.bulletin` снова становится глобальным
+    пропуском на чужой бюллетень вместо роли создателя в данных."""
+    _, own, _ = bulletin_tree()
+    creator, _ = client_for(
+        "bulletin-owner-scoped",
+        "EMPLOYEE_OPS_D2",
+        perms=("event.view", "event.create", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    another, _ = client_for(
+        "bulletin-other-scoped",
+        "EMPLOYEE_OPS_D2",
+        perms=("event.view", "event.create", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    event_id = create_event(creator, title="Чужой бюллетень").json()["id"]
+
+    denied = another.patch(
+        f"{URL}{event_id}/bulletin/",
+        {"briefDescription": "Чужая правка", "initialTasks": "Осмотр"},
+        format="json",
+    )
+
+    assert denied.status_code == 403, denied.content
+
+
+def test_a_plain_bulletin_holder_cannot_complete_another_creators_bulletin():
+    """Ломается, если переход к рекогносцировке остаётся обходом матрицы:
+    это отдельная mutation-ручка, а не следствие запрета PATCH."""
+    _, own, _ = bulletin_tree()
+    creator, _ = client_for(
+        "bulletin-complete-owner",
+        "EMPLOYEE_OPS_D2",
+        perms=("event.view", "event.create", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    another, _ = client_for(
+        "bulletin-complete-other",
+        "EMPLOYEE_OPS_D2",
+        perms=("event.view", "event.create", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    event_id = create_event(creator, title="Чужое завершение").json()["id"]
+
+    denied = another.post(f"{URL}{event_id}/bulletin/complete/", {}, format="json")
+
+    assert denied.status_code == 403, denied.content
+
+
+def test_ownership_does_not_replace_the_separate_bulletin_permission():
+    """Ломается, если роль создателя обходит отзыв/отсутствие специально
+    выделенного `event.bulletin` и тем самым склеивает его с `event.create`."""
+    creator, _ = client_for(
+        "bulletin-owner-without-editor",
+        "EVENT_CREATOR_ONLY",
+        perms=("event.view", "event.create"),
+    )
+    event_id = create_event(creator, title="Создано без права правки").json()["id"]
+
+    denied = creator.patch(
+        f"{URL}{event_id}/details/", {"title": "Обход права"}, format="json"
+    )
+
+    assert denied.status_code == 403, denied.content
+
+
+def test_closed_bulletin_text_is_immutable_for_an_authorized_creator():
+    """Ломается, если расширенная матрица допускает переписывание истории
+    через legacy PATCH текста после закрытия мероприятия."""
+    creator, _ = client_for(
+        "bulletin-closed-owner",
+        "BULLETIN_CREATOR",
+        perms=("event.view", "event.create", "event.bulletin"),
+    )
+    event_id = create_event(creator, title="Закрытая история").json()["id"]
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    OpsSecurityEvent.objects.filter(pk=event_id).update(stage="CLOSED")
+
+    denied = creator.patch(
+        f"{URL}{event_id}/bulletin/",
+        {"briefDescription": "Переписано", "initialTasks": "Переписано"},
+        format="json",
+    )
+
+    assert denied.status_code == 422, denied.content
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    assert event.brief_description == ""
+    assert event.initial_tasks == ""
+
+
+def test_heads_edit_bulletins_only_inside_their_organizational_scope():
+    """Ломается, если начальник не получает целевую правку `details` либо
+    область его гранта перестаёт ограничивать чужое управление."""
+    department, own, sibling = bulletin_tree()
+    creator, _ = client_for(
+        "bulletin-owner-for-head",
+        "EMPLOYEE_OPS_D2",
+        perms=("event.view", "event.create", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    event_id = create_event(creator, title="Бюллетень в области").json()["id"]
+    own_head, _ = client_for(
+        "bulletin-own-head",
+        "HEAD_OPS_UNIT",
+        perms=("event.view", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    department_head, _ = client_for(
+        "bulletin-department-head",
+        "HEAD_OPS_UNIT",
+        perms=("event.view", "event.bulletin"),
+        scope_division_id=department.pk,
+    )
+    sibling_head, _ = client_for(
+        "bulletin-sibling-head",
+        "HEAD_OPS_UNIT",
+        perms=("event.view", "event.bulletin"),
+        scope_division_id=sibling.pk,
+    )
+
+    for api, title in (
+        (own_head, "Правка начальника управления"),
+        (department_head, "Правка начальника департамента"),
+    ):
+        changed = api.patch(
+            f"{URL}{event_id}/details/", {"title": title}, format="json"
+        )
+        assert changed.status_code == 200, changed.content
+
+    denied = sibling_head.patch(
+        f"{URL}{event_id}/bulletin/",
+        {"briefDescription": "Чужая область", "initialTasks": "Осмотр"},
+        format="json",
+    )
+    assert denied.status_code == 403, denied.content
+
+
+def test_the_assigned_event_chief_edits_own_bulletin_without_a_bulletin_grant():
+    """Ломается, если право старшего снова проверяется только кодом роли,
+    хотя назначение старшего хранится в самом мероприятии."""
+    creator, _ = client_for(
+        "bulletin-owner-for-chief",
+        "BULLETIN_CREATOR",
+        perms=("event.view", "event.create", "event.bulletin"),
+    )
+    event_id = create_event(creator, title="Бюллетень старшего").json()["id"]
+    chief_api, chief_user = client_for(
+        "bulletin-assigned-chief", "BULLETIN_READER", perms=("event.view",)
+    )
+    chief = make_employee(last_name="Старший", first_name="Наряда")
+    chief.user = chief_user
+    chief.save(update_fields=["user"])
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    OpsSecurityEvent.objects.filter(pk=event_id).update(
+        chief_employee_id=chief.pk, chief_name="Старший Н."
+    )
+
+    changed = chief_api.patch(
+        f"{URL}{event_id}/bulletin/",
+        {
+            "briefDescription": "Правка назначенного старшего",
+            "initialTasks": "Осмотр",
+        },
+        format="json",
+    )
+
+    assert changed.status_code == 200, changed.content
+    assert changed.json()["canEditBulletin"] is True
+
+
+def test_scoped_head_registry_bulletin_policy_has_no_query_per_creator():
+    """Ломается, если вычисление `canEditBulletin` заново читает роли или
+    дерево подразделений для каждого отличающегося создателя строки."""
+    department, own, _ = bulletin_tree()
+    head, _ = client_for(
+        "bulletin-query-head",
+        "HEAD_OPS_UNIT",
+        perms=("event.view", "event.bulletin"),
+        scope_division_id=department.pk,
+    )
+
+    def add_event(index):
+        creator, _ = client_for(
+            f"bulletin-query-owner-{index}",
+            "EMPLOYEE_OPS_D2",
+            perms=("event.view", "event.create", "event.bulletin"),
+            scope_division_id=own.pk,
+        )
+        response = create_event(creator, title=f"ОМ создателя {index}")
+        assert response.status_code == 201, response.content
+
+    def registry_query_count():
+        with CaptureQueriesContext(connection) as captured:
+            response = head.get(f"{URL}?page_size=50")
+            assert response.status_code == 200, response.content
+            assert all(row["canEditBulletin"] for row in response.json()["results"])
+        return len(captured)
+
+    add_event(1)
+    one = registry_query_count()
+    add_event(2)
+    add_event(3)
+    three = registry_query_count()
+
+    assert three <= one, f"число запросов выросло вместе с создателями: {one} → {three}"
+
+
+def test_create_only_owner_cannot_change_any_part_of_bulletin_composition():
+    """Объекты и транспорт не обходят `[БЛН-14]` через старое creator-право."""
+    creator, _ = client_for(
+        "composition-owner-without-editor",
+        "EVENT_CREATOR_ONLY",
+        perms=("event.view", "event.create"),
+    )
+    event_id = create_event(creator, title="Состав без права").json()["id"]
+    first_object = make_object(code="OBJ-COMPOSITION-1", name="Первый объект")
+    second_object = make_object(code="OBJ-COMPOSITION-2", name="Второй объект")
+    from organization_management.apps.ops import security_events as event_service
+    from organization_management.apps.ops import vehicles as vehicles_service
+
+    event_service.add_visit_object(event_id, object_id=first_object.pk)
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    visit_id = event.visit_objects.get(security_object=first_object).pk
+    allocated_car = OpsVehicle.objects.create(
+        brand="Toyota Land Cruiser 300",
+        plate="980 aa 01",
+        body_class="внедорожник",
+        armor_class="VR7",
+    )
+    another_car = OpsVehicle.objects.create(
+        brand="Mercedes-Benz S680",
+        plate="981 aa 01",
+        body_class="седан",
+        armor_class="VR7",
+    )
+    vehicles_service.allocate_vehicle(event_id, vehicle_id=allocated_car.pk)
+    allocation_id = event.vehicles.get(vehicle=allocated_car).pk
+    base = f"{URL}{event_id}/"
+
+    attempts = (
+        creator.post(
+            f"{base}visit-objects/",
+            {"objectId": str(second_object.pk)},
+            format="json",
+        ),
+        creator.patch(
+            f"{base}visit-objects/{visit_id}/", {"note": "обход"}, format="json"
+        ),
+        creator.delete(f"{base}visit-objects/{visit_id}/"),
+        creator.post(
+            f"{base}vehicles/", {"vehicleId": str(another_car.pk)}, format="json"
+        ),
+        creator.delete(f"{base}vehicles/{allocation_id}/"),
+    )
+
+    assert [response.status_code for response in attempts] == [403] * 5
+    event.refresh_from_db()
+    assert event.visit_objects.filter(security_object=first_object, note="").exists()
+    assert not event.visit_objects.filter(security_object=second_object).exists()
+    assert event.vehicles.filter(pk=allocation_id).exists()
+    assert not event.vehicles.filter(vehicle=another_car).exists()
+
+
+def test_closed_event_reports_no_bulletin_edit_and_keeps_vehicle_history():
+    """Закрытый ОМ не показывает возможность правки и не меняет транспорт."""
+    manager, _ = client_for(
+        "closed-composition-manager",
+        "EVENT_MANAGER",
+        perms=("event.view", "event.manage", "event.create", "event.bulletin"),
+    )
+    event_id = create_event(manager, title="Закрытый состав").json()["id"]
+    from organization_management.apps.ops import vehicles as vehicles_service
+
+    allocated_car = OpsVehicle.objects.create(
+        brand="Toyota Camry",
+        plate="982 aa 01",
+        body_class="седан",
+        armor_class="",
+    )
+    another_car = OpsVehicle.objects.create(
+        brand="Kia Carnival",
+        plate="983 aa 01",
+        body_class="минивэн",
+        armor_class="",
+    )
+    vehicles_service.allocate_vehicle(event_id, vehicle_id=allocated_car.pk)
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    allocation_id = event.vehicles.get(vehicle=allocated_car).pk
+    OpsSecurityEvent.objects.filter(pk=event_id).update(stage="CLOSED")
+    base = f"{URL}{event_id}/"
+
+    card = manager.get(base)
+    allocate = manager.post(
+        f"{base}vehicles/", {"vehicleId": str(another_car.pk)}, format="json"
+    )
+    release = manager.delete(f"{base}vehicles/{allocation_id}/")
+
+    assert card.status_code == 200, card.content
+    assert card.json()["canEditBulletin"] is False
+    assert allocate.status_code == 422, allocate.content
+    assert release.status_code == 422, release.content
+    event.refresh_from_db()
+    assert event.vehicles.filter(pk=allocation_id).exists()
+    assert not event.vehicles.filter(vehicle=another_car).exists()

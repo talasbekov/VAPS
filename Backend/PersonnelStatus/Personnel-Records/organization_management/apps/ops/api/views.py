@@ -50,6 +50,8 @@ from organization_management.apps.operations.api.permissions import (
     resolve_actor_id,
 )
 from organization_management.apps.operations.clock import Clock
+from organization_management.apps.operations.selectors import DivisionTreeSelector
+from organization_management.apps.operations.services import PermissionService
 from django.core.exceptions import ValidationError
 
 from organization_management.apps.operations.exceptions import DomainError
@@ -457,6 +459,20 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         }
     )
 
+    #: Сведения, текст, объекты посещения и транспорт составляют один
+    #: бюллетень и охраняются одной объектной матрицей `[БЛН-14]` (№980).
+    _BULLETIN_EDITOR_ACTIONS = frozenset(
+        {
+            "details",
+            "bulletin",
+            "bulletin_complete",
+            "visit_object_add",
+            "visit_object_detail",
+            "vehicle_allocate",
+            "vehicle_release",
+        }
+    )
+
     def _is_creator(self, request, event):
         """Создатель — по идентификатору учётки (`owner_actor_id`), как в
         сводке ГВО (№947): пустой идентификатор старой строки не совпадает ни
@@ -467,15 +483,110 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
     def _may_edit_bulletin(self, event, *, perms=None):
-        """Может ли вызывающий править бюллетень — ТЕМ ЖЕ правилом, что гейт
-        `details` (Plane №951): право ведения либо создание этого ОМ. Уходит
-        экрану полем `canEditBulletin`: реестр и страница визита рисуют
-        «Редактировать бюллетень» по нему, а не по своей копии правила —
-        создателя клиент посчитать не может."""
+        """Доступна ли сейчас хотя бы одна мутация бюллетеня.
+
+        Закрытый этап отдельно выключает capability для интерфейса; сама
+        акторная матрица живёт в `_is_bulletin_editor`, чтобы mutation-сервис
+        вернул предметный `INVALID_STAGE_TRANSITION`, а не маскировал его 403.
+        """
+        return event.stage != OpsSecurityEvent.Stage.CLOSED and self._is_bulletin_editor(
+            event, perms=perms
+        )
+
+    def _is_bulletin_editor(self, event, *, perms=None):
+        """Единая акторная матрица редакторов `[БЛН-14]` (Plane №980).
+
+        Глобальный ведущий/админ, создатель и назначенный старший проверяются
+        по данным мероприятия. Руководитель второго департамента проходит
+        только если область его `HEAD_OPS_UNIT` накрывает область гранта, по
+        которому создатель получил `event.bulletin`. Само наличие
+        `event.bulletin` у рядового сотрудника не открывает чужие ОМ.
+        """
         perms = effective_permissions(self.request) if perms is None else perms
         if perms & {_MANAGE_EVENT_PERMISSION, "*"}:
             return True
-        return self._is_creator(self.request, event)
+        if self._is_creator(self.request, event) and _BULLETIN_PERMISSION in perms:
+            return True
+        employee = getattr(self.request.user, "employee", None)
+        if (
+            employee is not None
+            and employee.is_active
+            and event.chief_employee_id == employee.pk
+        ):
+            return True
+
+        actor_id = resolve_actor_id(self.request)
+        if actor_id is None or not event.owner_actor_id:
+            return False
+        head_grants = [
+            (scope_division_id, role_code)
+            for scope_division_id, role_code in self._bulletin_grants(actor_id)
+            if role_code == "HEAD_OPS_UNIT"
+        ]
+        if not head_grants:
+            return False
+        owner_grants = self._bulletin_grants(event.owner_actor_id)
+        for head_scope, _ in head_grants:
+            for owner_scope, _ in owner_grants:
+                if head_scope is None:
+                    return True
+                if owner_scope is not None and PermissionService.scope_matches(
+                    head_scope,
+                    owner_scope,
+                    children_map=self._bulletin_children_map(),
+                ):
+                    return True
+        return False
+
+    def _bulletin_grants(self, actor_id):
+        """Кеш грантов на время запроса: один создатель в нескольких строках
+        реестра не должен повторно читать одни и те же назначения ролей."""
+        cache = getattr(self, "_bulletin_grants_cache", None)
+        if cache is None:
+            cache = self._bulletin_grants_cache = {}
+        if actor_id not in cache:
+            self._prime_bulletin_grants([actor_id])
+        return cache[actor_id]
+
+    def _prime_bulletin_grants(self, actor_ids):
+        cache = getattr(self, "_bulletin_grants_cache", None)
+        if cache is None:
+            cache = self._bulletin_grants_cache = {}
+        missing = {
+            str(actor_id)
+            for actor_id in actor_ids
+            if actor_id is not None and str(actor_id) not in cache
+        }
+        if missing:
+            cache.update(
+                PermissionService.active_grants_for_permission_many(
+                    missing, _BULLETIN_PERMISSION
+                )
+            )
+
+    def _bulletin_children_map(self):
+        if not hasattr(self, "_bulletin_division_children"):
+            self._bulletin_division_children = DivisionTreeSelector.children_map()
+        return self._bulletin_division_children
+
+    def _bulletin_event(self, pk):
+        cache = getattr(self, "_bulletin_event_cache", None)
+        if cache is None:
+            cache = self._bulletin_event_cache = {}
+        key = str(pk)
+        if key not in cache:
+            cache[key] = (
+                OpsSecurityEvent.objects.filter(pk=pk).first()
+                if key.isdigit()
+                else None
+            )
+        return cache[key]
+
+    def _require_bulletin_editor(self, pk):
+        event = self._bulletin_event(pk)
+        if event is None or not self._is_bulletin_editor(event):
+            raise PermissionDenied("PERMISSION_DENIED")
+        return event
 
     #: Действия над СОСТАВОМ СВОДКИ ГВО — объекты посещения и транспорт из
     #: реестра — открыты редактору сводки (Plane №964, задача заказчика
@@ -497,7 +608,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if "gvo.manage" in effective_permissions(request):
             return True
         if self._is_creator(request, event):
-            return True
+            return self._is_bulletin_editor(event)
         employee = getattr(request.user, "employee", None)
         if employee is None or not employee.is_active:
             return False
@@ -535,7 +646,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
         if event is None:
             return False
-        return self._is_creator(request, event)
+        return self._is_bulletin_editor(event)
 
     def list(self, request):
         from organization_management.apps.operations.models_event import (
@@ -698,6 +809,18 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # (Plane №951) у каждой строки сравнивает создателя с вызывающим, а
         # набор прав у вызывающего один.
         perms = effective_permissions(request)
+        actor_id = resolve_actor_id(request)
+        if actor_id is not None:
+            self._prime_bulletin_grants([actor_id])
+            if any(
+                role_code == "HEAD_OPS_UNIT"
+                for _, role_code in self._bulletin_grants(actor_id)
+            ):
+                self._prime_bulletin_grants(
+                    event.owner_actor_id
+                    for event in page_rows
+                    if event.owner_actor_id
+                )
         by_date = {}
         everyone = set()
         for event in page_rows:
@@ -1034,6 +1157,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # принимающая «что угодно из модели», однажды примет и их.
     @action(detail=True, methods=["patch"], url_path="details")
     def details(self, request, pk=None):
+        self._require_bulletin_editor(pk)
         data = request.data or {}
         # `data.get` ВЕЗДЕ, а не `data.get(..., "")`: отсутствующий ключ здесь
         # означает «не трогай поле», и подстановка пустой строки превратила бы
@@ -1069,6 +1193,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["patch"], url_path="bulletin")
     def bulletin(self, request, pk=None):
+        self._require_bulletin_editor(pk)
         data = request.data or {}
         return self._event_response(
             event_service.update_bulletin(
@@ -1080,6 +1205,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="bulletin/complete")
     def bulletin_complete(self, request, pk=None):
+        self._require_bulletin_editor(pk)
         return self._event_response(event_service.complete_bulletin(pk))
 
     @action(detail=True, methods=["patch"], url_path="recon")
@@ -1770,6 +1896,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
         self._object_lead_employee = None
+        if self.action in self._BULLETIN_EDITOR_ACTIONS:
+            event = self._bulletin_event(self.kwargs.get("pk"))
+            if event is not None and self._is_bulletin_editor(event):
+                return True
         if self.action in self._CREATOR_ACTIONS and self._creator_override(request):
             return True
         if self.action in self._GVO_EDITOR_ACTIONS and self._gvo_editor_override(request):
