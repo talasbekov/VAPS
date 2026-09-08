@@ -196,6 +196,25 @@ def test_the_head_cannot_create_a_status_for_a_foreign_employee(world, head):
     assert not EmployeeStatus.objects.exists()
 
 
+def test_the_head_cannot_move_own_status_to_a_foreign_employee(world, head):
+    """Область проверяется и у НОВОГО сотрудника при правке (ревью №825 по
+    №938, 08.09.2026). `get_object()` сверял область по текущему сотруднику
+    строки, а `employee` у сериализатора записываемый: PATCH переставлял
+    свой статус человеку чужого управления — дверь, которую обходят другим
+    телом запроса.
+
+    КРАСНАЯ ПРОБА: убери проверку нового `employee` в `partial_update` —
+    ответ станет 200, а строка уедет в чужое управление.
+    """
+    row = _planned(world["people"]["own"])
+    response = head.patch(
+        f"{URL}{row.pk}/", {"employee": world["people"]["foreign"].pk}, format="json"
+    )
+    assert response.status_code == 403, response.content
+    row.refresh_from_db()
+    assert row.employee_id == world["people"]["own"].pk
+
+
 def test_the_head_cannot_touch_a_foreign_status_row(world, head):
     row = _planned(world["people"]["foreign"])
     response = head.post(f"{URL}{row.pk}/cancel/", {"reason": "x"}, format="json")
