@@ -762,14 +762,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             chief_employee_id=data.get("chiefEmployeeId"),
             actor=resolve_actor_id(request),
         )
-        # Идентификатор создателя (Plane №947) — здесь, а не в сервисе: тот
-        # пишет подпись `owner_name` для экрана, а право «создатель правит
-        # сводку ГВО» считается по учётке. Отдельным `update_fields`, чтобы
-        # не трогать сборку мероприятия в `security_events.create_event`.
-        actor_id = resolve_actor_id(request) or ""
-        if actor_id:
-            event.owner_actor_id = actor_id
-            event.save(update_fields=["owner_actor_id"])
+        # Идентификатор создателя (Plane №947) пишет сам сервис из того же
+        # `actor` (№949, ревью №825): второй `save` здесь оставлял ОМ «ничьим»
+        # между сохранениями и обходил всех остальных вызывателей сервиса.
         return self._event_response(event, status=201)
 
     # bindable-objects раньше детали в роутере не нужен: у DRF detail-роут
