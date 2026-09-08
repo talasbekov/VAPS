@@ -433,12 +433,17 @@ def visit_objects_of(event):
         # «подтянуты все». Пустой список отвечает сам за себя — читать нечего.
         if not visits:
             return visits
-        nested = getattr(visits[0], "_prefetched_objects_cache", {})
-        if "deputies" in nested and "document_versions" in nested:
-            return visits
-        # Кэш есть, но неполный: дотягиваем вложенные ОДНИМ разом на весь
-        # список, а не по объекту. Список объектов при этом перечитывается —
-        # это один запрос против двух на каждый объект.
+        # Кэш есть, но вложенные могли не подтянуть. Штатный
+        # `prefetch_related_objects` (ревью №825 по №911, 08.09.2026)
+        # пропускает уже подтянутые связи, НЕ перечитывает сами объекты и
+        # наполняет кэш на месте — повторная сериализация того же экземпляра
+        # бесплатна. Прежний фолбэк перечитывал объекты и обе связи (три
+        # запроса) даже когда не хватало одной. На 06.09.2026 набора с
+        # частичным prefetch в дереве нет — защита превентивная.
+        from django.db.models import prefetch_related_objects
+
+        prefetch_related_objects(visits, "deputies", "document_versions")
+        return visits
     return list(event.visit_objects.prefetch_related("deputies", "document_versions"))
 
 
