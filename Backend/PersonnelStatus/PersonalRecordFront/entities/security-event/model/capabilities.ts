@@ -17,3 +17,13 @@ export function mayManageVisitObjects(
     (event.canManageVisitObjects ?? hasEventManage)
   );
 }
+
+type ReconCapability = {
+  canManageRecon?: boolean;
+  stage: string;
+};
+
+/** Рекогносцировка не имеет клиентского fallback на `event.manage` (№982). */
+export function mayManageRecon(visit: ReconCapability | null): boolean {
+  return visit?.stage === "RECON" && visit.canManageRecon === true;
+}

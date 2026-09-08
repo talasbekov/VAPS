@@ -43,6 +43,7 @@ import {
   securityEventPlacementMovePath,
   securityEventPlacementCompletePath,
   securityEventPlacementPostPath,
+  securityEventPlacementPostCommentPath,
   securityEventPlacementSeniorPath,
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
@@ -89,7 +90,7 @@ interface StageMutationOptions {
   onFormError?: (details: Record<string, unknown>) => void;
   /** Ответ мутации — форме этапа. Нужен там, где сервер меняет данные, которые
    * форма держит у себя (импорт постов), а пересборки формы больше нет. */
-  onEvent?: (event: SecurityEvent) => void;
+  onEvent?: (event: SecurityEvent, variables: Record<string, unknown>) => void;
 }
 
 function useEventMutation<TVariables extends Record<string, unknown>>(
@@ -100,10 +101,10 @@ function useEventMutation<TVariables extends Record<string, unknown>>(
   const queryClient = useQueryClient();
   return useOpsMutation<SecurityEvent, TVariables>({
     mutationFn,
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       queryClient.setQueryData(["ops-security-events", "detail", id], data);
       invalidateSecurityEvents(queryClient);
-      options?.onEvent?.(data);
+      options?.onEvent?.(data, variables);
     },
     onFormError: options?.onFormError,
   });
@@ -226,8 +227,8 @@ export function useImportReconPosts(
 }
 
 export function useCompleteRecon(id: string) {
-  return useEventMutation<Record<string, never>>(id, () =>
-    opsApiClient.post<SecurityEvent>(securityEventReconCompletePath(id))
+  return useEventMutation<VisitObjectAddressed>(id, (body) =>
+    opsApiClient.post<SecurityEvent>(securityEventReconCompletePath(id), body)
   );
 }
 
@@ -365,6 +366,18 @@ export function useRemovePlacementPost(id: string) {
     opsApiClient.del<SecurityEvent>(
       securityEventPlacementPostPath(id, postId)
     )
+  );
+}
+
+/** Комментарий поста на расстановке: точечная операция, а не recon. */
+export function useUpdatePlacementPostComment(id: string) {
+  return useEventMutation<{ postId: string; comment: string }>(
+    id,
+    ({ postId, comment }) =>
+      opsApiClient.patch<SecurityEvent>(
+        securityEventPlacementPostCommentPath(id, postId),
+        { comment }
+      )
   );
 }
 

@@ -122,6 +122,11 @@ def manager():
             # заполняет бюллетень, и разделение не должно у него ничего отнять.
             "event.create",
             "event.bulletin",
+            # Рекогносцировка с №982 больше не выводится из `event.manage`.
+            # Эта общая фикстура проверяет бизнес-гарды всей цепочки как
+            # руководство/админ, поэтому использует отдельный разрешённый
+            # override; ролевые запреты проверяются выделенными клиентами.
+            "event.stage_override",
             "forces.command",
             "forces.allocate",
             "forces.select",
@@ -1613,7 +1618,12 @@ def test_stage_override_needs_its_own_permission(manager):
     """Право вести мероприятие НЕ даёт обходить этапы."""
     obj = make_object(with_passport=True)
     event_id = create_event(manager, obj).json()["id"]
-    resp = manager.post(
+    event_manager, _ = client_for(
+        "event-manager-without-stage-override",
+        "EVENT_MANAGER_ONLY",
+        perms=("event.view", "event.manage"),
+    )
+    resp = event_manager.post(
         f"{URL}{event_id}/stage/", {"stage": "APPROVAL"}, format="json"
     )
     assert resp.status_code == 403

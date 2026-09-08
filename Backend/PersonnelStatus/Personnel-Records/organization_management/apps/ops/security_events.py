@@ -52,6 +52,22 @@ RECON_CHECKLIST_TEMPLATE = [
     "Связь и электропитание",
 ]
 
+
+def new_recon_checklist():
+    """Новый независимый чек-лист объекта."""
+    return [
+        {
+            "id": f"checklist-{index}",
+            "label": label,
+            "state": "UNCHECKED",
+            "required": True,
+            "done": False,
+            "result": None,
+            "comment": "",
+        }
+        for index, label in enumerate(RECON_CHECKLIST_TEMPLATE)
+    ]
+
 # Состояние пункта чек-листа (`[РЕК-04]`, Plane №443): ОДИН переключатель
 # «Норма / Замечание / Не проверено» вместо чекбокса и select. Старые ключи
 # `done`/`result` ВЫВОДЯТСЯ из состояния и остаются для прежних читателей
@@ -459,18 +475,7 @@ def create_event(
         owner_actor_id=_creator_account_id(actor),
         brief_description="",
         initial_tasks="",
-        recon_checklist=[
-            {
-                "id": f"checklist-{index}",
-                "label": label,
-                "state": "UNCHECKED",
-                "required": True,
-                "done": False,
-                "result": None,
-                "comment": "",
-            }
-            for index, label in enumerate(RECON_CHECKLIST_TEMPLATE)
-        ],
+        recon_checklist=new_recon_checklist(),
         recon_sector_posts=[],
         demand_rows=[],
         demand_approved=False,
@@ -512,6 +517,7 @@ def create_event(
             # назначить его молча — ровно та ошибка, от которой уходим.
             chief_employee_id=chief.pk if chief is not None else None,
             chief_name=personnel_display_name(chief) if chief is not None else "",
+            recon_checklist=new_recon_checklist(),
             position=0,
             # Стадия объекта — стадия мероприятия с первой секунды (Plane
             # №412). Без этого ОМ, заведённое сразу на рекогносцировке,
@@ -1015,6 +1021,7 @@ def add_visit_object(event_id, *, object_id, protected_person_id=None):
         # собой согласованные. Такого решения никто не принимал, а работу по
         # новому объекту открывает обход этапов (`event.stage_override`).
         stage=event.stage,
+        recon_checklist=new_recon_checklist(),
     )
     event.refresh_from_db()
     # СНИМОК ПОТРЕБНОСТИ ПЕРЕСЧИТЫВАЕТСЯ (Plane №414). Прежде здесь стояло
@@ -1610,6 +1617,36 @@ def _rows_by_visit(rows, *, only=None):
     return {key: sorted(items) for key, items in grouped.items()}
 
 
+def _unassigned_rows_changed_outside_claim(event, sector_posts, target_id):
+    if event.visit_objects.count() <= 1:
+        return False
+    stored = {
+        str(row.get("id") or "").strip(): row
+        for row in (event.recon_sector_posts or [])
+        if not str(row.get("visitObjectId") or "").strip()
+    }
+    claimed = {
+        row_id
+        for row in (sector_posts or [])
+        if (row_id := str(row.get("id") or "").strip()) in stored
+        and str(row.get("visitObjectId") or "").strip() == str(target_id)
+        and _row_fingerprint(row) == _row_fingerprint(stored[row_id])
+    }
+
+    def remaining(rows, *, skip=()):
+        return sorted(
+            (
+                str(row.get("id") or "").strip(),
+                _row_fingerprint(row),
+            )
+            for row in (rows or [])
+            if not str(row.get("visitObjectId") or "").strip()
+            and str(row.get("id") or "").strip() not in skip
+        )
+
+    return remaining(event.recon_sector_posts, skip=claimed) != remaining(sector_posts)
+
+
 def _visits_with_edited_rows(event, sector_posts):
     """Объекты, чьи строки расчёта запрос МЕНЯЕТ ХОТЬ ЧЕМ-ТО (Plane №535).
 
@@ -2131,13 +2168,32 @@ def _require_visit_placement_editable(visit):
 
 
 @transaction.atomic
-def update_recon(event_id, *, checklist, sector_posts, force_request=None):
+def update_recon(
+    event_id,
+    *,
+    checklist,
+    sector_posts,
+    force_request=None,
+    visit_object_id=None,
+):
     """Правка рекогносцировки. `force_request` — запрос личного состава
     (Plane «Реестр ОМ-23»); `None` означает «поле не прислали» и оставляет
     сохранённое значение, а не обнуляет его: старые клиенты и мок-слой шлют
     тело без этого поля, и трактовка «нет ключа = ноль» стирала бы запрос при
     каждом чужом сохранении."""
     event = lock_event(event_id)
+    target = (
+        pick_visit_object(
+            event,
+            visit_object_id,
+            no_objects="У мероприятия нет объектов посещения.",
+            ambiguous=(
+                "У мероприятия несколько объектов посещения — выберите объект."
+            ),
+        )
+        if visit_object_id is not None or event.visit_objects.count() == 1
+        else None
+    )
     checklist = checklist or []
     # «Ключа нет» — не «пусто» (Plane №416, учтено в №424): отметка чек-листа
     # отдельным вызовом без пересылки постов стирала расчёт в пустой список, и
@@ -2167,6 +2223,12 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     own_visit_ids = {
         str(pk) for pk in event.visit_objects.values_list("pk", flat=True)
     }
+    stored_by_id = {
+        str(row.get("id") or "").strip(): row
+        for row in (event.recon_sector_posts or [])
+        if str(row.get("id") or "").strip()
+    }
+    seen_known_ids = set()
     for index, row in enumerate(sector_posts):
         if not str(row.get("sector", "")).strip():
             field_errors[f"sectorPosts.{index}.sector"] = ["Обязательное поле."]
@@ -2183,6 +2245,24 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
         if visit_id and visit_id not in own_visit_ids:
             field_errors[f"sectorPosts.{index}.visitObjectId"] = [
                 "Объекта посещения нет в этом мероприятии."
+            ]
+        row_id = str(row.get("id") or "").strip()
+        stored = stored_by_id.get(row_id)
+        if stored is None:
+            continue
+        if row_id in seen_known_ids:
+            field_errors[f"sectorPosts.{index}.id"] = [
+                "Идентификатор поста повторяется."
+            ]
+        seen_known_ids.add(row_id)
+        stored_visit_id = str(stored.get("visitObjectId") or "").strip()
+        # Неразмеченную legacy-строку можно отнести к объекту.
+        # Уже привязанный ID нельзя копировать/переносить в чужой
+        # объект: иначе `_normalize_post_ids` оставит его копии,
+        # а исходной строке выдаст новый ID, обойдя объектный гард.
+        if target is not None and stored_visit_id and visit_id != stored_visit_id:
+            field_errors[f"sectorPosts.{index}.id"] = [
+                "Принадлежность существующего поста объекту не меняется."
             ]
     if field_errors:
         raise _validation(field_errors)
@@ -2201,7 +2281,21 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     # чьи посты человек ДЕЙСТВИТЕЛЬНО правит. Перенос строки между объектами
     # меняет оба набора — оба и требуют старшего, это верно: пост уходит из
     # одного расчёта и приходит в другой.
+    if target is not None and _unassigned_rows_changed_outside_claim(
+        event, sector_posts, target.pk
+    ):
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            message="Неразмеченные посты изменяет только руководство ОМ.",
+        )
     touched = _visits_with_changed_posts(event, sector_posts)
+    if target is not None and touched - {str(target.pk)}:
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            message="Рекогносцировку другого объекта изменять нельзя.",
+        )
     for visit in event.visit_objects.filter(pk__in=touched or [-1]):
         _require_visit_chief(visit)
     # 🔴 ЗАМОРОЗКА ДЕЙСТВУЕТ И ЗДЕСЬ (Plane №535). Правка рекогносцировки
@@ -2226,7 +2320,7 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
         pk__in=_visits_with_edited_rows(event, sector_posts) or [-1]
     ):
         _require_visit_placement_editable(visit)
-    event.recon_checklist = [
+    normalized_checklist = [
         {**item, "comment": str(item.get("comment", "")).strip()}
         for item in checklist
     ]
@@ -2280,11 +2374,28 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
         ],
         known_ids=known_ids,
     )
-    fields = ["recon_checklist", "recon_sector_posts", "updated_at"]
-    if parsed_request is not None:
-        event.recon_force_request = parsed_request
-        fields.append("recon_force_request")
-    event.save(update_fields=fields)
+    event_fields = ["recon_sector_posts", "updated_at"]
+    if target is None:
+        event.recon_checklist = normalized_checklist
+        event_fields.append("recon_checklist")
+        if parsed_request is not None:
+            event.recon_force_request = parsed_request
+            event_fields.append("recon_force_request")
+    else:
+        target.recon_checklist = normalized_checklist
+        target_fields = ["recon_checklist", "updated_at"]
+        if parsed_request is not None:
+            target.recon_force_request = parsed_request
+            target_fields.append("recon_force_request")
+        target.save(update_fields=target_fields)
+        # Однообъектный legacy-ответ остаётся совместимым.
+        if event.visit_objects.count() == 1:
+            event.recon_checklist = normalized_checklist
+            event_fields.append("recon_checklist")
+            if parsed_request is not None:
+                event.recon_force_request = parsed_request
+                event_fields.append("recon_force_request")
+    event.save(update_fields=event_fields)
     # Разметка постов могла переехать — с ней переезжает и потребность объекта.
     recompute_visit_needs(event)
     return event
@@ -2503,18 +2614,41 @@ def import_recon_from_passport(event_id, *, visit_object_id=None):
 
 
 @transaction.atomic
-def complete_recon(event_id):
+def complete_recon(event_id, *, visit_object_id=None):
     event = lock_event(event_id)
-    _require_stage(
+    visits = list(event.visit_objects.all())
+    # Совместимый адрес без `visitObjectId` у многообъектного ОМ доступен
+    # только руководству/admin (это держит view-policy): он завершает прежний
+    # event-wide расчёт. Поимённый старший всегда называет свой объект.
+    # Без объектов остаётся legacy-путь: его используют сиды и старые
+    # ОМ, где расчёт ещё живёт только на мероприятии.
+    legacy_all = visit_object_id in (None, "") and len(visits) != 1
+    target = None if legacy_all else pick_visit_object(
         event,
-        "RECON",
-        "Рекогносцировку можно завершить только на этапе «Рекогносцировка».",
+        visit_object_id,
+        no_objects="У мероприятия нет объектов посещения.",
+        ambiguous=(
+            "У мероприятия несколько объектов посещения — выберите объект."
+        ),
     )
-    # `[РЕК-07]` (№424): «Завершить» недоступна, пока не назначен старший
-    # объекта — у каждого объекта посещения, что идёт этим этапом.
-    for visit in event.visit_objects.all():
-        if visit.stage == "RECON":
-            _require_visit_chief(visit)
+    if target is None:
+        _require_stage(
+            event,
+            "RECON",
+            "Рекогносцировку можно завершить только на этапе «Рекогносцировка».",
+        )
+        for visit in visits:
+            if visit.stage == "RECON":
+                _require_visit_chief(visit)
+    else:
+        _require_visit_stage(
+            target,
+            "RECON",
+            "Рекогносцировку объекта можно завершить только на его этапе «Рекогносцировка».",
+        )
+        # `[РЕК-07]` (№424/№982): завершает СВОЙ объект его назначенный
+        # старший; сосед без старшего не запирает готовый объект.
+        _require_visit_chief(target)
     # `[РЕК-04]`/`[РЕК-07]` (Plane №443): обязательные пункты не могут остаться
     # в «Не проверено»; «Замечание» — проверено, и завершать не мешает.
     #
@@ -2530,9 +2664,12 @@ def complete_recon(event_id):
     # ОТСУТСТВУЮЩИЙ пункт шаблона считается «Не проверено»: он и не проверен —
     # его нет. Отказать по нему честнее, чем промолчать; вернуть его в список
     # человек может тем же сохранением.
+    checklist_source = (
+        event.recon_checklist if target is None else target.recon_checklist
+    )
     stored = {
         str(item.get("id") or ""): normalize_check_item(item)
-        for item in (event.recon_checklist or [])
+        for item in (checklist_source or [])
     }
     unchecked = [
         check_id
@@ -2541,7 +2678,7 @@ def complete_recon(event_id):
     ]
     unchecked += [
         str(item.get("id") or "")
-        for item in (event.recon_checklist or [])
+        for item in (checklist_source or [])
         if str(item.get("id") or "") not in TEMPLATE_CHECK_IDS
         and normalize_check_item(item)["required"]
         and normalize_check_item(item)["state"] == "UNCHECKED"
@@ -2550,9 +2687,14 @@ def complete_recon(event_id):
         raise DomainError("RECON_CHECKLIST_INCOMPLETE", 422, message=
             "Обязательные пункты чек-листа остались в «Не проверено».",
         )
-    if not event.recon_sector_posts:
+    target_posts = (
+        event.recon_sector_posts
+        if target is None
+        else visit_object_posts(event, target)
+    )
+    if not target_posts:
         raise DomainError("RECON_SECTOR_POSTS_EMPTY", 422, message=
-            "Добавьте хотя бы один пост, прежде чем завершать этап.",
+            "Добавьте хотя бы один пост объекта, прежде чем завершать этап.",
         )
     # Число, которое получает штаб, — РАСЧЁТ ПО ПОСТАМ, а не отдельная оценка
     # старшего наряда: запроса личного состава на этапе больше нет (задача
@@ -2564,13 +2706,47 @@ def complete_recon(event_id):
     # Ручной ввод, если он уже был сохранён, НЕ затирается: у мероприятий,
     # прошедших рекогносцировку по прежним правилам, число ввёл человек, и
     # подменять его расчётом значило бы переписать чужое решение.
-    if event.recon_force_request < 1:
-        event.recon_force_request = sum(
-            max(int(row.get("need") or 0), 0) for row in event.recon_sector_posts
+    if target is None:
+        if event.recon_force_request < 1:
+            event.recon_force_request = sum(
+                max(int(row.get("need") or 0), 0)
+                for row in event.recon_sector_posts
+            )
+        event.recon_force_requested_at = Clock.now()
+        event.save(
+            update_fields=[
+                "recon_force_request",
+                "recon_force_requested_at",
+                "updated_at",
+            ]
         )
-    # Момент отправки запроса штабу. Проставляется ЗДЕСЬ, а не при правке
-    # расчёта: до завершения этапа расчёт — черновик старшего наряда, штаб его
-    # не видит, и лента «что пришло нового» считала бы черновики.
+        _advance(event, "DEMAND")
+        return _autopass_demand_and_forces(event)
+
+    # Объект сначала покидает рекогносцировку ОТДЕЛЬНО. Стадия мероприятия —
+    # минимум по объектам, поэтому сосед продолжает работу, а карточка ОМ
+    # остаётся на RECON до последнего объекта.
+    if target.recon_force_request < 1:
+        target.recon_force_request = sum(
+            max(int(row.get("need") or 0), 0) for row in target_posts
+        )
+        target.save(update_fields=["recon_force_request", "updated_at"])
+
+    old_event_stage = event.stage
+    advance_visits(event, "DEMAND", [target])
+    if event.stage != old_event_stage:
+        record_transition(event, old_event_stage, event.stage)
+    if event.visit_objects.filter(stage="RECON").exists():
+        return event
+
+    # Общая заявка старого контура строится только когда готовы ВСЕ объекты:
+    # до этого незавершённые строки — черновик другого старшего. №979/№978
+    # разрежут её на типизированные потребности и общий пул, не переписывая
+    # уже завершённые объектные стадии.
+    event.recon_force_request = sum(
+        int(visit.recon_force_request or 0)
+        for visit in event.visit_objects.all()
+    )
     event.recon_force_requested_at = Clock.now()
     event.save(
         update_fields=[
@@ -2580,9 +2756,7 @@ def complete_recon(event_id):
         ]
     )
     # Стадии «Потребность» и «Запрос сил» человек больше не ведёт руками
-    # (Plane №110): их проходит сервер расчётом рекогносцировки, и завершение
-    # осмотра выводит мероприятие сразу на «Расстановку».
-    _advance(event, "DEMAND")
+    # (Plane №110): после последнего объекта их проходит сервер расчётом.
     return _autopass_demand_and_forces(event)
 
 
@@ -5688,6 +5862,52 @@ def _detach_remarks_of_post(event, post_id, post):
         if touched:
             visit.approval_remarks = remarks
             visit.save(update_fields=["approval_remarks", "updated_at"])
+
+
+@transaction.atomic
+def update_placement_post_comment(event_id, post_id, *, comment, deputy=None):
+    """Изменить только комментарий поста на этапе расстановки.
+
+    Отдельная операция не открывает поздней стадии весь `PATCH /recon/`
+    и не пересылает список постов целиком.
+    """
+    event = lock_event(event_id)
+    visit = _visit_of_post(event, post_id)
+    if visit is None:
+        _require_stage(
+            event,
+            "PLACEMENT",
+            "Комментарий расстановки можно менять только на этапе «Расстановка».",
+        )
+    else:
+        _require_visit_stage(
+            visit,
+            "PLACEMENT",
+            "Комментарий поста можно менять только на этапе «Расстановка» этого объекта.",
+        )
+    _require_placement_editable(event, post_id)
+    post = next(
+        (
+            row
+            for row in (event.recon_sector_posts or [])
+            if str(row.get("id")) == str(post_id)
+        ),
+        None,
+    )
+    if post is None:
+        raise _not_found("Пост не найден.", post_id)
+    post["comment"] = str(comment or "").strip()
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+    _record_deputy_placement(
+        event,
+        deputy,
+        {
+            "operation": "UPDATE_POST_COMMENT",
+            "postId": str(post_id),
+            "comment": post["comment"],
+        },
+    )
+    return event
 
 
 @transaction.atomic

@@ -43,6 +43,7 @@ import base64
 from organization_management.apps.ops import documents_registry
 from organization_management.apps.ops.bulletin_issues import parse_as_of
 from organization_management.apps.ops import reports as reports_service
+from organization_management.apps.ops.event_actor_policy import can_manage_recon
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
     require_permission,
@@ -381,6 +382,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Снятие ЛИШНЕГО поста при недоборе — работа расстановки, а не правка
         # расчёта: её делают те же, кто расставляет людей (Plane №259).
         "placement_post_remove": _PLACEMENT_PERMISSION,
+        "placement_post_comment": _PLACEMENT_PERMISSION,
         "placement_sector_senior": _PLACEMENT_PERMISSION,
         # Завершение этапа — не расстановка людей, а переход мероприятия
         # дальше по цепочке: его делает ведущий ОМ.
@@ -466,7 +468,21 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         row["canManageVisitObjects"] = self._may_manage_visit_objects(
             event, perms=perms
         )
+        self._attach_recon_capabilities(event, row, perms=perms)
         return Response(row, status=status)
+
+    def _attach_recon_capabilities(self, event, row, *, perms=None):
+        """Добавить серверное слово прав к каждому объекту посещения."""
+        perms = effective_permissions(self.request) if perms is None else perms
+        employee = getattr(self.request.user, "employee", None)
+        visits = {str(visit.pk): visit for visit in event.visit_objects.all()}
+        for visit_row in row.get("visitObjects", []):
+            visit = visits.get(str(visit_row.get("id")))
+            visit_row["canManageRecon"] = bool(
+                visit is not None
+                and can_manage_recon(event, visit, employee, perms)
+            )
+        return row
 
     #: Сведения собственного бюллетеня создатель правит без `event.manage`;
     #: объекты по новому `[ОМ-РШ-06]` ведёт назначенный старший мероприятия.
@@ -887,13 +903,19 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "next": str(page + 1) if start + page_size < total else None,
                 "previous": str(page - 1) if page > 1 else None,
                 "results": [
-                    {
-                        **serialize_security_event(e, read_context=read_context),
-                        "canEditBulletin": self._may_edit_bulletin(e, perms=perms),
-                        "canManageVisitObjects": self._may_manage_visit_objects(
-                            e, perms=perms
-                        ),
-                    }
+                    self._attach_recon_capabilities(
+                        e,
+                        {
+                            **serialize_security_event(e, read_context=read_context),
+                            "canEditBulletin": self._may_edit_bulletin(
+                                e, perms=perms
+                            ),
+                            "canManageVisitObjects": self._may_manage_visit_objects(
+                                e, perms=perms
+                            ),
+                        },
+                        perms=perms,
+                    )
                     for e in page_rows
                 ],
             }
@@ -1253,6 +1275,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @action(detail=True, methods=["patch"], url_path="recon")
     def recon(self, request, pk=None):
         data = request.data or {}
+        self._require_recon_actor(request)
         return self._event_response(
             event_service.update_recon(
                 pk,
@@ -1261,6 +1284,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 # Ключа может не быть — тогда сохранённый запрос не трогаем
                 # (см. `update_recon`): «нет ключа» это не «ноль».
                 force_request=data.get("forceRequest"),
+                visit_object_id=self._visit_object_of(request),
             )
         )
 
@@ -1269,6 +1293,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # `visitObjectId` — ЧЕЙ паспорт импортируется (Plane №408, `[РЕК-05]`).
         # Ключа нет и объект один — берётся он; объектов несколько — сервис
         # отвечает отказом с просьбой выбрать, а не угадывает адресата.
+        self._require_recon_actor(request)
         return self._event_response(
             event_service.import_recon_from_passport(
                 pk, visit_object_id=(request.data or {}).get("visitObjectId")
@@ -1277,7 +1302,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="recon/complete")
     def recon_complete(self, request, pk=None):
-        return self._event_response(event_service.complete_recon(pk))
+        self._require_recon_actor(request)
+        return self._event_response(
+            event_service.complete_recon(
+                pk, visit_object_id=self._visit_object_of(request)
+            )
+        )
 
     # Ручка `POST demand/approve/` СНЯТА 26.08.2026 (Plane №149): стадию
     # «Потребность» проходит сервер (Plane №110), форм у неё на клиенте нет,
@@ -1895,6 +1925,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "placement_assign": _PLACEMENT_COMMAND_PERMISSION,
         "placement_unassign": _PLACEMENT_COMMAND_PERMISSION,
         "placement_post_remove": _PLACEMENT_COMMAND_PERMISSION,
+        "placement_post_comment": _PLACEMENT_COMMAND_PERMISSION,
         "placement_move": _PLACEMENT_COMMAND_PERMISSION,
     }
 
@@ -1903,6 +1934,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "placement_assign",
             "placement_unassign",
             "placement_post_remove",
+            "placement_post_comment",
             # Перенос (Plane №762) — то же действие, что «снять и назначить»,
             # которым замещающий пользовался до сих пор; закрыть его для него
             # значило бы отнять уже разрешённое, оформив это как починку.
@@ -1922,6 +1954,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         {"approval_send", "approval_withdraw", "approval_remark_resolve"}
     )
     _OBJECT_DEPUTY_ACTIONS = frozenset({"approval_remark_resolve"})
+    _RECON_OBJECT_ACTIONS = frozenset({"recon", "recon_import", "recon_complete"})
 
     def permission_override(self, request):
         """Роль В ДАННЫХ открывает действие человеку без кода права.
@@ -1938,6 +1971,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
         self._object_lead_employee = None
+        if self.action in self._RECON_OBJECT_ACTIONS:
+            return self._may_manage_recon_request(request)
         if self.action in self._VISIT_OBJECT_MANAGER_ACTIONS:
             event = self._bulletin_event(self.kwargs.get("pk"))
             if event is not None and self._is_visit_object_manager(event):
@@ -1986,6 +2021,46 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = allowed
         self._deputy_employee = employee if allowed else None
         return allowed
+
+    def _recon_target(self, request):
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None:
+            return None, None
+        try:
+            visit = event_service.pick_visit_object(
+                event,
+                self._visit_object_of(request),
+                no_objects="У мероприятия нет объектов посещения.",
+                ambiguous=(
+                    "У мероприятия несколько объектов посещения — выберите объект."
+                ),
+            )
+        except DomainError:
+            return event, None
+        return event, visit
+
+    def _may_manage_recon_request(self, request):
+        event, visit = self._recon_target(request)
+        if event is None:
+            return False
+        perms = effective_permissions(request)
+        # Старые административные вызовы над несколькими объектами могли не
+        # нести адресата. Только руководство/admin пропускаются дальше, где
+        # сервис вернёт предметный VISIT_OBJECT_REQUIRED или применит
+        # совместимое общее действие; поимённый старший объект не угадывает.
+        if visit is None:
+            return bool(perms & {_STAGE_OVERRIDE_PERMISSION, "*"})
+        return can_manage_recon(
+            event,
+            visit,
+            getattr(request.user, "employee", None),
+            perms,
+        )
+
+    def _require_recon_actor(self, request):
+        """Не даёт `event.manage` подменить назначение старшим объекта."""
+        if not self._may_manage_recon_request(request):
+            raise PermissionDenied("PERMISSION_DENIED")
 
     # Старший мероприятия/объекта ведёт «Ознакомление» по данным (Plane №432,
     # `[ОЗН-09]`): напоминает, заменяет, завершает.
@@ -2315,7 +2390,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return posts.get(str((self.request.data or {}).get("postId")))
         # У снятия поста адресат назван прямо в пути — искать его по
         # назначению не нужно и нечем: назначений у пустого поста нет.
-        if self.action == "placement_post_remove":
+        if self.action in {"placement_post_remove", "placement_post_comment"}:
             return posts.get(str(self.kwargs.get("post_id")))
         assignment = next(
             (
@@ -2392,6 +2467,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.remove_placement_post(
                 pk, post_id, deputy=self._deputy_actor()
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"placement/posts/(?P<post_id>[^/]+)/comment",
+    )
+    def placement_post_comment(self, request, pk=None, post_id=None):
+        """Точечная правка комментария на «Расстановке» (№982)."""
+        self._require_placement_lead(pk)
+        return self._event_response(
+            event_service.update_placement_post_comment(
+                pk,
+                post_id,
+                comment=(request.data or {}).get("comment"),
+                deputy=self._deputy_actor(),
             )
         )
 

@@ -176,6 +176,18 @@ const RECON_CHECKLIST_TEMPLATE = [
   "Связь и электропитание",
 ];
 
+function newReconChecklist(id: string): ReconChecklistItem[] {
+  return RECON_CHECKLIST_TEMPLATE.map((label, index) => ({
+    id: `${id}-checklist-${index}`,
+    label,
+    state: "UNCHECKED" as const,
+    required: true,
+    done: false,
+    result: null,
+    comment: "",
+  }));
+}
+
 // Идентификаторы строк расчёта постов выдаёт СЕРВЕР (порт правила бэка,
 // Plane №30): клиентская пометка не сохранённой строки живёт в памяти вкладки
 // и после перезагрузки повторяется, а назначение по повторённому id уезжает в
@@ -903,6 +915,9 @@ function emptyEvent(
         // тогда, когда источник один.
         chiefEmployeeId: SEED_CHIEF?.id ?? null,
         chiefName: SEED_CHIEF?.name ?? "",
+        reconChecklist: newReconChecklist(`${id}-visit-1`),
+        reconForceRequest: 0,
+        canManageRecon: true,
         placementNeed: 0,
         placementAssigned: 0,
         deputies: [],
@@ -961,15 +976,7 @@ function emptyEvent(
     ownerName: "demo-admin",
     briefDescription: "",
     initialTasks: "",
-    reconChecklist: RECON_CHECKLIST_TEMPLATE.map((label, index) => ({
-      id: `${id}-checklist-${index}`,
-      label,
-      state: "UNCHECKED" as const,
-      required: true,
-      done: false,
-      result: null,
-      comment: "",
-    })),
+    reconChecklist: newReconChecklist(id),
     reconSectorPosts: [],
     reconForceRequest: 0,
     reconForceRequestedAt: null,
@@ -1409,6 +1416,9 @@ function derive(event: SecurityEvent): SecurityEvent {
     closureSummary: closureSummaryOf(event, null),
     visitObjects: event.visitObjects.map((visit) => ({
       ...visit,
+      // Мок работает одной demo-admin персоной: серверное actor-слово для
+      // неё истинно только на живом этапе рекогносцировки (Plane №982).
+      canManageRecon: visit.stage === "RECON",
       closureSummary: closureSummaryOf(event, visit.id),
     })),
   });
@@ -1921,6 +1931,19 @@ export const securityEventsHandlers = [
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;
     const body = (await request.json()) as UpdateReconRequest;
+    const requestedVisitId = (body.visitObjectId ?? "").trim();
+    const targetVisit =
+      requestedVisitId !== ""
+        ? (event.visitObjects.find((visit) => visit.id === requestedVisitId) ?? undefined)
+        : event.visitObjects.length === 1
+          ? event.visitObjects[0]
+          : null;
+    if (targetVisit === undefined) {
+      return businessRuleError(
+        "VISIT_OBJECT_NOT_FOUND",
+        "Объект посещения не найден в этом мероприятии."
+      );
+    }
     const fieldErrors: Record<string, string[]> = {};
     // `[РЕК-04]` (Plane №443): состояние одно; done/result — производные.
     const normalizedChecklist = body.checklist.map((item) => normalizeCheckItem(item));
@@ -1958,6 +1981,14 @@ export const securityEventsHandlers = [
     // Перенос строки между объектами меняет ОБА набора — оба и требуют
     // старшего: пост уходит из одного расчёта и приходит в другой.
     const touchedVisits = visitsWithChangedRows(event, incomingPosts);
+    if (targetVisit !== null && [...touchedVisits].some((id) => id !== targetVisit.id)) {
+      return errorEnvelope(
+        "PERMISSION_DENIED",
+        "Рекогносцировку другого объекта изменять нельзя.",
+        {},
+        403
+      );
+    }
     const chiefless = event.visitObjects.find(
       (visit) => visit.chiefEmployeeId === null && touchedVisits.has(visit.id)
     );
@@ -1990,17 +2021,31 @@ export const securityEventsHandlers = [
       })),
       knownIds
     );
+    const visitObjects = event.visitObjects.map((visit) =>
+      targetVisit !== null && visit.id === targetVisit.id
+        ? {
+            ...visit,
+            reconChecklist: normalizedChecklist,
+            reconForceRequest:
+              body.forceRequest === undefined
+                ? (visit.reconForceRequest ?? 0)
+                : body.forceRequest,
+          }
+        : visit
+    );
+    const mirrorLegacy = targetVisit === null || event.visitObjects.length === 1;
     return HttpResponse.json(
       saveEvent({
         ...event,
-        reconChecklist: normalizedChecklist,
+        visitObjects,
+        reconChecklist: mirrorLegacy ? normalizedChecklist : event.reconChecklist,
         reconSectorPosts: sectorPosts,
-        // «Нет ключа» — не «ноль»: без этого правка расчёта постов стирала бы
-        // запрос штабу (порт правила бэка, Plane «Реестр ОМ-23»).
+        // Однообъектный ответ сохраняет legacy-поля; в многообъектном они не
+        // подменяют состояние выбранного визита.
         reconForceRequest:
-          body.forceRequest === undefined
-            ? event.reconForceRequest
-            : body.forceRequest,
+          mirrorLegacy && body.forceRequest !== undefined
+            ? body.forceRequest
+            : event.reconForceRequest,
         updatedAt: nowIso(),
       })
     );
@@ -2009,14 +2054,6 @@ export const securityEventsHandlers = [
   http.post(`*${securityEventReconImportPath(":id")}`, async ({ params, request }) => {
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;
-    const chieflessImport = event.visitObjects.find((visit) => visit.chiefEmployeeId === null);
-    if (chieflessImport !== undefined) return visitChiefRequired(chieflessImport.objectName);
-    if (event.stage !== "RECON") {
-      return businessRuleError(
-        "RECON_STAGE_REQUIRED",
-        "Расчёт постов формируется на этапе рекогносцировки."
-      );
-    }
     // Импорт идёт из паспорта ОБЪЕКТА ПОСЕЩЕНИЯ (Plane №408): мок повторяет
     // правило сервера, иначе контракт зелен на одной стороне и врёт про другую.
     const body = (await request.json().catch(() => ({}))) as {
@@ -2047,6 +2084,13 @@ export const securityEventsHandlers = [
       return businessRuleError(
         "VISIT_OBJECT_NOT_FOUND",
         "Объект посещения не найден в этом мероприятии."
+      );
+    }
+    if (target.chiefEmployeeId === null) return visitChiefRequired(target.objectName);
+    if (stageOf(event, target.id) !== "RECON") {
+      return businessRuleError(
+        "RECON_STAGE_REQUIRED",
+        "Расчёт постов формируется на этапе рекогносцировки."
       );
     }
     const binding = event.passportBinding;
@@ -2112,14 +2156,33 @@ export const securityEventsHandlers = [
     );
   }),
 
-  http.post(`*${securityEventReconCompletePath(":id")}`, ({ params }) => {
+  http.post(`*${securityEventReconCompletePath(":id")}`, async ({ params, request }) => {
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;
-    const chieflessComplete = event.visitObjects.find(
-      (visit) => visit.stage === "RECON" && visit.chiefEmployeeId === null
-    );
+    const body = (await request.json().catch(() => ({}))) as { visitObjectId?: string };
+    const requestedVisitId = (body.visitObjectId ?? "").trim();
+    const targetVisit =
+      requestedVisitId !== ""
+        ? (event.visitObjects.find((visit) => visit.id === requestedVisitId) ?? undefined)
+        : event.visitObjects.length === 1
+          ? event.visitObjects[0]
+          : null;
+    if (targetVisit === undefined) {
+      return businessRuleError(
+        "VISIT_OBJECT_NOT_FOUND",
+        "Объект посещения не найден в этом мероприятии."
+      );
+    }
+    const chieflessComplete =
+      targetVisit === null
+        ? event.visitObjects.find(
+            (visit) => visit.stage === "RECON" && visit.chiefEmployeeId === null
+          )
+        : targetVisit.chiefEmployeeId === null
+          ? targetVisit
+          : undefined;
     if (chieflessComplete !== undefined) return visitChiefRequired(chieflessComplete.objectName);
-    if (event.stage !== "RECON") {
+    if (stageOf(event, targetVisit?.id) !== "RECON") {
       return businessRuleError(
         "INVALID_STAGE_TRANSITION",
         "Рекогносцировку можно завершить только на этапе «Рекогносцировка»."
@@ -2128,7 +2191,10 @@ export const securityEventsHandlers = [
     // Обязательность спрашивается у нормализатора (Plane №541): `item.required`
     // здесь — присланное значение, и чтение его напрямую вернуло бы дыру,
     // закрытую в `requiredOf`.
-    if (event.reconChecklist.some((item) => {
+    const checklist = targetVisit === null
+      ? event.reconChecklist
+      : (targetVisit.reconChecklist ?? event.reconChecklist);
+    if (checklist.some((item) => {
       const normalized = normalizeCheckItem(item);
       return normalized.required && normalized.state === "UNCHECKED";
     })) {
@@ -2137,7 +2203,13 @@ export const securityEventsHandlers = [
         "Обязательные пункты чек-листа остались в «Не проверено»."
       );
     }
-    if (event.reconSectorPosts.length === 0) {
+    const targetPosts = targetVisit === null
+      ? event.reconSectorPosts
+      : event.reconSectorPosts.filter((post) =>
+          post.visitObjectId === targetVisit.id ||
+          (event.visitObjects.length === 1 && (post.visitObjectId ?? "") === "")
+        );
+    if (targetPosts.length === 0) {
       return businessRuleError(
         "RECON_SECTOR_POSTS_EMPTY",
         "Добавьте хотя бы один пост, прежде чем завершать этап."
@@ -2146,14 +2218,32 @@ export const securityEventsHandlers = [
     // Штабу уходит РАСЧЁТ ПО ПОСТАМ: запроса личного состава на этапе больше
     // нет (Plane №64). Уже сохранённый ручной ввод не затирается — порт
     // правила бэка.
-    const requestedFromPosts = event.reconSectorPosts.reduce(
+    const requestedFromPosts = targetPosts.reduce(
       (sum, row) => sum + Math.max(row.need || 0, 0),
       0
     );
+    let completed = event;
+    if (targetVisit !== null) {
+      completed = advanceVisits(
+        {
+          ...event,
+          visitObjects: event.visitObjects.map((visit) =>
+            visit.id === targetVisit.id && (visit.reconForceRequest ?? 0) < 1
+              ? { ...visit, reconForceRequest: requestedFromPosts }
+              : visit
+          ),
+        },
+        "DEMAND",
+        targetVisit.id
+      );
+      if (completed.visitObjects.some((visit) => visit.stage === "RECON")) {
+        return HttpResponse.json(saveEvent({ ...completed, updatedAt: nowIso() }));
+      }
+    }
     // Стадии «Потребность» и «Запрос сил» проходит сервер сам (Plane №110):
     // форм у них больше нет, и завершение осмотра выводит ОМ на «Расстановку».
     // Потребность собирается из расчёта постов, заявка на силы — одна.
-    const demandRows = event.reconSectorPosts.map((post, index) => ({
+    const demandRows = completed.reconSectorPosts.map((post, index) => ({
       id: `demand-${index + 1}`,
       sector: post.sector,
       task: post.task !== "" ? post.task : post.post,
@@ -2166,7 +2256,7 @@ export const securityEventsHandlers = [
     const forceNeed = demandRows.reduce((sum, row) => sum + row.need, 0);
     return HttpResponse.json(
       saveEvent({
-        ...advanceVisits(event, "PLACEMENT"),
+        ...advanceVisits(completed, "PLACEMENT"),
         readinessPercent: 60,
         demandRows,
         demandApproved: true,
@@ -2185,7 +2275,14 @@ export const securityEventsHandlers = [
               ]
             : [],
         reconForceRequest:
-          event.reconForceRequest < 1 ? requestedFromPosts : event.reconForceRequest,
+          targetVisit === null
+            ? completed.reconForceRequest < 1
+              ? requestedFromPosts
+              : completed.reconForceRequest
+            : completed.visitObjects.reduce(
+                (sum, visit) => sum + Math.max(visit.reconForceRequest ?? 0, 0),
+                0
+              ),
         // Момент отправки штабу ставит ЗАВЕРШЕНИЕ этапа, а не правка расчёта.
         reconForceRequestedAt: nowIso(),
         updatedAt: nowIso(),
@@ -3263,6 +3360,38 @@ export const securityEventsHandlers = [
     }
   ),
 
+  http.patch(
+    `*${SECURITY_EVENTS_PATH}:id/placement/posts/:postId/comment/`,
+    async ({ params, request }) => {
+      const { event, response } = findEvent(params.id as string);
+      if (event === null) return response;
+      const postId = params.postId as string;
+      const post = event.reconSectorPosts.find((row) => row.id === postId);
+      if (post === undefined) {
+        return errorEnvelope("ENTITY_NOT_FOUND", "Пост не найден.", { id: postId }, 404);
+      }
+      const visit = visitOfPost(event, postId);
+      if (stageOf(event, visit?.id) !== "PLACEMENT") {
+        return businessRuleError(
+          "INVALID_STAGE_TRANSITION",
+          "Комментарий поста можно менять только на этапе «Расстановка» этого объекта."
+        );
+      }
+      const frozenComment = refuseIfPostFrozen(event, postId);
+      if (frozenComment !== null) return frozenComment;
+      const body = (await request.json().catch(() => ({}))) as { comment?: string };
+      return HttpResponse.json(
+        saveEvent({
+          ...event,
+          reconSectorPosts: event.reconSectorPosts.map((row) =>
+            row.id === postId ? { ...row, comment: String(body.comment ?? "").trim() } : row
+          ),
+          updatedAt: nowIso(),
+        })
+      );
+    }
+  ),
+
   // 🔴 ШЕСТАЯ ОПЕРАЦИЯ РАССТАНОВКИ БЕЗ МОК-ОБРАБОТЧИКА ВООБЩЕ (доводка №867
   // по ревью №825). Сервер закрывает `remove_placement_post` тем же гардом
   // `_require_placement_editable`, что назначение, перенос, снятие и
@@ -4003,6 +4132,9 @@ export const securityEventsHandlers = [
             note: "",
             chiefEmployeeId: null,
             chiefName: "",
+            reconChecklist: newReconChecklist(`${event.id}-visit-${position + 1}`),
+            reconForceRequest: 0,
+            canManageRecon: true,
             placementNeed: 0,
             placementAssigned: 0,
             deputies: [],

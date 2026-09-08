@@ -307,6 +307,11 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const run = Date.now()
     const doomedName = `Проба №259/${run} · пост под снятие`
     const keptName = `Проба №259/${run} · пост-свидетель`
+    const reopened = await request.post(
+      `${API}/api/ops/security-events/${eventId}/stage/`,
+      { headers: auth, data: { stage: 'RECON' } },
+    )
+    expect(reopened.status(), 'администратор не вернул фикстуру на рекогносцировку').toBe(200)
     const patched = await request.patch(
       `${API}/api/ops/security-events/${eventId}/recon/`,
       {
@@ -329,6 +334,11 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       },
     )
     expect(patched.status(), 'посты пробы не завелись').toBe(200)
+    const restored = await request.post(
+      `${API}/api/ops/security-events/${eventId}/stage/`,
+      { headers: auth, data: { stage: 'PLACEMENT' } },
+    )
+    expect(restored.status(), 'фикстура не вернулась на расстановку').toBe(200)
 
     before = await read()
     const doomed = before.reconSectorPosts.find((p) => p.post === doomedName)
@@ -808,12 +818,9 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
 
     // 🔴 КОММЕНТАРИЙ ПОСТА НЕ ДОЛЖЕН СНОСИТЬ ЧУЖОЙ ОБЪЕКТ (Plane №471).
     //
-    // Окно правки шлёт `sectorPosts` ЦЕЛИКОМ, а сервер (`update_recon`) не
-    // сливает, а ЗАМЕЩАЕТ список. Пока окно собирало тело из постов ПОКАЗАННОГО
-    // объекта, сохранение комментария на объекте A удаляло все посты объекта B:
-    // его потребность падала в ноль, а назначения оставались ссылаться на
-    // несуществующие id. Восстановить было нечем — прежних строк нет ни в одной
-    // версии.
+    // №982: комментарий ходит точечной placement-операцией. Поздняя
+    // стадия не открывает весь `PATCH /recon/`, а соседние посты не
+    // пересылаются и не могут быть снесены этой правкой.
     //
     // Проверяется и экраном, и ручкой: экран показывает, что человек этого не
     // заметит, ручка — что данные на месте.
@@ -832,7 +839,9 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     // Ждём ответа ручки, а не таймера: сохранение асинхронно, и чтение сразу
     // после клика застало бы прежнее состояние и зеленело бы на поломке.
     await page.waitForResponse(
-      (r) => r.url().includes('/recon/') && r.request().method() === 'PATCH',
+      (r) =>
+        r.url().includes(`/placement/posts/${mine[0]!.id}/comment/`) &&
+        r.request().method() === 'PATCH',
       { timeout: 20_000 },
     )
 

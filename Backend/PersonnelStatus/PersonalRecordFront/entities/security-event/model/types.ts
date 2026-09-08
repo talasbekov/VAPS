@@ -658,6 +658,13 @@ export interface VisitObject {
   chiefEmployeeId: string | null;
   /** Снимок подписи старшего: увольнение не превращает строку в номер. */
   chiefName: string;
+  /** Ответы чек-листа этого объекта (№982). */
+  reconChecklist?: ReconChecklistItem[];
+  /** Снимок потребности этого объекта. */
+  reconForceRequest?: number;
+  /** Серверное слово: текущий пользователь ведёт рекогносцировку ЭТОГО
+   * объекта (`[РЕК-10]`), независимо от глобального `event.manage`. */
+  canManageRecon?: boolean;
   /**
    * Готовность расстановки: сколько людей нужно постам объекта и сколько
    * назначено. `null` — НЕИЗВЕСТНО (расчёт постов не размечен по объектам),
@@ -1049,6 +1056,8 @@ export interface UpdateBulletinRequest extends Record<string, unknown> {
 }
 
 export interface UpdateReconRequest extends Record<string, unknown> {
+  /** Объект, расчёт которого меняется; обязателен при нескольких объектах. */
+  visitObjectId?: string;
   checklist: ReconChecklistItem[];
   sectorPosts: ReconSectorPost[];
   /** Запрос личного состава. Необязателен: тело БЕЗ ключа оставляет
@@ -1568,6 +1577,14 @@ export function securityEventPlacementPostPath(
   return `${SECURITY_EVENTS_PATH}${id}/placement/posts/${encodeURIComponent(
     postId
   )}/`;
+}
+export function securityEventPlacementPostCommentPath(
+  id: string,
+  postId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/posts/${encodeURIComponent(
+    postId
+  )}/comment/`;
 }
 export function securityEventPlacementCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/placement/complete/`;

@@ -93,11 +93,12 @@ def test_catalog_sees_a_permission_that_widens_instead_of_closing():
     # мутация «дописать в карту ПЯТОЕ действие» её не красила: список рос, а
     # проба молчала. Пин состава краснеет на любом лишнем и любом пропавшем.
     assert {row["action"] for row in rows} == {
-        "placement_assign",
-        "placement_unassign",
-        "placement_post_remove",
-        "placement_move",
-    }
+            "placement_assign",
+            "placement_unassign",
+            "placement_post_remove",
+            "placement_post_comment",
+            "placement_move",
+        }
     # И основной гейт этих же ручек остался на месте — обход его не заменяет.
     assert ("POST", "/api/ops/security-events/<pk>/placement/assign/") in {
         (row["method"], row["path"]) for row in catalog()["placement.manage"]
