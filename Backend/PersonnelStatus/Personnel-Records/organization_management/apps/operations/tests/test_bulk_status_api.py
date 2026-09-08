@@ -135,10 +135,10 @@ def assert_denied_by_gate(response):
     assert "error_code" not in response.data
 
 
-def test_anonymous_403(types, division):
+def test_anonymous_401(types, division):
     employee = make_employee(division)
     response = post(APIClient(), payload(employee))
-    assert_denied_by_gate(response)
+    assert response.status_code == 401
     assert OpsEmployeeStatus.objects.count() == 0
 
 

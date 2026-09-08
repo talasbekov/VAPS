@@ -3,6 +3,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 from django.views.decorators.cache import cache_page
+from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
@@ -10,8 +11,16 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 
     # JWT Authentication
-    path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
-    path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path(
+        "api/token/",
+        TokenObtainPairView.as_view(permission_classes=[AllowAny]),
+        name="token_obtain_pair",
+    ),
+    path(
+        "api/token/refresh/",
+        TokenRefreshView.as_view(permission_classes=[AllowAny]),
+        name="token_refresh",
+    ),
 
     # API Documentation (короткие URL)
     path('docs', SpectacularSwaggerView.as_view(url_name='schema'), name='docs'),

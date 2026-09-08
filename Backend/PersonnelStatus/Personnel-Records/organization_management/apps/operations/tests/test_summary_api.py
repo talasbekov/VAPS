@@ -236,12 +236,12 @@ def test_division_id_is_required_for_freshness(types, tree):
 # ── Область и порядок гардов ─────────────────────────────────────────────
 
 
-def test_anonymous_403(types, tree):
+def test_anonymous_401(types, tree):
     root, _, _ = tree
 
     response = post(APIClient(), division_id=root.id)
 
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 def test_a_foreign_division_is_403_not_404(types, tree):

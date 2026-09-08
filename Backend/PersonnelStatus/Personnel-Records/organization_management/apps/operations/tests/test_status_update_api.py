@@ -65,11 +65,11 @@ def assert_denied_by_gate(response):
     assert "error_code" not in response.data
 
 
-def test_anonymous_403(types, division):
+def test_anonymous_401(types, division):
     employee = make_employee(division)
     status_row = make_status(employee)
     response = patch(APIClient(), status_row.pk, {"comment": "аноним"})
-    assert_denied_by_gate(response)
+    assert response.status_code == 401
     status_row.refresh_from_db()
     assert status_row.comment == ""
 

@@ -443,8 +443,8 @@ class TestStrengthReportEndpoint:
         assert response.status_code == 403
         assert response.data["detail"] == "PERMISSION_DENIED"
 
-    def test_anonymous_403(self, seeded_catalog, division):
-        assert APIClient().get(REPORT_URL).status_code == 403
+    def test_anonymous_401(self, seeded_catalog, division):
+        assert APIClient().get(REPORT_URL).status_code == 401
 
     def test_returns_rows_and_totals(self, seeded_catalog, division):
         api, _ = client_for("viewer", "VIEWER", ["status.view"])

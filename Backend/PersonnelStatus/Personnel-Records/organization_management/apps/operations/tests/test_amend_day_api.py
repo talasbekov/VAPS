@@ -73,9 +73,9 @@ def assert_denied_by_gate(response):
     assert "error_code" not in response.data
 
 
-def test_anonymous_403(types, division):
+def test_anonymous_401(types, division):
     row = submitted(division, TODAY)
-    assert_denied_by_gate(post(APIClient(), amend_url(row.pk)))
+    assert post(APIClient(), amend_url(row.pk)).status_code == 401
     assert OpsDailySubmission.objects.count() == 1
 
 

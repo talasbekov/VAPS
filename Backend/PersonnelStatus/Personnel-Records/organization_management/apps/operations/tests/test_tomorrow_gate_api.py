@@ -200,12 +200,12 @@ def test_garbage_does_not_hide_a_real_laggard(types, division):
 # ── Порядок гардов ───────────────────────────────────────────────────────
 
 
-def test_anonymous_is_403_even_on_a_blocked_date(types, division):
+def test_anonymous_is_401_even_on_a_blocked_date(types, division):
     require(division)
 
     response = get(APIClient())
 
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 def test_a_foreign_division_is_403_not_422(types, division):

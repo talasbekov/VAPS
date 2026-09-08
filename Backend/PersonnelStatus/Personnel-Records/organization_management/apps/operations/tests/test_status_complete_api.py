@@ -65,7 +65,7 @@ def operator(name="complete-op", scope=None):
 def test_anonymous_is_refused(types, division):  # noqa: F811
     status_row = make_status(make_employee(division))
 
-    assert complete(APIClient(), status_row.pk).status_code == 403
+    assert complete(APIClient(), status_row.pk).status_code == 401
 
 
 def test_an_authenticated_user_without_the_permission_is_refused(types, division):  # noqa: F811

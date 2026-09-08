@@ -77,7 +77,7 @@ def body_of(response):
 
 
 def test_anonymous_is_refused(storage, issued):
-    assert APIClient().get(url(issued.attachment_id)).status_code == 403
+    assert APIClient().get(url(issued.attachment_id)).status_code == 401
 
 
 def test_an_authenticated_user_without_the_permission_is_refused(storage, issued):

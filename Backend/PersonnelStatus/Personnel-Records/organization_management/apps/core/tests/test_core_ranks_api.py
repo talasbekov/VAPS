@@ -65,7 +65,7 @@ def by_code(response, code):
 
 
 def test_anonymous_is_refused(ranks):
-    assert APIClient().get(URL).status_code == 403
+    assert APIClient().get(URL).status_code == 401
 
 
 def test_permission_is_required(ranks):

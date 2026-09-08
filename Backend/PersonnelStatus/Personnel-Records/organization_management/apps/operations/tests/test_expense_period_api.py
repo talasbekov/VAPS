@@ -57,7 +57,7 @@ def pages_of(response):
 
 
 def test_anonymous_is_refused(types, division):  # noqa: F811
-    assert get(APIClient(), TODAY, TODAY).status_code == 403
+    assert get(APIClient(), TODAY, TODAY).status_code == 401
 
 
 def test_an_authenticated_user_without_the_permission_is_refused(types, division):  # noqa: F811
@@ -226,7 +226,7 @@ def csv_rows(response):
 
 
 def test_the_export_is_gated_by_the_same_permission(types, division):  # noqa: F811
-    assert export(APIClient()).status_code == 403
+    assert export(APIClient()).status_code == 401
 
 
 def test_the_export_returns_a_row_per_date(types, division):  # noqa: F811

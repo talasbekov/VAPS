@@ -71,7 +71,7 @@ def test_list_shape_ordering_and_string_ids():
 def test_list_denied_without_permission_and_anonymous():
     api, _ = client_for("ops-legal-nobody")
     assert api.get(URL).status_code == 403
-    assert APIClient().get(URL).status_code == 403
+    assert APIClient().get(URL).status_code == 401
 
 
 def test_seed_is_idempotent():

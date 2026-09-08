@@ -171,10 +171,10 @@ def test_an_unknown_format_is_400(types, tree):
 # ── Гарды ────────────────────────────────────────────────────────────────
 
 
-def test_anonymous_403(types, tree):
+def test_anonymous_401(types, tree):
     root, _, _ = tree
 
-    assert get(APIClient(), root.id).status_code == 403
+    assert get(APIClient(), root.id).status_code == 401
 
 
 def test_reading_needs_no_right_to_assemble(types, tree):

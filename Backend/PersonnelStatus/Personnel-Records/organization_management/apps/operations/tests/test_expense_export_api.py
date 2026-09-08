@@ -257,8 +257,8 @@ def test_the_title_names_the_division(types, division):
 # ── Гарды ────────────────────────────────────────────────────────────────
 
 
-def test_anonymous_403(types, division):
-    assert get(APIClient(), division.id).status_code == 403
+def test_anonymous_401(types, division):
+    assert get(APIClient(), division.id).status_code == 401
 
 
 def test_a_day_that_was_not_submitted_is_404(types, division):

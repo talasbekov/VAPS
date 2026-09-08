@@ -83,10 +83,10 @@ def assert_denied_by_gate(response):
     assert "error_code" not in response.data
 
 
-def test_anonymous_403(types, home, host):
+def test_anonymous_401(types, home, host):
     employee = make_employee(home)
     response = post(APIClient(), URL, create_body(employee, host))
-    assert_denied_by_gate(response)
+    assert response.status_code == 401
     assert not Secondment.objects.exists()
 
 

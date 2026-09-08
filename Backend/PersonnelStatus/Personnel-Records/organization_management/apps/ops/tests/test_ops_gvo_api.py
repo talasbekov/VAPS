@@ -120,7 +120,7 @@ def test_persons_denied_without_permission():
 
 
 def test_persons_denied_anonymous():
-    assert APIClient().get(PERSONS_URL).status_code == 403
+    assert APIClient().get(PERSONS_URL).status_code == 401
 
 
 # ── Сводки ГВО: list / patch / reset ─────────────────────────────────────

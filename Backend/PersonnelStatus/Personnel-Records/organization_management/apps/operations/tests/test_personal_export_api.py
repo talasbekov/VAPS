@@ -134,12 +134,12 @@ def test_the_log_records_who_took_the_copy(types, division):
 # ── Гарды ────────────────────────────────────────────────────────────────
 
 
-def test_anonymous_403(types, division):
+def test_anonymous_401(types, division):
     submission = submit(division)
 
     response = get(APIClient(), submission)
 
-    assert response.status_code == 403
+    assert response.status_code == 401
     assert not OpsAuditLog.objects.filter(
         action=audit_service.SUBMISSION_EXPORTED
     ).exists()
