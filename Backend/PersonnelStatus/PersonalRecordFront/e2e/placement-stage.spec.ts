@@ -184,6 +184,76 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })
 
+  test('«Удалить с поста» называет причину без placement.manage, как соседние кнопки строки (доводка №801 по ревью №825)', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Кнопка стояла БЕЗ `RightGate` — только статичный
+     * `title`, который браузер не покажет на выключенном элементе. Обе
+     * соседки в той же строке («Старший поста», «Роль и секция…») закрыты
+     * ТЕМ ЖЕ правом и обёрнуты правильно — рассинхрон нашёлся ревью №825.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const target = await placementEventWithRoster(token)
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
+    const eventId = target!.id
+
+    const before = (await (
+      await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+    ).json()) as {
+      reconSectorPosts: { id: string; need: number }[]
+      forceRoster: { employeeId: string }[]
+      placementAssignments: { id: string; employeeId: string; postId: string }[]
+    }
+    test.skip(before.reconSectorPosts.length === 0, 'у ОМ нет расчёта постов')
+    const postId = before.reconSectorPosts[0].id
+    const candidate = before.forceRoster.find(
+      (m) => !before.placementAssignments.some((a) => a.employeeId === m.employeeId),
+    )
+    requireFixture(candidate, 'в составе есть свободный человек')
+    const assigned = await request.post(
+      `${API}/api/ops/security-events/${eventId}/placement/assign/`,
+      { headers: auth, data: { postId, employeeId: candidate!.employeeId } },
+    )
+    expect(assigned.ok(), await assigned.text()).toBe(true)
+    const after = (await (
+      await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+    ).json()) as { placementAssignments: { employeeName: string; postId: string }[] }
+    const row = after.placementAssignments.find((a) => a.postId === postId)
+    requireFixture(row, 'назначение не завелось — проверять нечего')
+
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-permissions/'),
+      async (route) =>
+        route.fulfill({
+          json: { permissions: ['event.view', 'status.view', 'personnel.view'], roles: [] },
+        }),
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${eventId}/`)
+    const card = page.getByRole('region', { name: 'Расстановка сил' })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+    // Пост выбирается тем же деревом, что и в первой пробе файла.
+    const tree = page.getByRole('complementary', { name: 'Дерево постов' })
+    await tree.locator(`li[data-drop-post="${postId}"]`).click()
+
+    const removeButton = card.getByRole('button', {
+      name: `Удалить с поста: ${row!.employeeName}`,
+    })
+    await expect(removeButton).toBeVisible({ timeout: 15_000 })
+    await expect(removeButton).toBeDisabled()
+    const describedBy = await removeButton.getAttribute('aria-describedby')
+    expect(
+      describedBy,
+      'выключенная кнопка без aria-describedby — причина недостижима читалкой',
+    ).toBeTruthy()
+    const hint = page.locator(`#${describedBy}`)
+    await expect(hint).toBeVisible()
+    expect((await hint.innerText()).trim().length).toBeGreaterThan(0)
+  })
+
   test('лишний пост снимается с расстановки, занятый — нет', async ({ page, request }) => {
     /**
      * Негативная ветка недобора (Plane №259, Ш-5).

@@ -341,6 +341,77 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
       ).toBeDisabled()
     })
 
+    test('строчные «Напомнить» и «Ознакомлен лично» называют причину и без отставания этапа (доводка №801 по ревью №825)', async ({
+      page,
+    }) => {
+      /**
+       * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. У обеих кнопок в строке назначения `disabled`
+       * гасится и по `!canManage` — но `RightGate` до правки объяснял только
+       * отставание этапа (`stageBehindReason`) или не объяснял вовсе
+       * («Ознакомлен лично» вообще не была обёрнута). Без права и БЕЗ
+       * отставания (событие честно на нужном этапе) кнопки молчали:
+       * `reason={stageBehindReason}` при `null` даёт `RightGate` пустой
+       * текст, и он не рисует ничего — тот же класс дефекта, что и №913.
+       *
+       * Сценарий 2 «старший объекта ведёт этап без event.manage» (пробой
+       * выше) события НЕ проверяет: там канал открыт ЧЕРЕЗ `isStageLead`, и
+       * причины не видно потому, что кнопка включена. Здесь — обратный
+       * случай: права нет, старшинства нет, этап на месте — причина обязана
+       * появиться.
+       */
+      const token = await apiToken()
+      const businessDate = uniqueBusinessDate()
+      const code = await prepareEvent(token, { businessDate })
+      const event = (await events(token)).find((e) => e.code === code)
+      expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+      expect(
+        event!.placementAssignments.length,
+        'у своей фикстуры нет назначений — проверять нечего',
+      ).toBeGreaterThan(0)
+
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-permissions/'),
+        async (route) =>
+          route.fulfill({
+            json: { permissions: ['event.view', 'status.view', 'personnel.view'], roles: [] },
+          }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-employee/'),
+        async (route) =>
+          route.fulfill({
+            json: { employee: { id: 999999, full_name: 'Не старший', rank_code: null, position_code: null, division: null, personnel_number: null, hire_date: null }, unlinked_reason: null },
+          }),
+      )
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+      const card = page.locator('[data-slot="card"]', {
+        has: page.locator('[data-slot="card-title"]', { hasText: 'Ознакомление' }),
+      })
+      await expect(card).toBeVisible({ timeout: 20_000 })
+
+      const row = card.locator('li[data-testid^="ack-row-"]').first()
+      await expect(row, 'у своей фикстуры нет строк назначений в списке').toBeVisible({
+        timeout: 15_000,
+      })
+      const remindButton = row.getByRole('button', { name: /Напомнить:/ })
+      const ackButton = row.getByRole('button', { name: 'Ознакомлен лично' })
+      await expect(remindButton).toBeDisabled()
+      await expect(ackButton).toBeDisabled()
+
+      for (const button of [remindButton, ackButton]) {
+        const describedBy = await button.getAttribute('aria-describedby')
+        expect(
+          describedBy,
+          'выключенная кнопка без aria-describedby — причина недостижима читалкой',
+        ).toBeTruthy()
+        const hint = page.locator(`#${describedBy}`)
+        await expect(hint).toBeVisible()
+        const text = (await hint.innerText()).trim()
+        expect(text.length, 'причина пустая — тот же класс дефекта, что и №913').toBeGreaterThan(0)
+      }
+    })
+
     test('замещающий ВЕДЁТ этап, но не завершает его (Plane №453)', async ({ page }) => {
       /**
        * 🔴 ВТОРАЯ ПОЛОВИНА №453, ДОПИСАННАЯ ПО РЕВЮ (задача №825). Сервер

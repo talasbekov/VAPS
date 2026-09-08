@@ -485,6 +485,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                           key={assignment.id}
                           assignment={assignment}
                           canManage={canManage}
+                          manageReason={canManage ? null : access.reason(EVENT_MANAGE)}
                           // Напоминание закрыто и отставанием мероприятия:
                           // ручка стережётся тем же `_require_stage` (№528).
                           stageBehindReason={stageBehindReason}
@@ -615,6 +616,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
 function AssignmentRow({
   assignment,
   canManage,
+  manageReason,
   stageBehindReason,
   canReplace,
   onAcknowledge,
@@ -624,6 +626,11 @@ function AssignmentRow({
 }: {
   assignment: PlacementAssignment;
   canManage: boolean;
+  /** Причина отказа по праву (`access.reason(EVENT_MANAGE)`) — `null`, когда
+   *  права хватает. Тот же довод, что у соседних кнопок этапа (строки 329,
+   *  370): `canManage` — это ЕЩЁ и `isStageLead`, у которого канонической
+   *  фразы нет, и текст права уже принят приближением для обеих причин. */
+  manageReason: string | null;
   /** Мероприятие ещё не дошло до этапа — словами; `null`, когда дошло. */
   stageBehindReason: string | null;
   /** Замена — операция ОБЪЕКТА: чужой пост её не получает (Plane №613). */
@@ -754,7 +761,13 @@ function AssignmentRow({
               {assignment.phone}
             </a>
           )}
-          <RightGate reason={stageBehindReason}>
+          {/* 🔴 ПРИЧИНА ПРАВА ТОЖЕ ВХОДИТ В reason, А НЕ ТОЛЬКО ОТСТАВАНИЕ
+              (доводка №801/№528 по ревью №825). `disabled` гасит кнопку и
+              по `!canManage`, а `RightGate` объяснял только отставание
+              этапа — без права и БЕЗ отставания кнопка молчала совсем:
+              `reason={stageBehindReason}` при `stageBehindReason === null`
+              даёт RightGate пустой текст, и он не рисует ничего. */}
+          <RightGate reason={stageBehindReason || manageReason}>
             {(describedBy) => (
           <Button
             type="button"
@@ -770,17 +783,24 @@ function AssignmentRow({
           </Button>
             )}
           </RightGate>
+          {/* 🔴 БЕЗ RightGate КНОПКА МОЛЧАЛА ТЕМ ЖЕ СПОСОБОМ (доводка №801 по
+              ревью №825): title на выключенной кнопке браузер не покажет. */}
+          <RightGate reason={manageReason}>
+            {(describedBy) => (
           <Button
             type="button"
             variant="outline"
             size="sm"
             disabled={busy || !canManage}
+            aria-describedby={describedBy}
             title="Ознакомлен лично — доведено устно, отметка старшего"
             onClick={onAcknowledge}
           >
             <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
             Ознакомлен лично
           </Button>
+            )}
+          </RightGate>
         </>
       )}
     </li>

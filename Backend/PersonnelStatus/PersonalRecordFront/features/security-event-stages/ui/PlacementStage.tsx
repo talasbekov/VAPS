@@ -1493,16 +1493,26 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               </Button>
                             )}
                           </RightGate>
-                          <button
-                            type="button"
-                            aria-label={`Удалить с поста: ${assignment.employeeName}`}
-                            title="Удалить с поста"
-                            disabled={unassign.isPending || !access.can(PLACEMENT_MANAGE)}
-                            onClick={() => unassign.mutate({ assignmentId: assignment.id })}
-                            className="flex h-8 w-8 items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                          >
-                            <X className="h-4 w-4" aria-hidden="true" />
-                          </button>
+                          {/* 🔴 БЕЗ RightGate ТРЕТЬЯ КНОПКА СТРОКИ МОЛЧАЛА (доводка
+                              №801 по ревью №825). Те же права, что у соседей
+                              выше («Старший поста», «Роль и секция…»), а
+                              причина не сказана: title на выключенной кнопке
+                              подавляется браузером — ровно тот дефект, ради
+                              которого №801 и заведена. */}
+                          <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+                            {(describedBy) => (
+                              <button
+                                type="button"
+                                aria-label={`Удалить с поста: ${assignment.employeeName}`}
+                                disabled={unassign.isPending || !access.can(PLACEMENT_MANAGE)}
+                                aria-describedby={describedBy}
+                                onClick={() => unassign.mutate({ assignmentId: assignment.id })}
+                                className="flex h-8 w-8 items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                              >
+                                <X className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            )}
+                          </RightGate>
                         </span>
                       </span>
                     </li>
