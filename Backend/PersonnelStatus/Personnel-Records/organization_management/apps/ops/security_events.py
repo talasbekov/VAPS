@@ -1038,18 +1038,25 @@ def add_visit_object(event_id, *, object_id, protected_person_id=None):
 
 
 @transaction.atomic
-def update_visit_object(event_id, visit_object_id, *, visit_day, note):
-    """Правка дня посещения и примечания у объекта посещения.
+def update_visit_object(event_id, visit_object_id, *, visit_day, note, description=None):
+    """Правка дня посещения, примечания и описания визита у объекта посещения.
 
-    Оба поля переехали сюда из патча сводки ГВО (ключ `visits`, «Реестр
-    ОМ-35.1»): список объектов теперь один — таблица, — и править его подпись
-    надо там же, где он живёт. Сам объект здесь не меняется: подмена объекта
-    посещения — это снятие одной строки и добавление другой, у них своя
-    расстановка и свои замещающие.
+    День и примечание переехали сюда из патча сводки ГВО (ключ `visits`,
+    «Реестр ОМ-35.1»): список объектов теперь один — таблица, — и править его
+    подпись надо там же, где он живёт. `description` — та же идея для цели
+    визита (Plane SJ-1049): предложение о том, зачем именно на ЭТОМ ОМ едут на
+    этот объект («Основная площадка мероприятия.») — отдельно от `note`
+    (короткая служебная подпись для сводки ГВО). Сам объект здесь не
+    меняется: подмена объекта посещения — это снятие одной строки и
+    добавление другой, у них своя расстановка и свои замещающие.
 
     `visitDay` пустой (не пришёл, `null` или пустая строка) — день посещения
     снимается, и сводка снова показывает объект в дате мероприятия. Это ОТВЕТ,
     а не отсутствие ответа: «в день ОМ» — нормальное состояние строки.
+
+    `description=None` — параметр не пришёл вовсе (старый клиент шлёт только
+    `visitDay`/`note`): поле остаётся как было. Пустая строка — описание
+    снимается осознанно, это тоже ответ.
     """
     event = lock_event(event_id)
     if event.stage == "CLOSED":
@@ -1077,7 +1084,14 @@ def update_visit_object(event_id, visit_object_id, *, visit_day, note):
 
     visit.visit_day = day
     visit.note = raw_note
-    visit.save(update_fields=["visit_day", "note", "updated_at"])
+    update_fields = ["visit_day", "note", "updated_at"]
+    if description is not None:
+        raw_description = str(description).strip()
+        if len(raw_description) > 255:
+            raise _validation({"description": ["Не длиннее 255 символов."]})
+        visit.description = raw_description
+        update_fields.append("description")
+    visit.save(update_fields=update_fields)
     event.refresh_from_db()
     return event
 

@@ -5,7 +5,16 @@
 import { useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +56,7 @@ import {
   EditBulletinDialog,
 } from "@/features/create-security-event";
 import { GvoVisitsRegistry } from "@/widgets/gvo-visits-registry";
+import { GvoVisitsDialog } from "@/features/gvo-section-edit";
 import {
   AddDeputyDialog,
   AssignChiefDialog,
@@ -482,6 +492,7 @@ function EventRow({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [chiefOpen, setChiefOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [visitsOpen, setVisitsOpen] = useState(false);
   const detailsId = useId();
   const visits = event.visitObjects ?? [];
   const { hasPermission } = useOpsPermissions();
@@ -868,6 +879,7 @@ function EventRow({
               canManageDeputies={canManageEvent}
               backSuffix={backSuffix}
               onAdd={() => setAddOpen(true)}
+              onEdit={() => setVisitsOpen(true)}
             />
           </TableCell>
         </TableRow>
@@ -901,6 +913,10 @@ function EventRow({
           // просил раскрывать.
           onClose={() => setAddOpen(false)}
         />
+      )}
+
+      {visitsOpen && (
+        <GvoVisitsDialog event={event} onClose={() => setVisitsOpen(false)} />
       )}
 
       {/* Подтверждение — окно, а не `confirm()`: удаление необратимо, и
@@ -959,6 +975,7 @@ function VisitObjectList({
   canManageDeputies,
   backSuffix,
   onAdd,
+  onEdit,
 }: {
   event: SecurityEvent;
   visits: VisitObject[];
@@ -966,6 +983,7 @@ function VisitObjectList({
   canManageDeputies: boolean;
   backSuffix: string;
   onAdd: () => void;
+  onEdit: () => void;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1082,8 +1100,27 @@ function VisitObjectList({
             // «наведи красоту в реестре ОМ»).
             <li
               key={visit.id}
-              className="rounded-lg border border-border/70 bg-background p-3 text-xs shadow-sm"
+              className="flex gap-3 rounded-lg border border-border/70 bg-background p-3 text-xs shadow-sm"
             >
+              {/* СНИМОК ОБЪЕКТА (Plane SJ-1049, «в стиле Модуля ОЛ»): та же
+                  плашка-плейсхолдер, что карточка охраняемого лица
+                  (`app/security-ops/persons/page.tsx`) — квадрат `bg-muted`
+                  с иконкой, пока снимка нет. Свойство КАТАЛОГА объекта, не
+                  визита. Сервер включает его в event-контракт, чтобы право
+                  `event.view` не требовало дополнительного `object.view`. */}
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
+                {visit.photoUrl !== null ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- снимок объекта — произвольный URL медиа-хранилища, не оптимизируемый актив сборки.
+                  <img
+                    src={visit.photoUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <Building2 className="h-6 w-6" aria-hidden="true" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
               {/* ШАПКА КАРТОЧКИ: имя объекта и его непосредственные действия
                   (статус, снять объект) — в одной строке, статус и «снять»
                   прижаты вправо ЗДЕСЬ, у заголовка, а не в хвосте длинного
@@ -1156,6 +1193,34 @@ function VisitObjectList({
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* ОПИСАНИЕ ВИЗИТА (Plane SJ-1049) — цель посещения на ЭТОМ
+                  ОМ («Основная площадка мероприятия.»), не `note`. Пусто —
+                  строка не рисуется вовсе: обещание описания без текста
+                  хуже отсутствия строки. Правится в окне «Объекты
+                  посещения» сводки ГВО (`GvoVisitsDialog`). */}
+              <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                {visit.description !== "" && (
+                  <p className="text-xs text-muted-foreground">
+                    {visit.description}
+                  </p>
+                )}
+                {canEditVisit && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={onEdit}
+                    aria-label={`${
+                      visit.description === "" ? "Добавить" : "Редактировать"
+                    } описание объекта ${visit.objectName}`}
+                    className="min-h-11 px-2 text-xs"
+                  >
+                    <Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                    {visit.description === "" ? "Добавить описание" : "Редактировать описание"}
+                  </Button>
+                )}
               </div>
 
               {/* СВОДКА ОБЪЕКТА: дата, охраняемое лицо, готовность
@@ -1275,6 +1340,7 @@ function VisitObjectList({
                   visit={visit}
                   canEdit={canEditDeputies}
                 />
+              </div>
               </div>
             </li>
           );

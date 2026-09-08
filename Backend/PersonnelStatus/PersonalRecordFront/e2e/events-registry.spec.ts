@@ -680,6 +680,92 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(details).toBeHidden()
   })
 
+  test('описание визита из карточки ГВО доезжает до карточки объекта в реестре (Plane SJ-1049)', async ({
+    page,
+  }) => {
+    // SJ-1049: раскрытая строка объекта показывает описание визита («Основная
+    // площадка мероприятия.») — цель посещения на ЭТОМ ОМ, отдельное поле от
+    // `note`. Проба ведёт своё мероприятие и задаёт описание ИЗ САМОЙ
+    // карточки реестра: прямой PATCH здесь скрыл бы отсутствие пользовательского
+    // действия. Снимок объекта тоже приходит в строке мероприятия — реестр не
+    // должен зависеть от отдельного права `object.view`.
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const objects = (await (
+      await fetch(`${API}/api/ops/security-events/bindable-objects/`, { headers })
+    ).json()) as { results: { id: string; name: string }[] }
+    expect(objects.results.length, 'на стенде нет объектов').toBeGreaterThan(0)
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    )
+    const photo = new FormData()
+    photo.set('photo', new Blob([png], { type: 'image/png' }), 'registry-object.png')
+    const uploaded = (await (
+      await fetch(`${API}/api/ops/objects/${objects.results[0].id}/photo/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: photo,
+      })
+    ).json()) as { photoUrl: string }
+
+    const created = (await (
+      await fetch(`${API}/api/ops/security-events/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          title: `Проба описания визита (e2e) ${Date.now()}`,
+          objectId: objects.results[0].id,
+          businessDate: '2026-09-16',
+          kind: 'INTERNAL',
+        }),
+      })
+    ).json()) as {
+      id: string
+      code: string
+      visitObjects: { id: string; objectName: string; photoUrl: string | null }[]
+    }
+    expect(created.visitObjects).toHaveLength(1)
+    const description = 'Основная площадка мероприятия.'
+    expect(created.visitObjects[0].photoUrl).toBe(uploaded.photoUrl)
+
+    await signIn(page)
+    let objectCatalogRequests = 0
+    await page.route('**/api/ops/objects/**', async (route) => {
+      objectCatalogRequests += 1
+      await route.fulfill({ status: 403, json: { error_code: 'PERMISSION_DENIED' } })
+    })
+    await page.goto(`${APP}/security-ops/events/?search=${encodeURIComponent(created.code)}`)
+    const toggle = page.getByRole('button', {
+      name: `Развернуть объекты посещения ${created.code}`,
+    })
+    await expect(toggle).toBeVisible({ timeout: 15_000 })
+    await toggle.click()
+    // Подпись кнопки МЕНЯЕТСЯ после клика («Развернуть» → «Свернуть») —
+    // старый локатор ссылался бы на кнопку, которой уже нет; `aria-controls`
+    // читаем у ПЕРЕЗАПРОШЕННОЙ кнопки с новой подписью (тот же приём, что в
+    // «объекты посещения добавляются кнопкой…» выше).
+    const expandedToggle = page.getByRole('button', {
+      name: new RegExp(`^(Свернуть|Развернуть) объекты посещения ${created.code}$`),
+    })
+    const detailsId = await expandedToggle.getAttribute('aria-controls')
+    const details = page.locator(`#${detailsId}`)
+    await details
+      .getByRole('button', { name: `Добавить описание объекта ${created.visitObjects[0].objectName}` })
+      .click()
+    const dialog = page.getByRole('dialog', { name: 'Объекты посещения' })
+    await dialog
+      .getByLabel(`Описание визита — ${created.visitObjects[0].objectName}`)
+      .fill(description)
+    await dialog.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(details).toContainText(description, { timeout: 15_000 })
+
+    const image = details.locator('img[alt=""]').first()
+    await expect(image).toBeVisible()
+    expect(await image.getAttribute('src')).toBe(uploaded.photoUrl)
+    expect(objectCatalogRequests).toBe(0)
+  })
+
   test('клик по строке бюллетеня раскрывает список, а не уводит в этапы', async ({
     page,
   }) => {

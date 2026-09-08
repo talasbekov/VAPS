@@ -881,6 +881,10 @@ function emptyEvent(
         id: `${id}-visit-1`,
         objectId,
         objectName,
+        photoUrl:
+          objectId === null
+            ? null
+            : (readObjectsStore().find((object) => object.id === objectId)?.photoUrl ?? null),
         passportBinding: null,
         protectedPersonId: null,
         protectedPersonName: "",
@@ -889,6 +893,7 @@ function emptyEvent(
         // называть день второй раз незачем.
         visitDay: null,
         note: "",
+        description: "",
         // 🔴 ИДЕНТИФИКАТОР — ИЗ КАДРОВОГО СПИСКА МОКА, А НЕ ЛЮБОЙ (Plane
         // №633). Здесь стояло `"1"`, а состав мока нумеруется `emp-N`
         // (Ахметова С. — `emp-9`). Совпасть было не с чем: окно «Назначить
@@ -4135,12 +4140,14 @@ export const securityEventsHandlers = [
             id: `${event.id}-visit-${position + 1}`,
             objectId,
             objectName: object.name,
+            photoUrl: object.photoUrl,
             passportBinding: null,
             protectedPersonId: null,
             protectedPersonName: "",
             position,
             visitDay: null,
             note: "",
+            description: "",
             chiefEmployeeId: null,
             chiefName: "",
             reconChecklist: newReconChecklist(`${event.id}-visit-${position + 1}`),

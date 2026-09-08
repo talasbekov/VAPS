@@ -41,6 +41,15 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     sectors = serializers.SerializerMethodField()
     passportVersions = serializers.SerializerMethodField()
+    photoUrl = serializers.SerializerMethodField()
+
+    def get_photoUrl(self, obj):
+        # Тот же приём, что `person_photo_url` (apps/ops/gvo.py) — снимок
+        # объекта-каталога (Plane SJ-1049), не визита: одно здание снимают
+        # один раз. `bool(obj.photo)` вместо `obj.photo.url` в булевом
+        # контексте — `ImageFieldFile` без файла падает на доступе к `.url`
+        # (`ValueError`), пустая строка на диске никогда не лежит.
+        return obj.photo.url if obj.photo else None
 
     def get_hasSecurityEvents(self, obj):
         """Вкладка «Объекты ОМ» реестра — ПРОИЗВОДНЫЙ признак, не хранимый.
@@ -88,6 +97,7 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
             "hasSecurityEvents",
             "sectors",
             "passportVersions",
+            "photoUrl",
             "createdAt",
             "updatedAt",
         ]
@@ -237,6 +247,11 @@ def _visit_placement(event, visit, *, single):
 
 def serialize_visit_object(event, visit, *, single):
     need, assigned = _visit_placement(event, visit, single=single)
+    object_photo = (
+        visit.security_object.photo
+        if visit.security_object_id is not None and visit.security_object is not None
+        else None
+    )
     return {
         "id": str(visit.pk),
         "objectId": (
@@ -245,6 +260,9 @@ def serialize_visit_object(event, visit, *, single):
             else None
         ),
         "objectName": visit.object_name,
+        # Снимок нужен читателю мероприятия под `event.view`; отдельный
+        # запрос каталога объектов потребовал бы независимое `object.view`.
+        "photoUrl": object_photo.url if object_photo else None,
         "passportBinding": visit.passport_binding,
         "protectedPersonId": (
             str(visit.protected_person_id)
@@ -260,6 +278,9 @@ def serialize_visit_object(event, visit, *, single):
             visit.visit_day.isoformat() if visit.visit_day is not None else None
         ),
         "note": visit.note,
+        # Описание ВИЗИТА (Plane SJ-1049) — не `note`: цель посещения этим
+        # ОМ, а не служебный ярлык сводки ГВО. См. докстринг поля модели.
+        "description": visit.description,
         # Старший ОБЪЕКТА («Реестр ОМ-35.2») — не старший мероприятия: у
         # визита иностранного ОЛ объектов несколько, ответственный у каждого
         # свой. null — не назначен, и это ответ.
@@ -446,9 +467,15 @@ def visit_objects_of(event):
         # частичным prefetch в дереве нет — защита превентивная.
         from django.db.models import prefetch_related_objects
 
-        prefetch_related_objects(visits, "deputies", "document_versions")
+        prefetch_related_objects(
+            visits, "security_object", "deputies", "document_versions"
+        )
         return visits
-    return list(event.visit_objects.prefetch_related("deputies", "document_versions"))
+    return list(
+        event.visit_objects.prefetch_related(
+            "security_object", "deputies", "document_versions"
+        )
+    )
 
 
 def _serialize_visit_objects(event, visits=None):

@@ -208,6 +208,91 @@ def create_object(*, name, object_type, region, address, ownership=None):
     )
 
 
+#: Тот же лимит и тот же список типов, что у снимка ОЛ (`apps/ops/gvo.py`,
+#: `PERSON_PHOTO_MAX_BYTES`/`PERSON_PHOTO_TYPES`) — предмет разный, требование
+#: к файлу одно и то же, повторять число под другим именем незачем.
+OBJECT_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+OBJECT_PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp")
+OBJECT_PHOTO_FORMATS = {"jpeg": "jpg", "png": "png", "webp": "webp"}
+
+
+def set_object_photo(object_id, upload, *, actor=None):
+    """Положить снимок объекту-каталогу (Plane SJ-1049). None — объекта нет.
+
+    Проверка ПО БАЙТАМ, а не по заявленному `Content-Type` — тот же довод и
+    тот же приём, что у `gvo.set_person_photo` (ревью №825 по №951,
+    08.09.2026): заголовок части multipart пишет клиент, и без разбора байт
+    Pillow'ом HTML с подложным `Content-Type: image/png` лёг бы под своим
+    расширением и раздавался бы с домена портала — хранимый XSS любому, у
+    кого есть право на паспорт. Имя хранимого файла собирается здесь же —
+    от клиента не остаётся ни имени, ни расширения.
+    """
+    try:
+        object_id = int(object_id)
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= object_id <= 2**63 - 1:
+        return None
+
+    security_object = OpsSecurityObject.objects.filter(pk=object_id).first()
+    if security_object is None:
+        return None
+    if upload is None:
+        raise _validation({"photo": ["Приложите файл изображения."]})
+    content_type = getattr(upload, "content_type", "") or ""
+    if content_type not in OBJECT_PHOTO_TYPES:
+        raise _validation({"photo": ["Допустимы JPEG, PNG или WebP."]})
+    if upload.size > OBJECT_PHOTO_MAX_BYTES:
+        raise _validation({"photo": ["Файл больше 5 МБ."]})
+
+    from uuid import uuid4
+
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        upload.seek(0)
+        with Image.open(upload) as image:
+            image.verify()
+            image_format = (image.format or "").lower()
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError, ValueError):
+        raise _validation(
+            {"photo": ["Файл не является изображением JPEG, PNG или WebP."]}
+        )
+    if image_format not in OBJECT_PHOTO_FORMATS:
+        raise _validation({"photo": ["Допустимы JPEG, PNG или WebP."]})
+    upload.seek(0)
+    stored_name = f"{security_object.pk}-{uuid4().hex}.{OBJECT_PHOTO_FORMATS[image_format]}"
+    storage = security_object.photo.storage
+    old_name = security_object.photo.name or ""
+    generated_name = security_object.photo.field.generate_filename(
+        security_object, stored_name
+    )
+    new_name = storage.save(generated_name, upload)
+    try:
+        with transaction.atomic():
+            security_object.photo.name = new_name
+            security_object.save(update_fields=["photo", "updated_at"])
+            audit_service.record(
+                actor=actor,
+                action=audit_service.SECURITY_OBJECT_PHOTO_SET,
+                entity_type=audit_service.ENTITY_SECURITY_OBJECT,
+                entity_id=security_object.pk,
+                new_value={"code": security_object.code, "photo": new_name},
+            )
+    except Exception:
+        # Файловое хранилище не участвует в транзакции БД: при любом отказе
+        # модели или обязательного audit новый blob убирается вручную, а
+        # прежний ещё не тронут.
+        storage.delete(new_name)
+        security_object.photo.name = old_name
+        raise
+    if old_name and old_name != new_name:
+        # Старый blob удаляется только после успешного commit: до этого он —
+        # единственная согласованная с БД версия снимка.
+        transaction.on_commit(lambda: storage.delete(old_name))
+    return security_object
+
+
 @transaction.atomic
 def update_passport(security_object, sectors):
     """Заменить действующую редакцию (черновик) целиком.
