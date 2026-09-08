@@ -473,6 +473,14 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        try:
+            employee_id = int(employee_id)
+        except ValueError:
+            return Response(
+                {'error': 'Параметр employee_id должен быть числом'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         status_type = request.query_params.get('status_type')
         start_date_str = request.query_params.get('start_date')
         end_date_str = request.query_params.get('end_date')
@@ -487,7 +495,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             )
 
         queryset = self.service.get_employee_status_history(
-            employee_id=int(employee_id),
+            employee_id=employee_id,
             status_type=status_type,
             start_date=start_date_val,
             end_date=end_date_val
@@ -530,11 +538,19 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        try:
+            employee_id = int(employee_id)
+        except ValueError:
+            return Response(
+                {'error': 'Параметр employee_id должен быть числом'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Получаем текущий активный статус
-        current_status = self.service.get_employee_current_status(int(employee_id))
+        current_status = self.service.get_employee_current_status(employee_id)
 
         # Получаем запланированные статусы
-        planned_statuses = self.service.get_planned_statuses(employee_id=int(employee_id))
+        planned_statuses = self.service.get_planned_statuses(employee_id=employee_id)
 
         # Сериализуем данные
         current_serializer = EmployeeStatusSerializer(current_status, context={'request': request}) if current_status else None
@@ -643,8 +659,16 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        try:
+            division_id = int(division_id)
+        except ValueError:
+            return Response(
+                {'error': 'Параметр division_id должен быть числом'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         headcount_data = self.service.get_division_headcount(
-            division_id=int(division_id),
+            division_id=division_id,
             target_date=target_date
         )
 
