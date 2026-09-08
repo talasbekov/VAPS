@@ -1931,6 +1931,21 @@ export const securityEventsHandlers = [
     });
     // «Ключа нет» ≠ «пусто» (Plane №416/№424): без sectorPosts посты остаются.
     const incomingPosts = body.sectorPosts ?? event.reconSectorPosts;
+    // 🔴 ПОЛЯ ПРОВЕРЯЮТСЯ ДО ГАРДА СТАРШЕГО И ДО ЗАМОРОЗКИ, А НЕ ПОСЛЕ
+    // (доводка №867 по ревью №825, зеркало порядка `update_recon`: там все
+    // `field_errors` собираются и поднимаются ОДНИМ `_validation` РАНЬШЕ
+    // `_require_visit_chief`/`_require_visit_placement_editable`). Строка,
+    // у которой ОДНОВРЕМЕННО пустое обязательное поле И объект заморожен,
+    // отвечала мимо контракта — `PLACEMENT_FROZEN` вместо `VALIDATION_ERROR`.
+    incomingPosts.forEach((row, index) => {
+      if (row.sector.trim() === "")
+        fieldErrors[`sectorPosts.${index}.sector`] = ["Обязательное поле."];
+      if (row.post.trim() === "")
+        fieldErrors[`sectorPosts.${index}.post`] = ["Обязательное поле."];
+      if (row.need < 1)
+        fieldErrors[`sectorPosts.${index}.need`] = ["Должно быть не меньше 1."];
+    });
+    if (Object.keys(fieldErrors).length > 0) return validationError(fieldErrors);
     // 🔴 ГАРД СТАРШЕГО ДЕРЖИТ ОБЪЕКТЫ, ЧЕЙ СОСТАВ РАСЧЁТА ИЗМЕНЁН, А НЕ
     // УПОМЯНУТЫЕ В ЗАПРОСЕ (Plane №634, зеркало `_visits_with_changed_posts`).
     // Здесь стоял отбор по `incomingPosts.some((row) => row.visitObjectId ===
@@ -1961,15 +1976,6 @@ export const securityEventsHandlers = [
         return refuseFrozenPlacement(visit, "Расчёт постов объекта");
       }
     }
-    incomingPosts.forEach((row, index) => {
-      if (row.sector.trim() === "")
-        fieldErrors[`sectorPosts.${index}.sector`] = ["Обязательное поле."];
-      if (row.post.trim() === "")
-        fieldErrors[`sectorPosts.${index}.post`] = ["Обязательное поле."];
-      if (row.need < 1)
-        fieldErrors[`sectorPosts.${index}.need`] = ["Должно быть не меньше 1."];
-    });
-    if (Object.keys(fieldErrors).length > 0) return validationError(fieldErrors);
     const knownIds = new Set(event.reconSectorPosts.map((row) => row.id));
     const sectorPosts: ReconSectorPost[] = normalizePostIds(
       incomingPosts.map((row) => ({
@@ -3256,6 +3262,51 @@ export const securityEventsHandlers = [
       );
     }
   ),
+
+  // 🔴 ШЕСТАЯ ОПЕРАЦИЯ РАССТАНОВКИ БЕЗ МОК-ОБРАБОТЧИКА ВООБЩЕ (доводка №867
+  // по ревью №825). Сервер закрывает `remove_placement_post` тем же гардом
+  // `_require_placement_editable`, что назначение, перенос, снятие и
+  // старшего сектора, — а у мока для этого пути не было ни одной строки:
+  // `onUnhandledRequest: "bypass"` пропускал запрос в настоящую сеть, и
+  // проба на моке ничего не стерегла — ни старого поведения, ни нового.
+  // 🔴 ПАТТЕРН — ЛИТЕРАЛОМ, А НЕ ЧЕРЕЗ ПОСТРОИТЕЛЬ ПУТИ. `securityEventPlacementPostPath`
+  // зовёт `encodeURIComponent(postId)` — для настоящего id это верно, а для
+  // плейсхолдера ":postId" `encodeURIComponent` съедает двоеточие
+  // (`%3ApostId`), и MSW перестаёт видеть в нём параметр вовсе: правило
+  // молча не совпадало ни с одним запросом. Тот же приём уже применён
+  // соседями (`move`, `senior` — двумя строками выше) ровно по этой причине.
+  http.delete(`*${SECURITY_EVENTS_PATH}:id/placement/posts/:postId/`, ({ params }) => {
+    const { event, response } = findEvent(params.id as string);
+    if (event === null) return response;
+    const postId = params.postId as string;
+    const post = event.reconSectorPosts.find((p) => p.id === postId);
+    if (post === undefined) {
+      return errorEnvelope("ENTITY_NOT_FOUND", "Пост не найден.", { id: postId }, 404);
+    }
+    const frozenRemove = refuseIfPostFrozen(event, postId);
+    if (frozenRemove !== null) return frozenRemove;
+    const occupied = event.placementAssignments.filter((a) => a.postId === postId);
+    if (occupied.length > 0) {
+      const names = occupied
+        .slice(0, 3)
+        .map((a) => a.employeeName || "—")
+        .join(", ");
+      const tail = occupied.length > 3 ? ` и ещё ${occupied.length - 3}` : "";
+      return businessRuleError(
+        "POST_HAS_ASSIGNMENTS",
+        `Пост занят (${names}${tail}) — сначала снимите людей.`
+      );
+    }
+    return HttpResponse.json(
+      saveEvent({
+        ...withStaleFlag({
+          ...event,
+          reconSectorPosts: event.reconSectorPosts.filter((p) => p.id !== postId),
+        }),
+        updatedAt: nowIso(),
+      })
+    );
+  }),
 
   // ── Согласование ───────────────────────────────────────────────────────
   //
