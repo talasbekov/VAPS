@@ -126,6 +126,9 @@ def list_persons():
 
 PERSON_PHOTO_MAX_BYTES = 5 * 1024 * 1024
 PERSON_PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp")
+#: Формат ПО БАЙТАМ (Pillow `Image.format`, строчными) → расширение хранимого
+#: файла. Имя от клиента не используется вовсе — см. `set_person_photo`.
+PERSON_PHOTO_FORMATS = {"jpeg": "jpg", "png": "png", "webp": "webp"}
 
 
 def create_person(
@@ -180,9 +183,31 @@ def set_person_photo(person_id, upload, *, actor=None):
         raise ValidationError({"photo": ["Допустимы JPEG, PNG или WebP."]})
     if upload.size > PERSON_PHOTO_MAX_BYTES:
         raise ValidationError({"photo": ["Файл больше 5 МБ."]})
+    # 🔴 ПО БАЙТАМ, А НЕ ПО ЗАЯВЛЕННОМУ ТИПУ (ревью №825 по №951, 08.09.2026).
+    # Заголовок части multipart пишет клиент, и HTML с `Content-Type:
+    # image/png` проходил проверку выше, ложился под `/media/…/x.html` с
+    # расширением КЛИЕНТА и раздавался с домена портала — хранимый XSS любому
+    # держателю `event.create`. Поэтому файл открывается Pillow, формат
+    # берётся из байтов, а имя хранимого файла собирается здесь — от клиента
+    # не остаётся ни имени, ни расширения.
+    from uuid import uuid4
+
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        upload.seek(0)
+        with Image.open(upload) as image:
+            image.verify()
+            image_format = (image.format or "").lower()
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise ValidationError({"photo": ["Файл не является изображением JPEG, PNG или WebP."]})
+    if image_format not in PERSON_PHOTO_FORMATS:
+        raise ValidationError({"photo": ["Допустимы JPEG, PNG или WebP."]})
+    upload.seek(0)
+    stored_name = f"{person.pk}-{uuid4().hex}.{PERSON_PHOTO_FORMATS[image_format]}"
     if person.photo:
         person.photo.delete(save=False)
-    person.photo.save(upload.name, upload, save=True)
+    person.photo.save(stored_name, upload, save=True)
     audit_service.record(
         actor=actor,
         action=audit_service.PROTECTED_PERSON_PHOTO_SET,

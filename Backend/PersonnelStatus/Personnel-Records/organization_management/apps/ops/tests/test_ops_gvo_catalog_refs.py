@@ -130,6 +130,36 @@ def test_uploading_a_photo_sets_photo_url():
     assert api.post(f"{PERSONS_URL}999999/photo/", {"photo": png()}, format="multipart").status_code == 404
 
 
+def test_photo_is_checked_by_bytes_and_stored_under_its_own_name():
+    """Снимок проверяется ПО БАЙТАМ, а имя файла — не от клиента (ревью №825
+    по №951, 08.09.2026).
+
+    Проверка только по заявленному `content_type` пропускала HTML под видом
+    `image/png`: файл ложился под `/media/…/x.html` с расширением клиента и
+    раздавался с домена портала — хранимый XSS любому держателю
+    `event.create`. Теперь: (1) байты не картинка → 400 словами; (2) имя
+    хранимого файла — по id лица и формату из байтов, каким бы ни было
+    имя и расширение у клиента.
+
+    КРАСНАЯ ПРОБА: верни проверку одного `content_type` — первый ассерт
+    получит 200; сохрани `upload.name` — второй увидит `.html`.
+    """
+    api, _ = creator("refs-photo-bytes")
+    person = OpsProtectedPerson.objects.create(name="Оспанов Б.", category="OURS")
+
+    html = SimpleUploadedFile("x.html", b"<script>alert(1)</script>", content_type="image/png")
+    r = api.post(f"{PERSONS_URL}{person.pk}/photo/", {"photo": html}, format="multipart")
+    assert r.status_code == 400, r.content
+    assert "photo" in r.json().get("details", r.json().get("fieldErrors", r.json())), r.content
+
+    disguised = SimpleUploadedFile("evil.svg", png().read(), content_type="image/png")
+    r = api.post(f"{PERSONS_URL}{person.pk}/photo/", {"photo": disguised}, format="multipart")
+    assert r.status_code == 200, r.content
+    person.refresh_from_db()
+    assert person.photo.name.endswith(".png"), person.photo.name
+    assert "evil" not in person.photo.name, person.photo.name
+
+
 # ── База сводки: лица карточками справочника ────────────────────────────────
 
 
