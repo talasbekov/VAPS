@@ -475,21 +475,31 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
         const response = await route.fetch()
         const body = await response.json()
         const sample = body.visitObjects[0] ?? {}
-        // Два объекта на одной карточке: у одного документ отправлен, у
-        // другого нет. Одного не хватило бы — «убрать приложение всегда»
-        // прошло бы половину проверки.
+        // Три объекта на одной карточке: у одного документ отправлен, у
+        // второго массив версий пуст, у третьего версия ЕСТЬ, но осталась
+        // черновиком (sentAt: null) — тот самый случай, воскресающий №732
+        // на закрытом снятием этапа объекте (`override_stage`, документ
+        // `_ensure_document_version` заводит DRAFT ДО первой отправки).
+        // Одних первых двух не хватило бы: проверка «current существует»
+        // прошла бы их обе — она красит именно третий случай.
         body.visitObjects = [
           {
             ...sample,
             id: 'probe-sent',
             objectName: 'Объект с документом',
-            documentVersions: [{ number: 3, status: 'APPROVED', createdAt: '2026-09-01T10:00:00.000Z' }],
+            documentVersions: [{ number: 3, status: 'APPROVED', sentAt: '2026-09-01T09:00:00.000Z', createdAt: '2026-09-01T10:00:00.000Z' }],
           },
           {
             ...sample,
             id: 'probe-unsent',
             objectName: 'Объект без документа',
             documentVersions: [],
+          },
+          {
+            ...sample,
+            id: 'probe-draft',
+            objectName: 'Объект с черновиком',
+            documentVersions: [{ number: 1, status: 'DRAFT', sentAt: null, createdAt: '2026-09-01T10:00:00.000Z' }],
           },
         ]
         await route.fulfill({ response, json: body })
@@ -503,6 +513,12 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       const unsent = documents.getByRole('listitem').filter({ hasText: 'Объект без документа' })
       await expect(unsent).toContainText('не отправлялась')
       await expect(unsent).not.toContainText('лист ознакомления')
+
+      // Версия ЕСТЬ, но черновик — приложение всё равно не обещано:
+      // "existence" в проверке не заменяет "отправлен".
+      const draft = documents.getByRole('listitem').filter({ hasText: 'Объект с черновиком' })
+      await expect(draft).toContainText('не отправлялась')
+      await expect(draft).not.toContainText('лист ознакомления')
 
       // А у отправленного приложение обещано как прежде.
       const sent = documents.getByRole('listitem').filter({ hasText: 'Объект с документом' })
