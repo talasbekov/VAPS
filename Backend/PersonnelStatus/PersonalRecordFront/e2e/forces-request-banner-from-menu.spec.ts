@@ -230,6 +230,44 @@ test.describe(
     })
 
     /**
+     * Обратная сторона той же пробы (ревью №825 по №941): слово «управлению»
+     * для `addressee: 'directorate'` и путь совместимости — ответ БЕЗ поля —
+     * ничем не пинились; сервер, отдавший не тот уровень, экран бы не выдал.
+     */
+    for (const [addressee, expected] of [
+      ['directorate', 'Вашему управлению адресованы запросы на сбор сил: 2'],
+      [undefined, 'Вашему управлению адресованы запросы на сбор сил: 2'],
+    ] as const) {
+      test(`подпись баннера: адресат ${addressee ?? 'не назван'} → «управлению»`, async ({ page }) => {
+        const rows = [1, 2].map((n) => ({
+          eventId: `90001${n}`,
+          code: `ОМ-СИНТ-У${n}`,
+          title: `Синтетическое мероприятие У${n}`,
+          businessDate: `2026-09-2${n}`,
+          allocationId: `synthetic-allocation-dir-${n}`,
+          departmentName: 'Синт. департамент',
+          status: 'NOTIFIED',
+          dueAt: null,
+          directorates: [
+            { divisionId: '9101', name: 'Синт. управление', need: 2, assigned: 0, notifiedAt: '2026-09-05T06:00:00Z' },
+          ],
+        }))
+        await page.route(
+          (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+          (route) =>
+            route.fulfill({ json: addressee === undefined ? { results: rows } : { results: rows, addressee } }),
+        )
+
+        await signIn(page)
+        await page.goto(`${APP}/statuses/`)
+
+        const chooser = page.locator('[data-slot="forces-request-chooser"]')
+        await expect(chooser.getByText(expected)).toBeVisible({ timeout: 20_000 })
+        await expect(chooser.getByText('Вашему департаменту', { exact: false })).toHaveCount(0)
+      })
+    }
+
+    /**
      * Счётчик кнопки и «Выбрано» в таблице расходятся ОБЪЯСНИМО (Plane №547).
      *
      * Таблица считает выбранные СТРОКИ, а выделить можно только сотрудников:
