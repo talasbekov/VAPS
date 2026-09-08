@@ -105,6 +105,8 @@ from organization_management.apps.operations.notify_service import (
     mark_read,
 )
 from organization_management.apps.operations.expense_period import (
+    MODE_FACT,
+    VALID_MODES,
     derive_period,
 )
 from organization_management.apps.operations.expense_period_csv import (
@@ -1970,6 +1972,12 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpenApiParameter("date_from", OpenApiTypes.DATE, required=True),
             OpenApiParameter("date_to", OpenApiTypes.DATE, required=True),
             OpenApiParameter("division_id", OpenApiTypes.INT),
+            OpenApiParameter(
+                "mode",
+                OpenApiTypes.STR,
+                enum=sorted(VALID_MODES),
+                description="FACT (умолчание) или PLAN — см. `period`.",
+            ),
         ],
         responses={(200, "text/csv"): OpenApiTypes.BINARY},
         description=(
@@ -2012,6 +2020,18 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 OpenApiTypes.INT,
                 description="Корень поддерева; по умолчанию вся область актора.",
             ),
+            OpenApiParameter(
+                "mode",
+                OpenApiTypes.STR,
+                enum=sorted(VALID_MODES),
+                description=(
+                    "FACT (умолчание) — прежнее поведение, `date_to` не может "
+                    "быть в будущем. PLAN снимает этот запрет: будущие дни "
+                    "считаются по текущим (плановым) статусам и каждая "
+                    "страница несёт своё поле `mode` — FACT для прошлого/"
+                    "сегодня, PLAN для будущего (Plane №989)."
+                ),
+            ),
         ],
         responses=extend_schema_serializer(many=False)(
             inline_serializer(
@@ -2026,9 +2046,10 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "а не сумма — сложить два расхода не во что. Оба конца "
             "включительны. Дни без сдачи показываются наравне с прочими: это "
             "чтение, а не выпуск. Страничной обёртки нет — период сам ограничен "
-            "сверху. 400 — отсутствующая или нечитаемая дата, инверсия, период "
-            "длиннее допустимого или уходящий в будущее; 403 — чужое "
-            "подразделение."
+            "сверху. `mode=PLAN` разрешает будущее — см. параметр `mode`. "
+            "400 — отсутствующая или нечитаемая дата, инверсия, недопустимый "
+            "`mode`, период длиннее допустимого или (под FACT) уходящий в "
+            "будущее; 403 — чужое подразделение."
         ),
     )
     @action(detail=False, methods=["get"])
@@ -2062,8 +2083,12 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         division_id = _parse_int_param(request, "division_id")
         scope = _resolve_division_scope(request, division_id, _READ_STATUS_PERMISSION)
+        # Мусор — не 400 ЗДЕСЬ: `derive_period` уже валидирует `mode` против
+        # `VALID_MODES` тем же VALIDATION_ERROR, и второй проверке не нужно
+        # знать список режимов заново.
+        mode = request.query_params.get("mode") or MODE_FACT
         return derive_period(
-            date_from=date_from, date_to=date_to, division_ids=scope
+            date_from=date_from, date_to=date_to, division_ids=scope, mode=mode
         )
 
     @extend_schema(

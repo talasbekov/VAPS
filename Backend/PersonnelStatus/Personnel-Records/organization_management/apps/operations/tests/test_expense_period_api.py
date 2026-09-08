@@ -206,6 +206,34 @@ def test_a_range_reaching_into_the_future_is_a_form_error(types, division):  # n
     assert get(api, TODAY, TODAY + timedelta(days=1)).status_code == 400
 
 
+# ── Плановый режим (Plane №989) ──────────────────────────────────────────
+
+
+def test_mode_plan_lifts_the_future_denial(types, division):  # noqa: F811
+    in_slot(division)
+    api, _ = viewer(scope=division.id)
+
+    response = get(api, TODAY, TODAY + timedelta(days=1), mode="PLAN")
+
+    assert response.status_code == 200
+    assert [page["mode"] for page in response.data["pages"]] == ["FACT", "PLAN"]
+
+
+def test_mode_defaults_to_fact_when_absent(types, division):  # noqa: F811
+    """Клиент, ещё не знающий про `mode`, обязан получить ТО ЖЕ поведение,
+    что и до №989 — иначе widening окна тихо расширило бы контракт всем
+    существующим читателям сразу."""
+    api, _ = viewer()
+
+    assert get(api, TODAY, TODAY + timedelta(days=1)).status_code == 400
+
+
+def test_an_unknown_mode_is_a_form_error(types, division):  # noqa: F811
+    api, _ = viewer()
+
+    assert get(api, TODAY, TODAY, mode="SOMEDAY").status_code == 400
+
+
 # ── Выгрузка периода ─────────────────────────────────────────────────────
 
 EXPORT_URL = "/api/operations/strength-report/period-export/"

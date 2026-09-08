@@ -17,6 +17,8 @@ from organization_management.apps.operations import clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.expense_period import (
     MAX_PERIOD_DAYS,
+    MODE_FACT,
+    MODE_PLAN,
     derive_period,
 )
 from organization_management.apps.operations.tests.test_day_submission_service import (
@@ -36,17 +38,22 @@ def division():
     return Division.objects.create(name="Управление")
 
 
-def period(date_from, date_to, division=None, at=MORNING):
+def period(date_from, date_to, division=None, at=MORNING, mode=MODE_FACT):
     with clock.override(at):
         return derive_period(
             date_from=date_from,
             date_to=date_to,
             division_ids={division.id} if division is not None else None,
+            mode=mode,
         )
 
 
 def days_of(pages):
     return [page["business_date"] for page in pages]
+
+
+def modes_of(pages):
+    return [page["mode"] for page in pages]
 
 
 # ── Страница на дату ─────────────────────────────────────────────────────
@@ -212,6 +219,68 @@ def test_the_horizon_follows_the_sections_clock(types, division):  # noqa: F811
         period(TODAY, tomorrow, division)
 
     assert len(period(TODAY, tomorrow, division, at=MORNING + timedelta(days=1))) == 2
+
+
+# ── Плановый режим (Plane №989, §20.4 п.9) ────────────────────────────────
+
+
+def test_plan_mode_allows_the_future_and_marks_its_pages(types, division):  # noqa: F811
+    """RED до фикса: тот же запрос под `mode=PLAN` отвечал бы тем же 400, что
+    и FACT — режима не существовало вовсе. GREEN — future читается, и его
+    страницы несут `mode: "PLAN"`, а не тихо неотличимы от факта
+    (`[ДОП-20-02]`)."""
+    in_slot(division)
+    tomorrow = TODAY + timedelta(days=1)
+
+    pages = period(TODAY, tomorrow, division, mode=MODE_PLAN)
+
+    assert days_of(pages) == [str(TODAY), str(tomorrow)]
+    assert modes_of(pages) == ["FACT", "PLAN"]
+
+
+def test_fact_mode_is_the_default_and_still_refuses_the_future(types, division):  # noqa: F811
+    with pytest.raises(DomainError) as exc:
+        period(TODAY, TODAY + timedelta(days=1), division)
+
+    assert exc.value.code == "VALIDATION_ERROR"
+
+
+def test_a_page_reads_fact_once_the_clock_catches_up_even_under_plan_mode(
+    types, division  # noqa: F811
+):
+    """`mode` страницы — по ФАКТУ даты относительно часов раздела, а не по
+    режиму запроса: план на завтра, ставший сегодняшним фактом, обязан
+    прочитаться как FACT, даже если сам запрос всё ещё идёт под PLAN."""
+    in_slot(division)
+    tomorrow = TODAY + timedelta(days=1)
+
+    pages = period(
+        tomorrow, tomorrow, division, at=MORNING + timedelta(days=1), mode=MODE_PLAN
+    )
+
+    assert modes_of(pages) == ["FACT"]
+
+
+def test_plan_mode_still_respects_the_range_cap(types, division):  # noqa: F811
+    """Одно решение заказчика на предел диапазона (`[РАСХ-ВОП-05]`) — план не
+    заводит второй, более широкий предел поверх факта."""
+    with pytest.raises(DomainError) as exc:
+        period(
+            TODAY,
+            TODAY + timedelta(days=MAX_PERIOD_DAYS + 1),
+            division,
+            mode=MODE_PLAN,
+        )
+
+    assert exc.value.detail["max"] == MAX_PERIOD_DAYS
+
+
+def test_an_unknown_mode_is_refused(types, division):  # noqa: F811
+    with pytest.raises(DomainError) as exc:
+        period(TODAY, TODAY, division, mode="SOMEDAY")
+
+    assert exc.value.code == "VALIDATION_ERROR"
+    assert exc.value.http_status == 400
 
 
 # ── Область ──────────────────────────────────────────────────────────────

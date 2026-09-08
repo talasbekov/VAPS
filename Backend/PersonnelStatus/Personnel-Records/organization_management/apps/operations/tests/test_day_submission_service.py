@@ -14,6 +14,7 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations import audit_service, clock
 from organization_management.apps.operations.day_submission_service import submit_day
 from organization_management.apps.operations.exceptions import DomainError
+from organization_management.apps.operations.expense_period import MAX_PERIOD_DAYS
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.models_submission import (
@@ -110,6 +111,8 @@ class TestGuards:
         assert OpsDailySubmission.objects.count() == 0
 
     def test_date_outside_the_window_is_422(self, division):
+        # Окно расширено ВПЕРЁД (Plane №989), но не назад: вчера остаётся
+        # вне окна умолчания — прошлые несданные дни сдачей не «догоняются».
         with clock.override(MORNING), pytest.raises(DomainError) as exc:
             submit_day(
                 division_id=division.id,
@@ -119,8 +122,7 @@ class TestGuards:
         assert exc.value.code == "BUSINESS_DATE_OUT_OF_WINDOW"
         assert exc.value.http_status == 422
         assert exc.value.detail["allowed"] == [
-            str(TODAY),
-            str(TODAY + timedelta(days=1)),
+            str(TODAY + timedelta(days=offset)) for offset in range(MAX_PERIOD_DAYS + 1)
         ]
 
     def test_default_window_covers_today_and_tomorrow(self, division):
@@ -132,6 +134,25 @@ class TestGuards:
                 actor=ACTOR,
             )
         assert OpsDailySubmission.objects.count() == 2
+
+    def test_default_window_covers_several_days_ahead(self, division):
+        """Plane №989: «сводил за завтрашний и на несколько дней вперед и за
+        любой день» — RED до фикса (окно кончалось на завтра, 62-й день
+        вперёд отвечал 422); GREEN после расширения `_default_window`."""
+        far = TODAY + timedelta(days=MAX_PERIOD_DAYS)
+        with clock.override(MORNING):
+            submission = submit_day(
+                division_id=division.id, business_date=far, actor=ACTOR
+            )
+        assert submission.business_date == far
+
+    def test_default_window_stops_at_the_technical_limit(self, division):
+        # Тот же предел, что у чтения периода (`MAX_PERIOD_DAYS`) — одно
+        # решение заказчика [РАСХ-ВОП-05], а не второе магическое число.
+        too_far = TODAY + timedelta(days=MAX_PERIOD_DAYS + 1)
+        with clock.override(MORNING), pytest.raises(DomainError) as exc:
+            submit_day(division_id=division.id, business_date=too_far, actor=ACTOR)
+        assert exc.value.code == "BUSINESS_DATE_OUT_OF_WINDOW"
 
     def test_explicit_window_overrides_the_default(self, division):
         # Окно приходит параметром: догон за прошлый день — законная
