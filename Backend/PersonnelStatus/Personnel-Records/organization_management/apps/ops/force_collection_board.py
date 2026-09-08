@@ -25,7 +25,6 @@ STATUS_LABELS = {
     "DISTRIBUTED": "Распределено",
 }
 
-_FORCES_DEPT = "HEAD_OPS_UNIT"
 
 
 def _sent_rows(allocations):

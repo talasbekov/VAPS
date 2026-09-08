@@ -1,4 +1,4 @@
-"""Восемь учёток матрицы доступа — по СПИСКУ МОДУЛЕЙ заказчика (№348, №382).
+"""Девять учёток матрицы доступа — по СПИСКУ МОДУЛЕЙ заказчика (№348, №382, №972).
 
 Заказчик описал персон тем, что видно в меню, и проверять будет тем же. Поэтому
 пробы говорят его словами, а не «у роли столько-то прав»:
@@ -91,7 +91,7 @@ def modules(username):
     }
 
 
-def test_the_eight_accounts_are_complete(stand):
+def test_the_nine_accounts_are_complete(stand):
     call_command("seed_access_matrix", "--password", PASSWORD)
 
     usernames = set(
