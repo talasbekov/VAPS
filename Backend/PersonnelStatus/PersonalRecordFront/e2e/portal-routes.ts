@@ -89,6 +89,10 @@ export const ROUTES: readonly RouteSpec[] = [
   { template: '/security-ops/service-reports' },
   { template: '/security-ops/service-reports/history' },
   { template: '/security-ops/service-reports/{reportJobId}', needs: ['reportJobId'] },
+  // Свод по Службе для DUTY_OFFICER (Plane №992). Права не проверяются
+  // обходом маршрутов — видимость решает сама страница по роли, как и у
+  // остальных экранов раздела.
+  { template: '/security-ops/service-summary' },
   { template: '/security-ops/audit' },
   { template: '/security-ops/dictionaries' },
   { template: '/security-ops/dictionaries/{dictionaryCode}', needs: ['dictionaryCode'] },

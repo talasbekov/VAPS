@@ -23,6 +23,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
   Car,
+  ClipboardCheck,
   ClipboardList,
   FileText,
   KeyRound,
@@ -113,6 +114,10 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
       { name: "Сбор сил на ОМ", href: "/employees", icon: Users },
       { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
       { name: "Ежедневный отчет", href: "/reports", icon: FileText },
+      // Права здесь НЕ проверяются — тем же приёмом, что у остальных пунктов
+      // этого меню (см. комментарий у «Права»/«Роли» ниже): видимость решает
+      // сама страница по роли DUTY_OFFICER (Plane №992), а не пункт меню.
+      { name: "Свод по Службе", href: "/security-ops/service-summary", icon: ClipboardCheck },
     ],
   },
   {

@@ -42,9 +42,17 @@ export function useAssembleSummary() {
         allow_incomplete: true,
       }),
     onSuccess: () => {
-      // Свод — часть той же семьи ключей, что и остальной борд: список версий
-      // свода, сводка сдачи и строки расхода читают одно и то же состояние.
+      // Свод читают ДВА разных набора ключей на РАЗНЫХ уровнях дерева
+      // (Plane №992): «Свод департамента» — `daily-expense-board` (борд того
+      // же подразделения), «Свод по Службе» — `service-summary` (дерево ВСЕЙ
+      // организации, `useServiceTree`). Обе мутации общие для обоих экранов
+      // (сборка/отправка — одно действие на любом уровне дерева), поэтому обе
+      // семьи ключей инвалидируются здесь, а не в каждом экране по отдельности
+      // — иначе кнопка «Собрать» осталась бы висеть после реального успеха:
+      // так и было найдено (собственный e2e «Свод по Службе» ловил именно
+      // это — сборка на бэке проходила, а кнопка не менялась НИКОГДА).
       void client.invalidateQueries({ queryKey: ["daily-expense-board"] });
+      void client.invalidateQueries({ queryKey: ["service-summary"] });
     },
   });
 }
@@ -62,6 +70,7 @@ export function useSendSummary() {
       opsApiClient.post("/api/operations/daily-summaries/send/", body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["daily-expense-board"] });
+      void client.invalidateQueries({ queryKey: ["service-summary"] });
     },
   });
 }
