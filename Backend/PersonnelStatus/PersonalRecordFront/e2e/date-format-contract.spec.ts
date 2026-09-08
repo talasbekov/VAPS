@@ -166,6 +166,20 @@ test.describe('метка момента', () => {
     ['updatedAt', 'в командном центре это Math.max(dataUpdatedAt, …) — тоже число'],
   ])
 
+  /**
+   * 🔴 `dataUpdatedAt` НЕ НУЖНО «ГОЛЫМ» (доводка ревью №825/№932 по №1011).
+   * `NOT_A_SERVER_MOMENT` исключает по голому имени намеренно: `event.updatedAt`
+   * — реальная серверная ISO-строка, и совпадение по последнему сегменту пути
+   * стёрло бы это различие (ровно тот дефект, что чинили в №932). Но
+   * `dataUpdatedAt` — не `updatedAt`: это ИМЯ ПОЛЯ React Query, а не общее
+   * название по сущностям, и `query.dataUpdatedAt` — то же самое число, что и
+   * голый `dataUpdatedAt`. `query.dataUpdatedAt > 0 ? new Date(query.
+   * dataUpdatedAt).toLocaleTimeString(…)` (`app/security-ops/analytics/
+   * operations/page.tsx`) сторож считал виновным, хотя `Invalid Date` тут не
+   * бывает никогда.
+   */
+  const UNAMBIGUOUS_NUMERIC_FIELDS = new Set(['dataUpdatedAt'])
+
   test('момент не печатается инлайном мимо общего модуля', () => {
     const guilty: string[] = []
     for (const file of files) {
@@ -176,6 +190,9 @@ test.describe('метка момента', () => {
         const ident = hit[1] ?? ''
         // Только голое имя: `x.updatedAt` — поле сущности, а не локальное число.
         if (!ident.includes('.') && NOT_A_SERVER_MOMENT.has(ident)) continue
+        // `…dataUpdatedAt` — исключение и С НАМЕСПЕЙСОМ: имя однозначно.
+        const lastSegment = ident.includes('.') ? ident.split('.').pop() ?? '' : ''
+        if (UNAMBIGUOUS_NUMERIC_FIELDS.has(lastSegment)) continue
         const line = text.slice(0, hit.index).split('\n').length
         guilty.push(`${path.relative(ROOT, file)}:${line}: ${hit[1]}`)
       }
@@ -205,11 +222,29 @@ test.describe('метка момента', () => {
   // ничего не проверяет, и это правильно: проверять нечего.
   const OWN_FORMATTER_COPIES = new Map<string, string>([])
 
+  /**
+   * 🔴 ИМЯ ПЕРЕМЕННОЙ — НЕ ЧАСТЬ ПРАВИЛА (Plane №1011, ревью коммита
+   * `639efe94` по №935). Было `\bparsed\.getTime\(\)\b` буквально: копия
+   * `const d = new Date(v); Number.isNaN(d.getTime()) ? v : d.toLocaleString(…)`
+   * сторожа не будила — она с тем же дефектом, просто переменная не
+   * называется `parsed`. Список признанных копий пуст, и сторож — ЕДИНСТВЕННАЯ
+   * защита: восемь снятых копий вернулись бы под другим именем незамеченными.
+   */
+  const OWN_FORMATTER_COPY_PATTERN =
+    /Number\.isNaN\(\s*(\w+)\.getTime\(\)\s*\)\s*\?\s*\w+\s*:\s*\1\.toLocaleString/
+
+  test('сторож ловит копию под любым именем переменной', () => {
+    const named = 'Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU")'
+    const renamed = 'Number.isNaN(d.getTime()) ? v : d.toLocaleString("ru-RU")'
+    expect(OWN_FORMATTER_COPY_PATTERN.test(named), 'исходное имя `parsed` больше не ловится').toBe(true)
+    expect(OWN_FORMATTER_COPY_PATTERN.test(renamed), 'копия под чужим именем переменной проходит незамеченной').toBe(true)
+  })
+
   test('новая копия форматера момента не заводится', () => {
     const guilty: string[] = []
     for (const file of files) {
       const text = readFileSync(file, 'utf8')
-      if (!/Number\.isNaN\(\s*parsed\.getTime\(\)\s*\)/.test(text)) continue
+      if (!OWN_FORMATTER_COPY_PATTERN.test(text)) continue
       const relative = path.relative(ROOT, file)
       if (OWN_FORMATTER_COPIES.has(relative)) continue
       guilty.push(relative)
@@ -227,7 +262,7 @@ test.describe('метка момента', () => {
     for (const [relative, why] of OWN_FORMATTER_COPIES) {
       const text = readFileSync(path.join(ROOT, relative), 'utf8')
       expect(
-        /Number\.isNaN\(\s*parsed\.getTime\(\)\s*\)/.test(text),
+        OWN_FORMATTER_COPY_PATTERN.test(text),
         `${relative} (${why}) больше не держит своей копии — снимите строку`,
       ).toBe(true)
     }
