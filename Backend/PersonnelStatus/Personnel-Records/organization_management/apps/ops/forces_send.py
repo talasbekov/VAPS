@@ -141,6 +141,15 @@ def split_and_send(event_id, *, rows, draft=False, actor):
     from organization_management.apps.operations import audit_service
     from organization_management.apps.ops import forces_notify
 
+    # 🔴 СПИСОК, А НЕ ПОСЛЕДОВАТЕЛЬНОСТЬ (доводка №668 по ревью №825). Тот же
+    # класс дефекта, что уже чинили для employeeIds/protectedPersonIds/
+    # remarks: `rows` шёл прямо в `_frozen_rows_changed` — та строит `row.get`
+    # на каждом элементе, а голая строка `"18"` перебирается по символам, и
+    # `"1".get(...)` падает `AttributeError` → 500 вместо конверта поля.
+    # Проверка стоит ЗДЕСЬ, а не только внутри `split_force_demand`: этот
+    # разборщик читает `rows` РАНЬШЕ него.
+    if rows is not None and not isinstance(rows, list):
+        raise events._validation({"rows": ["Ожидается список строк."]})
     current = events.lock_event(event_id)
     errors = _frozen_rows_changed(current, rows)
     if errors:

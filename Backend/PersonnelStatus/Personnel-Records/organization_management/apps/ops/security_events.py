@@ -3293,6 +3293,13 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
             is_active=True,
         ).values_list("pk", "name")
     }
+    # 🔴 СПИСОК, А НЕ ПОСЛЕДОВАТЕЛЬНОСТЬ (доводка №668 по ревью №825). Тот же
+    # класс дефекта, что уже чинили для employeeIds/protectedPersonIds/
+    # remarks/split_force_demand: `list(rows or [])` без проверки типа делал
+    # из строки "18" список символов ['1', '8'] — `.get()` у строки нет,
+    # `AttributeError` → 500 вместо конверта поля.
+    if rows is not None and not isinstance(rows, list):
+        raise _validation({"rows": ["Ожидается список строк."]})
     incoming = list(rows or [])
     seen = set()
     prepared = []

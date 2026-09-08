@@ -1198,6 +1198,23 @@ def test_a_split_over_the_department_quota_is_refused(manager):  # noqa: F811
     assert "4" in response.data["message"]
 
 
+def test_the_directorate_split_rejects_a_bare_string_instead_of_a_list(manager):  # noqa: F811
+    """`rows` — список, а не последовательность (доводка №668 по ревью №825):
+    тот же класс дефекта, что уже чинили для employeeIds/protectedPersonIds/
+    remarks, найден и в третьем уровне раскладки. `list(rows or [])` без
+    проверки типа делает из строки "18" список символов `['1', '8']` —
+    `.get()` у строки нет, и вместо конверта поля сервер отвечал бы 500.
+    """
+    department = make_department()
+    make_directorate(department)
+    base, allocation_id = allocated_event(manager, department)
+
+    response = _split(manager, base, allocation_id, "18")
+
+    assert response.status_code == 400, response.data
+    assert response.data["error_code"] == "VALIDATION_ERROR"
+
+
 def test_a_foreign_directorate_is_refused(manager):  # noqa: F811
     """Адресат обязан быть управлением ЭТОГО департамента.
 
@@ -1483,6 +1500,24 @@ def test_the_staff_split_also_refuses_a_fractional_need(manager):  # noqa: F811
 
     assert resp.status_code == 400, resp.data
     assert resp.json()["details"]["rows.0.need"] == ["Укажите целое число."]
+
+
+def test_the_staff_split_rejects_a_bare_string_instead_of_a_list(manager):  # noqa: F811
+    """`rows` — список, а не последовательность (доводка №668 по ревью №825):
+    тот же класс дефекта, что уже чинили для employeeIds/protectedPersonIds/
+    remarks, найден и здесь — `_frozen_rows_changed` разбирает `rows` ДО
+    `split_force_demand`, и оба перебирали присланное как есть без проверки
+    типа. Строка вида "18" даёт `row = "1"` при переборе — `.get()` у строки
+    нет, и вместо конверта поля сервер отвечал бы 500.
+    """
+    base, _total = event_on_demand(manager)
+
+    resp = manager.post(
+        f"{base}forces/allocation/", {"rows": "18"}, format="json"
+    )
+
+    assert resp.status_code == 400, resp.data
+    assert resp.json()["error_code"] == "VALIDATION_ERROR"
 
 
 def test_dispatch_refuses_a_split_wider_than_the_promise(manager):  # noqa: F811
