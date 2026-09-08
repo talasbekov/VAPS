@@ -226,6 +226,10 @@ function EmployeesScreen() {
   // Номер страницы — тоже в адресе: ссылка на «страницу 7 отбора» должна
   // открываться такой же (Plane №228).
   const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
+  // Деловая дата «Ежедневного расхода» (Plane №988) — тем же приёмом: нет в
+  // адресе → борд сам возьмёт «завтра» сервера, выбор руками уезжает в
+  // ссылку так же, как отбор и вкладка.
+  const businessDateParam = searchParams.get("businessDate") ?? "";
 
   const setFilter = useCallback(
     (key: string, value: string, fallback: string) => {
@@ -284,6 +288,10 @@ function EmployeesScreen() {
   const activeTab = KNOWN_TABS.includes(tabParam) ? tabParam : "table";
   const setActiveTab = useCallback(
     (value: string) => setFilter("tab", value, "table"),
+    [setFilter]
+  );
+  const setBusinessDate = useCallback(
+    (value: string) => setFilter("businessDate", value, ""),
     [setFilter]
   );
   const queryClient = useQueryClient();
@@ -764,7 +772,12 @@ function EmployeesScreen() {
           </button>
         </nav>
 
-        {view === "daily" && <DailyExpenseBoard />}
+        {view === "daily" && (
+          <DailyExpenseBoard
+            businessDate={businessDateParam || undefined}
+            onBusinessDateChange={setBusinessDate}
+          />
+        )}
 
         {view === "forces" && (
         <>

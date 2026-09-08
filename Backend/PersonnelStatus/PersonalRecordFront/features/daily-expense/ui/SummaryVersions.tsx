@@ -388,14 +388,18 @@ export function SummaryVersions({
   const [openId, setOpenId] = useState<number | null>(null);
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
 
-  // Дерево — ЧЕРЕЗ ОБЩИЙ ХУК СВЕТОФОРА (`useTrafficLightTree`, ключ
-  // ["traffic-light","tree","today"]), а не своим `opsApiClient.get` под
-  // вторым ключом кэша: до ревью ветки 22.08 один и тот же ответ лежал в кэше
-  // ДВАЖДЫ под разными ключами, то есть и запрашивался дважды, и мог
-  // разъехаться во времени с деревом соседних экранов. Гейт `enabled` тут
-  // всегда true: борд не монтирует этот блок, пока сам не прошёл гейт
-  // `status.view` и не получил ответ расхода.
-  const treeQuery = useTrafficLightTree(true);
+  // Дерево — ЧЕРЕЗ ОБЩИЙ ХУК СВЕТОФОРА (`useTrafficLightTree`), а не своим
+  // `opsApiClient.get` под вторым ключом кэша: до ревью ветки 22.08 один и
+  // тот же ответ лежал в кэше ДВАЖДЫ под разными ключами, то есть и
+  // запрашивался дважды, и мог разъехаться во времени с деревом соседних
+  // экранов. Гейт `enabled` тут всегда true: борд не монтирует этот блок,
+  // пока сам не прошёл гейт `status.view` и не получил ответ расхода.
+  //
+  // `businessDate` ПЕРЕДАЁТСЯ ЯВНО, а не как раньше (без даты — про
+  // «сегодня»): борд получает СВОЙ `businessDate` пропом (Plane №988), и
+  // дерево сдачи обязано отвечать про ТОТ ЖЕ день, что и расход рядом —
+  // иначе свод сверял бы завтрашние управления со вчерашним светофором.
+  const treeQuery = useTrafficLightTree(true, dateValid ? businessDate : undefined);
 
   const treeNodes = useMemo(() => parseTreeNodes(treeQuery.data), [treeQuery.data]);
   const treeReady = dateValid && !treeQuery.isPending && !treeQuery.isError;

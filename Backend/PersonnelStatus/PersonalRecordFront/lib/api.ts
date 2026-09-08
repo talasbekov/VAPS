@@ -539,6 +539,18 @@ export interface TrafficLightNode {
   late: boolean;
 }
 
+/**
+ * Состояние блокировки расхода на дату (по умолчанию — завтра). Единственный
+ * источник, откуда фронт узнаёт «завтра» СЕРВЕРА, а не браузера: часы машины
+ * в минусовых зонах отсчитали бы «сегодня» неверно (Plane №991/№988).
+ */
+export interface TomorrowBlockState {
+  business_date: string;
+  blocked: boolean;
+  overridden: boolean;
+  laggards: { division_id: number; name: string }[];
+}
+
 export interface TrafficLightTree {
   business_date: string;
   /** Порог опоздания из настроек контроля сдачи, «HH:MM:SS». Едет вместе с
@@ -2234,6 +2246,22 @@ class ApiClient {
     const queryString = query.toString();
     return this.getDomainJson<TrafficLightTree>(
       `/api/operations/traffic-light/tree/${queryString ? `?${queryString}` : ""}`
+    );
+  }
+
+  /**
+   * Состояние блокировки на дату; без параметра сервер отвечает про ЗАВТРА
+   * (не про сегодня, как у расхода) — это и есть источник «завтра» для
+   * ежедневного экрана, без вычисления в браузере.
+   */
+  async getTomorrowBlockState(
+    params: { businessDate?: string } = {}
+  ): Promise<TomorrowBlockState> {
+    const query = new URLSearchParams();
+    if (params.businessDate) query.append("business_date", params.businessDate);
+    const queryString = query.toString();
+    return this.getDomainJson<TomorrowBlockState>(
+      `/api/operations/tomorrow-block/${queryString ? `?${queryString}` : ""}`
     );
   }
 

@@ -95,6 +95,17 @@ async function get<T>(token: string, path: string): Promise<T> {
   return (await res.json()) as T
 }
 
+/**
+ * «Завтра» СЕРВЕРА — тот же источник, что теперь использует борд (Plane
+ * №988): `GET /tomorrow-block/` без параметра отвечает про завтра. Пробы
+ * ниже сравнивают борд с расходом/деревом ИМЕННО на эту дату — борд её и
+ * запрашивает по умолчанию, а не «сегодня», как до фикса.
+ */
+async function tomorrowBusinessDate(token: string): Promise<string> {
+  const state = await get<{ business_date: string }>(token, '/api/operations/tomorrow-block/')
+  return state.business_date
+}
+
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -216,7 +227,8 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
 
   test('управления раскрываются поимённо и числа сходятся с расходом', async ({ page }) => {
     const token = await apiToken()
-    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const tomorrow = await tomorrowBusinessDate(token)
+    const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
     await signIn(page)
     await page.goto(`${APP}/employees?view=daily`)
     const board = page.getByRole('region', { name: 'Ежедневный расход' })
@@ -255,7 +267,8 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
 
   test('«Руководство департамента» — первым, раскрыт сразу, состав и статусы по правде штатки', async ({ page }) => {
     const token = await apiToken()
-    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const tomorrow = await tomorrowBusinessDate(token)
+    const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
     const directorate = await get<{ staff_units: RawStaffUnit[] }>(
       token, '/api/staff_unit/staff-units/directorate/')
 
@@ -331,9 +344,10 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
 
   test('«Суточный свод» — узел выводится СЕРВЕРНЫМ деревом (родитель-корень + макс. покрытие), версии сходятся с живой ручкой', async ({ page }) => {
     const token = await apiToken()
-    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const tomorrow = await tomorrowBusinessDate(token)
+    const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
     const businessDate = report.business_date
-    const tree = await get<{ nodes: TreeNode[] }>(token, '/api/operations/traffic-light/tree/')
+    const tree = await get<{ nodes: TreeNode[] }>(token, `/api/operations/traffic-light/tree/?business_date=${tomorrow}`)
     const boardDivisionIds = report.rows.map((row) => row.division_id)
     const expectedDivisionId = resolveSummaryDivisionId(tree.nodes, boardDivisionIds)
 
@@ -379,7 +393,7 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
       // состояние, которое проверяется здесь. Проверяем, что поле ЕСТЬ в
       // контракте: молча пропав, оно вернуло бы угадывание навсегда.
       const tree = await get<{ nodes: { is_summary_node?: boolean }[] }>(
-        token, '/api/operations/traffic-light/tree/')
+        token, `/api/operations/traffic-light/tree/?business_date=${tomorrow}`)
       expect(
         tree.nodes.every((node) => typeof node.is_summary_node === 'boolean'),
         'дерево светофора перестало отдавать is_summary_node — экран снова гадает',
@@ -426,7 +440,8 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
 
   test('«Суточный свод» — строки версии и снимок рендерятся по перехваченному дереву+ответу (2 версии, одна текущая)', async ({ page }) => {
     const token = await apiToken()
-    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const tomorrow = await tomorrowBusinessDate(token)
+    const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
     const businessDate = report.business_date
     const realBoardIds = report.rows.map((row) => row.division_id)
     expect(realBoardIds.length, 'на борде нет ни одного управления — пробе не с чем сравнить покрытие').toBeGreaterThan(0)
@@ -552,7 +567,8 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
 
   test('«Суточный свод» — департаментов в области нет: причина названа, запрос версий не уходит', async ({ page }) => {
     const token = await apiToken()
-    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const tomorrow = await tomorrowBusinessDate(token)
+    const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
     const businessDate = report.business_date
 
     // Дерево из ОДНОГО корня без единого ребёнка: кандидатов по правилу
@@ -676,6 +692,9 @@ test.describe(LIVE ? 'расход: занятость ОМ' : 'расход: з
     // Сценарий заказчика (Plane №243): ответственный сводит расход «для
     // участия в ОМ» и отправляет цифру штабу. До этой правки цифры не было
     // вовсе — привлечённые растворялись в «В строю».
+    // `/reports/` (аналитика) читает `useStrengthReport` БЕЗ даты нарочно —
+    // тот же снимок «сейчас», что у командного центра, и businessDate борда
+    // «Ежедневный расход» его не касается (Plane №988 не меняет этот экран).
     const token = await apiToken()
     const report = await get<StrengthReport>(
       token,
@@ -739,7 +758,8 @@ test.describe(
       // и достижимо только подменой двух ответов: списка подразделений
       // (`can_submit`) и списка сдач дня.
       const token = await apiToken()
-      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      const tomorrow = await tomorrowBusinessDate(token)
+      const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
       expect(
         report.rows.length,
         'на борде меньше двух управлений — сданное от несданного не отличить',
@@ -864,7 +884,8 @@ test.describe(
       // Требование заказчика: «Список разделен по категориям, сперва
       // Руководство, потом по очерёдно управления со списками.»
       const token = await apiToken()
-      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      const tomorrow = await tomorrowBusinessDate(token)
+      const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
       const divisions = await get<{ results: { id: string; name: string; ancestors?: string[] }[] }>(
         token,
         '/api/ops/daily/divisions/',
@@ -960,7 +981,8 @@ test.describe(
       // состояние. Проверяется РАЗБОР ответа — то, что делает экран, — а
       // правила сборки покрыты пробами бэка.
       const token = await apiToken()
-      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      const tomorrow = await tomorrowBusinessDate(token)
+      const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
       const businessDate = report.business_date
       const realBoardIds = report.rows.map((row) => row.division_id)
       expect(realBoardIds.length, 'на борде нет управлений — свод собирать не из чего').toBeGreaterThan(0)
@@ -1090,7 +1112,8 @@ test.describe(
       // администратором, и мутация «убрать проверку права» её не роняет
       // (проверено — зелёная).
       const token = await apiToken()
-      const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+      const tomorrow = await tomorrowBusinessDate(token)
+      const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
       const realBoardIds = report.rows.map((row) => row.division_id)
       const fakeTree: TreeNode[] = [
         { division_id: 1, name: 'Служба (проба)', parent_id: null },
