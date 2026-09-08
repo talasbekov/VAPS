@@ -71,7 +71,7 @@ export function protectedPersonPhotoPath(id: string): string {
   return `${PROTECTED_PERSONS_PATH}${encodeURIComponent(id)}/photo/`;
 }
 
-// ── Контракты API (реального бэка нет — см. lib/api-gaps.ts) ─────────────
+// ── Контракты API (бэк живой с 20.08.2026; режим мока — lib/ops-env.ts) ─────────────
 
 export const PROTECTED_PERSONS_PATH = "/api/ops/protected-persons/";
 

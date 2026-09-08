@@ -120,6 +120,24 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             self._assert_employees_in_scope([status_row.employee_id])
         return status_row
 
+    def _assert_target_employee_in_scope(self, request):
+        """Новый `employee` в теле правки — тоже в области (ревью №825 по №938).
+
+        `get_object()` сверяет область по ТЕКУЩЕМУ сотруднику строки, а
+        `employee` у сериализатора записываемый: PATCH переставлял свой статус
+        человеку чужого управления, и ни одна проверка этого не видела. Не
+        число — пусть отбивает сериализатор (400), дверь от этого не
+        открывается: без валидного id строка не сохранится.
+        """
+        raw = request.data.get("employee")
+        if raw is None or raw == "":
+            return
+        try:
+            employee_id = int(raw)
+        except (TypeError, ValueError):
+            return
+        self._assert_employees_in_scope([employee_id])
+
     def _assert_employees_in_scope(self, employee_ids):
         """Все названные сотрудники — в области `status.manage` актора.
 
@@ -227,6 +245,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
         - Активные статусы можно изменять только через специальные методы (extend, terminate)
         """
         instance = self.get_object()
+        self._assert_target_employee_in_scope(request)
 
         # Проверка: можно ли изменять этот статус
         if instance.state == EmployeeStatus.StatusState.ACTIVE:
@@ -265,6 +284,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
         Применяются те же правила, что и для полного обновления
         """
         instance = self.get_object()
+        self._assert_target_employee_in_scope(request)
 
         # Проверка: можно ли изменять этот статус
         if instance.state == EmployeeStatus.StatusState.ACTIVE:

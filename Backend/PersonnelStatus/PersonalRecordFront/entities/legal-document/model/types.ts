@@ -54,7 +54,7 @@ export interface LegalDocument {
   fileUrl: string | null;
 }
 
-// ── Контракты API (реального бэка нет — см. lib/api-gaps.ts) ─────────────
+// ── Контракты API (бэк живой с 20.08.2026; режим мока — lib/ops-env.ts) ─────────────
 
 export const LEGAL_DOCUMENTS_PATH = "/api/ops/legal-documents/";
 

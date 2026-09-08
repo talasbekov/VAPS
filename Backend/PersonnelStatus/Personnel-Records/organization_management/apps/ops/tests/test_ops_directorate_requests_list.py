@@ -262,3 +262,29 @@ def test_the_list_names_its_addressee_by_the_scope():
     # Роль без области — служба целиком (`allowed is None`).
     whole = directorate_client("org-head-941", "ORG_HEAD_941", None)
     assert whole.get(LIST_URL).json()["addressee"] == "organization"
+
+
+def test_two_grants_name_the_senior_level():
+    """Два гранта — управление одного департамента и целый другой департамент:
+    в области есть департамент, значит адресат — «департаменту» (старший
+    уровень побеждает). Правило жило только в докстринге `addressee_level`;
+    ревью №825 по №941 (08.09.2026) закрепило его пробой.
+
+    КРАСНАЯ ПРОБА: считай уровень по ПЕРВОМУ гранту или требуй, чтобы в
+    области были ТОЛЬКО департаменты, — ответ станет «directorate».
+    """
+    from organization_management.apps.operations.services import RoleAdminService
+
+    own = make_department("Департамент-941-свой")
+    directorate = make_directorate(own, "Управление-941-своё")
+    other = make_department("Департамент-941-чужой")
+    make_directorate(other, "Управление-941-чужое")
+
+    api, user = client_for(
+        "two-grants-941", "TWO_GRANTS_941",
+        perms=DIRECTORATE_PERMISSIONS, scope_division_id=directorate.pk,
+    )
+    RoleAdminService.assign_role(str(user.pk), "TWO_GRANTS_941", other.pk, actor="test")
+
+    assert api.get(LIST_URL).json()["addressee"] == "department"
+

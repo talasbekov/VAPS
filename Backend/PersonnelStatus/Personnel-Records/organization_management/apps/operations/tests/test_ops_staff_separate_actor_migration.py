@@ -69,7 +69,20 @@ def test_backward_restores_0101_and_does_not_resurrect_the_officer(base_after_01
 
 
 def test_forward_is_a_no_op_on_a_base_that_never_saw_the_seed():
-    """База без прав раскладку получит от сида; миграция ничего не выдумывает."""
+    """База без прав раскладку получит от сида; миграция ничего не выдумывает.
+
+    Роль `OPS_STAFF` есть, права `forces.command` в справочнике НЕТ — ровно
+    база, на которой сид ещё не бегал, а каталог ролей уже заведён. Право
+    приходится СНЯТЬ руками: тестовая база его знает из миграции 0047
+    (справочник прав сеют и миграции, не только сид). Без guard'а миграция
+    полезла бы `get_or_create` в связь с несуществующим правом
+    (IntegrityError по FK) — на этом проба и краснеет.
+    """
+    from organization_management.apps.operations.models import Permission, Role
+
+    Permission.objects.filter(code=PERMISSION).delete()
+    Role.objects.get_or_create(code="OPS_STAFF", defaults={"name": "Штаб сбора сил"})
+
     migration._separate_staff(apps, None)
 
     assert not RolePermission.objects.filter(permission_code_id=PERMISSION).exists()

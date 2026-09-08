@@ -1,17 +1,19 @@
-// Реестр экранов, под которыми НЕТ бэкенда.
-//
-// Раздел «Охранные мероприятия» (/security-ops/*) и встроенная SPA (/ops)
-// написаны под другой бэкенд и живут на MSW-моках: браузерный воркер отвечает
-// 200 на каждый /api/ops/*, поэтому экран выглядит рабочим. Ни один из этих
-// путей не резолвится ни целевым бэком (organization_management, резолвер
-// Django), ни донором (Backend/VAPS/schema.yaml).
-//
-// Пустой список или нули на месте отсутствующего бэка — хуже ошибки: дыру
-// найдут в проде. Поэтому каждый такой экран несёт видимую пометку с именем
-// недостающего пути (см. components/api-gap-notice.tsx, врезка в
+// Реестр врезок «данные не с бэка»: какой экран и при каком режиме домена
+// показывает пометку над данными (см. components/api-gap-notice.tsx, врезка в
 // components/dashboard-layout.tsx).
 //
-// Сводка целиком: docs/api-gaps.md в корне worktree.
+// ИСТОРИЯ. Шапка здесь говорила «раздел /security-ops/* живёт на MSW-моках,
+// ни один путь /api/ops/* не резолвится бэком» — это было правдой до
+// 20.08.2026, когда бэк раздела появился (Personnel-Records), и неправдой
+// после: общая запись `/security-ops` работала подстилкой и вешала «не
+// подключено» над живой сводкой ГВО (Plane №948). С №948 умолчание
+// перевёрнуто: экран ЖИВОЙ, пока правило домена (`lib/ops-env.ts`,
+// `NEXT_PUBLIC_OPS_MOCK_DOMAINS`) не переводит его на мок; тогда врезка
+// честно называет режим «Демоданные». Записей вида «на бэке нет пути X» в
+// реестре не осталось (`paths: []`); `GAPS` ниже пуст намеренно — сюда
+// пишутся только настоящие дыры с перечнем путей, и сторож
+// `e2e/api-gap-rules.spec.ts` не даст ему снова накрыть раздел целиком.
+// Замороженный `docs/api-gaps.md` — история, не источник.
 
 import { isOpsAnalyticsLive, isOpsAuditLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsGvoLive, isOpsLegalDocumentsLive, isOpsObjectsLive, isOpsProtectedPersonsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
 
