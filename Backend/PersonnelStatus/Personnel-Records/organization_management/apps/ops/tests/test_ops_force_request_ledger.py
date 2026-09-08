@@ -320,3 +320,51 @@ def test_a_single_request_row_still_carries_the_link(event_with_json):
     rows = list(OpsDepartmentRequest.objects.filter(event_id=event.pk))
     assert rows, "проба вакуумна — запрос департамента не спроецировался"
     assert {row.force_request_id for row in rows} == {request.pk}
+
+
+def test_a_link_that_becomes_wrong_gets_a_fresh_row_even_if_numbers_did_not_change(
+    event_with_json,
+):
+    """Связь — тоже часть строки, а не сопровождающая мелочь (доводка №673 по
+    ревью №825).
+
+    🔴 ЧТО ЭТО СТЕРЕЖЁТ. `changed` сравнивал только `requested_count`,
+    `allocating_count`, `status` и `due_at` — саму связь `force_request_id`
+    НЕ сравнивал вовсе. Заявка была ОДНОЙ (связь однозначна, строка привязана
+    честно), затем стала ДВУМЯ (связь по правилу №673 обязана обнулиться —
+    `test_department_requests_are_not_hung_on_a_guessed_request_row` уже
+    стережёт это), но раскладка при этом НЕ МЕНЯЛАСЬ ни одним из четырёх
+    сравниваемых полей. `changed` оставался `False`, новая строка не
+    заводилась, и старая — с уже НЕВЕРНОЙ связью — оставалась последней
+    записью append-only таблицы навсегда.
+    """
+    event, e1, e2 = event_with_json
+    forces_ledger.project(event)
+    first = (
+        OpsDepartmentRequest.objects.filter(event_id=event.pk, allocation_key="alloc-1")
+        .order_by("-sequence").first()
+    )
+    assert first is not None, "проба вакуумна — запрос департамента не спроецировался"
+    assert first.force_request_id is not None, "связь при одной заявке обязана быть — иначе фикстура не та"
+
+    # Заявок становится ДВЕ, а раскладка — БУКВАЛЬНО ТА ЖЕ: те же need/status/
+    # allocating/dueAt, что уже спроецированы строкой выше.
+    event.force_requests = [_request("force-request-1", 5), _request("force-request-2", 7)]
+    event.save(update_fields=["force_requests", "updated_at"])
+
+    forces_ledger.project(event)
+
+    latest = (
+        OpsDepartmentRequest.objects.filter(event_id=event.pk, allocation_key="alloc-1")
+        .order_by("-sequence").first()
+    )
+    assert latest.pk != first.pk, (
+        "новая строка не завелась — changed не увидел, что связь стала неверной"
+    )
+    assert latest.force_request_id is None, (
+        "последняя запись реестра приписана заявке, которую при двух заявках назвать нельзя"
+    )
+    # Старая запись НЕ переписана — append-only, и её связь по-прежнему
+    # честно отражает состояние на момент своего создания.
+    first.refresh_from_db()
+    assert first.force_request_id is not None
