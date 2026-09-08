@@ -45,3 +45,26 @@ def test_a_system_actor_is_not_a_creator_account():
     event = _create("stand-seed")
     event.refresh_from_db()
     assert event.owner_actor_id == ""
+
+
+def test_migration_0109_blanks_system_actors_and_keeps_accounts():
+    """Осадок бэкфилла 0104 («stand-seed» в поле id учётки) чистится, настоящие
+    учётки остаются. Реестр — живой, как у пробы 0108 (схема модели не
+    менялась)."""
+    from importlib import import_module
+
+    from django.apps import apps
+
+    migration = import_module(
+        "organization_management.apps.operations.migrations.0109_owner_actor_id_only_accounts"
+    )
+    seeded = _create("stand-seed")
+    type(seeded).objects.filter(pk=seeded.pk).update(owner_actor_id="stand-seed")
+    real = _create("77")
+
+    migration._blank_system_actors(apps, None)
+
+    seeded.refresh_from_db()
+    real.refresh_from_db()
+    assert seeded.owner_actor_id == ""
+    assert real.owner_actor_id == "77"
