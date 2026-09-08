@@ -150,12 +150,20 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # есть его слова «остальные модули на уровне своего управления». Пин
     # расширен ПОИМЕННО, а не ослаблен до `>=`: список держателей записи —
     # ровно то место, где лишняя роль обязана быть замечена.
+    # ШЕСТЬ 08.09.2026 (Plane №991, задача заказчика — основная проходка
+    # ежедневного расхода). Ответственный за сбор сил (`FORCES_GATHERING_
+    # OFFICER`) до этого мог только СДАТЬ управлениям чужой день (сбор сил не
+    # ставит статусы людям), а сценарий расхода требует, чтобы он же вручную
+    # правил статус на время сборов. Право со scope на СВОЙ департамент —
+    # scope_id гранта резолвит `seed_role_accounts.SCOPED_ROLES`, само право
+    # ничего не решает про область.
     assert holders("status.manage") == {
         "INTEGRATION_USER",
         "DIRECTORATE_HEAD",
         "HEAD_DIRECTORATE_LINE",
         "HEAD_DEPARTMENT_LINE",
         "HEAD_OPS_UNIT",
+        "FORCES_GATHERING_OFFICER",
     }
     assert holders("daily_report.mark_update") == {"DIRECTORATE_HEAD"}
     assert holders("daily_report.correct") == {"DIRECTORATE_HEAD"}

@@ -516,8 +516,12 @@ ROLE_PERMISSIONS = {
     # видны», а штабное право открывало ему список сборов по всем
     # мероприятиям и всем департаментам. Его звенья — `forces.allocate`:
     # «Выделяем», разбивка по управлениям, список в штаб (раздел 14).
+    # `status.manage` ДОБАВЛЕН 08.09.2026 (Plane №991): ответственный сам
+    # ставит статус на время сборов личному составу своего департамента —
+    # область гранта резолвит `seed_role_accounts.SCOPED_ROLES`, роль здесь
+    # только держит право.
     "FORCES_GATHERING_OFFICER": [
-        "status.view", "forces.allocate",
+        "status.view", "status.manage", "forces.allocate",
         "analytics.view", "analytics.drilldown", "analytics.operations",
         "daily_report.generate", "object.view",
         "feedback.view", "feedback.create", *SECTION_READ,

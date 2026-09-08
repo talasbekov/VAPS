@@ -34,6 +34,7 @@ from django.db import transaction
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.models import Role as OpsRole
+from organization_management.apps.operations.models import UserRole
 from organization_management.apps.operations.services import RoleAdminService
 
 USERNAME_PREFIX = "role_"
@@ -42,6 +43,11 @@ USERNAME_PREFIX = "role_"
 # своё» ничего не показывает — учётка видит либо всё, либо ничего.
 SCOPED_ROLES = {
     "DIVISION_OPERATOR": Division.DivisionType.DIVISION,
+    # Plane №991: `status.manage` даёт ответственному ПРАВО ставить статус, а
+    # без записи сюда учётка получила бы его С ОБЛАСТЬЮ «вся организация» —
+    # ровно то, что задача явно запрещает («сервер отбивает соседний
+    # департамент»).
+    "FORCES_GATHERING_OFFICER": Division.DivisionType.DEPARTMENT,
     "DIRECTORATE_HEAD": Division.DivisionType.DIRECTORATE,
     "DEPARTMENT_EXPENSE_OFFICER": Division.DivisionType.DEPARTMENT,
 }
@@ -95,6 +101,27 @@ class Command(BaseCommand):
                         division_type=wanted_type, is_active=True
                     ).order_by("id").first()
                     scope_id = division.id if division else None
+
+                # Грант живёт по тройке (user, role, scope) — смена области
+                # роли в `SCOPED_ROLES` заводит НОВУЮ строку, а старую (в том
+                # числе безскоуповую) оставляет активной как есть. Тогда
+                # `visible_division_ids` видит оба гранта и по безскоуповому
+                # молча читает «вся организация» — область новой строки
+                # значения не имеет. Прежде чем выдать текущую, снимаем
+                # ЛЮБЫЕ чужие по области активные гранты этой же роли этой
+                # же учётке (Plane №991: без этого `FORCES_GATHERING_OFFICER`
+                # остался бы безскоуповым даже после правки).
+                stale_scopes = set(
+                    UserRole.objects.filter(
+                        user_id=str(user.pk), role_code_id=role.code, is_active=True
+                    )
+                    .exclude(scope_division_id=scope_id)
+                    .values_list("scope_division_id", flat=True)
+                )
+                for stale_scope in stale_scopes:
+                    RoleAdminService.revoke_role(
+                        str(user.pk), role.code, stale_scope, actor="seed_role_accounts"
+                    )
 
                 RoleAdminService.assign_role(
                     str(user.pk), role.code, scope_id, actor="seed_role_accounts"
