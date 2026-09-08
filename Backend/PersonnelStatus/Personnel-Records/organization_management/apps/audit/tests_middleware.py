@@ -1,15 +1,19 @@
-from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 from organization_management.apps.audit.domain.models import AuditLog
 from organization_management.apps.divisions.models import Division
+from organization_management.apps.operations.tests.test_bulk_status_api import (
+    client_for,
+)
 
 
 class AuditMiddlewareTest(APITestCase):
 
     def setUp(self):
-        self.user = User.objects.create_user(username='testuser', password='testpassword')
-        # UserProfile.objects.create(user=self.user, role=UserRole.ROLE_4)  # Admin role
-        self.client.force_authenticate(user=self.user)
+        # Здесь стережётся audit-след успешной мутации, а не
+        # обход её RBAC-гейта. Право менеджера поэтому явное.
+        self.client, self.user = client_for(
+            "testuser", "AUDIT_DIVISION_MANAGER", ["orgstructure.manage"]
+        )
         self.division = Division.objects.create(name='Test Division', division_type=Division.DivisionType.DEPARTMENT)
 
     def test_create_action_is_logged(self):
