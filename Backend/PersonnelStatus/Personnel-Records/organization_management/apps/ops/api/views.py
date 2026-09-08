@@ -217,6 +217,25 @@ _MANAGE_EVENT_PERMISSION = "event.manage"
 #: Ведущий ОМ ничего не теряет — `EVENT_OFFICER` получил оба права рядом с
 #: `event.manage` в том же заходе.
 _CREATE_EVENT_PERMISSION = "event.create"
+
+
+def _has_open_event_chief_assignment(request):
+    """Назначенный старший открытого ОМ читает общие селекторы проходки.
+
+    Каталоги объектов и сотрудников сами не принадлежат конкретному ОМ,
+    поэтому идентификатора мероприятия в их URL нет. Роль всё равно берётся
+    из данных: доступ даёт хотя бы одно открытое мероприятие, в котором
+    текущий активный сотрудник назначен старшим. Мутации по-прежнему
+    проверяются отдельно и строго в контексте выбранного ОМ.
+    """
+    employee = getattr(request.user, "employee", None)
+    if employee is None or not employee.is_active:
+        return False
+    return (
+        OpsSecurityEvent.objects.filter(chief_employee_id=employee.pk)
+        .exclude(stage=OpsSecurityEvent.Stage.CLOSED)
+        .exists()
+    )
 _BULLETIN_PERMISSION = "event.bulletin"
 #: Решение согласующего по расстановке (Plane №267). Отдельно от ведения
 #: мероприятия: утверждающий видит расстановку целиком, но не правит её.
@@ -444,30 +463,27 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         with_phone = by_right or mine.may_manage_stage(event, viewer)
         row = serialize_security_event(event, with_phone=with_phone)
         row["canEditBulletin"] = self._may_edit_bulletin(event, perms=perms)
+        row["canManageVisitObjects"] = self._may_manage_visit_objects(
+            event, perms=perms
+        )
         return Response(row, status=status)
 
-    #: Действия над СОСТАВОМ бюллетеня, которые создатель ОМ выполняет по роли
-    #: в данных без `event.manage` (Plane №951): сведения бюллетеня, объекты
-    #: посещения (добавить, править день и примечание), транспорт из реестра.
-    _CREATOR_ACTIONS = frozenset(
-        {
-            "details",
-            "visit_object_add",
-            "visit_object_detail",
-            "vehicle_allocate",
-            "vehicle_release",
-        }
+    #: Сведения собственного бюллетеня создатель правит без `event.manage`;
+    #: объекты по новому `[ОМ-РШ-06]` ведёт назначенный старший мероприятия.
+    _CREATOR_ACTIONS = frozenset({"details"})
+
+    #: Сведения и текст бюллетеня охраняются матрицей `[БЛН-14]` (№980).
+    #: Объекты отделены ниже: `[ОМ-РШ-06]` отдаёт их старшему мероприятия,
+    #: но не каждому редактору бюллетеня.
+    _BULLETIN_EDITOR_ACTIONS = frozenset(
+        {"details", "bulletin", "bulletin_complete"}
     )
 
-    #: Сведения, текст, объекты посещения и транспорт составляют один
-    #: бюллетень и охраняются одной объектной матрицей `[БЛН-14]` (№980).
-    _BULLETIN_EDITOR_ACTIONS = frozenset(
+    _VISIT_OBJECT_MANAGER_ACTIONS = frozenset(
         {
-            "details",
-            "bulletin",
-            "bulletin_complete",
             "visit_object_add",
             "visit_object_detail",
+            "visit_object_chief",
             "vehicle_allocate",
             "vehicle_release",
         }
@@ -507,14 +523,20 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return True
         if self._is_creator(self.request, event) and _BULLETIN_PERMISSION in perms:
             return True
+        if self._is_event_chief(event):
+            return True
+
+        return self._scoped_head_covers_owner(event)
+
+    def _is_event_chief(self, event):
         employee = getattr(self.request.user, "employee", None)
-        if (
+        return bool(
             employee is not None
             and employee.is_active
             and event.chief_employee_id == employee.pk
-        ):
-            return True
+        )
 
+    def _scoped_head_covers_owner(self, event):
         actor_id = resolve_actor_id(self.request)
         if actor_id is None or not event.owner_actor_id:
             return False
@@ -537,6 +559,27 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 ):
                     return True
         return False
+
+    def _may_manage_visit_objects(self, event, *, perms=None):
+        """Capability списка объектов для текущего пользователя (№981).
+
+        Контур уже редакторов бюллетеня: автор без старшинства сюда не входит;
+        у визита иностранного ОЛ сохраняется право штаба `gvo.manage`.
+        """
+        if event.stage == OpsSecurityEvent.Stage.CLOSED:
+            return False
+        return self._is_visit_object_manager(event, perms=perms)
+
+    def _is_visit_object_manager(self, event, *, perms=None):
+        """`[ОМ-РШ-06]`: старший ОМ управляет объектами, автор — нет."""
+        perms = effective_permissions(self.request) if perms is None else perms
+        if perms & {_MANAGE_EVENT_PERMISSION, "*"}:
+            return True
+        if self._is_event_chief(event):
+            return True
+        if event.kind == "FOREIGN" and "gvo.manage" in perms:
+            return True
+        return self._scoped_head_covers_owner(event)
 
     def _bulletin_grants(self, actor_id):
         """Кеш грантов на время запроса: один создатель в нескольких строках
@@ -588,17 +631,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             raise PermissionDenied("PERMISSION_DENIED")
         return event
 
-    #: Действия над СОСТАВОМ СВОДКИ ГВО — объекты посещения и транспорт из
-    #: реестра — открыты редактору сводки (Plane №964, задача заказчика
+    #: Действия над ТРАНСПОРТОМ СВОДКИ ГВО открыты редактору сводки
+    #: (Plane №964, задача заказчика
     #: 07.09.2026: «этот пользователь должен уметь редактировать или добавлять
     #: какую то информацию в сводные данные»). Панель сводки рисует эти кнопки
     #: по слову сервера `canEdit` (№947: `gvo.manage`, старший ГВО, создатель),
     #: а ручки жили под `event.manage` с обходом только для создателя (№951):
-    #: штаб с `gvo.manage` видел кнопку и получал 403. Правило здесь то же,
-    #: что у `partial_update` сводки, и только у визита иностранного ОЛ — у
-    #: внутреннего ОМ сводки нет, и право на неё ничего не открывает.
+    #: штаб с `gvo.manage` видел кнопку и получал 403. Объектные действия сюда
+    #: больше не входят: `[ОМ-РШ-06]` отделяет автора бюллетеня от старшего
+    #: мероприятия; их полностью обслуживает `_VISIT_OBJECT_MANAGER_ACTIONS`.
+    #: Иначе creator иностранного ОМ обходил бы новый actor-policy, а API
+    #: разрешал бы мутацию при `canManageVisitObjects=false`.
     _GVO_EDITOR_ACTIONS = frozenset(
-        {"visit_object_add", "visit_object_detail", "vehicle_allocate", "vehicle_release"}
+        {
+            "vehicle_allocate",
+            "vehicle_release",
+        }
     )
 
     def _gvo_editor_override(self, request):
@@ -615,24 +663,15 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return event.chief_employee_id == employee.pk
 
     def _bindable_objects_override(self, request):
-        """Старший ГВО без кода права читает реестр объектов (Plane №1010).
+        """Старший ОМ без кода права читает реестр объектов (Plane №981).
 
         `bindable_objects` — `detail=False`: адрес не называет ОМ, и обычный
-        приём `_gvo_editor_override` (событие по `pk` из адреса) здесь не
-        работает. Роль проверяется по ЛЮБОМУ мероприятию, где актор — старший
-        ОТКРЫТОГО визита иностранного ОЛ: список объектов не принадлежит
-        одному ОМ, а кнопка «Добавить объект» открыта, пока хоть один такой
-        визит есть. Закрытый визит роли не даёт — как и остальные обходы по
+        приём с событием по `pk` из адреса здесь не работает. Список объектов
+        не принадлежит одному ОМ, поэтому роль проверяется по любому открытому
+        мероприятию. Закрытый визит роли не даёт — как и остальные обходы по
         данным этого вьюсета.
         """
-        employee = getattr(request.user, "employee", None)
-        if employee is None or not employee.is_active:
-            return False
-        return (
-            OpsSecurityEvent.objects.filter(kind="FOREIGN", chief_employee_id=employee.pk)
-            .exclude(stage=OpsSecurityEvent.Stage.CLOSED)
-            .exists()
-        )
+        return _has_open_event_chief_assignment(request)
 
     def _creator_override(self, request):
         """Создатель бюллетеня правит его состав без `event.manage`
@@ -851,6 +890,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     {
                         **serialize_security_event(e, read_context=read_context),
                         "canEditBulletin": self._may_edit_bulletin(e, perms=perms),
+                        "canManageVisitObjects": self._may_manage_visit_objects(
+                            e, perms=perms
+                        ),
                     }
                     for e in page_rows
                 ],
@@ -1896,6 +1938,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
         self._object_lead_employee = None
+        if self.action in self._VISIT_OBJECT_MANAGER_ACTIONS:
+            event = self._bulletin_event(self.kwargs.get("pk"))
+            if event is not None and self._is_visit_object_manager(event):
+                return True
         if self.action in self._BULLETIN_EDITOR_ACTIONS:
             event = self._bulletin_event(self.kwargs.get("pk"))
             if event is not None and self._is_bulletin_editor(event):
@@ -2854,6 +2900,14 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
     #: Потолок страницы. Без него `?page_size=1000000` отдаёт кадры целиком
     #: одним ответом — размер страницы назначал бы спросивший.
     MAX_PAGE_SIZE = 100
+
+    def permission_override(self, request):
+        """Старший открытого ОМ читает кандидатов для назначения старших.
+
+        Исключение действует только на GET-список; кадровые данные здесь
+        доступны в том же минимальном снимке, который уже использует диалог.
+        """
+        return self.action == "list" and _has_open_event_chief_assignment(request)
 
     def list(self, request):
         """Кадровый снимок: поиск и постраничка НА СЕРВЕРЕ («Реестр ОМ-35.3»).
