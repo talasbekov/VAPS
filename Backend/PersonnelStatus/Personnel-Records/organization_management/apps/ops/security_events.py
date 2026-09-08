@@ -7372,6 +7372,22 @@ def approve_placement(event_id, *, visit_object_id=None, actor=None):
     return _approve_visit(event, visit, actor=actor)
 
 
+def _signature_actor(actor):
+    """Актор журнала (логин / «system:…» / учётка / id) → актор ПОДПИСИ:
+    учётка либо `None`. Подпись считает `actor_display_name`, и логин в неё
+    попадать не должен (№484, №896)."""
+    if actor is None or getattr(actor, "is_authenticated", False):
+        return actor
+    text = str(actor)
+    if text.isdigit():
+        return text
+    if text.startswith("system:"):
+        return None
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.filter(username=text).first()
+
+
 def _return_visit(event, visit, comment, *, actor="system:approval-return"):
     """Возврат ОБЪЕКТА на доработку: статус, версия документа, стадия.
 
@@ -7420,7 +7436,17 @@ def _return_visit(event, visit, comment, *, actor="system:approval-return"):
             "approval_status", "approval_comment", "approval_route", "updated_at",
         ]
     )
-    _decide_document_version(event, visit, "RETURNED", actor=actor)
+    # 🔴 В ПОДПИСЬ ВЕРСИИ — НЕ ЛОГИН (ревью №825 по №896, 08.09.2026). Сюда
+    # актор приходит логином или «system:approval-return» (так его пишет
+    # журнал маршрута), а `_ensure_document_version` подписывает строку
+    # `actor_display_name(actor)`: логин не цифры и не учётка — уходил как
+    # есть. У объекта, выросшего до таблицы версий без строки (0073 без
+    # бэкфилла), первый же возврат подписывал версию «ev-approver» — болезнь
+    # №484 на узком пути. Логин переводится в учётку, системная метка — в
+    # «автор не назван».
+    _decide_document_version(
+        event, visit, "RETURNED", actor=_signature_actor(actor)
+    )
     _sync_event_approval(event)
     # Уведомление старшему объекта и замещающим (`[ВОЗ-03]`) — следствие
     # возврата, и его сбой не откатывает сам возврат: рассылка «не дошла»
