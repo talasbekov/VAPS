@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { releaseVehicle } from "@/features/event-vehicles";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
+import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { SecurityEvent } from "@/entities/security-event";
 
@@ -29,10 +30,13 @@ export function RegistryVehicles({
       invalidateSecurityEvents(queryClient);
       toast({ title: "Машина снята с мероприятия" });
     },
-    onError: () =>
+    onError: (error) =>
       toast({
         title: "Не удалось снять машину",
-        description: "Сервис временно недоступен. Попробуйте ещё раз.",
+        description: friendlyOpsErrorMessage(
+          error,
+          "Нет права снимать транспорт с этого мероприятия."
+        ),
         variant: "destructive",
       }),
   });

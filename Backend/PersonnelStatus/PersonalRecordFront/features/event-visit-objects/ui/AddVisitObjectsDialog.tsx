@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { opsApiClient } from "@/lib/ops-api";
+import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   BINDABLE_OBJECTS_PATH,
@@ -114,10 +115,13 @@ export function AddVisitObjectsDialog({
         variant: "destructive",
       });
     },
-    onError: () =>
+    onError: (error) =>
       toast({
         title: "Не удалось добавить объекты",
-        description: "Сервис временно недоступен. Попробуйте ещё раз.",
+        description: friendlyOpsErrorMessage(
+          error,
+          "Нет права добавлять объекты посещения на это мероприятие."
+        ),
         variant: "destructive",
       }),
   });
