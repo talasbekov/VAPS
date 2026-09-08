@@ -77,6 +77,50 @@ def unstaffed():
     )
 
 
+@pytest.fixture
+def scoped_world():
+    """Два соседних департамента и дочерний узел в области.
+
+    Дочерний узел доказывает, что scoped-грант открывает всё
+    поддерево, а не только корневой id гранта.
+    """
+    root = Division.objects.create(
+        name="Организация scope", code="CORE-SCOPE-ORG",
+        division_type=Division.DivisionType.ORGANIZATION,
+    )
+    own = Division.objects.create(
+        name="Свой департамент", code="CORE-SCOPE-OWN",
+        division_type=Division.DivisionType.DEPARTMENT, parent=root,
+    )
+    own_child = Division.objects.create(
+        name="Своё управление", code="CORE-SCOPE-CHILD",
+        division_type=Division.DivisionType.DIRECTORATE, parent=own,
+    )
+    foreign = Division.objects.create(
+        name="Чужой департамент", code="CORE-SCOPE-FOREIGN",
+        division_type=Division.DivisionType.DEPARTMENT, parent=root,
+    )
+    position = Position.objects.create(
+        name="Сотрудник scope", code="CORE-SCOPE-POS", level=3,
+    )
+    people = {}
+    for index, (key, division) in enumerate(
+        (("own", own), ("child", own_child), ("foreign", foreign)), start=1
+    ):
+        person = Employee.objects.create(
+            personnel_number=f"SCOPE-{index}",
+            last_name=f"Сотрудник-{key}", first_name="Имя",
+        )
+        StaffUnit.objects.create(
+            division=division, position=position, employee=person, index=1,
+        )
+        people[key] = person
+    people["unstaffed"] = Employee.objects.create(
+        personnel_number="SCOPE-0", last_name="Без-слота", first_name="Имя",
+    )
+    return {"own": own, "own_child": own_child, "foreign": foreign, "people": people}
+
+
 def reader(name="core-emp-reader"):
     return client_for(name, "VIEWER", ["personnel.view"])
 
@@ -107,6 +151,36 @@ def test_read_permission_opens_the_list(staffed):
     api, _ = reader()
 
     assert api.get(URL).status_code == 200
+
+
+def test_scoped_reader_sees_only_its_personnel_subtree(scoped_world):
+    """Красная граница Plane №954: соседний департамент и
+    сотрудник без штатной единицы не читаются."""
+    api, _ = client_for(
+        "core-scoped-reader", "CORE_SCOPED_READER", ["personnel.view"],
+        scoped_world["own"].pk,
+    )
+
+    response = api.get(URL)
+
+    assert response.status_code == 200, response.content
+    assert {row["id"] for row in rows(response)} == {
+        scoped_world["people"]["own"].pk,
+        scoped_world["people"]["child"].pk,
+    }
+
+
+def test_scoped_reader_cannot_retrieve_a_foreign_employee(scoped_world):
+    api, _ = client_for(
+        "core-scoped-detail", "CORE_SCOPED_DETAIL", ["personnel.view"],
+        scoped_world["own"].pk,
+    )
+
+    foreign = api.get(f"{URL}{scoped_world['people']['foreign'].pk}/")
+    own = api.get(f"{URL}{scoped_world['people']['child'].pk}/")
+
+    assert foreign.status_code == 404, foreign.content
+    assert own.status_code == 200, own.content
 
 
 # ── Контракт ─────────────────────────────────────────────────────────────

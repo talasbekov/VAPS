@@ -20,7 +20,10 @@ from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
+    resolve_actor_id,
 )
+from organization_management.apps.operations.selectors import StaffUnitSelector
+from organization_management.apps.operations.services import PermissionService
 from organization_management.apps.staff_unit.models import StaffUnit
 
 # Оргструктура открывается тем же правом, что и в доноре.
@@ -98,6 +101,13 @@ class EmployeeViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
             .all()
             .order_by("last_name", "first_name", "id")
         )
+        visible = PermissionService.visible_division_ids(
+            resolve_actor_id(self.request), _READ_PERSONNEL_PERMISSION
+        )
+        if visible is not None:
+            qs = qs.filter(
+                id__in=StaffUnitSelector.employee_ids_in(visible)
+            )
         qs = self._filter_by_division(qs)
         return self._filter_by_reference_and_search(qs)
 
