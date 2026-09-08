@@ -5,6 +5,7 @@ from datetime import date
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as APIValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -37,14 +38,18 @@ from .serializers import (
 )
 from organization_management.apps.statuses import catalog
 from organization_management.apps.operations.api.permissions import (
-    require_permission,
+    RequirePermissionMixin,
     resolve_actor_id,
 )
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.selectors import StaffUnitSelector
 from organization_management.apps.operations.services import PermissionService
 
-class EmployeeStatusViewSet(viewsets.ModelViewSet):
+_READ_STATUS_PERMISSION = "status.view"
+_WRITE_STATUS_PERMISSION = "status.manage"
+
+
+class EmployeeStatusViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     """
     ViewSet для управления статусами сотрудников
 
@@ -78,7 +83,8 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
     #: Право записи — то же, что у ручки раздела ОМ (`operations/api/views.py`,
     #: `_BULK_STATUS_PERMISSION`): статусы ставит тот, кому это разрешено
     #: ролью раздела, и ровно в области своего гранта.
-    WRITE_PERMISSION = "status.manage"
+    WRITE_PERMISSION = _WRITE_STATUS_PERMISSION
+    READ_PERMISSION = _READ_STATUS_PERMISSION
     #: Действия, которые МЕНЯЮТ строки. Перечень явный, а не «всё, кроме
     #: GET»: у ручки есть POST-действия чтения быть не должно, но появись они —
     #: правило «новая дверь закрыта, пока её не открыли» безопаснее обратного.
@@ -88,26 +94,23 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             "extend", "terminate", "cancel", "upload_document", "bulk_plan",
         }
     )
+    READ_ACTIONS = frozenset(
+        {
+            "list", "retrieve", "history", "planned",
+            "division_headcount", "absence_statistics",
+        }
+    )
+    # Plane №953: факт входа не является правом читать кадровые статусы.
+    # Карта перечисляет всю поверхность явно, поэтому следующий action не
+    # станет доступен любому вошедшему из-за забытой проверки.
+    permission_map = {
+        **{action: _READ_STATUS_PERMISSION for action in READ_ACTIONS},
+        **{action: _WRITE_STATUS_PERMISSION for action in WRITE_ACTIONS},
+    }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.service = StatusApplicationService()
-
-    def initial(self, request, *args, **kwargs):
-        """Гейт ЗАПИСИ — на сервере, а не на экране (Plane №938).
-
-        🔴 До этого все девять действий записи шли под одним `IsAuthenticated`:
-        экран прятал правку у сотрудника без `status.manage`, а сервер
-        принимал её от любого вошедшего — проверено на стенде, `acc_employee`
-        получал на `POST` 400 по форме, а не 403. Проверка, которую обходят
-        другим клиентом, проверкой не является (№757, №840).
-
-        Чтение здесь НЕ трогается: карточка про правку, и «он должен только
-        наблюдать» означает, что наблюдать он должен.
-        """
-        super().initial(request, *args, **kwargs)
-        if self.action in self.WRITE_ACTIONS:
-            require_permission(request, self.WRITE_PERMISSION)
 
     def get_object(self):
         """Адресуемая строка правится только в области гранта.
@@ -138,11 +141,13 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             return
         self._assert_employees_in_scope([employee_id])
 
-    def _assert_employees_in_scope(self, employee_ids):
-        """Все названные сотрудники — в области `status.manage` актора.
+    def _assert_employees_in_scope(self, employee_ids, permission_code=None):
+        """Все названные сотрудники — в области указанного права актора.
 
-        Правило то же, что у `StatusViewSet._assert_employee_in_scope` раздела
-        ОМ: `None` — грант без области (администратор) — открывает всё дерево;
+        По умолчанию это `status.manage` для сохранения контракта №938;
+        reader-actions №953 передают `status.view`. Правило то же, что у
+        `StatusViewSet._assert_employee_in_scope` раздела ОМ: `None` — грант
+        без области (администратор) — открывает всё дерево;
         подразделение берётся по штатной единице; сотрудник без слота не
         принадлежит ничьей области — отказ (fail-closed). Отказ по области —
         `DomainError` → конверт `{error_code}`, отказ гейта права —
@@ -152,8 +157,9 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
         Пачка проверяется целиком ДО первой записи: чужой в списке
         останавливает всё, иначе часть статусов легла бы при ответе «отказано».
         """
+        permission_code = permission_code or self.WRITE_PERMISSION
         allowed = PermissionService.visible_division_ids(
-            resolve_actor_id(self.request), self.WRITE_PERMISSION
+            resolve_actor_id(self.request), permission_code
         )
         if allowed is None:
             return
@@ -166,6 +172,24 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                     detail={"employee_id": str(employee_id)},
                     message="Сотрудник вне области видимости оператора.",
                 )
+
+    def _assert_division_in_scope(self, division_id, permission_code):
+        """Адресованное подразделение входит в область reader-action.
+
+        Списочный queryset можно безопасно сузить до пустого, а прямая
+        агрегатная ручка обязана вернуть отказ: иначе известный id открывает
+        цифры чужого подразделения в обход фильтра списка.
+        """
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(self.request), permission_code
+        )
+        if allowed is not None and division_id not in allowed:
+            raise DomainError(
+                "PERMISSION_DENIED",
+                403,
+                detail={"division_id": str(division_id)},
+                message="Подразделение вне области видимости оператора.",
+            )
 
     def get_queryset(self):
         """Фильтрация queryset по правам пользователя"""
@@ -182,8 +206,34 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Пока возвращаем все статусы для аутентифицированных пользователей
-        # TODO: Добавить проверку ролей после реализации системы ролей
+        # Запись адресует строку через get_object(), где область проверяется
+        # под status.manage и отказ имеет доменный 403. Фильтр здесь нужен
+        # только чтению: иначе PATCH своей строки мог бы потребовать ещё и
+        # status.view, хотя права чтения и записи независимы.
+        if self.action in self.READ_ACTIONS:
+            allowed = PermissionService.visible_division_ids(
+                resolve_actor_id(self.request), self.READ_PERMISSION
+            )
+            if allowed is not None:
+                visible_employee_ids = StaffUnitSelector.employee_ids_in(allowed)
+                qs = qs.filter(employee_id__in=visible_employee_ids)
+
+                # django-filter валидирует ModelChoice `employee` по
+                # глобальному Employee queryset. Без этой одинаковой ранней
+                # маскировки foreign existing давал 200/пусто, nonexistent —
+                # 400 и превращал GET списка в existence oracle (№953).
+                raw_employee_id = self.request.query_params.get("employee")
+                try:
+                    requested_employee_id = int(raw_employee_id)
+                except (TypeError, ValueError):
+                    # Отсутствие фильтра и его синтаксис остаются ответственностью
+                    # EmployeeStatusFilter; здесь проверяется только область.
+                    pass
+                else:
+                    if requested_employee_id not in visible_employee_ids:
+                        raise APIValidationError(
+                            {"employee": ["Недопустимый выбор."]}
+                        )
         return qs
 
     def get_serializer_class(self):
@@ -472,6 +522,10 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 {'error': 'Параметр employee_id обязателен'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        employee_id = int(employee_id)
+        self._assert_employees_in_scope(
+            [employee_id], permission_code=self.READ_PERMISSION
+        )
 
         status_type = request.query_params.get('status_type')
         start_date_str = request.query_params.get('start_date')
@@ -487,7 +541,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             )
 
         queryset = self.service.get_employee_status_history(
-            employee_id=int(employee_id),
+            employee_id=employee_id,
             status_type=status_type,
             start_date=start_date_val,
             end_date=end_date_val
@@ -529,9 +583,13 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 {'error': 'Параметр employee_id обязателен'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        employee_id = int(employee_id)
+        self._assert_employees_in_scope(
+            [employee_id], permission_code=self.READ_PERMISSION
+        )
 
         # Получаем текущий активный статус
-        current_status = self.service.get_employee_current_status(int(employee_id))
+        current_status = self.service.get_employee_current_status(employee_id)
 
         # Получаем запланированные статусы
         planned_statuses = self.service.get_planned_statuses(employee_id=int(employee_id))
@@ -634,6 +692,8 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 {'error': 'Параметр division_id обязателен'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        division_id = int(division_id)
+        self._assert_division_in_scope(division_id, self.READ_PERMISSION)
 
         try:
             target_date = date.fromisoformat(date_str) if date_str else timezone.localdate()
@@ -644,7 +704,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             )
 
         headcount_data = self.service.get_division_headcount(
-            division_id=int(division_id),
+            division_id=division_id,
             target_date=target_date
         )
 
@@ -697,6 +757,10 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 {'error': f'Ошибка при определении подразделения: {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # ВНЕ широкого legacy try/except: доменный 403 области не должен
+        # маскироваться ответом 400 «ошибка определения подразделения».
+        self._assert_division_in_scope(division_id, self.READ_PERMISSION)
 
         # Сегодня — по ЗОНЕ СИСТЕМЫ (Plane №374). `date.today()` берёт дату
         # у часов процесса: в контейнере они стоят по UTC, и сводка отсутствий
