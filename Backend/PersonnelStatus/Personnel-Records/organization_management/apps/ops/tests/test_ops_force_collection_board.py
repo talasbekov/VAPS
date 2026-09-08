@@ -672,6 +672,55 @@ def test_the_responsible_name_does_not_change_between_identical_requests(manager
     assert len(names) == 1, f"имя ответственного меняется между запросами: {names}"
 
 
+def test_a_duty_officer_is_a_responsible_too(manager, hq):  # noqa: F811
+    """🔴 Plane №1026 (ревью `6d422ffb` по №923): `_responsibles` читал ТОЛЬКО
+    `UserRole` (постоянные назначения) — рассылка той же заявки
+    (`forces_notify._department_officers`) уже читает и дежурства
+    (`TemporaryDutyPermission`) с №800. Дежурный по департаменту письмо
+    «ответьте по заявке» получает, а колонка «Ответственный» на него не
+    смотрит вовсе и остаётся пустой строкой.
+
+    Дежурный здесь ЕДИНСТВЕННЫЙ кандидат нарочно: постоянного держателя
+    `forces.allocate` на департаменте нет, и колонка обязана назвать именно
+    дежурного, а не остаться пустой.
+
+    Мутация: убрать чтение `TemporaryDutyPermission` из `_responsibles` —
+    `responsibleName` вернётся пустой строкой.
+    """
+    from organization_management.apps.operations.models import (
+        Role,
+        RolePermission,
+        TemporaryDutyPermission,
+    )
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    duty_role, _ = Role.objects.get_or_create(
+        code="ORGD", defaults={"name": "Дежурный по департаменту (проба)"}
+    )
+    RolePermission.objects.get_or_create(
+        role_code=duty_role, permission_code_id="forces.allocate"
+    )
+    _, duty_officer = client_for("dep-duty-officer", "ORGD", perms=())
+    now = Clock.now()
+    TemporaryDutyPermission.objects.create(
+        user_id=str(duty_officer.pk),
+        duty_role_code="ORGD",
+        scope_division_id=department.pk,
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
+        created_by="test",
+    )
+
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    row = hq.get(f"{base}force-collection/").json()["allocations"][0]
+
+    assert row["responsibleName"] == duty_officer.get_username(), (
+        "дежурный по департаменту не назван ответственным в колонке"
+    )
+
+
 # ── «Итого» сходится со строками, напечатанными рядом (Plane №678) ──────────
 
 

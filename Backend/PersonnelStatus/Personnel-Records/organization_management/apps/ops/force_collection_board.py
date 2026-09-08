@@ -189,8 +189,21 @@ def _responsibles(department_ids):
     `PermissionService.roles_holding` по №880, и там же записано, почему
     wildcard нельзя забывать. Ровно этот случай №880 и предсказывал — копия,
     оставшаяся в стороне, разошлась с остальными тремя.
+
+    🔴 ДЕЖУРСТВО — ВТОРОЙ ИСТОЧНИК, КАК В `_department_officers` (Plane
+    №1026, ревью коммита `6d422ffb` по №923). Рассылка той же заявки
+    (`forces_notify._department_officers`) уже читает и `TemporaryDutyPermission`
+    с №800 — заступивший дежурным ответственный письмо «ответьте по заявке»
+    получал, а колонка «Ответственный» смотрела только на постоянные
+    `UserRole` и оставалась пустой. Оба источника — та же область РОВНО на
+    департамент, что и у постоянных назначений; окно действия дежурства
+    проверяется тем же моментом, что и в рассылке.
     """
-    from organization_management.apps.operations.models import UserRole
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models import (
+        TemporaryDutyPermission,
+        UserRole,
+    )
     from organization_management.apps.operations.services import PermissionService
 
     ids = [int(x) for x in department_ids if str(x).isdigit()]
@@ -200,11 +213,24 @@ def _responsibles(department_ids):
     # Пустой набор — законный ответ («права не держит никто»), и тогда строка
     # остаётся без ответственного: fail-closed, как у остальных читателей.
     allowed_roles = PermissionService.roles_holding(RESPONSIBLE_PERMISSION)
+    if not allowed_roles:
+        return out
+    now = Clock.now()
     rows = list(
         UserRole.objects.filter(
             is_active=True,
             scope_division_id__in=ids,
             role_code_id__in=allowed_roles,
+        )
+        .order_by("id")
+        .values_list("scope_division_id", "user_id")
+    ) + list(
+        TemporaryDutyPermission.objects.filter(
+            is_active=True,
+            scope_division_id__in=ids,
+            duty_role_code__in=allowed_roles,
+            starts_at__lte=now,
+            ends_at__gte=now,
         )
         .order_by("id")
         .values_list("scope_division_id", "user_id")
