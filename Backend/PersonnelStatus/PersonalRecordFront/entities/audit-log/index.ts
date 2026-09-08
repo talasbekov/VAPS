@@ -169,6 +169,10 @@ export const AUDIT_FIELD_LABEL: Record<string, string> = {
   leadName: "Старший объекта",
   visitObjectId: "Объект посещения (id)",
   objectName: "Объект",
+  // Самый содержательный ключ той же записи — что именно сделал старший.
+  // Без подписи и перевода кода строка читалась «action approval_send»
+  // (ревью №825 по №860, 08.09.2026).
+  action: "Действие",
   is_active: "Действует",
   code: "Код",
   name: "Название",
@@ -198,12 +202,31 @@ export interface AuditChange {
 }
 
 /** Значение поля словами: `true/false` — «да/нет», пусто — «—». */
-function readableValue(value: unknown): string {
+/**
+ * Переводы ЗНАЧЕНИЙ поля, у которого значение — код, а не текст. Ключ карты —
+ * поле, внутри — код → подпись. Неизвестный код печатается как есть: прятать
+ * его за «прочее» значило бы скрыть от разбирательства, что именно произошло
+ * (та же конвенция, что у неизвестного действия записи).
+ */
+export const AUDIT_VALUE_LABEL: Record<string, Record<string, string>> = {
+  // Коды `record_object_lead_action` (бэк, `security_events.py`).
+  action: {
+    approval_send: "Отправил на согласование",
+    approval_withdraw: "Отозвал с согласования",
+    approval_remark_resolve: "Снял замечание",
+  },
+};
+
+function readableValue(value: unknown, key?: string): string {
+  if (typeof value === "string" && key !== undefined) {
+    const translated = AUDIT_VALUE_LABEL[key]?.[value];
+    if (translated !== undefined) return translated;
+  }
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "да" : "нет";
   if (typeof value === "number" || typeof value === "string") return String(value);
   if (Array.isArray(value)) {
-    return value.length === 0 ? "—" : value.map(readableValue).join(", ");
+    return value.length === 0 ? "—" : value.map((item) => readableValue(item)).join(", ");
   }
   // Вложенный объект остаётся JSON: разбирать его на поля вслепую значило бы
   // придумывать структуру, которой журнал не обещал.
@@ -230,8 +253,8 @@ export function auditChanges(
   const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
   const changes: AuditChange[] = [];
   for (const key of keys.sort()) {
-    const from = readableValue(before[key]);
-    const to = readableValue(after[key]);
+    const from = readableValue(before[key], key);
+    const to = readableValue(after[key], key);
     // Поле, которое не менялось, в ленте — шум: строка «Название: Иванов →
     // Иванов» отнимает место у той, где действительно что-то произошло.
     if (key in before && key in after && from === to) continue;
