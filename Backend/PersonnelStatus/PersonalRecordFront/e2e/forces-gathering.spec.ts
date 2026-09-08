@@ -625,6 +625,35 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
   // («момент только у управления с квотой») стережёт
   // `department-requests.spec.ts` и `test_ops_forces_gathering.py`.
 
+  test('неполная строка раскладки не даёт открыть диалог отправки', async ({ page }) => {
+    /**
+     * Ревью №825 по №944 (08.09.2026): строка «+ Департамент» без выбранного
+     * департамента попадала в диалог «Отправить запросы?» как «— департамент
+     * не выбран —» с активной «Отправить»; сервер отвечал ошибкой формы по
+     * позиции, а она рисовалась ПОД таблицей — за диалогом. Человек видел
+     * диалог без реакции. Теперь кнопка «Отправить запросы» гаснет, пока у
+     * строки нет департамента или число меньше единицы, и называет причину.
+     *
+     * КРАСНАЯ ПРОБА: убери `incompleteRow` из `disabled` — кнопка активна.
+     */
+    const token = await apiToken()
+    const { id } = await prepareDemandEvent(token, '2027-06-01')
+    await signIn(page)
+    const section = await openSplitEditor(page, id)
+    await section.getByRole('button', { name: 'Департамент', exact: true }).click()
+
+    const send = section.getByRole('button', { name: 'Отправить запросы' })
+    await expect(send, 'строка без департамента, а «Отправить запросы» активна').toBeDisabled()
+    await expect(send).toHaveAttribute('title', /департамент/)
+    await page.screenshot({ path: '.shot-tmp-944/split-incomplete-row.png', fullPage: true })
+
+    await section.getByLabel('Департамент, строка 1', { exact: true }).selectOption({ index: 1 })
+    await section.getByLabel('Сколько человек, строка 1', { exact: true }).fill('0')
+    await expect(send, 'число меньше единицы, а кнопка активна').toBeDisabled()
+    await section.getByLabel('Сколько человек, строка 1', { exact: true }).fill('1')
+    await expect(send).toBeEnabled()
+  })
+
   test('цепочка сбора сил доходит до состава мероприятия', async ({
     page,
   }) => {

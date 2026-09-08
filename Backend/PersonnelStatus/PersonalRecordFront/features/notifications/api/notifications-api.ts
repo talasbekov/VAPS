@@ -206,8 +206,12 @@ export function describeOpsNotification(row: OpsNotificationRow): {
     const department = p.departmentName || "Департамент";
     const allocating = p.allocating ?? 0;
     const requested = p.requested ?? 0;
-    const title =
-      allocating === 0
+    // Отзыв присланного списка — тоже «изменение ответа» (`[СБС-12]`, ревью
+    // №825 по №944): признак `withdrawn` в payload, иначе штаб прочёл бы
+    // «выделяет N из M» про людей, которых уже забрали из состава.
+    const title = p.withdrawn
+      ? `${department} отозвал присланный список (${allocating} из ${requested})`
+      : allocating === 0
         ? `${department}: отказ по запросу сил`
         : `${department} выделяет ${allocating} из ${requested}`;
     return {

@@ -491,6 +491,41 @@ def notify_headquarters_response(event, allocation, *, allocating):
     return {"notified": tally.notified, "undelivered": tally.undelivered}
 
 
+def notify_headquarters_withdrawal(event, allocation):
+    """Штаб узнаёт, что департамент ОТОЗВАЛ присланный список (`[СБС-12]`:
+    «уведомление при каждом изменении ответа»; ревью №825 по №944, 08.09.2026).
+
+    До этого отзыв проходил молча: люди уходили из состава мероприятия и из
+    распределения по объектам (пока не переданы), а штаб узнавал об этом
+    только глазами. Тот же вид `FORCES_RESPONSE` и тот же адресат, что у
+    ответа «Выделяем»; признак `withdrawn` в payload — экран печатает
+    «отозвал список», а не «выделяет N из M». Возвращает `{notified,
+    undelivered}`, как соседняя рассылка.
+    """
+    payload = {
+        "eventId": str(event.pk),
+        "eventCode": event.code,
+        "eventTitle": event.title,
+        "businessDate": event.business_date.isoformat(),
+        "allocationId": allocation.get("id"),
+        "departmentName": allocation.get("departmentName", ""),
+        "requested": int(allocation.get("need") or 0),
+        "allocating": int(allocation.get("allocating") or 0),
+        "withdrawn": True,
+    }
+    tally = notify_service.DeliveryTally()
+    for user_id in _headquarters_users():
+        tally.deliver(
+            user_id,
+            RESPONSE_KIND,
+            event.business_date,
+            payload,
+            dedupe_key=None,
+            label="штаб",
+        )
+    return {"notified": tally.notified, "undelivered": tally.undelivered}
+
+
 # ── Ответственному департамента: штаб отправил запрос (`[СБС-12]`, №944) ────
 SENT_KIND = "FORCES_REQUEST_SENT"
 

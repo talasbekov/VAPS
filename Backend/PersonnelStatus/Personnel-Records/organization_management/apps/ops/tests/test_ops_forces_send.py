@@ -271,3 +271,37 @@ def test_in_service_is_counted_per_directorate_on_the_business_date(manager):  #
     assert detail["memberDirectorateById"] == {str(first.pk): str(directorate.pk)}
     # Участие в ОМ — не «в строю»: привлечённый вычитается из колонки.
     assert detail["inServiceByDirectorate"] == {str(directorate.pk): 1}
+
+
+def test_withdrawal_notifies_the_headquarters(manager):  # noqa: F811
+    """`[СБС-12]`: штаб уведомляется «при каждом изменении ответа департамента».
+    Отзыв присланного списка — изменение, и до сих пор оно проходило молча:
+    люди уходили из состава (и из распределения по объектам — до передачи),
+    а штаб узнавал об этом только глазами (ревью №825 по №944, 08.09.2026).
+
+    КРАСНАЯ ПРОБА: убери вызов `notify_headquarters_withdrawal` из
+    `withdraw_allocation` — уведомления не будет.
+    """
+    from django.contrib.auth.models import User
+
+    from organization_management.apps.operations.models import OpsNotification
+    from organization_management.apps.operations.services import RoleAdminService
+    from organization_management.apps.operations.tests.test_bulk_status_api import seed_role
+
+    seed_role("HQ_WITHDRAW", ["forces.command", "event.view"])
+    hq_user = User.objects.create_user(username="hq-withdraw", password="x")
+    RoleAdminService.assign_role(str(hq_user.pk), "HQ_WITHDRAW", None, actor="test")
+
+    department = make_department()
+    base, _total = event_on_demand(manager, "2027-03-01")
+    allocation_id, _employee_id, _ = _submit_one(manager, base, department)
+
+    withdrawn = manager.post(f"{base}forces/allocation/{allocation_id}/withdraw/")
+    assert withdrawn.status_code == 200, withdrawn.content
+
+    note = OpsNotification.objects.filter(
+        kind="FORCES_RESPONSE", recipient=str(hq_user.pk), payload__withdrawn=True
+    ).first()
+    assert note is not None, "штаб не узнал об отзыве списка"
+    assert note.payload["allocationId"] == allocation_id
+    assert note.payload["departmentName"] == department.name

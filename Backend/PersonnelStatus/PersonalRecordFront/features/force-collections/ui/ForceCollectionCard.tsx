@@ -489,9 +489,17 @@ function SplitEditor({
       },
       onError: (error) => {
         if (error.kind === "validation") setFieldErrors(error.details);
+        // Ошибка формы рисуется ПОД таблицей, а диалог её закрывал собой:
+        // человек видел диалог без реакции (ревью №825 по №944). Диалог
+        // закрывается, ошибка — на виду.
+        setConfirmOpen(false);
       },
     });
   };
+  // Неполная строка (департамент не выбран, число меньше единицы) отбивается
+  // сервером по позиции — не давать открыть диалог с «— департамент не
+  // выбран —» и активной «Отправить» (ревью №825 по №944).
+  const incompleteRow = rows.some((row) => row.departmentId === "" || toCount(row.need) < 1);
   // Индекс строки в ТЕЛЕ запроса (после отправленных) — для ошибок формы
   // `rows.<i>.need`, которые сервер адресует по позиции.
   const offset = sentRows.filter((row) => !row.topUpOf).length;
@@ -629,7 +637,8 @@ function SplitEditor({
               <Button
                 type="button"
                 size="sm"
-                disabled={split.isPending || rows.length === 0}
+                disabled={split.isPending || rows.length === 0 || incompleteRow}
+                title={incompleteRow ? "У каждой строки нужен департамент и число не меньше единицы" : undefined}
                 onClick={() => setConfirmOpen(true)}
               >
                 Отправить запросы
