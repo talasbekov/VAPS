@@ -323,6 +323,28 @@ def _incident_on(manager, event_id, post_id, title):  # noqa: F811
     return resp
 
 
+def test_journal_rejects_a_type_the_operator_cannot_pick(manager, two_objects_on_conduct):  # noqa: F811
+    """Тип записи журнала — из списка, а не любая строка (доводка №729 по
+    ревью №825).
+
+    Форма отдаёт оператору ровно три типа: «Инструктаж», «Распоряжение» (общий
+    журнал) и «Инцидент» (панель `[ЗАК-03]`). `REPLACEMENT` пишет только
+    сервер из `replace_assignment` — прямой POST с этим типом выдал бы
+    журнальную запись «Замена», которой замены не было: `dictionaries.py`
+    зачёл бы её как использование справочника, а сводка объекта — как
+    настоящую замену.
+    """
+    _, event_id, first, _second = two_objects_on_conduct
+    for bad_type in ("REPLACEMENT", "banana", ""):
+        resp = manager.post(
+            f"{URL}{event_id}/journal/",
+            {"type": bad_type, "title": "Запись"},
+            format="json",
+        )
+        assert resp.status_code == 400, (bad_type, resp.content)
+        assert resp.json()["error_code"] == "VALIDATION_ERROR", (bad_type, resp.content)
+
+
 def test_summary_counts_only_this_objects_journal(manager, two_objects_on_conduct):  # noqa: F811
     """Замены и инциденты — ОБЪЕКТА, а не мероприятия (Plane №645).
 

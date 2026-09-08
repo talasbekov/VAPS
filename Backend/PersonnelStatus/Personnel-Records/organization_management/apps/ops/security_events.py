@@ -7618,9 +7618,20 @@ def _incident_moment(raw):
     return text
 
 
+# Типы, которые вправе прислать ОПЕРАТОР (доводка №729 по ревью №825).
+# `REPLACEMENT` сюда не входит нарочно: его пишет только `replace_assignment`
+# в момент настоящей замены — прямой POST с этим типом дал бы журнальную
+# запись «Замена», которой замены не было, а справочник и сводка объекта
+# зачли бы её как настоящую (тот же класс подмены факта, что закрывался
+# самим №729 для инцидента).
+_OPERATOR_JOURNAL_TYPES = frozenset({"INSTRUCTION", "ORDER", "INCIDENT"})
+
+
 @transaction.atomic
 def add_journal_entry(event_id, *, entry_type, title, description, occurred_at=None, post_id=None, measures=""):
     event = lock_event(event_id)
+    if entry_type not in _OPERATOR_JOURNAL_TYPES:
+        raise _validation({"type": ["Недопустимый тип записи."]})
     title = str(title or "").strip()
     if title == "":
         raise _validation({"title": ["Обязательное поле."]})
