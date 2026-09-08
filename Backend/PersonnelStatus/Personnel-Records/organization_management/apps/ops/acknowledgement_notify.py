@@ -171,6 +171,25 @@ def supervisors_by_division(division_ids):
         is_active=True, scope_division_id__in=all_scopes, role_code_id__in=roles
     ).values_list("scope_division_id", "user_id"):
         users_of_scope.setdefault(scope_id, set()).add(str(user_id))
+    # 🔴 ВТОРОЙ ИСТОЧНИК ГРАНТОВ — ДЕЖУРСТВА (решение заказчика по №800 «слать
+    # ОБОИМ», исполненное в рассылке сбора сил и пропущенное здесь; ревью №825
+    # по №880, 08.09.2026). Заступивший дежурным с `status.manage` на
+    # управление распоряжаться людьми может — гейт его видит, — а поимённый
+    # список за час до заступления не получал. Область дежурства читается тем
+    # же множеством предков, что и у постоянной роли: точное совпадение с
+    # узлом или его предком.
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models import TemporaryDutyPermission
+
+    now = Clock.now()
+    for scope_id, user_id in TemporaryDutyPermission.objects.filter(
+        is_active=True,
+        duty_role_code__in=roles,
+        scope_division_id__in=all_scopes,
+        starts_at__lte=now,
+        ends_at__gte=now,
+    ).values_list("scope_division_id", "user_id"):
+        users_of_scope.setdefault(scope_id, set()).add(str(user_id))
     return {
         division_id: set().union(
             *(users_of_scope.get(scope, set()) for scope in scopes), set()
