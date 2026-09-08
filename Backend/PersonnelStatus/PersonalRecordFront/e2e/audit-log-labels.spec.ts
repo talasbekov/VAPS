@@ -62,4 +62,36 @@ test.describe('журнал действий: подписи записи ста
     // Прятать неизвестное за «прочее» значило бы скрыть, что именно произошло.
     expect(label('something_new')).toBe('something_new')
   })
+
+  test('запись «расстановка заместителем» подписана (Plane №1012)', () => {
+    const rows = auditChanges(
+      {},
+      {
+        code: 'ОМ-2026-9',
+        deputyId: '21',
+        deputyName: 'Петров П.П.',
+        operation: 'ASSIGN',
+        postId: '7',
+        employeeId: '42',
+        assignmentId: 'a-1',
+        fromPostId: '5',
+        postName: 'Пост 1',
+      },
+    )
+    const byKey = Object.fromEntries(rows.map((row) => [row.key, row]))
+    for (const key of [
+      'code',
+      'deputyId',
+      'deputyName',
+      'operation',
+      'postId',
+      'employeeId',
+      'assignmentId',
+      'fromPostId',
+      'postName',
+    ]) {
+      expect(byKey[key]?.isKnownField, `ключ «${key}» без подписи`).toBe(true)
+    }
+    expect(byKey.deputyName.label).toBe('Заместитель старшего')
+  })
 })

@@ -169,6 +169,20 @@ export const AUDIT_FIELD_LABEL: Record<string, string> = {
   leadName: "Старший объекта",
   visitObjectId: "Объект посещения (id)",
   objectName: "Объект",
+  // Запись «расстановка заместителем» (`SECURITY_EVENT_PLACEMENT_BY_DEPUTY`,
+  // Plane №1012, та же болезнь, что у №860 п. 5): без подписей журнал печатал
+  // `deputyName Иванов И.И.`. Заодно подписаны остальные ключи пейлоада
+  // `_record_deputy_placement` (`operation`, `postId`, `employeeId`,
+  // `assignmentId`, `fromPostId`, `postName`) — те же четыре вызова несут их
+  // сырыми по тому же основанию.
+  deputyId: "Заместитель старшего (id)",
+  deputyName: "Заместитель старшего",
+  operation: "Операция",
+  postId: "Пост (id)",
+  employeeId: "Сотрудник (id)",
+  assignmentId: "Назначение (id)",
+  fromPostId: "Прежний пост (id)",
+  postName: "Пост",
   // Самый содержательный ключ той же записи — что именно сделал старший.
   // Без подписи и перевода кода строка читалась «action approval_send»
   // (ревью №825 по №860, 08.09.2026).
