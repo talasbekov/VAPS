@@ -3524,8 +3524,11 @@ export const securityEventsHandlers = [
       const allSigned = answered.approvalRoute.every(
         (approver) => approver.status === "APPROVED"
       );
+      // По `remarkIsOpen`, а не сырым `status` (ревью №825 по №502/503,
+      // 08.09.2026): у замечания старой формы `status` нет вовсе, и
+      // `undefined !== "OPEN"` молча считал бы его закрытым.
       const noOpen = answered.approvalRemarks.every(
-        (remark) => remark.status !== "OPEN"
+        (remark) => !remarkIsOpen(remark)
       );
       if (allSigned && noOpen && !answered.approvalStale) {
         return HttpResponse.json(
@@ -3669,7 +3672,8 @@ export const securityEventsHandlers = [
         );
       }
       const allSigned = route.every((approver) => approver.status === "APPROVED");
-      const noOpen = remarks.every((remark) => remark.status !== "OPEN");
+      // По `remarkIsOpen`, не сырым `status` — та же причина, что выше.
+      const noOpen = remarks.every((remark) => !remarkIsOpen(remark));
       if (allSigned && noOpen && !decided.approvalStale) {
         return HttpResponse.json(
           saveEvent(
