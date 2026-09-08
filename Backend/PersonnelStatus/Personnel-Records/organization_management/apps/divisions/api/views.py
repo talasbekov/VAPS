@@ -46,6 +46,7 @@ class DivisionViewSet(viewsets.ModelViewSet):
 
     permission_classes = [permissions.IsAuthenticated]
     WRITE_PERMISSION = "orgstructure.manage"
+    EMPLOYEES_PERMISSION = "personnel.view"
     WRITE_ACTIONS = frozenset(
         {
             "create", "update", "partial_update", "destroy", "restore", "move",
@@ -55,23 +56,34 @@ class DivisionViewSet(viewsets.ModelViewSet):
     def initial(self, request, *args, **kwargs):
         """Одного факта входа недостаточно для правки дерева (№955).
 
-        Read-actions legacy-ручки эта карточка не меняет; на запись
-        требуется явный код раздела.
+        На запись требуется явный код оргструктуры; action
+        employees отдаёт кадровые карточки и потому гейтится
+        отдельным `personnel.view`. Прочие legacy read-actions не меняются.
         """
         super().initial(request, *args, **kwargs)
         if self.action in self.WRITE_ACTIONS:
             require_permission(request, self.WRITE_PERMISSION)
+        elif self.action == "employees":
+            require_permission(request, self.EMPLOYEES_PERMISSION)
 
-    def _write_scope(self):
+    def _scope_for(self, permission_code):
         return PermissionService.visible_division_ids(
-            resolve_actor_id(self.request), self.WRITE_PERMISSION
+            resolve_actor_id(self.request), permission_code
         )
 
+    def _write_scope(self):
+        return self._scope_for(self.WRITE_PERMISSION)
+
     def get_queryset(self):
-        """Write-object адресуется только в области manage-гранта."""
+        """Write-object и employees-source адресуются только в своём scope."""
         qs = super().get_queryset()
+        scope_permission = None
         if self.action in self.WRITE_ACTIONS:
-            allowed = self._write_scope()
+            scope_permission = self.WRITE_PERMISSION
+        elif self.action == "employees":
+            scope_permission = self.EMPLOYEES_PERMISSION
+        if scope_permission is not None:
+            allowed = self._scope_for(scope_permission)
             if allowed is not None:
                 qs = qs.filter(pk__in=allowed)
         return qs
