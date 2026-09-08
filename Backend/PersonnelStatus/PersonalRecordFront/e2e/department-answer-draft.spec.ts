@@ -280,13 +280,18 @@ test.describe(
                 submittedAt: null,
                 decidedAt: null,
                 decisionComment: '',
+                // `assigned` меняется соседним оператором ПОСЛЕ ответа, а `need`
+                // — нет: structuralSharing даёт НОВУЮ ссылку на `directorates`
+                // (иначе проба зеленеет и на сломанном `[directorateRows]` —
+                // содержимое было бы байт-в-байт тем же и до, и после), но
+                // `serverSplit` (`divisionId:need`) не меняется вовсе.
                 directorates: [
                   {
                     id: 'force-directorate-555b',
                     divisionId: directorateId,
                     name: directorateName,
                     need: 1,
-                    assigned: 0,
+                    assigned: answered ? 1 : 0,
                     notifiedAt: null,
                   },
                 ],
@@ -320,12 +325,20 @@ test.describe(
       await answerSection.locator('#answer-comment').fill('людей не хватает')
       await answerSection.getByRole('button', { name: 'Сохранить ответ' }).click()
 
-      // Ждём сам рефетч: без него проба проверяла бы состояние ДО отката.
+      // 🔴 ЖДЁМ САМ РЕФЕТЧ ПО МАРКЕРУ, КОТОРЫЙ ЧЕЛОВЕК НЕ ВПИСЫВАЛ. Ждать по
+      // `#answer-comment` нельзя: туда только что вписано ТО ЖЕ значение
+      // руками — поле совпадёт со своим текстом и без единого рефетча, и
+      // проба зеленела бы, даже если `invalidateQueries` вообще не сработал
+      // (найдено эмпирически: без этой правки счётчик подмены ловил РОВНО
+      // ОДИН запрос детали за весь прогон — второго не было, а проба всё
+      // равно проходила). Строка «assigned» меняется ТОЛЬКО ответом сервера
+      // (0 → 1 после `respond/`), и её текст сервером же и рисуется.
       await expect(
-        answerSection.locator('#answer-comment'),
-        'подменённая ручка не отдала сохранённый ответ — проверять нечего',
-      ).toHaveValue('людей не хватает', { timeout: 15_000 })
+        splitSection.getByText('1 из 1'),
+        'подменённая ручка не отдала обновлённые данные — проверять нечего',
+      ).toBeVisible({ timeout: 15_000 })
 
+      await expect(answerSection.locator('#answer-comment')).toHaveValue('людей не хватает')
       await expect(quota, 'набранная квота откатилась к серверной').toHaveValue('4')
     })
   },
