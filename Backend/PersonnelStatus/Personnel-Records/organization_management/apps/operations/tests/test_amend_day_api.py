@@ -190,6 +190,7 @@ def test_response_carries_the_explanation(types, division):
     assert set(response.data) == {
         "id", "division_id", "business_date", "version", "is_current",
         "event", "submitted_by", "submitted_at", "late",
+        "sent_at", "sent_by", "incomplete_reason",
         "reason", "sanction", "triggered_by_status_id",
     }
     assert response.data["reason"] == "причина"

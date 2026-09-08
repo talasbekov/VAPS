@@ -276,6 +276,7 @@ CODES = {
     "AMENDMENT_REASON_REQUIRED": frozenset({422}),
     "SNAPSHOT_SCHEMA_UNSUPPORTED": frozenset({422}),
     "SUMMARY_CHILDREN_NOT_SUBMITTED": frozenset({422}),
+    "SUMMARY_ALREADY_SENT": frozenset({409}),
     "TOMORROW_BLOCKED": frozenset({422}),
     "TOMORROW_BLOCK_ALREADY_OVERRIDDEN": frozenset({409}),
     # ── Обратная связь (§28) ─────────────────────────────────────────────

@@ -97,6 +97,21 @@ class OpsDailySubmission(TimeStampedModel):
     # ручная поправка не обязана указывать конкретную строку.
     triggered_by_status_id = models.PositiveBigIntegerField(null=True, blank=True)
 
+    # Отправка сводки дежурному (Plane №990, §20.4 п.6) — СВОЁ событие, не
+    # тождественное сборке: раньше «собрать» и «отправить» были одной кнопкой,
+    # и заказчик прямо потребовал их различать («Собран» → «Отправлен
+    # дежурному» — разные состояния). NULL = ещё не отправлена; поля мутируют
+    # ПОСЛЕ создания строки — это метаданные о ДОСТАВКЕ уже собранного
+    # снимка, а не новая версия: снимок (roster/rows/sources) остаётся
+    # неизменным, меняется только факт «кто-то отправил и когда» — тем же
+    # приёмом, что и `late`, которое тоже не часть снимка.
+    sent_at = models.DateTimeField(null=True, blank=True)
+    sent_by = models.CharField(max_length=100, blank=True, default="")
+    # Причина неполной отправки (`[РАСХ-РШ-01]`) — обязательна, когда на
+    # момент отправки часть обязанных управлений не сдала (см.
+    # `summary_service.send_summary`); для полной сводки остаётся пустой.
+    incomplete_reason = models.TextField(blank=True, default="")
+
     class Meta:
         db_table = "ops_daily_submissions"
         constraints = [
@@ -131,6 +146,19 @@ class OpsDailySubmission(TimeStampedModel):
                     | (models.Q(reason__regex=r"\S") & models.Q(sanction__regex=r"\S"))
                 ),
                 name="chk_ops_submission_amended_explained",
+            ),
+            # Отправка — «оба поля или ни одного»: `sent_at` без `sent_by`
+            # обвинял бы отправку в безымянности, `sent_by` без `sent_at`
+            # утверждал бы момент, которого не было.
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(sent_at__isnull=True) & models.Q(sent_by=""))
+                    | (
+                        models.Q(sent_at__isnull=False)
+                        & models.Q(sent_by__regex=r"\S")
+                    )
+                ),
+                name="chk_ops_submission_sent_together",
             ),
         ]
         indexes = [

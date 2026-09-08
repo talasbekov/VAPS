@@ -3,9 +3,17 @@
 // «Ежедневный расход» — тот же департамент, что и «Сбор сил» (`/employees`),
 // но привычной формой прототипа: управления раскрываются построчно, а не
 // разрезом по статусу. Знаменатели (штат, список, колонки расхода) даёт
-// РАСХОД (`useStrengthReport`) — свой счёт личного состава экран не заводит;
-// деловая дата берётся ИЗ ЕГО ОТВЕТА, а не считается в браузере: в минусовых
-// зонах «сегодня» клиента спрашивало бы вчера.
+// РАСХОД (`useStrengthReport`) — свой счёт личного состава экран не заводит.
+//
+// ДЕЛОВАЯ ДАТА — СВОЙ ИСТОЧНИК, А НЕ ЧУЖОЙ ОТВЕТ (Plane №988). До этой
+// карточки дата бралась ИЗ ОТВЕТА расхода: удобно, но расход без даты
+// отвечает про СЕГОДНЯ, а борд задуман про ЗАВТРА — источник был случайным.
+// Теперь `useBusinessDate` резолвит «завтра» с `GET /tomorrow-block/» (тот
+// же приём против часового пояса — часы БРАУЗЕРА не считаются), а расход и
+// светофор получают эту дату ПАРАМЕТРОМ, а не угадывают её из своего ответа.
+//
+// РЕИСПОЛЬЗУЕТСЯ ВКЛАДКОЙ «Свод департамента» (Plane №990, `[ДОП-20-04]`):
+// тот же компонент под своей `regionLabel`, не копия таблицы.
 //
 // Поимённый список управления грузится ЛЕНИВО — только по первому раскрытию
 // строки (`enabled: open`): шесть управлений расхода на одну загрузку экрана
@@ -671,11 +679,17 @@ interface DailyExpenseBoardProps {
    * борд берёт «завтра» сервера (см. `useBusinessDate`). */
   businessDate?: string;
   onBusinessDateChange?: (date: string) => void;
+  /** Подпись региона — тот же борд рендерится под вкладкой «Свод
+   * департамента» (Plane №990, `[ДОП-20-04]`: тот же API и компонент, а не
+   * копия), и accessible-имя обязано называть экран, под которым он стоит,
+   * а не «Ежедневный расход» безусловно. */
+  regionLabel?: string;
 }
 
 export function DailyExpenseBoard({
   businessDate: businessDateOverride,
   onBusinessDateChange,
+  regionLabel = "Ежедневный расход",
 }: DailyExpenseBoardProps = {}) {
   // Гейт права — ТОТ ЖЕ, что у соседних экранов той же ручки: командный центр
   // (`command-center/page.tsx`) и аналитика (`analytics/page.tsx`) включают
@@ -890,14 +904,14 @@ export function DailyExpenseBoard({
   // true навсегда — борд крутил бы скелет, а не объяснял отказ.
   if (permissionsLoading) {
     return (
-      <section role="region" aria-label="Ежедневный расход" className="space-y-4">
+      <section role="region" aria-label={regionLabel} className="space-y-4">
         <p className="text-sm text-muted-foreground">Загрузка прав…</p>
       </section>
     );
   }
   if (!canRead) {
     return (
-      <section role="region" aria-label="Ежедневный расход" className="space-y-4">
+      <section role="region" aria-label={regionLabel} className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Ежедневный расход закрыт правом «Статусы: просмотр».
         </p>
@@ -906,7 +920,7 @@ export function DailyExpenseBoard({
   }
 
   return (
-    <section role="region" aria-label="Ежедневный расход" className="space-y-4">
+    <section role="region" aria-label={regionLabel} className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Popover>
           <PopoverTrigger asChild>

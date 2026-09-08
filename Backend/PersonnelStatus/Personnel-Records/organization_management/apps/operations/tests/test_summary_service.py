@@ -381,3 +381,177 @@ def test_a_refused_assembly_writes_nothing(types, tree):
     assert OpsAuditLog.objects.filter(
         action=audit_service.DAILY_SUMMARY_ASSEMBLED
     ).count() == 0
+
+
+# ── Неполная сборка и отправка дежурному (Plane №990, `[РАСХ-РШ-01]`) ────
+
+
+def test_allow_incomplete_lets_a_summary_form_without_every_child(types, tree):
+    """RED до фикса: `allow_incomplete` не существовал, любой недостающий
+    ребёнок отвечал 422 независимо от намерения вызывающего."""
+    root, left, right = tree
+    submit(left)
+    # right не сдал вовсе.
+
+    with clock.override(MORNING):
+        summary = assemble_summary(
+            division_id=root.id,
+            business_date=TODAY,
+            actor=ACTOR,
+            allow_incomplete=True,
+        )
+
+    # Точная форма пина (division_id/submission_id/version) уже покрыта
+    # `test_the_summary_pins_the_children_versions` — здесь важно только то,
+    # что сборка ВООБЩЕ прошла и пин несдавшего в ней отсутствует.
+    pinned = {pin["division_id"] for pin in summary.snapshot["sources"]}
+    assert pinned == {left.id}
+
+
+def test_allow_incomplete_still_refuses_without_the_flag(types, tree):
+    """Умолчание НЕ меняется: существующие читатели (например, вкладка
+    «Ежедневный расход») продолжают получать строгую сборку, если явно не
+    попросили иное."""
+    root, left, _ = tree
+    submit(left)
+
+    with pytest.raises(DomainError) as exc:
+        assemble(root)
+
+    assert exc.value.code == "SUMMARY_CHILDREN_NOT_SUBMITTED"
+
+
+def test_summary_laggards_reports_none_when_no_summary_exists(types, tree):
+    from organization_management.apps.operations.summary_service import (
+        summary_laggards,
+    )
+
+    root, _, _ = tree
+    assert summary_laggards(root.id, TODAY) is None
+
+
+def test_summary_laggards_reports_the_missing_children(types, tree):
+    from organization_management.apps.operations.summary_service import (
+        summary_laggards,
+    )
+
+    root, left, right = tree
+    submit(left)
+    with clock.override(MORNING):
+        assemble_summary(
+            division_id=root.id, business_date=TODAY, actor=ACTOR, allow_incomplete=True
+        )
+
+    assert summary_laggards(root.id, TODAY) == [right.id]
+
+
+def test_summary_laggards_is_empty_once_complete(types, tree):
+    from organization_management.apps.operations.summary_service import (
+        summary_laggards,
+    )
+
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assemble(root)
+
+    assert summary_laggards(root.id, TODAY) == []
+
+
+def send(division, business_date=TODAY, actor=ACTOR, reason=""):
+    from organization_management.apps.operations.summary_service import send_summary
+
+    with clock.override(MORNING):
+        return send_summary(
+            division_id=division.id, business_date=business_date, actor=actor, reason=reason
+        )
+
+
+def test_send_summary_needs_an_assembled_summary_first(types, tree):
+    root, _, _ = tree
+
+    with pytest.raises(DomainError) as exc:
+        send(root)
+
+    assert exc.value.code == "ENTITY_NOT_FOUND"
+    assert exc.value.http_status == 404
+
+
+def test_send_summary_refuses_a_plain_submission_not_a_summary(types, tree):
+    root, _, _ = tree
+    submit(root)
+
+    with pytest.raises(DomainError) as exc:
+        send(root)
+
+    assert exc.value.code == "VALIDATION_ERROR"
+    assert exc.value.http_status == 400
+
+
+def test_send_summary_of_a_complete_summary_needs_no_reason(types, tree):
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assemble(root)
+
+    sent = send(root)
+
+    assert sent.sent_at is not None
+    assert sent.sent_by == ACTOR
+    assert sent.incomplete_reason == ""
+
+
+def test_send_summary_of_an_incomplete_summary_without_a_reason_is_400(types, tree):
+    """RED до фикса: `send_summary` не существовал вовсе."""
+    root, left, right = tree
+    submit(left)
+    with clock.override(MORNING):
+        assemble_summary(
+            division_id=root.id, business_date=TODAY, actor=ACTOR, allow_incomplete=True
+        )
+
+    with pytest.raises(DomainError) as exc:
+        send(root, reason="")
+
+    assert exc.value.code == "VALIDATION_ERROR"
+    assert exc.value.detail["laggards"] == [right.id]
+
+
+def test_send_summary_of_an_incomplete_summary_with_a_reason_succeeds(types, tree):
+    root, left, right = tree
+    submit(left)
+    with clock.override(MORNING):
+        assemble_summary(
+            division_id=root.id, business_date=TODAY, actor=ACTOR, allow_incomplete=True
+        )
+
+    sent = send(root, reason="  второй отдел не сдал, штаб предупреждён  ")
+
+    assert sent.sent_at is not None
+    assert sent.incomplete_reason == "второй отдел не сдал, штаб предупреждён"
+
+
+def test_sending_twice_is_409(types, tree):
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    assemble(root)
+    send(root)
+
+    with pytest.raises(DomainError) as exc:
+        send(root)
+
+    assert exc.value.code == "SUMMARY_ALREADY_SENT"
+    assert exc.value.http_status == 409
+
+
+def test_sending_is_written_to_the_log(types, tree):
+    root, left, right = tree
+    submit(left)
+    submit(right)
+    summary = assemble(root)
+    send(root)
+
+    entry = OpsAuditLog.objects.get(action=audit_service.DAILY_SUMMARY_SENT)
+    assert entry.entity_id == summary.pk
+    assert entry.new_value["laggards"] == []

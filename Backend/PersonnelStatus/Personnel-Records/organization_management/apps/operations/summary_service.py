@@ -110,10 +110,14 @@ def _build_sources(direct_children, business_date):
     )
 
 
+def _laggards_of(required, sources):
+    pinned = {pin["division_id"] for pin in sources}
+    return sorted(child for child in required if child not in pinned)
+
+
 def _require_children_submitted(required, sources):
     """Сводка не собирается, пока не сдали все, кому есть что сдавать."""
-    pinned = {pin["division_id"] for pin in sources}
-    laggards = sorted(child for child in required if child not in pinned)
+    laggards = _laggards_of(required, sources)
     if laggards:
         raise DomainError(
             "SUMMARY_CHILDREN_NOT_SUBMITTED",
@@ -160,7 +164,13 @@ def _sources_compact(sources):
 
 @transaction.atomic
 def assemble_summary(
-    *, division_id, business_date, actor, window_dates=None, control_hour=None
+    *,
+    division_id,
+    business_date,
+    actor,
+    window_dates=None,
+    control_hour=None,
+    allow_incomplete=False,
 ):
     """Собрать сводку дня для подразделения с детьми (версия 1, действующая).
 
@@ -170,8 +180,17 @@ def assemble_summary(
 
     Отказы: 400 (пустой актор; подразделение-ЛИСТ — консолидировать некого,
     свой уровень листа сдаётся обычной сдачей), 404 (нет подразделения),
-    422 (дата вне окна; SUMMARY_CHILDREN_NOT_SUBMITTED со списком не сдавших),
-    409 (день уже сдан — пересборка это отдельное действие).
+    422 (дата вне окна; SUMMARY_CHILDREN_NOT_SUBMITTED со списком не сдавших
+    — если `allow_incomplete` не снят), 409 (день уже сдан — пересборка это
+    отдельное действие).
+
+    `allow_incomplete=False` — прежнее поведение дословно (Plane №989/№990 не
+    трогают существующих читателей: собирают сводку сегодня так же, как и до
+    №990). `allow_incomplete=True` — Plane №990, `[РАСХ-РШ-01]`: сводка
+    собирается ИЗ ТОГО, что уже сдали, а недостающие остаются видны в
+    `sources` (их там просто нет) — полнота решается на ЧТЕНИИ (сравнением с
+    `_required_children`), а разрешение ОТПРАВИТЬ неполную сводку дежурному
+    (обязательная причина) — отдельный гард `send_summary`, не этот.
 
     Пины читаются в обычной изоляции: ребёнок, поправивший день в этот самый
     момент, оставит сводку протухшей с рождения. Это не гонка, а нормальное
@@ -223,7 +242,8 @@ def assemble_summary(
         )
     required = _required_children(division_id, children_map=children_map)
     sources = _build_sources(children_map[division_id], business_date)
-    _require_children_submitted(required, sources)
+    if not allow_incomplete:
+        _require_children_submitted(required, sources)
 
     snapshot = build_division_snapshot(division_id, business_date)
     snapshot["sources"] = sources
@@ -256,6 +276,101 @@ def assemble_summary(
         | {"sources": _sources_compact(sources)},
     )
     return summary
+
+
+def summary_laggards(division_id, business_date):
+    """Кто из обязанных детей не вошёл в пины действующей сводки — по ЖИВОЙ
+    структуре, тем же приёмом, что и `summary_freshness` (`unpinned`):
+    «обязан» решает СЕГОДНЯШНЕЕ дерево, а не дерево на момент сборки.
+
+    None — сводки нет (или строка не сводка вовсе, без ключа `sources`);
+    иначе список id недостающих управлений (пустой — сводка полная).
+    Используется и `send_summary` (гард причины), и предполагаемым читателем
+    вкладки «Свод департамента» (Plane №990) — «готовность управлений» это и
+    есть обратная сторона того же списка.
+    """
+    current = DailySubmissionSelector.current_for(division_id, business_date)
+    if current is None or "sources" not in current.snapshot:
+        return None
+    children_map = DivisionTreeSelector.children_map()
+    required = _required_children(division_id, children_map=children_map)
+    return _laggards_of(required, current.snapshot["sources"])
+
+
+@transaction.atomic
+def send_summary(*, division_id, business_date, actor, reason=""):
+    """Отправить действующую сводку оперативному дежурному (Plane №990,
+    §20.4 п.6, `[РАСХ-РШ-01]`).
+
+    СВОЁ событие, отдельное от сборки — заказчик прямо запретил молчаливое
+    объединение («Собран» и «Отправлен дежурному» обязаны различаться).
+    Строка сводки не создаёт новую версию: снимок остаётся ЧЕМ БЫЛ, отправка
+    лишь ДОПИСЫВАЕТ факт доставки в ту же строку (`sent_at`/`sent_by`) — тем
+    же приёмом, что `late` не часть снимка, а факт О НЁМ.
+
+    Отказы: 400 (пустой актор; сводка неполная, а `reason` пуст —
+    `[РАСХ-РШ-01]` требует причину ИМЕННО для неполной отправки), 404 (нет
+    действующей сводки на дату — сперва «Собрать свод»; либо строка есть, но
+    это обычная сдача, не сводка), 409 (эта версия уже отправлена — повторная
+    отправка ждёт новой версии, как и любая правка сводки).
+    """
+    _require_actor(actor)
+
+    current = DailySubmissionSelector.current_for(division_id, business_date)
+    if current is None:
+        raise DomainError(
+            "ENTITY_NOT_FOUND",
+            404,
+            detail={
+                "division_id": str(division_id),
+                "business_date": business_date.isoformat(),
+            },
+            message="Свод не собран — сначала «Собрать свод».",
+        )
+    if "sources" not in current.snapshot:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"division_id": str(division_id)},
+            message="Этот день сдан обычной сдачей, а не сводкой.",
+        )
+    if current.sent_at is not None:
+        raise DomainError(
+            "SUMMARY_ALREADY_SENT",
+            409,
+            detail={"sent_at": current.sent_at.isoformat(), "sent_by": current.sent_by},
+            message="Эта версия свода уже отправлена дежурному.",
+        )
+
+    laggards = summary_laggards(division_id, business_date)
+    reason = (reason or "").strip()
+    if laggards and not reason:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"laggards": laggards},
+            message="Свод неполный — отправка требует явной причины.",
+        )
+
+    current.sent_at = Clock.now()
+    current.sent_by = actor
+    current.incomplete_reason = reason if laggards else ""
+    current.save(update_fields=["sent_at", "sent_by", "incomplete_reason"])
+
+    audit_service.record(
+        actor=actor,
+        action=audit_service.DAILY_SUMMARY_SENT,
+        entity_type=audit_service.ENTITY_SUBMISSION,
+        entity_id=current.pk,
+        new_value={
+            "division_id": str(division_id),
+            "business_date": business_date.isoformat(),
+            "sent_at": current.sent_at.isoformat(),
+            "laggards": laggards,
+            "incomplete_reason": current.incomplete_reason,
+        },
+    )
+    return current
 
 
 FRESH = "FRESH"

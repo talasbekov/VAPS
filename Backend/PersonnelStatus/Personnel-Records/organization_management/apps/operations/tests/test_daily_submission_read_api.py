@@ -33,6 +33,7 @@ READ_PERMS = ["status.view"]
 LIST_FIELDS = {
     "id", "division_id", "business_date", "version", "is_current",
     "event", "submitted_by", "submitted_at", "late",
+    "sent_at", "sent_by", "incomplete_reason",
 }
 
 

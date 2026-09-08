@@ -222,7 +222,15 @@ function EmployeesScreen() {
   // это Ежедневный расход Организации»). Значение по умолчанию меняется
   // ВМЕСТЕ с порядком: оставить умолчанием «forces» значило бы, что первая
   // вкладка открывается второй, и человек каждый раз попадает не туда.
-  const view = searchParams.get("view") === "forces" ? "forces" : "daily";
+  // Третья вкладка «Свод департамента» (Plane №990) — тем же приёмом, но
+  // значением, а не булем: `view` остаётся ОДНИМ полем адреса на все три.
+  const viewParam = searchParams.get("view");
+  const view =
+    viewParam === "forces"
+      ? "forces"
+      : viewParam === "department-summary"
+        ? "department-summary"
+        : "daily";
   // Номер страницы — тоже в адресе: ссылка на «страницу 7 отбора» должна
   // открываться такой же (Plane №228).
   const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
@@ -298,8 +306,18 @@ function EmployeesScreen() {
   // `user` остаётся ради подразделения человека (подпись и отбор «своё»);
   // ПРАВА теперь спрашиваются у раздела (Plane №352, Ш-1).
   const { user } = useAuth();
-  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
-    useOpsPermissions();
+  const {
+    hasPermission: hasOpsPermission,
+    isLoading: opsPermissionsLoading,
+    roles: opsRoles,
+  } = useOpsPermissions();
+  // Третья вкладка «Свод департамента» (Plane №990, `[РАСХ-РШ-03]`) видна
+  // ТОЛЬКО ответственному за сбор сил — по РОЛИ, а не по праву: право
+  // `daily_report.generate` шире одной этой роли (им же гейтится сборка у
+  // самого борда), и вкладку по нему увидел бы, например, штаб.
+  const isForcesGatheringOfficer = opsRoles.some(
+    (role) => role.code === "FORCES_GATHERING_OFFICER"
+  );
   const allowedCodes = modulePermissionsOf("/employees");
   const allowed = allowedCodes.some((code) => hasOpsPermission(code));
 
@@ -770,12 +788,32 @@ function EmployeesScreen() {
           >
             Сбор сил на ОМ
           </button>
+          {/* Видна ТОЛЬКО ответственному за сбор сил (Plane №990) — до того,
+              как права загрузились, вкладка тоже не рисуется: мигнувшая и
+              исчезнувшая вкладка хуже, чем появившаяся с задержкой. */}
+          {!opsPermissionsLoading && isForcesGatheringOfficer && (
+            <button
+              type="button"
+              aria-current={view === "department-summary" ? "page" : undefined}
+              className={
+                view === "department-summary"
+                  ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
+                  : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+              }
+              onClick={() => setFilter("view", "department-summary", "daily")}
+            >
+              Свод департамента
+            </button>
+          )}
         </nav>
 
-        {view === "daily" && (
+        {(view === "daily" || view === "department-summary") && (
           <DailyExpenseBoard
             businessDate={businessDateParam || undefined}
             onBusinessDateChange={setBusinessDate}
+            regionLabel={
+              view === "department-summary" ? "Свод департамента" : undefined
+            }
           />
         )}
 

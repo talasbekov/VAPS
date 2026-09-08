@@ -62,6 +62,10 @@ DAILY_SUMMARY_ASSEMBLED = "DAILY_SUMMARY_ASSEMBLED"
 # Пересборка «взамен» — своё событие, а не поправка сдачи: поправляют СВОЙ
 # день, пересобирают ЧУЖИЕ версии, и в ленте это разные истории.
 DAILY_SUMMARY_REBUILT = "DAILY_SUMMARY_REBUILT"
+# Отправка дежурному (Plane №990, §20.4 п.6) — СВОЁ событие, отдельное от
+# сборки: заказчик прямо потребовал различать «Собран» и «Отправлен
+# дежурному», а один код на оба лишил бы ленту возможности их различить.
+DAILY_SUMMARY_SENT = "DAILY_SUMMARY_SENT"
 # Выдача личной копии сданного дня. Событие ЧТЕНИЯ в журнале мутаций —
 # исключение осознанное: копию берут, чтобы предъявлять её в споре, и «кто и
 # когда её получил» это и есть предмет разбирательства.
@@ -92,6 +96,10 @@ DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED"
 # правку черновика: черновик — рабочая тетрадь, версия — утверждённый документ,
 # и предмет разбирательства («каким был паспорт и кто его утвердил») — она.
 PASSPORT_VERSION_PUBLISHED = "PASSPORT_VERSION_PUBLISHED"
+# Снимок объекта-каталога (Plane SJ-1049) — тот же довод, что у
+# PROTECTED_PERSON_PHOTO_SET ниже: правка справочника, по которой спрашивают
+# «кто завёл снимок».
+SECURITY_OBJECT_PHOTO_SET = "SECURITY_OBJECT_PHOTO_SET"
 # Охранное мероприятие: заведение и закрытие — решения с внешним следом
 # (номер ОМ в бумаге). Промежуточные стадии событий не пишут: их след — сам
 # агрегат (журнал штаба, назначения), а не журнал мутаций раздела.
@@ -321,12 +329,14 @@ ACTIONS = frozenset(
         TOMORROW_BLOCK_OVERRIDDEN,
         DAILY_SUMMARY_ASSEMBLED,
         DAILY_SUMMARY_REBUILT,
+        DAILY_SUMMARY_SENT,
         SUBMISSION_EXPORTED,
         ATTACHMENT_UPLOADED,
         DOCUMENT_ISSUED,
         DOCUMENT_SUPERSEDED,
         DOCUMENT_DOWNLOADED,
         PASSPORT_VERSION_PUBLISHED,
+        SECURITY_OBJECT_PHOTO_SET,
         SECURITY_EVENT_CREATED,
         SECURITY_EVENT_CLOSED,
         SECURITY_EVENT_DELETED,

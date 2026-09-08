@@ -153,6 +153,13 @@ interface DailySubmissionRow {
   submitted_by: string
   submitted_at: string
   late: boolean
+  // Отправка дежурному (Plane №990) — клиентский парсер требует эти три поля
+  // ОБЯЗАТЕЛЬНЫМИ (см. `entities/daily-grid`), иначе строка отбрасывается
+  // целиком: мок без них тихо давал бы ПУСТОЙ список версий вместо тех, что
+  // проба готовила.
+  sent_at: string | null
+  sent_by: string
+  incomplete_reason: string
 }
 
 interface TreeNode {
@@ -477,6 +484,9 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
         submitted_by: 'проба',
         submitted_at: `${businessDate}T10:00:00+05:00`,
         late: false,
+        sent_at: null,
+        sent_by: '',
+        incomplete_reason: '',
       },
       {
         id: 90000,
@@ -488,6 +498,9 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
         submitted_by: 'проба',
         submitted_at: `${businessDate}T09:00:00+05:00`,
         late: false,
+        sent_at: null,
+        sent_by: '',
+        incomplete_reason: '',
       },
     ]
 
@@ -812,6 +825,9 @@ test.describe(
         submitted_by: 'проба',
         submitted_at: `${businessDate}T09:30:00+05:00`,
         late: false,
+        sent_at: null,
+        sent_by: '',
+        incomplete_reason: '',
       }
       await page.route(
         (url) =>
@@ -963,23 +979,18 @@ test.describe(
   () => {
     test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-    test('кнопка собирает свод, отказ «не все сдали» называет отставших по именам (Plane №297)', async ({
+    test('«Собрать свод» проходит сразу, «Отправить дежурному» неполного требует причину — отставшие названы ИМЕНАМИ (Plane №297/№990)', async ({
       page,
     }) => {
-      // Требование заказчика: «Далее он нажимает на кнопку и отправляет
-      // Оперативному дежурному, который сводит за Организацию».
+      // Требование заказчика (уточнено №990): «Собрать свод» и «Отправить
+      // дежурному» — РАЗНЫЕ действия, и неполный свод отправляется только
+      // после явного предупреждения с причиной (`[РАСХ-РШ-01]`).
       //
-      // 🔴 ПОЧЕМУ ПЕРЕХВАТ ДЕРЕВА. На живом стенде узел свода по правилу не
-      // определяется вовсе («Узел суточного свода не определён» — состояние
-      // проверено соседней пробой этого файла), а без узла кнопки нет по
-      // построению. Дерево подменяется тем же приёмом и тем же правилом, что
-      // в пробе версий свода выше.
-      //
-      // 🔴 ПОЧЕМУ ПЕРЕХВАТ ОТВЕТА НА СБОРКУ. Сборка ПИШЕТ в живой стенд:
-      // настоящее нажатие оставило бы за собой версию свода за сегодня,
-      // которую следующая проба этого же файла увидела бы как чужое
-      // состояние. Проверяется РАЗБОР ответа — то, что делает экран, — а
-      // правила сборки покрыты пробами бэка.
+      // 🔴 ПОЧЕМУ ПЕРЕХВАТ ДЕРЕВА/ОТВЕТОВ. Тот же довод, что был здесь до
+      // №990: узел свода на живом стенде не определяется вовсе без
+      // синтетического дерева, а настоящие мутации оставили бы версию за
+      // собой для следующей пробы. Разбор ответа проверяется здесь — правила
+      // сборки/отправки покрыты пробами бэка.
       const token = await apiToken()
       const tomorrow = await tomorrowBusinessDate(token)
       const report = await get<StrengthReport>(token, `/api/operations/strength-report/?business_date=${tomorrow}`)
@@ -1023,39 +1034,59 @@ test.describe(
           })
         },
       )
-      // Версий свода нет — блок в состоянии «свод ещё не собирался», то самое,
-      // из которого кнопку и нажимают.
+
+      // Список версий: до сборки — пусто; после — одна неотправленная версия.
+      // Один роут с флагом, а не два: борд перечитывает список сам после
+      // мутации (invalidateQueries), и предмет проверки — что он показывает
+      // ПОСЛЕ каждого шага, а не что именно запросил.
+      // Флаги отражают состояние ПОСЛЕ мутации — борд перечитывает список сам
+      // (invalidateQueries), и список обязан рассказывать ТУ ЖЕ историю, что
+      // и последний ответ мутации, иначе `currentVersion.incomplete_reason`
+      // (из СПИСКА, не из ответа мутации напрямую) остался бы пуст даже
+      // после успешной отправки с причиной.
+      let assembled = false
+      let sentReason = ''
       await page.route(
         (url) =>
           url.pathname === '/api/ops/daily/daily-submissions/' &&
           url.searchParams.get('division_id') === String(expectedDivisionId),
         async (route) => {
-          await route.fulfill({ json: { count: 0, next: null, previous: null, results: [] } })
+          if (!assembled) {
+            await route.fulfill({ json: { count: 0, next: null, previous: null, results: [] } })
+            return
+          }
+          await route.fulfill({
+            json: {
+              count: 1,
+              next: null,
+              previous: null,
+              results: [
+                {
+                  id: 97001,
+                  division_id: String(expectedDivisionId),
+                  business_date: businessDate,
+                  version: 1,
+                  is_current: true,
+                  event: 'CHANGED',
+                  submitted_by: 'проба',
+                  submitted_at: `${businessDate}T11:00:00+05:00`,
+                  late: false,
+                  sent_at: sentReason === '' ? null : `${businessDate}T12:00:00+05:00`,
+                  sent_by: sentReason === '' ? '' : 'проба',
+                  incomplete_reason: sentReason,
+                },
+              ],
+            },
+          })
         },
       )
 
-      // Первое нажатие — отказ «сдали не все», второе — успех. Один роут с
-      // счётчиком, а не два: порядок ответов и есть предмет проверки.
-      let assembleCalls = 0
       const assembleBodies: unknown[] = []
       await page.route(
         (url) => url.pathname === '/api/operations/daily-summaries/',
         async (route) => {
-          assembleCalls += 1
           assembleBodies.push(route.request().postDataJSON())
-          if (assembleCalls === 1) {
-            await route.fulfill({
-              status: 422,
-              json: {
-                error_code: 'SUMMARY_CHILDREN_NOT_SUBMITTED',
-                message: 'Не все подчинённые подразделения сдали день.',
-                details: { laggards: [laggard.division_id] },
-                request_id: null,
-                timestamp: `${businessDate}T10:00:00+05:00`,
-              },
-            })
-            return
-          }
+          assembled = true
           await route.fulfill({
             status: 201,
             json: {
@@ -1068,8 +1099,54 @@ test.describe(
               submitted_by: 'проба',
               submitted_at: `${businessDate}T11:00:00+05:00`,
               late: false,
+              sent_at: null,
+              sent_by: '',
+              incomplete_reason: '',
             },
           })
+        },
+      )
+
+      // Первое нажатие «Отправить» — отказ «сдали не все» (причина нужна),
+      // второе (после ввода причины) — успех.
+      let sendCalls = 0
+      const sendBodies: unknown[] = []
+      await page.route(
+        (url) => url.pathname === '/api/operations/daily-summaries/send/',
+        async (route) => {
+          sendCalls += 1
+          sendBodies.push(route.request().postDataJSON())
+          if (sendCalls === 1) {
+            await route.fulfill({
+              status: 400,
+              json: {
+                error_code: 'VALIDATION_ERROR',
+                message: 'Свод неполный — отправка требует явной причины.',
+                details: { laggards: [laggard.division_id] },
+                request_id: null,
+                timestamp: `${businessDate}T10:00:00+05:00`,
+              },
+            })
+            return
+          }
+          await route.fulfill({
+            status: 200,
+            json: {
+              id: 97001,
+              division_id: String(expectedDivisionId),
+              business_date: businessDate,
+              version: 1,
+              is_current: true,
+              event: 'CHANGED',
+              submitted_by: 'проба',
+              submitted_at: `${businessDate}T11:00:00+05:00`,
+              late: false,
+              sent_at: `${businessDate}T12:00:00+05:00`,
+              sent_by: 'проба',
+              incomplete_reason: 'не все сдали, штаб предупреждён',
+            },
+          })
+          sentReason = 'не все сдали, штаб предупреждён'
         },
       )
 
@@ -1078,25 +1155,42 @@ test.describe(
       const board = page.getByRole('region', { name: 'Ежедневный расход' })
       await expect(board).toBeVisible({ timeout: 25_000 })
       const summary = board.getByRole('region', { name: 'Суточный свод' })
-      // Адресат назван вслух: «отправить» без адресата не отвечает на вопрос,
-      // что случится по нажатию.
-      await expect(summary).toContainText('оперативному дежурному')
 
-      const assembleButton = summary.getByRole('button', { name: 'Собрать и отправить свод' })
+      // ── «Собрать свод» проходит сразу (Plane №990 сняла жёсткий гейт) ────
+      const assembleButton = summary.getByRole('button', { name: 'Собрать свод' })
       await expect(assembleButton).toBeVisible()
-
-      // ── Отказ: отставшие названы ИМЕНАМИ, а не числами ───────────────────
       await assembleButton.click()
-      await expect(summary.getByRole('alert')).toContainText(`не сдали ${laggardLabel}`)
+      await expect(summary.getByText('Свод собран — новая версия в списке ниже')).toBeVisible()
       expect(
         assembleBodies[0],
         'тело сборки не совпало с узлом свода и деловым днём',
-      ).toEqual({ division_id: expectedDivisionId, business_date: businessDate })
+      ).toEqual({ division_id: expectedDivisionId, business_date: businessDate, allow_incomplete: true })
+      // Адресат назван вслух ТЕПЕРЬ, когда отправка стала действием, а не
+      // раньше: «отправить» без адресата не отвечает на вопрос, что
+      // случится по нажатию.
+      await expect(summary).toContainText('оперативному дежурному')
 
-      // ── Успех ─────────────────────────────────────────────────────────────
-      await assembleButton.click()
-      await expect(summary.getByRole('status')).toContainText('Свод собран и отправлен')
-      expect(assembleCalls).toBe(2)
+      // ── «Отправить дежурному»: отказ, отставшие названы ИМЕНАМИ ──────────
+      const sendButton = summary.getByRole('button', { name: 'Отправить дежурному' })
+      await expect(sendButton).toBeVisible()
+      await sendButton.click()
+      await expect(summary.getByRole('alert')).toContainText(`не сдали ${laggardLabel}`)
+      expect(sendBodies[0]).toEqual({
+        division_id: expectedDivisionId,
+        business_date: businessDate,
+        reason: '',
+      })
+
+      // ── Причина введена — подтверждение проходит ─────────────────────────
+      await summary
+        .getByPlaceholder('Причина неполной отправки — обязательна')
+        .fill('не все сдали, штаб предупреждён')
+      await summary.getByRole('button', { name: 'Подтвердить отправку' }).click()
+      await expect(summary.getByText('Свод отправлен дежурному')).toBeVisible()
+      await expect(
+        summary.getByText('неполный свод: «не все сдали, штаб предупреждён»'),
+      ).toBeVisible()
+      expect(sendCalls).toBe(2)
     })
 
     test('без права «Суточный отчёт: генерация» кнопки нет, а причина названа словами (Plane №297)', async ({
@@ -1165,11 +1259,12 @@ test.describe(
       const summary = board.getByRole('region', { name: 'Суточный свод' })
       await expect(summary).toBeVisible()
 
+      await expect(summary.getByRole('button', { name: 'Собрать свод' })).toHaveCount(0)
       await expect(
-        summary.getByRole('button', { name: 'Собрать и отправить свод' }),
+        summary.getByRole('button', { name: 'Отправить дежурному' }),
       ).toHaveCount(0)
       await expect(summary).toContainText(
-        'Сборка свода закрыта правом «Суточный отчёт: генерация»',
+        'Сборка и отправка свода закрыты правом «Суточный отчёт: генерация»',
       )
       expect(assembleCalls, 'запрос сборки ушёл без права').toEqual([])
     })

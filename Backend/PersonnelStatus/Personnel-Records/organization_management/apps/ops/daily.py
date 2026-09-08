@@ -5,9 +5,11 @@
 дубликат»): статусы, сдача дня и поправка уже живут в bulk_status_service /
 day_submission_service, и вторая реализация тех же правил разошлась бы с
 первой. Здесь только адресация и ФОРМА контракта клиента (entities/
-daily-grid): подразделения и сотрудники — строковыми id, сдача — 9-полевой
-проекцией со строковым division_id и человекочитаемой подписью сдавшего,
-список сдач — ВСЕ версии дня (история решает экран по is_current).
+daily-grid): подразделения и сотрудники — строковыми id, сдача — проекцией
+со строковым division_id и человекочитаемой подписью сдавшего (поля — те же,
+что у `OpsDailySubmissionSerializer` раздела `/api/operations/`: это ОДНА
+модель, и два представления одной строки обязаны совпадать полями), список
+сдач — ВСЕ версии дня (история решает экран по is_current).
 
 Тот же приём, что /api/ops/audit-logs (поверх живого журнала) и
 /api/ops/personnel (поверх живых Employee).
@@ -195,8 +197,16 @@ def _submitted_by_label(actor_id):
 
 
 def serialize_submission(row):
-    """9-полевая проекция сдачи в форме контракта клиента: division_id —
-    СТРОКА (тип клиента), подпись сдавшего — читаемая."""
+    """Проекция сдачи в форме контракта клиента: division_id — СТРОКА (тип
+    клиента), подпись сдавшего — читаемая.
+
+    `sent_at`/`sent_by`/`incomplete_reason` (Plane №990) — тот же контракт,
+    что у `OpsDailySubmissionSerializer` раздела `/api/operations/`: это ОДНА
+    модель (`OpsDailySubmission`), и два серверных представления одной
+    сущности обязаны нести одни и те же поля — иначе фронт получил бы разный
+    ответ в зависимости от того, каким путём читает ту же строку (борд читает
+    ИМЕННО этим адаптером, см. `DAILY_SUBMISSIONS_PATH` на клиенте).
+    """
     return {
         "id": row.pk,
         "division_id": str(row.division_id),
@@ -207,6 +217,9 @@ def serialize_submission(row):
         "submitted_by": _submitted_by_label(row.submitted_by),
         "submitted_at": row.submitted_at.isoformat(),
         "late": row.late,
+        "sent_at": row.sent_at.isoformat() if row.sent_at is not None else None,
+        "sent_by": row.sent_by,
+        "incomplete_reason": row.incomplete_reason,
     }
 
 

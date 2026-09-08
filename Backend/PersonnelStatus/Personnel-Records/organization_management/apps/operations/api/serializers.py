@@ -684,6 +684,11 @@ class OpsDailySubmissionSerializer(serializers.ModelSerializer):
         fields = [
             "id", "division_id", "business_date", "version", "is_current",
             "event", "submitted_by", "submitted_at", "late",
+            # Отправка дежурному (Plane №990) — своё событие, не привязанное
+            # к типу строки: у обычной сдачи оба поля просто пустые (никто её
+            # никому не отправляет), поэтому проекция ОДНА на оба случая, как
+            # и у `late`.
+            "sent_at", "sent_by", "incomplete_reason",
         ]
         read_only_fields = fields
 
@@ -881,6 +886,24 @@ class SummaryAssembleSerializer(serializers.Serializer):
 
     division_id = serializers.IntegerField()
     business_date = serializers.DateField()
+    # Plane №990: умолчание — прежнее строгое поведение (существующие
+    # читатели «Ежедневного расхода» не просили ослаблять гард). Вкладка
+    # «Свод департамента» передаёт true явно — намерение клиента, а не тихая
+    # смена контракта у всех.
+    allow_incomplete = serializers.BooleanField(default=False)
+
+
+class SummarySendSerializer(serializers.Serializer):
+    """Тело отправки дежурному: подразделение, день и причина неполноты.
+
+    `reason` необязателен ФОРМОЙ — сервис сам решает, обязателен ли он ПО
+    СУТИ (полная сводка причины не просит вовсе); дублировать это правило
+    здесь значило бы держать одно решение в двух местах.
+    """
+
+    division_id = serializers.IntegerField()
+    business_date = serializers.DateField()
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class SummaryRebuildSerializer(serializers.Serializer):

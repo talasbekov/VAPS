@@ -66,6 +66,7 @@ from organization_management.apps.operations.api.serializers import (
     SubmittedExpenseFilterSerializer,
     SummaryAssembleSerializer,
     SummaryRebuildSerializer,
+    SummarySendSerializer,
     OpsTomorrowBlockOverrideSerializer,
     TemporaryDutySerializer,
     TrafficLightDivisionFilterSerializer,
@@ -170,7 +171,9 @@ from organization_management.apps.operations.expense_release import (
 from organization_management.apps.operations.summary_service import (
     assemble_summary,
     rebuild_summary,
+    send_summary,
     summary_freshness,
+    summary_laggards,
 )
 from organization_management.apps.operations.tomorrow_gate import (
     assert_tomorrow_not_blocked,
@@ -3435,6 +3438,10 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     permission_map = {
         "create": _GENERATE_REPORT_PERMISSION,
+        # Кто вправе собрать, тот вправе и отправить собранное (Plane №990)
+        # — отправка не переписывает снимок и не вытесняет версию, в отличие
+        # от пересборки, поэтому право то же, что у сборки, а не у поправки.
+        "send": _GENERATE_REPORT_PERMISSION,
         "rebuild": _AMEND_DAY_PERMISSION,
         "freshness": _READ_STATUS_PERMISSION,
         # Выгрузка — то же чтение, что и свежесть: файлом отдаётся ровно то,
@@ -3469,11 +3476,42 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
             division_id=division_id,
             business_date=form.validated_data["business_date"],
             actor=resolve_actor_id(request),
+            allow_incomplete=form.validated_data["allow_incomplete"],
         )
         return Response(
             OpsDailySubmissionSerializer(summary).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @extend_schema(
+        request=SummarySendSerializer,
+        responses={200: OpsDailySubmissionSerializer},
+        description=(
+            "Отправить действующую сводку оперативному дежурному под правом "
+            "daily_report.generate — тем же, что и сборка: кто вправе "
+            "собрать, тот вправе и отправить собранное (Plane №990). "
+            "Неполная сводка требует `reason`, иначе 400 (детали — "
+            "`laggards`). Актор — из аутентификации. 400 — форма тела либо "
+            "неполная сводка без причины; 403 — нет права либо "
+            "подразделение вне области; 404 — сводки нет (сначала собрать); "
+            "409 — эта версия уже отправлена."
+        ),
+    )
+    @action(detail=False, methods=["post"])
+    def send(self, request, *args, **kwargs):
+        form = SummarySendSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        _assert_division_in_scope(
+            request, division_id, _GENERATE_REPORT_PERMISSION, field="division_id"
+        )
+        summary = send_summary(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            actor=resolve_actor_id(request),
+            reason=form.validated_data["reason"],
+        )
+        return Response(OpsDailySubmissionSerializer(summary).data)
 
     @extend_schema(
         parameters=[

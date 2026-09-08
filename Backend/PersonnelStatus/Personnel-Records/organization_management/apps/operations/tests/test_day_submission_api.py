@@ -163,6 +163,7 @@ def test_response_carries_the_row_without_snapshot(types, division):
     assert set(response.data) == {
         "id", "division_id", "business_date", "version", "is_current",
         "event", "submitted_by", "submitted_at", "late",
+        "sent_at", "sent_by", "incomplete_reason",
     }
     assert response.data["division_id"] == division.id
     assert response.data["business_date"] == TODAY.isoformat()

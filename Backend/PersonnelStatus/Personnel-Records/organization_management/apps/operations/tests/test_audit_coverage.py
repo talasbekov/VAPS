@@ -58,6 +58,7 @@ from organization_management.apps.operations.personal_export_service import (
 from organization_management.apps.operations.summary_service import (
     assemble_summary,
     rebuild_summary,
+    send_summary,
 )
 from organization_management.apps.operations.status_service import (
     cancel_status,
@@ -693,6 +694,9 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             reason="ребёнок исправил наряд",
             sanction="замечание",
         )
+        # Отправка дежурному — своё событие, отдельное от сборки/пересборки
+        # (Plane №990): «собрал» и «отправил» отвечают на разные вопросы.
+        send_summary(division_id=parent.id, business_date=TODAY, actor=ACTOR)
         # Выдача личной копии — событие ЧТЕНИЯ в журнале мутаций, и это
         # осознанное исключение: копию предъявляют в споре.
         export_submission(
@@ -1314,6 +1318,29 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         gvo_service.set_person_photo(
             person["id"],
             SimpleUploadedFile("c.png", png.getvalue(), content_type="image/png"),
+            actor=ACTOR,
+        )
+
+    # Снимок объекта-каталога (Plane SJ-1049) — тот же приём, что снимок ОЛ
+    # выше: своё событие журнала, отличное от PASSPORT_VERSION_PUBLISHED.
+    from organization_management.apps.ops import passport as passport_service
+
+    coverage_object = OpsSecurityObject.objects.create(
+        name="Объект покрытия журнала",
+        code="OBJ-COVERAGE-SJ1049",
+        object_type="Государственное учреждение",
+        region="г. Астана",
+        address="ул. Тестовая, 1",
+        object_state=OpsSecurityObject.ObjectState.ACTIVE,
+        passport_state=OpsSecurityObject.PassportState.RED,
+        ownership=OpsSecurityObject.Ownership.GUARDED,
+    )
+    object_png = _io.BytesIO()
+    Image.new("RGB", (2, 2), (4, 5, 6)).save(object_png, format="PNG")
+    with override_settings(MEDIA_ROOT=str(tmp_path / "media")):
+        passport_service.set_object_photo(
+            coverage_object.pk,
+            SimpleUploadedFile("o.png", object_png.getvalue(), content_type="image/png"),
             actor=ACTOR,
         )
 
