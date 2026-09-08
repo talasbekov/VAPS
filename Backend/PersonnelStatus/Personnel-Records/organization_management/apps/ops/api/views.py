@@ -262,7 +262,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # посещения отсюда, а создатель по `[БЛН-10]` носит `event.create`
         # без `event.manage` — и поле отвечало ему «Реестр объектов
         # недоступен».
-        "bindable_objects": (_MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+        # `gvo.manage` — третий код (Plane №1010, доводка №964): штаб читает
+        # реестр объектов для окна «Добавить объект» на визите иностранного
+        # ОЛ тем же правом, каким правит саму сводку.
+        "bindable_objects": (_MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION, "gvo.manage"),
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_detail": _MANAGE_EVENT_PERMISSION,
         "visit_object_chief": _MANAGE_EVENT_PERMISSION,
@@ -499,6 +502,26 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if employee is None or not employee.is_active:
             return False
         return event.chief_employee_id == employee.pk
+
+    def _bindable_objects_override(self, request):
+        """Старший ГВО без кода права читает реестр объектов (Plane №1010).
+
+        `bindable_objects` — `detail=False`: адрес не называет ОМ, и обычный
+        приём `_gvo_editor_override` (событие по `pk` из адреса) здесь не
+        работает. Роль проверяется по ЛЮБОМУ мероприятию, где актор — старший
+        ОТКРЫТОГО визита иностранного ОЛ: список объектов не принадлежит
+        одному ОМ, а кнопка «Добавить объект» открыта, пока хоть один такой
+        визит есть. Закрытый визит роли не даёт — как и остальные обходы по
+        данным этого вьюсета.
+        """
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
+        return (
+            OpsSecurityEvent.objects.filter(kind="FOREIGN", chief_employee_id=employee.pk)
+            .exclude(stage=OpsSecurityEvent.Stage.CLOSED)
+            .exists()
+        )
 
     def _creator_override(self, request):
         """Создатель бюллетеня правит его состав без `event.manage`
@@ -1750,6 +1773,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if self.action in self._CREATOR_ACTIONS and self._creator_override(request):
             return True
         if self.action in self._GVO_EDITOR_ACTIONS and self._gvo_editor_override(request):
+            return True
+        if self.action == "bindable_objects" and self._bindable_objects_override(request):
             return True
         if self.action in ("my_assignments", "acknowledge", "decline"):
             return self._my_assignments_override(request)

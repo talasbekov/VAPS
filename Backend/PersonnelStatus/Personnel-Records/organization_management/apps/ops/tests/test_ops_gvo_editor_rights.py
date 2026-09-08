@@ -165,3 +165,40 @@ def test_plain_viewer_is_still_denied():
         format="json",
     )
     assert r.status_code == 403, r.content
+
+
+def test_gvo_chief_without_permission_codes_can_still_list_bindable_objects():
+    """Plane №1010: старший ГВО без `event.manage`/`event.create` открывает
+    окно «Добавить объект», но `bindable_objects` (detail=False, без pk в
+    адресе) до правки гейтился ТОЛЬКО картой прав — роли в данных там не
+    было вовсе, в отличие от `_GVO_EDITOR_ACTIONS` (у которых pk есть).
+    Старший, назначенный по данным без роли, получал 403 и пустой список:
+    добавить нечего, хотя кнопка видна.
+    """
+    chief = _employee()
+    mine = make_event("ОМ-Т-1010")
+    mine.chief_employee_id = chief.pk
+    mine.save(update_fields=["chief_employee_id"])
+
+    api, user = client_for("gvo-chief-bindable", "VIEWER", ["event.view"])
+    chief.user = user
+    chief.save(update_fields=["user"])
+
+    r = api.get(f"{EVENTS_URL}bindable-objects/")
+    assert r.status_code == 200, r.content
+
+
+def test_gvo_chief_of_a_closed_event_gets_no_override():
+    """Закрытое мероприятие не даёт роли: обход — для ОТКРЫТОГО визита."""
+    chief = _employee()
+    closed = make_event("ОМ-Т-1011")
+    closed.chief_employee_id = chief.pk
+    closed.stage = closed.Stage.CLOSED
+    closed.save(update_fields=["chief_employee_id", "stage"])
+
+    api, user = client_for("gvo-chief-closed", "VIEWER", ["event.view"])
+    chief.user = user
+    chief.save(update_fields=["user"])
+
+    r = api.get(f"{EVENTS_URL}bindable-objects/")
+    assert r.status_code == 403, r.content
