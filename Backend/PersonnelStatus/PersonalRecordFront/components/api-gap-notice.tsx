@@ -57,7 +57,7 @@ export function ApiGapNotice({ gap }: { gap: ApiGap }) {
           {gap.note && <p className="text-sm opacity-90">{gap.note}</p>}
 
           <p className="text-xs opacity-75">
-            Сводка недостающих маршрутов — docs/api-gaps.md.
+            Режим доменов задаётся переменной NEXT_PUBLIC_OPS_MOCK_DOMAINS на стенде.
           </p>
         </div>
       </div>

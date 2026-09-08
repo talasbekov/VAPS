@@ -151,7 +151,7 @@ export type GvoSection =
   | `group:${number}`
   | "group:new";
 
-// ── Контракты API (реального бэка нет — см. lib/api-gaps.ts) ─────────────
+// ── Контракты API (бэк живой с 20.08.2026; режим мока — lib/ops-env.ts) ─────────────
 
 export const GVO_SUMMARIES_PATH = "/api/ops/gvo-summaries/";
 

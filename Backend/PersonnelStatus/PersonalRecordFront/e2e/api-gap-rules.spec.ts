@@ -17,13 +17,16 @@
  * `SMOKE_LIVE` не требуется и не проверяется — намеренно (см.
  * route-map-coverage.spec.ts: скип читается как зелень).
  *
- * КРАСНАЯ НА МУТАЦИИ: верни общую запись `/security-ops` в `GAPS` — вторая
- * проба назовёт каждую страницу без своего правила; убери префикс из
- * `SECURITY_OPS_RULED_PREFIXES` — первая назовёт потерянную страницу.
+ * КРАСНАЯ НА МУТАЦИИ: убери префикс из `SECURITY_OPS_RULED_PREFIXES` —
+ * первая проба назовёт потерянную страницу; верни общую запись
+ * `/security-ops` в `GAPS` — третья проба назовёт её ключ. (Вторая проба на
+ * возврат подстилки НЕ краснеет: каждая объявленная страница отвечает из
+ * if-цепочки `findApiGap` раньше, чем дело дойдёт до `GAPS`, — это нашло
+ * ревью №825 08.09.2026, и обещание из шапки было пустым.)
  */
 import { expect, test } from "@playwright/test";
 
-import { findApiGap, hasApiGapRule } from "../lib/api-gaps";
+import { API_GAPS, findApiGap, hasApiGapRule } from "../lib/api-gaps";
 import { declaredPortalRoutes } from "./portal-routes";
 
 const securityOpsPages = () =>
@@ -34,6 +37,13 @@ test.describe("врезка «не подключено» в разделе ОМ
     // Режим по умолчанию стенда: ни один домен не переведён на мок.
     delete process.env.NEXT_PUBLIC_OPS_MOCK_DOMAINS;
     delete process.env.NEXT_PUBLIC_OPS_LIVE_DOMAINS;
+  });
+
+  test("в реестре дыр нет общей записи, накрывающей раздел ОМ", () => {
+    // Подстилка `/security-ops` (и любой её префикс-родитель) — та самая
+    // запись, что вешала «не подключено» над живой сводкой ГВО (№948).
+    const covering = Object.keys(API_GAPS).filter((key) => "/security-ops".startsWith(key));
+    expect(covering, "общая запись реестра снова накрывает /security-ops").toEqual([]);
   });
 
   test("у каждой страницы раздела есть своё правило", () => {
