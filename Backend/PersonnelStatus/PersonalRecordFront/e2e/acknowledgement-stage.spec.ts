@@ -893,6 +893,101 @@ test.describe(LIVE ? 'ознакомление: этап мероприятия 
     // всегда выключены».
     await expect(page.getByRole('button', { name: /^Напомнить: / }).first()).toBeEnabled()
   })
+
+  test('причина отставания сказана ОДИН РАЗ на список, а не под каждой строкой (ревью №825 по №528)', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. `stageBehindReason` уходит в построчный `RightGate`
+     * каждого назначения (`AssignmentRow`), а заголовочный `AccessHints`
+     * закрывается ещё в `CardHeader` — на ОМ с несколькими отстающими
+     * назначениями КАЖДАЯ строка рисовала бы СВОЮ копию одной и той же фразы
+     * «Этап ведётся по всему мероприятию: …», ровно тот анти-паттерн, который
+     * `AccessHints` заведён убирать (см. `shared/ui/right-gate.tsx`).
+     *
+     * Нужен ОМ с ≥2 назначениями в одном объекте, чтобы отличить «одна причина
+     * на список» от «одна причина на кнопку» — на единственном назначении обе
+     * версии выглядели бы одинаково.
+     *
+     * КРАСНАЯ ПРОБА: убери `AccessHints` вокруг `ack-groups` — строк причины
+     * станет по одной на каждое назначение вместо одной на весь список.
+     */
+    const token = await apiToken()
+    const rows = (await (
+      await fetch(`${API}/api/ops/security-events/?page_size=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as {
+      results: {
+        id: string
+        visitObjects: { id: string }[]
+        placementAssignments: unknown[]
+      }[]
+    }
+    const target = rows.results.find(
+      (row) => row.visitObjects.length > 0 && row.placementAssignments.length > 0
+    )
+    expect(target, 'в реестре нет ОМ с объектом посещения и назначениями').toBeTruthy()
+
+    await page.route(
+      new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+      async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        body.stage = 'APPROVAL'
+        body.visitObjects = body.visitObjects.map((visit: Record<string, unknown>, index: number) =>
+          index === 0
+            ? { ...visit, stage: 'ACKNOWLEDGEMENT' }
+            : { ...visit, stage: 'APPROVAL' },
+        )
+        // Два НЕОТВЕЧЕННЫХ назначения на ОДНОМ посту — иначе «одна причина на
+        // список» и «одна причина на кнопку» неотличимы (на единственной
+        // строке результат один и тот же). Живых данных с гарантированно
+        // двумя ожидающими на одном посте на общем стенде может не быть, а
+        // подделывать состояние стенда запрещено — подмена ответом, как и у
+        // соседней пробы этого же блока. Пост и остальные поля строки — из
+        // ДЕТАЛЬНОГО ответа (не из реестра): у него гарантированно есть
+        // `reconSectorPosts`, а форма `placementAssignments` в реестре может
+        // не совпадать с деталью один в один.
+        const existing = (body.placementAssignments as Record<string, unknown>[] | undefined) ?? []
+        const postId = (body.reconSectorPosts as { id: string }[])[0]?.id ?? existing[0]?.postId
+        expect(postId, 'у ОМ нет ни одного поста расчёта — строку назначения некуда положить').toBeTruthy()
+        const template = existing[0] ?? { employeeId: 'probe-528', postId }
+        body.placementAssignments = [
+          { ...template, id: 'probe-528-a', postId, employeeName: 'Проба А', acknowledgedAt: null, declinedAt: null, viewedAt: null },
+          { ...template, id: 'probe-528-b', postId, employeeName: 'Проба Б', acknowledgedAt: null, declinedAt: null, viewedAt: null },
+        ]
+        await route.fulfill({ response, json: body })
+      },
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=${target!.visitObjects[0].id}`)
+
+    const remindButtons = page.getByRole('button', { name: /^Напомнить: / })
+    // `.count()` не ждёт — страница ещё грузится и гидрируется; тот же
+    // локатор через `expect(...).toHaveCount()` ждёт отрисовки авторетраем.
+    await expect(remindButtons, 'меньше двух построчных кнопок — отличить частокол не на чем').toHaveCount(2, {
+      timeout: 20_000,
+    })
+    const count = await remindButtons.count()
+    for (let i = 0; i < count; i += 1) {
+      await expect(remindButtons.nth(i)).toBeDisabled()
+    }
+
+    // Собранные `aria-describedby` у ВСЕХ строк — один и тот же id.
+    const describedByIds = new Set<string>()
+    for (let i = 0; i < count; i += 1) {
+      const id = await remindButtons.nth(i).getAttribute('aria-describedby')
+      expect(id, `строка ${i}: причина не связана с кнопкой`).not.toBeNull()
+      describedByIds.add(id!)
+    }
+    expect(
+      describedByIds.size,
+      `у ${count} строк причина связана с ${describedByIds.size} разными id — частокол вернулся`,
+    ).toBe(1)
+
+  })
 })
 
 /**

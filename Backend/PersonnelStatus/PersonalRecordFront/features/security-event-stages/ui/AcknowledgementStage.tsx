@@ -427,6 +427,17 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* 🔴 ОДНА ПРИЧИНА НА ВЕСЬ СПИСОК, А НЕ ЧАСТОКОЛ ПО СТРОКАМ (ревью
+            №825 по №528, 08.09.2026). `stageBehindReason` уходит в
+            построчный `RightGate` каждого назначения (`AssignmentRow`), а
+            заголовочный `AccessHints` закрывается ещё в `CardHeader` — на
+            ОМ с несколькими отстающими назначениями каждая строка рисовала
+            бы СВОЮ копию одной и той же фразы «Этап ведётся по всему
+            мероприятию: …», ровно тот анти-паттерн, который `AccessHints`
+            заведён убирать (см. комментарий в `shared/ui/right-gate.tsx`).
+            Отдельный провайдер на весь список: причина звучит один раз, все
+            строки лишь ссылаются `aria-describedby`. */}
+        <AccessHints reasons={[stageBehindReason]}>
         {unanswered.length > 0 && (
           <div className="inline-flex gap-1 rounded-md bg-muted p-1">
             {(
@@ -549,6 +560,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
             onClose={() => setReplacing(null)}
           />
         )}
+        </AccessHints>
       </CardContent>
 
       {/* Подтверждение завершения при неподтвердивших (`[ОЗН-04]`). */}
