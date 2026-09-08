@@ -365,3 +365,39 @@ def test_a_duty_grant_with_the_right_gets_the_names_too(two_directorates, django
     # Постоянный начальник — по-прежнему получает: источники складываются.
     assert {row["employeeId"] for row in _payload_of(boss_a)["unconfirmed"]} == {str(ours.pk)}
 
+
+
+def test_dismissed_employee_is_not_reminded_about(django_user_model):
+    """🔴 Plane №1039, доводка класса №900: уволенный — не «неподтвердивший».
+
+    Класс №900 закрывал уволенных на трёх путях рассылки этого раздела через
+    `dismissed_employees`; этот файл (напоминание за час до заступления) не
+    был тронут. Мутация, которую стережёт проба: убрать фильтр уволенных из
+    `_unconfirmed` — руководитель снова получит фамилию и id уже уволенного
+    сотрудника в списке «кому напомнить».
+    """
+    department = Division.objects.create(
+        name="Департамент увольнения", code="DEP-REM-DISM",
+        division_type=Division.DivisionType.DEPARTMENT,
+    )
+    directorate = Division.objects.create(
+        name="Управление увольнения", code="DIR-REM-DISM",
+        division_type=Division.DivisionType.DIRECTORATE, parent=department,
+    )
+    live = make_employee(directorate, last_name="Живов")
+    dismissed = make_employee(directorate, last_name="Уволенный", is_active=False)
+    event = _event(
+        "ОМ-REM-DISM",
+        [
+            {"id": "a-1", "employeeId": str(live.pk), "employeeName": "Живов", "postId": "p-1"},
+            {"id": "a-2", "employeeId": str(dismissed.pk), "employeeName": "Уволенный", "postId": "p-2"},
+        ],
+    )
+    boss = _boss(django_user_model, "rem-boss-dismissed", "REM_BOSS_DISM", directorate)
+
+    report = remind_supervisors_before_start(_in_window())
+
+    assert report["unconfirmed"] == 1, "уволенный не должен считаться неподтвердившим"
+    names = {row["employeeId"] for row in _payload_of(boss)["unconfirmed"]}
+    assert names == {str(live.pk)}, "руководителю приехала фамилия уволенного сотрудника"
+    assert event.code == "ОМ-REM-DISM"

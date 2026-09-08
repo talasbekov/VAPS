@@ -15,6 +15,7 @@ from organization_management.apps.operations import notify_service
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.ops.acknowledgement_notify import (
     _division_of,
+    dismissed_employees,
     supervisors_by_division,
 )
 
@@ -58,12 +59,23 @@ def _unconfirmed(event):
     (№616 же). То есть из трёх путей раздела правило соблюдали два, а этот
     остался — тот самый разнобой, при котором поведение системы зависит от
     того, каким путём до неё дошли.
+
+    🔴 УВОЛЕННЫЙ — ТОЖЕ НЕ «НЕПОДТВЕРДИВШИЙ» (Plane №1039, доводка класса
+    №900). Класс №900 закрывал уволенных на трёх путях рассылки через
+    `dismissed_employees`; этот файл рассылки не был тронут, и руководитель
+    за час до заступления по-прежнему получал фамилию и id уже уволенного —
+    напоминать там некому, заменить решение принимать поздно.
     """
-    return [
+    rows = [
         a
         for a in (event.placement_assignments or [])
         if a.get("acknowledgedAt") is None and a.get("declinedAt") is None
     ]
+    employee_ids = [str(a.get("employeeId")) for a in rows if a.get("employeeId") is not None]
+    if not employee_ids:
+        return rows
+    dismissed = set(dismissed_employees(employee_ids))
+    return [a for a in rows if str(a.get("employeeId")) not in dismissed]
 
 
 def remind_supervisors_before_start(now=None):
