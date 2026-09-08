@@ -54,6 +54,20 @@ async function signIn(page: Page): Promise<void> {
 test.describe('сборы сил (вид штаба)', () => {
   test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
 
+  test('над вкладками нет бокса «Запрос сил по мероприятиям» (Plane №928)', async ({ page }) => {
+    /**
+     * Слово заказчика: «зачем этот бокс нужен, если он ничего не делает —
+     * убери его». №928 бокс сняла, но саму просьбу ни одна проба не стерегла
+     * (ревью №825, 08.09.2026): возврат блока случайным мержем прошёл бы
+     * зелёным. Проверяется отсутствие ЗАГОЛОВКА снятого бокса при живых
+     * вкладках — чтобы «нет» не было «страница не отрисовалась».
+     */
+    await signIn(page)
+    await page.goto(`${APP}/employees?view=forces`)
+    await expect(page.getByRole('tab', { name: 'Сборы', exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Запрос сил по мероприятиям', { exact: true })).toHaveCount(0)
+  })
+
   test('таблица собрана из ручки сборов и не подменяет вкладку заявок', async ({ page }) => {
     const token = await apiToken()
     const server = (await (
