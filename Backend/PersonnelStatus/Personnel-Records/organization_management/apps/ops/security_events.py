@@ -1746,6 +1746,12 @@ def remove_visit_object_chief(event_id, visit_object_id, *, actor):
 @transaction.atomic
 def update_bulletin(event_id, *, brief_description, initial_tasks):
     event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — текст бюллетеня не меняется.",
+        )
     field_errors = {}
     brief = str(brief_description or "").strip()
     tasks = str(initial_tasks or "").strip()

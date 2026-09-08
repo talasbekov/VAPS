@@ -131,6 +131,12 @@ def allocate_vehicle(event_id, *, vehicle_id, callsign="", purpose=""):
     from organization_management.apps.ops.security_events import lock_event
 
     event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — транспорт не меняется.",
+        )
     car = OpsVehicle.objects.filter(pk=vehicle_id).first()
     if car is None:
         raise DomainError(
@@ -168,6 +174,12 @@ def release_vehicle(event_id, allocation_id):
     from organization_management.apps.ops.security_events import lock_event
 
     event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — транспорт не меняется.",
+        )
     row = event.vehicles.filter(pk=allocation_id).first()
     if row is None:
         raise DomainError(
