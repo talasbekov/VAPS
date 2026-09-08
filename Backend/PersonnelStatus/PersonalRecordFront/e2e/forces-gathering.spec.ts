@@ -1020,6 +1020,140 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await expect(page.getByRole('dialog')).toHaveCount(0)
   })
 
+  test('«Последние оценки» не выдают агрегат участника за отдельный балл (доводка №658 по ревью №825)', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. `aggregateRating` в строке реестра — агрегат
+     * УЧАСТНИКА за период, один и тот же во ВСЕХ его строках (тот же факт,
+     * которым №658 чинила колонку «Балл» в профиле). Модалка «Краткая
+     * информация о рейтинге» печатала это число в бейдже КАЖДОЙ строки
+     * «Последние N оценки» — то есть напротив трёх РАЗНЫХ мероприятий стояло
+     * одно и то же число, читавшееся как «балл именно за это мероприятие».
+     * Перехватываются оба источника: подробности (агрегат в шапке) и реестр
+     * (список строк), иначе проба зависела бы от того, что реально накопил
+     * сеяный участник, и не гарантировала бы больше одной строки.
+     */
+    const token = await apiToken()
+    const prepared = await prepareEventOnPlacement(token)
+    const name = prepared.roster[0]
+    await assertStep(
+      await fetch(`${API}/api/ops/security-events/${prepared.id}/placement/assign/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ postId: prepared.postId, employeeId: prepared.employeeId }),
+      }),
+      'POST',
+      `/api/ops/security-events/${prepared.id}/placement/assign/`,
+    )
+
+    const SAME_AGGREGATE = 7.2
+    await page.route(
+      (url) => url.pathname === '/api/ops/operational-ratings/',
+      async (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            results: [
+              {
+                employeeId: `employee-${prepared.employeeId}`,
+                personnelId: prepared.employeeId,
+                safeLabel: name,
+                aggregateRating: SAME_AGGREGATE,
+                evaluationsCount: 2,
+                periodStartsAt: '2026-05-01',
+                periodEndsAt: '2026-08-01',
+                calculationPolicyVersion: 'OPERATIONAL-RATING-2026.07.1',
+                calculatedAt: '2026-08-01T00:00:00+00:00',
+                dataState: 'READY',
+              },
+            ],
+            unavailableViews: [],
+          }),
+        }),
+    )
+    await page.route(
+      (url) => url.pathname === '/api/ops/evaluation-registry/',
+      async (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            results: [
+              {
+                rowId: 'row-probe-658-1',
+                employeeId: `employee-${prepared.employeeId}`,
+                personnelId: prepared.employeeId,
+                employeeSafeLabel: name,
+                unitSafeLabel: '',
+                eventNumber: '1',
+                eventTitle: 'Первое мероприятие пробы',
+                objectLabel: 'Объект А',
+                postLabel: null,
+                participated: true,
+                evaluationDirection: 'MANAGER',
+                method: 'MANUAL',
+                evaluatedAt: '2026-06-01T00:00:00+00:00',
+                corrected: false,
+                aggregateRating: SAME_AGGREGATE,
+                aggregateState: 'READY',
+              },
+              {
+                rowId: 'row-probe-658-2',
+                employeeId: `employee-${prepared.employeeId}`,
+                personnelId: prepared.employeeId,
+                employeeSafeLabel: name,
+                unitSafeLabel: '',
+                eventNumber: '2',
+                eventTitle: 'Второе мероприятие пробы',
+                objectLabel: 'Объект Б',
+                postLabel: null,
+                participated: true,
+                evaluationDirection: 'PEER',
+                method: 'MANUAL',
+                evaluatedAt: '2026-07-01T00:00:00+00:00',
+                corrected: false,
+                aggregateRating: SAME_AGGREGATE,
+                aggregateState: 'READY',
+              },
+            ],
+            total: 2,
+            page: 1,
+            pageCount: 1,
+            options: { units: [], events: [] },
+            policy: null,
+            capabilities: { operationalRatings: true },
+            columns: { sensitiveDetails: true },
+            unavailableViews: [],
+          }),
+        }),
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
+    const main = page.getByRole('main')
+    await expect(main).toContainText('Задача поста', { timeout: 25_000 })
+    await main
+      .getByRole('button', { name: `Открыть краткую информацию о рейтинге: ${name}` })
+      .first()
+      .click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Последние 3 оценки')
+    // Обе строки на месте — иначе ассерт «нет числа» ниже был бы вакуумным.
+    await expect(dialog).toContainText('Первое мероприятие пробы')
+    await expect(dialog).toContainText('Второе мероприятие пробы')
+    // Метка строки — качественная («оценено»), а не голое число агрегата:
+    // сравнение через дату («…7.2026») дало бы ложное срабатывание на
+    // подстроке, поэтому смотрим именно на бейдж строки, а не на весь текст.
+    const marks = dialog.locator('[data-slot="recent-row-mark"]')
+    await expect(marks).toHaveCount(2)
+    for (const mark of await marks.all()) {
+      await expect(mark, 'строка печатает число вместо качественной метки').toHaveText('оценено')
+    }
+  })
+
   test('предупреждение этапа и объяснение автоподбора', async ({ page }) => {
     const token = await apiToken()
     const prepared = await prepareEventOnPlacement(token)
