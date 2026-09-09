@@ -66,6 +66,7 @@ DAILY_SUMMARY_REBUILT = "DAILY_SUMMARY_REBUILT"
 # сборки: заказчик прямо потребовал различать «Собран» и «Отправлен
 # дежурному», а один код на оба лишил бы ленту возможности их различить.
 DAILY_SUMMARY_SENT = "DAILY_SUMMARY_SENT"
+DAILY_SUMMARY_REMINDED = "DAILY_SUMMARY_REMINDED"
 # Выдача личной копии сданного дня. Событие ЧТЕНИЯ в журнале мутаций —
 # исключение осознанное: копию берут, чтобы предъявлять её в споре, и «кто и
 # когда её получил» это и есть предмет разбирательства.
@@ -334,6 +335,7 @@ ACTIONS = frozenset(
         DAILY_SUMMARY_ASSEMBLED,
         DAILY_SUMMARY_REBUILT,
         DAILY_SUMMARY_SENT,
+        DAILY_SUMMARY_REMINDED,
         SUBMISSION_EXPORTED,
         ATTACHMENT_UPLOADED,
         DOCUMENT_ISSUED,

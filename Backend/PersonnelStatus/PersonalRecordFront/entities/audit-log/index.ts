@@ -52,6 +52,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   DAILY_SUMMARY_ASSEMBLED: "Сводка собрана из версий подразделений",
   DAILY_SUMMARY_REBUILT: "Сводка пересобрана взамен прежней",
   DAILY_SUMMARY_SENT: "Сводка отправлена оперативному дежурному",
+  DAILY_SUMMARY_REMINDED: "Отправлено напоминание о сдаче расхода",
   SUBMISSION_EXPORTED: "Выдана личная копия сданного дня",
   ATTACHMENT_UPLOADED: "Файл документа записан в хранилище",
   DOCUMENT_ISSUED: "Документ выпущен",

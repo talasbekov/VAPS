@@ -67,6 +67,8 @@ from organization_management.apps.operations.api.serializers import (
     SummaryAssembleSerializer,
     SummaryRebuildSerializer,
     SummarySendSerializer,
+    SummaryRemindSerializer,
+    SummaryRemindResponseSerializer,
     OpsTomorrowBlockOverrideSerializer,
     TemporaryDutySerializer,
     TrafficLightDivisionFilterSerializer,
@@ -168,6 +170,7 @@ from organization_management.apps.operations.expense_release import (
     build_summary_expense_document,
     render_expense,
 )
+from organization_management.apps.operations.daily_reminders import remind_daily_summary
 from organization_management.apps.operations.summary_service import (
     assemble_summary,
     rebuild_summary,
@@ -3449,6 +3452,7 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # — отправка не переписывает снимок и не вытесняет версию, в отличие
         # от пересборки, поэтому право то же, что у сборки, а не у поправки.
         "send": _GENERATE_REPORT_PERMISSION,
+        "remind": _GENERATE_REPORT_PERMISSION,
         "rebuild": _AMEND_DAY_PERMISSION,
         "freshness": _READ_STATUS_PERMISSION,
         # Выгрузка — то же чтение, что и свежесть: файлом отдаётся ровно то,
@@ -3489,6 +3493,32 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsDailySubmissionSerializer(summary).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @extend_schema(
+        request=SummaryRemindSerializer,
+        responses={200: SummaryRemindResponseSerializer},
+        description=(
+            "Напомнить о сдаче расхода обязательным детям без действующей сдачи. "
+            "Право daily_report.generate в области подразделения. Повтор за день "
+            "не создаёт дубликаты; число получателей включает уже уведомлённых. "
+            "400 — неверные поля; 403 — нет права/области; 404 — нет подразделения; "
+            "503 — сбой доставки, вся операция отменена."
+        ),
+    )
+    @action(detail=False, methods=["post"])
+    def remind(self, request, *args, **kwargs):
+        form = SummaryRemindSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        _assert_division_in_scope(
+            request, division_id, _GENERATE_REPORT_PERMISSION, field="division_id"
+        )
+        result = remind_daily_summary(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            actor=resolve_actor_id(request),
+        )
+        return Response(result)
 
     @extend_schema(
         request=SummarySendSerializer,
