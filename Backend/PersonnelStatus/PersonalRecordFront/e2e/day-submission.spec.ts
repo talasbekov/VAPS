@@ -73,6 +73,24 @@ async function get<T>(token: string, path: string): Promise<T> {
   return (await res.json()) as T
 }
 
+/**
+ * Деловая дата борда — та же, что берёт `useBusinessDate` (Plane №988):
+ * `GET /api/operations/tomorrow-block/` без параметра, СЕРВЕРНОЕ «завтра».
+ *
+ * 🔴 ПОЧЕМУ НЕ `strength-report` БЕЗ ПАРАМЕТРА (Plane №1057). Ручка расхода
+ * без `business_date` по-прежнему отвечает за СЕГОДНЯ (`Clock.today_local()`
+ * в `StrengthReportViewSet`) — это её собственное умолчание, и №988 его не
+ * трогал, он лишь научил БОРД запрашивать явную дату. Проба звала
+ * `strength-report` тем же способом, что и до №988, и подпись сводки
+ * («Сдано N из M управлений на <дата>») сравнивала вчерашнее умолчание с
+ * сегодняшним экраном — обе пробы стабильно красные, и это маскировало
+ * реальные регрессии сдачи/409 под собой.
+ */
+async function resolveBusinessDate(token: string): Promise<string> {
+  const state = await get<{ business_date: string }>(token, '/api/operations/tomorrow-block/')
+  return state.business_date
+}
+
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -178,6 +196,13 @@ function formatIsoDateRu(iso: string): string {
   return `${day}.${month}.${year}`
 }
 
+// 🔴 ВСЕ ПОЛЯ `DaySubmission` — ОБЯЗАТЕЛЬНЫ (Plane №1057, найдено при починке
+// даты). `parseSubmission` (`entities/daily-grid/index.ts`) отбрасывает
+// строку целиком, если `sent_at`/`sent_by`/`incomplete_reason` не пришли:
+// без них конверт молча читался как «строки нет», и борд после мокнутой
+// сдачи держал прежний счёт («0 из 51») — не потому что не перечитал список
+// (перечитал, подменённый ответ доходил), а потому что распарсить его не
+// смог. Список сверен с живым ответом `/api/ops/daily/daily-submissions/`.
 function fakeSubmission(divisionId: string, businessDate: string) {
   return {
     id: 999999,
@@ -189,6 +214,9 @@ function fakeSubmission(divisionId: string, businessDate: string) {
     submitted_by: STAND_USERNAME,
     submitted_at: new Date().toISOString(),
     late: false,
+    sent_at: null,
+    sent_by: '',
+    incomplete_reason: '',
   }
 }
 
@@ -311,7 +339,11 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     page,
   }) => {
     const token = await apiToken()
-    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const businessDate = await resolveBusinessDate(token)
+    const report = await get<StrengthReport>(
+      token,
+      `/api/operations/strength-report/?business_date=${businessDate}`,
+    )
     expect(
       report.rows.length,
       'в расходе нет управлений — пробе нечем проверить сдачу',
@@ -324,8 +356,19 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
       token,
       `/api/ops/daily/daily-submissions/?business_date=${report.business_date}&limit=200`,
     )
+    // 🔴 ФИЛЬТР ПО ОБЛАСТИ РАСХОДА, А НЕ ВСЯ ВЫБОРКА (Plane №1057, найдено при
+    // починке даты). `daily-submissions` без doctor может нести сдачу
+    // подразделения, которого в `report.rows` нет вовсе (стенд, 09.09.2026:
+    // текущая сдача division_id=2 — вне 51 строки расхода, видимо архивный/
+    // корневой узел). Борд считает «Сдано» ТОЛЬКО по строкам расхода
+    // (`DailyExpenseBoard.tsx`, пересечение submissions × data.rows) — счёт
+    // без этого фильтра завышал ожидание пробы и падал на живом «0 из 51»,
+    // хотя борд вёл себя верно.
+    const reportDivisionIds = new Set(report.rows.map((row) => String(row.division_id)))
     const submittedIdsBefore = new Set(
-      existing.results.filter((row) => row.is_current).map((row) => row.division_id),
+      existing.results
+        .filter((row) => row.is_current && reportDivisionIds.has(row.division_id))
+        .map((row) => row.division_id),
     )
     const target = report.rows.find((row) => !submittedIdsBefore.has(String(row.division_id)))
     expect(target, 'все управления уже сданы на сегодня — пробе нечем проверить кнопку').toBeDefined()
@@ -421,7 +464,11 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     page,
   }) => {
     const token = await apiToken()
-    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const businessDate = await resolveBusinessDate(token)
+    const report = await get<StrengthReport>(
+      token,
+      `/api/operations/strength-report/?business_date=${businessDate}`,
+    )
 
     // Тот же гвард вакуумности, что у пробы выше: цель — управление, которое
     // СЕЙЧАС не сдано. Иначе кнопки «Сдать день» не было бы вовсе, 409 неоткуда
@@ -431,8 +478,19 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
       token,
       `/api/ops/daily/daily-submissions/?business_date=${report.business_date}&limit=200`,
     )
+    // 🔴 ФИЛЬТР ПО ОБЛАСТИ РАСХОДА, А НЕ ВСЯ ВЫБОРКА (Plane №1057, найдено при
+    // починке даты). `daily-submissions` без doctor может нести сдачу
+    // подразделения, которого в `report.rows` нет вовсе (стенд, 09.09.2026:
+    // текущая сдача division_id=2 — вне 51 строки расхода, видимо архивный/
+    // корневой узел). Борд считает «Сдано» ТОЛЬКО по строкам расхода
+    // (`DailyExpenseBoard.tsx`, пересечение submissions × data.rows) — счёт
+    // без этого фильтра завышал ожидание пробы и падал на живом «0 из 51»,
+    // хотя борд вёл себя верно.
+    const reportDivisionIds = new Set(report.rows.map((row) => String(row.division_id)))
     const submittedIdsBefore = new Set(
-      existing.results.filter((row) => row.is_current).map((row) => row.division_id),
+      existing.results
+        .filter((row) => row.is_current && reportDivisionIds.has(row.division_id))
+        .map((row) => row.division_id),
     )
     const target = report.rows.find((row) => !submittedIdsBefore.has(String(row.division_id)))
     expect(target, 'все управления уже сданы на сегодня — пробе нечем поймать 409').toBeDefined()
