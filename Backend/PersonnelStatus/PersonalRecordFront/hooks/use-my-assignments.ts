@@ -41,6 +41,9 @@ export interface MyAssignmentRow {
   weapon: string;
   roleCode: string | null;
   sectionCode: string | null;
+  /** Есть ли у сотрудника своя учётка. Начальник управления может отметить
+   * ознакомление лично только когда её нет (`[ОЗН-05]`). */
+  employeeHasAccount: boolean;
   acknowledgedAt: string | null;
   /** Способ отметки (`[ОЗН-05]`, Plane №722): `self` — человек подтвердил
    * сам, `personal` — старший отметил «лично» (довёл устно). Пусто у строк,
@@ -85,10 +88,21 @@ export function useMyAssignments(employeeId?: string) {
 
 export function useAcknowledgeMyAssignment() {
   const queryClient = useQueryClient();
-  return useOpsMutation<SecurityEvent, { eventId: string; assignmentId: string }>({
-    mutationFn: ({ eventId, assignmentId }) =>
+  return useOpsMutation<
+    SecurityEvent,
+    {
+      eventId: string;
+      assignmentId: string;
+      deliveryMethod?: string;
+      accountAbsenceBasis?: string;
+    }
+  >({
+    mutationFn: ({ eventId, assignmentId, deliveryMethod, accountAbsenceBasis }) =>
       opsApiClient.post<SecurityEvent>(
-        securityEventAcknowledgePath(eventId, assignmentId)
+        securityEventAcknowledgePath(eventId, assignmentId),
+        deliveryMethod === undefined
+          ? undefined
+          : { deliveryMethod, accountAbsenceBasis }
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: MY_ASSIGNMENTS_QUERY_KEY });

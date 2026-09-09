@@ -26,6 +26,7 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const SCREEN = '/security-ops/profile'
+const ACCESS_PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
 
 interface CoreEmployee {
   id: number
@@ -758,6 +759,86 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
     // Ни плиток, ни вкладок: пустой профиль читался бы как «службы не было».
     await expect(page.getByRole('group', { name: 'Показатели службы' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Моя статистика' })).toHaveCount(0)
+  })
+
+  test('начальник управления отмечает ознакомление подчинённого без учётки из его профиля', async ({ page }) => {
+    test.skip(ACCESS_PASSWORD === '', 'нет пароля матрицы доступа')
+    let acknowledged = false
+    let requestBody: Record<string, unknown> | null = null
+    const assignment = {
+      assignmentId: 'assignment-personal-ack-probe',
+      eventId: '9550',
+      eventCode: 'ОМ-ПРОБА-ОЗН',
+      eventTitle: 'Проверка личного доведения',
+      eventStage: 'ACKNOWLEDGEMENT',
+      businessDate: '2026-09-15',
+      businessDateEnd: '2026-09-16',
+      objectName: 'Объект проверки',
+      visitObjectId: '8459',
+      visitObjectName: 'Объект проверки',
+      postId: 'post-probe',
+      postFound: true,
+      sector: 'Периметр',
+      post: 'Пост проверки',
+      task: 'Довести назначение лично',
+      requirements: '',
+      uniform: '',
+      weapon: '',
+      roleCode: null,
+      sectionCode: null,
+      employeeHasAccount: false,
+      acknowledgedAt: acknowledged ? '2026-09-09T18:00:00+05:00' : null,
+      acknowledgedVia: acknowledged ? 'personal' : '',
+      acknowledgedBy: acknowledged ? 'Серикова Г.' : '',
+      declinedAt: null,
+      declineReason: null,
+      declinedVia: '',
+      declinedBy: '',
+    }
+    await page.route(
+      (url) =>
+        url.pathname.endsWith('/api/ops/security-events/my-assignments/') &&
+        url.searchParams.get('employee') === '20',
+      async (route) =>
+        route.fulfill({
+          json: {
+            results: [{ ...assignment, acknowledgedAt: acknowledged ? '2026-09-09T18:00:00+05:00' : null,
+              acknowledgedVia: acknowledged ? 'personal' : '',
+              acknowledgedBy: acknowledged ? 'Серикова Г.' : '' }],
+            employeeId: '20',
+            unlinkedReason: null,
+          },
+        }),
+    )
+    await page.route(
+      (url) => url.pathname.endsWith('/api/ops/security-events/9550/acknowledge/assignment-personal-ack-probe/'),
+      async (route) => {
+        requestBody = route.request().postDataJSON() as Record<string, unknown>
+        acknowledged = true
+        await route.fulfill({ json: {} })
+      },
+    )
+
+    await signIn(page, 'acc_dir_head', ACCESS_PASSWORD)
+    await page.goto(`${APP}${SCREEN}/20`)
+    await expect(page.locator('[data-slot="personal-acknowledgement"]')).toHaveText(
+      'Ознакомление подчинённого',
+    )
+    const card = page.getByRole('listitem').filter({ hasText: 'ОМ-ПРОБА-ОЗН' })
+    await card.getByRole('button', { name: 'Ознакомлен лично' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Подтвердить ознакомление лично' })
+    const submit = dialog.getByRole('button', { name: 'Подтвердить ознакомление' })
+    await expect(submit).toBeDisabled()
+    await dialog.getByLabel('Способ доведения *').fill('Устно на построении')
+    await dialog
+      .getByLabel('Основание отсутствия учётной записи *')
+      .fill('Учётная запись ещё не заведена')
+    await submit.click()
+    await expect(card.getByText(/^Ознакомлен лично:/)).toBeVisible({ timeout: 15_000 })
+    expect(requestBody).toEqual({
+      deliveryMethod: 'Устно на построении',
+      accountAbsenceBasis: 'Учётная запись ещё не заведена',
+    })
   })
 
   test('уволенному сказано ПОЧЕМУ назначений нет, а не «Действующих назначений нет»', async ({

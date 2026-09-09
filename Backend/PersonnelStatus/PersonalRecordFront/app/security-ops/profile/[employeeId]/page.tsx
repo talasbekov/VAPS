@@ -15,6 +15,7 @@ import { OpsApiError } from "@/lib/ops-errors";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { CoreEmployee } from "@/lib/api";
 import { useMyAssignments } from "@/hooks/use-my-assignments";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { ProfileBody } from "@/widgets/my-profile";
 
 export default function EmployeeProfilePage() {
@@ -46,6 +47,10 @@ function LegacyEmployeeProfileScreen() {
   // Право читать чужой профиль решает ручка назначений: отказ — закрытый
   // раздел, а не пустые вкладки.
   const access = useMyAssignments(id === "" ? undefined : id);
+  const permissions = useOpsPermissions();
+  const mayConfirmPersonally = permissions.roles.some((role) =>
+    ["DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT"].includes(role.code)
+  );
   const denied =
     access.isError &&
     access.error instanceof OpsApiError &&
@@ -61,13 +66,17 @@ function LegacyEmployeeProfileScreen() {
         <PageHeader
           eyebrow="Личный кабинет · сотрудник"
           title="Профиль сотрудника"
-          description="Только чтение: назначения, календарь и история службы сотрудника"
+          description={
+            mayConfirmPersonally
+              ? "Назначения сотрудника и личное доведение для сотрудников без учётной записи"
+              : "Только чтение: назначения, календарь и история службы сотрудника"
+          }
           actions={
             <span
               className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground"
-              data-slot="read-only"
+              data-slot={mayConfirmPersonally ? "personal-acknowledgement" : "read-only"}
             >
-              Только чтение
+              {mayConfirmPersonally ? "Ознакомление подчинённого" : "Только чтение"}
             </span>
           }
         />
