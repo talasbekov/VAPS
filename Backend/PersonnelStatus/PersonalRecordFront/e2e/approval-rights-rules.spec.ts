@@ -224,4 +224,12 @@ test.describe('права экрана согласования', () => {
       'в обёртку вернулся запасной путь на старшего МЕРОПРИЯТИЯ (Plane №575)',
     ).toBe(false)
   })
+
+  test('старший объекта выбирает первого согласующего до отправки (Plane №983)', () => {
+    const source = readFileSync(SCREEN, 'utf8')
+    expect(source).toContain('Выберите согласующего из руководства второго департамента')
+    expect(source).toContain('useApprovalCandidates')
+    expect(source).toContain('useSelectApprovalRoute')
+    expect(source).toContain('approverUserId')
+  })
 })

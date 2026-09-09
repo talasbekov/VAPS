@@ -180,6 +180,8 @@ SECURITY_EVENT_APPROVAL_SIGNED = "SECURITY_EVENT_APPROVAL_SIGNED"
 SECURITY_EVENT_PLACEMENT_RETURNED = "SECURITY_EVENT_PLACEMENT_RETURNED"
 #: Маршрут согласования в настройках заменён (`[СОГ-05]`, Plane №429).
 APPROVAL_ROUTE_REPLACED = "APPROVAL_ROUTE_REPLACED"
+#: Старший объекта выбрал первого подписанта из руководства второго департамента.
+SECURITY_EVENT_APPROVAL_ROUTE_SELECTED = "SECURITY_EVENT_APPROVAL_ROUTE_SELECTED"
 #: Визит иностранного ОЛ утверждён штабом (`[ГВО-07]`/`[ГВО-09]`, Plane №436).
 GVO_VISIT_APPROVED = "GVO_VISIT_APPROVED"
 #: Утверждение визита СНЯТО правкой его состава (Plane №685). Отдельное
@@ -351,6 +353,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_APPROVAL_SIGNED,
         SECURITY_EVENT_PLACEMENT_RETURNED,
         APPROVAL_ROUTE_REPLACED,
+        SECURITY_EVENT_APPROVAL_ROUTE_SELECTED,
         GVO_VISIT_APPROVED,
         GVO_VISIT_APPROVAL_REVOKED,
         PLACEMENT_COMPLETED_WITH_SHORTAGE,

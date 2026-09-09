@@ -77,6 +77,8 @@ CODES = {
     # Согласование по эталону («ОМ-37.3»): у каждого условия завершения свой
     # код, потому что чинятся они по-разному.
     "APPROVAL_ROUTE_EMPTY": frozenset({422}),
+    "APPROVAL_ROUTE_INCOMPLETE": frozenset({422}),
+    "APPROVAL_ROUTE_LOCKED": frozenset({422}),
     "APPROVAL_NOT_SENT": frozenset({422}),
     # Маршрут последовательный и «если в маршруте» (`[СОГ-05]`, Plane №429).
     "APPROVAL_OUT_OF_ORDER": frozenset({422}),

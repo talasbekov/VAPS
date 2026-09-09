@@ -430,6 +430,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Action без записи в карте провалился бы в автоопределение и остался
         # без права.
         "approval_route_add": _MANAGE_EVENT_PERMISSION,
+        "approval_candidates": _MANAGE_EVENT_PERMISSION,
+        "approval_route_select": _MANAGE_EVENT_PERMISSION,
         "approval_route_remove": _MANAGE_EVENT_PERMISSION,
         "approval_route_move": _MANAGE_EVENT_PERMISSION,
         # …либо СТАРШИЙ ОБЪЕКТА по данным — без права, через
@@ -2042,9 +2044,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # того, ни у другого нет общего `event.manage` — они старшие ПО ДАННЫМ, а
     # не по роли, ровно как замещающий у расстановки выше. Маршрут (добавить,
     # снять, переставить) остаётся у ведущего мероприятие: это настройка
-    # процесса, а не работа по объекту.
+    # процесса, а не работа по объекту. Исключение №983 — старший объекта
+    # выбирает только первого подписанта в уже заданном маршруте из двух.
     _OBJECT_LEAD_ACTIONS = frozenset(
-        {"approval_send", "approval_withdraw", "approval_remark_resolve"}
+        {
+            "approval_candidates", "approval_route_select", "approval_send",
+            "approval_withdraw", "approval_remark_resolve",
+        }
     )
     _OBJECT_DEPUTY_ACTIONS = frozenset({"approval_remark_resolve"})
     _RECON_OBJECT_ACTIONS = frozenset({"recon", "recon_import", "recon_complete"})
@@ -2678,10 +2684,27 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         )
 
+    @action(detail=True, methods=["get"], url_path="approval/candidates")
+    def approval_candidates(self, request, pk=None):
+        return Response(
+            {"results": event_service.approval_candidates(actor=request.user)}
+        )
+
+    @action(detail=True, methods=["post"], url_path="approval/route/select")
+    def approval_route_select(self, request, pk=None):
+        return self._event_response(
+            event_service.select_approval_route(
+                pk,
+                approver_user_id=(request.data or {}).get("approverUserId"),
+                visit_object_id=self._visit_object_of(request),
+                actor=request.user,
+            )
+        )
+
     @action(
         detail=True,
         methods=["delete"],
-        url_path=r"approval/route/(?P<approver_id>(?!decide/)[^/]+)",
+        url_path=r"approval/route/(?P<approver_id>(?!decide/|select/)[^/]+)",
     )
     def approval_route_remove(self, request, pk=None, approver_id=None):
         return self._event_response(

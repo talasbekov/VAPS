@@ -1016,17 +1016,69 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.add_approver(
         om.pk, name="К. Оразов", unit="Департамент охраны", position="Зам."
     )
+    # Выбор первого подписанта старшим объекта (Plane №983) — отдельное
+    # именное решение. Второй обязательный шаг уже принадлежит маршруту и при
+    # выборе не меняется.
+    from django.contrib.auth import get_user_model
+
+    from organization_management.apps.operations.models import Role, UserRole
+
+    route_candidate = get_user_model().objects.create_user(
+        username="audit-d2-head"
+    )
+    route_employee = employee_in(home)
+    route_employee.user = route_candidate
+    route_employee.save(update_fields=["user"])
+    Role.objects.get_or_create(
+        code="HEAD_OPS_UNIT",
+        defaults={"name": "Начальник подразделения второго департамента"},
+    )
+    UserRole.objects.create(
+        user_id=str(route_candidate.pk), role_code_id="HEAD_OPS_UNIT"
+    )
+    visit = om.visit_objects.order_by("position", "pk").first()
+    visit.approval_route = [
+        *visit.approval_route,
+        {
+            "id": "approver-2",
+            "name": "Заместитель руководителя организации",
+            "unit": "Руководство",
+            "position": "Заместитель руководителя организации",
+            "username": "",
+            "status": "NOT_SENT",
+            "decidedAt": None,
+            "comment": "",
+        },
+    ]
+    visit.save(update_fields=["approval_route", "updated_at"])
+    event_service.select_approval_route(
+        om.pk,
+        approver_user_id=str(route_candidate.pk),
+        visit_object_id=str(visit.pk),
+        actor=get_user_model().objects.create_user(username="audit-object-chief"),
+    )
     om.refresh_from_db()
     # МАРШРУТ СОГЛАСОВАНИЯ ЖИВЁТ У ОБЪЕКТА ПОСЕЩЕНИЯ (Plane №411, Ш-5 плана
     # №385): согласуют объект и его документ «Расстановка сил», а не
     # мероприятие целиком. Столбец `om.approval_route` мутации больше не
     # пишут — он остался под старых читателей и снимается в Ш-7 (№413),
     # поэтому проба спрашивает там, где теперь ответ.
-    approver_id = om.visit_objects.order_by("position", "pk").first(
-    ).approval_route[0]["id"]
+    approval_route = om.visit_objects.order_by("position", "pk").first(
+    ).approval_route
     event_service.send_for_approval(om.pk)
     event_service.decide_approver(
-        om.pk, approver_id=approver_id, decision="APPROVED", comment=""
+        om.pk,
+        approver_id=approval_route[0]["id"],
+        decision="APPROVED",
+        comment="",
+        bypass_identity=True,
+    )
+    event_service.decide_approver(
+        om.pk,
+        approver_id=approval_route[1]["id"],
+        decision="APPROVED",
+        comment="",
+        bypass_identity=True,
     )
     # `approve_placement` здесь больше не зовётся: последняя подпись выше
     # завершила этап сама (`[СОГ-09]`, Plane №399); журнал у перехода тот же.

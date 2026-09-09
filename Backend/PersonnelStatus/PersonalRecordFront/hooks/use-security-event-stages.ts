@@ -19,6 +19,8 @@ import {
   securityEventAcknowledgementNotifyPath,
   securityEventApprovalApprovePath,
   securityEventApprovalRoutePath,
+  securityEventApprovalCandidatesPath,
+  securityEventApprovalRouteSelectPath,
   securityEventApproverPath,
   securityEventApproverDecidePath,
   securityEventApproverMovePath,
@@ -618,6 +620,46 @@ export function useAddApprover(id: string, options?: StageMutationOptions) {
     id,
     (body) =>
       opsApiClient.post<SecurityEvent>(securityEventApprovalRoutePath(id), body),
+    options
+  );
+}
+
+export interface ApprovalCandidate {
+  userId: string;
+  employeeId: string;
+  name: string;
+  username: string;
+}
+
+export function useApprovalCandidates(
+  id: string,
+  visitObjectId: string | undefined,
+  enabled: boolean
+) {
+  return useQuery<{ results: ApprovalCandidate[] }, OpsApiFailure>({
+    queryKey: ["ops-approval-candidates", id, visitObjectId],
+    queryFn: () =>
+      opsApiClient.get<{ results: ApprovalCandidate[] }>(
+        withVisitObject(securityEventApprovalCandidatesPath(id), visitObjectId)
+      ),
+    enabled: enabled && visitObjectId !== undefined,
+  });
+}
+
+export function useSelectApprovalRoute(
+  id: string,
+  options?: StageMutationOptions
+) {
+  return useEventMutation<{
+    approverUserId: string;
+    visitObjectId?: string;
+  }>(
+    id,
+    (body) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventApprovalRouteSelectPath(id),
+        body
+      ),
     options
   );
 }

@@ -7016,6 +7016,115 @@ def add_approver(event_id, *, name, unit, position, visit_object_id=None):
     return event
 
 
+def approval_candidates(*, actor):
+    from django.contrib.auth import get_user_model
+
+    from organization_management.apps.operations.models import UserRole
+
+    user_ids = set(
+        UserRole.objects.filter(
+            role_code_id="HEAD_OPS_UNIT", is_active=True
+        ).values_list("user_id", flat=True)
+    )
+    user_ids.discard(str(getattr(actor, "pk", "") or ""))
+    users = get_user_model().objects.filter(
+        pk__in=user_ids, is_active=True, employee__is_active=True
+    ).select_related("employee")
+    rows = [
+        {
+            "userId": str(user.pk),
+            "employeeId": str(user.employee.pk),
+            "name": " ".join(
+                part for part in (
+                    user.employee.last_name,
+                    user.employee.first_name,
+                    user.employee.middle_name,
+                ) if part
+            ),
+            "username": user.username,
+        }
+        for user in users
+    ]
+    rows.sort(key=lambda row: (row["name"], row["username"]))
+    return rows
+
+
+@transaction.atomic
+def select_approval_route(
+    event_id, *, approver_user_id, visit_object_id=None, actor=None
+):
+    event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
+    _require_visit_stage(
+        visit,
+        "APPROVAL",
+        "Маршрут выбирается только на этапе «Согласование».",
+    )
+    route = list(visit.approval_route or [])
+    if len(route) < 2:
+        raise DomainError(
+            "APPROVAL_ROUTE_INCOMPLETE", 422,
+            message="В маршруте не настроен второй обязательный подписант.",
+        )
+    if any(row.get("status") != "NOT_SENT" for row in route):
+        raise DomainError(
+            "APPROVAL_ROUTE_LOCKED", 422,
+            message="Отправленный маршрут согласования уже нельзя менять.",
+        )
+    candidate = next(
+        (
+            row for row in approval_candidates(actor=actor)
+            if row["userId"] == str(approver_user_id or "")
+        ),
+        None,
+    )
+    if candidate is None:
+        raise _validation(
+            {"approverUserId": ["Выберите руководителя второго департамента."]}
+        )
+    second = dict(route[1])
+    if second.get("position") != "Заместитель руководителя организации":
+        raise DomainError(
+            "APPROVAL_ROUTE_INCOMPLETE", 422,
+            message="Вторым должен быть заместитель руководителя организации.",
+        )
+    second.update(
+        {
+            "id": "approver-2",
+            "status": "NOT_SENT",
+            "decidedAt": None,
+            "comment": "",
+        }
+    )
+    visit.approval_route = [
+        {
+            "id": "approver-1",
+            "name": candidate["name"],
+            "unit": "Второй департамент",
+            "position": "Руководитель второго департамента",
+            "username": candidate["username"],
+            "status": "NOT_SENT",
+            "decidedAt": None,
+            "comment": "",
+        },
+        second,
+    ]
+    visit.save(update_fields=["approval_route", "updated_at"])
+    audit_service.record(
+        actor=str(getattr(actor, "pk", "") or ""),
+        action=audit_service.SECURITY_EVENT_APPROVAL_ROUTE_SELECTED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "visitObjectId": str(visit.pk),
+            "approverUserId": candidate["userId"],
+            "approverEmployeeId": candidate["employeeId"],
+            "username": candidate["username"],
+        },
+    )
+    return event
+
+
 @transaction.atomic
 def remove_approver(event_id, approver_id, *, visit_object_id=None):
     event = lock_event(event_id)

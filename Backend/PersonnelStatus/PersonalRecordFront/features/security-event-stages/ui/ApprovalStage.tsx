@@ -43,7 +43,9 @@ import {
 } from "@/components/ui/dialog";
 import {
   useDecideApprover,
+  useApprovalCandidates,
   useResolveRemark,
+  useSelectApprovalRoute,
   useSendForApproval,
   useWithdrawApproval,
 } from "@/hooks/use-security-event-stages";
@@ -816,6 +818,16 @@ function ApprovalRoute({
 
   const route = view.route;
   const visitObjectId = view.visitObjectId;
+  const sent = route.some((approver) => approver.status !== "NOT_SENT");
+  const [approverUserId, setApproverUserId] = useState("");
+  const candidates = useApprovalCandidates(
+    event.id,
+    visitObjectId,
+    rights.send && !sent
+  );
+  const selectRoute = useSelectApprovalRoute(event.id, {
+    onEvent: () => setApproverUserId(""),
+  });
   /**
    * 🔴 ДОРОГА НАЗАД К РАССТАНОВКЕ (Plane №861). Сервер правит расстановку,
    * пока документ — черновик или возвращён (`[СОГ-04]`, №533/№536), а
@@ -845,7 +857,6 @@ function ApprovalRoute({
     );
     return `${pathname}?${next.toString()}`;
   })();
-  const sent = route.some((approver) => approver.status !== "NOT_SENT");
   /** Кто-то ЖДЁТ решения — только таких снимает отзыв (`[СОГ-07]`). */
   const awaiting = route.some((approver) => approver.status === "PENDING");
   const signed = route.some((approver) => approver.status === "APPROVED");
@@ -977,11 +988,55 @@ function ApprovalRoute({
         </div>
       </div>
 
-      {/* 🔴 ФОРМЫ ДОБАВЛЕНИЯ СОГЛАСУЮЩЕГО ЗДЕСЬ НЕТ (Plane №702). Она стояла
+      {rights.send && !sent && visitObjectId !== undefined && (
+        <div className="grid gap-2 border-b bg-muted/20 px-3 py-3 sm:grid-cols-[minmax(260px,1fr)_auto] sm:items-end">
+          <label className="space-y-1 text-xs font-medium">
+            <span>Выберите согласующего из руководства второго департамента</span>
+            <select
+              value={approverUserId}
+              onChange={(event) => setApproverUserId(event.target.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+            >
+              <option value="">Выберите руководителя</option>
+              {(candidates.data?.results ?? []).map((candidate) => (
+                <option key={candidate.userId} value={candidate.userId}>
+                  {candidate.name} · {candidate.username}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              approverUserId === "" || candidates.isPending || selectRoute.isPending
+            }
+            onClick={() =>
+              selectRoute.mutate({ approverUserId, visitObjectId })
+            }
+          >
+            Назначить первым согласующим
+          </Button>
+          {candidates.isError && (
+            <p role="alert" className="text-xs text-destructive-ink sm:col-span-2">
+              Руководство второго департамента не загрузилось.
+            </p>
+          )}
+          {selectRoute.error !== null && (
+            <p role="alert" className="text-xs text-destructive-ink sm:col-span-2">
+              {selectRoute.error.message}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* 🔴 СВОБОДНОЙ ФОРМЫ ДОБАВЛЕНИЯ СОГЛАСУЮЩЕГО ЗДЕСЬ НЕТ (Plane №702).
+          Она стояла
           под условием `adding && rights.manageRoute && false` — сорок пять
           строк разметки, недостижимой ни при каком состоянии. Маршрут с №429
-          (`[СОГ-05]`) задаёт администратор в «Администрировании», объект
-          получает его при отправке; пустое состояние ниже это и объясняет.
+          (`[СОГ-05]`) задаёт администратор в «Администрировании»; №983
+          разрешает старшему объекта заменить только первый шаг выбором из
+          каталога, не меняя второй обязательный шаг.
           Литерал `false` был заглушкой на время переезда и пережил его: код,
           который «просто выключен», читается как временно выключенный и
           зовёт вернуть кнопку, которой не должно быть. Вместе с формой сняты

@@ -1627,6 +1627,12 @@ export function securityEventPlacementCompletePath(id: string): string {
 export function securityEventApprovalRoutePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/approval/route/`;
 }
+export function securityEventApprovalCandidatesPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/candidates/`;
+}
+export function securityEventApprovalRouteSelectPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/route/select/`;
+}
 export function securityEventApproverPath(id: string, approverId: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/approval/route/${encodeURIComponent(approverId)}/`;
 }
