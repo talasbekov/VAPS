@@ -147,7 +147,7 @@ export function useCorrectEvaluation(
 }
 
 /** Реестр (§19.15): фильтры едут в запрос и входят в ключ кэша. */
-export function useEvaluationRegistry(filters: RegistryFilters) {
+export function useEvaluationRegistry(filters: RegistryFilters, options: { enabled?: boolean } = {}) {
   const search = new URLSearchParams();
   if (filters.from !== null) search.set("from", filters.from);
   if (filters.to !== null) search.set("to", filters.to);
@@ -162,6 +162,7 @@ export function useEvaluationRegistry(filters: RegistryFilters) {
   const query = search.toString();
   return useQuery<EvaluationRegistryResponse, OpsApiFailure>({
     queryKey: ["ops-ratings", "registry", query],
+    enabled: options.enabled ?? true,
     queryFn: () =>
       opsApiClient.get<EvaluationRegistryResponse>(
         query === ""

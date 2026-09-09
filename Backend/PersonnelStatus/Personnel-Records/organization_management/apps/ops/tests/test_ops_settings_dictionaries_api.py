@@ -32,6 +32,31 @@ SETTINGS = "/api/ops/settings/"
 DICTS = "/api/ops/dictionaries/"
 
 
+@pytest.mark.parametrize("permission", ["event.view", "placement.manage"])
+def test_placement_catalogs_are_readable_without_dictionary_administration(permission):
+    """№1102: рабочие роли/разделы доступны читателю ОМ, но не их админка."""
+    api, _ = client_for("placement-reader", "PLACEMENT_READER", perms=(permission,))
+    for dictionary_code in ("PLACEMENT_ROLES", "PLACEMENT_SECTIONS"):
+        entry = OpsDictionaryEntry.objects.create(
+            dictionary_code=dictionary_code, code="PROBE", label="Проба", is_active=True,
+        )
+        response = api.get(f"{DICTS}{dictionary_code}/entries/")
+        assert response.status_code == 200, response.data
+        assert response.data["results"][0]["code"] == "PROBE"
+        assert api.post(f"{DICTS}{dictionary_code}/entries/", {"code": "NEW", "label": "Новая"}, format="json").status_code == 403
+        assert api.patch(f"{DICTS}entries/{entry.pk}/", {"label": "Новая"}, format="json").status_code == 403
+        assert api.delete(f"{DICTS}entries/{entry.pk}/").status_code == 403
+    assert api.get(DICTS).status_code == 403
+    assert api.get(f"{DICTS}RETURN_REASONS/entries/").status_code == 403
+
+
+@pytest.mark.parametrize("permission", ["object.view", "status.view", "forces.allocate"])
+def test_placement_catalogs_reject_unrelated_permissions(permission):
+    api, _ = client_for("placement-stranger", "PLACEMENT_STRANGER", perms=(permission,))
+    for dictionary_code in ("PLACEMENT_ROLES", "PLACEMENT_SECTIONS"):
+        assert api.get(f"{DICTS}{dictionary_code}/entries/").status_code == 403
+
+
 @pytest.mark.parametrize("permission", [
     "event.view", "status.view", "status.manage", "placement.manage",
     "forces.allocate", "forces.command",

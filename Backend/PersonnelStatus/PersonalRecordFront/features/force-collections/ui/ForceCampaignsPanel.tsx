@@ -224,7 +224,7 @@ function ForceCampaignWorkspace({ campaign, onBack }: { campaign: NonNullable<Re
           <div className="space-y-2">{campaign.events.flatMap(item => item.demandRows.map(demand => {
             const assigned = campaign.assignments.filter(row => row.eventId === item.eventId && row.demandRowId === demand.id).length;
             const object = item.visitObjects.find(row => row.visitObjectId === demand.visitObjectId);
-            return <div key={`${item.eventId}-${demand.id}`} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong>{item.code} · {object?.objectName ?? "Объект не указан"}</strong><Badge variant="outline">{assigned} из {demand.need ?? "—"}</Badge></div><p className="text-muted-foreground mt-1">{(demand.kindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD" ? "Физический наряд" : demand.kindCode} · {demand.place || demand.specification}{demand.need !== undefined && assigned < demand.need ? ` · недобор ${demand.need - assigned}` : ""}</p></div>;
+            return <div key={`${item.eventId}-${demand.id}`} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong>{item.code} · {object?.objectName ?? "Объект не указан"}</strong><Badge variant="outline">{assigned} из {demand.need ?? "—"}</Badge></div><p className="text-muted-foreground mt-1">{(demand.kindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD" ? "Физический наряд" : "Специальная группа"} · {demand.place || demand.specification}{demand.need !== undefined && assigned < demand.need ? ` · недобор ${demand.need - assigned}` : ""}</p></div>;
           }))}</div>
           <h3 className="font-semibold">Назначения</h3>
           {!locked && (

@@ -21,6 +21,7 @@ import {
   useRatingEmployeeDetail,
 } from "@/hooks/use-ops-ratings";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const DIRECTION_LABEL: Record<string, string> = {
   SELF: "самооценка",
@@ -49,7 +50,9 @@ export function RatingBriefDialog({
   rating: number | null;
   onClose: () => void;
 }) {
-  const detail = useRatingEmployeeDetail(employeeId);
+  const { hasPermission } = useOpsPermissions();
+  const canRead = hasPermission("rating.view_aggregate");
+  const detail = useRatingEmployeeDetail(canRead ? employeeId : null);
   // Реестр спрашивается ПО СОТРУДНИКУ и только при открытой модалке: список
   // оценок службы целиком расстановке не нужен, а право на реестр есть не у
   // каждого — запрос без нужды приносил бы 403 на каждом рендере.
@@ -64,7 +67,7 @@ export function RatingBriefDialog({
     correctedOnly: false,
     search: "",
     page: 1,
-  });
+  }, { enabled: employeeId !== null && canRead });
   const summary = detail.data?.summary ?? null;
   const recent = (registry.data?.results ?? []).slice(0, RECENT_LIMIT);
 
@@ -90,7 +93,7 @@ export function RatingBriefDialog({
           </span>
         </div>
 
-        {detail.isError ? (
+        {!canRead || detail.isError ? (
           <p className="text-xs text-muted-foreground">
             Подробности рейтинга по этому сотруднику недоступны.
           </p>
@@ -122,7 +125,9 @@ export function RatingBriefDialog({
         </p>
         {recent.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            {registry.isPending
+            {!canRead
+              ? "Реестр оценок недоступен."
+              : registry.isPending
               ? "Загрузка оценок…"
               : registry.isError
                 ? "Реестр оценок недоступен."

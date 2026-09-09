@@ -4038,6 +4038,14 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     http_method_names = ["get", "post", "patch", "delete", "options"]
 
     def permission_override(self, request):
+        # №1102: рабочие справочники расстановки нужны читателю ОМ и
+        # расстановщику, но не открывают реестр справочников или запись.
+        if (
+            self.action == "entries"
+            and request.method == "GET"
+            and self.kwargs.get("code") in {"PLACEMENT_ROLES", "PLACEMENT_SECTIONS"}
+        ):
+            return bool(effective_permissions(request).intersection({"event.view", "placement.manage"}))
         return (
             self.action == "entries"
             and request.method == "GET"
