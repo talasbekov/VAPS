@@ -4897,6 +4897,7 @@ class OpsDailyDivisionsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     # сервиса: коды прав раздела перечислены здесь, и второе
                     # их определение в `daily.py` разошлось бы с этим.
                     submit_permission_code=_DAILY_SUBMIT_PERMISSION,
+                    business_date=_parse_date_param(request, "business_date"),
                 )
             }
         )

@@ -21,7 +21,7 @@ from organization_management.apps.operations.selectors import (
 from organization_management.apps.operations.services import PermissionService
 
 
-def visible_division_rows(actor_id, permission_code, submit_permission_code=None):
+def visible_division_rows(actor_id, permission_code, submit_permission_code=None, business_date=None):
     """Подразделения области актора: [{id: str, name, ancestors, can_submit,
     last_submitted_at}] по имени.
 
@@ -61,6 +61,10 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
     её имя в каждой строке — шум.
     """
     from organization_management.apps.divisions.models import Division
+    from organization_management.apps.operations.clock import Clock
+
+    if business_date is None:
+        business_date = Clock.today_local()
 
     allowed = PermissionService.visible_division_ids(actor_id, permission_code)
     if allowed is None:
@@ -90,6 +94,8 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
             "id", "name", "parent_id", "division_type", "tree_id", "lft"
         )
     }
+    without_status = _without_status_counts(names, tree, business_date)
+    recipient_names = _recipient_names(names)
 
     def ancestors_of(division_id):
         path, cursor = [], tree.get(division_id, {}).get("parent_id")
@@ -107,6 +113,9 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
         return {
             "id": str(division_id),
             "name": name,
+            "parent_id": str(node["parent_id"]) if node and node["parent_id"] is not None else None,
+            "without_status": without_status.get(division_id, 0),
+            "notify_recipient_name": recipient_names.get(division_id),
             "ancestors": ancestors_of(division_id),
             # ТИП подразделения (Plane №307). Без него «департамент» читатель
             # опознавал по КОСВЕННОМУ признаку — «предков нет», — а он не про
@@ -146,6 +155,77 @@ def visible_division_rows(actor_id, permission_code, submit_permission_code=None
         row_of(division_id, names[division_id])
         for division_id in sorted(names, key=tree_key)
     ]
+
+
+def _without_status_counts(visible_ids, tree, business_date):
+    """Count derived IN_SERVICE occupants in visible expense subtrees.
+
+    An absent explicit winner is normal service, not incomplete data. All
+    reads are batched, and descendants outside the actor's scope stay out.
+    """
+    from collections import Counter, defaultdict
+    from organization_management.apps.operations.selectors import (
+        EmployeeStatusSelector, StaffUnitSelector, StatusTypeSelector,
+    )
+    from organization_management.apps.operations.strength_report import (
+        DERIVED_IN_SERVICE, StatusCatalog, resolve_status_row,
+    )
+
+    slots, _dismissed = StaffUnitSelector.slots_with_working_occupants(visible_ids)
+    employee_ids = {slot["employee_id"] for slot in slots if slot["employee_id"]}
+    if not employee_ids:
+        return {}
+    rows_by_employee = defaultdict(list)
+    for row in EmployeeStatusSelector.overlapping_on(business_date, employee_ids):
+        rows_by_employee[row["employee_id"]].append(row)
+    catalog_rows = list(StatusTypeSelector.catalog_rows())
+    # This metric needs priorities and staff membership, not report columns.
+    # Legacy callers with an empty catalog can still list their divisions;
+    # do not invent a stored IN_SERVICE type or mutate the catalog on GET.
+    catalog = StatusCatalog(
+        priority={row["code"]: row["priority"] for row in catalog_rows},
+        column={row["code"]: row["report_column_code"] for row in catalog_rows},
+        counts_in_staff={row["code"]: row["counts_in_staff"] for row in catalog_rows},
+    )
+    counts = Counter()
+    for slot in slots:
+        employee_id = slot["employee_id"]
+        if employee_id is None:
+            continue
+        winner = resolve_status_row(rows_by_employee[employee_id], business_date, catalog)
+        code = winner["status_type_code"] if winner else DERIVED_IN_SERVICE
+        if winner is not None or not catalog.counts_in_staff.get(code, True):
+            continue
+        cursor = slot["division_id"]
+        while cursor in tree:
+            if cursor in visible_ids:
+                counts[cursor] += 1
+            cursor = tree[cursor]["parent_id"]
+    return counts
+
+
+def _recipient_names(division_ids):
+    """Display names only: recipient routing strings never escape the API."""
+    from django.contrib.auth.models import User
+    from organization_management.apps.operations.selectors import NotifyRecipientSelector
+
+    recipients = NotifyRecipientSelector.resolve_many(division_ids)
+    user_ids = {
+        int(value) for value in recipients.values()
+        if value.isascii() and value.isdigit() and len(value) <= 18
+    }
+    users = {str(user.pk): user for user in User.objects.filter(pk__in=user_ids)}
+    names = {}
+    for division_id, value in recipients.items():
+        user = users.get(str(int(value))) if value.isascii() and value.isdigit() and len(value) <= 18 else None
+        if user is not None:
+            label = user.get_full_name().strip() or user.username
+        else:
+            # Only human labels (letters and spaces/punctuation) qualify;
+            # identifiers, email addresses, URLs and tokens resolve to null.
+            label = value if value and all(char.isalpha() or char in " .-'’" for char in value) and any(char.isalpha() for char in value) else None
+        names[division_id] = label
+    return names
 
 
 def employee_rows(division_ids):
