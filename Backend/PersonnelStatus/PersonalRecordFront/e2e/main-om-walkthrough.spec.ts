@@ -137,10 +137,9 @@ test.describe(LIVE ? 'основная проходка ОМ' : 'основна�
       chiefEmployeeId: await anyChiefId(accessToken),
     })
     const base = `/api/ops/security-events/${event.id}`
-    await call(accessToken, 'PATCH', `${base}/bulletin/`, {
-      briefDescription: 'Сквозная проверка основной проходки.',
-      initialTasks: 'Обеспечить охрану объекта.',
-    })
+    // Заводить и завершать бюллетень не нужно: ОМ с объектом заводится сразу
+    // на рекогносцировке («Реестр ОМ-5»); ручка и поля текста бюллетеня
+    // сняты Plane №950.
     await call(accessToken, 'POST', `${base}/recon/import-from-passport/`)
     const recon = await call<{
       reconChecklist: Record<string, unknown>[]

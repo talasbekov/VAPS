@@ -32,7 +32,6 @@ import {
   securityEventApprovalSendPath,
   securityEventApprovalWithdrawPath,
   securityEventBulletinCompletePath,
-  securityEventBulletinPath,
   securityEventClosePath,
   securityEventStagePath,
   securityEventDetailPath,
@@ -80,7 +79,6 @@ import type {
   SecurityEvent,
   SecurityEventStage,
   SplitForceDemandRequest,
-  UpdateBulletinRequest,
   UpdateForceAllocationRequest,
   UpdateReconRequest,
   VisitClosureSummary,
@@ -979,8 +977,6 @@ function emptyEvent(
     forceNeed: 0,
     conflictsCount: 0,
     ownerName: "demo-admin",
-    briefDescription: "",
-    initialTasks: "",
     reconChecklist: newReconChecklist(id),
     reconSectorPosts: [],
     reconForceRequest: 0,
@@ -1041,8 +1037,6 @@ function buildSeed(): SecurityEvent[] {
     e1.readinessPercent = 65;
     e1.forceNeed = 24;
     e1.conflictsCount = 1;
-    e1.briefDescription = "Обеспечение безопасности визита делегации.";
-    e1.initialTasks = "Усиление постов, проверка периметра.";
     events.push(e1);
   }
 
@@ -1893,28 +1887,6 @@ export const securityEventsHandlers = [
   }),
 
   // ── Бюллетень ──────────────────────────────────────────────────────────
-  http.patch(`*${securityEventBulletinPath(":id")}`, async ({ params, request }) => {
-    const { event, response } = findEvent(params.id as string);
-    if (event === null) return response;
-    const body = (await request.json()) as UpdateBulletinRequest;
-    const fieldErrors: Record<string, string[]> = {};
-    if (body.briefDescription.trim() === "") {
-      fieldErrors.briefDescription = ["Обязательное поле."];
-    }
-    if (body.initialTasks.trim() === "") {
-      fieldErrors.initialTasks = ["Обязательное поле."];
-    }
-    if (Object.keys(fieldErrors).length > 0) return validationError(fieldErrors);
-    return HttpResponse.json(
-      saveEvent({
-        ...event,
-        briefDescription: body.briefDescription.trim(),
-        initialTasks: body.initialTasks.trim(),
-        updatedAt: nowIso(),
-      })
-    );
-  }),
-
   http.post(`*${securityEventBulletinCompletePath(":id")}`, ({ params }) => {
     const { event, response } = findEvent(params.id as string);
     if (event === null) return response;

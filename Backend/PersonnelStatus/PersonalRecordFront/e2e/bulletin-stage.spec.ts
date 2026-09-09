@@ -58,8 +58,6 @@ interface EventRow {
   ownerName: string
   businessDate: string
   businessDateEnd: string | null
-  briefDescription: string
-  initialTasks: string
 }
 
 async function apiToken(): Promise<string> {

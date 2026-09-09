@@ -874,10 +874,6 @@ export interface SecurityEvent {
    * нет. Оба источника живут рядом намеренно, пока у текста есть читатели.
    */
   vehicles: EventVehicle[];
-  /** Бюллетень: краткое описание, обязательное поле этапа BULLETIN. */
-  briefDescription: string;
-  /** Бюллетень: первичные задачи направлениям. */
-  initialTasks: string;
   reconChecklist: ReconChecklistItem[];
   reconSectorPosts: ReconSectorPost[];
   /** Запрос личного состава с рекогносцировки — ОЦЕНКА старшего наряда,
@@ -1085,11 +1081,6 @@ export interface ListBindableObjectsResponse {
 }
 
 // ── Контракты операций этапов карточки ОМ ────────────────────────────────
-
-export interface UpdateBulletinRequest extends Record<string, unknown> {
-  briefDescription: string;
-  initialTasks: string;
-}
 
 export interface UpdateReconRequest extends Record<string, unknown> {
   /** Объект, расчёт которого меняется; обязателен при нескольких объектах. */
@@ -1305,9 +1296,6 @@ export function securityEventPlacementSeniorPath(
   return `${SECURITY_EVENTS_PATH}${id}/placement/${encodeURIComponent(assignmentId)}/senior/`;
 }
 
-export function securityEventBulletinPath(id: string): string {
-  return `${SECURITY_EVENTS_PATH}${id}/bulletin/`;
-}
 export function securityEventBulletinCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/bulletin/complete/`;
 }

@@ -82,17 +82,9 @@ async function seedOverdueRequest(token: string): Promise<Fixture> {
   const base = `/api/ops/security-events/${created.payload.id}`
 
   // Потребность считается с рекогносцировки: без числа делить нечего и
-  // раскладка отбивается.
-  await call('PATCH', `${base}/bulletin/`, {
-    briefDescription: 'Проба срока.',
-    initialTasks: '—',
-  })
-  // 🔴 ЗАВЕРШАТЬ БЮЛЛЕТЕНЬ НЕ НУЖНО И НЕЛЬЗЯ (Plane №812, найдено проверкой
-  // шагов). ОМ с объектом заводится сразу на рекогносцировке («Реестр ОМ-5»),
-  // и `bulletin/complete/` отвечал `INVALID_STAGE_TRANSITION` — «бюллетень
-  // можно завершить только на этапе „Бюллетень“». Шаг был мёртв с самого
-  // начала: ответ не смотрели, и отказ молчал. Тот же разбор уже стоял в
-  // `recon-stage.spec.ts` — здесь его просто никто не повторил.
+  // раскладка отбивается. Заводить и завершать бюллетень не нужно: ОМ с
+  // объектом заводится сразу на рекогносцировке («Реестр ОМ-5»); ручка и
+  // поля текста бюллетеня сняты Plane №950.
   await call('POST', `${base}/recon/import-from-passport/`)
   const afterImport = await call('GET', `${base}/`)
   await call('PATCH', `${base}/recon/`, {

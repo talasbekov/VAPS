@@ -929,13 +929,9 @@ async function prepareEvent(token: string): Promise<string> {
     businessDate: uniqueBusinessDate(),
   })
   const base = `/api/ops/security-events/${created.id}`
-  await call('PATCH', `${base}/bulletin/`, {
-    briefDescription: 'Проба рекогносцировки.',
-    initialTasks: '—',
-  })
-  // Завершать бюллетень больше НЕ нужно: ОМ с объектом заводится сразу на
-  // рекогносцировке (Plane «Реестр ОМ-5»), и `bulletin/complete/` ответил бы
-  // отказом «не на этом этапе».
+  // Заводить и завершать бюллетень не нужно: ОМ с объектом заводится сразу
+  // на рекогносцировке (Plane «Реестр ОМ-5»); ручка и поля текста бюллетеня
+  // сняты Plane №950.
   await call('POST', `${base}/recon/import-from-passport/`)
   // Возвращается id СВОЕЙ фикстуры (Plane №853). Пока подготовка отдавала
   // `void`, найти собственное мероприятие было НЕЧЕМ — и вызывающим не
