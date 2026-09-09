@@ -39,12 +39,9 @@ def apply_planned_statuses_task():
             'statuses': [status.id for status in applied_statuses]
         }
 
-    except Exception as e:
-        logger.error(f"Ошибка при применении запланированных статусов: {str(e)}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+    except Exception:
+        logger.exception("Ошибка при применении запланированных статусов")
+        raise
 
 
 @shared_task(name='statuses.complete_expired_statuses')
@@ -74,12 +71,9 @@ def complete_expired_statuses_task():
             'statuses': [status.id for status in completed_statuses]
         }
 
-    except Exception as e:
-        logger.error(f"Ошибка при завершении истекших статусов: {str(e)}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+    except Exception:
+        logger.exception("Ошибка при завершении истекших статусов")
+        raise
 
 
 @shared_task(name='statuses.send_upcoming_status_notifications')
@@ -107,18 +101,13 @@ def send_upcoming_status_notifications_task(days_before: int = 7):
         notifications_sent = 0
 
         for status in upcoming_statuses:
-            try:
-                send_upcoming_status_notification.delay(status.id, days_before)
+            send_upcoming_status_notification.delay(status.id, days_before)
 
-                # Отмечаем, что уведомление отправлено
-                status.is_notified = True
-                status.save(update_fields=['is_notified'])
+            # Отмечаем, что уведомление отправлено
+            status.is_notified = True
+            status.save(update_fields=['is_notified'])
 
-                notifications_sent += 1
-            except Exception as e:
-                logger.error(
-                    f"Ошибка при отправке уведомления для статуса {status.id}: {str(e)}"
-                )
+            notifications_sent += 1
 
         logger.info(
             f"Отправлено уведомлений о предстоящих статусах: {notifications_sent}"
@@ -130,12 +119,9 @@ def send_upcoming_status_notifications_task(days_before: int = 7):
             'days_before': days_before
         }
 
-    except Exception as e:
-        logger.error(f"Ошибка при отправке уведомлений о предстоящих статусах: {str(e)}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+    except Exception:
+        logger.exception("Ошибка при отправке уведомлений о предстоящих статусах")
+        raise
 
 
 @shared_task(name='statuses.send_upcoming_status_notification')
@@ -373,13 +359,8 @@ def send_ending_status_notifications_task(days_before: int = 3):
         notifications_sent = 0
 
         for status in ending_statuses:
-            try:
-                send_ending_status_notification.delay(status.id, days_before)
-                notifications_sent += 1
-            except Exception as e:
-                logger.error(
-                    f"Ошибка при отправке уведомления о завершении статуса {status.id}: {str(e)}"
-                )
+            send_ending_status_notification.delay(status.id, days_before)
+            notifications_sent += 1
 
         logger.info(
             f"Отправлено уведомлений о завершающихся статусах: {notifications_sent}"
@@ -391,12 +372,9 @@ def send_ending_status_notifications_task(days_before: int = 3):
             'days_before': days_before
         }
 
-    except Exception as e:
-        logger.error(f"Ошибка при отправке уведомлений о завершающихся статусах: {str(e)}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+    except Exception:
+        logger.exception("Ошибка при отправке уведомлений о завершающихся статусах")
+        raise
 
 
 @shared_task(name='statuses.send_ending_status_notification')
