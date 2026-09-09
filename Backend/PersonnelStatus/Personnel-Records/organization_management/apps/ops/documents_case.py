@@ -55,7 +55,7 @@ def _fmt_dt(value):
 
 
 def acknowledgement_sheet_rows(event, visit_object=None):
-    """`[ОЗН-07]`: ФИО · пост · дата-время · способ (в системе / лично)."""
+    """`[ОЗН-07]`: строка подтверждения и основание ручного ознакомления."""
     from organization_management.apps.ops import security_events
 
     posts = (
@@ -70,11 +70,14 @@ def acknowledgement_sheet_rows(event, visit_object=None):
             continue
         at = a.get("acknowledgedAt")
         manual = a.get("acknowledgedVia") == "personal" or bool(a.get("acknowledgedBy"))
+        method = a.get("acknowledgementMethod") or ("лично" if manual else "в системе")
         rows.append([
             a.get("employeeName") or "",
             names.get(str(a.get("postId")), ""),
             _fmt_dt(at) if at else "не подтвердил",
-            ("лично" if manual else "в системе") if at else "—",
+            method if at else "—",
+            (a.get("acknowledgedBy") or "—") if manual and at else "—",
+            (a.get("acknowledgementBasis") or "—") if manual and at else "—",
         ])
     return rows
 
@@ -289,7 +292,7 @@ def render_case(event_code, *, visit_object_id=None, fmt="pdf", permissions=None
         else:
             _versions(document, event, visit)
         document.add_heading("2. Лист ознакомления", level=2)
-        _table(document, ["ФИО", "Пост", "Дата-время", "Способ"], acknowledgement_sheet_rows(event, visit), empty="Назначений не было.")
+        _table(document, ["ФИО", "Пост", "Дата-время", "Способ", "Подтвердил", "Основание"], acknowledgement_sheet_rows(event, visit), empty="Назначений не было.")
         document.add_heading("3. Замечания согласования", level=2)
         if visit is None:
             document.add_paragraph("Замечаний не было.")
@@ -326,7 +329,7 @@ def append_acknowledgement_sheet(document, event, visit_object):
     # Не `add_heading`: у бланка заказчика нет стилей Heading, и python-docx
     # падает на «no style with name».
     document.add_paragraph().add_run("Приложение. Лист ознакомления").bold = True
-    _table(document, ["ФИО", "Пост", "Дата-время", "Способ"], acknowledgement_sheet_rows(event, visit_object), empty="Назначений не было.")
+    _table(document, ["ФИО", "Пост", "Дата-время", "Способ", "Подтвердил", "Основание"], acknowledgement_sheet_rows(event, visit_object), empty="Назначений не было.")
 
 
 def acknowledgement_completed(event, visit_object=None):

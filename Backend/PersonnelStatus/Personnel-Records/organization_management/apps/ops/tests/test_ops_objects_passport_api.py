@@ -494,3 +494,94 @@ def test_db_rejects_zero_version_number():
             published_by="t",
             sectors_snapshot=[],
         )
+
+
+# ── Снимок объекта-каталога (Plane SJ-1049) ─────────────────────────────────
+
+
+def _png(name="object.png"):
+    import io
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), (60, 120, 180)).save(buffer, format="PNG")
+    return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+
+def test_uploading_a_photo_sets_photo_url_on_the_catalog_row():
+    """Снимок — свойство КАТАЛОГА, а не визита: одно здание снимают один раз,
+
+    а не заново на каждое ОМ (заказчик подтвердил через SJ-1049: photo —
+    поле OpsSecurityObject). Проверяет тот же приём, что уже работает у
+    охраняемых лиц (`test_ops_gvo_catalog_refs.py::test_uploading_a_photo_sets_photo_url`).
+    """
+    make_policy()
+    api, _ = client_for(
+        "obj-photo-manager", "OBJ_MANAGER", perms=("object.view", "object.manage")
+    )
+    obj = make_object("A-1", "Стенд")
+
+    r = api.post(f"{URL}{obj.pk}/photo/", {"photo": _png()}, format="multipart")
+    assert r.status_code == 200, r.content
+    url = r.json()["photoUrl"]
+    assert url is not None and url.startswith("/media/security-objects/photos/")
+    obj.refresh_from_db()
+    assert obj.photo
+    listed = {row["id"]: row for row in api.get(URL).json()["results"]}
+    assert listed[str(obj.pk)]["photoUrl"] == url
+
+
+def test_photo_upload_needs_manage_right_and_checks_bytes():
+    api_reader, _ = client_for("obj-photo-reader", "OBJ_VIEWER", perms=("object.view",))
+    api_manager, _ = client_for(
+        "obj-photo-manager-2", "OBJ_MANAGER", perms=("object.view", "object.manage")
+    )
+    obj = make_object("A-1", "Стенд")
+
+    # Право на чтение объекта снимок не открывает — держатель паспорта и есть
+    # владелец объекта.
+    assert (
+        api_reader.post(f"{URL}{obj.pk}/photo/", {"photo": _png()}, format="multipart").status_code
+        == 403
+    )
+
+    # Не картинка — отказ словами, а не 500 из Pillow.
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    text = SimpleUploadedFile("x.txt", b"hello", content_type="text/plain")
+    r = api_manager.post(f"{URL}{obj.pk}/photo/", {"photo": text}, format="multipart")
+    assert r.status_code == 400, r.content
+    assert "photo" in r.json()["details"]
+
+    assert (
+        api_manager.post(f"{URL}999999/photo/", {"photo": _png()}, format="multipart").status_code
+        == 404
+    )
+
+
+def test_object_photo_is_checked_by_bytes_and_stored_under_its_own_name():
+    """Тот же XSS-класс, что закрыт у ОЛ ревью №825 по №951 (08.09.2026):
+
+    заголовок `Content-Type` пишет клиент, и без разбора байт Pillow'ом файл
+    с подложным типом лёг бы под своим расширением и раздавался бы с домена
+    портала. Имя хранимого файла — по id объекта и формату из байтов.
+    """
+    api, _ = client_for(
+        "obj-photo-bytes", "OBJ_MANAGER", perms=("object.view", "object.manage")
+    )
+    obj = make_object("A-1", "Стенд")
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    html = SimpleUploadedFile("x.html", b"<script>alert(1)</script>", content_type="image/png")
+    r = api.post(f"{URL}{obj.pk}/photo/", {"photo": html}, format="multipart")
+    assert r.status_code == 400, r.content
+
+    disguised = SimpleUploadedFile("evil.svg", _png().read(), content_type="image/png")
+    r = api.post(f"{URL}{obj.pk}/photo/", {"photo": disguised}, format="multipart")
+    assert r.status_code == 200, r.content
+    obj.refresh_from_db()
+    assert obj.photo.name.endswith(".png"), obj.photo.name
+    assert "evil" not in obj.photo.name, obj.photo.name

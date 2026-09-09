@@ -58,6 +58,7 @@ from organization_management.apps.operations.personal_export_service import (
 from organization_management.apps.operations.summary_service import (
     assemble_summary,
     rebuild_summary,
+    send_summary,
 )
 from organization_management.apps.operations.status_service import (
     cancel_status,
@@ -693,6 +694,9 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             reason="ребёнок исправил наряд",
             sanction="замечание",
         )
+        # Отправка дежурному — своё событие, отдельное от сборки/пересборки
+        # (Plane №990): «собрал» и «отправил» отвечают на разные вопросы.
+        send_summary(division_id=parent.id, business_date=TODAY, actor=ACTOR)
         # Выдача личной копии — событие ЧТЕНИЯ в журнале мутаций, и это
         # осознанное исключение: копию предъявляют в споре.
         export_submission(
@@ -1012,17 +1016,69 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     event_service.add_approver(
         om.pk, name="К. Оразов", unit="Департамент охраны", position="Зам."
     )
+    # Выбор первого подписанта старшим объекта (Plane №983) — отдельное
+    # именное решение. Второй обязательный шаг уже принадлежит маршруту и при
+    # выборе не меняется.
+    from django.contrib.auth import get_user_model
+
+    from organization_management.apps.operations.models import Role, UserRole
+
+    route_candidate = get_user_model().objects.create_user(
+        username="audit-d2-head"
+    )
+    route_employee = employee_in(home)
+    route_employee.user = route_candidate
+    route_employee.save(update_fields=["user"])
+    Role.objects.get_or_create(
+        code="HEAD_OPS_UNIT",
+        defaults={"name": "Начальник подразделения второго департамента"},
+    )
+    UserRole.objects.create(
+        user_id=str(route_candidate.pk), role_code_id="HEAD_OPS_UNIT"
+    )
+    visit = om.visit_objects.order_by("position", "pk").first()
+    visit.approval_route = [
+        *visit.approval_route,
+        {
+            "id": "approver-2",
+            "name": "Заместитель руководителя организации",
+            "unit": "Руководство",
+            "position": "Заместитель руководителя организации",
+            "username": "",
+            "status": "NOT_SENT",
+            "decidedAt": None,
+            "comment": "",
+        },
+    ]
+    visit.save(update_fields=["approval_route", "updated_at"])
+    event_service.select_approval_route(
+        om.pk,
+        approver_user_id=str(route_candidate.pk),
+        visit_object_id=str(visit.pk),
+        actor=get_user_model().objects.create_user(username="audit-object-chief"),
+    )
     om.refresh_from_db()
     # МАРШРУТ СОГЛАСОВАНИЯ ЖИВЁТ У ОБЪЕКТА ПОСЕЩЕНИЯ (Plane №411, Ш-5 плана
     # №385): согласуют объект и его документ «Расстановка сил», а не
     # мероприятие целиком. Столбец `om.approval_route` мутации больше не
     # пишут — он остался под старых читателей и снимается в Ш-7 (№413),
     # поэтому проба спрашивает там, где теперь ответ.
-    approver_id = om.visit_objects.order_by("position", "pk").first(
-    ).approval_route[0]["id"]
+    approval_route = om.visit_objects.order_by("position", "pk").first(
+    ).approval_route
     event_service.send_for_approval(om.pk)
     event_service.decide_approver(
-        om.pk, approver_id=approver_id, decision="APPROVED", comment=""
+        om.pk,
+        approver_id=approval_route[0]["id"],
+        decision="APPROVED",
+        comment="",
+        bypass_identity=True,
+    )
+    event_service.decide_approver(
+        om.pk,
+        approver_id=approval_route[1]["id"],
+        decision="APPROVED",
+        comment="",
+        bypass_identity=True,
     )
     # `approve_placement` здесь больше не зовётся: последняя подпись выше
     # завершила этап сама (`[СОГ-09]`, Plane №399); журнал у перехода тот же.
@@ -1034,6 +1090,17 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # уже не принимает (Plane №587).
     from organization_management.apps.ops import my_assignments as mine
 
+    mine.acknowledge(
+        om.pk,
+        om.placement_assignments[0]["id"],
+        personal=True,
+        actor=ACTOR,
+        actor_name="Коврижных К.",
+        actor_employee_id="101",
+        delivery_method="Устно на построении",
+        account_absence_basis="Учётная запись не заведена",
+    )
+    om.refresh_from_db()
     mine.decline(
         om.pk,
         om.placement_assignments[-1]["id"],
@@ -1209,7 +1276,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     gvo_service.apply_patch(
         om.code,
         {"section": "head", "values": {"country": "Черногория"},
-         "unspecified": ["persons", "arrival.date", "departure.date", "responsible"]},
+         "unspecified": ["persons", "arrival.date", "departure.date", "responsible", "senior"]},  # `senior` — обязательное поле с Plane №952
         None, actor=ACTOR,
     )
     gvo_service.approve_visit(om.code, actor=ACTOR)
@@ -1296,6 +1363,49 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         kind_code="PHYSICAL_SQUAD",
     )
     purge_orphan_participations(actor=ACTOR)
+
+    # Справочник охраняемых лиц с экрана (Plane №951): заведение и снимок.
+    import io as _io
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
+
+    from organization_management.apps.ops import gvo as gvo_service
+
+    person = gvo_service.create_person(
+        name="Лицо покрытия журнала", category="FOREIGN", actor=ACTOR
+    )
+    png = _io.BytesIO()
+    Image.new("RGB", (2, 2), (1, 2, 3)).save(png, format="PNG")
+    with override_settings(MEDIA_ROOT=str(tmp_path / "media")):
+        gvo_service.set_person_photo(
+            person["id"],
+            SimpleUploadedFile("c.png", png.getvalue(), content_type="image/png"),
+            actor=ACTOR,
+        )
+
+    # Снимок объекта-каталога (Plane SJ-1049) — тот же приём, что снимок ОЛ
+    # выше: своё событие журнала, отличное от PASSPORT_VERSION_PUBLISHED.
+    from organization_management.apps.ops import passport as passport_service
+
+    coverage_object = OpsSecurityObject.objects.create(
+        name="Объект покрытия журнала",
+        code="OBJ-COVERAGE-SJ1049",
+        object_type="Государственное учреждение",
+        region="г. Астана",
+        address="ул. Тестовая, 1",
+        object_state=OpsSecurityObject.ObjectState.ACTIVE,
+        passport_state=OpsSecurityObject.PassportState.RED,
+        ownership=OpsSecurityObject.Ownership.GUARDED,
+    )
+    object_png = _io.BytesIO()
+    Image.new("RGB", (2, 2), (4, 5, 6)).save(object_png, format="PNG")
+    with override_settings(MEDIA_ROOT=str(tmp_path / "media")):
+        passport_service.set_object_photo(
+            coverage_object.pk,
+            SimpleUploadedFile("o.png", object_png.getvalue(), content_type="image/png"),
+            actor=ACTOR,
+        )
 
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

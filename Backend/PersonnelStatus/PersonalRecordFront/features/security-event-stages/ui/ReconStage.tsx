@@ -25,7 +25,7 @@ import { AssignChiefDialog } from "@/features/event-visit-objects/ui/AssignChief
 //   а не нарисовано пустой кнопкой;
 // * «Задача поста» в эталоне — выбор из кодов приказов; у нас это текст из
 //   паспорта объекта, справочника нарядов в данных нет.
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +45,10 @@ import {
 } from "@/hooks/use-security-event-stages";
 import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
+import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
+import { useChainAccess } from "@/features/forces-split/ui/chain-access";
+import { moduleOpenFor } from "@/entities/portal-access";
+import { mayManageRecon } from "@/entities/security-event/model/capabilities";
 import type {
   ReconCheckState,
   ReconChecklistItem,
@@ -87,9 +90,14 @@ interface SectorGroup {
 }
 
 export function ReconStage({ event }: { event: SecurityEvent }) {
+  const participationCatalog = useParticipationCatalog();
   const [checklist, setChecklist] = useState<ReconChecklistItem[]>(
     event.reconChecklist
   );
+  const checklistDrafts = useRef<Record<string, ReconChecklistItem[]>>({});
+  // Callback мутации может жить дольше рендера, в котором был создан. Ref
+  // отвечает на вопрос «какой объект открыт В МОМЕНТ ответа», не замыкая A.
+  const activeVisitIdRef = useRef<string | null>(null);
   const [rows, setRows] = useState<ReconSectorPost[]>(event.reconSectorPosts);
   // Секторы, у которых ещё нет ни одного поста. Живут ОТДЕЛЬНО от строк:
   // сектор — заголовок группы, а не запись расчёта, и сервер про пустой сектор
@@ -109,8 +117,27 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   // черновик изменённым навсегда, а «Завершить» осталось бы заблокированным.
   const update = useUpdateRecon(event.id, {
     onFormError: (details) => setFieldErrors(details),
-    onEvent: (fresh) => {
-      setChecklist(fresh.reconChecklist);
+    onEvent: (fresh, variables) => {
+      const savedVisitId =
+        typeof variables.visitObjectId === "string"
+          ? variables.visitObjectId
+          : undefined;
+      const savedChecklist =
+        fresh.visitObjects.find((visit) => visit.id === savedVisitId)
+          ?.reconChecklist ?? fresh.reconChecklist;
+      if (savedVisitId !== undefined) {
+        if (activeVisitIdRef.current === savedVisitId) {
+          delete checklistDrafts.current[savedVisitId];
+          setChecklist(savedChecklist);
+        } else {
+          // Ответ A не имеет права перерисовать уже открытый B. Сохраняем
+          // подтверждённое сервером состояние A как его локальную базу:
+          // проп `event` намеренно не пересобирается после каждой мутации.
+          checklistDrafts.current[savedVisitId] = savedChecklist;
+        }
+      } else if (activeVisitIdRef.current === null) {
+        setChecklist(savedChecklist);
+      }
       setRows(fresh.reconSectorPosts);
       // Сектор, в котором появились посты, больше не пустой — иначе он остался
       // бы вторым заголовком с тем же именем.
@@ -134,6 +161,8 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   });
   const complete = useCompleteRecon(event.id);
   const access = useChainAccess();
+  // Ссылка в «Сбор сил» — по ключу модуля, как пункт меню (№939, ревью №825).
+  const forcesOpen = moduleOpenFor("/employees", access.can);
 
   /* ── Принадлежность расчёта объекту посещения (Plane №409) ──────────────
    *
@@ -147,7 +176,25 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
    */
   const scope = useVisitObjectScope(event, rows);
   const activeVisitObject = scope.visit;
+  activeVisitIdRef.current = activeVisitObject?.id ?? null;
   const visibleRows = scope.rows;
+  useEffect(() => {
+    const visitId = activeVisitObject?.id;
+    setChecklist(
+      (visitId === undefined ? undefined : checklistDrafts.current[visitId]) ??
+        activeVisitObject?.reconChecklist ??
+        event.reconChecklist
+    );
+    setFieldErrors(null);
+  }, [activeVisitObject?.id, activeVisitObject?.reconChecklist, event.reconChecklist]);
+  // `[РЕК-10]`/Plane №982: право приходит по КАЖДОМУ объекту с сервера.
+  // `event.manage` здесь не fallback — именно его task снимает как источник
+  // права рекогносцировки. Переключатель объектов остаётся доступным, чтобы
+  // старший объекта A мог уйти с read-only объекта B на свой.
+  const canManageRecon = mayManageRecon(activeVisitObject);
+  const reconManageReason = canManageRecon
+    ? null
+    : "Рекогносцировку ведёт назначенный старший выбранного объекта.";
 
   /** Отнести строки к объекту: одну (перенос) или все нераспределённые. */
   function assignToVisit(visitObjectId: string, only?: string): void {
@@ -163,14 +210,20 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   const dirty =
     JSON.stringify({ checklist, rows }) !==
     JSON.stringify({
-      checklist: event.reconChecklist,
+      checklist: activeVisitObject?.reconChecklist ?? event.reconChecklist,
       rows: event.reconSectorPosts,
     });
 
   /** Расчёт по постам — то самое число, которое завершение этапа отправит
    * штабу 2-го департамента. Считает его СЕРВЕР; здесь оно показывается,
    * чтобы старший наряда видел, что уходит. */
-  const needFromPosts = rows.reduce((sum, row) => sum + (row.need || 0), 0);
+  const needFromPosts = rows.reduce(
+    (sum, row) =>
+      (row.demandKindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD"
+        ? sum + (row.need || 0)
+        : sum,
+    0
+  );
 
   /** Паспорт, из которого пойдёт импорт: у объекта СВОЙ снимок версии
    *  (`[РЕК-05]` — «импорт из паспорта объекта посещения»).
@@ -191,7 +244,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
 
   /** Потребность ПОКАЗАННОГО объекта — то, что просит подвал `[РЕК-07]`.
    *  Общее число остаётся рядом: штабу уходит сумма по мероприятию. */
-  const needOfVisit = visibleRows.reduce((sum, row) => sum + (row.need || 0), 0);
+  const needOfVisit = visibleRows.reduce(
+    (sum, row) =>
+      (row.demandKindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD"
+        ? sum + (row.need || 0)
+        : sum,
+    0
+  );
 
   /** Группы «сектор → строки» в порядке появления строк. Пустые секторы
    * дописываются в хвост. */
@@ -216,9 +275,16 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   }, [visibleRows, emptySectors]);
 
   function patchItem(id: string, patch: Partial<ReconChecklistItem>): void {
-    setChecklist((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
-    );
+    setChecklist((prev) => {
+      const next = prev.map((item) =>
+        item.id === id ? { ...item, ...patch } : item
+      );
+      const visitId = activeVisitIdRef.current;
+      if (visitId !== null) {
+        checklistDrafts.current[visitId] = next;
+      }
+      return next;
+    });
   }
 
   /**
@@ -360,49 +426,21 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
 
   function save(): void {
     setFieldErrors(null);
-    update.mutate({ checklist, sectorPosts: rows });
+    update.mutate({
+      visitObjectId: activeVisitObject?.id,
+      checklist,
+      sectorPosts: rows,
+    });
   }
 
-  /**
-   * Объект БЕЗ СТАРШЕГО среди тех, что идут этапом «Рекогносцировка».
-   *
-   * 🔴 СТАРШЕГО СЧИТАЕМ ПО МЕРОПРИЯТИЮ, А НЕ ПО ПОКАЗАННОМУ ОБЪЕКТУ
-   * (Plane №635). `complete_recon` требует старшего у КАЖДОГО объекта на этом
-   * этапе, а кнопка смотрела только на активный: человек стоял на объекте со
-   * старшим, кнопка была включена, сервер отвечал 422. И это не редкий
-   * случай, а состояние двухобъектного ОМ ПО УМОЛЧАНИЮ: второй объект,
-   * добавленный кнопкой «+», старшего не наследует.
-   *
-   * Тот же довод, что у пустого расчёта строкой ниже (№710): показанный
-   * объект — то, что человек СЕЙЧАС правит, а не то, что проверяет сервер.
-   * Первым берётся активный, если он и есть виноватый, — тогда причина
-   * читается без имени, как раньше; иначе объект называется, иначе человек
-   * не поймёт, куда идти.
-   */
-  const chieflessVisits = event.visitObjects.filter(
-    (visit) => visit.stage === "RECON" && visit.chiefEmployeeId === null
-  );
-  const chiefless =
-    chieflessVisits.find((visit) => visit.id === activeVisitObject?.id) ??
-    chieflessVisits[0] ??
-    null;
-
+  // №982: завершение адресовано выбранному объекту. Соседний
+  // объект без старшего или постов не блокирует готовый.
   // `[РЕК-07]`: почему «Завершить» недоступна — одна причина, первая по порядку.
-  const completeBlocked: string | null = !access.can(EVENT_MANAGE)
-    ? access.reason(EVENT_MANAGE) || "Нет права вести мероприятие."
+  const completeBlocked: string | null = !canManageRecon
+    ? reconManageReason
     : dirty
       ? "Сохраните расчёт перед завершением этапа."
-      : chiefless !== null
-        ? chiefless.id === activeVisitObject?.id
-          ? "Не назначен старший объекта."
-          : `Не назначен старший объекта «${chiefless.objectName}».`
-        : /* 🔴 ПУСТОТУ СЧИТАЕМ ПО МЕРОПРИЯТИЮ, А НЕ ПО ПОКАЗАННОМУ ОБЪЕКТУ
-             (Plane №710). Сервер требует непустой расчёт ЦЕЛИКОМ, и человек,
-             стоящий на объекте без постов, видел выключенную кнопку с
-             неверной причиной — завершение прошло бы. Показанный объект —
-             это то, что человек СЕЙЧАС правит, а не то, что проверяет
-             сервер. */
-          rows.length === 0
+      : visibleRows.length === 0
           ? "Нет постов расчёта."
           : checklist.some((item) => (item.required ?? true) && item.state === "UNCHECKED")
             ? "Обязательные пункты чек-листа остались в «Не проверено»."
@@ -429,13 +467,13 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               Чек-лист, посты и завершение этапа откроются старшему объекта
               «{activeVisitObject.objectName}».
             </p>
-            {access.can(EVENT_MANAGE) ? (
+            {event.canManageVisitObjects === true ? (
               <Button type="button" size="sm" onClick={() => setChiefDialogOpen(true)}>
                 + Назначить
               </Button>
             ) : (
               <p className="text-xs text-muted-foreground">
-                {access.reason(EVENT_MANAGE)}
+                Старшего объекта назначает старший мероприятия или руководство.
               </p>
             )}
           </div>
@@ -463,6 +501,41 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
           блоки, а не этап. */}
       <CardContent className="space-y-5">
         <ObjectFacts event={event} />
+
+        <VisitObjectPicker event={event} scope={scope} allRows={rows}>
+          {scope.shown === UNASSIGNED_VISIT && event.visitObjects.length > 0 && (
+            <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>Эти посты заведены до разметки. Отнести все к:</span>
+              {event.visitObjects.map((visit) => (
+                <Button
+                  key={visit.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  disabled={!mayManageRecon(visit)}
+                  onClick={() => {
+                    assignToVisit(visit.id);
+                    scope.setShown(visit.id);
+                  }}
+                >
+                  {visit.objectName}
+                </Button>
+              ))}
+              <span>— затем «Сохранить расчёт».</span>
+            </span>
+          )}
+        </VisitObjectPicker>
+        {reconManageReason !== null && (
+          <p
+            className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground"
+            data-slot="recon-readonly-reason"
+          >
+            {reconManageReason} Форма доступна только для чтения.
+          </p>
+        )}
+
+        <fieldset disabled={!canManageRecon} className="contents">
 
         <section data-slot="recon-checklist">
           <div className="mb-2 flex items-center justify-between">
@@ -589,32 +662,6 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               </Button>
             </div>
           </div>
-          <VisitObjectPicker event={event} scope={scope} allRows={rows}>
-            {scope.shown === UNASSIGNED_VISIT && event.visitObjects.length > 0 && (
-              /* Строки, заведённые до Plane №408: объект в них не записан, и
-                 приписать его мог только человек — сервер честно оставил их
-                 без владельца, а не разделил поровну. */
-              <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>Эти посты заведены до разметки. Отнести все к:</span>
-                {event.visitObjects.map((visit) => (
-                  <Button
-                    key={visit.id}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7"
-                    onClick={() => {
-                      assignToVisit(visit.id);
-                      scope.setShown(visit.id);
-                    }}
-                  >
-                    {visit.objectName}
-                  </Button>
-                ))}
-                <span>— затем «Сохранить расчёт».</span>
-              </span>
-            )}
-          </VisitObjectPicker>
           {groups.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               {scope.shown === UNASSIGNED_VISIT
@@ -826,7 +873,49 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                                 <tr id={`recon-post-details-${row.id}`} className="bg-muted/20">
                                   <td />
                                   <td className="py-2 pr-2" colSpan={6}>
-                                    <div className="grid gap-2 md:grid-cols-5">
+                                    <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-7">
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Вид потребности</span>
+                                        <select
+                                          className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                                          aria-label={`Вид потребности: ${name}`}
+                                          value={row.demandKindCode ?? "PHYSICAL_SQUAD"}
+                                          onChange={(event) =>
+                                            patchRow(row.id, {
+                                              demandKindCode: event.target.value,
+                                            })
+                                          }
+                                        >
+                                          {(participationCatalog.data ?? []).map((kind) => (
+                                            <option key={kind.code} value={kind.code}>
+                                              {kind.label}
+                                            </option>
+                                          ))}
+                                          {(participationCatalog.data ?? []).every(
+                                            (kind) => kind.code !== (row.demandKindCode ?? "PHYSICAL_SQUAD")
+                                          ) && (
+                                            <option value={row.demandKindCode ?? "PHYSICAL_SQUAD"}>
+                                              {(row.demandKindCode ?? "PHYSICAL_SQUAD") === "PHYSICAL_SQUAD"
+                                                ? "Физический наряд"
+                                                : row.demandKindCode}
+                                            </option>
+                                          )}
+                                        </select>
+                                      </label>
+                                      <label className="space-y-1 text-[11px] text-muted-foreground">
+                                        <span>Спецификация</span>
+                                        <Input
+                                          className="h-8 text-xs"
+                                          placeholder="Состав или квалификация"
+                                          aria-label={`Спецификация потребности: ${name}`}
+                                          value={row.demandSpecification ?? ""}
+                                          onChange={(event) =>
+                                            patchRow(row.id, {
+                                              demandSpecification: event.target.value,
+                                            })
+                                          }
+                                        />
+                                      </label>
                                       <label className="space-y-1 text-[11px] text-muted-foreground">
                                         <span>Тип</span>
                                         <select
@@ -931,6 +1020,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
             </div>
           )}
         </section>
+        </fieldset>
 
         <FieldErrors errors={fieldErrors} />
         <StageError error={update.error} />
@@ -970,9 +1060,18 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               {needOfVisit === needFromPosts || activeVisitObject === null
                 ? "уйдёт в "
                 : ""}
-              <Link href="/employees?view=forces" className="font-semibold text-primary-ink">
-                «Сбор сил на ОМ»
-              </Link>
+              {forcesOpen ? (
+                <Link
+                  // Прямо на вкладку «Сборы» (№931; ревью №825 нашло тот же
+                  // адрес здесь): без `tab=` открывался «Список сотрудников».
+                  href="/employees?view=forces&tab=collections"
+                  className="font-semibold text-primary-ink"
+                >
+                  «Сбор сил на ОМ»
+                </Link>
+              ) : (
+                <span className="font-semibold text-foreground">«Сбор сил на ОМ»</span>
+              )}
             </span>
           </p>
           <div className="flex gap-2">
@@ -980,7 +1079,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               type="button"
               variant="outline"
               size="sm"
-              disabled={!dirty || update.isPending}
+              disabled={!canManageRecon || !dirty || update.isPending}
               onClick={save}
             >
               {update.isPending ? "Сохранение…" : "Сохранить"}
@@ -1022,16 +1121,15 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                   мероприятию. Потребность показанного объекта названа ниже,
                   когда она отличается, — чтобы разница не выглядела опечаткой. */}
               <DialogTitle>
-                Отправить потребность {needFromPosts} сотрудников штабу 2-го департамента?
+                Завершить рекогносцировку объекта с потребностью {needOfVisit} сотрудников?
               </DialogTitle>
               <DialogDescription>
-                Потребность зафиксируется, объект перейдёт к расстановке, штаб получит заявку.
+                Потребность объекта зафиксируется, и он перейдёт к расстановке.
                 {activeVisitObject !== null && needOfVisit !== needFromPosts && (
                   <>
                     {" "}
-                    По объекту «{activeVisitObject.objectName}» рассчитано{" "}
-                    {needOfVisit}; штабу уходит сумма по всем объектам
-                    мероприятия.
+                    Общая заявка мероприятия будет сформирована после завершения
+                    рекогносцировки остальных объектов.
                   </>
                 )}
               </DialogDescription>
@@ -1044,7 +1142,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                 type="button"
                 disabled={complete.isPending}
                 onClick={() => {
-                  complete.mutate({});
+                  complete.mutate({ visitObjectId: activeVisitObject?.id });
                   setConfirmOpen(false);
                 }}
               >

@@ -26,6 +26,7 @@ import type {
   SubmissionField,
   SubmissionViolation,
 } from "@/entities/operational-rating";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 const SCALE = Array.from(
   { length: RATING_SCALE_MAX - RATING_SCALE_MIN + 1 },
@@ -43,10 +44,9 @@ export const SERVER_ERROR_FIELD: Record<string, SubmissionField> = {
   CORRECTION_REASON_REQUIRED: "reason",
 };
 
-function dateTime(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU");
-}
+// Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
+// отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
+// нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
 export function SubmittedEvaluationCard({
   workItemId,
@@ -179,7 +179,7 @@ export function SubmittedEvaluationCard({
         <dt className="font-semibold">Комментарий</dt>
         <dd>{submitted.comment ?? "—"}</dd>
         <dt className="font-semibold">Отправлено</dt>
-        <dd>{dateTime(submitted.submittedAt)}</dd>
+        <dd>{formatIsoDateTime(submitted.submittedAt)}</dd>
         <dt className="font-semibold">Редакция</dt>
         <dd className="tabular-nums">{data.workItem.revision}</dd>
         <dt className="font-semibold">Идентификатор оценки</dt>
@@ -201,7 +201,7 @@ export function SubmittedEvaluationCard({
                 {link.score}
                 {link.current
                   ? " · действующая запись"
-                  : ` · заменена ${link.supersededAt === null ? "" : dateTime(link.supersededAt)}: ${link.supersededReason ?? "—"}`}
+                  : ` · заменена ${link.supersededAt === null ? "" : formatIsoDateTime(link.supersededAt)}: ${link.supersededReason ?? "—"}`}
               </li>
             ))}
           </ul>

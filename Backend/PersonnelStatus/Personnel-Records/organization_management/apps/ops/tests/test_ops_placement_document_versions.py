@@ -1,3 +1,4 @@
+import datetime as dt
 """Версии документа «Расстановка сил» и заморозка (`[СОГ-04]`, Plane №398).
 
 Спецификация: «После согласования версия замораживается: правка невозможна;
@@ -18,6 +19,7 @@
 """
 import pytest
 
+from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import (
     OpsPlacementDocumentVersion,
     OpsSecurityEventVisitObject,
@@ -497,8 +499,6 @@ def test_import_from_passport_is_refused_on_a_frozen_object(manager):  # noqa: F
     )
     assert created.status_code == 201, created.content
     event_id = created.json()["id"]
-    base = f"{URL}{event_id}/"
-
     event = service.lock_event(event_id)
     assert event.stage == "RECON", f"проба вакуумна: стадия {event.stage}"
     visit = event.visit_objects.first()
@@ -506,12 +506,16 @@ def test_import_from_passport_is_refused_on_a_frozen_object(manager):  # noqa: F
     visit.stage = "CLOSED"
     visit.save(update_fields=["closed_at", "stage", "updated_at"])
 
-    refused = manager.post(f"{base}recon/import-from-passport/")
+    # Ролевой HTTP-гейт №982 отсекает закрытый объект раньше.
+    # Эта проба стережёт независимую защиту вглубь на уровне сервиса.
+    with pytest.raises(DomainError) as refused:
+        service.import_recon_from_passport(
+            event_id, visit_object_id=str(visit.pk)
+        )
 
-    assert refused.status_code == 422, refused.content
-    body = refused.json()
-    assert body["error_code"] == "PLACEMENT_FROZEN", body
-    assert "закрыт" in body["message"], body["message"]
+    assert refused.value.code == "PLACEMENT_FROZEN"
+    assert refused.value.http_status == 422
+    assert "закрыт" in refused.value.message
 
 
 def test_the_chief_guard_sees_unmarked_posts_of_a_single_object(manager):  # noqa: F811
@@ -578,3 +582,54 @@ def test_the_chief_guard_sees_unmarked_posts_of_a_single_object(manager):  # noq
     checklist = [{**item, "state": "NORMAL"} for item in data["reconChecklist"]]
     saved = manager.patch(f"{base}recon/", {"checklist": checklist}, format="json")
     assert saved.status_code == 200, saved.content
+
+
+def test_a_return_on_an_object_without_version_rows_does_not_sign_with_a_login(
+    manager, approver, staffed_event  # noqa: F811
+):
+    """Путь «возврат» нёс актора ЛОГИНОМ (`approval/return` → `return_placement`
+    → `_return_visit(actor=login or "system:approval-return")`), и у объекта,
+    выросшего до таблицы версий без строки (бэкфилла нет намеренно, 0073),
+    первый же возврат заводил версию с `created_by="<login>"` — болезнь №484,
+    воскрешённая на узком пути (ревью №825 по №896, 08.09.2026).
+
+    КРАСНАЯ ПРОБА: передай в `_decide_document_version` логин как есть —
+    подпись станет логином согласующего.
+    """
+    from django.contrib.auth.models import User
+
+    from organization_management.apps.employees.models import Employee
+
+    base, event_id, _ = staffed_event
+    # У согласующего — кадровая карточка: без неё `actor_display_name`
+    # отдаёт логин по конвенции, и проба не отличила бы дефект от неё.
+    Employee.objects.create(
+        user=User.objects.get(username="ev-approver"),
+        personnel_number="ev-approver-1", last_name="Согласов", first_name="Игорь",
+        birth_date=dt.date(1985, 1, 1), hire_date=dt.date(2015, 1, 1),
+    )
+    manager.post(f"{base}placement/complete/")
+    manager.post(
+        f"{base}approval/route/",
+        {"name": "К. Оразов", "unit": "Департамент охраны", "position": "Зам."},
+        format="json",
+    )
+    assert manager.post(f"{base}approval/send/").status_code == 200
+    # Объект «без строки версии»: как у выросших до 0073.
+    OpsSecurityEventVisitObject.objects.get(event_id=event_id).document_versions.all().delete()
+
+    # Оба пути возврата — решение подписанта и `approval/return/` — идут в
+    # `_return_visit`; здесь первый, соседняя проба уровня API — второй.
+    route = manager.get(base).json()["visitObjects"][0]["approvalRoute"]
+    resp = approver.post(
+        f"{base}approval/route/{route[0]['id']}/decide/",
+        {"decision": "RETURNED", "comment": "Проверить посты"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+
+    versions = _versions(event_id)
+    assert versions, "возврат не завёл строку версии"
+    assert {v.created_by for v in versions} == {"Согласов И."}, (
+        f"подпись версии — логин, а не фамилия: {[v.created_by for v in versions]!r}"
+    )

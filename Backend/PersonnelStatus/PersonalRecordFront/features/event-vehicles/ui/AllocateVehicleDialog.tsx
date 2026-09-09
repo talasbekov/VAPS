@@ -26,6 +26,7 @@ import { useVehicles } from "@/hooks/use-vehicles";
 import type { SecurityEvent } from "@/entities/security-event";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
 import { allocateVehicle } from "../api/event-vehicles-api";
+import { allocationErrorMessage } from "../lib/allocation-error-message";
 
 export function AllocateVehicleDialog({
   event,
@@ -80,10 +81,10 @@ export function AllocateVehicleDialog({
       toast({ title: "Машина выделена на мероприятие" });
       onClose();
     },
-    onError: () =>
+    onError: (error) =>
       toast({
         title: "Не удалось выделить машину",
-        description: "Сервис временно недоступен. Попробуйте ещё раз.",
+        description: allocationErrorMessage(error),
         variant: "destructive",
       }),
   });

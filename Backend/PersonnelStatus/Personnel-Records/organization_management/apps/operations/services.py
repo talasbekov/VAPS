@@ -163,6 +163,59 @@ class PermissionService:
         )
 
     @classmethod
+    def active_grants_for_permission(cls, user_id, permission_code) -> list:
+        """Активные пары ``(scope_division_id, role_code)`` для права.
+
+        Глобальный набор :meth:`effective_permissions` теряет область каждого
+        гранта. Объектная авторизация должна знать и код роли, и исходную
+        область; источник остаётся общим для постоянных ролей и временных
+        дежурств.
+        """
+        return cls.active_grants_for_permission_many(
+            [user_id], permission_code
+        ).get(str(user_id), [])
+
+    @classmethod
+    def active_grants_for_permission_many(
+        cls, user_ids, permission_code
+    ) -> dict[str, list]:
+        """Пары грантов для нескольких пользователей постоянным числом
+        запросов — для списков, где объектные права считаются по создателю."""
+        wanted = {str(user_id) for user_id in user_ids if user_id is not None}
+        result = {user_id: [] for user_id in wanted}
+        if not wanted:
+            return result
+        grants = []
+        grants.extend(
+            (str(user_id), scope_division_id, role_code)
+            for user_id, scope_division_id, role_code in UserRole.objects.filter(
+                user_id__in=wanted, is_active=True
+            ).values_list("user_id", "scope_division_id", "role_code_id")
+        )
+        now = Clock.now()
+        grants.extend(
+            (str(user_id), scope_division_id, role_code)
+            for user_id, scope_division_id, role_code in TemporaryDutyPermission.objects.filter(
+                user_id__in=wanted,
+                is_active=True,
+                starts_at__lte=now,
+                ends_at__gte=now,
+            ).values_list("user_id", "scope_division_id", "duty_role_code")
+        )
+        if not grants:
+            return result
+        holding_roles = set(
+            RolePermission.objects.filter(
+                role_code_id__in={role_code for _, _, role_code in grants},
+                permission_code_id__in=[permission_code, WILDCARD],
+            ).values_list("role_code_id", flat=True)
+        )
+        for user_id, scope_division_id, role_code in grants:
+            if role_code in holding_roles:
+                result[user_id].append((scope_division_id, role_code))
+        return result
+
+    @classmethod
     def has_permission(cls, user_id, permission_code, division_id=None) -> bool:
         perms = cls.effective_permissions(user_id, division_id=division_id)
         if WILDCARD in perms:

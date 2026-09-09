@@ -135,8 +135,21 @@ export function RatingBriefDialog({
                 key={row.rowId}
                 className="flex items-center gap-2 border-b py-2 last:border-b-0"
               >
-                <span className="inline-flex shrink-0 rounded-md bg-secondary px-2 py-0.5 text-xs font-extrabold tabular-nums text-secondary-foreground">
-                  {row.aggregateRating ?? "—"}
+                {/* 🔴 ЧИСЛА ЗДЕСЬ БОЛЬШЕ НЕТ (доводка №658 по ревью №825, тот
+                    же приём, что в ScoreCell профиля): `aggregateRating` —
+                    агрегат УЧАСТНИКА за период, один и тот же во всех строках
+                    реестра этого сотрудника. Печатать его напротив каждой
+                    оценки читалось бы как «балл именно за это мероприятие» —
+                    ровно тот вырожденный вид, ради которого №658 и заведена.
+                    Средний балл уже назван вверху модалки (бейдж рядом с
+                    именем), число здесь было бы вторым источником того же
+                    факта. */}
+                <span
+                  data-slot="recent-row-mark"
+                  className="shrink-0 rounded-md bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground"
+                  title="Балл за отдельное мероприятие не раскрывается: рейтинг ведётся агрегатом за период."
+                >
+                  оценено
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-semibold">

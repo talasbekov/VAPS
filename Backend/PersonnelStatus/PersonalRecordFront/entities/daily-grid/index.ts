@@ -518,7 +518,13 @@ export function parseValidationDetails(error: unknown): string[] {
 /** Три значения события сдачи — других бэк не эмитит. */
 export type DaySubmissionEvent = "CONFIRMED_NO_CHANGES" | "CHANGED" | "AMENDED";
 
-/** 9-полевая проекция сдачи (без snapshot). id — числовой pk. */
+/** Проекция сдачи (без snapshot). id — числовой pk.
+ *
+ * `sent_at`/`sent_by`/`incomplete_reason` (Plane №990) — отправка дежурному:
+ * СВОЁ событие, отдельное от сборки/сдачи. У обычной (не сводной) строки они
+ * всегда пусты — никто её никому не отправляет; заполняются только у
+ * сводного `division_id` (составное подразделение) после `send_summary`.
+ */
 export interface DaySubmission {
   id: number;
   division_id: string;
@@ -529,6 +535,9 @@ export interface DaySubmission {
   submitted_by: string;
   submitted_at: string;
   late: boolean;
+  sent_at: string | null;
+  sent_by: string;
+  incomplete_reason: string;
 }
 
 /** Тело создания — РОВНО два поля: актора определяет сервер. */
@@ -584,8 +593,9 @@ const EVENTS: ReadonlySet<string> = new Set<DaySubmissionEvent>([
 function parseSubmission(raw: unknown): DaySubmission | null {
   const row = asRecord(raw);
   if (row === null) return null;
-  // Все девять полей — несущие: частичная строка дала бы «День сдан:
-  // vundefined» вместо честного «день не сдан».
+  // Несущие поля: частичная строка дала бы «День сдан: vundefined» вместо
+  // честного «день не сдан». `sent_at` — ИСКЛЮЧЕНИЕ (`null` — «не
+  // отправлена», законное состояние, а не брак строки).
   if (typeof row.id !== "number") return null;
   if (typeof row.division_id !== "string") return null;
   if (typeof row.business_date !== "string") return null;
@@ -595,6 +605,9 @@ function parseSubmission(raw: unknown): DaySubmission | null {
   if (typeof row.submitted_by !== "string") return null;
   if (typeof row.submitted_at !== "string") return null;
   if (typeof row.late !== "boolean") return null;
+  if (row.sent_at !== null && typeof row.sent_at !== "string") return null;
+  if (typeof row.sent_by !== "string") return null;
+  if (typeof row.incomplete_reason !== "string") return null;
   return {
     id: row.id,
     division_id: row.division_id,
@@ -605,6 +618,9 @@ function parseSubmission(raw: unknown): DaySubmission | null {
     submitted_by: row.submitted_by,
     submitted_at: row.submitted_at,
     late: row.late,
+    sent_at: row.sent_at,
+    sent_by: row.sent_by,
+    incomplete_reason: row.incomplete_reason,
   };
 }
 

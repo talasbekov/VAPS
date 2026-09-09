@@ -19,6 +19,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { anyChiefId } from './stand-chief'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { assertStep } from './fixture-step'
+import { uniqueBusinessDate } from './business-date'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -244,18 +245,18 @@ test.describe('заявки департаменту', () => {
     await open.click()
 
     await expect(
-    page.getByRole('button', { name: 'Назад к заявкам' }),
-    'карточка открылась на месте таблицы, а не увела на другой экран',
+      page.getByRole('button', { name: 'Назад к заявкам' }),
+      'карточка открылась на месте таблицы, а не увела на другой экран',
     ).toBeVisible({ timeout: 20_000 })
 
     // Четыре плитки эталона.
     for (const label of [
-    'Квота департамента',
-    'Разложено по управлениям',
-    'Выделено',
-    'Осталось',
+      'Квота департамента',
+      'Разложено по управлениям',
+      'Выделено',
+      'Осталось',
     ]) {
-    await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
     }
 
     // Распределение по управлениям — с полем квоты у строки.
@@ -271,20 +272,20 @@ test.describe('заявки департаменту', () => {
       timeout: 20_000,
     })
 
-      // Ключевая строка эталона: она объясняет, откуда берутся люди.
-      await expect(
+    // Ключевая строка эталона: она объясняет, откуда берутся люди.
+    await expect(
       page.getByText(
         'выделенные сотрудники появляются здесь автоматически',
         { exact: false },
       ),
       'подпись о том, откуда берутся выделенные, не показана',
-      ).toBeVisible()
+    ).toBeVisible()
 
-      // Возврат работает: человек не заперт в карточке.
-      await page.getByRole('button', { name: 'Назад к заявкам' }).click()
-      await expect(
-        page.getByRole('heading', { name: 'Заявки департаменту' }),
-      ).toBeVisible()
+    // Возврат работает: человек не заперт в карточке.
+    await page.getByRole('button', { name: 'Назад к заявкам' }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Заявки департаменту' }),
+    ).toBeVisible()
   })
 
   test('без права департамента вкладки «Заявки» нет вовсе', async ({ page }) => {
@@ -499,10 +500,10 @@ test.describe('заявки департаменту', () => {
         `/api/ops/security-events/${fixture.eventId}/forces/allocation/${fixture.allocationId}/members/`,
         { employeeId: employees.results[0].id },
       )
-      // Перезаход на список и повторное открытие: `reload()` сбрасывает
-      // локальное состояние `opened` карточки в `DepartmentRequestsTable`
-      // (адреса у карточки нет — она открывается кликом, а не маршрутом).
-      await page.reload()
+      // Перезаход на СПИСОК и повторное открытие. Открытая заявка теперь живёт
+      // в адресе (`?request=`, Plane №944): `reload()` вернул бы ту же
+      // карточку, а не список, — поэтому идём на вкладку без параметра.
+      await page.goto(`${APP}/employees?view=forces&tab=requests`)
       await tab.click()
       await page
         .getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) })
@@ -535,6 +536,61 @@ test.describe('заявки департаменту', () => {
       await expect(
         splitSection.getByText('Управления уже запрошены', { exact: false }),
       ).toBeVisible()
+    } finally {
+      await dropEvent(token, fixture.eventId)
+    }
+  })
+
+  test('раскладка без рассылки: экран не утверждает, что управления запрошены (Plane №891)', async ({
+    page,
+  }) => {
+    /**
+     * Предмет №891, оставшийся без пробы после №944 (ревью №825, 08.09.2026):
+     * прежняя панель говорила «Управления оповещены», как только у заявки
+     * появились строки управлений — а строки заводит РАЗБИВКА КВОТЫ, не
+     * рассылка. Панель снята №944; правда теперь держится на `notifiedAt`
+     * (`locked` в карточке заявки), и ровно это здесь стережётся: после одной
+     * лишь разбивки кнопка «Отправить в управления» на месте, у строк —
+     * «Не запрошено», и ни одного «Запрошено <момент>».
+     *
+     * КРАСНАЯ ПРОБА: считай `locked` по `directorates.length > 0` — кнопка
+     * пропадёт.
+     */
+    const token = await apiToken()
+    const fixture = await createDepartmentAllocationFixture(token)
+
+    try {
+      const departments = (await apiCall(token, 'GET', '/api/core/divisions/?page_size=200')) as {
+        results: { id: number; type_code: string; parent: number | null }[]
+      }
+      const directorate = departments.results.find(
+        (d) => d.type_code === 'directorate' && String(d.parent) === fixture.departmentId,
+      )
+      expect(directorate, 'у департамента фикстуры нет управления').toBeTruthy()
+      await apiCall(
+        token,
+        'POST',
+        `/api/ops/security-events/${fixture.eventId}/forces/allocation/${fixture.allocationId}/split/`,
+        { rows: [{ divisionId: String(directorate!.id), need: 1 }] },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/employees?view=forces`)
+      const tab = page.getByRole('tab', { name: 'Заявки', exact: true })
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await tab.click()
+      const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      await page.getByRole('button', { name: new RegExp(`^Открыть заявку ${event.code} `) }).click()
+
+      const splitSection = page.locator('section[aria-labelledby="split-heading"]')
+      await expect(splitSection.locator('input[id^="quota-"]').first()).toBeVisible({ timeout: 20_000 })
+      await expect(
+        splitSection.getByRole('button', { name: 'Отправить в управления' }),
+        'после разбивки без рассылки кнопка отправки пропала — экран считает рассылку состоявшейся',
+      ).toBeVisible()
+      await expect(splitSection.getByText('Не запрошено', { exact: true }).first()).toBeVisible()
+      await expect(splitSection.getByText(/^Запрошено \d/)).toHaveCount(0)
+      await expect(splitSection.getByText('Управления уже запрошены', { exact: false })).toHaveCount(0)
     } finally {
       await dropEvent(token, fixture.eventId)
     }
@@ -890,8 +946,10 @@ test.describe('заявки департаменту', () => {
     test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
 
     const token = await apiToken()
-    const day = new Date(Date.UTC(2027, 3, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
-    const businessDate = day.toISOString().slice(0, 10)
+    // 🔴 БЫЛ Ш-3 №567 (доводка №881 по ревью №825): `Math.floor(Date.now() /
+    // 1000) % 300` цикличен с периодом 300 с реального времени — та же
+    // болезнь, что №881 закрыла в `business-date.ts`, но не заметила здесь.
+    const businessDate = uniqueBusinessDate()
     const fixture = await createDepartmentAllocationFixture(token, { businessDate })
 
     try {
@@ -1029,7 +1087,7 @@ test.describe('заявки департаменту', () => {
     }
   })
 
-  test('чекбоксы на «Статусах» + «Выделить на ОМ» ставят «Участие в ОМ» из запроса (Plane №395)', async ({
+  test('физнаряд со «Статусов» уходит в резерв без фиктивного статуса ОМ (Plane №977)', async ({
     page,
   }) => {
     /**
@@ -1038,19 +1096,19 @@ test.describe('заявки департаменту', () => {
      * „мероприятие“ он не выбирает и не видит». До правки статус ставился
      * диалогом с ручным выбором мероприятия, а реестр начальнику отвечал 403.
      *
-     * Проба: раскладка Первому управлению → `acc_dir_head` открывает баннер
-     * → отмечает СВОЕГО сотрудника чекбоксом в таблице → «Выделить на
-     * ОМ-…: 1» → баннер «выделено 1 из 2», а в заявке (API) человек числится
-     * выделенным. Дата ОМ — своя на прогон: у сотрудника не должно быть
-     * пересечения статусов с прошлыми прогонами.
+     * №977 уточнил сценарий: физнаряд до решения Штаба не привязан к конкретному
+     * ОМ. Экран отправляет `kindCode=PHYSICAL_SQUAD` и показывает отдельную метку резерва.
+     * POST и ручка резерва здесь перехвачены: живой серверный контракт покрыт pytest,
+     * а браузерная проба не оставляет неудаляемую кампанию в общем стенде.
      */
     const bossPassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
     test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
 
     const token = await apiToken()
-    const day = new Date(Date.UTC(2027, 5, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
+    // 🔴 БЫЛ Ш-3 №567 (доводка №881 по ревью №825): период 300 с реального
+    // времени, та же болезнь, что №881 закрыла в `business-date.ts`.
     const fixture = await createDepartmentAllocationFixture(token, {
-      businessDate: day.toISOString().slice(0, 10),
+      businessDate: uniqueBusinessDate(),
     })
     try {
       const divisions = (await apiCall(token, 'GET', '/api/core/divisions/?page_size=200')) as {
@@ -1066,6 +1124,42 @@ test.describe('заявки департаменту', () => {
         { rows: [{ divisionId: String(first.id), need: 2 }] },
       )
       const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      const person = (await apiCall(
+        token,
+        'GET',
+        '/api/ops/personnel/?search=%D0%A2%D0%BE%D0%BA%D1%82%D0%B0%D1%80%D0%BE%D0%B2&page_size=1',
+      )).results[0] as { id: string; fullName: string }
+
+      // UI-контракт проверяем без записи неудаляемой кампании в общий
+      // стенд. Живая серверная запись резерва покрыта pytest.
+      let reserveSelected = false
+      let selectionBody: { employeeIds?: string[]; kindCode?: string } = {}
+      await page.route(
+        (url) => decodeURIComponent(url.pathname).includes(`/forces/requests/${fixture.allocationId}/directorate/select`),
+        async (route) => {
+          selectionBody = route.request().postDataJSON() as typeof selectionBody
+          reserveSelected = true
+          await route.fulfill({ json: { selected: [person.id], refused: [], request: {} } })
+        },
+      )
+      await page.route(
+        (url) => url.pathname.includes('/forces/campaign-reserves'),
+        (route) => route.fulfill({
+          json: {
+            results: reserveSelected
+              ? [{
+                  employeeId: person.id,
+                  employeeName: person.fullName,
+                  campaignId: 'e2e-reserve',
+                  campaignCode: 'РМ-E2E',
+                  campaignTitle: 'Проба резерва',
+                  kindCode: 'PHYSICAL_SQUAD',
+                  sourceEventIds: [fixture.eventId],
+                }]
+              : [],
+          },
+        }),
+      )
 
       const api = page.context().request
       const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -1083,18 +1177,17 @@ test.describe('заявки департаменту', () => {
       const row = page.locator('tbody tr', { hasText: 'Токтаров' }).first()
       await expect(row).toBeVisible({ timeout: 30_000 })
       await row.getByRole('checkbox').check()
-      const select = banner.getByRole('button', { name: `Выделить на ${event.code}: 1` })
+      await expect(banner.getByLabel('Вид участия')).toHaveValue('PHYSICAL_SQUAD')
+      await expect(
+        banner.getByText('Физнаряд пока не получает статус участия', { exact: false }),
+      ).toBeVisible()
+      const select = banner.getByRole('button', { name: 'Добавить в общий резерв: 1' })
       await expect(select).toBeEnabled()
       await select.click()
 
-      await expect(banner.getByText('Выделено:', { exact: false })).toBeVisible({ timeout: 15_000 })
-      await expect(banner.getByText('выделено 1 из 2', { exact: false })).toBeVisible({ timeout: 15_000 })
-
-      // Сервер: человек в заявке, статус — от мероприятия.
-      const fresh = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
-      const members = (fresh.forceAllocation as { members: { name: string; statusId: string }[] }[])[0].members
-      expect(members.map((m) => m.name)).toContain('Токтаров А.')
-      expect(members[0].statusId, 'статус привлечения не поставлен').toBeTruthy()
+      expect(selectionBody).toEqual({ employeeIds: [person.id], kindCode: 'PHYSICAL_SQUAD' })
+      await expect(banner.locator('[data-slot="select-report"]')).toContainText('Выделено: 1', { timeout: 15_000 })
+      await expect(row.getByText('Резерв ОМ · РМ-E2E · Физнаряд')).toBeVisible({ timeout: 15_000 })
     } finally {
       await dropEvent(token, fixture.eventId)
     }
@@ -1124,26 +1217,24 @@ test.describe('заявки департаменту', () => {
     const token = await apiToken()
 
     // 🔴 АДРЕСАТ — ДЕРЖАТЕЛЬ ПРАВА, А НЕ РОЛЬ С ПОХОЖИМ ИМЕНЕМ (Plane №930,
-    // следствие решения заказчика по №779 от 06.09.2026). Здесь стояла
-    // учётка `acc_dept_head_d2` (роль `HEAD_OPS_UNIT`), и проба падала на
-    // чистом дереве: 0 записей вместо 2. Дефекта в коде нет — рассылка штабу
-    // перешла с ИМЕНИ РОЛИ на ПРАВО `forces.command`, а у `HEAD_OPS_UNIT`
-    // его нет намеренно (матрица заказчика №348 против спецификации
-    // `[СБС-10]`, расхождение вынесено карточкой №421 и до ответа право не
-    // выдано). Разбор №779 прямо называет это следствие: «начальник второго
-    // департамента об ответах управлений больше не узнаёт».
+    // следствие решения заказчика по №779 от 06.09.2026): рассылка штабу
+    // идёт по ПРАВУ `forces.command`, и входить надо тем, у кого оно есть.
     //
-    // То есть проба стерегла адрес, который система больше не обещает.
-    // Взята персона `forces_officer` (роль `FORCES_GATHERING_OFFICER`) — у
-    // неё `forces.command` есть, и она же может открыть доску сбора, куда
-    // ведёт ссылка уведомления. Предмет пробы от этого не изменился: два
-    // ответа за день — две строки ленты, а не одна.
+    // ИСТОРИЯ АДРЕСА. Сперва здесь стояла `acc_dept_head_d2` (`HEAD_OPS_UNIT`)
+    // — и проба падала: права у профиля не было (№421). Потом
+    // `acc_forces_officer` — он носил штабное право по ошибке матрицы. Потом
+    // снова `acc_dept_head_d2`: №944 выдала профилю `forces.command`, прочитав
+    // раздел 7.1 так, будто штаб — обе руководящие персоны второго
+    // департамента. Заказчик это отменил (№972, 08.09.2026, `[ШТБ-01]`):
+    // Штаб — ОТДЕЛЬНАЯ персона `acc_ops_staff` с ролью `OPS_STAFF`, и только
+    // у неё право есть. Предмет пробы от переездов не менялся: два ответа за
+    // день — две строки ленты, а не одна.
     const hqToken = (
       (await (
         await fetch(`${API}/api/token/`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ username: 'acc_forces_officer', password: bossPassword }),
+          body: JSON.stringify({ username: 'acc_ops_staff', password: bossPassword }),
         })
       ).json()) as { access: string }
     ).access
@@ -1219,9 +1310,9 @@ test.describe('заявки департаменту', () => {
       const hq = await ctx.newPage()
       const csrf = (await (await ctx.request.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
       await ctx.request.post(`${APP}/api/auth/callback/credentials/`, {
-        // Тот же адресат, что и у ленты выше (Plane №930): экран смотрит
-        // ЕЁ уведомления, и войти надо тем, кому они пришли.
-        form: { csrfToken: csrf.csrfToken, username: 'acc_forces_officer', password: bossPassword, json: 'true' },
+        // Тот же адресат, что и у ленты выше (Plane №930, №972): экран смотрит
+        // ЕГО уведомления, и войти надо тем, кому они пришли, — Штабу.
+        form: { csrfToken: csrf.csrfToken, username: 'acc_ops_staff', password: bossPassword, json: 'true' },
       })
       await hq.goto(`${APP}/dashboard`)
       await hq.getByRole('button', { name: 'Уведомления' }).click()

@@ -37,7 +37,9 @@ export const REQUIRED_VISIT_FIELDS: { path: string; label: string }[] = [
   { path: "persons", label: "Охраняемые лица" },
   { path: "arrival.date", label: "Дата прибытия" },
   { path: "departure.date", label: "Дата убытия" },
-  { path: "responsible", label: "Старший ГВО" },
+  // Два человека, а не один (Plane №952): ответственный за ГВО и старший ГВО.
+  { path: "responsible", label: "Ответственный за ГВО" },
+  { path: "senior", label: "Старший ГВО" },
 ];
 
 /**
@@ -251,6 +253,7 @@ const WHOLE_SECTION_SPECS: Record<string, GvoSectionSpec> = {
     title: "Состав ГВО СГО РК",
     fields: [
       text("resp", "Ответственный", "Шитов | 2-9 | ответственный", "responsible"),
+      text("senior", "Старший ГВО", "Мамаев | 1-30 | старший ГВО", "senior"),
       area(
         "groups",
         "Группы ГВО",
@@ -259,9 +262,16 @@ const WHOLE_SECTION_SPECS: Record<string, GvoSectionSpec> = {
       ),
     ],
   },
+  // Оба человека одним разделом (Plane №952): форма правки рисует их не
+  // текстом, а выбором из кадрового списка (`GvoEditForm`, `MemberField`);
+  // текстовая спецификация остаётся для разбора «Фамилия | позывной | роль»
+  // и путей флагов «уточняется».
   resp: {
-    title: "Ответственный за ГВО",
-    fields: [text("resp", "Ответственный", "Шитов | 2-9 | ответственный", "responsible")],
+    title: "Ответственный и старший ГВО",
+    fields: [
+      text("resp", "Ответственный за ГВО", "Шитов | 2-9 | ответственный", "responsible"),
+      text("senior", "Старший ГВО", "Мамаев | 1-30 | старший ГВО", "senior"),
+    ],
   },
   transport: {
     title: "Выделяемый транспорт",
@@ -403,10 +413,11 @@ export function gvoFormFromSummary(
     case "groups":
       return {
         resp: respLine(summary.responsible),
+        senior: respLine(summary.senior),
         groups: summary.groups.map(groupBlock).join("\n\n"),
       };
     case "resp":
-      return { resp: respLine(summary.responsible) };
+      return { resp: respLine(summary.responsible), senior: respLine(summary.senior) };
     case "transport":
       return {
         transport: summary.transport
@@ -459,13 +470,16 @@ function parseMember(line: string): GvoMember {
   };
 }
 
-function parseResponsible(value: string | undefined): GvoMember | null {
+function parseResponsible(
+  value: string | undefined,
+  defaultRole = "ответственный"
+): GvoMember | null {
   if ((value ?? "").trim() === "") return null;
   const [name, callsign, role] = parts(value ?? "");
   return {
     name: name ?? "",
     callsign: callsign ?? "",
-    role: role === undefined || role === "" ? "ответственный" : role,
+    role: role === undefined || role === "" ? defaultRole : role,
   };
 }
 
@@ -574,13 +588,17 @@ export function gvoPatchFromForm(
     case "groups":
       return {
         responsible: parseResponsible(form.resp),
+        senior: parseResponsible(form.senior, "старший ГВО"),
         groups: blocks(form.groups).map((block) => ({
           name: block[0],
           members: block.slice(1).map(parseMember),
         })),
       };
     case "resp":
-      return { responsible: parseResponsible(form.resp) };
+      return {
+        responsible: parseResponsible(form.resp),
+        senior: parseResponsible(form.senior, "старший ГВО"),
+      };
     case "transport":
       return { transport: parseTransport(form.transport) };
     default:
@@ -643,9 +661,9 @@ export function gvoSectionPatchKeys(
         "delegation", "delegationEmployeeIds",
       ];
     case "groups":
-      return ["responsible", "groups"];
+      return ["responsible", "senior", "groups"];
     case "resp":
-      return ["responsible"];
+      return ["responsible", "senior"];
     case "transport":
       return ["transport"];
     default:

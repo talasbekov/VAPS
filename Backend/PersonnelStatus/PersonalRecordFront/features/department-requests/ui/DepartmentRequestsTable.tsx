@@ -26,7 +26,8 @@
  * вспомогательными технологиями и не отвечает на вопрос «сколько именно»;
  * число без полосы не даёт увидеть отставание одним взглядом по столбцу.
  */
-import { useState } from "react";
+import { useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -108,7 +109,26 @@ export function DepartmentRequestsTable({ enabled = true }: { enabled?: boolean 
   // Карточка открывается НА МЕСТЕ таблицы, как на эталоне («← Назад к
   // заявкам»), а не уводит на карточку мероприятия: та собрана для штаба и
   // показывает раскладку по ВСЕМ департаментам.
-  const [opened, setOpened] = useState<string | null>(null);
+  //
+  // 🔴 ОТКРЫТАЯ ЗАЯВКА ЖИВЁТ В АДРЕСЕ (`?request=`, Plane №944) — тем же
+  // решением, что и открытый сбор у штаба (№779): уведомление «Штаб запросил
+  // N сотрудников» ведёт ответственного прямо в заявку, и без адреса вести
+  // его было бы некуда. `replace`, не `push`: открытие карточки — не шаг
+  // навигации. Пустое значение (`?request=`) — это «не открыто».
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const opened = searchParams.get("request") || null;
+  const setOpened = useCallback(
+    (value: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (value === null) next.delete("request");
+      else next.set("request", value);
+      const query = next.toString();
+      router.replace(query === "" ? pathname : `${pathname}?${query}`, { scroll: false });
+    },
+    [router, pathname, searchParams]
+  );
 
   if (opened !== null) {
     return (

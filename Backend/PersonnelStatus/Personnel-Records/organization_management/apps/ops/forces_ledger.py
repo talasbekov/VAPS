@@ -135,9 +135,18 @@ def project(event, *, models=None, now=None):
             M.OpsDepartmentRequest.objects.filter(event_id=event.pk, allocation_key=key)
             .order_by("-sequence").first()
         )
+        # 🔴 СВЯЗЬ — ТОЖЕ ПОЛЕ, А НЕ СОПРОВОЖДАЮЩАЯ МЕЛОЧЬ (доводка №673 по
+        # ревью №825). Сравнивались только цифры и срок — а `force_request_id`
+        # мог стать НЕВЕРНЫМ (заявок стало больше одной, связь по правилу
+        # выше обязана обнулиться), пока раскладка не поменяла ни одного из
+        # четырёх полей. Без сравнения связи `changed` оставался `False`, и
+        # последняя запись append-only таблицы навсегда несла связь, честную
+        # только на момент своего создания.
+        new_link = link_request.pk if link_request else None
         changed = last is None or (
             last.requested_count != need or last.allocating_count != allocating
             or last.status != status or last.due_at != due_at
+            or last.force_request_id != new_link
         )
         if changed:
             last = M.OpsDepartmentRequest.objects.create(

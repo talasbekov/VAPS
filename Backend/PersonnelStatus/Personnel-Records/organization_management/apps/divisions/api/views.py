@@ -93,7 +93,11 @@ class DivisionViewSet(viewsets.ModelViewSet):
             instance.parent = None
             instance.save()
             return Response({'status': 'moved'})
-        if int(parent_id) == instance.id:
+        try:
+            parent_id = int(parent_id)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Параметр parent_id должен быть числом.'}, status=400)
+        if parent_id == instance.id:
             return Response({'detail': 'Нельзя переместить подразделение само в себя.'}, status=400)
         try:
             new_parent = Division.objects.get(pk=parent_id)

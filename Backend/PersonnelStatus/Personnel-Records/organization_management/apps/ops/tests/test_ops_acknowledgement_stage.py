@@ -41,6 +41,8 @@ def acknowledgement_event(event_with_people):
 
 
 def test_remind_one_and_all_mark_rows_and_refuse_the_confirmed(manager, acknowledgement_event):  # noqa: F811
+    from rest_framework.test import APIClient
+
     base, rows = acknowledgement_event
     first, second = rows[0]["id"], rows[1]["id"]
     before = OpsNotification.objects.count()
@@ -54,7 +56,13 @@ def test_remind_one_and_all_mark_rows_and_refuse_the_confirmed(manager, acknowle
     assert OpsNotification.objects.count() > before
 
     # Подтвердил — напоминать нечего.
-    manager.post(f"{base}acknowledge/{first}/")
+    account = OpsSecurityEvent.objects.get(pk=base.rstrip("/").split("/")[-1])
+    employee_id = account.placement_assignments[0]["employeeId"]
+    from organization_management.apps.employees.models import Employee
+
+    self_client = APIClient()
+    self_client.force_authenticate(Employee.objects.get(pk=employee_id).user)
+    self_client.post(f"{base}acknowledge/{first}/")
     resp = manager.post(f"{base}acknowledgement/remind/{first}/")
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "ALREADY_ACKNOWLEDGED"

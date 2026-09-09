@@ -54,6 +54,13 @@ NO_LIVE_DATA = {
     "summary_service.assemble_summary",
     "summary_service.summary_freshness",
     "summary_service.rebuild_summary",
+    # Тот же приём, что `summary_freshness`: сверяет пины из снимка (живого
+    # там уже нет — они заморожены) с ЖИВОЙ структурой (`_required_children`,
+    # НЕ из `LIVE_SOURCES`), не подмешивая ничего в содержимое ответа.
+    "summary_service.summary_laggards",
+    # Проверяет наличие ключа `sources` в снимке (есть ли он вообще у этой
+    # строки) — содержимое снимка НЕ читает и никуда не подмешивает.
+    "summary_service.send_summary",
 }
 
 # 2. Сами помощники: они и ЕСТЬ правило, к себе неприменимы.

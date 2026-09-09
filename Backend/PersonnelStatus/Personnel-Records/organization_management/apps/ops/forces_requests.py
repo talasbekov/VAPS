@@ -37,6 +37,14 @@ def _directorate_row_view(event, allocation, mine, allocation_id):
     показывал бы разные поля в зависимости от того, пришёл человек по ссылке
     из уведомления или открыл раздел из меню.
     """
+    group_demands = {
+        str(row.get("id")): row for row in allocation.get("groupDemands", [])
+    }
+    selected_group_ids = {
+        str(group_id)
+        for row in mine
+        for group_id in row.get("groupDemandIds", [])
+    }
     return {
         "eventId": str(event.pk),
         "code": event.code,
@@ -46,6 +54,11 @@ def _directorate_row_view(event, allocation, mine, allocation_id):
         "departmentName": allocation.get("departmentName", ""),
         "status": allocation.get("status"),
         "dueAt": allocation.get("dueAt"),
+        "groupDemands": [
+            row
+            for group_id, row in group_demands.items()
+            if group_id in selected_group_ids
+        ],
         # Обычно одна строка; несколько — у роли с областью на
         # департамент (она видит все его управления).
         "directorates": [
@@ -144,6 +157,34 @@ def requested_event_ids(allowed_division_ids):
                 found.add(str(event.pk))
                 break
     return found
+
+
+def addressee_level(allowed_division_ids):
+    """Кому адресован список: «управлению», «департаменту» или «службе»
+    (Plane №941, слово заказчика 07.09.2026).
+
+    Баннер на «Статусах сотрудников» говорил «Вашему управлению адресованы
+    запросы…» всем подряд — и начальнику ДЕПАРТАМЕНТА тоже, хотя строки у него
+    по всем управлениям департамента. Уровень считается по ОБЛАСТИ
+    `status.manage`: область без границ (администратор) — служба; в области
+    есть департамент — департамент; иначе — управление. Считает сервер, а не
+    экран: экран знает только строки, а строки одного управления и строки
+    целого департамента из одной заявки выглядят одинаково.
+    """
+    from organization_management.apps.divisions.models import Division
+
+    if allowed_division_ids is None:
+        return "organization"
+    types = set(
+        Division.objects.filter(id__in=allowed_division_ids).values_list(
+            "division_type", flat=True
+        )
+    )
+    if Division.DivisionType.ORGANIZATION in types:
+        return "organization"
+    if Division.DivisionType.DEPARTMENT in types:
+        return "department"
+    return "directorate"
 
 
 def directorate_requests_view(allowed_division_ids):
@@ -251,14 +292,14 @@ def select_for_request(
     allowed_division_ids,
     *,
     actor,
+    kind_code=None,
     override=False,
     override_reason="",
 ):
     """Начальник управления выделяет людей ПО ЗАПРОСУ (Plane №395, `[СБС-31]`).
 
-    Спецификация: «Начальник отмечает сотрудников чекбоксами. Статус „Участие
-    в ОМ“ создаётся автоматически с мероприятием и датами из запроса. Поле
-    „мероприятие“ он не выбирает и не видит. Объект на этом шаге пуст».
+    С Plane №977 выбор разделён по виду: физнаряд пишется в общий пул без
+    мероприятия и статуса, специальная группа сразу связывается с ОМ заявки.
 
     Мероприятие и даты берутся ИЗ ЗАЯВКИ, а статус ставит тот же путь, что и
     штабное выделение (`add_allocation_member`): второй способ ставить статус
@@ -305,6 +346,28 @@ def select_for_request(
     # всё равно станет другим.
     event = _event_of_request(allocation_id, allowed_division_ids)
     event_id = str(event.pk)
+    target_allocation = next(
+        row for row in _raw_allocations(event) if row.get("id") == allocation_id
+    )
+    if kind_code and kind_code != "PHYSICAL_SQUAD":
+        mine = _mine_of(target_allocation, allowed_division_ids)
+        allowed_group_ids = {
+            str(group_id)
+            for row in mine
+            for group_id in row.get("groupDemandIds", [])
+        }
+        allowed_kinds = {
+            str(row.get("kindCode") or "")
+            for row in target_allocation.get("groupDemands", [])
+            if str(row.get("id")) in allowed_group_ids
+        }
+        if kind_code not in allowed_kinds:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"kindCode": ["Вид группы не входит в запрос управления."]},
+                message="Выберите вид из запроса управления.",
+            )
     # 🔴 ВЫДЕЛЯЮТ ПО УПРАВЛЕНИЯМ, КОТОРЫМ АДРЕСОВАНА ЗАЯВКА (Plane №550).
     # Проверка области отвечает на вопрос «мой ли это сотрудник», и у
     # действующего с областью на ДЕПАРТАМЕНТ она молчит про всех его людей —
@@ -383,14 +446,35 @@ def select_for_request(
             )
             continue
         try:
-            add_allocation_member(
-                event_id,
-                allocation_id,
-                employee_id=employee_id,
-                actor=actor,
-                override=bool(override),
-                override_reason=str(override_reason or ""),
-            )
+            if kind_code == "PHYSICAL_SQUAD":
+                employee = _find_personnel(employee_id)
+                if employee is None:
+                    raise DomainError(
+                        "VALIDATION_ERROR",
+                        400,
+                        detail={"employeeId": ["Сотрудник не найден."]},
+                        message="Сотрудник не найден.",
+                    )
+                from organization_management.apps.ops.force_campaigns import (
+                    add_reserve_member,
+                )
+
+                add_reserve_member(
+                    event=event,
+                    allocation_id=allocation_id,
+                    employee=employee,
+                    actor=actor,
+                )
+            else:
+                add_allocation_member(
+                    event_id,
+                    allocation_id,
+                    employee_id=employee_id,
+                    actor=actor,
+                    kind_code=kind_code or "PHYSICAL_SQUAD",
+                    override=bool(override),
+                    override_reason=str(override_reason or ""),
+                )
         except DomainError as error:
             employee = _find_personnel(employee_id)
             refused.append(

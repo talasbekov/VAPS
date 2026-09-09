@@ -38,6 +38,10 @@ ALLOWED_PATCH_KEYS = (
     "obVariant",
     "radio",
     "responsible",
+    # Старший ГВО (Plane №952) — ОТДЕЛЬНО от ответственного: до этого одно поле
+    # `responsible` выводилось из ведущего бюллетеня, а подпись обязательного
+    # поля звала его «Старший ГВО», и назначить старшего было негде.
+    "senior",
     "groups",
     "transport",
     # Ссылки на справочники (Plane №435, `[ГВО-08]`): встречающие,
@@ -54,19 +58,164 @@ ALLOWED_PATCH_KEYS = (
 # следующий заход не вернул его «за компанию» с новой секцией.
 
 
-def list_persons():
+def person_photo_url(person):
+    """Адрес снимка под `MEDIA_URL`; None — снимка нет (Plane №951)."""
+    return person.photo.url if person.photo else None
+
+
+def person_view(p):
+    return {
+        "id": str(p.id),
+        # Код `OL-N` (Plane №417) — печатается в бюллетене и сводках.
+        "code": p.display_code,
+        "name": p.name,
+        "callsign": p.callsign,
+        "category": p.category,
+        "bio": p.bio,
+        # Фотография (Plane №951): экран сводки ГВО рисует её карточкой лица.
+        "photoUrl": person_photo_url(p),
+        # Данные образца (Plane №952): должность, страна и строки «параметр =
+        # значение» — их сводка подставляет при выборе лица из справочника.
+        "country": p.country,
+        "position": p.position,
+        "facts": person_facts(p),
+    }
+
+
+def person_facts(p):
+    """Строки «параметр = значение» записи — только правильной формы: поле
+    JSON, и мусор в нём не должен ронять каталог целиком."""
+    rows = p.facts if isinstance(p.facts, list) else []
     return [
-        {
-            "id": str(p.id),
-            # Код `OL-N` (Plane №417) — печатается в бюллетене и сводках.
-            "code": p.display_code,
-            "name": p.name,
-            "callsign": p.callsign,
-            "category": p.category,
-            "bio": p.bio,
-        }
-        for p in OpsProtectedPerson.objects.filter(is_active=True)
+        {"key": str(row.get("key", "")).strip(), "value": str(row.get("value", "")).strip()}
+        for row in rows
+        if isinstance(row, dict) and str(row.get("key", "")).strip()
     ]
+
+
+def parse_facts(raw):
+    """Разбор `facts` из тела запроса; ошибка формы — ValidationError по полю."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValidationError({"facts": ["Ожидается список строк «параметр = значение»."]})
+    facts = []
+    for row in raw:
+        if not isinstance(row, dict):
+            raise ValidationError({"facts": ["Каждая строка — объект {key, value}."]})
+        key = str(row.get("key", "") or "").strip()
+        value = str(row.get("value", "") or "").strip()
+        if key == "" and value == "":
+            continue
+        if key == "":
+            raise ValidationError({"facts": ["У строки данных нет названия параметра."]})
+        facts.append({"key": key, "value": value})
+    return facts
+
+
+def list_persons():
+    return [person_view(p) for p in OpsProtectedPerson.objects.filter(is_active=True)]
+
+
+# ── Заведение лица и фотография с экрана (Plane №951) ───────────────────────
+#
+# Заказчик: «со справочника ОЛ нужно подтягивать ОЛ и здесь же должна быть
+# кнопка добавить ОЛ». До этого справочник правился только в Django Admin, и
+# лицо, которого там нет, в сводку попадало ТЕКСТОМ — без ссылки на запись
+# каталога, без кода и без фотографии.
+
+PERSON_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+PERSON_PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp")
+#: Формат ПО БАЙТАМ (Pillow `Image.format`, строчными) → расширение хранимого
+#: файла. Имя от клиента не используется вовсе — см. `set_person_photo`.
+PERSON_PHOTO_FORMATS = {"jpeg": "jpg", "png": "png", "webp": "webp"}
+
+
+def create_person(
+    *,
+    name,
+    category,
+    callsign="",
+    bio="",
+    country="",
+    position="",
+    facts=None,
+    actor=None,
+):
+    name = str(name or "").strip()
+    field_errors = {}
+    if name == "":
+        field_errors["name"] = ["Обязательное поле."]
+    if category not in OpsProtectedPerson.Category.values:
+        field_errors["category"] = ["Категория — «Наши» или «Иностранные»."]
+    if field_errors:
+        raise ValidationError(field_errors)
+    person = OpsProtectedPerson.objects.create(
+        name=name,
+        category=category,
+        callsign=str(callsign or "").strip(),
+        bio=str(bio or "").strip(),
+        # Данные образца (Plane №952) — заводятся вместе с лицом, чтобы
+        # сводка получила их при первом же выборе, а не текстом заново.
+        country=str(country or "").strip(),
+        position=str(position or "").strip(),
+        facts=parse_facts(facts),
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.PROTECTED_PERSON_CREATED,
+        entity_type=audit_service.ENTITY_PROTECTED_PERSON,
+        entity_id=person.pk,
+        new_value={"code": person.display_code, "name": person.name},
+    )
+    return person_view(person)
+
+
+def set_person_photo(person_id, upload, *, actor=None):
+    """Положить снимок лицу. None — лица нет (404 решает вьюха)."""
+    person = OpsProtectedPerson.objects.filter(pk=person_id, is_active=True).first()
+    if person is None:
+        return None
+    if upload is None:
+        raise ValidationError({"photo": ["Приложите файл изображения."]})
+    content_type = getattr(upload, "content_type", "") or ""
+    if content_type not in PERSON_PHOTO_TYPES:
+        raise ValidationError({"photo": ["Допустимы JPEG, PNG или WebP."]})
+    if upload.size > PERSON_PHOTO_MAX_BYTES:
+        raise ValidationError({"photo": ["Файл больше 5 МБ."]})
+    # 🔴 ПО БАЙТАМ, А НЕ ПО ЗАЯВЛЕННОМУ ТИПУ (ревью №825 по №951, 08.09.2026).
+    # Заголовок части multipart пишет клиент, и HTML с `Content-Type:
+    # image/png` проходил проверку выше, ложился под `/media/…/x.html` с
+    # расширением КЛИЕНТА и раздавался с домена портала — хранимый XSS любому
+    # держателю `event.create`. Поэтому файл открывается Pillow, формат
+    # берётся из байтов, а имя хранимого файла собирается здесь — от клиента
+    # не остаётся ни имени, ни расширения.
+    from uuid import uuid4
+
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        upload.seek(0)
+        with Image.open(upload) as image:
+            image.verify()
+            image_format = (image.format or "").lower()
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise ValidationError({"photo": ["Файл не является изображением JPEG, PNG или WebP."]})
+    if image_format not in PERSON_PHOTO_FORMATS:
+        raise ValidationError({"photo": ["Допустимы JPEG, PNG или WebP."]})
+    upload.seek(0)
+    stored_name = f"{person.pk}-{uuid4().hex}.{PERSON_PHOTO_FORMATS[image_format]}"
+    if person.photo:
+        person.photo.delete(save=False)
+    person.photo.save(stored_name, upload, save=True)
+    audit_service.record(
+        actor=actor,
+        action=audit_service.PROTECTED_PERSON_PHOTO_SET,
+        entity_type=audit_service.ENTITY_PROTECTED_PERSON,
+        entity_id=person.pk,
+        new_value={"code": person.display_code, "photo": person.photo.name},
+    )
+    return person_view(person)
 
 
 # ── История мероприятий (задача заказчика Plane №38) ────────────────────────
@@ -254,8 +403,8 @@ SECTION_PATCH_KEYS = {
         "stay", "sbChief", "weapons", "obVariant", "radio", "wishes",
         "delegation", "delegationEmployeeIds",
     ),
-    "groups": ("responsible", "groups"),
-    "resp": ("responsible",),
+    "groups": ("responsible", "senior", "groups"),
+    "resp": ("responsible", "senior"),
     "transport": ("transport",),
 }
 
@@ -307,7 +456,12 @@ REQUIRED_VISIT_FIELDS = (
     ("persons", "Охраняемые лица"),
     ("arrival.date", "Дата прибытия"),
     ("departure.date", "Дата убытия"),
-    ("responsible", "Старший ГВО"),
+    # Два человека, а не один (Plane №952): ответственный за ГВО (база —
+    # ведущий бюллетеня) и старший ГВО (база — старший из бюллетеня, он же
+    # правит сводку). Прежде `responsible` подписывался «Старший ГВО», и
+    # заказчик не находил, где старшего назначить.
+    ("responsible", "Ответственный за ГВО"),
+    ("senior", "Старший ГВО"),
 )
 
 
@@ -423,6 +577,40 @@ def _parse_unspecified(raw):
     return sorted(set(k.strip() for k in raw if k.strip()))
 
 
+def _sync_senior_to_event(event, senior):
+    """Старший ГВО из сводки — он же старший мероприятия (Plane №952).
+
+    Старший ГВО правит сводку своего ОМ по `chief_employee_id` мероприятия
+    (`test_ops_gvo_api`: «Старший ГВО правит сводку СВОЕГО ОМ по роли в
+    данных»). Два списка старших — в бюллетене и в сводке — разошлись бы на
+    первой же замене: назначенный в сводке не получил бы права, а снятый
+    сохранил бы его. Поэтому выбор старшего в сводке переписывает старшего
+    мероприятия; база сводки в свою очередь выводится из него — источник
+    один. Старший, набранный текстом (без `employeeId`), мероприятие не
+    трогает: права по тексту не выдаются.
+    """
+    if not isinstance(senior, dict):
+        return
+    raw = senior.get("employeeId")
+    if not raw:
+        return
+    from organization_management.apps.ops.security_events import (
+        _find_personnel,
+        personnel_display_name,
+    )
+
+    employee = _find_personnel(raw)
+    if employee is None:
+        return
+    chief_id = int(employee.pk)
+    chief_name = personnel_display_name(employee)
+    if event.chief_employee_id == chief_id and event.chief_name == chief_name:
+        return
+    event.chief_employee_id = chief_id
+    event.chief_name = chief_name
+    event.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+
+
 def apply_patch(om_code, body, user, actor=None):
     """Тело — {section, values} (контракт UpdateGvoSummaryRequest фронта):
     values мержатся по ключам верхнего уровня — присланный ключ замещает
@@ -458,6 +646,7 @@ def apply_patch(om_code, body, user, actor=None):
     rec.patch = {**rec.patch, **values}
     rec.updated_by = user if getattr(user, "is_authenticated", False) else None
     rec.save(update_fields=["patch", "updated_by", "updated_at"])
+    _sync_senior_to_event(event, values.get("senior"))
     # Визит — новый источник правды (Plane №435): та же правка пишется в
     # него, версия растёт; патч живёт рядом, пока его читают.
     visit = visit_for_event(event, create=True)

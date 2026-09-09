@@ -150,6 +150,12 @@ class OpsSecurityEvent(TimeStampedModel):
     force_need = models.PositiveIntegerField()
     conflicts_count = models.PositiveIntegerField()
     owner_name = models.CharField(max_length=255)
+    # Идентификатор учётки создателя (Plane №947) — рядом с подписью, как
+    # `chief_employee_id` рядом с `chief_name`: подпись для экрана, id для
+    # права. Создатель правит сводку ГВО своего ОМ по роли в данных; по
+    # подписи право не выдаётся — тёзка получил бы чужую сводку. Пусто у
+    # строк, чьё создание не нашлось в журнале аудита (миграция 0104).
+    owner_actor_id = models.CharField(max_length=255, blank=True, default="")
     brief_description = models.TextField(blank=True)
     initial_tasks = models.TextField(blank=True)
     recon_checklist = models.JSONField()
@@ -372,6 +378,14 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
     # Примечание к посещению («основной объект», «резерв», время) — подпись
     # рядом с объектом в сводке ГВО, свободный текст без разбора.
     note = models.CharField(max_length=255, blank=True)
+    # Описание ВИЗИТА (Plane SJ-1049) — не `note`: `note` подписывает объект в
+    # сводке ГВО коротким служебным ярлыком («основной объект», «резерв»), а
+    # `description` — предложение о ЦЕЛИ посещения именно на этом ОМ («Основная
+    # площадка мероприятия.», «Размещение на время мероприятия.»). Поле визита,
+    # а не объекта-каталога: цель визита меняется от мероприятия к мероприятию
+    # даже для одного и того же здания — то же рассуждение, что у `chief_name`
+    # ниже (старший объекта — тоже факт визита, а не каталога).
+    description = models.CharField(max_length=255, blank=True)
     # Старший ОБЪЕКТА посещения (Plane «Реестр ОМ-35.2») — не то же, что
     # старший мероприятия (`chief_employee_id` у ОМ): у визита иностранного ОЛ
     # объектов несколько, и на каждом свой ответственный за расстановку и
@@ -409,8 +423,8 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
         choices=OpsSecurityEvent.Stage.choices,
         default=OpsSecurityEvent.Stage.BULLETIN,
     )
-    # 🔴 `recon_checklist`, `recon_sector_posts`, `recon_notes`,
-    # `placement_assignments`, `journal_entries` ЗАВЕДЕНЫ Ш-1 И НЕ ПРИЖИЛИСЬ
+    # 🔴 `recon_sector_posts`, `recon_notes`, `placement_assignments`,
+    # `journal_entries` ЗАВЕДЕНЫ Ш-1 И НЕ ПРИЖИЛИСЬ
     # (Plane №413, Ш-7 плана №385): Ш-1 задумывал их как дубликат
     # одноимённых полей мероприятия, но Ш-2 выбрал ДРУГОЙ путь — ОДИН общий
     # расчёт постов мероприятия (`event.recon_sector_posts`), где строка несёт
@@ -418,7 +432,11 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
     # лучше дублирования: два ОМ-2026-11 с 32 назначениями на 5 постов не
     # завели бы второй источник расхождения. Пять полей ни разу не получили
     # писателя — грепом подтверждено при взятии этого шага — и снимаются без
-    # бэкфилла: переносить в них было нечего.
+    # бэкфилла: переносить в них было нечего. Чек-лист возвращён
+    # на объект по №982: поимённый старший не может отмечать
+    # готовность соседнего объекта через общее поле мероприятия.
+    recon_checklist = models.JSONField(default=list, blank=True)
+    recon_force_request = models.PositiveIntegerField(default=0)
     #
     # «Потребность N, назначено 0» из `[РЕК-08]`: обе цифры показывает реестр
     # в раскрытой строке (Plane №387). `force_assigned` — снимок счёта, а не

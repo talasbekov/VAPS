@@ -122,6 +122,7 @@ const MONTENEGRO_PATCH: GvoSummaryPatch = {
   obVariant: "трасса № 2, объекты № 1",
   radio: "В-1 / В-12 / С-12",
   responsible: { name: "Шитов", callsign: "2-9", role: "ответственный" },
+  senior: { name: "Булатаев", callsign: "2-27", role: "старший ГВО" },
   groups: [
     {
       name: "ГВО «Черногория»",
@@ -288,6 +289,9 @@ function assembledRow(event: { code: string }): GvoSummaryRow {
     omCode: event.code,
     summary,
     filled: Object.keys(patch).length > 0,
+    // Слово сервера о правке (Plane №947). Мок правит всякому: границу прав
+    // стерегут живые пробы, а мок-контракт — форму ответа.
+    canEdit: true,
     // Визит (Plane №435): мок держит его у каждой строки — черновик/заполнен.
     visit: {
       status:

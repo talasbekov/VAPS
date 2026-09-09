@@ -25,11 +25,17 @@ STATUS_LABELS = {
     "DISTRIBUTED": "Распределено",
 }
 
-_FORCES_DEPT = "HEAD_OPS_UNIT"
 
 
 def _sent_rows(allocations):
-    return [r for r in allocations if r.get("status") != events._ALLOCATION_DRAFT]
+    # «Запросы отправлены» — это момент `sentAt` шага штаба «Отправить
+    # запросы» (`[СБС-12]`, Plane №944), а не «департамент что-то сделал»:
+    # здесь стояло `status != DRAFT`, и статус доски менялся действием
+    # ДЕПАРТАМЕНТА (оповещением управлений), тогда как спецификация описывает
+    # шаг штаба.
+    from organization_management.apps.ops import forces_send
+
+    return forces_send.sent_rows(allocations)
 
 
 def _answered(row):
@@ -183,8 +189,21 @@ def _responsibles(department_ids):
     `PermissionService.roles_holding` по №880, и там же записано, почему
     wildcard нельзя забывать. Ровно этот случай №880 и предсказывал — копия,
     оставшаяся в стороне, разошлась с остальными тремя.
+
+    🔴 ДЕЖУРСТВО — ВТОРОЙ ИСТОЧНИК, КАК В `_department_officers` (Plane
+    №1026, ревью коммита `6d422ffb` по №923). Рассылка той же заявки
+    (`forces_notify._department_officers`) уже читает и `TemporaryDutyPermission`
+    с №800 — заступивший дежурным ответственный письмо «ответьте по заявке»
+    получал, а колонка «Ответственный» смотрела только на постоянные
+    `UserRole` и оставалась пустой. Оба источника — та же область РОВНО на
+    департамент, что и у постоянных назначений; окно действия дежурства
+    проверяется тем же моментом, что и в рассылке.
     """
-    from organization_management.apps.operations.models import UserRole
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models import (
+        TemporaryDutyPermission,
+        UserRole,
+    )
     from organization_management.apps.operations.services import PermissionService
 
     ids = [int(x) for x in department_ids if str(x).isdigit()]
@@ -194,11 +213,24 @@ def _responsibles(department_ids):
     # Пустой набор — законный ответ («права не держит никто»), и тогда строка
     # остаётся без ответственного: fail-closed, как у остальных читателей.
     allowed_roles = PermissionService.roles_holding(RESPONSIBLE_PERMISSION)
+    if not allowed_roles:
+        return out
+    now = Clock.now()
     rows = list(
         UserRole.objects.filter(
             is_active=True,
             scope_division_id__in=ids,
             role_code_id__in=allowed_roles,
+        )
+        .order_by("id")
+        .values_list("scope_division_id", "user_id")
+    ) + list(
+        TemporaryDutyPermission.objects.filter(
+            is_active=True,
+            scope_division_id__in=ids,
+            duty_role_code__in=allowed_roles,
+            starts_at__lte=now,
+            ends_at__gte=now,
         )
         .order_by("id")
         .values_list("scope_division_id", "user_id")
@@ -252,6 +284,7 @@ def detail_extras(event, allocations):
     """Дополнение к `force_collection_detail` (Ш-2 №271) полями `[СБС-11]`/`[СБС-12]`."""
     return {
         "needByObject": need_by_object(event),
+        "demandRows": event.demand_rows or [],
         "totals": totals(event, allocations),
         "boardStatus": collection_status(event, allocations),
         "urgent": is_urgent(event, allocations),
@@ -310,9 +343,13 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
     """«Довыделить недобор → …» (`[СБС-12]`): НОВАЯ строка запроса тому же
     департаменту; отправленные цифры не правятся и не удаляются. Строка
     сразу отправляется (оповещение управлений тем же путём, что и первая)."""
+    from organization_management.apps.ops import forces_send
+
     event = events.lock_event(event_id)
     source = events._find_allocation(event, allocation_id)
-    if source.get("status") == events._ALLOCATION_DRAFT:
+    # «Отправленный» — по моменту `sentAt` (№944), а не по статусу: черновик
+    # штаба, который тот ещё не отправил, правится на месте.
+    if not forces_send.is_sent(source):
         raise DomainError(
             "ALLOCATION_NOT_SENT", 422,
             message="Довыделить можно только по отправленному запросу — черновик правится на месте.",
@@ -357,9 +394,16 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
         ],
         "topUpOf": source.get("id"),
         "createdAt": now.isoformat(),
+        # Довыделение отправляется сразу (`[СБС-12]`): момент тот же, что
+        # ставит «Отправить запросы» (Plane №944), и ответственный департамента
+        # узнаёт о нём тем же письмом.
+        "sentAt": now.astimezone(dt.timezone.utc).isoformat(),
     }
     event.force_allocation = [*event.force_allocation, row]
     event.save(update_fields=["force_allocation", "updated_at"])
+    from organization_management.apps.ops import forces_notify
+
+    forces_notify.notify_department_officers(event, [row])
     if row["directorates"]:
         event = events.notify_directorates(event.pk, key, actor=actor)
     return event

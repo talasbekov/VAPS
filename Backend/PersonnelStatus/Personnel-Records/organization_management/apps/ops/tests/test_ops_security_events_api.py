@@ -10,6 +10,7 @@ conduct → closed. Правила, коды и тексты — порт мок
 from datetime import date
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.db.utils import IntegrityError
 
 from organization_management.apps.dictionaries.models import Rank
@@ -122,6 +123,11 @@ def manager():
             # заполняет бюллетень, и разделение не должно у него ничего отнять.
             "event.create",
             "event.bulletin",
+            # Рекогносцировка с №982 больше не выводится из `event.manage`.
+            # Эта общая фикстура проверяет бизнес-гарды всей цепочки как
+            # руководство/админ, поэтому использует отдельный разрешённый
+            # override; ролевые запреты проверяются выделенными клиентами.
+            "event.stage_override",
             "forces.command",
             "forces.allocate",
             "forces.select",
@@ -451,6 +457,19 @@ def test_list_filters_and_pages(manager, viewer):
     assert data["results"][0]["title"] == "ОМ номер 2"
     data = viewer.get(URL, {"search": "номер 1"}).json()
     assert data["count"] == 1
+    # 🔴 ПИНЫ ПЕРЕНОСА ОТБОРА В БАЗУ (№910; ревью №825, 08.09.2026): ровно
+    # те места, где буквальный перенос сузил бы поведение. Регистр: поиск
+    # без учёта регистра. Граница полей: склейка `title code object owner`
+    # ищется как одна строка — «ОМ номер 1» находится по хвосту названия и
+    # началу кода. Период — включительно с обеих сторон. Владелец — точное имя.
+    assert viewer.get(URL, {"search": "НОМЕР 1"}).json()["count"] == 1
+    first = viewer.get(URL, {"search": "номер 1"}).json()["results"][0]
+    across = f"{first['title'][-5:]} {first['code'][:3]}"
+    assert viewer.get(URL, {"search": across}).json()["count"] == 1, across
+    day = first["businessDate"]
+    assert viewer.get(URL, {"from": day, "to": day}).json()["count"] == 3
+    assert viewer.get(URL, {"owner": first["ownerName"]}).json()["count"] == 3
+    assert viewer.get(URL, {"owner": "Никто Такой"}).json()["count"] == 0
     data = viewer.get(URL, {"page": "2", "page_size": "2"}).json()
     assert data["count"] == 3
     assert len(data["results"]) == 1
@@ -599,6 +618,8 @@ def test_personnel_page_size_has_a_ceiling(manager):
 def test_full_lifecycle_walkthrough(manager, approver_client):
     obj = make_object(with_passport=True)
     employee = make_employee()
+    employee.user = get_user_model().objects.get(username="ev-manager")
+    employee.save(update_fields=["user"])
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
 
@@ -1334,6 +1355,79 @@ def test_update_visit_object_day_and_note(manager):
     assert resp.json()["visitObjects"][0]["note"] == ""
 
 
+def test_update_visit_object_description_is_a_separate_field_from_note(manager):
+    """Описание визита — цель посещения на ЭТОМ ОМ, отдельно от `note`
+
+    (короткая служебная подпись для сводки ГВО). Plane SJ-1049: макет
+    показывает объекту предложение вида «Основная площадка мероприятия.» —
+    проба стережёт, что это своё поле, не подмена `note`, и что оба поля
+    правятся одним PATCH независимо друг от друга.
+    """
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "основной объект", "description": "Основная площадка мероприятия."},
+        format="json",
+    )
+    assert resp.status_code == 200
+    row = resp.json()["visitObjects"][0]
+    assert row["note"] == "основной объект"
+    assert row["description"] == "Основная площадка мероприятия."
+    saved = OpsSecurityEventVisitObject.objects.get(pk=visit_id)
+    assert saved.description == "Основная площадка мероприятия."
+
+    # `description` не пришёл вовсе (старый клиент шлёт только visitDay/note)
+    # — поле остаётся как было, не сбрасывается молча.
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "то же примечание"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["visitObjects"][0]["description"] == "Основная площадка мероприятия."
+
+    # Пустая строка — описание снимается осознанно.
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "", "description": ""},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["visitObjects"][0]["description"] == ""
+
+
+def test_visit_object_carries_catalog_photo_without_object_catalog_permission(manager):
+    """Фото приходит в законно читаемом event-контракте, без второго object.view API."""
+
+    obj = make_object(with_passport=True)
+    obj.photo.name = "security-objects/photos/registry-object.png"
+    obj.save(update_fields=["photo"])
+
+    created = create_event(manager, obj)
+
+    assert created.status_code == 201
+    assert created.json()["visitObjects"][0]["photoUrl"] == (
+        "/media/security-objects/photos/registry-object.png"
+    )
+
+
+def test_update_visit_object_rejects_a_too_long_description(manager):
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "", "description": "x" * 256},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["details"]["description"] == ["Не длиннее 255 символов."]
+
+
 def test_update_visit_object_rejects_bad_day_and_unknown_row(manager):
     obj = make_object(with_passport=True)
     event_id = create_event(manager, obj).json()["id"]
@@ -1600,7 +1694,12 @@ def test_stage_override_needs_its_own_permission(manager):
     """Право вести мероприятие НЕ даёт обходить этапы."""
     obj = make_object(with_passport=True)
     event_id = create_event(manager, obj).json()["id"]
-    resp = manager.post(
+    event_manager, _ = client_for(
+        "event-manager-without-stage-override",
+        "EVENT_MANAGER_ONLY",
+        perms=("event.view", "event.manage"),
+    )
+    resp = event_manager.post(
         f"{URL}{event_id}/stage/", {"stage": "APPROVAL"}, format="json"
     )
     assert resp.status_code == 403
@@ -1710,15 +1809,19 @@ def test_event_with_object_opens_on_recon(manager):
     assert [row["post"] for row in saved.json()["reconSectorPosts"]] == ["Пост 1"]
 
 
-def test_bulletin_complete_opens_recon_when_object_present(manager):
-    """ОМ, заведённые ДО правила (стадия «Бюллетень») и имеющие объект, тоже
-    открывают рекогносцировку без заполненного бюллетеня: гейт держит объект,
-    а не текст. Без объекта текст остаётся условием — старшему наряда больше
-    ничего не приходит до выезда."""
+def test_bulletin_complete_opens_recon_without_bulletin_text(manager):
+    """Рекогносцировка открывается БЕЗ описания и задач — и с объектом, и без
+    (Plane №943, слово заказчика 07.09.2026: блок текста бюллетеня снят «со
+    всего проекта»). До этого ОМ без объекта отбивался `BULLETIN_INCOMPLETE`
+    — пин перевёрнут осознанно: в бланке «Орда-4» таких полей нет.
+
+    КРАСНАЯ ПРОБА: верни гейт по тексту в `complete_bulletin` — вторая
+    половина ответит 422.
+    """
     obj = make_object(with_passport=True)
     event_id = create_event(manager, obj).json()["id"]
-    # Возвращаем ОМ в состояние «до правила» напрямую: сервисом такой стадии
-    # у ОМ с объектом больше не получить.
+    # ОМ с объектом стартует рекогносцировкой; возвращаем его на «Бюллетень»
+    # напрямую — сервисом такой стадии у ОМ с объектом не получить.
     OpsSecurityEvent.objects.filter(pk=event_id).update(
         stage="BULLETIN", brief_description="", initial_tasks=""
     )
@@ -1726,15 +1829,14 @@ def test_bulletin_complete_opens_recon_when_object_present(manager):
     assert resp.status_code == 200
     assert resp.json()["stage"] == "RECON"
 
-    # А ОМ без объекта — по-прежнему через заполненный бюллетень.
     bare = manager.post(
         URL,
         {"title": "Без маршрута", "businessDate": "2026-08-10", "kind": "INTERNAL"},
         format="json",
     ).json()
-    refused = manager.post(f"{URL}{bare['id']}/bulletin/complete/")
-    assert refused.status_code == 422
-    assert refused.json()["error_code"] == "BULLETIN_INCOMPLETE"
+    opened = manager.post(f"{URL}{bare['id']}/bulletin/complete/")
+    assert opened.status_code == 200, opened.content
+    assert opened.json()["stage"] == "RECON"
 
 
 def test_recon_force_request_survives_saves_without_the_field(manager):

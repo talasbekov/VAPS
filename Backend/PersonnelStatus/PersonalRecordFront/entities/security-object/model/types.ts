@@ -89,6 +89,9 @@ export interface SecurityObject {
   /** Производное: у объекта есть хотя бы одно охранное мероприятие. Считает
    * сервер аннотацией — у объекта такого поля нет. */
   hasSecurityEvents: boolean;
+  /** Снимок объекта-каталога (Plane SJ-1049); null — не загружен. Свойство
+   * каталога, а не визита: одно здание снимают один раз. */
+  photoUrl: string | null;
   /** Действующая редакция (черновик): её и правит форма паспорта. */
   sectors: ObjectSector[];
   /** История публикаций, по возрастанию номера версии. Неизменяема. */
@@ -158,6 +161,11 @@ export function objectHistoryPath(id: string): string {
 
 export function objectDetailPath(id: string): string {
   return `${OPS_OBJECTS_PATH}${id}/`;
+}
+
+/** Снимок объекта-каталога (Plane SJ-1049). */
+export function objectPhotoPath(id: string): string {
+  return `${OPS_OBJECTS_PATH}${encodeURIComponent(id)}/photo/`;
 }
 
 export function objectPassportPath(id: string): string {

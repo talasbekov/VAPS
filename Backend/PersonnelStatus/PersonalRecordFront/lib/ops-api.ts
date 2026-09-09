@@ -28,10 +28,15 @@ class OpsApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
+    // Тело-форма (снимок лица, Plane №951) уходит БЕЗ `Content-Type`:
+    // границу multipart ставит сам `fetch`, а выставленный руками заголовок
+    // без границы сервер разобрать не сможет.
+    const headers: Record<string, string> = {
       accept: "application/json",
     };
+    if (!(options.body instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+    }
 
     const token = await getAccessToken();
     if (token) {
@@ -68,6 +73,11 @@ class OpsApiClient {
       method: "POST",
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+  }
+
+  /** Отправка формы (файлы) — multipart, Plane №951. */
+  async postForm<T>(endpoint: string, form: FormData): Promise<T> {
+    return this.request<T>(endpoint, { method: "POST", body: form });
   }
 
   async patch<T>(endpoint: string, body?: unknown): Promise<T> {

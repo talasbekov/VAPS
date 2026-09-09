@@ -19,6 +19,8 @@ import {
   securityEventAcknowledgementNotifyPath,
   securityEventApprovalApprovePath,
   securityEventApprovalRoutePath,
+  securityEventApprovalCandidatesPath,
+  securityEventApprovalRouteSelectPath,
   securityEventApproverPath,
   securityEventApproverDecidePath,
   securityEventApproverMovePath,
@@ -43,6 +45,7 @@ import {
   securityEventPlacementMovePath,
   securityEventPlacementCompletePath,
   securityEventPlacementPostPath,
+  securityEventPlacementPostCommentPath,
   securityEventPlacementSeniorPath,
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
@@ -89,7 +92,7 @@ interface StageMutationOptions {
   onFormError?: (details: Record<string, unknown>) => void;
   /** Ответ мутации — форме этапа. Нужен там, где сервер меняет данные, которые
    * форма держит у себя (импорт постов), а пересборки формы больше нет. */
-  onEvent?: (event: SecurityEvent) => void;
+  onEvent?: (event: SecurityEvent, variables: Record<string, unknown>) => void;
 }
 
 function useEventMutation<TVariables extends Record<string, unknown>>(
@@ -100,10 +103,10 @@ function useEventMutation<TVariables extends Record<string, unknown>>(
   const queryClient = useQueryClient();
   return useOpsMutation<SecurityEvent, TVariables>({
     mutationFn,
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       queryClient.setQueryData(["ops-security-events", "detail", id], data);
       invalidateSecurityEvents(queryClient);
-      options?.onEvent?.(data);
+      options?.onEvent?.(data, variables);
     },
     onFormError: options?.onFormError,
   });
@@ -226,8 +229,8 @@ export function useImportReconPosts(
 }
 
 export function useCompleteRecon(id: string) {
-  return useEventMutation<Record<string, never>>(id, () =>
-    opsApiClient.post<SecurityEvent>(securityEventReconCompletePath(id))
+  return useEventMutation<VisitObjectAddressed>(id, (body) =>
+    opsApiClient.post<SecurityEvent>(securityEventReconCompletePath(id), body)
   );
 }
 
@@ -368,6 +371,18 @@ export function useRemovePlacementPost(id: string) {
   );
 }
 
+/** Комментарий поста на расстановке: точечная операция, а не recon. */
+export function useUpdatePlacementPostComment(id: string) {
+  return useEventMutation<{ postId: string; comment: string }>(
+    id,
+    ({ postId, comment }) =>
+      opsApiClient.patch<SecurityEvent>(
+        securityEventPlacementPostCommentPath(id, postId),
+        { comment }
+      )
+  );
+}
+
 /** Старший ПОСТА: назначить (`senior: true`) или снять (`[РАС-03]`, №445).
  *
  * Имя хука и поле `isSectorSenior` остались от прежнего правила «один на
@@ -409,8 +424,15 @@ export function useReturnPlacement(id: string, options?: StageMutationOptions) {
 // ── Ознакомление ─────────────────────────────────────────────────────────
 
 export function useAcknowledgePlacement(id: string) {
-  return useEventMutation<{ assignmentId: string }>(id, ({ assignmentId }) =>
-    opsApiClient.post<SecurityEvent>(securityEventAcknowledgePath(id, assignmentId))
+  return useEventMutation<{
+    assignmentId: string;
+    deliveryMethod?: string;
+    accountAbsenceBasis?: string;
+  }>(id, ({ assignmentId, ...body }) =>
+    opsApiClient.post<SecurityEvent>(
+      securityEventAcknowledgePath(id, assignmentId),
+      body
+    )
   );
 }
 
@@ -605,6 +627,46 @@ export function useAddApprover(id: string, options?: StageMutationOptions) {
     id,
     (body) =>
       opsApiClient.post<SecurityEvent>(securityEventApprovalRoutePath(id), body),
+    options
+  );
+}
+
+export interface ApprovalCandidate {
+  userId: string;
+  employeeId: string;
+  name: string;
+  username: string;
+}
+
+export function useApprovalCandidates(
+  id: string,
+  visitObjectId: string | undefined,
+  enabled: boolean
+) {
+  return useQuery<{ results: ApprovalCandidate[] }, OpsApiFailure>({
+    queryKey: ["ops-approval-candidates", id, visitObjectId],
+    queryFn: () =>
+      opsApiClient.get<{ results: ApprovalCandidate[] }>(
+        withVisitObject(securityEventApprovalCandidatesPath(id), visitObjectId)
+      ),
+    enabled: enabled && visitObjectId !== undefined,
+  });
+}
+
+export function useSelectApprovalRoute(
+  id: string,
+  options?: StageMutationOptions
+) {
+  return useEventMutation<{
+    approverUserId: string;
+    visitObjectId?: string;
+  }>(
+    id,
+    (body) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventApprovalRouteSelectPath(id),
+        body
+      ),
     options
   );
 }

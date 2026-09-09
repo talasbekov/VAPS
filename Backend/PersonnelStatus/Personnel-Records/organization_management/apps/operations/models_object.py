@@ -83,6 +83,14 @@ class OpsSecurityObject(TimeStampedModel):
     # вкладку не попал бы. Третья вкладка считается от `security_events`, и
     # она НЕ исключает первые две — на собственном объекте тоже проводят ОМ.
     ownership = models.CharField(max_length=10, choices=Ownership.choices)
+    # Снимок объекта (Plane SJ-1049) — свойство КАТАЛОГА, а не визита: одно и
+    # то же здание фотографируют один раз, а не заново на каждое ОМ. Тот же
+    # приём, что `OpsProtectedPerson.photo` (models_gvo.py): загрузка отдельной
+    # ручкой `POST /objects/{id}/photo/`, а не полем формы создания — заводящий
+    # объект минимальной карточкой снимка ещё не имеет.
+    photo = models.ImageField(
+        upload_to="security-objects/photos/", null=True, blank=True
+    )
 
     class Meta:
         db_table = "ops_security_objects"

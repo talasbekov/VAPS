@@ -401,6 +401,65 @@ def test_resending_an_approved_object_supersedes_it_instead_of_overwriting(
     assert [(r.number, r.status) for r in rows] == [(1, "APPROVED"), (2, "APPROVED")]
 
 
+def test_resending_a_legacy_object_without_version_rows_still_supersedes_instead_of_overwriting(
+    manager, approver, two_objects_on_approval  # noqa: F811
+):
+    """Повторная отправка СОГЛАСОВАННОГО объекта БЕЗ строк истории версий тоже
+    открывает N+1, а не переписывает воображаемую версию 1 (Plane №584).
+
+    🔴 ПОЧЕМУ БЕЗ СТРОК, А НЕ С НИМИ. `test_resending_an_approved_object_…`
+    рядом проверяет тот же исход, но там строку версии заранее завела
+    `complete_placement` — канонический путь. У объектов, чей `document_version`
+    вырос в эту таблицу ДО миграции `0073`, строки нет вовсе: бэкфилла нет
+    НАМЕРЕННО (`_ensure_document_version`). Ровно на этих объектах и жил
+    дефект: `visit.approval_status = "PENDING"` присваивалось ВЫШЕ вызова
+    `_submit_document_version`, и та видела уже переписанный `PENDING` вместо
+    `APPROVED` — заводила `SUBMITTED` номером 1 и правила его на месте, стирая
+    факт согласования вместо того, чтобы открыть версию 2.
+    """
+    base, event_id, first, _, _ = two_objects_on_approval
+    _add_approver(manager, base, first)
+    manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    first.refresh_from_db()
+    approver_id = first.approval_route[0]["id"]
+    decided = approver.post(
+        f"{base}approval/route/{approver_id}/decide/",
+        {"decision": "APPROVED", "comment": "", "visitObjectId": str(first.pk)},
+        format="json",
+    )
+    assert decided.status_code == 200, decided.content
+    first.refresh_from_db()
+    assert first.stage == "ACKNOWLEDGEMENT", (
+        "единственный согласующий обязан автозавершить этап — иначе проба "
+        "проверяет не тот путь"
+    )
+    assert first.approval_status == "APPROVED"
+
+    # Строка истории — только что заведённая канонической отправкой —
+    # стирается: имитируем данные, выросшие в эту таблицу до бэкфилла.
+    deleted, _ = first.document_versions.all().delete()
+    assert deleted > 0, "у объекта не было версии — проба стерегла бы не то"
+    assert first.document_versions.count() == 0
+
+    resp = manager.post(
+        f"{base}approval/send/", {"visitObjectId": str(first.pk)}, format="json"
+    )
+    assert resp.status_code == 200, resp.content
+
+    rows = list(first.document_versions.order_by("number"))
+    assert [(r.number, r.status) for r in rows] == [
+        (1, "APPROVED"),
+        (2, "SUBMITTED"),
+    ], (
+        "версия, реконструированная из approval_status, переписана вместо "
+        "того, чтобы быть перекрытой — воскрес дефект №584"
+    )
+    assert rows[0].superseded_at is not None
+    assert rows[1].superseded_at is None
+
+
 def test_the_document_version_grows_with_every_sending(
     manager, approver, two_objects_on_approval  # noqa: F811
 ):
@@ -1894,14 +1953,18 @@ def test_recon_edit_cannot_strip_an_unmarked_post_of_the_only_object(
     assert service.placement_frozen(visit), "фикстура не заморозила объект"
 
     card = manager.get(base).json()
-    refused = manager.patch(
-        f"{base}recon/",
-        {"checklist": card["reconChecklist"], "sectorPosts": []},
-        format="json",
-    )
+    # HTTP-гейт №982 теперь отсекает объект не на RECON раньше;
+    # заморозку как независимую защиту вглубь проверяем прямо.
+    with pytest.raises(DomainError) as refused:
+        service.update_recon(
+            event_id,
+            checklist=card["reconChecklist"],
+            sector_posts=[],
+            visit_object_id=str(visit.pk),
+        )
 
-    assert refused.status_code == 422, refused.content
-    assert refused.json()["error_code"] == "PLACEMENT_FROZEN", refused.json()
+    assert refused.value.code == "PLACEMENT_FROZEN"
+    assert refused.value.http_status == 422
     event = service.lock_event(event_id)
     assert event.recon_sector_posts, "неразмеченный пост замороженного объекта снят"
 

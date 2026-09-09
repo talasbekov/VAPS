@@ -13,6 +13,7 @@
 from datetime import date, timedelta
 
 import pytest
+from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from organization_management.apps.operations import clock
@@ -81,6 +82,30 @@ def test_without_status_manage_403(types, division):
     employee = make_employee(division)
     status_row = make_status(employee)
     response = patch(api, status_row.pk, {"comment": "нельзя"})
+    assert_denied_by_gate(response)
+    status_row.refresh_from_db()
+    assert status_row.comment == ""
+
+
+def test_duty_officer_reads_but_cannot_write_a_status(types, division):
+    """Негативная проба Plane №992: «Свод по Службе» — рабочее место
+    read-only, дежурный сводит департаменты, но не правит чужие статусы
+    (`[РАСХ-РШ-05]`/§20.4 п.10). Роль — НАСТОЯЩАЯ (`seed_operations`, не
+    рукописный набор прав из `client_for`): это проверка реальной раскладки
+    ролей, а не гипотетической «роль без права»."""
+    from django.core.management import call_command
+
+    from organization_management.apps.operations.services import RoleAdminService
+
+    call_command("seed_operations")
+    user = User.objects.create_user(username="duty-officer-write-probe")
+    RoleAdminService.assign_role(str(user.pk), "DUTY_OFFICER", None, actor="test")
+    api = APIClient()
+    api.force_authenticate(user)
+
+    employee = make_employee(division)
+    status_row = make_status(employee)
+    response = patch(api, status_row.pk, {"comment": "дежурный не правит"})
     assert_denied_by_gate(response)
     status_row.refresh_from_db()
     assert status_row.comment == ""

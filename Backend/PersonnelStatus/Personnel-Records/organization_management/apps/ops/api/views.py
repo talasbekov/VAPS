@@ -43,6 +43,7 @@ import base64
 from organization_management.apps.ops import documents_registry
 from organization_management.apps.ops.bulletin_issues import parse_as_of
 from organization_management.apps.ops import reports as reports_service
+from organization_management.apps.ops.event_actor_policy import can_manage_recon
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
     require_permission,
@@ -50,6 +51,8 @@ from organization_management.apps.operations.api.permissions import (
     resolve_actor_id,
 )
 from organization_management.apps.operations.clock import Clock
+from organization_management.apps.operations.selectors import DivisionTreeSelector
+from organization_management.apps.operations.services import PermissionService
 from django.core.exceptions import ValidationError
 
 from organization_management.apps.operations.exceptions import DomainError
@@ -89,12 +92,29 @@ class SecurityObjectViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSe
         "create": _MANAGE_OBJECT_PERMISSION,
         "passport": _MANAGE_OBJECT_PERMISSION,
         "passport_versions": _MANAGE_OBJECT_PERMISSION,
+        # Снимок — та же правка справочника объекта, что паспорт (Plane
+        # SJ-1049): своего права заводить незачем — держатель паспорта и есть
+        # владелец объекта.
+        "photo": _MANAGE_OBJECT_PERMISSION,
     }
 
     @action(detail=True, methods=["get"], url_path="history")
     def history(self, request, pk=None):
         """История ОМ на объекте и лица, его посещавшие (Plane №38)."""
         return Response({"results": gvo_service.object_event_history(pk)})
+
+    @action(detail=True, methods=["post"], url_path="photo")
+    def photo(self, request, pk=None):
+        """POST /objects/{id}/photo/ — снимок объекта (multipart, поле
+        `photo`; Plane SJ-1049). Прежний снимок заменяется."""
+        security_object = passport_service.set_object_photo(
+            pk,
+            request.FILES.get("photo"),
+            actor=resolve_actor_id(request) or request.user,
+        )
+        if security_object is None:
+            raise NotFound("Объект не найден.")
+        return Response(SecurityObjectSerializer(security_object).data)
 
     # Заведение объекта прямо из окна создания ОМ: «объекта нет в списке —
     # добавить» (ClickUp 86eyqf7a7). Карточка МИНИМАЛЬНАЯ, паспорт не оформлен —
@@ -215,6 +235,25 @@ _MANAGE_EVENT_PERMISSION = "event.manage"
 #: Ведущий ОМ ничего не теряет — `EVENT_OFFICER` получил оба права рядом с
 #: `event.manage` в том же заходе.
 _CREATE_EVENT_PERMISSION = "event.create"
+
+
+def _has_open_event_chief_assignment(request):
+    """Назначенный старший открытого ОМ читает общие селекторы проходки.
+
+    Каталоги объектов и сотрудников сами не принадлежат конкретному ОМ,
+    поэтому идентификатора мероприятия в их URL нет. Роль всё равно берётся
+    из данных: доступ даёт хотя бы одно открытое мероприятие, в котором
+    текущий активный сотрудник назначен старшим. Мутации по-прежнему
+    проверяются отдельно и строго в контексте выбранного ОМ.
+    """
+    employee = getattr(request.user, "employee", None)
+    if employee is None or not employee.is_active:
+        return False
+    return (
+        OpsSecurityEvent.objects.filter(chief_employee_id=employee.pk)
+        .exclude(stage=OpsSecurityEvent.Stage.CLOSED)
+        .exists()
+    )
 _BULLETIN_PERMISSION = "event.bulletin"
 #: Решение согласующего по расстановке (Plane №267). Отдельно от ведения
 #: мероприятия: утверждающий видит расстановку целиком, но не правит её.
@@ -235,6 +274,7 @@ _FORCES_SELECT_PERMISSION = "forces.select"
 # статусы по управлению, — у профилей заказчика `forces.*` нет намеренно, а
 # `status.manage` с областью на управление есть (см. Decisions).
 _STATUS_MANAGE_PERMISSION = "status.manage"
+_STATUS_VIEW_PERMISSION = "status.view"
 _PLACEMENT_PERMISSION = "placement.manage"
 #: Расстановка на ЛЮБОМ объекте — штаб (`[РАС-08]`, Plane №421). Гейт действия
 #: остаётся `placement.manage`; этот код снимает только проверку «своё ли».
@@ -257,7 +297,15 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Удаление — СВОЁ право: ведущий мероприятие его правит, стирает из
         # реестра администратор (та же мерка, что у stage_override).
         "destroy": _DELETE_EVENT_PERMISSION,
-        "bindable_objects": _MANAGE_EVENT_PERMISSION,
+        # Список объектов для привязки читает и тот, кто мероприятие только
+        # ЗАВОДИТ (Plane №946): окно «Создать бюллетень» берёт объект
+        # посещения отсюда, а создатель по `[БЛН-10]` носит `event.create`
+        # без `event.manage` — и поле отвечало ему «Реестр объектов
+        # недоступен».
+        # `gvo.manage` — третий код (Plane №1010, доводка №964): штаб читает
+        # реестр объектов для окна «Добавить объект» на визите иностранного
+        # ОЛ тем же правом, каким правит саму сводку.
+        "bindable_objects": (_MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION, "gvo.manage"),
         "visit_object_add": _MANAGE_EVENT_PERMISSION,
         "visit_object_detail": _MANAGE_EVENT_PERMISSION,
         "visit_object_chief": _MANAGE_EVENT_PERMISSION,
@@ -322,6 +370,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_accept": _FORCES_COMMAND_PERMISSION,
         "forces_return": _FORCES_COMMAND_PERMISSION,
         "forces_collections": _FORCES_COMMAND_PERMISSION,
+        "forces_campaigns": _FORCES_COMMAND_PERMISSION,
+        "forces_campaign": _FORCES_COMMAND_PERMISSION,
+        "forces_campaign_assignment": _FORCES_COMMAND_PERMISSION,
+        "forces_campaign_handover": _FORCES_COMMAND_PERMISSION,
+        "forces_campaign_reserves": _STATUS_VIEW_PERMISSION,
         "forces_collection": _FORCES_COMMAND_PERMISSION,
         "forces_collection_objects": _FORCES_COMMAND_PERMISSION,
         "forces_collection_handover": _FORCES_COMMAND_PERMISSION,
@@ -352,6 +405,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Снятие ЛИШНЕГО поста при недоборе — работа расстановки, а не правка
         # расчёта: её делают те же, кто расставляет людей (Plane №259).
         "placement_post_remove": _PLACEMENT_PERMISSION,
+        "placement_post_comment": _PLACEMENT_PERMISSION,
         "placement_sector_senior": _PLACEMENT_PERMISSION,
         # Завершение этапа — не расстановка людей, а переход мероприятия
         # дальше по цепочке: его делает ведущий ОМ.
@@ -378,6 +432,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Action без записи в карте провалился бы в автоопределение и остался
         # без права.
         "approval_route_add": _MANAGE_EVENT_PERMISSION,
+        "approval_candidates": _MANAGE_EVENT_PERMISSION,
+        "approval_route_select": _MANAGE_EVENT_PERMISSION,
         "approval_route_remove": _MANAGE_EVENT_PERMISSION,
         "approval_route_move": _MANAGE_EVENT_PERMISSION,
         # …либо СТАРШИЙ ОБЪЕКТА по данным — без права, через
@@ -432,10 +488,245 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             resolve_actor_id(self.request)
         )
         with_phone = by_right or mine.may_manage_stage(event, viewer)
-        return Response(
-            serialize_security_event(event, with_phone=with_phone),
-            status=status,
+        row = serialize_security_event(event, with_phone=with_phone)
+        row["canEditBulletin"] = self._may_edit_bulletin(event, perms=perms)
+        row["canManageVisitObjects"] = self._may_manage_visit_objects(
+            event, perms=perms
         )
+        self._attach_recon_capabilities(event, row, perms=perms)
+        return Response(row, status=status)
+
+    def _attach_recon_capabilities(self, event, row, *, perms=None):
+        """Добавить серверное слово прав к каждому объекту посещения."""
+        perms = effective_permissions(self.request) if perms is None else perms
+        employee = getattr(self.request.user, "employee", None)
+        visits = {str(visit.pk): visit for visit in event.visit_objects.all()}
+        for visit_row in row.get("visitObjects", []):
+            visit = visits.get(str(visit_row.get("id")))
+            visit_row["canManageRecon"] = bool(
+                visit is not None
+                and can_manage_recon(event, visit, employee, perms)
+            )
+        return row
+
+    #: Сведения собственного бюллетеня создатель правит без `event.manage`;
+    #: объекты по новому `[ОМ-РШ-06]` ведёт назначенный старший мероприятия.
+    _CREATOR_ACTIONS = frozenset({"details"})
+
+    #: Сведения и текст бюллетеня охраняются матрицей `[БЛН-14]` (№980).
+    #: Объекты отделены ниже: `[ОМ-РШ-06]` отдаёт их старшему мероприятия,
+    #: но не каждому редактору бюллетеня.
+    _BULLETIN_EDITOR_ACTIONS = frozenset(
+        {"details", "bulletin", "bulletin_complete"}
+    )
+
+    _VISIT_OBJECT_MANAGER_ACTIONS = frozenset(
+        {
+            "visit_object_add",
+            "visit_object_detail",
+            "visit_object_chief",
+            "vehicle_allocate",
+            "vehicle_release",
+        }
+    )
+
+    def _is_creator(self, request, event):
+        """Создатель — по идентификатору учётки (`owner_actor_id`), как в
+        сводке ГВО (№947): пустой идентификатор старой строки не совпадает ни
+        с кем — «ничей» не значит «любой»."""
+        actor_id = resolve_actor_id(request)
+        return bool(
+            actor_id and event.owner_actor_id and event.owner_actor_id == actor_id
+        )
+
+    def _may_edit_bulletin(self, event, *, perms=None):
+        """Доступна ли сейчас хотя бы одна мутация бюллетеня.
+
+        Закрытый этап отдельно выключает capability для интерфейса; сама
+        акторная матрица живёт в `_is_bulletin_editor`, чтобы mutation-сервис
+        вернул предметный `INVALID_STAGE_TRANSITION`, а не маскировал его 403.
+        """
+        return event.stage != OpsSecurityEvent.Stage.CLOSED and self._is_bulletin_editor(
+            event, perms=perms
+        )
+
+    def _is_bulletin_editor(self, event, *, perms=None):
+        """Единая акторная матрица редакторов `[БЛН-14]` (Plane №980).
+
+        Глобальный ведущий/админ, создатель и назначенный старший проверяются
+        по данным мероприятия. Руководитель второго департамента проходит
+        только если область его `HEAD_OPS_UNIT` накрывает область гранта, по
+        которому создатель получил `event.bulletin`. Само наличие
+        `event.bulletin` у рядового сотрудника не открывает чужие ОМ.
+        """
+        perms = effective_permissions(self.request) if perms is None else perms
+        if perms & {_MANAGE_EVENT_PERMISSION, "*"}:
+            return True
+        if self._is_creator(self.request, event) and _BULLETIN_PERMISSION in perms:
+            return True
+        if self._is_event_chief(event):
+            return True
+
+        return self._scoped_head_covers_owner(event)
+
+    def _is_event_chief(self, event):
+        employee = getattr(self.request.user, "employee", None)
+        return bool(
+            employee is not None
+            and employee.is_active
+            and event.chief_employee_id == employee.pk
+        )
+
+    def _scoped_head_covers_owner(self, event):
+        actor_id = resolve_actor_id(self.request)
+        if actor_id is None or not event.owner_actor_id:
+            return False
+        head_grants = [
+            (scope_division_id, role_code)
+            for scope_division_id, role_code in self._bulletin_grants(actor_id)
+            if role_code == "HEAD_OPS_UNIT"
+        ]
+        if not head_grants:
+            return False
+        owner_grants = self._bulletin_grants(event.owner_actor_id)
+        for head_scope, _ in head_grants:
+            for owner_scope, _ in owner_grants:
+                if head_scope is None:
+                    return True
+                if owner_scope is not None and PermissionService.scope_matches(
+                    head_scope,
+                    owner_scope,
+                    children_map=self._bulletin_children_map(),
+                ):
+                    return True
+        return False
+
+    def _may_manage_visit_objects(self, event, *, perms=None):
+        """Capability списка объектов для текущего пользователя (№981).
+
+        Контур уже редакторов бюллетеня: автор без старшинства сюда не входит;
+        у визита иностранного ОЛ сохраняется право штаба `gvo.manage`.
+        """
+        if event.stage == OpsSecurityEvent.Stage.CLOSED:
+            return False
+        return self._is_visit_object_manager(event, perms=perms)
+
+    def _is_visit_object_manager(self, event, *, perms=None):
+        """`[ОМ-РШ-06]`: старший ОМ управляет объектами, автор — нет."""
+        perms = effective_permissions(self.request) if perms is None else perms
+        if perms & {_MANAGE_EVENT_PERMISSION, "*"}:
+            return True
+        if self._is_event_chief(event):
+            return True
+        if event.kind == "FOREIGN" and "gvo.manage" in perms:
+            return True
+        return self._scoped_head_covers_owner(event)
+
+    def _bulletin_grants(self, actor_id):
+        """Кеш грантов на время запроса: один создатель в нескольких строках
+        реестра не должен повторно читать одни и те же назначения ролей."""
+        cache = getattr(self, "_bulletin_grants_cache", None)
+        if cache is None:
+            cache = self._bulletin_grants_cache = {}
+        if actor_id not in cache:
+            self._prime_bulletin_grants([actor_id])
+        return cache[actor_id]
+
+    def _prime_bulletin_grants(self, actor_ids):
+        cache = getattr(self, "_bulletin_grants_cache", None)
+        if cache is None:
+            cache = self._bulletin_grants_cache = {}
+        missing = {
+            str(actor_id)
+            for actor_id in actor_ids
+            if actor_id is not None and str(actor_id) not in cache
+        }
+        if missing:
+            cache.update(
+                PermissionService.active_grants_for_permission_many(
+                    missing, _BULLETIN_PERMISSION
+                )
+            )
+
+    def _bulletin_children_map(self):
+        if not hasattr(self, "_bulletin_division_children"):
+            self._bulletin_division_children = DivisionTreeSelector.children_map()
+        return self._bulletin_division_children
+
+    def _bulletin_event(self, pk):
+        cache = getattr(self, "_bulletin_event_cache", None)
+        if cache is None:
+            cache = self._bulletin_event_cache = {}
+        key = str(pk)
+        if key not in cache:
+            cache[key] = (
+                OpsSecurityEvent.objects.filter(pk=pk).first()
+                if key.isdigit()
+                else None
+            )
+        return cache[key]
+
+    def _require_bulletin_editor(self, pk):
+        event = self._bulletin_event(pk)
+        if event is None or not self._is_bulletin_editor(event):
+            raise PermissionDenied("PERMISSION_DENIED")
+        return event
+
+    #: Действия над ТРАНСПОРТОМ СВОДКИ ГВО открыты редактору сводки
+    #: (Plane №964, задача заказчика
+    #: 07.09.2026: «этот пользователь должен уметь редактировать или добавлять
+    #: какую то информацию в сводные данные»). Панель сводки рисует эти кнопки
+    #: по слову сервера `canEdit` (№947: `gvo.manage`, старший ГВО, создатель),
+    #: а ручки жили под `event.manage` с обходом только для создателя (№951):
+    #: штаб с `gvo.manage` видел кнопку и получал 403. Объектные действия сюда
+    #: больше не входят: `[ОМ-РШ-06]` отделяет автора бюллетеня от старшего
+    #: мероприятия; их полностью обслуживает `_VISIT_OBJECT_MANAGER_ACTIONS`.
+    #: Иначе creator иностранного ОМ обходил бы новый actor-policy, а API
+    #: разрешал бы мутацию при `canManageVisitObjects=false`.
+    _GVO_EDITOR_ACTIONS = frozenset(
+        {
+            "vehicle_allocate",
+            "vehicle_release",
+        }
+    )
+
+    def _gvo_editor_override(self, request):
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None or event.kind != "FOREIGN":
+            return False
+        if "gvo.manage" in effective_permissions(request):
+            return True
+        if self._is_creator(request, event):
+            return self._is_bulletin_editor(event)
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
+        return event.chief_employee_id == employee.pk
+
+    def _bindable_objects_override(self, request):
+        """Старший ОМ без кода права читает реестр объектов (Plane №981).
+
+        `bindable_objects` — `detail=False`: адрес не называет ОМ, и обычный
+        приём с событием по `pk` из адреса здесь не работает. Список объектов
+        не принадлежит одному ОМ, поэтому роль проверяется по любому открытому
+        мероприятию. Закрытый визит роли не даёт — как и остальные обходы по
+        данным этого вьюсета.
+        """
+        return _has_open_event_chief_assignment(request)
+
+    def _creator_override(self, request):
+        """Создатель бюллетеня правит его состав без `event.manage`
+        (Plane №951, задача заказчика: «редактировать Бюллетень тем, у кого
+        есть возможность создавать бюллетень»).
+
+        Только СВОЁ ОМ: мероприятие берётся из адреса, и «я где-то создатель»
+        права на чужой бюллетень не даёт. Закрытое ОМ отбивает сам сервис —
+        роль в данных гейт открывает, а правило стадии не обходит.
+        """
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None:
+            return False
+        return self._is_bulletin_editor(event)
 
     def list(self, request):
         from organization_management.apps.operations.models_event import (
@@ -562,6 +853,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         page_rows = list(
             queryset.select_related("country", "city").prefetch_related(
                 "visit_objects__deputies",
+                "visit_objects__security_object",
                 # История версий документа объекта тоже читается КАЖДОЙ
                 # строкой (`documentVersions`, `[СОГ-04]`): без неё
                 # `_serialize_visit_objects` добирал её сам, по запросу на
@@ -594,6 +886,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
         read_context = registry_reads.RegistryReadContext()
+        # Право ведения считается ОДИН раз на страницу: `canEditBulletin`
+        # (Plane №951) у каждой строки сравнивает создателя с вызывающим, а
+        # набор прав у вызывающего один.
+        perms = effective_permissions(request)
+        actor_id = resolve_actor_id(request)
+        if actor_id is not None:
+            self._prime_bulletin_grants([actor_id])
+            if any(
+                role_code == "HEAD_OPS_UNIT"
+                for _, role_code in self._bulletin_grants(actor_id)
+            ):
+                self._prime_bulletin_grants(
+                    event.owner_actor_id
+                    for event in page_rows
+                    if event.owner_actor_id
+                )
         by_date = {}
         everyone = set()
         for event in page_rows:
@@ -621,7 +929,19 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "next": str(page + 1) if start + page_size < total else None,
                 "previous": str(page - 1) if page > 1 else None,
                 "results": [
-                    serialize_security_event(e, read_context=read_context)
+                    self._attach_recon_capabilities(
+                        e,
+                        {
+                            **serialize_security_event(e, read_context=read_context),
+                            "canEditBulletin": self._may_edit_bulletin(
+                                e, perms=perms
+                            ),
+                            "canManageVisitObjects": self._may_manage_visit_objects(
+                                e, perms=perms
+                            ),
+                        },
+                        perms=perms,
+                    )
                     for e in page_rows
                 ],
             }
@@ -678,6 +998,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             chief_employee_id=data.get("chiefEmployeeId"),
             actor=resolve_actor_id(request),
         )
+        # Идентификатор создателя (Plane №947) пишет сам сервис из того же
+        # `actor` (№949, ревью №825): второй `save` здесь оставлял ОМ «ничьим»
+        # между сохранениями и обходил всех остальных вызывателей сервиса.
         return self._event_response(event, status=201)
 
     # bindable-objects раньше детали в роутере не нужен: у DRF detail-роут
@@ -729,6 +1052,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     visit_object_id,
                     visit_day=data.get("visitDay"),
                     note=data.get("note"),
+                    description=data.get("description"),
                 )
             )
         return self._event_response(
@@ -924,6 +1248,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # принимающая «что угодно из модели», однажды примет и их.
     @action(detail=True, methods=["patch"], url_path="details")
     def details(self, request, pk=None):
+        self._require_bulletin_editor(pk)
         data = request.data or {}
         # `data.get` ВЕЗДЕ, а не `data.get(..., "")`: отсутствующий ключ здесь
         # означает «не трогай поле», и подстановка пустой строки превратила бы
@@ -959,6 +1284,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["patch"], url_path="bulletin")
     def bulletin(self, request, pk=None):
+        self._require_bulletin_editor(pk)
         data = request.data or {}
         return self._event_response(
             event_service.update_bulletin(
@@ -970,11 +1296,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="bulletin/complete")
     def bulletin_complete(self, request, pk=None):
+        self._require_bulletin_editor(pk)
         return self._event_response(event_service.complete_bulletin(pk))
 
     @action(detail=True, methods=["patch"], url_path="recon")
     def recon(self, request, pk=None):
         data = request.data or {}
+        self._require_recon_actor(request)
         return self._event_response(
             event_service.update_recon(
                 pk,
@@ -983,6 +1311,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 # Ключа может не быть — тогда сохранённый запрос не трогаем
                 # (см. `update_recon`): «нет ключа» это не «ноль».
                 force_request=data.get("forceRequest"),
+                visit_object_id=self._visit_object_of(request),
             )
         )
 
@@ -991,6 +1320,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # `visitObjectId` — ЧЕЙ паспорт импортируется (Plane №408, `[РЕК-05]`).
         # Ключа нет и объект один — берётся он; объектов несколько — сервис
         # отвечает отказом с просьбой выбрать, а не угадывает адресата.
+        self._require_recon_actor(request)
         return self._event_response(
             event_service.import_recon_from_passport(
                 pk, visit_object_id=(request.data or {}).get("visitObjectId")
@@ -999,7 +1329,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="recon/complete")
     def recon_complete(self, request, pk=None):
-        return self._event_response(event_service.complete_recon(pk))
+        self._require_recon_actor(request)
+        return self._event_response(
+            event_service.complete_recon(
+                pk, visit_object_id=self._visit_object_of(request)
+            )
+        )
 
     # Ручка `POST demand/approve/` СНЯТА 26.08.2026 (Plane №149): стадию
     # «Потребность» проходит сервер (Plane №110), форм у неё на клиенте нет,
@@ -1007,13 +1342,25 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="forces/allocation")
     def forces_split(self, request, pk=None):
-        """Раскладка потребности по департаментам (Plane №73, шаг «СС-1»).
+        """Раскладка потребности по департаментам (Plane №73, шаг «СС-1») и
+        «Отправить запросы» (`[СБС-12]`, Plane №944).
 
         Список целиком, а не строка: «кому сколько» — одно решение штаба.
+        Тело: `{"rows": [...], "draft": false}`. Без `draft` строки после
+        сохранения ОТПРАВЛЯЮТСЯ департаментам (момент `sentAt`, уведомление
+        ответственным); `draft: true` — черновик штаба, департамент его не
+        видит. Отправленная цифра заперта — 422 по полю строки.
         """
+        from organization_management.apps.ops import forces_send
+
         data = request.data or {}
         return self._event_response(
-            event_service.split_force_demand(pk, rows=data.get("rows"))
+            forces_send.split_and_send(
+                pk,
+                rows=data.get("rows"),
+                draft=bool(data.get("draft")),
+                actor=resolve_actor_id(request),
+            )
         )
 
     @action(detail=False, methods=["get"], url_path="forces/collections")
@@ -1078,6 +1425,85 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         rows.sort(key=board.sort_key)
         return Response({"results": rows})
+
+    @action(detail=False, methods=["get", "post"], url_path="forces/campaigns")
+    def forces_campaigns(self, request):
+        from organization_management.apps.ops.force_campaigns import (
+            create_campaign,
+            list_campaigns,
+        )
+
+        if request.method.lower() == "get":
+            return Response(list_campaigns())
+
+        data = request.data or {}
+        return Response(
+            create_campaign(
+                title=data.get("title"),
+                event_ids=data.get("eventIds"),
+                actor=resolve_actor_id(request),
+            ),
+            status=201,
+        )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"forces/campaigns/(?P<campaign_id>[^/.]+)",
+    )
+    def forces_campaign(self, request, campaign_id=None):
+        from organization_management.apps.ops.force_campaigns import get_campaign
+
+        return Response(get_campaign(campaign_id))
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path=r"forces/campaigns/(?P<campaign_id>[^/.]+)/assignments",
+    )
+    def forces_campaign_assignment(self, request, campaign_id=None):
+        from organization_management.apps.ops.force_campaigns import assign_employee
+
+        data = request.data or {}
+        return Response(
+            assign_employee(
+                campaign_id,
+                employee_id=data.get("employeeId"),
+                event_id=data.get("eventId"),
+                visit_object_id=data.get("visitObjectId"),
+                demand_row_id=data.get("demandRowId"),
+                override_conflict=bool(data.get("overrideConflict")),
+                override_reason=data.get("overrideReason"),
+                actor=resolve_actor_id(request),
+            ),
+            status=201,
+        )
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path=r"forces/campaigns/(?P<campaign_id>[^/.]+)/hand-over",
+    )
+    def forces_campaign_handover(self, request, campaign_id=None):
+        from organization_management.apps.ops.force_campaigns import hand_over
+
+        return Response(
+            hand_over(
+                campaign_id,
+                comment=(request.data or {}).get("comment"),
+                actor=resolve_actor_id(request),
+            )
+        )
+
+    @action(detail=False, methods=["get"], url_path="forces/campaign-reserves")
+    def forces_campaign_reserves(self, request):
+        from organization_management.apps.operations.services import PermissionService
+        from organization_management.apps.ops.force_campaigns import list_reserves
+
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _STATUS_VIEW_PERMISSION
+        )
+        return Response(list_reserves(allowed))
 
     # 🔴 ПУТЬ НЕ `forces/collection`: он попадал бы в уже заведённый
     # `<id>/forces/<requestId>/` (правка строки запроса, только PATCH), и
@@ -1170,10 +1596,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             PermissionService,
         )
 
+        from organization_management.apps.ops import forces_send
+
         allowed = PermissionService.visible_division_ids(
             resolve_actor_id(request), _FORCES_ALLOCATE_PERMISSION
         )
-        return Response({"results": event_service.department_requests_view(allowed)})
+        # Департамент видит ТОЛЬКО отправленные штабом запросы (`[СБС-12]`,
+        # Plane №944): черновик штаба — ещё не запрос.
+        return Response(
+            {"results": forces_send.sent_rows(event_service.department_requests_view(allowed))}
+        )
 
     @action(
         detail=False,
@@ -1191,12 +1623,18 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             PermissionService,
         )
 
+        from organization_management.apps.ops import forces_send
+
         allowed = PermissionService.visible_division_ids(
             resolve_actor_id(request), _FORCES_ALLOCATE_PERMISSION
         )
-        return Response(
-            event_service.department_request_detail(allocation_id, allowed)
-        )
+        detail = event_service.department_request_detail(allocation_id, allowed)
+        # Неотправленный черновик штаба для департамента не существует —
+        # тот же 404, что и у чужой заявки (`[СБС-12]`, Plane №944).
+        if not forces_send.is_sent(detail.get("allocation") or {}):
+            raise event_service._not_found("Заявка департаменту не найдена.", allocation_id)
+        # «В строю» по управлениям (`[СБС-22]`) — считает сервер на деловую дату.
+        return Response(forces_send.with_in_service(detail))
 
     @action(
         detail=False,
@@ -1219,13 +1657,21 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             PermissionService,
         )
         from organization_management.apps.ops.forces_requests import (
+            addressee_level,
             directorate_requests_view,
         )
 
         allowed = PermissionService.visible_division_ids(
             resolve_actor_id(request), _STATUS_MANAGE_PERMISSION
         )
-        return Response({"results": directorate_requests_view(allowed)})
+        return Response(
+            {
+                "results": directorate_requests_view(allowed),
+                # Кому адресовано — «управлению», «департаменту», «службе»
+                # (Plane №941): баннер подписывает список по этому слову.
+                "addressee": addressee_level(allowed),
+            }
+        )
 
     @action(
         detail=False,
@@ -1261,9 +1707,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def forces_directorate_select(self, request, allocation_id=None):
         """Выделить отмеченных сотрудников по запросу (Plane №395, `[СБС-31]`).
 
-        Тело: `{"employeeIds": ["18", …]}`, необязательно `override` и
-        `override_reason` (Plane №545). Статус «Участие в ОМ» ставится из
-        заявки — мероприятие и даты человек не выбирает. Отказы по отдельным
+        Тело: `{"employeeIds": ["18", …], "kindCode": "…"}`, необязательно
+        `override` и `override_reason` (Plane №545). Физнаряд уходит в резерв
+        кампании без статуса; специальная группа получает ОМ из заявки. Отказы по отдельным
         людям СОБИРАЮТСЯ в ответ (`refused[]` с причиной и признаком
         `overridable`), а не роняют запрос. Гейт — `status.manage`, область —
         управления актора.
@@ -1307,6 +1753,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 list(raw_ids),
                 allowed,
                 actor=actor_id,
+                kind_code=(str(data["kindCode"]) if data.get("kindCode") else None),
                 # Обход мягкого конфликта — тем же протоколом, что у штаба
                 # (Plane №545): одно обоснование на вызов, потому что человек
                 # объясняет ОДНО решение про отмеченную пачку.
@@ -1334,11 +1781,14 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         построчное сохранение позволяло бы сумме уехать за квоту между двумя
         запросами. 422 — перебор, чужое управление, дубль, уже запрошено.
         """
+        from organization_management.apps.ops import forces_send
+
         require_scoped_permission(
             request,
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        forces_send.require_sent(pk, allocation_id)
         return self._event_response(
             event_service.split_directorate_quotas(
                 pk,
@@ -1360,11 +1810,14 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         управления вправе ответственный за выделение в этом департаменте, а не
         в чужом.
         """
+        from organization_management.apps.ops import forces_send
+
         require_scoped_permission(
             request,
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        forces_send.require_sent(pk, allocation_id)
         return self._event_response(
             event_service.notify_directorates(
                 pk, allocation_id, actor=resolve_actor_id(request)
@@ -1442,18 +1895,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         цифру ставит только ответственный, штаб читает. Тело:
         `{"allocating": 3, "comment": "…"}`; 0 — отказ.
         """
+        from organization_management.apps.ops import forces_send
+
         data = request.data or {}
         require_scoped_permission(
             request,
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        forces_send.require_sent(pk, allocation_id)
         return self._event_response(
             event_service.respond_allocation(
                 pk,
                 allocation_id,
                 allocating=data.get("allocating"),
                 comment=data.get("comment"),
+                group_offers=data.get("groupOffers"),
                 actor=resolve_actor_id(request),
             )
         )
@@ -1469,13 +1926,18 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         Область — департамент строки раскладки (Plane №74): отправляет свой
         список тот, кто за него отвечает.
         """
+        from organization_management.apps.ops import forces_send
+
         require_scoped_permission(
             request,
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        forces_send.require_sent(pk, allocation_id)
+        # Присланный список сразу в составе мероприятия (`[СБС-13]`, №944):
+        # блок «Собранные → объекты» появляется с первым присланным списком.
         return self._event_response(
-            event_service.submit_allocation(
+            forces_send.submit_allocation(
                 pk, allocation_id, actor=resolve_actor_id(request)
             )
         )
@@ -1493,8 +1955,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             _FORCES_ALLOCATE_PERMISSION,
             event_service.allocation_scope_division(pk, allocation_id),
         )
+        from organization_management.apps.ops import forces_send
+
+        # Отзыв забирает людей из состава — пока их не отдали объектам (№944).
         return self._event_response(
-            event_service.withdraw_allocation(
+            forces_send.withdraw_allocation(
                 pk, allocation_id, actor=resolve_actor_id(request)
             )
         )
@@ -1518,9 +1983,12 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"forces/allocation/(?P<allocation_id>[^/]+)/return",
     )
     def forces_return(self, request, pk=None, allocation_id=None):
+        from organization_management.apps.ops import forces_send
+
         data = request.data or {}
+        # Возврат забирает людей из состава — пока их не отдали объектам (№944).
         return self._event_response(
-            event_service.return_allocation(
+            forces_send.return_allocation(
                 pk,
                 allocation_id,
                 reason=data.get("reason"),
@@ -1565,6 +2033,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "placement_assign": _PLACEMENT_COMMAND_PERMISSION,
         "placement_unassign": _PLACEMENT_COMMAND_PERMISSION,
         "placement_post_remove": _PLACEMENT_COMMAND_PERMISSION,
+        "placement_post_comment": _PLACEMENT_COMMAND_PERMISSION,
         "placement_move": _PLACEMENT_COMMAND_PERMISSION,
     }
 
@@ -1573,6 +2042,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "placement_assign",
             "placement_unassign",
             "placement_post_remove",
+            "placement_post_comment",
             # Перенос (Plane №762) — то же действие, что «снять и назначить»,
             # которым замещающий пользовался до сих пор; закрыть его для него
             # значило бы отнять уже разрешённое, оформив это как починку.
@@ -1587,11 +2057,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # того, ни у другого нет общего `event.manage` — они старшие ПО ДАННЫМ, а
     # не по роли, ровно как замещающий у расстановки выше. Маршрут (добавить,
     # снять, переставить) остаётся у ведущего мероприятие: это настройка
-    # процесса, а не работа по объекту.
+    # процесса, а не работа по объекту. Исключение №983 — старший объекта
+    # выбирает только первого подписанта в уже заданном маршруте из двух.
     _OBJECT_LEAD_ACTIONS = frozenset(
-        {"approval_send", "approval_withdraw", "approval_remark_resolve"}
+        {
+            "approval_candidates", "approval_route_select", "approval_send",
+            "approval_withdraw", "approval_remark_resolve",
+        }
     )
     _OBJECT_DEPUTY_ACTIONS = frozenset({"approval_remark_resolve"})
+    _RECON_OBJECT_ACTIONS = frozenset({"recon", "recon_import", "recon_complete"})
 
     def permission_override(self, request):
         """Роль В ДАННЫХ открывает действие человеку без кода права.
@@ -1608,6 +2083,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = False
         self._acting_as_object_lead = False
         self._object_lead_employee = None
+        if self.action in self._RECON_OBJECT_ACTIONS:
+            return self._may_manage_recon_request(request)
+        if self.action in self._VISIT_OBJECT_MANAGER_ACTIONS:
+            event = self._bulletin_event(self.kwargs.get("pk"))
+            if event is not None and self._is_visit_object_manager(event):
+                return True
+        if self.action in self._BULLETIN_EDITOR_ACTIONS:
+            event = self._bulletin_event(self.kwargs.get("pk"))
+            if event is not None and self._is_bulletin_editor(event):
+                return True
+        if self.action in self._CREATOR_ACTIONS and self._creator_override(request):
+            return True
+        if self.action in self._GVO_EDITOR_ACTIONS and self._gvo_editor_override(request):
+            return True
+        if self.action == "bindable_objects" and self._bindable_objects_override(request):
+            return True
         if self.action in ("my_assignments", "acknowledge", "decline"):
             return self._my_assignments_override(request)
         if self.action in self._STAGE_LEAD_ACTIONS:
@@ -1642,6 +2133,46 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = allowed
         self._deputy_employee = employee if allowed else None
         return allowed
+
+    def _recon_target(self, request):
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None:
+            return None, None
+        try:
+            visit = event_service.pick_visit_object(
+                event,
+                self._visit_object_of(request),
+                no_objects="У мероприятия нет объектов посещения.",
+                ambiguous=(
+                    "У мероприятия несколько объектов посещения — выберите объект."
+                ),
+            )
+        except DomainError:
+            return event, None
+        return event, visit
+
+    def _may_manage_recon_request(self, request):
+        event, visit = self._recon_target(request)
+        if event is None:
+            return False
+        perms = effective_permissions(request)
+        # Старые административные вызовы над несколькими объектами могли не
+        # нести адресата. Только руководство/admin пропускаются дальше, где
+        # сервис вернёт предметный VISIT_OBJECT_REQUIRED или применит
+        # совместимое общее действие; поимённый старший объект не угадывает.
+        if visit is None:
+            return bool(perms & {_STAGE_OVERRIDE_PERMISSION, "*"})
+        return can_manage_recon(
+            event,
+            visit,
+            getattr(request.user, "employee", None),
+            perms,
+        )
+
+    def _require_recon_actor(self, request):
+        """Не даёт `event.manage` подменить назначение старшим объекта."""
+        if not self._may_manage_recon_request(request):
+            raise PermissionDenied("PERMISSION_DENIED")
 
     # Старший мероприятия/объекта ведёт «Ознакомление» по данным (Plane №432,
     # `[ОЗН-09]`): напоминает, заменяет, завершает.
@@ -1748,8 +2279,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return False
         owner = event_service._visit_of_post(event, assignment.get("postId"))
         if owner is None:
-            # У ОМ без объектов посещения объектных старших не бывает вовсе:
-            # сюда доходит только старший мероприятия, а он обработан выше.
+            # Объекта у поста нет — в ДВУХ случаях (Plane №860, п. 3): у ОМ
+            # без объектов посещения (объектных старших там нет вовсе, а
+            # старший мероприятия обработан выше) и у МНОГООБЪЕКТНОГО ОМ с
+            # неразмеченным постом (`visitObjectId` пуст — такие посты
+            # собирает `_unattributed_posts`). Во втором случае старший
+            # объекта получает закрытый отказ: неразмеченный пост ничей, и
+            # выдать его «своим» какому-то объекту гейт не имеет права.
             return False
         if (
             owner.chief_employee_id is not None
@@ -1796,7 +2332,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if event is None:
             return False
         return mine.may_acknowledge(
-            event, self.kwargs.get("assignment_id"), employee
+            event,
+            self.kwargs.get("assignment_id"),
+            employee,
+            actor_user_id=actor_id,
         )
 
     @action(detail=False, methods=["get"], url_path="my-assignments")
@@ -1966,7 +2505,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return posts.get(str((self.request.data or {}).get("postId")))
         # У снятия поста адресат назван прямо в пути — искать его по
         # назначению не нужно и нечем: назначений у пустого поста нет.
-        if self.action == "placement_post_remove":
+        if self.action in {"placement_post_remove", "placement_post_comment"}:
             return posts.get(str(self.kwargs.get("post_id")))
         assignment = next(
             (
@@ -2043,6 +2582,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return self._event_response(
             event_service.remove_placement_post(
                 pk, post_id, deputy=self._deputy_actor()
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"placement/posts/(?P<post_id>[^/]+)/comment",
+    )
+    def placement_post_comment(self, request, pk=None, post_id=None):
+        """Точечная правка комментария на «Расстановке» (№982)."""
+        self._require_placement_lead(pk)
+        return self._event_response(
+            event_service.update_placement_post_comment(
+                pk,
+                post_id,
+                comment=(request.data or {}).get("comment"),
+                deputy=self._deputy_actor(),
             )
         )
 
@@ -2144,10 +2700,27 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         )
 
+    @action(detail=True, methods=["get"], url_path="approval/candidates")
+    def approval_candidates(self, request, pk=None):
+        return Response(
+            {"results": event_service.approval_candidates(actor=request.user)}
+        )
+
+    @action(detail=True, methods=["post"], url_path="approval/route/select")
+    def approval_route_select(self, request, pk=None):
+        return self._event_response(
+            event_service.select_approval_route(
+                pk,
+                approver_user_id=(request.data or {}).get("approverUserId"),
+                visit_object_id=self._visit_object_of(request),
+                actor=request.user,
+            )
+        )
+
     @action(
         detail=True,
         methods=["delete"],
-        url_path=r"approval/route/(?P<approver_id>(?!decide/)[^/]+)",
+        url_path=r"approval/route/(?P<approver_id>(?!decide/|select/)[^/]+)",
     )
     def approval_route_remove(self, request, pk=None, approver_id=None):
         return self._event_response(
@@ -2299,34 +2872,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsSecurityEvent,
         )
 
-        employee = getattr(self.request.user, "employee", None)
         event = OpsSecurityEvent.objects.filter(pk=pk).first()
-        row = next(
-            (a for a in ((event.placement_assignments if event else None) or []) if a.get("id") == assignment_id),
-            None,
-        )
-        # 🔴 «ЛИЧНО» СТАВИТСЯ, ТОЛЬКО КОГДА ЧУЖАЯ СТРОКА ДОКАЗАНА (Plane №721).
-        # Прежде «своё или чужое» решалось одной связкой `User → Employee`, а
-        # учётка без кадровой привязки — ШТАТНЫЙ исход (докстринг
-        # `actor_display_name` говорит это прямо, сид связь не заполняет).
-        # Человек подтверждал СВОЮ строку из профиля, а сервер писал
-        # `personal` с логином, и лист ознакомления печатал «лично» вместо «в
-        # системе»: документ утверждал неправду о способе.
-        #
-        # «Лично» — утверждение о том, КАК человека довели (старший сказал
-        # устно). Не зная, чья это строка, утверждать его нельзя — тот же
-        # довод, которым раздел отказывается печатать ноль вместо
-        # «неизвестно» (№726, №409). Поэтому чужое должно быть ДОКАЗАНО, а
-        # неизвестность читается как «в системе».
-        #
-        # Что при этом недосказано, и это осознанно: старший БЕЗ кадровой
-        # привязки, отметивший чужую строку, тоже получит «в системе» —
-        # преуменьшение вместо ложного утверждения. Отличить его от самого
-        # сотрудника нечем, пока привязки нет.
-        someone_elses = (
-            employee is not None and row is not None
-            and str(row.get("employeeId")) != str(employee.pk)
-        )
         from organization_management.apps.ops.security_events import (
             actor_display_name,
         )
@@ -2335,11 +2881,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # кадровой записи, иначе username учётки» было написано здесь второй
         # раз, и две копии одного правила разошлись бы при первой же правке.
         actor_id = resolve_actor_id(request)
+        actor_employee = mine.employee_of_user(actor_id)
+        authority = mine.acknowledgement_authority(
+            event, assignment_id, actor_id
+        ) if event is not None else None
+        if authority is None:
+            raise PermissionDenied("PERMISSION_DENIED")
         return self._event_response(
             mine.acknowledge(
-                pk, assignment_id, personal=someone_elses,
+                pk, assignment_id, personal=authority == "unit_head",
                 actor=actor_id,
                 actor_name=actor_display_name(actor_id) or request.user.get_username(),
+                actor_employee_id=getattr(actor_employee, "pk", None),
+                delivery_method=(request.data or {}).get("deliveryMethod"),
+                account_absence_basis=(request.data or {}).get(
+                    "accountAbsenceBasis"
+                ),
             )
         )
 
@@ -2534,7 +3091,10 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # автоопределение, которое для нестандартного имени возвращает None, то
     # есть ручка осталась бы без права вовсе.
     permission_map = {
-        "list": _MANAGE_EVENT_PERMISSION,
+        # Старшего наряда / ГВО в окне «Создать бюллетень» ищет и тот, кто
+        # мероприятие только заводит (`event.create`, Plane №946): без этого
+        # комбобокс отвечал создателю «Кадровый список сейчас недоступен».
+        "list": (_MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
         "me": _READ_EVENT_PERMISSION,
     }
 
@@ -2548,6 +3108,14 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
     #: Потолок страницы. Без него `?page_size=1000000` отдаёт кадры целиком
     #: одним ответом — размер страницы назначал бы спросивший.
     MAX_PAGE_SIZE = 100
+
+    def permission_override(self, request):
+        """Старший открытого ОМ читает кандидатов для назначения старших.
+
+        Исключение действует только на GET-список; кадровые данные здесь
+        доступны в том же минимальном снимке, который уже использует диалог.
+        """
+        return self.action == "list" and _has_open_event_chief_assignment(request)
 
     def list(self, request):
         """Кадровый снимок: поиск и постраничка НА СЕРВЕРЕ («Реестр ОМ-35.3»).
@@ -3477,33 +4045,22 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(
         detail=False,
-        methods=["get", "post"],
+        methods=["get"],
         url_path=r"(?P<code>[A-Z_]+)/entries",
     )
     def entries(self, request, code=None):
-        if request.method == "GET":
-            return Response({"results": dict_service.list_entries(code)})
-        # POST — заведение значения: гейт правки строже гейта чтения, и его
-        # держит карта прав через отдельное имя действия ниже.
-        return self.create_entry(request, code=code)
+        return Response({"results": dict_service.list_entries(code)})
 
+    # 🔴 POST — ОТДЕЛЬНОЕ ДЕЙСТВИЕ `create_entry` на том же адресе
+    # (`@entries.mapping.post`; ревью №825 по №901, 08.09.2026). Пока оба
+    # метода жили в одном действии `entries`, миксин гейтил POST правом
+    # ЧТЕНИЯ, а каталог прав показывал заведение значения под
+    # `dictionary.view` — ключ `create_entry` в карте был мёртвым: такого
+    # действия у DRF не существовало. Теперь у POST своё имя действия, карта
+    # и каталог читают его напрямую, а построчный `require_permission` не
+    # нужен вовсе: право одно и держится в одном месте — карте.
+    @entries.mapping.post
     def create_entry(self, request, code=None):
-        # RequirePermissionMixin гейтит по self.action="entries" (см. выше),
-        # поэтому право правки проверяется здесь явно.
-        #
-        # 🔴 ЧЕРЕЗ `require_permission`, А НЕ СВОИМ `in perms` (Plane №901).
-        # Каталог прав читает построчные гейты РАЗБОРОМ ИСХОДНИКА и знает
-        # ровно два имени — `require_permission` и `require_scoped_permission`.
-        # Своя проверка членством ему невидима, и заведение значения
-        # справочника показывалось в каталоге под правом ЧТЕНИЯ
-        # (`dictionary.view`, которым закрыто маршрутное действие `entries`).
-        # Это опаснее пропуска: администратор читает, что запись открывается
-        # правом чтения, и раздаёт его шире, чем собирался.
-        #
-        # Сообщение стало общим («PERMISSION_DENIED» без своего текста) — цена
-        # известная и небольшая: гейт один на весь раздел, и различать его
-        # формулировкой значило бы держать два способа отвечать одно и то же.
-        require_permission(request, "dictionary.manage")
         data = request.data or {}
         entry = dict_service.create_entry(
             code,
@@ -3718,6 +4275,10 @@ class EvaluationWorkItemViewSet(viewsets.ViewSet):
     permission_service_map = {
         "submit": ratings_service.EVALUATE_PERMISSION,
         "correct": ratings_service.CORRECT_PERMISSION,
+        # Карточка задания: сервис `submitted_evaluation_detail` первым делом
+        # требует `rating.evaluate` (ревью №825 по №901) — без этой строки
+        # каталог показывал у `GET …/detail/` только обход, не называя гейта.
+        "detail_view": ratings_service.EVALUATE_PERMISSION,
     }
 
     #: `rating.view_correction_chain` карточку задания не закрывает — он
@@ -4712,10 +5273,66 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     выдать одно без другого было нельзя.
     """
 
-    permission_map = {"list": _CATALOG_PERMISSION, "history": _CATALOG_PERMISSION}
+    permission_map = {
+        "list": _CATALOG_PERMISSION,
+        "history": _CATALOG_PERMISSION,
+        # Заведение лица и его фотография С ЭКРАНА (Plane №951): заказчик
+        # просит кнопку «добавить ОЛ» на сводных данных ГВО. Открыто тем, кто
+        # заполняет сводку или заводит бюллетень, — им лицо и нужно; своё
+        # право под справочник заводить не стали: одну кнопку одного экрана
+        # защищали бы иначе, чем всё вокруг неё.
+        "create": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+        "photo": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
+    }
 
     def list(self, request):
         return Response({"results": gvo_service.list_persons()})
+
+    def create(self, request):
+        """POST /protected-persons/ — новое лицо справочника (Plane №951)."""
+        data = request.data or {}
+        try:
+            row = gvo_service.create_person(
+                name=data.get("name"),
+                category=data.get("category"),
+                callsign=data.get("callsign") or "",
+                bio=data.get("bio") or "",
+                # Данные образца (Plane №952): должность, страна, строки
+                # «параметр = значение».
+                country=data.get("country") or "",
+                position=data.get("position") or "",
+                facts=data.get("facts"),
+                actor=resolve_actor_id(request) or request.user,
+            )
+        except ValidationError as exc:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail=exc.message_dict,
+                message="Проверьте поля лица.",
+            )
+        return Response(row, status=201)
+
+    @action(detail=True, methods=["post"], url_path="photo")
+    def photo(self, request, pk=None):
+        """POST /protected-persons/{id}/photo/ — снимок лица (multipart,
+        поле `photo`; Plane №951). Прежний снимок заменяется."""
+        try:
+            row = gvo_service.set_person_photo(
+                pk,
+                request.FILES.get("photo"),
+                actor=resolve_actor_id(request) or request.user,
+            )
+        except ValidationError as exc:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail=exc.message_dict,
+                message="Проверьте файл снимка.",
+            )
+        if row is None:
+            raise NotFound("Охраняемое лицо не найдено.")
+        return Response(row)
 
     @action(detail=True, methods=["get"], url_path="history")
     def history(self, request, pk=None):
@@ -4895,13 +5512,36 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """
         if self.action not in self._CHIEF_ACTIONS:
             return False
-        employee = getattr(request.user, "employee", None)
-        if employee is None or not employee.is_active:
-            return False
         event = OpsSecurityEvent.objects.filter(code=self.kwargs.get("pk")).first()
         if event is None:
             return False
+        return self._is_chief_or_creator(request, event)
+
+    @staticmethod
+    def _is_chief_or_creator(request, event):
+        """Роль В ДАННЫХ: старший этого ОМ либо его создатель (Plane №947).
+
+        Создатель — по идентификатору учётки (`owner_actor_id`), не по
+        подписи `owner_name`; пустой идентификатор старой строки не совпадает
+        ни с кем — «ничей» не значит «любой».
+        """
+        actor_id = resolve_actor_id(request)
+        if actor_id and event.owner_actor_id and event.owner_actor_id == actor_id:
+            return True
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
         return event.chief_employee_id == employee.pk
+
+    def _may_edit(self, request, event):
+        """Может ли вызывающий править сводку — ТЕМ ЖЕ правилом, что гейт
+        `partial_update`: код права либо роль в данных. Уходит экрану полем
+        `canEdit`, чтобы кнопка «Редактировать» не держала свою копию правила
+        (третью половину — создателя — клиент посчитать не может)."""
+        perms = effective_permissions(request)
+        if "*" in perms or self.permission_map["partial_update"] in perms:
+            return True
+        return self._is_chief_or_creator(request, event)
 
     def list(self, request):
         return Response({"results": gvo_service.list_patches()})
@@ -4939,7 +5579,9 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 404,
                 message="Мероприятие с таким кодом не найдено.",
             )
-        return Response(documents_summary.summary_row(event))
+        row = documents_summary.summary_row(event)
+        row["canEdit"] = self._may_edit(request, event)
+        return Response(row)
 
     def partial_update(self, request, pk=None):
         try:

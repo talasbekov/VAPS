@@ -33,6 +33,7 @@ import {
 import type { ForceCollectionRow } from "@/entities/security-event";
 import { useForceCollections } from "@/hooks/use-force-collections";
 import { ForceCollectionCard } from "./ForceCollectionCard";
+import { ForceCampaignsPanel } from "./ForceCampaignsPanel";
 import { formatIsoDate } from "@/shared/lib/date";
 
 
@@ -92,6 +93,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
   // пропускала, карточка монтировалась с пустым `eventId` и просила у сервера
   // `…/forces/collection//`.
   const opened = searchParams.get("collection") || null;
+  const openedCampaign = searchParams.get("campaign") || null;
   const setOpened = useCallback(
     (value: string | null) => {
       const next = new URLSearchParams(searchParams);
@@ -101,6 +103,16 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
       router.replace(query === "" ? pathname : `${pathname}?${query}`, {
         scroll: false,
       });
+    },
+    [router, pathname, searchParams]
+  );
+  const setOpenedCampaign = useCallback(
+    (value: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (value === null) next.delete("campaign");
+      else next.set("campaign", value);
+      const query = next.toString();
+      router.replace(query === "" ? pathname : `${pathname}?${query}`, { scroll: false });
     },
     [router, pathname, searchParams]
   );
@@ -120,7 +132,25 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
     );
   }
 
+  if (openedCampaign !== null) {
+    return (
+      <ForceCampaignsPanel
+        enabled={enabled}
+        collectionRows={rows}
+        openedId={openedCampaign}
+        onOpen={setOpenedCampaign}
+      />
+    );
+  }
+
   return (
+    <div className="space-y-6">
+      <ForceCampaignsPanel
+        enabled={enabled}
+        collectionRows={rows}
+        openedId={null}
+        onOpen={setOpenedCampaign}
+      />
     <section aria-labelledby="force-collections-heading" className="space-y-3">
       <div>
         <h2 id="force-collections-heading" className="text-lg font-semibold">
@@ -267,5 +297,6 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
         </Table>
       </div>
     </section>
+    </div>
   );
 }

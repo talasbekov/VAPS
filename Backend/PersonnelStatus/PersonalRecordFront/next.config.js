@@ -63,6 +63,13 @@ const nextConfig = {
       // FIX: rewrites срезали завершающий слэш (`:path*` не несёт пустой
       // сегмент) — Django с APPEND_SLASH=False отвечал 404 на каждый прокси-
       // запрос. Слэш возвращён в destination (все пути API — Django-стиля).
+      // Снимки под `/media/` (Plane №951): фотографии охраняемых лиц лежат
+      // под MEDIA_ROOT бэкенда, и в прод-сборке, где клиент ходит
+      // относительными адресами, без этой строки они отвечали бы 404 стенда.
+      {
+        source: "/media/:path*",
+        destination: `${backendUrl}/media/:path*`,
+      },
       {
         source: "/api/staff_unit/:path*",
         destination: `${backendUrl}/api/staff_unit/:path*/`,

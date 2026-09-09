@@ -10,7 +10,6 @@ import { Pager } from "@/components/pager";
 import { DivisionPicker } from "@/components/division-picker";
 import { EmployeeTable } from "@/entities/employee/ui/EmployeeTable";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
-import { AddEmployeeDialog } from "@/features/add-employee";
 import { DailyExpenseBoard } from "@/features/daily-expense";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
@@ -27,7 +26,6 @@ import {
 } from "@/components/ui/select";
 import {
   Users,
-  UserPlus,
   Search,
   Download,
   RefreshCw,
@@ -224,10 +222,22 @@ function EmployeesScreen() {
   // это Ежедневный расход Организации»). Значение по умолчанию меняется
   // ВМЕСТЕ с порядком: оставить умолчанием «forces» значило бы, что первая
   // вкладка открывается второй, и человек каждый раз попадает не туда.
-  const view = searchParams.get("view") === "forces" ? "forces" : "daily";
+  // Третья вкладка «Свод департамента» (Plane №990) — тем же приёмом, но
+  // значением, а не булем: `view` остаётся ОДНИМ полем адреса на все три.
+  const viewParam = searchParams.get("view");
+  const view =
+    viewParam === "forces"
+      ? "forces"
+      : viewParam === "department-summary"
+        ? "department-summary"
+        : "daily";
   // Номер страницы — тоже в адресе: ссылка на «страницу 7 отбора» должна
   // открываться такой же (Plane №228).
   const page = Math.max(1, Number(searchParams.get("page") ?? 1) || 1);
+  // Деловая дата «Ежедневного расхода» (Plane №988) — тем же приёмом: нет в
+  // адресе → борд сам возьмёт «завтра» сервера, выбор руками уезжает в
+  // ссылку так же, как отбор и вкладка.
+  const businessDateParam = searchParams.get("businessDate") ?? "";
 
   const setFilter = useCallback(
     (key: string, value: string, fallback: string) => {
@@ -257,7 +267,6 @@ function EmployeesScreen() {
     searchQuery,
     (value) => setFilter("search", value, "")
   );
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   // Вкладка стала управляемой: по ней решается, грузить ли ВЕСЬ состав
   // подразделения (вкладки сбора сил) или хватит страницы (Plane №228).
   //
@@ -289,12 +298,26 @@ function EmployeesScreen() {
     (value: string) => setFilter("tab", value, "table"),
     [setFilter]
   );
+  const setBusinessDate = useCallback(
+    (value: string) => setFilter("businessDate", value, ""),
+    [setFilter]
+  );
   const queryClient = useQueryClient();
   // `user` остаётся ради подразделения человека (подпись и отбор «своё»);
   // ПРАВА теперь спрашиваются у раздела (Plane №352, Ш-1).
   const { user } = useAuth();
-  const { hasPermission: hasOpsPermission, isLoading: opsPermissionsLoading } =
-    useOpsPermissions();
+  const {
+    hasPermission: hasOpsPermission,
+    isLoading: opsPermissionsLoading,
+    roles: opsRoles,
+  } = useOpsPermissions();
+  // Третья вкладка «Свод департамента» (Plane №990, `[РАСХ-РШ-03]`) видна
+  // ТОЛЬКО ответственному за сбор сил — по РОЛИ, а не по праву: право
+  // `daily_report.generate` шире одной этой роли (им же гейтится сборка у
+  // самого борда), и вкладку по нему увидел бы, например, штаб.
+  const isForcesGatheringOfficer = opsRoles.some(
+    (role) => role.code === "FORCES_GATHERING_OFFICER"
+  );
   const allowedCodes = modulePermissionsOf("/employees");
   const allowed = allowedCodes.some((code) => hasOpsPermission(code));
 
@@ -503,18 +526,20 @@ function EmployeesScreen() {
   const canSeeAll =
     hasOpsPermission("forces.command") || hasOpsPermission("forces.allocate");
 
-  // Своё подразделение видит и тот, кто выделяет людей на ОМ
-  // (`forces.select`), и тот, у кого есть просто право на личный состав
-  // (`personnel.view`) — второй пришёл с решением заказчика 02.09.2026
-  // (Plane №375): «свои управления видны всем, строго на ознакомление».
-  // Правка от этого не открывается: кнопки живут на своих правах.
-  const canSeeOwnDepartment =
-    hasOpsPermission("forces.select") || hasOpsPermission("personnel.view");
+  // Своё подразделение видит тот, кто выделяет людей на ОМ (`forces.select`).
+  // С 02.09.2026 (№375) вторым ключом здесь стояло право на личный состав
+  // (`personnel.view`); с 07.09.2026 (№939) оно экран не открывает вовсе —
+  // пропуск на модуль (`entities/portal-access`) спрашивает только права
+  // сбора сил, и держатель одного `personnel.view` сюда не доходит. Оставить
+  // ключ здесь значило бы описывать ветку, в которую попасть нельзя.
+  const canSeeOwnDepartment = hasOpsPermission("forces.select");
 
-  /** Право ПРАВИТЬ кадровую запись — то же, которым закрыты правка и удаление
-   *  в карточке сотрудника (`entities/employee`). Без него экран остаётся
-   *  читаемым, но заводить людей с него нельзя. */
-  const canEditPersonnel = hasOpsPermission("orgstructure.manage");
+  // Заведения сотрудника с этого экрана БОЛЬШЕ НЕТ (Plane №940, слово
+  // заказчика 07.09.2026: «убрать кнопку „Добавить сотрудника“, а также её
+  // функционал»). Кнопка, окно `features/add-employee` и право под ней
+  // сняты целиком; кадровая запись заводится кадровым контуром, а не сбором
+  // сил. Правка и удаление в карточке сотрудника живут на своём праве
+  // (`entities/employee`) и этим решением не тронуты.
 
   // ПРАВА — единственный отбор, оставшийся на клиенте (Plane №228). Поиск,
   // отдел и статус теперь считает сервер: клиентский поиск по загруженной
@@ -723,19 +748,6 @@ function EmployeesScreen() {
                 />
                 Обновить
               </Button>
-              {/* Заведение сотрудника — ПРАВО, а не вид экрана (Plane №375).
-                  Кнопка показывалась всякому, кто открыл вкладку сбора сил, и
-                  после того как экран открылся читателям, она предлагала бы
-                  им действие, на которое сервер отвечает отказом. */}
-              {view === "forces" && canEditPersonnel && (
-                <Button
-                  className="bg-blue-600 hover:bg-blue-700"
-                  onClick={() => setIsAddDialogOpen(true)}
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Добавить сотрудника
-                </Button>
-              )}
             </div>
           }
         />
@@ -776,9 +788,34 @@ function EmployeesScreen() {
           >
             Сбор сил на ОМ
           </button>
+          {/* Видна ТОЛЬКО ответственному за сбор сил (Plane №990) — до того,
+              как права загрузились, вкладка тоже не рисуется: мигнувшая и
+              исчезнувшая вкладка хуже, чем появившаяся с задержкой. */}
+          {!opsPermissionsLoading && isForcesGatheringOfficer && (
+            <button
+              type="button"
+              aria-current={view === "department-summary" ? "page" : undefined}
+              className={
+                view === "department-summary"
+                  ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
+                  : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+              }
+              onClick={() => setFilter("view", "department-summary", "daily")}
+            >
+              Свод департамента
+            </button>
+          )}
         </nav>
 
-        {view === "daily" && <DailyExpenseBoard />}
+        {(view === "daily" || view === "department-summary") && (
+          <DailyExpenseBoard
+            businessDate={businessDateParam || undefined}
+            onBusinessDateChange={setBusinessDate}
+            regionLabel={
+              view === "department-summary" ? "Свод департамента" : undefined
+            }
+          />
+        )}
 
         {view === "forces" && (
         <>
@@ -1271,10 +1308,6 @@ function EmployeesScreen() {
         </>
         )}
 
-        <AddEmployeeDialog
-          open={isAddDialogOpen}
-          onOpenChange={setIsAddDialogOpen}
-        />
       </div>
     </DashboardLayout>
   );

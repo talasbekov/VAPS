@@ -176,6 +176,22 @@ export function describeOpsNotification(row: OpsNotificationRow): {
       ? { title: "Подчинённый заступает на мероприятие", message, link }
       : { title: "Вы назначены на мероприятие", message, link };
   }
+  if (row.kind === "FORCES_REQUEST_SENT") {
+    // Штаб нажал «Отправить запросы» (`[СБС-12]`, Plane №944): ответственный
+    // за сбор сил в департаменте узнаёт, сколько просят и к какому сроку, и
+    // попадает по ссылке прямо в карточку заявки — там его «Выделяем».
+    const p = row.payload;
+    const need = p.need ?? 0;
+    return {
+      title: `Штаб запросил ${ruCount(need, EMPLOYEES)} на ${p.eventCode ?? "мероприятие"}`,
+      message: `${p.eventTitle ?? ""} · ${p.businessDate ?? ""}${
+        p.departmentName ? ` · ${p.departmentName}` : ""
+      }`.trim(),
+      link: p.allocationId
+        ? `/employees/?view=forces&tab=requests&request=${encodeURIComponent(p.allocationId)}`
+        : "/employees/?view=forces&tab=requests",
+    };
+  }
   if (row.kind === "FORCES_RESPONSE") {
     // Департамент ответил штабу «Выделяем: X» (Plane №426, `[СБС-12]`).
     // Уведомление адресовано ШТАБУ, и вопрос у него один: кто ответил и
@@ -190,8 +206,12 @@ export function describeOpsNotification(row: OpsNotificationRow): {
     const department = p.departmentName || "Департамент";
     const allocating = p.allocating ?? 0;
     const requested = p.requested ?? 0;
-    const title =
-      allocating === 0
+    // Отзыв присланного списка — тоже «изменение ответа» (`[СБС-12]`, ревью
+    // №825 по №944): признак `withdrawn` в payload, иначе штаб прочёл бы
+    // «выделяет N из M» про людей, которых уже забрали из состава.
+    const title = p.withdrawn
+      ? `${department} отозвал присланный список (${allocating} из ${requested})`
+      : allocating === 0
         ? `${department}: отказ по запросу сил`
         : `${department} выделяет ${allocating} из ${requested}`;
     return {

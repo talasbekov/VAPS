@@ -18,6 +18,7 @@
 фиксирует именно код, а не пересказ.
 """
 import pytest
+from django.contrib.auth import get_user_model
 
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 
@@ -39,6 +40,8 @@ def test_an_event_walks_from_bulletin_to_closure(manager, approver):  # noqa: F8
     department = make_department()
     make_directorate(department, "Управление охраны")
     person = make_employee("Сериков")
+    person.user = get_user_model().objects.get(username="ev-manager")
+    person.save(update_fields=["user"])
 
     # Шаги 1–3 постановки: бюллетень, объект, рекогносцировка и автопередача
     # цифры штабу — их собирает фикстура соседнего файла и на выходе даёт ОМ

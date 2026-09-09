@@ -58,6 +58,7 @@ import {
   useChainAccess,
   EVENT_MANAGE,
 } from "@/features/forces-split/ui/chain-access";
+import { moduleOpenFor } from "@/entities/portal-access";
 import {
   useAssignPlacement,
   useMovePlacement,
@@ -65,7 +66,7 @@ import {
   useRemovePlacementPost,
   useSetSectorSenior,
   useUnassignPlacement,
-  useUpdateRecon,
+  useUpdatePlacementPostComment,
 } from "@/hooks/use-security-event-stages";
 import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { usePlacementRoles } from "@/hooks/use-placement-roles";
@@ -294,6 +295,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // Клиент гейтит по КОДУ права; «его ли это мероприятие» знает сервер — он же
   // и отвечает словами, если нет.
   const access = useChainAccess();
+  // Ссылки в «Сбор сил» — по ключу модуля, как пункт меню (№939, ревью №825).
+  const forcesOpen = moduleOpenFor("/employees", access.can);
   const assign = useAssignPlacement(event.id);
   const unassign = useUnassignPlacement(event.id);
   // Перенос — ОДНА операция сервера (Plane №762), а не пара «снять + назначить».
@@ -304,7 +307,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // пустой соответственно можно удалять этот пост с расстановки».
   const removePost = useRemovePlacementPost(event.id);
   const [postToRemove, setPostToRemove] = useState<ReconSectorPost | null>(null);
-  const updateRecon = useUpdateRecon(event.id);
+  const updatePostComment = useUpdatePlacementPostComment(event.id);
   const { hasPermission } = useOpsPermissions();
   // Роли наряда — из справочника раздела (Plane №239). Пустой справочник не
   // ломает экран: выбор просто не показывается, и это честно — назначать
@@ -404,6 +407,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // Причина возврата берётся у ПОКАЗАННОГО объекта (Plane №491); поля
   // мероприятия остаются ответом только там, где объектов нет вовсе.
   const returnedFrom = scope.visit ?? event;
+  /** Объект уже прошёл расстановку (шаг открыт назад с «Согласования», №861). */
+  const placementAlreadyCompleted = scope.visit !== null && scope.visit.stage !== "PLACEMENT";
   const returnedComment =
     returnedFrom.approvalStatus === "RETURNED"
       ? (returnedFrom.approvalComment ?? "")
@@ -991,12 +996,21 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 </Button>
               )}
             </RightGate>
-            <RightGate reason={access.reason(EVENT_MANAGE)}>
+            <RightGate
+              reason={
+                placementAlreadyCompleted
+                  ? "Расстановка уже завершена — вернитесь к согласованию"
+                  : access.reason(EVENT_MANAGE)
+              }
+            >
               {(describedBy) => (
                 <Button
                   type="button"
                   size="sm"
-                  disabled={complete.isPending || !access.can(EVENT_MANAGE)}
+                  // На шаге, открытом назад с «Согласования» (№861), сервер
+                  // отобьёт повторное завершение (`_require_visit_stage`);
+                  // обещать кнопкой то, что отобьют, нельзя (ревью №825).
+                  disabled={complete.isPending || !access.can(EVENT_MANAGE) || placementAlreadyCompleted}
                   aria-describedby={describedBy}
                   onClick={() =>
                     complete.mutate({ visitObjectId: scope.visit?.id })
@@ -1479,16 +1493,26 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               </Button>
                             )}
                           </RightGate>
-                          <button
-                            type="button"
-                            aria-label={`Удалить с поста: ${assignment.employeeName}`}
-                            title="Удалить с поста"
-                            disabled={unassign.isPending || !access.can(PLACEMENT_MANAGE)}
-                            onClick={() => unassign.mutate({ assignmentId: assignment.id })}
-                            className="flex h-8 w-8 items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                          >
-                            <X className="h-4 w-4" aria-hidden="true" />
-                          </button>
+                          {/* 🔴 БЕЗ RightGate ТРЕТЬЯ КНОПКА СТРОКИ МОЛЧАЛА (доводка
+                              №801 по ревью №825). Те же права, что у соседей
+                              выше («Старший поста», «Роль и секция…»), а
+                              причина не сказана: title на выключенной кнопке
+                              подавляется браузером — ровно тот дефект, ради
+                              которого №801 и заведена. */}
+                          <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+                            {(describedBy) => (
+                              <button
+                                type="button"
+                                aria-label={`Удалить с поста: ${assignment.employeeName}`}
+                                disabled={unassign.isPending || !access.can(PLACEMENT_MANAGE)}
+                                aria-describedby={describedBy}
+                                onClick={() => unassign.mutate({ assignmentId: assignment.id })}
+                                className="flex h-8 w-8 items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                              >
+                                <X className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            )}
+                          </RightGate>
                         </span>
                       </span>
                     </li>
@@ -1532,24 +1556,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={comment === null || updateRecon.isPending}
-                    /* 🔴 ТЕЛО СТРОИТСЯ ИЗ `allPosts`, А НЕ ИЗ `posts`
-                       (Plane №471). `posts` — строки ТОЛЬКО показанного
-                       объекта посещения, а `update_recon` на сервере не
-                       сливает списки, а ЗАМЕЩАЕТ `recon_sector_posts`
-                       присланным целиком. Пока здесь стоял разрез, сохранение
-                       комментария на объекте A удаляло все посты объекта B:
-                       его потребность падала в ноль, назначения оставались
-                       ссылаться на несуществующие id, и восстановить было
-                       нечем — прежних строк нет ни в одной версии.
-                       Разрез нужен ПОКАЗУ, а не отправке; соседний
-                       `ReconStage` шлёт полный список ровно поэтому. */
+                    disabled={comment === null || updatePostComment.isPending}
                     onClick={() =>
-                      updateRecon.mutate({
-                        checklist: event.reconChecklist,
-                        sectorPosts: allPosts.map((p) =>
-                          p.id === selected.id ? { ...p, comment: comment ?? "" } : p
-                        ),
+                      updatePostComment.mutate({
+                        postId: selected.id,
+                        comment: comment ?? "",
                       })
                     }
                   >
@@ -1585,10 +1596,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     (доводка №489 по ревью №825). Сервер меряет выделение
                     ИМЕННО первым: `force_demand_total` = заявка
                     рекогносцировки, иначе потребность
-                    (`security_events.py:2843`), и он же сверяется с перебором
-                    `ALLOCATION_OVER_DEMAND` (`:3037`) и стоит знаменателем на
-                    доске штаба (`:4001`, `:4051`); `ForcesSplitPanel.tsx:131`
-                    уже берёт его. `forceNeed` — ДРУГОЙ факт: он
+                    (`security_events.py:2843`); он же стоит знаменателем на
+                    доске штаба (`force_collections_view`) и в редакторе
+                    раскладки карточки сбора (`ForceCollectionCard`). Сверки
+                    «сумма не больше потребности» больше нет (Plane №944,
+                    `[СБС-12]`: «Блокировки на сумму нет»). `forceNeed` — ДРУГОЙ факт: он
                     пересчитывается при каждой правке расчёта, в том числе
                     снятием поста на этой же расстановке. Снял оператор пост —
                     `forceNeed` уменьшился, выделенное осталось, и «Выделено 12
@@ -1635,7 +1647,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 {/* Без состава ссылка стоит в пустом состоянии ниже, а не
                     дважды: две одинаковые ссылки в одной колонке — шум, и
                     пробы карточки читают её как одну. */}
-                {fromRoster && (
+                {fromRoster && forcesOpen && (
                   <Link
                     // 🔴 ВКЛАДКА НАЗВАНА В АДРЕСЕ (Plane №931). До №928 по
                     // `?view=forces` открывался экран, где лента входящих
@@ -1674,14 +1686,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       ? `Заявки на силы по ${event.code} ещё нет.`
                       : `Заявка ${event.code}: запрошено ${requestedTotal} чел. В состав штаб пока никого не принял.`}
                   </p>
-                  <Link
-                    // Та же вкладка, что и у ссылки выше (Plane №931): обе
-                    // отвечают на вопрос «сколько выделили департаменты».
-                    href="/employees?view=forces&tab=collections"
-                    className="mt-1.5 inline-block font-semibold text-primary-ink"
-                  >
-                    Сбор сил на ОМ →
-                  </Link>
+                  {forcesOpen && (
+                    <Link
+                      // Та же вкладка, что и у ссылки выше (Plane №931): обе
+                      // отвечают на вопрос «сколько выделили департаменты».
+                      href="/employees?view=forces&tab=collections"
+                      className="mt-1.5 inline-block font-semibold text-primary-ink"
+                    >
+                      Сбор сил на ОМ →
+                    </Link>
+                  )}
                 </div>
               ) : (
               <div className="space-y-2 p-2">
@@ -1914,7 +1928,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         <StageError error={assign.error} />
         <StageError error={unassign.error} />
         <StageError error={move.error} />
-        <StageError error={updateRecon.error} />
+        <StageError error={updatePostComment.error} />
         <StageError error={setSenior.error} />
         <StageError error={complete.error} />
 

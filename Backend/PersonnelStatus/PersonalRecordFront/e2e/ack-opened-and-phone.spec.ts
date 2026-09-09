@@ -185,9 +185,7 @@ test.describe(LIVE ? 'ознакомление: открыл и не нажал'
       `tel:${OPENED_PHONE.replace(/[^+\d]/g, '')}`,
     )
     await expect(phone).toContainText(OPENED_PHONE)
-    // Кнопки у неответившего те же: напомнить и отметить лично можно и тому,
-    // кто открыл.
-    await expect(openedRow.getByRole('button', { name: 'Ознакомлен лично' })).toBeVisible()
+    await expect(openedRow.getByRole('button', { name: 'Напомнить:' })).toBeVisible()
 
     // ── Строка «не открывал»: другая плашка, но ☎ тоже есть ───────────────
     const pendingRow = card.getByTestId(`ack-row-${pendingId}`)

@@ -209,10 +209,13 @@ def test_a_global_grant_is_not_asked_to_select_for_every_directorate(chain, djan
     )
 
 
-def test_the_department_officer_does_not_get_his_own_request(chain):
-    """Область департамента — выше управления; свой запрос ответственному не
-    шлётся: он его и отправил. Это отличие от заступления, где уведомляются
-    все уровни над сотрудником."""
+def test_the_department_head_gets_no_per_directorate_letter(chain):
+    """Область департамента — выше управления: письма ПО УПРАВЛЕНИЮ у неё нет.
+    Сводное `FORCES_REQUEST_DEPARTMENT` — отдельной пробой ниже (№922).
+    Прежнее имя пробы говорило «он его и отправил» — неправда: отправляет
+    держатель `forces.allocate`, а эта учётка держит `status.manage`
+    (ревью №825, 08.09.2026). Отличие от заступления, где уведомляются все
+    уровни над сотрудником, — в силе."""
     event, allocation, directorates, _head, officer, _watcher = chain
 
     notify_directorate_heads(event, allocation, directorates)

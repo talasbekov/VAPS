@@ -184,6 +184,76 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     expect(errors.filter((e) => !e.includes('CLIENT_FETCH_ERROR'))).toEqual([])
   })
 
+  test('«Удалить с поста» называет причину без placement.manage, как соседние кнопки строки (доводка №801 по ревью №825)', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Кнопка стояла БЕЗ `RightGate` — только статичный
+     * `title`, который браузер не покажет на выключенном элементе. Обе
+     * соседки в той же строке («Старший поста», «Роль и секция…») закрыты
+     * ТЕМ ЖЕ правом и обёрнуты правильно — рассинхрон нашёлся ревью №825.
+     */
+    const token = await apiToken(STAND_USERNAME, STAND_PASSWORD)
+    const auth = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const target = await placementEventWithRoster(token)
+    requireFixture(target, 'мероприятие на стадии «Расстановка»')
+    const eventId = target!.id
+
+    const before = (await (
+      await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+    ).json()) as {
+      reconSectorPosts: { id: string; need: number }[]
+      forceRoster: { employeeId: string }[]
+      placementAssignments: { id: string; employeeId: string; postId: string }[]
+    }
+    test.skip(before.reconSectorPosts.length === 0, 'у ОМ нет расчёта постов')
+    const postId = before.reconSectorPosts[0].id
+    const candidate = before.forceRoster.find(
+      (m) => !before.placementAssignments.some((a) => a.employeeId === m.employeeId),
+    )
+    requireFixture(candidate, 'в составе есть свободный человек')
+    const assigned = await request.post(
+      `${API}/api/ops/security-events/${eventId}/placement/assign/`,
+      { headers: auth, data: { postId, employeeId: candidate!.employeeId } },
+    )
+    expect(assigned.ok(), await assigned.text()).toBe(true)
+    const after = (await (
+      await request.get(`${API}/api/ops/security-events/${eventId}/`, { headers: auth })
+    ).json()) as { placementAssignments: { employeeName: string; postId: string }[] }
+    const row = after.placementAssignments.find((a) => a.postId === postId)
+    requireFixture(row, 'назначение не завелось — проверять нечего')
+
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-permissions/'),
+      async (route) =>
+        route.fulfill({
+          json: { permissions: ['event.view', 'status.view', 'personnel.view'], roles: [] },
+        }),
+    )
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${eventId}/`)
+    const card = page.getByRole('region', { name: 'Расстановка сил' })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+    // Пост выбирается тем же деревом, что и в первой пробе файла.
+    const tree = page.getByRole('complementary', { name: 'Дерево постов' })
+    await tree.locator(`li[data-drop-post="${postId}"]`).click()
+
+    const removeButton = card.getByRole('button', {
+      name: `Удалить с поста: ${row!.employeeName}`,
+    })
+    await expect(removeButton).toBeVisible({ timeout: 15_000 })
+    await expect(removeButton).toBeDisabled()
+    const describedBy = await removeButton.getAttribute('aria-describedby')
+    expect(
+      describedBy,
+      'выключенная кнопка без aria-describedby — причина недостижима читалкой',
+    ).toBeTruthy()
+    const hint = page.locator(`#${describedBy}`)
+    await expect(hint).toBeVisible()
+    expect((await hint.innerText()).trim().length).toBeGreaterThan(0)
+  })
+
   test('лишний пост снимается с расстановки, занятый — нет', async ({ page, request }) => {
     /**
      * Негативная ветка недобора (Plane №259, Ш-5).
@@ -237,6 +307,11 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     const run = Date.now()
     const doomedName = `Проба №259/${run} · пост под снятие`
     const keptName = `Проба №259/${run} · пост-свидетель`
+    const reopened = await request.post(
+      `${API}/api/ops/security-events/${eventId}/stage/`,
+      { headers: auth, data: { stage: 'RECON' } },
+    )
+    expect(reopened.status(), 'администратор не вернул фикстуру на рекогносцировку').toBe(200)
     const patched = await request.patch(
       `${API}/api/ops/security-events/${eventId}/recon/`,
       {
@@ -259,6 +334,11 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       },
     )
     expect(patched.status(), 'посты пробы не завелись').toBe(200)
+    const restored = await request.post(
+      `${API}/api/ops/security-events/${eventId}/stage/`,
+      { headers: auth, data: { stage: 'PLACEMENT' } },
+    )
+    expect(restored.status(), 'фикстура не вернулась на расстановку').toBe(200)
 
     before = await read()
     const doomed = before.reconSectorPosts.find((p) => p.post === doomedName)
@@ -738,12 +818,9 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
 
     // 🔴 КОММЕНТАРИЙ ПОСТА НЕ ДОЛЖЕН СНОСИТЬ ЧУЖОЙ ОБЪЕКТ (Plane №471).
     //
-    // Окно правки шлёт `sectorPosts` ЦЕЛИКОМ, а сервер (`update_recon`) не
-    // сливает, а ЗАМЕЩАЕТ список. Пока окно собирало тело из постов ПОКАЗАННОГО
-    // объекта, сохранение комментария на объекте A удаляло все посты объекта B:
-    // его потребность падала в ноль, а назначения оставались ссылаться на
-    // несуществующие id. Восстановить было нечем — прежних строк нет ни в одной
-    // версии.
+    // №982: комментарий ходит точечной placement-операцией. Поздняя
+    // стадия не открывает весь `PATCH /recon/`, а соседние посты не
+    // пересылаются и не могут быть снесены этой правкой.
     //
     // Проверяется и экраном, и ручкой: экран показывает, что человек этого не
     // заметит, ручка — что данные на месте.
@@ -762,7 +839,9 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     // Ждём ответа ручки, а не таймера: сохранение асинхронно, и чтение сразу
     // после клика застало бы прежнее состояние и зеленело бы на поломке.
     await page.waitForResponse(
-      (r) => r.url().includes('/recon/') && r.request().method() === 'PATCH',
+      (r) =>
+        r.url().includes(`/placement/posts/${mine[0]!.id}/comment/`) &&
+        r.request().method() === 'PATCH',
       { timeout: 20_000 },
     )
 
@@ -1128,7 +1207,12 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       const dialog = page.getByRole('dialog')
       await expect(dialog).toBeVisible({ timeout: 15_000 })
       await expect(dialog).toContainText('Расчёт поста')
-      await expect(dialog).toContainText('обоснование усиления')
+      // 🔴 СВОЙ ПОРОГ, А НЕ УМОЛЧАНИЕ (доводка №798 по ревью №825, тот же
+      // довод, что у соседних окон этого файла, строки 1508/1717): текст
+      // обоснования дорисовывается ПОСЛЕ ответа сервера, а глобальное умолчание
+      // Playwright — 5 с. Под нагрузкой это ровно тот класс мигания, который
+      // №798 уже правила рядом, но не здесь.
+      await expect(dialog).toContainText('обоснование усиления', { timeout: 15_000 })
       // Снимок — в `smoke-results/` (Plane №747): каталог закрыт `.gitignore`,
       // как и у всех прочих спек. Голый относительный путь писал PNG в КОРЕНЬ
       // фронта, и каждый прогон смоука оставлял в репозитории неотслеживаемый

@@ -31,11 +31,15 @@ interface Visit {
   id: string
   objectId: string
   stage: string
+  reconChecklist?: Array<{ id: string; state: string }>
+  reconForceRequest?: number
 }
 interface EventShape {
   id: string
   stage: string
   visitObjects: Visit[]
+  reconChecklist: Array<Record<string, unknown>>
+  reconSectorPosts: Array<Record<string, unknown>>
 }
 
 test.describe(
@@ -173,6 +177,125 @@ test.describe(
       // «Ознакомлении», вывод вернёт мероприятие туда же, и ответ уйдёт со
       // стадией `ACKNOWLEDGEMENT`.
       expect(result.conductedEvent.stage).toBe('CONDUCT')
+    })
+
+    test('рекогносцировка и комментарий расстановки адресованы объекту (Plane №982)', async ({
+      page,
+    }) => {
+      const api = page.context().request
+      const csrf = (await (await api.get(`${MOCK_APP}/api/auth/csrf/`)).json()) as {
+        csrfToken: string
+      }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/`)
+      await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible({
+        timeout: 30_000,
+      })
+
+      const result = await page.evaluate(async () => {
+        const call = async (method: string, path: string, body?: unknown) => {
+          const res = await fetch(path, {
+            method,
+            headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          })
+          return { status: res.status, payload: await res.json().catch(() => ({})) }
+        }
+        const base = '/api/ops/security-events/se-1'
+        const objects = await call('GET', '/api/ops/security-events/bindable-objects/')
+        const initial = (await call('GET', `${base}/`)).payload as EventShape
+        const firstInitial = initial.visitObjects[0]!
+        const post = {
+          id: 'new-А',
+          sector: 'Сектор А',
+          post: 'Пост А',
+          task: 'Задача А',
+          need: 1,
+          shift: '',
+          requirements: '',
+          result: null,
+          comment: '',
+          sourceSectorId: null,
+          sourcePostId: null,
+          minRating: null,
+          visitObjectId: firstInitial.id,
+        }
+        const seeded = await call('PATCH', `${base}/recon/`, {
+          visitObjectId: firstInitial.id,
+          checklist: initial.reconChecklist,
+          sectorPosts: [post],
+        })
+        const other = (objects.payload as { results: { id: string }[] }).results.find(
+          (row) => row.id !== initial.visitObjects[0]?.objectId,
+        )
+        const withSecond = (await call('POST', `${base}/visit-objects/`, {
+          objectId: other?.id,
+        })).payload as EventShape
+        const first = withSecond.visitObjects[0]!
+        const second = withSecond.visitObjects[1]!
+        await call('POST', `${base}/stage/`, { stage: 'RECON' })
+        const imported = await call('POST', `${base}/recon/import-from-passport/`, {
+          visitObjectId: first.id,
+        })
+
+        const checked = initial.reconChecklist.map((row) => ({ ...row, state: 'NORMAL' }))
+        const firstSaved = await call('PATCH', `${base}/recon/`, {
+          visitObjectId: first.id,
+          checklist: checked,
+          sectorPosts: (seeded.payload as EventShape).reconSectorPosts,
+          forceRequest: 41,
+        })
+        const afterFirstSave = firstSaved.payload as EventShape
+        const firstDone = await call('POST', `${base}/recon/complete/`, {
+          visitObjectId: first.id,
+        })
+        const onPlacement = await call('POST', `${base}/stage/`, { stage: 'PLACEMENT' })
+        const firstPost = ((onPlacement.payload as Partial<EventShape>).reconSectorPosts ?? []).find(
+          (row) => row.visitObjectId === first.id,
+        )
+        const commented = firstPost === undefined
+          ? { status: 0, payload: {} }
+          : await call(
+              'PATCH',
+              `${base}/placement/posts/${firstPost.id}/comment/`,
+              { comment: '  Проверить связь  ' },
+            )
+
+        return {
+          importedStatus: imported.status,
+          importedPayload: imported.payload,
+          firstSavedStatus: firstSaved.status,
+          firstVisit: afterFirstSave.visitObjects?.find((visit) => visit.id === first.id),
+          secondVisit: afterFirstSave.visitObjects?.find((visit) => visit.id === second.id),
+          firstDoneStatus: firstDone.status,
+          firstDoneEvent: firstDone.payload as EventShape,
+          commentedStatus: commented.status,
+          commentedEvent: commented.payload as EventShape,
+          firstPostId: firstPost?.id as string | undefined,
+        }
+      })
+
+      expect(result.importedStatus, JSON.stringify(result.importedPayload)).toBe(200)
+      expect(result.firstSavedStatus, JSON.stringify(result)).toBe(200)
+      expect(result.firstVisit?.reconForceRequest).toBe(41)
+      expect(result.firstVisit?.reconChecklist?.every((row) => row.state === 'NORMAL')).toBe(true)
+      expect(result.secondVisit?.reconForceRequest).toBe(0)
+      expect(result.secondVisit?.reconChecklist?.every((row) => row.state === 'UNCHECKED')).toBe(true)
+
+      expect(result.firstDoneStatus, JSON.stringify(result.firstDoneEvent)).toBe(200)
+      expect(result.firstDoneEvent.visitObjects.map((visit) => visit.stage)).toEqual([
+        'DEMAND',
+        'RECON',
+      ])
+      expect(result.firstDoneEvent.stage).toBe('RECON')
+
+      expect(result.commentedStatus, JSON.stringify(result.commentedEvent)).toBe(200)
+      expect(
+        result.commentedEvent.reconSectorPosts.find((row) => row.id === result.firstPostId)
+          ?.comment,
+      ).toBe('Проверить связь')
     })
   },
 )

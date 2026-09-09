@@ -33,19 +33,29 @@ export function removeVisitObject(variables: {
   );
 }
 
-/** День посещения и примечание объекта («Реестр ОМ-35.1»). Оба поля жили
- * свободным текстом патча сводки ГВО — там они были ВТОРЫМ списком объектов и
- * молча расходились с расстановкой. `visitDay: ""` снимает день: объект
- * возвращается в дату мероприятия, и это ответ, а не пробел. */
+/** День посещения, примечание и описание визита объекта («Реестр ОМ-35.1»,
+ * Plane SJ-1049). День и примечание жили свободным текстом патча сводки ГВО
+ * — там они были ВТОРЫМ списком объектов и молча расходились с
+ * расстановкой. `visitDay: ""` снимает день: объект возвращается в дату
+ * мероприятия, и это ответ, а не пробел. `description` необязателен —
+ * вызывающий, которому нечего сказать про описание, его не шлёт, и поле на
+ * сервере остаётся как было (не сбрасывается молча). */
 export function updateVisitObject(variables: {
   eventId: string;
   visitObjectId: string;
   visitDay: string;
   note: string;
+  description?: string;
 }): Promise<SecurityEvent> {
   return opsApiClient.patch<SecurityEvent>(
     visitObjectDetailPath(variables.eventId, variables.visitObjectId),
-    { visitDay: variables.visitDay, note: variables.note }
+    {
+      visitDay: variables.visitDay,
+      note: variables.note,
+      ...(variables.description === undefined
+        ? {}
+        : { description: variables.description }),
+    }
   );
 }
 

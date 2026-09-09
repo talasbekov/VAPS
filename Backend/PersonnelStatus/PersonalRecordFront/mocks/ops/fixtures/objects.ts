@@ -129,6 +129,7 @@ export function buildObjectsFixtures(
       passportState: "GREEN",
       ownership: "GUARDED",
       hasSecurityEvents: true,
+      photoUrl: null,
       sectors: palaceSectors,
       passportVersions: [
         {
@@ -155,6 +156,7 @@ export function buildObjectsFixtures(
       passportState: "YELLOW",
       ownership: "GUARDED",
       hasSecurityEvents: true,
+      photoUrl: null,
       sectors: buildSectors([
         {
           name: "Сектор A",
@@ -182,6 +184,7 @@ export function buildObjectsFixtures(
       passportState: "RED",
       ownership: "OWN",
       hasSecurityEvents: false,
+      photoUrl: null,
       sectors: [],
       passportVersions: [],
       createdAt: now,
@@ -198,6 +201,7 @@ export function buildObjectsFixtures(
       passportState: "GREEN",
       ownership: "OWN",
       hasSecurityEvents: true,
+      photoUrl: null,
       sectors: dueSoonSectors,
       passportVersions: [
         {
@@ -225,6 +229,7 @@ export function buildObjectsFixtures(
       passportState: "YELLOW",
       ownership: "GUARDED",
       hasSecurityEvents: false,
+      photoUrl: null,
       sectors: overdueSectors,
       passportVersions: [
         {

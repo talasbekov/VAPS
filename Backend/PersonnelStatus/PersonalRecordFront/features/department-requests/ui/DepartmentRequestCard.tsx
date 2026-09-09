@@ -18,9 +18,9 @@
  * Выключить без объяснения значит оставить человека гадать, что он сделал не
  * так.
  */
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Plus, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/stat-card";
@@ -43,7 +43,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { ForceAllocationDirectorate } from "@/entities/security-event";
+import type {
+  ForceAllocationDirectorate,
+  ForceGroupOffer,
+} from "@/entities/security-event";
 import {
   useDepartmentRequest,
   useNotifyDepartmentDirectorates,
@@ -54,6 +57,7 @@ import {
 } from "@/hooks/use-department-requests";
 import { apiClient, type CoreDivision } from "@/lib/api";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
 
 /**
  * Статусы, при которых разбивка по управлениям уже не правится: решение
@@ -145,6 +149,7 @@ export function DepartmentRequestCard({
   const notify = useNotifyDepartmentDirectorates(detail?.eventId ?? "", allocationId);
   const submit = useSubmitDepartmentAllocation(detail?.eventId ?? "", allocationId);
   const respond = useRespondDepartmentAllocation(detail?.eventId ?? "", allocationId);
+  const participationCatalog = useParticipationCatalog();
   const withdraw = useWithdrawDepartmentAllocation(detail?.eventId ?? "", allocationId);
   const [submitOpen, setSubmitOpen] = useState(false);
   // Запрос управлений НЕОБРАТИМ (Plane №532): после него сервер запирает
@@ -159,6 +164,7 @@ export function DepartmentRequestCard({
     allocating: "",
     comment: "",
   });
+  const [groupOffers, setGroupOffers] = useState<ForceGroupOffer[]>([]);
   // 🔴 ЗАВИСИМОСТИ — ЗНАЧЕНИЯ СЕРВЕРА, А НЕ ОБЪЕКТ ЗАЯВКИ (Plane №555).
   //
   // Эффект стоял на `[allocation]`, то есть на ИДЕНТИЧНОСТИ объекта, а её
@@ -178,13 +184,38 @@ export function DepartmentRequestCard({
       ? ""
       : String(allocation.allocating);
   const serverComment = allocation?.answerComment ?? "";
+  const serverGroupOffers = JSON.stringify(allocation?.groupOffers ?? []);
+  const serverGroupState = JSON.stringify({
+    demands: allocation?.groupDemands ?? [],
+    offers: allocation?.groupOffers ?? [],
+  });
+  const groupOffersDirty = JSON.stringify(groupOffers) !== serverGroupOffers;
   useEffect(() => {
     if (allocation === undefined) return;
     setAnswer({ allocating: serverAllocating, comment: serverComment });
+    const saved = allocation.groupOffers ?? [];
+    const savedByDemand = new Map(
+      saved.filter((row) => row.demandRowId).map((row) => [row.demandRowId, row])
+    );
+    setGroupOffers([
+      ...(allocation.groupDemands ?? []).map(
+        (demand): ForceGroupOffer =>
+          savedByDemand.get(demand.id) ?? {
+            demandRowId: demand.id,
+            kindCode: demand.kindCode ?? "",
+            count: 0,
+            place: demand.place ?? demand.sector,
+            specification: demand.specification ?? "",
+            comment: "",
+          }
+      ),
+      ...saved.filter((row) => row.demandRowId === null),
+    ]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `allocation` в
     // списке и есть дефект: объект новый на каждом рефетче.
-  }, [allocationId, serverAllocating, serverComment]);
+  }, [allocationId, serverAllocating, serverComment, serverGroupState]);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [groupDraft, setGroupDraft] = useState<Record<string, string[]>>({});
 
   const {
     directorates: orgDirectorates,
@@ -247,6 +278,11 @@ export function DepartmentRequestCard({
     setDraft(
       Object.fromEntries(directorateRows.map((row) => [row.divisionId, String(row.need ?? 0)]))
     );
+    setGroupDraft(
+      Object.fromEntries(
+        directorateRows.map((row) => [row.divisionId, row.groupDemandIds ?? []])
+      )
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverSplit]);
 
@@ -274,6 +310,8 @@ export function DepartmentRequestCard({
   }
 
   const quota = allocation.need;
+  const groupAnswerLocked =
+    allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
   // ПРЕДЕЛ РАСКЛАДКИ — ОТ «ВЫДЕЛЯЕМ» (`[СБС-22]`, Plane №392): раскладывать
   // между управлениями департамент обязан СВОЮ цифру, а не запрос штаба.
   // Пока ответа нет — запрос штаба, как и раньше.
@@ -286,6 +324,27 @@ export function DepartmentRequestCard({
     0
   );
   const assigned = allocation.members.length;
+  // Своя цифра департамента (`[СБС-21]`/`[СБС-23]`): против неё считается
+  // подтверждение отправки. Ответа нет — запрос штаба.
+  const ownFigure = splitCap;
+  // Группы списка по управлениям (`[СБС-23]`): порядок — как в таблице
+  // управлений; люди вне управлений заявки — последней группой, названной
+  // словами, а не молча выброшенной.
+  const memberGroups = (() => {
+    const map = detail.memberDirectorateById ?? {};
+    const groups = directorateRows.map((row) => ({
+      divisionId: row.divisionId as string | null,
+      name: row.name,
+      need: row.need ?? 0,
+      members: allocation.members.filter((m) => map[m.employeeId] === row.divisionId),
+    }));
+    const placed = new Set(groups.flatMap((g) => g.members.map((m) => m.employeeId)));
+    const rest = allocation.members.filter((m) => !placed.has(m.employeeId));
+    if (rest.length > 0) {
+      groups.push({ divisionId: null, name: "Вне управлений заявки", need: 0, members: rest });
+    }
+    return groups.filter((g) => g.members.length > 0);
+  })();
   const draftTotal = Object.values(draft).reduce(
     (sum, value) => sum + (Number(value) || 0),
     0
@@ -301,6 +360,10 @@ export function DepartmentRequestCard({
   const editableRows = directorateRows.filter((row) => orgIds.has(row.divisionId));
   const splitDirty = directorateRows.some(
     (row) => (Number(draft[row.divisionId]) || 0) !== (row.need ?? 0)
+  ) || directorateRows.some(
+    (row) =>
+      JSON.stringify(groupDraft[row.divisionId] ?? []) !==
+      JSON.stringify(row.groupDemandIds ?? [])
   );
 
   // 🔴 ЧТО ИМЕННО УЕДЕТ ПРИ НАЖАТИИ «ОТПРАВИТЬ В УПРАВЛЕНИЯ» (Plane №808,
@@ -336,6 +399,7 @@ export function DepartmentRequestCard({
       rows: editableRows.map((row) => ({
         divisionId: row.divisionId,
         need: Number(draft[row.divisionId]) || 0,
+        groupDemandIds: groupDraft[row.divisionId] ?? [],
       })),
     });
   }
@@ -362,6 +426,142 @@ export function DepartmentRequestCard({
           {detail.eventTime !== null ? ` · ${detail.eventTime}` : ""}
         </p>
       </div>
+
+      <section
+        role="region"
+        aria-label="Специальные группы"
+        className="space-y-3 rounded-lg border p-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="font-semibold">Специальные группы</h3>
+            <p className="text-muted-foreground text-sm">
+              Идут сверх физического наряда; недобор и перебор ответ не блокируют.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={groupAnswerLocked}
+            onClick={() => {
+              const kind = (participationCatalog.data ?? []).find(
+                (item) => item.code !== "PHYSICAL_SQUAD"
+              );
+              setGroupOffers((current) => [
+                ...current,
+                {
+                  demandRowId: null,
+                  kindCode: kind?.code ?? "SCREENING_GROUP",
+                  count: 1,
+                  place: "",
+                  specification: "",
+                  comment: "",
+                },
+              ]);
+            }}
+          >
+            <Plus className="mr-1 size-4" aria-hidden="true" />
+            Своя группа
+          </Button>
+        </div>
+        {(allocation.groupDemands ?? []).length === 0 && groupOffers.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Специальные группы не запрошены.</p>
+        ) : (
+          <div className="space-y-3">
+            {groupOffers.map((offer, index) => {
+              const demand = (allocation.groupDemands ?? []).find(
+                (row) => row.id === offer.demandRowId
+              );
+              const kindLabel =
+                (participationCatalog.data ?? []).find(
+                  (item) => item.code === offer.kindCode
+                )?.label ?? offer.kindCode;
+              const patchOffer = (next: Partial<ForceGroupOffer>) =>
+                setGroupOffers((current) =>
+                  current.map((row, rowIndex) =>
+                    rowIndex === index ? { ...row, ...next } : row
+                  )
+                );
+              return (
+                <div key={`${offer.demandRowId ?? "own"}-${index}`} className="rounded-md bg-muted/30 p-3">
+                  <p className="mb-2 text-sm font-medium">
+                    {kindLabel} · {demand?.need ?? offer.count} · {demand?.place ?? offer.place}
+                  </p>
+                  {demand && (
+                    <p className="text-muted-foreground mb-2 text-xs">
+                      {[demand.specification, demand.requirements, demand.shift]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
+                  <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-5">
+                    <select
+                      aria-label={`Вид группы, строка ${index + 1}`}
+                      className="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                      disabled={groupAnswerLocked || Boolean(demand)}
+                      value={offer.kindCode}
+                      onChange={(event) => patchOffer({ kindCode: event.target.value })}
+                    >
+                      {(participationCatalog.data ?? [])
+                        .filter((item) => item.code !== "PHYSICAL_SQUAD")
+                        .map((item) => (
+                          <option key={item.code} value={item.code}>{item.label}</option>
+                        ))}
+                    </select>
+                    <Input
+                      type="number"
+                      min={0}
+                      disabled={groupAnswerLocked}
+                      aria-label={`Количество групп, строка ${index + 1}`}
+                      value={offer.count}
+                      onChange={(event) => patchOffer({ count: Number(event.target.value) || 0 })}
+                    />
+                    <Input
+                      aria-label={`Место группы, строка ${index + 1}`}
+                      disabled={groupAnswerLocked}
+                      placeholder="Место"
+                      value={offer.place}
+                      onChange={(event) => patchOffer({ place: event.target.value })}
+                    />
+                    <Input
+                      aria-label={`Спецификация группы, строка ${index + 1}`}
+                      disabled={groupAnswerLocked}
+                      placeholder="Состав / квалификация"
+                      value={offer.specification}
+                      onChange={(event) => patchOffer({ specification: event.target.value })}
+                    />
+                    <div className="flex gap-1">
+                      <Input
+                        aria-label={`Комментарий группы, строка ${index + 1}`}
+                        disabled={groupAnswerLocked}
+                        placeholder="Комментарий"
+                        value={offer.comment}
+                        onChange={(event) => patchOffer({ comment: event.target.value })}
+                      />
+                      {offer.demandRowId === null && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Удалить свою группу, строка ${index + 1}`}
+                          onClick={() =>
+                            setGroupOffers((current) =>
+                              current.filter((_row, rowIndex) => rowIndex !== index)
+                            )
+                          }
+                        >
+                          <X className="size-4" aria-hidden="true" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* ШАПКА-ОТВЕТ (`[СБС-21]`, Plane №391): «Запрошено штабом: N ·
           Выделяем: [ввод] · Комментарий: [ввод]». Цифру ставит только
@@ -397,7 +597,9 @@ export function DepartmentRequestCard({
             answer.allocating !==
               (allocation.allocating === null || allocation.allocating === undefined
                 ? ""
-                : String(allocation.allocating)) || answer.comment !== (allocation.answerComment ?? "");
+                : String(allocation.allocating)) ||
+            answer.comment !== (allocation.answerComment ?? "") ||
+            groupOffersDirty;
           return (
             <>
               <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
@@ -438,6 +640,7 @@ export function DepartmentRequestCard({
                     respond.mutate({
                       allocating: Number.parseInt(answer.allocating, 10),
                       comment: answer.comment,
+                      groupOffers,
                     })
                   }
                 >
@@ -554,13 +757,16 @@ export function DepartmentRequestCard({
           <Table>
             <TableHeader>
               <TableRow>
-                {/* Колонки — эталон `[СБС-22]`: «Управление | Запрошено |
-                    Проставлено „Участие в ОМ“ | Статус». «В строю» из эталона
-                    здесь нет намеренно: строевой численности управления у
-                    заявки нет, а тянуть расход дня ради колонки — второй
-                    источник числа, который разошёлся бы с экраном расхода. */}
+                {/* Колонки — эталон `[СБС-22]`: «Управление | В строю |
+                    Запрошено | Проставлено „Участие в ОМ“ | Статус». «В
+                    строю» считает СЕРВЕР на деловую дату ОМ
+                    (`inServiceByDirectorate`, Plane №944) тем же правилом,
+                    что и разрез сбора на экране: без статуса или со статусом
+                    колонки «В строю» расхода, кроме участия в ОМ. */}
                 <TableHead>Управление</TableHead>
+                <TableHead className="text-right">В строю</TableHead>
                 <TableHead className="w-32">Запрошено</TableHead>
+                <TableHead>Спецгруппы</TableHead>
                 <TableHead>Проставлено «Участие в ОМ»</TableHead>
                 <TableHead>Статус</TableHead>
               </TableRow>
@@ -568,7 +774,7 @@ export function DepartmentRequestCard({
             <TableBody>
               {directorateRows.length === 0 && orgLoading && (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={6}>
                     {/* Справочник ещё едет — сказать это, а не выдать ожидание
                         за ответ (Plane №531). */}
                     <div
@@ -580,7 +786,7 @@ export function DepartmentRequestCard({
               )}
               {directorateRows.length === 0 && orgFailed && (
                 <TableRow>
-                  <TableCell colSpan={4} className="whitespace-normal">
+                  <TableCell colSpan={6} className="whitespace-normal">
                     {/* 🔴 ОТКАЗ НАЗВАН ОТКАЗОМ (Plane №531). Здесь стояло
                         «нет действующих управлений» — утверждение об
                         оргструктуре, сделанное по молчанию сети. Причина
@@ -605,7 +811,7 @@ export function DepartmentRequestCard({
               )}
               {directorateRows.length === 0 && !orgLoading && !orgFailed && (
                 <TableRow>
-                  <TableCell colSpan={4} className="whitespace-normal">
+                  <TableCell colSpan={6} className="whitespace-normal">
                     <p className="text-muted-foreground text-sm">
                       {/* Пусто означает РОВНО ОДНО: справочник ответил, и в
                           дереве оргструктуры у департамента нет ни одного
@@ -620,6 +826,11 @@ export function DepartmentRequestCard({
               {directorateRows.map((row: ForceAllocationDirectorate) => (
                 <TableRow key={row.divisionId}>
                   <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="text-right tabular-nums" data-slot="directorate-in-service">
+                    {detail.inServiceByDirectorate?.[row.divisionId] ?? (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {orgIds.has(row.divisionId) ? (
                       <>
@@ -650,6 +861,39 @@ export function DepartmentRequestCard({
                       <span className="text-muted-foreground tabular-nums text-sm">
                         {row.need ?? 0} · не в оргструктуре
                       </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="min-w-64">
+                    {(allocation.groupDemands ?? []).length === 0 ? (
+                      <span className="text-muted-foreground text-sm">—</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {(allocation.groupDemands ?? []).map((demand) => {
+                          const checked = (groupDraft[row.divisionId] ?? []).includes(demand.id);
+                          const assignedElsewhere = Object.entries(groupDraft).some(
+                            ([divisionId, ids]) => divisionId !== row.divisionId && ids.includes(demand.id)
+                          );
+                          return (
+                            <label key={demand.id} className="flex items-start gap-2 text-xs">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 size-4"
+                                disabled={locked || assignedElsewhere || !orgIds.has(row.divisionId)}
+                                checked={checked}
+                                onChange={(event) =>
+                                  setGroupDraft((current) => ({
+                                    ...current,
+                                    [row.divisionId]: event.target.checked
+                                      ? [...(current[row.divisionId] ?? []), demand.id]
+                                      : (current[row.divisionId] ?? []).filter((id) => id !== demand.id),
+                                  }))
+                                }
+                              />
+                              <span>{demand.specification || demand.kindCode} · {demand.place}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     )}
                   </TableCell>
                   <TableCell className="tabular-nums">
@@ -717,6 +961,11 @@ export function DepartmentRequestCard({
           </p>
         </div>
 
+        {/* `[СБС-23]`: ГРУППЫ ПО УПРАВЛЕНИЯМ с чипами «N из M» (Plane №944).
+            Человек числится в отделе; к управлению его относит сервер по
+            поддереву (`memberDirectorateById`) — тем же правилом, что и
+            «выделено N из M» в таблице выше. Чип в одну строку: число — не
+            текст, переноситься ему нечего. */}
         <div className="overflow-x-auto rounded-lg border">
           <Table>
             <TableHeader>
@@ -737,21 +986,42 @@ export function DepartmentRequestCard({
                   </TableCell>
                 </TableRow>
               )}
-              {allocation.members.map((member) => (
-                <TableRow key={member.employeeId}>
-                  <TableCell className="font-medium">{member.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {member.divisionName || "—"}
-                  </TableCell>
-                  <TableCell>
-                    {/* Источник назван словом: у строки «из статуса» нет
-                        записи штаба, и снять её как выделение нельзя —
-                        кнопка обещала бы то, чего не может. */}
-                    <Badge variant={member.source === "STATUS" ? "secondary" : "outline"}>
-                      {member.source === "STATUS" ? "По статусу" : "Выделен штабом"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
+              {memberGroups.map((group) => (
+                <Fragment key={`group-${group.divisionId ?? "none"}`}>
+                  <TableRow data-slot="member-group">
+                    <TableCell
+                      colSpan={3}
+                      className="text-muted-foreground bg-muted/30 text-xs font-semibold uppercase tracking-wide"
+                    >
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        {group.name}
+                        <Badge
+                          variant={group.need > 0 && group.members.length >= group.need ? "secondary" : "outline"}
+                          className="whitespace-nowrap normal-case tabular-nums"
+                          data-slot="member-group-chip"
+                        >
+                          {group.members.length} из {group.need}
+                        </Badge>
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                  {group.members.map((member) => (
+                    <TableRow key={member.employeeId}>
+                      <TableCell className="font-medium">{member.name}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {member.divisionName || "—"}
+                      </TableCell>
+                      <TableCell>
+                        {/* Источник назван словом: у строки «из статуса» нет
+                            записи штаба, и снять её как выделение нельзя —
+                            кнопка обещала бы то, чего не может. */}
+                        <Badge variant={member.source === "STATUS" ? "secondary" : "outline"}>
+                          {member.source === "STATUS" ? "По статусу" : "Выделен штабом"}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </Fragment>
               ))}
             </TableBody>
           </Table>
@@ -771,10 +1041,10 @@ export function DepartmentRequestCard({
             >
               Отправить список в штаб
             </Button>
-            {assigned < quota && (
+            {assigned < ownFigure && (
               <p className="text-muted-foreground text-sm">
-                Недобор {quota - assigned} — список можно отправить и так,
-                штаб решит, довыделять или принять как есть.
+                Собрано {assigned} из {ownFigure} — список можно отправить и
+                так, штаб решит, довыделять или принять как есть.
               </p>
             )}
           </div>
@@ -949,11 +1219,15 @@ export function DepartmentRequestCard({
                   («Никто не выделен — отправлять нечего»), пока недобор
                   1..N-1 отправить можно — решает штаб. Формулировка не
                   обещает то, чего действие не сделает. */}
+              {/* `[СБС-23]`: подтверждение — ПРОТИВ СВОЕЙ ЦИФРЫ «Выделяем»
+                  («Отправить 2 из 3?»), а не против запроса штаба: сколько
+                  департамент обещал, столько и должен сдать (Plane №944).
+                  Пока ответа нет — запрос штаба. */}
               {assigned === 0
                 ? "Никто ещё не выделен — штаб получит пустой список. Отправить всё равно?"
-                : assigned < quota
-                  ? `Выделено ${assigned} из ${quota} — отправить список с недобором ${quota - assigned}?`
-                  : `Выделено ${assigned} из ${quota} — список полный, отправить штабу?`}
+                : assigned < ownFigure
+                  ? `Отправить ${assigned} из ${ownFigure}? Обещано «Выделяем: ${ownFigure}», собрано меньше на ${ownFigure - assigned}.`
+                  : `Выделено ${assigned} из ${ownFigure} — список полный, отправить штабу?`}
               {" "}Раскладку по управлениям после отправки не поправить:
               отзыв возвращает список в работу, но квоты управлений остаются
               прежними.

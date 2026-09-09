@@ -40,6 +40,7 @@ import { auditHandlers } from '../mocks/ops/audit-store'
 import { dictionariesHandlers } from '../mocks/ops/dictionaries-handlers'
 import { dutiesHandlers } from '../mocks/ops/duties-handlers'
 import { feedbackHandlers } from '../mocks/ops/feedback-handlers'
+import { forceCampaignHandlers } from '../mocks/ops/force-campaign-handlers'
 import { geoHandlers } from '../mocks/ops/geo-handlers'
 import { gvoHandlers } from '../mocks/ops/gvo-handlers'
 import { legalDocumentsHandlers } from '../mocks/ops/legal-documents-handlers'
@@ -74,6 +75,7 @@ const SETS: ReadonlyArray<readonly [string, readonly unknown[]]> = [
   ['dictionaries-handlers.ts', dictionariesHandlers],
   ['duties-handlers.ts', dutiesHandlers],
   ['feedback-handlers.ts', feedbackHandlers],
+  ['force-campaign-handlers.ts', forceCampaignHandlers],
   ['geo-handlers.ts', geoHandlers],
   ['gvo-handlers.ts', gvoHandlers],
   ['legal-documents-handlers.ts', legalDocumentsHandlers],

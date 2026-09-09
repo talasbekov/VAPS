@@ -8,11 +8,19 @@
 // говорит это словами, а не отказом: адрес ведёт к ОМ, у которого «нечего
 // показывать», и это ответ.
 //
-// Шапка — «тип визита · статус · прогресс обязательных · PDF / Утвердить»;
-// «Утвердить» недоступна, пока обязательные не заполнены (список — в
-// подсказке), и открыта штабу (`gvo.manage`). Вкладки «Сводные данные ГВО /
-// Объекты посещения / Бюллетень / Транспорт» — каркас `[ГВО-02]`; единый
-// режим редактирования (`[ГВО-05]`) и порядок блоков — P3 №441.
+// Шапка — «тип визита · статус · прогресс обязательных · PDF / Утвердить /
+// Редактировать бюллетень»; «Утвердить» недоступна, пока обязательные не
+// заполнены (список — в подсказке), и открыта штабу (`gvo.manage`).
+//
+// ВКЛАДОК БОЛЬШЕ НЕТ (Plane №951). Каркас `[ГВО-02]` держал четыре вкладки —
+// «Сводные данные ГВО / Объекты посещения / Бюллетень / Транспорт», — и
+// заказчик спросил, зачем они. Ответ: три из четырёх повторяли то, что уже
+// стоит в сводке: разделы «Объекты посещения» и «Выделяемый транспорт» — её
+// собственные блоки, а «Бюллетень» показывал четыре поля шапки и ссылку на
+// карточку ОМ. Правка бюллетеня переехала кнопкой в шапку, объекты
+// добавляются из сводки, машины реестра в ней уже были. Вместе с вкладками
+// сняты `forceMount` и метка несохранённого на ярлыке (№693): форма теперь
+// единственное содержимое страницы и с экрана не уходит.
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -20,7 +28,6 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -29,6 +36,7 @@ import { useSecurityEvent } from "@/hooks/use-security-events";
 import { useApproveVisit, useGvoSummary } from "@/hooks/use-gvo-summaries";
 import { useRenderEventDocument } from "@/hooks/use-ops-reports";
 import { saveBinaryFile } from "@/features/ops-reports/report-shared";
+import { EditBulletinDialog } from "@/features/create-security-event";
 import { GvoSummaryPanel } from "@/widgets/gvo-summary";
 import { SECURITY_EVENT_KIND_LABEL } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
@@ -131,10 +139,12 @@ function NoVisit({ event }: { event: SecurityEvent }) {
 
 function VisitCard({ event }: { event: SecurityEvent }) {
   const { hasPermission } = useOpsPermissions();
-  /** В форме правки сводки есть несохранённое (Plane №693): вкладка остаётся
-   * в DOM, но не видна, и метка на её ярлыке — единственное, что об этом
-   * говорит. */
-  const [summaryDirty, setSummaryDirty] = useState(false);
+  // Правка бюллетеня — по слову сервера (`canEditBulletin`, Plane №951):
+  // ведущий ОМ либо его создатель; старый сервер поля не несёт — по праву.
+  const canEditBulletin =
+    (event.canEditBulletin ?? hasPermission("event.manage")) &&
+    event.stage !== "CLOSED";
+  const [bulletinOpen, setBulletinOpen] = useState(false);
   const summary = useGvoSummary(event.code);
   const approve = useApproveVisit();
   const render = useRenderEventDocument((file) =>
@@ -194,6 +204,16 @@ function VisitCard({ event }: { event: SecurityEvent }) {
                 утверждён {formatIsoDateTime(row.visit.approvedAt)}
               </span>
             )}
+            {canEditBulletin && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setBulletinOpen(true)}
+              >
+                Редактировать бюллетень
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -243,122 +263,13 @@ function VisitCard({ event }: { event: SecurityEvent }) {
         </p>
       )}
 
-      <Tabs defaultValue="summary">
-        <TabsList aria-label="Разделы визита">
-          <TabsTrigger value="summary">
-            Сводные данные ГВО
-            {/* Метка несохранённого черновика (Plane №693). Сам черновик от
-                переключения больше не гибнет, но вкладка неактивна и не видна
-                — без метки человек может уйти со страницы, считая правку
-                сохранённой. Тот же довод, что у `bulletinDirty` на карточке
-                ОМ; здесь достаточно метки, а не предупреждения: терять больше
-                нечего. */}
-            {summaryDirty && (
-              <span className="ml-1 text-amber-700" title="Есть несохранённые правки">
-                •<span className="sr-only"> есть несохранённые правки</span>
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="objects">Объекты посещения ({event.visitObjects.length})</TabsTrigger>
-          <TabsTrigger value="bulletin">Бюллетень</TabsTrigger>
-          <TabsTrigger value="transport">Транспорт</TabsTrigger>
-        </TabsList>
-        {/* 🔴 `forceMount` — ЧЕРНОВИК ПЕРЕЖИВАЕТ ПЕРЕКЛЮЧЕНИЕ (Plane №693).
-            Radix размонтирует неактивную вкладку, и вместе с ней исчезала
-            форма правки со всем набранным: человек жал «Редактировать»,
-            заполнял десяток полей, переходил на «Объекты посещения»
-            свериться — и, вернувшись, находил пустоту, без предупреждения.
-            Ровно тот класс потери, ради которого на карточке ОМ заведён
-            `bulletinDirty`. Держится в DOM ТОЛЬКО эта вкладка: у остальных
-            терять нечего, а ранняя загрузка их данных обошлась бы лишними
-            запросами на каждом открытии визита. */}
-        <TabsContent value="summary" forceMount>
-          <GvoSummaryPanel
-            event={event}
-            variant="page"
-            onDirtyChange={setSummaryDirty}
-          />
-        </TabsContent>
-        <TabsContent value="objects">
-          <Card>
-            <CardContent className="p-4 text-sm">
-              {event.visitObjects.length === 0 ? (
-                <p className="text-muted-foreground">Объекты посещения не добавлены.</p>
-              ) : (
-                <ul className="divide-y">
-                  {event.visitObjects.map((visit) => (
-                    <li key={visit.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                      <span>
-                        <span className="font-semibold">{visit.objectName}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {visit.visitDay !== null ? formatIsoDate(visit.visitDay) : "дата не указана"} · старший:{" "}
-                          {visit.chiefName === "" ? "не назначен" : visit.chiefName}
-                        </span>
-                      </span>
-                      {/* Клик по объекту → этапы объекта (`[ГВО-02]`). */}
-                      <Link
-                        href={`/security-ops/events/${event.id}/?visit=${visit.id}`}
-                        className="text-xs font-semibold text-primary-ink"
-                      >
-                        Этапы объекта →
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="bulletin">
-          <Card>
-            <CardContent className="p-4 text-sm">
-              <dl className="grid gap-2 sm:grid-cols-2">
-                <div>
-                  <dt className="text-[11px] font-bold uppercase text-muted-foreground">Мероприятие</dt>
-                  <dd>{event.title}</dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] font-bold uppercase text-muted-foreground">Дата</dt>
-                  <dd>{formatIsoDate(event.businessDate)}</dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] font-bold uppercase text-muted-foreground">Локация</dt>
-                  <dd>{event.location === "" ? "—" : event.location}</dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] font-bold uppercase text-muted-foreground">Охраняемое лицо</dt>
-                  <dd>{event.protectedPersonName === "" ? "—" : event.protectedPersonName}</dd>
-                </div>
-              </dl>
-              <Link
-                href={`/security-ops/events/${event.id}/`}
-                className="mt-3 inline-block text-xs font-semibold text-primary-ink"
-              >
-                Открыть бюллетень в карточке ОМ →
-              </Link>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="transport">
-          <Card>
-            <CardContent className="p-4 text-sm">
-              {(row?.summary.transport ?? []).length === 0 ? (
-                <p className="text-muted-foreground">Транспорт в сводке не указан.</p>
-              ) : (
-                <ul className="divide-y">
-                  {(row?.summary.transport ?? []).map((line, index) => (
-                    <li key={index} className="py-1.5">
-                      {Object.values(line as unknown as Record<string, unknown>)
-                        .filter((v) => typeof v === "string" && v !== "")
-                        .join(" · ")}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <GvoSummaryPanel event={event} variant="page" />
+
+      <EditBulletinDialog
+        event={event}
+        open={bulletinOpen}
+        onClose={() => setBulletinOpen(false)}
+      />
     </>
   );
 }

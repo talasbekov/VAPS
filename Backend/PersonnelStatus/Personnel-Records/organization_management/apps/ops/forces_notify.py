@@ -9,12 +9,18 @@
 
 КТО ПОЛУЧАЕТ. Учётки, которые МОГУТ выделить людей (право `status.manage`,
 см. `SELECT_PERMISSION` — Plane №481), с активной ролью, у которой
-`scope_division_id` равен управлению — РОВНО ему, а не предкам: запрос адресован управлению, и
-ответственный за департамент (область выше) его и отправляет — слать ему же
-его собственный запрос было бы шумом. Это осознанное отличие от
+`scope_division_id` равен управлению — РОВНО ему, а не предкам: письмо «по
+управлению» адресовано тому, кто набирает людей в ЭТОМ управлении.
+Область, НАКРЫВАЮЩАЯ управление (начальник департамента: `HEAD_DEPARTMENT_LINE`
+/ `HEAD_OPS_UNIT` с областью на департамент), письма по управлению не
+получает, а получает ОДНО сводное `FORCES_REQUEST_DEPARTMENT` за все
+управления (Plane №922, решение заказчика; `_department_heads_over`).
+Глобальный грант (без области) не получает ничего: иначе писали бы трём
+администраторам. Отправитель разбивки — держатель `forces.allocate`
+(`DEPARTMENT_EXPENSE_OFFICER`), у него `status.manage` нет, и в рассылку он
+не попадает по построению. Это осознанное отличие от
 `acknowledgement_notify._supervisor_users`, где берутся все предки:
-заступление подчинённого касается каждого уровня над ним, запрос сил —
-одного.
+заступление подчинённого касается каждого уровня над ним.
 
 «ОДНО НА ДЕНЬ» — ключ модели уведомлений (получатель, вид, деловая дата):
 начальник управления, запрошенный в один день по двум мероприятиям, получит
@@ -146,12 +152,13 @@ def _directorate_heads(division_ids):
     # Настоящий довод — В АДРЕСАТЕ, а не в том, кто нажал кнопку. Рассылка
     # спрашивает «кому ИСПОЛНЯТЬ запрос по ЭТОМУ управлению», а исполняет его
     # тот, чья область — само управление. Держатель `status.manage` с
-    # областью на департамент или без области (глобальный грант) — это штаб и
-    # админ: они видят раскладку целиком и делят её, а не набирают людей по
-    # каждому управлению. Требование «Выделите N сотрудников» им не адресовано.
+    # областью на ДЕПАРТАМЕНТ письма по управлению не получает — ему идёт
+    # ОДНО сводное (`_department_heads_over`, №922); без области (глобальный
+    # грант — админ) не получает ничего. Требование «Выделите N сотрудников»
+    # по управлению им не адресовано.
     #
-    # ПОВЕДЕНИЕ ЗАКРЕПЛЕНО ПРОБОЙ `test_the_department_officer_does_not_get_
-    # his_own_request` — то есть это правило раздела, а не случайность
+    # ПОВЕДЕНИЕ ЗАКРЕПЛЕНО ПРОБОЙ `test_the_department_head_gets_no_per_
+    # directorate_letter` — то есть это правило раздела, а не случайность
     # фильтра, и менять его надо решением заказчика, а не правкой запроса.
     # Проверено делом: расширение отбора на `scope_matches` краснит три пробы
     # дежурств и саму эту — уведомлений становится 3 вместо 1.
@@ -280,10 +287,16 @@ def notify_directorate_heads(event, allocation, directorates):
     # остаются СВОИМИ — это не отказ доставки, а «просить некого» и «не о чем»,
     # и в общий отчёт их сводить было бы неправдой.
     tally = notify_service.DeliveryTally()
+    group_demands = {
+        str(row.get("id")): row for row in allocation.get("groupDemands", [])
+    }
+    has_work = lambda row: int(row.get("need") or 0) > 0 or bool(
+        row.get("groupDemandIds")
+    )
     headless, without_quota = [], []
     for row in directorates:
         key = str(row.get("divisionId"))
-        if int(row.get("need") or 0) <= 0:
+        if not has_work(row):
             without_quota.append(row.get("name") or key)
             continue
         users = heads.get(key, set())
@@ -301,6 +314,11 @@ def notify_directorate_heads(event, allocation, directorates):
             "directorateName": row.get("name", ""),
             # Сколько просят с ЭТОГО управления — цифра раскладки департамента.
             "need": int(row.get("need") or 0),
+            "groupDemands": [
+                group_demands[str(group_id)]
+                for group_id in row.get("groupDemandIds", [])
+                if str(group_id) in group_demands
+            ],
             "dueAt": allocation.get("dueAt"),
         }
         for user_id in users:
@@ -324,7 +342,7 @@ def notify_directorate_heads(event, allocation, directorates):
     asked = {
         str(row.get("divisionId")): row
         for row in directorates
-        if int(row.get("need") or 0) > 0
+        if has_work(row)
     }
     for user_id, covered in _department_heads_over(
         [int(key) for key in asked if key.isdigit()]
@@ -386,15 +404,15 @@ def _headquarters_users():
     """Учётки, которые МОГУТ открыть доску сбора, — по праву, а не по роли.
 
     🔴 РОЛЬ `HEAD_OPS_UNIT` ЗДЕСЬ БЫЛА НЕВЕРНЫМ АДРЕСОМ (Plane №779, решение
-    заказчика 06.09.2026; найдено ревью №825). У этой роли `forces.command`
-    НЕТ намеренно: спецификация `[СБС-10]` отдаёт заявки штабу, а матрица
-    заказчика №348 назвала «Сбор сил» недоступным начальнику второго
-    департамента — расхождение вынесено заказчику карточкой №421 и до ответа
-    право не выдано. А обе ручки сбора закрыты именно им. Получалось полное
-    расхождение: кто получал уведомление, тот не мог открыть цель; кто мог
-    открыть цель, тот уведомления не получал. Пока у уведомления не было
-    ссылки, это было незаметно; №779 ссылку добавила — и «обещания нет»
-    превратилось в «обещание сломано».
+    заказчика 06.09.2026; найдено ревью №825). Штаб сбора сил — отдельный
+    актор `OPS_STAFF` (`[ШТБ-01]`, `[ШТБ-04]`; Plane №972, решение заказчика
+    08.09.2026), и `forces.command` есть только у него; начальники второго
+    департамента (`HEAD_OPS_UNIT`) Штабом не являются (вопрос №421 закрыт
+    через №944 → №972). А обе ручки сбора закрыты именно этим правом.
+    Получалось полное расхождение: кто получал уведомление, тот не мог
+    открыть цель; кто мог открыть цель, тот уведомления не получал. Пока у
+    уведомления не было ссылки, это было незаметно; №779 ссылку добавила —
+    и «обещания нет» превратилось в «обещание сломано».
 
     Заказчик выбрал «слать тем, у кого право есть»; отвергнуты «выдать
     `forces.command` роли `HEAD_OPS_UNIT`» (это закрыло бы и №421, но правит
@@ -482,3 +500,145 @@ def notify_headquarters_response(event, allocation, *, allocating):
             label="штаб",
         )
     return {"notified": tally.notified, "undelivered": tally.undelivered}
+
+
+def notify_headquarters_withdrawal(event, allocation):
+    """Штаб узнаёт, что департамент ОТОЗВАЛ присланный список (`[СБС-12]`:
+    «уведомление при каждом изменении ответа»; ревью №825 по №944, 08.09.2026).
+
+    До этого отзыв проходил молча: люди уходили из состава мероприятия и из
+    распределения по объектам (пока не переданы), а штаб узнавал об этом
+    только глазами. Тот же вид `FORCES_RESPONSE` и тот же адресат, что у
+    ответа «Выделяем»; признак `withdrawn` в payload — экран печатает
+    «отозвал список», а не «выделяет N из M». Возвращает `{notified,
+    undelivered}`, как соседняя рассылка.
+    """
+    payload = {
+        "eventId": str(event.pk),
+        "eventCode": event.code,
+        "eventTitle": event.title,
+        "businessDate": event.business_date.isoformat(),
+        "allocationId": allocation.get("id"),
+        "departmentName": allocation.get("departmentName", ""),
+        "requested": int(allocation.get("need") or 0),
+        "allocating": int(allocation.get("allocating") or 0),
+        "withdrawn": True,
+    }
+    tally = notify_service.DeliveryTally()
+    for user_id in _headquarters_users():
+        tally.deliver(
+            user_id,
+            RESPONSE_KIND,
+            event.business_date,
+            payload,
+            dedupe_key=None,
+            label="штаб",
+        )
+    return {"notified": tally.notified, "undelivered": tally.undelivered}
+
+
+# ── Ответственному департамента: штаб отправил запрос (`[СБС-12]`, №944) ────
+SENT_KIND = "FORCES_REQUEST_SENT"
+
+#: Право, под которым ответственный отвечает на запрос (`forces_respond`,
+#: `forces_directorate_split`, `forces_notify` в `api/views.py`).
+ALLOCATE_PERMISSION = "forces.allocate"
+
+
+def _department_officers(department_ids):
+    """Учётки, которые МОГУТ ответить на запрос департамента:
+    {department_id → {user_id, …}}.
+
+    По ПРАВУ `forces.allocate` и по области — тем же договором, которым гейт
+    ручек ответа пропускает человека (`require_scoped_permission` →
+    `PermissionService.scope_matches`): грант на сам департамент, на его
+    предка или без области. Уведомить того, кто ответить не может, значило бы
+    послать требование, которое некому исполнить (тот же довод, что у
+    начальников управлений, №481); не уведомить того, кто может, — оставить
+    запрос без ответа. Оба источника грантов — назначения и дежурства (№800).
+
+    🔴 ГЛОБАЛЬНЫЙ ГРАНТ ЗДЕСЬ ПОЛУЧАЕТ ПИСЬМО, в отличие от сводки начальнику
+    департамента (№922): там адресат — «кто отвечает за департамент», здесь —
+    «кто ответит на запрос», а без области `forces.allocate` носит администратор
+    и ответственный по всей организации, которые на запрос и отвечают.
+    """
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.operations.models import (
+        TemporaryDutyPermission,
+        UserRole,
+    )
+    from organization_management.apps.operations.selectors import DivisionTreeSelector
+
+    officers = {str(pk): set() for pk in department_ids}
+    ids = [int(pk) for pk in department_ids if str(pk).isdigit()]
+    if not ids:
+        return officers
+    roles = PermissionService.roles_holding(ALLOCATE_PERMISSION)
+    if not roles:
+        return officers
+    children_map = DivisionTreeSelector.children_map()
+    now = Clock.now()
+    grants = list(
+        UserRole.objects.filter(is_active=True, role_code_id__in=roles).values_list(
+            "scope_division_id", "user_id"
+        )
+    ) + list(
+        TemporaryDutyPermission.objects.filter(
+            is_active=True,
+            duty_role_code__in=roles,
+            starts_at__lte=now,
+            ends_at__gte=now,
+        ).values_list("scope_division_id", "user_id")
+    )
+    for scope_division_id, user_id in grants:
+        for department_id in ids:
+            if PermissionService.scope_matches(
+                scope_division_id, department_id, children_map=children_map
+            ):
+                officers[str(department_id)].add(str(user_id))
+    return officers
+
+
+def notify_department_officers(event, rows):
+    """Штаб нажал «Отправить запросы» — ответственные департаментов узнают.
+
+    `rows` — ТОЛЬКО что отправленные строки раскладки. Ключ уведомления —
+    одна строка на запрос (`dedupe_key` = id строки): повторная отправка того
+    же запроса в тот же день второго письма не даёт, а два запроса разным
+    департаментам — два письма. Отчёт — доставленное, а не попытки (№561).
+    """
+    ids = [str(row.get("departmentId")) for row in rows if row.get("departmentId")]
+    officers = _department_officers(ids)
+    tally = notify_service.DeliveryTally()
+    unaddressed = []
+    for row in rows:
+        key = str(row.get("departmentId"))
+        users = officers.get(key, set())
+        if not users:
+            unaddressed.append(row.get("departmentName") or key)
+            continue
+        payload = {
+            "eventId": str(event.pk),
+            "eventCode": event.code,
+            "eventTitle": event.title,
+            "businessDate": event.business_date.isoformat(),
+            "allocationId": row.get("id"),
+            "departmentId": key,
+            "departmentName": row.get("departmentName", ""),
+            "need": int(row.get("need") or 0),
+            "dueAt": row.get("dueAt"),
+        }
+        for user_id in users:
+            tally.deliver(
+                user_id,
+                SENT_KIND,
+                event.business_date,
+                payload,
+                dedupe_key=str(row.get("id") or "")[:100],
+                label=row.get("departmentName") or key,
+            )
+    return {
+        "notifiedOfficers": tally.notified,
+        "unaddressed": unaddressed,
+        "undelivered": tally.undelivered,
+    }

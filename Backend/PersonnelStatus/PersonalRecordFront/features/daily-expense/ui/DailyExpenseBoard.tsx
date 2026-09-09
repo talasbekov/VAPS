@@ -3,9 +3,17 @@
 // «Ежедневный расход» — тот же департамент, что и «Сбор сил» (`/employees`),
 // но привычной формой прототипа: управления раскрываются построчно, а не
 // разрезом по статусу. Знаменатели (штат, список, колонки расхода) даёт
-// РАСХОД (`useStrengthReport`) — свой счёт личного состава экран не заводит;
-// деловая дата берётся ИЗ ЕГО ОТВЕТА, а не считается в браузере: в минусовых
-// зонах «сегодня» клиента спрашивало бы вчера.
+// РАСХОД (`useStrengthReport`) — свой счёт личного состава экран не заводит.
+//
+// ДЕЛОВАЯ ДАТА — СВОЙ ИСТОЧНИК, А НЕ ЧУЖОЙ ОТВЕТ (Plane №988). До этой
+// карточки дата бралась ИЗ ОТВЕТА расхода: удобно, но расход без даты
+// отвечает про СЕГОДНЯ, а борд задуман про ЗАВТРА — источник был случайным.
+// Теперь `useBusinessDate` резолвит «завтра» с `GET /tomorrow-block/» (тот
+// же приём против часового пояса — часы БРАУЗЕРА не считаются), а расход и
+// светофор получают эту дату ПАРАМЕТРОМ, а не угадывают её из своего ответа.
+//
+// РЕИСПОЛЬЗУЕТСЯ ВКЛАДКОЙ «Свод департамента» (Plane №990, `[ДОП-20-04]`):
+// тот же компонент под своей `regionLabel`, не копия таблицы.
 //
 // Поимённый список управления грузится ЛЕНИВО — только по первому раскрытию
 // строки (`enabled: open`): шесть управлений расхода на одну загрузку экрана
@@ -21,9 +29,13 @@
 // бейдж, собранный из ТОГО ЖЕ списочного ответа, без нового запроса.
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { ru } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -34,11 +46,12 @@ import {
 } from "@/components/ui/table";
 import { StatCard } from "@/components/stat-card";
 import { cn } from "@/lib/utils";
-import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { formatIsoDate, formatIsoDateTime, localIsoDate, parseIsoDate } from "@/shared/lib/date";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import { useStrengthReport } from "@/hooks/use-strength-report";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useBusinessDate } from "../model/business-date";
 import {
   DAILY_DIVISIONS_PATH,
   DAILY_EMPLOYEES_PATH,
@@ -661,7 +674,23 @@ function NotSubmittedList({
   );
 }
 
-export function DailyExpenseBoard() {
+interface DailyExpenseBoardProps {
+  /** Деловая дата из адреса (`?businessDate=`); нет или не прошла формат —
+   * борд берёт «завтра» сервера (см. `useBusinessDate`). */
+  businessDate?: string;
+  onBusinessDateChange?: (date: string) => void;
+  /** Подпись региона — тот же борд рендерится под вкладкой «Свод
+   * департамента» (Plane №990, `[ДОП-20-04]`: тот же API и компонент, а не
+   * копия), и accessible-имя обязано называть экран, под которым он стоит,
+   * а не «Ежедневный расход» безусловно. */
+  regionLabel?: string;
+}
+
+export function DailyExpenseBoard({
+  businessDate: businessDateOverride,
+  onBusinessDateChange,
+  regionLabel = "Ежедневный расход",
+}: DailyExpenseBoardProps = {}) {
   // Гейт права — ТОТ ЖЕ, что у соседних экранов той же ручки: командный центр
   // (`command-center/page.tsx`) и аналитика (`analytics/page.tsx`) включают
   // `useStrengthReport` только при `status.view`. Ревью ветки 22.08 нашло, что
@@ -672,7 +701,22 @@ export function DailyExpenseBoard() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const canRead = hasPermission("status.view");
   const gateAllowed = !permissionsLoading && canRead;
-  const strength = useStrengthReport(gateAllowed);
+  // ЕДИНАЯ деловая дата борда (Plane №988): раньше `businessDate` ниже читался
+  // ИЗ ОТВЕТА расхода (`strength.data.business_date`) — а расход без даты
+  // отвечает про СЕГОДНЯ, а не про завтра, для которого борд и существует.
+  // Источник переехал СЮДА, а расход теперь сам получает эту дату параметром
+  // — не угадывает её из своего же прошлого ответа.
+  const {
+    businessDate: resolvedBusinessDate,
+    isResolving: dateResolving,
+    isOverridden: dateOverridden,
+    defaultBlocked,
+    defaultLaggards,
+  } = useBusinessDate(businessDateOverride);
+  const strength = useStrengthReport(
+    gateAllowed && !dateResolving,
+    resolvedBusinessDate ?? undefined
+  );
   const queryClient = useQueryClient();
 
   // Путь до подразделения приходит ОТДЕЛЬНЫМ лёгким списком
@@ -860,14 +904,14 @@ export function DailyExpenseBoard() {
   // true навсегда — борд крутил бы скелет, а не объяснял отказ.
   if (permissionsLoading) {
     return (
-      <section role="region" aria-label="Ежедневный расход" className="space-y-4">
+      <section role="region" aria-label={regionLabel} className="space-y-4">
         <p className="text-sm text-muted-foreground">Загрузка прав…</p>
       </section>
     );
   }
   if (!canRead) {
     return (
-      <section role="region" aria-label="Ежедневный расход" className="space-y-4">
+      <section role="region" aria-label={regionLabel} className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Ежедневный расход закрыт правом «Статусы: просмотр».
         </p>
@@ -876,7 +920,56 @@ export function DailyExpenseBoard() {
   }
 
   return (
-    <section role="region" aria-label="Ежедневный расход" className="space-y-4">
+    <section role="region" aria-label={regionLabel} className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-auto justify-start text-left font-normal"
+              disabled={dateResolving}
+            >
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {resolvedBusinessDate
+                ? format(parseIsoDate(resolvedBusinessDate) ?? new Date(), "dd MMMM yyyy", {
+                    locale: ru,
+                  })
+                : "Загрузка даты…"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={resolvedBusinessDate ? parseIsoDate(resolvedBusinessDate) ?? undefined : undefined}
+              onSelect={(date) => date && onBusinessDateChange?.(localIsoDate(date))}
+              initialFocus
+            />
+          </PopoverContent>
+        </Popover>
+        {dateOverridden && (
+          <Button variant="ghost" size="sm" onClick={() => onBusinessDateChange?.("")}>
+            Вернуть «завтра»
+          </Button>
+        )}
+      </div>
+
+      {/* Блокировка показывается ТОЛЬКО для неизменённого умолчания
+          («завтра»): выбранную руками дату гейт блокировки не смотрит вовсе
+          (см. `useBusinessDate`), и предупреждение о чужом дне сбило бы с
+          толку — расход на нём читается всегда, замок только у записи. */}
+      {defaultBlocked && (
+        <p
+          role="alert"
+          className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          Расход на завтра заблокирован: не сдали{" "}
+          {defaultLaggards.length > 0
+            ? defaultLaggards.map((row) => row.name).join(", ")
+            : "необходимые управления"}
+          .
+        </p>
+      )}
+
       {strength.isPending && (
         <div className="space-y-2">
           {Array.from({ length: SKELETON_ROWS }, (_, index) => (

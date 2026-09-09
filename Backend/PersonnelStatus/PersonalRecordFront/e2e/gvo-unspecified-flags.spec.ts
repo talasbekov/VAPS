@@ -66,6 +66,9 @@ const PATHS_THE_SERVER_READS = new Set<string>([
   'obVariant',
   'radio',
   'responsible',
+  // Старший ГВО — своё обязательное поле (Plane №952): `senior` в
+  // `REQUIRED_VISIT_FIELDS` сервера.
+  'senior',
 ])
 
 test.describe('«уточняется»: где стоит галочка', () => {

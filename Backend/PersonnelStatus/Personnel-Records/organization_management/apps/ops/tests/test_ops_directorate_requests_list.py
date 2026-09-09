@@ -237,3 +237,54 @@ def test_foreign_events_do_not_cost_a_query_each():
         "цена ответа выросла с числом ЧУЖИХ мероприятий: "
         f"{len(few)} → {len(many)} запросов"
     )
+
+
+def test_the_list_names_its_addressee_by_the_scope():
+    """«Вашему управлению адресованы запросы…» говорилось и начальнику
+    ДЕПАРТАМЕНТА (Plane №941). Уровень адресата считает сервер по области
+    `status.manage`: у начальника департамента в области есть департамент,
+    у начальника управления — нет, у администратора области нет вовсе.
+
+    КРАСНАЯ ПРОБА: верни в ответ одно `results` — упадёт первый же ассерт;
+    посчитай уровень по числу строк — начальник департамента с одним
+    управлением станет «управлением».
+    """
+    department = make_department("Департамент-941")
+    directorate = make_directorate(department, "Управление-941")
+    make_directorate(department, "Управление-941-б")
+
+    head = directorate_client("dept-head-941", "DEPT_HEAD_941", department.pk)
+    assert head.get(LIST_URL).json()["addressee"] == "department"
+
+    lead = directorate_client("dir-head-941", "DIR_HEAD_941", directorate.pk)
+    assert lead.get(LIST_URL).json()["addressee"] == "directorate"
+
+    # Роль без области — служба целиком (`allowed is None`).
+    whole = directorate_client("org-head-941", "ORG_HEAD_941", None)
+    assert whole.get(LIST_URL).json()["addressee"] == "organization"
+
+
+def test_two_grants_name_the_senior_level():
+    """Два гранта — управление одного департамента и целый другой департамент:
+    в области есть департамент, значит адресат — «департаменту» (старший
+    уровень побеждает). Правило жило только в докстринге `addressee_level`;
+    ревью №825 по №941 (08.09.2026) закрепило его пробой.
+
+    КРАСНАЯ ПРОБА: считай уровень по ПЕРВОМУ гранту или требуй, чтобы в
+    области были ТОЛЬКО департаменты, — ответ станет «directorate».
+    """
+    from organization_management.apps.operations.services import RoleAdminService
+
+    own = make_department("Департамент-941-свой")
+    directorate = make_directorate(own, "Управление-941-своё")
+    other = make_department("Департамент-941-чужой")
+    make_directorate(other, "Управление-941-чужое")
+
+    api, user = client_for(
+        "two-grants-941", "TWO_GRANTS_941",
+        perms=DIRECTORATE_PERMISSIONS, scope_division_id=directorate.pk,
+    )
+    RoleAdminService.assign_role(str(user.pk), "TWO_GRANTS_941", other.pk, actor="test")
+
+    assert api.get(LIST_URL).json()["addressee"] == "department"
+

@@ -42,7 +42,9 @@ CODES = {
     # ── Охранные мероприятия (жизненный цикл ОМ, порт мок-контракта) ─────
     # Общий отказ «не та стадия» — 422: нагрузка верна, состояние не то.
     "INVALID_STAGE_TRANSITION": frozenset({422}),
-    "BULLETIN_INCOMPLETE": frozenset({422}),
+    # `BULLETIN_INCOMPLETE` снят (07.09.2026): гейт «рекогносцировка без текста
+    # бюллетеня» ушёл с №943, и объявленный код больше нигде не поднимался —
+    # две пробы покрытия кодов краснели на чистом HEAD (замечено в №951).
     # Свой код у кнопки импорта: та же стадийная беда, но своя подсказка.
     "RECON_STAGE_REQUIRED": frozenset({422}),
     "NO_PASSPORT_VERSION": frozenset({422}),
@@ -75,6 +77,8 @@ CODES = {
     # Согласование по эталону («ОМ-37.3»): у каждого условия завершения свой
     # код, потому что чинятся они по-разному.
     "APPROVAL_ROUTE_EMPTY": frozenset({422}),
+    "APPROVAL_ROUTE_INCOMPLETE": frozenset({422}),
+    "APPROVAL_ROUTE_LOCKED": frozenset({422}),
     "APPROVAL_NOT_SENT": frozenset({422}),
     # Маршрут последовательный и «если в маршруте» (`[СОГ-05]`, Plane №429).
     "APPROVAL_OUT_OF_ORDER": frozenset({422}),
@@ -104,9 +108,9 @@ CODES = {
     # ручкой `forces/complete`. Недобор в самих списках отбивается своими
     # кодами приёмки (`ALLOCATION_NOT_DECIDABLE` и соседние) — правило не
     # потеряно, потеряна стадия, на которой этот код поднимался.
-    # Раскладка потребности по департаментам (Plane №73): перебор над
-    # запрошенным и попытка снять департамент, которому заявка уже ушла.
-    "ALLOCATION_OVER_DEMAND": frozenset({422}),
+    # Раскладка потребности по департаментам (Plane №73): попытка снять
+    # департамент, которому заявка уже ушла. `ALLOCATION_OVER_DEMAND` СНЯТ
+    # 07.09.2026 (Plane №944): «Блокировки на сумму нет» (`[СБС-12]`).
     "ALLOCATION_LOCKED": frozenset({422}),
     "ALLOCATION_NO_DIRECTORATES": frozenset({422}),
     # Третий уровень раскладки — департамент делит свою квоту между
@@ -137,6 +141,8 @@ CODES = {
     # Передача собранных на расстановку (Plane №390, [СБС-13]).
     "FORCE_HANDED_OVER": frozenset({422}),
     "FORCE_ROSTER_UNASSIGNED": frozenset({422}),
+    "FORCE_CAMPAIGN_TIME_CONFLICT": frozenset({422}),
+    "FORCE_CAMPAIGN_HANDED_OVER": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
     # Старший ПОСТА (Plane №65 «Р-4» → `[РАС-03]`, №445): и сам пост, и его
@@ -274,6 +280,7 @@ CODES = {
     "AMENDMENT_REASON_REQUIRED": frozenset({422}),
     "SNAPSHOT_SCHEMA_UNSUPPORTED": frozenset({422}),
     "SUMMARY_CHILDREN_NOT_SUBMITTED": frozenset({422}),
+    "SUMMARY_ALREADY_SENT": frozenset({409}),
     "TOMORROW_BLOCKED": frozenset({422}),
     "TOMORROW_BLOCK_ALREADY_OVERRIDDEN": frozenset({409}),
     # ── Обратная связь (§28) ─────────────────────────────────────────────

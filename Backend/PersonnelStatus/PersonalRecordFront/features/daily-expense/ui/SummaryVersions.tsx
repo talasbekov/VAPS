@@ -68,10 +68,12 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   SUMMARY_ASSEMBLE_PERMISSION,
   useAssembleSummary,
+  useSendSummary,
 } from "@/hooks/use-daily-summary-write";
 import { useTrafficLightTree } from "@/hooks/use-strength-report";
 import { DAILY_SUBMISSIONS_PATH, parseSubmissionList } from "@/entities/daily-grid";
 import type { DaySubmission } from "@/entities/daily-grid";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 /** Строка «Суточного свода» — эмпирически ТА ЖЕ форма, что и строка обычной
  * сдачи (общая модель и сериализатор на бэке, см. заголовок файла). Алиас,
@@ -266,11 +268,9 @@ function resolveSummary(
   };
 }
 
-function formatSubmittedAt(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("ru-RU");
-}
+// Момент печатается модулем `formatIsoDateTime` (Plane №935): своя копия
+// отдавала сырую ISO-строку вместо «—» и печатала секунды, которых на экране
+// нет ни у кого. Один формат на все экраны — «дд.мм.гггг, чч:мм».
 
 interface SnapshotBody {
   rosterCount: number;
@@ -353,23 +353,12 @@ interface SummaryVersionsProps {
  * делает по ним РАЗНОЕ: «не все сдали» — торопить перечисленных, «уже
  * собран» — идти в пересборку (отдельное действие и отдельное право), всё
  * прочее — читать сообщение сервера. */
-function assembleFailureText(
-  failure: OpsApiFailure,
-  labelOfDivision: (divisionId: number) => string
-): string {
+function assembleFailureText(failure: OpsApiFailure): string {
+  // `SUMMARY_CHILDREN_NOT_SUBMITTED` сюда больше не долетает (Plane №990):
+  // кнопка всегда шлёт `allow_incomplete: true`, и недостающие управления
+  // видны в СПИСКЕ версий/статусе отправки, а не как отказ сборки.
   if (!(failure instanceof OpsApiError)) {
     return "Свод не собран: связи с сервером нет";
-  }
-  if (failure.errorCode === "SUMMARY_CHILDREN_NOT_SUBMITTED") {
-    const raw = failure.details.laggards;
-    const laggards = Array.isArray(raw) ? raw : [];
-    const names = laggards
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value))
-      .map((value) => labelOfDivision(value));
-    return names.length > 0
-      ? `Свод не собран: не сдали ${names.join(", ")}`
-      : "Свод не собран: сдали не все подчинённые подразделения";
   }
   if (failure.status === 409) {
     return "Свод за этот день уже собран — исправление отдельным действием";
@@ -378,6 +367,43 @@ function assembleFailureText(
     return "Свод не собран: нет права собирать свод за это подразделение";
   }
   return `Свод не собран: ${failure.message}`;
+}
+
+/** Список несдавших из отказа ОТПРАВКИ — `null`, если отказ не про
+ * неполноту (403/404/409/сеть): им поле причины не решает ничего, и
+ * рисовать его значило бы обещать выход из тупика, которого нет. */
+function sendLaggardsOf(failure: OpsApiFailure | null): number[] | null {
+  if (failure === null || !(failure instanceof OpsApiError)) return null;
+  const raw = failure.details.laggards;
+  if (!Array.isArray(raw)) return null;
+  return raw
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+}
+
+function sendFailureText(
+  failure: OpsApiFailure | null,
+  labelOfDivision: (divisionId: number) => string,
+  laggards: number[] | null
+): string | null {
+  if (failure === null) return null;
+  if (!(failure instanceof OpsApiError)) {
+    return "Отправка не удалась: связи с сервером нет";
+  }
+  if (laggards !== null && laggards.length > 0) {
+    const names = laggards.map((id) => labelOfDivision(id));
+    return `Свод неполный — не сдали ${names.join(", ")}. Укажите причину и подтвердите отправку.`;
+  }
+  if (failure.errorCode === "SUMMARY_ALREADY_SENT") {
+    return "Эта версия свода уже отправлена дежурному";
+  }
+  if (failure.status === 404) {
+    return "Свод ещё не собран — сначала «Собрать свод»";
+  }
+  if (failure.status === 403) {
+    return "Отправка закрыта правом «Суточный отчёт: генерация»";
+  }
+  return `Отправка не удалась: ${failure.message}`;
 }
 
 /** «Суточный свод» — версии сводного заявления департамента. */
@@ -389,14 +415,18 @@ export function SummaryVersions({
   const [openId, setOpenId] = useState<number | null>(null);
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
 
-  // Дерево — ЧЕРЕЗ ОБЩИЙ ХУК СВЕТОФОРА (`useTrafficLightTree`, ключ
-  // ["traffic-light","tree","today"]), а не своим `opsApiClient.get` под
-  // вторым ключом кэша: до ревью ветки 22.08 один и тот же ответ лежал в кэше
-  // ДВАЖДЫ под разными ключами, то есть и запрашивался дважды, и мог
-  // разъехаться во времени с деревом соседних экранов. Гейт `enabled` тут
-  // всегда true: борд не монтирует этот блок, пока сам не прошёл гейт
-  // `status.view` и не получил ответ расхода.
-  const treeQuery = useTrafficLightTree(true);
+  // Дерево — ЧЕРЕЗ ОБЩИЙ ХУК СВЕТОФОРА (`useTrafficLightTree`), а не своим
+  // `opsApiClient.get` под вторым ключом кэша: до ревью ветки 22.08 один и
+  // тот же ответ лежал в кэше ДВАЖДЫ под разными ключами, то есть и
+  // запрашивался дважды, и мог разъехаться во времени с деревом соседних
+  // экранов. Гейт `enabled` тут всегда true: борд не монтирует этот блок,
+  // пока сам не прошёл гейт `status.view` и не получил ответ расхода.
+  //
+  // `businessDate` ПЕРЕДАЁТСЯ ЯВНО, а не как раньше (без даты — про
+  // «сегодня»): борд получает СВОЙ `businessDate` пропом (Plane №988), и
+  // дерево сдачи обязано отвечать про ТОТ ЖЕ день, что и расход рядом —
+  // иначе свод сверял бы завтрашние управления со вчерашним светофором.
+  const treeQuery = useTrafficLightTree(true, dateValid ? businessDate : undefined);
 
   const treeNodes = useMemo(() => parseTreeNodes(treeQuery.data), [treeQuery.data]);
   const treeReady = dateValid && !treeQuery.isPending && !treeQuery.isError;
@@ -437,25 +467,37 @@ export function SummaryVersions({
   });
 
   const versions: DailySummaryRow[] = resolved ? parseSubmissionList(query.data) : [];
+  const currentVersion = versions.find((version) => version.is_current) ?? null;
+  const assembled = currentVersion !== null;
+  const alreadySent = currentVersion !== null && currentVersion.sent_at !== null;
 
-  // ВТОРАЯ СТУПЕНЬ ЦЕПОЧКИ (Plane №297). Право своё — `daily_report.generate`;
-  // без него кнопки нет вовсе и причина названа словами, как на остальных
-  // гейтах экрана. Пока права ещё грузятся, кнопка не рисуется: мигнувшая и
-  // исчезнувшая кнопка хуже, чем появившаяся с задержкой.
+  // ДВЕ СТУПЕНИ, А НЕ ОДНА (Plane №990, §20.4 п.6). Право одно на обе —
+  // `daily_report.generate`; без него кнопок нет вовсе и причина названа
+  // словами, как на остальных гейтах экрана. Пока права ещё грузятся, кнопка
+  // не рисуется: мигнувшая и исчезнувшая кнопка хуже, чем появившаяся с
+  // задержкой.
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const canAssemble = hasPermission(SUMMARY_ASSEMBLE_PERMISSION);
   const assemble = useAssembleSummary();
-  const failureText =
+  const send = useSendSummary();
+  const [sendReason, setSendReason] = useState("");
+  const assembleFailureMessage =
     assemble.error === null
       ? null
-      : assembleFailureText(assemble.error, labelOfDivision);
+      : assembleFailureText(assemble.error);
+  const sendLaggards = sendLaggardsOf(send.error);
+  // Причина нужна ИМЕННО когда сервер отказал по неполноте — а не на любой
+  // отказ отправки: 403/404/409 показывать поле ввода не должны, оно не
+  // решает ни одну из этих причин.
+  const sendNeedsReason = sendLaggards !== null && sendLaggards.length > 0;
+  const sendFailureMessage = sendFailureText(send.error, labelOfDivision, sendLaggards);
 
   return (
     <section role="region" aria-label="Суточный свод" className="space-y-2">
       <div className="rounded-lg border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
           <h2 className="text-sm font-semibold">Суточный свод</h2>
-          {resolved && !permissionsLoading && canAssemble && (
+          {resolved && !permissionsLoading && canAssemble && !assembled && (
             <Button
               type="button"
               size="sm"
@@ -463,40 +505,106 @@ export function SummaryVersions({
               onClick={() => {
                 assemble.reset();
                 assemble.mutate({
-                  division_id: summaryDivisionId,
+                  division_id: summaryDivisionId as number,
                   business_date: businessDate,
                 });
               }}
             >
-              {assemble.isPending ? "Отправляем…" : "Собрать и отправить свод"}
+              {assemble.isPending ? "Собираем…" : "Собрать свод"}
+            </Button>
+          )}
+          {resolved && !permissionsLoading && canAssemble && assembled && !alreadySent && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={send.isPending || (sendNeedsReason && sendReason.trim() === "")}
+              onClick={() => {
+                send.mutate({
+                  division_id: summaryDivisionId as number,
+                  business_date: businessDate,
+                  reason: sendReason,
+                });
+              }}
+            >
+              {send.isPending ? "Отправляем…" : "Отправить дежурному"}
             </Button>
           )}
         </div>
         {/* Кому уходит — сказано вслух и рядом с кнопкой: «отправить» без
-            адресата не отвечает на вопрос, что случится по нажатию. Свод
-            департамента и ЕСТЬ его заявление наверх — отдельного действия
-            «отправить» на сервере нет (см. `use-daily-summary-write`). */}
-        {resolved && !permissionsLoading && canAssemble && (
+            адресата не отвечает на вопрос, что случится по нажатию. */}
+        {resolved && !permissionsLoading && canAssemble && !assembled && (
           <p className="border-b px-4 py-2 text-xs text-muted-foreground">
-            Свод уходит оперативному дежурному, который сводит расход за
-            организацию. Собирается он из действующих сдач управлений, поэтому
-            до сдачи всеми — отказ с перечислением отставших.
+            Свод собирается из действующих сдач управлений; недостающие
+            остаются видны как «не сдали» — отправка неполного свода
+            потребует явной причины.
+          </p>
+        )}
+        {resolved && !permissionsLoading && canAssemble && assembled && !alreadySent && (
+          <p className="border-b px-4 py-2 text-xs text-muted-foreground">
+            Свод собран. Отправка уходит оперативному дежурному, который
+            сводит расход за организацию, — отдельным действием со своим
+            моментом и автором.
+          </p>
+        )}
+        {resolved && !permissionsLoading && canAssemble && alreadySent && currentVersion !== null && (
+          <p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">
+            Отправлено {formatIsoDateTime(currentVersion.sent_at as string)} ·{" "}
+            {currentVersion.sent_by}
+            {currentVersion.incomplete_reason !== "" && (
+              <> — неполный свод: «{currentVersion.incomplete_reason}»</>
+            )}
           </p>
         )}
         {resolved && !permissionsLoading && !canAssemble && (
           <p className="border-b px-4 py-2 text-xs text-muted-foreground">
-            Сборка свода закрыта правом «Суточный отчёт: генерация» — свод
-            собирает ответственный за расход департамента.
+            Сборка и отправка свода закрыты правом «Суточный отчёт: генерация»
+            — свод собирает и отправляет ответственный за расход департамента.
           </p>
         )}
-        {failureText !== null && (
+        {assembleFailureMessage !== null && (
           <p role="alert" className="border-b px-4 py-2 text-sm text-muted-foreground">
-            {failureText}
+            {assembleFailureMessage}
           </p>
         )}
         {assemble.isSuccess && (
           <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
-            Свод собран и отправлен — новая версия в списке ниже
+            Свод собран — новая версия в списке ниже
+          </p>
+        )}
+        {sendFailureMessage !== null && (
+          <p role="alert" className="border-b px-4 py-2 text-sm text-muted-foreground">
+            {sendFailureMessage}
+          </p>
+        )}
+        {sendNeedsReason && !send.isSuccess && (
+          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+            <input
+              type="text"
+              value={sendReason}
+              onChange={(event) => setSendReason(event.target.value)}
+              placeholder="Причина неполной отправки — обязательна"
+              className="min-w-64 flex-1 rounded-md border bg-background px-2 py-1 text-sm"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={send.isPending || sendReason.trim() === ""}
+              onClick={() => {
+                send.mutate({
+                  division_id: summaryDivisionId as number,
+                  business_date: businessDate,
+                  reason: sendReason,
+                });
+              }}
+            >
+              Подтвердить отправку
+            </Button>
+          </div>
+        )}
+        {send.isSuccess && (
+          <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
+            Свод отправлен дежурному
           </p>
         )}
         {/* `role="list"`/`listitem` — тот же приём, что у «Руководства
@@ -600,7 +708,7 @@ export function SummaryVersions({
                   <span className="font-medium">Версия {version.version}</span>
                   {version.is_current && <Badge variant="secondary">Текущая</Badge>}
                   <span className="text-muted-foreground">
-                    {formatSubmittedAt(version.submitted_at)} · {version.submitted_by}
+                    {formatIsoDateTime(version.submitted_at)} · {version.submitted_by}
                   </span>
                   <button
                     type="button"

@@ -73,11 +73,13 @@ test.describe(LIVE ? 'закрытие объекта посещения' : 'з�
     const token = await apiToken()
     const target = requireFixture(
       (await events(token, 'CONDUCT')).find((e) =>
-        e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+        // Экран без `?visit=` показывает ПЕРВЫЙ объект (`useVisitObjectScope`),
+        // поэтому и отбор — по первому, а не «какой-нибудь» (№914; ревью №825).
+        (e.visitObjects[0]?.stage ?? 'CLOSED') !== 'CLOSED',
       ),
       'мероприятие на «Проведении» с незакрытым объектом',
     )
-    const visit = target.visitObjects.find((v) => v.stage !== 'CLOSED')!
+    const visit = target.visitObjects[0]!
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
@@ -114,7 +116,9 @@ test.describe(LIVE ? 'закрытие объекта посещения' : 'з�
     const token = await apiToken()
     const target = requireFixture(
       (await events(token)).find(
-        (e) => !['CONDUCT', 'CLOSED'].includes(e.stage) && e.visitObjects.length > 0,
+        (e) =>
+          !['CONDUCT', 'CLOSED'].includes(e.stage) &&
+          (e.visitObjects[0]?.stage ?? 'CLOSED') !== 'CLOSED',
       ),
       'мероприятие не на «Проведении» с объектом посещения',
     )
@@ -165,7 +169,9 @@ test.describe(LIVE ? 'закрытие объекта: отказ и черно�
     const token = await apiToken()
     const target = requireFixture(
       (await events(token, 'CONDUCT')).find((e) =>
-        e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+        // Экран без `?visit=` показывает ПЕРВЫЙ объект (`useVisitObjectScope`),
+        // поэтому и отбор — по первому, а не «какой-нибудь» (№914; ревью №825).
+        (e.visitObjects[0]?.stage ?? 'CLOSED') !== 'CLOSED',
       ),
       'мероприятие на «Проведении» с незакрытым объектом',
     )
@@ -308,7 +314,9 @@ test.describe(LIVE ? 'закрытие объекта: отказ и черно�
     const token = await apiToken()
     const target = requireFixture(
       (await events(token, 'CONDUCT')).find((e) =>
-        e.visitObjects.some((v) => v.stage !== 'CLOSED'),
+        // Экран без `?visit=` показывает ПЕРВЫЙ объект (`useVisitObjectScope`),
+        // поэтому и отбор — по первому, а не «какой-нибудь» (№914; ревью №825).
+        (e.visitObjects[0]?.stage ?? 'CLOSED') !== 'CLOSED',
       ),
       'мероприятие на «Проведении» с незакрытым объектом',
     )

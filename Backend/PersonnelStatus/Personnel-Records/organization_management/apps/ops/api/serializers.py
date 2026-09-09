@@ -41,6 +41,15 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     sectors = serializers.SerializerMethodField()
     passportVersions = serializers.SerializerMethodField()
+    photoUrl = serializers.SerializerMethodField()
+
+    def get_photoUrl(self, obj):
+        # Тот же приём, что `person_photo_url` (apps/ops/gvo.py) — снимок
+        # объекта-каталога (Plane SJ-1049), не визита: одно здание снимают
+        # один раз. `bool(obj.photo)` вместо `obj.photo.url` в булевом
+        # контексте — `ImageFieldFile` без файла падает на доступе к `.url`
+        # (`ValueError`), пустая строка на диске никогда не лежит.
+        return obj.photo.url if obj.photo else None
 
     def get_hasSecurityEvents(self, obj):
         """Вкладка «Объекты ОМ» реестра — ПРОИЗВОДНЫЙ признак, не хранимый.
@@ -88,6 +97,7 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
             "hasSecurityEvents",
             "sectors",
             "passportVersions",
+            "photoUrl",
             "createdAt",
             "updatedAt",
         ]
@@ -237,6 +247,11 @@ def _visit_placement(event, visit, *, single):
 
 def serialize_visit_object(event, visit, *, single):
     need, assigned = _visit_placement(event, visit, single=single)
+    object_photo = (
+        visit.security_object.photo
+        if visit.security_object_id is not None and visit.security_object is not None
+        else None
+    )
     return {
         "id": str(visit.pk),
         "objectId": (
@@ -245,6 +260,9 @@ def serialize_visit_object(event, visit, *, single):
             else None
         ),
         "objectName": visit.object_name,
+        # Снимок нужен читателю мероприятия под `event.view`; отдельный
+        # запрос каталога объектов потребовал бы независимое `object.view`.
+        "photoUrl": object_photo.url if object_photo else None,
         "passportBinding": visit.passport_binding,
         "protectedPersonId": (
             str(visit.protected_person_id)
@@ -260,6 +278,9 @@ def serialize_visit_object(event, visit, *, single):
             visit.visit_day.isoformat() if visit.visit_day is not None else None
         ),
         "note": visit.note,
+        # Описание ВИЗИТА (Plane SJ-1049) — не `note`: цель посещения этим
+        # ОМ, а не служебный ярлык сводки ГВО. См. докстринг поля модели.
+        "description": visit.description,
         # Старший ОБЪЕКТА («Реестр ОМ-35.2») — не старший мероприятия: у
         # визита иностранного ОЛ объектов несколько, ответственный у каждого
         # свой. null — не назначен, и это ответ.
@@ -269,6 +290,10 @@ def serialize_visit_object(event, visit, *, single):
             else None
         ),
         "chiefName": visit.chief_name,
+        # №982: рекогносцировку ведёт старший ЭТОГО объекта, поэтому
+        # его ответы не хранятся в общем чек-листе мероприятия.
+        "reconChecklist": visit.recon_checklist or [],
+        "reconForceRequest": visit.recon_force_request,
         # null — «неизвестно» (расчёт постов не размечен по объектам), 0 —
         # «посты не рассчитаны». Экран различает эти два случая словами.
         "placementNeed": need,
@@ -433,13 +458,24 @@ def visit_objects_of(event):
         # «подтянуты все». Пустой список отвечает сам за себя — читать нечего.
         if not visits:
             return visits
-        nested = getattr(visits[0], "_prefetched_objects_cache", {})
-        if "deputies" in nested and "document_versions" in nested:
-            return visits
-        # Кэш есть, но неполный: дотягиваем вложенные ОДНИМ разом на весь
-        # список, а не по объекту. Список объектов при этом перечитывается —
-        # это один запрос против двух на каждый объект.
-    return list(event.visit_objects.prefetch_related("deputies", "document_versions"))
+        # Кэш есть, но вложенные могли не подтянуть. Штатный
+        # `prefetch_related_objects` (ревью №825 по №911, 08.09.2026)
+        # пропускает уже подтянутые связи, НЕ перечитывает сами объекты и
+        # наполняет кэш на месте — повторная сериализация того же экземпляра
+        # бесплатна. Прежний фолбэк перечитывал объекты и обе связи (три
+        # запроса) даже когда не хватало одной. На 06.09.2026 набора с
+        # частичным prefetch в дереве нет — защита превентивная.
+        from django.db.models import prefetch_related_objects
+
+        prefetch_related_objects(
+            visits, "security_object", "deputies", "document_versions"
+        )
+        return visits
+    return list(
+        event.visit_objects.prefetch_related(
+            "security_object", "deputies", "document_versions"
+        )
+    )
 
 
 def _serialize_visit_objects(event, visits=None):

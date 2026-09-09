@@ -48,6 +48,7 @@ interface EventRow {
     /** «Открыл и не нажал» (`[ОЗН-02]`, Plane №452). */
     viewedAt?: string | null
     acknowledgedAt: string | null
+    employeeHasAccount?: boolean
   }[]
 }
 
@@ -232,16 +233,72 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
 
-    // «Ознакомлен лично» (`[ОЗН-05]`, №447) — счётчик растёт, в строке — способ и кто отметил.
-    await card.getByRole('button', { name: 'Ознакомлен лично' }).first().click()
-    await expect(card.getByTestId('ack-summary')).toContainText(
-      `Ознакомились ${confirmed.length + 1} из ${total}`,
-      { timeout: 15_000 },
-    )
   })
 
   test.describe(() => {
     test.use({ serviceWorkers: 'block' })
+
+    test('начальник управления подтверждает сотрудника без учётки с обязательным основанием (Plane №984)', async ({ page }) => {
+      const token = await apiToken()
+      const code = await prepareEvent(token, { businessDate: uniqueBusinessDate() })
+      const event = (await events(token)).find((row) => row.code === code)
+      expect(event?.placementAssignments.length).toBeGreaterThan(0)
+      const assignment = event!.placementAssignments[0]!
+      const detailPath = `/api/ops/security-events/${event!.id}/`
+      let detail: Record<string, unknown> | null = null
+      let requestBody: Record<string, unknown> | null = null
+
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-permissions/'),
+        (route) => route.fulfill({ json: { permissions: ['event.view', 'status.manage'], roles: [] } }),
+      )
+      await page.route(
+        (url) => url.pathname === detailPath,
+        async (route) => {
+          const response = await route.fetch()
+          detail = (await response.json()) as Record<string, unknown>
+          const assignments = detail.placementAssignments as Record<string, unknown>[]
+          detail = {
+            ...detail,
+            placementAssignments: assignments.map((row) =>
+              String(row.id) === assignment.id
+                ? { ...row, employeeHasAccount: false }
+                : row,
+            ),
+          }
+          await route.fulfill({ response, json: detail })
+        },
+      )
+      await page.route(
+        (url) => url.pathname.includes(`/acknowledge/${assignment.id}/`),
+        async (route) => {
+          requestBody = route.request().postDataJSON() as Record<string, unknown>
+          await route.fulfill({ json: detail })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+      const row = page.getByTestId(`ack-row-${assignment.id}`)
+      await row.getByRole('button', { name: 'Подтвердить без учётки' }).click()
+      const dialog = page.getByRole('dialog', { name: /Подтвердить ознакомление/ })
+      const submit = dialog.getByRole('button', { name: 'Подтвердить ознакомление' })
+      await expect(submit).toBeDisabled()
+      await dialog.getByLabel('Способ доведения *').fill('Устно на построении')
+      await dialog.getByLabel('Основание отсутствия учётной записи *').fill('Учётка ещё не заведена')
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await row.getByRole('button', { name: 'Подтвердить без учётки' }).click()
+      await expect(dialog.getByLabel('Способ доведения *')).toHaveValue('')
+      await expect(dialog.getByLabel('Основание отсутствия учётной записи *')).toHaveValue('')
+      await expect(submit).toBeDisabled()
+      await dialog.getByLabel('Способ доведения *').fill('Устно на построении')
+      await dialog.getByLabel('Основание отсутствия учётной записи *').fill('Учётка ещё не заведена')
+      await submit.click()
+      await expect.poll(() => requestBody).toEqual({
+        deliveryMethod: 'Устно на построении',
+        accountAbsenceBasis: 'Учётка ещё не заведена',
+      })
+    })
 
     test('старший объекта ведёт этап без event.manage (Plane №612, №494)', async ({ page }) => {
       /**
@@ -339,6 +396,96 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
         card.getByRole('button', { name: /Напомнить всем, кто не подтвердил/ }),
         'действия этапа открыты тому, кто ни старший, ни ведущий ОМ',
       ).toBeDisabled()
+    })
+
+    test('строчные «Напомнить» и подтверждение без учётки называют причину и без отставания этапа (№984)', async ({
+      page,
+    }) => {
+      /**
+       * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. У обеих кнопок в строке назначения `disabled`
+       * гасится и по `!canManage` — но `RightGate` до правки объяснял только
+       * отставание этапа (`stageBehindReason`) или не объяснял вовсе
+       * («Ознакомлен лично» вообще не была обёрнута). Без права и БЕЗ
+       * отставания (событие честно на нужном этапе) кнопки молчали:
+       * `reason={stageBehindReason}` при `null` даёт `RightGate` пустой
+       * текст, и он не рисует ничего — тот же класс дефекта, что и №913.
+       *
+       * Сценарий 2 «старший объекта ведёт этап без event.manage» (пробой
+       * выше) события НЕ проверяет: там канал открыт ЧЕРЕЗ `isStageLead`, и
+       * причины не видно потому, что кнопка включена. Здесь — обратный
+       * случай: права нет, старшинства нет, этап на месте — причина обязана
+       * появиться.
+       */
+      const token = await apiToken()
+      const businessDate = uniqueBusinessDate()
+      const code = await prepareEvent(token, { businessDate })
+      const event = (await events(token)).find((e) => e.code === code)
+      expect(event, `не удалось подготовить фикстуру (${code})`).toBeDefined()
+      expect(
+        event!.placementAssignments.length,
+        'у своей фикстуры нет назначений — проверять нечего',
+      ).toBeGreaterThan(0)
+
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-permissions/'),
+        async (route) =>
+          route.fulfill({
+            json: { permissions: ['event.view', 'status.view', 'personnel.view'], roles: [] },
+          }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-employee/'),
+        async (route) =>
+          route.fulfill({
+            json: { employee: { id: 999999, full_name: 'Не старший', rank_code: null, position_code: null, division: null, personnel_number: null, hire_date: null }, unlinked_reason: null },
+          }),
+      )
+      await page.route(
+        (url) => url.pathname === `/api/ops/security-events/${event!.id}/`,
+        async (route) => {
+          const response = await route.fetch()
+          const body = (await response.json()) as {
+            placementAssignments: Record<string, unknown>[]
+          }
+          await route.fulfill({
+            response,
+            json: {
+              ...body,
+              placementAssignments: body.placementAssignments.map((assignment) => ({
+                ...assignment,
+                employeeHasAccount: false,
+              })),
+            },
+          })
+        },
+      )
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+      const card = page.locator('[data-slot="card"]', {
+        has: page.locator('[data-slot="card-title"]', { hasText: 'Ознакомление' }),
+      })
+      await expect(card).toBeVisible({ timeout: 20_000 })
+
+      const row = card.locator('li[data-testid^="ack-row-"]').first()
+      await expect(row, 'у своей фикстуры нет строк назначений в списке').toBeVisible({
+        timeout: 15_000,
+      })
+      const remindButton = row.getByRole('button', { name: /Напомнить:/ })
+      const ackButton = row.getByRole('button', { name: 'Подтвердить без учётки' })
+      await expect(remindButton).toBeDisabled()
+      await expect(ackButton).toBeDisabled()
+
+      for (const button of [remindButton, ackButton]) {
+        const describedBy = await button.getAttribute('aria-describedby')
+        expect(
+          describedBy,
+          'выключенная кнопка без aria-describedby — причина недостижима читалкой',
+        ).toBeTruthy()
+        const hint = page.locator(`#${describedBy}`)
+        await expect(hint).toBeVisible()
+        const text = (await hint.innerText()).trim()
+        expect(text.length, 'причина пустая — тот же класс дефекта, что и №913').toBeGreaterThan(0)
+      }
     })
 
     test('замещающий ВЕДЁТ этап, но не завершает его (Plane №453)', async ({ page }) => {
@@ -892,6 +1039,101 @@ test.describe(LIVE ? 'ознакомление: этап мероприятия 
     // Обратная сторона и для напоминаний: иначе проба доказывала бы «кнопки
     // всегда выключены».
     await expect(page.getByRole('button', { name: /^Напомнить: / }).first()).toBeEnabled()
+  })
+
+  test('причина отставания сказана ОДИН РАЗ на список, а не под каждой строкой (ревью №825 по №528)', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 ЧТО ЭТО СТЕРЕЖЁТ. `stageBehindReason` уходит в построчный `RightGate`
+     * каждого назначения (`AssignmentRow`), а заголовочный `AccessHints`
+     * закрывается ещё в `CardHeader` — на ОМ с несколькими отстающими
+     * назначениями КАЖДАЯ строка рисовала бы СВОЮ копию одной и той же фразы
+     * «Этап ведётся по всему мероприятию: …», ровно тот анти-паттерн, который
+     * `AccessHints` заведён убирать (см. `shared/ui/right-gate.tsx`).
+     *
+     * Нужен ОМ с ≥2 назначениями в одном объекте, чтобы отличить «одна причина
+     * на список» от «одна причина на кнопку» — на единственном назначении обе
+     * версии выглядели бы одинаково.
+     *
+     * КРАСНАЯ ПРОБА: убери `AccessHints` вокруг `ack-groups` — строк причины
+     * станет по одной на каждое назначение вместо одной на весь список.
+     */
+    const token = await apiToken()
+    const rows = (await (
+      await fetch(`${API}/api/ops/security-events/?page_size=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as {
+      results: {
+        id: string
+        visitObjects: { id: string }[]
+        placementAssignments: unknown[]
+      }[]
+    }
+    const target = rows.results.find(
+      (row) => row.visitObjects.length > 0 && row.placementAssignments.length > 0
+    )
+    expect(target, 'в реестре нет ОМ с объектом посещения и назначениями').toBeTruthy()
+
+    await page.route(
+      new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+      async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        body.stage = 'APPROVAL'
+        body.visitObjects = body.visitObjects.map((visit: Record<string, unknown>, index: number) =>
+          index === 0
+            ? { ...visit, stage: 'ACKNOWLEDGEMENT' }
+            : { ...visit, stage: 'APPROVAL' },
+        )
+        // Два НЕОТВЕЧЕННЫХ назначения на ОДНОМ посту — иначе «одна причина на
+        // список» и «одна причина на кнопку» неотличимы (на единственной
+        // строке результат один и тот же). Живых данных с гарантированно
+        // двумя ожидающими на одном посте на общем стенде может не быть, а
+        // подделывать состояние стенда запрещено — подмена ответом, как и у
+        // соседней пробы этого же блока. Пост и остальные поля строки — из
+        // ДЕТАЛЬНОГО ответа (не из реестра): у него гарантированно есть
+        // `reconSectorPosts`, а форма `placementAssignments` в реестре может
+        // не совпадать с деталью один в один.
+        const existing = (body.placementAssignments as Record<string, unknown>[] | undefined) ?? []
+        const postId = (body.reconSectorPosts as { id: string }[])[0]?.id ?? existing[0]?.postId
+        expect(postId, 'у ОМ нет ни одного поста расчёта — строку назначения некуда положить').toBeTruthy()
+        const template = existing[0] ?? { employeeId: 'probe-528', postId }
+        body.placementAssignments = [
+          { ...template, id: 'probe-528-a', postId, employeeName: 'Проба А', acknowledgedAt: null, declinedAt: null, viewedAt: null },
+          { ...template, id: 'probe-528-b', postId, employeeName: 'Проба Б', acknowledgedAt: null, declinedAt: null, viewedAt: null },
+        ]
+        await route.fulfill({ response, json: body })
+      },
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=${target!.visitObjects[0].id}`)
+
+    const remindButtons = page.getByRole('button', { name: /^Напомнить: / })
+    // `.count()` не ждёт — страница ещё грузится и гидрируется; тот же
+    // локатор через `expect(...).toHaveCount()` ждёт отрисовки авторетраем.
+    await expect(remindButtons, 'меньше двух построчных кнопок — отличить частокол не на чем').toHaveCount(2, {
+      timeout: 20_000,
+    })
+    const count = await remindButtons.count()
+    for (let i = 0; i < count; i += 1) {
+      await expect(remindButtons.nth(i)).toBeDisabled()
+    }
+
+    // Собранные `aria-describedby` у ВСЕХ строк — один и тот же id.
+    const describedByIds = new Set<string>()
+    for (let i = 0; i < count; i += 1) {
+      const id = await remindButtons.nth(i).getAttribute('aria-describedby')
+      expect(id, `строка ${i}: причина не связана с кнопкой`).not.toBeNull()
+      describedByIds.add(id!)
+    }
+    expect(
+      describedByIds.size,
+      `у ${count} строк причина связана с ${describedByIds.size} разными id — частокол вернулся`,
+    ).toBe(1)
+
   })
 })
 

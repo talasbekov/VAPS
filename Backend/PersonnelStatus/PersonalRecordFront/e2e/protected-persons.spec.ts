@@ -212,8 +212,10 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
       // Поэтому: клик один раз, потом длинное ожидание формы, а повтор — только
       // если кнопка всё ещё в DOM (значит первый клик действительно ушёл в
       // никуда, как бывает до гидратации на свежем dev-стенде).
-      const addPerson = page.getByRole('button', { name: '＋ Добавить лицо' })
-      const editButton = page.getByRole('button', { name: 'Редактировать' })
+      // Лицо — ИЗ СПРАВОЧНИКА (Plane №951): текстом лицо больше не вписывается,
+      // окно выбора берёт запись каталога по имени.
+      const addPerson = page.getByRole('button', { name: '＋ Лицо из справочника' })
+      const editButton = page.getByRole('button', { name: 'Редактировать', exact: true })
       await editButton.click()
       await expect(async () => {
         if ((await editButton.count()) > 0) {
@@ -222,21 +224,19 @@ test.describe(LIVE ? 'охраняемые лица' : 'охраняемые л�
         await expect(addPerson).toBeVisible({ timeout: 10_000 })
       }).toPass({ timeout: 60_000 })
       await addPerson.click()
-      // 🔴 ПОЛЯ СУЖЕНЫ К СВОЕМУ БЛОКУ (Plane №736). С единым режимом правки
-      // (№441) форма рисует по `fieldset` на КАЖДОЕ лицо сводки, и в каждом своя
-      // подпись «ФИО»: собранная сводка уже несёт лицо, выведенное из бюллетеня,
-      // поэтому после «＋ Добавить лицо» таких полей минимум два, и несужённый
-      // локатор бросает strict mode. У автора прошло случайно — выбранный ОМ
-      // оказался без названного лица; первый же иностранный ОМ с лицом красил
-      // пробу по причине, к проверяемому поведению отношения не имеющей.
-      //
-      // Берётся ПОСЛЕДНИЙ блок: «＋ Добавить лицо» дописывает свой в конец.
-      const personBlock = page.locator('form fieldset', { has: page.getByText(/^Лицо \d+$/) }).last()
-      // Сужение проверяется, а не подразумевается: в СВОЁМ блоке поле ровно
-      // одно, сколько бы лиц ни было в сводке. Без этой строки починка
-      // держалась бы на удаче выбранного ОМ — ровно так дефект и прожил.
-      await expect(personBlock.getByRole('textbox', { name: 'ФИО' })).toHaveCount(1)
-      await personBlock.getByRole('textbox', { name: 'ФИО' }).fill(PERSON)
+      const pickDialog = page.getByRole('dialog')
+      await pickDialog.getByRole('textbox', { name: 'Поиск охраняемого лица' }).fill(PERSON)
+      await pickDialog
+        .locator('[data-slot="protected-person-picker"] button', { hasText: PERSON })
+        .click()
+      await expect(pickDialog).toBeHidden()
+      // 🔴 ПОЛЯ СУЖЕНЫ К СВОЕМУ БЛОКУ (Plane №736): форма рисует по `fieldset`
+      // на КАЖДОЕ лицо сводки, и подпись «Должность» есть в каждом. Берётся
+      // ПОСЛЕДНИЙ блок: выбранное лицо встаёт в конец. У лица из справочника
+      // поля «ФИО» нет — имя из записи (Plane №951), шапка блока несёт его.
+      const personBlock = page.locator('form fieldset[data-slot="gvo-person"]').last()
+      await expect(personBlock.locator('[data-slot="gvo-person-head"]')).toContainText(PERSON)
+      await expect(personBlock.getByRole('textbox', { name: 'ФИО' })).toHaveCount(0)
       await personBlock.getByRole('textbox', { name: 'Должность' }).fill(PROBE_ROLE)
       await page.getByRole('button', { name: 'Сохранить' }).click()
       // `.first()`: сводка теперь панель в КАРТОЧКЕ ОМ (Plane «Реестр ОМ-35.8»),

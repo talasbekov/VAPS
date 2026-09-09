@@ -14,11 +14,15 @@ import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePersonnelPage } from "@/hooks/use-security-event-stages";
+import type { PersonnelSummarySnapshot } from "@/entities/security-event";
 
 export interface PersonnelPickerProps {
   /** Выбранный сотрудник; null — ещё не выбран. */
   value: string | null;
   onPick: (employeeId: string) => void;
+  /** Та же строка целиком (Plane №951): состав ГВО кладёт в сводку фамилию
+   * и позывной выбранного сразу, не дожидаясь пересборки с сервера. */
+  onPickRow?: (row: PersonnelSummarySnapshot) => void;
   /** Кого предлагать нельзя (уже назначен и т. п.). */
   disabledIds?: Set<string>;
   /** Словом — ПОЧЕМУ строка недоступна: серая строка без причины читается
@@ -44,6 +48,7 @@ export interface PersonnelPickerProps {
 export function PersonnelPicker({
   value,
   onPick,
+  onPickRow,
   disabledIds,
   disabledNote = "недоступен",
   pageSize = 20,
@@ -124,7 +129,10 @@ export function PersonnelPicker({
                 <button
                   type="button"
                   disabled={already}
-                  onClick={() => onPick(person.id)}
+                  onClick={() => {
+                    onPick(person.id);
+                    onPickRow?.(person);
+                  }}
                   className={`flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${
                     value === person.id ? "bg-muted" : ""
                   }`}

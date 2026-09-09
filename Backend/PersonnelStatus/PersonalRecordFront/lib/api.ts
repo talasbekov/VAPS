@@ -314,6 +314,8 @@ export interface StrengthReportRow {
   off_list: number;
   columns: Record<string, number>;
   event: EventInvolvement;
+  /** Нераспределённый пул ОМ: справочно, сотрудник остаётся в строю. */
+  reserve?: number;
 }
 
 /**
@@ -493,6 +495,7 @@ export interface StrengthReportTotals {
   off_list: number;
   columns: Record<string, number>;
   event: EventInvolvement;
+  reserve?: number;
 }
 
 export interface StrengthReport {
@@ -539,6 +542,18 @@ export interface TrafficLightNode {
   late: boolean;
 }
 
+/**
+ * Состояние блокировки расхода на дату (по умолчанию — завтра). Единственный
+ * источник, откуда фронт узнаёт «завтра» СЕРВЕРА, а не браузера: часы машины
+ * в минусовых зонах отсчитали бы «сегодня» неверно (Plane №991/№988).
+ */
+export interface TomorrowBlockState {
+  business_date: string;
+  blocked: boolean;
+  overridden: boolean;
+  laggards: { division_id: number; name: string }[];
+}
+
 export interface TrafficLightTree {
   business_date: string;
   /** Порог опоздания из настроек контроля сдачи, «HH:MM:SS». Едет вместе с
@@ -569,7 +584,8 @@ export interface OpsNotification {
     | "PLACEMENT_RETURNED"
     | "ACKNOWLEDGEMENT_DUE_SOON"
     | "FORCES_RESPONSE"
-    | "ASSIGNMENT_DECLINED";
+    | "ASSIGNMENT_DECLINED"
+    | "FORCES_REQUEST_SENT";
   business_date: string;
   /** `laggard_division_ids` — только у `SUBMISSION_LAGGING`; остальные поля —
    *  у `EVENT_ACKNOWLEDGEMENT` (Plane №402, `acknowledgement_notify.py`).
@@ -586,6 +602,9 @@ export interface OpsNotification {
     /** `FORCES_REQUEST` (Plane №392): запрос сил управлению. */
     allocationId?: string;
     departmentName?: string;
+    /** `FORCES_REQUEST_SENT` (Plane №944, `[СБС-12]`): штаб отправил запрос
+     *  департаменту — ответственному за сбор сил, со ссылкой в заявку. */
+    departmentId?: string;
     directorateId?: string;
     directorateName?: string;
     need?: number;
@@ -621,6 +640,8 @@ export interface OpsNotification {
     unconfirmed?: { employeeId: string; employeeName: string }[];
     /** Признак того самого часа — сервер ставит его тем же payload'ом. */
     oneHourBefore?: boolean;
+    /** `FORCES_RESPONSE`: департамент ОТОЗВАЛ присланный список (`[СБС-12]`, ревью №825 по №944). */
+    withdrawn?: boolean;
   };
   read_at: string | null;
   created_at: string;
@@ -2228,6 +2249,22 @@ class ApiClient {
     const queryString = query.toString();
     return this.getDomainJson<TrafficLightTree>(
       `/api/operations/traffic-light/tree/${queryString ? `?${queryString}` : ""}`
+    );
+  }
+
+  /**
+   * Состояние блокировки на дату; без параметра сервер отвечает про ЗАВТРА
+   * (не про сегодня, как у расхода) — это и есть источник «завтра» для
+   * ежедневного экрана, без вычисления в браузере.
+   */
+  async getTomorrowBlockState(
+    params: { businessDate?: string } = {}
+  ): Promise<TomorrowBlockState> {
+    const query = new URLSearchParams();
+    if (params.businessDate) query.append("business_date", params.businessDate);
+    const queryString = query.toString();
+    return this.getDomainJson<TomorrowBlockState>(
+      `/api/operations/tomorrow-block/${queryString ? `?${queryString}` : ""}`
     );
   }
 

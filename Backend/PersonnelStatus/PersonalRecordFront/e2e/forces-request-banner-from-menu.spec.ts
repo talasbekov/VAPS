@@ -19,6 +19,7 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+const SELECT_ACTION = /(?:Добавить в общий резерв|Выделить на )/
 
 async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
@@ -189,6 +190,85 @@ test.describe(
       ).toHaveAttribute('aria-pressed', 'true')
     })
     /**
+     * Подпись адресата — по слову сервера (Plane №941, слово заказчика
+     * 07.09.2026): начальнику ДЕПАРТАМЕНТА баннер говорил «Вашему управлению
+     * адресованы запросы…», хотя строки у него по всем управлениям
+     * департамента. Уровень считает сервер по области `status.manage`
+     * (`addressee`); экран только подставляет слово. Ответ подменяется —
+     * предмет пробы поведение экрана при разных словах сервера, а не то, у
+     * кого на стенде какая область (это стережёт серверная проба).
+     *
+     * Красная до правки: слово было зашито, и поле ответа экран не читал.
+     */
+    test('подпись баннера следует адресату из ответа сервера', async ({ page }) => {
+      const rows = [1, 2].map((n) => ({
+        eventId: `90000${n}`,
+        code: `ОМ-СИНТ-${n}`,
+        title: `Синтетическое мероприятие ${n}`,
+        businessDate: `2026-09-1${n}`,
+        allocationId: `synthetic-allocation-${n}`,
+        departmentName: 'Синт. департамент',
+        status: 'NOTIFIED',
+        dueAt: null,
+        directorates: [
+          { divisionId: '9101', name: 'Синт. управление', need: 2, assigned: 0, notifiedAt: '2026-09-05T06:00:00Z' },
+        ],
+      }))
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) => route.fulfill({ json: { results: rows, addressee: 'department' } }),
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+
+      const chooser = page.locator('[data-slot="forces-request-chooser"]')
+      await expect(
+        chooser.getByText('Вашему департаменту адресованы запросы на сбор сил: 2'),
+        'начальник департамента читает подпись про управление',
+      ).toBeVisible({ timeout: 20_000 })
+      await expect(chooser.getByText('Вашему управлению', { exact: false })).toHaveCount(0)
+    })
+
+    /**
+     * Обратная сторона той же пробы (ревью №825 по №941): слово «управлению»
+     * для `addressee: 'directorate'` и путь совместимости — ответ БЕЗ поля —
+     * ничем не пинились; сервер, отдавший не тот уровень, экран бы не выдал.
+     */
+    for (const [addressee, expected] of [
+      ['directorate', 'Вашему управлению адресованы запросы на сбор сил: 2'],
+      [undefined, 'Вашему управлению адресованы запросы на сбор сил: 2'],
+    ] as const) {
+      test(`подпись баннера: адресат ${addressee ?? 'не назван'} → «управлению»`, async ({ page }) => {
+        const rows = [1, 2].map((n) => ({
+          eventId: `90001${n}`,
+          code: `ОМ-СИНТ-У${n}`,
+          title: `Синтетическое мероприятие У${n}`,
+          businessDate: `2026-09-2${n}`,
+          allocationId: `synthetic-allocation-dir-${n}`,
+          departmentName: 'Синт. департамент',
+          status: 'NOTIFIED',
+          dueAt: null,
+          directorates: [
+            { divisionId: '9101', name: 'Синт. управление', need: 2, assigned: 0, notifiedAt: '2026-09-05T06:00:00Z' },
+          ],
+        }))
+        await page.route(
+          (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+          (route) =>
+            route.fulfill({ json: addressee === undefined ? { results: rows } : { results: rows, addressee } }),
+        )
+
+        await signIn(page)
+        await page.goto(`${APP}/statuses/`)
+
+        const chooser = page.locator('[data-slot="forces-request-chooser"]')
+        await expect(chooser.getByText(expected)).toBeVisible({ timeout: 20_000 })
+        await expect(chooser.getByText('Вашему департаменту', { exact: false })).toHaveCount(0)
+      })
+    }
+
+    /**
      * Счётчик кнопки и «Выбрано» в таблице расходятся ОБЪЯСНИМО (Plane №547).
      *
      * Таблица считает выбранные СТРОКИ, а выделить можно только сотрудников:
@@ -341,7 +421,7 @@ test.describe(
       ).toBeVisible({ timeout: 15_000 })
       // И счётчик кнопки обязан быть МЕНЬШЕ числа выбранных строк — иначе
       // объяснение объясняло бы несуществующее расхождение.
-      const label = await banner.getByRole('button', { name: /Выделить на / }).innerText()
+      const label = await banner.getByRole('button', { name: SELECT_ACTION }).innerText()
       const counted = Number(label.replace(/\D+/g, '').slice(-2))
       expect(Number.isFinite(counted)).toBe(true)
     })
@@ -408,7 +488,7 @@ test.describe(
       const boxes = page.locator('table').getByRole('checkbox')
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       await boxes.nth(1).check({ force: true })
-      await banner.getByRole('button', { name: /Выделить на / }).click()
+      await banner.getByRole('button', { name: SELECT_ACTION }).click()
 
       const report = page.locator('[data-slot="select-report"]')
       await expect(report, 'отчёт о выделении обязан появиться').toBeVisible({
@@ -509,7 +589,7 @@ test.describe(
       const boxes = page.locator('table').getByRole('checkbox')
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       await boxes.nth(1).check({ force: true })
-      await banner.getByRole('button', { name: /Выделить на / }).click()
+      await banner.getByRole('button', { name: SELECT_ACTION }).click()
 
       const override = banner.locator('[data-slot="select-override"]')
       await expect(
@@ -638,10 +718,10 @@ test.describe(
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       await boxes.nth(1).check({ force: true })
 
-      const select = banner.getByRole('button', { name: /Выделить на / })
+      const select = banner.getByRole('button', { name: SELECT_ACTION })
       expect(
         await tapHeight(select),
-        'кнопка «Выделить на ОМ» меньше 44 px',
+        'кнопка выделения/резерва меньше 44 px',
       ).toBeGreaterThanOrEqual(44)
       await select.click()
 
@@ -757,8 +837,30 @@ test.describe(
         (route) => route.fulfill({ json: row }),
       )
 
+      // Бюджет пробы поднят явно: два захода плюс ожидание баннера иначе
+      // выедают 30 с по умолчанию, и падение читалось бы тайм-аутом ТЕСТА —
+      // признаком ещё хуже прежнего (ревью №825 по №869, 08.09.2026).
+      test.setTimeout(60_000)
       await page.setViewportSize({ width: 420, height: 1000 })
       await signIn(page)
+      // 🔴 ПРОГРЕВ МАРШРУТА ДО ЗАМЕРА (Plane №869). Проба мигала ✘ ✓ ✓ на одном
+      // коде в ОДИНОЧНЫХ прогонах (`-g`). ПРЕДПОЛОЖИТЕЛЬНАЯ причина — холодный
+      // заход на `/statuses` под `next dev`: страница и клиентские чанки
+      // компилируются на лету, а баннер клиентский и появляется после
+      // гидратации. Замер 07.09.2026: пять одиночных прогонов зелёные,
+      // первый 11,1 с против 6,6 с у остальных; прогона дольше 20 с замер НЕ
+      // показал, поэтому это гипотеза по признаку, а не доказанная причина.
+      // Что прогрев НЕ лечит: перезапуск стенда сторожем в момент захода
+      // (тот же признак «элемент не найден»); в пакете этого файла маршрут
+      // уже прогрет соседними пробами; на прод-стенде :3108 (полный смоук)
+      // компиляции нет вовсе. Предмет пробы — ширина документа, а не
+      // скорость компилятора: первый заход прогревает, второй — меряется.
+      // Порог замера не поднят. Прогрев ждёт САМ БАННЕР, а не `networkidle`:
+      // тот глотал бы и 500 стенда, и висел бы на HMR-сокете.
+      await page.goto(`${APP}/statuses/`)
+      await expect(page.locator('[data-slot="forces-request-banner"]')).toBeVisible({
+        timeout: 30_000,
+      })
       await page.goto(`${APP}/statuses/`)
       await expect(page.locator('[data-slot="forces-request-banner"]')).toBeVisible({
         timeout: 20_000,

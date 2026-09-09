@@ -59,12 +59,20 @@ test.describe('замечание согласования старой форм
     // однажды — разойдутся и снова, как только появится пятый счётчик.
     // Проверяется ТЕКСТ исходников: нормализация обязана идти через
     // `remarkIsOpen`/`remarkStatusOf`, а не через сравнение поля.
+    //
+    // 🔴 МОК — ПЯТЫЙ ЧИТАТЕЛЬ, НЕ НАЗВАННЫЙ ПОИМЁННО (ревью №825 по №502/503,
+    // 08.09.2026): `mocks/ops/security-events-handlers.ts` сравнивал
+    // `remark.status !== "OPEN"` мимо `remarkIsOpen` — на старой строке без
+    // `status` вовсе `undefined !== "OPEN"` даёт `true`, и мок-режим МОЛЧА
+    // считал незакрытое замечание закрытым. Регэксп расширен на `!==`, иначе
+    // он этой формы сравнения не видит вовсе.
     const ROOT = path.join(__dirname, '..')
     const SUSPECTS = [
       'app/security-ops/events/page.tsx',
       'features/security-event-stages/ui/PlacementStage.tsx',
       'features/security-event-stages/ui/ApprovalStage.tsx',
       'features/security-event-stages/ui/ClosedView.tsx',
+      'mocks/ops/security-events-handlers.ts',
     ]
     const guilty: string[] = []
     for (const file of SUSPECTS) {
@@ -72,14 +80,14 @@ test.describe('замечание согласования старой форм
       // Сравнение ЛЮБОГО `…status` с кодом замечания в файле, который эти
       // замечания читает. Строка-определение перечня статусов не в счёт:
       // она живёт в сущности, а сюда не попадает.
-      for (const hit of text.matchAll(/\.status\s*===\s*["'](OPEN|RESOLVED|DISAGREED)["']/g)) {
+      for (const hit of text.matchAll(/\.status\s*[!=]==\s*["'](OPEN|RESOLVED|DISAGREED)["']/g)) {
         guilty.push(`${file}: ${hit[0]}`)
       }
     }
     expect(
       guilty,
       'читатель замечаний сравнивает сырой status: у строки старой формы его ' +
-        'нет вовсе, и счётчик молча покажет ноль — зовите remarkIsOpen',
+        'нет вовсе, и счётчик молча покажет неверное — зовите remarkIsOpen',
     ).toEqual([])
   })
 })

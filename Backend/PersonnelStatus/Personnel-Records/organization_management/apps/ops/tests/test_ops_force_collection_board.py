@@ -36,8 +36,12 @@ def _event_id(base):
 
 @pytest.fixture
 def hq():
-    """Штаб: список сборов и карточка — под `forces.command`."""
-    api, user = client_for("hq-officer", "HEAD_OPS_UNIT", perms=("forces.command", "event.view"))
+    """Штаб: список сборов и карточка — под `forces.command`.
+
+    Роль — `OPS_STAFF`, отдельный актор Штаба (Plane №972, `[ШТБ-01]`); до
+    этого фикстура звалась `HEAD_OPS_UNIT`, а у этого профиля права больше нет.
+    """
+    api, user = client_for("hq-officer", "OPS_STAFF", perms=("forces.command", "event.view"))
     api.user = user
     return api
 
@@ -58,10 +62,26 @@ def _free_object_code():
 def test_status_follows_the_spec(manager, hq):  # noqa: F811
     department = make_department()
     make_directorate(department, "Управление охраны")
-    base, allocation_id = allocated_event(manager, department)
+    # ЧЕРНОВИК штаба — «Новая»; «Запросы отправлены» ставит шаг штаба
+    # «Отправить запросы», а не действие департамента (Plane №944, `[СБС-12]`):
+    # здесь строка становилась «отправленной» от оповещения управлений.
+    base, total = event_on_demand(manager)
+    manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(department.pk), "need": total}], "draft": True},
+        format="json",
+    )
     row = _row(hq, base)
     assert row["boardStatus"]["code"] == "NEW" and row["boardStatus"]["label"] == "Новая"
     assert row["isNew"] is True
+    data = manager.post(
+        f"{base}forces/allocation/",
+        {"rows": [{"departmentId": str(department.pk), "need": total}]},
+        format="json",
+    ).json()
+    allocation_id = data["forceAllocation"][0]["id"]
+    row = _row(hq, base)
+    assert row["boardStatus"]["label"] == "Запросы отправлены"
     manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
     row = _row(hq, base)
     assert row["boardStatus"]["label"] == "Запросы отправлены"
@@ -114,9 +134,15 @@ def test_card_carries_objects_totals_and_history(manager, hq):  # noqa: F811
 def test_top_up_is_a_new_row_and_draft_is_refused(manager):  # noqa: F811
     department = make_department()
     make_directorate(department, "Управление охраны")
-    base, allocation_id = allocated_event(manager, department)
+    # Черновик — `draft: true` (Plane №944): раскладка без флага отправляется
+    # сразу, и довыделять по ней уже можно.
+    base, total = event_on_demand(manager)
+    rows = [{"departmentId": str(department.pk), "need": total}]
+    draft = manager.post(f"{base}forces/allocation/", {"rows": rows, "draft": True}, format="json").json()
+    allocation_id = draft["forceAllocation"][0]["id"]
     refused = manager.post(f"{base}forces/allocation/{allocation_id}/top-up/", {"count": 2}, format="json")
     assert refused.status_code == 422 and refused.json()["error_code"] == "ALLOCATION_NOT_SENT"
+    manager.post(f"{base}forces/allocation/", {"rows": rows}, format="json")
     manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
     zero = manager.post(f"{base}forces/allocation/{allocation_id}/top-up/", {"count": 0}, format="json")
     assert zero.status_code == 400
@@ -225,14 +251,14 @@ def test_editing_the_split_keeps_the_top_up_and_the_original(manager):  # noqa: 
     # Своей строки он не касается — меняется только число, а состав, ответ и
     # оповещение обязаны пережить это без единой правки.
     #
-    # Единицу приходится ОТНЯТЬ у первого: `allocated_event` раскладывает всю
-    # потребность на него, и лишний человек упёрся бы в ALLOCATION_OVER_DEMAND
-    # — проба падала бы на чужом правиле, не дойдя до своего предмета.
+    # Цифра отправленной строки ЗАПЕРТА (`[СБС-12]`, Plane №944), а суммы
+    # сверх потребности спецификация не запрещает («Блокировки на сумму нет»)
+    # — второй департамент добавляется, первый остаётся как есть.
     saved = manager.post(
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(department.pk), "need": before["need"] - 1},
+                {"departmentId": str(department.pk), "need": before["need"]},
                 {"departmentId": str(other.pk), "need": 1},
             ]
         },
@@ -245,7 +271,7 @@ def test_editing_the_split_keeps_the_top_up_and_the_original(manager):  # noqa: 
     assert rows[extra_id]["topUpOf"] == allocation_id
     assert allocation_id in rows, "исходная строка потеряла свой id"
     kept = rows[allocation_id]
-    assert kept["need"] == before["need"] - 1, "правка числа не сохранилась"
+    assert kept["need"] == before["need"], "отправленная цифра изменилась (заперта, №944)"
     assert kept["allocating"] == 3, "ответ департамента стёрт правкой чужой строки"
     assert kept["answerComment"] == "выделяем троих"
     assert kept["notifiedAt"] is not None, "момент оповещения стёрт"
@@ -379,15 +405,14 @@ def test_every_department_answer_reaches_headquarters(manager, hq):  # noqa: F81
     second_department = make_department("Департамент связи")
     make_directorate(second_department, "Управление связи")
     event_id = _event_id(base)
-    # Разложено не больше потребности: первая строка отдаёт часть второй —
-    # редактор отбивает сумму сверх расчёта (`ALLOCATION_OVER_DEMAND`).
+    # Первая строка уже отправлена и заперта (`[СБС-12]`, №944); второй
+    # департамент добавляется рядом — сумму спецификация не ограничивает.
     need = int(service.lock_event(event_id).force_allocation[0]["need"])
-    assert need >= 2, "потребность меньше двух — делить между департаментами нечего"
     split = manager.post(
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(first_department.pk), "need": need - 1},
+                {"departmentId": str(first_department.pk), "need": need},
                 {"departmentId": str(second_department.pk), "need": 1},
             ]
         },
@@ -645,6 +670,55 @@ def test_the_responsible_name_does_not_change_between_identical_requests(manager
     }
 
     assert len(names) == 1, f"имя ответственного меняется между запросами: {names}"
+
+
+def test_a_duty_officer_is_a_responsible_too(manager, hq):  # noqa: F811
+    """🔴 Plane №1026 (ревью `6d422ffb` по №923): `_responsibles` читал ТОЛЬКО
+    `UserRole` (постоянные назначения) — рассылка той же заявки
+    (`forces_notify._department_officers`) уже читает и дежурства
+    (`TemporaryDutyPermission`) с №800. Дежурный по департаменту письмо
+    «ответьте по заявке» получает, а колонка «Ответственный» на него не
+    смотрит вовсе и остаётся пустой строкой.
+
+    Дежурный здесь ЕДИНСТВЕННЫЙ кандидат нарочно: постоянного держателя
+    `forces.allocate` на департаменте нет, и колонка обязана назвать именно
+    дежурного, а не остаться пустой.
+
+    Мутация: убрать чтение `TemporaryDutyPermission` из `_responsibles` —
+    `responsibleName` вернётся пустой строкой.
+    """
+    from organization_management.apps.operations.models import (
+        Role,
+        RolePermission,
+        TemporaryDutyPermission,
+    )
+
+    department = make_department()
+    make_directorate(department, "Управление охраны")
+    duty_role, _ = Role.objects.get_or_create(
+        code="ORGD", defaults={"name": "Дежурный по департаменту (проба)"}
+    )
+    RolePermission.objects.get_or_create(
+        role_code=duty_role, permission_code_id="forces.allocate"
+    )
+    _, duty_officer = client_for("dep-duty-officer", "ORGD", perms=())
+    now = Clock.now()
+    TemporaryDutyPermission.objects.create(
+        user_id=str(duty_officer.pk),
+        duty_role_code="ORGD",
+        scope_division_id=department.pk,
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
+        created_by="test",
+    )
+
+    base, allocation_id = allocated_event(manager, department)
+    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    row = hq.get(f"{base}force-collection/").json()["allocations"][0]
+
+    assert row["responsibleName"] == duty_officer.get_username(), (
+        "дежурный по департаменту не назван ответственным в колонке"
+    )
 
 
 # ── «Итого» сходится со строками, напечатанными рядом (Plane №678) ──────────

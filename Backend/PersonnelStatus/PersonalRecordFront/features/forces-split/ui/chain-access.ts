@@ -28,6 +28,7 @@ export const APPROVAL_RETURN = "assignment.return";
  * «Закрыть объект», «Закрыть мероприятие» — работа ведущего мероприятие.
  * До №422 эти кнопки были активны у читателя и отвечали 403 без слов. */
 export const EVENT_MANAGE = "event.manage";
+export const STATUS_MANAGE = "status.manage";
 
 /** Причина отказа — ЧТО ЗА РОЛЬ это делает, а не «нет прав».
  *
@@ -43,6 +44,7 @@ const REASON: Record<string, string> = {
   [APPROVAL_APPROVE]: "Согласовывает расстановку утверждающий",
   [APPROVAL_RETURN]: "Возвращает расстановку на доработку утверждающий",
   [EVENT_MANAGE]: "Переводит этапы и закрывает мероприятие ведущий ОМ или штаб",
+  [STATUS_MANAGE]: "За сотрудника без учётки подтверждает начальник его управления",
 };
 
 export interface ChainAccess {

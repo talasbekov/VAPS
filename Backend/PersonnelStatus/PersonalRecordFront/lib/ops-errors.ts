@@ -108,6 +108,39 @@ export class OpsNetworkError extends Error {
   }
 }
 
+const GENERIC_FAILURE_MESSAGE = "Сервис временно недоступен. Попробуйте ещё раз.";
+
+/**
+ * Текст отказа для диалогов, чей `onError` до сих пор показывал ОДИН и тот
+ * же generic-текст на ЛЮБОЙ отказ, включая 403 (Plane №967).
+ *
+ * Живое наблюдение 07.09.2026: acc_dir_head_d2 пять раз нажимал «выделить
+ * машину» на ОМ без права `event.manage`, каждый раз получал 403, а тост
+ * отвечал «Сервис временно недоступен. Попробуйте ещё раз» — сообщение врёт
+ * про отказ прав и провоцирует бессмысленный повтор. Отказ прав приходит
+ * DRF-нативным `{"detail": "PERMISSION_DENIED"}` (`require_permission`), и
+ * сам код тоже не текст для человека — 403 получает СВОЙ текст, вызывающий
+ * называет его для своего действия (у разных диалогов разное право теряется
+ * по-разному: «выделить транспорт», «снять транспорт», «добавить объекты»).
+ * 4xx с настоящим сообщением сервера показывает его; 5xx и обрыв сети —
+ * общий текст, единственный случай, где «попробуйте ещё раз» правда.
+ */
+export function friendlyOpsErrorMessage(
+  error: unknown,
+  permissionDeniedMessage: string,
+): string {
+  if (error instanceof OpsServerError || error instanceof OpsNetworkError) {
+    return GENERIC_FAILURE_MESSAGE;
+  }
+  if (error instanceof OpsApiError) {
+    if (error.status === 403) return permissionDeniedMessage;
+    if (error.message && error.message !== "PERMISSION_DENIED") {
+      return error.message;
+    }
+  }
+  return GENERIC_FAILURE_MESSAGE;
+}
+
 /** Всё, чем может упасть вызов opsApiClient (тип ошибки use-ops-mutation). */
 export type OpsApiFailure = OpsApiError | OpsNetworkError;
 

@@ -220,7 +220,13 @@ def test_the_row_assembles_the_summary_once(django_assert_num_queries):
     # `_find_personnel` не её предмет; предмет — что сборка ОДНА. Мутация
     # «вернуть повторную сборку в `_required_progress`» даёт 12 и краснит
     # здесь (проверено запуском).
-    with django_assert_num_queries(7):
+    #
+    # 8, а не 7 — с 07.09.2026 (Plane №951): лица сводки строятся карточками
+    # справочника, и одиночная сборка читает связи бюллетеня с лицами ОДНИМ
+    # запросом (`person_links` + `select_related("person")`). Реестр этот
+    # запрос не платит — `assembled_summaries` подтягивает связи заранее, и
+    # проба «число запросов не растёт с числом мероприятий» это стережёт.
+    with django_assert_num_queries(8):
         row = summary.summary_row(event)
 
     assert [ref["id"] for ref in row["summary"]["meetRefs"]] == [
@@ -230,3 +236,38 @@ def test_the_row_assembles_the_summary_once(django_assert_num_queries):
     # обернулась бы вторым, расходящимся ответом.
     assert row["requiredTotal"] > 0
     assert isinstance(row["missingRequired"], list)
+
+
+def test_person_facts_print_as_key_equals_value_not_as_python_dicts():
+    """Данные ОЛ из справочника — список `{key, value}` (№952). Документ
+    печатал их `str(fact)`, то есть `{'key': 'Группа крови', 'value': …}` —
+    Python-словарём в PDF, ровно на том сценарии, ради которого №952
+    ставилась. Пины до сих пор давали `facts: []` и дефекта не видели
+    (ревью №825, 08.09.2026).
+
+    КРАСНАЯ ПРОБА: верни `str(fact)` — первая же строка станет словарём.
+    """
+    event = make_event(code="ОМ-Д-9")
+    OpsGvoSummaryPatch.objects.create(
+        event=event,
+        patch={
+            "persons": [
+                {
+                    "name": "Яков Милатович",
+                    "role": "Президент",
+                    "facts": [
+                        {"key": "Группа крови", "value": "А (II) Rh +"},
+                        {"key": "Рост", "value": "181 см"},
+                        "Строка старого образца",
+                    ],
+                }
+            ]
+        },
+    )
+
+    values = summary.document_values(event)
+
+    assert values["person1_data_1"] == "Группа крови = А (II) Rh +"
+    assert values["person1_data_2"] == "Рост = 181 см"
+    assert values["person1_data_3"] == "Строка старого образца"
+

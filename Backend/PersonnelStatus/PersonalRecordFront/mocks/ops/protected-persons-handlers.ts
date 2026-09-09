@@ -7,11 +7,10 @@
 // BACKEND_URL (http://localhost:8100), и относительный путь резолвился бы от
 // origin документа (:3106) — запрос молча ушёл бы в сеть мимо мока.
 import { http, HttpResponse } from "msw";
-import {
-  PROTECTED_PERSONS_PATH,
-} from "@/entities/protected-person";
+import { PROTECTED_PERSONS_PATH } from "@/entities/protected-person";
 import { readEventsStore } from "./security-events-handlers";
 import type {
+  CreateProtectedPersonRequest,
   ListProtectedPersonsResponse,
   ProtectedPerson,
 } from "@/entities/protected-person";
@@ -25,6 +24,10 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     callsign: "Сокол",
     category: "OURS",
     bio: "Государственный служащий высшего звена, куратор международных визитов. Под охраной с 2019 года.",
+    photoUrl: null,
+    country: "Казахстан",
+    position: "",
+    facts: [],
   },
   {
     id: "pp-2",
@@ -33,6 +36,10 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     callsign: "Гранит",
     category: "OURS",
     bio: "Руководитель аппарата, регулярный участник протокольных мероприятий республиканского уровня.",
+    photoUrl: null,
+    country: "Казахстан",
+    position: "",
+    facts: [],
   },
   {
     id: "pp-3",
@@ -41,6 +48,10 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     callsign: "Беркут",
     category: "OURS",
     bio: "Член правительственной делегации, курирует вопросы регионального взаимодействия.",
+    photoUrl: null,
+    country: "Казахстан",
+    position: "",
+    facts: [],
   },
   {
     id: "pp-4",
@@ -49,6 +60,10 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     callsign: "Дельта-1",
     category: "FOREIGN",
     bio: "Глава иностранной делегации. Визит согласован по линии МИД, повышенные требования к сопровождению.",
+    photoUrl: null,
+    country: "США",
+    position: "Глава делегации",
+    facts: [],
   },
   {
     id: "pp-5",
@@ -57,6 +72,10 @@ export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
     callsign: "Оазис",
     category: "FOREIGN",
     bio: "Официальный представитель иностранного государства, прибывает с собственной группой сопровождения.",
+    photoUrl: null,
+    country: "Оман",
+    position: "Заместитель Премьер-министра по экономическим вопросам",
+    facts: [],
   },
 ];
 
@@ -114,4 +133,69 @@ export const protectedPersonsHandlers = [
       results: PROTECTED_PERSONS_CATALOG,
     })
   ),
+
+  // Заведение лица с экрана (Plane №951) — паритет с сервером: пустое имя и
+  // чужая категория отбиваются 400, а не ложатся в каталог молча.
+  http.post(`*${PROTECTED_PERSONS_PATH}`, async ({ request }) => {
+    const body = (await request.json()) as CreateProtectedPersonRequest;
+    const name = (body.name ?? "").trim();
+    const details: Record<string, string[]> = {};
+    if (name === "") details.name = ["Обязательное поле."];
+    if (body.category !== "OURS" && body.category !== "FOREIGN") {
+      details.category = ["Категория — «Наши» или «Иностранные»."];
+    }
+    if (Object.keys(details).length > 0) {
+      return HttpResponse.json(
+        { error_code: "VALIDATION_ERROR", message: "Проверьте поля лица.", details },
+        { status: 400 }
+      );
+    }
+    const id = `pp-${PROTECTED_PERSONS_CATALOG.length + 1}`;
+    const person: ProtectedPerson = {
+      id,
+      code: `OL-${PROTECTED_PERSONS_CATALOG.length + 1}`,
+      name,
+      callsign: (body.callsign ?? "").trim(),
+      category: body.category,
+      bio: (body.bio ?? "").trim(),
+      photoUrl: null,
+      // Данные образца (Plane №952) — паритет с сервером: пустые строки
+      // отбрасываются.
+      country: (body.country ?? "").trim(),
+      position: (body.position ?? "").trim(),
+      facts: (body.facts ?? [])
+        .map((row) => ({ key: row.key.trim(), value: row.value.trim() }))
+        .filter((row) => row.key !== ""),
+    };
+    PROTECTED_PERSONS_CATALOG.push(person);
+    return HttpResponse.json(person, { status: 201 });
+  }),
+
+  // Снимок лица (Plane №951): мок не хранит байты — кладёт data-URL, чтобы
+  // карточка на мок-стенде показала снимок, а не заглушку.
+  http.post(`*${PROTECTED_PERSONS_PATH}:id/photo/`, async ({ params, request }) => {
+    const person = PROTECTED_PERSONS_CATALOG.find((row) => row.id === params.id);
+    if (person === undefined) {
+      return HttpResponse.json({ detail: "Охраняемое лицо не найдено." }, { status: 404 });
+    }
+    const form = await request.formData();
+    const file = form.get("photo");
+    if (!(file instanceof File) || !/^image\/(jpeg|png|webp)$/.test(file.type)) {
+      return HttpResponse.json(
+        {
+          error_code: "VALIDATION_ERROR",
+          message: "Проверьте файл снимка.",
+          details: { photo: ["Допустимы JPEG, PNG или WebP."] },
+        },
+        { status: 400 }
+      );
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+    person.photoUrl = `data:${file.type};base64,${btoa(binary)}`;
+    return HttpResponse.json(person);
+  }),
 ];

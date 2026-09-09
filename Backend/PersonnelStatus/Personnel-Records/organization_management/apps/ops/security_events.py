@@ -18,6 +18,7 @@ import re
 from uuid import uuid4
 
 from django.db import transaction
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from organization_management.apps.operations import audit_service
@@ -51,6 +52,22 @@ RECON_CHECKLIST_TEMPLATE = [
     "Пути эвакуации",
     "Связь и электропитание",
 ]
+
+
+def new_recon_checklist():
+    """Новый независимый чек-лист объекта."""
+    return [
+        {
+            "id": f"checklist-{index}",
+            "label": label,
+            "state": "UNCHECKED",
+            "required": True,
+            "done": False,
+            "result": None,
+            "comment": "",
+        }
+        for index, label in enumerate(RECON_CHECKLIST_TEMPLATE)
+    ]
 
 # Состояние пункта чек-листа (`[РЕК-04]`, Plane №443): ОДИН переключатель
 # «Норма / Замечание / Не проверено» вместо чекбокса и select. Старые ключи
@@ -269,6 +286,12 @@ def bind_passport_version(security_object, version, bound_at):
 
 
 @transaction.atomic
+def _creator_account_id(actor):
+    """Идентификатор учётки создателя или пустая строка для системного актора."""
+    value = "" if actor is None else str(actor).strip()
+    return value if value.isdigit() else ""
+
+
 def create_event(
     *,
     title,
@@ -444,20 +467,16 @@ def create_event(
         # Подпись, а не id учётки: поле уходит на экран карточки и в значения
         # фильтра реестра. Идентификатор остаётся аудиту — ему нужен именно он.
         owner_name=actor_display_name(actor),
+        # Идентификатор создателя — ЗДЕСЬ, одним сохранением со строкой (Plane
+        # №949, ревью №825 по №947). Вьюха ставила его вторым `save` после
+        # коммита сервиса: ОМ жил «ничьим» между сохранениями, а сиды и любой
+        # другой вызыватель создателя не получали вовсе. Только идентификатор
+        # учётки (`resolve_actor_id` → цифры): системная метка сида в поле
+        # «id учётки» — ложь о типе.
+        owner_actor_id=_creator_account_id(actor),
         brief_description="",
         initial_tasks="",
-        recon_checklist=[
-            {
-                "id": f"checklist-{index}",
-                "label": label,
-                "state": "UNCHECKED",
-                "required": True,
-                "done": False,
-                "result": None,
-                "comment": "",
-            }
-            for index, label in enumerate(RECON_CHECKLIST_TEMPLATE)
-        ],
+        recon_checklist=new_recon_checklist(),
         recon_sector_posts=[],
         demand_rows=[],
         demand_approved=False,
@@ -499,6 +518,7 @@ def create_event(
             # назначить его молча — ровно та ошибка, от которой уходим.
             chief_employee_id=chief.pk if chief is not None else None,
             chief_name=personnel_display_name(chief) if chief is not None else "",
+            recon_checklist=new_recon_checklist(),
             position=0,
             # Стадия объекта — стадия мероприятия с первой секунды (Plane
             # №412). Без этого ОМ, заведённое сразу на рекогносцировке,
@@ -1002,6 +1022,7 @@ def add_visit_object(event_id, *, object_id, protected_person_id=None):
         # собой согласованные. Такого решения никто не принимал, а работу по
         # новому объекту открывает обход этапов (`event.stage_override`).
         stage=event.stage,
+        recon_checklist=new_recon_checklist(),
     )
     event.refresh_from_db()
     # СНИМОК ПОТРЕБНОСТИ ПЕРЕСЧИТЫВАЕТСЯ (Plane №414). Прежде здесь стояло
@@ -1018,18 +1039,25 @@ def add_visit_object(event_id, *, object_id, protected_person_id=None):
 
 
 @transaction.atomic
-def update_visit_object(event_id, visit_object_id, *, visit_day, note):
-    """Правка дня посещения и примечания у объекта посещения.
+def update_visit_object(event_id, visit_object_id, *, visit_day, note, description=None):
+    """Правка дня посещения, примечания и описания визита у объекта посещения.
 
-    Оба поля переехали сюда из патча сводки ГВО (ключ `visits`, «Реестр
-    ОМ-35.1»): список объектов теперь один — таблица, — и править его подпись
-    надо там же, где он живёт. Сам объект здесь не меняется: подмена объекта
-    посещения — это снятие одной строки и добавление другой, у них своя
-    расстановка и свои замещающие.
+    День и примечание переехали сюда из патча сводки ГВО (ключ `visits`,
+    «Реестр ОМ-35.1»): список объектов теперь один — таблица, — и править его
+    подпись надо там же, где он живёт. `description` — та же идея для цели
+    визита (Plane SJ-1049): предложение о том, зачем именно на ЭТОМ ОМ едут на
+    этот объект («Основная площадка мероприятия.») — отдельно от `note`
+    (короткая служебная подпись для сводки ГВО). Сам объект здесь не
+    меняется: подмена объекта посещения — это снятие одной строки и
+    добавление другой, у них своя расстановка и свои замещающие.
 
     `visitDay` пустой (не пришёл, `null` или пустая строка) — день посещения
     снимается, и сводка снова показывает объект в дате мероприятия. Это ОТВЕТ,
     а не отсутствие ответа: «в день ОМ» — нормальное состояние строки.
+
+    `description=None` — параметр не пришёл вовсе (старый клиент шлёт только
+    `visitDay`/`note`): поле остаётся как было. Пустая строка — описание
+    снимается осознанно, это тоже ответ.
     """
     event = lock_event(event_id)
     if event.stage == "CLOSED":
@@ -1057,7 +1085,14 @@ def update_visit_object(event_id, visit_object_id, *, visit_day, note):
 
     visit.visit_day = day
     visit.note = raw_note
-    visit.save(update_fields=["visit_day", "note", "updated_at"])
+    update_fields = ["visit_day", "note", "updated_at"]
+    if description is not None:
+        raw_description = str(description).strip()
+        if len(raw_description) > 255:
+            raise _validation({"description": ["Не длиннее 255 символов."]})
+        visit.description = raw_description
+        update_fields.append("description")
+    visit.save(update_fields=update_fields)
     event.refresh_from_db()
     return event
 
@@ -1597,6 +1632,36 @@ def _rows_by_visit(rows, *, only=None):
     return {key: sorted(items) for key, items in grouped.items()}
 
 
+def _unassigned_rows_changed_outside_claim(event, sector_posts, target_id):
+    if event.visit_objects.count() <= 1:
+        return False
+    stored = {
+        str(row.get("id") or "").strip(): row
+        for row in (event.recon_sector_posts or [])
+        if not str(row.get("visitObjectId") or "").strip()
+    }
+    claimed = {
+        row_id
+        for row in (sector_posts or [])
+        if (row_id := str(row.get("id") or "").strip()) in stored
+        and str(row.get("visitObjectId") or "").strip() == str(target_id)
+        and _row_fingerprint(row) == _row_fingerprint(stored[row_id])
+    }
+
+    def remaining(rows, *, skip=()):
+        return sorted(
+            (
+                str(row.get("id") or "").strip(),
+                _row_fingerprint(row),
+            )
+            for row in (rows or [])
+            if not str(row.get("visitObjectId") or "").strip()
+            and str(row.get("id") or "").strip() not in skip
+        )
+
+    return remaining(event.recon_sector_posts, skip=claimed) != remaining(sector_posts)
+
+
 def _visits_with_edited_rows(event, sector_posts):
     """Объекты, чьи строки расчёта запрос МЕНЯЕТ ХОТЬ ЧЕМ-ТО (Plane №535).
 
@@ -1733,6 +1798,12 @@ def remove_visit_object_chief(event_id, visit_object_id, *, actor):
 @transaction.atomic
 def update_bulletin(event_id, *, brief_description, initial_tasks):
     event = lock_event(event_id)
+    if event.stage == "CLOSED":
+        raise DomainError(
+            "INVALID_STAGE_TRANSITION",
+            422,
+            message="Мероприятие закрыто — текст бюллетеня не меняется.",
+        )
     field_errors = {}
     brief = str(brief_description or "").strip()
     tasks = str(initial_tasks or "").strip()
@@ -1754,23 +1825,14 @@ def complete_bulletin(event_id):
     _require_stage(
         event, "BULLETIN", "Бюллетень можно завершить только на этапе «Бюллетень»."
     )
-    # Гейт держит ОБЪЕКТ, а не текст бюллетеня. Новые ОМ с объектом заводятся
-    # сразу на рекогносцировке (см. `create_event`), и требовать описание с
-    # задачами от ОМ, заведённых до этого правила, значило бы держать две
-    # разные цепочки для одного и того же состояния. Осматривать нечего ровно
-    # тогда, когда объекта нет — там текст бюллетеня остаётся условием: он
-    # единственное, что старший наряда получает до выезда.
-    has_object = (
-        event.security_object_id is not None
-        or event.visit_objects.exists()
-    )
-    if not has_object and (
-        event.brief_description.strip() == "" or event.initial_tasks.strip() == ""
-    ):
-        raise DomainError("BULLETIN_INCOMPLETE", 422, message=
-            "Заполните и сохраните описание и первичные задачи либо добавьте "
-            "объект посещения, прежде чем открывать рекогносцировку.",
-        )
+    # Текста бюллетеня («краткое описание», «первичные задачи направлениям»)
+    # переход БОЛЬШЕ НЕ ТРЕБУЕТ (Plane №943, слово заказчика 07.09.2026:
+    # «вот эту часть полностью со всего проекта убери»). В бланке «Орда-4»
+    # (`[БЛН-01]`…`[БЛН-04]`) этих полей нет — они прототипный остаток, и
+    # экран их не показывает. До этого ОМ без объекта не открывал
+    # рекогносцировку без заполненного текста (`BULLETIN_INCOMPLETE`);
+    # поля и `update_bulletin` пока живут ради старых читателей (e2e-подготовка
+    # фикстур) и снимаются отдельным шагом.
     return _advance(event, "RECON")
 
 
@@ -1886,7 +1948,7 @@ def event_force_need(event, visits=None):
         visits = list(event.visit_objects.all())
     posts = event.recon_sector_posts or []
     if not visits:
-        return sum(max(int(post.get("need") or 0), 0) for post in posts)
+        return _physical_need(posts)
     need = sum(int(visit.force_need or 0) for visit in visits)
     if len(visits) > 1:
         # 🔴 «НИЧЕЙ» — ЭТО И ПУСТАЯ РАЗМЕТКА, И ССЫЛКА В ПУСТОТУ (Plane №759).
@@ -1905,8 +1967,8 @@ def event_force_need(event, visits=None):
         # требует миграции для уже накопленных строк; он остаётся доступен
         # отдельным шагом и этой правке не мешает.
         alive = {str(visit.pk) for visit in visits}
-        need += sum(
-            int(post.get("need") or 0)
+        need += _physical_need(
+            post
             for post in posts
             if str(post.get("visitObjectId") or "").strip() not in alive
         )
@@ -2121,13 +2183,32 @@ def _require_visit_placement_editable(visit):
 
 
 @transaction.atomic
-def update_recon(event_id, *, checklist, sector_posts, force_request=None):
+def update_recon(
+    event_id,
+    *,
+    checklist,
+    sector_posts,
+    force_request=None,
+    visit_object_id=None,
+):
     """Правка рекогносцировки. `force_request` — запрос личного состава
     (Plane «Реестр ОМ-23»); `None` означает «поле не прислали» и оставляет
     сохранённое значение, а не обнуляет его: старые клиенты и мок-слой шлют
     тело без этого поля, и трактовка «нет ключа = ноль» стирала бы запрос при
     каждом чужом сохранении."""
     event = lock_event(event_id)
+    target = (
+        pick_visit_object(
+            event,
+            visit_object_id,
+            no_objects="У мероприятия нет объектов посещения.",
+            ambiguous=(
+                "У мероприятия несколько объектов посещения — выберите объект."
+            ),
+        )
+        if visit_object_id is not None or event.visit_objects.count() == 1
+        else None
+    )
     checklist = checklist or []
     # «Ключа нет» — не «пусто» (Plane №416, учтено в №424): отметка чек-листа
     # отдельным вызовом без пересылки постов стирала расчёт в пустой список, и
@@ -2157,17 +2238,59 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     own_visit_ids = {
         str(pk) for pk in event.visit_objects.values_list("pk", flat=True)
     }
+    stored_by_id = {
+        str(row.get("id") or "").strip(): row
+        for row in (event.recon_sector_posts or [])
+        if str(row.get("id") or "").strip()
+    }
+    from organization_management.apps.operations.models_settings import OpsDictionaryEntry
+
+    participation_kinds = set(
+        OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_PARTICIPATION_KINDS", is_active=True
+        ).values_list("code", flat=True)
+    )
+    participation_kinds.add(PHYSICAL_SQUAD_KIND)
+    seen_known_ids = set()
     for index, row in enumerate(sector_posts):
         if not str(row.get("sector", "")).strip():
             field_errors[f"sectorPosts.{index}.sector"] = ["Обязательное поле."]
         if not str(row.get("post", "")).strip():
             field_errors[f"sectorPosts.{index}.post"] = ["Обязательное поле."]
-        if int(row.get("need", 0)) < 1:
-            field_errors[f"sectorPosts.{index}.need"] = ["Должно быть не меньше 1."]
+        try:
+            row_need = int(row.get("need", 0))
+        except (TypeError, ValueError):
+            field_errors[f"sectorPosts.{index}.need"] = ["Должно быть целым числом не меньше 1."]
+        else:
+            if row_need < 1:
+                field_errors[f"sectorPosts.{index}.need"] = ["Должно быть не меньше 1."]
+        kind_code = _demand_kind_of(row)
+        if kind_code not in participation_kinds:
+            field_errors[f"sectorPosts.{index}.demandKindCode"] = [
+                "Выберите действующий вид участия."
+            ]
         visit_id = str(row.get("visitObjectId") or "").strip()
         if visit_id and visit_id not in own_visit_ids:
             field_errors[f"sectorPosts.{index}.visitObjectId"] = [
                 "Объекта посещения нет в этом мероприятии."
+            ]
+        row_id = str(row.get("id") or "").strip()
+        stored = stored_by_id.get(row_id)
+        if stored is None:
+            continue
+        if row_id in seen_known_ids:
+            field_errors[f"sectorPosts.{index}.id"] = [
+                "Идентификатор поста повторяется."
+            ]
+        seen_known_ids.add(row_id)
+        stored_visit_id = str(stored.get("visitObjectId") or "").strip()
+        # Неразмеченную legacy-строку можно отнести к объекту.
+        # Уже привязанный ID нельзя копировать/переносить в чужой
+        # объект: иначе `_normalize_post_ids` оставит его копии,
+        # а исходной строке выдаст новый ID, обойдя объектный гард.
+        if target is not None and stored_visit_id and visit_id != stored_visit_id:
+            field_errors[f"sectorPosts.{index}.id"] = [
+                "Принадлежность существующего поста объекту не меняется."
             ]
     if field_errors:
         raise _validation(field_errors)
@@ -2186,7 +2309,21 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
     # чьи посты человек ДЕЙСТВИТЕЛЬНО правит. Перенос строки между объектами
     # меняет оба набора — оба и требуют старшего, это верно: пост уходит из
     # одного расчёта и приходит в другой.
+    if target is not None and _unassigned_rows_changed_outside_claim(
+        event, sector_posts, target.pk
+    ):
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            message="Неразмеченные посты изменяет только руководство ОМ.",
+        )
     touched = _visits_with_changed_posts(event, sector_posts)
+    if target is not None and touched - {str(target.pk)}:
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            message="Рекогносцировку другого объекта изменять нельзя.",
+        )
     for visit in event.visit_objects.filter(pk__in=touched or [-1]):
         _require_visit_chief(visit)
     # 🔴 ЗАМОРОЗКА ДЕЙСТВУЕТ И ЗДЕСЬ (Plane №535). Правка рекогносцировки
@@ -2211,7 +2348,7 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
         pk__in=_visits_with_edited_rows(event, sector_posts) or [-1]
     ):
         _require_visit_placement_editable(visit)
-    event.recon_checklist = [
+    normalized_checklist = [
         {**item, "comment": str(item.get("comment", "")).strip()}
         for item in checklist
     ]
@@ -2242,6 +2379,10 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
                 "sector": str(row.get("sector", "")).strip(),
                 "post": str(row.get("post", "")).strip(),
                 "task": str(row.get("task", "")).strip(),
+                "demandKindCode": _demand_kind_of(row),
+                "demandSpecification": str(
+                    row.get("demandSpecification", "")
+                ).strip(),
                 # Смена — свойство ПОСТА, как в эталоне (`posts[].shift`:
                 # «Сектор A · смена 07:00–15:00»). До Plane №123 её вводили в
                 # строке потребности, а когда бокс потребности сняли (№110),
@@ -2265,11 +2406,28 @@ def update_recon(event_id, *, checklist, sector_posts, force_request=None):
         ],
         known_ids=known_ids,
     )
-    fields = ["recon_checklist", "recon_sector_posts", "updated_at"]
-    if parsed_request is not None:
-        event.recon_force_request = parsed_request
-        fields.append("recon_force_request")
-    event.save(update_fields=fields)
+    event_fields = ["recon_sector_posts", "updated_at"]
+    if target is None:
+        event.recon_checklist = normalized_checklist
+        event_fields.append("recon_checklist")
+        if parsed_request is not None:
+            event.recon_force_request = parsed_request
+            event_fields.append("recon_force_request")
+    else:
+        target.recon_checklist = normalized_checklist
+        target_fields = ["recon_checklist", "updated_at"]
+        if parsed_request is not None:
+            target.recon_force_request = parsed_request
+            target_fields.append("recon_force_request")
+        target.save(update_fields=target_fields)
+        # Однообъектный legacy-ответ остаётся совместимым.
+        if event.visit_objects.count() == 1:
+            event.recon_checklist = normalized_checklist
+            event_fields.append("recon_checklist")
+            if parsed_request is not None:
+                event.recon_force_request = parsed_request
+                event_fields.append("recon_force_request")
+    event.save(update_fields=event_fields)
     # Разметка постов могла переехать — с ней переезжает и потребность объекта.
     recompute_visit_needs(event)
     return event
@@ -2488,18 +2646,41 @@ def import_recon_from_passport(event_id, *, visit_object_id=None):
 
 
 @transaction.atomic
-def complete_recon(event_id):
+def complete_recon(event_id, *, visit_object_id=None):
     event = lock_event(event_id)
-    _require_stage(
+    visits = list(event.visit_objects.all())
+    # Совместимый адрес без `visitObjectId` у многообъектного ОМ доступен
+    # только руководству/admin (это держит view-policy): он завершает прежний
+    # event-wide расчёт. Поимённый старший всегда называет свой объект.
+    # Без объектов остаётся legacy-путь: его используют сиды и старые
+    # ОМ, где расчёт ещё живёт только на мероприятии.
+    legacy_all = visit_object_id in (None, "") and len(visits) != 1
+    target = None if legacy_all else pick_visit_object(
         event,
-        "RECON",
-        "Рекогносцировку можно завершить только на этапе «Рекогносцировка».",
+        visit_object_id,
+        no_objects="У мероприятия нет объектов посещения.",
+        ambiguous=(
+            "У мероприятия несколько объектов посещения — выберите объект."
+        ),
     )
-    # `[РЕК-07]` (№424): «Завершить» недоступна, пока не назначен старший
-    # объекта — у каждого объекта посещения, что идёт этим этапом.
-    for visit in event.visit_objects.all():
-        if visit.stage == "RECON":
-            _require_visit_chief(visit)
+    if target is None:
+        _require_stage(
+            event,
+            "RECON",
+            "Рекогносцировку можно завершить только на этапе «Рекогносцировка».",
+        )
+        for visit in visits:
+            if visit.stage == "RECON":
+                _require_visit_chief(visit)
+    else:
+        _require_visit_stage(
+            target,
+            "RECON",
+            "Рекогносцировку объекта можно завершить только на его этапе «Рекогносцировка».",
+        )
+        # `[РЕК-07]` (№424/№982): завершает СВОЙ объект его назначенный
+        # старший; сосед без старшего не запирает готовый объект.
+        _require_visit_chief(target)
     # `[РЕК-04]`/`[РЕК-07]` (Plane №443): обязательные пункты не могут остаться
     # в «Не проверено»; «Замечание» — проверено, и завершать не мешает.
     #
@@ -2515,9 +2696,12 @@ def complete_recon(event_id):
     # ОТСУТСТВУЮЩИЙ пункт шаблона считается «Не проверено»: он и не проверен —
     # его нет. Отказать по нему честнее, чем промолчать; вернуть его в список
     # человек может тем же сохранением.
+    checklist_source = (
+        event.recon_checklist if target is None else target.recon_checklist
+    )
     stored = {
         str(item.get("id") or ""): normalize_check_item(item)
-        for item in (event.recon_checklist or [])
+        for item in (checklist_source or [])
     }
     unchecked = [
         check_id
@@ -2526,7 +2710,7 @@ def complete_recon(event_id):
     ]
     unchecked += [
         str(item.get("id") or "")
-        for item in (event.recon_checklist or [])
+        for item in (checklist_source or [])
         if str(item.get("id") or "") not in TEMPLATE_CHECK_IDS
         and normalize_check_item(item)["required"]
         and normalize_check_item(item)["state"] == "UNCHECKED"
@@ -2535,9 +2719,14 @@ def complete_recon(event_id):
         raise DomainError("RECON_CHECKLIST_INCOMPLETE", 422, message=
             "Обязательные пункты чек-листа остались в «Не проверено».",
         )
-    if not event.recon_sector_posts:
+    target_posts = (
+        event.recon_sector_posts
+        if target is None
+        else visit_object_posts(event, target)
+    )
+    if not target_posts:
         raise DomainError("RECON_SECTOR_POSTS_EMPTY", 422, message=
-            "Добавьте хотя бы один пост, прежде чем завершать этап.",
+            "Добавьте хотя бы один пост объекта, прежде чем завершать этап.",
         )
     # Число, которое получает штаб, — РАСЧЁТ ПО ПОСТАМ, а не отдельная оценка
     # старшего наряда: запроса личного состава на этапе больше нет (задача
@@ -2549,13 +2738,42 @@ def complete_recon(event_id):
     # Ручной ввод, если он уже был сохранён, НЕ затирается: у мероприятий,
     # прошедших рекогносцировку по прежним правилам, число ввёл человек, и
     # подменять его расчётом значило бы переписать чужое решение.
-    if event.recon_force_request < 1:
-        event.recon_force_request = sum(
-            max(int(row.get("need") or 0), 0) for row in event.recon_sector_posts
+    if target is None:
+        if event.recon_force_request < 1:
+            event.recon_force_request = _physical_need(event.recon_sector_posts)
+        event.recon_force_requested_at = Clock.now()
+        event.save(
+            update_fields=[
+                "recon_force_request",
+                "recon_force_requested_at",
+                "updated_at",
+            ]
         )
-    # Момент отправки запроса штабу. Проставляется ЗДЕСЬ, а не при правке
-    # расчёта: до завершения этапа расчёт — черновик старшего наряда, штаб его
-    # не видит, и лента «что пришло нового» считала бы черновики.
+        _advance(event, "DEMAND")
+        return _autopass_demand_and_forces(event)
+
+    # Объект сначала покидает рекогносцировку ОТДЕЛЬНО. Стадия мероприятия —
+    # минимум по объектам, поэтому сосед продолжает работу, а карточка ОМ
+    # остаётся на RECON до последнего объекта.
+    if target.recon_force_request < 1:
+        target.recon_force_request = _physical_need(target_posts)
+        target.save(update_fields=["recon_force_request", "updated_at"])
+
+    old_event_stage = event.stage
+    advance_visits(event, "DEMAND", [target])
+    if event.stage != old_event_stage:
+        record_transition(event, old_event_stage, event.stage)
+    if event.visit_objects.filter(stage="RECON").exists():
+        return event
+
+    # Общая заявка старого контура строится только когда готовы ВСЕ объекты:
+    # до этого незавершённые строки — черновик другого старшего. №979/№978
+    # разрежут её на типизированные потребности и общий пул, не переписывая
+    # уже завершённые объектные стадии.
+    event.recon_force_request = sum(
+        int(visit.recon_force_request or 0)
+        for visit in event.visit_objects.all()
+    )
     event.recon_force_requested_at = Clock.now()
     event.save(
         update_fields=[
@@ -2565,9 +2783,7 @@ def complete_recon(event_id):
         ]
     )
     # Стадии «Потребность» и «Запрос сил» человек больше не ведёт руками
-    # (Plane №110): их проходит сервер расчётом рекогносцировки, и завершение
-    # осмотра выводит мероприятие сразу на «Расстановку».
-    _advance(event, "DEMAND")
+    # (Plane №110): после последнего объекта их проходит сервер расчётом.
     return _autopass_demand_and_forces(event)
 
 
@@ -2606,6 +2822,24 @@ def complete_recon(event_id):
 # Подпись автозаявки на силы. Не название пула — его никто больше не вводит, —
 # а источник числа: заявка одна на мероприятие и говорит, откуда взялась.
 AUTO_FORCE_REQUEST_GROUP = "По расчёту рекогносцировки"
+PHYSICAL_SQUAD_KIND = "PHYSICAL_SQUAD"
+
+
+def _demand_kind_of(row):
+    """Вид потребности; старые строки расчёта были только физнарядом."""
+    return str(
+        row.get("demandKindCode")
+        or row.get("kindCode")
+        or PHYSICAL_SQUAD_KIND
+    ).strip()
+
+
+def _physical_need(rows):
+    return sum(
+        max(int(row.get("need") or 0), 0)
+        for row in (rows or [])
+        if _demand_kind_of(row) == PHYSICAL_SQUAD_KIND
+    )
 
 
 def _sync_auto_force_request(event):
@@ -2651,10 +2885,7 @@ def recompute_visit_needs(event):
     assignments = event.placement_assignments or []
     for visit in event.visit_objects.all():
         post_ids = {str(p.get("id")) for p in visit_object_posts(event, visit)}
-        need = sum(
-            int(p.get("need") or 0)
-            for p in visit_object_posts(event, visit)
-        )
+        need = _physical_need(visit_object_posts(event, visit))
         assigned = sum(
             1 for a in assignments if str(a.get("postId")) in post_ids
         )
@@ -2674,19 +2905,28 @@ def _demand_rows_of(posts):
     Второй способ построить строку разошёлся бы с первым — и разошёлся бы
     именно в числе, по которому собирают людей.
     """
-    return [
-        {
-            "id": f"demand-{index}",
-            "sector": str(post.get("sector") or "").strip(),
-            "task": str(post.get("task") or post.get("post") or "").strip(),
-            "shift": "",
-            "need": max(int(post.get("need") or 0), 0),
-            "group": "",
-            "requirements": str(post.get("requirements") or "").strip(),
-            "comment": "",
-        }
-        for index, post in enumerate(posts or [], start=1)
-    ]
+    rows = []
+    for index, post in enumerate(posts or [], start=1):
+        source_id = str(post.get("id") or "").strip()
+        sector = str(post.get("sector") or "").strip()
+        post_name = str(post.get("post") or "").strip()
+        rows.append(
+            {
+                "id": f"demand-{source_id}" if source_id else f"demand-{index}",
+                "sourcePostId": source_id or None,
+                "visitObjectId": str(post.get("visitObjectId") or "").strip() or None,
+                "sector": sector,
+                "task": str(post.get("task") or post_name).strip(),
+                "place": " · ".join(part for part in (sector, post_name) if part),
+                "shift": str(post.get("shift") or "").strip(),
+                "need": max(int(post.get("need") or 0), 0),
+                "kindCode": _demand_kind_of(post),
+                "specification": str(post.get("demandSpecification") or "").strip(),
+                "requirements": str(post.get("requirements") or "").strip(),
+                "comment": "",
+            }
+        )
+    return rows
 
 
 def _autopass_demand_and_forces(event):
@@ -3035,6 +3275,12 @@ def split_force_demand(event_id, *, rows):
         )
     rows = rows or []
     field_errors = {}
+    group_demands = {
+        str(row.get("id")): row
+        for row in (event.demand_rows or [])
+        if row.get("id") and _demand_kind_of(row) != PHYSICAL_SQUAD_KIND
+    }
+    assigned_group_ids = set()
     for index, row in enumerate(rows):
         if not str(row.get("departmentId", "")).strip():
             field_errors[f"rows.{index}.departmentId"] = ["Выберите департамент."]
@@ -3060,6 +3306,26 @@ def split_force_demand(event_id, *, rows):
                 field_errors[f"rows.{index}.dueAt"] = [
                     "Укажите момент в формате ГГГГ-ММ-ДДTЧЧ:ММ."
                 ]
+        raw_group_ids = row.get("groupDemandIds", [])
+        if not isinstance(raw_group_ids, list):
+            field_errors[f"rows.{index}.groupDemandIds"] = [
+                "Ожидается список строк потребности."
+            ]
+        else:
+            normalized_group_ids = [str(value).strip() for value in raw_group_ids]
+            if len(normalized_group_ids) != len(set(normalized_group_ids)):
+                field_errors[f"rows.{index}.groupDemandIds"] = [
+                    "Строка потребности указана дважды."
+                ]
+            elif any(value not in group_demands for value in normalized_group_ids):
+                field_errors[f"rows.{index}.groupDemandIds"] = [
+                    "Строка специальной группы не найдена в потребности ОМ."
+                ]
+            elif assigned_group_ids.intersection(normalized_group_ids):
+                field_errors[f"rows.{index}.groupDemandIds"] = [
+                    "Строка потребности уже адресована другому департаменту."
+                ]
+            assigned_group_ids.update(normalized_group_ids)
     if field_errors:
         raise _validation(field_errors)
 
@@ -3081,17 +3347,12 @@ def split_force_demand(event_id, *, rows):
     if field_errors:
         raise _validation(field_errors)
 
-    total = force_demand_total(event)
-    requested = sum(_whole_number(row.get("need", 0), "need") for row in rows)
-    if total and requested > total:
-        raise DomainError(
-            "ALLOCATION_OVER_DEMAND",
-            422,
-            message=(
-                f"Разложено {requested} человек при потребности {total} — "
-                "уберите лишних."
-            ),
-        )
+    # 🔴 БЛОКИРОВКИ НА СУММУ НЕТ (`[СБС-12]`, Plane №944). Здесь стоял отказ
+    # `ALLOCATION_OVER_DEMAND` при сумме сверх потребности; спецификация
+    # говорит прямо: «Блокировки на сумму нет» — запрос штаба пожелание, не
+    # наряд (`[СБС-01]`), департамент отвечает своей цифрой, и штаб вправе
+    # просить с запасом. Перебор виден в «Итоге» карточки словами, а не
+    # отбивается.
 
     # 🔴 У ДЕПАРТАМЕНТА БЫВАЕТ БОЛЬШЕ ОДНОЙ СТРОКИ (Plane №675). Довыделение
     # недобора (`[СБС-12]`, №426) дописывает департаменту ВТОРУЮ строку с
@@ -3177,6 +3438,19 @@ def split_force_demand(event_id, *, rows):
                 "decisionComment": kept.get("decisionComment", ""),
                 "directorates": kept.get("directorates", []),
                 "members": kept.get("members", []),
+                "groupDemands": [
+                    group_demands[group_id]
+                    for group_id in (
+                        [str(value).strip() for value in row.get("groupDemandIds", [])]
+                        if "groupDemandIds" in row
+                        else [
+                            str(item.get("id"))
+                            for item in kept.get("groupDemands", [])
+                            if str(item.get("id")) in group_demands
+                        ]
+                    )
+                ],
+                "groupOffers": kept.get("groupOffers", []),
                 # Ответ департамента «Выделяем: X» (Plane №391, `[СБС-21]`)
                 # переносится по тому же правилу, что и опоздание выше: строка
                 # пересобирается явным перечнем, и забытый ключ — стёртый
@@ -3289,8 +3563,19 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
             is_active=True,
         ).values_list("pk", "name")
     }
+    # 🔴 СПИСОК, А НЕ ПОСЛЕДОВАТЕЛЬНОСТЬ (доводка №668 по ревью №825). Тот же
+    # класс дефекта, что уже чинили для employeeIds/protectedPersonIds/
+    # remarks/split_force_demand: `list(rows or [])` без проверки типа делал
+    # из строки "18" список символов ['1', '8'] — `.get()` у строки нет,
+    # `AttributeError` → 500 вместо конверта поля.
+    if rows is not None and not isinstance(rows, list):
+        raise _validation({"rows": ["Ожидается список строк."]})
     incoming = list(rows or [])
     seen = set()
+    assigned_group_ids = set()
+    allowed_group_ids = {
+        str(row.get("id")) for row in target.get("groupDemands", []) if row.get("id")
+    }
     prepared = []
     for index, row in enumerate(incoming):
         key = str(row.get("divisionId") or "").strip()
@@ -3308,7 +3593,27 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
         need = _whole_number(row.get("need", 0), f"rows.{index}.need")
         if need < 0:
             raise _validation({f"rows.{index}.need": ["Число не может быть меньше нуля."]})
-        prepared.append((key, need))
+        raw_group_ids = row.get("groupDemandIds", [])
+        if not isinstance(raw_group_ids, list):
+            raise _validation(
+                {f"rows.{index}.groupDemandIds": ["Ожидается список строк потребности."]}
+            )
+        group_ids = [str(value).strip() for value in raw_group_ids]
+        if len(group_ids) != len(set(group_ids)):
+            raise _validation(
+                {f"rows.{index}.groupDemandIds": ["Строка потребности указана дважды."]}
+            )
+        if any(value not in allowed_group_ids for value in group_ids):
+            raise _validation(
+                {f"rows.{index}.groupDemandIds": ["Группа не адресована департаменту."]}
+            )
+        repeated = assigned_group_ids.intersection(group_ids)
+        if repeated:
+            raise _validation(
+                {f"rows.{index}.groupDemandIds": ["Группа уже назначена другому управлению."]}
+            )
+        assigned_group_ids.update(group_ids)
+        prepared.append((key, need, group_ids))
 
     # ПРЕДЕЛ — ОТ «ВЫДЕЛЯЕМ» (Plane №392, `[СБС-22]`: «разбивка по
     # управлениям — от цифры „Выделяем“»). Пока департамент не ответил —
@@ -3322,10 +3627,27 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
     # 2, управления A и B; `{rows:[{A,2}]}` принято, затем `{rows:[{B,2}]}`
     # тоже принято — и сохранено A=2 И B=2 при квоте 2. Докстринг выше прямо
     # утверждает, что этого быть не может.
-    need_of = dict(prepared)
+    need_of = {key: need for key, need, _group_ids in prepared}
+    groups_of = {key: group_ids for key, _need, group_ids in prepared}
     kept_rows = {
         str(row.get("divisionId")): row for row in target.get("directorates", [])
     }
+    resulting_groups = {
+        key: groups_of.get(key, list(kept_rows.get(key, {}).get("groupDemandIds", [])))
+        for key in known
+    }
+    for key, kept in kept_rows.items():
+        if key not in resulting_groups:
+            resulting_groups[key] = list(kept.get("groupDemandIds", []))
+    group_owner = {}
+    for key, group_ids in resulting_groups.items():
+        for group_id in group_ids:
+            previous_owner = group_owner.get(group_id)
+            if previous_owner is not None and previous_owner != key:
+                raise _validation(
+                    {"rows": ["Группа уже назначена другому управлению."]}
+                )
+            group_owner[group_id] = key
     resulting = {
         key: need_of.get(key, int(kept_rows.get(key, {}).get("need") or 0))
         for key in known
@@ -3366,6 +3688,7 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
                 # касался, остаётся как была. Именно поэтому предел выше
                 # считается по `resulting`, а не по `prepared`.
                 "need": resulting[key],
+                "groupDemandIds": resulting_groups[key],
                 "notifiedAt": kept.get("notifiedAt"),
             }
         )
@@ -3390,7 +3713,10 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
             "departmentName": target.get("departmentName"),
             "quota": quota,
             "split": total,
-            "rows": [{"divisionId": key, "need": need} for key, need in prepared],
+            "rows": [
+                {"divisionId": key, "need": need, "groupDemandIds": group_ids}
+                for key, need, group_ids in prepared
+            ],
         },
     )
     return event
@@ -3478,6 +3804,8 @@ def notify_directorates(event_id, allocation_id, *, actor):
         key = str(pk)
         kept = known.get(key)
         need = int((kept or {}).get("need") or 0)
+        group_demand_ids = list((kept or {}).get("groupDemandIds", []))
+        has_work = need > 0 or bool(group_demand_ids)
         rows.append(
             {
                 "id": (kept or {}).get("id") or f"force-directorate-{key}",
@@ -3489,6 +3817,7 @@ def notify_directorates(event_id, allocation_id, *, actor):
                 # бы раскладку в момент рассылки — то есть ровно тогда, когда
                 # число впервые становится нужным.
                 "need": need,
+                "groupDemandIds": group_demand_ids,
                 # Уже оповещённому момент НЕ переписывается: повторное нажатие
                 # добирает тех, кому не сказали, а не объявляет всех
                 # оповещёнными заново — иначе «когда сказали» стало бы
@@ -3505,7 +3834,7 @@ def notify_directorates(event_id, allocation_id, *, actor):
                 # ввела соседняя №551: «разослана» — это `notifiedAt`, и ставит
                 # его только состоявшаяся рассылка.
                 "notifiedAt": (
-                    ((kept or {}).get("notifiedAt") or now) if need > 0
+                    ((kept or {}).get("notifiedAt") or now) if has_work
                     else (kept or {}).get("notifiedAt")
                 ),
             }
@@ -4145,6 +4474,8 @@ def department_requests_view(allowed_division_ids):
                     "departmentId": str(department_id),
                     "departmentName": allocation.get("departmentName") or "",
                     "need": int(allocation.get("need") or 0),
+                    "groupDemands": allocation.get("groupDemands", []),
+                    "groupOffers": allocation.get("groupOffers", []),
                     # Ответ департамента «Выделяем: X» (Plane №391) — колонка
                     # «выделяем» строки `[СБС-20]` (Plane №444); None — ответа
                     # ещё нет.
@@ -4158,6 +4489,10 @@ def department_requests_view(allowed_division_ids):
                     "dueAt": allocation.get("dueAt"),
                     "overdue": bool(allocation.get("overdue")),
                     "submittedLate": bool(allocation.get("submittedLate")),
+                    # Момент «Отправить запросы» штаба (`[СБС-12]`, Plane №944):
+                    # по нему вьюха отсеивает черновики — департамент видит
+                    # только отправленное.
+                    "sentAt": allocation.get("sentAt"),
                 }
             )
     return rows
@@ -4443,6 +4778,9 @@ def placement_assignments_view(event, *, with_phone=False, read_context=None):
                 "divisionName": division_name,
                 "statusCode": code,
                 "statusLabel": label,
+                "employeeHasAccount": bool(
+                    employee is not None and employee.user_id is not None
+                ),
                 # Явный bool: строки, заведённые до появления старшего сектора,
                 # ключа не несут вовсе, и клиенту незачем знать разницу между
                 # «не старший» и «поля не было».
@@ -4476,7 +4814,14 @@ def placement_assignments_view(event, *, with_phone=False, read_context=None):
 
 @transaction.atomic
 def add_allocation_member(
-    event_id, allocation_id, *, employee_id, actor, override=False, override_reason=""
+    event_id,
+    allocation_id,
+    *,
+    employee_id,
+    actor,
+    kind_code="PHYSICAL_SQUAD",
+    override=False,
+    override_reason="",
 ):
     """Управление выделяет человека на мероприятие (Plane №73, шаг «СС-3»).
 
@@ -4538,7 +4883,7 @@ def add_allocation_member(
         participations=[
             {
                 "event_id": event.pk,
-                "kind_code": _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE],
+                "kind_code": str(kind_code or _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE]),
             }
         ],
         # Участие поставила ЦЕПОЧКА, а не человек из каталога: вид выведен из
@@ -4557,6 +4902,7 @@ def add_allocation_member(
         # Ссылка на статус — то, чем выделение снимается: без неё снятие
         # искало бы «похожий» статус и однажды закрыло бы чужой.
         "statusId": str(status.pk),
+        "kindCode": str(kind_code or _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE]),
     }
     event.force_allocation = [
         {**row, "members": [*row.get("members", []), member]}
@@ -4622,6 +4968,19 @@ def remove_allocation_member(event_id, allocation_id, employee_id, *, actor):
             actor=actor,
             reason=f"Снят(а) с выделения на мероприятие {event.code}",
         )
+    if member.get("reserveCampaignId"):
+        from organization_management.apps.operations.models_forces import (
+            OpsForceCampaignPoolMember,
+        )
+
+        reserve = OpsForceCampaignPoolMember.objects.filter(
+            campaign_id=member["reserveCampaignId"],
+            employee_key=str(employee_id),
+            removed_at__isnull=True,
+        ).first()
+        if reserve is not None:
+            reserve.removed_at = timezone.now()
+            reserve.save(update_fields=["removed_at", "updated_at"])
 
     event.force_allocation = [
         {
@@ -4657,7 +5016,9 @@ _ALLOCATION_DECLINED = "DECLINED"
 
 
 @transaction.atomic
-def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
+def respond_allocation(
+    event_id, allocation_id, *, allocating, comment, group_offers=None, actor
+):
     """Ответ департамента на запрос штаба: «Выделяем: X · Комментарий»
     (Plane №391, `[СБС-21]`).
 
@@ -4705,6 +5066,63 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
     if count < 0:
         raise _validation({"allocating": ["Число не может быть меньше нуля."]})
 
+    raw_offers = [] if group_offers is None else group_offers
+    if not isinstance(raw_offers, list):
+        raise _validation({"groupOffers": ["Ожидается список групп."]})
+    from organization_management.apps.operations.models_settings import OpsDictionaryEntry
+
+    known_kinds = set(
+        OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_PARTICIPATION_KINDS", is_active=True
+        ).values_list("code", flat=True)
+    )
+    known_kinds.update(
+        _demand_kind_of(row) for row in target.get("groupDemands", [])
+    )
+    allowed_demand_ids = {
+        str(row.get("id")) for row in target.get("groupDemands", []) if row.get("id")
+    }
+    prepared_offers = []
+    offer_errors = {}
+    for index, offer in enumerate(raw_offers):
+        if not isinstance(offer, dict):
+            offer_errors[f"groupOffers.{index}"] = ["Ожидается строка группы."]
+            continue
+        kind_code = str(offer.get("kindCode") or "").strip()
+        demand_row_id = str(offer.get("demandRowId") or "").strip()
+        place = str(offer.get("place") or "").strip()
+        try:
+            offer_count = _whole_number(offer.get("count", 0), "count")
+        except DomainError:
+            offer_errors[f"groupOffers.{index}.count"] = ["Укажите целое число."]
+            offer_count = 0
+        if offer_count < 0:
+            offer_errors[f"groupOffers.{index}.count"] = [
+                "Число не может быть меньше нуля."
+            ]
+        if kind_code == PHYSICAL_SQUAD_KIND or kind_code not in known_kinds:
+            offer_errors[f"groupOffers.{index}.kindCode"] = [
+                "Выберите действующий вид специальной группы."
+            ]
+        if demand_row_id and demand_row_id not in allowed_demand_ids:
+            offer_errors[f"groupOffers.{index}.demandRowId"] = [
+                "Строка потребности не адресована этому департаменту."
+            ]
+        if not place:
+            offer_errors[f"groupOffers.{index}.place"] = ["Укажите место."]
+        prepared_offers.append(
+            {
+                "demandRowId": demand_row_id or None,
+                "kindCode": kind_code,
+                "count": offer_count,
+                "place": place,
+                "specification": str(offer.get("specification") or "").strip(),
+                "comment": str(offer.get("comment") or "").strip(),
+            }
+        )
+    if offer_errors:
+        raise _validation(offer_errors)
+
 
     # СВОЙ ключ, а не `comment`: тот — комментарий ШТАБА к строке раскладки
     # (приходит с `forces/allocation/` и пересохраняется им же). Пиши ответ
@@ -4713,6 +5131,7 @@ def respond_allocation(event_id, allocation_id, *, allocating, comment, actor):
     patch = {
         "allocating": count,
         "answerComment": str(comment or "").strip(),
+        "groupOffers": prepared_offers,
     }
     if count == 0:
         # Статус ДО отказа запоминается (Plane №552). Повторный «0» его не
@@ -5061,6 +5480,17 @@ def resolve_protected_persons(raw_ids, field_errors, field="protectedPersonIds")
     Неизвестный идентификатор — ОШИБКА ПОЛЯ, а не пропуск: тихо выброшенное
     лицо человек заметит только по документу, в котором его нет.
     """
+    # 🔴 СПИСОК СКАЛЯРОВ, А НЕ ПОСЛЕДОВАТЕЛЬНОСТЬ (доводка №544 по ревью №825).
+    # Без проверки типа строка вида "18" — тоже последовательность: цикл шёл
+    # ПО СИМВОЛАМ и выделял лиц с pk 1 и 8 вместо отказа. Тот же класс дефекта
+    # уже чинили для employeeIds (Plane №544, api/views.py) — здесь, в общем
+    # разборщике охраняемых лиц, он оставался нетронутым. Пустое (None, "",
+    # []) остаётся пустым списком — законное «лиц не выбрано».
+    if raw_ids in (None, ""):
+        raw_ids = []
+    if not isinstance(raw_ids, (list, tuple)):
+        field_errors[field] = [f"{field} — список идентификаторов."]
+        return []
     seen = set()
     persons = []
     unknown = []
@@ -5388,6 +5818,17 @@ def assign_placement(
         "postId": post_id,
         "employeeId": employee_key,
         "employeeName": personnel_display_name(employee),
+        # 🔴 ПОЗЫВНОЙ — СНИМКОМ, КАК И ИМЯ (Plane №878). Документ расстановки
+        # обещал «фамилиями и позывными» и читал `row["callsign"]` с самого
+        # своего появления, но класть его сюда было некому: ветка была мертва,
+        # а пробы документа подставляли ключ руками — то есть проверяли
+        # формат, который прод-данные произвести не могли.
+        #
+        # Берётся В МОМЕНТ расстановки, а не из кадров на чтении, ровно по той
+        # же причине, что и `employeeName`: в подписанном документе должно
+        # остаться записанное тогда, даже если человека потом переименовали,
+        # сменили ему позывной или уволили.
+        "callsign": (employee.callsign or "").strip(),
         # Роль наряда (Plane №238). Необязательна: расстановка без ролей — не
         # ошибка, а «ещё не назначено»; документ по такой строке места не
         # заполнит, и это честнее, чем поставить человека наугад.
@@ -5645,6 +6086,52 @@ def _detach_remarks_of_post(event, post_id, post):
         if touched:
             visit.approval_remarks = remarks
             visit.save(update_fields=["approval_remarks", "updated_at"])
+
+
+@transaction.atomic
+def update_placement_post_comment(event_id, post_id, *, comment, deputy=None):
+    """Изменить только комментарий поста на этапе расстановки.
+
+    Отдельная операция не открывает поздней стадии весь `PATCH /recon/`
+    и не пересылает список постов целиком.
+    """
+    event = lock_event(event_id)
+    visit = _visit_of_post(event, post_id)
+    if visit is None:
+        _require_stage(
+            event,
+            "PLACEMENT",
+            "Комментарий расстановки можно менять только на этапе «Расстановка».",
+        )
+    else:
+        _require_visit_stage(
+            visit,
+            "PLACEMENT",
+            "Комментарий поста можно менять только на этапе «Расстановка» этого объекта.",
+        )
+    _require_placement_editable(event, post_id)
+    post = next(
+        (
+            row
+            for row in (event.recon_sector_posts or [])
+            if str(row.get("id")) == str(post_id)
+        ),
+        None,
+    )
+    if post is None:
+        raise _not_found("Пост не найден.", post_id)
+    post["comment"] = str(comment or "").strip()
+    event.save(update_fields=["recon_sector_posts", "updated_at"])
+    _record_deputy_placement(
+        event,
+        deputy,
+        {
+            "operation": "UPDATE_POST_COMMENT",
+            "postId": str(post_id),
+            "comment": post["comment"],
+        },
+    )
+    return event
 
 
 @transaction.atomic
@@ -6554,6 +7041,115 @@ def add_approver(event_id, *, name, unit, position, visit_object_id=None):
     return event
 
 
+def approval_candidates(*, actor):
+    from django.contrib.auth import get_user_model
+
+    from organization_management.apps.operations.models import UserRole
+
+    user_ids = set(
+        UserRole.objects.filter(
+            role_code_id="HEAD_OPS_UNIT", is_active=True
+        ).values_list("user_id", flat=True)
+    )
+    user_ids.discard(str(getattr(actor, "pk", "") or ""))
+    users = get_user_model().objects.filter(
+        pk__in=user_ids, is_active=True, employee__is_active=True
+    ).select_related("employee")
+    rows = [
+        {
+            "userId": str(user.pk),
+            "employeeId": str(user.employee.pk),
+            "name": " ".join(
+                part for part in (
+                    user.employee.last_name,
+                    user.employee.first_name,
+                    user.employee.middle_name,
+                ) if part
+            ),
+            "username": user.username,
+        }
+        for user in users
+    ]
+    rows.sort(key=lambda row: (row["name"], row["username"]))
+    return rows
+
+
+@transaction.atomic
+def select_approval_route(
+    event_id, *, approver_user_id, visit_object_id=None, actor=None
+):
+    event = lock_event(event_id)
+    visit = _approval_target(event, visit_object_id)
+    _require_visit_stage(
+        visit,
+        "APPROVAL",
+        "Маршрут выбирается только на этапе «Согласование».",
+    )
+    route = list(visit.approval_route or [])
+    if len(route) < 2:
+        raise DomainError(
+            "APPROVAL_ROUTE_INCOMPLETE", 422,
+            message="В маршруте не настроен второй обязательный подписант.",
+        )
+    if any(row.get("status") != "NOT_SENT" for row in route):
+        raise DomainError(
+            "APPROVAL_ROUTE_LOCKED", 422,
+            message="Отправленный маршрут согласования уже нельзя менять.",
+        )
+    candidate = next(
+        (
+            row for row in approval_candidates(actor=actor)
+            if row["userId"] == str(approver_user_id or "")
+        ),
+        None,
+    )
+    if candidate is None:
+        raise _validation(
+            {"approverUserId": ["Выберите руководителя второго департамента."]}
+        )
+    second = dict(route[1])
+    if second.get("position") != "Заместитель руководителя организации":
+        raise DomainError(
+            "APPROVAL_ROUTE_INCOMPLETE", 422,
+            message="Вторым должен быть заместитель руководителя организации.",
+        )
+    second.update(
+        {
+            "id": "approver-2",
+            "status": "NOT_SENT",
+            "decidedAt": None,
+            "comment": "",
+        }
+    )
+    visit.approval_route = [
+        {
+            "id": "approver-1",
+            "name": candidate["name"],
+            "unit": "Второй департамент",
+            "position": "Руководитель второго департамента",
+            "username": candidate["username"],
+            "status": "NOT_SENT",
+            "decidedAt": None,
+            "comment": "",
+        },
+        second,
+    ]
+    visit.save(update_fields=["approval_route", "updated_at"])
+    audit_service.record(
+        actor=str(getattr(actor, "pk", "") or ""),
+        action=audit_service.SECURITY_EVENT_APPROVAL_ROUTE_SELECTED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={
+            "visitObjectId": str(visit.pk),
+            "approverUserId": candidate["userId"],
+            "approverEmployeeId": candidate["employeeId"],
+            "username": candidate["username"],
+        },
+    )
+    return event
+
+
 @transaction.atomic
 def remove_approver(event_id, approver_id, *, visit_object_id=None):
     event = lock_event(event_id)
@@ -7358,6 +7954,22 @@ def approve_placement(event_id, *, visit_object_id=None, actor=None):
     return _approve_visit(event, visit, actor=actor)
 
 
+def _signature_actor(actor):
+    """Актор журнала (логин / «system:…» / учётка / id) → актор ПОДПИСИ:
+    учётка либо `None`. Подпись считает `actor_display_name`, и логин в неё
+    попадать не должен (№484, №896)."""
+    if actor is None or getattr(actor, "is_authenticated", False):
+        return actor
+    text = str(actor)
+    if text.isdigit():
+        return text
+    if text.startswith("system:"):
+        return None
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.filter(username=text).first()
+
+
 def _return_visit(event, visit, comment, *, actor="system:approval-return"):
     """Возврат ОБЪЕКТА на доработку: статус, версия документа, стадия.
 
@@ -7406,7 +8018,17 @@ def _return_visit(event, visit, comment, *, actor="system:approval-return"):
             "approval_status", "approval_comment", "approval_route", "updated_at",
         ]
     )
-    _decide_document_version(event, visit, "RETURNED", actor=actor)
+    # 🔴 В ПОДПИСЬ ВЕРСИИ — НЕ ЛОГИН (ревью №825 по №896, 08.09.2026). Сюда
+    # актор приходит логином или «system:approval-return» (так его пишет
+    # журнал маршрута), а `_ensure_document_version` подписывает строку
+    # `actor_display_name(actor)`: логин не цифры и не учётка — уходил как
+    # есть. У объекта, выросшего до таблицы версий без строки (0073 без
+    # бэкфилла), первый же возврат подписывал версию «ev-approver» — болезнь
+    # №484 на узком пути. Логин переводится в учётку, системная метка — в
+    # «автор не назван».
+    _decide_document_version(
+        event, visit, "RETURNED", actor=_signature_actor(actor)
+    )
     _sync_event_approval(event)
     # Уведомление старшему объекта и замещающим (`[ВОЗ-03]`) — следствие
     # возврата, и его сбой не откатывает сам возврат: рассылка «не дошла»
@@ -7555,9 +8177,20 @@ def _incident_moment(raw):
     return text
 
 
+# Типы, которые вправе прислать ОПЕРАТОР (доводка №729 по ревью №825).
+# `REPLACEMENT` сюда не входит нарочно: его пишет только `replace_assignment`
+# в момент настоящей замены — прямой POST с этим типом дал бы журнальную
+# запись «Замена», которой замены не было, а справочник и сводка объекта
+# зачли бы её как настоящую (тот же класс подмены факта, что закрывался
+# самим №729 для инцидента).
+_OPERATOR_JOURNAL_TYPES = frozenset({"INSTRUCTION", "ORDER", "INCIDENT"})
+
+
 @transaction.atomic
 def add_journal_entry(event_id, *, entry_type, title, description, occurred_at=None, post_id=None, measures=""):
     event = lock_event(event_id)
+    if entry_type not in _OPERATOR_JOURNAL_TYPES:
+        raise _validation({"type": ["Недопустимый тип записи."]})
     title = str(title or "").strip()
     if title == "":
         raise _validation({"title": ["Обязательное поле."]})

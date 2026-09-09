@@ -55,3 +55,10 @@ class SecondmentRequest(models.Model):
         db_table = 'secondment_requests'
         verbose_name = 'Запрос на прикомандирование'
         verbose_name_plural = 'Запросы на прикомандирование'
+        # Порядок задаёт МОДЕЛЬ (Plane №1037, по образцу reports/models.py):
+        # список пагинируется, а неупорядоченный queryset даёт
+        # UnorderedObjectListWarning и раскладывается по страницам как решит
+        # планировщик — запись может прийти дважды или не прийти вовсе.
+        # `-id` вторым ключом обязателен: `created_at` — auto_now_add, и у
+        # записей одной транзакции он совпадает до микросекунды.
+        ordering = ['-created_at', '-id']

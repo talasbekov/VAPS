@@ -260,9 +260,26 @@ function PersonCard({
               Позывной «{person.callsign}»
             </span>
           </div>
+          {/* Должность и страна (Plane №952) — те же данные, что сводка ГВО
+              подставляет при выборе лица; здесь их видно до выбора. */}
+          {(person.position !== "" || person.country !== "") && (
+            <p className="mt-[6px] text-[12.5px] font-medium" data-testid={`person-profile-${person.id}`}>
+              {[person.position, person.country].filter((part) => part !== "").join(" · ")}
+            </p>
+          )}
           <p className="mt-[9px] max-w-[640px] text-[12.5px] leading-[1.55] text-muted-foreground">
             {person.bio}
           </p>
+          {person.facts.length > 0 && (
+            <dl className="mt-2 grid max-w-[640px] gap-x-4 gap-y-1 text-[12px] sm:grid-cols-2">
+              {person.facts.map((fact) => (
+                <div key={fact.key} className="flex gap-1.5">
+                  <dt className="shrink-0 text-muted-foreground">{fact.key}:</dt>
+                  <dd className="min-w-0">{fact.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </div>
         <div className="hidden w-px self-stretch bg-border md:block" />
         <div className="flex shrink-0 flex-col gap-2">

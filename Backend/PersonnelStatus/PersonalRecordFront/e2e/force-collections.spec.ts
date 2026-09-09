@@ -17,6 +17,7 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 // стадий (см. шапку `prepare-events.ts`).
 import { prepareDemandEvent } from './prepare-events'
 import { assertStep } from './fixture-step'
+import { uniqueBusinessDate } from './business-date'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -53,6 +54,20 @@ async function signIn(page: Page): Promise<void> {
 
 test.describe('сборы сил (вид штаба)', () => {
   test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
+
+  test('над вкладками нет бокса «Запрос сил по мероприятиям» (Plane №928)', async ({ page }) => {
+    /**
+     * Слово заказчика: «зачем этот бокс нужен, если он ничего не делает —
+     * убери его». №928 бокс сняла, но саму просьбу ни одна проба не стерегла
+     * (ревью №825, 08.09.2026): возврат блока случайным мержем прошёл бы
+     * зелёным. Проверяется отсутствие ЗАГОЛОВКА снятого бокса при живых
+     * вкладках — чтобы «нет» не было «страница не отрисовалась».
+     */
+    await signIn(page)
+    await page.goto(`${APP}/employees?view=forces`)
+    await expect(page.getByRole('tab', { name: 'Сборы', exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Запрос сил по мероприятиям', { exact: true })).toHaveCount(0)
+  })
 
   test('таблица собрана из ручки сборов и не подменяет вкладку заявок', async ({ page }) => {
     const token = await apiToken()
@@ -395,8 +410,12 @@ test.describe('сборы сил (вид штаба)', () => {
       await assertStep(res, method, path)
       return res.json().catch(() => ({}))
     }
-    const day = new Date(Date.UTC(2027, 7, 1) + (Math.floor(Date.now() / 1000) % 300) * 86_400_000)
-    const own = await prepareDemandEvent(token, day.toISOString().slice(0, 10))
+    // 🔴 БЫЛ Ш-3 №567 (доводка №881 по ревью №825): `Math.floor(Date.now() /
+    // 1000) % 300` цикличен ровно с периодом 300 с (5 мин) реального времени
+    // — та же болезнь, которую №881 закрыла в `business-date.ts`, но не
+    // заметила здесь. `uniqueBusinessDate()` не повторяется в пределах
+    // процесса и разведена по воркерам (Plane №893).
+    const own = await prepareDemandEvent(token, uniqueBusinessDate())
     const list = (await call('GET', '/api/ops/security-events/forces/collections/')) as {
       results: { code: string; eventId: string }[]
     }
@@ -455,5 +474,64 @@ test.describe('сборы сил (вид штаба)', () => {
     } finally {
       await fetch(`${API}/api/ops/security-events/${eventId}/`, { method: 'DELETE', headers })
     }
+  })
+})
+
+const campaign978Fixture = {
+  id: '978',
+  code: 'РМ-2026-0978',
+  title: 'Распределение на два визита',
+  status: 'DISTRIBUTING',
+  events: [
+    {
+      eventId: '201', code: 'ОМ-2026-0201', title: 'Первый визит',
+      businessDate: '2026-09-12', businessDateEnd: null, eventTime: null, visitObjects: [], demandRows: [],
+    },
+    {
+      eventId: '202', code: 'ОМ-2026-0202', title: 'Второй визит',
+      businessDate: '2026-09-13', businessDateEnd: null, eventTime: null,
+      visitObjects: [{ visitObjectId: '302', objectName: 'Резиденция' }],
+      demandRows: [{ id: 'demand-gate', visitObjectId: '302', kindCode: 'PHYSICAL_SQUAD', place: 'Главный вход', need: 2 }],
+    },
+  ],
+  pool: [
+    { employeeId: '401', employeeName: 'Абенов Серик', kindCode: 'PHYSICAL_SQUAD', sourceEventIds: ['201'] },
+    { employeeId: '402', employeeName: 'Беков Марат', kindCode: 'PHYSICAL_SQUAD', sourceEventIds: ['202'] },
+  ],
+  assignments: [],
+  warnings: [],
+}
+
+test.describe('общее распределение сил по мероприятиям (Plane №978)', () => {
+  test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
+
+  test('штаб видит кампанию и открывает рабочее место общего пула', async ({ page }) => {
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/campaigns/'),
+      (route) => route.fulfill({ json: { results: [campaign978Fixture] } }),
+    )
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/campaigns/978/'),
+      (route) => route.fulfill({ json: campaign978Fixture }),
+    )
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/collections/'),
+      (route) => route.fulfill({ json: { results: [] } }),
+    )
+
+    await page.goto(`${APP}/employees?view=forces`)
+    await page.getByRole('tab', { name: 'Сборы', exact: true }).click()
+    const panel = page.locator('section[aria-labelledby="force-campaigns-heading"]')
+    await expect(panel.getByRole('heading', { name: 'Распределения по мероприятиям' })).toBeVisible()
+    await expect(panel.getByText('Распределение на два визита', { exact: true })).toBeVisible()
+    await expect(panel.getByText('Общий пул: 2')).toBeVisible()
+    await panel.getByRole('button', { name: 'Открыть распределение РМ-2026-0978' }).click()
+    await expect(page.getByRole('heading', { name: 'Распределение на два визита' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Общий пул' })).toBeVisible()
+    await expect(page.getByText('Физнаряд · резерв', { exact: true })).toHaveCount(2)
+    await expect(page.getByRole('heading', { name: 'Назначения' })).toBeVisible()
+    await expect(page.getByLabel('Сотрудник', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Мероприятие', { exact: true })).toBeVisible()
   })
 })

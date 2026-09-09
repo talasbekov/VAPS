@@ -22,6 +22,9 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.status_types import StatusType
 from organization_management.apps.statuses.models import EmployeeStatus
 
+from organization_management.apps.operations.services import RoleAdminService
+from organization_management.apps.operations.tests.test_bulk_status_api import seed_role
+
 pytestmark = pytest.mark.django_db
 
 CATALOG_URL = "/api/statuses/types/"
@@ -30,8 +33,14 @@ STATUSES_URL = "/api/statuses/statuses/"
 
 @pytest.fixture
 def api():
+    """Учётка со `status.manage` без области: две пробы ниже СОХРАНЯЮТ статус,
+    а запись кадровой ручки закрыта правом (Plane №938). До №938 хватало
+    любого вошедшего — что и было дефектом."""
+    user = User.objects.create_user("status-catalog-reader")
+    seed_role("STATUS_CATALOG_WRITER", ("status.view", "status.manage"))
+    RoleAdminService.assign_role(str(user.pk), "STATUS_CATALOG_WRITER", None, actor="test")
     client = APIClient()
-    client.force_authenticate(User.objects.create_user("status-catalog-reader"))
+    client.force_authenticate(user)
     return client
 
 

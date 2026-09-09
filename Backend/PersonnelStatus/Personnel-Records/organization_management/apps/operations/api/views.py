@@ -66,6 +66,7 @@ from organization_management.apps.operations.api.serializers import (
     SubmittedExpenseFilterSerializer,
     SummaryAssembleSerializer,
     SummaryRebuildSerializer,
+    SummarySendSerializer,
     OpsTomorrowBlockOverrideSerializer,
     TemporaryDutySerializer,
     TrafficLightDivisionFilterSerializer,
@@ -105,6 +106,8 @@ from organization_management.apps.operations.notify_service import (
     mark_read,
 )
 from organization_management.apps.operations.expense_period import (
+    MODE_FACT,
+    VALID_MODES,
     derive_period,
 )
 from organization_management.apps.operations.expense_period_csv import (
@@ -168,7 +171,9 @@ from organization_management.apps.operations.expense_release import (
 from organization_management.apps.operations.summary_service import (
     assemble_summary,
     rebuild_summary,
+    send_summary,
     summary_freshness,
+    summary_laggards,
 )
 from organization_management.apps.operations.tomorrow_gate import (
     assert_tomorrow_not_blocked,
@@ -1970,6 +1975,12 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpenApiParameter("date_from", OpenApiTypes.DATE, required=True),
             OpenApiParameter("date_to", OpenApiTypes.DATE, required=True),
             OpenApiParameter("division_id", OpenApiTypes.INT),
+            OpenApiParameter(
+                "mode",
+                OpenApiTypes.STR,
+                enum=sorted(VALID_MODES),
+                description="FACT (умолчание) или PLAN — см. `period`.",
+            ),
         ],
         responses={(200, "text/csv"): OpenApiTypes.BINARY},
         description=(
@@ -2012,6 +2023,18 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 OpenApiTypes.INT,
                 description="Корень поддерева; по умолчанию вся область актора.",
             ),
+            OpenApiParameter(
+                "mode",
+                OpenApiTypes.STR,
+                enum=sorted(VALID_MODES),
+                description=(
+                    "FACT (умолчание) — прежнее поведение, `date_to` не может "
+                    "быть в будущем. PLAN снимает этот запрет: будущие дни "
+                    "считаются по текущим (плановым) статусам и каждая "
+                    "страница несёт своё поле `mode` — FACT для прошлого/"
+                    "сегодня, PLAN для будущего (Plane №989)."
+                ),
+            ),
         ],
         responses=extend_schema_serializer(many=False)(
             inline_serializer(
@@ -2026,9 +2049,10 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "а не сумма — сложить два расхода не во что. Оба конца "
             "включительны. Дни без сдачи показываются наравне с прочими: это "
             "чтение, а не выпуск. Страничной обёртки нет — период сам ограничен "
-            "сверху. 400 — отсутствующая или нечитаемая дата, инверсия, период "
-            "длиннее допустимого или уходящий в будущее; 403 — чужое "
-            "подразделение."
+            "сверху. `mode=PLAN` разрешает будущее — см. параметр `mode`. "
+            "400 — отсутствующая или нечитаемая дата, инверсия, недопустимый "
+            "`mode`, период длиннее допустимого или (под FACT) уходящий в "
+            "будущее; 403 — чужое подразделение."
         ),
     )
     @action(detail=False, methods=["get"])
@@ -2062,8 +2086,12 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         division_id = _parse_int_param(request, "division_id")
         scope = _resolve_division_scope(request, division_id, _READ_STATUS_PERMISSION)
+        # Мусор — не 400 ЗДЕСЬ: `derive_period` уже валидирует `mode` против
+        # `VALID_MODES` тем же VALIDATION_ERROR, и второй проверке не нужно
+        # знать список режимов заново.
+        mode = request.query_params.get("mode") or MODE_FACT
         return derive_period(
-            date_from=date_from, date_to=date_to, division_ids=scope
+            date_from=date_from, date_to=date_to, division_ids=scope, mode=mode
         )
 
     @extend_schema(
@@ -2112,6 +2140,11 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
         report = StrengthReportService.compute(business_date, division_ids=scope)
+        from organization_management.apps.ops.force_campaigns import (
+            reserve_counts_by_division,
+        )
+
+        reserve_counts = reserve_counts_by_division(scope)
         columns = list(report.totals.columns)
         return Response(
             {
@@ -2144,6 +2177,7 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                         # ОМ остаётся в строю, и вынуть его в свою колонку
                         # значило бы сломать «Σ колонок == Список».
                         "event": row.event.as_dict(),
+                        "reserve": reserve_counts.get(row.division_id, 0),
                     }
                     for row in report.rows
                 ],
@@ -2155,6 +2189,7 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "off_list": report.totals.off_list,
                     "columns": report.totals.columns,
                     "event": report.totals.event.as_dict(),
+                    "reserve": sum(reserve_counts.values()),
                 },
                 "warnings": report.warnings,
             }
@@ -3410,6 +3445,10 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     permission_map = {
         "create": _GENERATE_REPORT_PERMISSION,
+        # Кто вправе собрать, тот вправе и отправить собранное (Plane №990)
+        # — отправка не переписывает снимок и не вытесняет версию, в отличие
+        # от пересборки, поэтому право то же, что у сборки, а не у поправки.
+        "send": _GENERATE_REPORT_PERMISSION,
         "rebuild": _AMEND_DAY_PERMISSION,
         "freshness": _READ_STATUS_PERMISSION,
         # Выгрузка — то же чтение, что и свежесть: файлом отдаётся ровно то,
@@ -3444,11 +3483,42 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
             division_id=division_id,
             business_date=form.validated_data["business_date"],
             actor=resolve_actor_id(request),
+            allow_incomplete=form.validated_data["allow_incomplete"],
         )
         return Response(
             OpsDailySubmissionSerializer(summary).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @extend_schema(
+        request=SummarySendSerializer,
+        responses={200: OpsDailySubmissionSerializer},
+        description=(
+            "Отправить действующую сводку оперативному дежурному под правом "
+            "daily_report.generate — тем же, что и сборка: кто вправе "
+            "собрать, тот вправе и отправить собранное (Plane №990). "
+            "Неполная сводка требует `reason`, иначе 400 (детали — "
+            "`laggards`). Актор — из аутентификации. 400 — форма тела либо "
+            "неполная сводка без причины; 403 — нет права либо "
+            "подразделение вне области; 404 — сводки нет (сначала собрать); "
+            "409 — эта версия уже отправлена."
+        ),
+    )
+    @action(detail=False, methods=["post"])
+    def send(self, request, *args, **kwargs):
+        form = SummarySendSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        _assert_division_in_scope(
+            request, division_id, _GENERATE_REPORT_PERMISSION, field="division_id"
+        )
+        summary = send_summary(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            actor=resolve_actor_id(request),
+            reason=form.validated_data["reason"],
+        )
+        return Response(OpsDailySubmissionSerializer(summary).data)
 
     @extend_schema(
         parameters=[

@@ -36,6 +36,13 @@ from .serializers import (
     StatusTypeCatalogSerializer,
 )
 from organization_management.apps.statuses import catalog
+from organization_management.apps.operations.api.permissions import (
+    require_permission,
+    resolve_actor_id,
+)
+from organization_management.apps.operations.exceptions import DomainError
+from organization_management.apps.operations.selectors import StaffUnitSelector
+from organization_management.apps.operations.services import PermissionService
 
 class EmployeeStatusViewSet(viewsets.ModelViewSet):
     """
@@ -68,9 +75,97 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_class = EmployeeStatusFilter
 
+    #: Право записи — то же, что у ручки раздела ОМ (`operations/api/views.py`,
+    #: `_BULK_STATUS_PERMISSION`): статусы ставит тот, кому это разрешено
+    #: ролью раздела, и ровно в области своего гранта.
+    WRITE_PERMISSION = "status.manage"
+    #: Действия, которые МЕНЯЮТ строки. Перечень явный, а не «всё, кроме
+    #: GET»: у ручки есть POST-действия чтения быть не должно, но появись они —
+    #: правило «новая дверь закрыта, пока её не открыли» безопаснее обратного.
+    WRITE_ACTIONS = frozenset(
+        {
+            "create", "update", "partial_update", "destroy",
+            "extend", "terminate", "cancel", "upload_document", "bulk_plan",
+        }
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.service = StatusApplicationService()
+
+    def initial(self, request, *args, **kwargs):
+        """Гейт ЗАПИСИ — на сервере, а не на экране (Plane №938).
+
+        🔴 До этого все девять действий записи шли под одним `IsAuthenticated`:
+        экран прятал правку у сотрудника без `status.manage`, а сервер
+        принимал её от любого вошедшего — проверено на стенде, `acc_employee`
+        получал на `POST` 400 по форме, а не 403. Проверка, которую обходят
+        другим клиентом, проверкой не является (№757, №840).
+
+        Чтение здесь НЕ трогается: карточка про правку, и «он должен только
+        наблюдать» означает, что наблюдать он должен.
+        """
+        super().initial(request, *args, **kwargs)
+        if self.action in self.WRITE_ACTIONS:
+            require_permission(request, self.WRITE_PERMISSION)
+
+    def get_object(self):
+        """Адресуемая строка правится только в области гранта.
+
+        Проверка стоит здесь, а не в каждом действии: действий над строкой
+        семь, и седьмое, дописанное без проверки, открыло бы дверь заново.
+        """
+        status_row = super().get_object()
+        if self.action in self.WRITE_ACTIONS:
+            self._assert_employees_in_scope([status_row.employee_id])
+        return status_row
+
+    def _assert_target_employee_in_scope(self, request):
+        """Новый `employee` в теле правки — тоже в области (ревью №825 по №938).
+
+        `get_object()` сверяет область по ТЕКУЩЕМУ сотруднику строки, а
+        `employee` у сериализатора записываемый: PATCH переставлял свой статус
+        человеку чужого управления, и ни одна проверка этого не видела. Не
+        число — пусть отбивает сериализатор (400), дверь от этого не
+        открывается: без валидного id строка не сохранится.
+        """
+        raw = request.data.get("employee")
+        if raw is None or raw == "":
+            return
+        try:
+            employee_id = int(raw)
+        except (TypeError, ValueError):
+            return
+        self._assert_employees_in_scope([employee_id])
+
+    def _assert_employees_in_scope(self, employee_ids):
+        """Все названные сотрудники — в области `status.manage` актора.
+
+        Правило то же, что у `StatusViewSet._assert_employee_in_scope` раздела
+        ОМ: `None` — грант без области (администратор) — открывает всё дерево;
+        подразделение берётся по штатной единице; сотрудник без слота не
+        принадлежит ничьей области — отказ (fail-closed). Отказ по области —
+        `DomainError` → конверт `{error_code}`, отказ гейта права —
+        `PermissionDenied` DRF → `{detail}`: формы РАЗНЫЕ намеренно, оба 403,
+        и без различения проба одного зеленела бы от другого.
+
+        Пачка проверяется целиком ДО первой записи: чужой в списке
+        останавливает всё, иначе часть статусов легла бы при ответе «отказано».
+        """
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(self.request), self.WRITE_PERMISSION
+        )
+        if allowed is None:
+            return
+        divisions = StaffUnitSelector.divisions_of(employee_ids)
+        for employee_id in employee_ids:
+            if divisions.get(employee_id) not in allowed:
+                raise DomainError(
+                    "PERMISSION_DENIED",
+                    403,
+                    detail={"employee_id": str(employee_id)},
+                    message="Сотрудник вне области видимости оператора.",
+                )
 
     def get_queryset(self):
         """Фильтрация queryset по правам пользователя"""
@@ -113,6 +208,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
         """Создание нового статуса"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        self._assert_employees_in_scope([serializer.validated_data['employee'].id])
 
         try:
             status_obj = self.service.create_status(
@@ -149,6 +245,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
         - Активные статусы можно изменять только через специальные методы (extend, terminate)
         """
         instance = self.get_object()
+        self._assert_target_employee_in_scope(request)
 
         # Проверка: можно ли изменять этот статус
         if instance.state == EmployeeStatus.StatusState.ACTIVE:
@@ -187,6 +284,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
         Применяются те же правила, что и для полного обновления
         """
         instance = self.get_object()
+        self._assert_target_employee_in_scope(request)
 
         # Проверка: можно ли изменять этот статус
         if instance.state == EmployeeStatus.StatusState.ACTIVE:
@@ -375,6 +473,14 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        try:
+            employee_id = int(employee_id)
+        except ValueError:
+            return Response(
+                {'error': 'Параметр employee_id должен быть числом'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         status_type = request.query_params.get('status_type')
         start_date_str = request.query_params.get('start_date')
         end_date_str = request.query_params.get('end_date')
@@ -389,7 +495,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             )
 
         queryset = self.service.get_employee_status_history(
-            employee_id=int(employee_id),
+            employee_id=employee_id,
             status_type=status_type,
             start_date=start_date_val,
             end_date=end_date_val
@@ -432,11 +538,19 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        try:
+            employee_id = int(employee_id)
+        except ValueError:
+            return Response(
+                {'error': 'Параметр employee_id должен быть числом'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Получаем текущий активный статус
-        current_status = self.service.get_employee_current_status(int(employee_id))
+        current_status = self.service.get_employee_current_status(employee_id)
 
         # Получаем запланированные статусы
-        planned_statuses = self.service.get_planned_statuses(employee_id=int(employee_id))
+        planned_statuses = self.service.get_planned_statuses(employee_id=employee_id)
 
         # Сериализуем данные
         current_serializer = EmployeeStatusSerializer(current_status, context={'request': request}) if current_status else None
@@ -464,6 +578,7 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        self._assert_employees_in_scope(list(serializer.validated_data['employee_ids']))
 
         created_statuses = []
         errors = []
@@ -544,8 +659,16 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        try:
+            division_id = int(division_id)
+        except ValueError:
+            return Response(
+                {'error': 'Параметр division_id должен быть числом'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         headcount_data = self.service.get_division_headcount(
-            division_id=int(division_id),
+            division_id=division_id,
             target_date=target_date
         )
 

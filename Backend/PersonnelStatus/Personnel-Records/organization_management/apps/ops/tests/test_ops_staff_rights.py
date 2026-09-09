@@ -9,10 +9,12 @@
 фикстуре: проба отвечает «персона заказчика умеет ровно это», и мутация
 раскладки в сиде обязана её красить.
 
-`forces.command` штабу НЕ выдан: матрица заказчика №348 назвала «Сбор сил»
-недоступным начальнику второго департамента, а спецификация `[СБС-10]` отдаёт
-заявки ему — конфликт двух решений задан вопросом в карточке. Проба это
-стережёт: появится право без ответа заказчика — красна.
+`forces.command` У ПРОФИЛЯ БОЛЬШЕ НЕТ (Plane №972, 08.09.2026). Конфликт
+матрицы №348 («Сбор сил» закрыт) и спецификации `[СБС-10]`/7.1 (штаб делит
+заявки) три дня ждал ответа в карточке №421; №944 выдала право профилю,
+прочитав 7.1 так, будто штаб — обе руководящие персоны второго департамента;
+разделом 21 заказчик назвал Штаб ОТДЕЛЬНЫМ актором `OPS_STAFF`. Проба стережёт
+уже это: вернётся право в профиль — красна.
 """
 import pytest
 from django.core.management import call_command
@@ -40,6 +42,11 @@ URL = "/api/ops/security-events/"
 @pytest.fixture
 def staff():
     """Начальник ДЕПАРТАМЕНТА: профиль плюс роль-добавка «Штаб ОМ».
+
+    🔴 Это НЕ Штаб сбора сил (`OPS_STAFF`, №972) — это «штаб ОМ» в смысле
+    №601: расстановка на чужом объекте, перевод этапов, сводка ГВО. Имя
+    фикстуры историческое; Штаб сбора сил в этом файле — только в пробе про
+    `forces.command`.
 
     Грантов два с №601 (решение заказчика 06.09.2026): штабные права-обходы
     уехали из профиля в `OPS_STAFF_COMMAND`, потому что профиль носят обе
@@ -131,25 +138,44 @@ def test_the_staff_edits_the_visit_summary_of_any_event(staff):
     assert r.json()["patch"]["country"] == "Черногория"
 
 
-def test_forces_command_is_not_granted_until_the_customer_answers(staff):
+def test_forces_command_belongs_to_the_separate_staff_actor_not_to_the_profile(staff):
+    """`[ШТБ-01]`–`[ШТБ-04]` (Plane №972, решение заказчика 08.09.2026): Штаб
+    сбора сил — отдельный актор `OPS_STAFF`, а начальники второго департамента
+    (`HEAD_OPS_UNIT`) Штабом не являются. №944 выдала `forces.command` профилю,
+    и «Сбор сил» открылся тем, кому заказчик его закрыл (№939); это отменено.
+    Звенья департамента и управлений (`forces.allocate`, `forces.select`)
+    Штабу по-прежнему не положены: «делит по департаментам» ≠ «выделяет
+    людей»; штабные обходы `OPS_STAFF_COMMAND` ему автоматически не даются
+    (`[ШТБ-05]`)."""
     codes = set(RoleAdminService.role_permission_codes("HEAD_OPS_UNIT"))
     assert {"event.create", "event.bulletin", "placement.manage"} <= codes
-    assert not codes & {"forces.command", "forces.allocate", "forces.select"}, (
-        "«Сбор сил» штабу — открытый вопрос заказчику (№421), право не выдаётся молча"
-    )
+    assert "forces.command" not in codes, "начальник второго департамента снова Штаб (№972)"
+    assert not codes & {"forces.allocate", "forces.select"}
+
+    staff_codes = set(RoleAdminService.role_permission_codes("OPS_STAFF"))
+    assert "forces.command" in staff_codes, "«Сбор сил» Штабу — `[ШТБ-04]` (№972)"
+    assert not staff_codes & {
+        "forces.allocate", "forces.select", "placement.command", "event.stage_override",
+    }
 
 
 def test_the_staff_powers_left_the_profile_for_an_add_on_role(staff):
-    """Три обхода лежат в роли-добавке, а не в профиле (Plane №601).
+    """Два обхода лежат в роли-добавке, а не в профиле (Plane №601).
 
-    🔴 КРАСНОТА НА МУТАЦИИ: верни любое из трёх обратно в раскладку
+    Было три: `gvo.manage` вернулся в профиль штаба по слову заказчика
+    07.09.2026 (Plane №947 — сводку ГВО правит и начальник управления второго
+    департамента; `[ГВО-09]` называет штабом обе персоны). Для расстановки и
+    переходов №601 в силе. Пин правлен осознанно; добавка право сохраняет.
+
+    🔴 КРАСНОТА НА МУТАЦИИ: верни любой из двух обратно в раскладку
     `HEAD_OPS_UNIT` в `seed_operations` — покраснеет первый набор, а следом
     проба ниже, которая спрашивает то же самое поведением.
     """
     profile = set(RoleAdminService.role_permission_codes("HEAD_OPS_UNIT"))
     add_on = set(RoleAdminService.role_permission_codes("OPS_STAFF_COMMAND"))
 
-    assert not profile & {"placement.command", "gvo.manage", "event.stage_override"}
+    assert not profile & {"placement.command", "event.stage_override"}
+    assert "gvo.manage" in profile
     assert add_on == {"placement.command", "gvo.manage", "event.stage_override"}
 
 

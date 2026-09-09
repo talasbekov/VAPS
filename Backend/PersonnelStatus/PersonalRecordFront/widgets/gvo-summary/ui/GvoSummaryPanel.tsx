@@ -13,7 +13,6 @@
 // отсутствие правок.
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,10 +22,10 @@ import { useGvoSummary } from "@/hooks/use-gvo-summaries";
 import { StageBadge } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { GvoVisitsDialog } from "@/features/gvo-section-edit";
+import { AddVisitObjectsDialog } from "@/features/event-visit-objects";
 import { GvoEditForm } from "./GvoEditForm";
-import { AllocateVehicleDialog, releaseVehicle } from "@/features/event-vehicles";
-import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
-import { useToast } from "@/shared/hooks/use-toast";
+import { RegistryVehicles } from "./RegistryVehicles";
+import { AllocateVehicleDialog } from "@/features/event-vehicles";
 import {
   Table,
   TableBody,
@@ -40,13 +39,13 @@ import {
   gvoStaffCount,
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
-import type { GvoFlight } from "@/entities/gvo-summary";
+import type { GvoFlight, GvoMember } from "@/entities/gvo-summary";
+import { mediaSrc } from "@/shared/lib/media";
 
-// Однострочная константа, а не текст прямо в JSX: e2e пинит её ДОСЛОВНО
-// (см. e2e/gvo-sections.spec.ts), а JSX схлопывает переносы строк по своим
-// правилам — рисковать переносами там, где важен точный текст, незачем.
-export const PERSONS_REGISTRY_GAP_LINE =
-  "С реестром «Охраняемые лица» эти карточки не связаны — модель ГВО хранит только текст бюллетеня, без ссылки на запись каталога; появится бэк-этапом.";
+// Строка «С реестром „Охраняемые лица“ эти карточки не связаны…» СНЯТА
+// (Plane №951): карточка лица теперь несёт ссылку на запись справочника,
+// код и снимок — оговорка перестала быть правдой. Её пин в e2e снят вместе
+// с ней.
 
 export interface GvoSummaryPanelProps {
   event: SecurityEvent;
@@ -72,10 +71,18 @@ export function GvoSummaryPanel({
   // старший ЭТОГО мероприятия. Кадровая запись учётки нужна именно для второй
   // половины: связь «учётка → сотрудник» существует только на сервере.
   const me = usePersonnelMe();
+  // Сводка приходит СОБРАННОЙ с сервера (Plane №166): база из бюллетеня плюс
+  // ручные правки. Раньше базу выводил браузер, и та же сводка на экране и в
+  // документе успела разойтись.
+  const summaryQuery = useGvoSummary(event.code);
+  // Кнопка «Редактировать» — по слову сервера (`canEdit`, Plane №947): правку
+  // открывают право, старшинство И создание этого ОМ, а создателя экран сам
+  // не узнаёт. Пока ответа нет — считаем по двум первым половинам.
   const canEdit = canManageGvoSummary({
     hasPermission,
     myEmployeeId: me.data?.id ?? null,
     event,
+    serverCanEdit: summaryQuery.data?.canEdit,
   });
   // Единый режим правки (`[ГВО-05]`, Plane №441): одна кнопка «Редактировать»
   // на страницу, окон и кнопок «Изменить» по блокам больше нет.
@@ -86,26 +93,13 @@ export function GvoSummaryPanel({
   // Машины реестра ГОН выделяются своим окном (Plane №215): они принадлежат
   // мероприятию, как объекты посещения, а не патчу сводки.
   const [vehiclesOpen, setVehiclesOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const release = useMutation({
-    mutationFn: releaseVehicle,
-    onSuccess: () => {
-      invalidateSecurityEvents(queryClient);
-      toast({ title: "Машина снята с мероприятия" });
-    },
-    onError: () =>
-      toast({
-        title: "Не удалось снять машину",
-        description: "Сервис временно недоступен. Попробуйте ещё раз.",
-        variant: "destructive",
-      }),
-  });
-  // Сводка приходит СОБРАННОЙ с сервера (Plane №166): база из бюллетеня плюс
-  // ручные правки. Раньше базу выводил браузер, и та же сводка на экране и в
-  // документе успела разойтись.
-  const summaryQuery = useGvoSummary(event.code);
-
+  // Объект посещения добавляется и отсюда (Plane №951): заказчик просит
+  // заводить объекты на сводке. Окно — то же, что у строки реестра, список
+  // ОДИН (таблица объектов мероприятия), поэтому добавленное здесь тут же
+  // видно в реестре и на этапах. Право — то же, что у реестра: сервер
+  // открывает ручку ведущему и создателю ОМ, закрытое ОМ отбивает сам.
+  const [addObjectOpen, setAddObjectOpen] = useState(false);
+  const canAddObjects = canEdit && event.stage !== "CLOSED";
   if (summaryQuery.isLoading) {
     return (
       <Card>
@@ -183,7 +177,9 @@ export function GvoSummaryPanel({
               {variant === "page" ? (
                 <PageHeader
                   className="mt-1"
-                  title="Сводные данные"
+                  // «ГВО» — в самом заголовке (Plane №951): раньше слово несла
+                  // вкладка страницы визита, вкладок больше нет.
+                  title="Сводные данные ГВО"
                   description={`${event.title} · ${summary.country} · ${summary.arrival.date} — ${summary.departure.date}`}
                 />
               ) : (
@@ -228,6 +224,7 @@ export function GvoSummaryPanel({
         {editing ? (
           <GvoEditForm
             omCode={event.code}
+            event={event}
             summary={summary}
             unspecified={summaryQuery.data.unspecified ?? []}
             onDirtyChange={onDirtyChange}
@@ -252,14 +249,31 @@ export function GvoSummaryPanel({
                   {/* bg-muted вместо того же хардкода (fix round 1): текст тут
                       уже themed (text-muted-foreground), поэтому баг был
                       Minor — контраст деградировал, но не исчезал целиком. */}
-                  <div className="flex h-[196px] w-[150px] shrink-0 items-center justify-center rounded-[12px] bg-muted text-[12px] text-muted-foreground shadow-[0_8px_22px_rgba(16,24,40,.10)]">
-                    Фото ОЛ
-                  </div>
+                  {/* Снимок — из справочника лиц (Plane №951); нет снимка —
+                      честная подпись, а не прежняя заглушка «Фото ОЛ»,
+                      которая читалась как картинка, которая не загрузилась. */}
+                  {mediaSrc(person.photoUrl) === null ? (
+                    <div
+                      className="flex h-[196px] w-[150px] shrink-0 items-center justify-center rounded-[12px] bg-muted text-[12px] text-muted-foreground shadow-[0_8px_22px_rgba(16,24,40,.10)]"
+                      data-slot="gvo-person-photo"
+                    >
+                      {person.personId ? "фото не загружено" : "лицо не из справочника"}
+                    </div>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={mediaSrc(person.photoUrl) ?? undefined}
+                      alt={`Фото: ${person.name}`}
+                      className="h-[196px] w-[150px] shrink-0 rounded-[12px] object-cover shadow-[0_8px_22px_rgba(16,24,40,.10)]"
+                      data-slot="gvo-person-photo"
+                    />
+                  )}
                   <div className="min-w-56 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
                           Лицо {index + 1}
+                          {person.code ? ` · ${person.code}` : ""}
                         </p>
                         <p className="text-[17px] font-bold tracking-[-0.01em]">
                           {person.name}
@@ -286,13 +300,6 @@ export function GvoSummaryPanel({
               ))}
             </div>
           )}
-          {/* Честная подпись — ПОД списком, как у «Руководства департамента»
-              и у вкладок паспорта объекта (ревью ветки 22.08: здесь она одна
-              стояла НАД содержимым и читалась как заголовок раздела, а не как
-              оговорка о нём). */}
-          <p className="mt-3 text-xs text-muted-foreground">
-            {PERSONS_REGISTRY_GAP_LINE}
-          </p>
         </Section>
 
         {/* Борта */}
@@ -362,13 +369,21 @@ export function GvoSummaryPanel({
         <Section
           title="Состав ГВО СГО РК"
           action={
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {/* Два человека (Plane №952): ответственный за ГВО и старший
+                  ГВО — подписи разные, и обе печатаются, даже когда кого-то
+                  не назначили: пустая подпись читалась бы как «его не
+                  бывает», а не как «не назначен». */}
               <span className="text-[12px] text-muted-foreground">
-                Ответственный:{" "}
-                <span className="font-semibold text-foreground">
-                  {summary.responsible === null
-                    ? UNSPECIFIED
-                    : `${summary.responsible.name} · позывной ${summary.responsible.callsign} — ${summary.responsible.role}`}
+                Ответственный за ГВО:{" "}
+                <span className="font-semibold text-foreground" data-slot="gvo-responsible">
+                  {memberLine(summary.responsible)}
+                </span>
+              </span>
+              <span className="text-[12px] text-muted-foreground">
+                Старший ГВО:{" "}
+                <span className="font-semibold text-foreground" data-slot="gvo-senior">
+                  {memberLine(summary.senior ?? null)}
                 </span>
               </span>
             </div>
@@ -445,51 +460,9 @@ export function GvoSummaryPanel({
               ГРНЗ и класс брони, то есть сведения, которых у текста нет
               вовсе, и ставить точное после приблизительного значило бы его
               прятать (тот же порядок, что в документе сводных данных). */}
-          {event.vehicles.length > 0 && (
-            <div className="mb-2 space-y-2">
-              {event.vehicles.map((row) => (
-                <div
-                  key={row.id}
-                  className="flex flex-wrap items-center gap-[11px] rounded-[9px] border border-[hsl(210_40%_94%)] px-3 py-[9px]"
-                >
-                  {row.callsign === "" ? null : (
-                    <span className="rounded-[7px] bg-[hsl(222.2_47.4%_11.2%)] px-[10px] py-[3px] text-[11px] font-extrabold text-white">
-                      {row.callsign}
-                    </span>
-                  )}
-                  <span className="text-[12.5px] font-semibold">{row.label}</span>
-                  {row.armorClass ? (
-                    <span className="rounded-full bg-blue-100 px-[9px] py-0.5 text-[10.5px] font-bold text-blue-800">
-                      {row.armorClass}
-                    </span>
-                  ) : null}
-                  <span className="text-[11.5px] text-muted-foreground">
-                    {row.purpose}
-                  </span>
-                  {/* Источник назван СЛОВАМИ: две строки подряд из разных
-                      источников иначе неотличимы, и человек не поймёт, почему
-                      одну можно править текстом, а другую нет. */}
-                  <span className="text-[11px] text-muted-foreground">
-                    из реестра ГОН
-                  </span>
-                  {canEdit && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="ml-auto h-[26px] text-[11.5px]"
-                      disabled={release.isPending}
-                      onClick={() =>
-                        release.mutate({ eventId: event.id, allocationId: row.id })
-                      }
-                    >
-                      Снять
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <div className={event.vehicles.length > 0 ? "mb-2" : ""}>
+            <RegistryVehicles event={event} canEdit={canEdit} />
+          </div>
           {summary.transport.length === 0 ? (
             event.vehicles.length === 0 ? (
               <EmptyBox text="Транспорт не выделен" />
@@ -517,10 +490,25 @@ export function GvoSummaryPanel({
           title="Объекты посещения"
           action={
             canEdit && (
-              <EditButton
-                onClick={() => setVisitsOpen(true)}
-                label="Изменить объекты посещения"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                {canAddObjects && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-[30px] text-[12px]"
+                    onClick={() => setAddObjectOpen(true)}
+                  >
+                    ＋ Добавить объект
+                  </Button>
+                )}
+                {summary.visits.length > 0 && (
+                  <EditButton
+                    onClick={() => setVisitsOpen(true)}
+                    label="Изменить объекты посещения"
+                  />
+                )}
+              </div>
             )
           }
         >
@@ -573,8 +561,22 @@ export function GvoSummaryPanel({
         open={vehiclesOpen}
         onClose={() => setVehiclesOpen(false)}
       />
+      <AddVisitObjectsDialog
+        event={event}
+        open={addObjectOpen}
+        onClose={() => setAddObjectOpen(false)}
+      />
     </>
   );
+}
+
+/** Подпись человека в шапке состава: «Фамилия · позывной N»; без позывного —
+ * одна фамилия (у ведущего бюллетеня позывного в сводке нет). */
+function memberLine(member: GvoMember | null): string {
+  if (member === null || member.name.trim() === "") return UNSPECIFIED;
+  return member.callsign === "" || member.callsign === UNSPECIFIED
+    ? member.name
+    : `${member.name} · позывной ${member.callsign}`;
 }
 
 function Section({

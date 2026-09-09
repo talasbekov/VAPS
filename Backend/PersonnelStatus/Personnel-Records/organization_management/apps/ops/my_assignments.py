@@ -19,6 +19,7 @@ from django.db import transaction
 
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.exceptions import DomainError
+from organization_management.apps.operations.models import UserRole
 from organization_management.apps.ops.security_events import (
     _now_iso,
     _placement_chiefs,
@@ -55,19 +56,36 @@ def _own_assignment(event, assignment_id, employee_id):
     )
 
 
-def may_acknowledge(event, assignment_id, employee):
-    """Подтвердить ознакомление без `event.manage` может тот, ЧЬЁ это
-    назначение, и старший мероприятия/объекта (по данным, не по праву).
+_DIRECTORATE_HEAD_ROLES = frozenset(
+    {"DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT"}
+)
 
-    Ведущий мероприятие проходит общим `event.manage` и сюда не попадает.
-    Послабление «старший не назначен → любой» из `placement_is_led_by` здесь
-    НЕ действует: подтверждение за другого — не простой, а подмена подписи.
-    """
-    if employee is None or not employee.is_active:
-        return False
-    if _own_assignment(event, assignment_id, employee.pk):
-        return True
-    return int(employee.pk) in _placement_chiefs(event)
+
+def acknowledgement_authority(event, assignment_id, actor_user_id):
+    """Кто вправе подтвердить строку: сам либо начальник его управления."""
+    row = _find_assignment(event, assignment_id)
+    target = Employee.objects.filter(
+        pk=row.get("employeeId"), is_active=True
+    ).first()
+    if target is None or not actor_user_id:
+        return None
+    if target.user_id is not None:
+        return "self" if str(target.user_id) == str(actor_user_id) else None
+    division_id = employee_scope_division(target.pk)
+    if division_id is None:
+        return None
+    is_head = UserRole.objects.filter(
+        user_id=str(actor_user_id),
+        role_code_id__in=_DIRECTORATE_HEAD_ROLES,
+        scope_division_id=division_id,
+        is_active=True,
+    ).exists()
+    return "unit_head" if is_head else None
+
+
+def may_acknowledge(event, assignment_id, employee, *, actor_user_id=None):
+    actor_id = actor_user_id or getattr(employee, "user_id", None)
+    return acknowledgement_authority(event, assignment_id, actor_id) is not None
 
 
 def may_manage_stage(event, employee):
@@ -298,6 +316,10 @@ def assignments_of(employee_id):
                     # значения по умолчанию: у старых строк способа нет.
                     "acknowledgedVia": a.get("acknowledgedVia") or "",
                     "acknowledgedBy": a.get("acknowledgedBy") or "",
+                    "acknowledgedByUserId": a.get("acknowledgedByUserId") or "",
+                    "acknowledgedByEmployeeId": a.get("acknowledgedByEmployeeId") or "",
+                    "acknowledgementMethod": a.get("acknowledgementMethod") or "",
+                    "acknowledgementBasis": a.get("acknowledgementBasis") or "",
                     "declinedAt": a.get("declinedAt"),
                     "declineReason": a.get("declineReason"),
                     # КТО ВПИСАЛ ОТКАЗ (Plane №588) — рядом с текстом, а не
@@ -334,14 +356,19 @@ def assignments_of(employee_id):
 
 
 def _find_assignment(event, assignment_id):
-    if not any(
-        str(a.get("id")) == str(assignment_id)
-        for a in (event.placement_assignments or [])
-    ):
+    row = next(
+        (
+            a for a in (event.placement_assignments or [])
+            if str(a.get("id")) == str(assignment_id)
+        ),
+        None,
+    )
+    if row is None:
         raise DomainError(
             "ENTITY_NOT_FOUND", 404, detail={"id": str(assignment_id)},
             message="Назначение не найдено.",
         )
+    return row
 
 
 def _require_open(event, what):
@@ -367,7 +394,17 @@ def _patch_assignment(event, assignment_id, **fields):
 
 
 @transaction.atomic
-def acknowledge(event_id, assignment_id, *, personal=False, actor=None, actor_name=""):
+def acknowledge(
+    event_id,
+    assignment_id,
+    *,
+    personal=False,
+    actor=None,
+    actor_name="",
+    actor_employee_id=None,
+    delivery_method="",
+    account_absence_basis="",
+):
     """«Ознакомлен, заступлю»: подтверждение ставится, отказ снимается.
 
     Способ (`[ОЗН-05]`, Plane №447): `self` — сотрудник подтвердил сам,
@@ -385,14 +422,53 @@ def acknowledge(event_id, assignment_id, *, personal=False, actor=None, actor_na
     для отказа.
     """
     event = lock_event(event_id)
-    _find_assignment(event, assignment_id)
+    row = _find_assignment(event, assignment_id)
     _require_open(event, "подтвердить ознакомление")
-    return _patch_assignment(
+    method = str(delivery_method or "").strip()
+    basis = str(account_absence_basis or "").strip()
+    if personal:
+        errors = {}
+        if not method:
+            errors["deliveryMethod"] = ["Укажите способ доведения."]
+        if not basis:
+            errors["accountAbsenceBasis"] = [
+                "Укажите основание отсутствия учётной записи."
+            ]
+        if errors:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail=errors,
+                message="Проверьте заполнение формы.",
+            )
+    patched = _patch_assignment(
         event, assignment_id,
         acknowledgedAt=_now_iso(), declinedAt=None, declineReason=None,
         acknowledgedVia="personal" if personal else "self",
         acknowledgedBy=(actor_name or str(actor or "")) if personal else "",
+        acknowledgedByUserId=str(actor or "") if personal else "",
+        acknowledgedByEmployeeId=(
+            str(actor_employee_id or "") if personal else ""
+        ),
+        acknowledgementMethod=method if personal else "",
+        acknowledgementBasis=basis if personal else "",
     )
+    if personal:
+        audit_service.record(
+            actor=str(actor or ""),
+            action=audit_service.SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD,
+            entity_type=audit_service.ENTITY_SECURITY_EVENT,
+            entity_id=event.pk,
+            new_value={
+                "assignmentId": str(assignment_id),
+                "employeeId": str(row.get("employeeId") or ""),
+                "confirmedByUserId": str(actor or ""),
+                "confirmedByEmployeeId": str(actor_employee_id or ""),
+                "deliveryMethod": method,
+                "accountAbsenceBasis": basis,
+            },
+        )
+    return patched
 
 
 @transaction.atomic
@@ -438,6 +514,8 @@ def decline(
         event, assignment_id,
         acknowledgedAt=None, declinedAt=_now_iso(), declineReason=text,
         acknowledgedVia="", acknowledgedBy="",
+        acknowledgedByUserId="", acknowledgedByEmployeeId="",
+        acknowledgementMethod="", acknowledgementBasis="",
         declinedBy=author,
         declinedVia="personal" if personal else "self",
     )

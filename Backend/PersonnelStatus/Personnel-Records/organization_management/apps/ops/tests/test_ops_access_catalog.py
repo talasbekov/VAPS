@@ -93,11 +93,12 @@ def test_catalog_sees_a_permission_that_widens_instead_of_closing():
     # мутация «дописать в карту ПЯТОЕ действие» её не красила: список рос, а
     # проба молчала. Пин состава краснеет на любом лишнем и любом пропавшем.
     assert {row["action"] for row in rows} == {
-        "placement_assign",
-        "placement_unassign",
-        "placement_post_remove",
-        "placement_move",
-    }
+            "placement_assign",
+            "placement_unassign",
+            "placement_post_remove",
+            "placement_post_comment",
+            "placement_move",
+        }
     # И основной гейт этих же ручек остался на месте — обход его не заменяет.
     assert ("POST", "/api/ops/security-events/<pk>/placement/assign/") in {
         (row["method"], row["path"]) for row in catalog()["placement.manage"]
@@ -250,6 +251,33 @@ def test_catalog_endpoint_answers_the_admin():
     assert row["isKnown"] is True
     assert len(row["functions"]) > 0
     assert data["count"] == len(data["results"])
+
+
+def test_creating_a_dictionary_entry_is_listed_under_manage_not_view():
+    """POST записи справочника — под `dictionary.manage` (ревью №825 по №901).
+
+    Пока GET и POST жили одним действием `entries`, каталог показывал
+    заведение значения под правом ЧТЕНИЯ — администратор раздавал бы
+    `dictionary.view` шире, чем собирался. КРАСНАЯ ПРОБА: верни POST в
+    `methods` действия `entries` — строка уедет под `dictionary.view`.
+    """
+    path = "/api/ops/dictionaries/<code>/entries/"
+    manage = {(row["method"], row["path"]) for row in catalog()["dictionary.manage"]}
+    view = {(row["method"], row["path"]) for row in catalog()["dictionary.view"]}
+    assert ("POST", path) in manage
+    assert ("POST", path) not in view
+    assert ("GET", path) in view
+
+
+def test_the_evaluation_detail_names_its_gate_not_only_the_bypass():
+    """`GET …/detail/` карточки задания: гейт `rating.evaluate` назван в
+    каталоге, а не только обход `rating.view_correction_chain` (ревью №825 по
+    №901)."""
+    detail_rows = [
+        row for row in catalog()["rating.evaluate"] if row["action"] == "detail_view"
+    ]
+    assert detail_rows, "у карточки задания в каталоге нет строки гейта"
+    assert all((row.get("kind") or "gate") == "gate" for row in detail_rows)
 
 
 def test_permission_missing_from_the_dictionary_still_shows_up():

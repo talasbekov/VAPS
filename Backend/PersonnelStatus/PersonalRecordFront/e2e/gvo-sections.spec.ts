@@ -19,8 +19,9 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
-// Пин дословно совпадает с константой виджета (widgets/gvo-summary)
-// — проба ловит расхождение текста, а не только факт наличия какой-то строки.
+// Прежняя оговорка «С реестром „Охраняемые лица“ эти карточки не связаны…»
+// СНЯТА с экрана (Plane №951): лица теперь несут ссылку на справочник, и
+// проба стережёт, что строка не вернулась.
 const PERSONS_REGISTRY_GAP_LINE =
   'С реестром «Охраняемые лица» эти карточки не связаны — модель ГВО хранит только текст бюллетеня, без ссылки на запись каталога; появится бэк-этапом.'
 
@@ -168,7 +169,8 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // Строка вкладки ведёт на СТРАНИЦУ ВИЗИТА (`[ГВО-01]`, Plane №436):
     // «Сводные данные →» — ссылка строки (`[РЕЕ-07]`, №441).
     await eventRow.getByRole('link', { name: /^Сводные данные / }).click()
-    await expect(page.getByRole('tab', { name: 'Сводные данные ГВО' })).toBeVisible({
+    // Вкладок на странице визита больше нет (Plane №951): ждём заголовок сводки.
+    await expect(page.getByRole('heading', { name: 'Сводные данные ГВО' })).toBeVisible({
       timeout: 15_000,
     })
     const main = page.locator('main')
@@ -176,50 +178,72 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // ЕДИНЫЙ РЕЖИМ ПРАВКИ (`[ГВО-05]`, Plane №441): одна кнопка
     // «Редактировать», все блоки инпутами, одно «Сохранить». Окон по
     // разделам и кнопок «Изменить» у блоков больше нет.
-    await main.getByRole('button', { name: 'Редактировать' }).click()
+    await main.getByRole('button', { name: 'Редактировать', exact: true }).click()
     const form = page.locator('[data-slot="gvo-edit-form"]')
     await expect(form).toBeVisible()
 
-    // Охраняемое лицо: «параметр = значение» построчно. `.last()` — база
-    // сводки может нести лицо из бюллетеня, и новое лицо встаёт последним.
-    await form.getByRole('button', { name: '＋ Добавить лицо' }).click()
-    await form.getByRole('textbox', { name: 'ФИО' }).last().fill('Яков Милатович')
+    // Охраняемое лицо — ИЗ СПРАВОЧНИКА (Plane №951): окно выбора, первая
+    // свободная строка каталога; имя выбранного — предмет ассерта ниже.
+    // «параметр = значение» построчно; `.last()` — база сводки может нести
+    // лицо из бюллетеня, и новое лицо встаёт последним.
+    await form.getByRole('button', { name: '＋ Лицо из справочника' }).click()
+    const personDialog = page.getByRole('dialog')
+    const personRow = personDialog
+      .locator('[data-slot="protected-person-picker"] button:not([disabled])')
+      .first()
+    await expect(personRow).toBeVisible({ timeout: 10_000 })
+    const pickedPersonName = (await personRow.locator('span.font-medium').innerText()).trim()
+    expect(pickedPersonName).not.toEqual('')
+    await personRow.click()
+    await expect(personDialog).toBeHidden()
     await form.getByRole('textbox', { name: 'Должность' }).last().fill('Президент Черногории')
     await form
       .getByRole('textbox', { name: 'Данные' })
       .last()
       .fill('Группа крови = А (II) Rh +\nРост = 185 см')
 
-    // Группа ГВО: «Фамилия | позывной | роль»; счётчик состава пересчитывается
+    // Группа ГВО: состав — ИЗ КАДРОВОГО СПИСКА (Plane №951), двое подряд;
+    // счётчик состава пересчитывается.
     await form.getByRole('button', { name: '＋ Группа' }).click()
     await form.getByRole('textbox', { name: 'Название группы' }).last().fill('ГВО «Черногория»')
-    await form
-      .getByRole('textbox', { name: 'Состав группы' })
-      .last()
-      .fill('Булатаев | 2-27 | старший ГВО\nБайболов | 7-41 | прикреплённый')
+    const pickedMembers: string[] = []
+    for (const role of ['старший ГВО', 'прикреплённый']) {
+      await form.getByRole('button', { name: '＋ Сотрудник из списка' }).last().click()
+      const memberDialog = page.getByRole('dialog')
+      const row = memberDialog
+        .locator('[data-slot="personnel-picker"] li button:not([disabled])')
+        .first()
+      await expect(row).toBeVisible({ timeout: 15_000 })
+      pickedMembers.push((await row.locator('span.font-medium').innerText()).trim())
+      await row.click()
+      await memberDialog.getByRole('textbox', { name: 'Роль в группе' }).fill(role)
+      await memberDialog.getByRole('button', { name: 'Добавить в состав' }).click()
+      await expect(memberDialog).toBeHidden()
+    }
+    expect(pickedMembers[0]).not.toEqual(pickedMembers[1])
 
-    // Транспорт: «код | марка | примечание»
-    await form
-      .getByRole('textbox', { name: 'Транспорт' })
-      .fill('VIP | Mercedes-Benz Pullman S600 W222, 2019 г.в. | бронь, гостевой парк')
+    // Текстового поля «Транспорт» в форме больше НЕТ (Plane №952): машины
+    // выделяются из реестра (`gvo-catalog-refs.spec.ts`), и проба это стережёт.
+    await expect(form.getByRole('textbox', { name: 'Транспорт' })).toHaveCount(0)
 
     // Одно «Сохранить» на всё: разделы уезжают по очереди, форма закрывается
     // после последнего ответа.
     await form.getByRole('button', { name: 'Сохранить' }).click()
     await expect(form).toBeHidden({ timeout: 20_000 })
 
-    await expect(main.getByText('Яков Милатович').first()).toBeVisible({
+    await expect(main.getByText(pickedPersonName).first()).toBeVisible({
       timeout: 10_000,
     })
     await expect(main.getByText('А (II) Rh +').first()).toBeVisible()
     await expect(main.getByText('185 см').first()).toBeVisible()
-    await expect(main.getByText('2-27').first()).toBeVisible({ timeout: 10_000 })
+    // Участник из кадров печатается подписью сервера «Фамилия И.» — ассерт на
+    // фамилию (первое слово выбранной строки), а не на всю строку каталога.
+    await expect(main.getByText(pickedMembers[0].split(' ')[0]).first()).toBeVisible({ timeout: 10_000 })
     await expect(main.getByText('старший ГВО').first()).toBeVisible()
     await expect(main.getByText('2 чел.').first()).toBeVisible()
-    await expect(
-      main.getByText('Mercedes-Benz Pullman S600 W222, 2019 г.в.'),
-    ).toBeVisible({ timeout: 10_000 })
-    await expect(main.getByText('бронь, гостевой парк')).toBeVisible()
+    // Старший ГВО панели (поле `senior`, Plane №952) — его же печатает реестр.
+    const seniorShown = (await main.locator('[data-slot="gvo-senior"]').innerText()).trim()
+    expect(seniorShown, 'старший ГВО в панели не назван').not.toEqual('уточняется')
 
     // Объекты посещения: НЕ текст патча, а строки объектов мероприятия
     // («Реестр ОМ-35.1»). Правятся день и примечание КОНКРЕТНОГО объекта —
@@ -268,8 +292,13 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await expect(row).toContainText(/Черновик · заполнено \d+ из \d+|Утверждено/, {
       timeout: 10_000,
     })
-    await expect(row).toContainText('Булатаев · 2-27')
-    await expect(row).toContainText('Яков Милатович')
+    // Старший ГВО в реестре — СВОЁ поле сводки (Plane №952), а не участник
+    // группы с ролью «старший» (так было в №951): читаем его из шапки состава
+    // панели и ждём в строке реестра ту же фамилию. Полный прогон по
+    // прод-стенду 07.09.2026 поймал здесь расхождение: у ОМ со старшим из
+    // бюллетеня реестр печатал его, а проба ждала участника группы.
+    await expect(row).toContainText(seniorShown.split(' ')[0])
+    await expect(row).toContainText(pickedPersonName)
 
     // Удаление ЭЛЕМЕНТА списка возвращает раздел в пустое состояние.
     //
@@ -279,10 +308,10 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // не было. Цикл «удалять, пока есть» здесь не годится: панель после
     // каждого ответа пересобирается, и клик по едущей карточке не доходит.
     await row.getByRole('link', { name: /^Сводные данные / }).click()
-    await expect(main.getByRole('button', { name: 'Редактировать' })).toBeVisible({
+    await expect(main.getByRole('button', { name: 'Редактировать', exact: true })).toBeVisible({
       timeout: 15_000,
     })
-    await main.getByRole('button', { name: 'Редактировать' }).click()
+    await main.getByRole('button', { name: 'Редактировать', exact: true }).click()
     // Снимаются ВСЕ лица: «Удалить лицо N» у каждого, пока список не пуст.
     while ((await form.getByRole('button', { name: /^Удалить лицо \d+$/ }).count()) > 0) {
       await form.getByRole('button', { name: /^Удалить лицо \d+$/ }).first().click()
@@ -298,7 +327,7 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // это тоже ручная правка, и статус остаётся «заполнена», пока разделы не
     // сброшены явно. С №441 кнопка одна на всю сводку — в режиме правки.
     await expect(main.getByText('Сводка заполнена')).toBeVisible()
-    await main.getByRole('button', { name: 'Редактировать' }).click()
+    await main.getByRole('button', { name: 'Редактировать', exact: true }).click()
     await form.getByRole('button', { name: 'Вернуть исходные' }).click()
     await expect(form).toBeHidden({ timeout: 20_000 })
     await expect(main.getByText('Черновик сводки')).toBeVisible({ timeout: 10_000 })
@@ -339,12 +368,11 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
 
     await link.click()
     await expect(page).toHaveURL(new RegExp(`/security-ops/visits/${target!.id}/?$`))
-    await expect(page.getByRole('tab', { name: 'Сводные данные ГВО' })).toBeVisible({
+    // Вкладок нет (Plane №951): страница визита — шапка и сводка целиком.
+    await expect(page.getByRole('heading', { name: 'Сводные данные ГВО' })).toBeVisible({
       timeout: 15_000,
     })
-    await expect(page.getByRole('tab', { name: /Объекты посещения/ })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Бюллетень' })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Транспорт' })).toBeVisible()
+    await expect(page.getByRole('tab')).toHaveCount(0)
     // Разделы приехали целиком, а не одна шапка.
     await expect(page.getByRole('heading', { name: 'Охраняемые лица' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Объекты посещения' })).toBeVisible()
@@ -369,7 +397,7 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
-    await page.getByRole('main').getByRole('button', { name: 'Редактировать' }).click()
+    await page.getByRole('main').getByRole('button', { name: 'Редактировать', exact: true }).click()
     const form = page.locator('[data-slot="gvo-edit-form"]')
     await form.getByRole('textbox', { name: 'Канал р/связи' }).fill('')
     await form.getByRole('checkbox', { name: 'Уточняется: Канал р/связи' }).check()
@@ -428,7 +456,7 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
-    await page.getByRole('main').getByRole('button', { name: 'Редактировать' }).click()
+    await page.getByRole('main').getByRole('button', { name: 'Редактировать', exact: true }).click()
     const form = page.locator('[data-slot="gvo-edit-form"]')
 
     // Секции «Прибытие» и «Убытие» стоят рядом, и поле «Дата» в них одно и то
@@ -446,12 +474,22 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
       'флаг «Прибытия» поставился заодно и «Убытию» — ключ у них общий',
     ).not.toBeChecked()
 
-    // «Ответственный» — обязательное поле, и галочка у него была выключена
-    // вовсе (`noFlags`), то есть пометить его было нечем.
-    const respFlag = form.getByRole('checkbox', { name: 'Уточняется: Ответственный' })
-    await expect(respFlag, 'у «Ответственного» нет галочки «уточняется»').toBeVisible()
-    await form.getByRole('textbox', { name: 'Ответственный' }).fill('')
+    // «Ответственный за ГВО» — обязательное поле, и галочка у него была
+    // выключена вовсе (`noFlags`), то есть пометить его было нечем. С Plane
+    // №952 он выбирается из кадров, а не вписывается: снимается кнопкой.
+    const respFlag = form.getByRole('checkbox', { name: 'Уточняется: Ответственный за ГВО' })
+    await expect(respFlag, 'у «Ответственного за ГВО» нет галочки «уточняется»').toBeVisible()
+    const clearResp = form.getByRole('button', { name: 'Убрать: Ответственный за ГВО' })
+    if (await clearResp.count()) await clearResp.click()
     await respFlag.check()
+    // Старший ГВО — своё поле и свой флаг (Plane №952); проба стережёт, что
+    // флаги двух людей не делят ключ, как когда-то «Прибытие» и «Убытие».
+    const seniorFlag = form.getByRole('checkbox', { name: 'Уточняется: Старший ГВО' })
+    await expect(seniorFlag).not.toBeChecked()
+    const clearSenior = form.getByRole('button', { name: 'Убрать: Старший ГВО' })
+    if (await clearSenior.count()) await clearSenior.click()
+    await seniorFlag.check()
+    await expect(respFlag).toBeChecked()
 
     // «Охраняемые лица» правятся карточками, и своего поля у списка нет —
     // флаг у него на БЛОКЕ.
@@ -469,9 +507,11 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     // из списка недостающих, «Дата убытия» осталась нетронутой.
     expect(after.unspecified).toContain('arrival.date')
     expect(after.unspecified).toContain('responsible')
+    expect(after.unspecified).toContain('senior')
     expect(after.unspecified, 'флаг убытия поставился сам').not.toContain('departure.date')
     expect(after.unspecified, 'в списке осталось голое имя поля формы').not.toContain('date')
     expect(after.missingRequired).not.toContain('Дата прибытия')
+    expect(after.missingRequired).not.toContain('Ответственный за ГВО')
     expect(after.missingRequired).not.toContain('Старший ГВО')
 
     // Уборка: снимаем флаги, чтобы соседние пробы читали чистую сводку.
@@ -482,46 +522,9 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     })
   })
 
-  test('черновик правки переживает переключение вкладок, а ярлык говорит о нём', async ({
-    page,
-  }) => {
-    /**
-     * ЧЕРНОВИК НЕ ГИБНЕТ ОТ ВКЛАДКИ (Plane №693). Форма правки жила внутри
-     * `TabsContent`, а Radix размонтирует неактивную вкладку: человек жал
-     * «Редактировать», заполнял поля, уходил на «Объекты посещения»
-     * свериться — и, вернувшись, находил пустоту. Без предупреждения, без
-     * следа. Ровно тот класс потери, ради которого на карточке ОМ заведён
-     * `bulletinDirty`.
-     *
-     * Красная проверка — убрать `forceMount` у вкладки «Сводные данные»:
-     * набранное «Черногория-проба» после возврата исчезнет.
-     */
-    const target = (await registryEvents()).find((r) => r.kind !== 'INTERNAL')
-    expect(target, 'в реестре нет ОМ с иностранным ОЛ').toBeTruthy()
-
-    await signIn(page)
-    await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
-    await page.getByRole('main').getByRole('button', { name: 'Редактировать' }).click()
-    const form = page.locator('[data-slot="gvo-edit-form"]')
-    const country = form.getByRole('textbox', { name: 'Страна' })
-    await country.fill('Черногория-проба')
-
-    // Ярлык вкладки говорит о несохранённом — иначе черновик, переживший
-    // переключение, остался бы незаметным.
-    const summaryTab = page.getByRole('tab', { name: /Сводные данные ГВО/ })
-    await expect(summaryTab).toContainText('есть несохранённые правки')
-
-    await page.getByRole('tab', { name: /Объекты посещения/ }).click()
-    await page.getByRole('tab', { name: /Сводные данные ГВО/ }).click()
-
-    await expect(
-      country,
-      'черновик правки исчез при переключении вкладки — набранное потеряно молча',
-    ).toHaveValue('Черногория-проба')
-
-    // Уходим без сохранения: проба ничего не меняет на стенде.
-    await form.getByRole('button', { name: 'Отмена' }).click()
-  })
+  // Проба «черновик правки переживает переключение вкладок» СНЯТА (Plane
+  // №951): вкладок на странице визита больше нет, форма — единственное тело
+  // страницы, и терять черновик переключением стало нечем.
 
   test('у внутреннего мероприятия ссылки «Карточка визита →» нет', async ({
     page,
@@ -643,7 +646,7 @@ test.describe(
       await expect(main.getByText(other!.code, { exact: true })).toHaveCount(0)
     })
 
-    test('сводка честно называет отсутствие связи с реестром лиц', async ({ page }) => {
+    test('сводка больше не оговаривает отсутствие связи с реестром лиц (Plane №951)', async ({ page }) => {
       const rows = await registryEvents()
       // Страница визита есть только у ОМ с иностранным ОЛ (`[ГВО-01]`):
       // «первое в реестре» упиралось бы во внутреннее.
@@ -652,12 +655,22 @@ test.describe(
 
       await signIn(page)
       await page.goto(`${APP}/security-ops/visits/${target!.id}/`)
-      await expect(page.getByText('Сводные данные ГВО')).toBeVisible({
+      await expect(page.getByRole('heading', { name: 'Сводные данные ГВО' })).toBeVisible({
         timeout: 15_000,
       })
       await expect(
         page.getByText(PERSONS_REGISTRY_GAP_LINE, { exact: true }),
-      ).toBeVisible()
+      ).toHaveCount(0)
+      // Лицо, названное бюллетенем из справочника, несёт код `OL-N` в
+      // подписи карточки — связь есть, и её видно.
+      const summary = await apiGet<{ summary: { persons: { personId?: string | null; code?: string }[] } }>(
+        `/api/ops/gvo-summaries/${encodeURIComponent(target!.code)}/`,
+        await apiToken(),
+      )
+      const linked = summary.summary.persons.find((p) => p.personId)
+      if (linked) {
+        await expect(page.getByText(`· ${linked.code}`).first()).toBeVisible()
+      }
     })
   },
 )

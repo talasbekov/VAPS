@@ -150,12 +150,20 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # есть его слова «остальные модули на уровне своего управления». Пин
     # расширен ПОИМЕННО, а не ослаблен до `>=`: список держателей записи —
     # ровно то место, где лишняя роль обязана быть замечена.
+    # ШЕСТЬ 08.09.2026 (Plane №991, задача заказчика — основная проходка
+    # ежедневного расхода). Ответственный за сбор сил (`FORCES_GATHERING_
+    # OFFICER`) до этого мог только СДАТЬ управлениям чужой день (сбор сил не
+    # ставит статусы людям), а сценарий расхода требует, чтобы он же вручную
+    # правил статус на время сборов. Право со scope на СВОЙ департамент —
+    # scope_id гранта резолвит `seed_role_accounts.SCOPED_ROLES`, само право
+    # ничего не решает про область.
     assert holders("status.manage") == {
         "INTEGRATION_USER",
         "DIRECTORATE_HEAD",
         "HEAD_DIRECTORATE_LINE",
         "HEAD_DEPARTMENT_LINE",
         "HEAD_OPS_UNIT",
+        "FORCES_GATHERING_OFFICER",
     }
     assert holders("daily_report.mark_update") == {"DIRECTORATE_HEAD"}
     assert holders("daily_report.correct") == {"DIRECTORATE_HEAD"}
@@ -192,9 +200,12 @@ def test_the_write_permissions_have_exactly_these_holders(seeded):
     # роль осознанно и стережёт ОБЕ стороны переезда: право появилось у
     # добавки И пропало у профиля.
     assert holders("placement.command") == {"OPS_STAFF_COMMAND"}
-    # Два соседних обхода уехали туда же и той же причиной. `gvo.manage`
-    # остаётся и у `GVO_LEAD`: старший ГВО правит сводку СВОЕГО мероприятия.
-    assert holders("gvo.manage") == {"GVO_LEAD", "OPS_STAFF_COMMAND"}
+    # `event.stage_override` уехал туда же и той же причиной. `gvo.manage`
+    # остаётся и у `GVO_LEAD` (старший ГВО правит сводку СВОЕГО мероприятия),
+    # а с №947 (слово заказчика 07.09.2026) снова и у профиля штаба
+    # `HEAD_OPS_UNIT`: сводку правит и начальник управления второго
+    # департамента. Пин поднят осознанно, миграция 0105.
+    assert holders("gvo.manage") == {"GVO_LEAD", "OPS_STAFF_COMMAND", "HEAD_OPS_UNIT"}
     assert holders("event.stage_override") == {"OPS_STAFF_COMMAND"}
     # Персональная детализация и выгрузка со скрытыми полями — «пока только
     # администратор» (решение №267), то есть ни одной роли, кроме «*».
@@ -256,9 +267,20 @@ def test_the_customer_profiles_see_exactly_the_modules_he_named(seeded):
     assert "report.generate" not in granted("HEAD_DEPARTMENT_LINE")
     assert "report.generate" not in granted("FORCES_GATHERING_OFFICER")
 
-    # Сбор сил ведёт ровно один из семи профилей.
-    assert "forces.command" in granted("FORCES_GATHERING_OFFICER")
-    for code in ("HEAD_DIRECTORATE_LINE", "HEAD_DEPARTMENT_LINE", "HEAD_OPS_UNIT"):
+    # Сбор сил — по разделу 7 спецификации и `[ШТБ-01]`–`[ШТБ-04]` (Plane
+    # №972, решение заказчика 08.09.2026): штаб — ОТДЕЛЬНЫЙ актор `OPS_STAFF`,
+    # и только он делит потребность (`forces.command`). Начальники второго
+    # департамента (`HEAD_OPS_UNIT`) штабом НЕ являются — №944 выдала право им,
+    # и заказчик это отменил. Ответственный департамента отвечает на запрос
+    # (`forces.allocate`) и ТОЛЬКО он; штабного права у него нет — иначе он
+    # видел бы список заявок по всем департаментам (`[СБС-20]`).
+    assert "forces.allocate" in granted("FORCES_GATHERING_OFFICER")
+    assert "forces.command" not in granted("FORCES_GATHERING_OFFICER")
+    assert "forces.command" in granted("OPS_STAFF")
+    assert "forces.command" not in granted("HEAD_OPS_UNIT")
+    assert not {"forces.allocate", "forces.select"} & granted("HEAD_OPS_UNIT")
+    assert holders("forces.command") == {"OPS_STAFF"}
+    for code in ("HEAD_DIRECTORATE_LINE", "HEAD_DEPARTMENT_LINE"):
         assert not {"forces.command", "forces.allocate", "forces.select"} & granted(code)
 
     # «Система» закрыта у всех шести неадминистраторских профилей.

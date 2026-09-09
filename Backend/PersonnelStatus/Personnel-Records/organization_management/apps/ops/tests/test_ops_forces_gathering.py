@@ -97,20 +97,24 @@ def test_split_addresses_departments(manager):  # noqa: F811
     assert manager.get(base).json()["forceAllocation"] == data["forceAllocation"]
 
 
-def test_split_refuses_more_than_demanded(manager):  # noqa: F811
-    """Разложить больше, чем просили, нельзя — это ошибка ввода."""
+def test_split_accepts_more_than_demanded(manager):  # noqa: F811
+    """«Блокировки на сумму нет» (`[СБС-12]`, Plane №944).
+
+    Здесь стоял отказ `ALLOCATION_OVER_DEMAND`; спецификация говорит обратное:
+    запрос штаба — пожелание, департамент отвечает своей цифрой, и штаб вправе
+    просить с запасом. Перебор виден в «Итоге» карточки, а не отбивается.
+    """
     base, total = event_on_demand(manager)
     department = make_department()
 
     resp = manager.post(
         f"{base}forces/allocation/",
-        {"rows": [{"departmentId": str(department.pk), "need": total + 1}]},
+        {"rows": [{"departmentId": str(department.pk), "need": total + 1}], "draft": True},
         format="json",
     )
 
-    assert resp.status_code == 422
-    assert resp.json()["error_code"] == "ALLOCATION_OVER_DEMAND"
-    assert str(total) in resp.json()["message"]
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["forceAllocation"][0]["need"] == total + 1
     # Недобор — не ошибка: штаб раскладывает в несколько заходов.
     ok = manager.post(
         f"{base}forces/allocation/",
@@ -193,11 +197,14 @@ def test_split_keeps_started_department_state(manager):  # noqa: F811
     assert dropped.json()["error_code"] == "ALLOCATION_LOCKED"
     assert first.name in dropped.json()["message"]
 
+    # Цифры ОТПРАВЛЕННЫХ строк заперты (`[СБС-12]`, Plane №944): штаб
+    # пересохраняет раскладку с теми же числами — состояние первого
+    # департамента обязано пережить и это.
     kept = manager.post(
         f"{base}forces/allocation/",
         {
             "rows": [
-                {"departmentId": str(first.pk), "need": 2},
+                {"departmentId": str(first.pk), "need": 1},
                 {"departmentId": str(second.pk), "need": 1},
             ]
         },
@@ -208,7 +215,7 @@ def test_split_keeps_started_department_state(manager):  # noqa: F811
         for row in kept["forceAllocation"]
         if row["departmentId"] == str(first.pk)
     )
-    assert (started["status"], started["need"]) == ("NOTIFIED", 2)
+    assert (started["status"], started["need"]) == ("NOTIFIED", 1)
     assert started["members"] == [{"employeeId": "1"}]
 
 
@@ -1191,6 +1198,23 @@ def test_a_split_over_the_department_quota_is_refused(manager):  # noqa: F811
     assert "4" in response.data["message"]
 
 
+def test_the_directorate_split_rejects_a_bare_string_instead_of_a_list(manager):  # noqa: F811
+    """`rows` — список, а не последовательность (доводка №668 по ревью №825):
+    тот же класс дефекта, что уже чинили для employeeIds/protectedPersonIds/
+    remarks, найден и в третьем уровне раскладки. `list(rows or [])` без
+    проверки типа делает из строки "18" список символов `['1', '8']` —
+    `.get()` у строки нет, и вместо конверта поля сервер отвечал бы 500.
+    """
+    department = make_department()
+    make_directorate(department)
+    base, allocation_id = allocated_event(manager, department)
+
+    response = _split(manager, base, allocation_id, "18")
+
+    assert response.status_code == 400, response.data
+    assert response.data["error_code"] == "VALIDATION_ERROR"
+
+
 def test_a_foreign_directorate_is_refused(manager):  # noqa: F811
     """Адресат обязан быть управлением ЭТОГО департамента.
 
@@ -1476,6 +1500,24 @@ def test_the_staff_split_also_refuses_a_fractional_need(manager):  # noqa: F811
 
     assert resp.status_code == 400, resp.data
     assert resp.json()["details"]["rows.0.need"] == ["Укажите целое число."]
+
+
+def test_the_staff_split_rejects_a_bare_string_instead_of_a_list(manager):  # noqa: F811
+    """`rows` — список, а не последовательность (доводка №668 по ревью №825):
+    тот же класс дефекта, что уже чинили для employeeIds/protectedPersonIds/
+    remarks, найден и здесь — `_frozen_rows_changed` разбирает `rows` ДО
+    `split_force_demand`, и оба перебирали присланное как есть без проверки
+    типа. Строка вида "18" даёт `row = "1"` при переборе — `.get()` у строки
+    нет, и вместо конверта поля сервер отвечал бы 500.
+    """
+    base, _total = event_on_demand(manager)
+
+    resp = manager.post(
+        f"{base}forces/allocation/", {"rows": "18"}, format="json"
+    )
+
+    assert resp.status_code == 400, resp.data
+    assert resp.json()["error_code"] == "VALIDATION_ERROR"
 
 
 def test_dispatch_refuses_a_split_wider_than_the_promise(manager):  # noqa: F811

@@ -904,7 +904,11 @@ def _actor_matches(actor_user_id):
         if value.isdigit()
         else None
     )
-    if username and username != value:
+    # 🔴 ЛОГИН ИЗ ОДНИХ ЦИФР НЕ БЕРЁТСЯ (ревью №825 по №895, 08.09.2026): для
+    # `?actor=12` логин «12» другой учётки подмешал бы ЕЁ легаси-строки в ленту
+    # pk=12, а по цифрам после приведения отличить «логин» от «id» нельзя.
+    # Такой логин теряет только свои дореформенные строки — цена известная.
+    if username and username != value and not username.isdigit():
         condition |= Q(actor_user_id=username)
     return condition
 

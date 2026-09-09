@@ -73,6 +73,8 @@ def test_seed_protected_persons_is_idempotent():
     call_command("seed_protected_persons")
     call_command("seed_protected_persons")
     qs = OpsProtectedPerson.objects.all()
-    assert qs.count() == 5
+    # Шесть, а не пять (Plane №952): к пяти записям мока добавлено лицо из
+    # образца заказчика «Сводные данные» — с должностью, страной и данными.
+    assert qs.count() == 6
     assert qs.filter(category="OURS").count() == 3
-    assert qs.filter(category="FOREIGN").count() == 2
+    assert qs.filter(category="FOREIGN").count() == 3

@@ -3,7 +3,8 @@
  *
  * Путь заказчика: реестр ОМ → вкладка «Визиты иностранных ОЛ» → строка ведёт
  * на `/security-ops/visits/{id}`: шапка «тип · статус · заполнено K из N
- * обязательных · PDF · Утвердить», вкладки. «Утвердить» выключена, пока
+ * обязательных · PDF · Утвердить · Редактировать бюллетень» и сводка
+ * (вкладок нет с Plane №951). «Утвердить» выключена, пока
  * обязательные поля пусты (подсказка перечисляет их); после заполнения страны
  * и пометки остальных «уточняется» по API — кнопка доступна, утверждение
  * ставит статус «Утверждён». У внутреннего ОМ страница говорит «визита нет».
@@ -82,15 +83,22 @@ test.describe(LIVE ? 'страница визита' : 'страница виз�
       /Заполните обязательные поля/,
     )
     await expect(approve).toHaveAttribute('aria-describedby', /.+/)
-    await expect(page.getByRole('tab', { name: 'Сводные данные ГВО' })).toBeVisible()
-    await expect(page.getByRole('tab', { name: /Объекты посещения/ })).toBeVisible()
+    // Вкладок больше нет (Plane №951): сводка — единственное тело страницы,
+    // а правка бюллетеня — кнопкой в шапке (админ ведёт ОМ — кнопка есть).
+    await expect(page.getByRole('tab')).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Сводные данные ГВО' })).toBeVisible()
+    await expect(head.getByRole('button', { name: 'Редактировать бюллетень' })).toBeVisible()
+    // Врезки «Не подключено — на бэке нет /api/ops/*» над живой сводкой НЕТ
+    // (Plane №948): данные пришли с сервера, и надпись про мок была ложью.
+    await expect(page.getByTestId('api-gap-notice')).toHaveCount(0)
     await page.screenshot({ path: path.join(SHOTS, 'visit-page-draft.png') })
 
     // Заполняем страну, остальное — «уточняется»: этого достаточно (ГВО-06/07).
     const patched = await admin('PATCH', `/api/ops/gvo-summaries/${encodeURIComponent(created.code)}/`, {
       section: 'head',
       values: { country: 'Черногория' },
-      unspecified: ['persons', 'arrival.date', 'departure.date', 'responsible'],
+      // `senior` — тоже обязательное поле с Plane №952 («Старший ГВО»).
+      unspecified: ['persons', 'arrival.date', 'departure.date', 'responsible', 'senior'],
     })
     expect(patched.status, JSON.stringify(patched).slice(0, 200)).toBe(200)
     await page.reload()

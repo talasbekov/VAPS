@@ -48,7 +48,17 @@ def _serialize_row(row):
     }
 
 
-def _serialize_page(business_date, result):
+#: Режимы `derive_period` (Plane №989, §20.4 п.9). `FACT` — прежнее
+#: поведение дословно: чтение состоявшегося, будущее закрыто. `PLAN` снимает
+#: этот гвард — заказчик прямо запретил «просто удалить запрет из
+#: исторической аналитики»: план должен быть НАЗВАН режимом, а не подменять
+#: факт молча.
+MODE_FACT = "FACT"
+MODE_PLAN = "PLAN"
+VALID_MODES = frozenset({MODE_FACT, MODE_PLAN})
+
+
+def _serialize_page(business_date, result, *, today):
     """Страница одной даты.
 
     Дата берётся из аргумента, но выбор здесь не несущий: расход кладёт в
@@ -56,9 +66,16 @@ def _serialize_page(business_date, result):
     дало бы то же самое. Значимо другое — что дата в странице ВООБЩЕ есть:
     именно она отличает соседние страницы, и без неё ответ стал бы столбиком
     одинаковых на вид объектов.
+
+    `mode` страницы — ФАКТ будущего дня относительно `today` в момент вызова,
+    а не режим ЗАПРОСА: план на послезавтра, ставший сегодняшним фактом,
+    обязан прочитаться как `FACT`, даже если запрошен под `mode=PLAN`
+    (`[ДОП-20-02]`: будущие числа без подписи неотличимы от подтверждённого
+    факта — как только день настал, подпись обязана исчезнуть тоже).
     """
     return {
         "business_date": business_date.isoformat(),
+        "mode": MODE_PLAN if business_date > today else MODE_FACT,
         "rows": [_serialize_row(row) for row in result.rows],
         "totals": {
             "staff_total": result.totals.staff_total,
@@ -71,7 +88,7 @@ def _serialize_page(business_date, result):
     }
 
 
-def derive_period(*, date_from, date_to, division_ids=None):
+def derive_period(*, date_from, date_to, division_ids=None, mode=MODE_FACT):
     """Страницы расхода за `[date_from, date_to]` включительно.
 
     Оба конца принадлежат периоду: «с 1 по 31 августа» в обиходе означает и
@@ -79,7 +96,20 @@ def derive_period(*, date_from, date_to, division_ids=None):
     день месяца — тот самый, ради которого месячную сводку и смотрят.
 
     `division_ids=None` не сужает выборку — общий уговор чтений раздела.
+
+    `mode=PLAN` снимает запрет будущего (см. `MODE_PLAN`); длина диапазона
+    (`MAX_PERIOD_DAYS`) остаётся ЕДИНСТВЕННЫМ техническим пределом и для
+    плана тоже — заказчик решил `[РАСХ-ВОП-05]` РОВНО так: «сохранить
+    технический предел 62 дней и разрешить будущие даты», не второй предел
+    поверх первого.
     """
+    if mode not in VALID_MODES:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"mode": sorted(VALID_MODES)},
+            message="Недопустимый режим периода.",
+        )
     if date_from > date_to:
         raise DomainError(
             "VALIDATION_ERROR",
@@ -99,12 +129,12 @@ def derive_period(*, date_from, date_to, division_ids=None):
             message=f"Период длиннее {MAX_PERIOD_DAYS} дней.",
         )
     today = Clock.today_local()
-    if date_to > today:
+    if mode == MODE_FACT and date_to > today:
         raise DomainError(
             "VALIDATION_ERROR",
             400,
             detail={"date_to": date_to.isoformat(), "today": today.isoformat()},
-            message="Период не может уходить в будущее.",
+            message="Период не может уходить в будущее. Плановые дни — mode=PLAN.",
         )
 
     pages = []
@@ -112,7 +142,9 @@ def derive_period(*, date_from, date_to, division_ids=None):
     while day <= date_to:
         pages.append(
             _serialize_page(
-                day, StrengthReportService.compute(day, division_ids=division_ids)
+                day,
+                StrengthReportService.compute(day, division_ids=division_ids),
+                today=today,
             )
         )
         day += timedelta(days=1)

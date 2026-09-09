@@ -10,6 +10,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
+import type { StaffingDemandRow } from "@/entities/security-event";
+import { FORCE_CAMPAIGN_RESERVES_KEY } from "@/hooks/use-force-campaigns";
 
 export interface DirectorateForcesRequest {
   eventId: string;
@@ -20,6 +22,7 @@ export interface DirectorateForcesRequest {
   departmentName: string;
   status: string;
   dueAt: string | null;
+  groupDemands?: StaffingDemandRow[];
   directorates: {
     divisionId: string;
     name: string;
@@ -52,11 +55,22 @@ export function directorateForcesRequestsPath(): string {
  * адреса `?forcesRequest=…`, который кладёт только уведомление. Открывший
  * раздел из меню не мог поставить статус ничем.
  */
+/** Кому адресован список — считает сервер по области `status.manage`
+ * (Plane №941): начальник департамента видит строки всех своих управлений, и
+ * подпись «вашему управлению» была ему неправдой. Старый сервер поля не несёт
+ * — тогда подпись прежняя, про управление. */
+export type ForcesRequestsAddressee = "directorate" | "department" | "organization";
+
+export interface DirectorateForcesRequestsResponse {
+  results: DirectorateForcesRequest[];
+  addressee?: ForcesRequestsAddressee;
+}
+
 export function useDirectorateForcesRequests(options: { enabled?: boolean } = {}) {
-  return useQuery<{ results: DirectorateForcesRequest[] }, OpsApiFailure>({
+  return useQuery<DirectorateForcesRequestsResponse, OpsApiFailure>({
     queryKey: DIRECTORATE_FORCES_REQUESTS_KEY,
     queryFn: () =>
-      opsApiClient.get<{ results: DirectorateForcesRequest[] }>(
+      opsApiClient.get<DirectorateForcesRequestsResponse>(
         directorateForcesRequestsPath()
       ),
     enabled: options.enabled ?? true,
@@ -108,15 +122,20 @@ export function directorateSelectPath(allocationId: string): string {
 
 /**
  * Выделить отмеченных сотрудников по запросу (Plane №395, `[СБС-31]`).
- * Мероприятие и даты человек не выбирает — их даёт заявка; статус
- * «Участие в ОМ» ставит сервер тем же путём, что и штабное выделение.
+ * Физнаряд попадает в общий резерв кампании без финального статуса; для
+ * специальной группы сервер сразу создаёт участие в ОМ из заявки.
  */
 export function useSelectForRequest(allocationId: string | null) {
   const client = useQueryClient();
   return useMutation<
     SelectForRequestReport,
     OpsApiFailure,
-    { employeeIds: string[]; override?: boolean; override_reason?: string }
+    {
+      employeeIds: string[];
+      kindCode: string;
+      override?: boolean;
+      override_reason?: string;
+    }
   >({
     mutationFn: (body) =>
       opsApiClient.post<SelectForRequestReport>(directorateSelectPath(allocationId as string), body),
@@ -129,6 +148,8 @@ export function useSelectForRequest(allocationId: string | null) {
       void client.invalidateQueries({ queryKey: DIRECTORATE_FORCES_REQUESTS_KEY });
       void client.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
       void client.invalidateQueries({ queryKey: ["staff-units-page"] });
+      void client.invalidateQueries({ queryKey: ["ops-force-campaigns"] });
+      void client.invalidateQueries({ queryKey: FORCE_CAMPAIGN_RESERVES_KEY });
     },
   });
 }

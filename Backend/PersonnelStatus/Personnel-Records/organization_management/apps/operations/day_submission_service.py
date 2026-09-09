@@ -37,6 +37,7 @@ from django.db import transaction
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
+from organization_management.apps.operations.expense_period import MAX_PERIOD_DAYS
 from organization_management.apps.operations.models_submission import (
     OpsDailySubmission,
 )
@@ -58,9 +59,25 @@ def _local_tz():
 
 
 def _default_window():
-    """Сегодня и завтра: основная сдача «на день вперёд» плюс коррекция."""
+    """Сегодня плюс `MAX_PERIOD_DAYS` дней вперёд (Plane №989, §20.4 п.3).
+
+    Раньше окно кончалось на завтра — «основная сдача «на день вперёд» плюс
+    коррекция сегодня». Заказчик уточнил (раздел 20 RAW/README.md):
+    «сводил за завтрашний и на несколько дней вперед и за любой день» —
+    завтра остаётся дефолтом ЭКРАНА, а не единственной допустимой датой
+    СЕРВЕРА. Верхняя граница — тот же технический предел, что и у чтения
+    периода (`expense_period.MAX_PERIOD_DAYS`), а не второе магическое число:
+    `[РАСХ-ВОП-05]` решает его ОДИН раз для всей функции «планирование
+    вперёд», а не отдельно для чтения и отдельно для записи.
+
+    Назад окно НЕ расширено: прошлые несданные дни сдачей не «догоняются» —
+    только явным `window_dates` вызывающего (см. `test_explicit_window_
+    overrides_the_default`), а закрытые прошлые дни остаются доступны для
+    чтения/версий, не для тихой пересдачи (`DAY_ALREADY_SUBMITTED` — тем же
+    гардом, что и раньше).
+    """
     today = Clock.today_local()
-    return [today, today + timedelta(days=1)]
+    return [today + timedelta(days=offset) for offset in range(MAX_PERIOD_DAYS + 1)]
 
 
 def _is_late(control_hour):

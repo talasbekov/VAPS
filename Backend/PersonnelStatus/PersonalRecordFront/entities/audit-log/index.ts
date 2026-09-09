@@ -51,12 +51,14 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   TOMORROW_BLOCK_OVERRIDDEN: "Снят запрет правки на завтра",
   DAILY_SUMMARY_ASSEMBLED: "Сводка собрана из версий подразделений",
   DAILY_SUMMARY_REBUILT: "Сводка пересобрана взамен прежней",
+  DAILY_SUMMARY_SENT: "Сводка отправлена оперативному дежурному",
   SUBMISSION_EXPORTED: "Выдана личная копия сданного дня",
   ATTACHMENT_UPLOADED: "Файл документа записан в хранилище",
   DOCUMENT_ISSUED: "Документ выпущен",
   DOCUMENT_SUPERSEDED: "Документ отозван взамен нового",
   DOCUMENT_DOWNLOADED: "Документ выдан на руки",
   PASSPORT_VERSION_PUBLISHED: "Версия паспорта опубликована",
+  SECURITY_OBJECT_PHOTO_SET: "Снимок объекта загружен",
   SECURITY_EVENT_CREATED: "Мероприятие заведено",
   SECURITY_EVENT_CLOSED: "Мероприятие закрыто",
   SECURITY_EVENT_DELETED: "Мероприятие удалено из реестра",
@@ -73,6 +75,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   SECURITY_EVENT_PLACEMENT_RETURNED: "Расстановка возвращена на доработку",
   SECURITY_EVENT_APPROVAL_SIGNED: "Подпись согласующего с реквизитами",
   APPROVAL_ROUTE_REPLACED: "Маршрут согласования в настройках заменён",
+  SECURITY_EVENT_APPROVAL_ROUTE_SELECTED:
+    "Старший объекта выбрал первого согласующего",
   PLACEMENT_COMPLETED_WITH_SHORTAGE: "Расстановка завершена с недобором",
   VISIT_OBJECT_CLOSED: "Объект посещения закрыт",
   VISIT_OBJECT_CHIEF_ASSIGNED: "Назначен старший объекта",
@@ -112,7 +116,12 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   FORCE_ALLOCATION_SUBMITTED: "Список выделенных отправлен в штаб",
   FORCE_ALLOCATION_ACCEPTED: "Штаб принял список и передал людей мероприятию",
   FORCE_ALLOCATION_RETURNED: "Штаб вернул список департаменту",
+  SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD:
+    "Начальник управления подтвердил ознакомление сотрудника без учётки",
   GVO_SUMMARY_RESET: "Ручная правка сводки ГВО сброшена",
+  // Справочник охраняемых лиц с экрана (Plane №951).
+  PROTECTED_PERSON_CREATED: "Охраняемое лицо заведено",
+  PROTECTED_PERSON_PHOTO_SET: "Снимок охраняемого лица загружен",
 };
 
 /**
@@ -136,6 +145,7 @@ export const AUDIT_ENTITY_LABEL: Record<string, string> = {
   duty_shift: "Смена дежурства",
   policy_setting: "Правило настроек",
   dictionary_entry: "Значение справочника",
+  protected_person: "Охраняемое лицо",
   access_permission: "Право доступа",
   access_role: "Роль",
   access_account: "Учётная запись",
@@ -158,6 +168,40 @@ export function isKnownAuditEntity(entityType: string): boolean {
  * странно (та же конвенция, что у неизвестного действия).
  */
 export const AUDIT_FIELD_LABEL: Record<string, string> = {
+  // Запись «действие старшего объекта» (`SECURITY_EVENT_APPROVAL_BY_OBJECT_LEAD`,
+  // Plane №860, п. 5): заказчику обещана запись «с именем человека, кодом ОМ
+  // и объектом», а без подписей экран печатал `leadName Иванов И.И.`.
+  leadId: "Старший объекта (id)",
+  leadName: "Старший объекта",
+  visitObjectId: "Объект посещения (id)",
+  objectName: "Объект",
+  // Запись «расстановка заместителем» (`SECURITY_EVENT_PLACEMENT_BY_DEPUTY`,
+  // Plane №1012, та же болезнь, что у №860 п. 5): без подписей журнал печатал
+  // `deputyName Иванов И.И.`. Заодно подписаны остальные ключи пейлоада
+  // `_record_deputy_placement` (`operation`, `postId`, `employeeId`,
+  // `assignmentId`, `fromPostId`, `postName`) — те же четыре вызова несут их
+  // сырыми по тому же основанию.
+  deputyId: "Заместитель старшего (id)",
+  deputyName: "Заместитель старшего",
+  operation: "Операция",
+  postId: "Пост (id)",
+  employeeId: "Сотрудник (id)",
+  assignmentId: "Назначение (id)",
+  fromPostId: "Прежний пост (id)",
+  postName: "Пост",
+  // Самый содержательный ключ той же записи — что именно сделал старший.
+  // Без подписи и перевода кода строка читалась «action approval_send»
+  // (ревью №825 по №860, 08.09.2026).
+  action: "Действие",
+  // Запись «оповещение управлений» (`FORCE_ALLOCATION_NOTIFIED`, №481/№921):
+  // графы доставки читают вслух при разборе «почему никого не запросили».
+  notifiedHeads: "Оповещено начальников",
+  notifiedHeadsList: "Кому дошло",
+  undeliveredHeads: "Кому не дошло",
+  headlessDirectorates: "Управления без начальника",
+  directoratesWithoutQuota: "Управления без квоты",
+  departmentName: "Департамент",
+  need: "Запрошено",
   is_active: "Действует",
   code: "Код",
   name: "Название",
@@ -187,12 +231,31 @@ export interface AuditChange {
 }
 
 /** Значение поля словами: `true/false` — «да/нет», пусто — «—». */
-function readableValue(value: unknown): string {
+/**
+ * Переводы ЗНАЧЕНИЙ поля, у которого значение — код, а не текст. Ключ карты —
+ * поле, внутри — код → подпись. Неизвестный код печатается как есть: прятать
+ * его за «прочее» значило бы скрыть от разбирательства, что именно произошло
+ * (та же конвенция, что у неизвестного действия записи).
+ */
+export const AUDIT_VALUE_LABEL: Record<string, Record<string, string>> = {
+  // Коды `record_object_lead_action` (бэк, `security_events.py`).
+  action: {
+    approval_send: "Отправил на согласование",
+    approval_withdraw: "Отозвал с согласования",
+    approval_remark_resolve: "Снял замечание",
+  },
+};
+
+function readableValue(value: unknown, key?: string): string {
+  if (typeof value === "string" && key !== undefined) {
+    const translated = AUDIT_VALUE_LABEL[key]?.[value];
+    if (translated !== undefined) return translated;
+  }
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "да" : "нет";
   if (typeof value === "number" || typeof value === "string") return String(value);
   if (Array.isArray(value)) {
-    return value.length === 0 ? "—" : value.map(readableValue).join(", ");
+    return value.length === 0 ? "—" : value.map((item) => readableValue(item)).join(", ");
   }
   // Вложенный объект остаётся JSON: разбирать его на поля вслепую значило бы
   // придумывать структуру, которой журнал не обещал.
@@ -219,8 +282,8 @@ export function auditChanges(
   const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
   const changes: AuditChange[] = [];
   for (const key of keys.sort()) {
-    const from = readableValue(before[key]);
-    const to = readableValue(after[key]);
+    const from = readableValue(before[key], key);
+    const to = readableValue(after[key], key);
     // Поле, которое не менялось, в ленте — шум: строка «Название: Иванов →
     // Иванов» отнимает место у той, где действительно что-то произошло.
     if (key in before && key in after && from === to) continue;

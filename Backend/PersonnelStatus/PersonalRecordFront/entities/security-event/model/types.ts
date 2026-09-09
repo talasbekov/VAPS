@@ -100,17 +100,36 @@ export interface ReconSectorPost {
    * проставила миграция.
    */
   visitObjectId?: string | null;
+  /** Вид строки потребности; отсутствие у старых постов означает физнаряд. */
+  demandKindCode?: string;
+  /** Уточнение состава/квалификации строки потребности. */
+  demandSpecification?: string;
 }
 
 /** Строка потребности в силах. */
 export interface StaffingDemandRow {
   id: string;
+  sourcePostId?: string | null;
+  visitObjectId?: string | null;
   sector: string;
   task: string;
+  place?: string;
   shift: string;
   need: number;
-  group: string;
+  kindCode?: string;
+  specification?: string;
+  /** Старое поле ручной формы; остаётся для чтения исторических строк. */
+  group?: string;
   requirements: string;
+  comment: string;
+}
+
+export interface ForceGroupOffer {
+  demandRowId: string | null;
+  kindCode: string;
+  count: number;
+  place: string;
+  specification: string;
   comment: string;
 }
 
@@ -164,6 +183,7 @@ export interface ForceAllocationDirectorate {
    * разошёлся бы с сервером при первом же переводе. */
   assigned: number;
   notifiedAt: string | null;
+  groupDemandIds?: string[];
 }
 
 /** Выделенный управлением сотрудник (заполняется СС-3). */
@@ -227,6 +247,12 @@ export interface ForceAllocationRow {
   decisionComment: string;
   directorates: ForceAllocationDirectorate[];
   members: ForceAllocationMember[];
+  groupDemands?: StaffingDemandRow[];
+  groupOffers?: ForceGroupOffer[];
+  /** Момент «Отправить запросы» штаба (`[СБС-12]`, Plane №944). Пусто —
+   *  черновик: департамент строки не видит, цифра правится; есть — цифра
+   *  заперта, менять её можно только «Довыделить недобор →». */
+  sentAt?: string | null;
 }
 
 /** Человек в СОСТАВЕ мероприятия: штаб принял его и отдал ОМ (шаг СС-5).
@@ -329,6 +355,11 @@ export interface PlacementAssignment {
   /** Способ подтверждения (`[ОЗН-05]`, Plane №447): сам / лично старшим; кто отметил. */
   acknowledgedVia?: "self" | "personal" | null;
   acknowledgedBy?: string;
+  acknowledgedByUserId?: string;
+  acknowledgedByEmployeeId?: string;
+  acknowledgementMethod?: string;
+  acknowledgementBasis?: string;
+  employeeHasAccount?: boolean;
   /** Обоснование обхода предупреждения по рейтингу; заполнено только если предупреждение было. */
   ratingOverrideReason: string | null;
   /** Обоснование УСИЛЕНИЯ поста сверх расчёта (Plane №414); заполнено только
@@ -531,10 +562,18 @@ export interface PersonnelSummarySnapshot {
   rankLabel: string;
   /** Позывной (`[МД-10]`, Plane №456); пустая строка — не вписан.
    *
-   * Поле приезжает с кадрового снимка с №456. Экрана, который его читает,
-   * пока нет: бюллетень печатает позывной САМ, документом сервера. Тип
-   * дописан всё равно — иначе первый же читатель начал бы с вопроса «а
-   * приходит ли оно вообще», а мок-слой разошёлся бы с ответом молча. */
+   * 🔴 ЗНАК ВОПРОСА ЗДЕСЬ НЕ НЕБРЕЖНОСТЬ, А ФАКТ О ДВУХ РУЧКАХ (Plane №878).
+   * Кадровый каталог (`/api/ops/personnel/`) шлёт поле ВСЕГДА — `"callsign":
+   * employee.callsign or ""`, то есть «нет позывного» выражено пустой
+   * строкой. А состав сил (`force_roster_view`) отдаёт СОХРАНЁННЫЕ строки
+   * выделения, и позывного в них нет вовсе. Этим же типом описаны обе
+   * выдачи, поэтому обязательное поле было бы неправдой про вторую.
+   *
+   * Проверено попыткой: `callsign: string` роняет `tsc` на пяти местах
+   * `PlacementStage`, где строка состава собирается без него. Это не повод
+   * дописать поле в состав — это признак того, что один тип обслуживает два
+   * разных ответа. Разведение типов заведено отдельной карточкой; до неё
+   * читатель обязан писать `person.callsign ?? ""`. */
   callsign?: string;
   unit: string;
   /** Статус на дату, СПРОШЕННУЮ клиентом (`business_date`). null — либо даты
@@ -624,6 +663,8 @@ export interface VisitObject {
   /** Объект реестра; null — объект удалён, снимок имени остался. */
   objectId: string | null;
   objectName: string;
+  /** Фото объекта из event-контракта; не требует отдельного object.view. */
+  photoUrl: string | null;
   passportBinding: PassportBinding | null;
   /** Охраняемое лицо этого объекта; null — не названо. */
   protectedPersonId: string | null;
@@ -638,6 +679,13 @@ export interface VisitObject {
   /** Примечание к посещению («основной объект», время) — свободный текст. */
   note: string;
   /**
+   * Описание визита (Plane SJ-1049) — не `note`: предложение о ЦЕЛИ
+   * посещения именно на этом ОМ («Основная площадка мероприятия.»), а не
+   * короткая служебная подпись для сводки ГВО. Поле визита, а не объекта из
+   * каталога — цель меняется от мероприятия к мероприятию.
+   */
+  description: string;
+  /**
    * Старший ЭТОГО объекта посещения — не старший мероприятия: у визита
    * иностранного ОЛ объектов несколько, ответственный у каждого свой.
    * `null` — не назначен, и это ответ: объект может стоять в маршруте
@@ -646,6 +694,13 @@ export interface VisitObject {
   chiefEmployeeId: string | null;
   /** Снимок подписи старшего: увольнение не превращает строку в номер. */
   chiefName: string;
+  /** Ответы чек-листа этого объекта (№982). */
+  reconChecklist?: ReconChecklistItem[];
+  /** Снимок потребности этого объекта. */
+  reconForceRequest?: number;
+  /** Серверное слово: текущий пользователь ведёт рекогносцировку ЭТОГО
+   * объекта (`[РЕК-10]`), независимо от глобального `event.manage`. */
+  canManageRecon?: boolean;
   /**
    * Готовность расстановки: сколько людей нужно постам объекта и сколько
    * назначено. `null` — НЕИЗВЕСТНО (расчёт постов не размечен по объектам),
@@ -795,6 +850,14 @@ export interface SecurityEvent {
   chiefEmployeeId: string | null;
   /** Снимок подписи старшего — как ownerName. */
   chiefName: string;
+  /** Может ли ВЫЗЫВАЮЩИЙ править сведения бюллетеня — считает сервер тем же
+   * правилом, что гейт `PATCH …/details/` (Plane №951): право ведения либо
+   * создание этого ОМ. Старый сервер поля не несёт — тогда экран считает по
+   * праву, как раньше. */
+  canEditBulletin?: boolean;
+  /** Может ли вызывающий управлять объектами посещения и их старшими.
+   * Сервер считает назначенного старшего ОМ и объектную матрицу (№981). */
+  canManageVisitObjects?: boolean;
   stage: SecurityEventStage;
   /** Готовность текущей стадии, 0–100 (демонстрационная метрика). */
   readinessPercent: number;
@@ -1029,6 +1092,8 @@ export interface UpdateBulletinRequest extends Record<string, unknown> {
 }
 
 export interface UpdateReconRequest extends Record<string, unknown> {
+  /** Объект, расчёт которого меняется; обязателен при нескольких объектах. */
+  visitObjectId?: string;
   checklist: ReconChecklistItem[];
   sectorPosts: ReconSectorPost[];
   /** Запрос личного состава. Необязателен: тело БЕЗ ключа оставляет
@@ -1068,7 +1133,11 @@ export interface SplitForceDemandRequest extends Record<string, unknown> {
      *  сохранит прежний срок либо поставит умолчание «за сутки до ОМ»;
      *  неразбираемое значение он отбивает 400, а не подменяет умолчанием. */
     dueAt?: string;
+    groupDemandIds?: string[];
   }[];
+  /** `true` — «Сохранить черновик»: строки без момента отправки. Без флага
+   *  раскладка ОТПРАВЛЯЕТСЯ департаментам (`[СБС-12]`, Plane №944). */
+  draft?: boolean;
 }
 
 export interface AssignPlacementRequest extends Record<string, unknown> {
@@ -1315,6 +1384,8 @@ export interface DepartmentRequestRow {
   /** Список отправлен ПОСЛЕ срока. Отправку опоздание не запрещает — оно её
    * помечает. */
   submittedLate: boolean;
+  groupDemands?: StaffingDemandRow[];
+  groupOffers?: ForceGroupOffer[];
 }
 
 /** Состояние сбора по МЕРОПРИЯТИЮ (Plane №271, Ш-1/Ш-3).
@@ -1417,6 +1488,7 @@ export interface ForceCollectionDetail {
   remaining: number;
   collectionStatus: ForceCollectionStatus;
   allocations: ForceAllocationRow[];
+  demandRows?: StaffingDemandRow[];
 }
 
 /** 🔴 `force-collection`, а не `forces/collection`: второй попадал бы в уже
@@ -1439,6 +1511,12 @@ export interface DepartmentRequestDetail {
   location: string;
   stage: SecurityEventStage;
   allocation: ForceAllocationRow;
+  /** «В строю» по КАЖДОМУ действующему управлению департамента на деловую
+   *  дату ОМ (`[СБС-22]`, Plane №944): `{divisionId: n}`. Считает сервер. */
+  inServiceByDirectorate?: Record<string, number>;
+  /** Управление каждого выделенного — для групп списка (`[СБС-23]`):
+   *  `{employeeId: divisionId | null}`; `null` — вне управлений заявки. */
+  memberDirectorateById?: Record<string, string | null>;
 }
 
 export function securityEventDepartmentRequestPath(allocationId: string): string {
@@ -1540,11 +1618,25 @@ export function securityEventPlacementPostPath(
     postId
   )}/`;
 }
+export function securityEventPlacementPostCommentPath(
+  id: string,
+  postId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/posts/${encodeURIComponent(
+    postId
+  )}/comment/`;
+}
 export function securityEventPlacementCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/placement/complete/`;
 }
 export function securityEventApprovalRoutePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/approval/route/`;
+}
+export function securityEventApprovalCandidatesPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/candidates/`;
+}
+export function securityEventApprovalRouteSelectPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/route/select/`;
 }
 export function securityEventApproverPath(id: string, approverId: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/approval/route/${encodeURIComponent(approverId)}/`;

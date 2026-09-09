@@ -262,35 +262,44 @@ test.describe(
         'мок-фикстура без потребности — делить нечего',
       ).toBeGreaterThan(1)
 
+      // Контракт раскладки по документации (Plane №944, `[СБС-12]`): суммы
+      // сверх потребности НЕ отбиваются («Блокировки на сумму нет»);
+      // черновик (`draft: true`) не отправляется и правится; раскладка без
+      // флага ОТПРАВЛЯЕТСЯ (момент `sentAt`), и после этого цифра заперта.
       const outcome = await page.evaluate(async (total: number) => {
-        const post = async (rows: unknown) => {
+        const post = async (rows: unknown, draft = false) => {
           const res = await fetch('/api/ops/security-events/se-1/forces/allocation/', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ rows }),
+            body: JSON.stringify(draft ? { rows, draft: true } : { rows }),
           })
           return { status: res.status, body: await res.json() }
         }
         return {
-          over: await post([{ departmentId: '2', need: total + 1 }]),
+          over: await post([{ departmentId: '2', need: total + 1 }], true),
           repeated: await post([
             { departmentId: '2', need: 1 },
             { departmentId: '2', need: 1 },
           ]),
           saved: await post([{ departmentId: '2', need: total - 1 }]),
+          locked: await post([{ departmentId: '2', need: total - 2 }]),
         }
       }, prepared.forceDemandTotal)
 
-      expect(outcome.over.status).toBe(422)
-      expect(outcome.over.body.error_code).toBe('ALLOCATION_OVER_DEMAND')
+      expect(outcome.over.status).toBe(200)
+      expect(outcome.over.body.forceAllocation[0].need).toBe(prepared.forceDemandTotal + 1)
+      expect(outcome.over.body.forceAllocation[0].sentAt ?? null).toBeNull()
       expect(outcome.repeated.status).toBe(400)
       expect(outcome.repeated.body.details['rows.1.departmentId']).toBeTruthy()
       expect(outcome.saved.status).toBe(200)
       expect(outcome.saved.body.forceAllocation).toHaveLength(1)
       expect(outcome.saved.body.forceAllocation[0].status).toBe('DRAFT')
+      expect(outcome.saved.body.forceAllocation[0].sentAt).toBeTruthy()
       expect(outcome.saved.body.forceAllocation[0].need).toBe(
         prepared.forceDemandTotal - 1,
       )
+      expect(outcome.locked.status).toBe(400)
+      expect(outcome.locked.body.details['rows.0.need']).toBeTruthy()
 
       // Оповещение управлений (СС-2): незнакомая заявка — 404, своя переводит
       // заявку в «оповещено», а повтор НЕ переписывает момент уже оповещённым.
@@ -1984,6 +1993,172 @@ test.describe(
       expect(refusal.body?.details?.closed).toBe(true)
     })
 
+    test('правка расчёта постов сперва проверяет поля, потом заморозку — как на сервере (доводка №867 по ревью №825)', async ({
+      page,
+    }) => {
+      // 🔴 ЧТО ЭТО СТЕРЕЖЁТ. У сервера (`update_recon`) все ошибки полей
+      // собираются и поднимаются ОДНИМ VALIDATION_ERROR ДО гарда старшего и
+      // ДО заморозки. Мок проверял в обратном порядке: заморозка/гард
+      // старшего — раньше required-полей расчёта постов. Строка, у которой
+      // ОДНОВРЕМЕННО пустое обязательное поле И принадлежит замороженному
+      // объекту, получала от мока PLACEMENT_FROZEN вместо VALIDATION_ERROR —
+      // разные коды ошибки на один и тот же запрос.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-3/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const refusal = await page.evaluate(async () => {
+        const event = await (
+          await fetch('/api/ops/security-events/se-3/')
+        ).json()
+        const visit = event.visitObjects[0]
+        const res = await fetch('/api/ops/security-events/se-3/recon/', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            checklist: event.reconChecklist,
+            sectorPosts: [
+              ...event.reconSectorPosts,
+              {
+                id: '',
+                visitObjectId: visit?.id ?? null,
+                // Пустой ОБЯЗАТЕЛЬНЫЙ сектор — строка одновременно и трогает
+                // замороженный объект, и не проходит проверку полей.
+                sector: '',
+                post: 'Пост пробы 867-2',
+                task: '',
+                need: 1,
+                kind: null,
+                weapon: '',
+                uniform: '',
+                requirements: '',
+                minRating: null,
+                comment: '',
+                shift: '',
+              },
+            ],
+          }),
+        })
+        return {
+          status: res.status,
+          stage: visit?.stage ?? null,
+          body: await res.json().catch(() => null),
+        }
+      })
+
+      expect(refusal.stage, 'объект мок-сида не закрыт').toBe('CLOSED')
+      expect(refusal.status, JSON.stringify(refusal.body)).toBe(400)
+      expect(refusal.body?.error_code).toBe('VALIDATION_ERROR')
+      expect(Object.keys(refusal.body?.details ?? {})).toEqual(
+        expect.arrayContaining([expect.stringContaining('.sector')]),
+      )
+    })
+
+    test('снятие пустого поста на закрытом объекте тоже отбивается заморозкой (доводка №867 по ревью №825)', async ({
+      page,
+    }) => {
+      // 🔴 ЧТО ЭТО СТЕРЕЖЁТ. Комментарий соседней пробы №867 называет ШЕСТЬ
+      // операций расстановки, закрытых заморозкой на сервере, — но снятие
+      // пустого поста (`DELETE .../placement/posts/<id>/`, Ш-1) не имело
+      // мок-обработчика ВООБЩЕ. `mocks/ops/browser.ts` пропускает
+      // необслуженный запрос дальше — в настоящую сеть, — и проба на моке
+      // зеленела бы даже там, где живой сервер отбивает 422.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/se-3/`)
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      // se-3 (закрытое мероприятие мок-сида) заводится БЕЗ постов вовсе —
+      // а дописать пост через ручку рекогносцировки нельзя: та же заморозка
+      // отбивает и её (см. соседнюю пробу выше). Пост кладётся НАПРЯМУЮ в
+      // стор, минуя API, — единственный путь дать закрытому объекту хоть
+      // один пост для проверки снятия.
+      //
+      // 🔴 ПОЧЕМУ ПОСЛЕ ЗАПИСИ НУЖНА ПЕРЕЗАГРУЗКА. Модуль мока держит стор в
+      // ПАМЯТИ (`getEvents()`), а `sessionStorage` читает только при рождении
+      // этой памяти — правка стора мимо `saveEvent` в уже поднятой вкладке
+      // осталась бы невидимой самому же обработчику до перезагрузки.
+      const postId = 'post-probe-867'
+      const prepared = await page.evaluate((id) => {
+        const key = 'ops-mock-security-events:v3'
+        const raw = sessionStorage.getItem(key)
+        if (raw === null) return false
+        const list = JSON.parse(raw) as Array<Record<string, unknown>>
+        const idx = list.findIndex((e) => e.id === 'se-3')
+        if (idx === -1) return false
+        list[idx] = {
+          ...list[idx],
+          reconSectorPosts: [
+            {
+              id,
+              visitObjectId: null,
+              sector: 'Проба 867',
+              post: 'Пост пробы',
+              task: '',
+              need: 1,
+              kind: null,
+              weapon: '',
+              uniform: '',
+              requirements: '',
+              minRating: null,
+              comment: '',
+              shift: '',
+            },
+          ],
+        }
+        sessionStorage.setItem(key, JSON.stringify(list))
+        return true
+      }, postId)
+      expect(prepared, 'не удалось положить пост в стор se-3 напрямую').toBe(true)
+
+      await page.reload()
+      await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+
+      const refusal = await page.evaluate(async (id) => {
+        const event = await (
+          await fetch('/api/ops/security-events/se-3/')
+        ).json()
+        const res = await fetch(
+          `/api/ops/security-events/se-3/placement/posts/${id}/`,
+          { method: 'DELETE' }
+        )
+        return {
+          status: res.status,
+          stage: event.visitObjects?.[0]?.stage ?? null,
+          postFound: (event.reconSectorPosts ?? []).some(
+            (p: { id?: string }) => p.id === id,
+          ),
+          body: await res.json().catch(() => null),
+        }
+      }, postId)
+
+      expect(refusal.postFound, 'пост не пережил перезагрузку — проверять нечего').toBe(true)
+      expect(refusal.stage, 'объект мок-сида не закрыт').toBe('CLOSED')
+      expect(refusal.status, JSON.stringify(refusal.body)).toBe(422)
+      expect(refusal.body?.error_code).toBe('PLACEMENT_FROZEN')
+    })
+
     test('мок рекогносцировки живёт по правилам сервера (Plane №877)', async ({
       page,
     }) => {
@@ -2138,5 +2313,6 @@ test.describe(
       expect(result.postStatus, JSON.stringify(result.postBody)).toBe(422)
       expect(result.postBody?.error_code).toBe('VISIT_CHIEF_REQUIRED')
     })
+
   },
 )

@@ -62,6 +62,10 @@ DAILY_SUMMARY_ASSEMBLED = "DAILY_SUMMARY_ASSEMBLED"
 # Пересборка «взамен» — своё событие, а не поправка сдачи: поправляют СВОЙ
 # день, пересобирают ЧУЖИЕ версии, и в ленте это разные истории.
 DAILY_SUMMARY_REBUILT = "DAILY_SUMMARY_REBUILT"
+# Отправка дежурному (Plane №990, §20.4 п.6) — СВОЁ событие, отдельное от
+# сборки: заказчик прямо потребовал различать «Собран» и «Отправлен
+# дежурному», а один код на оба лишил бы ленту возможности их различить.
+DAILY_SUMMARY_SENT = "DAILY_SUMMARY_SENT"
 # Выдача личной копии сданного дня. Событие ЧТЕНИЯ в журнале мутаций —
 # исключение осознанное: копию берут, чтобы предъявлять её в споре, и «кто и
 # когда её получил» это и есть предмет разбирательства.
@@ -92,6 +96,10 @@ DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED"
 # правку черновика: черновик — рабочая тетрадь, версия — утверждённый документ,
 # и предмет разбирательства («каким был паспорт и кто его утвердил») — она.
 PASSPORT_VERSION_PUBLISHED = "PASSPORT_VERSION_PUBLISHED"
+# Снимок объекта-каталога (Plane SJ-1049) — тот же довод, что у
+# PROTECTED_PERSON_PHOTO_SET ниже: правка справочника, по которой спрашивают
+# «кто завёл снимок».
+SECURITY_OBJECT_PHOTO_SET = "SECURITY_OBJECT_PHOTO_SET"
 # Охранное мероприятие: заведение и закрытие — решения с внешним следом
 # (номер ОМ в бумаге). Промежуточные стадии событий не пишут: их след — сам
 # агрегат (журнал штаба, назначения), а не журнал мутаций раздела.
@@ -125,6 +133,8 @@ SECURITY_EVENT_STAGE_OVERRIDDEN = "SECURITY_EVENT_STAGE_OVERRIDDEN"
 # «Ознакомление» завершено при неподтвердивших — решение старшего с
 # комментарием (Plane №432, `[ОЗН-04]`); число неподтвердивших — в old_value.
 SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED = "SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED"
+#: Начальник управления подтвердил ознакомление за сотрудника без учётки.
+SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD = "SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD"
 # Отказ заступить на назначение (Plane №588, `[ПРФ-04]`). Записывается ИМЕННО
 # потому, что отказ читается как СЛОВА САМОГО СОТРУДНИКА: «Не могу заступить:
 # …» стоит в его карточке и в листе «Ознакомление». А вписать эти слова может
@@ -172,6 +182,8 @@ SECURITY_EVENT_APPROVAL_SIGNED = "SECURITY_EVENT_APPROVAL_SIGNED"
 SECURITY_EVENT_PLACEMENT_RETURNED = "SECURITY_EVENT_PLACEMENT_RETURNED"
 #: Маршрут согласования в настройках заменён (`[СОГ-05]`, Plane №429).
 APPROVAL_ROUTE_REPLACED = "APPROVAL_ROUTE_REPLACED"
+#: Старший объекта выбрал первого подписанта из руководства второго департамента.
+SECURITY_EVENT_APPROVAL_ROUTE_SELECTED = "SECURITY_EVENT_APPROVAL_ROUTE_SELECTED"
 #: Визит иностранного ОЛ утверждён штабом (`[ГВО-07]`/`[ГВО-09]`, Plane №436).
 GVO_VISIT_APPROVED = "GVO_VISIT_APPROVED"
 #: Утверждение визита СНЯТО правкой его состава (Plane №685). Отдельное
@@ -291,6 +303,11 @@ DICTIONARY_ENTRY_UPDATED = "DICTIONARY_ENTRY_UPDATED"
 # она производная бюллетеня мероприятия.
 GVO_SUMMARY_PATCHED = "GVO_SUMMARY_PATCHED"
 GVO_SUMMARY_RESET = "GVO_SUMMARY_RESET"
+# Справочник охраняемых лиц с экрана (Plane №951): заведение лица и его
+# фотография — правки справочника, по которым спрашивают «кто завёл»; до этого
+# каталог правился только через Django Admin, и своего следа у него не было.
+PROTECTED_PERSON_CREATED = "PROTECTED_PERSON_CREATED"
+PROTECTED_PERSON_PHOTO_SET = "PROTECTED_PERSON_PHOTO_SET"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -316,16 +333,19 @@ ACTIONS = frozenset(
         TOMORROW_BLOCK_OVERRIDDEN,
         DAILY_SUMMARY_ASSEMBLED,
         DAILY_SUMMARY_REBUILT,
+        DAILY_SUMMARY_SENT,
         SUBMISSION_EXPORTED,
         ATTACHMENT_UPLOADED,
         DOCUMENT_ISSUED,
         DOCUMENT_SUPERSEDED,
         DOCUMENT_DOWNLOADED,
         PASSPORT_VERSION_PUBLISHED,
+        SECURITY_OBJECT_PHOTO_SET,
         SECURITY_EVENT_CREATED,
         SECURITY_EVENT_CLOSED,
         SECURITY_EVENT_DELETED,
         SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED,
+        SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD,
         ASSIGNMENT_DECLINED,
         STATUS_PARTICIPATIONS_PURGED,
         SECURITY_EVENT_STAGE_OVERRIDDEN,
@@ -336,6 +356,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_APPROVAL_SIGNED,
         SECURITY_EVENT_PLACEMENT_RETURNED,
         APPROVAL_ROUTE_REPLACED,
+        SECURITY_EVENT_APPROVAL_ROUTE_SELECTED,
         GVO_VISIT_APPROVED,
         GVO_VISIT_APPROVAL_REVOKED,
         PLACEMENT_COMPLETED_WITH_SHORTAGE,
@@ -367,6 +388,8 @@ ACTIONS = frozenset(
         DICTIONARY_ENTRY_UPDATED,
         GVO_SUMMARY_PATCHED,
         GVO_SUMMARY_RESET,
+        PROTECTED_PERSON_CREATED,
+        PROTECTED_PERSON_PHOTO_SET,
     }
 )
 
@@ -396,6 +419,7 @@ ENTITY_SECURITY_EVENT = "security_event"
 ENTITY_DUTY_SHIFT = "duty_shift"
 ENTITY_POLICY_SETTING = "policy_setting"
 ENTITY_DICTIONARY_ENTRY = "dictionary_entry"
+ENTITY_PROTECTED_PERSON = "protected_person"
 # Справочники доступа (Plane №36): право и роль. Правка доступа — именное
 # решение, по которому потом спрашивают «кто и когда открыл эту ручку».
 ENTITY_PERMISSION = "access_permission"
@@ -419,6 +443,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_DUTY_SHIFT,
         ENTITY_POLICY_SETTING,
         ENTITY_DICTIONARY_ENTRY,
+        ENTITY_PROTECTED_PERSON,
         ENTITY_PERMISSION,
         ENTITY_ROLE,
         ENTITY_ACCOUNT,

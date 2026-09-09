@@ -19,6 +19,12 @@ export interface GvoPerson {
   name: string;
   role: string;
   facts: GvoFact[];
+  /** Ссылка на запись справочника «Охраняемые лица» (Plane №951); нет —
+   * лицо набрано текстом. Код и снимок по ссылке подставляет сервер. */
+  personId?: string | null;
+  code?: string;
+  /** Адрес снимка под `/media/`; null — снимка нет. */
+  photoUrl?: string | null;
 }
 
 /** Борт прибытия/убытия. dur — «время в полёте 5:40 часа» целой строкой. */
@@ -34,6 +40,10 @@ export interface GvoMember {
   name: string;
   callsign: string;
   role: string;
+  /** Ссылка на кадровую запись (Plane №951): фамилию и позывной по ней
+   * подставляет сервер при каждой сборке; текст рядом — запас на случай,
+   * если запись снята. Нет — строка набрана руками до этой задачи. */
+  employeeId?: string | null;
 }
 
 export interface GvoGroup {
@@ -79,6 +89,11 @@ export interface GvoSummary {
   radio: string;
   /** null — ответственный не назначен (не то же, что «уточняется»). */
   responsible: GvoMember | null;
+  /** Старший ГВО (Plane №952) — ОТДЕЛЬНО от ответственного: база — старший
+   * мероприятия из бюллетеня, выбор в сводке переписывает его же. Прежде
+   * одно поле `responsible` подписывалось «Старший ГВО», и назначить
+   * старшего было негде. */
+  senior: GvoMember | null;
   groups: GvoGroup[];
   transport: GvoTransportRow[];
   visits: GvoVisitDay[];
@@ -136,7 +151,7 @@ export type GvoSection =
   | `group:${number}`
   | "group:new";
 
-// ── Контракты API (реального бэка нет — см. lib/api-gaps.ts) ─────────────
+// ── Контракты API (бэк живой с 20.08.2026; режим мока — lib/ops-env.ts) ─────────────
 
 export const GVO_SUMMARIES_PATH = "/api/ops/gvo-summaries/";
 
@@ -186,6 +201,11 @@ export interface GvoSummaryRow {
   missingRequired?: string[];
   requiredTotal?: number;
   requiredFilled?: number;
+  /** Может ли ВЫЗЫВАЮЩИЙ править сводку — считает сервер тем же правилом,
+   * что гейт правки (Plane №947): право `gvo.manage`, старший этого ОМ или
+   * его создатель. Старый сервер поля не несёт — тогда экран считает сам
+   * (`canManageGvoSummary`), без создателя. */
+  canEdit?: boolean;
 }
 
 export interface ListGvoSummariesResponse {
