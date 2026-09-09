@@ -21,6 +21,7 @@ import {
 import { accessHandlers } from "./access-handlers";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
+import { forceCampaignHandlers } from "./force-campaign-handlers";
 import { dutiesHandlers } from "./duties-handlers";
 import { auditHandlers } from "./audit-store";
 import { settingsHandlers } from "./settings-store";
@@ -47,7 +48,9 @@ export function composeOpsHandlers() {
     // ОМ и кадровый снимок подключены тем же пер-доменным переключателем
     // (срез B1). Стор мока остаётся: dictionaries/analytics/ratings читают
     // его фикстуры через readSecurityEventsStore().
-    ...(isOpsSecurityEventsLive() ? [] : securityEventsHandlers),
+    ...(isOpsSecurityEventsLive()
+      ? []
+      : [...forceCampaignHandlers, ...securityEventsHandlers]),
     // План дежурств — тот же пер-доменный переключатель (срез C1).
     ...(isOpsDutiesLive() ? [] : dutiesHandlers),
     ...(isOpsAuditLive() ? [] : auditHandlers),

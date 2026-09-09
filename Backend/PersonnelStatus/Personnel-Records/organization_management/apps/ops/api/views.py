@@ -369,6 +369,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_accept": _FORCES_COMMAND_PERMISSION,
         "forces_return": _FORCES_COMMAND_PERMISSION,
         "forces_collections": _FORCES_COMMAND_PERMISSION,
+        "forces_campaigns": _FORCES_COMMAND_PERMISSION,
+        "forces_campaign": _FORCES_COMMAND_PERMISSION,
+        "forces_campaign_assignment": _FORCES_COMMAND_PERMISSION,
+        "forces_campaign_handover": _FORCES_COMMAND_PERMISSION,
         "forces_collection": _FORCES_COMMAND_PERMISSION,
         "forces_collection_objects": _FORCES_COMMAND_PERMISSION,
         "forces_collection_handover": _FORCES_COMMAND_PERMISSION,
@@ -1417,6 +1421,75 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         rows.sort(key=board.sort_key)
         return Response({"results": rows})
+
+    @action(detail=False, methods=["get", "post"], url_path="forces/campaigns")
+    def forces_campaigns(self, request):
+        from organization_management.apps.ops.force_campaigns import (
+            create_campaign,
+            list_campaigns,
+        )
+
+        if request.method.lower() == "get":
+            return Response(list_campaigns())
+
+        data = request.data or {}
+        return Response(
+            create_campaign(
+                title=data.get("title"),
+                event_ids=data.get("eventIds"),
+                actor=resolve_actor_id(request),
+            ),
+            status=201,
+        )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"forces/campaigns/(?P<campaign_id>[^/.]+)",
+    )
+    def forces_campaign(self, request, campaign_id=None):
+        from organization_management.apps.ops.force_campaigns import get_campaign
+
+        return Response(get_campaign(campaign_id))
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path=r"forces/campaigns/(?P<campaign_id>[^/.]+)/assignments",
+    )
+    def forces_campaign_assignment(self, request, campaign_id=None):
+        from organization_management.apps.ops.force_campaigns import assign_employee
+
+        data = request.data or {}
+        return Response(
+            assign_employee(
+                campaign_id,
+                employee_id=data.get("employeeId"),
+                event_id=data.get("eventId"),
+                visit_object_id=data.get("visitObjectId"),
+                demand_row_id=data.get("demandRowId"),
+                override_conflict=bool(data.get("overrideConflict")),
+                override_reason=data.get("overrideReason"),
+                actor=resolve_actor_id(request),
+            ),
+            status=201,
+        )
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path=r"forces/campaigns/(?P<campaign_id>[^/.]+)/hand-over",
+    )
+    def forces_campaign_handover(self, request, campaign_id=None):
+        from organization_management.apps.ops.force_campaigns import hand_over
+
+        return Response(
+            hand_over(
+                campaign_id,
+                comment=(request.data or {}).get("comment"),
+                actor=resolve_actor_id(request),
+            )
+        )
 
     # 🔴 ПУТЬ НЕ `forces/collection`: он попадал бы в уже заведённый
     # `<id>/forces/<requestId>/` (правка строки запроса, только PATCH), и

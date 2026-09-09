@@ -268,6 +268,11 @@ from organization_management.apps.operations.models_feedback import (  # noqa: E
 )
 from organization_management.apps.operations.models_forces import (  # noqa: E402
     OpsDepartmentRequest,
+    OpsForceCampaign,
+    OpsForceCampaignAssignment,
+    OpsForceCampaignEvent,
+    OpsForceCampaignHandover,
+    OpsForceCampaignPoolMember,
     OpsForceRequest,
     OpsForceRequestMember,
     OpsUnitRequest,

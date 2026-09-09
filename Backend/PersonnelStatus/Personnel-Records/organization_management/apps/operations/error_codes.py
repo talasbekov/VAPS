@@ -139,6 +139,8 @@ CODES = {
     # Передача собранных на расстановку (Plane №390, [СБС-13]).
     "FORCE_HANDED_OVER": frozenset({422}),
     "FORCE_ROSTER_UNASSIGNED": frozenset({422}),
+    "FORCE_CAMPAIGN_TIME_CONFLICT": frozenset({422}),
+    "FORCE_CAMPAIGN_HANDED_OVER": frozenset({422}),
     "ALLOCATION_NOT_DECIDABLE": frozenset({422}),
     "DOUBLE_ASSIGNMENT": frozenset({422}),
     # Старший ПОСТА (Plane №65 «Р-4» → `[РАС-03]`, №445): и сам пост, и его

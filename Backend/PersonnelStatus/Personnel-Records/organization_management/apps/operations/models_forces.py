@@ -37,6 +37,45 @@ class AppendOnlyError(RuntimeError):
     """Попытка изменить уже записанную строку реестра заявки."""
 
 
+class OpsForceCampaign(TimeStampedModel):
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Черновик"
+        GATHERING = "GATHERING", "Сбор пула"
+        DISTRIBUTING = "DISTRIBUTING", "Распределение"
+        HANDED_OVER = "HANDED_OVER", "Передано на расстановку"
+        CLOSED = "CLOSED", "Закрыто"
+
+    code = models.CharField(max_length=50, unique=True, blank=True)
+    title = models.CharField(max_length=500)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        db_table = "ops_force_campaigns"
+        verbose_name = "Распределение сил по мероприятиям"
+        verbose_name_plural = "Распределения сил по мероприятиям"
+        ordering = ["-created_at", "-pk"]
+
+
+class OpsForceCampaignEvent(TimeStampedModel):
+    campaign = models.ForeignKey(
+        OpsForceCampaign, on_delete=models.CASCADE, related_name="campaign_events"
+    )
+    event = models.ForeignKey(
+        "operations.OpsSecurityEvent", on_delete=models.PROTECT, related_name="force_campaign_links"
+    )
+
+    class Meta:
+        db_table = "ops_force_campaign_events"
+        verbose_name = "Мероприятие распределения сил"
+        verbose_name_plural = "Мероприятия распределения сил"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["campaign", "event"], name="unique_force_campaign_event"
+            )
+        ]
+
+
 class _AppendOnly(TimeStampedModel):
     #: Поля, которые можно менять у существующей строки (остальное — новая строка).
     MUTABLE = frozenset()
@@ -231,3 +270,81 @@ class OpsForceRequestMember(_AppendOnly):
         verbose_name = "Сотрудник в составе по запросу"
         verbose_name_plural = "Состав по запросам"
         ordering = ["event_id", "allocation_key", "added_at", "pk"]
+
+
+class OpsForceCampaignAssignment(_AppendOnly):
+    campaign = models.ForeignKey(
+        OpsForceCampaign, on_delete=models.CASCADE, related_name="assignments"
+    )
+    employee = models.ForeignKey(
+        "employees.Employee", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    employee_key = models.CharField(max_length=40)
+    employee_name = models.CharField(max_length=255, blank=True, default="")
+    event = models.ForeignKey(
+        "operations.OpsSecurityEvent", on_delete=models.PROTECT,
+        related_name="force_campaign_assignments",
+    )
+    visit_object = models.ForeignKey(
+        "operations.OpsSecurityEventVisitObject", on_delete=models.PROTECT,
+        related_name="force_campaign_assignments",
+    )
+    demand_row_id = models.CharField(max_length=160)
+    kind_code = models.CharField(max_length=60)
+    override_reason = models.TextField(blank=True, default="")
+    assigned_by = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        db_table = "ops_force_campaign_assignments"
+        verbose_name = "Назначение сотрудника из общего пула"
+        verbose_name_plural = "Назначения сотрудников из общего пула"
+        ordering = ["created_at", "pk"]
+
+
+class OpsForceCampaignPoolMember(_AppendOnly):
+    campaign = models.ForeignKey(
+        OpsForceCampaign, on_delete=models.CASCADE, related_name="pool_members"
+    )
+    employee = models.ForeignKey(
+        "employees.Employee", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    employee_key = models.CharField(max_length=40)
+    employee_name = models.CharField(max_length=255, blank=True, default="")
+    source_event_ids = models.JSONField(default=list)
+
+    class Meta:
+        db_table = "ops_force_campaign_pool_members"
+        verbose_name = "Сотрудник общего пула мероприятий"
+        verbose_name_plural = "Сотрудники общего пула мероприятий"
+        ordering = ["created_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["campaign", "employee_key"],
+                name="unique_force_campaign_pool_member",
+            )
+        ]
+
+
+class OpsForceCampaignHandover(_AppendOnly):
+    campaign = models.ForeignKey(
+        OpsForceCampaign, on_delete=models.CASCADE, related_name="handovers"
+    )
+    event = models.ForeignKey(
+        "operations.OpsSecurityEvent", on_delete=models.PROTECT,
+        related_name="force_campaign_handovers",
+    )
+    comment = models.TextField(blank=True, default="")
+    handed_by = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        db_table = "ops_force_campaign_handovers"
+        verbose_name = "Передача общего пула в расстановку"
+        verbose_name_plural = "Передачи общего пула в расстановку"
+        ordering = ["created_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["campaign", "event"], name="unique_force_campaign_handover"
+            )
+        ]

@@ -476,3 +476,61 @@ test.describe('сборы сил (вид штаба)', () => {
     }
   })
 })
+
+const campaign978Fixture = {
+  id: '978',
+  code: 'РМ-2026-0978',
+  title: 'Распределение на два визита',
+  status: 'DISTRIBUTING',
+  events: [
+    {
+      eventId: '201', code: 'ОМ-2026-0201', title: 'Первый визит',
+      businessDate: '2026-09-12', businessDateEnd: null, eventTime: null, visitObjects: [], demandRows: [],
+    },
+    {
+      eventId: '202', code: 'ОМ-2026-0202', title: 'Второй визит',
+      businessDate: '2026-09-13', businessDateEnd: null, eventTime: null,
+      visitObjects: [{ visitObjectId: '302', objectName: 'Резиденция' }],
+      demandRows: [{ id: 'demand-gate', visitObjectId: '302', kindCode: 'PHYSICAL_SQUAD', place: 'Главный вход', need: 2 }],
+    },
+  ],
+  pool: [
+    { employeeId: '401', employeeName: 'Абенов Серик', sourceEventIds: ['201'] },
+    { employeeId: '402', employeeName: 'Беков Марат', sourceEventIds: ['202'] },
+  ],
+  assignments: [],
+  warnings: [],
+}
+
+test.describe('общее распределение сил по мероприятиям (Plane №978)', () => {
+  test.skip(!LIVE, 'живая проба — нужен SMOKE_LIVE=1')
+
+  test('штаб видит кампанию и открывает рабочее место общего пула', async ({ page }) => {
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/campaigns/'),
+      (route) => route.fulfill({ json: { results: [campaign978Fixture] } }),
+    )
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/campaigns/978/'),
+      (route) => route.fulfill({ json: campaign978Fixture }),
+    )
+    await page.route(
+      (url) => url.pathname.endsWith('/forces/collections/'),
+      (route) => route.fulfill({ json: { results: [] } }),
+    )
+
+    await page.goto(`${APP}/employees?view=forces`)
+    await page.getByRole('tab', { name: 'Сборы', exact: true }).click()
+    const panel = page.locator('section[aria-labelledby="force-campaigns-heading"]')
+    await expect(panel.getByRole('heading', { name: 'Распределения по мероприятиям' })).toBeVisible()
+    await expect(panel.getByText('Распределение на два визита', { exact: true })).toBeVisible()
+    await expect(panel.getByText('Общий пул: 2')).toBeVisible()
+    await panel.getByRole('button', { name: 'Открыть распределение РМ-2026-0978' }).click()
+    await expect(page.getByRole('heading', { name: 'Распределение на два визита' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Общий пул' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Назначения' })).toBeVisible()
+    await expect(page.getByLabel('Сотрудник', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Мероприятие', { exact: true })).toBeVisible()
+  })
+})
