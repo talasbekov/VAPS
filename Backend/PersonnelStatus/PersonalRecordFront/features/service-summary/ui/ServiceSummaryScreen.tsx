@@ -1,11 +1,10 @@
 "use client";
 
-// «Свод по Службе» (Plane №992) — рабочее место оперативного дежурного:
+// «Свод по Службе» (Plane №992/№1115) — рабочее место ответственного за сбор сил:
 // готовность сдачи расхода ПО ВСЕЙ ОРГАНИЗАЦИИ на дату или диапазон дат.
-// Видимость — по РОЛИ (DUTY_OFFICER), тем же приёмом, что у вкладки «Свод
-// департамента» (Plane №990): право `daily_report.generate` шире одной этой
-// роли, и гейт по праву открыл бы экран, например, ответственному за сбор
-// сил — которому здесь смотреть не на что (его область — один департамент).
+// Видимость — по РОЛИ FORCES_GATHERING_OFFICER. Одного `status.view`
+// недостаточно: это право есть у обычных читателей статусов, которым рабочее
+// место свода не предназначено.
 import { Suspense, useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -15,6 +14,7 @@ import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { moduleOpenFor } from "@/entities/portal-access";
 import { localIsoDate, parseIsoDate } from "@/shared/lib/date";
 import { useServiceDateRange } from "../model/date-range";
 import { DaySummarySection } from "./DaySummarySection";
@@ -55,16 +55,19 @@ function ServiceSummaryBody() {
 
   const range = useServiceDateRange(fromParam, toParam);
   const { hasPermission, isLoading: permissionsLoading, roles } = useOpsPermissions();
-  const isDutyOfficer = roles.some((role) => role.code === "DUTY_OFFICER");
-  const canRead = hasPermission("status.view");
+  const canRead = moduleOpenFor(
+    "/security-ops/service-summary",
+    hasPermission,
+    (code) => roles.some((role) => role.code === code),
+  );
 
   if (permissionsLoading) {
     return <p className="text-sm text-muted-foreground">Загрузка прав…</p>;
   }
-  if (!canRead || !isDutyOfficer) {
+  if (!canRead) {
     return (
       <p className="text-sm text-muted-foreground">
-        «Свод по Службе» открыт только оперативному дежурному.
+        Недостаточно прав для просмотра свода по Службе.
       </p>
     );
   }

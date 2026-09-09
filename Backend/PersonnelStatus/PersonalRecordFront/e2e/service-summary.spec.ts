@@ -1,13 +1,13 @@
 /**
  * «Свод по Службе» (Plane №992, `[РАСХ-РШ-05]`, §20.4 п.7) — ЖИВОЙ стенд.
  *
- * Рабочее место оперативного дежурного: видит готовность сдачи по ВСЕЙ
+ * Рабочее место ответственного за сбор сил: видит готовность сдачи по ВСЕЙ
  * организации (не по одному департаменту, как «Свод департамента» №990),
  * может собрать и отправить свод СЛУЖБЫ, но не правит статусы сотрудников
  * и не сдаёт день за подчинённых.
  *
  * Пробы стерегут:
- * 1) экран открыт ТОЛЬКО оперативному дежурному — другая роль видит текст
+ * 1) экран открыт ТОЛЬКО ответственному за сбор сил — другая роль видит текст
  *    отказа, а не список департаментов;
  * 2) дерево показывает РЕАЛЬНУЮ структуру (департаменты → управления →
  *    отделы → сотрудники), а не плоский список — раскрытие листа даёт
@@ -85,8 +85,8 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
   test.skip(ROLE_PASSWORD === '', 'нужен ROLE_ACCOUNTS_PASSWORD')
 
-  test('открыт только оперативному дежурному', async ({ page }) => {
-    await signIn(page, 'role_duty_officer', ROLE_PASSWORD)
+  test('открыт только ответственному за сбор сил', async ({ page }) => {
+    await signIn(page, 'role_forces_gathering_officer', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary`, { waitUntil: 'domcontentloaded' })
     await expect(
       page.getByRole('region', { name: 'Свод по Службе', exact: true }),
@@ -96,7 +96,7 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
     await signIn(page, 'role_division_operator', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary`, { waitUntil: 'domcontentloaded' })
     await expect(
-      page.getByText('«Свод по Службе» открыт только оперативному дежурному.'),
+      page.getByText('Недостаточно прав для просмотра свода по Службе.'),
     ).toBeVisible({ timeout: 25_000 })
     await expect(
       page.getByRole('region', { name: 'Свод по Службе', exact: true }),
@@ -106,7 +106,7 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
   test('дерево показывает реальную структуру, раскрытие листа — поимённый состав без правки', async ({
     page,
   }) => {
-    await signIn(page, 'role_duty_officer', ROLE_PASSWORD)
+    await signIn(page, 'role_forces_gathering_officer', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary`, { waitUntil: 'domcontentloaded' })
     const region = page.getByRole('region', { name: 'Свод по Службе', exact: true })
     await expect(region).toBeVisible({ timeout: 25_000 })
@@ -168,7 +168,7 @@ test.describe(LIVE ? 'Свод по Службе' : 'Свод по Службе 
     const adminToken = await apiToken(STAND_USERNAME, STAND_PASSWORD)
     const date = await freshRootDate(adminToken)
 
-    await signIn(page, 'role_duty_officer', ROLE_PASSWORD)
+    await signIn(page, 'role_forces_gathering_officer', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary?dateFrom=${date}`, {
       waitUntil: 'domcontentloaded',
     })

@@ -1,10 +1,7 @@
 "use client";
 
-// «Свод по Службе» (Plane №992) — рабочее место оперативного дежурного.
-// Видимость решает сама `ServiceSummaryScreen` — по РОЛИ DUTY_OFFICER, а не
-// по общему модульному праву: `daily_report.generate` шире одной этой роли
-// (им же гейтится «Свод департамента», Plane №990), и запись в
-// `MODULE_PERMISSION` открыла бы экран не тому.
+// «Свод по Службе» (Plane №992/№1115) — рабочее место ответственного за сбор
+// сил. Видимость решает сама `ServiceSummaryScreen` по общей ролевой карте.
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { ServiceSummaryScreen } from "@/features/service-summary";

@@ -162,7 +162,7 @@ test.describe(LIVE ? 'основная проходка ежедневного �
     await shot(page, testInfo, '02-department-summary-sent')
 
     const rangeEnd = addDays(businessDate, 2)
-    await signIn(page, 'role_duty_officer', ROLE_PASSWORD)
+    await signIn(page, 'role_forces_gathering_officer', ROLE_PASSWORD)
     await page.goto(`${APP}/security-ops/service-summary?dateFrom=${businessDate}&dateTo=${rangeEnd}`)
     const serviceSummary = page.getByRole('region', { name: 'Свод по Службе', exact: true })
     await expect(serviceSummary).toBeVisible({ timeout: 30_000 })

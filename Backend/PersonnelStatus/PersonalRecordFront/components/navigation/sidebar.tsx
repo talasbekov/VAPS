@@ -12,7 +12,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { modulePermissionsOf } from "@/entities/portal-access";
+import { moduleOpenFor } from "@/entities/portal-access";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { InDevelopmentBadge } from "@/components/in-development-badge";
 import {
@@ -115,9 +115,9 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
       { name: "Сбор сил на ОМ", href: "/employees", icon: Users },
       { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
       { name: "Ежедневный отчет", href: "/reports", icon: FileText },
-      // Права здесь НЕ проверяются — тем же приёмом, что у остальных пунктов
-      // этого меню (см. комментарий у «Права»/«Роли» ниже): видимость решает
-      // сама страница по роли DUTY_OFFICER (Plane №992), а не пункт меню.
+      // Видимость считается тем же источником, что и на странице. Для «Свод
+      // по Службе» это роль FORCES_GATHERING_OFFICER, а не широкое право
+      // `status.view`.
       { name: "Свод по Службе", href: "/security-ops/service-summary", icon: ClipboardCheck },
     ],
   },
@@ -399,9 +399,12 @@ export function Sidebar() {
       // `lib/auth.tsx`. Заказчик потребовал работать по семи ролям, а они
       // живут в каталоге РАЗДЕЛА, поэтому и портальные пункты спрашивают
       // раздел. Одна дорога вместо двух.
-      const required = modulePermissionsOf(item.href);
-      if (required.length === 0 || opsPermissionsLoading) return true;
-      return required.some((code) => hasOpsPermission(code));
+      if (opsPermissionsLoading) return true;
+      return moduleOpenFor(
+        item.href,
+        hasOpsPermission,
+        (code) => sectionRoles.some((role) => role.code === code),
+      );
     }),
   })).filter((category) => category.items.length > 0);
 

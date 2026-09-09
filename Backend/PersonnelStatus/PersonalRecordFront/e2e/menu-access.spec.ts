@@ -51,6 +51,7 @@ const ITEMS: Array<{ name: string; href: string }> = [
   { name: 'Статусы сотрудников', href: '/statuses' },
   { name: 'Сбор сил на ОМ', href: '/employees' },
   { name: 'Ежедневный отчет', href: '/reports' },
+  { name: 'Свод по Службе', href: '/security-ops/service-summary' },
   { name: 'Командный центр', href: '/security-ops/command-center' },
   { name: 'Аналитика службы', href: '/security-ops/analytics' },
   { name: 'Объекты и паспорта', href: '/security-ops/objects' },
@@ -69,7 +70,7 @@ const ITEMS: Array<{ name: string; href: string }> = [
 /** Списки — словами заказчика из карточки №348, а не пересчётом прав. */
 const CLOSED_TO_EMPLOYEE = [
   'Командный центр', 'Реестр ОМ', 'Транспорт ГОН', 'Аналитика ОМ',
-  'Отчеты по ОМ', 'Аналитика службы', 'Справочники', 'Администрирование',
+  'Отчеты по ОМ', 'Аналитика службы', 'Свод по Службе', 'Справочники', 'Администрирование',
   'Журнал изменений',
 ]
 const OPEN_TO_EMPLOYEE = ['Объекты и паспорта', 'Охраняемые лица', 'Законы об ОМ']

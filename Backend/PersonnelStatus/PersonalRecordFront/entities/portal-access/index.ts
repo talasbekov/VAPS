@@ -66,6 +66,9 @@ export const MODULE_PERMISSION = {
   "/security-ops/vehicles": "event.view",
   "/security-ops/analytics/operations": "analytics.operations",
   "/security-ops/service-reports": "report.generate",
+  // «Свод по Службе» дополнительно закрыт ролевой картой ниже: одного
+  // `status.view` недостаточно, иначе его увидят все читатели статусов.
+  "/security-ops/service-summary": null,
   "/security-ops/dictionaries": "dictionary.view",
   "/security-ops/settings": "settings.view",
   "/settings/permissions": "admin.roles",
@@ -79,6 +82,16 @@ export const MODULE_PERMISSION = {
   "/security-ops/changelog": "settings.view",
   "/feedback": "feedback.view",
 } as const satisfies Record<string, string | readonly string[] | null>;
+
+/** Роль модуля, если одного права раздела недостаточно.
+ *
+ * Пункт «Свод по Службе» нельзя открывать одним `status.view`: это право
+ * получают и обычные читатели статусов. Роль ответственного за сбор сил —
+ * отдельная граница рабочего места и должна быть общей для меню и страницы.
+ */
+export const MODULE_ROLE = {
+  "/security-ops/service-summary": "FORCES_GATHERING_OFFICER",
+} as const satisfies Record<string, string | readonly string[]>;
 
 export type ModuleHref = keyof typeof MODULE_PERMISSION;
 
@@ -97,15 +110,30 @@ export function modulePermissionsOf(href: string): readonly string[] {
   return typeof value === "string" ? [value] : value;
 }
 
+export function moduleRolesOf(href: string): readonly string[] {
+  const value = (MODULE_ROLE as Record<string, string | readonly string[]>)[href];
+  if (value === undefined) return [];
+  return typeof value === "string" ? [value] : value;
+}
+
 /**
  * Открыт ли модуль этому человеку — ТЕМ ЖЕ ключом, что и пункт меню.
  *
  * Глубокие ссылки «Открыть „Сбор сил на ОМ“ →» на этапах ОМ и в «Статусах»
  * вели персон, у которых модуль снят (№939), на «Доступ закрыт» — ровно тот
  * дефект, что №350 чинил для меню (ревью №825 по №939, 08.09.2026). Ссылка
- * спрашивает здесь, а не держит свою копию списка прав.
+ * спрашивает здесь, а не держит свою копию списка прав и ролей. Wildcard
+ * администратора сохраняет полный доступ к ролевым модулям.
  */
-export function moduleOpenFor(href: string, hasPermission: (code: string) => boolean): boolean {
+export function moduleOpenFor(
+  href: string,
+  hasPermission: (code: string) => boolean,
+  hasRole: (code: string) => boolean = () => true,
+): boolean {
   const codes = modulePermissionsOf(href);
-  return codes.length === 0 || codes.some(hasPermission);
+  const roles = moduleRolesOf(href);
+  return (
+    (codes.length === 0 || codes.some(hasPermission)) &&
+    (roles.length === 0 || hasPermission("*") || roles.some(hasRole))
+  );
 }
