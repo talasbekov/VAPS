@@ -56,7 +56,6 @@ import { RatingBriefDialog } from "./RatingBriefDialog";
 import {
   PLACEMENT_MANAGE,
   useChainAccess,
-  EVENT_MANAGE,
 } from "@/features/forces-split/ui/chain-access";
 import { moduleOpenFor } from "@/entities/portal-access";
 import {
@@ -115,6 +114,14 @@ type DragPayload = {
   fromPostId?: string;
   roleCode?: string | null;
   sectionCode?: string | null;
+};
+
+type AutoPlacementPlanRow = {
+  postId: string;
+  postLabel: string;
+  employeeId: string;
+  employeeName: string;
+  reasons: string[];
 };
 /**
  * Перенос, ожидающий обоснования (Plane №762).
@@ -338,6 +345,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * ни на что не влияет, значило бы врать про происхождение записи. После
    * перезагрузки блок исчезает — отклонение записано в решениях. */
   const [autoReasons, setAutoReasons] = useState<Record<string, string[]>>({});
+  const [autoPlan, setAutoPlan] = useState<AutoPlacementPlanRow[] | null>(null);
   /** Чей рейтинг открыт: null — модалка закрыта. Человек, а не флаг: иначе
    * пришлось бы держать имя и подразделение отдельной парой полей. */
   const [ratingBriefFor, setRatingOf] = useState<{
@@ -383,6 +391,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * задача №390). */
   const allPosts = event.reconSectorPosts;
   const scope = useVisitObjectScope(event, allPosts);
+  const placementStage = scope.visit?.stage ?? event.stage;
+  const canManagePlacement =
+    placementStage === "PLACEMENT" &&
+    (scope.visit?.canManagePlacement ?? access.can(PLACEMENT_MANAGE));
+  const placementManageReason = canManagePlacement
+    ? ""
+    : access.reason(PLACEMENT_MANAGE);
   /**
    * Кандидаты ПОКАЗАННОГО ОБЪЕКТА (Plane №579).
    *
@@ -762,7 +777,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     e.dataTransfer.effectAllowed = "move";
   }
   function dragOverPost(e: React.DragEvent, postId: string): void {
-    if (!access.can(PLACEMENT_MANAGE)) return;
+    if (!canManagePlacement) return;
     const types = Array.from(e.dataTransfer.types);
     if (!types.includes(DRAG_MIME) && !types.includes("text/plain")) return;
     e.preventDefault();
@@ -776,7 +791,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     e.preventDefault();
     setDropTarget(null);
     const payload = readDragPayload(e);
-    if (payload === null || !access.can(PLACEMENT_MANAGE)) return;
+    if (payload === null || !canManagePlacement) return;
     await placePayload(postId, payload);
   }
   /** Кандидат из пула — назначение; строка с другого поста — снятие и
@@ -870,10 +885,10 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
     setEditing(null);
   }
 
-  /** Автоподбор: реальные назначения свободных кандидатов на недобранные посты. */
+  /** Автоподбор сначала показывает проверяемый план, затем применяет его. */
   function autoFill(): void {
     const taken = new Set(assignedIds);
-    const reasons: Record<string, string[]> = { ...autoReasons };
+    const plan: AutoPlacementPlanRow[] = [];
     for (const post of posts) {
       let missing = post.need - assignmentsOf(post.id).length;
       for (const candidate of candidates) {
@@ -881,14 +896,30 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         if (taken.has(candidate.person.id)) continue;
         taken.add(candidate.person.id);
         missing -= 1;
-        reasons[`${post.id}:${candidate.person.id}`] = autoReasonsFor(
-          candidate,
-          post
-        );
-        assign.mutate({ postId: post.id, employeeId: candidate.person.id });
+        plan.push({
+          postId: post.id,
+          postLabel: `${post.sector} · ${post.post}`,
+          employeeId: candidate.person.id,
+          employeeName: candidate.person.name,
+          reasons: autoReasonsFor(candidate, post),
+        });
       }
     }
+    setAutoPlan(plan);
+  }
+
+  async function confirmAutoFill(): Promise<void> {
+    if (autoPlan === null || autoPlan.length === 0) return;
+    const reasons: Record<string, string[]> = { ...autoReasons };
+    for (const row of autoPlan) {
+      await assign.mutateAsync({
+        postId: row.postId,
+        employeeId: row.employeeId,
+      });
+      reasons[`${row.postId}:${row.employeeId}`] = row.reasons;
+    }
     setAutoReasons(reasons);
+    setAutoPlan(null);
   }
 
   /** Почему автоподбор выбрал ЭТОГО человека на ЭТОТ пост.
@@ -935,8 +966,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             браузера. */}
         <AccessHints
           reasons={[
-            access.reason(PLACEMENT_MANAGE),
-            access.reason(EVENT_MANAGE),
+            placementManageReason,
           ]}
         >
         {/* 🔴 ПРИЧИНА ВОЗВРАТА — ПОКАЗАННОГО ОБЪЕКТА, А НЕ МЕРОПРИЯТИЯ
@@ -979,16 +1009,16 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+            <RightGate reason={placementManageReason}>
               {(describedBy) => (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   disabled={
-                    assign.isPending || unfilled === 0 || !access.can(PLACEMENT_MANAGE)
+                    assign.isPending || unfilled === 0 || !canManagePlacement
                   }
-                  aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                  aria-disabled={!canManagePlacement}
                   aria-describedby={describedBy}
                   onClick={autoFill}
                 >
@@ -1000,7 +1030,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
               reason={
                 placementAlreadyCompleted
                   ? "Расстановка уже завершена — вернитесь к согласованию"
-                  : access.reason(EVENT_MANAGE)
+                  : placementManageReason
               }
             >
               {(describedBy) => (
@@ -1010,7 +1040,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   // На шаге, открытом назад с «Согласования» (№861), сервер
                   // отобьёт повторное завершение (`_require_visit_stage`);
                   // обещать кнопкой то, что отобьют, нельзя (ревью №825).
-                  disabled={complete.isPending || !access.can(EVENT_MANAGE) || placementAlreadyCompleted}
+                  disabled={complete.isPending || !canManagePlacement || placementAlreadyCompleted}
                   aria-describedby={describedBy}
                   onClick={() =>
                     complete.mutate({ visitObjectId: scope.visit?.id })
@@ -1195,7 +1225,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                                 занятый пост выглядел «почти удаляемым». Сервер
                                 правило всё равно проверяет: кнопка — подсказка,
                                 а не защита. */}
-                            {access.can(PLACEMENT_MANAGE) && count === 0 && (
+                            {canManagePlacement && count === 0 && (
                               <button
                                 type="button"
                                 aria-label={`Снять пост ${post.post}`}
@@ -1307,7 +1337,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                       // Строка строго ОДНОГО назначения (Plane №415): якорь для
                       // проб — id назначения, а не имя (оно не единственно).
                       data-testid={`placement-assignment-${assignment.id}`}
-                      draggable={access.can(PLACEMENT_MANAGE)}
+                      draggable={canManagePlacement}
                       onDragStart={(e) => startDrag(e, payloadOfAssignment(assignment))}
                       onDragEnd={() => setDropTarget(null)}
                       className="flex flex-wrap items-start gap-2 rounded-md border p-2 text-sm"
@@ -1452,13 +1482,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         {/* Чип-переключатель «Старший поста» (`[РАС-03]`): старший
                             на пост ОДИН, сервер снимает прежнего сам. Состояние
                             — `aria-pressed`, а не второй текст кнопки. */}
-                        <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+                        <RightGate reason={placementManageReason}>
                           {(describedBy) => (
                             <button
                               type="button"
                               aria-pressed={assignment.isSectorSenior}
                               aria-label={`Старший поста: ${assignment.employeeName}`}
-                              disabled={setSenior.isPending || !access.can(PLACEMENT_MANAGE)}
+                              disabled={setSenior.isPending || !canManagePlacement}
                               aria-describedby={describedBy}
                               onClick={() =>
                                 setSenior.mutate({
@@ -1477,7 +1507,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                           )}
                         </RightGate>
                         <span className="flex gap-1">
-                          <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+                          <RightGate reason={placementManageReason}>
                             {(describedBy) => (
                               <Button
                                 type="button"
@@ -1485,7 +1515,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                                 size="sm"
                                 className="h-8 px-2 text-xs"
                                 aria-label={`Роль и секция: ${assignment.employeeName}`}
-                                disabled={!access.can(PLACEMENT_MANAGE)}
+                                disabled={!canManagePlacement}
                                 aria-describedby={describedBy}
                                 onClick={() => setEditing(assignment)}
                               >
@@ -1499,12 +1529,12 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                               причина не сказана: title на выключенной кнопке
                               подавляется браузером — ровно тот дефект, ради
                               которого №801 и заведена. */}
-                          <RightGate reason={access.reason(PLACEMENT_MANAGE)}>
+                          <RightGate reason={placementManageReason}>
                             {(describedBy) => (
                               <button
                                 type="button"
                                 aria-label={`Удалить с поста: ${assignment.employeeName}`}
-                                disabled={unassign.isPending || !access.can(PLACEMENT_MANAGE)}
+                                disabled={unassign.isPending || !canManagePlacement}
                                 aria-describedby={describedBy}
                                 onClick={() => unassign.mutate({ assignmentId: assignment.id })}
                                 className="flex h-8 w-8 items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
@@ -1824,7 +1854,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     candidates.map(({ person, fit, rating, busy, warn }) => (
                       <RightGate
                         key={person.id}
-                        reason={access.reason(PLACEMENT_MANAGE)}
+                        reason={placementManageReason}
                         className="w-full"
                       >
                         {(describedBy) => (
@@ -1833,8 +1863,8 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         // Выключенная кнопка не тянется (drag на disabled не
                         // стартует), поэтому без выбранного поста кнопка живая:
                         // клик молчит, а перетащить на пост в дереве можно.
-                        disabled={assign.isPending || !access.can(PLACEMENT_MANAGE)}
-                        aria-disabled={!access.can(PLACEMENT_MANAGE)}
+                        disabled={assign.isPending || !canManagePlacement}
+                        aria-disabled={!canManagePlacement}
                         aria-describedby={describedBy}
                         // 🔴 Причины отказа по праву здесь НЕТ (Plane №801):
                         //    на выключенной кнопке `title` не показывается
@@ -1847,7 +1877,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                             ? "Выберите пост слева или перетащите сотрудника на пост"
                             : "Назначить на выбранный пост (или перетащите на пост)"
                         }
-                        draggable={access.can(PLACEMENT_MANAGE)}
+                        draggable={canManagePlacement}
                         onDragStart={(e) => startDrag(e, { employeeId: person.id })}
                         onDragEnd={() => setDropTarget(null)}
                         onClick={() =>
@@ -1931,6 +1961,51 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         <StageError error={updatePostComment.error} />
         <StageError error={setSenior.error} />
         <StageError error={complete.error} />
+
+        <Dialog
+          open={autoPlan !== null}
+          onOpenChange={(open) => {
+            if (!open && !assign.isPending) setAutoPlan(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Предпросмотр автоматической расстановки</DialogTitle>
+              <DialogDescription>
+                Проверьте сотрудников и посты. Назначения сохранятся только после подтверждения.
+              </DialogDescription>
+            </DialogHeader>
+            {autoPlan?.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Для свободных мест нет доступных сотрудников из пула этого объекта.
+              </p>
+            ) : (
+              <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
+                {autoPlan?.map((row) => (
+                  <li key={`${row.postId}:${row.employeeId}`} className="rounded-md border p-3">
+                    <b>{row.employeeName}</b>
+                    <span className="block">{row.postLabel}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {row.reasons.join(" · ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <StageError error={assign.error} />
+            <DialogFooter>
+              <Button variant="outline" disabled={assign.isPending} onClick={() => setAutoPlan(null)}>
+                Отмена
+              </Button>
+              <Button
+                disabled={assign.isPending || (autoPlan?.length ?? 0) === 0}
+                onClick={() => void confirmAutoFill()}
+              >
+                {assign.isPending ? "Распределение…" : "Подтвердить распределение"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Подтверждение НАЗЫВАЕТ ЧИСЛА: какой пост, из какого сектора и на
             сколько человек уменьшится потребность. Снятие поста меняет

@@ -494,6 +494,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             event, perms=perms
         )
         self._attach_recon_capabilities(event, row, perms=perms)
+        self._attach_placement_capabilities(event, row, perms=perms)
         return Response(row, status=status)
 
     def _attach_recon_capabilities(self, event, row, *, perms=None):
@@ -506,6 +507,45 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             visit_row["canManageRecon"] = bool(
                 visit is not None
                 and can_manage_recon(event, visit, employee, perms)
+            )
+        return row
+
+    def _attach_placement_capabilities(self, event, row, *, perms=None):
+        """Назвать право вести расстановку каждого объекта по данным."""
+        perms = effective_permissions(self.request) if perms is None else perms
+        employee = getattr(self.request.user, "employee", None)
+        employee_id = employee.pk if employee is not None and employee.is_active else None
+        event_chief = (
+            employee_id is not None
+            and event.chief_employee_id is not None
+            and int(event.chief_employee_id) == int(employee_id)
+        )
+        # Обычное ``placement.manage`` не делает старшего ОДНОГО объекта
+        # старшим всех объектов мероприятия. Оно остаётся широким только у
+        # старого совместимого случая, когда старший не назначен нигде.
+        no_named_chiefs = not event_service._placement_chiefs(event)
+        broad = bool(perms & {"*", _PLACEMENT_COMMAND_PERMISSION}) or (
+            _PLACEMENT_PERMISSION in perms and no_named_chiefs
+        )
+        visits = {str(visit.pk): visit for visit in event.visit_objects.all()}
+        for visit_row in row.get("visitObjects", []):
+            visit = visits.get(str(visit_row.get("id")))
+            own = bool(
+                visit is not None
+                and employee_id is not None
+                and visit.chief_employee_id is not None
+                and int(visit.chief_employee_id) == int(employee_id)
+            )
+            deputy = bool(
+                visit is not None
+                and employee_id is not None
+                and any(
+                    row.employee_id == employee_id and row.can_edit_placement
+                    for row in visit.deputies.all()
+                )
+            )
+            visit_row["canManagePlacement"] = bool(
+                visit is not None and (broad or event_chief or own or deputy)
             )
         return row
 
@@ -929,17 +969,21 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "next": str(page + 1) if start + page_size < total else None,
                 "previous": str(page - 1) if page > 1 else None,
                 "results": [
-                    self._attach_recon_capabilities(
+                    self._attach_placement_capabilities(
                         e,
-                        {
-                            **serialize_security_event(e, read_context=read_context),
-                            "canEditBulletin": self._may_edit_bulletin(
-                                e, perms=perms
-                            ),
-                            "canManageVisitObjects": self._may_manage_visit_objects(
-                                e, perms=perms
-                            ),
-                        },
+                        self._attach_recon_capabilities(
+                            e,
+                            {
+                                **serialize_security_event(e, read_context=read_context),
+                                "canEditBulletin": self._may_edit_bulletin(
+                                    e, perms=perms
+                                ),
+                                "canManageVisitObjects": self._may_manage_visit_objects(
+                                    e, perms=perms
+                                ),
+                            },
+                            perms=perms,
+                        ),
                         perms=perms,
                     )
                     for e in page_rows
@@ -1696,7 +1740,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """Выделить отмеченных сотрудников по запросу (Plane №395, `[СБС-31]`).
 
         Тело: `{"employeeIds": ["18", …], "kindCode": "…"}`, необязательно
-        `override` и `override_reason` (Plane №545). Физнаряд уходит в резерв
+        `roleCode`, `override` и `override_reason` (Plane №545). Физнаряд уходит в резерв
         кампании без статуса; специальная группа получает ОМ из заявки. Отказы по отдельным
         людям СОБИРАЮТСЯ в ответ (`refused[]` с причиной и признаком
         `overridable`), а не роняют запрос. Гейт — `status.manage`, область —
@@ -1742,6 +1786,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 allowed,
                 actor=actor_id,
                 kind_code=(str(data["kindCode"]) if data.get("kindCode") else None),
+                role_code=(str(data["roleCode"]) if data.get("roleCode") else ""),
                 # Обход мягкого конфликта — тем же протоколом, что у штаба
                 # (Plane №545): одно обоснование на вызов, потому что человек
                 # объясняет ОДНО решение про отмеченную пачку.
@@ -2038,6 +2083,18 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         }
     )
 
+    _PLACEMENT_OBJECT_LEAD_ACTIONS = frozenset(
+        {
+            "placement_assign",
+            "placement_unassign",
+            "placement_move",
+            "placement_post_remove",
+            "placement_post_comment",
+            "placement_sector_senior",
+            "placement_complete",
+        }
+    )
+
     # ── Исключение гейта: старший объекта ведёт согласование своего объекта ──
     #
     # `[СОГ-12]` (Plane №401): «старший объекта — отправить, отозвать, ответить
@@ -2091,6 +2148,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             return self._my_assignments_override(request)
         if self.action in self._STAGE_LEAD_ACTIONS:
             return self._stage_lead_override(request)
+        if self.action in self._PLACEMENT_OBJECT_LEAD_ACTIONS:
+            if self._placement_object_lead_override(request):
+                return True
         if self.action in self._OBJECT_LEAD_ACTIONS:
             return self._object_lead_override(request)
         if self.action not in self._DEPUTY_ACTIONS:
@@ -2121,6 +2181,60 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         self._acting_as_deputy = allowed
         self._deputy_employee = employee if allowed else None
         return allowed
+
+    def _placement_object_lead_override(self, request):
+        """Старший объекта без глобального права правит только свои посты."""
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return False
+        event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
+        if event is None:
+            return False
+
+        # Старший мероприятия ведёт все его объекты по той же роли в данных.
+        if (
+            event.chief_employee_id is not None
+            and int(event.chief_employee_id) == int(employee.pk)
+        ):
+            self._acting_as_object_lead = True
+            self._object_lead_employee = employee
+            return True
+
+        if self.action == "placement_complete":
+            try:
+                visit = event_service.pick_visit_object(
+                    event,
+                    self._visit_object_of(request),
+                    no_objects="У мероприятия нет объектов посещения.",
+                    ambiguous="Выберите объект, чью расстановку завершить.",
+                )
+            except DomainError:
+                return False
+            allowed = (
+                visit.chief_employee_id is not None
+                and int(visit.chief_employee_id) == int(employee.pk)
+            )
+        else:
+            targets = (
+                self._deputy_move_posts(event)
+                if self.action == "placement_move"
+                else [self._deputy_target_post(event)]
+            )
+            if not targets or any(post is None for post in targets):
+                return False
+            allowed = True
+            for post in targets:
+                visit = event_service._visit_of_post(event, post.get("id"))
+                if (
+                    visit is None
+                    or visit.chief_employee_id is None
+                    or int(visit.chief_employee_id) != int(employee.pk)
+                ):
+                    allowed = False
+                    break
+        self._acting_as_object_lead = bool(allowed)
+        self._object_lead_employee = employee if allowed else None
+        return bool(allowed)
 
     def _recon_target(self, request):
         event = OpsSecurityEvent.objects.filter(pk=self.kwargs.get("pk")).first()
@@ -2454,9 +2568,55 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if event is None:
             return
         employee = getattr(self.request.user, "employee", None)
-        employee_id = employee.pk if employee is not None else None
-        if not event_service.placement_is_led_by(event, employee_id):
+        employee_id = employee.pk if employee is not None and employee.is_active else None
+        chiefs = event_service._placement_chiefs(event)
+        # Историческое послабление: если старших нет вообще, обычное
+        # placement.manage продолжает вести расстановку. Как только старшие
+        # названы, граница становится адресной.
+        if not chiefs:
+            return
+        if (
+            employee_id is not None
+            and event.chief_employee_id is not None
+            and int(event.chief_employee_id) == int(employee_id)
+        ):
+            return
+
+        visits = self._placement_target_visits(event)
+        if (
+            employee_id is None
+            or not visits
+            or any(
+                visit.chief_employee_id is None
+                or int(visit.chief_employee_id) != int(employee_id)
+                for visit in visits
+            )
+        ):
             raise PermissionDenied("PERMISSION_DENIED")
+
+    def _placement_target_visits(self, event):
+        """Объекты, которых касается текущая мутация расстановки."""
+        if self.action == "placement_complete":
+            try:
+                return [
+                    event_service.pick_visit_object(
+                        event,
+                        self._visit_object_of(self.request),
+                        no_objects="У мероприятия нет объектов посещения.",
+                        ambiguous="Выберите объект, чью расстановку завершить.",
+                    )
+                ]
+            except DomainError:
+                return []
+        posts = (
+            self._deputy_move_posts(event)
+            if self.action == "placement_move"
+            else [self._deputy_target_post(event)]
+        )
+        if not posts or any(post is None for post in posts):
+            return []
+        visits = [event_service._visit_of_post(event, post.get("id")) for post in posts]
+        return [] if any(visit is None for visit in visits) else visits
 
     def _acting_as_deputy_now(self):
         return bool(getattr(self, "_acting_as_deputy", False))
@@ -2639,6 +2799,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def placement_sector_senior(self, request, pk=None, assignment_id=None):
         """Старший сектора: назначить или снять (Plane №65, «Р-4»)."""
         data = request.data or {}
+        self._require_placement_lead(pk)
         return self._event_response(
             event_service.set_sector_senior(
                 pk,
@@ -2651,6 +2812,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @action(detail=True, methods=["post"], url_path="placement/complete")
     def placement_complete(self, request, pk=None):
         data = request.data or {}
+        self._require_placement_lead(pk)
         return self._event_response(
             event_service.complete_placement(
                 pk,
@@ -4068,7 +4230,11 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         url_path=r"(?P<code>[A-Z_]+)/entries",
     )
     def entries(self, request, code=None):
-        return Response({"results": dict_service.list_entries(code)})
+        return Response({
+            "results": dict_service.list_entries(
+                code, actor_id=resolve_actor_id(request)
+            )
+        })
 
     # 🔴 POST — ОТДЕЛЬНОЕ ДЕЙСТВИЕ `create_entry` на том же адресе
     # (`@entries.mapping.post`; ревью №825 по №901, 08.09.2026). Пока оба
@@ -4087,9 +4253,15 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
             label=data.get("label"),
             description=data.get("description"),
             group_code=data.get("groupCode"),
+            owner_division_id=data.get("ownerDivisionId"),
             actor=resolve_actor_id(request),
         )
-        return Response(dict_service.serialize_entry(entry), status=201)
+        rows = dict_service.list_entries(
+            code, actor_id=resolve_actor_id(request)
+        )
+        return Response(
+            next(row for row in rows if row["id"] == str(entry.pk)), status=201
+        )
 
     @action(
         detail=False,
@@ -4126,14 +4298,20 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         """
         if request.method.upper() == "PATCH":
             data = request.data or {}
-            entry = dict_service.update_entry(
-                entry_id,
-                label=data.get("label"),
-                description=data.get("description"),
-                group_code=data.get("groupCode"),
-                actor=resolve_actor_id(request),
+            update_kwargs = {
+                "entry_id": entry_id,
+                "label": data.get("label"),
+                "description": data.get("description"),
+                "group_code": data.get("groupCode"),
+                "actor": resolve_actor_id(request),
+            }
+            if "ownerDivisionId" in data:
+                update_kwargs["owner_division_id"] = data.get("ownerDivisionId")
+            entry = dict_service.update_entry(**update_kwargs)
+            rows = dict_service.list_entries(
+                entry.dictionary_code, actor_id=resolve_actor_id(request)
             )
-            return Response(dict_service.serialize_entry(entry))
+            return Response(next(row for row in rows if row["id"] == str(entry.pk)))
 
         dict_service.delete_entry(
             entry_id, actor=resolve_actor_id(request)

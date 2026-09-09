@@ -4,7 +4,8 @@
 // создание, деактивация/активация, удаление. Удаление значения со связями —
 // 409 с понятной зависимостью; у неотслеживаемых справочников — 422 с
 // причиной (только деактивация).
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -24,6 +25,20 @@ import {
   useUpdateDictionaryEntry,
 } from "@/hooks/use-dictionaries";
 import type { DictionaryEntryView } from "@/entities/dictionary";
+import { apiClient, type CoreDivision } from "@/lib/api";
+
+function divisionPath(rows: CoreDivision[], id: number): string {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const names: string[] = [];
+  const visited = new Set<number>();
+  let current = byId.get(id);
+  while (current !== undefined && !visited.has(current.id)) {
+    visited.add(current.id);
+    names.push(current.name);
+    current = current.parent === null ? undefined : byId.get(current.parent);
+  }
+  return names.reverse().join(" / ");
+}
 
 export default function DictionaryDetailPage() {
   const params = useParams<{ code: string }>();
@@ -33,6 +48,7 @@ export default function DictionaryDetailPage() {
   const [newCode, setNewCode] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [newGroup, setNewGroup] = useState("");
+  const [newOwnerDivisionId, setNewOwnerDivisionId] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
     null
   );
@@ -51,6 +67,20 @@ export default function DictionaryDetailPage() {
   const mutationError =
     create.error ?? setActive.error ?? remove.error ?? update.error;
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const divisionsQuery = useQuery<CoreDivision[]>({
+    queryKey: ["core-divisions"],
+    queryFn: () => apiClient.getCoreDivisions(),
+    staleTime: 10 * 60_000,
+    enabled: code === "EVENT_PARTICIPATION_KINDS",
+  });
+  const divisions = useMemo(
+    () =>
+      (divisionsQuery.data ?? [])
+        .filter((row) => row.is_active)
+        .map((row) => ({ ...row, path: divisionPath(divisionsQuery.data ?? [], row.id) }))
+        .sort((a, b) => a.path.localeCompare(b.path, "ru")),
+    [divisionsQuery.data]
+  );
 
   // Тот же код, что у списка справочников: карточка достижима по прямой
   // ссылке в обход списка, и без гварда она открывалась любому.
@@ -106,6 +136,7 @@ export default function DictionaryDetailPage() {
                   setActive.mutate({ entryId: entry.id, isActive })
                 }
                 onDelete={() => remove.mutate({ entryId: entry.id })}
+                divisions={divisions}
               />
             ))}
           </div>
@@ -148,6 +179,23 @@ export default function DictionaryDetailPage() {
                   />
                 </div>
               )}
+              {code === "EVENT_PARTICIPATION_KINDS" &&
+                newCode.trim().toUpperCase() !== "PHYSICAL_SQUAD" && (
+                  <div className="min-w-72 flex-1 space-y-1">
+                    <Label htmlFor="entry-owner">Подразделение-владелец *</Label>
+                    <select
+                      id="entry-owner"
+                      className="bg-background h-11 w-full rounded-md border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      value={newOwnerDivisionId}
+                      onChange={(event) => setNewOwnerDivisionId(event.target.value)}
+                    >
+                      <option value="">Выберите подразделение</option>
+                      {divisions.map((division) => (
+                        <option key={division.id} value={division.id}>{division.path}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               <Button
                 type="button"
                 disabled={create.isPending}
@@ -158,10 +206,15 @@ export default function DictionaryDetailPage() {
                     label: newLabel,
                     description: "",
                     groupCode: newGroup === "" ? null : newGroup,
+                    ownerDivisionId:
+                      newCode.trim().toUpperCase() === "PHYSICAL_SQUAD"
+                        ? null
+                        : newOwnerDivisionId || null,
                   });
                   setNewCode("");
                   setNewLabel("");
                   setNewGroup("");
+                  setNewOwnerDivisionId("");
                 }}
               >
                 {create.isPending ? "Добавление…" : "Добавить"}
@@ -196,6 +249,7 @@ function EntryCard({
   onSave,
   onToggle,
   onDelete,
+  divisions,
 }: {
   entry: DictionaryEntryView;
   isEditing: boolean;
@@ -206,15 +260,18 @@ function EntryCard({
     label: string;
     description: string;
     groupCode?: string | null;
+    ownerDivisionId?: string | null;
   }) => Promise<void>;
   onToggle: (isActive: boolean) => void;
   onDelete: () => void;
+  divisions: Array<CoreDivision & { path: string }>;
 }) {
   // Черновик правки живёт В КАРТОЧКЕ: он касается одной строки, и хранить его
   // страницей значило бы чистить его на каждом переключении.
   const [label, setLabel] = useState(entry.label);
   const [description, setDescription] = useState(entry.description);
   const [groupCode, setGroupCode] = useState(entry.groupCode ?? "");
+  const [ownerDivisionId, setOwnerDivisionId] = useState(entry.ownerDivisionId ?? "");
 
   if (isEditing) {
     return (
@@ -258,6 +315,23 @@ function EntryCard({
                 />
               </div>
             )}
+            {entry.dictionaryCode === "EVENT_PARTICIPATION_KINDS" &&
+              entry.code !== "PHYSICAL_SQUAD" && (
+                <div className="space-y-1 md:col-span-2">
+                  <Label htmlFor={`owner-${entry.id}`}>Подразделение-владелец</Label>
+                  <select
+                    id={`owner-${entry.id}`}
+                    className="bg-background h-11 w-full rounded-md border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value={ownerDivisionId}
+                    onChange={(event) => setOwnerDivisionId(event.target.value)}
+                  >
+                    <option value="">Выберите подразделение</option>
+                    {divisions.map((division) => (
+                      <option key={division.id} value={division.id}>{division.path}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
           </div>
           <div className="flex justify-end gap-2">
             <Button
@@ -269,6 +343,7 @@ function EntryCard({
                 setLabel(entry.label);
                 setDescription(entry.description);
                 setGroupCode(entry.groupCode ?? "");
+                setOwnerDivisionId(entry.ownerDivisionId ?? "");
                 onCancelEdit();
               }}
             >
@@ -283,6 +358,11 @@ function EntryCard({
                   label,
                   description,
                   groupCode: entry.groupCode !== null ? groupCode : undefined,
+                  ownerDivisionId:
+                    entry.dictionaryCode === "EVENT_PARTICIPATION_KINDS" &&
+                    entry.code !== "PHYSICAL_SQUAD"
+                      ? ownerDivisionId || null
+                      : undefined,
                 })
               }
             >
@@ -304,6 +384,9 @@ function EntryCard({
           <span className="font-semibold">{entry.label}</span>
           {entry.groupCode !== null && (
             <Badge variant="outline">группа: {entry.groupCode}</Badge>
+          )}
+          {entry.ownerDivisionPath && (
+            <Badge variant="outline">владелец: {entry.ownerDivisionPath}</Badge>
           )}
           <Badge
             className={

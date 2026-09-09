@@ -11,9 +11,8 @@
  * Уборка стенда снимает пробные ОМ по заголовку («Проба»).
  *
  * КРАСНОТА НА МУТАЦИИ: убери `event.create` у `HEAD_OPS_UNIT` в
- * `seed_operations` и пересей стенд — создание отвечает 403. Мутация проверяет
- * ИМЕННО ассерты по API: кнопка «+ Создать бюллетень» рисуется безусловно и
- * правом не управляется вовсе (Plane №604).
+ * `seed_operations` и пересей стенд — создание отвечает 403, а кнопка
+ * исчезает. Read-only observer видит реестр, но не получает ложного действия.
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -44,19 +43,7 @@ test.describe(LIVE ? 'права штаба' : 'права штаба (скип:
   test.skip(PASSWORD === '', 'нужен ACCESS_MATRIX_PASSWORD — тот же, которым заведены учётки')
 
   test('acc_dept_head_d2: реестр открыт и ОМ заводится, а без права — 403', async ({ page }) => {
-    /**
-     * 🔴 КНОПКА — НЕ ДОКАЗАТЕЛЬСТВО ПРАВА (Plane №604). Проверка наличия
-     * «+ Создать бюллетень» была подана как доказательство `event.create`, но
-     * кнопка рисуется БЕЗУСЛОВНО (`app/security-ops/events/page.tsx`): на
-     * мутацию «снять `event.create` у `HEAD_OPS_UNIT`» она покраснеть не может
-     * в принципе, и всю нагрузку нёс один ассерт по API.
-     *
-     * Кнопка проверяется по-прежнему, но за то, чем она и является, — что
-     * экран открылся и отрисовался. А право доказывается ДВУМЯ концами:
-     * учётка штаба заводит ОМ (201), учётка без права получает 403. Без
-     * второго конца первый доказывал бы только «сервер вообще принимает
-     * запросы».
-     */
+    /** Кнопка и API используют один код права; observer проверен ниже. */
     await signIn(page, 'acc_dept_head_d2')
     await page.goto(`${APP}/security-ops/events/`)
     await expect(page.getByRole('heading', { level: 1, name: 'Реестр ОМ' })).toBeVisible()
@@ -89,5 +76,11 @@ test.describe(LIVE ? 'права штаба' : 'права штаба (скип:
       }),
     })
     expect(refused.status, await refused.text()).toBe(403)
+
+    await page.context().clearCookies()
+    await signIn(page, 'observer')
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { level: 1, name: 'Реестр ОМ' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '+ Создать бюллетень' })).toHaveCount(0)
   })
 })

@@ -1966,6 +1966,151 @@ def test_deputy_edits_placement_of_own_object_without_manage_right(manager):
     assert deputy_api.post(f"{base}placement/complete/").status_code == 403
 
 
+def test_object_chief_edits_and_completes_own_placement_without_manage_right(manager):
+    """Назначение старшим объекта само открывает его расстановку.
+
+    У рабочего старшего нет глобального ``placement.manage``: принадлежность
+    действия задаёт объект в данных. Он назначает человека на пост своего
+    объекта и завершает именно этот объект.
+    """
+    from organization_management.apps.ops.tests.test_ops_placement_post_removal import prepared
+
+    base, data = prepared(manager)
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    visit_id = data["visitObjects"][0]["id"]
+    chief = make_employee(last_name="Старший", first_name="Рабочий")
+    chief_api = _deputy_persona(chief, username="ev-object-chief")
+    assignee = make_employee(last_name="Назначаемый", first_name="Иван")
+
+    # Пока сотрудник не назначен старшим — обе мутации закрыты.
+    payload = {
+        "postId": data["reconSectorPosts"][0]["id"],
+        "employeeId": str(assignee.pk),
+    }
+    assert chief_api.post(f"{base}placement/assign/", payload, format="json").status_code == 403
+    assert chief_api.post(
+        f"{base}placement/complete/",
+        {"visitObjectId": visit_id},
+        format="json",
+    ).status_code == 403
+    assert chief_api.get(base).json()["visitObjects"][0]["canManagePlacement"] is False
+
+    visit = OpsSecurityEventVisitObject.objects.get(pk=visit_id)
+    visit.chief_employee_id = chief.pk
+    visit.chief_name = f"{chief.last_name} {chief.first_name}".strip()
+    visit.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+    assert chief_api.get(base).json()["visitObjects"][0]["canManagePlacement"] is True
+
+    assigned = chief_api.post(f"{base}placement/assign/", payload, format="json")
+    assert assigned.status_code == 200, assigned.json()
+    completed = chief_api.post(
+        f"{base}placement/complete/",
+        {
+            "visitObjectId": visit_id,
+            "override": True,
+            "override_reason": "Второй пост снят из-за недобора",
+        },
+        format="json",
+    )
+    assert completed.status_code == 200, completed.json()
+    assert completed.json()["visitObjects"][0]["stage"] == "APPROVAL"
+    assert completed.json()["id"] == event_id
+
+
+def test_object_chief_with_manage_right_cannot_touch_another_objects_placement(manager):
+    """Общее право не превращает старшего одного объекта в старшего всех.
+
+    Проверка нужна именно с ``placement.manage``: без него чужое действие
+    отбивает общий гейт, а прежняя реализация после успешного общего гейта
+    спрашивала лишь «старший ли он ХОТЬ ГДЕ в этом ОМ» и пропускала дальше.
+    """
+    first_object = make_object(with_passport=True)
+    second_object = make_object(
+        code="OBJ-FOREIGN", name="Чужой объект", with_passport=True
+    )
+    chief = make_employee(last_name="Старший", first_name="Первого")
+    assignee = make_employee(last_name="Назначаемый", first_name="Иван")
+    chief_api, chief_user = client_for(
+        "ev-object-chief-with-right",
+        "EV_OBJECT_CHIEF_WITH_RIGHT",
+        perms=("event.view", "placement.manage"),
+    )
+    chief.user = chief_user
+    chief.save(update_fields=["user"])
+
+    data = create_event(manager, first_object).json()
+    event_id = data["id"]
+    base = f"{URL}{event_id}/"
+    first_visit = OpsSecurityEventVisitObject.objects.get(event_id=event_id)
+    first_visit.chief_employee_id = chief.pk
+    first_visit.chief_name = f"{chief.last_name} {chief.first_name}"
+    first_visit.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+    second_visit = OpsSecurityEventVisitObject.objects.create(
+        event_id=event_id,
+        security_object=second_object,
+        object_name=second_object.name,
+        passport_binding=None,
+        position=1,
+    )
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.stage = "PLACEMENT"
+    event.recon_sector_posts = [
+        {
+            "id": "post-own",
+            "sector": "Периметр",
+            "post": "Свой пост",
+            "task": "",
+            "need": 1,
+            "requirements": "",
+            "result": None,
+            "comment": "",
+            "sourceSectorId": None,
+            "sourcePostId": None,
+            "minRating": None,
+            "visitObjectId": str(first_visit.pk),
+        },
+        {
+            "id": "post-foreign",
+            "sector": "Периметр",
+            "post": "Чужой пост",
+            "task": "",
+            "need": 1,
+            "requirements": "",
+            "result": None,
+            "comment": "",
+            "sourceSectorId": None,
+            "sourcePostId": None,
+            "minRating": None,
+            "visitObjectId": str(second_visit.pk),
+        },
+    ]
+    event.save(update_fields=["stage", "recon_sector_posts", "updated_at"])
+
+    visits = chief_api.get(base).json()["visitObjects"]
+    capabilities = {row["id"]: row["canManagePlacement"] for row in visits}
+    assert capabilities[str(first_visit.pk)] is True
+    assert capabilities[str(second_visit.pk)] is False
+
+    own = chief_api.post(
+        f"{base}placement/assign/",
+        {"postId": "post-own", "employeeId": str(assignee.pk)},
+        format="json",
+    )
+    assert own.status_code == 200, own.json()
+    foreign = chief_api.post(
+        f"{base}placement/assign/",
+        {"postId": "post-foreign", "employeeId": str(assignee.pk)},
+        format="json",
+    )
+    assert foreign.status_code == 403
+    foreign_complete = chief_api.post(
+        f"{base}placement/complete/",
+        {"visitObjectId": str(second_visit.pk)},
+        format="json",
+    )
+    assert foreign_complete.status_code == 403
+
+
 def test_deputy_of_one_object_cannot_touch_unmarked_posts_of_a_multi_object_event(
     manager,
 ):

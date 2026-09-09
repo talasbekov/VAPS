@@ -75,10 +75,18 @@ def fact(employee_id, kind_code):
 def test_kind_split_comes_from_participations_not_from_the_status_code(
     merged_catalog,
 ):
-    """Один код на двоих, а «гр./нар.» по-прежнему 1/1."""
+    """Один код статуса, а все специальные виды считаются группами."""
     snapshot = {
-        "roster": [member(1), member(2, full_name="Петров Пётр"), member(3)],
-        "rows": [fact(1, "PHYSICAL_SQUAD"), fact(2, "SCREENING_GROUP")],
+        "roster": [
+            member(1),
+            member(2, full_name="Петров Пётр"),
+            member(3, full_name="Сидоров Семён"),
+        ],
+        "rows": [
+            fact(1, "PHYSICAL_SQUAD"),
+            fact(2, "SCREENING_GROUP"),
+            fact(3, "CANINE_GROUP"),
+        ],
     }
 
     document = build_expense_document(
@@ -92,9 +100,9 @@ def test_kind_split_comes_from_participations_not_from_the_status_code(
     )
 
     row = document.rows[0]
-    assert row.event["total"] == 2, "оба привлечённых обязаны попасть в счётчик ОМ"
+    assert row.event["total"] == 3, "все привлечённые обязаны попасть в счётчик ОМ"
     assert row.event["squad"] == 1, "наряд обязан считаться по kind_code, а не по коду статуса"
-    assert row.event["group"] == 1, "боевая группа обязана считаться по kind_code"
+    assert row.event["group"] == 2, "каждый вид кроме физнаряда обязан считаться группой"
     # «В строю» от занятости не уменьшается — тот же инвариант, что и до слияния.
     assert row.cells["IN_SERVICE"].count == 3
 

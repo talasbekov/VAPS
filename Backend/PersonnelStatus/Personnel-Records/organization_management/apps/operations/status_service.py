@@ -563,12 +563,17 @@ def _save_participations(status, participations, *, actor, system=False):
             field_errors[f"{prefix}.kind_code"] = [
                 "Вид участия не найден в справочнике или неактивен."
             ]
-        elif role_code and not system:
-            if role_code not in roles:
+        elif not system:
+            group_has_roles = any(group_code == kind_code for group_code in roles.values())
+            if group_has_roles and not role_code:
+                field_errors[f"{prefix}.role_code"] = [
+                    "Выберите специальность внутри группы."
+                ]
+            elif role_code not in roles and role_code:
                 field_errors[f"{prefix}.role_code"] = [
                     "Роль не найдена в справочнике или неактивна."
                 ]
-            elif roles[role_code] != kind_code:
+            elif role_code and roles[role_code] != kind_code:
                 field_errors[f"{prefix}.role_code"] = [
                     "Роль принадлежит другой группе."
                 ]
