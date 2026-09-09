@@ -122,6 +122,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   // Справочник охраняемых лиц с экрана (Plane №951).
   PROTECTED_PERSON_CREATED: "Охраняемое лицо заведено",
   PROTECTED_PERSON_PHOTO_SET: "Снимок охраняемого лица загружен",
+  PROTECTED_PERSON_PHOTO_VIEWED: "Снимок охраняемого лица просмотрен",
 };
 
 /**

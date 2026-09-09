@@ -40,7 +40,7 @@ import {
   UNSPECIFIED,
 } from "@/entities/gvo-summary";
 import type { GvoFlight, GvoMember } from "@/entities/gvo-summary";
-import { mediaSrc } from "@/shared/lib/media";
+import { ProtectedPhoto } from "@/shared/ui/protected-photo";
 
 // Строка «С реестром „Охраняемые лица“ эти карточки не связаны…» СНЯТА
 // (Plane №951): карточка лица теперь несёт ссылку на запись справочника,
@@ -252,7 +252,7 @@ export function GvoSummaryPanel({
                   {/* Снимок — из справочника лиц (Plane №951); нет снимка —
                       честная подпись, а не прежняя заглушка «Фото ОЛ»,
                       которая читалась как картинка, которая не загрузилась. */}
-                  {mediaSrc(person.photoUrl) === null ? (
+                  {person.photoUrl === null ? (
                     <div
                       className="flex h-[196px] w-[150px] shrink-0 items-center justify-center rounded-[12px] bg-muted text-[12px] text-muted-foreground shadow-[0_8px_22px_rgba(16,24,40,.10)]"
                       data-slot="gvo-person-photo"
@@ -261,8 +261,8 @@ export function GvoSummaryPanel({
                     </div>
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={mediaSrc(person.photoUrl) ?? undefined}
+                    <ProtectedPhoto
+                      url={person.photoUrl}
                       alt={`Фото: ${person.name}`}
                       className="h-[196px] w-[150px] shrink-0 rounded-[12px] object-cover shadow-[0_8px_22px_rgba(16,24,40,.10)]"
                       data-slot="gvo-person-photo"

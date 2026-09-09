@@ -11,6 +11,9 @@ from django.db import models
 
 from organization_management.apps.operations.models import TimeStampedModel
 from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.operations.protected_person_photo_storage import (
+    ProtectedPersonPhotoStorage,
+)
 
 
 class OpsProtectedPerson(TimeStampedModel):
@@ -30,14 +33,13 @@ class OpsProtectedPerson(TimeStampedModel):
     # Без дефолта: категорию обязан назвать тот, кто заводит запись.
     category = models.CharField(max_length=10, choices=Category.choices)
     bio = models.TextField(blank=True)
-    # Фотография лица (Plane №951): печатается карточкой в сводных данных ГВО
-    # на месте прежней заглушки «Фото ОЛ». Файл — под MEDIA_ROOT, как у
-    # `Employee.photo`: карточка сводки и так показывает имя и биографию лица,
-    # и прятать снимок под приватное хранилище с проверкой права значило бы
-    # защищать одну колонку карточки иначе, чем остальные. Загружается
-    # ручкой `POST /protected-persons/{id}/photo/`.
+    # Фотография лица (Plane №951): байты лежат вне MEDIA_ROOT и читаются
+    # только API-ручкой с проверкой `catalog.view`, области и аудитом.
     photo = models.ImageField(
-        upload_to="protected-persons/photos/", null=True, blank=True
+        upload_to="protected-persons/photos/",
+        storage=ProtectedPersonPhotoStorage(),
+        null=True,
+        blank=True,
     )
     # Данные образца заказчика (Plane №952): «ОЛ должен иметь все данные,
     # которые я предоставил». В образце «Сводные данные» у лица — должность,
