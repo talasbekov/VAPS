@@ -44,12 +44,8 @@ def event_on_placement(manager):
     )
     assert created.status_code == 201, created.content
     event_id = created.json()["id"]
-    manager.patch(
-        f"/api/ops/security-events/{event_id}/bulletin/",
-        {"briefDescription": "x", "initialTasks": "—"},
-        format="json",
-    )
-    manager.post(f"/api/ops/security-events/{event_id}/bulletin/complete/")
+    # ОМ с объектом заводится сразу на рекогносцировке (Plane «Реестр ОМ-5») —
+    # заводить и завершать бюллетень нечего.
     give_chief(manager, event_id)
     visit = service.lock_event(event_id).visit_objects.get()
     manager.patch(

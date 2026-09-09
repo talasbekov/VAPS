@@ -1282,18 +1282,6 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     # ── Стадии ──────────────────────────────────────────────────────────
 
-    @action(detail=True, methods=["patch"], url_path="bulletin")
-    def bulletin(self, request, pk=None):
-        self._require_bulletin_editor(pk)
-        data = request.data or {}
-        return self._event_response(
-            event_service.update_bulletin(
-                pk,
-                brief_description=data.get("briefDescription"),
-                initial_tasks=data.get("initialTasks"),
-            )
-        )
-
     @action(detail=True, methods=["post"], url_path="bulletin/complete")
     def bulletin_complete(self, request, pk=None):
         self._require_bulletin_editor(pk)

@@ -297,11 +297,6 @@ def test_create_without_object(manager):
 
     # Импорт постов из паспорта у такого ОМ отвечает СВОИМ отказом, а не 500.
     base = f"{URL}{data['id']}/"
-    manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
-        format="json",
-    )
     manager.post(f"{base}bulletin/complete/")
     failed = manager.post(f"{base}recon/import-from-passport/")
     assert failed.status_code == 422
@@ -628,15 +623,7 @@ def test_full_lifecycle_walkthrough(manager, approver_client):
     resp = manager.post(f"{base}bulletin/complete/")
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "INVALID_STAGE_TRANSITION"
-    # Сведения бюллетеня при этом правятся на любой стадии — панель над
-    # этапами живёт всю жизнь ОМ.
-    resp = manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "Обеспечение визита.", "initialTasks": "Усиление."},
-        format="json",
-    )
-    assert resp.status_code == 200
-    data = resp.json()
+    data = manager.get(base).json()
     assert (data["stage"], data["readinessPercent"]) == ("RECON", 15)
 
     # RECON: импорт из паспорта, повторный импорт — 422 NOTHING_TO_IMPORT
@@ -830,12 +817,6 @@ def test_double_assignment_rejected(manager):
     employee = make_employee()
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
-    manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
-        format="json",
-    )
-    manager.post(f"{base}bulletin/complete/")
     data = manager.post(f"{base}recon/import-from-passport/").json()
     # второй пост руками — чтобы было куда назначать дважды
     posts = data["reconSectorPosts"] + [
@@ -875,12 +856,6 @@ def test_rating_requirement_soft_conflict_and_override(manager):
     employee = make_employee()
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
-    manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
-        format="json",
-    )
-    manager.post(f"{base}bulletin/complete/")
     data = manager.post(f"{base}recon/import-from-passport/").json()
     # требование рейтинга на посту: данных рейтинга нет → мягкий конфликт
     posts = [{**data["reconSectorPosts"][0], "minRating": 4}]
@@ -922,12 +897,6 @@ def test_unassign_removes_assignment(manager):
     employee = make_employee()
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
-    manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
-        format="json",
-    )
-    manager.post(f"{base}bulletin/complete/")
     data = manager.post(f"{base}recon/import-from-passport/").json()
     post_id = data["reconSectorPosts"][0]["id"]
     data = manager.post(
@@ -956,12 +925,6 @@ def test_import_without_binding_is_explicit(manager):
     obj = make_object()  # без публикаций → binding null
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
-    manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
-        format="json",
-    )
-    manager.post(f"{base}bulletin/complete/")
     resp = manager.post(f"{base}recon/import-from-passport/")
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "NO_PASSPORT_VERSION"
@@ -971,8 +934,8 @@ def test_mutations_require_manage(viewer, manager):
     obj = make_object()
     event_id = create_event(manager, obj).json()["id"]
     resp = viewer.patch(
-        f"{URL}{event_id}/bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
+        f"{URL}{event_id}/details/",
+        {"title": "Обход права"},
         format="json",
     )
     assert resp.status_code == 403
@@ -1028,12 +991,6 @@ def test_visit_object_placement_counts_posts_and_assignments(manager):
     employee = make_employee()
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
-    manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
-        format="json",
-    )
-    manager.post(f"{base}bulletin/complete/")
     data = manager.post(f"{base}recon/import-from-passport/").json()
     posts = data["reconSectorPosts"]
     assert len(posts) == 1
@@ -1066,12 +1023,6 @@ def test_second_visit_object_without_post_mapping_reports_unknown(manager):
     obj = make_object(with_passport=True)
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
-    manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
-        format="json",
-    )
-    manager.post(f"{base}bulletin/complete/")
     data = manager.post(f"{base}recon/import-from-passport/").json()
     manager.patch(
         f"{base}recon/",
@@ -1141,12 +1092,6 @@ def test_the_closure_summary_says_unknown_where_the_placement_does(manager):
     obj = make_object(with_passport=True)
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
-    manager.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "x", "initialTasks": "y"},
-        format="json",
-    )
-    manager.post(f"{base}bulletin/complete/")
     data = manager.post(f"{base}recon/import-from-passport/").json()
     manager.patch(
         f"{base}recon/",

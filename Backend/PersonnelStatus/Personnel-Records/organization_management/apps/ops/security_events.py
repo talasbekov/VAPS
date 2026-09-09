@@ -1796,30 +1796,6 @@ def remove_visit_object_chief(event_id, visit_object_id, *, actor):
 
 
 @transaction.atomic
-def update_bulletin(event_id, *, brief_description, initial_tasks):
-    event = lock_event(event_id)
-    if event.stage == "CLOSED":
-        raise DomainError(
-            "INVALID_STAGE_TRANSITION",
-            422,
-            message="Мероприятие закрыто — текст бюллетеня не меняется.",
-        )
-    field_errors = {}
-    brief = str(brief_description or "").strip()
-    tasks = str(initial_tasks or "").strip()
-    if brief == "":
-        field_errors["briefDescription"] = ["Обязательное поле."]
-    if tasks == "":
-        field_errors["initialTasks"] = ["Обязательное поле."]
-    if field_errors:
-        raise _validation(field_errors)
-    event.brief_description = brief
-    event.initial_tasks = tasks
-    event.save(update_fields=["brief_description", "initial_tasks", "updated_at"])
-    return event
-
-
-@transaction.atomic
 def complete_bulletin(event_id):
     event = lock_event(event_id)
     _require_stage(
@@ -1830,9 +1806,11 @@ def complete_bulletin(event_id):
     # «вот эту часть полностью со всего проекта убери»). В бланке «Орда-4»
     # (`[БЛН-01]`…`[БЛН-04]`) этих полей нет — они прототипный остаток, и
     # экран их не показывает. До этого ОМ без объекта не открывал
-    # рекогносцировку без заполненного текста (`BULLETIN_INCOMPLETE`);
-    # поля и `update_bulletin` пока живут ради старых читателей (e2e-подготовка
-    # фикстур) и снимаются отдельным шагом.
+    # рекогносцировку без заполненного текста (`BULLETIN_INCOMPLETE`).
+    # `update_bulletin` и ручка `PATCH .../bulletin/` сняты (Plane №950) —
+    # `brief_description`/`initial_tasks` остаются полями модели без читателя
+    # ни на экране, ни в контракте API; снятие самих колонок — миграцией
+    # отдельным шагом, здесь не требуется.
     return _advance(event, "RECON")
 
 

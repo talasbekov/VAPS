@@ -203,11 +203,6 @@ def test_an_event_without_visit_objects_keeps_its_own_stage(manager):  # noqa: F
     event_id = created.json()["id"]
     assert not _visits(event_id), "у ОМ без объекта завёлся объект посещения"
 
-    manager.patch(
-        f"{URL}{event_id}/bulletin/",
-        {"briefDescription": "Есть.", "initialTasks": "Есть."},
-        format="json",
-    )
     resp = manager.post(f"{URL}{event_id}/bulletin/complete/")
 
     assert resp.status_code == 200, resp.content

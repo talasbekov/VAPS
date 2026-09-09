@@ -39,7 +39,7 @@ def test_creating_an_event_moved_to_its_own_permission():
     заметила бы.
     """
     create = ("POST", "/api/ops/security-events/")
-    bulletin = ("PATCH", "/api/ops/security-events/<pk>/bulletin/")
+    bulletin = ("POST", "/api/ops/security-events/<pk>/bulletin/complete/")
 
     manage = {(row["method"], row["path"]) for row in catalog()["event.manage"]}
     created_at = {(row["method"], row["path"]) for row in catalog()["event.create"]}

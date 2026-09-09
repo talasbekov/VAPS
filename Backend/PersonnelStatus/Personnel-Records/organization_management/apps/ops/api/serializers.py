@@ -517,8 +517,6 @@ def serialize_security_event(event, *, with_phone=False, read_context=None):
         "forceNeed": event.force_need,
         "conflictsCount": event.conflicts_count,
         "ownerName": event.owner_name,
-        "briefDescription": event.brief_description,
-        "initialTasks": event.initial_tasks,
         "reconChecklist": event.recon_checklist,
         "reconSectorPosts": event.recon_sector_posts,
         # Запрос личного состава с рекогносцировки: число и МОМЕНТ отправки
