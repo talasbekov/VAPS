@@ -155,9 +155,10 @@ async function openHandedOverCampaign(page: Page) {
 }
 
 test('Штаб: специальные группы в ёмкости названы без технического кода', async ({ page }) => {
-  await openHandedOverCampaign(page)
+  const campaign = await openHandedOverCampaign(page)
   await expect(page.getByRole('main')).not.toContainText('SCREENING_GROUP')
   await expect(page.getByText(/Специальная группа · Периметр · Досмотр/).first()).toBeVisible()
+  await stableScreenshot(page, `/tmp/1090-campaign-${campaign.id}-handover-stable.png`)
 })
 
 test('реальная передача: стабильный кадр Штаба и доступ старшего к расстановке', async ({ page }) => {
