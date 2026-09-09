@@ -17,6 +17,8 @@
 бы от любой соседней правки, ничего не говоря про N+1. Прирост на строку — это
 и есть предмет: он обязан быть НУЛЁМ.
 """
+import datetime as dt
+
 import pytest
 
 from django.db import connection
@@ -62,11 +64,11 @@ def _event_with_two_objects(manager, index):  # noqa: F811
         format="json",
     )
     assert imported.status_code == 200, imported.content
-    _populate_people(manager, event_id)
+    _populate_people(manager, event_id, index)
     return event_id
 
 
-def _populate_people(manager, event_id):  # noqa: F811
+def _populate_people(manager, event_id, index):  # noqa: F811
     """Люди в строке: назначения, состав и раскладка (Plane №909).
 
     🔴 БЕЗ ЭТОГО СТОРОЖ НЕ ДОХОДИЛ ДО САМЫХ ДОРОГИХ ПОЛЕЙ. Фикстура заводила
@@ -82,11 +84,29 @@ def _populate_people(manager, event_id):  # noqa: F811
     департаментами и правами, а к предмету сторожа (растут ли запросы вместе
     со строками) он отношения не имеет — фикстура стала бы вдвое длиннее
     самой пробы.
+
+    🔴 `directorates` И ОДНА СТРОКА УЧАСТИЯ ВНЕ ЦЕПОЧКИ — ОБЯЗАТЕЛЬНЫ (Plane
+    №1031, найдено ревью коммита c2505c49). Без `directorates` в раскладке
+    `_with_directorate_progress` уходит ранним `return` до единственного
+    своего запроса (`StaffUnitSelector.divisions_of`) — сторож молчал о нём
+    ВООБЩЕ. Без строки `OpsStatusParticipation`, заведённой МИМО
+    `force_allocation.members` (человеку поставили статус участия напрямую,
+    а не выделением штаба), `_merge_status_members` уходит другим ранним
+    `return` до своих трёх запросов (`divisions_of`, имя подразделения,
+    `denorm_for`) — та же слепая зона. Заявление «прирост запросов — ноль»
+    было верным для двух ветвей из четырёх; теперь фикстура держит все
+    четыре.
     """
+    from organization_management.apps.divisions.models import Division
+    from organization_management.apps.operations import status_service
     from organization_management.apps.operations.models_event import OpsSecurityEvent
+    from organization_management.apps.ops.tests.test_ops_forces_gathering import (
+        make_assignment_status_type,
+    )
     from organization_management.apps.ops.tests.test_ops_security_events_api import (
         make_employee,
     )
+    from organization_management.apps.staff_unit.models import StaffUnit
 
     base = f"{URL}{event_id}/"
     posts = manager.get(base).json()["reconSectorPosts"]
@@ -101,6 +121,11 @@ def _populate_people(manager, event_id):  # noqa: F811
         assert resp.status_code == 200, resp.content
         assigned.append(employee)
     extra = [make_employee(), make_employee()]
+
+    directorate = Division.objects.create(
+        name=f"Управление пробы {index}",
+        division_type=Division.DivisionType.DIRECTORATE,
+    )
 
     event = OpsSecurityEvent.objects.get(pk=event_id)
     event.force_roster = [
@@ -122,9 +147,28 @@ def _populate_people(manager, event_id):  # noqa: F811
                 {"employeeId": str(employee.pk), "employeeName": employee.last_name}
                 for employee in extra
             ],
+            "directorates": [
+                {"divisionId": str(directorate.pk), "name": directorate.name, "need": 1}
+            ],
         }
     ]
     event.save(update_fields=["force_roster", "force_allocation", "updated_at"])
+
+    # Человек со статусом участия, поставленным МИМО штаба (Ш-5, Plane №1031):
+    # у него есть штатная единица (нужна `divisions_of`/`denorm_for`), но его
+    # нет ни в одной строке `members` выше.
+    make_assignment_status_type()
+    outsider = make_employee()
+    StaffUnit.objects.create(division=directorate, employee=outsider, index=1)
+    status_service.create_status(
+        employee_id=outsider.pk,
+        status_type_code="IN_EVENT",
+        system_participations=True,
+        date_start=dt.date(2026, 9, 3),
+        date_end=dt.date(2026, 9, 4),
+        actor="user:test-fixture",
+        participations=[{"event_id": event_id, "kind_code": "PHYSICAL_SQUAD"}],
+    )
 
 
 def _queries_for_registry(manager):  # noqa: F811

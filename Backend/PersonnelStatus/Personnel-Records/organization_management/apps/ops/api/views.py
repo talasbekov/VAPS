@@ -918,10 +918,24 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         for business_date, people in by_date.items():
             if people:
                 read_context.prime_statuses(people, business_date)
-        if everyone:
-            read_context.prime_employees(everyone)
+        # Участия — ДО `prime_employees` (Plane №1031): раскладка сил сводит
+        # ручной набор штаба со статусом (`_merge_status_members`), и
+        # человек, привлечённый статусом МИМО штаба, не попадает ни в
+        # `placement_assignments`, ни в `force_roster` выше — до этой правки
+        # его карточку `divisions_of`/`denorm_for` поднимали СВОИМ запросом на
+        # КАЖДОЙ такой строке реестра. Участия страницы уже читаются одним
+        # запросом (`prime_participations`) — добавить их сотрудников в общий
+        # набор ничего не стоит, а второй проход по уже собранным участиям не
+        # добавляет запросов вовсе.
         if page_rows:
             read_context.prime_participations([event.pk for event in page_rows])
+            for event in page_rows:
+                for participation in read_context.participations(event.pk):
+                    key = str(participation.status.employee_id)
+                    if key:
+                        everyone.add(key)
+        if everyone:
+            read_context.prime_employees(everyone)
         return Response(
             {
                 "owners": owners,
