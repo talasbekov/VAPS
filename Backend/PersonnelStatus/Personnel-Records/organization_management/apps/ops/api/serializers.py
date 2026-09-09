@@ -41,6 +41,15 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     sectors = serializers.SerializerMethodField()
     passportVersions = serializers.SerializerMethodField()
+    photoUrl = serializers.SerializerMethodField()
+
+    def get_photoUrl(self, obj):
+        # Тот же приём, что `person_photo_url` (apps/ops/gvo.py) — снимок
+        # объекта-каталога (Plane SJ-1049), не визита: одно здание снимают
+        # один раз. `bool(obj.photo)` вместо `obj.photo.url` в булевом
+        # контексте — `ImageFieldFile` без файла падает на доступе к `.url`
+        # (`ValueError`), пустая строка на диске никогда не лежит.
+        return obj.photo.url if obj.photo else None
 
     def get_hasSecurityEvents(self, obj):
         """Вкладка «Объекты ОМ» реестра — ПРОИЗВОДНЫЙ признак, не хранимый.
@@ -88,6 +97,7 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
             "hasSecurityEvents",
             "sectors",
             "passportVersions",
+            "photoUrl",
             "createdAt",
             "updatedAt",
         ]
@@ -260,6 +270,9 @@ def serialize_visit_object(event, visit, *, single):
             visit.visit_day.isoformat() if visit.visit_day is not None else None
         ),
         "note": visit.note,
+        # Описание ВИЗИТА (Plane SJ-1049) — не `note`: цель посещения этим
+        # ОМ, а не служебный ярлык сводки ГВО. См. докстринг поля модели.
+        "description": visit.description,
         # Старший ОБЪЕКТА («Реестр ОМ-35.2») — не старший мероприятия: у
         # визита иностранного ОЛ объектов несколько, ответственный у каждого
         # свой. null — не назначен, и это ответ.

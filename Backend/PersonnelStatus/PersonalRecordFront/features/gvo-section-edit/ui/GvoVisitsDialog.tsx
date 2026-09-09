@@ -37,12 +37,13 @@ export interface GvoVisitsDialogProps {
 interface Draft {
   visitDay: string;
   note: string;
+  description: string;
 }
 
 /** Строка формы — своя на каждый объект. `visitDay: ""` — «в день
  * мероприятия»: пустое поле здесь ОТВЕТ, а не незаполненность. */
 function draftOf(visit: VisitObject): Draft {
-  return { visitDay: visit.visitDay ?? "", note: visit.note };
+  return { visitDay: visit.visitDay ?? "", note: visit.note, description: visit.description };
 }
 
 export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
@@ -73,7 +74,11 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
   const changed = visits.filter((visit) => {
     const draft = drafts[visit.id] ?? draftOf(visit);
     const was = draftOf(visit);
-    return draft.visitDay !== was.visitDay || draft.note.trim() !== was.note;
+    return (
+      draft.visitDay !== was.visitDay ||
+      draft.note.trim() !== was.note ||
+      draft.description.trim() !== was.description
+    );
   });
 
   async function submit(): Promise<void> {
@@ -86,6 +91,7 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
           visitObjectId: visit.id,
           visitDay: draft.visitDay,
           note: draft.note.trim(),
+          description: draft.description.trim(),
         });
       }
       toast({ description: "Объекты посещения обновлены" });
@@ -111,7 +117,8 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
   async function resetAll(): Promise<void> {
     setFailed(null);
     const dirty = visits.filter(
-      (visit) => visit.visitDay !== null || visit.note !== ""
+      (visit) =>
+        visit.visitDay !== null || visit.note !== "" || visit.description !== ""
     );
     try {
       for (const visit of dirty) {
@@ -120,9 +127,10 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
           visitObjectId: visit.id,
           visitDay: "",
           note: "",
+          description: "",
         });
       }
-      toast({ description: "Дни и примечания объектов сняты" });
+      toast({ description: "Дни, примечания и описания объектов сняты" });
       onClose();
     } catch {
       setFailed("Не удалось снять правки. Попробуйте ещё раз.");
@@ -132,7 +140,7 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
   function patchDraft(id: string, next: Partial<Draft>): void {
     setDrafts((prev) => ({
       ...prev,
-      [id]: { ...(prev[id] ?? { visitDay: "", note: "" }), ...next },
+      [id]: { ...(prev[id] ?? { visitDay: "", note: "", description: "" }), ...next },
     }));
   }
 
@@ -143,8 +151,8 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
           <DialogTitle>Объекты посещения</DialogTitle>
           <DialogDescription>
             {event.code} · {event.title}. Список объектов ведётся в реестре ОМ —
-            здесь правятся день посещения и примечание. Пустой день означает
-            «в дату мероприятия».
+            здесь правятся день посещения, примечание и описание визита.
+            Пустой день означает «в дату мероприятия».
           </DialogDescription>
         </DialogHeader>
 
@@ -200,6 +208,24 @@ export function GvoVisitsDialog({ event, onClose }: GvoVisitsDialogProps) {
                       }
                     />
                   </div>
+                </div>
+                <div className="space-y-1">
+                  <label
+                    className="block text-[11.5px] font-bold text-[hsl(215.4_16.3%_36.9%)]"
+                    htmlFor={`visit-description-${visit.id}`}
+                  >
+                    Описание визита
+                  </label>
+                  <Input
+                    id={`visit-description-${visit.id}`}
+                    className="h-[38px] text-[13px]"
+                    placeholder="Основная площадка мероприятия."
+                    aria-label={`Описание визита — ${visit.objectName}`}
+                    value={drafts[visit.id]?.description ?? ""}
+                    onChange={(e) =>
+                      patchDraft(visit.id, { description: e.target.value })
+                    }
+                  />
                 </div>
               </div>
             ))}

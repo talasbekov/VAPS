@@ -26,6 +26,8 @@ Smart Josparlau: Personnel Records (в разработке). Эталон фо�
 
 Заморожено: `.Codex/memory` и `docs/api-gaps.md` (с 19.08.2026, снапшот — `<vault>/Archive/`), ClickUp (с 24.08.2026; старые id вида `86eyqf5dc` остались в описаниях задач). BMAD — в `Archive/bmad-process/`, стори-цикл спит с 10.08.2026.
 
+**Решение заказчика 08.09.2026:** активные рабочие процессы Codex выполняются только через навыки `superpowers:*`. Навыки и workflow `bmad-*` не запускать, даже если их описание формально совпадает с запросом; установленный BMAD считать только историческим архивом. Планы Superpowers по-прежнему обязательно зеркалируются в Plane и `<vault>` по правилам ниже.
+
 ## Жёсткие правила
 
 1. Задачи нет в Plane — задачи нет. Своё (находка, техдолг, «заодно») — только в `Предложено Codex`, в работу без разрешения заказчика не брать.
@@ -348,9 +350,9 @@ pytest
 ruff check .
 ```
 
-# BMAD Epic and Story Decomposition Rules
+# Superpowers Planning and Task Decomposition Rules
 
-When creating epics and stories with BMAD, always decompose work as deeply as possible.
+When planning work through Superpowers, always decompose work as deeply as possible.
 
 The goal is to create small, implementation-ready stories that can be built, tested, reviewed, and reverted independently.
 
@@ -561,7 +563,7 @@ After creating epics and stories, always include:
 4. Recommended execution order
 5. Risks and edge cases
 6. Blockers
-7. Next BMAD command
+7. Next Superpowers workflow or action
 
 Before finalizing, check every story.
 

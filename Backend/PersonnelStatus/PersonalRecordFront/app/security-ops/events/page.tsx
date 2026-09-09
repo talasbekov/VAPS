@@ -38,6 +38,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSecurityEvents } from "@/hooks/use-security-events";
+import { useSecurityObjects } from "@/hooks/use-security-objects";
+import { Building2 } from "lucide-react";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MODULE_PERMISSION } from "@/entities/portal-access";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -959,6 +961,15 @@ function VisitObjectList({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // Снимок объекта (Plane SJ-1049) — свойство КАТАЛОГА (см. entities/
+  // security-object), а не визита: карточка визита показывает его по
+  // objectId, не хранит свою копию. Кэш React Query на `["ops-objects"]`
+  // общий для всех раскрытых строк реестра сразу — второй экземпляр
+  // раскрытия не шлёт второй запрос.
+  const objectsQuery = useSecurityObjects();
+  const photoByObjectId = new Map(
+    (objectsQuery.data?.results ?? []).map((obj) => [obj.id, obj.photoUrl])
+  );
   const removal = useMutation({
     mutationFn: removeVisitObject,
     onSuccess: () => {
@@ -1069,8 +1080,27 @@ function VisitObjectList({
             // «наведи красоту в реестре ОМ»).
             <li
               key={visit.id}
-              className="rounded-lg border border-border/70 bg-background p-3 text-xs shadow-sm"
+              className="flex gap-3 rounded-lg border border-border/70 bg-background p-3 text-xs shadow-sm"
             >
+              {/* СНИМОК ОБЪЕКТА (Plane SJ-1049, «в стиле Модуля ОЛ»): та же
+                  плашка-плейсхолдер, что карточка охраняемого лица
+                  (`app/security-ops/persons/page.tsx`) — квадрат `bg-muted`
+                  с иконкой, пока снимка нет. Свойство КАТАЛОГА объекта, не
+                  визита — карточка находит его по `objectId` в общем кэше
+                  `useSecurityObjects()`, не хранит свою копию. */}
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
+                {visit.objectId !== null && photoByObjectId.get(visit.objectId) ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- снимок объекта — произвольный URL медиа-хранилища, не оптимизируемый актив сборки.
+                  <img
+                    src={photoByObjectId.get(visit.objectId) ?? undefined}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <Building2 className="h-6 w-6" aria-hidden="true" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
               {/* ШАПКА КАРТОЧКИ: имя объекта и его непосредственные действия
                   (статус, снять объект) — в одной строке, статус и «снять»
                   прижаты вправо ЗДЕСЬ, у заголовка, а не в хвосте длинного
@@ -1144,6 +1174,17 @@ function VisitObjectList({
                   )}
                 </div>
               </div>
+
+              {/* ОПИСАНИЕ ВИЗИТА (Plane SJ-1049) — цель посещения на ЭТОМ
+                  ОМ («Основная площадка мероприятия.»), не `note`. Пусто —
+                  строка не рисуется вовсе: обещание описания без текста
+                  хуже отсутствия строки. Правится в окне «Объекты
+                  посещения» сводки ГВО (`GvoVisitsDialog`). */}
+              {visit.description !== "" && (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {visit.description}
+                </p>
+              )}
 
               {/* СВОДКА ОБЪЕКТА: дата, охраняемое лицо, готовность
                   расстановки и бейджи возврата — сгруппированы отдельной
@@ -1262,6 +1303,7 @@ function VisitObjectList({
                   visit={visit}
                   canEdit={canEditVisit}
                 />
+              </div>
               </div>
             </li>
           );

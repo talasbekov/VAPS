@@ -11,6 +11,11 @@ import pytest
 
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.ops import documents_placement as placement
+from .test_ops_placement_post_removal import prepared  # noqa: F401
+from .test_ops_security_events_api import (  # noqa: F401
+    make_employee,
+    manager,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -53,6 +58,57 @@ def make_event(posts=None, assignments=None):
     event.placement_assignments = ASSIGNMENTS if assignments is None else assignments
     event.save(update_fields=["recon_sector_posts", "placement_assignments"])
     return event
+
+
+def test_the_callsign_reaches_the_document_from_a_real_assignment(manager):  # noqa: F811
+    """🔴 Plane №878: позывной доезжает до документа НАСТОЯЩИМ путём.
+
+    Докстрока `_assigned_names` обещает «фамилиями и позывными», и код читает
+    `row.get("callsign")` из строки назначения — а туда позывной не клал
+    НИКТО. Ветка была мертва с рождения: соседние пробы этого файла
+    (`ASSIGNMENTS`) кладут ключ РУКАМИ, то есть проверяют формат, который
+    прод-данные произвести не могут. Такая проба зелена и при полностью
+    неработающем поле.
+
+    Поэтому здесь путь целиком: мероприятие доводится до «Расстановки»,
+    человек с позывным ставится на пост НАСТОЯЩЕЙ ручкой `placement/assign/`,
+    и позывной ищется в готовом PDF.
+
+    Проверяются ДВА звена по отдельности, а не одно «в документе есть строка»:
+    (1) строка назначения несёт позывной — иначе непонятно, где обрыв;
+    (2) документ его печатает. Одного второго хватило бы для зелени, но при
+    падении он не сказал бы, чья это половина.
+
+    Позывной снимается В МОМЕНТ расстановки — тем же правилом, что имя
+    (`employeeName`): в документе должно остаться то, что было записано, даже
+    если человека потом переименовали или позывной сменили.
+    """
+    base, data = prepared(manager)
+    post = data["reconSectorPosts"][0]
+    employee = make_employee(last_name="Беркутов")
+    employee.callsign = "2-27"
+    employee.save(update_fields=["callsign"])
+
+    assigned = manager.post(
+        f"{base}placement/assign/",
+        {"postId": post["id"], "employeeId": str(employee.pk)},
+        format="json",
+    )
+    assert assigned.status_code == 200, assigned.json()
+
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1])
+    row = next(
+        r for r in event.placement_assignments if str(r.get("postId")) == str(post["id"])
+    )
+    assert row.get("callsign") == "2-27", (
+        "строка назначения не несёт позывной — документ читает ключ, "
+        f"которого никто не кладёт: {row}"
+    )
+
+    printed = flat(text_of(placement.render_placement(event.code)))
+    assert "2-27" in printed, "позывной не доехал до документа расстановки"
 
 
 def test_there_is_a_row_for_every_post():

@@ -680,6 +680,70 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(details).toBeHidden()
   })
 
+  test('описание визита из карточки ГВО доезжает до карточки объекта в реестре (Plane SJ-1049)', async ({
+    page,
+  }) => {
+    // SJ-1049: раскрытая строка объекта показывает описание визита («Основная
+    // площадка мероприятия.») — цель посещения на ЭТОМ ОМ, отдельное поле от
+    // `note`. Проба ведёт своё мероприятие, задаёт описание через ту же ручку,
+    // что использует `GvoVisitsDialog` (PATCH visit-objects/:id/), и стережёт,
+    // что текст доезжает до карточки, а НЕ заведённое описание не рисует
+    // пустую строку вовсе.
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const objects = (await (
+      await fetch(`${API}/api/ops/security-events/bindable-objects/`, { headers })
+    ).json()) as { results: { id: string; name: string }[] }
+    expect(objects.results.length, 'на стенде нет объектов').toBeGreaterThan(0)
+    const created = (await (
+      await fetch(`${API}/api/ops/security-events/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          title: `Проба описания визита (e2e) ${Date.now()}`,
+          objectId: objects.results[0].id,
+          businessDate: '2026-09-16',
+          kind: 'INTERNAL',
+        }),
+      })
+    ).json()) as { id: string; code: string; visitObjects: { id: string; objectName: string }[] }
+    expect(created.visitObjects).toHaveLength(1)
+    const visitId = created.visitObjects[0].id
+    const description = 'Основная площадка мероприятия.'
+
+    const patched = (await (
+      await fetch(`${API}/api/ops/security-events/${created.id}/visit-objects/${visitId}/`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ visitDay: '', note: '', description }),
+      })
+    ).json()) as { visitObjects: { description: string }[] }
+    expect(patched.visitObjects[0].description).toBe(description)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/?search=${encodeURIComponent(created.code)}`)
+    const toggle = page.getByRole('button', {
+      name: `Развернуть объекты посещения ${created.code}`,
+    })
+    await expect(toggle).toBeVisible({ timeout: 15_000 })
+    await toggle.click()
+    // Подпись кнопки МЕНЯЕТСЯ после клика («Развернуть» → «Свернуть») —
+    // старый локатор ссылался бы на кнопку, которой уже нет; `aria-controls`
+    // читаем у ПЕРЕЗАПРОШЕННОЙ кнопки с новой подписью (тот же приём, что в
+    // «объекты посещения добавляются кнопкой…» выше).
+    const expandedToggle = page.getByRole('button', {
+      name: new RegExp(`^(Свернуть|Развернуть) объекты посещения ${created.code}$`),
+    })
+    const detailsId = await expandedToggle.getAttribute('aria-controls')
+    const details = page.locator(`#${detailsId}`)
+    await expect(details).toContainText(description, { timeout: 15_000 })
+
+    // Плейсхолдер снимка (иконка) стоит на месте, когда объект без фото —
+    // настоящего <img> в карточке нет, обещание снимка без файла хуже
+    // молчаливой иконки-заглушки.
+    await expect(details.locator('img')).toHaveCount(0)
+  })
+
   test('клик по строке бюллетеня раскрывает список, а не уводит в этапы', async ({
     page,
   }) => {

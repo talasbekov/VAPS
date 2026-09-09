@@ -877,6 +877,7 @@ function emptyEvent(
         // называть день второй раз незачем.
         visitDay: null,
         note: "",
+        description: "",
         // 🔴 ИДЕНТИФИКАТОР — ИЗ КАДРОВОГО СПИСКА МОКА, А НЕ ЛЮБОЙ (Plane
         // №633). Здесь стояло `"1"`, а состав мока нумеруется `emp-N`
         // (Ахметова С. — `emp-9`). Совпасть было не с чем: окно «Назначить
@@ -4001,6 +4002,7 @@ export const securityEventsHandlers = [
             position,
             visitDay: null,
             note: "",
+            description: "",
             chiefEmployeeId: null,
             chiefName: "",
             placementNeed: 0,

@@ -26,11 +26,13 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Building2 } from "lucide-react";
+import { useToast } from "@/shared/hooks/use-toast";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   useSecurityObject,
   useSecurityObjects,
+  useUploadObjectPhoto,
 } from "@/hooks/use-security-objects";
 import {
   FRESHNESS_LABEL,
@@ -261,25 +263,87 @@ function PassportHeader({
   object: SecurityObject;
   freshness: PassportFreshness | undefined;
 }) {
+  const { toast } = useToast();
+  const uploadPhoto = useUploadObjectPhoto();
+
+  function pickPhoto(file: File | undefined): void {
+    if (file === undefined) return;
+    uploadPhoto.mutate(
+      { id: object.id, file },
+      {
+        onSuccess: () => toast({ description: "Снимок объекта загружен" }),
+        onError: (error: unknown) => {
+          const message =
+            typeof error === "object" && error !== null && "message" in error
+              ? String((error as { message: unknown }).message)
+              : "";
+          toast({
+            title: "Снимок не загружен",
+            description:
+              message === "" ? "Сервис временно недоступен. Попробуйте ещё раз." : message,
+            variant: "destructive",
+          });
+        },
+      }
+    );
+  }
+
   return (
     <Card className="mb-4">
-      <CardContent className="p-4">
-        <div className="mb-1 flex flex-wrap items-center gap-2">
-          <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-bold">
-            {object.code}
-          </span>
-          <PassportStateBadge state={object.passportState} />
-          {freshness !== undefined && (
-            <span className="text-[11px] text-muted-foreground">
-              {FRESHNESS_LABEL[freshness.state]}
-            </span>
-          )}
+      <CardContent className="flex gap-4 p-4">
+        {/* Снимок объекта-каталога (Plane SJ-1049, «в стиле Модуля ОЛ») —
+            та же плашка-плейсхолдер, что карточка охраняемого лица
+            (`app/security-ops/persons/page.tsx`): квадрат `bg-muted` с
+            иконкой, пока снимка нет. Право на загрузку не проверяется на
+            клиенте намеренно — та же конвенция, что у формы паспорта на
+            этой странице: сервер отбивает `object.manage` 403-м, а не
+            кнопка прячется по догадке. */}
+        <div className="flex flex-col items-center gap-1.5">
+          <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-muted text-muted-foreground">
+            {object.photoUrl !== null ? (
+              // eslint-disable-next-line @next/next/no-img-element -- снимок объекта — произвольный URL медиа-хранилища, не оптимизируемый актив сборки.
+              <img src={object.photoUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <Building2 className="h-8 w-8" aria-hidden="true" />
+            )}
+          </div>
+          <label className="cursor-pointer text-[11px] font-semibold text-primary-ink hover:underline">
+            {uploadPhoto.isPending
+              ? "Загрузка…"
+              : object.photoUrl !== null
+                ? "Заменить снимок"
+                : "Загрузить снимок"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              disabled={uploadPhoto.isPending}
+              aria-label={`Снимок объекта ${object.name}`}
+              onChange={(e) => {
+                pickPhoto(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
         </div>
-        <PageHeader
-          eyebrow="Объекты"
-          title={object.name}
-          description={`${object.type} · ${object.region} · ${object.address}`}
-        />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-bold">
+              {object.code}
+            </span>
+            <PassportStateBadge state={object.passportState} />
+            {freshness !== undefined && (
+              <span className="text-[11px] text-muted-foreground">
+                {FRESHNESS_LABEL[freshness.state]}
+              </span>
+            )}
+          </div>
+          <PageHeader
+            eyebrow="Объекты"
+            title={object.name}
+            description={`${object.type} · ${object.region} · ${object.address}`}
+          />
+        </div>
       </CardContent>
     </Card>
   );

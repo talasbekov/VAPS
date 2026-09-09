@@ -53,6 +53,8 @@ CONTRACT_FIELDS = {
     # Принадлежность хранится, признак ОМ считается от security_events.
     "ownership",
     "hasSecurityEvents",
+    # Снимок объекта-каталога (Plane SJ-1049) — null, пока не загружен.
+    "photoUrl",
     "createdAt",
     "updatedAt",
 }

@@ -73,6 +73,7 @@ interface ObjectRow {
   ownership: 'OWN' | 'GUARDED'
   hasSecurityEvents: boolean
   sectors: { name: string; posts: unknown[] }[]
+  photoUrl: string | null
 }
 
 interface Registry {
@@ -257,6 +258,57 @@ test.describe(LIVE ? 'паспорт объекта' : 'паспорт объе�
       await expect(page.getByText(planned.honestLine, { exact: true })).toBeVisible()
     }
   })
+
+  test('снимок объекта загружается с шапки паспорта (Plane SJ-1049)', async ({ page }) => {
+    // Своя карточка КАТАЛОГА — не визита: снимок переживает конкретное ОМ,
+    // грузится один раз с шапки паспорта. Проба стережёт: плейсхолдер до
+    // загрузки (иконка, не <img>), кнопка меняет подпись «Загрузить» →
+    // «Заменить», <img> после загрузки указывает на своё файловое хранилище,
+    // и снимок ДОЕЗЖАЕТ до конверта реестра — не только до карточки.
+    const snapshot = await registry(await apiToken())
+    const object = snapshot.results[0]
+    expect(object, 'в реестре нет ни одного объекта — проба вакуумна').toBeDefined()
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}/${object!.id}`)
+    await expect(generalCard(page)).toBeVisible({ timeout: 15_000 });
+
+    const fileInput = page.getByLabel(`Снимок объекта ${object!.name}`);
+    const uploadLabel = page.getByText(/^(Загрузить снимок|Заменить снимок)$/);
+    await expect(uploadLabel).toBeVisible();
+    const wasEmpty = (await uploadLabel.textContent()) === 'Загрузить снимок';
+    // Прошлый прогон этой самой пробы мог уже оставить снимок на объекте —
+    // `src` ДО загрузки снят заранее, чтобы дождаться, что он ИЗМЕНИЛСЯ, а не
+    // просто «виден» (старый `<img>` виден и без новой загрузки — ассерт по
+    // одной видимости читал бы предыдущий прогон за этот).
+    const img = page.locator('img[alt=""]').first();
+    const srcBefore = wasEmpty ? null : await img.getAttribute('src');
+
+    // 1×1 PNG в памяти — файл на диске пробе не нужен.
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    );
+    await fileInput.setInputFiles({ name: 'probe.png', mimeType: 'image/png', buffer: png });
+
+    if (wasEmpty) {
+      await expect(page.getByText('Заменить снимок')).toBeVisible({ timeout: 15_000 });
+      await expect(img).toBeVisible({ timeout: 15_000 });
+    } else {
+      await expect
+        .poll(() => img.getAttribute('src'), { timeout: 15_000 })
+        .not.toBe(srcBefore);
+    }
+    const src = await img.getAttribute('src');
+    expect(src, 'снимок должен указывать на своё файловое хранилище').toMatch(
+      /\/media\/security-objects\/photos\//,
+    );
+
+    // Сервер, а не только экран: снимок пришёл в конверт реестра.
+    const after = await registry(await apiToken());
+    const updated = after.results.find((row) => row.id === object!.id);
+    expect(updated?.photoUrl).toBe(src);
+  });
 
   test('общие данные и срок проверки идут от сервера', async ({ page }) => {
     const snapshot = await registry(await apiToken())

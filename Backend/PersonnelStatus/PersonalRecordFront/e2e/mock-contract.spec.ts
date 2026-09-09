@@ -2314,5 +2314,64 @@ test.describe(
       expect(result.postBody?.error_code).toBe('VISIT_CHIEF_REQUIRED')
     })
 
+    test('комбобокс старшего печатает позывной, а без него строка не ломается (Plane №878)', async ({
+      page,
+    }) => {
+      // 🔴 ЧТО ЭТО СТЕРЕЖЁТ. `[БЛН-11]` п.6 прямо перечисляет позывной в
+      // строке подсказки выбора старшего. Данные приезжают с №456, а поля не
+      // было: человек выбирал старшего вслепую и узнавал позывной только из
+      // готового PDF.
+      //
+      // ПОЧЕМУ ПРОБА ЖИВЁТ В МОК-РЕЖИМЕ, А НЕ НА СТЕНДЕ. На стенде 440
+      // сотрудников и НИ ОДНОГО с позывным (проверено запросом к базе) —
+      // живая проба была бы вакуумной и зеленела бы при полностью
+      // неработающем поле. Мок-режим подменяет только ответ ручки, сам экран
+      // здесь настоящий, поэтому проверка честная.
+      //
+      // Проверяются ОБЕ половины. Одной первой мало: строка «показывать
+      // позывной» легко пишется так, что у не имеющих его остаётся висящий
+      // разделитель — а это и есть «сломанная строка», ради которой
+      // отсутствующее значение отсекается фильтром, а не подставляется
+      // пустым.
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/`)
+      await expect(
+        page.getByRole('heading', { name: 'Реестр ОМ' })
+      ).toBeVisible({ timeout: 30_000 })
+      await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+      const dialog = page.getByRole('dialog')
+      const chief = dialog.locator('#chiefEmployeeId')
+      const options = dialog.locator('[data-slot="chief-combobox"] li[role="option"]')
+
+      // У этого позывной есть.
+      await chief.fill('Жаксылыков')
+      await expect(options.first()).toContainText('позывной «2-31»', {
+        timeout: 15_000,
+      })
+
+      // А у этого — нет, и строка обязана начинаться со звания, а не с
+      // разделителя.
+      await chief.fill('Абенов')
+      await expect(options.first()).toContainText('Абенов', { timeout: 15_000 })
+      await expect(options.first()).not.toContainText('позывной')
+      const hint = await options
+        .first()
+        .locator('span.block.text-\\[11px\\]')
+        .innerText()
+      expect(hint.trim(), 'у сотрудника без позывного строка начинается с разделителя').toMatch(
+        /^Майор/
+      )
+    })
   },
 )

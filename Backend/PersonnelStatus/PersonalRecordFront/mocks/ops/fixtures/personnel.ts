@@ -14,7 +14,7 @@ interface PersonnelSeed {
 
 const SEED: PersonnelSeed[] = [
   { id: "emp-1", name: "Абенов С.", rankLabel: "Майор", unit: "Отдел охраны объектов" },
-  { id: "emp-2", name: "Жаксылыков Д.", rankLabel: "Капитан", unit: "Отдел охраны объектов" },
+  { id: "emp-2", name: "Жаксылыков Д.", rankLabel: "Капитан", callsign: "2-31", unit: "Отдел охраны объектов" },
   { id: "emp-3", name: "Оспанова А.", rankLabel: "Ст. лейтенант", unit: "Отдел охраны объектов" },
   { id: "emp-4", name: "Токтаров Н.", rankLabel: "Лейтенант", unit: "Отдел охраны объектов" },
   { id: "emp-5", name: "Сериков А.", rankLabel: "Прапорщик", unit: "Отдел охраны объектов" },
@@ -113,6 +113,13 @@ export function personnelPhone(id: string): string {
  * (`business_date`), а без неё честно молчит. */
 export const PERSONNEL_ROSTER: PersonnelSummarySnapshot[] = SEED.map((row) => ({
   ...row,
+  // 🔴 КЛЮЧ ЕСТЬ ВСЕГДА, ПУСТОЙ ОН ИЛИ НЕТ (Plane №878, зеркало сервера:
+  // `"callsign": employee.callsign or ""`). Раскладка `...row` роняла ключ у
+  // девяти сотрудников из десяти — то есть мок описывал ответ, которого
+  // сервер не даёт: «нет позывного» он выражает пустой строкой, а не
+  // отсутствием поля. Пока читателя не было, расхождение молчало; с
+  // комбобоксом старшего оно стало видимым.
+  callsign: row.callsign ?? "",
   statusCode: null,
   statusLabel: null,
 }));

@@ -1,7 +1,7 @@
 "use client";
 
 // Запросы реестра объектов ОМ (конвенция OLD: hooks поверх клиента).
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { ListObjectHistoryResponse } from "@/entities/protected-person";
@@ -9,6 +9,7 @@ import {
   OPS_OBJECTS_PATH,
   objectDetailPath,
   objectHistoryPath,
+  objectPhotoPath,
   type ListObjectsResponse,
   type SecurityObject,
 } from "@/entities/security-object";
@@ -25,6 +26,23 @@ export function useSecurityObject(id: string) {
     queryKey: ["ops-objects", id],
     queryFn: () => opsApiClient.get<SecurityObject>(objectDetailPath(id)),
     enabled: id !== "",
+  });
+}
+
+/** Снимок объекта-каталога (Plane SJ-1049). Реестр перечитывается: карточка
+ * объекта в раскрытии «Реестра ОМ» берёт снимок из каталога, а не хранит
+ * свою копию. */
+export function useUploadObjectPhoto() {
+  const queryClient = useQueryClient();
+  return useMutation<SecurityObject, OpsApiFailure, { id: string; file: File }>({
+    mutationFn: ({ id, file }) => {
+      const form = new FormData();
+      form.append("photo", file);
+      return opsApiClient.postForm<SecurityObject>(objectPhotoPath(id), form);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ops-objects"] });
+    },
   });
 }
 

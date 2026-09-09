@@ -89,12 +89,29 @@ class SecurityObjectViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSe
         "create": _MANAGE_OBJECT_PERMISSION,
         "passport": _MANAGE_OBJECT_PERMISSION,
         "passport_versions": _MANAGE_OBJECT_PERMISSION,
+        # Снимок — та же правка справочника объекта, что паспорт (Plane
+        # SJ-1049): своего права заводить незачем — держатель паспорта и есть
+        # владелец объекта.
+        "photo": _MANAGE_OBJECT_PERMISSION,
     }
 
     @action(detail=True, methods=["get"], url_path="history")
     def history(self, request, pk=None):
         """История ОМ на объекте и лица, его посещавшие (Plane №38)."""
         return Response({"results": gvo_service.object_event_history(pk)})
+
+    @action(detail=True, methods=["post"], url_path="photo")
+    def photo(self, request, pk=None):
+        """POST /objects/{id}/photo/ — снимок объекта (multipart, поле
+        `photo`; Plane SJ-1049). Прежний снимок заменяется."""
+        security_object = passport_service.set_object_photo(
+            pk,
+            request.FILES.get("photo"),
+            actor=resolve_actor_id(request) or request.user,
+        )
+        if security_object is None:
+            raise NotFound("Объект не найден.")
+        return Response(SecurityObjectSerializer(security_object).data)
 
     # Заведение объекта прямо из окна создания ОМ: «объекта нет в списке —
     # добавить» (ClickUp 86eyqf7a7). Карточка МИНИМАЛЬНАЯ, паспорт не оформлен —
@@ -839,6 +856,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     visit_object_id,
                     visit_day=data.get("visitDay"),
                     note=data.get("note"),
+                    description=data.get("description"),
                 )
             )
         return self._event_response(

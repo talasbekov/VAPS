@@ -139,7 +139,24 @@ export function ChiefCombobox({
                 <span className="min-w-0">
                   <span className="block font-medium">{person.name}</span>
                   <span className="block text-[11px] text-muted-foreground">
-                    {[person.rankLabel, person.unit].filter((p) => p !== "").join(" · ")}
+                    {/* Позывной — ПЕРВЫМ и со своей подписью (`[БЛН-11]` п.6,
+                        Plane №878). Форма взята у соседнего комбобокса охраняемых
+                        лиц (`ProtectedPersonsPicker`), а не придумана: там она уже
+                        канон, и два списка выбора в одной форме обязаны читаться
+                        одинаково. Подпись «позывной» не украшение — без неё
+                        значение сливается с должностью и званием, стоящими рядом.
+                        Пустой позывной отсекается тем же `filter`, что и остальные
+                        части: у кого его нет, строка выглядит как раньше, без
+                        висящего разделителя. */}
+                    {[
+                      (person.callsign ?? "") === ""
+                        ? ""
+                        : `позывной «${person.callsign}»`,
+                      person.rankLabel,
+                      person.unit,
+                    ]
+                      .filter((part) => part !== "")
+                      .join(" · ")}
                   </span>
                 </span>
               </button>

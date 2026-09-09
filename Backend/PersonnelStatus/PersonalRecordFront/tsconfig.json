@@ -42,8 +42,10 @@
     ".next-mock/types/**/*.ts",
     ".next-mut/types/**/*.ts",
     ".next-prod/types/**/*.ts",
+    ".next-turbo/types/**/*.ts",
     ".next/types/**/*.ts",
-    "next-env.d.ts"
+    "next-env.d.ts",
+    ".next-smoke843/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

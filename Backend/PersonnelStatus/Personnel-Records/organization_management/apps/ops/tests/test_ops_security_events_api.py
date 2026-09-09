@@ -1347,6 +1347,64 @@ def test_update_visit_object_day_and_note(manager):
     assert resp.json()["visitObjects"][0]["note"] == ""
 
 
+def test_update_visit_object_description_is_a_separate_field_from_note(manager):
+    """Описание визита — цель посещения на ЭТОМ ОМ, отдельно от `note`
+
+    (короткая служебная подпись для сводки ГВО). Plane SJ-1049: макет
+    показывает объекту предложение вида «Основная площадка мероприятия.» —
+    проба стережёт, что это своё поле, не подмена `note`, и что оба поля
+    правятся одним PATCH независимо друг от друга.
+    """
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "основной объект", "description": "Основная площадка мероприятия."},
+        format="json",
+    )
+    assert resp.status_code == 200
+    row = resp.json()["visitObjects"][0]
+    assert row["note"] == "основной объект"
+    assert row["description"] == "Основная площадка мероприятия."
+    saved = OpsSecurityEventVisitObject.objects.get(pk=visit_id)
+    assert saved.description == "Основная площадка мероприятия."
+
+    # `description` не пришёл вовсе (старый клиент шлёт только visitDay/note)
+    # — поле остаётся как было, не сбрасывается молча.
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "то же примечание"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["visitObjects"][0]["description"] == "Основная площадка мероприятия."
+
+    # Пустая строка — описание снимается осознанно.
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "", "description": ""},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["visitObjects"][0]["description"] == ""
+
+
+def test_update_visit_object_rejects_a_too_long_description(manager):
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    visit_id = manager.get(f"{URL}{event_id}/").json()["visitObjects"][0]["id"]
+
+    resp = manager.patch(
+        f"{URL}{event_id}/visit-objects/{visit_id}/",
+        {"note": "", "description": "x" * 256},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["details"]["description"] == ["Не длиннее 255 символов."]
+
+
 def test_update_visit_object_rejects_bad_day_and_unknown_row(manager):
     obj = make_object(with_passport=True)
     event_id = create_event(manager, obj).json()["id"]
