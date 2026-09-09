@@ -18,7 +18,6 @@
  * в какую ручку — это дело окна. Он отвечает на один вопрос: «на какие ОМ и
  * кем именно».
  */
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -29,6 +28,11 @@ import {
 } from "@/components/ui/select";
 import { Trash2 } from "lucide-react";
 import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
+import {
+  branchOfKind,
+  ParticipationKindPicker,
+  type ParticipationBranch,
+} from "@/features/event-participation/ui/ParticipationKindPicker";
 
 /** Мероприятие в списке выбора: подпись собирает вызывающий. */
 export interface ParticipationEventOption {
@@ -41,6 +45,7 @@ export interface ParticipationDraft {
   eventId: string;
   kindCode: string;
   roleCode: string;
+  branch?: ParticipationBranch;
 }
 
 export const EMPTY_PARTICIPATION_ROW: ParticipationDraft = {
@@ -137,8 +142,6 @@ export function EventParticipationFields({
   const catalog = useParticipationCatalog(enabled);
   const eventList = events;
   const kinds = catalog.data ?? [];
-  const kindOf = (code: string) => kinds.find((kind) => kind.code === code) ?? null;
-
   const patchRow = (index: number, patch: Partial<ParticipationDraft>): void => {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   };
@@ -167,7 +170,6 @@ export function EventParticipationFields({
       )}
 
       {rows.map((row, index) => {
-        const kind = kindOf(row.kindCode);
         return (
           <div
             key={index}
@@ -182,7 +184,7 @@ export function EventParticipationFields({
                прогон» наползал на «Группа досмотра».
                Ассерты «текст на месте» не видят ни того, ни другого: текст на
                месте в обоих случаях. */
-            className="grid min-w-0 gap-2 md:grid-cols-[1fr_1fr_1fr_auto]"
+            className="grid min-w-0 items-start gap-2 md:grid-cols-[minmax(0,1fr)_minmax(18rem,2fr)_auto]"
           >
             <Select
               value={row.eventId}
@@ -218,56 +220,26 @@ export function EventParticipationFields({
               </SelectContent>
             </Select>
 
-            <Select
-              value={row.kindCode}
-              onValueChange={(value) =>
-                // Смена вида СБРАСЫВАЕТ роль: роль принадлежит группе, и
-                // оставленная от прежней группы она была бы отвергнута
-                // сервером — но человек увидел бы отказ вместо подсказки.
-                patchRow(index, { kindCode: value, roleCode: "" })
+            <ParticipationKindPicker
+              id={`participation-${index + 1}`}
+              branch={row.branch ?? (row.kindCode ? branchOfKind(row.kindCode) : "")}
+              kindCode={row.kindCode}
+              roleCode={row.roleCode}
+              kinds={kinds}
+              onBranchChange={(branch) =>
+                patchRow(index, {
+                  branch,
+                  kindCode: branch === "PHYSICAL" ? "PHYSICAL_SQUAD" : "",
+                  roleCode: "",
+                })
               }
-            >
-              <SelectTrigger
-                className="w-full min-w-0 [&>span]:truncate"
-                aria-label={`Вид участия ${index + 1}`}
-              >
-                <SelectValue placeholder="Вид участия" />
-              </SelectTrigger>
-              <SelectContent>
-                {kinds.map((item) => (
-                  <SelectItem key={item.code} value={item.code}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {kind !== null && kind.roles.length > 0 ? (
-              <Select
-                value={row.roleCode}
-                onValueChange={(value) => patchRow(index, { roleCode: value })}
-              >
-                <SelectTrigger
-                  className="w-full min-w-0 [&>span]:truncate"
-                  aria-label={`Роль в группе ${index + 1}`}
-                >
-                  <SelectValue placeholder="Роль в группе" />
-                </SelectTrigger>
-                <SelectContent>
-                  {kind.roles.map((role) => (
-                    <SelectItem key={role.code} value={role.code}>
-                      {role.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="flex items-center">
-                <Badge variant="outline" className="text-xs font-normal">
-                  {kind === null ? "выберите вид" : "ролей внутри нет"}
-                </Badge>
-              </div>
-            )}
+              onKindChange={(value) =>
+                // Смена группы сбрасывает специальность: она принадлежит
+                // конкретной группе, и переносить её в другую нельзя.
+                patchRow(index, { branch: "GROUP", kindCode: value, roleCode: "" })
+              }
+              onRoleChange={(value) => patchRow(index, { roleCode: value })}
+            />
 
             <Button
               type="button"

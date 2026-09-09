@@ -324,3 +324,20 @@ def test_a_role_from_another_group_is_refused_by_the_route(
 
     assert response.status_code == 400, response.data
     assert "participations.0.role_code" in str(response.data)
+
+
+def test_a_group_with_specialties_requires_one_on_the_single_route(
+    types, division, participation_catalog  # noqa: F811
+):
+    """Клиент не может обойти обязательную специальность прямым API-вызовом."""
+    api, _ = operator()
+
+    response = post(api, body(make_employee(division), participations=[
+        {"event_id": 4103, "kind_code": "SCREENING_GROUP"},
+    ]))
+
+    assert response.status_code == 400, response.data
+    assert response.data["details"]["participations.0.role_code"] == [
+        "Выберите специальность внутри группы."
+    ]
+    assert OpsStatusParticipation.objects.count() == 0

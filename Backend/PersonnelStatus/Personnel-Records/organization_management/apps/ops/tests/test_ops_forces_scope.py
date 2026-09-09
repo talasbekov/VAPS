@@ -29,6 +29,7 @@ import json
 import pytest
 
 from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.operations.models_settings import OpsDictionaryEntry
 from organization_management.apps.staff_unit.models import StaffUnit
 
 from .test_ops_forces_gathering import (  # noqa: F401
@@ -1234,12 +1235,13 @@ def test_physical_squad_selection_enters_campaign_reserve_without_event_status(m
     assert head.get(f"{URL}forces/campaign-reserves/").json()["results"] == []
 
 
-def test_special_group_selection_creates_final_participation_for_requested_event(manager):  # noqa: F811
-    """Специальная группа выбирается сразу для ОМ и потому создаёт участие."""
+def test_foreign_group_and_its_specialty_can_be_selected_for_own_employee(manager):  # noqa: F811
+    """№1100: чужая группа допустима, область сотрудников остаётся своей."""
     from organization_management.apps.operations.models_status import OpsEmployeeStatus
 
     own = make_department("Департамент группы")
     directorate = make_directorate(own, "Управление группы")
+    foreign = make_department("Чужой департамент группы")
     base, allocation_id = allocated_event(manager, own)
     _split_first(manager, base, allocation_id, directorate)
     event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1])
@@ -1249,20 +1251,34 @@ def test_special_group_selection_creates_final_participation_for_requested_event
     ]
     allocation["directorates"][0]["groupDemandIds"] = ["screening-1"]
     event.save(update_fields=["force_allocation", "updated_at"])
+    OpsDictionaryEntry.objects.create(
+        dictionary_code="EVENT_PARTICIPATION_KINDS", code="CANINE_GROUP",
+        label="Кинологическая группа", owner_division_id=foreign.pk,
+        is_active=True,
+    )
+    OpsDictionaryEntry.objects.create(
+        dictionary_code="EVENT_GROUP_ROLES", code="DOG_HANDLER",
+        label="Кинолог", group_code="CANINE_GROUP", is_active=True,
+    )
     person = employee_of(directorate, "Досмотров")
     make_assignment_status_type()
     head = _status_head("dir-head-special", "DIR_HEAD_SPECIAL", directorate)
 
     response = head.post(
         f"{URL}forces/requests/{allocation_id}/directorate/select/",
-        {"employeeIds": [str(person.pk)], "kindCode": "SCREENING_GROUP"},
+        {
+            "employeeIds": [str(person.pk)],
+            "kindCode": "CANINE_GROUP",
+            "roleCode": "DOG_HANDLER",
+        },
         format="json",
     )
 
     assert response.status_code == 200, response.data
     status = OpsEmployeeStatus.objects.get(employee_id=person.pk)
     assert status.participations.get().event_id == event.pk
-    assert status.participations.get().kind_code == "SCREENING_GROUP"
+    assert status.participations.get().kind_code == "CANINE_GROUP"
+    assert status.participations.get().role_code == "DOG_HANDLER"
 
 
 def test_selecting_builds_the_full_request_view_exactly_once(manager, monkeypatch):  # noqa: F811

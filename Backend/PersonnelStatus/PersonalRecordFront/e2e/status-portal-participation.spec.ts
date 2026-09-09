@@ -174,11 +174,10 @@ test.describe('статусы: привлечение на ОМ из порта�
       'мероприятие выбрано — в поле стоит код ОМ',
     ).toContainText(/ОМ-[\d-]+/)
 
-    await dialog.getByLabel('Вид участия 1', { exact: true }).click()
-    await page.getByRole('option', { name: 'Физический наряд' }).click()
+    await dialog.getByRole('button', { name: 'Физнаряд', exact: true }).click()
     // У физнаряда ролей внутри нет — третьего списка быть не должно.
     await expect(
-      dialog.getByLabel('Роль в группе 1', { exact: true }),
+      dialog.getByLabel('Специальность', { exact: true }),
       'физнаряду предложена роль, которой у него не бывает',
     ).toHaveCount(0)
 

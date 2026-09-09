@@ -35,6 +35,12 @@ export interface DictionaryEntry {
   isActive: boolean;
   /** Только для POST_REQUIREMENTS — код записи POST_REQUIREMENT_GROUPS. */
   groupCode: string | null;
+  /** Подразделение-владелец специальной группы участия (Plane №1100). */
+  ownerDivisionId?: string | null;
+  ownerDivisionName?: string | null;
+  ownerDivisionPath?: string | null;
+  /** Входит ли владелец группы в область status.manage текущего пользователя. */
+  isOwn?: boolean;
   updatedAt: string;
 }
 
@@ -111,6 +117,7 @@ export interface CreateDictionaryEntryRequest extends Record<string, unknown> {
   label: string;
   description: string;
   groupCode?: string | null;
+  ownerDivisionId?: string | null;
 }
 
 /** Правка значения (Plane №274). Кода здесь НЕТ намеренно: на значение
@@ -120,6 +127,7 @@ export interface UpdateDictionaryEntryRequest extends Record<string, unknown> {
   label: string;
   description: string;
   groupCode?: string | null;
+  ownerDivisionId?: string | null;
 }
 
 export interface SetDictionaryEntryActiveRequest

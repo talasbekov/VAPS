@@ -293,6 +293,7 @@ def select_for_request(
     *,
     actor,
     kind_code=None,
+    role_code="",
     override=False,
     override_reason="",
 ):
@@ -346,27 +347,44 @@ def select_for_request(
     # всё равно станет другим.
     event = _event_of_request(allocation_id, allowed_division_ids)
     event_id = str(event.pk)
-    target_allocation = next(
-        row for row in _raw_allocations(event) if row.get("id") == allocation_id
-    )
+    if kind_code == "PHYSICAL_SQUAD" and role_code:
+        raise DomainError(
+            "VALIDATION_ERROR", 400,
+            detail={"roleCode": ["У физнаряда нет специальности внутри группы."]},
+            message="Для физнаряда специальность не выбирается.",
+        )
     if kind_code and kind_code != "PHYSICAL_SQUAD":
-        mine = _mine_of(target_allocation, allowed_division_ids)
-        allowed_group_ids = {
-            str(group_id)
-            for row in mine
-            for group_id in row.get("groupDemandIds", [])
-        }
-        allowed_kinds = {
-            str(row.get("kindCode") or "")
-            for row in target_allocation.get("groupDemands", [])
-            if str(row.get("id")) in allowed_group_ids
-        }
-        if kind_code not in allowed_kinds:
+        from organization_management.apps.operations.models_settings import (
+            OpsDictionaryEntry,
+        )
+
+        if not OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_PARTICIPATION_KINDS",
+            code=kind_code,
+            is_active=True,
+        ).exists():
             raise DomainError(
                 "VALIDATION_ERROR",
                 400,
-                detail={"kindCode": ["Вид группы не входит в запрос управления."]},
-                message="Выберите вид из запроса управления.",
+                detail={"kindCode": ["Группа не найдена или неактивна."]},
+                message="Выберите действующую группу участия.",
+            )
+        roles = OpsDictionaryEntry.objects.filter(
+            dictionary_code="EVENT_GROUP_ROLES",
+            group_code=kind_code,
+            is_active=True,
+        )
+        if roles.exists() and not role_code:
+            raise DomainError(
+                "VALIDATION_ERROR", 400,
+                detail={"roleCode": ["Выберите специальность внутри группы."]},
+                message="Выберите специальность внутри группы.",
+            )
+        if role_code and not roles.filter(code=role_code).exists():
+            raise DomainError(
+                "VALIDATION_ERROR", 400,
+                detail={"roleCode": ["Специальность не относится к выбранной группе."]},
+                message="Выберите специальность выбранной группы.",
             )
     # 🔴 ВЫДЕЛЯЮТ ПО УПРАВЛЕНИЯМ, КОТОРЫМ АДРЕСОВАНА ЗАЯВКА (Plane №550).
     # Проверка области отвечает на вопрос «мой ли это сотрудник», и у
@@ -472,6 +490,7 @@ def select_for_request(
                     employee_id=employee_id,
                     actor=actor,
                     kind_code=kind_code or "PHYSICAL_SQUAD",
+                    role_code=role_code,
                     override=bool(override),
                     override_reason=str(override_reason or ""),
                 )

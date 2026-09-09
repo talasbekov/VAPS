@@ -4856,6 +4856,7 @@ def add_allocation_member(
     employee_id,
     actor,
     kind_code="PHYSICAL_SQUAD",
+    role_code="",
     override=False,
     override_reason="",
 ):
@@ -4920,6 +4921,7 @@ def add_allocation_member(
             {
                 "event_id": event.pk,
                 "kind_code": str(kind_code or _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE]),
+                "role_code": str(role_code or ""),
             }
         ],
         # Участие поставила ЦЕПОЧКА, а не человек из каталога: вид выведен из
@@ -4939,6 +4941,7 @@ def add_allocation_member(
         # искало бы «похожий» статус и однажды закрыло бы чужой.
         "statusId": str(status.pk),
         "kindCode": str(kind_code or _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE]),
+        "roleCode": str(role_code or ""),
     }
     event.force_allocation = [
         {**row, "members": [*row.get("members", []), member]}

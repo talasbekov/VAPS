@@ -68,10 +68,7 @@ EVENT_INVOLVEMENT_CODES = frozenset(
 #: коде статуса: после слияния код у наряда и у боевой группы ОДИН, и вывод по
 #: коду дал бы «2 (0/2)» вместо «2 (1/1)» — цифру, на которую смотрит
 #: начальник департамента, причём соврал бы молча.
-EVENT_INVOLVEMENT_BUCKETS = {
-    "PHYSICAL_SQUAD": "squad",
-    "SCREENING_GROUP": "group",
-}
+PHYSICAL_SQUAD_KIND = "PHYSICAL_SQUAD"
 
 #: Запасной путь для строк БЕЗ участия: у исторических фактов его может не
 #: быть вовсе (бэкфилл Ш-3 перенёс лишь то, что было на момент миграции).
@@ -93,9 +90,14 @@ def involvement_bucket(row):
     if row is None:
         return None
     for participation in row.get("participations") or ():
-        bucket = EVENT_INVOLVEMENT_BUCKETS.get(participation.get("kind_code"))
-        if bucket is not None:
-            return bucket
+        kind_code = str(participation.get("kind_code") or "").strip()
+        if kind_code == PHYSICAL_SQUAD_KIND:
+            return "squad"
+        # Канон делит участие на две подгруппы: один физнаряд и все
+        # специальные группы. Перечень групп расширяемый, поэтому расход не
+        # перечисляет SCREENING_GROUP/CANINE_GROUP и будущие коды вручную.
+        if kind_code:
+            return "group"
     return LEGACY_INVOLVEMENT_KINDS.get(row.get("status_type_code"))
 
 
