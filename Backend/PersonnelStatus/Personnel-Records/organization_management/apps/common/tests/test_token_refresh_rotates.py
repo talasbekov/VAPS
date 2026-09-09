@@ -63,8 +63,8 @@ def test_the_new_refresh_token_carries_a_later_expiry(tokens):
     """
     api, pair = tokens
 
-    renewed = api.post("/api/token/refresh/", {"refresh": pair["refresh"]}, format="json")
     was = RefreshToken(pair["refresh"])
+    renewed = api.post("/api/token/refresh/", {"refresh": pair["refresh"]}, format="json")
     now = RefreshToken(renewed.json()["refresh"])
 
     assert now["exp"] >= was["exp"]
@@ -86,3 +86,15 @@ def test_the_new_refresh_token_works_for_the_next_renewal(tokens):
 
     assert second.status_code == 200, second.content
     assert second.json()["access"]
+
+
+def test_the_rotated_refresh_token_revokes_the_previous_one(tokens):
+    """После ротации refresh, предъявленный повторно, должен быть отозван."""
+    api, pair = tokens
+
+    renewed = api.post("/api/token/refresh/", {"refresh": pair["refresh"]}, format="json")
+
+    assert renewed.status_code == 200, renewed.content
+    rejected = api.post("/api/token/refresh/", {"refresh": pair["refresh"]}, format="json")
+
+    assert rejected.status_code == 401, rejected.content
