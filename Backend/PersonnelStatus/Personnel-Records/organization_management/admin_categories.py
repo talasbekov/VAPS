@@ -73,6 +73,7 @@ MODEL_CATEGORY: dict[str, str] = {
         "OpsCombatRoute", "OpsServiceReportType", "OpsFeedbackRegistry",
         "OpsAnalyticsMetricDefinition", "OpsAnalyticsPeriodPreset",
         "OpsAttentionDetector", "OpsLegalDocument", "OpsVehicle",
+        "OpsCountry", "OpsCity", "OpsRatingGroup",
     ),
     # Настройки и политики: меняются редко, действуют на весь раздел.
     **_spread(
@@ -94,7 +95,7 @@ MODEL_CATEGORY: dict[str, str] = {
         "Доступ и журналы", "operations",
         "Permission", "Role", "RolePermission", "UserRole",
         "TemporaryDutyPermission", "OpsAuditLog", "OpsRatingAuditEntry",
-        "OpsNotification", "OpsRatingNotification",
+        "OpsNotification", "OpsRatingNotification", "OpsRatingIdempotencyRecord",
     ),
     # Состояния людей: они про сотрудника, а не про мероприятие.
     **_spread(
