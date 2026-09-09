@@ -13,6 +13,10 @@ export interface ParticipationKind {
   label: string;
   /** Роли внутри вида. Пусто у физического наряда — их там нет вовсе. */
   roles: { code: string; label: string }[];
+  ownerDivisionId: string | null;
+  ownerDivisionName: string | null;
+  ownerDivisionPath: string | null;
+  isOwn: boolean;
 }
 
 /**
@@ -42,6 +46,10 @@ export function useParticipationCatalog(enabled = true) {
       return active(kinds.results).map((kind) => ({
         code: kind.code,
         label: kind.label,
+        ownerDivisionId: kind.ownerDivisionId ?? null,
+        ownerDivisionName: kind.ownerDivisionName ?? null,
+        ownerDivisionPath: kind.ownerDivisionPath ?? null,
+        isOwn: kind.isOwn ?? false,
         roles: active(roles.results)
           .filter((role) => role.groupCode === kind.code)
           .map((role) => ({ code: role.code, label: role.label })),

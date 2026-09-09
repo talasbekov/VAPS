@@ -90,6 +90,67 @@ test.describe(
       ).toBeVisible({ timeout: 20_000 })
     })
 
+    test('группы участия: свои первыми, чужие через поиск, специальность сбрасывается', async ({
+      page,
+    }) => {
+      const request = {
+        eventId: '9001100', code: 'ОМ-ГР-1100', title: 'Проверка иерархии групп',
+        businessDate: '2026-09-20', allocationId: 'group-hierarchy-1100',
+        departmentName: 'Технический департамент', status: 'NOTIFIED', dueAt: null,
+        directorates: [{
+          divisionId: '11003', name: 'Управление БПЛА', need: 2, assigned: 0,
+          notifiedAt: '2026-09-09T06:00:00Z',
+        }],
+      }
+      const usage = { status: 'TRACKED', reason: null, references: [], totalCount: 0 }
+      await page.route(
+        (url) => url.pathname.endsWith('/forces/directorate-requests/'),
+        (route) => route.fulfill({ json: { results: [request], addressee: 'directorate' } }),
+      )
+      await page.route(
+        (url) => url.pathname.includes('/forces/requests/group-hierarchy-1100/directorate/'),
+        (route) => route.fulfill({ json: request }),
+      )
+      await page.route(
+        (url) => url.pathname.endsWith('/dictionaries/EVENT_PARTICIPATION_KINDS/entries/'),
+        (route) => route.fulfill({ json: { results: [
+          { id: 'p', dictionaryCode: 'EVENT_PARTICIPATION_KINDS', code: 'PHYSICAL_SQUAD', label: 'Физический наряд', description: '', isActive: true, groupCode: null, updatedAt: '2026-09-09T00:00:00Z', usage, ownerDivisionId: null, ownerDivisionName: null, ownerDivisionPath: null, isOwn: false },
+          { id: 'u', dictionaryCode: 'EVENT_PARTICIPATION_KINDS', code: 'UAV_GROUP', label: 'Группа БВС', description: '', isActive: true, groupCode: null, updatedAt: '2026-09-09T00:00:00Z', usage, ownerDivisionId: '11004', ownerDivisionName: 'Второй отдел', ownerDivisionPath: 'Служба / Технический департамент / Управление БПЛА / Второй отдел', isOwn: true },
+          { id: 's', dictionaryCode: 'EVENT_PARTICIPATION_KINDS', code: 'SCREENING_GROUP', label: 'Группа досмотра', description: '', isActive: true, groupCode: null, updatedAt: '2026-09-09T00:00:00Z', usage, ownerDivisionId: '12002', ownerDivisionName: 'Первое управление', ownerDivisionPath: 'Служба / Первый департамент / Первое управление / Первый отдел', isOwn: false },
+        ] } }),
+      )
+      await page.route(
+        (url) => url.pathname.endsWith('/dictionaries/EVENT_GROUP_ROLES/entries/'),
+        (route) => route.fulfill({ json: { results: [
+          { id: 'r1', dictionaryCode: 'EVENT_GROUP_ROLES', code: 'AERIAL_RECON', label: 'Аэроразведка', description: '', isActive: true, groupCode: 'UAV_GROUP', updatedAt: '2026-09-09T00:00:00Z', usage },
+          { id: 'r2', dictionaryCode: 'EVENT_GROUP_ROLES', code: 'COUNTER_UAV', label: 'Противодействие БПЛА', description: '', isActive: true, groupCode: 'UAV_GROUP', updatedAt: '2026-09-09T00:00:00Z', usage },
+          { id: 'r3', dictionaryCode: 'EVENT_GROUP_ROLES', code: 'SCREENER', label: 'Досмотрщик', description: '', isActive: true, groupCode: 'SCREENING_GROUP', updatedAt: '2026-09-09T00:00:00Z', usage },
+        ] } }),
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/statuses/`)
+      const banner = page.locator('[data-slot="forces-request-banner"]')
+      await expect(banner).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 20_000 })
+      const employeeRowsBefore = await page.locator('table tbody tr').count()
+
+      await banner.getByRole('button', { name: 'Группы', exact: true }).click()
+      await banner.getByLabel('Свои группы').click()
+      await page.getByRole('option', { name: /Группа БВС.*Технический департамент.*Управление БПЛА.*Второй отдел/ }).click()
+      await banner.getByLabel('Специальность').click()
+      await page.getByRole('option', { name: 'Аэроразведка', exact: true }).click()
+
+      await banner.getByRole('button', { name: 'Выбрать другую группу другого подразделения' }).click()
+      await page.getByLabel('Поиск другой группы').fill('Первый департамент')
+      await page.getByRole('option', { name: /Группа досмотра.*Первый департамент.*Первое управление.*Первый отдел/ }).click()
+      await expect(
+        banner.getByRole('button', { name: 'Выбрать другую группу другого подразделения' }),
+      ).toContainText(/Группа досмотра.*Первый департамент/)
+      await expect(banner.getByLabel('Специальность')).toContainText('Выберите специальность')
+      expect(await page.locator('table tbody tr').count(), 'выбор чужой группы не меняет область сотрудников').toBe(employeeRowsBefore)
+    })
+
     /**
      * Отказ ВЫБРАННОГО запроса не уносит переключатель (Plane №755).
      *

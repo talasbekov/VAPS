@@ -8,12 +8,11 @@
 одним `event.manage`, и такая персона не выражалась ничем. Пробы стерегут обе
 половины требования на живых ручках, а не на списке кодов:
 
-  1) под ролью каталога `EMPLOYEE_OPS_D2` POST реестра проходит, бюллетень
-     правится и этап открывается;
+  1) под ролью каталога `EMPLOYEE_OPS_D2` POST реестра проходит и этап
+     открывается (текст бюллетеня снят с проекта целиком, Plane №943/№950 —
+     редактировать в нём больше нечего);
   2) правка мероприятия и удаление той же роли ОТБИВАЮТСЯ 403 — мутация
-     «вернуть роли `event.manage`» краснит вторую пробу;
-  3) ведущий мероприятие (`EVENT_OFFICER` из каталога) ничего не потерял —
-     разделение прав не должно было отнять у него заведение бюллетеня.
+     «вернуть роли `event.manage`» краснит вторую пробу.
 """
 import pytest
 from django.core.management import call_command
@@ -75,26 +74,11 @@ def employee_d2(catalog):
     return api
 
 
-@pytest.fixture
-def event_officer(catalog):
-    api, _ = client_for("d2-officer", "EVENT_OFFICER")
-    return api
-
-
-def test_the_second_department_employee_creates_and_fills_a_bulletin(employee_d2):
+def test_the_second_department_employee_creates_a_bulletin(employee_d2):
     resp = create_event(employee_d2)
     assert resp.status_code == 201, resp.content
     event = resp.json()
     assert event["stage"] == "BULLETIN"
-
-    base = f"{URL}{event['id']}/"
-    filled = employee_d2.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "Прибытие делегации", "initialTasks": "Осмотр"},
-        format="json",
-    )
-    assert filled.status_code == 200, filled.content
-    assert filled.json()["briefDescription"] == "Прибытие делегации"
 
     # Реестр он тоже видит — это и есть «всё что касается ОМ видно».
     assert employee_d2.get(URL).status_code == 200
@@ -139,20 +123,6 @@ def test_the_same_employee_may_not_edit_or_delete_the_event(employee_d2):
     assert employee_d2.delete(base).status_code == 403
 
 
-def test_the_event_officer_kept_what_he_could_do_before(event_officer):
-    """Разделение прав — расширение, а не отъём: ведущий мероприятие заводил
-    и заполнял бюллетень одним `event.manage`, и обязан уметь это дальше."""
-    resp = create_event(event_officer, title="ОМ офицера")
-    assert resp.status_code == 201, resp.content
-
-    base = f"{URL}{resp.json()['id']}/"
-    assert event_officer.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "текст", "initialTasks": "задачи"},
-        format="json",
-    ).status_code == 200
-
-
 def bulletin_tree():
     department = Division.objects.create(
         name="Второй департамент",
@@ -172,33 +142,6 @@ def bulletin_tree():
         parent=department,
     )
     return department, own, sibling
-
-
-def test_a_plain_bulletin_holder_cannot_edit_another_creators_event():
-    """Ломается, если код `event.bulletin` снова становится глобальным
-    пропуском на чужой бюллетень вместо роли создателя в данных."""
-    _, own, _ = bulletin_tree()
-    creator, _ = client_for(
-        "bulletin-owner-scoped",
-        "EMPLOYEE_OPS_D2",
-        perms=("event.view", "event.create", "event.bulletin"),
-        scope_division_id=own.pk,
-    )
-    another, _ = client_for(
-        "bulletin-other-scoped",
-        "EMPLOYEE_OPS_D2",
-        perms=("event.view", "event.create", "event.bulletin"),
-        scope_division_id=own.pk,
-    )
-    event_id = create_event(creator, title="Чужой бюллетень").json()["id"]
-
-    denied = another.patch(
-        f"{URL}{event_id}/bulletin/",
-        {"briefDescription": "Чужая правка", "initialTasks": "Осмотр"},
-        format="json",
-    )
-
-    assert denied.status_code == 403, denied.content
 
 
 def test_a_plain_bulletin_holder_cannot_complete_another_creators_bulletin():
@@ -241,31 +184,6 @@ def test_ownership_does_not_replace_the_separate_bulletin_permission():
     assert denied.status_code == 403, denied.content
 
 
-def test_closed_bulletin_text_is_immutable_for_an_authorized_creator():
-    """Ломается, если расширенная матрица допускает переписывание истории
-    через legacy PATCH текста после закрытия мероприятия."""
-    creator, _ = client_for(
-        "bulletin-closed-owner",
-        "BULLETIN_CREATOR",
-        perms=("event.view", "event.create", "event.bulletin"),
-    )
-    event_id = create_event(creator, title="Закрытая история").json()["id"]
-    from organization_management.apps.operations.models_event import OpsSecurityEvent
-
-    OpsSecurityEvent.objects.filter(pk=event_id).update(stage="CLOSED")
-
-    denied = creator.patch(
-        f"{URL}{event_id}/bulletin/",
-        {"briefDescription": "Переписано", "initialTasks": "Переписано"},
-        format="json",
-    )
-
-    assert denied.status_code == 422, denied.content
-    event = OpsSecurityEvent.objects.get(pk=event_id)
-    assert event.brief_description == ""
-    assert event.initial_tasks == ""
-
-
 def test_heads_edit_bulletins_only_inside_their_organizational_scope():
     """Ломается, если начальник не получает целевую правку `details` либо
     область его гранта перестаёт ограничивать чужое управление."""
@@ -306,16 +224,20 @@ def test_heads_edit_bulletins_only_inside_their_organizational_scope():
         assert changed.status_code == 200, changed.content
 
     denied = sibling_head.patch(
-        f"{URL}{event_id}/bulletin/",
-        {"briefDescription": "Чужая область", "initialTasks": "Осмотр"},
-        format="json",
+        f"{URL}{event_id}/details/", {"title": "Чужая область"}, format="json"
     )
     assert denied.status_code == 403, denied.content
 
 
-def test_the_assigned_event_chief_edits_own_bulletin_without_a_bulletin_grant():
+def test_the_assigned_event_chief_completes_own_bulletin_without_a_bulletin_grant():
     """Ломается, если право старшего снова проверяется только кодом роли,
-    хотя назначение старшего хранится в самом мероприятии."""
+    хотя назначение старшего хранится в самом мероприятии.
+
+    Правится ЗАВЕРШЕНИЕ бюллетеня (`bulletin/complete/`), а не текст —
+    `PATCH .../bulletin/` снят вместе с полями текста (Plane №950), но гейт
+    `_require_bulletin_editor` держит оба действия ОДНИМ правилом, и разбор
+    старшего без кода роли остаётся актуальным для того, что осталось.
+    """
     creator, _ = client_for(
         "bulletin-owner-for-chief",
         "BULLETIN_CREATOR",
@@ -334,17 +256,10 @@ def test_the_assigned_event_chief_edits_own_bulletin_without_a_bulletin_grant():
         chief_employee_id=chief.pk, chief_name="Старший Н."
     )
 
-    changed = chief_api.patch(
-        f"{URL}{event_id}/bulletin/",
-        {
-            "briefDescription": "Правка назначенного старшего",
-            "initialTasks": "Осмотр",
-        },
-        format="json",
-    )
+    completed = chief_api.post(f"{URL}{event_id}/bulletin/complete/")
 
-    assert changed.status_code == 200, changed.content
-    assert changed.json()["canEditBulletin"] is True
+    assert completed.status_code == 200, completed.content
+    assert completed.json()["canEditBulletin"] is True
 
 
 def test_scoped_head_registry_bulletin_policy_has_no_query_per_creator():

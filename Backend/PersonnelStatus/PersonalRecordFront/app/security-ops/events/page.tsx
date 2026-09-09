@@ -210,9 +210,11 @@ export default function SecurityEventsPage() {
                   {view === "calendar" ? "К списку" : "Календарь"}
                 </Button>
               )}
-              <Button onClick={() => setDialogOpen(true)}>
-                + Создать бюллетень
-              </Button>
+              {!permissionsLoading && hasPermission("event.create") && (
+                <Button onClick={() => setDialogOpen(true)}>
+                  + Создать бюллетень
+                </Button>
+              )}
             </div>
           }
         />

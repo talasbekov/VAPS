@@ -83,24 +83,12 @@ export function ConductStage({ event }: { event: SecurityEvent }) {
       />
       <EvaluationPanel event={event} />
       <IncidentsPanel event={event} />
-      {/* 🔴 ПРИЧИНА ОТКАЗА — ОДИН РАЗ НА ПАРУ, А НЕ У КАЖДОЙ КНОПКИ
-          (Plane №913, конвенция №801). Обе панели закрытия рисуются на
-          «Проведении» ОДНОВРЕМЕННО, обе кнопки закрыты ОДНИМ правом, и обе
-          печатали свою копию одной и той же фразы — тот самый «частокол»,
-          ради которого `AccessHints` и появился.
-
-          🔴 БЛОК СТОИТ ЗДЕСЬ, А НЕ НАВЕРХУ ЭТАПА. Карточек в колонке восемь,
-          и общий блок над первой из них оказался бы за два экрана прокрутки
-          от кнопок: человек, доскроллив до серой кнопки, не увидел бы причины
-          ВОВСЕ — это хуже повтора, а не лучше. Панели закрытия идут подряд,
-          поэтому блок охватывает ровно их две и стоит вплотную. Для читалки
-          расстояние безразлично — связь держит `aria-describedby`, — но
-          глазами причина читается там, где стоит.
-
-          Остальные шесть карточек этапа права `event.manage` не спрашивают,
-          и в блок им попадать не с чем. */}
+      {/* Объект закрывает назначенный старший по серверному флагу объекта;
+          мероприятие целиком остаётся действием event.manage. Эти две кнопки
+          больше нельзя объединять одной причиной запрета: для старшего
+          объекта первая доступна, вторая — нет. */}
+      <VisitObjectClosurePanel event={event} />
       <AccessHints reasons={[access.reason(EVENT_MANAGE)]}>
-        <VisitObjectClosurePanel event={event} />
         <ClosurePanel event={event} />
       </AccessHints>
       <PostControlPanel event={event} />
@@ -434,13 +422,11 @@ const SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 function EvaluationPanel({ event }: { event: SecurityEvent }) {
   const scope = useVisitObjectScope(event, event.reconSectorPosts);
   const visit = scope.visit;
-  // 🔴 ПАНЕЛЬ ЗАКРЫТА ТЕМ ЖЕ ПРАВОМ, ЧТО И ОСТАЛЬНЫЕ ДЕЙСТВИЯ ЭТАПА (Plane
-  // №644). Обе ручки оценок требуют `event.manage`, а гард стоял только у
-  // «Завершить этап» и «Закрыть объект»: читатель ОМ получал 403 на сводку,
-  // видел «Оценки не загрузились — обновите страницу» и десять включённых
-  // кнопок шкалы в каждой строке, каждая из которых отвечала 403.
+  // Старший объекта оценивает только свой объект. Сервер называет это право
+  // в строке объекта; общий `event.manage` здесь был уже и шире, и уже
+  // фактической границы одновременно.
   const access = useChainAccess();
-  const canManage = access.can(EVENT_MANAGE);
+  const canManage = visit?.canManagePlacement === true;
   const query = useVisitEvaluations(event.id, visit?.id ?? null, canManage);
   const lockedHintId = `evaluation-locked-${event.id}`;
   const setScore = useSetEvaluation(event.id, visit?.id ?? "");
@@ -659,6 +645,7 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
   });
   const access = useChainAccess();
   const visit = scope.visit;
+  const canManage = visit?.canManagePlacement === true;
   // Сводка оценок — для подтверждения «Оценено K из N, инцидентов N»
   // (`[ЗАК-05]`, Plane №433); неоценённые закрытию не мешают. Ручка закрыта
   // тем же `event.manage`, что и сама кнопка «Закрыть объект» ниже, поэтому
@@ -667,7 +654,7 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
   const evaluations = useVisitEvaluations(
     event.id,
     visit?.id ?? null,
-    access.can(EVENT_MANAGE)
+    canManage
   );
   // Смена объекта в шапке — это ДРУГОЙ объект и другой черновик (Plane №610).
   // Эффект, а не `key` на компоненте: `key` пересоздал бы и запрос сводки
@@ -744,12 +731,12 @@ function VisitObjectClosurePanel({ event }: { event: SecurityEvent }) {
                 виртуальный курсор читалки до подписи доходит. Тем же приёмом
                 закрыта панель оценок выше (№644). */}
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <RightGate reason={access.reason(EVENT_MANAGE)}>
+              <RightGate reason={canManage ? null : access.reason(EVENT_MANAGE)}>
                 {(describedBy) => (
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={!access.can(EVENT_MANAGE)}
+                    disabled={!canManage}
                     aria-describedby={describedBy}
                     onClick={() => setOpen(true)}
                   >
@@ -900,6 +887,9 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
  * «+ Добавить» — форма; пусто — одна строка «Инцидентов не было».
  */
 function IncidentsPanel({ event }: { event: SecurityEvent }) {
+  const scope = useVisitObjectScope(event, event.reconSectorPosts);
+  const access = useChainAccess();
+  const canManage = scope.visit?.canManagePlacement === true;
   const [open, setOpen] = useState(false);
   const [occurredAt, setOccurredAt] = useState("");
   const [postId, setPostId] = useState("");
@@ -922,7 +912,15 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
       setPostId("");
     },
   });
-  const incidents = event.journalEntries.filter((e) => e.type === "INCIDENT");
+  const visitPosts = event.reconSectorPosts.filter(
+    (post) => scope.visit === null || post.visitObjectId === scope.visit.id
+  );
+  const visitPostIds = new Set(visitPosts.map((post) => post.id));
+  const incidents = event.journalEntries.filter(
+    (entry) =>
+      entry.type === "INCIDENT" &&
+      (entry.postId === null || entry.postId === undefined || visitPostIds.has(entry.postId))
+  );
   const postName = (id: string | null | undefined) => {
     const post = event.reconSectorPosts.find((p) => p.id === id);
     return post ? `${post.sector} · ${post.post}` : "—";
@@ -931,9 +929,20 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
     <Card data-slot="incidents-panel">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Инциденты и замечания</CardTitle>
-        <Button type="button" variant="outline" size="sm" onClick={() => setOpen((v) => !v)}>
-          + Добавить
-        </Button>
+        <RightGate reason={canManage ? null : access.reason(EVENT_MANAGE)}>
+          {(describedBy) => (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canManage}
+              aria-describedby={describedBy}
+              onClick={() => setOpen((v) => !v)}
+            >
+              + Добавить
+            </Button>
+          )}
+        </RightGate>
       </CardHeader>
       <CardContent className="space-y-3">
         {incidents.length === 0 ? (
@@ -980,7 +989,7 @@ function IncidentsPanel({ event }: { event: SecurityEvent }) {
                 onChange={(e) => setPostId(e.target.value)}
               >
                 <option value="">— не привязан —</option>
-                {event.reconSectorPosts.map((post) => (
+                {visitPosts.map((post) => (
                   <option key={post.id} value={post.id}>
                     {post.sector} · {post.post}
                   </option>

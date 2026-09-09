@@ -1796,30 +1796,6 @@ def remove_visit_object_chief(event_id, visit_object_id, *, actor):
 
 
 @transaction.atomic
-def update_bulletin(event_id, *, brief_description, initial_tasks):
-    event = lock_event(event_id)
-    if event.stage == "CLOSED":
-        raise DomainError(
-            "INVALID_STAGE_TRANSITION",
-            422,
-            message="Мероприятие закрыто — текст бюллетеня не меняется.",
-        )
-    field_errors = {}
-    brief = str(brief_description or "").strip()
-    tasks = str(initial_tasks or "").strip()
-    if brief == "":
-        field_errors["briefDescription"] = ["Обязательное поле."]
-    if tasks == "":
-        field_errors["initialTasks"] = ["Обязательное поле."]
-    if field_errors:
-        raise _validation(field_errors)
-    event.brief_description = brief
-    event.initial_tasks = tasks
-    event.save(update_fields=["brief_description", "initial_tasks", "updated_at"])
-    return event
-
-
-@transaction.atomic
 def complete_bulletin(event_id):
     event = lock_event(event_id)
     _require_stage(
@@ -1830,9 +1806,11 @@ def complete_bulletin(event_id):
     # «вот эту часть полностью со всего проекта убери»). В бланке «Орда-4»
     # (`[БЛН-01]`…`[БЛН-04]`) этих полей нет — они прототипный остаток, и
     # экран их не показывает. До этого ОМ без объекта не открывал
-    # рекогносцировку без заполненного текста (`BULLETIN_INCOMPLETE`);
-    # поля и `update_bulletin` пока живут ради старых читателей (e2e-подготовка
-    # фикстур) и снимаются отдельным шагом.
+    # рекогносцировку без заполненного текста (`BULLETIN_INCOMPLETE`).
+    # `update_bulletin` и ручка `PATCH .../bulletin/` сняты (Plane №950) —
+    # `brief_description`/`initial_tasks` остаются полями модели без читателя
+    # ни на экране, ни в контракте API; снятие самих колонок — миграцией
+    # отдельным шагом, здесь не требуется.
     return _advance(event, "RECON")
 
 
@@ -2763,28 +2741,8 @@ def complete_recon(event_id, *, visit_object_id=None):
     advance_visits(event, "DEMAND", [target])
     if event.stage != old_event_stage:
         record_transition(event, old_event_stage, event.stage)
-    if event.visit_objects.filter(stage="RECON").exists():
-        return event
+    return _publish_completed_visit_demand(event, target)
 
-    # Общая заявка старого контура строится только когда готовы ВСЕ объекты:
-    # до этого незавершённые строки — черновик другого старшего. №979/№978
-    # разрежут её на типизированные потребности и общий пул, не переписывая
-    # уже завершённые объектные стадии.
-    event.recon_force_request = sum(
-        int(visit.recon_force_request or 0)
-        for visit in event.visit_objects.all()
-    )
-    event.recon_force_requested_at = Clock.now()
-    event.save(
-        update_fields=[
-            "recon_force_request",
-            "recon_force_requested_at",
-            "updated_at",
-        ]
-    )
-    # Стадии «Потребность» и «Запрос сил» человек больше не ведёт руками
-    # (Plane №110): после последнего объекта их проходит сервер расчётом.
-    return _autopass_demand_and_forces(event)
 
 
 # ── Потребность ─────────────────────────────────────────────────────────────
@@ -2927,6 +2885,42 @@ def _demand_rows_of(posts):
             }
         )
     return rows
+
+
+def _publish_completed_visit_demand(event, target):
+    """Publish completed objects without consuming a neighbour's draft (§18)."""
+    visits = list(event.visit_objects.all())
+    ready = [visit for visit in visits if visit.stage not in ("BULLETIN", "RECON")]
+    posts = [post for visit in ready for post in visit_object_posts(event, visit)]
+    event.demand_rows = _demand_rows_of(posts)
+    event.recon_force_request = sum(int(visit.recon_force_request or 0) for visit in ready)
+    event.recon_force_requested_at = Clock.now()
+    event.demand_approved = len(ready) == len(visits)
+    requests = event.force_requests or []
+    if not requests and event.recon_force_request > 0:
+        requests = [{
+            "id": "force-request-1", "group": AUTO_FORCE_REQUEST_GROUP,
+            "requestedCount": event.recon_force_request, "allocatedCount": 0,
+            "status": "NOT_SENT", "comment": "",
+        }]
+    elif len(requests) == 1 and requests[0].get("group") == AUTO_FORCE_REQUEST_GROUP:
+        requests = [{**requests[0], "requestedCount": event.recon_force_request}]
+    event.force_requests = requests
+    _sync_auto_force_request(event)
+    event.save(update_fields=[
+        "demand_rows", "recon_force_request", "recon_force_requested_at",
+        "demand_approved", "force_requests", "updated_at",
+    ])
+    # Only this object advances; the event continues to show the lowest stage.
+    old_stage = event.stage
+    advance_visits(event, "FORCES", [target])
+    if event.stage != old_stage:
+        record_transition(event, old_stage, event.stage)
+    old_stage = event.stage
+    advance_visits(event, "PLACEMENT", [target])
+    if event.stage != old_stage:
+        record_transition(event, old_stage, event.stage)
+    return event
 
 
 def _autopass_demand_and_forces(event):
@@ -3111,6 +3105,32 @@ def _as_division_id(value):
 # ОМ уже стоит на расстановке; пул подбора на доске растёт по мере приёмки.
 _ALLOCATION_STAGES = ("DEMAND", "FORCES", "PLACEMENT")
 
+
+def can_collect_forces(event):
+    """A completed object's published demand opens collection during RECON."""
+    if event.stage in _ALLOCATION_STAGES:
+        return True
+    if event.stage != "RECON" or not event.demand_rows:
+        return False
+    published_visit_ids = {
+        str(row.get("visitObjectId")) for row in event.demand_rows
+        if str(row.get("visitObjectId") or "").isdigit()
+    }
+    return event.visit_objects.filter(
+        pk__in=published_visit_ids, stage__in=_ALLOCATION_STAGES,
+    ).exists()
+
+
+def published_visit_ids(event):
+    """Object boundary of an early force collection; ``None`` means all."""
+    if event.stage != "RECON":
+        return None
+    return {
+        str(row.get("visitObjectId")) for row in (event.demand_rows or [])
+        if str(row.get("visitObjectId") or "").isdigit()
+    }
+
+
 # Статус заявки департаменту. Правится раскладка только у тех, кого ещё не
 # оповещали: у остальных внутри уже живут управления и выделенные люди.
 _ALLOCATION_DRAFT = "DRAFT"
@@ -3136,6 +3156,8 @@ def force_demand_total(event):
     у мероприятий, доехавших до утверждения, он подставляется запасным, иначе
     раскладка старых строк упёрлась бы в ноль и не сохранилась бы вовсе.
     """
+    if event.recon_force_requested_at is not None:
+        return int(event.recon_force_request or 0)
     return int(event.recon_force_request or 0) or int(event.force_need or 0)
 
 
@@ -3264,7 +3286,7 @@ def split_force_demand(event_id, *, rows):
     потребность между двумя запросами.
     """
     event = lock_event(event_id)
-    if event.stage not in _ALLOCATION_STAGES:
+    if not can_collect_forces(event):
         raise DomainError(
             "INVALID_STAGE_TRANSITION",
             422,
@@ -3522,7 +3544,7 @@ def split_directorate_quotas(event_id, allocation_id, rows, *, actor):
     from organization_management.apps.divisions.models import Division
 
     event = lock_event(event_id)
-    if event.stage not in _ALLOCATION_STAGES:
+    if not can_collect_forces(event):
         raise DomainError(
             "INVALID_STAGE_TRANSITION",
             422,
@@ -3738,7 +3760,7 @@ def notify_directorates(event_id, allocation_id, *, actor):
     from organization_management.apps.divisions.models import Division
 
     event = lock_event(event_id)
-    if event.stage not in _ALLOCATION_STAGES:
+    if not can_collect_forces(event):
         raise DomainError(
             "INVALID_STAGE_TRANSITION",
             422,
@@ -4623,6 +4645,7 @@ def force_collection_detail(event_id):
         ),
         "location": event.location or event.object_name,
         "stage": event.stage,
+        "canCollect": can_collect_forces(event),
         "need": need,
         "allocated": sum(int(row.get("need") or 0) for row in allocations),
         "gathered": gathered,
@@ -4686,7 +4709,20 @@ def force_roster_view(event, *, read_context=None):
     view = []
     for row in rows:
         code, label = statuses.get(str(row.get("employeeId")), (None, None))
-        view.append({**row, "statusCode": code, "statusLabel": label})
+        # №1084: campaigns store employeeName, while placement consumes name.
+        # Normalize at the API boundary so existing handovers work too; retain
+        # campaign/object identity and any recorded organizational snapshot.
+        view.append({
+            "divisionId": None,
+            "divisionName": "",
+            "departmentId": None,
+            "departmentName": "",
+            "acceptedAt": (event.force_handover or {}).get("at"),
+            **row,
+            "name": row.get("name") or row.get("employeeName") or str(row.get("employeeId") or ""),
+            "statusCode": code,
+            "statusLabel": label,
+        })
     return view
 
 
@@ -4820,6 +4856,7 @@ def add_allocation_member(
     employee_id,
     actor,
     kind_code="PHYSICAL_SQUAD",
+    role_code="",
     override=False,
     override_reason="",
 ):
@@ -4837,7 +4874,7 @@ def add_allocation_member(
     from organization_management.apps.operations import status_service
 
     event = lock_event(event_id)
-    if event.stage not in _ALLOCATION_STAGES:
+    if not can_collect_forces(event):
         raise DomainError(
             "INVALID_STAGE_TRANSITION",
             422,
@@ -4884,6 +4921,7 @@ def add_allocation_member(
             {
                 "event_id": event.pk,
                 "kind_code": str(kind_code or _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE]),
+                "role_code": str(role_code or ""),
             }
         ],
         # Участие поставила ЦЕПОЧКА, а не человек из каталога: вид выведен из
@@ -4903,6 +4941,7 @@ def add_allocation_member(
         # искало бы «похожий» статус и однажды закрыло бы чужой.
         "statusId": str(status.pk),
         "kindCode": str(kind_code or _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE]),
+        "roleCode": str(role_code or ""),
     }
     event.force_allocation = [
         {**row, "members": [*row.get("members", []), member]}
@@ -5039,7 +5078,7 @@ def respond_allocation(
       запрошенной — подсказка экрана, не правило сервера.
     """
     event = lock_event(event_id)
-    if event.stage not in _ALLOCATION_STAGES:
+    if not can_collect_forces(event):
         raise DomainError(
             "INVALID_STAGE_TRANSITION",
             422,
@@ -5235,7 +5274,7 @@ def submit_allocation(event_id, allocation_id, *, actor):
     не набравший людей, вообще ничего не может сообщить.
     """
     event = lock_event(event_id)
-    if event.stage not in _ALLOCATION_STAGES:
+    if not can_collect_forces(event):
         raise DomainError(
             "INVALID_STAGE_TRANSITION",
             422,
@@ -6165,8 +6204,9 @@ def remove_placement_post(event_id, post_id, *, deputy=None):
     # мероприятия ниже не спасает у двух объектов — мероприятие стоит на
     # «Расстановке» наименьшим, пока сосед уже на согласовании.
     _require_placement_editable(event, post_id)
+    target_visit = _visit_of_post(event, post_id)
     _require_stage(
-        event,
+        target_visit or event,
         "PLACEMENT",
         "Снять пост можно только на этапе «Расстановка».",
     )
@@ -6215,7 +6255,11 @@ def remove_placement_post(event_id, post_id, *, deputy=None):
     # Строки потребности пересобираются ТЕМИ ЖЕ правилами, что и при
     # автопроходе после рекогносцировки: второй способ построить строку
     # разошёлся бы с первым ровно там, где расхождение труднее заметить.
-    event.demand_rows = _demand_rows_of(remaining)
+    published_posts = remaining
+    if event.stage == "RECON":
+        ready_visits = event.visit_objects.exclude(stage__in=("BULLETIN", "RECON"))
+        published_posts = [post for visit in ready_visits for post in visit_object_posts(event, visit)]
+    event.demand_rows = _demand_rows_of(published_posts)
     event.force_need = sum(int(row["need"]) for row in event.demand_rows)
     event.save(
         update_fields=[

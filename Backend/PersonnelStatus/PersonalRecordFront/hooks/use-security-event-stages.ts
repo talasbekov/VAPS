@@ -29,7 +29,6 @@ import {
   securityEventRemarkResolvePath,
   securityEventApprovalReturnPath,
   securityEventBulletinCompletePath,
-  securityEventBulletinPath,
   securityEventClosePath,
   securityEventForceAllocationPath,
   securityEventForcesSplitPath,
@@ -81,7 +80,6 @@ import type {
   ReturnAllocationRequest,
   SetEvaluationRequest,
   SplitForceDemandRequest,
-  UpdateBulletinRequest,
   UpdateForceAllocationRequest,
   UpdateReconRequest,
   VisitEvaluationSummary,
@@ -182,14 +180,6 @@ export function usePersonnelPage(params: {
 }
 
 // ── Бюллетень ────────────────────────────────────────────────────────────
-
-export function useUpdateBulletin(id: string, options?: StageMutationOptions) {
-  return useEventMutation<UpdateBulletinRequest>(
-    id,
-    (body) => opsApiClient.patch<SecurityEvent>(securityEventBulletinPath(id), body),
-    options
-  );
-}
 
 export function useCompleteBulletin(id: string) {
   return useEventMutation<Record<string, never>>(id, () =>

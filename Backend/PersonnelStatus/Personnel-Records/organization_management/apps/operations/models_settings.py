@@ -12,6 +12,8 @@
 """
 from django.db import models
 
+from organization_management.apps.divisions.models import Division
+
 from organization_management.apps.operations.models import TimeStampedModel
 
 _SECTIONS = (
@@ -149,6 +151,13 @@ class OpsDictionaryEntry(TimeStampedModel):
     # Код записи справочника-родителя: у требования поста это его группа, у
     # роли — вид участия (группа). Пары перечислены в `ops.dictionaries`.
     group_code = models.CharField(max_length=100, null=True)
+    # Подразделение-владелец специальной группы участия. PROTECT не даёт
+    # удалить подразделение, пока каталог на него ссылается; существующие
+    # группы до заполнения владельца продолжают читаться (Plane №1100).
+    owner_division = models.ForeignKey(
+        Division, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="+",
+    )
     updated_by = models.CharField(max_length=255, null=True)
 
     class Meta:

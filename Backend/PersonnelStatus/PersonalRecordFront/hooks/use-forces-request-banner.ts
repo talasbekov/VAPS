@@ -133,6 +133,7 @@ export function useSelectForRequest(allocationId: string | null) {
     {
       employeeIds: string[];
       kindCode: string;
+      roleCode?: string;
       override?: boolean;
       override_reason?: string;
     }

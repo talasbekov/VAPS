@@ -9,6 +9,7 @@ POST_REQUIREMENT_GROUPS — по groupCode записей POST_REQUIREMENTS.
 """
 from django.db import transaction
 
+from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import (
@@ -79,6 +80,9 @@ DEFINITIONS = [
     },
 ]
 _CODES = {d["code"] for d in DEFINITIONS}
+_PARTICIPATION_DICTIONARY = "EVENT_PARTICIPATION_KINDS"
+_PHYSICAL_SQUAD = "PHYSICAL_SQUAD"
+UNSET = object()
 
 #: Справочник → справочник его групп. Раньше эта связь была вписана литералом
 #: в трёх местах («если POST_REQUIREMENTS, то проверяй по
@@ -202,8 +206,54 @@ def usage_of(entry):
     }
 
 
-def serialize_entry(entry):
-    return {
+def _division_context(entries, actor_id):
+    """Владельцы и пути групп одним чтением дерева, без N+1."""
+    owner_ids = {
+        entry.owner_division_id for entry in entries
+        if entry.dictionary_code == _PARTICIPATION_DICTIONARY
+        and entry.code != _PHYSICAL_SQUAD
+        and entry.owner_division_id is not None
+    }
+    if not owner_ids:
+        return {}, set()
+
+    divisions = {
+        row["id"]: row
+        for row in Division.objects.filter(is_active=True).values(
+            "id", "name", "parent_id"
+        )
+    }
+
+    def path_of(division_id):
+        names = []
+        visited = set()
+        current = divisions.get(division_id)
+        while current is not None and current["id"] not in visited:
+            visited.add(current["id"])
+            names.append(current["name"])
+            current = divisions.get(current["parent_id"])
+        return " / ".join(reversed(names))
+
+    owners = {
+        owner_id: {
+            "name": divisions[owner_id]["name"],
+            "path": path_of(owner_id),
+        }
+        for owner_id in owner_ids
+        if owner_id in divisions
+    }
+    from organization_management.apps.operations.services import PermissionService
+
+    visible = PermissionService.visible_division_ids(actor_id, "status.manage")
+    own_ids = owner_ids if visible is None else owner_ids.intersection(visible)
+    return owners, own_ids
+
+
+def serialize_entry(entry, *, owners=None, own_ids=None):
+    owners = owners or {}
+    own_ids = own_ids or set()
+    owner = owners.get(entry.owner_division_id)
+    result = {
         "id": str(entry.pk),
         "dictionaryCode": entry.dictionary_code,
         "code": entry.code,
@@ -214,6 +264,17 @@ def serialize_entry(entry):
         "updatedAt": entry.updated_at.isoformat(),
         "usage": usage_of(entry),
     }
+    if entry.dictionary_code == _PARTICIPATION_DICTIONARY:
+        result.update({
+            "ownerDivisionId": (
+                str(entry.owner_division_id)
+                if owner is not None else None
+            ),
+            "ownerDivisionName": owner["name"] if owner is not None else None,
+            "ownerDivisionPath": owner["path"] if owner is not None else None,
+            "isOwn": entry.owner_division_id in own_ids,
+        })
+    return result
 
 
 #: Справочники раздела, живущие СВОЕЙ таблицей, а не generic-реестром.
@@ -295,19 +356,47 @@ def definitions_with_counts():
     return results + _external_definitions_with_counts()
 
 
-def list_entries(dictionary_code):
+def list_entries(dictionary_code, *, actor_id=None):
     _require_dictionary(dictionary_code)
-    return [
-        serialize_entry(entry)
-        for entry in OpsDictionaryEntry.objects.filter(
-            dictionary_code=dictionary_code
-        )
-    ]
+    entries = list(OpsDictionaryEntry.objects.filter(
+        dictionary_code=dictionary_code
+    ))
+    owners, own_ids = _division_context(entries, actor_id)
+    return [serialize_entry(entry, owners=owners, own_ids=own_ids) for entry in entries]
+
+
+def _validated_owner(dictionary_code, code, owner_division_id, field_errors):
+    """Проверить владельца специальной группы и вернуть нормализованный id."""
+    if dictionary_code != _PARTICIPATION_DICTIONARY:
+        return None
+    if code == _PHYSICAL_SQUAD:
+        if owner_division_id not in (None, ""):
+            field_errors["ownerDivisionId"] = [
+                "Физнаряд не принадлежит отдельному подразделению."
+            ]
+        return None
+    if owner_division_id in (None, ""):
+        field_errors["ownerDivisionId"] = [
+            "Для специальной группы выберите подразделение-владельца."
+        ]
+        return None
+    try:
+        normalized = int(owner_division_id)
+    except (TypeError, ValueError):
+        normalized = None
+    if normalized is None or not Division.objects.filter(
+        pk=normalized, is_active=True
+    ).exists():
+        field_errors["ownerDivisionId"] = [
+            "Подразделение не найдено или неактивно."
+        ]
+        return None
+    return normalized
 
 
 @transaction.atomic
 def create_entry(dictionary_code, *, code, label, description, group_code,
-                 actor):
+                 owner_division_id=None, actor):
     _require_dictionary(dictionary_code)
     field_errors = {}
     code = str(code or "").strip().upper()
@@ -319,6 +408,9 @@ def create_entry(dictionary_code, *, code, label, description, group_code,
         dictionary_code=dictionary_code, code=code
     ).exists():
         field_errors["code"] = ["Код уже используется в этом справочнике."]
+    owner_division_id = _validated_owner(
+        dictionary_code, code, owner_division_id, field_errors
+    )
     group_parent = GROUP_PARENT.get(dictionary_code)
     if (
         group_parent is not None
@@ -342,6 +434,7 @@ def create_entry(dictionary_code, *, code, label, description, group_code,
         description=str(description or "").strip(),
         is_active=True,
         group_code=(group_code or None) if group_parent is not None else None,
+        owner_division_id=owner_division_id,
         updated_by=actor,
     )
     audit_service.record(
@@ -351,13 +444,16 @@ def create_entry(dictionary_code, *, code, label, description, group_code,
         entity_id=entry.pk,
         new_value={
             "dictionary": dictionary_code, "code": code, "label": entry.label,
+            "ownerDivisionId": owner_division_id,
         },
     )
     return entry
 
 
 @transaction.atomic
-def update_entry(entry_id, *, label, description, group_code, actor):
+def update_entry(
+    entry_id, *, label, description, group_code, owner_division_id=UNSET, actor
+):
     """Правка значения справочника (Plane №274).
 
     Заказчик просил у модуля все три действия — «Добавлять, удалять,
@@ -379,6 +475,11 @@ def update_entry(entry_id, *, label, description, group_code, actor):
         field_errors["label"] = ["Обязательное поле."]
     group_parent = GROUP_PARENT.get(entry.dictionary_code)
     wants_group = group_parent is not None
+    normalized_owner = entry.owner_division_id
+    if owner_division_id is not UNSET:
+        normalized_owner = _validated_owner(
+            entry.dictionary_code, entry.code, owner_division_id, field_errors
+        )
     if (
         wants_group
         and group_code
@@ -399,15 +500,19 @@ def update_entry(entry_id, *, label, description, group_code, actor):
         "label": entry.label,
         "description": entry.description,
         "groupCode": entry.group_code,
+        "ownerDivisionId": entry.owner_division_id,
     }
     entry.label = str(label).strip()
     entry.description = str(description or "").strip()
     if wants_group:
         entry.group_code = group_code or None
+    if owner_division_id is not UNSET:
+        entry.owner_division_id = normalized_owner
     entry.updated_by = actor
     entry.save(
         update_fields=[
-            "label", "description", "group_code", "updated_by", "updated_at",
+            "label", "description", "group_code", "owner_division_id",
+            "updated_by", "updated_at",
         ]
     )
     audit_service.record(
@@ -420,6 +525,7 @@ def update_entry(entry_id, *, label, description, group_code, actor):
             "label": entry.label,
             "description": entry.description,
             "groupCode": entry.group_code,
+            "ownerDivisionId": entry.owner_division_id,
         },
     )
     return entry

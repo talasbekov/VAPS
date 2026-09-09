@@ -11,7 +11,11 @@ from organization_management.apps.operations.models_forces import (
     OpsForceCampaignPoolMember,
 )
 from organization_management.apps.operations.exceptions import DomainError
-from organization_management.apps.ops.security_events import _not_found, _validation
+from organization_management.apps.ops.security_events import (
+    _not_found,
+    _validation,
+    published_visit_ids,
+)
 
 
 def _event_row(event):
@@ -236,6 +240,16 @@ def hand_over(campaign_id, *, comment, actor):
                 422,
                 message=f"Состав {event.code} уже передан в расстановку.",
             )
+        published = published_visit_ids(event)
+        if published is not None and event.visit_objects.exclude(pk__in=published).exists():
+            raise DomainError(
+                "FORCE_OBJECTS_NOT_READY",
+                422,
+                message=(
+                    f"Состав {event.code} можно передать после завершения "
+                    "рекогносцировки всех объектов."
+                ),
+            )
         event.force_roster = [
             {
                 "employeeId": row.employee_key,
@@ -339,12 +353,14 @@ def add_reserve_member(*, event, allocation_id, employee, actor):
         OpsForceCampaign.objects.select_for_update().filter(pk__in=campaign_ids)
     )
     if not campaigns:
+        message = "Для мероприятия не создано активное распределение сил."
         raise _validation(
-            {"campaign": ["Для мероприятия не создано активное распределение сил."]}
+            {"campaign": [message]}, message=message
         )
     if len(campaigns) != 1:
+        message = "Мероприятие входит более чем в одно активное распределение."
         raise _validation(
-            {"campaign": ["Мероприятие входит более чем в одно активное распределение."]}
+            {"campaign": [message]}, message=message
         )
     campaign = campaigns[0]
     employee_key = str(employee.pk)

@@ -124,7 +124,7 @@ const ALL_PERSONAS: readonly Persona[] = [
     key: 'observer',
     username: 'observer',
     password: 'observer123',
-    role: 'OPS_READER (object.view + duty.view)',
+    role: 'OPS_READER (object.view + duty.view + event.view)',
   },
   {
     key: 'erda',

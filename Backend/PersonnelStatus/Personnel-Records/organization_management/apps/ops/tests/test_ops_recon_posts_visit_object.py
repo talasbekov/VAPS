@@ -52,12 +52,8 @@ def event_on_recon(manager):
     )
     assert created.status_code == 201, created.content
     event_id = created.json()["id"]
-    manager.patch(
-        f"/api/ops/security-events/{event_id}/bulletin/",
-        {"briefDescription": "x", "initialTasks": "—"},
-        format="json",
-    )
-    manager.post(f"/api/ops/security-events/{event_id}/bulletin/complete/")
+    # ОМ с объектом заводится сразу на рекогносцировке (Plane «Реестр ОМ-5») —
+    # заводить и завершать бюллетень нечего.
     return event_id, obj
 
 

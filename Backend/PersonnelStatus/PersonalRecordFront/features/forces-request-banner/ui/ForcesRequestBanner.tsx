@@ -50,6 +50,11 @@ import {
 } from "@/hooks/use-forces-request-banner";
 import { employeeIdOfKey } from "@/features/employee-status-update/model/row-key";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
+import { useParticipationCatalog } from "@/hooks/use-participation-catalog";
+import {
+  ParticipationKindPicker,
+  type ParticipationBranch,
+} from "@/features/event-participation/ui/ParticipationKindPicker";
 
 /** Подпись адресата списка (Plane №941): слово берётся у сервера — он один
  * знает, чья это область; экран видит только строки. Нет поля — «управлению»,
@@ -85,6 +90,9 @@ export function ForcesRequestBanner({
   // Физнаряд — отдельный резерв без ОМ; специальная группа сразу относится
   // к тому мероприятию, из которого пришёл запрос (Plane №977).
   const [kindCode, setKindCode] = useState("PHYSICAL_SQUAD");
+  const [roleCode, setRoleCode] = useState("");
+  const [participationBranch, setParticipationBranch] =
+    useState<ParticipationBranch>("PHYSICAL");
   // Порядок значим: ссылка из уведомления сильнее выбора и списка — человек
   // пришёл по конкретному адресу. Дальше — его собственный выбор. И только
   // когда запрос ровно один, он подставляется сам.
@@ -102,6 +110,7 @@ export function ForcesRequestBanner({
     linkedId ?? pickedAlive ?? (rows.length === 1 ? rows[0].allocationId : null);
   const request = useDirectorateForcesRequest(allocationId);
   const select = useSelectForRequest(allocationId);
+  const participationCatalog = useParticipationCatalog(allocationId !== null);
   // 🔴 ОТЧЁТ ПРИНАДЛЕЖИТ ЗАПРОСУ, А НЕ ЭКРАНУ (Plane №546). Состояние
   // мутации не ключится по `allocationId` и не сбрасывается при его смене, а
   // баннер печатал `select.data` безусловно. Человек выделял двоих по
@@ -121,6 +130,8 @@ export function ForcesRequestBanner({
     // для запроса A текст под шапкой запроса B объяснял бы чужое решение.
     setOverrideReason("");
     setKindCode("PHYSICAL_SQUAD");
+    setRoleCode("");
+    setParticipationBranch("PHYSICAL");
   }, [allocationId, resetReport]);
   // 🔴 СТРОКА ТАБЛИЦЫ СТАТУСОВ АДРЕСУЕТ СОТРУДНИКА СОСТАВНЫМ КЛЮЧОМ
   // `${staffUnitId}-${employeeId}` (см. `status-table.tsx`, `employeeIdOf`),
@@ -149,6 +160,13 @@ export function ForcesRequestBanner({
   const overridableRefused = (select.data?.refused ?? []).filter(
     (row) => row.overridable
   );
+  const selectedKind = (participationCatalog.data ?? []).find(
+    (kind) => kind.code === kindCode
+  );
+  const participationIncomplete =
+    participationBranch === "GROUP" &&
+    (kindCode === "" ||
+      ((selectedKind?.roles.length ?? 0) > 0 && roleCode === ""));
 
   // Пока список едет — НЕ рисуем скелет: на «Статусах сотрудников» запроса
   // чаще всего нет вовсе, и полоса-заглушка обещала бы содержимое, которого
@@ -327,25 +345,29 @@ export function ForcesRequestBanner({
           </ul>
         </div>
       )}
-      <div className="grid max-w-md gap-1">
-        <Label htmlFor="forces-participation-kind">Вид участия</Label>
-        <select
-          id="forces-participation-kind"
-          value={kindCode}
-          onChange={(event) => setKindCode(event.target.value)}
-          className="bg-background h-11 w-full rounded-md border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <option value="PHYSICAL_SQUAD">Физнаряд — в общий резерв</option>
-          {(data.groupDemands ?? []).map((demand) => (
-            <option key={demand.id} value={demand.kindCode}>
-              {demand.specification || demand.kindCode} — сразу на {data.code}
-            </option>
-          ))}
-        </select>
+      <div className="grid max-w-xl gap-1">
+        <Label>Участие ОМ</Label>
+        <ParticipationKindPicker
+          id="forces-participation"
+          branch={participationBranch}
+          kindCode={kindCode}
+          roleCode={roleCode}
+          kinds={participationCatalog.data ?? []}
+          onBranchChange={(branch) => {
+            setParticipationBranch(branch);
+            setKindCode(branch === "PHYSICAL" ? "PHYSICAL_SQUAD" : "");
+            setRoleCode("");
+          }}
+          onKindChange={(value) => {
+            setKindCode(value);
+            setRoleCode("");
+          }}
+          onRoleChange={setRoleCode}
+        />
         <p className="text-muted-foreground text-xs">
-          {kindCode === "PHYSICAL_SQUAD"
+          {participationBranch === "PHYSICAL"
             ? "Физнаряд пока не получает статус участия: конкретное мероприятие, объект и даты назначит Штаб."
-            : `Специальная группа сразу получит статус участия в ${data.code}; объект назначит Штаб.`}
+            : `Выбранная группа сразу получит статус участия в ${data.code}; объект назначит Штаб. Выбор чужой группы не расширяет список сотрудников.`}
         </p>
       </div>
       {/* ЧЕКБОКСЫ → резерв либо «УЧАСТИЕ В ОМ» (Plane №977). Кнопка живёт в
@@ -373,10 +395,10 @@ export function ForcesRequestBanner({
           // px, а не создавали её). «Статусы» открывают с планшета, ради
           // этого вся карточка и правится, — чинится здесь же.
           className="h-auto min-h-11 max-w-full py-2 text-left whitespace-normal"
-          disabled={employeeIds.length === 0 || select.isPending}
+          disabled={employeeIds.length === 0 || participationIncomplete || select.isPending}
           onClick={() =>
             select.mutate(
-              { employeeIds, kindCode },
+              { employeeIds, kindCode, roleCode: roleCode || undefined },
               { onSuccess: () => onSelected?.() }
             )
           }
@@ -385,7 +407,9 @@ export function ForcesRequestBanner({
             ? "Выделяю…"
             : employeeIds.length === 0
               ? "Отметьте сотрудников в таблице"
-              : kindCode === "PHYSICAL_SQUAD"
+              : participationIncomplete
+                ? "Выберите группу и специальность"
+                : kindCode === "PHYSICAL_SQUAD"
                 ? `Добавить в общий резерв: ${employeeIds.length}`
                 : `Выделить на ${data.code}: ${employeeIds.length}`}
         </Button>
@@ -454,6 +478,7 @@ export function ForcesRequestBanner({
                 {
                   employeeIds: overridableRefused.map((row) => row.employeeId),
                   kindCode,
+                  roleCode: roleCode || undefined,
                   override: true,
                   override_reason: overrideReason.trim(),
                 },

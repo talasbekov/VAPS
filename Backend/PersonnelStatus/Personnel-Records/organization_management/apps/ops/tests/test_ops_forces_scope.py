@@ -29,6 +29,7 @@ import json
 import pytest
 
 from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.operations.models_settings import OpsDictionaryEntry
 from organization_management.apps.staff_unit.models import StaffUnit
 
 from .test_ops_forces_gathering import (  # noqa: F401
@@ -1101,6 +1102,55 @@ def test_the_directorate_request_is_closed_without_status_manage():
 # ── Выделение по запросу: чекбоксы → «Участие в ОМ» (Plane №395, `[СБС-31]`) ─
 
 
+@pytest.mark.parametrize(
+    ("campaign_count", "expected_message"),
+    [
+        (0, "Для мероприятия не создано активное распределение сил."),
+        (2, "Мероприятие входит более чем в одно активное распределение."),
+    ],
+    ids=["missing", "ambiguous"],
+)
+def test_physical_squad_selection_explains_unavailable_campaign(
+    manager, campaign_count, expected_message  # noqa: F811
+):
+    """№1086: массовый ответ сохраняет причину отказа, а не общий текст формы."""
+    from organization_management.apps.operations.models_forces import (
+        OpsForceCampaignPoolMember,
+    )
+    from organization_management.apps.operations.models_status import OpsEmployeeStatus
+
+    department = make_department("Департамент резерва")
+    directorate = make_directorate(department, "Управление резерва")
+    base, allocation_id = allocated_event(manager, department)
+    _split_first(manager, base, allocation_id, directorate)
+    person = employee_of(directorate, "Резервистов")
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    for index in range(campaign_count):
+        created = manager.post(
+            f"{URL}forces/campaigns/",
+            {"title": f"Распределение {index}", "eventIds": [event_id]},
+            format="json",
+        )
+        assert created.status_code == 201, created.data
+    head = _status_head("dir-head-campaign-error", "DIR_HEAD_CAMPAIGN_ERROR", directorate)
+
+    response = head.post(
+        f"{URL}forces/requests/{allocation_id}/directorate/select/",
+        {"employeeIds": [str(person.pk)], "kindCode": "PHYSICAL_SQUAD"},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+    body = response.json()
+    assert body["selected"] == []
+    assert len(body["refused"]) == 1
+    assert body["refused"][0]["employeeId"] == str(person.pk)
+    assert body["refused"][0]["message"] == expected_message
+    assert body["refused"][0]["overridable"] is False
+    assert not OpsForceCampaignPoolMember.objects.filter(employee_id=person.pk).exists()
+    assert not OpsEmployeeStatus.objects.filter(employee_id=person.pk).exists()
+
+
 def test_physical_squad_selection_enters_campaign_reserve_without_event_status(manager):  # noqa: F811
     """Физнаряд до решения Штаба — резерв кампании, а не участие в ОМ.
 
@@ -1185,12 +1235,13 @@ def test_physical_squad_selection_enters_campaign_reserve_without_event_status(m
     assert head.get(f"{URL}forces/campaign-reserves/").json()["results"] == []
 
 
-def test_special_group_selection_creates_final_participation_for_requested_event(manager):  # noqa: F811
-    """Специальная группа выбирается сразу для ОМ и потому создаёт участие."""
+def test_foreign_group_and_its_specialty_can_be_selected_for_own_employee(manager):  # noqa: F811
+    """№1100: чужая группа допустима, область сотрудников остаётся своей."""
     from organization_management.apps.operations.models_status import OpsEmployeeStatus
 
     own = make_department("Департамент группы")
     directorate = make_directorate(own, "Управление группы")
+    foreign = make_department("Чужой департамент группы")
     base, allocation_id = allocated_event(manager, own)
     _split_first(manager, base, allocation_id, directorate)
     event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1])
@@ -1200,20 +1251,34 @@ def test_special_group_selection_creates_final_participation_for_requested_event
     ]
     allocation["directorates"][0]["groupDemandIds"] = ["screening-1"]
     event.save(update_fields=["force_allocation", "updated_at"])
+    OpsDictionaryEntry.objects.create(
+        dictionary_code="EVENT_PARTICIPATION_KINDS", code="CANINE_GROUP",
+        label="Кинологическая группа", owner_division_id=foreign.pk,
+        is_active=True,
+    )
+    OpsDictionaryEntry.objects.create(
+        dictionary_code="EVENT_GROUP_ROLES", code="DOG_HANDLER",
+        label="Кинолог", group_code="CANINE_GROUP", is_active=True,
+    )
     person = employee_of(directorate, "Досмотров")
     make_assignment_status_type()
     head = _status_head("dir-head-special", "DIR_HEAD_SPECIAL", directorate)
 
     response = head.post(
         f"{URL}forces/requests/{allocation_id}/directorate/select/",
-        {"employeeIds": [str(person.pk)], "kindCode": "SCREENING_GROUP"},
+        {
+            "employeeIds": [str(person.pk)],
+            "kindCode": "CANINE_GROUP",
+            "roleCode": "DOG_HANDLER",
+        },
         format="json",
     )
 
     assert response.status_code == 200, response.data
     status = OpsEmployeeStatus.objects.get(employee_id=person.pk)
     assert status.participations.get().event_id == event.pk
-    assert status.participations.get().kind_code == "SCREENING_GROUP"
+    assert status.participations.get().kind_code == "CANINE_GROUP"
+    assert status.participations.get().role_code == "DOG_HANDLER"
 
 
 def test_selecting_builds_the_full_request_view_exactly_once(manager, monkeypatch):  # noqa: F811

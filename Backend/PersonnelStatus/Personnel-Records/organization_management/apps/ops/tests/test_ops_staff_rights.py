@@ -75,7 +75,7 @@ def directorate_head():
     return api
 
 
-def test_the_staff_creates_an_event_and_fills_the_bulletin(staff):
+def test_the_staff_creates_an_event_and_completes_the_bulletin(staff):
     created = staff.post(
         URL,
         {"title": "Визит делегации", "businessDate": "2026-09-12", "kind": "INTERNAL"},
@@ -83,12 +83,8 @@ def test_the_staff_creates_an_event_and_fills_the_bulletin(staff):
     )
     assert created.status_code == 201, created.content
     base = f"{URL}{created.json()['id']}/"
-    filled = staff.patch(
-        f"{base}bulletin/",
-        {"briefDescription": "Штаб завёл", "initialTasks": "—"},
-        format="json",
-    )
-    assert filled.status_code == 200, filled.content
+    completed = staff.post(f"{base}bulletin/complete/")
+    assert completed.status_code == 200, completed.content
 
 
 def test_the_staff_places_people_on_an_object_it_does_not_lead(manager, staff):  # noqa: F811

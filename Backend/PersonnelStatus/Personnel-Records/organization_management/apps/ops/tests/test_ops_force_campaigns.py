@@ -253,6 +253,30 @@ def test_handover_projects_assignments_to_event_rosters_and_locks_campaign(manag
         format="json",
     ).json()["assignments"][0]
 
+    # Частично опубликованный объект можно собирать, но общую передачу ОМ
+    # нельзя закрыть, пока соседний объект остаётся черновиком рекогносцировки.
+    visit.stage = "PLACEMENT"
+    visit.save(update_fields=["stage"])
+    target.stage = "RECON"
+    target.save(update_fields=["stage", "updated_at"])
+    second = target.visit_objects.create(
+        security_object=make_object(code="OBJ-HANDOVER-DRAFT", name="Черновой объект"),
+        object_name="Черновой объект",
+        position=2,
+        stage="RECON",
+    )
+    blocked = manager.post(
+        f"{URL}{campaign['id']}/hand-over/", {"comment": "Рано"}, format="json"
+    )
+    assert blocked.status_code == 422, blocked.content
+    assert blocked.json()["error_code"] == "FORCE_OBJECTS_NOT_READY"
+    target.refresh_from_db()
+    assert target.force_handover == {}
+    second.stage = "PLACEMENT"
+    second.save(update_fields=["stage"])
+    target.stage = "PLACEMENT"
+    target.save(update_fields=["stage", "updated_at"])
+
     response = manager.post(
         f"{URL}{campaign['id']}/hand-over/", {"comment": ""}, format="json"
     )
@@ -270,6 +294,19 @@ def test_handover_projects_assignments_to_event_rosters_and_locks_campaign(manag
         }
     ]
     assert target.force_handover["campaignId"] == campaign["id"]
+
+    # №1084: the campaign snapshot must also satisfy the placement API contract.
+    detail = manager.get(f"/api/ops/security-events/{target.pk}/")
+    assert detail.status_code == 200, detail.data
+    member = detail.json()["forceRoster"][0]
+    assert member["name"] == "Переданов Сотрудник"
+    assert member["divisionName"] == ""
+    assert member["departmentName"] == ""
+    assert member["divisionId"] is None
+    assert member["departmentId"] is None
+    assert member["acceptedAt"] == target.force_handover["at"]
+    assert member["visitObjectId"] == str(visit.pk)
+    assert member["campaignAssignmentId"] == assignment["id"]
 
     locked = manager.post(
         f"{URL}{campaign['id']}/assignments/",

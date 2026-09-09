@@ -50,12 +50,8 @@ def event_with_two_posts(manager):  # noqa: F811
     )
     assert created.status_code == 201, created.content
     event_id = created.json()["id"]
-    manager.patch(
-        f"{URL}{event_id}/bulletin/",
-        {"briefDescription": "x", "initialTasks": "—"},
-        format="json",
-    )
-    manager.post(f"{URL}{event_id}/bulletin/complete/")
+    # ОМ с объектом заводится сразу на рекогносцировке (Plane «Реестр ОМ-5») —
+    # заводить и завершать бюллетень нечего.
     give_chief(manager, event_id)
     visit = service.lock_event(event_id).visit_objects.get()
     manager.patch(

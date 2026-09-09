@@ -171,17 +171,10 @@ export async function prepareDemandEvent(
     businessDate,
   })
   const base = `/api/ops/security-events/${created.id}`
-  await call('PATCH', `${base}/bulletin/`, {
-    briefDescription: 'Проба раскладки.',
-    initialTasks: '—',
-  })
-  // 🔴 ЗДЕСЬ БЫЛ МЁРТВЫЙ ШАГ `bulletin/complete/` (Plane №812; в девяти
-  //    спеках он снят коммитом 315e0968, а в ОБЩЕЙ фикстуре остался —
-  //    пропуск найден ревью, задача №825). ОМ, заведённый С ОБЪЕКТОМ, встаёт
-  //    сразу на рекогносцировку, и завершать бюллетень нечего: сервер отвечал
-  //    INVALID_STAGE_TRANSITION, а фикстура шла дальше молча. Пока шаги не
-  //    проверялись, это было незаметно; теперь `standCall` роняет подготовку
-  //    на первом же отбитом шаге, и мёртвую строку надо снять, а не глушить.
+  // 🔴 ЗДЕСЬ БЫЛИ МЁРТВЫЕ ШАГИ `PATCH .../bulletin/` + `bulletin/complete/`
+  //    (Plane №812/№825; ручка и поля текста сняты Plane №950). ОМ,
+  //    заведённый С ОБЪЕКТОМ, встаёт сразу на рекогносцировку — заводить и
+  //    завершать бюллетень нечего.
   await call('POST', `${base}/recon/import-from-passport/`)
   const afterImport = await call('GET', `${base}/`)
   const posts = afterImport.reconSectorPosts.map(

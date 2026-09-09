@@ -462,13 +462,10 @@ class Command(BaseCommand):
             kind=OpsSecurityEvent.Kind.INTERNAL,
             actor=ACTOR,
         )
-        event = event_service.update_bulletin(
-            event.id,
-            brief_description="Фикстура стенда: мероприятие доведено до запроса сил.",
-            initial_tasks="Обеспечить посты по расчёту.",
-        )
         # ОМ без объекта стартует с бюллетеня — его надо закрыть руками; ОМ с
         # объектом заводится сразу на рекогносцировке (Plane «Реестр ОМ-5»).
+        # Текста бюллетеня переход не требует (Plane №943/№950): поле и ручка
+        # правки текста сняты, завершение бюллетеня их не спрашивает.
         if event.stage == "BULLETIN":
             event = event_service.complete_bulletin(event.id)
         posts = [
@@ -659,11 +656,6 @@ class Command(BaseCommand):
             actor=ACTOR,
         )
         self._assign_visit_chief(event)
-        event = event_service.update_bulletin(
-            event.id,
-            brief_description="Фикстура стенда: мероприятие стоит на рекогносцировке.",
-            initial_tasks="Осмотреть объект, составить расчёт постов.",
-        )
         if event.stage == "BULLETIN":
             event = event_service.complete_bulletin(event.id)
         return event_service.update_recon(

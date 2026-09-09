@@ -8,6 +8,7 @@ passport.*/conflict.rest_after_duty.mode в той же транзакции о�
 """
 import pytest
 
+from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.models_duty import (
     OpsDutyConflictPolicy,
 )
@@ -30,6 +31,155 @@ pytestmark = pytest.mark.django_db
 
 SETTINGS = "/api/ops/settings/"
 DICTS = "/api/ops/dictionaries/"
+
+
+@pytest.mark.parametrize("permission", [
+    "event.view", "status.view", "status.manage", "placement.manage",
+    "forces.allocate", "forces.command",
+])
+def test_participation_catalog_is_readable_to_operational_consumers(permission):
+    """№1083: рабочий экран читает виды и специальности без прав админки."""
+    api, _ = client_for("participation-reader", "PARTICIPATION_READER", perms=(permission,))
+    for dictionary_code, code, group_code in [
+        ("EVENT_PARTICIPATION_KINDS", "SCREENING_GROUP", None),
+        ("EVENT_GROUP_ROLES", "SCREENER", "SCREENING_GROUP"),
+    ]:
+        OpsDictionaryEntry.objects.create(
+            dictionary_code=dictionary_code, code=code, label=code,
+            group_code=group_code, is_active=True,
+        )
+        response = api.get(f"{DICTS}{dictionary_code}/entries/")
+        assert response.status_code == 200, response.data
+        assert response.data["results"][0]["code"] == code
+        assert response.data["results"][0]["groupCode"] == group_code
+
+
+@pytest.mark.parametrize("permission", [
+    "event.view", "status.view", "status.manage", "placement.manage",
+    "forces.allocate", "forces.command",
+])
+def test_participation_catalog_read_does_not_grant_dictionary_administration(permission):
+    """Адресный доступ не открывает другие каталоги или запись даже своих."""
+    api, _ = client_for("participation-limited", "PARTICIPATION_LIMITED", perms=(permission,))
+    entry = OpsDictionaryEntry.objects.create(
+        dictionary_code="EVENT_PARTICIPATION_KINDS", code="SCREENING_GROUP",
+        label="Группа досмотра", is_active=True,
+    )
+    assert api.get(DICTS).status_code == 403
+    assert api.get(f"{DICTS}RETURN_REASONS/entries/").status_code == 403
+    for dictionary_code in ("EVENT_PARTICIPATION_KINDS", "EVENT_GROUP_ROLES"):
+        assert api.post(f"{DICTS}{dictionary_code}/entries/", {
+            "code": "FORBIDDEN", "label": "Forbidden",
+        }, format="json").status_code == 403
+    assert api.patch(f"{DICTS}entries/{entry.pk}/", {
+        "label": "Forbidden",
+    }, format="json").status_code == 403
+    assert api.post(f"{DICTS}entries/{entry.pk}/set-active/", {
+        "isActive": False,
+    }, format="json").status_code == 403
+    assert api.delete(f"{DICTS}entries/{entry.pk}/").status_code == 403
+    entry.refresh_from_db()
+    assert entry.label == "Группа досмотра"
+    assert entry.is_active
+
+
+def test_participation_catalog_rejects_unrelated_permission():
+    api, _ = client_for("participation-stranger", "PARTICIPATION_STRANGER", perms=("object.view",))
+    for dictionary_code in ("EVENT_PARTICIPATION_KINDS", "EVENT_GROUP_ROLES"):
+        assert api.get(f"{DICTS}{dictionary_code}/entries/").status_code == 403
+
+
+def test_participation_groups_expose_owner_path_and_own_scope():
+    """№1100: принадлежность группы приходит данными, а «своя» — областью."""
+    root = Division.objects.create(
+        name="Служба", code="SERVICE", division_type="organization"
+    )
+    own_department = Division.objects.create(
+        name="Технический департамент", code="TECH", division_type="department",
+        parent=root,
+    )
+    own_directorate = Division.objects.create(
+        name="Управление БПЛА", code="UAV", division_type="directorate",
+        parent=own_department,
+    )
+    own_section = Division.objects.create(
+        name="Второй отдел", code="UAV-2", division_type="division",
+        parent=own_directorate,
+    )
+    other_department = Division.objects.create(
+        name="Первый департамент", code="FIRST", division_type="department",
+        parent=root,
+    )
+    api, _ = client_for(
+        "group-scope-head", "GROUP_SCOPE_HEAD", perms=("status.manage",),
+        scope_division_id=own_directorate.pk,
+    )
+    for code, label, owner in (
+        ("UAV_GROUP", "Группа БВС", own_section),
+        ("SCREENING_GROUP", "Группа досмотра", other_department),
+    ):
+        OpsDictionaryEntry.objects.create(
+            dictionary_code="EVENT_PARTICIPATION_KINDS", code=code,
+            label=label, is_active=True, owner_division_id=owner.pk,
+        )
+
+    rows = api.get(
+        f"{DICTS}EVENT_PARTICIPATION_KINDS/entries/"
+    ).json()["results"]
+    by_code = {row["code"]: row for row in rows}
+
+    assert by_code["UAV_GROUP"]["ownerDivisionId"] == str(own_section.pk)
+    assert by_code["UAV_GROUP"]["ownerDivisionName"] == "Второй отдел"
+    assert by_code["UAV_GROUP"]["ownerDivisionPath"] == (
+        "Служба / Технический департамент / Управление БПЛА / Второй отдел"
+    )
+    assert by_code["UAV_GROUP"]["isOwn"] is True
+    assert by_code["SCREENING_GROUP"]["isOwn"] is False
+
+
+def test_new_participation_group_requires_an_active_owner(admin_api):
+    """Новая специальная группа без подразделения не становится бесхозной."""
+    missing = admin_api.post(
+        f"{DICTS}EVENT_PARTICIPATION_KINDS/entries/",
+        {"code": "UAV_GROUP", "label": "Группа БВС"}, format="json",
+    )
+    assert missing.status_code == 400
+    assert missing.json()["details"]["ownerDivisionId"] == [
+        "Для специальной группы выберите подразделение-владельца."
+    ]
+
+    inactive = Division.objects.create(
+        name="Архивный отдел", code="ARCHIVED", division_type="division",
+        is_active=False,
+    )
+    refused = admin_api.post(
+        f"{DICTS}EVENT_PARTICIPATION_KINDS/entries/",
+        {
+            "code": "UAV_GROUP", "label": "Группа БВС",
+            "ownerDivisionId": str(inactive.pk),
+        }, format="json",
+    )
+    assert refused.status_code == 400
+    assert refused.json()["details"]["ownerDivisionId"] == [
+        "Подразделение не найдено или неактивно."
+    ]
+
+
+def test_physical_squad_does_not_accept_a_group_owner(admin_api):
+    division = Division.objects.create(
+        name="Управление", code="DIR", division_type="directorate"
+    )
+    response = admin_api.post(
+        f"{DICTS}EVENT_PARTICIPATION_KINDS/entries/",
+        {
+            "code": "PHYSICAL_SQUAD", "label": "Физический наряд",
+            "ownerDivisionId": str(division.pk),
+        }, format="json",
+    )
+    assert response.status_code == 400
+    assert response.json()["details"]["ownerDivisionId"] == [
+        "Физнаряд не принадлежит отдельному подразделению."
+    ]
 
 
 @pytest.fixture(autouse=True)

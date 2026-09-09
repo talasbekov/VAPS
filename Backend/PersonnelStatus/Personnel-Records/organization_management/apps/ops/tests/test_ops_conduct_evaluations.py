@@ -24,6 +24,7 @@ from organization_management.apps.ops.tests.test_ops_visit_object_approval impor
 )
 from organization_management.apps.ops.tests.test_ops_security_events_api import (  # noqa: F401
     URL,
+    _deputy_persona,
     approver,
     make_employee,
     make_object,
@@ -56,6 +57,71 @@ def test_summary_counts_only_this_objects_assignments(manager, two_objects_on_co
     assert a["evaluated"] == 0 and b["evaluated"] == 0
     row = a["rows"][0]
     assert set(row) >= {"assignmentId", "post", "sector", "employeeName", "score", "comment", "replaced"}
+
+
+def test_object_chief_evaluates_records_incident_and_closes_only_own_object(
+    manager, two_objects_on_conduct  # noqa: F811
+):
+    """Старший объекта ведёт этап 5 в границе своего объекта (`[ЗАК-05]`)."""
+    base, event_id, first, second = two_objects_on_conduct
+    chief = make_employee("Старший", "Объекта")
+    chief_api = _deputy_persona(chief, username="conduct-object-chief")
+    first.chief_employee_id = chief.pk
+    first.chief_name = f"{chief.last_name} {chief.first_name}"
+    first.save(update_fields=["chief_employee_id", "chief_name", "updated_at"])
+
+    own = chief_api.get(_url(event_id, first))
+    assert own.status_code == 200, own.content
+    foreign = chief_api.get(_url(event_id, second))
+    assert foreign.status_code == 403, foreign.content
+    assignment_id = own.json()["rows"][0]["assignmentId"]
+    scored = chief_api.post(
+        _url(event_id, first),
+        {"assignmentId": assignment_id, "score": 9},
+        format="json",
+    )
+    assert scored.status_code == 200, scored.content
+
+    event = service.lock_event(event_id)
+    own_post = next(
+        row for row in event.recon_sector_posts
+        if str(row.get("visitObjectId")) == str(first.pk)
+    )
+    foreign_post = next(
+        row for row in event.recon_sector_posts
+        if str(row.get("visitObjectId")) == str(second.pk)
+    )
+    incident = chief_api.post(
+        f"{base}journal/",
+        {
+            "type": "INCIDENT",
+            "title": "Инцидент своего объекта",
+            "postId": own_post["id"],
+        },
+        format="json",
+    )
+    assert incident.status_code == 200, incident.content
+    assert chief_api.post(
+        f"{base}journal/",
+        {
+            "type": "INCIDENT",
+            "title": "Инцидент чужого объекта",
+            "postId": foreign_post["id"],
+        },
+        format="json",
+    ).status_code == 403
+    assert chief_api.post(
+        f"{base}visit-objects/{second.pk}/close/", {}, format="json"
+    ).status_code == 403
+    closed = chief_api.post(
+        f"{base}visit-objects/{first.pk}/close/",
+        {"comment": "Свой объект закрыт"},
+        format="json",
+    )
+    assert closed.status_code == 200, closed.content
+    assert next(
+        row for row in closed.json()["visitObjects"] if row["id"] == str(first.pk)
+    )["stage"] == "CLOSED"
 
 
 def test_reading_the_summary_needs_the_manage_right_too(  # noqa: F811
