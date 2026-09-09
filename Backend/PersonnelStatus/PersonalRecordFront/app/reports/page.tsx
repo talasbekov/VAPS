@@ -40,6 +40,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
+import { ReportSectionCard } from "@/components/reports/report-section-card";
 import {
   Table,
   TableHeader,
@@ -145,18 +146,13 @@ export default function ReportsPage() {
         />
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="md:col-span-2 lg:col-span-3">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileSpreadsheet className="h-5 w-5 text-green-600" />
-                Расход Л/С
-              </CardTitle>
-              <CardDescription>
-                Строевая записка на выбранную дату по вашей области видимости.
-                Выгрузка доступна для дня, который уже сдан.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <ReportSectionCard
+            className="md:col-span-2 lg:col-span-3"
+            icon={FileSpreadsheet}
+            iconClassName="text-green-600"
+            title="Расход Л/С"
+            description="Строевая записка на выбранную дату по вашей области видимости. Выгрузка доступна для дня, который уже сдан."
+          >
               <div className="flex flex-wrap items-end gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">
@@ -311,8 +307,7 @@ export default function ReportsPage() {
                     </TableBody>
                   </Table>
               )}
-            </CardContent>
-          </Card>
+          </ReportSectionCard>
 
           {/* Заглушка: Статистика отсутствий */}
           <Card className="relative overflow-hidden border-dashed">

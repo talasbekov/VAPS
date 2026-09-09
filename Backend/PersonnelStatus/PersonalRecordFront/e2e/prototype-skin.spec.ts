@@ -966,7 +966,10 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     { path: '/security-ops/ratings/analytics/', title: 'Аналитика рейтинга', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/analytics/', title: 'Состояние службы и личного состава', eyebrow: 'Ежедневный расход' },
     { path: '/security-ops/analytics/operations/', title: 'Аналитика мероприятий', eyebrow: 'Охранные мероприятия' },
-    { path: '/security-ops/service-reports/', title: 'Отчёты службы', eyebrow: 'Охранные мероприятия' },
+    // Переименовано Plane №985, [ОТЧ-ОМ-01]: заголовок расходился с
+    // сайдбаром («Отчёты службы» на экране vs «Отчеты по ОМ» в меню) — теперь
+    // одно имя «Отчёты по ОМ» везде.
+    { path: '/security-ops/service-reports/', title: 'Отчёты по ОМ', eyebrow: 'Охранные мероприятия' },
     { path: '/security-ops/service-reports/history/', title: 'История отчётов', eyebrow: 'Охранные мероприятия' },
     // Система
     { path: '/security-ops/dictionaries/', title: 'Справочники', eyebrow: 'Система' },

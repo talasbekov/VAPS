@@ -145,7 +145,7 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
       // Экран существовал с 17.08.2026, но в меню не стоял никогда — на него
       // попадали только по ссылкам с других экранов.
       { name: "Аналитика ОМ", href: "/security-ops/analytics/operations", icon: LineChart },
-      { name: "Отчеты по ОМ", href: "/security-ops/service-reports", icon: ScrollText },
+      { name: "Отчёты по ОМ", href: "/security-ops/service-reports", icon: ScrollText },
     ],
   },
   {
