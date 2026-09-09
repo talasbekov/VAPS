@@ -64,6 +64,29 @@ test.describe('ежедневный расход ответственного', 
     await screen.getByRole('button', { name: 'Повторить состояние сдачи' }).click()
     await expect(screen.getByText('Сдали 0 из 1')).toBeVisible()
   })
+  test('пересекающиеся статусы выбираются по приоритету каталога, не порядку API', async ({ page }) => {
+    await prepare(page)
+    const type = (code: string, name: string, priority: number, active = true) => ({ code, name, priority, report_column_code: code, is_active: active, counts_in_staff: true, counts_in_list: true, is_hard_block: false, restricts_editing: false, is_ku_owned: false, max_duration_days: null, color: '', legacy_code: null })
+    await page.route('**/api/operations/status-types/**', route => route.fulfill({ json: { count: 4, next: null, results: [type('IN_SERVICE', 'В строю', 100), type('DUTY', 'На дежурстве', 30), type('SICK_LEAVE', 'На больничном', 10, false), type('EXPIRED', 'Истёкший статус', 1)] } }))
+    const status = (id: number, code: string, start: string, end: string) => ({ id, employee_id: 41, status_type_code: code, date_start: start, date_end: end, state: 'ACTIVE', source: '', comment: '', document_basis: '', cancelled_at: null, cancelled_reason: '', participations: [] })
+    await page.route('**/api/operations/statuses/**', route => route.fulfill({ json: { count: 3, next: null, results: [status(1, 'DUTY', date, '2026-09-12'), status(2, 'EXPIRED', '2026-09-08', date), status(3, 'SICK_LEAVE', '2026-09-09', '2026-09-12')] } }))
+    await page.goto(`${APP}/employees?view=daily&businessDate=${date}`)
+    await page.getByRole('button', { name: 'Первое управление', exact: true }).click()
+    const person = page.getByText('Сотрудник из отдела', { exact: true }).locator('..')
+    // Deactivated catalog entries still describe historical facts; date_end is exclusive.
+    await expect(person.getByText('На больничном', { exact: true })).toBeVisible()
+    await expect(person.getByText('На дежурстве', { exact: true })).toHaveCount(0)
+  })
+  test('числа и состояние строки имеют доступные подписи на desktop', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await prepare(page)
+    await page.goto(`${APP}/employees?view=daily&businessDate=${date}`)
+    const unit = page.getByRole('article').filter({ has: page.getByRole('button', { name: 'Первое управление', exact: true }) })
+    await expect(unit.getByRole('group', { name: 'По списку: 3', exact: true })).toBeVisible()
+    await expect(unit.getByRole('group', { name: 'В строю: 3', exact: true })).toBeVisible()
+    await expect(unit.getByRole('group', { name: 'Отклонения: 0', exact: true })).toBeVisible()
+    await expect(unit.getByRole('group', { name: 'Сдача: Не сдано', exact: true })).toBeVisible()
+  })
   test('напоминает департаменту на выбранную дату, показывает отказ и неразрешённых получателей', async ({ page }) => {
     await prepare(page)
     let attempts = 0

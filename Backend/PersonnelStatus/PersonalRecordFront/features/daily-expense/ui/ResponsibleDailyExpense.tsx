@@ -8,7 +8,8 @@ import { apiClient } from '@/lib/api'
 import { opsApiClient } from '@/lib/ops-api'
 import { DAILY_EMPLOYEES_PATH } from '@/entities/daily-grid'
 import { formatIsoDate, formatIsoDateTime } from '@/shared/lib/date'
-import { useResponsibleDaily, type DirectorateSummary } from '../model/directorate-summary'
+import { useOpsStatusTypes } from '@/hooks/use-ops-status-types'
+import { effectiveDailyStatus, useResponsibleDaily, type DirectorateSummary } from '../model/directorate-summary'
 import { SummaryVersions } from './SummaryVersions'
 import styles from './responsible-daily.module.css'
 
@@ -18,6 +19,7 @@ export function DailyRetry({ label, onRetry, action = 'Повторить' }: { 
 
 interface Employee { id: string; full_name: string; rank_code: string }
 function People({ row, date, labelOf }: { row: DirectorateSummary; date: string; labelOf: (code: string) => string }) {
+  const catalog = useOpsStatusTypes()
   const employees = useQuery({ queryKey: ['daily-expense-board', 'responsible-people', date, row.ids], queryFn: async () => {
     const result: Employee[] = []
     // Daily adapter accepts at most 200 exact division IDs, not a subtree root.
@@ -33,11 +35,13 @@ function People({ row, date, labelOf }: { row: DirectorateSummary; date: string;
   // Operations status endpoint explicitly resolves division_id as a subtree.
   const statuses = useQuery({ queryKey: ['daily-expense-board', 'responsible-statuses', date, row.division.id],
     queryFn: () => apiClient.getOpsStatusesOn({ businessDate: date, divisionId: Number(row.division.id) }) })
-  if (employees.isError || statuses.isError) return <DailyRetry label="Не удалось получить сотрудников и статусы" onRetry={() => Promise.all([employees.refetch(), statuses.refetch()])} />
-  if (employees.isPending || statuses.isPending) return <p role="status">Загрузка сотрудников…</p>
+  if (employees.isError || statuses.isError || catalog.isError) return <DailyRetry label="Не удалось получить сотрудников и статусы" onRetry={() => Promise.all([employees.refetch(), statuses.refetch(), catalog.refetch()])} />
+  if (employees.isPending || statuses.isPending || catalog.isLoading) return <p role="status">Загрузка сотрудников…</p>
   return <div className={styles.people}>
     {employees.data.length === 0 ? <p>Нет сотрудников на выбранную дату.</p> : employees.data.map(person => {
-      const status = statuses.data.find(item => item.employee_id === Number(person.id))
+      let status
+      try { status = effectiveDailyStatus(statuses.data.filter(item => item.employee_id === Number(person.id)), date, catalog.all) }
+      catch { return <div key={person.id} className={styles.person}><strong>{person.full_name}</strong><DailyRetry label="Не удалось определить статус по справочнику" onRetry={() => Promise.all([statuses.refetch(), catalog.refetch()])} /></div> }
       return <div key={person.id} className={styles.person}><strong>{person.full_name}</strong><span>{person.rank_code || '—'}</span><span className={styles.neutral}>{status ? labelOf(status.status_type_code) : 'Без отдельной отметки: в строю'}</span></div>
     })}
   </div>
@@ -45,11 +49,12 @@ function People({ row, date, labelOf }: { row: DirectorateSummary; date: string;
 
 function Directorate({ row, date, labels, labelOf, submissionReady }: { row: DirectorateSummary; date: string; labels: Record<string, string>; labelOf: (code: string) => string; submissionReady: boolean }) {
   const [open, setOpen] = useState(false)
+  const submissionText = submissionReady ? row.submission ? 'Сдано' : 'Не сдано' : 'Неизвестно'
   return <article className={styles.unit}>
     <div className={styles.unitRow}>
       <div><button className={styles.expand} aria-expanded={open} onClick={() => setOpen(!open)}><ChevronRight aria-hidden className={open ? styles.chevronOpen : ''} size={18} />{row.division.name}</button><p>{row.division.notify_recipient_name ? `Ответственный: ${row.division.notify_recipient_name}` : 'Получатель напоминаний не назначен'}</p></div>
-      <div><span className={styles.mobileLabel}>Сдача</span><span className={row.submission ? styles.submitted : styles.neutral}>{submissionReady ? row.submission ? 'Сдано' : 'Не сдано' : 'Неизвестно'}</span>{submissionReady && row.submission && <small>{formatIsoDateTime(row.submission.submitted_at)} · v{row.submission.version}</small>}</div>
-      <div><span className={styles.mobileLabel}>По списку</span><b>{row.listTotal}</b></div><div><span className={styles.mobileLabel}>В строю</span><b>{row.inService ?? '—'}</b></div><div><span className={styles.mobileLabel}>Отклонения</span><b>{row.deviations ?? '—'}</b></div>
+      <div role="group" aria-label={`Сдача: ${submissionText}`}><span className={styles.mobileLabel}>Сдача</span><span className={row.submission ? styles.submitted : styles.neutral}>{submissionText}</span>{submissionReady && row.submission && <small>{formatIsoDateTime(row.submission.submitted_at)} · v{row.submission.version}</small>}</div>
+      <div role="group" aria-label={`По списку: ${row.listTotal}`}><span className={styles.mobileLabel}>По списку</span><b>{row.listTotal}</b></div><div role="group" aria-label={`В строю: ${row.inService ?? 'Неизвестно'}`}><span className={styles.mobileLabel}>В строю</span><b>{row.inService ?? '—'}</b></div><div role="group" aria-label={`Отклонения: ${row.deviations ?? 'Неизвестно'}`}><span className={styles.mobileLabel}>Отклонения</span><b>{row.deviations ?? '—'}</b></div>
     </div>
     {open && <div className={styles.expanded}><dl className={styles.columnStats}>{Object.entries(row.columns).map(([code, count]) => <div key={code}><dt>{labels[code] ?? code}</dt><dd>{count}</dd></div>)}</dl><p className={styles.hint}>Без отдельной отметки — в строю: {row.withoutStatus}. Вне списка: {row.offList}.</p><People row={row} date={date} labelOf={labelOf} /></div>}
   </article>
