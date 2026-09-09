@@ -355,6 +355,11 @@ export interface PlacementAssignment {
   /** Способ подтверждения (`[ОЗН-05]`, Plane №447): сам / лично старшим; кто отметил. */
   acknowledgedVia?: "self" | "personal" | null;
   acknowledgedBy?: string;
+  acknowledgedByUserId?: string;
+  acknowledgedByEmployeeId?: string;
+  acknowledgementMethod?: string;
+  acknowledgementBasis?: string;
+  employeeHasAccount?: boolean;
   /** Обоснование обхода предупреждения по рейтингу; заполнено только если предупреждение было. */
   ratingOverrideReason: string | null;
   /** Обоснование УСИЛЕНИЯ поста сверх расчёта (Plane №414); заполнено только

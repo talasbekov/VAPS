@@ -424,8 +424,15 @@ export function useReturnPlacement(id: string, options?: StageMutationOptions) {
 // ── Ознакомление ─────────────────────────────────────────────────────────
 
 export function useAcknowledgePlacement(id: string) {
-  return useEventMutation<{ assignmentId: string }>(id, ({ assignmentId }) =>
-    opsApiClient.post<SecurityEvent>(securityEventAcknowledgePath(id, assignmentId))
+  return useEventMutation<{
+    assignmentId: string;
+    deliveryMethod?: string;
+    accountAbsenceBasis?: string;
+  }>(id, ({ assignmentId, ...body }) =>
+    opsApiClient.post<SecurityEvent>(
+      securityEventAcknowledgePath(id, assignmentId),
+      body
+    )
   );
 }
 

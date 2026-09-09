@@ -116,6 +116,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   FORCE_ALLOCATION_SUBMITTED: "Список выделенных отправлен в штаб",
   FORCE_ALLOCATION_ACCEPTED: "Штаб принял список и передал людей мероприятию",
   FORCE_ALLOCATION_RETURNED: "Штаб вернул список департаменту",
+  SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD:
+    "Начальник управления подтвердил ознакомление сотрудника без учётки",
   GVO_SUMMARY_RESET: "Ручная правка сводки ГВО сброшена",
   // Справочник охраняемых лиц с экрана (Plane №951).
   PROTECTED_PERSON_CREATED: "Охраняемое лицо заведено",

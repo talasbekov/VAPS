@@ -4778,6 +4778,9 @@ def placement_assignments_view(event, *, with_phone=False, read_context=None):
                 "divisionName": division_name,
                 "statusCode": code,
                 "statusLabel": label,
+                "employeeHasAccount": bool(
+                    employee is not None and employee.user_id is not None
+                ),
                 # Явный bool: строки, заведённые до появления старшего сектора,
                 # ключа не несут вовсе, и клиенту незачем знать разницу между
                 # «не старший» и «поля не было».

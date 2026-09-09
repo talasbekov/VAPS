@@ -10,6 +10,7 @@ conduct → closed. Правила, коды и тексты — порт мок
 from datetime import date
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.db.utils import IntegrityError
 
 from organization_management.apps.dictionaries.models import Rank
@@ -617,6 +618,8 @@ def test_personnel_page_size_has_a_ceiling(manager):
 def test_full_lifecycle_walkthrough(manager, approver_client):
     obj = make_object(with_passport=True)
     employee = make_employee()
+    employee.user = get_user_model().objects.get(username="ev-manager")
+    employee.save(update_fields=["user"])
     event_id = create_event(manager, obj).json()["id"]
     base = f"{URL}{event_id}/"
 

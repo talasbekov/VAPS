@@ -2332,7 +2332,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if event is None:
             return False
         return mine.may_acknowledge(
-            event, self.kwargs.get("assignment_id"), employee
+            event,
+            self.kwargs.get("assignment_id"),
+            employee,
+            actor_user_id=actor_id,
         )
 
     @action(detail=False, methods=["get"], url_path="my-assignments")
@@ -2869,34 +2872,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsSecurityEvent,
         )
 
-        employee = getattr(self.request.user, "employee", None)
         event = OpsSecurityEvent.objects.filter(pk=pk).first()
-        row = next(
-            (a for a in ((event.placement_assignments if event else None) or []) if a.get("id") == assignment_id),
-            None,
-        )
-        # 🔴 «ЛИЧНО» СТАВИТСЯ, ТОЛЬКО КОГДА ЧУЖАЯ СТРОКА ДОКАЗАНА (Plane №721).
-        # Прежде «своё или чужое» решалось одной связкой `User → Employee`, а
-        # учётка без кадровой привязки — ШТАТНЫЙ исход (докстринг
-        # `actor_display_name` говорит это прямо, сид связь не заполняет).
-        # Человек подтверждал СВОЮ строку из профиля, а сервер писал
-        # `personal` с логином, и лист ознакомления печатал «лично» вместо «в
-        # системе»: документ утверждал неправду о способе.
-        #
-        # «Лично» — утверждение о том, КАК человека довели (старший сказал
-        # устно). Не зная, чья это строка, утверждать его нельзя — тот же
-        # довод, которым раздел отказывается печатать ноль вместо
-        # «неизвестно» (№726, №409). Поэтому чужое должно быть ДОКАЗАНО, а
-        # неизвестность читается как «в системе».
-        #
-        # Что при этом недосказано, и это осознанно: старший БЕЗ кадровой
-        # привязки, отметивший чужую строку, тоже получит «в системе» —
-        # преуменьшение вместо ложного утверждения. Отличить его от самого
-        # сотрудника нечем, пока привязки нет.
-        someone_elses = (
-            employee is not None and row is not None
-            and str(row.get("employeeId")) != str(employee.pk)
-        )
         from organization_management.apps.ops.security_events import (
             actor_display_name,
         )
@@ -2905,11 +2881,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # кадровой записи, иначе username учётки» было написано здесь второй
         # раз, и две копии одного правила разошлись бы при первой же правке.
         actor_id = resolve_actor_id(request)
+        actor_employee = mine.employee_of_user(actor_id)
+        authority = mine.acknowledgement_authority(
+            event, assignment_id, actor_id
+        ) if event is not None else None
+        if authority is None:
+            raise PermissionDenied("PERMISSION_DENIED")
         return self._event_response(
             mine.acknowledge(
-                pk, assignment_id, personal=someone_elses,
+                pk, assignment_id, personal=authority == "unit_head",
                 actor=actor_id,
                 actor_name=actor_display_name(actor_id) or request.user.get_username(),
+                actor_employee_id=getattr(actor_employee, "pk", None),
+                delivery_method=(request.data or {}).get("deliveryMethod"),
+                account_absence_basis=(request.data or {}).get(
+                    "accountAbsenceBasis"
+                ),
             )
         )
 

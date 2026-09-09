@@ -48,6 +48,7 @@ interface EventRow {
     /** «Открыл и не нажал» (`[ОЗН-02]`, Plane №452). */
     viewedAt?: string | null
     acknowledgedAt: string | null
+    employeeHasAccount?: boolean
   }[]
 }
 
@@ -232,16 +233,72 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
 
-    // «Ознакомлен лично» (`[ОЗН-05]`, №447) — счётчик растёт, в строке — способ и кто отметил.
-    await card.getByRole('button', { name: 'Ознакомлен лично' }).first().click()
-    await expect(card.getByTestId('ack-summary')).toContainText(
-      `Ознакомились ${confirmed.length + 1} из ${total}`,
-      { timeout: 15_000 },
-    )
   })
 
   test.describe(() => {
     test.use({ serviceWorkers: 'block' })
+
+    test('начальник управления подтверждает сотрудника без учётки с обязательным основанием (Plane №984)', async ({ page }) => {
+      const token = await apiToken()
+      const code = await prepareEvent(token, { businessDate: uniqueBusinessDate() })
+      const event = (await events(token)).find((row) => row.code === code)
+      expect(event?.placementAssignments.length).toBeGreaterThan(0)
+      const assignment = event!.placementAssignments[0]!
+      const detailPath = `/api/ops/security-events/${event!.id}/`
+      let detail: Record<string, unknown> | null = null
+      let requestBody: Record<string, unknown> | null = null
+
+      await page.route(
+        (url) => url.pathname.includes('/api/operations/my-permissions/'),
+        (route) => route.fulfill({ json: { permissions: ['event.view', 'status.manage'], roles: [] } }),
+      )
+      await page.route(
+        (url) => url.pathname === detailPath,
+        async (route) => {
+          const response = await route.fetch()
+          detail = (await response.json()) as Record<string, unknown>
+          const assignments = detail.placementAssignments as Record<string, unknown>[]
+          detail = {
+            ...detail,
+            placementAssignments: assignments.map((row) =>
+              String(row.id) === assignment.id
+                ? { ...row, employeeHasAccount: false }
+                : row,
+            ),
+          }
+          await route.fulfill({ response, json: detail })
+        },
+      )
+      await page.route(
+        (url) => url.pathname.includes(`/acknowledge/${assignment.id}/`),
+        async (route) => {
+          requestBody = route.request().postDataJSON() as Record<string, unknown>
+          await route.fulfill({ json: detail })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+      const row = page.getByTestId(`ack-row-${assignment.id}`)
+      await row.getByRole('button', { name: 'Подтвердить без учётки' }).click()
+      const dialog = page.getByRole('dialog', { name: /Подтвердить ознакомление/ })
+      const submit = dialog.getByRole('button', { name: 'Подтвердить ознакомление' })
+      await expect(submit).toBeDisabled()
+      await dialog.getByLabel('Способ доведения *').fill('Устно на построении')
+      await dialog.getByLabel('Основание отсутствия учётной записи *').fill('Учётка ещё не заведена')
+      await dialog.getByRole('button', { name: 'Отмена' }).click()
+      await row.getByRole('button', { name: 'Подтвердить без учётки' }).click()
+      await expect(dialog.getByLabel('Способ доведения *')).toHaveValue('')
+      await expect(dialog.getByLabel('Основание отсутствия учётной записи *')).toHaveValue('')
+      await expect(submit).toBeDisabled()
+      await dialog.getByLabel('Способ доведения *').fill('Устно на построении')
+      await dialog.getByLabel('Основание отсутствия учётной записи *').fill('Учётка ещё не заведена')
+      await submit.click()
+      await expect.poll(() => requestBody).toEqual({
+        deliveryMethod: 'Устно на построении',
+        accountAbsenceBasis: 'Учётка ещё не заведена',
+      })
+    })
 
     test('старший объекта ведёт этап без event.manage (Plane №612, №494)', async ({ page }) => {
       /**
@@ -341,7 +398,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
       ).toBeDisabled()
     })
 
-    test('строчные «Напомнить» и «Ознакомлен лично» называют причину и без отставания этапа (доводка №801 по ревью №825)', async ({
+    test('строчные «Напомнить» и подтверждение без учётки называют причину и без отставания этапа (№984)', async ({
       page,
     }) => {
       /**
@@ -383,6 +440,25 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
             json: { employee: { id: 999999, full_name: 'Не старший', rank_code: null, position_code: null, division: null, personnel_number: null, hire_date: null }, unlinked_reason: null },
           }),
       )
+      await page.route(
+        (url) => url.pathname === `/api/ops/security-events/${event!.id}/`,
+        async (route) => {
+          const response = await route.fetch()
+          const body = (await response.json()) as {
+            placementAssignments: Record<string, unknown>[]
+          }
+          await route.fulfill({
+            response,
+            json: {
+              ...body,
+              placementAssignments: body.placementAssignments.map((assignment) => ({
+                ...assignment,
+                employeeHasAccount: false,
+              })),
+            },
+          })
+        },
+      )
       await signIn(page)
       await page.goto(`${APP}/security-ops/events/${event!.id}/`)
       const card = page.locator('[data-slot="card"]', {
@@ -395,7 +471,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
         timeout: 15_000,
       })
       const remindButton = row.getByRole('button', { name: /Напомнить:/ })
-      const ackButton = row.getByRole('button', { name: 'Ознакомлен лично' })
+      const ackButton = row.getByRole('button', { name: 'Подтвердить без учётки' })
       await expect(remindButton).toBeDisabled()
       await expect(ackButton).toBeDisabled()
 

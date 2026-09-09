@@ -19,8 +19,8 @@
 //
 // Панели «Экран сотрудника» на странице этапа больше нет (`[ОЗН-08]`):
 // сотрудник отвечает со своей карточки в профиле (№405), а здесь — экран
-// старшего. Отметка «Отметить ознакомление» за сотрудника осталась —
-// «доведено лично» (`[ОЗН-05]`) старший подтверждает сам.
+// старшего. За сотрудника без учётки подтверждает только начальник его
+// управления с обязательной фиксацией способа и основания (`[ОЗН-05]`).
 import { useMemo, useState } from "react";
 // Роль старшего читается по данным мероприятия — так же, как это делает
 // согласование (`useApprovalRights`): право этапа «Ознакомление» у сервера
@@ -48,7 +48,7 @@ import {
   useReplaceAssignment,
 } from "@/hooks/use-security-event-stages";
 import { PersonnelPicker } from "@/features/personnel-picker";
-import { EVENT_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
+import { EVENT_MANAGE, STATUS_MANAGE, useChainAccess } from "@/features/forces-split/ui/chain-access";
 import type { PlacementAssignment, SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
 import { AccessHints, RightGate } from "@/shared/ui/right-gate";
@@ -129,6 +129,14 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
   const complete = useCompleteAcknowledgement(event.id);
   const [scope, setScope] = useState<Scope>("all");
   const [replacing, setReplacing] = useState<PlacementAssignment | null>(null);
+  const [confirming, setConfirming] = useState<PlacementAssignment | null>(null);
+  const [deliveryMethod, setDeliveryMethod] = useState("");
+  const [accountAbsenceBasis, setAccountAbsenceBasis] = useState("");
+  const closeConfirmation = () => {
+    setConfirming(null);
+    setDeliveryMethod("");
+    setAccountAbsenceBasis("");
+  };
 
   const assignments = event.placementAssignments;
   const confirmed = assignments.filter((a) => stateOf(a) === "confirmed");
@@ -490,7 +498,16 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                           // ручка стережётся тем же `_require_stage` (№528).
                           stageBehindReason={stageBehindReason}
                           canReplace={canManage && mayReplaceOn(assignment.postId)}
-                          onAcknowledge={() => acknowledge.mutate({ assignmentId: assignment.id })}
+                          canConfirmUnlinked={
+                            assignment.employeeHasAccount === false &&
+                            access.can(STATUS_MANAGE)
+                          }
+                          confirmReason={
+                            assignment.employeeHasAccount === false
+                              ? access.reason(STATUS_MANAGE)
+                              : null
+                          }
+                          onAcknowledge={() => setConfirming(assignment)}
                           onRemind={() => {
                             setLastRemind("one");
                             remindOne.mutate({ assignmentId: assignment.id });
@@ -507,7 +524,6 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           </div>
         )}
 
-        <StageError error={acknowledge.error} />
         <StageError error={remindOne.error} />
         <StageError error={remindAll.error} />
         <StageError error={complete.error} />
@@ -609,6 +625,75 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open) closeConfirmation();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Подтвердить ознакомление</DialogTitle>
+            <DialogDescription>
+              За сотрудника без учётной записи подтверждает начальник его
+              управления. Способ и основание сохраняются в аудите и листе
+              ознакомления.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="ack-delivery-method">Способ доведения *</Label>
+              <Input
+                id="ack-delivery-method"
+                value={deliveryMethod}
+                onChange={(event) => setDeliveryMethod(event.target.value)}
+                placeholder="Например: устно на построении"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ack-account-basis">
+                Основание отсутствия учётной записи *
+              </Label>
+              <Textarea
+                id="ack-account-basis"
+                rows={3}
+                value={accountAbsenceBasis}
+                onChange={(event) => setAccountAbsenceBasis(event.target.value)}
+                placeholder="Например: учётная запись ещё не заведена кадровиком"
+              />
+            </div>
+            <StageError error={acknowledge.error} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeConfirmation}>
+              Отмена
+            </Button>
+            <Button
+              disabled={
+                deliveryMethod.trim() === "" ||
+                accountAbsenceBasis.trim() === "" ||
+                acknowledge.isPending
+              }
+              onClick={() => {
+                if (confirming === null) return;
+                void acknowledge
+                  .mutateAsync({
+                    assignmentId: confirming.id,
+                    deliveryMethod: deliveryMethod.trim(),
+                    accountAbsenceBasis: accountAbsenceBasis.trim(),
+                  })
+                  .then(() => {
+                    closeConfirmation();
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              Подтвердить ознакомление
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -619,6 +704,8 @@ function AssignmentRow({
   manageReason,
   stageBehindReason,
   canReplace,
+  canConfirmUnlinked,
+  confirmReason,
   onAcknowledge,
   onRemind,
   onReplace,
@@ -635,6 +722,8 @@ function AssignmentRow({
   stageBehindReason: string | null;
   /** Замена — операция ОБЪЕКТА: чужой пост её не получает (Plane №613). */
   canReplace: boolean;
+  canConfirmUnlinked: boolean;
+  confirmReason: string | null;
   onAcknowledge: () => void;
   onRemind: () => void;
   onReplace: () => void;
@@ -652,12 +741,22 @@ function AssignmentRow({
         <span className="text-xs text-muted-foreground">{assignment.divisionName}</span>
       )}
       {state === "confirmed" && (
-        <span className="ml-auto inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
-          Ознакомлен{assignment.acknowledgedVia === "personal" ? " лично" : ""}{" "}
-          {formatIsoDateTime(assignment.acknowledgedAt ?? "")}
-          {assignment.acknowledgedVia === "personal" && (assignment.acknowledgedBy ?? "") !== ""
-            ? ` · ${assignment.acknowledgedBy}`
-            : ""}
+        <span className="ml-auto flex flex-col items-end text-[11px]">
+          <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-800">
+            Ознакомлен{assignment.acknowledgedVia === "personal" ? " лично" : ""}{" "}
+            {formatIsoDateTime(assignment.acknowledgedAt ?? "")}
+            {assignment.acknowledgedVia === "personal" && (assignment.acknowledgedBy ?? "") !== ""
+              ? ` · ${assignment.acknowledgedBy}`
+              : ""}
+          </span>
+          {assignment.acknowledgedVia === "personal" && (
+            <span className="mt-1 text-muted-foreground">
+              {assignment.acknowledgementMethod}
+              {assignment.acknowledgementBasis
+                ? ` · основание: ${assignment.acknowledgementBasis}`
+                : ""}
+            </span>
+          )}
         </span>
       )}
       {state === "declined" && (
@@ -785,22 +884,24 @@ function AssignmentRow({
           </RightGate>
           {/* 🔴 БЕЗ RightGate КНОПКА МОЛЧАЛА ТЕМ ЖЕ СПОСОБОМ (доводка №801 по
               ревью №825): title на выключенной кнопке браузер не покажет. */}
-          <RightGate reason={manageReason}>
+          {assignment.employeeHasAccount === false && (
+          <RightGate reason={confirmReason}>
             {(describedBy) => (
           <Button
             type="button"
             variant="outline"
             size="sm"
-            disabled={busy || !canManage}
+            disabled={busy || !canConfirmUnlinked}
             aria-describedby={describedBy}
-            title="Ознакомлен лично — доведено устно, отметка старшего"
+            title="Подтвердить доведение сотруднику без учётной записи"
             onClick={onAcknowledge}
           >
             <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-            Ознакомлен лично
+            Подтвердить без учётки
           </Button>
             )}
           </RightGate>
+          )}
         </>
       )}
     </li>

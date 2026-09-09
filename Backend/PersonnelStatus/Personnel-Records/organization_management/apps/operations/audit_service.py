@@ -133,6 +133,8 @@ SECURITY_EVENT_STAGE_OVERRIDDEN = "SECURITY_EVENT_STAGE_OVERRIDDEN"
 # «Ознакомление» завершено при неподтвердивших — решение старшего с
 # комментарием (Plane №432, `[ОЗН-04]`); число неподтвердивших — в old_value.
 SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED = "SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED"
+#: Начальник управления подтвердил ознакомление за сотрудника без учётки.
+SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD = "SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD"
 # Отказ заступить на назначение (Plane №588, `[ПРФ-04]`). Записывается ИМЕННО
 # потому, что отказ читается как СЛОВА САМОГО СОТРУДНИКА: «Не могу заступить:
 # …» стоит в его карточке и в листе «Ознакомление». А вписать эти слова может
@@ -343,6 +345,7 @@ ACTIONS = frozenset(
         SECURITY_EVENT_CLOSED,
         SECURITY_EVENT_DELETED,
         SECURITY_EVENT_ACKNOWLEDGEMENT_FORCED,
+        SECURITY_EVENT_ACKNOWLEDGED_BY_UNIT_HEAD,
         ASSIGNMENT_DECLINED,
         STATUS_PARTICIPATIONS_PURGED,
         SECURITY_EVENT_STAGE_OVERRIDDEN,

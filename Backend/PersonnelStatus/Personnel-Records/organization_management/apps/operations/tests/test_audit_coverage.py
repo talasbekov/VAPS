@@ -1090,6 +1090,17 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # уже не принимает (Plane №587).
     from organization_management.apps.ops import my_assignments as mine
 
+    mine.acknowledge(
+        om.pk,
+        om.placement_assignments[0]["id"],
+        personal=True,
+        actor=ACTOR,
+        actor_name="Коврижных К.",
+        actor_employee_id="101",
+        delivery_method="Устно на построении",
+        account_absence_basis="Учётная запись не заведена",
+    )
+    om.refresh_from_db()
     mine.decline(
         om.pk,
         om.placement_assignments[-1]["id"],
