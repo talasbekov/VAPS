@@ -164,6 +164,14 @@ export async function prepareDemandEvent(
   // `id` дописан к возврату (Plane №675): пробам нужен адрес ручек самого
   // мероприятия (оповещение, довыделение), и искать его по коду через реестр
   // значило бы завести второй способ узнать то, что здесь уже известно.
+  //
+  // `firstPostShift` (Plane №1058) — смена ПЕРВОГО поста расчёта. Задаётся
+  // здесь, а не PATCH'ем `.../recon/` после подготовки: `can_manage_recon`
+  // намеренно замораживает объект, как только тот уходит с этапа RECON
+  // (Plane №424/№634, «закрытый или уже прошедший этап неизменяем»), и это
+  // — гард, а не дефект. Задавать смену нужно ДО завершения рекогносцировки,
+  // как это делает человек.
+  options?: { firstPostShift?: string },
 ): Promise<{ id: string; code: string; total: number }> {
   const call = standCall(token)
   const created = await createOwnEvent(call, token, {
@@ -186,7 +194,15 @@ export async function prepareDemandEvent(
   const afterImport = await call('GET', `${base}/`)
   const posts = afterImport.reconSectorPosts.map(
     (post: Record<string, unknown>, index: number) =>
-      index === 0 ? { ...post, need: 4 } : post,
+      index === 0
+        ? {
+            ...post,
+            need: 4,
+            ...(options?.firstPostShift !== undefined
+              ? { shift: options.firstPostShift }
+              : {}),
+          }
+        : post,
   )
   await call('PATCH', `${base}/recon/`, {
     checklist: afterImport.reconChecklist.map((item: Record<string, unknown>) => ({
