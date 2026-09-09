@@ -1,10 +1,16 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.http import Http404
 from django.urls import path, include
 from django.views.decorators.cache import cache_page
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+
+
+def protected_person_photo_legacy(request, name):
+    """Never serve the former guessable MEDIA_ROOT photo path."""
+    raise Http404
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -65,6 +71,11 @@ urlpatterns = [
     path("api/audit/", include("organization_management.apps.audit.urls")),
     path("api/dictionaries/", include("organization_management.apps.dictionaries.api.urls")),
     path("api/divisions/", include("organization_management.apps.divisions.api.urls")),
+    path(
+        "media/protected-persons/photos/<path:name>",
+        protected_person_photo_legacy,
+        name="protected_person_photo_legacy",
+    ),
     # path("api/employees/", include("organization_management.apps.employees.api.urls")),
 ]
 

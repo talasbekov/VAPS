@@ -41,7 +41,7 @@ import { useResetGvoSection, useSaveGvoSection } from "@/hooks/use-gvo-summaries
 import { useUploadProtectedPersonPhoto } from "@/hooks/use-protected-persons";
 import { GvoMemberPickerDialog, ProtectedPersonPickDialog } from "@/features/gvo-section-edit";
 import { AllocateVehicleDialog } from "@/features/event-vehicles";
-import { mediaSrc } from "@/shared/lib/media";
+import { ProtectedPhoto } from "@/shared/ui/protected-photo";
 import { RegistryVehicles } from "./RegistryVehicles";
 
 // ОТВЕТСТВЕННЫЙ И СТАРШИЙ ГВО — ИЗ КАДРОВ (Plane №952, задача заказчика).
@@ -789,16 +789,19 @@ function PersonHead({
   const fileRef = useRef<HTMLInputElement>(null);
   const upload = useUploadProtectedPersonPhoto();
   const { toast } = useToast();
-  const src = mediaSrc(photoUrl);
   return (
     <div className="flex flex-wrap items-center gap-3" data-slot="gvo-person-head">
-      {src === null ? (
+      {photoUrl === null ? (
         <span className="flex h-[72px] w-[56px] items-center justify-center rounded-[8px] bg-muted text-[10px] text-muted-foreground">
           нет фото
         </span>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={`Фото: ${name}`} className="h-[72px] w-[56px] rounded-[8px] object-cover" />
+        <ProtectedPhoto
+          url={photoUrl}
+          alt={`Фото: ${name}`}
+          className="h-[72px] w-[56px] rounded-[8px] object-cover"
+        />
       )}
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold">{name}</p>
@@ -839,7 +842,7 @@ function PersonHead({
         disabled={upload.isPending}
         onClick={() => fileRef.current?.click()}
       >
-        {upload.isPending ? "Загрузка…" : src === null ? "Загрузить фото" : "Заменить фото"}
+        {upload.isPending ? "Загрузка…" : photoUrl === null ? "Загрузить фото" : "Заменить фото"}
       </Button>
     </div>
   );

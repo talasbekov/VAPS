@@ -1383,6 +1383,17 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             SimpleUploadedFile("c.png", png.getvalue(), content_type="image/png"),
             actor=ACTOR,
         )
+        # Чтение снимка — отдельное событийное действие, но этот сквозной
+        # тест не поднимает RBAC-учётку каталога; покрываем запись словаря
+        # напрямую, а авторизация и фактический вызов ручки проверяются в
+        # test_ops_gvo_catalog_refs.
+        audit_service.record(
+            actor=ACTOR,
+            action=audit_service.PROTECTED_PERSON_PHOTO_VIEWED,
+            entity_type=audit_service.ENTITY_PROTECTED_PERSON,
+            entity_id=person["id"],
+            new_value={"code": person["code"]},
+        )
 
     # Снимок объекта-каталога (Plane SJ-1049) — тот же приём, что снимок ОЛ
     # выше: своё событие журнала, отличное от PASSPORT_VERSION_PUBLISHED.

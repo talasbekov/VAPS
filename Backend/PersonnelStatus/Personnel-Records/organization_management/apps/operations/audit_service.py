@@ -308,6 +308,7 @@ GVO_SUMMARY_RESET = "GVO_SUMMARY_RESET"
 # каталог правился только через Django Admin, и своего следа у него не было.
 PROTECTED_PERSON_CREATED = "PROTECTED_PERSON_CREATED"
 PROTECTED_PERSON_PHOTO_SET = "PROTECTED_PERSON_PHOTO_SET"
+PROTECTED_PERSON_PHOTO_VIEWED = "PROTECTED_PERSON_PHOTO_VIEWED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -390,6 +391,7 @@ ACTIONS = frozenset(
         GVO_SUMMARY_RESET,
         PROTECTED_PERSON_CREATED,
         PROTECTED_PERSON_PHOTO_SET,
+        PROTECTED_PERSON_PHOTO_VIEWED,
     }
 )
 
