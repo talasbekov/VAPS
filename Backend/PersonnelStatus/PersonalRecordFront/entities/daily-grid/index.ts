@@ -338,7 +338,8 @@ export type YesterdayPlacement = Record<
  * администратором.
  */
 export interface StatusParticipation {
-  event_id: number;
+  /** `null` на входе означает физнаряд до распределения; ответ нормализуется в 0. */
+  event_id: number | null;
   kind_code: string;
   role_code?: string;
 }

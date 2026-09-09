@@ -56,7 +56,7 @@ export const EMPTY_PARTICIPATION_ROW: ParticipationDraft = {
 
 /** Тело, которое ждёт ручка раздела ОМ. */
 export interface ParticipationPayload {
-  event_id: number;
+  event_id: number | null;
   kind_code: string;
   role_code?: string;
 }
@@ -65,7 +65,7 @@ export function participationsToPayload(
   rows: ParticipationDraft[]
 ): ParticipationPayload[] {
   return rows.map((row) => ({
-    event_id: Number(row.eventId),
+    event_id: row.eventId === "" ? null : Number(row.eventId),
     kind_code: row.kindCode,
     role_code: row.roleCode === "" ? undefined : row.roleCode,
   }));
@@ -90,8 +90,11 @@ export function validateParticipations(
   kinds: KindRow[]
 ): string | null {
   for (const [index, row] of rows.entries()) {
-    if (row.eventId === "" || row.kindCode === "") {
+    if (row.kindCode === "") {
       return `Строка ${index + 1}: выберите мероприятие и вид участия.`;
+    }
+    if (row.eventId === "" && row.kindCode !== "PHYSICAL_SQUAD") {
+      return `Строка ${index + 1}: выберите мероприятие для группы.`;
     }
     const kind = kinds.find((item) => item.code === row.kindCode) ?? null;
     if (kind !== null && kind.roles.length > 0 && row.roleCode === "") {
@@ -194,7 +197,13 @@ export function EventParticipationFields({
                 className="w-full min-w-0 [&>span]:truncate"
                 aria-label={`Мероприятие ${index + 1}`}
               >
-                <SelectValue placeholder="Мероприятие" />
+                <SelectValue
+                  placeholder={
+                    row.kindCode === "PHYSICAL_SQUAD"
+                      ? "Мероприятие (необязательно)"
+                      : "Мероприятие"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {/* ЗАГРУЗКА И ПУСТОТА — РАЗНЫЕ СОСТОЯНИЯ, и молчать нельзя ни
@@ -219,6 +228,12 @@ export function EventParticipationFields({
                 ))}
               </SelectContent>
             </Select>
+
+            {row.kindCode === "PHYSICAL_SQUAD" && row.eventId === "" && (
+              <p className="col-span-full text-xs text-muted-foreground md:col-span-2">
+                Для физнаряда мероприятие можно определить позже штабом.
+              </p>
+            )}
 
             <ParticipationKindPicker
               id={`participation-${index + 1}`}

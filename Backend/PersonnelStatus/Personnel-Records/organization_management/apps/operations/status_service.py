@@ -30,6 +30,7 @@ from organization_management.apps.operations.models import StatusType
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     StatusOverride,
+    UNKNOWN_EVENT_ID,
 )
 
 
@@ -291,7 +292,7 @@ PARTICIPATION_STATUS_CODES = frozenset(
 def _assert_manual_participation(
     status_type_code, participations, *, system, scope_division_ids, where=""
 ):
-    """Ручное «Участие в ОМ»: можно, но только на ЗАПРОШЕННОЕ мероприятие.
+    """Ручное «Участие в ОМ»: по запросу, с отложенным ОМ для физнаряда.
 
     🔴 ЧТО ЗДЕСЬ ПРОИЗОШЛО (Plane №737, решение заказчика 04.09.2026). До
     этой задачи ручной ввод отбивался всегда (`PARTICIPATION_MANUAL_FORBIDDEN`,
@@ -302,12 +303,11 @@ def _assert_manual_participation(
     за сбор сил». Всё остальное из №427 (системный путь, колонка «По разделу
     ОМ», напоминание за час) осталось как было.
 
-    ОТМЕНЁН ЗАПРЕТ, А НЕ ПРИЧИНА, ПО КОТОРОЙ ОН ПОЯВИЛСЯ. Причина была одна:
-    статус привлечения без мероприятия — это «привлечён неизвестно куда»,
-    расход посчитает человека занятым, а департамент не увидит, куда он отдан
-    (после №486 вид «наряд/группа» тоже живёт в строке участия, и без неё
-    колонка «На ОМ (гр./нар.)» теряет разбивку). Поэтому мероприятие
-    обязательно — и обязано быть тем, о котором управление просили.
+    До распределения штабом физнаряд может быть записан без конкретного
+    мероприятия: вид участия уже известен, а `UNKNOWN_EVENT_ID` (`0`) означает
+    отложенное назначение. Для специальной группы мероприятие по-прежнему
+    обязательно. Если мероприятие названо, оно обязано быть тем, о котором
+    управление просили.
 
     ОТБОР МЕРОПРИЯТИЙ — ЗАЯВКИ СВОЕГО УПРАВЛЕНИЯ (вариант 2 из трёх, выбран
     заказчиком). Отвергнуты им же: «весь реестр ОМ через новую узкую ручку» —
@@ -344,7 +344,24 @@ def _assert_manual_participation(
     from organization_management.apps.ops.forces_requests import requested_event_ids
 
     allowed = requested_event_ids(scope_division_ids)
-    named = [str(row.get("event_id") or "").strip() for row in rows]
+    named = []
+    for row in rows:
+        raw_event_id = row.get("event_id")
+        kind_code = str(row.get("kind_code") or "").strip()
+        event_id = str(raw_event_id or "").strip()
+        is_missing = event_id in {"", str(UNKNOWN_EVENT_ID)}
+        if is_missing and kind_code != "PHYSICAL_SQUAD":
+            raise DomainError(
+                "PARTICIPATION_EVENT_REQUIRED",
+                422,
+                detail={"field": "participations"},
+                message=(
+                    "Для группы «Участие в ОМ» выберите мероприятие."
+                    + (f" {where}" if where else "")
+                ),
+            )
+        if not is_missing:
+            named.append(event_id)
     unknown = sorted({value for value in named if value not in allowed})
     if unknown:
         raise DomainError(
@@ -545,20 +562,30 @@ def _save_participations(status, participations, *, actor, system=False):
     seen_events = set()
     prepared = []
     for index, row in enumerate(rows):
-        event_id = row.get("event_id")
         kind_code = str(row.get("kind_code") or "").strip()
         role_code = str(row.get("role_code") or "").strip()
         prefix = f"participations.{index}"
-        if not str(event_id or "").isdigit():
+        raw_event_id = row.get("event_id")
+        raw_event_text = str(raw_event_id or "").strip()
+        if (
+            kind_code == "PHYSICAL_SQUAD"
+            and raw_event_text in {"", str(UNKNOWN_EVENT_ID)}
+        ):
+            event_id = UNKNOWN_EVENT_ID
+        elif not raw_event_text.isdigit():
+            event_id = None
             field_errors[f"{prefix}.event_id"] = ["Укажите мероприятие."]
-        elif int(event_id) in seen_events:
+        else:
+            event_id = int(raw_event_text)
+
+        if event_id is not None and event_id in seen_events:
             # Два участия в одном ОМ — это два разных вида на одном
             # мероприятии; расход посчитал бы человека дважды.
             field_errors[f"{prefix}.event_id"] = [
                 "Мероприятие уже выбрано в этом статусе."
             ]
-        else:
-            seen_events.add(int(event_id))
+        elif event_id is not None:
+            seen_events.add(event_id)
         if kind_code not in kinds and not system:
             field_errors[f"{prefix}.kind_code"] = [
                 "Вид участия не найден в справочнике или неактивен."
@@ -577,7 +604,7 @@ def _save_participations(status, participations, *, actor, system=False):
                 field_errors[f"{prefix}.role_code"] = [
                     "Роль принадлежит другой группе."
                 ]
-        if not field_errors.get(f"{prefix}.kind_code"):
+        if not field_errors.get(f"{prefix}.kind_code") and event_id is not None:
             prepared.append((event_id, kind_code, role_code))
 
     if field_errors:

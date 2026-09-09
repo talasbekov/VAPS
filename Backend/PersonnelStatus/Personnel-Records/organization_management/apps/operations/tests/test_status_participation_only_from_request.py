@@ -109,20 +109,32 @@ def _event_with_request(department, directorate, *, notified=True, code="ОМ-73
     return event
 
 
-def test_manual_participation_without_an_event_is_refused(types):  # noqa: F811
-    """Статус участия без мероприятия — «привлечён неизвестно куда» (№737).
+def test_manual_physical_participation_without_an_event_is_allowed(types, participation_catalog):  # noqa: F811
+    """Физнаряд до распределения допускается без конкретного мероприятия."""
+    _status_type("IN_EVENT")
+    employee = make_employee()
+    status = create_status(
+        employee_id=employee.id, status_type_code="IN_EVENT",
+        date_start=TODAY, date_end=TODAY + dt.timedelta(days=1), actor="test",
+        participations=[{"event_id": None, "kind_code": "PHYSICAL_SQUAD"}],
+    )
+    participation = status.participations.get()
+    assert participation.event_id == 0
+    assert participation.kind_code == "PHYSICAL_SQUAD"
 
-    Заказчик снял ЗАПРЕТ ручного ввода, а не причину, по которой он появился:
-    расход посчитает такого человека занятым, не сказав, куда он отдан.
-    """
+
+def test_manual_participation_without_kind_is_refused(types):  # noqa: F811
+    """Строка участия без вида по-прежнему требует корректного выбора."""
     _status_type("IN_EVENT")
     employee = make_employee()
     with pytest.raises(DomainError) as refused:
         create_status(
             employee_id=employee.id, status_type_code="IN_EVENT",
             date_start=TODAY, date_end=TODAY + dt.timedelta(days=1), actor="test",
+            participations=[],
         )
     assert refused.value.code == "PARTICIPATION_EVENT_REQUIRED"
+
     # Системный путь (чекбоксы запроса / выделение штабом) — как и раньше,
     # без проверок: мероприятие и даты там берутся из самой заявки.
     status = create_status(
@@ -131,6 +143,19 @@ def test_manual_participation_without_an_event_is_refused(types):  # noqa: F811
         participations=[], system_participations=True,
     )
     assert status.pk is not None
+
+
+def test_manual_group_participation_without_an_event_is_refused(types, participation_catalog):  # noqa: F811
+    """Для группы конкретное мероприятие по-прежнему обязательно."""
+    _status_type("IN_EVENT")
+    employee = make_employee()
+    with pytest.raises(DomainError) as refused:
+        create_status(
+            employee_id=employee.id, status_type_code="IN_EVENT",
+            date_start=TODAY, date_end=TODAY + dt.timedelta(days=1), actor="test",
+            participations=[{"event_id": None, "kind_code": "SCREENING_GROUP"}],
+        )
+    assert refused.value.code == "PARTICIPATION_EVENT_REQUIRED"
 
 
 def test_manual_participation_refuses_event_without_a_request(types, participation_catalog):  # noqa: F811

@@ -24,7 +24,8 @@
  *   2) в списке мероприятий — ЗАЯВКИ СВОЕГО УПРАВЛЕНИЯ, а не реестр ОМ: на
  *      реестр у начальника управления нет права `event.view` (№348), и проба
  *      сверяет список окна с ручкой `forces/directorate-requests/`;
- *   3) мероприятие и вид участия доезжают до сервера и возвращаются из него;
+ *   3) вид участия доезжает до сервера, а пустое мероприятие физнаря
+ *      возвращается маркером отложенного распределения;
  *   4) сервер держит своё правило сам: тело без `participations` — 422
  *      `PARTICIPATION_EVENT_REQUIRED`, чужое мероприятие — 422
  *      `PARTICIPATION_EVENT_NOT_REQUESTED`.
@@ -147,9 +148,8 @@ test.describe('статусы: привлечение на ОМ из порта�
     // Список мероприятий — РОВНО заявки своего управления, без повторов:
     // на одно ОМ заявок бывает несколько, и дубль читался бы как второе ОМ.
     //
-    // Строка открыта сразу: мероприятие обязательно, и прятать его за кнопкой
-    // «+ Мероприятие» значило бы показать форму, которую нельзя сохранить, не
-    // догадавшись нажать.
+    // Строка открыта сразу: вид участия обязателен. Конкретное мероприятие
+    // можно оставить пустым для физнаря до распределения штабом.
     await dialog.getByLabel('Мероприятие 1', { exact: true }).click()
     await expect(
       page.getByText('Загружаем мероприятия…'),
@@ -165,16 +165,15 @@ test.describe('статусы: привлечение на ОМ из порта�
     for (const code of expectedCodes) {
       expect(shown.some((text) => text.includes(code)), `в списке нет ${code}`).toBe(true)
     }
-    // Выбор С КЛАВИАТУРЫ, а не кликом в «первый по DOM»: Radix открывает
-    // список прокрученным к подсвеченному варианту (разобрано в
-    // `status-set-dialog.spec.ts`).
-    await page.keyboard.press('Enter')
+    await page.keyboard.press('Escape')
+    await dialog.getByRole('button', { name: 'Физнаряд', exact: true }).click()
     await expect(
       dialog.getByLabel('Мероприятие 1', { exact: true }),
-      'мероприятие выбрано — в поле стоит код ОМ',
-    ).toContainText(/ОМ-[\d-]+/)
-
-    await dialog.getByRole('button', { name: 'Физнаряд', exact: true }).click()
+      'для физнаря мероприятие можно не выбирать',
+    ).toContainText('Мероприятие (необязательно)')
+    await expect(
+      dialog.getByText('Для физнаряда мероприятие можно определить позже штабом.'),
+    ).toBeVisible()
     // У физнаряда ролей внутри нет — третьего списка быть не должно.
     await expect(
       dialog.getByLabel('Специальность', { exact: true }),
@@ -204,11 +203,12 @@ test.describe('статусы: привлечение на ОМ из порта�
       participations: { event_id: number; kind_code: string }[]
     }
     expect(saved.status_type_code).toBe(IN_EVENT_STATUS_CODE)
-    expect(saved.participations, 'мероприятие доехало до сервера и вернулось').toHaveLength(1)
+    expect(saved.participations, 'строка физнаря доехала до сервера').toHaveLength(1)
+    expect(saved.participations[0]!.event_id).toBe(0)
     expect(saved.participations[0]!.kind_code).toBe(SQUAD_KIND)
   })
 
-  test('сервер держит правило сам: без мероприятия и на чужое ОМ — 422 (Plane №737)', async () => {
+  test('сервер держит правило сам: без вида, физнарь без ОМ и чужое ОМ', async () => {
     const token = await tokenFor()
     const employees = (await (
       await fetch(`${API}/api/core/employees/?page_size=1`, {
@@ -217,7 +217,7 @@ test.describe('статусы: привлечение на ОМ из порта�
     ).json()) as { results: { id: number }[] }
     const employeeId = employees.results[0]!.id
 
-    // Без мероприятия — «привлечён неизвестно куда».
+    // Без строки участия — вид тоже неизвестен, это по-прежнему ошибка.
     const bare = await fetch(`${API}/api/operations/statuses/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -232,6 +232,23 @@ test.describe('статусы: привлечение на ОМ из порта�
     expect(((await bare.json()) as { error_code: string }).error_code).toBe(
       'PARTICIPATION_EVENT_REQUIRED',
     )
+
+    const physical = await fetch(`${API}/api/operations/statuses/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        employee_id: employeeId,
+        status_type_code: IN_EVENT_STATUS_CODE,
+        date_start: '2030-01-11',
+        date_end: '2030-01-12',
+        participations: [{ kind_code: SQUAD_KIND }],
+      }),
+    })
+    const physicalBody = (await physical.json()) as {
+      participations: { event_id: number }[]
+    }
+    expect(physical.status, JSON.stringify(physicalBody)).toBe(201)
+    expect(physicalBody.participations[0]!.event_id).toBe(0)
 
     // Мероприятие, по которому запроса управлению не было. Несуществующий
     // идентификатор — заведомо не запрошенный, и заводить лишнее ОМ ради

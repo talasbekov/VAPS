@@ -45,7 +45,7 @@ class StatusParticipationSerializer(serializers.Serializer):
     — там же, где известен состав справочника.
     """
 
-    event_id = serializers.IntegerField()
+    event_id = serializers.IntegerField(required=False, allow_null=True)
     kind_code = serializers.CharField(max_length=100)
     role_code = serializers.CharField(
         required=False, allow_blank=True, max_length=100
