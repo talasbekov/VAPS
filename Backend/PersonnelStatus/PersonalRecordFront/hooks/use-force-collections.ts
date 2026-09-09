@@ -22,6 +22,7 @@ import {
 } from "@/entities/security-event";
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
+import { refreshForceWorkspaceViews } from "./use-force-campaigns";
 
 export const FORCE_COLLECTIONS_KEY = ["ops-force-collections"] as const;
 
@@ -91,7 +92,7 @@ export function useAssignRosterObjects(eventId: string) {
       ),
     onSuccess: (data) => {
       client.setQueryData(["ops-force-collection", eventId], data);
-      void client.invalidateQueries({ queryKey: FORCE_COLLECTIONS_KEY });
+      return refreshForceWorkspaceViews(client, [eventId]);
     },
   });
 }
@@ -107,9 +108,7 @@ export function useHandOverToPlacement(eventId: string) {
       ),
     onSuccess: (data) => {
       client.setQueryData(["ops-force-collection", eventId], data);
-      void client.invalidateQueries({ queryKey: FORCE_COLLECTIONS_KEY });
-      // Расстановка читает состав из карточки мероприятия — ей тоже пора.
-      void client.invalidateQueries({ queryKey: ["ops-security-events"] });
+      return refreshForceWorkspaceViews(client, [eventId]);
     },
   });
 }
@@ -125,9 +124,7 @@ export function useSplitCollection(eventId: string) {
     mutationFn: (body) =>
       opsApiClient.post<SecurityEvent>(securityEventForcesSplitPath(eventId), body),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["ops-force-collection", eventId] });
-      void queryClient.invalidateQueries({ queryKey: ["ops-force-collections"] });
-      void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      return refreshForceWorkspaceViews(queryClient, [eventId]);
     },
   });
 }
@@ -140,9 +137,7 @@ export function useTopUpAllocation(eventId: string) {
     mutationFn: ({ allocationId, ...body }) =>
       opsApiClient.post<SecurityEvent>(securityEventForceTopUpPath(eventId, allocationId), body),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["ops-force-collection", eventId] });
-      void queryClient.invalidateQueries({ queryKey: ["ops-force-collections"] });
-      void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      return refreshForceWorkspaceViews(queryClient, [eventId]);
     },
   });
 }

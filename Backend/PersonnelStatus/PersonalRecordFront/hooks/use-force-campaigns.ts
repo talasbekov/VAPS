@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
@@ -8,6 +8,18 @@ import type { OpsApiFailure } from "@/lib/ops-errors";
 const PATH = "/api/ops/security-events/forces/campaigns/";
 export const FORCE_CAMPAIGNS_KEY = ["ops-force-campaigns"] as const;
 export const FORCE_CAMPAIGN_RESERVES_KEY = ["ops-force-campaign-reserves"] as const;
+
+/** Collection requests and campaigns share people, but retain their own owners. */
+export function refreshForceWorkspaceViews(client: QueryClient, eventIds: string[]) {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: FORCE_CAMPAIGNS_KEY }),
+    client.invalidateQueries({ queryKey: ["ops-force-campaign"] }),
+    client.invalidateQueries({ queryKey: FORCE_CAMPAIGN_RESERVES_KEY }),
+    client.invalidateQueries({ queryKey: ["ops-force-collections"] }),
+    client.invalidateQueries({ queryKey: ["ops-security-events"] }),
+    ...eventIds.map(eventId => client.invalidateQueries({ queryKey: ["ops-force-collection", eventId] })),
+  ]);
+}
 
 export interface ForceCampaignReserve {
   employeeId: string;
@@ -96,9 +108,7 @@ function useCampaignMutation<TBody>(
     mutationFn,
     onSuccess: (campaign) => {
       client.setQueryData(["ops-force-campaign", campaign.id], campaign);
-      void client.invalidateQueries({ queryKey: FORCE_CAMPAIGNS_KEY });
-      void client.invalidateQueries({ queryKey: ["ops-force-collections"] });
-      void client.invalidateQueries({ queryKey: ["ops-security-events"] });
+      return refreshForceWorkspaceViews(client, campaign.events.map(event => event.eventId));
     },
   });
 }

@@ -97,6 +97,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
   const setOpened = useCallback(
     (value: string | null) => {
       const next = new URLSearchParams(searchParams);
+      next.delete("campaign");
       if (value === null) next.delete("collection");
       else next.set("collection", value);
       const query = next.toString();
@@ -109,6 +110,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
   const setOpenedCampaign = useCallback(
     (value: string | null) => {
       const next = new URLSearchParams(searchParams);
+      next.delete("collection");
       if (value === null) next.delete("campaign");
       else next.set("campaign", value);
       const query = next.toString();
@@ -170,8 +172,10 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
               <TableHead>Мероприятие</TableHead>
               <TableHead>Дата ОМ</TableHead>
               <TableHead className="text-right">Потребность</TableHead>
+              <TableHead className="text-right">Запрошено</TableHead>
               <TableHead className="text-right">Выделяют</TableHead>
               <TableHead>Прислано</TableHead>
+              <TableHead className="text-right">Недобор</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead className="w-10" />
             </TableRow>
@@ -180,7 +184,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
             {collections.isPending &&
               [0, 1, 2].map((index) => (
                 <TableRow key={index}>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={9}>
                     <div
                       className="bg-muted h-9 w-full animate-pulse rounded"
                       aria-hidden
@@ -191,7 +195,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
 
             {!collections.isPending && collections.isError && (
               <TableRow>
-                <TableCell colSpan={7}>
+                <TableCell colSpan={9}>
                   <p role="alert" className="text-destructive-ink text-sm">
                     {collections.error?.message ??
                       "Сборы не загрузились — список показать нечем"}
@@ -202,7 +206,7 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
 
             {!collections.isPending && !collections.isError && rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="whitespace-normal">
+                <TableCell colSpan={9} className="whitespace-normal">
                   <p className="text-muted-foreground text-sm">
                     Сборов нет — ни у одного мероприятия ещё не посчитана
                     потребность в силах
@@ -257,12 +261,16 @@ export function ForceCollectionsTable({ enabled = true }: { enabled?: boolean })
                   <TableCell className="text-right font-semibold tabular-nums">
                     {row.need}
                   </TableCell>
+                  <TableCell className="text-right tabular-nums" data-slot="collection-requested">
+                    {row.requested}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums" data-slot="collection-allocating">
                     {row.allocating}
                   </TableCell>
                   <TableCell data-slot="collection-sent">
                     <Progress done={row.sent} need={row.need} />
                   </TableCell>
+                  <TableCell className="text-right tabular-nums" data-slot="collection-shortage">{row.shortage}</TableCell>
                   <TableCell>
                     <Badge variant="outline" data-slot="collection-status">
                       {row.boardStatus.label}
