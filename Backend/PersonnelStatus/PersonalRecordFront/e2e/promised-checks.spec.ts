@@ -28,13 +28,27 @@ import { join } from 'node:path'
 
 const ROOT = join(__dirname, '..')
 
-function declaresEslint(): boolean {
-  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
-    dependencies?: Record<string, string>
-    devDependencies?: Record<string, string>
+function packageJson(): {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  scripts?: Record<string, string>
+} {
+  return JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+}
+
+function eslintState(): { declared: boolean; installed: boolean } {
+  const pkg = packageJson()
+  const declared = Object.keys({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) }).includes('eslint')
+  return { declared, installed: existsSync(join(ROOT, 'node_modules/.bin/eslint')) }
+}
+
+function firstCommand(script: string): string | null {
+  const words = script.trim().split(/\s+/)
+  for (const word of words) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue
+    return word.replace(/^.*\//, '')
   }
-  const all = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) }
-  return Object.keys(all).includes('eslint')
+  return null
 }
 
 test.describe('обещанные проверки', () => {
@@ -45,7 +59,14 @@ test.describe('обещанные проверки', () => {
     )
     const present = [...configs, ...flat]
 
-    if (declaresEslint()) {
+    const { declared, installed } = eslintState()
+    if (declared !== installed) {
+      expect(
+        installed,
+        'eslint объявлен в зависимостях, но node_modules/.bin/eslint отсутствует',
+      ).toBe(true)
+    }
+    if (declared && installed) {
       expect(
         present.length,
         'eslint объявлен в зависимостях, но конфига нет — он не применится',
@@ -60,15 +81,32 @@ test.describe('обещанные проверки', () => {
   })
 
   test('скрипт lint объявлен только вместе с линтером', () => {
-    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
-      scripts?: Record<string, string>
-    }
+    const pkg = packageJson()
     const hasScript = Object.keys(pkg.scripts ?? {}).includes('lint')
+    const { installed } = eslintState()
 
     expect(
-      hasScript && !declaresEslint(),
+      hasScript && !installed,
       'в package.json объявлен скрипт lint, а eslint не установлен: ' +
         'команда не работает и обещает проверку, которой нет (Plane №915)',
     ).toBe(false)
+  })
+
+  test('каждый npm script запускает установленную команду', () => {
+    const pkg = packageJson()
+    const allowList = new Set(['bash', 'node', 'npm', 'npx'])
+    const missing = Object.entries(pkg.scripts ?? {})
+      .map(([name, command]) => [name, firstCommand(command)] as const)
+      .filter(([, command]) => command !== null)
+      .filter(([, command]) =>
+        !allowList.has(command as string) && !existsSync(join(ROOT, 'node_modules/.bin', command as string)),
+      )
+      .map(([name, command]) => `${name}: ${command}`)
+
+    expect(
+      missing,
+      'npm script начинается командой, которой нет в node_modules/.bin и нет в allow-list: ' +
+        missing.join(', '),
+    ).toEqual([])
   })
 })

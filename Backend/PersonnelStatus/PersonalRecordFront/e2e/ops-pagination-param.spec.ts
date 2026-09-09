@@ -100,9 +100,13 @@ function startsRegex(source: string, at: number): boolean {
   while (i >= 0 && /\s/.test(source[i] as string)) i -= 1
   if (i < 0) return true
   const prev = source[i] as string
-  if ('([{,;=:!&|?+-*%<>~^'.includes(prev)) return true
+  if ('([{,;=:!&|?+-*%<>~^}'.includes(prev)) return true
   const word = source.slice(Math.max(0, i - 9), i + 1).match(/[A-Za-z_$]+$/)
-  return word !== null && ['return', 'case', 'typeof', 'in', 'of', 'new', 'delete', 'void'].includes(word[0])
+  if (word === null) return false
+  const wordStart = i + 1 - word[0].length
+  // `value2of` must not be shortened to the keyword `of`.
+  if (wordStart > 0 && /[A-Za-z0-9_$]/.test(source[wordStart - 1] as string)) return false
+  return ['return', 'case', 'typeof', 'in', 'of', 'new', 'delete', 'void'].includes(word[0])
 }
 
 function stringLiterals(source: string): string[] {
@@ -343,6 +347,15 @@ test.describe('пагинация раздела ОМ', () => {
       countIn(source),
       'деление принято за регулярку — разбор съел код до следующего слэша',
     ).toBe(1)
+  })
+
+  test('границы эвристики не принимают хвост идентификатора и закрытые конструкции за регулярку', () => {
+    for (const prefix of ['const half = value2of / 2', '/* комментарий */', 'call()', '}']) {
+      expect(
+        countIn(`${prefix}\nconst url = '/api/operations/status-types/?page_size=5'`),
+        `граница «${prefix}» не должна съедать следующий строковый литерал`,
+      ).toBe(1)
+    }
   })
 
   test('сторож не гниёт: починенная проба снимается из списка', () => {

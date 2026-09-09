@@ -7,7 +7,7 @@ const nextConfig = {
   // «Unexpected token '<'». Проверочная сборка запускается так:
   //   NEXT_DIST_DIR=.next-build npx next build
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  // 🔴 ESLint В ПРОЕКТЕ НЕТ ВОВСЕ (Plane №915). Ни `eslint`, ни плагинов нет
+  // 🔴 ESLint В ПРОЕКТЕ НЕТ ВОВСЕ (Plane №915; продуктовая вилка №937). Ни `eslint`, ни плагинов нет
   // в зависимостях, `node_modules/.bin/eslint` отсутствует. Настройка
   // оставлена НАМЕРЕННО: без неё `next build` при появлении конфига полез бы
   // проверять и упал бы на отсутствующем пакете — то есть сборка стала бы
