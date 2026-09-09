@@ -3414,7 +3414,14 @@ def split_force_demand(event_id, *, rows):
                 "departmentName": known[key],
                 "need": int(row.get("need", 0)),
                 "status": kept.get("status") or _ALLOCATION_DRAFT,
-                "comment": str(row.get("comment") or "").strip(),
+                # Комментарий штаба переживает пересохранение ЧУЖОЙ строки
+                # (Plane №1023, ревью №944/№825): у редактора нет поля ввода
+                # для этого комментария вовсе (он приходит из сида/API), и
+                # `SplitEditor` шлёт отправленные строки как `{departmentId,
+                # need}` без ключа `comment` — тем же правилом, что уже
+                # применено к `dueAt`/`submittedLate`/`answerComment` ниже,
+                # отсутствующий в запросе комментарий не стирает сохранённый.
+                "comment": str(row.get("comment") or kept.get("comment") or "").strip(),
                 # Срок сдачи списка (Plane №287). Задан штабом — берём его;
                 # не задан — сохраняем прежний, а у новой строки считаем
                 # умолчание. Пересчитывать умолчание каждой правке нельзя:

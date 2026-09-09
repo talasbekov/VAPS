@@ -71,6 +71,16 @@ def test_a_draft_is_invisible_to_the_department_and_unanswerable(manager):  # no
     assert refused.status_code == 422 and refused.json()["error_code"] == "ALLOCATION_NOT_SENT"
     refused = manager.post(f"{base}forces/allocation/{row['id']}/notify/")
     assert refused.json()["error_code"] == "ALLOCATION_NOT_SENT"
+    # Выделение человека — тоже ответ департамента на запрос (Plane №1023,
+    # ревью №944/№825): держатель `forces.select`, знающий id черновика штаба,
+    # не должен вписывать в него людей раньше «Отправить запросы».
+    candidate = make_employee("Кандидат", "Черновика")
+    refused = manager.post(
+        f"{base}forces/allocation/{row['id']}/members/",
+        {"employeeId": str(candidate.pk)},
+        format="json",
+    )
+    assert refused.status_code == 422 and refused.json()["error_code"] == "ALLOCATION_NOT_SENT"
 
     # Черновик правится на месте: и цифра, и снятие строки.
     changed = _split(manager, base, department, total - 1, draft=True)
