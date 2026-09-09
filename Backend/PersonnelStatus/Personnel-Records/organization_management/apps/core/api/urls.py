@@ -1,5 +1,6 @@
 """Маршруты core. Имена ресурсов — донорские: под них написан клиент SPA."""
 from rest_framework.routers import DefaultRouter
+from organization_management.apps.core.api.service_employees import ServiceEmployeeViewSet
 
 from organization_management.apps.core.api.views import (
     DivisionViewSet,
@@ -11,6 +12,7 @@ from organization_management.apps.core.api.views import (
 )
 
 router = DefaultRouter()
+router.register('service-employees', ServiceEmployeeViewSet, basename='core-service-employees')
 router.register("divisions", DivisionViewSet, basename="core-divisions")
 router.register("employees", EmployeeViewSet, basename="core-employees")
 router.register("positions", PositionViewSet, basename="core-positions")

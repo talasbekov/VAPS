@@ -23,6 +23,7 @@
  */
 export const MODULE_PERMISSION = {
   "/security-ops/profile": null,
+  "/service-employees": null,
   // ── Портальные модули (Plane №352, Ш-1) ─────────────────────────────────
   //
   // Раньше их видимость решал набор ресурсов зашитой портальной роли

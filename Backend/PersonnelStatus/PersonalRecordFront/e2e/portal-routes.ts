@@ -31,6 +31,7 @@ export interface RouteSpec {
 export const ROUTES: readonly RouteSpec[] = [
   { template: '/', chromeless: true },
   { template: '/dashboard' },
+  { template: '/service-employees' },
   // Оба вида модуля, а не один: с Plane №273 по умолчанию открывается
   // «Ежедневный расход организации», и обход, ходивший только по адресу без
   // параметра, перестал бы заглядывать в «Сбор сил на ОМ» вовсе.

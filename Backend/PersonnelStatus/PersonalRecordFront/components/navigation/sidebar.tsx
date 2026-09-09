@@ -103,6 +103,7 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
     title: "Личный кабинет",
     items: [
       { name: "Мой профиль", href: "/security-ops/profile", icon: UserRound },
+      { name: "Сотрудники Службы", href: "/service-employees", icon: Users },
     ],
   },
   {

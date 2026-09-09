@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from 'next/link';
+import { useOpsPermissions } from '@/hooks/use-ops-permissions';
 import { useRef, useState, useLayoutEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +42,7 @@ export function OrgNode({
   renderEmployee,
   rootId,
 }: OrgNodeProps) {
+  const { hasPermission } = useOpsPermissions();
   const hasChildren = unit.children && unit.children.length > 0;
   const containerRef = useRef<HTMLDivElement>(null);
   const [childPositions, setChildPositions] = useState<number[]>([]);
@@ -243,6 +246,10 @@ export function OrgNode({
                 </Button>
               )}
             </div>
+
+            {unit.divisionId !== undefined && hasPermission('personnel.view') && (
+              <Link className="inline-flex min-h-11 items-center text-xs font-medium text-primary-ink hover:underline" href={`/service-employees?division_id=${unit.divisionId}`} onClick={event => event.stopPropagation()}>Сотрудники подразделения →</Link>
+            )}
 
             {unit.head && (
               <div className="mb-2">{renderEmployee(unit.head, "small")}</div>

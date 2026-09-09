@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from 'next/link';
+import { useOpsPermissions } from '@/hooks/use-ops-permissions';
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { StaffUnit, StaffUnitEmployee, StaffUnitStatistics } from "@/lib/api";
@@ -282,6 +284,7 @@ const formatDate = (dateString?: string) => {
 };
 
 export default function OrgBoard() {
+  const { hasPermission } = useOpsPermissions();
   // Подписи статусов — из справочника (Plane №366): тип, заведённый заказчиком
   // в админке, иначе читается как «Не обновлено».
   const naming = useStatusNaming();
@@ -479,6 +482,7 @@ export default function OrgBoard() {
                       className="border-2 border-border bg-muted px-4 py-2 text-foreground"
                     >
                       {management.unit.division.name}
+                      {hasPermission('personnel.view') && <Link className="block py-2 text-xs text-primary-ink hover:underline" href={`/service-employees?division_id=${management.unit.division.id}`}>Сотрудники подразделения →</Link>}
                       {managementHead && (
                         <div className="flex flex-col items-center justify-center text-center mt-2">
                           <img
@@ -521,6 +525,7 @@ export default function OrgBoard() {
                         className="border border-border px-4 py-2"
                       >
                         {division.unit.division.name}
+                        {hasPermission('personnel.view') && <Link className="block py-2 text-xs text-primary-ink hover:underline" href={`/service-employees?division_id=${division.unit.division.id}`}>Сотрудники подразделения →</Link>}
                       </th>
                     ))
                   ) : (

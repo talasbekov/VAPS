@@ -1,13 +1,9 @@
 "use client";
 
-// Профиль СОТРУДНИКА для администратора — только чтение (`[ПРФ-08]`, Plane
-// №449). Тот же виджет, что и у «Моего профиля», без кнопок ответа на
-// назначение; назначения — по `?employee=`, и право на них проверяет сервер
-// (`may_read`: область `status.manage`), а не экран. Руководители своих
-// сотрудников смотрят в «Статусах сотрудников» — сюда их не ведёт ничего.
 import { Suspense } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
+import { ServiceEmployeeProfile } from '@/features/service-employees/ui/ServiceEmployeeProfile';
 import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -31,6 +27,15 @@ export default function EmployeeProfilePage() {
 }
 
 function EmployeeProfileScreen() {
+  const params = useParams<{ employeeId: string }>();
+  const query = useSearchParams();
+  if (query.get('directory') === '1') {
+    return <ServiceEmployeeProfile id={params?.employeeId ?? ''} filters={query.get('filters') ?? ''} />;
+  }
+  return <LegacyEmployeeProfileScreen />;
+}
+
+function LegacyEmployeeProfileScreen() {
   const params = useParams<{ employeeId: string }>();
   const id = params?.employeeId ?? "";
   const employee = useQuery<CoreEmployee, OpsApiFailure>({

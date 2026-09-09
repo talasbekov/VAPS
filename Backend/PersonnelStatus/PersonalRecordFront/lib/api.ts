@@ -61,6 +61,7 @@ export interface Department {
 
 export interface OrgUnit {
   id: string;
+  divisionId?: number;
   name: string;
   head: Employee;
   employees: Employee[];
@@ -2520,6 +2521,7 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
 
   return {
     id: staffUnit.id.toString(),
+    divisionId: staffUnit.division.id,
     name: staffUnit.division.name,
     head,
     employees: otherEmployees,

@@ -14,6 +14,7 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/employees/:path*",
+    "/service-employees/:path*",
     "/organization/:path*",
     "/statuses/:path*",
     "/reports/:path*",
