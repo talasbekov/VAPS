@@ -4016,6 +4016,15 @@ class OpsSettingChangesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """/api/ops/dictionaries/ — generic-реестр значений справочников."""
 
+    # №1083: каталог участия нужен рекогносцировке, сбору сил и окну статуса.
+    # Это доступ к двум рабочим каталогам, а не к администрированию системы.
+    permission_bypass_map = {
+        "entries": (
+            "event.view", "status.view", "status.manage", "placement.manage",
+            "forces.allocate", "forces.command",
+        ),
+    }
+
     permission_map = {
         "list": "dictionary.view",
         "entries": "dictionary.view",
@@ -4027,6 +4036,20 @@ class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # PATCH объявлен явно: у ViewSet умолчание не включает его, и правка
     # значения отбивалась 405 при заведённом маршруте (Plane №274).
     http_method_names = ["get", "post", "patch", "delete", "options"]
+
+    def permission_override(self, request):
+        return (
+            self.action == "entries"
+            and request.method == "GET"
+            and self.kwargs.get("code") in {
+                "EVENT_PARTICIPATION_KINDS", "EVENT_GROUP_ROLES",
+            }
+            and bool(
+                effective_permissions(request).intersection(
+                    self.permission_bypass_map["entries"]
+                )
+            )
+        )
 
     def list(self, request):
         return Response({"results": dict_service.definitions_with_counts()})

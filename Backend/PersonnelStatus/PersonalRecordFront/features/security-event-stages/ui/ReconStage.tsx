@@ -1128,8 +1128,8 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                 {activeVisitObject !== null && needOfVisit !== needFromPosts && (
                   <>
                     {" "}
-                    Общая заявка мероприятия будет сформирована после завершения
-                    рекогносцировки остальных объектов.
+                    Штаб получит потребность этого объекта сразу. Остальные объекты
+                    продолжают рекогносцировку независимо.
                   </>
                 )}
               </DialogDescription>

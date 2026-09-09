@@ -18,6 +18,7 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+const MATRIX_PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
 
 // Прежняя оговорка «С реестром „Охраняемые лица“ эти карточки не связаны…»
 // СНЯТА с экрана (Plane №951): лица теперь несут ссылку на справочник, и
@@ -593,7 +594,8 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
   test('без event.view вкладка визитов закрыта вместе с реестром ОМ', async ({
     page,
   }) => {
-    await signIn(page, 'observer', 'observer123')
+    test.skip(MATRIX_PASSWORD === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
+    await signIn(page, 'acc_employee', MATRIX_PASSWORD)
     // Своего гейта у вкладки нет и быть не должно: она часть реестра ОМ, и
     // право на неё то же — `event.view`. Отдельный гейт означал бы второе
     // правило доступа к одним данным.

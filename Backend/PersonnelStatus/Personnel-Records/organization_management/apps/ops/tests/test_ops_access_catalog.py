@@ -216,10 +216,19 @@ def test_catalog_search_looks_at_the_path_not_only_the_code():
     found = catalog("placement")
 
     assert found != {}
+    # Поиск также включает код права и имя вьюсета. С №1083 право
+    # placement.manage открывает чтение каталога участия: у этого совпадения
+    # слово placement закономерно находится в праве, а не в URL.
     assert all(
-        "placement" in f"{row['path']} {row['action']}".lower()
-        for rows in found.values()
+        "placement" in f"{permission} {row['path']} {row['action']} {row['view']}".lower()
+        for permission, rows in found.items()
         for row in rows
+    )
+    # Именно путь/действие тоже ищутся: event.manage сам не содержит
+    # placement, но его операции расстановки обязаны попасть в результат.
+    assert any(
+        "placement" in f"{row['path']} {row['action']}".lower()
+        for row in found["event.manage"]
     )
     # Сторож: без фильтра функций СИЛЬНО больше — иначе проба не отличала бы
     # поиск от его отсутствия.

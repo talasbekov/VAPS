@@ -387,7 +387,7 @@ def test_deputy_post_comment_is_named_in_the_placement_audit(manager):  # noqa: 
     assert trace.new_value["deputyId"] == str(deputy_employee.pk)
 
 
-def test_each_object_chief_completes_only_their_object(two_object_recon):
+def test_each_object_chief_completes_only_their_object(two_object_recon, manager):
     event_id, first, second, chief_a, chief_b = two_object_recon
     base = f"{URL}{event_id}/"
     for visit, api in ((first, chief_a), (second, chief_b)):
@@ -417,8 +417,43 @@ def test_each_object_chief_completes_only_their_object(two_object_recon):
 
     assert first_done.status_code == 200, first_done.content
     stages = {row["id"]: row["stage"] for row in first_done.json()["visitObjects"]}
-    assert stages == {str(first.pk): "DEMAND", str(second.pk): "RECON"}
+    assert stages == {str(first.pk): "PLACEMENT", str(second.pk): "RECON"}
     assert first_done.json()["stage"] == "RECON"
+    published = first_done.json()["demandRows"]
+    assert published and {row["visitObjectId"] for row in published} == {str(first.pk)}
+    first_need = sum(row["need"] for row in published)
+    assert first_done.json()["forceRequests"][0]["requestedCount"] == first_need
+    # HQ can already begin collecting the completed object's need.
+    from organization_management.apps.divisions.models import Division
+    department = Division.objects.create(name="Департамент раннего сбора", division_type=Division.DivisionType.DEPARTMENT)
+    split = manager.post(f"{base}forces/allocation/", {"rows": [{"departmentId": str(department.pk), "need": first_need}]}, format="json")
+    assert split.status_code == 200, split.content
+    collection = manager.get(f"{base}force-collection/")
+    assert collection.status_code == 200, collection.content
+    assert {row["visitObjectId"] for row in collection.json()["objects"]} == {str(first.pk)}
+    assert {row["visitObjectId"] for row in collection.json()["needByObject"]} == {str(first.pk)}
+    stored = OpsSecurityEvent.objects.get(pk=event_id)
+    allocation_snapshot = stored.force_allocation
+    request_id = stored.force_requests[0]["id"]
+    stored.force_requests[0]["comment"] = "Сбор уже начат"
+    stored.force_roster = [{"employeeId": "accepted-before-second", "name": "Принят ранее"}]
+    stored.save(update_fields=["force_requests", "force_roster", "updated_at"])
+    draft_assignment = manager.post(
+        f"{base}force-collection/objects/",
+        {"rows": [{
+            "employeeId": "accepted-before-second",
+            "visitObjectId": str(second.pk),
+        }]},
+        format="json",
+    )
+    assert draft_assignment.status_code == 400, draft_assignment.content
+    early_handover = manager.post(
+        f"{base}force-collection/hand-over/",
+        {"comment": "Рано"},
+        format="json",
+    )
+    assert early_handover.status_code == 422, early_handover.content
+    assert early_handover.json()["error_code"] == "FORCE_OBJECTS_NOT_READY"
     assert chief_a.post(
         f"{base}recon/complete/",
         {"visitObjectId": str(second.pk)},
@@ -448,6 +483,14 @@ def test_each_object_chief_completes_only_their_object(two_object_recon):
     )
     assert second_done.status_code == 200, second_done.content
     assert second_done.json()["stage"] == "PLACEMENT"
+    stored.refresh_from_db()
+    assert stored.force_allocation == allocation_snapshot
+    assert stored.force_roster[0]["employeeId"] == "accepted-before-second"
+    assert stored.force_requests[0]["id"] == request_id
+    assert stored.force_requests[0]["comment"] == "Сбор уже начат"
+    assert stored.force_requests[0]["allocatedCount"] == 1
+    assert stored.force_requests[0]["requestedCount"] > first_need
+    assert {row["visitObjectId"] for row in stored.demand_rows} == {str(first.pk), str(second.pk)}
     assert {row["stage"] for row in second_done.json()["visitObjects"]} == {
         "PLACEMENT"
     }
@@ -485,3 +528,52 @@ def test_stage_override_can_run_recon_without_object_assignment(two_object_recon
     )
 
     assert allowed.status_code == 200, allowed.content
+
+
+def test_draft_recon_does_not_open_force_collection(two_object_recon):
+    event_id, first, second, _chief_a, _chief_b = two_object_recon
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.demand_rows = [{"visitObjectId": str(first.pk), "need": 2}]
+    assert event.stage == "RECON"
+    assert service.can_collect_forces(event) is False
+
+
+def test_published_zero_never_uses_neighbour_draft_need(two_object_recon):
+    from django.utils import timezone
+    event_id, first, second, _chief_a, _chief_b = two_object_recon
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.recon_force_request = 0
+    event.recon_force_requested_at = timezone.now()
+    event.force_need = 5  # Unfinished neighbour's draft physical need.
+    assert service.force_demand_total(event) == 0
+
+
+def test_partial_publish_retains_original_requested_number(two_object_recon):
+    event_id, first, second, _chief_a, _chief_b = two_object_recon
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    first.stage = "DEMAND"
+    first.recon_force_request = 64
+    first.save(update_fields=["stage", "recon_force_request"])
+    event.recon_sector_posts = [{"id": "own", "visitObjectId": str(first.pk), "need": 3}]
+    event.save(update_fields=["recon_sector_posts"])
+    service._publish_completed_visit_demand(event, first)
+    event.refresh_from_db()
+    assert event.recon_force_request == 64
+    assert event.force_requests[0]["requestedCount"] == 64
+
+
+def test_empty_post_removal_uses_object_stage_and_keeps_drafts_unpublished(two_object_recon):
+    event_id, first, second, chief_a, _chief_b = two_object_recon
+    first.stage = "PLACEMENT"
+    first.save(update_fields=["stage"])
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.recon_sector_posts = [
+        {"id": "remove-own", "visitObjectId": str(first.pk), "need": 1},
+        {"id": "keep-own", "visitObjectId": str(first.pk), "need": 1},
+        {"id": "draft-neighbour", "visitObjectId": str(second.pk), "need": 5},
+    ]
+    event.save(update_fields=["recon_sector_posts"])
+    result = service.remove_placement_post(event_id, "remove-own")
+    assert result.stage == "RECON"
+    assert [row["sourcePostId"] for row in result.demand_rows] == ["keep-own"]
+    assert [row["id"] for row in result.recon_sector_posts] == ["keep-own", "draft-neighbour"]
