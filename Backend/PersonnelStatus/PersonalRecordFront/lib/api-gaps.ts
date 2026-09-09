@@ -175,6 +175,7 @@ export const SECURITY_OPS_RULED_PREFIXES: readonly string[] = [
   "/security-ops/settings",
   "/security-ops/audit",
   "/security-ops/feedback",
+  "/security-ops/service-summary",
   "/security-ops/changelog",
 ];
 
