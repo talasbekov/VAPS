@@ -221,9 +221,9 @@ def _recipient_names(division_ids):
         if user is not None:
             label = user.get_full_name().strip() or user.username
         else:
-            # Only human labels (letters and spaces/punctuation) qualify;
-            # identifiers, email addresses, URLs and tokens resolve to null.
-            label = value if value and all(char.isalpha() or char in " .-'’" for char in value) and any(char.isalpha() for char in value) else None
+            # Recipient strings are routing identifiers, even when they look
+            # like names. Only a resolved account supplies a trusted label.
+            label = None
         names[division_id] = label
     return names
 

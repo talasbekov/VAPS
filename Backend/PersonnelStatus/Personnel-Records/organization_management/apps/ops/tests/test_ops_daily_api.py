@@ -128,6 +128,8 @@ def test_division_metadata_uses_requested_day_and_expense_subtree(operator, divi
     from organization_management.apps.staff_unit.models import StaffUnit
     department = Division.objects.create(name="Департамент", parent=division, division_type=Division.DivisionType.DEPARTMENT)
     directorate = Division.objects.create(name="Управление", parent=department, division_type=Division.DivisionType.DIRECTORATE)
+    # Sibling names must differ: uq_division_name_per_parent enforces it.
+    sibling = Division.objects.create(name="Второе управление", parent=department, division_type=Division.DivisionType.DIRECTORATE)
     child = Division.objects.create(name="Отдел", parent=directorate, division_type=Division.DivisionType.DIVISION)
     other_department = Division.objects.create(name="Другой департамент", parent=division, division_type=Division.DivisionType.DEPARTMENT)
     twin = Division.objects.create(name="Управление", parent=other_department, division_type=Division.DivisionType.DIRECTORATE)
@@ -150,6 +152,8 @@ def test_division_metadata_uses_requested_day_and_expense_subtree(operator, divi
     with clock.override(TODAY + timedelta(days=3)):
         result = rows(TODAY)
         assert result[str(directorate.pk)]["parent_id"] == str(department.pk)
+        assert result[str(sibling.pk)]["parent_id"] == str(department.pk)
+        assert result[str(sibling.pk)]["id"] != result[str(directorate.pk)]["id"]
         assert result[str(twin.pk)]["parent_id"] == str(other_department.pk)
         assert result[str(directorate.pk)]["without_status"] == 2
         assert result[str(child.pk)]["without_status"] == 1
@@ -167,7 +171,7 @@ def test_division_metadata_resolves_names_without_exposing_addresses(operator, d
     def label():
         return operator.get(DIVISIONS).json()["results"][0]["notify_recipient_name"]
     assert label() == "Иван Петров"
-    for raw, expected in [("Дежурный управления", "Дежурный управления"), ("person@example.com", None), ("token:secret123", None), ("99999999999999999999999999", None)]:
+    for raw, expected in [("pagerduty", None), ("Дежурный управления", None), ("person@example.com", None), ("token:secret123", None), ("99999999999999999999999999", None)]:
         assignment.recipient = raw
         assignment.save(update_fields=["recipient"])
         assert label() == expected
