@@ -59,11 +59,19 @@ class Command(BaseCommand):
 
         source = Path(options["source"])
         files = sorted(p for p in source.glob("*") if p.suffix.lower() in SUFFIXES)
+        use_fallback = source.resolve() == DEFAULT_SOURCE.resolve() and not files
         if not files:
-            raise CommandError(
-                f"В папке «{source}» нет снимков ({', '.join(SUFFIXES)}). "
-                f"Путь задаётся флагом --source."
-            )
+            if use_fallback:
+                # Репозиторий и контейнер стенда не обязаны содержать 192 МБ
+                # исходных фотографий заказчика. Один встроенный аватар
+                # сохраняет контракт /media/... для smoke, а явный пустой
+                # --source по-прежнему сообщает об ошибке ниже.
+                files = [None]
+            else:
+                raise CommandError(
+                    f"В папке «{source}» нет снимков ({', '.join(SUFFIXES)}). "
+                    f"Путь задаётся флагом --source."
+                )
 
         people = list(
             Employee.objects.filter(personnel_number__startswith=PERSONNEL_PREFIX).order_by(
@@ -84,11 +92,16 @@ class Command(BaseCommand):
                 kept += 1
                 continue
             source_file = files[number % len(files)]
-            with Image.open(source_file) as image:
-                avatar = image.convert("RGB")
-                avatar.thumbnail(AVATAR_BOX)
+            if source_file is None:
+                avatar = Image.new("RGB", (128, 128), (74, 105, 140))
                 buffer = io.BytesIO()
                 avatar.save(buffer, format="JPEG", quality=JPEG_QUALITY)
+            else:
+                with Image.open(source_file) as image:
+                    avatar = image.convert("RGB")
+                    avatar.thumbnail(AVATAR_BOX)
+                    buffer = io.BytesIO()
+                    avatar.save(buffer, format="JPEG", quality=JPEG_QUALITY)
             if employee.photo:
                 # Старый файл снимается ЯВНО: `photo.save()` его не удаляет, а
                 # Django добавляет к имени случайный хвост — при каждом
