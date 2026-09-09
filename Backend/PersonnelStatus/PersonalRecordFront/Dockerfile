@@ -24,14 +24,17 @@ ENV NEXT_PUBLIC_MEDIA_URL=$NEXT_PUBLIC_MEDIA_URL
 ENV NODE_ENV=production
 # Сборке нужен запас кучи (рантайму — нет, см. runner)
 ENV NODE_OPTIONS=--max-old-space-size=2048
-RUN npm run build
+# NextAuth fail-closed config is evaluated during prerender too. Use a
+# non-secret value only for this build command; runtime receives the real
+# NEXTAUTH_SECRET from the deployment environment.
+RUN NEXTAUTH_SECRET=build-only-placeholder npm run build
 
 # ---------------------------------------------------------------- prod-deps
 # sharp ставится отдельно и только для прода: без него Next 15 падает обратно
 # на медленный JS-резайзер, а тащить ради него весь node_modules билдера нельзя.
 FROM base AS sharp-deps
 WORKDIR /sharp
-RUN npm install --no-package-lock --no-save --omit=dev sharp@0.33.5 \
+RUN npm install --no-package-lock --no-save --omit=dev sharp@0.35.4 \
  && npm cache clean --force
 
 # ---------------------------------------------------------------- runner
