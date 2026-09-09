@@ -311,7 +311,7 @@ export function DepartmentRequestCard({
 
   const quota = allocation.need;
   const groupAnswerLocked =
-    allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
+    allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED" || respond.isPending;
   // ПРЕДЕЛ РАСКЛАДКИ — ОТ «ВЫДЕЛЯЕМ» (`[СБС-22]`, Plane №392): раскладывать
   // между управлениями департамент обязан СВОЮ цифру, а не запрос штаба.
   // Пока ответа нет — запрос штаба, как и раньше.
@@ -327,6 +327,15 @@ export function DepartmentRequestCard({
   // Своя цифра департамента (`[СБС-21]`/`[СБС-23]`): против неё считается
   // подтверждение отправки. Ответа нет — запрос штаба.
   const ownFigure = splitCap;
+  const hasAnswer = allocation.allocating !== null && allocation.allocating !== undefined;
+  const sent = allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
+  const activeStep = sent ? 3 : allocation.notifiedAt !== null ? (assigned >= ownFigure ? 3 : 2) : hasAnswer ? 1 : 0;
+  const steps = [
+    { title: "Назвать количество", detail: hasAnswer ? `Выделяем ${allocation.allocating} из ${quota}` : "Ответ ещё не сохранён" },
+    { title: "Разделить по управлениям", detail: `Разложено ${splitTotal} из ${ownFigure}` },
+    { title: "Получить людей", detail: `Собрано ${assigned} из ${ownFigure}` },
+    { title: "Отправить список Штабу", detail: sent ? "Список у Штаба" : assigned === 0 ? "Сначала получите сотрудников" : "Можно с недобором после подтверждения" },
+  ];
   // Группы списка по управлениям (`[СБС-23]`): порядок — как в таблице
   // управлений; люди вне управлений заявки — последней группой, названной
   // словами, а не молча выброшенной.
@@ -405,7 +414,7 @@ export function DepartmentRequestCard({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="mr-1 size-4" aria-hidden="true" />
@@ -414,23 +423,160 @@ export function DepartmentRequestCard({
       </div>
 
       <div className="space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Входящий запрос Штаба</p>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="font-mono text-[11px]">
             {detail.code}
           </Badge>
           <Badge variant="outline">{allocation.departmentName}</Badge>
+          <Badge variant="outline">{allocation.status === "ACCEPTED" ? "Принято Штабом" : allocation.status === "SUBMITTED" ? "Отправлено в Штаб" : allocation.status === "DECLINED" ? "Отказ" : allocation.status === "RETURNED" ? "Возвращено Штабом" : allocation.notifiedAt !== null ? "Собираем людей" : "Ответ формируется"}</Badge>
         </div>
         <h2 className="text-xl font-semibold">{detail.title}</h2>
         <p className="text-muted-foreground text-sm">
           {formatIsoDate(detail.businessDate)} · {detail.location}
           {detail.eventTime !== null ? ` · ${detail.eventTime}` : ""}
         </p>
+        <p className={`text-sm ${allocation.overdue || allocation.submittedLate ? "text-destructive-ink" : "text-muted-foreground"}`}>
+          {allocation.dueAt ? `Срок сдачи: ${formatIsoDateTime(allocation.dueAt)}` : "Срок сдачи не назначен"}
+          {allocation.overdue ? " · Срок истёк" : allocation.submittedLate ? " · Отправлено после срока" : ""}
+        </p>
       </div>
+
+      <ol aria-label="Этапы запроса сил" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {steps.map((step, index) => (
+          <li key={step.title} aria-current={index === activeStep ? "step" : undefined}
+            className={`min-w-0 rounded-xl border p-4 ${index === activeStep ? "border-primary bg-primary/5" : "bg-card"}`}>
+            <p className="text-xs font-medium text-muted-foreground">{index === 3 ? "Финиш" : `Шаг ${index + 1}`}</p>
+            <p className="mt-1 font-semibold">{step.title}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{step.detail}</p>
+          </li>
+        ))}
+      </ol>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Итоги запроса">
+        <StatCard label="Запрошено Штабом" value={quota} caption="Физический наряд" />
+        <StatCard label="Выделяем" value={allocation.allocating ?? "—"} tone="info" caption={hasAnswer ? "Сохранённый ответ департамента" : "Ответ ещё не сохранён"} />
+        <StatCard label="Собрано" value={assigned} tone="success" caption="Сотрудники в списке" />
+        <StatCard label="Недобор к обещанию" value={hasAnswer ? Math.max(0, ownFigure - assigned) : "—"}
+          tone={hasAnswer && assigned < ownFigure ? "danger" : "neutral"}
+          caption={!hasAnswer ? "Ответ количеством не сохранён" : assigned > ownFigure ? `Сверх обещания: ${assigned - ownFigure}` : "От собственного ответа департамента"} />
+      </div>
+
+      {/* ШАПКА-ОТВЕТ (`[СБС-21]`, Plane №391): «Запрошено штабом: N ·
+          Выделяем: [ввод] · Комментарий: [ввод]». Цифру ставит только
+          ответственный, штаб читает. Ограничений нет — меньше, больше, 0;
+          «0» закрывает запрос статусом «Отказ». Правится до отправки
+          списка. Комментарий необязателен: при цифре меньше запрошенной —
+          подсказка «желательно пояснить», без блокировки. */}
+      <section
+        aria-labelledby="answer-heading"
+        className="rounded-xl border bg-card p-4 space-y-3"
+        data-slot="department-answer"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 id="answer-heading" className="font-semibold">
+            1. Ответ департамента
+          </h3>
+          <p className="text-muted-foreground text-sm">
+            Запрошено штабом: <b className="tabular-nums text-foreground">{quota}</b>
+          </p>
+        </div>
+        <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+          Можно выделить меньше, больше или 0. Специальные группы считаются отдельно и не уменьшают физический наряд.
+        </p>
+        {allocation.status === "DECLINED" && (
+          <p role="status" className="text-destructive-ink text-sm">
+            Запрос закрыт отказом («Выделяем: 0»). Поставьте ненулевую цифру,
+            чтобы снять отказ.
+          </p>
+        )}
+        {(() => {
+          const answerLocked =
+            allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
+          const parsed = Number.parseInt(answer.allocating, 10);
+          const short = Number.isFinite(parsed) && parsed > 0 && parsed < quota;
+          const dirty =
+            answer.allocating !==
+              (allocation.allocating === null || allocation.allocating === undefined
+                ? ""
+                : String(allocation.allocating)) ||
+            answer.comment !== (allocation.answerComment ?? "") ||
+            groupOffersDirty;
+          return (
+            <>
+              <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
+                <div className="space-y-1">
+                  <Label htmlFor="answer-allocating">Выделяем</Label>
+                  <Input
+                    id="answer-allocating"
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className="tabular-nums"
+                    disabled={answerLocked || respond.isPending}
+                    value={answer.allocating}
+                    onChange={(event) =>
+                      setAnswer((prev) => ({ ...prev, allocating: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="answer-comment">Комментарий</Label>
+                  <Input
+                    id="answer-comment"
+                    disabled={answerLocked || respond.isPending}
+                    value={answer.comment}
+                    placeholder={short ? "Желательно пояснить, почему меньше" : "Необязательно"}
+                    onChange={(event) =>
+                      setAnswer((prev) => ({ ...prev, comment: event.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={answerLocked || respond.isPending || answer.allocating === "" || !dirty}
+                  onClick={() =>
+                    respond.mutate({
+                      allocating: Number.parseInt(answer.allocating, 10),
+                      comment: answer.comment,
+                      groupOffers,
+                    })
+                  }
+                >
+                  {respond.isPending ? "Сохраняю…" : "Сохранить ответ"}
+                </Button>
+                {answerLocked ? (
+                  <p className="text-muted-foreground text-sm">
+                    Список уже у штаба — цифра правится до отправки
+                  </p>
+                ) : short && answer.comment.trim() === "" ? (
+                  // Подсветка без блокировки — ровно как в спецификации.
+                  <p className="text-sm text-amber-700">
+                    Меньше запрошенного на {quota - parsed} — желательно пояснить
+                  </p>
+                ) : parsed === 0 && answer.allocating !== "" ? (
+                  <p className="text-muted-foreground text-sm">
+                    «0» закроет запрос отказом
+                  </p>
+                ) : null}
+              </div>
+              {respond.isError && (
+                <p role="alert" className="text-destructive-ink text-sm">
+                  {respond.error?.message ?? "Ответ не сохранился"}
+                </p>
+              )}
+            </>
+          );
+        })()}
+      </section>
 
       <section
         role="region"
         aria-label="Специальные группы"
-        className="space-y-3 rounded-lg border p-4"
+        className="space-y-3 rounded-xl border bg-card p-4"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -545,6 +691,7 @@ export function DepartmentRequestCard({
                           variant="ghost"
                           size="icon"
                           aria-label={`Удалить свою группу, строка ${index + 1}`}
+                          disabled={groupAnswerLocked}
                           onClick={() =>
                             setGroupOffers((current) =>
                               current.filter((_row, rowIndex) => rowIndex !== index)
@@ -563,158 +710,11 @@ export function DepartmentRequestCard({
         )}
       </section>
 
-      {/* ШАПКА-ОТВЕТ (`[СБС-21]`, Plane №391): «Запрошено штабом: N ·
-          Выделяем: [ввод] · Комментарий: [ввод]». Цифру ставит только
-          ответственный, штаб читает. Ограничений нет — меньше, больше, 0;
-          «0» закрывает запрос статусом «Отказ». Правится до отправки
-          списка. Комментарий необязателен: при цифре меньше запрошенной —
-          подсказка «желательно пояснить», без блокировки. */}
-      <section
-        aria-labelledby="answer-heading"
-        className="rounded-lg border p-4 space-y-3"
-        data-slot="department-answer"
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 id="answer-heading" className="font-semibold">
-            Ответ департамента
-          </h3>
-          <p className="text-muted-foreground text-sm">
-            Запрошено штабом: <b className="tabular-nums text-foreground">{quota}</b>
-          </p>
-        </div>
-        {allocation.status === "DECLINED" && (
-          <p role="status" className="text-destructive-ink text-sm">
-            Запрос закрыт отказом («Выделяем: 0»). Поставьте ненулевую цифру,
-            чтобы снять отказ.
-          </p>
-        )}
-        {(() => {
-          const answerLocked =
-            allocation.status === "SUBMITTED" || allocation.status === "ACCEPTED";
-          const parsed = Number.parseInt(answer.allocating, 10);
-          const short = Number.isFinite(parsed) && parsed > 0 && parsed < quota;
-          const dirty =
-            answer.allocating !==
-              (allocation.allocating === null || allocation.allocating === undefined
-                ? ""
-                : String(allocation.allocating)) ||
-            answer.comment !== (allocation.answerComment ?? "") ||
-            groupOffersDirty;
-          return (
-            <>
-              <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
-                <div className="space-y-1">
-                  <Label htmlFor="answer-allocating">Выделяем</Label>
-                  <Input
-                    id="answer-allocating"
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    className="tabular-nums"
-                    disabled={answerLocked || respond.isPending}
-                    value={answer.allocating}
-                    onChange={(event) =>
-                      setAnswer((prev) => ({ ...prev, allocating: event.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="answer-comment">Комментарий</Label>
-                  <Input
-                    id="answer-comment"
-                    disabled={answerLocked || respond.isPending}
-                    value={answer.comment}
-                    placeholder={short ? "Желательно пояснить, почему меньше" : "Необязательно"}
-                    onChange={(event) =>
-                      setAnswer((prev) => ({ ...prev, comment: event.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={answerLocked || respond.isPending || answer.allocating === "" || !dirty}
-                  onClick={() =>
-                    respond.mutate({
-                      allocating: Number.parseInt(answer.allocating, 10),
-                      comment: answer.comment,
-                      groupOffers,
-                    })
-                  }
-                >
-                  {respond.isPending ? "Сохраняю…" : "Сохранить ответ"}
-                </Button>
-                {answerLocked ? (
-                  <p className="text-muted-foreground text-sm">
-                    Список уже у штаба — цифра правится до отправки
-                  </p>
-                ) : short && answer.comment.trim() === "" ? (
-                  // Подсветка без блокировки — ровно как в спецификации.
-                  <p className="text-sm text-amber-700">
-                    Меньше запрошенного на {quota - parsed} — желательно пояснить
-                  </p>
-                ) : parsed === 0 && answer.allocating !== "" ? (
-                  <p className="text-muted-foreground text-sm">
-                    «0» закроет запрос отказом
-                  </p>
-                ) : null}
-              </div>
-              {respond.isError && (
-                <p role="alert" className="text-destructive-ink text-sm">
-                  {respond.error?.message ?? "Ответ не сохранился"}
-                </p>
-              )}
-            </>
-          );
-        })()}
-      </section>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Плитки — ОБЩИЕ (`StatCard` из набора прототипа), а не свои.
-            Первая версия рисовала собственные и красила их выдуманными
-            токенами `text-success-ink`, которых в системе нет вовсе: класс
-            молча отрисовался бы как ничто, и «зелёное» число оказалось бы
-            обычным. */}
-        <StatCard
-          label="Квота департамента"
-          value={quota}
-          caption="Сколько просит штаб"
-        />
-        <StatCard
-          label="Разложено по управлениям"
-          value={splitTotal}
-          tone={splitTotal > splitCap ? "danger" : "neutral"}
-          caption={
-            splitTotal > splitCap
-              ? `Больше «Выделяем» на ${splitTotal - splitCap}`
-              : `Ещё не разложено ${Math.max(0, splitCap - splitTotal)}`
-          }
-        />
-        <StatCard
-          label="Выделено"
-          value={assigned}
-          tone="success"
-          caption="Люди со статусом участия"
-        />
-        <StatCard
-          label="Осталось"
-          value={Math.max(0, quota - assigned)}
-          tone={assigned > quota ? "danger" : "info"}
-          caption={
-            assigned > quota
-              ? `Выделено сверх квоты на ${assigned - quota}`
-              : "До закрытия квоты"
-          }
-        />
-      </div>
-
-      <section aria-labelledby="split-heading" className="space-y-3">
+      <section aria-labelledby="split-heading" className="min-w-0 space-y-3 rounded-xl border bg-card p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 id="split-heading" className="font-semibold">
-              Распределение по управлениям
+              2. Распределение по управлениям
             </h3>
             <p className="text-muted-foreground text-sm">
               {locked
@@ -722,6 +722,9 @@ export function DepartmentRequestCard({
                 : allocation.allocating === null || allocation.allocating === undefined
                   ? "Разложите запрос по управлениям и отправьте им — начальники получат уведомление"
                   : `Разложите «Выделяем: ${allocation.allocating}» по управлениям и отправьте им`}
+            </p>
+            <p className={`mt-1 text-sm font-medium tabular-nums ${splitTotal > ownFigure ? "text-destructive-ink" : ""}`}>
+              Разложено {splitTotal} из {ownFigure}{splitTotal > ownFigure ? ` · перебор ${splitTotal - ownFigure}` : ""}
             </p>
           </div>
           {/* 🔴 КНОПКА, КОТОРОЙ НЕ БЫЛО (Plane №389, `[СБС-22]`). До правки
@@ -950,15 +953,16 @@ export function DepartmentRequestCard({
         )}
       </section>
 
-      <section aria-labelledby="members-heading" className="space-y-3">
+      <section aria-labelledby="members-heading" className="min-w-0 space-y-3 rounded-xl border bg-card p-4 sm:p-5">
         <div>
           <h3 id="members-heading" className="font-semibold">
-            Выделенные сотрудники
+            3. Выделенные сотрудники
           </h3>
           <p className="text-muted-foreground text-sm">
             Статус «Привлечён на мероприятие» проставляют начальники управлений
             — выделенные сотрудники появляются здесь автоматически
           </p>
+          <p className="mt-1 text-sm font-medium tabular-nums">Собрано {assigned} из {ownFigure}</p>
         </div>
 
         {/* `[СБС-23]`: ГРУППЫ ПО УПРАВЛЕНИЯМ с чипами «N из M» (Plane №944).
@@ -1027,6 +1031,9 @@ export function DepartmentRequestCard({
           </Table>
         </div>
 
+        <section aria-labelledby="send-heading" className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <h3 id="send-heading" className="font-semibold">4. Отправить список Штабу</h3>
+          <p className="text-sm text-muted-foreground">{sent ? "Список передан Штабу" : allocation.notifiedAt === null ? "Сначала отправьте квоты в управления" : `В списке ${assigned} из ${ownFigure} — перед отправкой проверьте состав`}</p>
         {/* 🔴 КНОПКА, КОТОРОЙ НЕ БЫЛО (Plane №389, `[СБС-23]`): «Отправить
             список в штаб» жила только на панели мероприятия у ШТАБА
             (`ForcesSplitPanel`), куда у ответственного за департамент нет
@@ -1083,6 +1090,7 @@ export function DepartmentRequestCard({
             Возвращено штабом: {allocation.decisionComment}
           </p>
         )}
+        </section>
       </section>
 
       {/* ПОДТВЕРЖДЕНИЕ ЗАПРОСА УПРАВЛЕНИЙ (Plane №532). Кнопка слала мутацию

@@ -11,7 +11,7 @@
 // Область сужает СЕРВЕР: чужие строки не приезжают вовсе. Считать «мой ли это
 // департамент» на клиенте значило бы завести вторую правду об авторизации —
 // она разошлась бы с сервером при первой же правке дерева подразделений.
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import {
   securityEventDepartmentRequestPath,
@@ -29,6 +29,21 @@ import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 
 export const DEPARTMENT_REQUESTS_KEY = ["ops-department-requests"] as const;
+
+/** Ответ департамента меняет также сводку Штаба и доступный резерв кампании.
+ * В детали заявки нет id кампании, поэтому её детали инвалидируются по
+ * безопасному префиксу. Литеральные ключи исключают цикл между хуками. */
+export function refreshDepartmentRequestViews(client: QueryClient, eventId: string, allocationId: string) {
+  return Promise.all([
+    [...DEPARTMENT_REQUESTS_KEY],
+    ["ops-department-request", allocationId],
+    ["ops-force-collections"],
+    ["ops-force-collection", eventId],
+    ["ops-force-campaigns"],
+    ["ops-force-campaign"],
+    ["ops-force-campaign-reserves"],
+  ].map((queryKey) => client.invalidateQueries({ queryKey })));
+}
 
 export function useDepartmentRequests(options: { enabled?: boolean } = {}) {
   return useQuery<{ results: DepartmentRequestRow[] }, OpsApiFailure>({
@@ -77,8 +92,7 @@ export function useSplitDirectorateQuotas(eventId: string, allocationId: string)
       // Обе выдачи описывают одно и то же: список заявок несёт итог, карточка
       // — строки. Обновить одну и забыть вторую значит показать человеку два
       // разных ответа на один вопрос на соседних экранах.
-      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
-      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+      return refreshDepartmentRequestViews(client, eventId, allocationId);
     },
   });
 }
@@ -102,8 +116,7 @@ export function useNotifyDepartmentDirectorates(eventId: string, allocationId: s
   return useMutation<unknown, OpsApiFailure, Record<string, never>>({
     mutationFn: () => opsApiClient.post(securityEventForcesNotifyPath(eventId, allocationId)),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
-      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+      return refreshDepartmentRequestViews(client, eventId, allocationId);
     },
   });
 }
@@ -121,8 +134,7 @@ export function useSubmitDepartmentAllocation(eventId: string, allocationId: str
   return useMutation<unknown, OpsApiFailure, Record<string, never>>({
     mutationFn: () => opsApiClient.post(securityEventForcesSubmitPath(eventId, allocationId)),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
-      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+      return refreshDepartmentRequestViews(client, eventId, allocationId);
     },
   });
 }
@@ -148,8 +160,7 @@ export function useWithdrawDepartmentAllocation(eventId: string, allocationId: s
   return useMutation<unknown, OpsApiFailure, Record<string, never>>({
     mutationFn: () => opsApiClient.post(securityEventForcesWithdrawPath(eventId, allocationId)),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
-      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+      return refreshDepartmentRequestViews(client, eventId, allocationId);
     },
   });
 }
@@ -169,8 +180,7 @@ export function useRespondDepartmentAllocation(eventId: string, allocationId: st
     mutationFn: (body) =>
       opsApiClient.post(securityEventForcesRespondPath(eventId, allocationId), body),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: DEPARTMENT_REQUESTS_KEY });
-      void client.invalidateQueries({ queryKey: ["ops-department-request", allocationId] });
+      return refreshDepartmentRequestViews(client, eventId, allocationId);
     },
   });
 }
