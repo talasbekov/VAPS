@@ -918,10 +918,24 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         for business_date, people in by_date.items():
             if people:
                 read_context.prime_statuses(people, business_date)
-        if everyone:
-            read_context.prime_employees(everyone)
+        # Участия — ДО `prime_employees` (Plane №1031): раскладка сил сводит
+        # ручной набор штаба со статусом (`_merge_status_members`), и
+        # человек, привлечённый статусом МИМО штаба, не попадает ни в
+        # `placement_assignments`, ни в `force_roster` выше — до этой правки
+        # его карточку `divisions_of`/`denorm_for` поднимали СВОИМ запросом на
+        # КАЖДОЙ такой строке реестра. Участия страницы уже читаются одним
+        # запросом (`prime_participations`) — добавить их сотрудников в общий
+        # набор ничего не стоит, а второй проход по уже собранным участиям не
+        # добавляет запросов вовсе.
         if page_rows:
             read_context.prime_participations([event.pk for event in page_rows])
+            for event in page_rows:
+                for participation in read_context.participations(event.pk):
+                    key = str(participation.status.employee_id)
+                    if key:
+                        everyone.add(key)
+        if everyone:
+            read_context.prime_employees(everyone)
         return Response(
             {
                 "owners": owners,
@@ -4745,9 +4759,13 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     `GET /api/ops/event-documents/` — какие документы бывают и в чём.
     `GET /api/ops/event-documents/render/?kind=…&event=…&format=…` — сам файл.
 
-    ФОРМАТА ДВА, И ЭТО НЕ УДОБСТВО. Заказчик просил документы «в таком же
-    формате», а образцы — рабочие бланки Word: их дозаполняют руками после
-    выгрузки, чего PDF не даёт. PDF остаётся рядом для печати и отправки.
+    ПОЛЬЗОВАТЕЛЬСКИЙ ФОРМАТ — ТОЛЬКО PDF (Plane №986, [ОТЧ-ОМ-04], решение
+    заказчика 26-27.08.2026). До №986 ручка отдавала и DOCX — заказчик просил
+    документы «в таком же формате», а образцы — рабочие бланки Word, которые
+    дозаполняют руками. Позднее прямое решение это отменило: DOCX-шаблон и
+    конвертер LibreOffice остаются ВНУТРИ сборщика (без них не собрать сам
+    PDF), но наружу, человеку, отдаётся только PDF — `ext=docx` отклоняется
+    здесь же, до `documents_registry.render()`.
 
     ПРАВО НЕ ЗАВЕДЕНО НОВОЕ. Выгрузка открывает ровно то, что показывают
     экраны мероприятия, — та же мерка, что у `period-export` расхода: заводить
@@ -4803,12 +4821,12 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "ext", OpenApiTypes.STR, OpenApiParameter.QUERY,
                 required=False,
                 description=(
-                    "docx либо pdf. По умолчанию pdf — так вела себя ручка до "
-                    "появления выбора, и менять умолчание молча значило бы "
-                    "отдать прежним читателям другой файл. Параметр НЕ назван "
-                    "`format`: это имя занято самим DRF (URL_FORMAT_OVERRIDE) "
-                    "под выбор рендерера, и `?format=docx` отвечает 404 «Not "
-                    "found» ещё до вьюхи."
+                    "Только pdf (Plane №986) — единственное значение из "
+                    "`documents_registry.list_formats()`. По умолчанию pdf; "
+                    "любое другое значение отклоняется 400 до сборки "
+                    "документа. Параметр НЕ назван `format`: это имя занято "
+                    "самим DRF (URL_FORMAT_OVERRIDE) под выбор рендерера, и "
+                    "`?format=pdf` отвечает 404 «Not found» ещё до вьюхи."
                 ),
             ),
         ],
@@ -4816,6 +4834,15 @@ class OpsEventDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @action(detail=False, methods=["get"], url_path="render")
     def render_document(self, request):
         fmt = (request.query_params.get("ext") or "pdf").strip().lower()
+        allowed_formats = {row["format"] for row in documents_registry.list_formats()}
+        if fmt not in allowed_formats:
+            raise DomainError(
+                "VALIDATION_ERROR", 400,
+                detail={"ext": [
+                    "Формат бывает: " + ", ".join(sorted(allowed_formats))
+                ]},
+                message="Проверьте заполнение формы.",
+            )
         payload, name = documents_registry.render(
             (request.query_params.get("kind") or "").strip(),
             event_code=request.query_params.get("event"),

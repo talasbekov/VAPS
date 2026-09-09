@@ -120,18 +120,19 @@ def test_registry_knows_the_case_and_the_endpoint_serves_it(manager, two_objects
     assert kinds["case"]["needsEvent"] is True
     payload, name = documents_registry.render("case", event_code=event.code, fmt="docx", visit_object_id=str(first.pk))
     assert name == f"delo-{event.code}.docx" and len(payload) > 1000
+    # Пользовательский формат — только PDF (Plane №986): та же ручка, тот же
+    # вид, но `ext=docx` теперь отказ, а не файл; сборщик выше уже доказал,
+    # что DOCX-шаблон и конвертер живы и работают.
     resp = manager.get(
         f"/api/ops/event-documents/render/?kind=case&event={event.code}&ext=docx&visitObject={first.pk}"
     )
-    assert resp.status_code == 200, resp.content
+    assert resp.status_code == 400, resp.content
 
 
 # ── Оценки в деле охраняются своим правом (Plane №695) ──────────────────
 
 
-def test_the_case_hides_the_evaluations_from_a_plain_viewer(
-    viewer, two_objects_on_conduct  # noqa: F811
-):
+def test_the_case_hides_the_evaluations_from_a_plain_viewer(two_objects_on_conduct):  # noqa: F811
     """Баллы и комментарии по людям — не для того, у кого только `event.view`.
 
     🔴 ЧТО БЫЛО НЕ ТАК. Дело вшивает оценку и комментарий по КАЖДОМУ
@@ -140,6 +141,13 @@ def test_the_case_hides_the_evaluations_from_a_plain_viewer(
     `DUTY_PLANNER`, `AUDITOR` скачивали то, что им во всех прочих местах
     закрыто. Раздел объявляет своим правилом «выгрузка открывает ровно то, что
     показывают экраны» — здесь оно и нарушалось.
+
+    Прямой вызов `render_case(permissions=...)`, а не HTTP (Plane №986):
+    фикстура `viewer` — тот же `EV_VIEWER`, `perms=("event.view",)` (см.
+    `client_for` в `test_ops_security_events_api.py`), то есть тот же набор
+    информации, что и здесь; HTTP-ручка теперь отдаёт наружу только PDF, а
+    этот тест проверяет редактирование содержимого В ГЕНЕРАТОРЕ, не транспорт
+    (транспорт стережёт `test_ops_event_documents_api.py`).
     """
     _, event_id, first, _ = two_objects_on_conduct
     from organization_management.apps.ops import security_events as service
@@ -152,15 +160,15 @@ def test_the_case_hides_the_evaluations_from_a_plain_viewer(
     ]
     assert scored, "фикстура обязана дать хоть одного назначенного"
 
-    response = viewer.get(
-        f"/api/ops/event-documents/render/?kind=case&event={event.code}"
-        f"&ext=docx&visitObject={first.pk}"
+    text = _text(
+        documents_case.render_case(
+            event.code,
+            visit_object_id=str(first.pk),
+            fmt="docx",
+            permissions={"event.view"},
+        )
     )
 
-    assert response.status_code == 200, response.content
-    import base64
-
-    text = _text(base64.b64decode(response.json()["contentBase64"]))
     assert "Оценки сотрудников" in text, (
         "раздел обязан остаться в оглавлении: дело не должно молча менять состав"
     )

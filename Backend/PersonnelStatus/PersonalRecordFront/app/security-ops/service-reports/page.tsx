@@ -62,11 +62,11 @@ export default function ServiceReportsPage() {
   const documentKinds = useEventDocumentKinds();
   const [documentKind, setDocumentKind] = useState("");
   const [documentEvent, setDocumentEvent] = useState("");
-  // DOCX по умолчанию: образцы заказчика это рабочие бланки Word, и выгружают
-  // их чаще, чтобы дозаполнить руками (Plane №156). У РУЧКИ умолчание другое
-  // — PDF, ради её прежних читателей; экран спрашивает формат всегда и явно,
-  // поэтому расхождения умолчаний человек не видит.
-  const [documentFormat, setDocumentFormat] = useState<EventDocumentFormat>("docx");
+  // PDF — единственный пользовательский формат (Plane №986, [ОТЧ-ОМ-04]).
+  // До №986 умолчание было DOCX (образцы заказчика — рабочие бланки Word,
+  // дозаполняемые руками, Plane №156); решение заказчика 26-27.08.2026 сняло
+  // DOCX из пользовательской выгрузки, ручка теперь отдаёт только PDF.
+  const [documentFormat, setDocumentFormat] = useState<EventDocumentFormat>("pdf");
   const [documentSaved, setDocumentSaved] = useState<string | null>(null);
   // Срез бюллетеня (`[БЛН-04]`, Plane №420): дата и время, от которых идёт
   // отбор и которые печатаются в заголовке. Умолчание — сегодня, 08:00, как в
@@ -266,8 +266,8 @@ export default function ServiceReportsPage() {
         >
           <h2 className="mb-1 text-sm font-semibold">Документы по мероприятию</h2>
           <p className="mb-3 text-xs text-muted-foreground">
-            Готовый файл по форме документа: DOCX для правки руками, PDF для
-            печати и отправки. Собирается сразу, в очередь работ не попадает.
+            Готовый файл по форме документа в PDF — для печати и отправки.
+            Собирается сразу, в очередь работ не попадает.
           </p>
           {documentKinds.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка видов документов…</p>

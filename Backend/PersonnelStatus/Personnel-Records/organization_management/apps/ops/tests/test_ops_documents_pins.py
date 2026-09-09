@@ -345,12 +345,16 @@ def test_an_unknown_format_is_refused_by_name():
     assert failure.value.code == "VALIDATION_ERROR"
 
 
-def test_the_screen_is_offered_both_formats():
-    """Перечень форматов — пин: DOCX первым.
+def test_the_screen_is_offered_pdf_only():
+    """Перечень форматов — пин: только PDF (Plane №986, [ОТЧ-ОМ-04]).
 
-    Порядок не украшение: образцы заказчика это рабочие бланки Word, и
-    выгружают их чаще, чтобы дозаполнить руками.
+    До №986 здесь стояло `[("docx", "DOCX (Word)"), ("pdf", "PDF")]` —
+    образцы заказчика были рабочими бланками Word, и их выгружали чаще, чтобы
+    дозаполнить руками. Прямое решение заказчика 26-27.08.2026 сняло DOCX из
+    пользовательского выбора; шаблон и конвертер остаются в `render()`
+    (проверено соседними пробами файла — прямой вызов `fmt="docx"` по-прежнему
+    собирает настоящий Word), в каталоге для экрана — только PDF.
     """
     listed = [(item["format"], item["label"]) for item in registry.list_formats()]
 
-    assert listed == [("docx", "DOCX (Word)"), ("pdf", "PDF")]
+    assert listed == [("pdf", "PDF")]
