@@ -140,6 +140,13 @@ export default async function globalTeardown(): Promise<void> {
     }
   }
 
+  // Explicit acceptance mode: keep the postflight verdict above, but never
+  // acquire cleanup credentials or run API/management-command mutations.
+  if (process.env.SMOKE_PRESERVE_DATA === '1') {
+    console.log('SMOKE_PRESERVE_DATA=1: данные сохранены; глобальная уборка не запускалась')
+    return
+  }
+
   const token = await probeToken(STAND_USERNAME, STAND_PASSWORD)
   if (token === null) {
     // Стенд мог быть погашен между прогоном и уборкой — это не повод
