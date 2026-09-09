@@ -1953,14 +1953,18 @@ def test_recon_edit_cannot_strip_an_unmarked_post_of_the_only_object(
     assert service.placement_frozen(visit), "фикстура не заморозила объект"
 
     card = manager.get(base).json()
-    refused = manager.patch(
-        f"{base}recon/",
-        {"checklist": card["reconChecklist"], "sectorPosts": []},
-        format="json",
-    )
+    # HTTP-гейт №982 теперь отсекает объект не на RECON раньше;
+    # заморозку как независимую защиту вглубь проверяем прямо.
+    with pytest.raises(DomainError) as refused:
+        service.update_recon(
+            event_id,
+            checklist=card["reconChecklist"],
+            sector_posts=[],
+            visit_object_id=str(visit.pk),
+        )
 
-    assert refused.status_code == 422, refused.content
-    assert refused.json()["error_code"] == "PLACEMENT_FROZEN", refused.json()
+    assert refused.value.code == "PLACEMENT_FROZEN"
+    assert refused.value.http_status == 422
     event = service.lock_event(event_id)
     assert event.recon_sector_posts, "неразмеченный пост замороженного объекта снят"
 

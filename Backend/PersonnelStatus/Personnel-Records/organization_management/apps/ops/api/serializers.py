@@ -269,6 +269,10 @@ def serialize_visit_object(event, visit, *, single):
             else None
         ),
         "chiefName": visit.chief_name,
+        # №982: рекогносцировку ведёт старший ЭТОГО объекта, поэтому
+        # его ответы не хранятся в общем чек-листе мероприятия.
+        "reconChecklist": visit.recon_checklist or [],
+        "reconForceRequest": visit.recon_force_request,
         # null — «неизвестно» (расчёт постов не размечен по объектам), 0 —
         # «посты не рассчитаны». Экран различает эти два случая словами.
         "placementNeed": need,

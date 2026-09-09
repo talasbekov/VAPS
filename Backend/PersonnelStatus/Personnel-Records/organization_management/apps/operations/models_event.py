@@ -415,8 +415,8 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
         choices=OpsSecurityEvent.Stage.choices,
         default=OpsSecurityEvent.Stage.BULLETIN,
     )
-    # 🔴 `recon_checklist`, `recon_sector_posts`, `recon_notes`,
-    # `placement_assignments`, `journal_entries` ЗАВЕДЕНЫ Ш-1 И НЕ ПРИЖИЛИСЬ
+    # 🔴 `recon_sector_posts`, `recon_notes`, `placement_assignments`,
+    # `journal_entries` ЗАВЕДЕНЫ Ш-1 И НЕ ПРИЖИЛИСЬ
     # (Plane №413, Ш-7 плана №385): Ш-1 задумывал их как дубликат
     # одноимённых полей мероприятия, но Ш-2 выбрал ДРУГОЙ путь — ОДИН общий
     # расчёт постов мероприятия (`event.recon_sector_posts`), где строка несёт
@@ -424,7 +424,11 @@ class OpsSecurityEventVisitObject(TimeStampedModel):
     # лучше дублирования: два ОМ-2026-11 с 32 назначениями на 5 постов не
     # завели бы второй источник расхождения. Пять полей ни разу не получили
     # писателя — грепом подтверждено при взятии этого шага — и снимаются без
-    # бэкфилла: переносить в них было нечего.
+    # бэкфилла: переносить в них было нечего. Чек-лист возвращён
+    # на объект по №982: поимённый старший не может отмечать
+    # готовность соседнего объекта через общее поле мероприятия.
+    recon_checklist = models.JSONField(default=list, blank=True)
+    recon_force_request = models.PositiveIntegerField(default=0)
     #
     # «Потребность N, назначено 0» из `[РЕК-08]`: обе цифры показывает реестр
     # в раскрытой строке (Plane №387). `force_assigned` — снимок счёта, а не

@@ -627,13 +627,11 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       await expect(footer.locator('[data-slot="recon-need-event"]')).toHaveText('5')
     })
 
-    test('на объекте без постов кнопка не жалуется на пустой расчёт', async ({
+    test('на объекте без постов завершение заблокировано', async ({
       page,
     }) => {
-      // `completeBlocked` считал пустоту по ПОКАЗАННОМУ объекту, а сервер
-      // требует непустой расчёт по мероприятию целиком (Plane №710): стоя на
-      // объекте без постов, человек видел выключенную кнопку с неверной
-      // причиной, хотя завершение прошло бы.
+      // №982: сервер завершает выбранный объект, поэтому его собственный
+      // пустой расчёт должен блокировать кнопку, даже если у соседа есть посты.
       const token = await apiToken()
       // Своё безусловно (Plane №853): разбор — в шапке `ownEventOnRecon`.
       const target = await ownEventOnRecon(token)
@@ -660,28 +658,14 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       const footer = page.locator('[data-slot="recon-footer"]')
       await expect(footer).toBeVisible({ timeout: 15_000 })
 
-      // Причина отказа может быть ДРУГОЙ (чек-лист, старший объекта) — это не
-      // предмет пробы. Предмет: она не «Нет постов расчёта», потому что по
-      // мероприятию расчёт есть.
-      //
-      // 🔴 ПИН ПЕРЕЕХАЛ С `title` НА ВИДИМУЮ СТРОКУ (правило №801, найдено
-      // ревью №825): на выключенной кнопке подсказка не показывается, и
-      // проба стерегла атрибут, которого человек не видит.
-      await expect(footer).not.toContainText('Нет постов расчёта.')
+      await expect(footer).toContainText('Нет постов расчёта.')
     })
 
-    test('кнопка знает про старшего СОСЕДНЕГО объекта и называет его', async ({
+    test('соседний объект без старшего не блокирует готовый', async ({
       page,
     }) => {
-      // 🔴 Plane №635. `completeBlocked` смотрел старшего только у ПОКАЗАННОГО
-      // объекта, а `complete_recon` требует его у КАЖДОГО объекта на этапе
-      // «Рекогносцировка». Человек стоял на объекте со старшим, кнопка была
-      // включена, сервер отвечал 422 — и это не редкий случай, а состояние
-      // двухобъектного ОМ ПО УМОЛЧАНИЮ: второй объект, добавленный кнопкой
-      // «+», старшего не наследует.
-      //
-      // Красная проверка — вернуть условие по активному объекту: подпись
-      // станет `null`, кнопка включится, и `toHaveAttribute` не найдёт текста.
+      // №982: каждый старший завершает свой объект отдельно. Сосед без
+      // старшего остаётся на RECON, но не мешает готовому объекту уйти на DEMAND.
       const token = await apiToken()
       // Своё безусловно (Plane №853): разбор — в шапке `ownEventOnRecon`.
       const target = await ownEventOnRecon(token)
@@ -701,6 +685,7 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
             objectName: 'Объект А',
             stage: 'RECON',
             chiefEmployeeId: base.chiefEmployeeId ?? '1',
+            canManageRecon: true,
           }
           const neighbour = {
             ...shown,
@@ -722,15 +707,165 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       await expect(footer).toBeVisible({ timeout: 15_000 })
 
       const complete = footer.getByRole('button', { name: /Завершить рекогносцировку/ })
-      await expect(complete).toBeDisabled()
-      // Имя в подписи обязательно: без него человек не поймёт, куда идти —
-      // объект, на котором он стоит, со старшим. Причина читается ВИДИМОЙ
-      // строкой (правило №801): на выключенной кнопке `title` не показывается
-      // ни при каком поведении браузера.
+      await expect(complete).toBeVisible()
+      await expect(footer).not.toContainText('Не назначен старший объекта «Объект Б».')
+    })
+
+    test('несохранённый чек-лист объекта переживает переключение', async ({
+      page,
+    }) => {
+      const token = await apiToken()
+      const target = await ownEventOnRecon(token)
+
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (route) => {
+          const response = await route.fetch()
+          const body = await response.json()
+          const checklist = body.reconChecklist.map((row: Record<string, unknown>) => ({
+            ...row,
+            state: 'UNCHECKED',
+            done: false,
+            result: null,
+          }))
+          const base = body.visitObjects[0] ?? {}
+          body.visitObjects = [
+            {
+              ...base,
+              id: 'draft-a',
+              objectName: 'Объект А',
+              chiefEmployeeId: base.chiefEmployeeId ?? '1',
+              canManageRecon: true,
+              reconChecklist: checklist,
+            },
+            {
+              ...base,
+              id: 'draft-b',
+              objectName: 'Объект Б',
+              chiefEmployeeId: base.chiefEmployeeId ?? '1',
+              canManageRecon: true,
+              reconChecklist: checklist.map((row: Record<string, unknown>) => ({ ...row })),
+            },
+          ]
+          await route.fulfill({ response, json: body })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=draft-a`)
+      const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
+      const first = stage.locator('[data-slot="recon-check-item"]').first()
+      await first.getByRole('button', { name: 'Норма' }).click()
+      await expect(first).toHaveAttribute('data-state', 'NORMAL')
+
+      const picker = stage.getByLabel('Объект посещения')
+      await picker.selectOption('draft-b')
+      await expect(first).toHaveAttribute('data-state', 'UNCHECKED')
+      await picker.selectOption('draft-a')
+      await expect(first).toHaveAttribute('data-state', 'NORMAL')
+    })
+
+    test('ответ сохранения объекта не стирает новый черновик соседнего', async ({
+      page,
+    }) => {
+      const token = await apiToken()
+      const target = await ownEventOnRecon(token)
+      let card: Record<string, any> | null = null
+      let releaseSave!: () => void
+      let markStarted!: () => void
+      const saveReleased = new Promise<void>((resolve) => {
+        releaseSave = resolve
+      })
+      const saveStarted = new Promise<void>((resolve) => {
+        markStarted = resolve
+      })
+
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/(\\?.*)?$`),
+        async (route) => {
+          const response = await route.fetch()
+          const body = await response.json()
+          const checklist = body.reconChecklist.map((row: Record<string, unknown>) => ({
+            ...row,
+            state: 'UNCHECKED',
+            done: false,
+            result: null,
+          }))
+          const base = body.visitObjects[0] ?? {}
+          body.visitObjects = [
+            {
+              ...base,
+              id: 'pending-a',
+              objectName: 'Объект А',
+              chiefEmployeeId: base.chiefEmployeeId ?? '1',
+              canManageRecon: true,
+              reconChecklist: checklist,
+            },
+            {
+              ...base,
+              id: 'pending-b',
+              objectName: 'Объект Б',
+              chiefEmployeeId: base.chiefEmployeeId ?? '1',
+              canManageRecon: true,
+              reconChecklist: checklist.map((row: Record<string, unknown>) => ({ ...row })),
+            },
+          ]
+          card = body
+          await route.fulfill({ response, json: body })
+        },
+      )
+      await page.route(
+        new RegExp(`/api/ops/security-events/${target!.id}/recon/$`),
+        async (route) => {
+          markStarted()
+          await saveReleased
+          const request = route.request().postDataJSON() as {
+            visitObjectId: string
+            checklist: Record<string, unknown>[]
+          }
+          expect(request.visitObjectId).toBe('pending-a')
+          expect(request.checklist[0]?.state).toBe('NORMAL')
+          const response = structuredClone(card!)
+          response.visitObjects = response.visitObjects.map((visit: Record<string, any>) =>
+            visit.id === request.visitObjectId
+              ? { ...visit, reconChecklist: request.checklist }
+              : visit,
+          )
+          await route.fulfill({ status: 200, contentType: 'application/json', json: response })
+        },
+      )
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target!.id}/?visit=pending-a`)
+      const stage = page.getByRole('region', { name: 'Рекогносцировка объекта' })
+      const first = stage.locator('[data-slot="recon-check-item"]').first()
+      const picker = stage.getByLabel('Объект посещения')
+      await first.getByRole('button', { name: 'Норма' }).click()
+      await stage.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await saveStarted
+
+      await picker.selectOption('pending-b')
+      await expect(page).toHaveURL(/visit=pending-b(?:&|$)/)
+      await first.getByRole('button', { name: 'Норма' }).click()
+      await expect(first).toHaveAttribute('data-state', 'NORMAL')
+      const responseDone = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/api/ops/security-events/${target!.id}/recon/`) &&
+          response.request().method() === 'PATCH',
+      )
+      releaseSave()
+      await responseDone
       await expect(
-        footer.locator('[data-slot="right-hint"]'),
-      ).toHaveText('Не назначен старший объекта «Объект Б».')
-      await expect(complete).toHaveAttribute('aria-describedby', /.+/)
+        stage.getByRole('button', { name: 'Сохранить', exact: true }),
+      ).toBeVisible()
+
+      await expect(first).toHaveAttribute('data-state', 'NORMAL')
+      await picker.selectOption('pending-a')
+      await expect(page).toHaveURL(/visit=pending-a(?:&|$)/)
+      await expect(first).toHaveAttribute('data-state', 'NORMAL')
+      await picker.selectOption('pending-b')
+      await expect(page).toHaveURL(/visit=pending-b(?:&|$)/)
+      await expect(first).toHaveAttribute('data-state', 'NORMAL')
     })
   })
 })
@@ -882,4 +1017,3 @@ async function dropEvent(
 ): Promise<void> {
   await call('DELETE', `/api/ops/security-events/${eventId}/`).catch(() => ({}))
 }
-

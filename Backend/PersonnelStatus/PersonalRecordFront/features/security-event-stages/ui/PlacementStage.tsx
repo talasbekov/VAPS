@@ -66,7 +66,7 @@ import {
   useRemovePlacementPost,
   useSetSectorSenior,
   useUnassignPlacement,
-  useUpdateRecon,
+  useUpdatePlacementPostComment,
 } from "@/hooks/use-security-event-stages";
 import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { usePlacementRoles } from "@/hooks/use-placement-roles";
@@ -307,7 +307,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // пустой соответственно можно удалять этот пост с расстановки».
   const removePost = useRemovePlacementPost(event.id);
   const [postToRemove, setPostToRemove] = useState<ReconSectorPost | null>(null);
-  const updateRecon = useUpdateRecon(event.id);
+  const updatePostComment = useUpdatePlacementPostComment(event.id);
   const { hasPermission } = useOpsPermissions();
   // Роли наряда — из справочника раздела (Plane №239). Пустой справочник не
   // ломает экран: выбор просто не показывается, и это честно — назначать
@@ -1556,24 +1556,11 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={comment === null || updateRecon.isPending}
-                    /* 🔴 ТЕЛО СТРОИТСЯ ИЗ `allPosts`, А НЕ ИЗ `posts`
-                       (Plane №471). `posts` — строки ТОЛЬКО показанного
-                       объекта посещения, а `update_recon` на сервере не
-                       сливает списки, а ЗАМЕЩАЕТ `recon_sector_posts`
-                       присланным целиком. Пока здесь стоял разрез, сохранение
-                       комментария на объекте A удаляло все посты объекта B:
-                       его потребность падала в ноль, назначения оставались
-                       ссылаться на несуществующие id, и восстановить было
-                       нечем — прежних строк нет ни в одной версии.
-                       Разрез нужен ПОКАЗУ, а не отправке; соседний
-                       `ReconStage` шлёт полный список ровно поэтому. */
+                    disabled={comment === null || updatePostComment.isPending}
                     onClick={() =>
-                      updateRecon.mutate({
-                        checklist: event.reconChecklist,
-                        sectorPosts: allPosts.map((p) =>
-                          p.id === selected.id ? { ...p, comment: comment ?? "" } : p
-                        ),
+                      updatePostComment.mutate({
+                        postId: selected.id,
+                        comment: comment ?? "",
                       })
                     }
                   >
@@ -1941,7 +1928,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
         <StageError error={assign.error} />
         <StageError error={unassign.error} />
         <StageError error={move.error} />
-        <StageError error={updateRecon.error} />
+        <StageError error={updatePostComment.error} />
         <StageError error={setSenior.error} />
         <StageError error={complete.error} />
 

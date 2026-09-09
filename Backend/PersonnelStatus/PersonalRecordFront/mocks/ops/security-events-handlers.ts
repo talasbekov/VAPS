@@ -1409,6 +1409,9 @@ function derive(event: SecurityEvent): SecurityEvent {
     closureSummary: closureSummaryOf(event, null),
     visitObjects: event.visitObjects.map((visit) => ({
       ...visit,
+      // Мок работает одной demo-admin персоной: серверное actor-слово для
+      // неё истинно только на живом этапе рекогносцировки (Plane №982).
+      canManageRecon: visit.stage === "RECON",
       closureSummary: closureSummaryOf(event, visit.id),
     })),
   });
