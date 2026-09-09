@@ -13,6 +13,7 @@ class DivisionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Division
+        read_only_fields = ('is_active',)
         fields = (
             'id',
             'name',
