@@ -107,7 +107,13 @@ def need_by_object(event):
     двойным счётом.
     """
     rows = []
-    visits = list(event.visit_objects.order_by("position", "pk"))
+    all_visits = list(event.visit_objects.order_by("position", "pk"))
+    published = events.published_visit_ids(event)
+    visits = (
+        all_visits
+        if published is None
+        else [visit for visit in all_visits if str(visit.pk) in published]
+    )
     # 🔴 «ОДИН ЛИ ОБЪЕКТ» СЧИТАЕТСЯ ЗДЕСЬ, А НЕ ВНУТРИ (Plane №908, третья
     # дверь к дефекту №480). Без `single=` разрез спрашивает
     # `event.visit_objects.count()` САМ — по запросу на КАЖДЫЙ объект
@@ -118,7 +124,7 @@ def need_by_object(event):
     # ЗАМЕРЕНО (карточка сбора, два объекта): было 4 обращения к таблице
     # объектов, стало 2. Оставшиеся два — законные: список здесь и чтение
     # сериализатора карточки, они к этому дефекту отношения не имеют.
-    single = len(visits) == 1
+    single = len(all_visits) == 1
     for visit in visits:
         posts = events.visit_object_posts(event, visit, single=single)
         need = sum(int(p.get("need") or 0) for p in posts)
@@ -133,10 +139,14 @@ def need_by_object(event):
             "statusLabel": events.visit_status_label(visit, assigned=assigned),
             "chiefName": visit.chief_name or "",
         })
-    if len(visits) > 1:
+    if len(all_visits) > 1:
         loose = sum(
             int(post.get("need") or 0)
-            for post in (event.recon_sector_posts or [])
+            for post in (
+                event.recon_sector_posts or []
+                if published is None
+                else event.demand_rows or []
+            )
             if not str(post.get("visitObjectId") or "").strip()
         )
         if loose > 0:

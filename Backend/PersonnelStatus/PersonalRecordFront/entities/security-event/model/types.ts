@@ -1470,6 +1470,8 @@ export interface ForceCollectionDetail {
   eventTime: string | null;
   location: string;
   stage: SecurityEventStage;
+  /** Includes completed-object demand while another object is still on RECON. */
+  canCollect?: boolean;
   need: number;
   allocated: number;
   gathered: number;

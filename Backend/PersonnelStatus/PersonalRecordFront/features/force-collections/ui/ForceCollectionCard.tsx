@@ -790,7 +790,8 @@ export function ForceCollectionCard({
   // Таблица `[СБС-12]` показывает ОТПРАВЛЕННЫЕ запросы; черновик штаба живёт
   // строками редактора ниже, и департаменту его не видно (Plane №944).
   const sentRows = data.allocations.filter(isSent);
-  const editable = SPLIT_STAGES.includes(data.stage) && access.can(FORCES_COMMAND);
+  const collectionOpen = data.canCollect ?? SPLIT_STAGES.includes(data.stage);
+  const editable = collectionOpen && access.can(FORCES_COMMAND);
 
   return (
     <div className="space-y-6">
@@ -960,7 +961,7 @@ export function ForceCollectionCard({
             {data.totals.shortage}
           </b>
         </p>
-        {!SPLIT_STAGES.includes(data.stage) && (
+        {!collectionOpen && (
           <p className="text-muted-foreground border-t pt-3 text-xs" data-slot="split-closed">
             Раскладку правят после рекогносцировки и до согласования
             расстановки — на этой стадии мероприятия сервер правку уже не

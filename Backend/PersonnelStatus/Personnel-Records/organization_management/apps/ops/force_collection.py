@@ -26,6 +26,7 @@ from organization_management.apps.ops.security_events import (
     force_collection_detail,
     force_roster_view,
     lock_event,
+    published_visit_ids,
 )
 
 
@@ -41,6 +42,9 @@ def _object_capacity(event):
 
     visits = list(event.visit_objects.all())
     single = len(visits) == 1
+    published = published_visit_ids(event)
+    if published is not None:
+        visits = [visit for visit in visits if str(visit.pk) in published]
     roster = event.force_roster or []
     rows = []
     for visit in visits:
@@ -87,6 +91,9 @@ def assign_roster_objects(event_id, rows, *, actor):
     """
     event = lock_event(event_id)
     known_objects = {str(v.pk) for v in event.visit_objects.all()}
+    published = published_visit_ids(event)
+    if published is not None:
+        known_objects.intersection_update(published)
     # 🔴 ПОСЛЕ ПЕРЕДАЧИ РАСПРЕДЕЛЯТЬ МОЖНО ТОЛЬКО ЕЩЁ НЕ РОЗДАННЫХ (Plane
     # №577). Прежний отказ закрывал распределение целиком, а состав ПОСЛЕ
     # передачи продолжает пополняться: `accept_allocation` принимает
@@ -156,6 +163,16 @@ def hand_over_to_placement(event_id, *, comment, actor):
     if event.force_handover:
         raise DomainError(
             "FORCE_HANDED_OVER", 422, message="Состав уже передан на расстановку."
+        )
+    published = published_visit_ids(event)
+    if published is not None and event.visit_objects.exclude(pk__in=published).exists():
+        raise DomainError(
+            "FORCE_OBJECTS_NOT_READY",
+            422,
+            message=(
+                "Передать состав на расстановку можно после завершения "
+                "рекогносцировки всех объектов."
+            ),
         )
     objects = _object_capacity(event)
     shortfall = [
