@@ -9,8 +9,79 @@
 // Promise, а не булев флаг: под React StrictMode эффект layout выполняется
 // дважды, два параллельных вызова прошли бы мимо булевого guard-а и подняли
 // два инстанса worker-а (каждый исполняет handler → мутации дублируются).
-import { isOpsMockMode } from "@/lib/ops-env";
+import { isOpsMockMode, opsMockDomains } from "@/lib/ops-env";
 import { composeOpsHandlers } from "./handlers";
+
+const OPS_MOCK_DOMAIN_PATHS: Readonly<Record<string, readonly string[]>> = {
+  "security-events": ["/api/ops/security-events/"],
+  objects: ["/api/ops/objects/"],
+  duties: [
+    "/api/ops/duty-types/",
+    "/api/ops/duty-shifts/",
+    "/api/ops/duty-monthly-plan/",
+    "/api/ops/duty-plan-objects/",
+    "/api/ops/duty-candidates/",
+  ],
+  gvo: ["/api/ops/gvo-summaries/"],
+  "protected-persons": ["/api/ops/protected-persons/"],
+  "legal-documents": ["/api/ops/legal-documents/"],
+  dictionaries: [
+    "/api/ops/dictionaries/",
+    "/api/dictionaries/positions/",
+    "/api/dictionaries/ranks/",
+  ],
+  settings: ["/api/ops/settings/"],
+  audit: ["/api/ops/audit-logs/"],
+  ratings: [
+    "/api/ops/operational-ratings/",
+    "/api/ops/operational-rating-dynamics/",
+    "/api/ops/rating-analytics/",
+    "/api/ops/evaluation-workspace/",
+    "/api/ops/evaluation-work-items/",
+    "/api/ops/evaluation-registry/",
+    "/api/ops/rating-audit/",
+    "/api/ops/rating-notifications/",
+    "/api/ops/operational-rating-employee/",
+    "/api/ops/rating-exports/",
+    "/api/ops/rating-export-artifacts/",
+  ],
+  analytics: [
+    "/api/ops/service-analytics/",
+    "/api/ops/service-analytics-presets/",
+    "/api/ops/service-analytics-drilldown/",
+    "/api/ops/service-analytics-attention/",
+    "/api/ops/operations-analytics/",
+    "/api/ops/load-analytics/",
+  ],
+  "service-reports": [
+    "/api/ops/service-report-types/",
+    "/api/ops/service-report-jobs/",
+    "/api/ops/service-report-artifacts/",
+    "/api/ops/event-documents/",
+    "/api/ops/bulletin-issues/",
+  ],
+  feedback: ["/api/ops/feedback-requests/"],
+  access: [
+    "/api/operations/permissions/",
+    "/api/operations/roles/",
+    "/api/operations/user-roles/",
+    "/api/operations/accounts/",
+    "/api/ops/access-catalog/",
+  ],
+};
+
+/** Returns the active mock domain owning a request path, or null for bypass. */
+export function opsMockDomainForPath(pathname: string): string | null {
+  for (const [domain, prefixes] of Object.entries(OPS_MOCK_DOMAIN_PATHS)) {
+    if (
+      opsMockDomains().has(domain) &&
+      prefixes.some((prefix) => pathname.startsWith(prefix))
+    ) {
+      return domain;
+    }
+  }
+  return null;
+}
 
 /** Где host-MSW разрешён. Гейт нужен из-за SPA-MSW на /ops: два worker-а в
  * одном документе исполняли бы handlers дважды. `/settings` добавлен
@@ -42,10 +113,15 @@ async function start(): Promise<void> {
   const { setupWorker } = await import("msw/browser");
   const worker = setupWorker(...composeOpsHandlers());
   await worker.start({
-    // рядом живые запросы хоста (NextAuth, /api/* основного бэка) —
-    // их перехватывать нельзя; цена bypass: опечатка в пути handler-а не
-    // упадёт ошибкой, а молча уйдёт в сеть — проверять network-таб
-    onUnhandledRequest: "bypass",
+    // Рядом живут запросы хоста (NextAuth и /api/* основного бэка), поэтому
+    // bypass остаётся для путей вне включённых мок-доменов. Внутри домена
+    // bypass запрещён: опечатка или снятый handler не должен уходить в живой
+    // бэк и выдавать мок-пробе зелёный ответ.
+    onUnhandledRequest(request, print) {
+      if (opsMockDomainForPath(new URL(request.url).pathname) !== null) {
+        print.error();
+      }
+    },
     serviceWorker: { url: "/mockServiceWorker.js" },
   });
 }

@@ -32,6 +32,46 @@ test.describe(
   () => {
     test.skip(MOCK_APP === '', 'нужен dev-сервер на моке: SMOKE_MOCK_APP=…')
 
+    test('необработанный маршрут активного мок-домена не уходит в сеть', async ({
+      page,
+    }) => {
+      const mswErrors: string[] = []
+      page.on('console', (message) => {
+        if (message.type() === 'error') mswErrors.push(message.text())
+      })
+      const api = page.context().request
+      const csrf = (await (
+        await api.get(`${MOCK_APP}/api/auth/csrf/`)
+      ).json()) as { csrfToken: string }
+      await api.post(`${MOCK_APP}/api/auth/callback/credentials/`, {
+        form: {
+          csrfToken: csrf.csrfToken,
+          username: STAND_USERNAME,
+          password: STAND_PASSWORD,
+          json: 'true',
+        },
+      })
+      await page.goto(`${MOCK_APP}/security-ops/events/`)
+      await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible({
+        timeout: 30_000,
+      })
+
+      const outcome = await page.evaluate(async () => {
+        try {
+          const response = await fetch(
+            '/api/ops/security-events/__missing-handler__/not-a-handler/'
+          )
+          return `network-response:${response.status}`
+        } catch (error) {
+          return `blocked:${error instanceof Error ? error.message : String(error)}`
+        }
+      })
+      expect(outcome).toBe('network-response:500')
+      expect(mswErrors.join('\n')).toContain(
+        'intercepted a request without a matching request handler'
+      )
+    })
+
     test('бюллетень заводится БЕЗ объекта и остаётся на бюллетене', async ({
       page,
     }) => {
