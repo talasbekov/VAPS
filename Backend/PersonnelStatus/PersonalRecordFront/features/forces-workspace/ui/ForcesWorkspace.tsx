@@ -98,11 +98,6 @@ export function ForcesWorkspace({ role }: { role: WorkspaceRole }) {
   const scopedRole = access.roles.find(item => item.code === (role === 'responsible' ? 'FORCES_GATHERING_OFFICER' : 'OPS_STAFF'))
   const title = view === 'desk' ? 'Рабочий стол' : view === 'daily' ? 'Ежедневный расход' : role === 'headquarters' ? 'Распределения' : 'Сбор сил на ОМ'
   return <DashboardLayout><div className={styles.workspace}>
-    <nav className={styles.nav} aria-label="Рабочее место">
-      {role === 'responsible' && <Link aria-current={view === 'desk' ? 'page' : undefined} href={workspaceHref(query, 'desk')}>Рабочий стол</Link>}
-      {access.hasPermission('status.view') && <Link aria-current={view === 'daily' ? 'page' : undefined} href={workspaceHref(query, 'daily')}>Ежедневный расход</Link>}
-      <Link aria-current={view === 'forces' ? 'page' : undefined} href={workspaceHref(query, 'forces')}>{role === 'headquarters' ? 'Распределения' : 'Сбор сил на ОМ'}</Link>
-    </nav>
     <div className={styles.titleRow}><div><p className={styles.eyebrow}>{role === 'responsible' ? 'Мои задачи' : 'Штаб · сбор и распределение сил'}</p><h1>{title}</h1><p>{scopedRole?.name}</p></div><span className={styles.scope}>{scopedRole?.scope_division_name ?? (role === 'headquarters' ? 'Штаб' : 'Мой департамент')}</span></div>
     {view === 'desk' ? <ResponsibleDesk query={query} />
       : view === 'daily' ? access.hasPermission('status.view') ? role === 'responsible' ? <ResponsibleDailyExpense businessDate={query.get('businessDate') ?? undefined} onBusinessDateChange={date => {

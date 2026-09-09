@@ -7,9 +7,11 @@ import {
   useState,
   useId,
   useSyncExternalStore,
+  Suspense,
 } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { resolveWorkspaceRole, resolveWorkspaceView, workspaceHref, type WorkspaceView } from "@/features/forces-workspace/model/workspace";
 import { useAuth } from "@/lib/auth";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { modulePermissionsOf } from "@/entities/portal-access";
@@ -93,6 +95,7 @@ type NavItem = {
    * сервера: счётчик в меню — обещание «здесь столько-то дел», и выдуманное
    * число врёт на каждой странице приложения сразу. */
   counter?: "events";
+  workspaceView?: WorkspaceView;
 };
 
 // Категории нераскрываемые: заголовок — не кнопка, список под ним всегда
@@ -332,11 +335,17 @@ function LinkStatus() {
 }
 
 export function Sidebar() {
+  return <Suspense><SidebarContent /></Suspense>;
+}
+
+function SidebarContent() {
   // Из `useAuth` берётся только КТО вошёл: роль и права переехали в раздел
   // (Plane №352, Ш-4), и подпись человека внизу меню читает их оттуда же,
   // что и шапка.
   const { user } = useAuth();
   const pathname = normalizePath(usePathname() ?? "");
+  const searchParams = useSearchParams();
+  const query = new URLSearchParams(searchParams);
 
   // Счётчик у «Реестра ОМ». Берётся `count` СЕРВЕРА при `page_size=1`: строки
   // не нужны, нужно число, и тащить ради бейджа страницу мероприятий было бы
@@ -363,7 +372,7 @@ export function Sidebar() {
   // `startsWith` зажигало бы «Аналитику службы» (/security-ops/analytics)
   // заодно с «Аналитикой ОМ» (/security-ops/analytics/operations): второй
   // адрес вложен в первый.
-  const activeHref = CATEGORIES.flatMap((category) =>
+  const activeRouteHref = CATEGORIES.flatMap((category) =>
     category.items.flatMap((item) =>
       [item.href, ...(item.match ?? [])].map((prefix) => ({ href: item.href, prefix }))
     )
@@ -381,16 +390,33 @@ export function Sidebar() {
   // мигание меню на каждом открытии приложения — и, что хуже, показать
   // человеку неполное меню как окончательное, если запрос прав не ответит
   // вовсе. Отказ страницы остаётся вторым рубежом: он никуда не делся.
+  const access = useOpsPermissions();
   const {
     hasPermission: hasOpsPermission,
     isLoading: opsPermissionsLoading,
     roles: sectionRoles,
-  } = useOpsPermissions();
+  } = access;
   // Подпись внизу меню: первая роль раздела. Их может быть несколько — полный
   // состав виден в профиле, а строка в 256px не место для списка.
   const sidebarRole = sectionRoles.length > 0 ? sectionRoles[0] : null;
 
-  const visibleCategories = CATEGORIES.map((category) => ({
+  const workspaceRole = resolveWorkspaceRole(access);
+  const workspace = workspaceRole === 'responsible' || workspaceRole === 'headquarters';
+  const workspaceView = workspace ? resolveWorkspaceView(workspaceRole, query) : null;
+  const workspaceItems: NavItem[] = workspaceRole === 'responsible' ? [
+    { name: 'Рабочий стол', href: workspaceHref(query, 'desk'), icon: ClipboardList, workspaceView: 'desk' },
+    ...(hasOpsPermission('status.view') ? [{ name: 'Ежедневный расход', href: workspaceHref(query, 'daily'), icon: BarChart3, workspaceView: 'daily' as const }] : []),
+    { name: 'Сбор сил на ОМ', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' },
+  ] : workspaceRole === 'headquarters' ? [
+    { name: 'Распределения', href: workspaceHref(query, 'forces'), icon: Users, workspaceView: 'forces' },
+  ] : [];
+  const categories = CATEGORIES.map(category => ({ ...category,
+    items: category.items.flatMap(item => workspace && item.href === '/employees' ? workspaceItems : [item]),
+  }));
+  const activeHref = pathname === '/employees' && workspace
+    ? workspaceItems.find(item => item.workspaceView === workspaceView)?.href
+    : activeRouteHref;
+  const visibleCategories = categories.map((category) => ({
     ...category,
     items: category.items.filter((item) => {
       if (user === null) return true;
@@ -399,7 +425,7 @@ export function Sidebar() {
       // `lib/auth.tsx`. Заказчик потребовал работать по семи ролям, а они
       // живут в каталоге РАЗДЕЛА, поэтому и портальные пункты спрашивают
       // раздел. Одна дорога вместо двух.
-      const required = modulePermissionsOf(item.href);
+      const required = modulePermissionsOf(item.href.split('?')[0]);
       if (required.length === 0 || opsPermissionsLoading) return true;
       return required.some((code) => hasOpsPermission(code));
     }),
