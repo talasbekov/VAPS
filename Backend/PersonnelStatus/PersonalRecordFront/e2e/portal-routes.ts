@@ -36,6 +36,8 @@ export const ROUTES: readonly RouteSpec[] = [
   // параметра, перестал бы заглядывать в «Сбор сил на ОМ» вовсе.
   { template: '/employees' },
   { template: '/employees?view=forces' },
+  { template: '/employees?view=daily' },
+  { template: '/employees?view=department-summary' },
   { template: '/organization' },
   { template: '/statuses' },
   { template: '/reports' },
@@ -147,4 +149,3 @@ export function declaredPortalRoutes(): string[] {
     r.replace(/\/\[\[?\.{0,3}([^\]]+)\]?\]/g, '/:x'),
   )
 }
-
