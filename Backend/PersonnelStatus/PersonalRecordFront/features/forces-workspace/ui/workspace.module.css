@@ -1,4 +1,7 @@
 .workspace { color: #24334b; max-width: 1500px; margin: 0 auto; }
+:global(.dark) .workspace { color:#edf2fa; }
+:global(.dark) .titleRow p { color:#b7c5d8; }
+:global(.dark) .scope { background:#1b293f; border-color:#3b4b63; }
 .nav { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:24px; padding:6px; background:white; border:1px solid #dce3ed; border-radius:12px; width:fit-content; }
 .nav a { padding:10px 16px; border-radius:8px; font-weight:600; font-size:14px; color:#536176; }
 .nav a[aria-current="page"] { background:#eaf0ff; color:#244ea5; }
