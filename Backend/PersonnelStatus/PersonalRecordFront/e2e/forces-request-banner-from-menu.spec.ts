@@ -19,6 +19,7 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+const SELECT_ACTION = /(?:Добавить в общий резерв|Выделить на )/
 
 async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
@@ -420,7 +421,7 @@ test.describe(
       ).toBeVisible({ timeout: 15_000 })
       // И счётчик кнопки обязан быть МЕНЬШЕ числа выбранных строк — иначе
       // объяснение объясняло бы несуществующее расхождение.
-      const label = await banner.getByRole('button', { name: /Выделить на / }).innerText()
+      const label = await banner.getByRole('button', { name: SELECT_ACTION }).innerText()
       const counted = Number(label.replace(/\D+/g, '').slice(-2))
       expect(Number.isFinite(counted)).toBe(true)
     })
@@ -487,7 +488,7 @@ test.describe(
       const boxes = page.locator('table').getByRole('checkbox')
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       await boxes.nth(1).check({ force: true })
-      await banner.getByRole('button', { name: /Выделить на / }).click()
+      await banner.getByRole('button', { name: SELECT_ACTION }).click()
 
       const report = page.locator('[data-slot="select-report"]')
       await expect(report, 'отчёт о выделении обязан появиться').toBeVisible({
@@ -588,7 +589,7 @@ test.describe(
       const boxes = page.locator('table').getByRole('checkbox')
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       await boxes.nth(1).check({ force: true })
-      await banner.getByRole('button', { name: /Выделить на / }).click()
+      await banner.getByRole('button', { name: SELECT_ACTION }).click()
 
       const override = banner.locator('[data-slot="select-override"]')
       await expect(
@@ -717,10 +718,10 @@ test.describe(
       await expect(boxes.first()).toBeVisible({ timeout: 20_000 })
       await boxes.nth(1).check({ force: true })
 
-      const select = banner.getByRole('button', { name: /Выделить на / })
+      const select = banner.getByRole('button', { name: SELECT_ACTION })
       expect(
         await tapHeight(select),
-        'кнопка «Выделить на ОМ» меньше 44 px',
+        'кнопка выделения/резерва меньше 44 px',
       ).toBeGreaterThanOrEqual(44)
       await select.click()
 

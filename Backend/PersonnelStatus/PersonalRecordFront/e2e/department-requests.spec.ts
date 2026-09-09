@@ -1087,7 +1087,7 @@ test.describe('заявки департаменту', () => {
     }
   })
 
-  test('чекбоксы на «Статусах» + «Выделить на ОМ» ставят «Участие в ОМ» из запроса (Plane №395)', async ({
+  test('физнаряд со «Статусов» уходит в резерв без фиктивного статуса ОМ (Plane №977)', async ({
     page,
   }) => {
     /**
@@ -1096,11 +1096,10 @@ test.describe('заявки департаменту', () => {
      * „мероприятие“ он не выбирает и не видит». До правки статус ставился
      * диалогом с ручным выбором мероприятия, а реестр начальнику отвечал 403.
      *
-     * Проба: раскладка Первому управлению → `acc_dir_head` открывает баннер
-     * → отмечает СВОЕГО сотрудника чекбоксом в таблице → «Выделить на
-     * ОМ-…: 1» → баннер «выделено 1 из 2», а в заявке (API) человек числится
-     * выделенным. Дата ОМ — своя на прогон: у сотрудника не должно быть
-     * пересечения статусов с прошлыми прогонами.
+     * №977 уточнил сценарий: физнаряд до решения Штаба не привязан к конкретному
+     * ОМ. Экран отправляет `kindCode=PHYSICAL_SQUAD` и показывает отдельную метку резерва.
+     * POST и ручка резерва здесь перехвачены: живой серверный контракт покрыт pytest,
+     * а браузерная проба не оставляет неудаляемую кампанию в общем стенде.
      */
     const bossPassword = process.env.ACCESS_MATRIX_PASSWORD ?? ''
     test.skip(bossPassword === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
@@ -1125,6 +1124,42 @@ test.describe('заявки департаменту', () => {
         { rows: [{ divisionId: String(first.id), need: 2 }] },
       )
       const event = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
+      const person = (await apiCall(
+        token,
+        'GET',
+        '/api/ops/personnel/?search=%D0%A2%D0%BE%D0%BA%D1%82%D0%B0%D1%80%D0%BE%D0%B2&page_size=1',
+      )).results[0] as { id: string; fullName: string }
+
+      // UI-контракт проверяем без записи неудаляемой кампании в общий
+      // стенд. Живая серверная запись резерва покрыта pytest.
+      let reserveSelected = false
+      let selectionBody: { employeeIds?: string[]; kindCode?: string } = {}
+      await page.route(
+        (url) => decodeURIComponent(url.pathname).includes(`/forces/requests/${fixture.allocationId}/directorate/select`),
+        async (route) => {
+          selectionBody = route.request().postDataJSON() as typeof selectionBody
+          reserveSelected = true
+          await route.fulfill({ json: { selected: [person.id], refused: [], request: {} } })
+        },
+      )
+      await page.route(
+        (url) => url.pathname.includes('/forces/campaign-reserves'),
+        (route) => route.fulfill({
+          json: {
+            results: reserveSelected
+              ? [{
+                  employeeId: person.id,
+                  employeeName: person.fullName,
+                  campaignId: 'e2e-reserve',
+                  campaignCode: 'РМ-E2E',
+                  campaignTitle: 'Проба резерва',
+                  kindCode: 'PHYSICAL_SQUAD',
+                  sourceEventIds: [fixture.eventId],
+                }]
+              : [],
+          },
+        }),
+      )
 
       const api = page.context().request
       const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -1142,18 +1177,17 @@ test.describe('заявки департаменту', () => {
       const row = page.locator('tbody tr', { hasText: 'Токтаров' }).first()
       await expect(row).toBeVisible({ timeout: 30_000 })
       await row.getByRole('checkbox').check()
-      const select = banner.getByRole('button', { name: `Выделить на ${event.code}: 1` })
+      await expect(banner.getByLabel('Вид участия')).toHaveValue('PHYSICAL_SQUAD')
+      await expect(
+        banner.getByText('Физнаряд пока не получает статус участия', { exact: false }),
+      ).toBeVisible()
+      const select = banner.getByRole('button', { name: 'Добавить в общий резерв: 1' })
       await expect(select).toBeEnabled()
       await select.click()
 
-      await expect(banner.getByText('Выделено:', { exact: false })).toBeVisible({ timeout: 15_000 })
-      await expect(banner.getByText('выделено 1 из 2', { exact: false })).toBeVisible({ timeout: 15_000 })
-
-      // Сервер: человек в заявке, статус — от мероприятия.
-      const fresh = await apiCall(token, 'GET', `/api/ops/security-events/${fixture.eventId}/`)
-      const members = (fresh.forceAllocation as { members: { name: string; statusId: string }[] }[])[0].members
-      expect(members.map((m) => m.name)).toContain('Токтаров А.')
-      expect(members[0].statusId, 'статус привлечения не поставлен').toBeTruthy()
+      expect(selectionBody).toEqual({ employeeIds: [person.id], kindCode: 'PHYSICAL_SQUAD' })
+      await expect(banner.locator('[data-slot="select-report"]')).toContainText('Выделено: 1', { timeout: 15_000 })
+      await expect(row.getByText('Резерв ОМ · РМ-E2E · Физнаряд')).toBeVisible({ timeout: 15_000 })
     } finally {
       await dropEvent(token, fixture.eventId)
     }
