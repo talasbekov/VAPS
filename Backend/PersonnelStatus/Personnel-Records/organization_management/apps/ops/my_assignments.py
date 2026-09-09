@@ -14,6 +14,7 @@
 Штаб и админ проходят общим `event.view`.
 """
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from django.db import transaction
 
@@ -74,10 +75,20 @@ def acknowledgement_authority(event, assignment_id, actor_user_id):
     division_id = employee_scope_division(target.pk)
     if division_id is None:
         return None
+    target_division = Division.objects.filter(pk=division_id).first()
+    if target_division is None:
+        return None
+    permitted_scopes = {
+        target_division.pk,
+        *target_division.get_ancestors().values_list("pk", flat=True),
+    }
     is_head = UserRole.objects.filter(
         user_id=str(actor_user_id),
         role_code_id__in=_DIRECTORATE_HEAD_ROLES,
-        scope_division_id=division_id,
+        # Руководитель управления отвечает и за отделы в его поддереве. На
+        # живой структуре сотрудник стоит в отделе, а роль начальника — на
+        # управлении; прямое равенство оставляло `[ОЗН-05]` с вечным 403.
+        scope_division_id__in=permitted_scopes,
         is_active=True,
     ).exists()
     return "unit_head" if is_head else None
@@ -265,6 +276,9 @@ def assignments_of(employee_id):
     # читается ОДИН раз до цикла, иначе список из десяти нарядов стоил бы
     # десяти запросов за одним и тем же номером (`[ОЗН-03]`, Plane №452).
     phone = _phone_of(employee_id)
+    employee_has_account = Employee.objects.filter(
+        pk=employee_id, user_id__isnull=False
+    ).exists()
     events = (
         OpsSecurityEvent.objects.filter(placement_assignments__contains=[{"employeeId": key}])
         .prefetch_related("visit_objects")
@@ -306,6 +320,10 @@ def assignments_of(employee_id):
                     "weapon": (post or {}).get("weapon", ""),
                     "roleCode": a.get("roleCode"),
                     "sectionCode": a.get("sectionCode"),
+                    # Начальник управления читает эту же плоскую строку в
+                    # профиле подчинённого. Только для сотрудника БЕЗ учётки
+                    # ему доступна отметка «Ознакомлен лично» (`[ОЗН-05]`).
+                    "employeeHasAccount": employee_has_account,
                     "acknowledgedAt": a.get("acknowledgedAt"),
                     # СПОСОБ И АВТОР ОТМЕТКИ ЕДУТ К ЧИТАТЕЛЮ (Plane №722).
                     # Без них карточка сотрудника и этап «Проведение»

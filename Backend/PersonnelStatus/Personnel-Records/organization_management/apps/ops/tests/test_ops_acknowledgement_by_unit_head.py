@@ -35,9 +35,14 @@ def _head(username, division):
 
 def test_only_the_employees_unit_head_confirms_an_unlinked_employee(manager):  # noqa: F811
     home = _directorate("Управление без учётки")
+    section = Division.objects.create(
+        name="Отдел без учётки",
+        division_type=Division.DivisionType.DIVISION,
+        parent=home,
+    )
     foreign = _directorate("Чужое управление")
     employee = make_employee("Безучётный", "Сотрудник")
-    StaffUnit.objects.create(division=home, employee=employee, index=2)
+    StaffUnit.objects.create(division=section, employee=employee, index=2)
     base, assignment_id = placed(manager, employee)
     event = on_acknowledgement(base)
     head, head_employee = _head("ack-home-head", home)
@@ -46,6 +51,9 @@ def test_only_the_employees_unit_head_confirms_an_unlinked_employee(manager):  #
     missing = head.post(f"{base}acknowledge/{assignment_id}/", {}, format="json")
     assert missing.status_code == 400, missing.content
     assert set(missing.json()["details"]) == {"deliveryMethod", "accountAbsenceBasis"}
+    own_rows = head.get(f"{base.rsplit(str(event.pk) + '/', 1)[0]}my-assignments/?employee={employee.pk}")
+    assert own_rows.status_code == 200, own_rows.content
+    assert own_rows.json()["results"][0]["employeeHasAccount"] is False
     assert foreign_head.post(
         f"{base}acknowledge/{assignment_id}/",
         {"deliveryMethod": "Устно", "accountAbsenceBasis": "Учётка не заведена"},

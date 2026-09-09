@@ -575,6 +575,7 @@ interface MyAssignment {
    * инструкции в модели нет, а эта строка — то, что человеку велено делать. */
   post: MyAssignmentPost | null;
   postLabel: string;
+  employeeHasAccount: boolean;
   acknowledgedAt: string | null;
   /** Способ и автор отметки (`[ОЗН-05]`, Plane №722): «лично» — старший довёл
    * устно, и это ДРУГОЙ факт, чем «я прочитал в системе». Без них карточка
@@ -662,6 +663,7 @@ function toMyAssignment(row: MyAssignmentRow): MyAssignment {
     postLabel: row.postFound
       ? `${row.sector} · ${row.post}`
       : "пост не найден в расчёте",
+    employeeHasAccount: row.employeeHasAccount,
     acknowledgedAt: row.acknowledgedAt,
     acknowledgedVia: row.acknowledgedVia ?? "",
     acknowledgedBy: row.acknowledgedBy ?? "",
@@ -1104,8 +1106,12 @@ function AssignmentRow({
 }) {
   const acknowledge = useAcknowledgeMyAssignment();
   const decline = useDeclineMyAssignment();
+  const { roles } = useOpsPermissions();
   const [declineOpen, setDeclineOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [personalOpen, setPersonalOpen] = useState(false);
+  const [deliveryMethod, setDeliveryMethod] = useState("");
+  const [accountAbsenceBasis, setAccountAbsenceBasis] = useState("");
   /**
    * Начать ответ заново: снять ПРОТУХШУЮ ошибку соседней мутации (Plane
    * №590).
@@ -1134,10 +1140,27 @@ function AssignmentRow({
     setReason("");
     clearAnswerErrors();
   };
+  const closePersonal = () => {
+    setPersonalOpen(false);
+    setDeliveryMethod("");
+    setAccountAbsenceBasis("");
+    acknowledge.reset();
+  };
   // Ответить можно, пока мероприятие живо: закрытому ОМ ответ уже никому не
   // нужен, и сервер его не примет.
   const preparing = isPreparing(item);
   const answerable = item.event.stage !== "CLOSED" && !preparing;
+  const isUnitHead = roles.some((role) =>
+    ["DIRECTORATE_HEAD", "HEAD_DIRECTORATE_LINE", "HEAD_OPS_UNIT"].includes(
+      role.code
+    )
+  );
+  const canConfirmPersonally =
+    readOnly &&
+    isUnitHead &&
+    item.employeeHasAccount === false &&
+    answerable &&
+    item.acknowledgedAt === null;
   const busy = acknowledge.isPending || decline.isPending;
   const period =
     item.event.businessDateEnd !== null &&
@@ -1244,6 +1267,21 @@ function AssignmentRow({
             )}
           </div>
         )}
+        {canConfirmPersonally && (
+          <Button
+            type="button"
+            size="sm"
+            className="h-[31px] text-[11px]"
+            disabled={busy}
+            onClick={() => {
+              acknowledge.reset();
+              setPersonalOpen(true);
+            }}
+          >
+            <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            Ознакомлен лично
+          </Button>
+        )}
         {(acknowledge.error || decline.error) && (
           <p className="text-[11px] text-destructive" role="alert">
             {(acknowledge.error ?? decline.error)?.message ??
@@ -1262,6 +1300,74 @@ function AssignmentRow({
           Инструкция по посту
         </EventLink>
       </div>
+
+      <Dialog
+        open={personalOpen}
+        onOpenChange={(open) => (open ? setPersonalOpen(true) : closePersonal())}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Подтвердить ознакомление лично</DialogTitle>
+            <DialogDescription>
+              Укажите, как назначение доведено сотруднику и почему у него нет
+              учётной записи. Система сохранит сотрудника, начальника и время.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor={`personal-method-${item.id}`}>Способ доведения *</Label>
+              <Textarea
+                id={`personal-method-${item.id}`}
+                value={deliveryMethod}
+                onChange={(event) => setDeliveryMethod(event.target.value)}
+                rows={2}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`personal-basis-${item.id}`}>
+                Основание отсутствия учётной записи *
+              </Label>
+              <Textarea
+                id={`personal-basis-${item.id}`}
+                value={accountAbsenceBasis}
+                onChange={(event) => setAccountAbsenceBasis(event.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+          {acknowledge.error && (
+            <p className="text-sm text-destructive" role="alert">
+              {acknowledge.error.message}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closePersonal}>
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                deliveryMethod.trim() === "" ||
+                accountAbsenceBasis.trim() === "" ||
+                acknowledge.isPending
+              }
+              onClick={() => {
+                void acknowledge
+                  .mutateAsync({
+                    eventId: item.event.id,
+                    assignmentId: item.id,
+                    deliveryMethod: deliveryMethod.trim(),
+                    accountAbsenceBasis: accountAbsenceBasis.trim(),
+                  })
+                  .then(closePersonal)
+                  .catch(() => undefined);
+              }}
+            >
+              Подтвердить ознакомление
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 🔴 ЗАКРЫТИЕ ОКНА ЧИСТИТ ПРИЧИНУ (Plane №591). Здесь стоял голый
           `setDeclineOpen`: «Отмена», Esc и клик вне окна закрывали его, не
@@ -1789,4 +1895,3 @@ function CalendarTab({
     </div>
   );
 }
-
