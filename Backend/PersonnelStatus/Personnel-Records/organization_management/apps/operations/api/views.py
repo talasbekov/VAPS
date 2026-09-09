@@ -2140,6 +2140,11 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
         report = StrengthReportService.compute(business_date, division_ids=scope)
+        from organization_management.apps.ops.force_campaigns import (
+            reserve_counts_by_division,
+        )
+
+        reserve_counts = reserve_counts_by_division(scope)
         columns = list(report.totals.columns)
         return Response(
             {
@@ -2172,6 +2177,7 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                         # ОМ остаётся в строю, и вынуть его в свою колонку
                         # значило бы сломать «Σ колонок == Список».
                         "event": row.event.as_dict(),
+                        "reserve": reserve_counts.get(row.division_id, 0),
                     }
                     for row in report.rows
                 ],
@@ -2183,6 +2189,7 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "off_list": report.totals.off_list,
                     "columns": report.totals.columns,
                     "event": report.totals.event.as_dict(),
+                    "reserve": sum(reserve_counts.values()),
                 },
                 "warnings": report.warnings,
             }

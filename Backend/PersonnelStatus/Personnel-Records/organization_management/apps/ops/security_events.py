@@ -18,6 +18,7 @@ import re
 from uuid import uuid4
 
 from django.db import transaction
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from organization_management.apps.operations import audit_service
@@ -4810,7 +4811,14 @@ def placement_assignments_view(event, *, with_phone=False, read_context=None):
 
 @transaction.atomic
 def add_allocation_member(
-    event_id, allocation_id, *, employee_id, actor, override=False, override_reason=""
+    event_id,
+    allocation_id,
+    *,
+    employee_id,
+    actor,
+    kind_code="PHYSICAL_SQUAD",
+    override=False,
+    override_reason="",
 ):
     """Управление выделяет человека на мероприятие (Plane №73, шаг «СС-3»).
 
@@ -4872,7 +4880,7 @@ def add_allocation_member(
         participations=[
             {
                 "event_id": event.pk,
-                "kind_code": _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE],
+                "kind_code": str(kind_code or _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE]),
             }
         ],
         # Участие поставила ЦЕПОЧКА, а не человек из каталога: вид выведен из
@@ -4891,6 +4899,7 @@ def add_allocation_member(
         # Ссылка на статус — то, чем выделение снимается: без неё снятие
         # искало бы «похожий» статус и однажды закрыло бы чужой.
         "statusId": str(status.pk),
+        "kindCode": str(kind_code or _PARTICIPATION_KIND_BY_STATUS[ASSIGNMENT_STATUS_CODE]),
     }
     event.force_allocation = [
         {**row, "members": [*row.get("members", []), member]}
@@ -4956,6 +4965,19 @@ def remove_allocation_member(event_id, allocation_id, employee_id, *, actor):
             actor=actor,
             reason=f"Снят(а) с выделения на мероприятие {event.code}",
         )
+    if member.get("reserveCampaignId"):
+        from organization_management.apps.operations.models_forces import (
+            OpsForceCampaignPoolMember,
+        )
+
+        reserve = OpsForceCampaignPoolMember.objects.filter(
+            campaign_id=member["reserveCampaignId"],
+            employee_key=str(employee_id),
+            removed_at__isnull=True,
+        ).first()
+        if reserve is not None:
+            reserve.removed_at = timezone.now()
+            reserve.save(update_fields=["removed_at", "updated_at"])
 
     event.force_allocation = [
         {

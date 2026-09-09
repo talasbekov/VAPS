@@ -176,9 +176,11 @@ function SectionAccountCell({
   loading,
   legacyHint,
   forcesOpen,
+  reserve,
 }: {
   /** Открыт ли человеку модуль «Сбор сил» (ключ пункта меню, №939). */
   forcesOpen: boolean;
+  reserve: { campaignCode: string; campaignTitle: string; kindCode: string } | null;
   status: { code: string; name: string } | null;
   participations: {
     event_id: number;
@@ -191,10 +193,10 @@ function SectionAccountCell({
   loading: boolean;
   legacyHint: boolean;
 }) {
-  if (loading && status === null && participations.length === 0) {
+  if (loading && status === null && participations.length === 0 && reserve === null) {
     return <span className="text-muted-foreground text-xs">Загрузка…</span>;
   }
-  if (status === null && participations.length === 0) {
+  if (status === null && participations.length === 0 && reserve === null) {
     // Запасной путь: КАДРОВЫЙ код говорит об участии, а мероприятий в разделе
     // не нашлось. Ссылка на общий разрез и подпись, называющая причину, —
     // ровно то, что стояло здесь до №314; переехало в свою колонку целиком,
@@ -229,6 +231,14 @@ function SectionAccountCell({
   }
   return (
     <div className="flex max-w-[260px] flex-col items-start gap-0.5">
+      {reserve !== null && (
+        <span
+          className="text-amber-700 text-xs font-medium leading-tight"
+          title={reserve.campaignTitle}
+        >
+          Резерв ОМ · {reserve.campaignCode} · Физнаряд
+        </span>
+      )}
       {status !== null && (
         /* Две строки максимум, полное имя — в подсказке. Имена справочника
            раздела длинные («Привлечён на мероприятие (наряд)»), и без предела
@@ -529,6 +539,12 @@ export function StatusTable({
     const employeeId = employeeIdOf(employee);
     if (employeeId === null) return null;
     return sectionStatuses.statusByEmployee.get(employeeId) ?? null;
+  };
+
+  const reserveOf = (employee: { id: string }) => {
+    const employeeId = employeeIdOf(employee);
+    if (employeeId === null) return null;
+    return sectionStatuses.reserveByEmployee.get(employeeId) ?? null;
   };
 
   // Функция для открытия диалога редактирования
@@ -933,6 +949,7 @@ export function StatusTable({
                     ) : (
                       <SectionAccountCell
                         forcesOpen={forcesOpen}
+                        reserve={reserveOf(employee)}
                         status={sectionStatusOf(employee)}
                         participations={eventsOf(employee)}
                         loading={sectionStatuses.loading}

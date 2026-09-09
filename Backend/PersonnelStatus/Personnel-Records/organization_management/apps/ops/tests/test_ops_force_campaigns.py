@@ -9,6 +9,7 @@ from .test_ops_security_events_api import (  # noqa: F401
     make_object,
     manager,
 )
+from .test_ops_forces_gathering import make_assignment_status_type
 
 pytestmark = pytest.mark.django_db
 
@@ -86,6 +87,7 @@ def test_campaign_requires_a_title_and_at_least_one_event(manager):  # noqa: F81
 
 
 def test_hq_assigns_a_pooled_employee_to_event_object_and_demand_row(manager):  # noqa: F811
+    from organization_management.apps.operations.models_status import OpsEmployeeStatus
     source = _event(manager, code="SOURCE", date="2026-09-12")
     target_object = make_object(code="OBJ-TARGET", name="Целевой объект")
     target_response = create_event(
@@ -108,6 +110,7 @@ def test_hq_assigns_a_pooled_employee_to_event_object_and_demand_row(manager):  
     ]
     target.save(update_fields=["demand_rows", "updated_at"])
     person = make_employee(last_name="Распределяемов", first_name="Сотрудник")
+    make_assignment_status_type()
     source.force_roster = [
         {"employeeId": str(person.pk), "employeeName": "Распределяемов Сотрудник"}
     ]
@@ -144,9 +147,14 @@ def test_hq_assigns_a_pooled_employee_to_event_object_and_demand_row(manager):  
             "overrideReason": "",
         }
     ]
+    final_status = OpsEmployeeStatus.objects.get(employee_id=person.pk)
+    participation = final_status.participations.get()
+    assert participation.event_id == target.pk
+    assert participation.kind_code == "PHYSICAL_SQUAD"
 
 
 def test_time_overlap_needs_an_explicit_override_reason(manager):  # noqa: F811
+    make_assignment_status_type()
     source = _event(manager, code="POOL", date="2026-09-11")
     person = make_employee(last_name="Конфликтов", first_name="Сотрудник")
     source.force_roster = [{"employeeId": str(person.pk), "employeeName": "Конфликтов Сотрудник"}]
@@ -209,6 +217,7 @@ def test_time_overlap_needs_an_explicit_override_reason(manager):  # noqa: F811
 
 
 def test_handover_projects_assignments_to_event_rosters_and_locks_campaign(manager):  # noqa: F811
+    make_assignment_status_type()
     source = _event(manager, code="HANDOVER-POOL", date="2026-09-11")
     obj = make_object(code="OBJ-HANDOVER", name="Объект передачи")
     target_response = create_event(

@@ -269,6 +269,7 @@ export default function ReportsPage() {
                             </TableCell>
                           ))}
                           <TableCell className="border-l tabular-nums">
+                            <div className="flex flex-col gap-0.5">
                             {row.event.total === 0 ? (
                               // Ноль печатается прочерком: «никого не
                               // привлекли» и «колонка пустая» иначе выглядят
@@ -284,6 +285,12 @@ export default function ReportsPage() {
                                 </span>
                               </span>
                             )}
+                            {(row.reserve ?? 0) > 0 && (
+                              <span className="text-amber-700 text-[11px] font-medium">
+                                Резерв: {row.reserve}
+                              </span>
+                            )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Button

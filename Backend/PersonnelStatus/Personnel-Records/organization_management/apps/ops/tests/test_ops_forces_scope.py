@@ -1101,13 +1101,15 @@ def test_the_directorate_request_is_closed_without_status_manage():
 # ── Выделение по запросу: чекбоксы → «Участие в ОМ» (Plane №395, `[СБС-31]`) ─
 
 
-def test_the_head_selects_people_and_the_status_is_created_from_the_request(manager):  # noqa: F811
-    """Начальник управления отмечает людей — статус привлечения ставится ИЗ
-    ЗАЯВКИ (мероприятие и даты), человек становится выделенным.
+def test_physical_squad_selection_enters_campaign_reserve_without_event_status(manager):  # noqa: F811
+    """Физнаряд до решения Штаба — резерв кампании, а не участие в ОМ.
 
-    Красная на мутации: замени `add_allocation_member` на запись без статуса —
-    статуса у сотрудника не будет.
+    Красная на мутации: вернуть прежний `add_allocation_member` — появится
+    финальный статус с event_id, а общий пул останется пустым.
     """
+    from organization_management.apps.operations.models_forces import (
+        OpsForceCampaignPoolMember,
+    )
     from organization_management.apps.operations.models_status import OpsEmployeeStatus
 
     own = make_department("Департамент А")
@@ -1116,11 +1118,28 @@ def test_the_head_selects_people_and_the_status_is_created_from_the_request(mana
     _split_first(manager, base, allocation_id, first)
     person = employee_of(first, "Выделяемов")
     make_assignment_status_type()
+    from organization_management.apps.operations.models import StatusType
+
+    StatusType.objects.get_or_create(
+        code="IN_SERVICE",
+        defaults={
+            "name": "В строю",
+            "priority": 999,
+            "report_column_code": "IN_SERVICE",
+        },
+    )
+    event_id = base.rstrip("/").rsplit("/", 1)[-1]
+    campaign = manager.post(
+        "/api/ops/security-events/forces/campaigns/",
+        {"title": "Общий резерв", "eventIds": [event_id]},
+        format="json",
+    )
+    assert campaign.status_code == 201, campaign.data
     head = _status_head("dir-head-select", "DIR_HEAD_SEL1", first)
 
     resp = head.post(
         f"{URL}forces/requests/{allocation_id}/directorate/select/",
-        {"employeeIds": [str(person.pk)]},
+        {"employeeIds": [str(person.pk)], "kindCode": "PHYSICAL_SQUAD"},
         format="json",
     )
 
@@ -1129,7 +1148,72 @@ def test_the_head_selects_people_and_the_status_is_created_from_the_request(mana
     assert body["selected"] == [str(person.pk)]
     assert body["refused"] == []
     assert body["request"]["directorates"][0]["assigned"] == 1
-    assert OpsEmployeeStatus.objects.filter(employee_id=person.pk).exists()
+    assert not OpsEmployeeStatus.objects.filter(employee_id=person.pk).exists()
+    reserve = OpsForceCampaignPoolMember.objects.get(
+        campaign_id=campaign.json()["id"], employee_id=person.pk
+    )
+    assert reserve.kind_code == "PHYSICAL_SQUAD"
+    assert reserve.source_event_ids == [event_id]
+    visible = head.get(f"{URL}forces/campaign-reserves/")
+    assert visible.status_code == 200, visible.data
+    assert visible.json()["results"] == [
+        {
+            "employeeId": str(person.pk),
+            "employeeName": "Выделяемов С.",
+            "campaignId": campaign.json()["id"],
+            "campaignCode": campaign.json()["code"],
+            "campaignTitle": "Общий резерв",
+            "kindCode": "PHYSICAL_SQUAD",
+        }
+    ]
+    business_date = OpsSecurityEvent.objects.get(pk=event_id).business_date.isoformat()
+    expense = head.get(
+        f"/api/operations/strength-report/?business_date={business_date}"
+    )
+    assert expense.status_code == 200, expense.data
+    own_row = next(
+        row for row in expense.json()["rows"] if row["division_id"] == first.pk
+    )
+    assert own_row["reserve"] == 1
+    assert expense.json()["totals"]["reserve"] == 1
+    removed = manager.delete(
+        f"{base}forces/allocation/{allocation_id}/members/{person.pk}/"
+    )
+    assert removed.status_code == 200, removed.data
+    reserve.refresh_from_db()
+    assert reserve.removed_at is not None
+    assert head.get(f"{URL}forces/campaign-reserves/").json()["results"] == []
+
+
+def test_special_group_selection_creates_final_participation_for_requested_event(manager):  # noqa: F811
+    """Специальная группа выбирается сразу для ОМ и потому создаёт участие."""
+    from organization_management.apps.operations.models_status import OpsEmployeeStatus
+
+    own = make_department("Департамент группы")
+    directorate = make_directorate(own, "Управление группы")
+    base, allocation_id = allocated_event(manager, own)
+    _split_first(manager, base, allocation_id, directorate)
+    event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1])
+    allocation = next(row for row in event.force_allocation if row["id"] == allocation_id)
+    allocation["groupDemands"] = [
+        {"id": "screening-1", "kindCode": "SCREENING_GROUP", "need": 1}
+    ]
+    allocation["directorates"][0]["groupDemandIds"] = ["screening-1"]
+    event.save(update_fields=["force_allocation", "updated_at"])
+    person = employee_of(directorate, "Досмотров")
+    make_assignment_status_type()
+    head = _status_head("dir-head-special", "DIR_HEAD_SPECIAL", directorate)
+
+    response = head.post(
+        f"{URL}forces/requests/{allocation_id}/directorate/select/",
+        {"employeeIds": [str(person.pk)], "kindCode": "SCREENING_GROUP"},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+    status = OpsEmployeeStatus.objects.get(employee_id=person.pk)
+    assert status.participations.get().event_id == event.pk
+    assert status.participations.get().kind_code == "SCREENING_GROUP"
 
 
 def test_selecting_builds_the_full_request_view_exactly_once(manager, monkeypatch):  # noqa: F811

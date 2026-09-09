@@ -5,6 +5,7 @@ import type { ForceCampaign } from "@/hooks/use-force-campaigns";
 import { readEventsStore } from "./security-events-handlers";
 
 const PATH = "/api/ops/security-events/forces/campaigns/";
+const RESERVES_PATH = "/api/ops/security-events/forces/campaign-reserves/";
 let campaigns: ForceCampaign[] = [];
 
 function error(status: number, errorCode: string, message: string, details = {}) {
@@ -43,6 +44,7 @@ function poolOf(events: SecurityEvent[]): ForceCampaign["pool"] {
       const row = rows.get(member.employeeId) ?? {
         employeeId: member.employeeId,
         employeeName: member.name,
+        kindCode: "PHYSICAL_SQUAD",
         sourceEventIds: [],
       };
       row.sourceEventIds.push(event.id);
@@ -57,6 +59,25 @@ function findCampaign(id: string) {
 }
 
 export const forceCampaignHandlers = [
+  http.get(`*${RESERVES_PATH}`, () =>
+    HttpResponse.json({
+      results: campaigns.flatMap((campaign) => {
+        const assigned = new Set(
+          campaign.assignments.map((row) => row.employeeId)
+        );
+        return campaign.pool
+          .filter((row) => !assigned.has(row.employeeId))
+          .map((row) => ({
+            employeeId: row.employeeId,
+            employeeName: row.employeeName,
+            campaignId: campaign.id,
+            campaignCode: campaign.code,
+            campaignTitle: campaign.title,
+            kindCode: row.kindCode,
+          }));
+      }),
+    })
+  ),
   http.get(`*${PATH}`, () => HttpResponse.json({ results: campaigns })),
   http.post(`*${PATH}`, async ({ request }) => {
     const body = (await request.json()) as { title?: string; eventIds?: string[] };

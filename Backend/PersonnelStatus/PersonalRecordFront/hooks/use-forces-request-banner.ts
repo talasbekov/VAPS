@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { opsApiClient } from "@/lib/ops-api";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import type { StaffingDemandRow } from "@/entities/security-event";
+import { FORCE_CAMPAIGN_RESERVES_KEY } from "@/hooks/use-force-campaigns";
 
 export interface DirectorateForcesRequest {
   eventId: string;
@@ -121,15 +122,20 @@ export function directorateSelectPath(allocationId: string): string {
 
 /**
  * Выделить отмеченных сотрудников по запросу (Plane №395, `[СБС-31]`).
- * Мероприятие и даты человек не выбирает — их даёт заявка; статус
- * «Участие в ОМ» ставит сервер тем же путём, что и штабное выделение.
+ * Физнаряд попадает в общий резерв кампании без финального статуса; для
+ * специальной группы сервер сразу создаёт участие в ОМ из заявки.
  */
 export function useSelectForRequest(allocationId: string | null) {
   const client = useQueryClient();
   return useMutation<
     SelectForRequestReport,
     OpsApiFailure,
-    { employeeIds: string[]; override?: boolean; override_reason?: string }
+    {
+      employeeIds: string[];
+      kindCode: string;
+      override?: boolean;
+      override_reason?: string;
+    }
   >({
     mutationFn: (body) =>
       opsApiClient.post<SelectForRequestReport>(directorateSelectPath(allocationId as string), body),
@@ -142,6 +148,8 @@ export function useSelectForRequest(allocationId: string | null) {
       void client.invalidateQueries({ queryKey: DIRECTORATE_FORCES_REQUESTS_KEY });
       void client.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
       void client.invalidateQueries({ queryKey: ["staff-units-page"] });
+      void client.invalidateQueries({ queryKey: ["ops-force-campaigns"] });
+      void client.invalidateQueries({ queryKey: FORCE_CAMPAIGN_RESERVES_KEY });
     },
   });
 }

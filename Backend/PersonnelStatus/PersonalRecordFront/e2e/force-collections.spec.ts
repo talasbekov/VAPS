@@ -495,8 +495,8 @@ const campaign978Fixture = {
     },
   ],
   pool: [
-    { employeeId: '401', employeeName: 'Абенов Серик', sourceEventIds: ['201'] },
-    { employeeId: '402', employeeName: 'Беков Марат', sourceEventIds: ['202'] },
+    { employeeId: '401', employeeName: 'Абенов Серик', kindCode: 'PHYSICAL_SQUAD', sourceEventIds: ['201'] },
+    { employeeId: '402', employeeName: 'Беков Марат', kindCode: 'PHYSICAL_SQUAD', sourceEventIds: ['202'] },
   ],
   assignments: [],
   warnings: [],
@@ -529,6 +529,7 @@ test.describe('общее распределение сил по меропри�
     await panel.getByRole('button', { name: 'Открыть распределение РМ-2026-0978' }).click()
     await expect(page.getByRole('heading', { name: 'Распределение на два визита' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Общий пул' })).toBeVisible()
+    await expect(page.getByText('Физнаряд · резерв', { exact: true })).toHaveCount(2)
     await expect(page.getByRole('heading', { name: 'Назначения' })).toBeVisible()
     await expect(page.getByLabel('Сотрудник', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Мероприятие', { exact: true })).toBeVisible()

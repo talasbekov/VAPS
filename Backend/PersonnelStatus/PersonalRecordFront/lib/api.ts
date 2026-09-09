@@ -314,6 +314,8 @@ export interface StrengthReportRow {
   off_list: number;
   columns: Record<string, number>;
   event: EventInvolvement;
+  /** Нераспределённый пул ОМ: справочно, сотрудник остаётся в строю. */
+  reserve?: number;
 }
 
 /**
@@ -493,6 +495,7 @@ export interface StrengthReportTotals {
   off_list: number;
   columns: Record<string, number>;
   event: EventInvolvement;
+  reserve?: number;
 }
 
 export interface StrengthReport {

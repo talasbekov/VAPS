@@ -9,6 +9,7 @@ import {
   type OpsStatusType,
   type StrengthReport,
 } from "@/lib/api";
+import { useForceCampaignReserves } from "@/hooks/use-force-campaigns";
 
 /** Учёт РАЗДЕЛА ОМ по сотруднику на деловую дату: статус и мероприятия.
  *
@@ -64,6 +65,7 @@ export function participationLabelKey(participation: {
 }
 
 export function useOpsSectionStatuses(enabled = true) {
+  const reserves = useForceCampaignReserves(enabled);
   const report = useQuery<StrengthReport>({
     // Ключ ТОТ ЖЕ, что у разреза «Сбор сил»: расход за день один, и второй
     // ключ означал бы второй запрос за тем же ответом.
@@ -164,12 +166,21 @@ export function useOpsSectionStatuses(enabled = true) {
     });
   }
 
+  const reserveByEmployee = new Map(
+    (reserves.data?.results ?? []).map((row) => [Number(row.employeeId), row])
+  );
+
   return {
     byEmployee,
     statusByEmployee,
+    reserveByEmployee,
     businessDate,
     // «Данных ещё нет» и «мероприятий нет» — РАЗНЫЕ ответы: пока идёт запрос,
     // экран не вправе утверждать, что человек ни на что не привлечён.
-    loading: report.isLoading || statuses.isLoading || statusTypes.isLoading,
+    loading:
+      report.isLoading ||
+      statuses.isLoading ||
+      statusTypes.isLoading ||
+      reserves.isLoading,
   };
 }

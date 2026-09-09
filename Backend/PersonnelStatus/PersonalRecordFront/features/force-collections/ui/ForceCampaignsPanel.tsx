@@ -173,7 +173,12 @@ function ForceCampaignWorkspace({ campaign, onBack }: { campaign: NonNullable<Re
           {campaign.pool.map((person) => (
             <label key={person.employeeId} className="flex min-h-11 items-center gap-3 rounded-md border px-3 text-sm">
               <input type="radio" name="campaign-employee" value={person.employeeId} checked={employeeId === person.employeeId} onChange={() => setEmployeeId(person.employeeId)} disabled={locked} />
-              <span className="flex-1">{person.employeeName || `Сотрудник №${person.employeeId}`}</span>
+              <span className="flex-1">
+                {person.employeeName || `Сотрудник №${person.employeeId}`}
+                <span className="text-muted-foreground block text-xs">
+                  {person.kindCode === "PHYSICAL_SQUAD" ? "Физнаряд · резерв" : person.kindCode}
+                </span>
+              </span>
               <Badge variant="outline">{campaign.assignments.filter((row) => row.employeeId === person.employeeId).length || "Не распределён"}</Badge>
             </label>
           ))}

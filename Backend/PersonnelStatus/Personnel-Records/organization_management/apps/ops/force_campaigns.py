@@ -1,4 +1,5 @@
 """Общий пул и распределение сил между несколькими ОМ (Plane №978)."""
+import datetime as dt
 from django.db import transaction
 from django.utils import timezone
 
@@ -32,12 +33,15 @@ def _event_row(event):
 
 
 def _pool(campaign):
-    persisted = list(campaign.pool_members.order_by("created_at", "pk"))
+    persisted = list(
+        campaign.pool_members.filter(removed_at__isnull=True).order_by("created_at", "pk")
+    )
     if persisted:
         return [
             {
                 "employeeId": row.employee_key,
                 "employeeName": row.employee_name,
+                "kindCode": row.kind_code,
                 "sourceEventIds": row.source_event_ids,
             }
             for row in persisted
@@ -57,6 +61,7 @@ def _pool(campaign):
                     "employeeName": str(
                         member.get("employeeName") or member.get("name") or ""
                     ),
+                    "kindCode": str(member.get("kindCode") or "PHYSICAL_SQUAD"),
                     "sourceEventIds": [],
                 },
             )
@@ -113,6 +118,66 @@ def list_campaigns():
             )
         ]
     }
+
+
+def list_reserves(allowed_division_ids):
+    """Нераспределённый резерв кампаний в области читателя статусов."""
+    from organization_management.apps.staff_unit.models import StaffUnit
+
+    rows = list(
+        OpsForceCampaignPoolMember.objects.select_related("campaign")
+        .filter(
+            removed_at__isnull=True,
+            campaign__status__in=(
+                OpsForceCampaign.Status.DRAFT,
+                OpsForceCampaign.Status.GATHERING,
+                OpsForceCampaign.Status.DISTRIBUTING,
+            )
+        )
+        .order_by("created_at", "pk")
+    )
+    assigned = set(
+        OpsForceCampaignAssignment.objects.filter(
+            campaign_id__in={row.campaign_id for row in rows}
+        ).values_list("campaign_id", "employee_key")
+    )
+    divisions = dict(
+        StaffUnit.objects.filter(employee_id__in=[row.employee_id for row in rows])
+        .exclude(employee_id__isnull=True)
+        .values_list("employee_id", "division_id")
+    )
+    return {
+        "results": [
+            {
+                "employeeId": row.employee_key,
+                "employeeName": row.employee_name,
+                "campaignId": str(row.campaign_id),
+                "campaignCode": row.campaign.code,
+                "campaignTitle": row.campaign.title,
+                "kindCode": row.kind_code,
+            }
+            for row in rows
+            if (row.campaign_id, row.employee_key) not in assigned
+            and (
+                allowed_division_ids is None
+                or divisions.get(row.employee_id) in allowed_division_ids
+            )
+        ]
+    }
+
+
+def reserve_counts_by_division(allowed_division_ids):
+    """Число нераспределённых сотрудников пула для справки в расходе."""
+    from organization_management.apps.staff_unit.models import StaffUnit
+
+    visible = list_reserves(allowed_division_ids)["results"]
+    employee_ids = [row["employeeId"] for row in visible]
+    counts = {}
+    for division_id in StaffUnit.objects.filter(
+        employee_id__in=employee_ids
+    ).values_list("division_id", flat=True):
+        counts[division_id] = counts.get(division_id, 0) + 1
+    return counts
 
 
 def get_campaign(campaign_id):
@@ -237,12 +302,91 @@ def create_campaign(*, title, event_ids, actor):
                 employee=employees.get(row["employeeId"]),
                 employee_key=row["employeeId"],
                 employee_name=row["employeeName"],
+                kind_code=row["kindCode"],
                 source_event_ids=row["sourceEventIds"],
             )
             for row in pool
         ]
     )
     return campaign_detail(campaign)
+
+
+@transaction.atomic
+def add_reserve_member(*, event, allocation_id, employee, actor):
+    """Записать физнаряд в общий резерв, не создавая финальный статус ОМ."""
+    from organization_management.apps.ops.security_events import (
+        _employee_division,
+        _find_allocation,
+        lock_event,
+        personnel_display_name,
+    )
+
+    event = lock_event(event.pk)
+    _find_allocation(event, allocation_id)
+    campaign_ids = list(
+        OpsForceCampaign.objects.filter(
+            campaign_events__event=event,
+            status__in=(
+                OpsForceCampaign.Status.DRAFT,
+                OpsForceCampaign.Status.GATHERING,
+                OpsForceCampaign.Status.DISTRIBUTING,
+            ),
+        )
+        .values_list("pk", flat=True)
+        .distinct()
+    )
+    campaigns = list(
+        OpsForceCampaign.objects.select_for_update().filter(pk__in=campaign_ids)
+    )
+    if not campaigns:
+        raise _validation(
+            {"campaign": ["Для мероприятия не создано активное распределение сил."]}
+        )
+    if len(campaigns) != 1:
+        raise _validation(
+            {"campaign": ["Мероприятие входит более чем в одно активное распределение."]}
+        )
+    campaign = campaigns[0]
+    employee_key = str(employee.pk)
+    if campaign.pool_members.filter(
+        employee_key=employee_key, removed_at__isnull=True
+    ).exists():
+        raise DomainError(
+            "DOUBLE_ASSIGNMENT",
+            422,
+            message="Сотрудник уже находится в общем резерве.",
+        )
+    employee_name = personnel_display_name(employee)
+    row = OpsForceCampaignPoolMember.objects.create(
+        campaign=campaign,
+        employee=employee,
+        employee_key=employee_key,
+        employee_name=employee_name,
+        kind_code="PHYSICAL_SQUAD",
+        source_allocation_id=str(allocation_id),
+        source_event_ids=[str(event.pk)],
+    )
+    if campaign.status == OpsForceCampaign.Status.DRAFT:
+        campaign.status = OpsForceCampaign.Status.GATHERING
+        campaign.save(update_fields=["status", "updated_at"])
+    division_id, division_name = _employee_division(employee)
+    member = {
+        "employeeId": employee_key,
+        "name": employee_name,
+        "divisionId": division_id,
+        "divisionName": division_name,
+        "addedAt": row.created_at.isoformat(),
+        "reserveCampaignId": str(row.campaign_id),
+        "kindCode": row.kind_code,
+    }
+    event.force_allocation = [
+        {**item, "members": [*item.get("members", []), member]}
+        if item.get("id") == allocation_id
+        else item
+        for item in event.force_allocation
+    ]
+    event.save(update_fields=["force_allocation", "updated_at"])
+    return row
 
 
 @transaction.atomic
@@ -332,7 +476,7 @@ def assign_employee(
         )
     from organization_management.apps.employees.models import Employee
 
-    OpsForceCampaignAssignment.objects.create(
+    assignment = OpsForceCampaignAssignment.objects.create(
         campaign=campaign,
         employee=Employee.objects.filter(pk=employee_key).first(),
         employee_key=employee_key,
@@ -343,6 +487,31 @@ def assign_employee(
         kind_code=str(demand.get("kindCode") or "PHYSICAL_SQUAD"),
         override_reason=clean_reason,
         assigned_by=str(actor or ""),
+    )
+    # Финальный статус появляется только теперь: Штаб назвал конкретное ОМ,
+    # его даты и вид потребности. До этого сотрудник существует только в
+    # отдельном пуле кампании (Plane №977).
+    from organization_management.apps.operations import status_service
+    from organization_management.apps.ops.security_events import ASSIGNMENT_STATUS_CODE
+
+    status_service.create_status(
+        employee_id=employee_key,
+        status_type_code=ASSIGNMENT_STATUS_CODE,
+        date_start=link.event.business_date,
+        date_end=(link.event.business_date_end or link.event.business_date)
+        + dt.timedelta(days=1),
+        actor=actor,
+        comment=f"Распределено Штабом на мероприятие {link.event.code}",
+        source_ref=f"force-campaign-assignment:{assignment.pk}",
+        participations=[
+            {
+                "event_id": link.event.pk,
+                "kind_code": assignment.kind_code,
+            }
+        ],
+        system_participations=True,
+        override=bool(override_conflict),
+        override_reason=clean_reason,
     )
     if campaign.status != OpsForceCampaign.Status.DISTRIBUTING:
         campaign.status = OpsForceCampaign.Status.DISTRIBUTING

@@ -292,14 +292,14 @@ def select_for_request(
     allowed_division_ids,
     *,
     actor,
+    kind_code=None,
     override=False,
     override_reason="",
 ):
     """Начальник управления выделяет людей ПО ЗАПРОСУ (Plane №395, `[СБС-31]`).
 
-    Спецификация: «Начальник отмечает сотрудников чекбоксами. Статус „Участие
-    в ОМ“ создаётся автоматически с мероприятием и датами из запроса. Поле
-    „мероприятие“ он не выбирает и не видит. Объект на этом шаге пуст».
+    С Plane №977 выбор разделён по виду: физнаряд пишется в общий пул без
+    мероприятия и статуса, специальная группа сразу связывается с ОМ заявки.
 
     Мероприятие и даты берутся ИЗ ЗАЯВКИ, а статус ставит тот же путь, что и
     штабное выделение (`add_allocation_member`): второй способ ставить статус
@@ -346,6 +346,28 @@ def select_for_request(
     # всё равно станет другим.
     event = _event_of_request(allocation_id, allowed_division_ids)
     event_id = str(event.pk)
+    target_allocation = next(
+        row for row in _raw_allocations(event) if row.get("id") == allocation_id
+    )
+    if kind_code and kind_code != "PHYSICAL_SQUAD":
+        mine = _mine_of(target_allocation, allowed_division_ids)
+        allowed_group_ids = {
+            str(group_id)
+            for row in mine
+            for group_id in row.get("groupDemandIds", [])
+        }
+        allowed_kinds = {
+            str(row.get("kindCode") or "")
+            for row in target_allocation.get("groupDemands", [])
+            if str(row.get("id")) in allowed_group_ids
+        }
+        if kind_code not in allowed_kinds:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"kindCode": ["Вид группы не входит в запрос управления."]},
+                message="Выберите вид из запроса управления.",
+            )
     # 🔴 ВЫДЕЛЯЮТ ПО УПРАВЛЕНИЯМ, КОТОРЫМ АДРЕСОВАНА ЗАЯВКА (Plane №550).
     # Проверка области отвечает на вопрос «мой ли это сотрудник», и у
     # действующего с областью на ДЕПАРТАМЕНТ она молчит про всех его людей —
@@ -424,14 +446,35 @@ def select_for_request(
             )
             continue
         try:
-            add_allocation_member(
-                event_id,
-                allocation_id,
-                employee_id=employee_id,
-                actor=actor,
-                override=bool(override),
-                override_reason=str(override_reason or ""),
-            )
+            if kind_code == "PHYSICAL_SQUAD":
+                employee = _find_personnel(employee_id)
+                if employee is None:
+                    raise DomainError(
+                        "VALIDATION_ERROR",
+                        400,
+                        detail={"employeeId": ["Сотрудник не найден."]},
+                        message="Сотрудник не найден.",
+                    )
+                from organization_management.apps.ops.force_campaigns import (
+                    add_reserve_member,
+                )
+
+                add_reserve_member(
+                    event=event,
+                    allocation_id=allocation_id,
+                    employee=employee,
+                    actor=actor,
+                )
+            else:
+                add_allocation_member(
+                    event_id,
+                    allocation_id,
+                    employee_id=employee_id,
+                    actor=actor,
+                    kind_code=kind_code or "PHYSICAL_SQUAD",
+                    override=bool(override),
+                    override_reason=str(override_reason or ""),
+                )
         except DomainError as error:
             employee = _find_personnel(employee_id)
             refused.append(

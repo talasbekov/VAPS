@@ -7,6 +7,16 @@ import type { OpsApiFailure } from "@/lib/ops-errors";
 
 const PATH = "/api/ops/security-events/forces/campaigns/";
 export const FORCE_CAMPAIGNS_KEY = ["ops-force-campaigns"] as const;
+export const FORCE_CAMPAIGN_RESERVES_KEY = ["ops-force-campaign-reserves"] as const;
+
+export interface ForceCampaignReserve {
+  employeeId: string;
+  employeeName: string;
+  campaignId: string;
+  campaignCode: string;
+  campaignTitle: string;
+  kindCode: string;
+}
 
 export interface ForceCampaignDemand {
   id: string;
@@ -34,7 +44,12 @@ export interface ForceCampaign {
   title: string;
   status: "DRAFT" | "GATHERING" | "DISTRIBUTING" | "HANDED_OVER" | "CLOSED";
   events: ForceCampaignEvent[];
-  pool: { employeeId: string; employeeName: string; sourceEventIds: string[] }[];
+  pool: {
+    employeeId: string;
+    employeeName: string;
+    kindCode: string;
+    sourceEventIds: string[];
+  }[];
   assignments: {
     id: string;
     employeeId: string;
@@ -52,6 +67,15 @@ export function useForceCampaigns(enabled = true) {
   return useQuery<{ results: ForceCampaign[] }, OpsApiFailure>({
     queryKey: FORCE_CAMPAIGNS_KEY,
     queryFn: () => opsApiClient.get(PATH),
+    enabled,
+  });
+}
+
+export function useForceCampaignReserves(enabled = true) {
+  return useQuery<{ results: ForceCampaignReserve[] }, OpsApiFailure>({
+    queryKey: FORCE_CAMPAIGN_RESERVES_KEY,
+    queryFn: () =>
+      opsApiClient.get("/api/ops/security-events/forces/campaign-reserves/"),
     enabled,
   });
 }

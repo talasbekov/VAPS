@@ -82,6 +82,9 @@ export function ForcesRequestBanner({
   // Обоснование обхода мягкого конфликта (Plane №545) — ОДНО на повтор:
   // человек объясняет одно решение про отмеченную пачку, а не по строке.
   const [overrideReason, setOverrideReason] = useState("");
+  // Физнаряд — отдельный резерв без ОМ; специальная группа сразу относится
+  // к тому мероприятию, из которого пришёл запрос (Plane №977).
+  const [kindCode, setKindCode] = useState("PHYSICAL_SQUAD");
   // Порядок значим: ссылка из уведомления сильнее выбора и списка — человек
   // пришёл по конкретному адресу. Дальше — его собственный выбор. И только
   // когда запрос ровно один, он подставляется сам.
@@ -117,6 +120,7 @@ export function ForcesRequestBanner({
     // Обоснование обхода принадлежит тому же отчёту (Plane №545): набранный
     // для запроса A текст под шапкой запроса B объяснял бы чужое решение.
     setOverrideReason("");
+    setKindCode("PHYSICAL_SQUAD");
   }, [allocationId, resetReport]);
   // 🔴 СТРОКА ТАБЛИЦЫ СТАТУСОВ АДРЕСУЕТ СОТРУДНИКА СОСТАВНЫМ КЛЮЧОМ
   // `${staffUnitId}-${employeeId}` (см. `status-table.tsx`, `employeeIdOf`),
@@ -323,10 +327,31 @@ export function ForcesRequestBanner({
           </ul>
         </div>
       )}
-      {/* ЧЕКБОКСЫ → «УЧАСТИЕ В ОМ» (`[СБС-31]`, Plane №395). Кнопка живёт в
-          баннере, а не в диалоге статуса: человек не выбирает мероприятие и
-          дат не вводит — всё это даёт запрос. Отказы приходят построчно и
-          видны здесь же, а не в тосте, который уедет.
+      <div className="grid max-w-md gap-1">
+        <Label htmlFor="forces-participation-kind">Вид участия</Label>
+        <select
+          id="forces-participation-kind"
+          value={kindCode}
+          onChange={(event) => setKindCode(event.target.value)}
+          className="bg-background h-11 w-full rounded-md border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="PHYSICAL_SQUAD">Физнаряд — в общий резерв</option>
+          {(data.groupDemands ?? []).map((demand) => (
+            <option key={demand.id} value={demand.kindCode}>
+              {demand.specification || demand.kindCode} — сразу на {data.code}
+            </option>
+          ))}
+        </select>
+        <p className="text-muted-foreground text-xs">
+          {kindCode === "PHYSICAL_SQUAD"
+            ? "Физнаряд пока не получает статус участия: конкретное мероприятие, объект и даты назначит Штаб."
+            : `Специальная группа сразу получит статус участия в ${data.code}; объект назначит Штаб.`}
+        </p>
+      </div>
+      {/* ЧЕКБОКСЫ → резерв либо «УЧАСТИЕ В ОМ» (Plane №977). Кнопка живёт в
+          баннере, а не в диалоге статуса: для группы мероприятие и даты даёт
+          запрос, для физнаряда их позже назначает Штаб. Отказы приходят
+          построчно и видны здесь же, а не в тосте, который уедет.
 
           ПОИМЁННО — ТОЛЬКО ПО СВОИМ (Plane №543). Отказ по чужому сотруднику
           несёт идентификатор вместо фамилии: подтверждать существование людей
@@ -350,14 +375,19 @@ export function ForcesRequestBanner({
           className="h-auto min-h-11 max-w-full py-2 text-left whitespace-normal"
           disabled={employeeIds.length === 0 || select.isPending}
           onClick={() =>
-            select.mutate({ employeeIds }, { onSuccess: () => onSelected?.() })
+            select.mutate(
+              { employeeIds, kindCode },
+              { onSuccess: () => onSelected?.() }
+            )
           }
         >
           {select.isPending
             ? "Выделяю…"
             : employeeIds.length === 0
-              ? "Отметьте сотрудников в таблице — и выделите на ОМ"
-              : `Выделить на ${data.code}: ${employeeIds.length}`}
+              ? "Отметьте сотрудников в таблице"
+              : kindCode === "PHYSICAL_SQUAD"
+                ? `Добавить в общий резерв: ${employeeIds.length}`
+                : `Выделить на ${data.code}: ${employeeIds.length}`}
         </Button>
         {vacantSelected > 0 && (
           <span className="text-muted-foreground text-xs">
@@ -366,8 +396,9 @@ export function ForcesRequestBanner({
           </span>
         )}
         <span className="text-muted-foreground text-xs">
-          Статус «Участие в ОМ» с датами мероприятия проставится сам; объект
-          назначит штаб.{" "}
+          {kindCode === "PHYSICAL_SQUAD"
+            ? "До распределения в календаре и расходе будет виден резерв кампании. "
+            : "Статус «Участие в ОМ» с датами мероприятия проставится сразу. "}
           <Link
             href={`/security-ops/events/${data.eventId}/`}
             className="text-primary-ink font-medium hover:underline"
@@ -422,6 +453,7 @@ export function ForcesRequestBanner({
               select.mutate(
                 {
                   employeeIds: overridableRefused.map((row) => row.employeeId),
+                  kindCode,
                   override: true,
                   override_reason: overrideReason.trim(),
                 },

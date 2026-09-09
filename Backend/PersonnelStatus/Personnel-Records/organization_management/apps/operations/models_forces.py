@@ -303,6 +303,7 @@ class OpsForceCampaignAssignment(_AppendOnly):
 
 
 class OpsForceCampaignPoolMember(_AppendOnly):
+    MUTABLE = frozenset({"removed_at"})
     campaign = models.ForeignKey(
         OpsForceCampaign, on_delete=models.CASCADE, related_name="pool_members"
     )
@@ -312,7 +313,10 @@ class OpsForceCampaignPoolMember(_AppendOnly):
     )
     employee_key = models.CharField(max_length=40)
     employee_name = models.CharField(max_length=255, blank=True, default="")
+    kind_code = models.CharField(max_length=60, default="PHYSICAL_SQUAD")
+    source_allocation_id = models.CharField(max_length=160, blank=True, default="")
     source_event_ids = models.JSONField(default=list)
+    removed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_force_campaign_pool_members"
@@ -323,6 +327,7 @@ class OpsForceCampaignPoolMember(_AppendOnly):
             models.UniqueConstraint(
                 fields=["campaign", "employee_key"],
                 name="unique_force_campaign_pool_member",
+                condition=models.Q(removed_at__isnull=True),
             )
         ]
 

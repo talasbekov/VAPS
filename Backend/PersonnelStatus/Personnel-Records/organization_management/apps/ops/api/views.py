@@ -274,6 +274,7 @@ _FORCES_SELECT_PERMISSION = "forces.select"
 # статусы по управлению, — у профилей заказчика `forces.*` нет намеренно, а
 # `status.manage` с областью на управление есть (см. Decisions).
 _STATUS_MANAGE_PERMISSION = "status.manage"
+_STATUS_VIEW_PERMISSION = "status.view"
 _PLACEMENT_PERMISSION = "placement.manage"
 #: Расстановка на ЛЮБОМ объекте — штаб (`[РАС-08]`, Plane №421). Гейт действия
 #: остаётся `placement.manage`; этот код снимает только проверку «своё ли».
@@ -373,6 +374,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "forces_campaign": _FORCES_COMMAND_PERMISSION,
         "forces_campaign_assignment": _FORCES_COMMAND_PERMISSION,
         "forces_campaign_handover": _FORCES_COMMAND_PERMISSION,
+        "forces_campaign_reserves": _STATUS_VIEW_PERMISSION,
         "forces_collection": _FORCES_COMMAND_PERMISSION,
         "forces_collection_objects": _FORCES_COMMAND_PERMISSION,
         "forces_collection_handover": _FORCES_COMMAND_PERMISSION,
@@ -1493,6 +1495,16 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         )
 
+    @action(detail=False, methods=["get"], url_path="forces/campaign-reserves")
+    def forces_campaign_reserves(self, request):
+        from organization_management.apps.operations.services import PermissionService
+        from organization_management.apps.ops.force_campaigns import list_reserves
+
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _STATUS_VIEW_PERMISSION
+        )
+        return Response(list_reserves(allowed))
+
     # 🔴 ПУТЬ НЕ `forces/collection`: он попадал бы в уже заведённый
     # `<id>/forces/<requestId>/` (правка строки запроса, только PATCH), и
     # ручка отвечала бы 405 «Method GET not allowed» вместо своих данных.
@@ -1695,9 +1707,9 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def forces_directorate_select(self, request, allocation_id=None):
         """Выделить отмеченных сотрудников по запросу (Plane №395, `[СБС-31]`).
 
-        Тело: `{"employeeIds": ["18", …]}`, необязательно `override` и
-        `override_reason` (Plane №545). Статус «Участие в ОМ» ставится из
-        заявки — мероприятие и даты человек не выбирает. Отказы по отдельным
+        Тело: `{"employeeIds": ["18", …], "kindCode": "…"}`, необязательно
+        `override` и `override_reason` (Plane №545). Физнаряд уходит в резерв
+        кампании без статуса; специальная группа получает ОМ из заявки. Отказы по отдельным
         людям СОБИРАЮТСЯ в ответ (`refused[]` с причиной и признаком
         `overridable`), а не роняют запрос. Гейт — `status.manage`, область —
         управления актора.
@@ -1741,6 +1753,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 list(raw_ids),
                 allowed,
                 actor=actor_id,
+                kind_code=(str(data["kindCode"]) if data.get("kindCode") else None),
                 # Обход мягкого конфликта — тем же протоколом, что у штаба
                 # (Plane №545): одно обоснование на вызов, потому что человек
                 # объясняет ОДНО решение про отмеченную пачку.
