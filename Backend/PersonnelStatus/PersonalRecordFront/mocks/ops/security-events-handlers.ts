@@ -621,6 +621,24 @@ function normalizeCheckItem(item: ReconChecklistItem): ReconChecklistItem {
 }
 
 /**
+ * Проверяет завершение рекогносцировки по шаблону, а не по составу PATCH.
+ * Отсутствующий шаблонный пункт считается незавершённым — иначе `checklist: []`
+ * обходил бы серверное правило `TEMPLATE_CHECK_IDS` (Plane №1025).
+ */
+export function reconChecklistIncomplete(items: ReconChecklistItem[]): boolean {
+  const normalized = items.map((item) => normalizeCheckItem(item));
+  for (let index = 0; index < RECON_CHECKLIST_TEMPLATE.length; index += 1) {
+    const templateItem = normalized.find(
+      (item) => isTemplateCheckId(item.id) && String(item.id).endsWith(`checklist-${index}`),
+    );
+    if (templateItem === undefined || templateItem.state === "UNCHECKED") return true;
+  }
+  return normalized.some(
+    (item) => !isTemplateCheckId(item.id) && requiredOf(item) && item.state === "UNCHECKED",
+  );
+}
+
+/**
  * Календарных суток до даты ОМ (Plane №504) — порт серверной
  * `(business_date − Clock.today_local()).days`, а не вторая её версия.
  *
@@ -2199,10 +2217,7 @@ export const securityEventsHandlers = [
     const checklist = targetVisit === null
       ? event.reconChecklist
       : (targetVisit.reconChecklist ?? event.reconChecklist);
-    if (checklist.some((item) => {
-      const normalized = normalizeCheckItem(item);
-      return normalized.required && normalized.state === "UNCHECKED";
-    })) {
+    if (reconChecklistIncomplete(checklist)) {
       return businessRuleError(
         "RECON_CHECKLIST_INCOMPLETE",
         "Обязательные пункты чек-листа остались в «Не проверено»."
