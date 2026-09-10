@@ -1,21 +1,8 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { Providers } from "@/components/providers"
 import { Toaster } from "@/components/ui/toaster"
-
-const inter = Inter({
-  subsets: ["latin", "cyrillic"],
-  display: "swap",
-  variable: "--font-inter",
-})
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin", "cyrillic"],
-  display: "swap",
-  variable: "--font-mono",
-})
 
 export const metadata: Metadata = {
   title: "Smart Жоспарлау — силы и мероприятия",
@@ -29,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ru" className={`${inter.variable} ${jetbrainsMono.variable} antialiased`} suppressHydrationWarning>
+    <html lang="ru" className="antialiased" suppressHydrationWarning>
       {/* suppressHydrationWarning здесь — щит от расширений браузера, а не
           глушилка своих расхождений: расширения дописывают в <body> свои
           атрибуты (data-gptw, Grammarly и пр.) ПОСЛЕ доставки SSR-разметки и
