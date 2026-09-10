@@ -28,6 +28,8 @@ from django.contrib.admin import AdminSite
 from organization_management.admin_categories import (
     CATEGORIES,
     OTHER_CATEGORY,
+    MODEL_PRIORITY_INDEX,
+    HIDDEN_ADMIN_MODELS,
     category_of,
 )
 
@@ -50,10 +52,14 @@ class CategorizedAdminSite(AdminSite):
 
         for app in app_dict.values():
             for model in app["models"]:
+                model_label = f"{app['app_label']}.{model['object_name']}"
+                if model_label in HIDDEN_ADMIN_MODELS:
+                    continue
                 # `object_name` — имя класса; связки «приложение.Модель» хватает,
                 # чтобы различить одноимённые модели разных приложений (две
                 # «Роли»: портала и раздела ОМ).
                 model["category_label"] = f"{app['name']} · {model['name']}"
+                model["model_label"] = model_label
                 by_category[category_of(app["app_label"], model["object_name"])].append(model)
 
         result = []
@@ -63,7 +69,14 @@ class CategorizedAdminSite(AdminSite):
                 continue
             # Внутри категории — по подписи «Приложение · Модель»: две «Роли»
             # (портала и раздела ОМ) иначе стояли бы рядом неразличимо.
-            models.sort(key=lambda item: item["category_label"])
+            models.sort(
+                key=lambda item: (
+                    MODEL_PRIORITY_INDEX.get(
+                        item["model_label"], 10_000
+                    ),
+                    item["category_label"],
+                )
+            )
             result.append(
                 {
                     "name": name,

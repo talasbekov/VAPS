@@ -146,6 +146,6 @@ class EmployeeTransferHistoryAdmin(admin.ModelAdmin):
 # ручная проверка требует видеть каждую сущность. Настроенные выше admin-классы
 # авторегистратор не трогает; см. organization_management/admin_auto.py — там же
 # записано, чем это оплачено (правка мимо сервисов и мимо аудита).
-from organization_management.admin_auto import register_remaining  # noqa: E402
+from organization_management.admin_auto import register_allowed  # noqa: E402
 
-register_remaining("employees")
+register_allowed("employees", ("Employee", "EmployeeTransferHistory"))

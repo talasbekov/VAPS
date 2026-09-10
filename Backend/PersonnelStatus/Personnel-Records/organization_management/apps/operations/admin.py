@@ -26,6 +26,7 @@ Backend/VAPS).
 выкатка, ровно по той же причине, по которой сюда попал контрольный час.
 """
 from django.contrib import admin
+from organization_management.admin_auto import NullableDefaultsAdminForm
 
 from organization_management.apps.operations.models_submission import (
     OpsDivisionNotifyRecipient,
@@ -33,6 +34,18 @@ from organization_management.apps.operations.models_submission import (
 )
 from organization_management.apps.operations.models_geo import OpsCity, OpsCountry
 from organization_management.apps.operations.models_gvo import OpsProtectedPerson
+from organization_management.apps.operations.models import UserRole
+from organization_management.apps.operations.models_event import (
+    OpsSecurityEvent,
+    OpsSecurityEventPerson,
+)
+from organization_management.apps.operations.models_feedback import OpsFeedbackRequest
+from organization_management.apps.operations.models_status import (
+    OpsEmployeeStatus,
+    OpsStatusParticipation,
+)
+from organization_management.apps.operations.models_vehicle import OpsEventVehicle
+from organization_management.apps.ops.security_events import new_recon_checklist
 
 
 @admin.register(OpsSubmissionControlSettings)
@@ -73,11 +86,6 @@ class OpsDivisionNotifyRecipientAdmin(admin.ModelAdmin):
     # задали. Нужно выбрать подразделение — это фильтр в адресе списка.
     search_fields = ("recipient",)
 
-# Показать в Admin всё остальное — решение заказчика 27.08.2026 (Plane №182):
-# ручная проверка требует видеть каждую сущность. Настроенные выше admin-классы
-# авторегистратор не трогает; см. organization_management/admin_auto.py — там же
-# записано, чем это оплачено (правка мимо сервисов и мимо аудита).
-from organization_management.admin_auto import register_remaining  # noqa: E402
 # ── Справочники Ш-1 (Plane №417): страна → город, охраняемое лицо ──────────
 
 
@@ -106,6 +114,160 @@ class OpsProtectedPersonAdmin(admin.ModelAdmin):
     readonly_fields = ("code",)
 
 
+@admin.register(UserRole)
+class UserRoleAdmin(admin.ModelAdmin):
+    list_display = (
+        "user_id", "role_code", "scope_division_id", "is_active", "created_at",
+    )
+    search_fields = ("user_id", "role_code__code", "role_code__name")
+    list_filter = ("is_active", "role_code")
+    autocomplete_fields = ("role_code",)
 
-register_remaining("operations")
 
+class OpsFeedbackRequestAdminForm(NullableDefaultsAdminForm):
+    """Admin следует семантике API: nullable/default поля черновика необязательны."""
+
+    class Meta:
+        model = OpsFeedbackRequest
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in (
+            "expected_result", "reproduction_steps", "attachments", "contact",
+            "related_route", "technical_info", "working_priority_code",
+            "assignee_user_id", "assignee_label", "duplicate_of", "submitted_at",
+        ):
+            self.fields[name].required = False
+
+    def clean_attachments(self):
+        # Пустой ввод в ModelForm превращается в None; колонка NOT NULL и API
+        # трактуют отсутствие вложений как пустой список.
+        return self.cleaned_data.get("attachments") or []
+
+
+@admin.register(OpsFeedbackRequest)
+class OpsFeedbackRequestAdmin(admin.ModelAdmin):
+    form = OpsFeedbackRequestAdminForm
+    list_display = (
+        "subject", "type_code", "module_code", "priority_code", "status_code",
+        "author_label", "created_at",
+    )
+    search_fields = ("subject", "description", "author_label", "author_user_id")
+    list_filter = ("type_code", "module_code", "priority_code", "status_code")
+    raw_id_fields = ("duplicate_of",)
+
+
+class OpsSecurityEventPersonInline(admin.TabularInline):
+    model = OpsSecurityEventPerson
+    extra = 0
+    autocomplete_fields = ("person",)
+
+
+class OpsEventVehicleInline(admin.TabularInline):
+    model = OpsEventVehicle
+    extra = 0
+    autocomplete_fields = ("vehicle",)
+
+
+class OpsStatusParticipationInline(admin.TabularInline):
+    model = OpsStatusParticipation
+    extra = 0
+    fields = ("event_id", "kind_code", "role_code")
+
+
+@admin.register(OpsEmployeeStatus)
+class OpsEmployeeStatusAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee_id", "status_type_code", "date_start", "date_end", "source",
+    )
+    search_fields = ("status_type_code", "comment", "document_basis", "source_ref")
+    list_filter = ("source", "date_start", "date_end", "cancelled_at")
+    inlines = (OpsStatusParticipationInline,)
+
+
+class OpsSecurityEventAdminForm(NullableDefaultsAdminForm):
+    """Начальные коллекции ОМ совпадают с `create_event` сервиса."""
+
+    class Meta:
+        model = OpsSecurityEvent
+        fields = "__all__"
+
+    COLLECTION_DEFAULTS = {
+        "recon_checklist": new_recon_checklist,
+        "recon_sector_posts": list,
+        "demand_rows": list,
+        "force_requests": list,
+        "placement_assignments": list,
+        "journal_entries": list,
+        "closure_direction_summaries": list,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, factory in self.COLLECTION_DEFAULTS.items():
+            self.fields[name].required = False
+            if not self.is_bound and not self.instance.pk:
+                self.fields[name].initial = factory()
+
+    def clean(self):
+        cleaned = super().clean()
+        for name, factory in self.COLLECTION_DEFAULTS.items():
+            if cleaned.get(name) is None:
+                cleaned[name] = factory()
+        return cleaned
+
+
+@admin.register(OpsSecurityEvent)
+class OpsSecurityEventAdmin(admin.ModelAdmin):
+    form = OpsSecurityEventAdminForm
+    list_display = (
+        "code", "title", "business_date", "kind", "stage",
+        "readiness_percent", "object_name", "owner_name",
+    )
+    search_fields = ("code", "title", "object_name", "owner_name")
+    list_filter = ("kind", "stage", "approval_status", "business_date")
+    raw_id_fields = ("security_object", "protected_person", "country", "city")
+    inlines = (OpsSecurityEventPersonInline, OpsEventVehicleInline)
+
+
+from organization_management.admin_auto import register_allowed  # noqa: E402
+
+register_allowed(
+    "operations",
+    (
+        # Доступ.
+        "Role", "Permission", "UserRole", "RolePermission", "TemporaryDutyPermission",
+        # Сотрудники и статусы.
+        "OpsEmployeeStatus", "Secondment", "StatusOverride", "OpsProtectedPerson",
+        # Справочники и настройки, которые администратор действительно ведёт.
+        "OpsDictionaryEntry", "StatusType", "OpsDutyType", "OpsCombatDutyType",
+        "OpsCombatRoute", "OpsServiceReportType", "OpsFeedbackRegistry",
+        "OpsAnalyticsMetricDefinition", "OpsAnalyticsPeriodPreset",
+        "OpsAttentionDetector", "OpsLegalDocument", "OpsVehicle", "OpsCountry",
+        "OpsCity", "OpsRatingGroup", "OpsPolicySetting",
+        "OpsSubmissionControlSettings", "OpsPassportFreshnessPolicy",
+        "OpsDutyConflictPolicy", "OpsRatingFeatureFlags", "OpsDocumentSequence",
+        "OpsDivisionNotifyRecipient", "OpsApprovalRouteStep", "OpsSettingChangeEvent",
+        # Охранные мероприятия, объекты, посты, расстановка и оценки.
+        "OpsSecurityEvent", "OpsSecurityEventTransition", "OpsSecurityObject",
+        "OpsObjectSector", "OpsSecurityPost", "OpsSecurityEventVisitObject",
+        "OpsVisitObjectDeputy", "OpsRatedParticipant", "OpsEvaluationEvent",
+        "OpsEventEvaluation", "OpsEvaluationWorkItem", "OpsEvaluationCorrection",
+        "OpsDutyShift", "OpsDutyMonthlyPlan", "OpsCombatDutyShift", "OpsForeignVisit",
+        "OpsGvoSummaryPatch",
+        "OpsTomorrowBlockOverride",
+        # Сбор сил и расход.
+        "OpsDailySubmission", "OpsForceRequest", "OpsDepartmentRequest",
+        "OpsUnitRequest", "OpsForceRequestMember", "OpsForceCampaign",
+        "OpsForceCampaignEvent", "OpsForceCampaignAssignment",
+        "OpsForceCampaignPoolMember", "OpsForceCampaignHandover",
+        # Обратная связь.
+        "OpsFeedbackRequest", "OpsFeedbackComment", "OpsFeedbackEvent",
+        # Документы, отчёты и служебные журналы.
+        "OpsIssuedDocument", "OpsAttachment", "OpsBulletinIssue",
+        "OpsServiceReportJob", "OpsServiceReportArtifact", "OpsRatingExportJob",
+        "OpsRatingExportArtifact", "OpsAuditLog", "OpsRatingAuditEntry",
+        "OpsNotification", "OpsRatingNotification",
+    ),
+)

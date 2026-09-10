@@ -1,10 +1,8 @@
-"""Авторегистрация моделей в Django Admin.
+"""Явная регистрация разрешённых моделей в Django Admin.
 
-РЕШЕНИЕ ЗАКАЗЧИКА 27.08.2026 (Plane №182): «полностью разрешаю, всё должно в
-админке отражаться, я должен руками это всё тестировать». До него раздел ОМ
-отдавал в Admin ровно два справочника, а 63 модели — мероприятия, объекты,
-посты, паспорта, охраняемые лица, аналитику, рейтинг — не показывал вовсе,
-и проверить их руками было нечем.
+Plane №1140 заменил автоматическое «показать каждую таблицу» явными списками
+рабочих редакторов. Новая модель теперь появляется в Admin только после
+осознанного решения: это не даёт технической таблице стать публичной формой.
 
 ЧТО ЭТО ЗНАЧИТ И ЧЕМ ОПЛАЧЕНО. Форма Admin пишет модель НАПРЯМУЮ, минуя
 сервисы: сдача дня без новой версии, статус без проверки пересечений, обход
@@ -16,13 +14,8 @@ Admin НЕ равна работе раздела — она не проверя
 смотровое окно в базу и способ подготовить данные, а не второй интерфейс
 раздела.
 
-ПОЧЕМУ АВТОМАТОМ, А НЕ 73 КЛАССА РУКАМИ. Руками написанный перечень
-устаревает молча: новая модель просто не появляется в Admin, и никто этого
-не замечает — так и получилось с моделями выпуска документа, приехавшими
-после гварда. Здесь список берётся у ПРИЛОЖЕНИЯ, поэтому новая модель
-показывается сама. Тонкая настройка остаётся возможной: свой `ModelAdmin`,
-зарегистрированный в `admin.py` приложения, авторегистратор не трогает —
-он добавляет только то, чего в реестре ещё нет.
+Специальный `ModelAdmin`, зарегистрированный приложением, сохраняет приоритет:
+allowlist добавляет только модели, которых ещё нет в реестре.
 
 РЕШЕНИЯ ПО ПОЛЯМ приняты так, чтобы страница списка не отвечала ошибкой и не
 клала базу:
@@ -49,6 +42,7 @@ Admin НЕ равна работе раздела — она не проверя
   они на месте;
 - `list_select_related = True`: без него FK в колонках дают запрос на строку.
 """
+from django import forms
 from django.contrib import admin
 from django.db import models
 
@@ -153,6 +147,42 @@ def build_readonly_fields(model):
     )
 
 
+class NullableDefaultsAdminForm(forms.ModelForm):
+    """Не требовать служебные поля, которые модель разрешает не задавать."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for model_field in self._meta.model._meta.fields:
+            form_field = self.fields.get(model_field.name)
+            if form_field is not None and (
+                model_field.null
+                or (isinstance(model_field, models.JSONField) and model_field.has_default())
+            ):
+                form_field.required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        for model_field in self._meta.model._meta.fields:
+            if (
+                model_field.name in cleaned
+                and cleaned[model_field.name] is None
+                and isinstance(model_field, models.JSONField)
+                and not model_field.null
+                and model_field.has_default()
+            ):
+                cleaned[model_field.name] = model_field.get_default()
+        return cleaned
+
+
+def build_model_form(model):
+    meta = type("Meta", (), {"model": model, "fields": "__all__"})
+    return type(
+        f"{model.__name__}AutoAdminForm",
+        (NullableDefaultsAdminForm,),
+        {"Meta": meta},
+    )
+
+
 def build_model_admin(model):
     """Собрать класс `ModelAdmin` под конкретную модель.
 
@@ -169,6 +199,7 @@ def build_model_admin(model):
     бы отменить это решение вместо того, чтобы починить дефект.
     """
     attrs = {
+        "form": build_model_form(model),
         "list_display": build_list_display(model),
         "list_select_related": True,
         "save_on_top": True,
@@ -196,23 +227,31 @@ def build_model_admin(model):
     return type(f"{model.__name__}AutoAdmin", (admin.ModelAdmin,), attrs)
 
 
-def register_remaining(app_label, skip=()):
-    """Зарегистрировать все ещё не зарегистрированные модели приложения.
+def register_allowed(app_label, model_names):
+    """Зарегистрировать только явно разрешённые модели приложения.
 
-    Возвращает имена зарегистрированных моделей — чтобы гвард мог утверждать
-    не «что-то произошло», а что именно.
-
-    `skip` — имена моделей, которые приложение сознательно оставляет вне
-    Admin. Пустой по умолчанию: решение заказчика — показывать всё.
+    Новая техническая, промежуточная или архивная таблица не должна молча
+    становиться пользовательским редактором. Поэтому вызывающий код перечисляет
+    предметные модели, которые действительно нужны администратору.
     """
     from django.apps import apps as django_apps
 
+    allowed = tuple(model_names)
+    available = {
+        model.__name__: model
+        for model in django_apps.get_app_config(app_label).get_models()
+    }
+    unknown = set(allowed) - set(available)
+    if unknown:
+        raise LookupError(
+            f"Unknown admin allowlist models for {app_label}: {sorted(unknown)}"
+        )
+
     registered = []
-    for model in django_apps.get_app_config(app_label).get_models():
+    for model_name in allowed:
+        model = available[model_name]
         if model in admin.site._registry:
             # Уже есть свой, настроенный руками — он главнее.
-            continue
-        if model.__name__ in skip:
             continue
         admin.site.register(model, build_model_admin(model))
         registered.append(model.__name__)
