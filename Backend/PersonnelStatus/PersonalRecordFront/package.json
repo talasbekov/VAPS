@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "deps:ensure": "bash scripts/ensure-worktree-deps.sh",
+    "pregate:front": "npm run deps:ensure",
+    "prebuild:check": "npm run deps:ensure",
+    "prestand:prod": "npm run deps:ensure",
+    "presmoke:prod": "npm run deps:ensure",
     "build": "next build",
     "dev": "next dev --turbo",
     "dev:webpack": "next dev",
