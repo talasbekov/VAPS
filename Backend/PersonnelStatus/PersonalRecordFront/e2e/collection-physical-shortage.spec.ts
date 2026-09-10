@@ -43,5 +43,5 @@ test('№1129: Штаб видит 2 физсотрудника и 2 спецг�
   await expect(totals).toContainText('прислано 2')
   await expect(totals).toContainText('недобор 0')
   await expect(page.getByLabel('Потребность в специальных группах').getByText('Досмотр · 2 · Вход', { exact: true })).toBeVisible()
-  await page.screenshot({ path: '/tmp/1129-mixed-physical-shortage.png', fullPage: true, animations: 'disabled' })
+  await page.screenshot({ path: 'smoke-results/1129-mixed-physical-shortage.png', fullPage: true, animations: 'disabled' })
 })
