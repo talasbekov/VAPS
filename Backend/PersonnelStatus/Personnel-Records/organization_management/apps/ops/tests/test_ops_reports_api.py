@@ -20,12 +20,16 @@ import threading
 
 import pytest
 from django.apps import apps as django_apps
-from django.db import connection, connections
+from django.db import connection, connections, transaction
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.employees.models import Employee
+from organization_management.apps.employees.models import (
+    Employee,
+    EmployeeTransferHistory,
+)
+from organization_management.apps.ops import reports
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_duty import OpsDutyShift
 from organization_management.apps.operations.models_report import (
@@ -133,6 +137,19 @@ def _create_report_in_thread(user_id, body, results, index):
         results[index] = (response.status_code, response.json())
     except Exception as error:  # noqa: BLE001 — гонка не должна скрыть 500
         results[index] = ("EXC", error)
+    finally:
+        connections.close_all()
+
+
+def _advance_report_in_thread(job_code, results, index):
+    """Собирает отдельную job отдельным PostgreSQL-соединением."""
+    try:
+        with transaction.atomic():
+            job = OpsServiceReportJob.objects.get(job_code=job_code)
+            reports._advance(job)
+        results[index] = "OK"
+    except Exception as error:  # noqa: BLE001 — конкурентный сбой не скрывать
+        results[index] = error
     finally:
         connections.close_all()
 
@@ -410,6 +427,43 @@ def test_scoped_report_contains_only_descendants_of_grant(scoped_report_actors):
     assert "Чужой Отчёт" not in content
 
 
+def test_scoped_csv_uses_employee_division_on_shift_business_date(
+    scoped_report_actors,
+):
+    """Будущий перевод не переносит прошлую смену в чужой отчёт."""
+    own_api, foreign_api = scoped_report_actors
+    first_unit = Division.objects.get(name="Первое управление отчёта")
+    second_unit = Division.objects.get(name="Второе управление отчёта")
+    employee = Employee.objects.get(personnel_number="SR-OWN")
+    _shift("Переведённый после смены", 1, employee_id=employee.id)
+
+    StaffUnit.objects.filter(employee=employee).update(division=second_unit)
+    EmployeeTransferHistory.objects.create(
+        employee=employee,
+        from_division=first_unit,
+        to_division=second_unit,
+        transfer_date=Clock.today_local(),
+    )
+
+    own_job = own_api.post(
+        JOBS, _create_body(idempotencyKey="historic-shift-first"), format="json",
+    ).json()
+    own_content = own_api.post(download_path(
+        _run_to_completion(own_api, own_job["reportJobId"])["artifact"]["artifactId"]
+    )).json()["content"]
+    foreign_job = foreign_api.post(
+        JOBS, _create_body(idempotencyKey="historic-shift-second"), format="json",
+    ).json()
+    foreign_content = foreign_api.post(download_path(
+        _run_to_completion(
+            foreign_api, foreign_job["reportJobId"]
+        )["artifact"]["artifactId"]
+    )).json()["content"]
+
+    assert "Переведённый после смены" in own_content
+    assert "Переведённый после смены" not in foreign_content
+
+
 def test_scoped_report_is_not_addressable_from_another_department(
     scoped_report_actors,
 ):
@@ -553,6 +607,70 @@ def test_concurrent_same_actor_key_returns_one_job(generator, monkeypatch):
     ).count() == 1
 
 
+@pytest.mark.django_db(transaction=True)
+def test_idempotency_race_rechecks_scope_after_integrity_error(
+    scoped_report_actors, monkeypatch,
+):
+    """Проигравший unique-гонку не получает job после отзыва его области."""
+    own_api, _ = scoped_report_actors
+    actor = UserRole.objects.get(
+        role_code_id="REPORT_DEPARTMENT_ONE"
+    ).user_id
+    second_department = Division.objects.get(name="Второй департамент отчёта")
+    create_barrier = threading.Barrier(2, timeout=20)
+    original_create = OpsServiceReportJob.objects.create
+    original_scope_snapshot = reports.scope_snapshot_for
+    snapshot_lock = threading.Lock()
+    snapshot_calls = 0
+    scope_rechecked = threading.Event()
+
+    def create_simultaneously(*args, **kwargs):
+        create_barrier.wait()
+        return original_create(*args, **kwargs)
+
+    def move_scope_before_recheck(user_id):
+        nonlocal snapshot_calls
+        with snapshot_lock:
+            snapshot_calls += 1
+            move_now = snapshot_calls == 3
+        # Первые два снимка взяты двумя конкурирующими POST до INSERT. Третий
+        # возможен только в обработчике IntegrityError — именно между ними
+        # эмулируем перевод grant в соседний департамент.
+        if move_now:
+            UserRole.objects.filter(user_id=actor).update(
+                scope_division_id=second_department.id
+            )
+            scope_rechecked.set()
+        return original_scope_snapshot(user_id)
+
+    monkeypatch.setattr(
+        OpsServiceReportJob.objects, "create", create_simultaneously
+    )
+    monkeypatch.setattr(
+        reports, "scope_snapshot_for", move_scope_before_recheck
+    )
+    body = _create_body(idempotencyKey="scope-changed-during-idempotency-race")
+    results = [None, None]
+    threads = [
+        threading.Thread(
+            target=_create_report_in_thread,
+            args=(int(actor), body, results, index),
+        )
+        for index in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert all(not thread.is_alive() for thread in threads), results
+    assert scope_rechecked.is_set()
+    assert sorted(status for status, _ in results) == [200, 404]
+    assert OpsServiceReportJob.objects.filter(
+        created_by_user_id=actor, idempotency_key=body["idempotencyKey"]
+    ).count() == 1
+
+
 # ── Повтор и новая редакция (§22.25) ────────────────────────────────────────
 
 
@@ -573,6 +691,63 @@ def test_retry_reuses_artifact_new_revision_rebuilds(generator, shifts):
     detail = _run_to_completion(api, revision["reportJobId"])
     assert detail["artifact"]["revision"] == 2
     assert OpsServiceReportArtifact.objects.count() == 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_new_revisions_get_distinct_series_revisions(
+    generator, shifts, monkeypatch,
+):
+    """Две одновременно собранные редакции одной серии не получают r2 обе."""
+    api, _ = generator
+    source = api.post(
+        JOBS, _create_body(idempotencyKey="revision-source"), format="json",
+    ).json()
+    _run_to_completion(api, source["reportJobId"])
+    revisions = [
+        api.post(job_path(source["reportJobId"]) + "new-revision/").json()
+        for _ in range(2)
+    ]
+    revision_codes = [row["reportJobId"] for row in revisions]
+    OpsServiceReportJob.objects.filter(job_code__in=revision_codes).update(
+        state="PROCESSING", progress_percent=50
+    )
+
+    assert connection.vendor == "postgresql"
+    barrier = threading.Barrier(2, timeout=20)
+    counter_lock = threading.Lock()
+    create_calls = 0
+    original_create = OpsServiceReportArtifact.objects.create
+
+    def create_simultaneously(*args, **kwargs):
+        nonlocal create_calls
+        with counter_lock:
+            create_calls += 1
+            should_wait = create_calls <= 2
+        if should_wait:
+            barrier.wait()
+        return original_create(*args, **kwargs)
+
+    monkeypatch.setattr(
+        OpsServiceReportArtifact.objects, "create", create_simultaneously
+    )
+    results = [None, None]
+    threads = [
+        threading.Thread(
+            target=_advance_report_in_thread,
+            args=(job_code, results, index),
+        )
+        for index, job_code in enumerate(revision_codes)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert all(not thread.is_alive() for thread in threads), results
+    assert results == ["OK", "OK"]
+    assert set(OpsServiceReportArtifact.objects.filter(
+        job_code__in=revision_codes
+    ).values_list("revision", flat=True)) == {2, 3}
 
 
 def test_new_revision_requires_completed_job(generator, shifts):

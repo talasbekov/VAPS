@@ -15,10 +15,13 @@ sensitive-право, владельца параметров и срок хра
 а не ссылка: постоянной ссылки не существует вовсе, ей неоткуда утечь.
 """
 import datetime as dt
+import hashlib
 import uuid
 
 from django.db import IntegrityError, transaction
+from django.db.models import Max
 
+from organization_management.apps.employees.models import EmployeeTransferHistory
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_duty import OpsDutyShift
@@ -272,13 +275,27 @@ def read_source_rows(scope_division_ids=None):
     """Строки «Расхода личного состава» из живых смен. Пост — из СНИМКА
     привязки паспорта, а не резолвится сейчас: отчёт обязан показать то, что
     было зафиксировано при планировании (§9.6)."""
-    shifts = OpsDutyShift.objects.all()
-    if scope_division_ids is not None:
-        # Сотрудник без штатной единицы не принадлежит ни одной scoped области.
-        employee_ids = StaffUnitSelector.employee_ids_in(scope_division_ids)
-        shifts = shifts.filter(employee_id__in=[str(pk) for pk in employee_ids])
+    shifts = list(OpsDutyShift.objects.all())
+    employee_ids = {
+        int(shift.employee_id)
+        for shift in shifts
+        if str(shift.employee_id or "").isdigit()
+    }
+    current_divisions = StaffUnitSelector.divisions_of(employee_ids)
+    transfers_by_employee = {}
+    for transfer in EmployeeTransferHistory.objects.filter(
+        employee_id__in=employee_ids
+    ).order_by("employee_id", "transfer_date", "id"):
+        transfers_by_employee.setdefault(transfer.employee_id, []).append(transfer)
     rows = []
     for shift in shifts:
+        division_id = _shift_division_on_business_date(
+            shift, transfers_by_employee, current_divisions
+        )
+        if scope_division_ids is not None and division_id not in scope_division_ids:
+            # Сотрудник без исторически определяемого подразделения не
+            # принадлежит scoped области (fail-closed).
+            continue
         binding = shift.passport_binding or {}
         sector = str(binding.get("sectorName") or "")
         post = str(binding.get("postName") or "")
@@ -306,6 +323,32 @@ def read_source_rows(scope_division_ids=None):
             "overrideReason": shift.override_reason or None,
         })
     return rows
+
+
+def _shift_division_on_business_date(shift, transfers_by_employee, current_divisions):
+    """Подразделение смены определяется её business date, не текущим slot."""
+    if not str(shift.employee_id or "").isdigit():
+        return None
+    employee_id = int(shift.employee_id)
+    transfers = transfers_by_employee.get(employee_id, [])
+    effective = [
+        transfer for transfer in transfers
+        if transfer.transfer_date <= shift.business_date
+    ]
+    if effective:
+        transfer = effective[-1]
+        if (
+            transfer.is_temporary
+            and transfer.end_date is not None
+            and shift.business_date > transfer.end_date
+        ):
+            return transfer.from_division_id
+        return transfer.to_division_id
+    if transfers:
+        # Смена раньше первого известного перевода относится к его `from`,
+        # даже если текущая штатная единица уже перемещена.
+        return transfers[0].from_division_id
+    return current_divisions.get(employee_id)
 
 
 def select_rows(rows, param_from, param_to):
@@ -375,8 +418,16 @@ def _series_key(report_type_code, param_from, param_to, sensitive, scope_divisio
     return f"{report_type_code}|{param_from}|{param_to}|{mode}|{scope_key}"
 
 
+def _series_fingerprint(report_type_code, param_from, param_to, sensitive,
+                        scope_division_ids):
+    """Стабильный DB-key series для uniqueness и конкурентного retry."""
+    return hashlib.sha256(_series_key(
+        report_type_code, param_from, param_to, sensitive, scope_division_ids,
+    ).encode("utf-8")).hexdigest()
+
+
 def _artifact_series_key(artifact):
-    return _series_key(
+    return _series_fingerprint(
         artifact.report_type_code,
         artifact.param_from.isoformat(),
         artifact.param_to.isoformat(),
@@ -388,26 +439,18 @@ def _artifact_series_key(artifact):
 def _next_revision(series_key):
     """По МАКСИМУМУ, а не по количеству: артефакт может исчезнуть по сроку
     хранения, и счёт по длине выдал бы второй артефакт с номером 1."""
-    revisions = [
-        artifact.revision
-        for artifact in OpsServiceReportArtifact.objects.all()
-        if _artifact_series_key(artifact) == series_key
-    ]
-    return max(revisions) + 1 if revisions else 1
+    maximum = OpsServiceReportArtifact.objects.filter(
+        series_key=series_key
+    ).aggregate(Max("revision"))["revision__max"]
+    return (maximum or 0) + 1
 
 
 def _find_reusable_artifact(series_key, now):
     """§22.25: пригодный — той же серии и ещё не истёкший; последняя
     редакция — повтор обязан отдавать самое свежее прочтение данных."""
-    suitable = [
-        artifact
-        for artifact in OpsServiceReportArtifact.objects.all()
-        if _artifact_series_key(artifact) == series_key
-        and now < artifact.expires_at
-    ]
-    if not suitable:
-        return None
-    return max(suitable, key=lambda artifact: artifact.revision)
+    return OpsServiceReportArtifact.objects.filter(
+        series_key=series_key, expires_at__gt=now,
+    ).order_by("-revision", "-id").first()
 
 
 # ── Продвижение работы (§22.21) ─────────────────────────────────────────────
@@ -468,36 +511,50 @@ def _advance(job):
     report_type = OpsServiceReportType.objects.filter(
         report_type_code=job.report_type_code
     ).first()
-    artifact = OpsServiceReportArtifact.objects.create(
-        artifact_code=f"artifact-{job.job_code}",
-        job_code=job.job_code,
-        report_type_code=job.report_type_code,
-        safe_title=(
-            report_type.safe_title
-            if report_type is not None
-            else job.report_type_code
-        ),
-        format=job.format,
-        # §22.25: редакция считается по серии — «новая revision» обязана
-        # давать 2 там, где уже есть 1.
-        revision=_next_revision(_series_key(
-            job.report_type_code, job.param_from.isoformat(),
-            job.param_to.isoformat(), job.sensitive, job.scope_division_ids,
-        )),
-        generated_at=generated_at,
-        generated_by=job.created_by_user_id,
-        param_from=job.param_from,
-        param_to=job.param_to,
-        calculation_version=CALCULATION_VERSION,
-        masking_policy_version=MASKING_POLICY_VERSION,
-        retention_policy_version=limits["policyVersion"],
-        sensitive=job.sensitive,
-        file_size=content_size(content),
-        hash=content_hash(content),
-        expires_at=generated_at + dt.timedelta(days=limits["retentionDays"]),
-        content=content,
-        scope_division_ids=job.scope_division_ids,
+    series_key = _series_fingerprint(
+        job.report_type_code, job.param_from.isoformat(), job.param_to.isoformat(),
+        job.sensitive, job.scope_division_ids,
     )
+    # Unique(series_key, revision) — последний барьер, если две разные job
+    # одной серии дошли до генерации одновременно. Savepoint оставляет
+    # внешнюю transaction пригодной для нового MAX после IntegrityError.
+    artifact = None
+    for _ in range(3):
+        try:
+            with transaction.atomic():
+                artifact = OpsServiceReportArtifact.objects.create(
+                    artifact_code=f"artifact-{job.job_code}",
+                    job_code=job.job_code,
+                    report_type_code=job.report_type_code,
+                    safe_title=(
+                        report_type.safe_title
+                        if report_type is not None
+                        else job.report_type_code
+                    ),
+                    format=job.format,
+                    series_key=series_key,
+                    revision=_next_revision(series_key),
+                    generated_at=generated_at,
+                    generated_by=job.created_by_user_id,
+                    param_from=job.param_from,
+                    param_to=job.param_to,
+                    calculation_version=CALCULATION_VERSION,
+                    masking_policy_version=MASKING_POLICY_VERSION,
+                    retention_policy_version=limits["policyVersion"],
+                    sensitive=job.sensitive,
+                    file_size=content_size(content),
+                    hash=content_hash(content),
+                    expires_at=generated_at + dt.timedelta(
+                        days=limits["retentionDays"]
+                    ),
+                    content=content,
+                    scope_division_ids=job.scope_division_ids,
+                )
+            break
+        except IntegrityError:
+            artifact = None
+    if artifact is None:
+        raise IntegrityError("Could not allocate a unique report revision")
     job.state = "COMPLETED"
     job.progress_percent = 100
     job.completed_at = generated_at
@@ -942,6 +999,11 @@ def create_report_job(actor, perms, body):
             ).first()
             if job is None:
                 raise
+            # Scope мог смениться, пока второй INSERT ждал unique-constraint.
+            # Нельзя отдавать найденную job по snapshot, прочитанному до гонки.
+            current_scope = scope_snapshot_for(actor)
+            if not _scope_allows(job.scope_division_ids, current_scope):
+                raise _not_found(job.job_code)
         if job_created:
             _stamp_code(job, "job_code", "report-job")
         return _project_job(job, True)
@@ -976,7 +1038,7 @@ def rerun_report_job(actor, perms, job_code, mode):
                 "JOB_NOT_FINISHED", 422,
                 message="Работа ещё выполняется — дождитесь её завершения.",
             )
-        series_key = _series_key(
+        series_key = _series_fingerprint(
             source.report_type_code, source.param_from.isoformat(),
             source.param_to.isoformat(), source.sensitive,
             source.scope_division_ids,
