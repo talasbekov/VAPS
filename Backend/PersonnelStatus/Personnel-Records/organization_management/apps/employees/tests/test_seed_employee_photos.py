@@ -107,6 +107,49 @@ def test_empty_source_is_reported(people, tmp_path):
     assert "нет снимков" in str(error.value)
 
 
+def test_default_source_uses_small_fallback_when_customer_media_is_absent(monkeypatch, people, tmp_path):
+    monkeypatch.setattr(
+        "organization_management.apps.employees.management.commands.seed_employee_photos.DEFAULT_SOURCE",
+        tmp_path / "customer-media-not-mounted",
+    )
+
+    call_command("seed_employee_photos")
+
+    assert seeded().filter(photo="").count() == 0
+    employee = seeded().order_by("personnel_number").first()
+    with Image.open(employee.photo) as saved:
+        assert saved.size == (128, 128)
+
+
+def test_explicit_default_source_is_reported_when_customer_media_is_absent(
+    monkeypatch, people, tmp_path
+):
+    missing_default_source = tmp_path / "customer-media-not-mounted"
+    monkeypatch.setattr(
+        "organization_management.apps.employees.management.commands.seed_employee_photos.DEFAULT_SOURCE",
+        missing_default_source,
+    )
+
+    with pytest.raises(CommandError) as error:
+        call_command("seed_employee_photos", "--source", str(missing_default_source))
+
+    assert "нет снимков" in str(error.value)
+
+
+def test_existing_empty_default_source_is_reported_without_source_flag(
+    monkeypatch, people, tmp_path
+):
+    monkeypatch.setattr(
+        "organization_management.apps.employees.management.commands.seed_employee_photos.DEFAULT_SOURCE",
+        tmp_path,
+    )
+
+    with pytest.raises(CommandError) as error:
+        call_command("seed_employee_photos")
+
+    assert "нет снимков" in str(error.value)
+
+
 def test_wipe_removes_photos(photos, people):
     call_command("seed_employee_photos", "--source", str(photos))
 
