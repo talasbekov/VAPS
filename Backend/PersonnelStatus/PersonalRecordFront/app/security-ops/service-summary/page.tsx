@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+
 // «Свод по Службе» (Plane №992/№1115) — рабочее место ответственного за сбор
 // сил. Видимость решает сама `ServiceSummaryScreen` по общей ролевой карте.
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -7,6 +9,14 @@ import { PageHeader } from "@/components/page-header";
 import { ServiceSummaryScreen } from "@/features/service-summary";
 
 export default function ServiceSummaryPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <ServiceSummaryPageScreen />
+    </Suspense>
+  );
+}
+
+function ServiceSummaryPageScreen() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
