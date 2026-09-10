@@ -10,6 +10,8 @@
  * Без `SMOKE_LIVE=1` живые спеки скипаются сами, и проверять нечего.
  */
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
 import { promisify } from 'node:util'
 import type { FullConfig } from '@playwright/test'
 import { resolvePurgeTarget } from './purge-python'
@@ -23,6 +25,11 @@ import { standVerdict } from './stand-alive'
 export const PREFLIGHT_FAILED = 'STAND_PREFLIGHT_FAILED'
 const DATES_PER_WORKER = 256
 const MAX_FIXTURE_WORKERS = 64
+const CURRENT_BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
+const FIXTURE_DATE_COMMAND = path.join(
+  CURRENT_BACKEND_ROOT,
+  'organization_management/apps/operations/management/commands/reserve_e2e_fixture_dates.py',
+)
 // Совпадает с global-teardown: локальная команда обязана работать с той же
 // PostgreSQL-базой, что и временный Django-стенд, а не с manage.py default.
 const DJANGO_SETTINGS = 'organization_management.config.settings.local_postgres'
@@ -35,12 +42,28 @@ export function fixtureRangeSize(workers: number): number {
   return workers * DATES_PER_WORKER
 }
 
-async function reserveFixtureDateRange(workers: number): Promise<void> {
-  const rangeDays = fixtureRangeSize(workers)
-  const target = await resolvePurgeTarget()
-  if (target === null) {
+/**
+ * Python разрешается брать из venv главного checkout, но manage.py всегда
+ * берётся из кода этого worktree. Иначе новый command отсутствует у primary
+ * checkout и setup падает до первой пробы (P1 ревью Plane №890).
+ */
+export async function resolveFixtureDateCommandTarget(): Promise<Readonly<{ backendRoot: string; python: string }>> {
+  if (!existsSync(path.join(CURRENT_BACKEND_ROOT, 'manage.py'))) {
+    throw new Error(`в текущем worktree не найден manage.py: ${CURRENT_BACKEND_ROOT}`)
+  }
+  if (!existsSync(FIXTURE_DATE_COMMAND)) {
+    throw new Error(`в текущем worktree не найдена команда брони e2e-дат: ${FIXTURE_DATE_COMMAND}`)
+  }
+  const pythonTarget = await resolvePurgeTarget()
+  if (pythonTarget === null) {
     throw new Error('не найден Django venv для локальной брони e2e-дат')
   }
+  return { backendRoot: CURRENT_BACKEND_ROOT, python: pythonTarget.python }
+}
+
+async function reserveFixtureDateRange(workers: number): Promise<void> {
+  const rangeDays = fixtureRangeSize(workers)
+  const target = await resolveFixtureDateCommandTarget()
   const { stdout } = await execFileAsync(
     target.python,
     ['manage.py', 'reserve_e2e_fixture_dates', '--count', String(rangeDays), `--settings=${DJANGO_SETTINGS}`],
