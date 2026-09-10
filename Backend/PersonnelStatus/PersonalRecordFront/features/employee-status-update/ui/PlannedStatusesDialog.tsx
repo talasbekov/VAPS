@@ -39,12 +39,11 @@ import {
   X,
   CalendarIcon,
   Plus,
-  Shield,
 } from "lucide-react";
 import { useStatusNaming } from "@/entities/status";
-import { useEmployeeStatuses } from "@/hooks/use-my-employee";
 import { useEmployeeStatusTypes } from "@/hooks/use-employee-status-types";
-import { apiClient } from "@/lib/api";
+import { useOpsStatusTypes } from "@/hooks/use-ops-status-types";
+import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -123,6 +122,9 @@ export function PlannedStatusesDialog({
   const statusTypes = catalogTypes.filter(
     (item) => !EVENT_PARTICIPATION_STATUS_CODES.has(item.code)
   );
+  // Справочник ОМ нужен не для второго раздела, а чтобы дать строкам обеих
+  // моделей одну подпись и распознать точный дубль через legacy_code.
+  const opsStatusTypes = useOpsStatusTypes(open);
   // Штатная единица ОДНОГО сотрудника, и только когда диалог открыт
   // (Plane №234). Прежде здесь звался весь состав подразделения — 2,7 МБ ради
   // одной строки на пяти тысячах человек, и грузился он при открытии ЭКРАНА, а
@@ -134,21 +136,12 @@ export function PlannedStatusesDialog({
   );
   const staffUnits = data?.staff_units || [];
 
-  // 🔴 УЧЁТ РАЗДЕЛА ОМ — ВТОРОЙ УЧЁТ, И ОКНО ОБЯЗАНО ЕГО ПОКАЗЫВАТЬ
-  // (Plane №368, Ш-3 задачи №365). Привлечение на мероприятие пишется в
-  // модель расхода (решение заказчика по Ш-2), а это окно до сих пор
-  // показывало только кадровые строки: человек ставил привлечение и не
-  // находил его нигде — «статус заведён и невидим». Раздел ТОЛЬКО ДЛЯ
-  // ЧТЕНИЯ: правит эти строки раздел ОМ, у них своя дисциплина (снять
-  // поставленный статус расхода нельзя вовсе), и кнопки правки здесь
-  // обещали бы то, чего ручка не делает.
-  const opsStatuses = useEmployeeStatuses(open ? wantedEmployeeId : null);
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<PlannedStatusesResponse | null>(
     null
   );
+  const [opsStatuses, setOpsStatuses] = useState<OpsEmployeeStatusRow[]>([]);
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<{
     status_type: string;
@@ -219,6 +212,7 @@ export function PlannedStatusesDialog({
     if (!employeeIdNum) {
       setError("Сотрудник не найден или вакантная должность");
       setStatuses(null);
+      setOpsStatuses([]);
       return;
     }
 
@@ -226,10 +220,12 @@ export function PlannedStatusesDialog({
       try {
         setLoading(true);
         setError(null);
-        const response = await apiClient.getEmployeePlannedStatuses(
-          employeeIdNum
-        );
-        setStatuses(response);
+        const [employeeStatuses, sectionStatuses] = await Promise.all([
+          apiClient.getEmployeePlannedStatuses(employeeIdNum),
+          apiClient.getOpsStatusesFor(employeeIdNum),
+        ]);
+        setStatuses(employeeStatuses);
+        setOpsStatuses(sectionStatuses);
         setEditingStatusId(null); // Сброс редактирования при обновлении
       } catch (e) {
         const message =
@@ -238,6 +234,7 @@ export function PlannedStatusesDialog({
             : "Не удалось загрузить данные о статусах";
         setError(message);
         setStatuses(null);
+        setOpsStatuses([]);
       } finally {
         setLoading(false);
       }
@@ -245,6 +242,30 @@ export function PlannedStatusesDialog({
 
     fetchStatuses();
   }, [open, employeeIdNum]);
+
+  // Одна и та же будущая запись иногда существует в обеих таблицах во время
+  // переходного периода. Совпадение считается дублем только при одинаковых
+  // каноническом типе и границах периода; кадровая карточка остаётся, потому
+  // что её можно править из этого окна. Самостоятельные строки ОМ сохраняются.
+  const plannedOpsStatuses = useMemo(() => {
+    const legacyCodeByOpsCode = new Map(
+      opsStatusTypes.all.map((type) => [type.code, type.legacy_code])
+    );
+    const employeeKeys = new Set(
+      (statuses?.planned ?? []).map(
+        (status) =>
+          `${status.status_type}|${status.start_date ?? ""}|${status.end_date ?? ""}`
+      )
+    );
+    return opsStatuses.filter((row) => {
+      if (row.state !== "PLANNED") return false;
+      const canonicalCode =
+        legacyCodeByOpsCode.get(row.status_type_code) ?? row.status_type_code;
+      return !employeeKeys.has(
+        `${canonicalCode}|${row.date_start}|${row.date_end}`
+      );
+    });
+  }, [opsStatusTypes.all, opsStatuses, statuses?.planned]);
 
   const handleEditClick = (status: EmployeeStatusDto) => {
     setEditingStatusId(status.id);
@@ -267,7 +288,12 @@ export function PlannedStatusesDialog({
   /** Перечитать статусы и освежить таблицу под диалогом. */
   const reloadStatuses = async () => {
     if (!employeeIdNum) return;
-    setStatuses(await apiClient.getEmployeePlannedStatuses(employeeIdNum));
+    const [employeeStatuses, sectionStatuses] = await Promise.all([
+      apiClient.getEmployeePlannedStatuses(employeeIdNum),
+      apiClient.getOpsStatusesFor(employeeIdNum),
+    ]);
+    setStatuses(employeeStatuses);
+    setOpsStatuses(sectionStatuses);
     // Обе семьи ключей: сводка шапки и страницы таблицы — разные запросы.
     queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] });
     queryClient.invalidateQueries({ queryKey: ["staff-units-page"] });
@@ -770,11 +796,11 @@ export function PlannedStatusesDialog({
                   </Button>
                 )}
               </div>
-              {statuses.planned.length > 0 ? (
+              {statuses.planned.length + plannedOpsStatuses.length > 0 ? (
                 <div className="space-y-3">
                   {statuses.planned.map((status) => (
                     <div
-                      key={status.id}
+                      key={`employee-${status.id}`}
                       className="rounded-lg border p-4 flex flex-col gap-2 bg-card relative group"
                     >
                       {editingStatusId === status.id && editForm ? (
@@ -992,6 +1018,48 @@ export function PlannedStatusesDialog({
                       )}
                     </div>
                   ))}
+                  {plannedOpsStatuses.map((status) => (
+                    <div
+                      key={`operations-${status.id}`}
+                      data-status-source="operations"
+                      className="rounded-lg border p-4 flex flex-col gap-3 bg-card"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className={naming.colorOf(status.status_type_code)}>
+                          {opsStatusTypes.labelOf(status.status_type_code)}
+                        </Badge>
+                        <Badge variant="outline">Запланирован</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-foreground">
+                        <div>
+                          <div className="font-medium">Дата начала</div>
+                          <div>{formatDate(status.date_start)}</div>
+                        </div>
+                        <div>
+                          <div className="font-medium">Дата окончания</div>
+                          <div>{formatDate(status.date_end)}</div>
+                        </div>
+                      </div>
+                      {status.comment && (
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium">Комментарий: </span>
+                          {status.comment}
+                        </div>
+                      )}
+                      {status.participations.length > 0 && (
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium">Мероприятия: </span>
+                          {status.participations
+                            .map((participation) =>
+                              participation.event_code === ""
+                                ? `удалено из реестра (№${participation.event_id})`
+                                : `${participation.event_code} · ${participation.event_title}`
+                            )
+                            .join("; ")}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground">
@@ -1000,65 +1068,6 @@ export function PlannedStatusesDialog({
               )}
             </div>
 
-            {/* Учёт раздела ОМ: то, что заведено привлечением на мероприятие. */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Shield className="h-4 w-4 text-blue-600" aria-hidden="true" />
-                Учёт раздела ОМ
-              </h3>
-              {/* ЗАГРУЗКА, ПУСТОТА И ОТКАЗ — ТРИ РАЗНЫХ ОТВЕТА. Пустой раздел
-                  читается как «на мероприятия не привлекался» и когда запрос
-                  ещё идёт, и когда ручка отказала: человек решил бы, что
-                  привлечение не сохранилось, и поставил бы его второй раз. */}
-              {opsStatuses.isPending ? (
-                <div className="text-sm text-muted-foreground">
-                  Загружаем учёт раздела…
-                </div>
-              ) : opsStatuses.isError ? (
-                <div className="text-sm text-destructive-ink" role="alert">
-                  Учёт раздела ОМ не ответил — привлечения показать нечем.
-                </div>
-              ) : (opsStatuses.data ?? []).length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  В учёте раздела ОМ строк нет — на мероприятия не привлекался.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {(opsStatuses.data ?? []).map((row) => (
-                    <div
-                      key={row.id}
-                      className="rounded-lg border p-4 flex flex-col gap-2 bg-card"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Подпись — из того же справочника, что и у кадровых
-                            строк (Plane №366): каталог у обоих учётов ОДИН. */}
-                        <Badge className={naming.colorOf(row.status_type_code)}>
-                          {naming.labelOf(row.status_type_code)}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDate(row.date_start)} — {formatDate(row.date_end)}
-                        </span>
-                      </div>
-                      {row.participations.length > 0 && (
-                        <ul className="text-sm text-muted-foreground space-y-1">
-                          {row.participations.map((part) => (
-                            <li key={`${row.id}-${part.event_id}`}>
-                              {/* Мероприятие могло быть удалено: ссылка в
-                                  модели плоская, участие переживает удаление
-                                  ОМ. Тогда кода и названия нет, и врать
-                                  «мероприятие такое-то» нечем. */}
-                              {part.event_code === ""
-                                ? `Мероприятие удалено из реестра (№${part.event_id})`
-                                : `${part.event_code} · ${part.event_title}`}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </DialogContent>
