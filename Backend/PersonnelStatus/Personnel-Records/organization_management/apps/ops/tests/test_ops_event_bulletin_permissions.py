@@ -229,6 +229,47 @@ def test_heads_edit_bulletins_only_inside_their_organizational_scope():
     assert denied.status_code == 403, denied.content
 
 
+def test_scoped_bulletin_head_assigns_event_chief_only_inside_own_scope():
+    """Руководитель области доводит созданный в ней ОМ до ведущего наряда.
+
+    Это не выдача ``event.manage``: тот же scoped-editor уже может править
+    бюллетень, но до №1131 не мог назначить человека, который нужен для
+    завершения ознакомления. Соседнее управление не получает этот путь.
+    """
+    _, own, sibling = bulletin_tree()
+    creator, _ = client_for(
+        "bulletin-owner-for-chief-assignment",
+        "EMPLOYEE_OPS_D2",
+        perms=("event.view", "event.create", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    event_id = create_event(creator, title="Старший в своей области").json()["id"]
+    own_head, _ = client_for(
+        "bulletin-own-head-for-chief-assignment",
+        "HEAD_OPS_UNIT",
+        perms=("event.view", "event.bulletin"),
+        scope_division_id=own.pk,
+    )
+    sibling_head, _ = client_for(
+        "bulletin-sibling-head-for-chief-assignment",
+        "HEAD_OPS_UNIT",
+        perms=("event.view", "event.bulletin"),
+        scope_division_id=sibling.pk,
+    )
+    chief = make_employee(last_name="Руководитель", first_name="Наряда")
+
+    denied = sibling_head.post(
+        f"{URL}{event_id}/chief/", {"employeeId": str(chief.pk)}, format="json"
+    )
+    assert denied.status_code == 403, denied.content
+
+    assigned = own_head.post(
+        f"{URL}{event_id}/chief/", {"employeeId": str(chief.pk)}, format="json"
+    )
+    assert assigned.status_code == 200, assigned.content
+    assert assigned.json()["chiefEmployeeId"] == str(chief.pk)
+
+
 def test_the_assigned_event_chief_completes_own_bulletin_without_a_bulletin_grant():
     """Ломается, если право старшего снова проверяется только кодом роли,
     хотя назначение старшего хранится в самом мероприятии.

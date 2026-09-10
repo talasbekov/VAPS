@@ -506,16 +506,16 @@ function EventRow({
     event,
     hasPermission("event.manage"),
   );
-  // Назначение старшего всего ОМ и управление замещающими остаются у
-  // ведущего/администратора: capability объектов их не расширяет (№981).
-  const canManageEvent =
-    hasPermission("event.manage") && event.stage !== "CLOSED";
   // Сведения бюллетеня правит и СОЗДАТЕЛЬ ОМ (Plane №951) — по слову сервера
   // (`canEditBulletin`, то же правило, что гейт `details`): создателя клиент
   // сам посчитать не может. Старый сервер поля не несёт — тогда по праву.
   const canEditBulletin =
     (event.canEditBulletin ?? hasPermission("event.manage")) &&
     event.stage !== "CLOSED";
+  // Назначение старшего наряда — часть ведения конкретного бюллетеня, а не
+  // выдача глобального event.manage. Сервер повторяет этот scoped-гейт в
+  // `event_chief`; capability объектов его не расширяет (Plane №1131).
+  const canManageEvent = canEditBulletin;
   // Закрытое ОМ сервер удалять отказывается по той же причине.
   const canDeleteEvent =
     hasPermission("event.delete") && event.stage !== "CLOSED";

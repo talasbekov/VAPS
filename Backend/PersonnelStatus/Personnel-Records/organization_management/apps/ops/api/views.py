@@ -343,10 +343,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "acknowledgement_notify": _MANAGE_EVENT_PERMISSION,
         "vehicle_allocate": _MANAGE_EVENT_PERMISSION,
         "vehicle_release": _MANAGE_EVENT_PERMISSION,
-        # Тем же правом, что и старший объекта: это назначение ответственного
-        # внутри мероприятия, и заводить под него отдельное право значило бы
-        # защищать одно и то же по-разному.
-        "event_chief": _MANAGE_EVENT_PERMISSION,
+        # Руководителя наряда назначает редактор СВОЕГО бюллетеня: это тот же
+        # scoped-контур, который уже отвечает за его содержание. После
+        # разрешения кода action дополнительно проверяет _require_bulletin_editor
+        # — один event.bulletin без владения/области чужой ОМ не открывает.
+        "event_chief": _BULLETIN_PERMISSION,
         "details": _MANAGE_EVENT_PERMISSION,
         # Раздача права — работа ведущего мероприятие, а не замещающего:
         # иначе назначенный смог бы назначить себе смену и разрастить круг.
@@ -1317,6 +1318,7 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="chief")
     def event_chief(self, request, pk=None):
+        self._require_bulletin_editor(pk)
         data = request.data or {}
         return self._event_response(
             event_service.set_event_chief(

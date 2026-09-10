@@ -761,6 +761,35 @@ test('диагностика прав завершения ознакомлен�
   }
 })
 
+test('№1131: scoped head назначает руководителей двух ОМ через реестр', async ({ page }) => {
+  test.setTimeout(180_000)
+  const run: OmRun = JSON.parse(fs.readFileSync('/tmp/1090-om-ui-resume.json', 'utf8'))
+  const token = await role(page, 'acc_dir_head_d2')
+  const leaders = ['Приёмка1090Старший', 'Приёмка1090Второй']
+
+  for (const [index, eventId] of run.eventIds.entries()) {
+    const event = await read(page, token, `/api/ops/security-events/${eventId}/`)
+    expect(event.chiefEmployeeId, `До №1131 у ${event.code} руководитель не назначен`).toBeNull()
+    await page.goto(`${APP}/security-ops/events?search=${encodeURIComponent(run.marker)}`)
+    const row = page.getByRole('row').filter({ hasText: event.code })
+    const assign = row.getByRole('button', { name: `Назначить старшего наряда ${event.code}` })
+    await expect(assign).toBeVisible()
+    await assign.click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('textbox', { name: 'Поиск сотрудника' }).fill(leaders[index])
+    const candidate = dialog.getByRole('button', { name: new RegExp(leaders[index]) }).first()
+    await expect(candidate).toBeVisible()
+    await candidate.click()
+    const response = page.waitForResponse((item) => item.url().includes(`/security-events/${eventId}/chief/`) && item.request().method() === 'POST')
+    await dialog.getByRole('button', { name: 'Назначить', exact: true }).click()
+    expect((await response).status()).toBe(200)
+    await expect(dialog).toHaveCount(0)
+    const saved = await read(page, token, `/api/ops/security-events/${eventId}/`)
+    expect(saved.chiefEmployeeId).toBeTruthy()
+    await stableScreenshot(page, `/tmp/1090-5-${eventId}-event-chief-assigned.png`)
+  }
+})
+
 async function chooseScreeningGroup(page: Page, token: string) {
   const kinds = await read(page, token, '/api/ops/dictionaries/EVENT_PARTICIPATION_KINDS/entries/')
   const kind = kinds.results.find((row: { code: string }) => row.code === 'SCREENING_GROUP')
@@ -1038,10 +1067,21 @@ async function finishOmUI(page: Page, run: OmRun, phase: 'full' | 'ack' = 'full'
       await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-${noaccount ? 'head-personal' : 'self'}-ack.png`)
     }
     if (phase === 'ack') continue
-    const leadToken = await role(page, 'acc_dept_head_d2')
+    // Завершение ознакомления — действие ВЕДУЩЕГО всего ОМ, а не начальника
+    // подразделения, который штатно назначил его выше в сценарии №1131.
+    // Входим тем же назначенным руководителем: это проверяет реальную цепочку
+    // назначения → полномочие завершить этап, не подменяя роль широким правом.
+    const leadName = eventIndex === 0 ? 'probe1090_senior' : 'probe1090_senior2'
+    const leadToken = await role(page, leadName)
     let event = await read(page, leadToken, `/api/ops/security-events/${eventId}/`)
     if (event.stage === 'ACKNOWLEDGEMENT') {
       expect(event.placementAssignments.every((row: { acknowledgedAt: string | null }) => row.acknowledgedAt)).toBe(true)
+      await role(page, 'acc_dept_head_d2')
+      await page.goto(`${APP}/security-ops/events/${eventId}`)
+      await expect(page.getByRole('button', { name: 'Завершить ознакомление', exact: true })).toBeDisabled()
+      // Возвращаемся к назначенному старшему: начальник подразделения не
+      // получает скрытый доступ, а старший завершает весь ОМ штатно.
+      await role(page, leadName)
       await page.goto(`${APP}/security-ops/events/${eventId}`)
       await expect(page.getByRole('button', { name: 'Завершить ознакомление', exact: true })).toBeEnabled()
       const completion = page.waitForResponse(response => response.url().includes('/acknowledgement/complete/') && response.request().method() === 'POST')
