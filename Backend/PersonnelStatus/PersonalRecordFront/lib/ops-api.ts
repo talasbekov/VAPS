@@ -98,6 +98,47 @@ class OpsApiClient {
   async del<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: "DELETE" });
   }
+
+
+  /**
+   * Бинарная выгрузка (XLSX сдачи, байты выпуска). Отдельно от request():
+   * успешный ответ здесь НЕ JSON, а ошибки — тот же типизированный конверт,
+   * поэтому ветка отказа переиспользует parseOpsErrorResponse. Имя файла
+   * берётся из Content-Disposition (сервер шлёт filename* в UTF-8) — клиент
+   * его не сочиняет, иначе кириллическое имя с сервера потерялось бы.
+   */
+  async download(
+    endpoint: string
+  ): Promise<{ blob: Blob; filename: string | null }> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers: HeadersInit = {};
+    const token = await getAccessToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(url, { headers, cache: "no-store" });
+    } catch (error) {
+      throw new OpsNetworkError("Сеть недоступна", { cause: error });
+    }
+    if (!response.ok) {
+      throw await parseOpsErrorResponse(response);
+    }
+
+    const disposition = response.headers.get("content-disposition") ?? "";
+    // Сначала filename* (RFC 5987, UTF-8), затем простой filename в кавычках.
+    const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+    const plain = /filename="([^"]+)"/i.exec(disposition);
+    const filename =
+      star !== null
+        ? decodeURIComponent(star[1])
+        : plain !== null
+          ? plain[1]
+          : null;
+    return { blob: await response.blob(), filename };
+  }
 }
 
 export const opsApiClient = new OpsApiClient();

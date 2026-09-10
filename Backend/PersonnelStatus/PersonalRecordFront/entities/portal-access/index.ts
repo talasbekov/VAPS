@@ -166,18 +166,3 @@ export function defaultPortalRoute(hasPermission: (code: string) => boolean): Mo
     "/security-ops/profile"
   );
 }
-
-/** Выбрать первый доступный рабочий экран сразу после входа. */
-export function defaultPortalRoute(hasPermission: (code: string) => boolean): ModuleHref {
-  if (hasPermission("*")) return "/dashboard";
-  // Старт «Сбора сил» задаёт та же карта `forces.*`, что открывает сам экран.
-  // Это покрывает дополнительные и составные роли, а снятое право сразу
-  // возвращает человека к следующему доступному рабочему маршруту.
-  if (moduleOpenFor("/employees", hasPermission)) {
-    return "/employees";
-  }
-  return (
-    DEFAULT_WORKSPACE_ROUTES.find((href) => moduleOpenFor(href, hasPermission)) ??
-    "/security-ops/profile"
-  );
-}
