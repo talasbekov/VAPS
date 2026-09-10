@@ -59,8 +59,12 @@ export interface ChainAccess {
 export function useChainAccess(): ChainAccess {
   const { hasPermission, isLoading } = useOpsPermissions();
   return {
-    can: (code) => isLoading || hasPermission(code),
+    can: (code) => !isLoading && hasPermission(code),
     reason: (code) =>
-      isLoading || hasPermission(code) ? "" : (REASON[code] ?? "Действие закрыто правом"),
+      isLoading
+        ? "Права загружаются…"
+        : hasPermission(code)
+          ? ""
+          : (REASON[code] ?? "Действие закрыто правом"),
   };
 }
