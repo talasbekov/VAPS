@@ -30,10 +30,12 @@ def _grant(apps, schema_editor):
 
 
 def _revoke(apps, schema_editor):
-    RolePermission = apps.get_model("operations", "RolePermission")
-    RolePermission.objects.filter(
-        role_code_id=ROLE, permission_code_id=PERMISSION
-    ).delete()
+    # У строки RolePermission нет provenance: grant мог существовать до
+    # migration и ``get_or_create`` в forward не помечает, кто его создал.
+    # Удаление здесь разрушило бы ручное назначение при rollback, поэтому
+    # безопасное обратное действие — no-op. Повторный seed всё равно задаёт
+    # состав профиля из канона.
+    return
 
 
 class Migration(migrations.Migration):

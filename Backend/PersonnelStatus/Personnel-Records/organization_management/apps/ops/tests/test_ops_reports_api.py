@@ -14,23 +14,29 @@
 - скачивание повторно проверяет право, sensitive, владельца и срок (§22.23).
 """
 import datetime as dt
+import importlib
 import json
 
 import pytest
+from django.apps import apps as django_apps
 from django.core.management import call_command
 
+from organization_management.apps.divisions.models import Division
+from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_duty import OpsDutyShift
 from organization_management.apps.operations.models_report import (
     OpsServiceReportArtifact,
     OpsServiceReportJob,
 )
+from organization_management.apps.operations.models import RolePermission, UserRole
 from organization_management.apps.operations.models_settings import (
     OpsPolicySectionVersion,
 )
 from organization_management.apps.operations.tests.test_bulk_status_api import (
     client_for,
 )
+from organization_management.apps.staff_unit.models import StaffUnit
 
 pytestmark = pytest.mark.django_db
 
@@ -68,14 +74,14 @@ def sensitive_api(registries):
     return api
 
 
-def _shift(employee_name, days_ago, *, note=None, override=None):
+def _shift(employee_name, days_ago, *, employee_id=None, note=None, override=None):
     return OpsDutyShift.objects.create(
         business_date=Clock.today_local() - dt.timedelta(days=days_ago),
         duty_type_code="DAY_OBJECT",
         target={"targetType": "PROTECTED_OBJECT", "objectId": None,
                 "safeLabel": "Резиденция"},
         employee_name=employee_name,
-        employee_id=None,
+        employee_id=str(employee_id) if employee_id is not None else None,
         state_code="COMPLETED",
         acknowledged_at=None,
         actual_start=None,
@@ -291,6 +297,148 @@ def test_own_parameters_always_visible(generator, shifts):
     row = api.get(JOBS).json()["results"][0]
     assert row["parameters"] is not None
     assert row["parametersRedactedReason"] is None
+
+
+# ── Область отчёта (§22.20, Plane №1125) ──────────────────────────────────
+
+
+@pytest.fixture
+def scoped_report_actors(registries):
+    """Два департамента с дочерними управлениями и отдельными держателями
+    report.generate. У каждого один и тот же код права, различается только
+    область гранта — это не позволяет подменить проверку отсутствием права.
+    """
+    first_department = Division.objects.create(
+        name="Первый департамент отчёта",
+        division_type=Division.DivisionType.DEPARTMENT,
+    )
+    second_department = Division.objects.create(
+        name="Второй департамент отчёта",
+        division_type=Division.DivisionType.DEPARTMENT,
+    )
+    first_unit = Division.objects.create(
+        name="Первое управление отчёта",
+        division_type=Division.DivisionType.DIRECTORATE,
+        parent=first_department,
+    )
+    second_unit = Division.objects.create(
+        name="Второе управление отчёта",
+        division_type=Division.DivisionType.DIRECTORATE,
+        parent=second_department,
+    )
+    own = Employee.objects.create(
+        first_name="Свой", last_name="Отчёт", personnel_number="SR-OWN",
+        iin="910000000001",
+    )
+    foreign = Employee.objects.create(
+        first_name="Чужой", last_name="Отчёт", personnel_number="SR-FOREIGN",
+        iin="910000000002",
+    )
+    StaffUnit.objects.create(division=first_unit, employee=own, index=1)
+    StaffUnit.objects.create(division=second_unit, employee=foreign, index=1)
+    own_api, _ = client_for(
+        "report-department-one", "REPORT_DEPARTMENT_ONE",
+        perms=("report.generate",), scope_division_id=first_department.id,
+    )
+    foreign_api, _ = client_for(
+        "report-department-two", "REPORT_DEPARTMENT_TWO",
+        perms=("report.generate", "report.view_foreign_parameters"),
+        scope_division_id=second_department.id,
+    )
+    _shift("Свой Отчёт", 1, employee_id=own.id)
+    _shift("Чужой Отчёт", 1, employee_id=foreign.id)
+    return own_api, foreign_api
+
+
+def test_scoped_report_contains_only_descendants_of_grant(scoped_report_actors):
+    own_api, _ = scoped_report_actors
+
+    created = own_api.post(
+        JOBS, _create_body(idempotencyKey="scoped-department-report"),
+        format="json",
+    ).json()
+    detail = _run_to_completion(own_api, created["reportJobId"])
+    content = own_api.post(
+        download_path(detail["artifact"]["artifactId"])
+    ).json()["content"]
+
+    assert "Свой Отчёт" in content
+    assert "Чужой Отчёт" not in content
+
+
+def test_scoped_report_is_not_addressable_from_another_department(
+    scoped_report_actors,
+):
+    own_api, foreign_api = scoped_report_actors
+    created = own_api.post(
+        JOBS, _create_body(idempotencyKey="scoped-addressability"),
+        format="json",
+    ).json()
+    detail = _run_to_completion(own_api, created["reportJobId"])
+    artifact_id = detail["artifact"]["artifactId"]
+
+    assert foreign_api.get(JOBS).json()["results"] == []
+    assert foreign_api.get(job_path(created["reportJobId"])).status_code == 404
+    assert foreign_api.post(download_path(artifact_id)).status_code == 404
+
+
+def test_report_scope_snapshot_does_not_follow_later_grant_change(
+    scoped_report_actors,
+):
+    own_api, _ = scoped_report_actors
+    created = own_api.post(
+        JOBS, _create_body(idempotencyKey="scoped-grant-change"),
+        format="json",
+    ).json()
+    job = OpsServiceReportJob.objects.get(job_code=created["reportJobId"])
+    second_department = Division.objects.get(name="Второй департамент отчёта")
+
+    UserRole.objects.filter(user_id=job.created_by_user_id).update(
+        scope_division_id=second_department.id,
+    )
+
+    # Готовящийся job остался снимком первого департамента: новый grant не
+    # переинтерпретирует ни его данные, ни возможность открыть карточку.
+    assert own_api.get(job_path(job.job_code)).status_code == 404
+
+
+def test_0117_reverse_keeps_preexisting_manual_role_permission(registries):
+    """У RolePermission нет provenance, поэтому rollback 0117 не вправе
+    угадывать, что единственная строка создана именно этой миграцией.
+    """
+    assert RolePermission.objects.filter(
+        role_code_id="HEAD_DEPARTMENT_LINE",
+        permission_code_id="report.generate",
+    ).exists()
+
+    migration = importlib.import_module(
+        "organization_management.apps.operations.migrations."
+        "0117_head_department_service_reports"
+    )
+    migration._revoke(django_apps, None)
+
+    assert RolePermission.objects.filter(
+        role_code_id="HEAD_DEPARTMENT_LINE",
+        permission_code_id="report.generate",
+    ).exists()
+
+
+def test_0119_removes_report_generate_from_every_role_except_head(registries):
+    """Forward policy is exact; reverse remains a safe no-op."""
+    client_for(
+        "report-unapproved", "REPORT_UNAPPROVED",
+        perms=("report.generate",),
+    )
+    migration = importlib.import_module(
+        "organization_management.apps.operations.migrations."
+        "0119_report_generate_head_department_only"
+    )
+
+    migration._revoke_unapproved(django_apps, None)
+
+    assert set(RolePermission.objects.filter(
+        permission_code_id="report.generate"
+    ).values_list("role_code_id", flat=True)) == {"HEAD_DEPARTMENT_LINE"}
 
 
 # ── Повтор и новая редакция (§22.25) ────────────────────────────────────────

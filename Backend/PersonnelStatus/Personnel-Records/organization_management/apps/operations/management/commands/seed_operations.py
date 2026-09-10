@@ -290,12 +290,12 @@ ROLE_PERMISSIONS = {
     # Статусы НЕ проставляет: это работа начальника управления.
     "DEPARTMENT_EXPENSE_OFFICER": [
         "status.view", "daily_report.generate", "forces.allocate",
-        "analytics.view", "report.generate", "feedback.create", *OPS_READ,
+        "analytics.view", "feedback.create", *OPS_READ,
     ],
     # Сводит департаменты в расход организации; снимает блокировку опоздавшим.
     "DUTY_OFFICER": [
         "status.view", "daily_report.generate", "daily_report.override_block",
-        "analytics.view", "report.generate", "duty.view", "object.view",
+        "analytics.view", "duty.view", "object.view",
         "feedback.create", *OPS_READ,
     ],
 
@@ -361,7 +361,7 @@ ROLE_PERMISSIONS = {
     # решение заказчика — «пока только администратор» (№267).
     "ANALYST": [
         "analytics.view", "analytics.drilldown", "analytics.operations",
-        "rating.view_aggregate", "rating.export", "report.generate",
+        "rating.view_aggregate", "rating.export",
         "status.view", "feedback.create", *OPS_READ,
     ],
     "FEEDBACK_TRIAGE": [
@@ -416,7 +416,7 @@ ROLE_PERMISSIONS = {
     "HEAD_OPS_UNIT": [
         "status.view", "status.manage", "orgstructure.manage",
         "object.view", "analytics.operations",
-        "report.generate", "feedback.view", "feedback.create", *OPS_READ,
+        "feedback.view", "feedback.create", *OPS_READ,
         # Подпись и возврат расстановки (`[СОГ-12]`, Plane №401). Спецификация
         # называет согласующими начальника второго департамента и начальника
         # его управления, «если в маршруте», — обе персоны заказчика носят эту
@@ -474,7 +474,7 @@ ROLE_PERMISSIONS = {
     # `SECTION_READ`) на своей области; мероприятия по всей организации от
     # этого не сузились — их даёт `event.view`, который остался здесь.
     "OM_CATEGORY_ORG": [
-        "event.view", "catalog.view", "analytics.operations", "report.generate",
+        "event.view", "catalog.view", "analytics.operations",
         "personnel.view", "document.view",
     ],
 
@@ -508,7 +508,7 @@ ROLE_PERMISSIONS = {
     "EMPLOYEE_OPS_D2": [
         "catalog.view", "status.view", "document.view", "object.view",
         "feedback.view", "feedback.create",
-        "event.view", "analytics.operations", "report.generate",
+        "event.view", "analytics.operations",
         "event.create", "event.bulletin",
     ],
 
