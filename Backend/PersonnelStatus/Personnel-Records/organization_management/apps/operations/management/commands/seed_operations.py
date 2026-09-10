@@ -400,12 +400,13 @@ ROLE_PERMISSIONS = {
         "object.view", "analytics.operations",
         "feedback.view", "feedback.create", *SECTION_READ,
     ],
-    # То же плюс Аналитика службы и сведение суточного отчёта — департамент
-    # сводит свои управления. Реестра ОМ и Отчётов по ОМ по-прежнему нет.
+    # То же плюс Аналитика службы, сведение суточного отчёта и Отчёты по
+    # Службе — департамент сводит свои управления и получает отчёт только в
+    # области собственного департамента. Реестра ОМ по-прежнему нет.
     "HEAD_DEPARTMENT_LINE": [
         "status.view", "status.manage", "orgstructure.manage",
         "analytics.view", "analytics.drilldown",
-        "daily_report.generate", "object.view", "analytics.operations",
+        "daily_report.generate", "report.generate", "object.view", "analytics.operations",
         "feedback.view", "feedback.create", *SECTION_READ,
     ],
     # Второй департамент ведёт охранные мероприятия: у его начальника и у
@@ -473,7 +474,7 @@ ROLE_PERMISSIONS = {
     # `SECTION_READ`) на своей области; мероприятия по всей организации от
     # этого не сузились — их даёт `event.view`, который остался здесь.
     "OM_CATEGORY_ORG": [
-        "event.view", "catalog.view", "analytics.operations", "report.generate",
+        "event.view", "catalog.view", "analytics.operations",
         "personnel.view", "document.view",
     ],
 

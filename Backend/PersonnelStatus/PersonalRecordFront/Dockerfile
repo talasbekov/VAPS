@@ -10,7 +10,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm install --legacy-peer-deps && npm cache clean --force
+RUN npm ci --legacy-peer-deps && npm cache clean --force
 
 # ---------------------------------------------------------------- builder
 FROM base AS builder
@@ -24,15 +24,22 @@ ENV NEXT_PUBLIC_MEDIA_URL=$NEXT_PUBLIC_MEDIA_URL
 ENV NODE_ENV=production
 # Сборке нужен запас кучи (рантайму — нет, см. runner)
 ENV NODE_OPTIONS=--max-old-space-size=2048
-RUN npm run build
+# NextAuth fail-closed config is evaluated during prerender too. Use a
+# non-secret value only for this build command; runtime receives the real
+# NEXTAUTH_SECRET from the deployment environment.
+# Dependencies are already complete in the deps stage. Calling the host-facing
+# npm wrapper here would require bash on Alpine and would try to bootstrap a
+# second tree after NODE_ENV=production has hidden build-time devDependencies.
+RUN NEXTAUTH_SECRET=build-only-placeholder ./node_modules/.bin/next build
 
 # ---------------------------------------------------------------- prod-deps
-# sharp ставится отдельно и только для прода: без него Next 15 падает обратно
-# на медленный JS-резайзер, а тащить ради него весь node_modules билдера нельзя.
-FROM base AS sharp-deps
-WORKDIR /sharp
-RUN npm install --no-package-lock --no-save --omit=dev sharp@0.33.5 \
- && npm cache clean --force
+# sharp и его нативные зависимости ставятся из зафиксированного package-lock.
+# Нужен весь production-граф: standalone не несёт sharp, а npm ci гарантирует
+# версии его транзитивных пакетов в рантайм-образе.
+FROM base AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 
 # ---------------------------------------------------------------- runner
 FROM base AS runner
@@ -49,7 +56,7 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=sharp-deps --chown=nextjs:nodejs /sharp/node_modules ./node_modules
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 # Каталог кеша ISR/изображений — точка монтирования tmpfs из compose
 RUN mkdir -p .next/cache && chown -R nextjs:nodejs .next/cache

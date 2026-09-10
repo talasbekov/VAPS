@@ -20,17 +20,17 @@
  * вместо уборки — это не уборка.
  *
  * Теперь остаток снимается той самой командой, которую совет называл:
- * `manage.py purge_probe_events --yes --force` запускается ИЗ уборки, когда
- * бэкенд лежит рядом в дереве (обычный случай: обе половины в одном
- * репозитории). Нет бэкенда рядом — печатается прежний совет: команду негде
- * взять, а падать уборке нельзя, она не предмет проверки.
+ * `manage.py purge_probe_events --yes --force` запускается ИЗ уборки. Python
+ * берётся из явного `SMOKE_PURGE_PYTHON`, из venv текущего checkout или — для
+ * изолированного worktree — из главного checkout того же Git-репозитория.
+ * Случайный системный `python` намеренно не запускается: в нём Django обычно
+ * не установлен, а уборка должна работать тем же окружением, что и стенд.
  */
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import path from 'node:path'
 import { promisify } from 'node:util'
 import { dropProbeEvents, probeToken } from './probe-events'
 import { PREFLIGHT_FAILED } from './global-setup'
+import { resolvePurgeTarget, type PurgeTarget } from './purge-python'
 import { standVerdict } from './stand-alive'
 
 /** Адрес бэкенда — тот же, что у остальных шагов уборки. */
@@ -40,18 +40,19 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const execFileAsync = promisify(execFile)
 
-/** Корень бэкенда рядом с фронтом: обе половины лежат в одном репозитории. */
-const BACKEND_ROOT = path.resolve(__dirname, '../../Personnel-Records')
-const BACKEND_PYTHON = path.join(BACKEND_ROOT, '.venv/bin/python')
 const DJANGO_SETTINGS = 'organization_management.config.settings.local_postgres'
 
-/** Запуск purge_probe_events с нужными ключами; null — бэкенда рядом нет. */
+let purgeTargetPromise: Promise<PurgeTarget | null> | undefined
+
+/** Запуск purge_probe_events с нужными ключами; null — venv не найден. */
 async function runPurge(extra: string[]): Promise<string | null> {
-  if (!existsSync(BACKEND_PYTHON)) return null
+  purgeTargetPromise ??= resolvePurgeTarget()
+  const target = await purgeTargetPromise
+  if (target === null) return null
   const { stdout } = await execFileAsync(
-    BACKEND_PYTHON,
+    target.python,
     ['manage.py', 'purge_probe_events', ...extra, `--settings=${DJANGO_SETTINGS}`],
-    { cwd: BACKEND_ROOT, timeout: 120_000 },
+    { cwd: target.backendRoot, timeout: 120_000 },
   )
   const lines = stdout.trim().split('\n').filter((line) => line.trim() !== '')
   return lines[lines.length - 1] ?? ''
@@ -214,8 +215,8 @@ export default async function globalTeardown(): Promise<void> {
       if (purged === null) {
         console.log(
           `уборка пробных ОМ: снято ${dropped}, оставлено ${refused} ` +
-            '(расстановка/журнал/закрытые; бэкенда рядом нет — снимите ' +
-            'purge_probe_events --yes --force с консоли)',
+            '(расстановка/журнал/закрытые; проверенный Python не найден — задайте ' +
+            'SMOKE_PURGE_PYTHON для venv бэкенда и повторите purge_probe_events --yes --force)',
         )
       } else {
         console.log(
@@ -240,8 +241,8 @@ export default async function globalTeardown(): Promise<void> {
     const swept = await purgeOrphanParticipations()
     if (swept === null) {
       console.log(
-        'участия удалённых ОМ: бэкенда рядом нет — снимите ' +
-          'purge_probe_events --orphans-only --yes с консоли',
+        'участия удалённых ОМ: проверенный Python не найден — задайте ' +
+          'SMOKE_PURGE_PYTHON для venv бэкенда и повторите purge_probe_events --orphans-only --yes',
       )
     } else {
       console.log(`участия удалённых ОМ: ${swept}`)

@@ -371,6 +371,8 @@ export function DepartmentRequestCard({
   // сохранённым: кнопка диалога сперва зовёт `save()` и только потом `notify`.
   const effectiveNeed = (row: ForceAllocationDirectorate) =>
     splitDirty ? Number(draft[row.divisionId]) || 0 : row.need ?? 0;
+  const effectiveGroupDemandIds = (row: ForceAllocationDirectorate) =>
+    splitDirty ? groupDraft[row.divisionId] ?? [] : row.groupDemandIds ?? [];
   const effectiveTotal = splitDirty ? draftTotal : splitTotal;
   // 🔴 «МОЛЧАЩИЕ» СЧИТАЮТСЯ ПО СТРОКАМ, А НЕ ПО СУММЕ. Сумма на этот вопрос не
   // отвечает, и ошибалась она в обе стороны: потолок 3, всё отдано одному
@@ -381,7 +383,9 @@ export function DepartmentRequestCard({
   // Уведомление с нулём не шлётся (`forces_notify.notify_directorate_heads`
   // складывает такие строки в `without_quota`), поэтому «ноль в строке» и
   // означает «этому начальнику не придёт ничего».
-  const silentRows = directorateRows.filter((row) => effectiveNeed(row) <= 0);
+  const silentRows = directorateRows.filter(
+    (row) => effectiveNeed(row) <= 0 && effectiveGroupDemandIds(row).length === 0
+  );
   const nothingWillBeSent =
     directorateRows.length > 0 && silentRows.length === directorateRows.length;
   const someWillBeSilent =
@@ -1107,7 +1111,7 @@ export function DepartmentRequestCard({
               людей. После этого раскладку по управлениям не поправить —
               ни правкой, ни отзывом списка.
               {nothingWillBeSent
-                ? " Внимание: по управлениям не разложено ни одного человека — сейчас не уйдёт ни одного уведомления, а поля квот всё равно запрутся."
+                ? " По управлениям пока ничего не разложено, поэтому отправка недоступна. Сначала укажите людей или специальные группы и сохраните раскладку."
                 : ""}
               {someWillBeSilent
                 ? ` Внимание: ${silentRows.length} из ${directorateRows.length} управлений стоят без цифры — им уведомление не уйдёт, и дописать их после отправки будет нельзя.`
@@ -1127,16 +1131,9 @@ export function DepartmentRequestCard({
               ? ` · не разложено ${splitCap - effectiveTotal}`
               : ""}
           </p>
-          {/* 🔴 «0 из 12» — ЧИСЛО, А НЕ ПОЛОЖЕНИЕ (Plane №808). Человек читает
-              его как «мало», а происходит другое: уведомления с «Выделите 0»
-              не шлются вовсе (№557), значит при нулевой раскладке не уйдёт НИ
-              ОДНОГО письма — а `notifiedAt` встанет, и сервер после этого
-              отобьёт правку квот кодом `DIRECTORATE_QUOTAS_LOCKED`. Один
-              щелчок отбирает разбивку насовсем и не даёт взамен ничего.
-              Из трёх вариантов карточки сделан ПЕРВЫЙ — назвать положение
-              словами. Кнопку здесь НЕ выключаем и на сервере нажатие НЕ
-              отбиваем: и то, и другое меняет порядок работы, а второе уже
-              стоило 30 красных проб в №557. Решение за заказчиком. */}
+          {/* Пустая рассылка отклоняется и сервером (Plane №887), поэтому
+              диалог заранее объясняет следующий шаг и не предлагает
+              необратимое действие, которое ничего не отправит. */}
           {nothingWillBeSent && (
             <p
               data-slot="notify-nothing-to-send"
@@ -1144,10 +1141,9 @@ export function DepartmentRequestCard({
               className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
             >
               По управлениям не разложено ни одного человека:{" "}
-              <strong>не уйдёт ни одного уведомления</strong>, а поля квот
-              после нажатия запрутся — поправить раскладку будет нельзя.
+              <strong>отправка пока недоступна</strong>.
               {splitCap > 0
-                ? " Сначала разложите цифры по управлениям; кнопка никуда не денется."
+                ? " Сначала разложите людей или специальные группы по управлениям и сохраните раскладку."
                 : " Раскладывать нечего: в ответе департамента стоит «Выделяем: 0» — сперва поправьте ответ, если людей всё же выделяете."}
             </p>
           )}
@@ -1176,7 +1172,7 @@ export function DepartmentRequestCard({
               Отмена
             </Button>
             <Button
-              disabled={notify.isPending || split.isPending}
+              disabled={nothingWillBeSent || notify.isPending || split.isPending}
               onClick={() => {
                 // Сохранение и оповещение — ДВА запроса, и второй идёт
                 // только после успеха первого: иначе несохранённая
@@ -1195,6 +1191,8 @@ export function DepartmentRequestCard({
             >
               {notify.isPending || split.isPending
                 ? "Отправляю…"
+                : nothingWillBeSent
+                  ? "Сначала разложите запрос"
                 : splitDirty
                   ? "Сохранить и отправить"
                   : "Отправить"}

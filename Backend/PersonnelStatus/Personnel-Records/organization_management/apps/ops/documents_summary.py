@@ -93,7 +93,7 @@ def visit_days(event):
     ]
 
 
-def _person_card(person, *, name=None):
+def _person_card(person, *, name=None, actor_id=None):
     from organization_management.apps.ops.gvo import person_photo_url
 
     from organization_management.apps.ops.gvo import person_facts
@@ -107,7 +107,7 @@ def _person_card(person, *, name=None):
         # и набирать их текстом при каждом ОМ он больше не хочет.
         "role": person.position or "охраняемое лицо",
         "facts": person_facts(person),
-        "photoUrl": person_photo_url(person),
+        "photoUrl": person_photo_url(person, actor_id=actor_id),
     }
 
 
@@ -148,7 +148,7 @@ def _derived_senior(event):
     }
 
 
-def _derived_persons(event):
+def _derived_persons(event, *, actor_id=None):
     """Лица бюллетеня карточками справочника; главное — первым (Plane №951).
 
     Раньше здесь было ОДНО лицо и только именем (`protected_person_name`) —
@@ -166,7 +166,7 @@ def _derived_persons(event):
     main = event.protected_person
     main_name = (event.protected_person_name or "").strip()
     if main is not None:
-        cards.append(_person_card(main, name=main_name or None))
+        cards.append(_person_card(main, name=main_name or None, actor_id=actor_id))
     elif main_name:
         cards.append({"name": main_name, "role": "охраняемое лицо", "facts": []})
     links = (
@@ -179,15 +179,15 @@ def _derived_persons(event):
         if link.person_id in seen:
             continue
         seen.add(link.person_id)
-        cards.append(_person_card(link.person))
+        cards.append(_person_card(link.person, actor_id=actor_id))
     return cards
 
 
-def derive_summary(event):
+def derive_summary(event, *, actor_id=None):
     """База сводки из мероприятия. Порт клиентского `deriveGvoSummary`."""
     day = _ru_date(event.business_date)
     owner = (event.owner_name or "").strip()
-    persons = _derived_persons(event)
+    persons = _derived_persons(event, actor_id=actor_id)
     return {
         "country": _derived_country(event, persons),
         # Лица — ИЗ СПРАВОЧНИКА, а не снимком имени (Plane №951): у каждого
@@ -307,7 +307,7 @@ def _resolve_member(member):
     }
 
 
-def _resolve_person(person):
+def _resolve_person(person, *, actor_id=None):
     """Охраняемое лицо со ссылкой на справочник (Plane №951): код и снимок —
     из записи; имя — из записи, если в патче его не переписали."""
     from organization_management.apps.operations.models_gvo import OpsProtectedPerson
@@ -333,11 +333,11 @@ def _resolve_person(person):
         # справочника без повторного выбора; вписанное руками остаётся.
         "role": (person.get("role") or "").strip() or record.position or "охраняемое лицо",
         "facts": person.get("facts") or person_facts(record),
-        "photoUrl": person_photo_url(record),
+        "photoUrl": person_photo_url(record, actor_id=actor_id),
     }
 
 
-def _with_refs(summary):
+def _with_refs(summary, *, actor_id=None):
     for key in ("meet", "farewell", "delegation"):
         ids = summary.get(f"{key}EmployeeIds")
         if ids:
@@ -361,11 +361,13 @@ def _with_refs(summary):
             summary[key] = _resolve_member(member)
     persons = summary.get("persons")
     if isinstance(persons, list):
-        summary["persons"] = [_resolve_person(person) for person in persons]
+        summary["persons"] = [
+            _resolve_person(person, actor_id=actor_id) for person in persons
+        ]
     return summary
 
 
-def summary_for_event(event, visit=None):
+def summary_for_event(event, visit=None, *, actor_id=None):
     """Сводка мероприятия: база плюс правки. Источник правок — визит
     (Plane №435), у мероприятий без визита — патч (внутренние ОМ и строки
     до бэкфилла)."""
@@ -382,7 +384,10 @@ def summary_for_event(event, visit=None):
             .values_list("patch", flat=True)
             .first()
         ) or {}
-    return _with_refs(_deep_merge(derive_summary(event), data))
+    return _with_refs(
+        _deep_merge(derive_summary(event, actor_id=actor_id), data),
+        actor_id=actor_id,
+    )
 
 
 def visit_view(visit):
@@ -399,7 +404,7 @@ def visit_view(visit):
     }
 
 
-def summary_row(event, record=None, *, fetch=True):
+def summary_row(event, record=None, *, fetch=True, actor_id=None):
     """Строка сводки: собранная сводка плюс признак «Заполнена».
 
     `filled` считает СЕРВЕР, а не экран: признак живёт там же, откуда пришла
@@ -420,7 +425,10 @@ def summary_row(event, record=None, *, fetch=True):
     # ровно затем, чтобы не платить запросом за строку. Пока
     # `_required_progress` пересобирал то же выражение заново, эта цена
     # удваивалась — молча: ответ был верный, дороже был только путь.
-    summary = _with_refs(_deep_merge(derive_summary(event), data))
+    summary = _with_refs(
+        _deep_merge(derive_summary(event, actor_id=actor_id), data),
+        actor_id=actor_id,
+    )
     return {
         "omCode": event.code,
         "summary": summary,
@@ -459,7 +467,7 @@ def _required_progress(summary, visit):
     }
 
 
-def assembled_summaries():
+def assembled_summaries(*, actor_id=None):
     """Собранные сводки ВСЕХ мероприятий — по одной строке на мероприятие.
 
     Реестрам (ГВО, охраняемые лица) нужна сводка каждого ОМ, а не только тех,
@@ -497,7 +505,14 @@ def assembled_summaries():
     rows = []
     for event in events:
         event._visit_cache = visits.get(event.pk)
-        rows.append(summary_row(event, patches.get(event.pk), fetch=False))
+        rows.append(
+            summary_row(
+                event,
+                patches.get(event.pk),
+                fetch=False,
+                actor_id=actor_id,
+            )
+        )
     return rows
 
 

@@ -21,6 +21,7 @@
 import { expect, test } from "@playwright/test";
 
 import { ROUTES, declaredPortalRoutes } from "./portal-routes";
+import { defaultPortalRoute } from "../entities/portal-access";
 
 test("карта маршрутов покрыта обходом", () => {
   const covered = new Set(
@@ -33,4 +34,12 @@ test("карта маршрутов покрыта обходом", () => {
     return !(d === "/ops/:x" && covered.has("/ops/objects"));
   });
   expect(missing, "страницы app/ вне обхода").toEqual([]);
+});
+
+test("стартовый маршрут следует grants forces, а не названию роли", () => {
+  const withForcesAndObject = (code: string) => ["forces.allocate", "object.view"].includes(code);
+  expect(defaultPortalRoute(withForcesAndObject)).toBe("/employees");
+
+  const afterForcesRevoked = (code: string) => code === "object.view";
+  expect(defaultPortalRoute(afterForcesRevoked)).toBe("/security-ops/objects");
 });

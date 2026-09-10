@@ -13,8 +13,8 @@
 // очереди.
 //
 // Как гонять:
-//   SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts
-//   SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"
+//   SMOKE_LIVE=1 npm run playwright -- -c playwright.walk.config.ts
+//   SMOKE_LIVE=1 npm run playwright -- -c playwright.walk.config.ts -g "persona admin"
 //
 // ⚠️ Перед обходом — замер памяти стенда, после каждого блока персон — снова:
 // у выросшего `next dev` обход падает САМ, и такое падение читается как дефект
@@ -31,6 +31,16 @@ if (process.env.SMOKE_PASSWORD === undefined) {
       .trim()
   } catch {
     // Файла нет — пусть падает сам спек с внятным текстом (stand-credentials.ts).
+  }
+}
+
+if (process.env.ROLE_ACCOUNTS_PASSWORD === undefined) {
+  try {
+    process.env.ROLE_ACCOUNTS_PASSWORD = fs
+      .readFileSync(path.join(os.homedir(), '.config', 'vaps', 'role-accounts-password'), 'utf8')
+      .trim()
+  } catch {
+    // Ролевые submit-пробы ниже честно скипнутся без внешнего секрета.
   }
 }
 

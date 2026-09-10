@@ -19,14 +19,23 @@
  * КРАСНОТА НА МУТАЦИИ: верни `forces.command` в профиль `HEAD_OPS_UNIT` — красна
  * отрицательная половина; сними его у `OPS_STAFF` — красна положительная.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { prepareDemandEvent } from './prepare-events'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
+const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 const MATRIX_PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
+
+async function signIn(page: Page, username: string, password: string): Promise<void> {
+  const api = page.context().request
+  const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
+  await api.post(`${APP}/api/auth/callback/credentials/`, {
+    form: { csrfToken: csrf.csrfToken, username, password, json: 'true' },
+  })
+}
 
 async function tokenFor(username: string, password: string): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
@@ -113,6 +122,42 @@ test.describe(LIVE ? 'штаб сбора сил: отдельная персо�
     // этапа мероприятия ему закрыт.
     const override = await call(staff, 'POST', `${base}/stage/`, { stage: 'PLACEMENT' })
     expect(override.status, 'Штаб сбора сил не двигает этапы ОМ').toBe(403)
+  })
+
+  test('acc_ops_staff открывает список и карточку сбора через браузер', async ({ page }) => {
+    await signIn(page, 'acc_ops_staff', MATRIX_PASSWORD)
+    await page.goto(`${APP}/security-ops/profile`)
+
+    const forcesLink = page.locator('aside').getByRole('link', {
+      name: 'Сбор сил на ОМ',
+      exact: true,
+    })
+    await expect(forcesLink).toBeVisible({ timeout: 30_000 })
+    await forcesLink.click()
+
+    const collections = page.getByRole('button', { name: 'Сбор сил на ОМ', exact: true })
+    await expect(collections).toBeVisible({ timeout: 30_000 })
+    await collections.click()
+
+    const collectionsTab = page.getByRole('tab', { name: 'Сборы', exact: true })
+    await expect(collectionsTab).toBeVisible({ timeout: 20_000 })
+    await collectionsTab.click()
+
+    const section = page.locator('section[aria-labelledby="force-collections-heading"]')
+    await expect(section.getByRole('heading', { name: 'Сборы сил' })).toBeVisible({
+      timeout: 20_000,
+    })
+    const openCollection = section.getByRole('button', { name: /^Открыть сбор / }).first()
+    await expect(openCollection, 'у Штаба нет ни одного сбора для открытия').toBeVisible()
+    await openCollection.click()
+
+    await expect(
+      page.getByRole('button', { name: 'Назад к списку сборов' }),
+      'карточка сбора не открылась для Штаба',
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('[data-slot="collection-status"]')).toBeVisible()
+    await page.getByRole('button', { name: 'Назад к списку сборов' }).click()
+    await expect(section).toBeVisible({ timeout: 15_000 })
   })
 
   test('начальники второго департамента и ответственный за сбор сил Штабом не являются', async () => {

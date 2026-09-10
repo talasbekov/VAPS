@@ -35,6 +35,9 @@ INSTALLED_APPS = [
 
     # Third party
     'rest_framework',
+    # Хранилище OutstandingToken/BlacklistedToken нужно для фактического
+    # отзыва refresh-токена после ротации (Plane №828).
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'channels',
     'django_celery_beat',
@@ -208,20 +211,13 @@ SIMPLE_JWT = {
     # семисуточным окном, и непрерывная работа не прерывается вовсе.
     # Клиент обязан этот новый токен СОХРАНИТЬ — это делает колбэк `jwt`
     # (`PersonalRecordFront/lib/auth-config.ts`, функция `refreshed`);
-    # без сохранения ротация ничего не меняет, а с включённым списком
-    # отозванных — ломала бы продление на втором заходе.
+    # без сохранения ротация ничего не меняет. Клиент сохраняет новый refresh,
+    # а этот список отзывает старый и закрывает повторное использование.
     'ROTATE_REFRESH_TOKENS': True,
-    # 🔴 ВЫКЛЮЧЕН НАМЕРЕННО, И ЭТО НЕ ОСЛАБЛЕНИЕ, А ПРАВДА О НАСТРОЙКАХ.
-    # Отзыв старого токена делает `BlacklistMixin`, который появляется у
-    # токена ТОЛЬКО когда установлено приложение
-    # `rest_framework_simplejwt.token_blacklist`, — а его в `INSTALLED_APPS`
-    # нет. simplejwt в этом случае молча глотает `AttributeError`, то есть
-    # `True` здесь означало «отзываем», а на деле не отзывалось ничего.
-    # Ставить приложение — отдельное решение: оно заводит две таблицы,
-    # которые растут с каждым продлением, и требует регулярного
-    # `manage.py flushexpiredtokens`. Вопрос вынесен картой в
-    # «Предложено Claude», а настройка приведена в соответствие с фактом.
-    'BLACKLIST_AFTER_ROTATION': False,
+    # Отозванный refresh больше нельзя предъявить повторно. Таблицы
+    # `token_blacklist` чистятся штатной командой
+    # `manage.py flushexpiredtokens` по расписанию эксплуатации.
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',

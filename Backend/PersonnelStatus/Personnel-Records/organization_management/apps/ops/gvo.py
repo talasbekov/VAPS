@@ -4,7 +4,10 @@
 хранение ручных правок (патч по коду ОМ) и справочник лиц. Формы ответов
 повторяют мок фронта: {"results": [...]}, ключи camelCase.
 """
+from pathlib import Path
+
 from django.core.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied
 
 from organization_management.apps.operations.exceptions import DomainError
 from django.db.models import Q
@@ -18,6 +21,7 @@ from organization_management.apps.operations.models_gvo import (
     OpsGvoSummaryPatch,
     OpsProtectedPerson,
 )
+from organization_management.apps.operations.services import PermissionService
 
 # Разрешённые секции патча — ключи GvoSummary фронта дословно
 # (entities/gvo-summary/model/types.ts, GvoSummaryPatch = Partial<GvoSummary>).
@@ -58,12 +62,20 @@ ALLOWED_PATCH_KEYS = (
 # следующий заход не вернул его «за компанию» с новой секцией.
 
 
-def person_photo_url(person):
-    """Адрес снимка под `MEDIA_URL`; None — снимка нет (Plane №951)."""
-    return person.photo.url if person.photo else None
+PERSON_PHOTO_API_PATH = "/api/ops/protected-persons/{}/photo/"
+CATALOG_VIEW_PERMISSION = "catalog.view"
 
 
-def person_view(p):
+def person_photo_url(person, *, actor_id=None):
+    """API-адрес снимка; публичного storage URL наружу больше нет."""
+    if not person.photo or actor_id is None:
+        return None
+    if not can_view_person_photo(person, actor_id):
+        return None
+    return PERSON_PHOTO_API_PATH.format(person.pk)
+
+
+def person_view(p, *, actor_id=None):
     return {
         "id": str(p.id),
         # Код `OL-N` (Plane №417) — печатается в бюллетене и сводках.
@@ -73,7 +85,7 @@ def person_view(p):
         "category": p.category,
         "bio": p.bio,
         # Фотография (Plane №951): экран сводки ГВО рисует её карточкой лица.
-        "photoUrl": person_photo_url(p),
+        "photoUrl": person_photo_url(p, actor_id=actor_id),
         # Данные образца (Plane №952): должность, страна и строки «параметр =
         # значение» — их сводка подставляет при выборе лица из справочника.
         "country": p.country,
@@ -113,8 +125,82 @@ def parse_facts(raw):
     return facts
 
 
-def list_persons():
-    return [person_view(p) for p in OpsProtectedPerson.objects.filter(is_active=True)]
+def _person_event_ids(person_id):
+    return set(
+        OpsSecurityEvent.objects.filter(
+            Q(protected_person_id=person_id)
+            | Q(protected_persons=person_id)
+            | Q(visit_objects__protected_person_id=person_id)
+        )
+        .values_list("pk", flat=True)
+        .distinct()
+    )
+
+
+def person_photo_scope_division_ids(person_id):
+    """Return verifiable divisions of all OMs that include this person."""
+    division_ids = set()
+    events = OpsSecurityEvent.objects.filter(pk__in=_person_event_ids(person_id))
+    for force_allocation in events.values_list("force_allocation", flat=True):
+        if not isinstance(force_allocation, list):
+            continue
+        for row in force_allocation:
+            if not isinstance(row, dict):
+                continue
+            try:
+                division_ids.add(int(row.get("departmentId")))
+            except (TypeError, ValueError):
+                continue
+    return division_ids
+
+
+def can_view_person_photo(person, actor_id):
+    """Check both `catalog.view` and its division scope, fail-closed."""
+    if actor_id is None:
+        return False
+    actor_id = str(actor_id)
+    permissions = PermissionService.effective_permissions(actor_id)
+    if "*" in permissions:
+        return True
+    if CATALOG_VIEW_PERMISSION not in permissions:
+        return False
+    if CATALOG_VIEW_PERMISSION in PermissionService.unscoped_permissions(actor_id):
+        return True
+    visible = PermissionService.visible_division_ids(
+        actor_id, CATALOG_VIEW_PERMISSION
+    )
+    return bool(visible and person_photo_scope_division_ids(person.pk) & visible)
+
+
+def list_persons(actor_id=None):
+    return [
+        person_view(p, actor_id=actor_id)
+        for p in OpsProtectedPerson.objects.filter(is_active=True)
+    ]
+
+
+def person_photo_download(person_id, *, actor_id=None):
+    """Authorize and audit a photo read, then return its private filesystem path."""
+    person = OpsProtectedPerson.objects.filter(pk=person_id, is_active=True).first()
+    if person is None:
+        return None
+    if not can_view_person_photo(person, actor_id):
+        raise PermissionDenied("PERMISSION_DENIED")
+    if not person.photo:
+        return None
+    path = person.photo.path
+    # `path` is already resolved by the field's private storage; do not turn a
+    # missing blob into a public fallback or an existence oracle.
+    if not Path(path).is_file():
+        return None
+    audit_service.record(
+        actor=actor_id,
+        action=audit_service.PROTECTED_PERSON_PHOTO_VIEWED,
+        entity_type=audit_service.ENTITY_PROTECTED_PERSON,
+        entity_id=person.pk,
+        new_value={"code": person.display_code},
+    )
+    return path
 
 
 # ── Заведение лица и фотография с экрана (Plane №951) ───────────────────────
@@ -168,7 +254,7 @@ def create_person(
         entity_id=person.pk,
         new_value={"code": person.display_code, "name": person.name},
     )
-    return person_view(person)
+    return person_view(person, actor_id=getattr(actor, "pk", actor))
 
 
 def set_person_photo(person_id, upload, *, actor=None):
@@ -215,7 +301,7 @@ def set_person_photo(person_id, upload, *, actor=None):
         entity_id=person.pk,
         new_value={"code": person.display_code, "photo": person.photo.name},
     )
-    return person_view(person)
+    return person_view(person, actor_id=getattr(actor, "pk", actor))
 
 
 # ── История мероприятий (задача заказчика Plane №38) ────────────────────────

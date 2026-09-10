@@ -27,15 +27,20 @@ Django Admin. Сведения бюллетеня (`PATCH …/details/`), объ
 `canEditBulletin` в «только право» — красной станет проба про флаг.
 """
 import io
+from pathlib import Path
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import resolve
 from PIL import Image
 
+from organization_management.apps.divisions.models import Division
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
     OpsSecurityEventPerson,
 )
+from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_gvo import OpsProtectedPerson
 from organization_management.apps.operations.models_vehicle import OpsVehicle
 from organization_management.apps.operations.tests.test_bulk_status_api import (
@@ -52,6 +57,7 @@ EVENTS_URL = "/api/ops/security-events/"
 @pytest.fixture(autouse=True)
 def _media_root(settings, tmp_path):
     settings.MEDIA_ROOT = str(tmp_path / "media")
+    settings.OPS_PRIVATE_STORAGE_ROOT = str(tmp_path / "private")
 
 
 def creator(name="refs-creator"):
@@ -80,6 +86,28 @@ def own_event(user, code="ОМ-Т-951"):
     event = make_event(code)
     event.owner_actor_id = str(user.pk)
     event.save(update_fields=["owner_actor_id"])
+    return event
+
+
+def photo_url(person_id):
+    return f"{PERSONS_URL}{person_id}/photo/"
+
+
+def response_bytes(response):
+    return b"".join(response.streaming_content) if response.streaming else response.content
+
+
+def scoped_viewer(name, division_id):
+    api, _ = client_for(name, "SCOPED_CATALOG_VIEWER", ["catalog.view"], division_id)
+    return api
+
+
+def event_for_person(person, *, division_id=None, code="ОМ-ФОТО"):
+    event = make_event(code)
+    if division_id is not None:
+        event.force_allocation = [{"departmentId": str(division_id)}]
+        event.save(update_fields=["force_allocation"])
+    event.protected_persons.add(person)
     return event
 
 
@@ -119,7 +147,7 @@ def test_uploading_a_photo_sets_photo_url():
     r = api.post(f"{PERSONS_URL}{person.pk}/photo/", {"photo": png()}, format="multipart")
     assert r.status_code == 200, r.content
     url = r.json()["photoUrl"]
-    assert url is not None and url.startswith("/media/protected-persons/photos/")
+    assert url == photo_url(person.pk)
     person.refresh_from_db()
     assert person.photo
     listed = {p["id"]: p for p in api.get(PERSONS_URL).json()["results"]}
@@ -128,6 +156,96 @@ def test_uploading_a_photo_sets_photo_url():
     text = SimpleUploadedFile("x.txt", b"hello", content_type="text/plain")
     assert api.post(f"{PERSONS_URL}{person.pk}/photo/", {"photo": text}, format="multipart").status_code == 400
     assert api.post(f"{PERSONS_URL}999999/photo/", {"photo": png()}, format="multipart").status_code == 404
+
+
+def test_photo_is_served_only_by_authorized_api_and_is_audited(settings):
+    api, user = client_for("photo-reader", "VIEWER", ["event.view", "catalog.view"])
+    person = OpsProtectedPerson.objects.create(name="Лицо для выдачи", category="OURS")
+    person.photo.save("not-a-public-name.png", png(), save=True)
+
+    listed = {p["id"]: p for p in api.get(PERSONS_URL).json()["results"]}
+    assert listed[str(person.pk)]["photoUrl"] == photo_url(person.pk)
+    assert not Path(person.photo.path).is_relative_to(Path(settings.MEDIA_ROOT))
+
+    response = api.get(photo_url(person.pk))
+
+    assert response.status_code == 200
+    assert response_bytes(response) == Path(person.photo.path).read_bytes()
+    assert response["Cache-Control"] == "private, no-store"
+    entry = OpsAuditLog.objects.get(action=audit_service.PROTECTED_PERSON_PHOTO_VIEWED)
+    assert entry.entity_id == person.pk
+    assert entry.actor_user_id == str(user.pk)
+    assert entry.new_value == {"code": person.display_code}
+
+
+def test_photo_is_denied_without_catalog_permission():
+    person = OpsProtectedPerson.objects.create(name="Закрытое лицо", category="OURS")
+    person.photo.save("private.png", png(), save=True)
+    api, _ = client_for("photo-no-permission", "NO_PHOTO_PERMISSION", ["event.view"])
+
+    response = api.get(photo_url(person.pk))
+
+    assert response.status_code == 403
+    assert OpsAuditLog.objects.filter(
+        action=audit_service.PROTECTED_PERSON_PHOTO_VIEWED
+    ).count() == 0
+
+
+def test_scoped_catalog_viewer_can_read_photo_of_person_in_its_event_scope():
+    division = Division.objects.create(name="Область фото")
+    person = OpsProtectedPerson.objects.create(name="Лицо своей области", category="OURS")
+    person.photo.save("scoped.png", png(), save=True)
+    event_for_person(person, division_id=division.pk)
+    api = scoped_viewer("photo-scoped-reader", division.pk)
+
+    response = api.get(photo_url(person.pk))
+
+    assert response.status_code == 200
+    assert response_bytes(response)
+
+
+def test_scoped_catalog_viewer_cannot_read_photo_outside_its_event_scope():
+    own = Division.objects.create(name="Своя область фото")
+    foreign = Division.objects.create(name="Чужая область фото")
+    person = OpsProtectedPerson.objects.create(name="Лицо чужой области", category="OURS")
+    person.photo.save("foreign.png", png(), save=True)
+    event_for_person(person, division_id=foreign.pk, code="ОМ-ФОТО-ЧУЖОЕ")
+    api = scoped_viewer("photo-foreign-reader", own.pk)
+
+    response = api.get(photo_url(person.pk))
+
+    assert response.status_code == 403
+    assert OpsAuditLog.objects.filter(
+        action=audit_service.PROTECTED_PERSON_PHOTO_VIEWED
+    ).count() == 0
+    listed = {p["id"]: p for p in api.get(PERSONS_URL).json()["results"]}
+    assert listed[str(person.pk)]["photoUrl"] is None
+
+
+def test_scoped_catalog_viewer_is_denied_when_person_scope_cannot_be_verified():
+    division = Division.objects.create(name="Неполная область фото")
+    person = OpsProtectedPerson.objects.create(name="Лицо без области", category="OURS")
+    person.photo.save("unscoped.png", png(), save=True)
+    api = scoped_viewer("photo-unscoped-reader", division.pk)
+
+    response = api.get(photo_url(person.pk))
+
+    assert response.status_code == 403
+
+
+def test_legacy_public_photo_url_never_serves_protected_person_photo(settings):
+    legacy = Path(settings.MEDIA_ROOT) / "protected-persons" / "photos" / "legacy.png"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_bytes(b"private photo")
+
+    response = viewer("legacy-photo-reader").get(
+        "/media/protected-persons/photos/legacy.png"
+    )
+
+    assert response.status_code == 404
+    assert resolve("/media/protected-persons/photos/legacy.png").url_name == (
+        "protected_person_photo_legacy"
+    )
 
 
 def test_photo_is_checked_by_bytes_and_stored_under_its_own_name():
@@ -179,7 +297,7 @@ def test_derived_persons_come_from_the_catalog_main_first():
     assert [p["name"] for p in persons] == ["Я. Милатович", "Анна Петрова"]
     assert persons[0]["personId"] == str(main.pk)
     assert persons[0]["code"] == main.display_code
-    assert persons[0]["photoUrl"].startswith("/media/protected-persons/photos/")
+    assert persons[0]["photoUrl"] == photo_url(main.pk)
     assert persons[1]["personId"] == str(other.pk)
     assert persons[1]["photoUrl"] is None
 

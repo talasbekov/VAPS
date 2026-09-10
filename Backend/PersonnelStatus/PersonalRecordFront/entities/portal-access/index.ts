@@ -96,6 +96,20 @@ export const MODULE_ROLE = {
 export type ModuleHref = keyof typeof MODULE_PERMISSION;
 
 /**
+ * Стартовые рабочие экраны портала в понятном порядке. Личный кабинет не
+ * входит в список: после входа человеку нужна работа, а не карточка профиля.
+ * Администратор сохраняет привычный старт с «Обзора»; для остальных маршрут
+ * выбирается по той же карте прав, что и меню и гейты экранов.
+ */
+const DEFAULT_WORKSPACE_ROUTES: readonly ModuleHref[] = [
+  "/security-ops/objects",
+  "/security-ops/events",
+  "/statuses",
+  "/security-ops/command-center",
+  "/dashboard",
+];
+
+/**
  * Права пункта по его адресу — СПИСОК, потому что модуль может открываться
  * любым из нескольких прав. Пустой список = «права не требует».
  *
@@ -135,5 +149,20 @@ export function moduleOpenFor(
   return (
     (codes.length === 0 || codes.some(hasPermission)) &&
     (roles.length === 0 || hasPermission("*") || roles.some(hasRole))
+  );
+}
+
+/** Выбрать первый доступный рабочий экран сразу после входа. */
+export function defaultPortalRoute(hasPermission: (code: string) => boolean): ModuleHref {
+  if (hasPermission("*")) return "/dashboard";
+  // Старт «Сбора сил» задаёт та же карта `forces.*`, что открывает сам экран.
+  // Это покрывает дополнительные и составные роли, а снятое право сразу
+  // возвращает человека к следующему доступному рабочему маршруту.
+  if (moduleOpenFor("/employees", hasPermission)) {
+    return "/employees";
+  }
+  return (
+    DEFAULT_WORKSPACE_ROUTES.find((href) => moduleOpenFor(href, hasPermission)) ??
+    "/security-ops/profile"
   );
 }

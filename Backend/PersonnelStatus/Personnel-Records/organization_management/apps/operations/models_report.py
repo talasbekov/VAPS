@@ -38,8 +38,9 @@ class OpsServiceReportType(TimeStampedModel):
 
 
 class OpsServiceReportJob(TimeStampedModel):
-    """Работа генерации. Ключ идемпотентности уникален: повтор с тем же
-    ключом возвращает ТУ ЖЕ работу (§22.21), а не создаёт вторую."""
+    """Работа генерации. Ключ идемпотентности уникален внутри одного актора:
+    повтор возвращает ТУ ЖЕ работу, но одинаковый ключ коллеги не раскрывает
+    и не блокирует его запуск (§22.21)."""
 
     job_code = models.CharField(max_length=100, unique=True)
     report_type_code = models.CharField(max_length=100)
@@ -53,10 +54,13 @@ class OpsServiceReportJob(TimeStampedModel):
     failure_code = models.CharField(max_length=100, null=True)
     safe_failure_message = models.TextField(null=True)
     artifact_code = models.CharField(max_length=100, null=True)
-    idempotency_key = models.CharField(max_length=255, unique=True)
+    idempotency_key = models.CharField(max_length=255)
     sensitive = models.BooleanField()
     param_from = models.DateField()
     param_to = models.DateField()
+    # Снимок разрешённых подразделений на момент запуска. ``None`` означает
+    # глобальный grant; список — уже развернутые потомки scoped-grant.
+    scope_division_ids = models.JSONField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_service_report_jobs"
@@ -65,6 +69,10 @@ class OpsServiceReportJob(TimeStampedModel):
         # История читается свежими сверху; ключ — тай-брейкер.
         ordering = ["-requested_at", "-id"]
         constraints = [
+            models.UniqueConstraint(
+                fields=["created_by_user_id", "idempotency_key"],
+                name="uq_ops_report_job_actor_idempotency",
+            ),
             models.CheckConstraint(
                 condition=models.Q(state__in=_JOB_STATES),
                 name="chk_ops_report_job_state",
@@ -85,6 +93,9 @@ class OpsServiceReportArtifact(TimeStampedModel):
     report_type_code = models.CharField(max_length=100)
     safe_title = models.CharField(max_length=255)
     format = models.CharField(max_length=10)
+    # Hash канонических типа+периода+режима+scope: JSON NULL не годится для
+    # series uniqueness, а порядок JSON-массива не определяет документ.
+    series_key = models.CharField(max_length=64)
     revision = models.IntegerField()
     generated_at = models.DateTimeField()
     generated_by = models.CharField(max_length=255)
@@ -98,6 +109,9 @@ class OpsServiceReportArtifact(TimeStampedModel):
     hash = models.CharField(max_length=32)
     expires_at = models.DateTimeField()
     content = models.TextField()
+    # Артефакт самодостаточен: job может быть очищен по политике раньше файла,
+    # а граница выдачи байтов должна остаться той же.
+    scope_division_ids = models.JSONField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_service_report_artifacts"
@@ -105,6 +119,10 @@ class OpsServiceReportArtifact(TimeStampedModel):
         verbose_name_plural = "Артефакты служебных отчётов"
         ordering = ["-generated_at", "-id"]
         constraints = [
+            models.UniqueConstraint(
+                fields=["series_key", "revision"],
+                name="uq_ops_report_artifact_series_revision",
+            ),
             models.CheckConstraint(
                 condition=models.Q(revision__gte=1),
                 name="chk_ops_report_artifact_revision",

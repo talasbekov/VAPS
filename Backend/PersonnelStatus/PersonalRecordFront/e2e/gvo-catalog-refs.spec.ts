@@ -114,7 +114,9 @@ test.describe(LIVE ? 'ГВО из справочников' : 'ГВО из сп�
       // Карточка лица: снимок из справочника (img, не заглушка) и код OL-N.
       const photo = main.locator('img[data-slot="gvo-person-photo"]').first()
       await expect(photo).toBeVisible({ timeout: 10_000 })
-      await expect(photo).toHaveAttribute('src', /\/media\/protected-persons\/photos\//)
+      // Protected snapshots are fetched with the current JWT and rendered
+      // from an object URL; the legacy public /media URL must not reappear.
+      await expect(photo).toHaveAttribute('src', /^blob:/)
       await expect(main.getByText(PROBE_PERSON).first()).toBeVisible()
       await expect(main.getByText(/· OL-\d+/).first()).toBeVisible()
       await page.screenshot({ path: path.join(SHOTS, 'visit-person-photo.png'), fullPage: true })

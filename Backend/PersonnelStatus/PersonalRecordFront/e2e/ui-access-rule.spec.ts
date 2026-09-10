@@ -17,6 +17,7 @@
  * (2) красна; убери заголовок в `ops-access-denied.tsx` — красна (1).
  */
 import { expect, test, type Page } from '@playwright/test'
+import { staffedRow } from './row-menu'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
@@ -30,6 +31,20 @@ async function signIn(page: Page, username: string, password: string): Promise<v
   await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken: csrf.csrfToken, username, password, json: 'true' },
   })
+}
+
+async function openStatusesAfterPermissions(
+  page: Page,
+): Promise<{ permissions: string[] }> {
+  const permissionsResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/operations/my-permissions/') &&
+      response.request().method() === 'GET',
+  )
+  await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
+  const response = await permissionsResponse
+  expect(response.status(), 'права роли не загрузились — интерактивность проверять рано').toBe(200)
+  return (await response.json()) as { permissions: string[] }
 }
 
 async function adminEvents(): Promise<{ id: string; stage: string }[]> {
@@ -55,6 +70,58 @@ test.describe(LIVE ? 'правило доступа' : 'правило дост�
     await page.goto(`${APP}/security-ops/audit`)
     await expect(page.getByRole('heading', { name: 'Доступ закрыт' })).toBeVisible()
     await expect(page.getByText(/Недостаточно прав для просмотра/)).toBeVisible()
+  })
+
+  test('простой сотрудник видит статус без кнопки и окна изменения', async ({ page }) => {
+    await signIn(page, 'acc_employee_d2', PASSWORD)
+    const access = await openStatusesAfterPermissions(page)
+    expect(
+      access.permissions,
+      'фикстура read-only роли неожиданно получила status.manage',
+    ).not.toContain('status.manage')
+    const row = staffedRow(page)
+    await expect(row, 'у read-only роли нет занятой строки — проверка была бы вакуумной').toBeVisible({
+      timeout: 30_000,
+    })
+    expect(await row.getAttribute('data-employee-id'), 'занятая строка не адресует сотрудника').toBeTruthy()
+
+    await expect(
+      page.locator('button[title="Открыть статусы сотрудника"]'),
+      'read-only роль всё ещё получает кликабельный статус',
+    ).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: /Статусы сотрудника|Запланированные статусы/ })).toHaveCount(0)
+  })
+
+  test('начальник с status.manage открывает статусы точного сотрудника', async ({ page }) => {
+    await signIn(page, 'acc_dir_head_d2', PASSWORD)
+    const access = await openStatusesAfterPermissions(page)
+    expect(
+      access.permissions,
+      'фикстура управляющей роли не получила status.manage',
+    ).toContain('status.manage')
+
+    const row = staffedRow(page)
+    await expect(row, 'у управляющей роли нет занятой строки — проверка была бы вакуумной').toBeVisible({
+      timeout: 30_000,
+    })
+    expect(await row.getAttribute('data-employee-id'), 'занятая строка не адресует сотрудника').toBeTruthy()
+    const actionsLabel = await row.getByRole('button', { name: /^Действия:/ }).getAttribute('aria-label')
+    const employeeName = actionsLabel?.replace(/^Действия:\s*/, '') ?? ''
+    expect(employeeName, 'из точной строки не удалось получить ФИО сотрудника').not.toBe('')
+
+    const statusButton = row.getByTitle('Открыть статусы сотрудника')
+    await expect(
+      statusButton,
+      'занятый сотрудник у держателя status.manage остался без кнопки статуса',
+    ).toBeVisible()
+    await statusButton.click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText('Запланированные статусы сотрудника', { exact: true })).toBeVisible()
+    await expect(
+      dialog.getByText(`Сотрудник: ${employeeName}`, { exact: true }),
+      'кнопка открыла диалог не того сотрудника',
+    ).toBeVisible()
   })
 
   test('читатель раздела видит кнопку перехода этапа выключенной, с причиной', async ({ page }) => {

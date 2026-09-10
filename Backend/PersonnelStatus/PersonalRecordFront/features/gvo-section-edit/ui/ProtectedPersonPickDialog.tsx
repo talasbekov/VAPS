@@ -34,7 +34,7 @@ import {
   PROTECTED_PERSON_FACT_KEYS,
 } from "@/entities/protected-person";
 import type { ProtectedPerson, ProtectedPersonCategory } from "@/entities/protected-person";
-import { mediaSrc } from "@/shared/lib/media";
+import { ProtectedPhoto } from "@/shared/ui/protected-photo";
 
 const LABEL_CLASS = "block text-[11.5px] font-bold text-muted-foreground";
 const SELECT_CLASS =
@@ -150,7 +150,6 @@ function PickFromCatalog({
         <ul>
           {rows.map((person) => {
             const taken = takenIds.has(person.id);
-            const photo = mediaSrc(person.photoUrl);
             return (
               <li key={person.id} className="border-b last:border-0">
                 <button
@@ -159,7 +158,7 @@ function PickFromCatalog({
                   onClick={() => onPick(person)}
                   className="flex w-full items-center gap-3 px-3 py-2 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {photo === null ? (
+                  {person.photoUrl === null ? (
                     <span
                       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] text-muted-foreground"
                       aria-hidden="true"
@@ -168,7 +167,11 @@ function PickFromCatalog({
                     </span>
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={photo} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
+                    <ProtectedPhoto
+                      url={person.photoUrl}
+                      alt=""
+                      className="h-9 w-9 shrink-0 rounded-md object-cover"
+                    />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium">{person.name}</span>

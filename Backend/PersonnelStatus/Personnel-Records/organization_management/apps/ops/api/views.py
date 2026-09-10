@@ -5,8 +5,11 @@ documents: заводить второй механизм прав ради но
 защищать одни и те же сведения по-разному в зависимости от того, каким адресом
 их спросили.
 """
+import mimetypes
+
 from django.db.models import CharField, Exists, OuterRef, Prefetch, Value
 from django.db.models.functions import Cast, Concat
+from django.http import FileResponse
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied
@@ -1449,6 +1452,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         read_context = registry_reads.RegistryReadContext()
         if page:
             read_context.prime_participations([event.pk for event in page])
+            # `_merge_status_members` и `_with_directorate_progress` читают
+            # живую штатную единицу, а первая ещё и денормализованное ФИО.
+            # Собираем оба источника людей до обхода строк: без этого каждый
+            # сбор запрашивает свои `divisions_of/denorm_for`.
+            member_ids = {
+                participant.status.employee_id
+                for event in page
+                for participant in read_context.participations(event.pk)
+            }
+            member_ids.update(
+                member.get("employeeId")
+                for event in page
+                for allocation in (event.force_allocation or [])
+                for member in (allocation.get("members") or [])
+                if member.get("employeeId") is not None
+            )
+            read_context.prime_allocation_members(member_ids)
         for event in page:
             rows.append(
                 board.board_row(
@@ -5501,8 +5521,18 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "photo": ("gvo.manage", _MANAGE_EVENT_PERMISSION, _CREATE_EVENT_PERMISSION),
     }
 
+    def permission_override(self, request):
+        # GET is checked once more by the service because a scoped catalog
+        # grant must be matched to the OM's verifiable allocation.  The mixin
+        # still needs to let catalog readers reach that fail-closed check.
+        if request.method.lower() == "get" and self.action == "photo":
+            return bool({"*", _CATALOG_PERMISSION} & effective_permissions(request))
+        return False
+
     def list(self, request):
-        return Response({"results": gvo_service.list_persons()})
+        return Response(
+            {"results": gvo_service.list_persons(resolve_actor_id(request))}
+        )
 
     def create(self, request):
         """POST /protected-persons/ — новое лицо справочника (Plane №951)."""
@@ -5529,10 +5559,23 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         return Response(row, status=201)
 
-    @action(detail=True, methods=["post"], url_path="photo")
+    @action(detail=True, methods=["get", "post"], url_path="photo")
     def photo(self, request, pk=None):
-        """POST /protected-persons/{id}/photo/ — снимок лица (multipart,
-        поле `photo`; Plane №951). Прежний снимок заменяется."""
+        """GET/POST /protected-persons/{id}/photo/ — чтение или замена снимка."""
+        if request.method.lower() == "get":
+            photo_path = gvo_service.person_photo_download(
+                pk, actor_id=resolve_actor_id(request)
+            )
+            if photo_path is None:
+                raise NotFound("Охраняемое лицо или снимок не найден.")
+            response = FileResponse(
+                open(photo_path, "rb"),
+                content_type=mimetypes.guess_type(photo_path)[0]
+                or "application/octet-stream",
+            )
+            response["Cache-Control"] = "private, no-store"
+            response["X-Content-Type-Options"] = "nosniff"
+            return response
         try:
             row = gvo_service.set_person_photo(
                 pk,
@@ -5780,7 +5823,13 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
         адрес живёт, пока его кто-то читает, и снимается отдельным шагом
         после переезда читателей.
         """
-        return Response({"results": documents_summary.assembled_summaries()})
+        return Response(
+            {
+                "results": documents_summary.assembled_summaries(
+                    actor_id=resolve_actor_id(request)
+                )
+            }
+        )
 
     def retrieve(self, request, pk=None):
         """Собранная сводка мероприятия: база из бюллетеня плюс правки.
@@ -5795,7 +5844,9 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 404,
                 message="Мероприятие с таким кодом не найдено.",
             )
-        row = documents_summary.summary_row(event)
+        row = documents_summary.summary_row(
+            event, actor_id=resolve_actor_id(request)
+        )
         row["canEdit"] = self._may_edit(request, event)
         return Response(row)
 

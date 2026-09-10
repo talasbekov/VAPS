@@ -38,6 +38,7 @@ from .test_ops_forces_gathering import (  # noqa: F401
     make_assignment_status_type,
     make_department,
     make_directorate,
+    notify_after_split,
 )
 from .test_ops_security_events_api import (  # noqa: F401
     client_for,
@@ -116,11 +117,11 @@ def test_notify_of_own_department_passes(manager):  # noqa: F811
     Без него отказ выше нельзя отличить от «эта ручка не работает ни у кого».
     """
     own = make_department("Департамент А")
-    make_directorate(own, "Управление А-1")
+    directorate = make_directorate(own, "Управление А-1")
     base, allocation_id = allocated_event(manager, own)
     dept_lead = scoped_client("forces-own-dept-ok", "DEPT_LEAD_A", own.pk)
 
-    resp = dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    resp = notify_after_split(dept_lead, base, allocation_id)
 
     assert resp.status_code == 200
     assert resp.json()["forceAllocation"][0]["status"] == "NOTIFIED"
@@ -156,7 +157,7 @@ def test_directorate_of_own_department_is_not_foreign(manager):  # noqa: F811
     # Роль выдана на ДЕПАРТАМЕНТ, а строка адресована ему же.
     lead = scoped_client("forces-subtree", "DEPT_LEAD_A3", department.pk)
 
-    resp = lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    resp = notify_after_split(lead, base, allocation_id, directorate)
 
     assert resp.status_code == 200
     assert {row["name"] for row in resp.json()["forceAllocation"][0]["directorates"]} == {
@@ -726,9 +727,9 @@ def test_the_collection_status_follows_the_whole_split(manager):  # noqa: F811
         )["collectionStatus"]
 
     assert status_now() == "NEW"
-    manager.post(f"{base}forces/allocation/{rows[0]['id']}/notify/", {}, format="json")
+    notify_after_split(manager, base, rows[0]["id"])
     assert status_now() == "NEW", "разнарядка одному департаменту — ещё не «разослана»"
-    manager.post(f"{base}forces/allocation/{rows[1]['id']}/notify/", {}, format="json")
+    notify_after_split(manager, base, rows[1]["id"])
     assert status_now() == "NOTIFIED"
 
 
@@ -835,7 +836,7 @@ def test_the_department_answers_with_its_own_number_and_a_comment(manager):  # n
     не сохранится.
     """
     own = make_department("Департамент А")
-    make_directorate(own, "Управление А-1")
+    directorate = make_directorate(own, "Управление А-1")
     base, allocation_id = allocated_event(manager, own)
     dept_lead = scoped_client("forces-respond-own", "DEPT_LEAD_R1", own.pk)
 
@@ -855,10 +856,10 @@ def test_zero_closes_the_request_as_declined_and_a_number_reopens_it(manager):  
     сервер не помнит и помнить не должен.
     """
     own = make_department("Департамент А")
-    make_directorate(own, "Управление А-1")
+    directorate = make_directorate(own, "Управление А-1")
     base, allocation_id = allocated_event(manager, own)
     dept_lead = scoped_client("forces-respond-zero", "DEPT_LEAD_R2", own.pk)
-    dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(dept_lead, base, allocation_id, directorate)
 
     declined = _allocation(_respond(dept_lead, base, allocation_id, 0, "Все на объекте"))
     assert declined["status"] == "DECLINED"
@@ -878,7 +879,7 @@ def test_the_answer_is_locked_once_the_list_is_with_the_staff(manager):  # noqa:
     directorate = make_directorate(own, "Управление А-1")
     base, allocation_id = allocated_event(manager, own)
     dept_lead = scoped_client("forces-respond-locked", "DEPT_LEAD_R3", own.pk)
-    dept_lead.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(dept_lead, base, allocation_id, directorate)
     person = employee_of(directorate, "Выделенов")
     make_assignment_status_type()
     manager.post(

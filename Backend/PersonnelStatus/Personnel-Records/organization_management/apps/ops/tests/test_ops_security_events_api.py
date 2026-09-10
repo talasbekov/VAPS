@@ -308,6 +308,14 @@ def test_create_without_object(manager):
     assert failed.json()["error_code"] == "VISIT_OBJECT_REQUIRED"
 
 
+def test_fixture_date_reservation_is_not_a_production_http_capability(manager):
+    """Создатель ОМ не может исчерпать служебный диапазон через публичное API."""
+    response = manager.post(f"{URL}fixture-date/", {"count": 3650}, format="json")
+    # Без list-action DRF воспринимает fixture-date как detail pk и отвергает
+    # POST методом 405: production HTTP capability действительно отсутствует.
+    assert response.status_code == 405
+
+
 def test_create_with_unknown_object_still_refused(manager):
     """Необязательное поле не значит «любое значение»: чужой id — ошибка."""
     resp = manager.post(
