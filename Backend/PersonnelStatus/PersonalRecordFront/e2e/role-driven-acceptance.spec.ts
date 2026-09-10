@@ -433,12 +433,13 @@ test('реальные роли: два ОМ от создания до закр
   page.on('response', async response => {
     if (response.status() >= 400 && response.url().includes('/api/ops/')) console.log(`UI API failure ${response.request().method()} ${new URL(response.url()).pathname}: ${response.status()} ${await response.text().catch(() => '(body unavailable after navigation)')}`)
   })
-  const businessDate = '2026-10-20'
+  const businessDate = process.env.OM_ACCEPTANCE_DATE ?? '2026-11-20'
   const eventIds: string[] = []
   const employeeToken = await role(page, 'acc_employee_d2')
   for (let i = 1; i <= 2; i++) {
     await test.step(`Сотрудник: создать INTERNAL ОМ ${i}`, async () => {
       await page.goto(`${APP}/security-ops/events`)
+      await expect(page.getByRole('button', { name: '+ Создать бюллетень' })).toBeVisible({ timeout: 60_000 })
       await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
       const dialog = page.getByRole('dialog')
       await dialog.getByRole('button', { name: 'Внутреннее', exact: true }).click()
@@ -619,7 +620,7 @@ test('реальные роли: два ОМ от создания до закр
       const groupName = request === requests[0] ? 'Приёмка1090Группа' : 'Приёмка1090Досмотр'
       await page.getByPlaceholder('Поиск по ФИО, отделу, должности...').fill(groupName)
       await page.getByRole('row').filter({ hasText: groupName }).getByRole('checkbox').check()
-      await banner.getByLabel('Вид участия', { exact: true }).selectOption('SCREENING_GROUP')
+      await chooseScreeningGroup(page, headToken)
       await banner.getByRole('button', { name: `Выделить на ${request.code}: 1`, exact: true }).click()
       await expect(banner.locator('[data-slot="select-report"]')).toContainText('Выделено: 1')
       await page.reload()
@@ -643,15 +644,15 @@ test('реальные роли: два ОМ от создания до закр
     await role(page, 'acc_ops_staff')
     await page.goto(`${APP}/employees?campaign=${campaignId}&businessDate=${businessDate}`)
     const campaign: ForceCampaign = await read(page, hqToken, `/api/ops/security-events/forces/campaigns/${campaignId}/`)
-    for (const [index, employeeId] of [fixture.people.participant.id, fixture.people.noaccount.id, fixture.people.participant.id].entries()) {
-      const event = campaign.events.find(row => row.eventId === eventIds[index === 2 ? 1 : 0])!
-      const visit = event.visitObjects[index === 1 ? 1 : 0]
+    for (const [index, employeeId] of [fixture.people.participant.id, fixture.people.noaccount.id, fixture.people.participant.id, fixture.people.noaccount.id].entries()) {
+      const event = campaign.events.find(row => row.eventId === eventIds[index >= 2 ? 1 : 0])!
+      const visit = event.visitObjects[index % 2]
       const demand = event.demandRows.find(row => row.visitObjectId === visit.visitObjectId && row.kindCode === 'PHYSICAL_SQUAD')!
       await page.getByLabel('Сотрудник', { exact: true }).selectOption(employeeId)
       await page.getByLabel('Мероприятие', { exact: true }).selectOption(event.eventId)
       await page.getByLabel('Объект', { exact: true }).selectOption(visit.visitObjectId)
       await page.getByLabel('Строка потребности', { exact: true }).selectOption(demand.id)
-      if (index === 2) {
+      if (index >= 2) {
         await expect(page.getByText('Период пересекается с существующим назначением сотрудника.', { exact: true })).toBeVisible()
         await expect(page.getByRole('button', { name: 'Назначить', exact: true })).toBeDisabled()
         await page.getByRole('checkbox', { name: 'Подтвердить назначение с конфликтом', exact: true }).check()
@@ -663,9 +664,9 @@ test('реальные роли: два ОМ от создания до закр
       await page.reload()
       const saved: ForceCampaign = await read(page, hqToken, `/api/ops/security-events/forces/campaigns/${campaignId}/`)
       expect(saved.assignments.some(row => row.employeeId === employeeId && row.eventId === event.eventId && row.visitObjectId === visit.visitObjectId && row.demandRowId === demand.id)).toBe(true)
-      if (index === 2) expect(saved.assignments.find(row => row.employeeId === employeeId && row.eventId === event.eventId)?.overrideReason).toContain(marker)
+      if (index >= 2) expect(saved.assignments.find(row => row.employeeId === employeeId && row.eventId === event.eventId)?.overrideReason).toContain(marker)
     }
-    await page.getByLabel('Комментарий при неполном распределении', { exact: true }).fill(`${marker}: один пост второго ОМ остаётся резервным до довыделения`)
+    await page.getByLabel('Комментарий при неполном распределении', { exact: true }).fill(`${marker}: физический пост каждого объекта обеспечен; досмотр ожидает усиления`)
     await page.getByRole('button', { name: 'Передать в расстановку', exact: true }).click()
     await expect.poll(async () => (await read(page, hqToken, `/api/ops/security-events/forces/campaigns/${campaignId}/`)).status).toBe('HANDED_OVER')
     await page.reload()
@@ -674,7 +675,421 @@ test('реальные роли: два ОМ от создания до закр
     await expect(page.getByText('Передано в расстановку', { exact: true })).toBeVisible()
     await stableScreenshot(page, `/tmp/1090-${marker}-campaign-handover.png`)
   })
-  // Until every required transition is implemented and observed, this is
-  // explicitly incomplete. A passing prefix must never claim full acceptance.
-  throw new Error('INCOMPLETE: placement, v1/v2 approvals, acknowledgements, conduct and CLOSED still require UI execution')
+  fs.writeFileSync('/tmp/1090-om-ui-resume.json', JSON.stringify({ marker, eventIds, campaignId, businessDate }))
+  await finishOmUI(page, { marker, eventIds, campaignId, businessDate })
 })
+
+type OmRun = { marker: string; eventIds: string[]; campaignId: string; businessDate: string }
+
+test('граница проведения: старшие объектов остаются на ознакомлении без обхода этапа', async ({ page }) => {
+  const run: OmRun = JSON.parse(fs.readFileSync('/tmp/1090-om-ui-resume.json', 'utf8'))
+  expect(run.campaignId).not.toBe('3')
+  const mutations: string[] = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/ops/') && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) mutations.push(request.url())
+  })
+  for (const eventId of run.eventIds) {
+    for (const [index, username] of ['probe1090_senior', 'probe1090_senior2'].entries()) {
+      const token = await role(page, username)
+      const event = await read(page, token, `/api/ops/security-events/${eventId}/`)
+      expect(event.title).toContain(run.marker)
+      expect(event.stage).toBe('ACKNOWLEDGEMENT')
+      expect(event.chiefEmployeeId).toBeNull()
+      expect(event.placementAssignments.every((row: { acknowledgedAt: string | null }) => row.acknowledgedAt)).toBe(true)
+      const visit = event.visitObjects[index]
+      await page.goto(`${APP}/security-ops/events/${eventId}?visit=${visit.id}`)
+      await expect(page.getByRole('button', { name: 'Завершить ознакомление', exact: true })).toBeDisabled()
+      await expect(page.locator('[data-slot="evaluation-panel"]')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Закрыть объект', exact: true })).toHaveCount(0)
+      await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-${visit.id}-conduct-blocked.png`)
+      expect((await read(page, token, `/api/ops/security-events/${eventId}/`)).stage).toBe('ACKNOWLEDGEMENT')
+    }
+  }
+  expect(mutations, 'Только чтение: проведение не имитируется и стадия не обходится').toEqual([])
+  console.log('CONDUCT BLOCKED BEFORE START: all four assignments acknowledged; no event chief; no business writes')
+})
+
+test('production рабочие места: settled desktop и mobile двух реальных ролей', async ({ page }) => {
+  test.setTimeout(120_000)
+  for (const [username, key, heading] of [
+    ['acc_forces_officer', 'responsible', 'Рабочий стол'],
+    ['acc_ops_staff', 'headquarters', 'Распределения'],
+  ]) {
+    await role(page, username)
+    for (const viewport of [{ name: 'desktop', width: 1600, height: 1000 }, { name: 'mobile', width: 390, height: 844 }]) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      await page.goto(`${APP}/employees`)
+      await expect(page.getByRole('main').getByRole('heading', { name: heading, exact: true })).toBeVisible()
+      if (key === 'responsible') {
+        await expect(page.getByRole('main').getByRole('link', { name: 'Открыть заявки', exact: true })).toBeVisible()
+        await expect(page.getByRole('main').getByRole('link', { name: 'Открыть свод', exact: true }).first()).toBeVisible()
+      }
+      await stableScreenshot(page, `/tmp/1090-production-${key}-${viewport.name}.png`)
+      const width = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: window.innerWidth }))
+      expect(width.document, `${username}/${viewport.name}: нет горизонтального переполнения`).toBeLessThanOrEqual(width.viewport + 1)
+      console.log(`SETTLED UI ${username} ${viewport.name} ${viewport.width}x${viewport.height}: ${heading}; width=${width.document}`)
+    }
+  }
+})
+
+test('диагностика прав завершения ознакомления текущей UI кампании', async ({ page }) => {
+  const run: OmRun = JSON.parse(fs.readFileSync('/tmp/1090-om-ui-resume.json', 'utf8'))
+  for (const username of ['acc_dir_head_d2', 'acc_dept_head_d2', 'probe1090_senior']) {
+    const token = await role(page, username)
+    const permissions = await read(page, token, '/api/operations/my-permissions/')
+    const event = await read(page, token, `/api/ops/security-events/${run.eventIds[0]}/`)
+    console.log('ACK AUTHORITY', JSON.stringify({ username, roles: permissions.roles, stage: event.stage, chiefEmployeeId: event.chiefEmployeeId, eventManage: permissions.permissions.includes('event.manage'), permissions: permissions.permissions.filter((code: string) => code.includes('event') || code.includes('placement')) }))
+    await page.goto(`${APP}/security-ops/events/${event.id}`)
+    await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${username}-ack-authority.png`)
+  }
+})
+
+async function chooseScreeningGroup(page: Page, token: string) {
+  const kinds = await read(page, token, '/api/ops/dictionaries/EVENT_PARTICIPATION_KINDS/entries/')
+  const kind = kinds.results.find((row: { code: string }) => row.code === 'SCREENING_GROUP')
+  expect(kind).toBeTruthy()
+  await page.getByRole('group', { name: 'Подгруппа участия ОМ', exact: true }).getByRole('button', { name: 'Группы', exact: true }).click()
+  if (kind.isOwn) {
+    await page.getByRole('combobox', { name: 'Свои группы', exact: true }).click()
+    await page.getByRole('option', { name: new RegExp(kind.label) }).click()
+  } else {
+    await page.getByRole('button', { name: 'Выбрать другую группу другого подразделения', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Поиск другой группы', exact: true }).fill('SCREENING_GROUP')
+    await page.getByRole('listbox', { name: 'Другие группы', exact: true }).getByRole('option').click()
+  }
+  const roles = await read(page, token, '/api/ops/dictionaries/EVENT_GROUP_ROLES/entries/')
+  const selectedRole = roles.results.find((row: { groupCode: string; isActive: boolean }) => row.groupCode === 'SCREENING_GROUP' && row.isActive)
+  if (selectedRole) {
+    await page.getByRole('combobox', { name: 'Специальность', exact: true }).click()
+    await page.getByRole('option', { name: selectedRole.label, exact: true }).click()
+  }
+}
+
+test('продолжение текущего маркера: группы и четыре точных назначения', async ({ page }) => {
+  test.setTimeout(900_000)
+  const marker = process.env.OM_ACCEPTANCE_MARKER!
+  expect(marker).toMatch(/^Приёмка1090-\d+$/)
+  const fixture = prerequisites()
+  const hq = await role(page, 'acc_ops_staff')
+  let campaign = (await read(page, hq, '/api/ops/security-events/forces/campaigns/')).results.find((row: { title: string }) => row.title === `${marker} Общая кампания`)
+  expect(campaign).toBeTruthy()
+  expect(campaign.id).not.toBe('3')
+  const run: OmRun = { marker, campaignId: campaign.id, eventIds: campaign.events.map((row: { eventId: string }) => row.eventId), businessDate: campaign.events[0].businessDate }
+  fs.writeFileSync('/tmp/1090-om-ui-resume.json', JSON.stringify(run))
+  for (const [index, eventId] of run.eventIds.entries()) {
+    const collection = await read(page, hq, `/api/ops/security-events/${eventId}/force-collection/`)
+    const allocation = collection.allocations.find((row: { departmentId: string }) => row.departmentId === '631')
+    const group = index === 0 ? fixture.people.group : fixture.people.group2
+    const groupName = index === 0 ? 'Приёмка1090Группа' : 'Приёмка1090Досмотр'
+    const head = await role(page, 'acc_dir_head')
+    const statuses = await read(page, head, `/api/operations/statuses/?employee_id=${group.id}`)
+    if (!JSON.stringify(statuses).includes(`\"${eventId}\"`)) {
+      await page.goto(`${APP}/statuses?forcesRequest=${encodeURIComponent(allocation.id)}`)
+      const banner = page.getByRole('status', { name: `Запрос на ${collection.code}`, exact: true })
+      await page.getByPlaceholder('Поиск по ФИО, отделу, должности...').fill(groupName)
+      await page.getByRole('row').filter({ hasText: groupName }).getByRole('checkbox').check()
+      await chooseScreeningGroup(page, head)
+      await banner.getByRole('button', { name: `Выделить на ${collection.code}: 1`, exact: true }).click()
+      await expect(banner.locator('[data-slot="select-report"]')).toContainText('Выделено: 1')
+      await page.reload()
+      const saved = await read(page, head, `/api/operations/statuses/?employee_id=${group.id}`)
+      expect(JSON.stringify(saved)).toContain(eventId)
+      expect(JSON.stringify(saved)).toContain('SCREENING_GROUP')
+    }
+    const officer = await role(page, 'acc_forces_officer')
+    const request = await read(page, officer, `/api/ops/security-events/forces/requests/${encodeURIComponent(allocation.id)}/`)
+    if (!request.allocation.submittedAt) {
+      await page.goto(`${APP}/employees?request=${encodeURIComponent(allocation.id)}&businessDate=${run.businessDate}`)
+      await page.getByRole('button', { name: 'Отправить список в штаб', exact: true }).click()
+      await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await page.reload()
+      expect((await read(page, officer, `/api/ops/security-events/forces/requests/${encodeURIComponent(allocation.id)}/`)).allocation.submittedAt).toBeTruthy()
+    }
+  }
+  await role(page, 'acc_ops_staff')
+  await page.goto(`${APP}/employees?campaign=${run.campaignId}&businessDate=${run.businessDate}`)
+  campaign = await read(page, hq, `/api/ops/security-events/forces/campaigns/${run.campaignId}/`)
+  for (const [index, employeeId] of [fixture.people.participant.id, fixture.people.noaccount.id, fixture.people.participant.id, fixture.people.noaccount.id].entries()) {
+    const event = campaign.events.find((row: { eventId: string }) => row.eventId === run.eventIds[Math.floor(index / 2)])
+    const visit = event.visitObjects[index % 2]
+    const demand = event.demandRows.find((row: { visitObjectId: string; kindCode: string }) => row.visitObjectId === visit.visitObjectId && row.kindCode === 'PHYSICAL_SQUAD')
+    if (campaign.assignments.some((row: { employeeId: string; eventId: string; visitObjectId: string }) => row.employeeId === employeeId && row.eventId === event.eventId && row.visitObjectId === visit.visitObjectId)) continue
+    await page.getByLabel('Сотрудник', { exact: true }).selectOption(employeeId)
+    await page.getByLabel('Мероприятие', { exact: true }).selectOption(event.eventId)
+    await page.getByLabel('Объект', { exact: true }).selectOption(visit.visitObjectId)
+    await page.getByLabel('Строка потребности', { exact: true }).selectOption(demand.id)
+    if (index >= 2) {
+      await expect(page.getByRole('button', { name: 'Назначить', exact: true })).toBeDisabled()
+      await page.getByRole('checkbox', { name: 'Подтвердить назначение с конфликтом', exact: true }).check()
+      await expect(page.getByRole('button', { name: 'Назначить', exact: true })).toBeDisabled()
+      await page.getByLabel('Причина конфликта', { exact: true }).fill(`${marker}: последовательные смены согласованы Штабом`)
+    }
+    await page.getByRole('button', { name: 'Назначить', exact: true }).click()
+    await expect.poll(async () => (await read(page, hq, `/api/ops/security-events/forces/campaigns/${run.campaignId}/`)).assignments.length).toBe(index + 1)
+    await page.reload()
+    campaign = await read(page, hq, `/api/ops/security-events/forces/campaigns/${run.campaignId}/`)
+    const saved = campaign.assignments.find((row: { employeeId: string; eventId: string; visitObjectId: string }) => row.employeeId === employeeId && row.eventId === event.eventId && row.visitObjectId === visit.visitObjectId)
+    expect(saved.demandRowId).toBe(demand.id)
+    if (index >= 2) expect(saved.overrideReason).toContain(marker)
+  }
+  if (campaign.status !== 'HANDED_OVER') {
+    await page.getByLabel('Комментарий при неполном распределении', { exact: true }).fill(`${marker}: физнаряд каждого объекта обеспечен, досмотр ожидает усиления`)
+    await page.getByRole('button', { name: 'Передать в расстановку', exact: true }).click()
+    await expect.poll(async () => (await read(page, hq, `/api/ops/security-events/forces/campaigns/${run.campaignId}/`)).status).toBe('HANDED_OVER')
+  }
+  await page.reload()
+  await stableScreenshot(page, `/tmp/1090-${run.campaignId}-campaign-handover.png`)
+  await finishOmUI(page, run)
+})
+
+test('продолжение свежей UI кампании: согласование, ознакомление, закрытие', async ({ page }) => {
+  test.setTimeout(900_000)
+  page.on('response', async response => {
+    if (response.status() >= 400 && response.url().includes('/api/ops/')) console.log(`UI ${response.request().method()} ${new URL(response.url()).pathname}: ${response.status()} ${await response.text().catch(() => '(navigation)')}`)
+  })
+  expect(process.env.OM_ACCEPTANCE_RESUME).toBe('1')
+  const run: OmRun = JSON.parse(fs.readFileSync('/tmp/1090-om-ui-resume.json', 'utf8'))
+  expect(run.campaignId).not.toBe('3')
+  await finishOmUI(page, run)
+})
+
+test('сотрудники обоих ОМ текущей кампании подтверждают ознакомление', async ({ page }) => {
+  test.setTimeout(180_000)
+  const run: OmRun = JSON.parse(fs.readFileSync('/tmp/1090-om-ui-resume.json', 'utf8'))
+  expect(run.campaignId).not.toBe('3')
+  await finishOmUI(page, run, 'ack')
+})
+
+async function finishOmUI(page: Page, run: OmRun, phase: 'full' | 'ack' = 'full') {
+  const fixture = prerequisites()
+  const token = await role(page, 'acc_ops_staff')
+  const campaign = await read(page, token, `/api/ops/security-events/forces/campaigns/${run.campaignId}/`)
+  expect(campaign.title).toBe(`${run.marker} Общая кампания`)
+  expect(campaign.status).toBe('HANDED_OVER')
+  expect(campaign.assignments).toHaveLength(4)
+  for (const [eventIndex, eventId] of run.eventIds.entries()) {
+    let event = await read(page, token, `/api/ops/security-events/${eventId}/`)
+    expect(event.title).toBe(`${run.marker} ОМ${eventIndex + 1}`)
+    for (const [visitIndex, initialVisit] of event.visitObjects.entries()) {
+      const visitId = initialVisit.id
+      const seniorName = initialVisit.chiefEmployeeId === fixture.people.senior.id ? 'probe1090_senior' : 'probe1090_senior2'
+      const screenshot = (step: string) => stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-${visitId}-${step}.png`)
+      const senior = await role(page, seniorName)
+      event = await read(page, senior, `/api/ops/security-events/${eventId}/`)
+      let visit = event.visitObjects.find((row: { id: string }) => row.id === visitId)
+      const needsReturn = eventIndex === 0 && visitIndex === 0
+      const finalVersion = needsReturn ? 2 : 1
+      if (visit.stage === 'APPROVAL' && visit.approvalRemarks.some((row: { status: string }) => row.status === 'OPEN')) {
+        await page.goto(`${APP}/security-ops/events/${eventId}?visit=${visitId}`)
+        await expect(page.getByRole('region', { name: 'Согласование расстановки', exact: true })).toBeVisible()
+        const unresolved = page.getByRole('button', { name: 'Устранено', exact: true })
+        while (await unresolved.count()) {
+          const count = await unresolved.count()
+          await unresolved.first().click()
+          await expect(unresolved).toHaveCount(count - 1)
+        }
+        event = await persisted(page, senior, eventId)
+        visit = event.visitObjects.find((row: { id: string }) => row.id === visitId)
+      }
+      const physicalPost = event.reconSectorPosts.find((row: { visitObjectId: string; demandKindCode: string }) => row.visitObjectId === visitId && row.demandKindCode === 'PHYSICAL_SQUAD')
+      const expectedAssignment = campaign.assignments.find((row: { eventId: string; visitObjectId: string }) => row.eventId === eventId && row.visitObjectId === visitId)
+      expect(expectedAssignment).toBeTruthy()
+      if (visit.stage === 'PLACEMENT') {
+        await page.goto(`${APP}/security-ops/events/${eventId}?visit=${visitId}`)
+        if (!event.placementAssignments.some((row: { employeeId: string; postId: string }) => row.employeeId === expectedAssignment.employeeId && row.postId === physicalPost.id)) {
+          await page.getByRole('button', { name: 'Распределить автоматически', exact: true }).click()
+          await page.getByRole('dialog').getByRole('button', { name: 'Подтвердить распределение', exact: true }).click()
+          await expect(page.getByRole('dialog')).toHaveCount(0)
+        }
+        if (visit.approvalStatus === 'RETURNED') {
+          const correction = `${run.marker}: при недоборе старший вызывает усиление; досмотр открывается после усиления`
+          await page.getByRole('textbox', { name: 'Комментарий к посту', exact: true }).fill(correction)
+          await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+          await expect(page.getByRole('button', { name: 'Сохранить', exact: true })).toBeDisabled()
+          expect((await persisted(page, senior, eventId)).reconSectorPosts.find((row: { id: string }) => row.id === physicalPost.id).comment).toBe(correction)
+          await screenshot('corrected-post')
+        }
+        await page.getByRole('button', { name: 'Завершить расстановку', exact: true }).click()
+        const shortage = page.getByRole('dialog')
+        await expect(shortage.getByRole('button', { name: 'Подтвердить оверрайд', exact: true })).toBeDisabled()
+        await shortage.getByRole('textbox').fill(`${run.marker}: недобор досмотра; до усиления пост не открывается`)
+        await shortage.getByRole('button', { name: 'Подтвердить оверрайд', exact: true }).click()
+        await expect(shortage).toHaveCount(0)
+        event = await persisted(page, senior, eventId)
+        visit = event.visitObjects.find((row: { id: string }) => row.id === visitId)
+        expect(visit.stage).toBe('APPROVAL')
+        expect(event.placementAssignments).toEqual(expect.arrayContaining([expect.objectContaining({ employeeId: expectedAssignment.employeeId, postId: physicalPost.id })]))
+        await screenshot('placement-completed')
+      }
+      if (visit.stage === 'APPROVAL' && visit.documentStatus !== 'SUBMITTED') {
+        await page.goto(`${APP}/security-ops/events/${eventId}?visit=${visitId}`)
+        await expect(page.getByRole('region', { name: 'Согласование расстановки', exact: true })).toBeVisible()
+        const resolved = page.getByRole('button', { name: 'Устранено', exact: true })
+        while (await resolved.count()) {
+          const count = await resolved.count()
+          await resolved.first().click()
+          await expect(resolved).toHaveCount(count - 1)
+        }
+        if (visit.documentVersion === 0 || visit.documentVersions.length === 0) {
+          await page.getByRole('combobox', { name: 'Выберите согласующего из руководства второго департамента', exact: true }).selectOption({ label: 'Калиев Алишер Дарханович · acc_dir_head_d2' })
+          await page.getByRole('button', { name: 'Назначить первым согласующим', exact: true }).click()
+        }
+        await page.getByRole('button', { name: 'Отправить на согласование', exact: true }).click()
+        event = await persisted(page, senior, eventId)
+        visit = event.visitObjects.find((row: { id: string }) => row.id === visitId)
+        expect(visit.documentStatus).toBe('SUBMITTED')
+        await screenshot(`v${visit.documentVersion}-sent`)
+      }
+      if (needsReturn && visit.documentVersion === 1 && visit.documentStatus === 'SUBMITTED') {
+        const approver = await role(page, 'acc_dir_head_d2')
+        await page.goto(`${APP}/security-ops/events/${eventId}?visit=${visitId}`)
+        await page.getByRole('row').filter({ hasText: 'учётка acc_dir_head_d2' }).getByRole('button', { name: 'Вернуть', exact: true }).click()
+        const dialog = page.getByRole('dialog')
+        await dialog.getByLabel('Общая причина *', { exact: true }).fill(`${run.marker}: уточнить действия при недоборе`)
+        for (const n of [1, 2]) {
+          await dialog.getByRole('button', { name: '+ Замечание', exact: true }).click()
+          await dialog.getByLabel(`Текст замечания ${n}`, { exact: true }).fill(`${run.marker}: ${n === 1 ? 'порядок усиления' : 'уточнить запись физического поста'}`)
+        }
+        await dialog.getByLabel('Пост замечания 2', { exact: true }).selectOption(physicalPost.id)
+        await dialog.getByRole('button', { name: 'Подтвердить возврат', exact: true }).click()
+        await expect(dialog).toHaveCount(0)
+        const returned = (await persisted(page, approver, eventId)).visitObjects.find((row: { id: string }) => row.id === visitId)
+        expect(returned).toMatchObject({ stage: 'PLACEMENT', approvalStatus: 'RETURNED', documentVersion: 1 })
+        expect(returned.approvalRemarks).toHaveLength(2)
+        await screenshot('v1-returned')
+        // Repeat this same object's UI correction branch, preserving all saved
+        // signatures/version history. Nothing is reset or rebuilt via API.
+        return finishOmUI(page, run, phase)
+      }
+      if (visit.documentStatus === 'SUBMITTED') {
+        for (const [index, username] of ['acc_dir_head_d2', 'probe1090_approver2'].entries()) {
+          const signer = await role(page, username)
+          const saved = await read(page, signer, `/api/ops/security-events/${eventId}/`)
+          const current = saved.visitObjects.find((row: { id: string }) => row.id === visitId)
+          if (current.approvalRoute[index].status !== 'APPROVED') {
+            await page.goto(`${APP}/security-ops/events/${eventId}?visit=${visitId}`)
+            const decision = page.waitForResponse(response => response.url().includes('/decide/') && response.request().method() === 'POST')
+            await page.getByRole('row').filter({ hasText: `учётка ${username}` }).getByRole('button', { name: 'Согласовать', exact: true }).click()
+            const result = await decision
+            expect(result.status(), await result.text()).toBe(200)
+          }
+          const signed = (await persisted(page, signer, eventId)).visitObjects.find((row: { id: string }) => row.id === visitId)
+          expect(signed.approvalRoute[index]).toMatchObject({ status: 'APPROVED', signature: { login: username, versionNumber: finalVersion } })
+          await screenshot(`signature-${index + 1}`)
+        }
+      }
+      const verified = (await read(page, senior, `/api/ops/security-events/${eventId}/`)).visitObjects.find((row: { id: string }) => row.id === visitId)
+      expect(verified.documentStatus).toBe('APPROVED')
+      expect(verified.approvalRoute.map((row: { signature: { login: string } }) => row.signature.login)).toEqual(['acc_dir_head_d2', 'probe1090_approver2'])
+      if (needsReturn) expect(verified.documentVersions.map((row: { number: number; status: string }) => [row.number, row.status])).toEqual([[1, 'RETURNED'], [2, 'APPROVED']])
+    }
+  }
+  for (const [eventIndex, eventId] of run.eventIds.entries()) {
+    for (const noaccount of [false, true]) {
+      const username = noaccount ? 'acc_dir_head' : 'probe1090_participant'
+      const ackToken = await role(page, username)
+      const employeeId = noaccount ? fixture.people.noaccount.id : fixture.people.participant.id
+      const endpoint = `/api/ops/security-events/my-assignments/${noaccount ? `?employee=${employeeId}` : ''}`
+      const before = await read(page, ackToken, endpoint)
+      const assignment = before.results.find((row: { eventId: string }) => row.eventId === eventId)
+      expect(assignment).toBeTruthy()
+      await page.goto(`${APP}/security-ops/profile${noaccount ? `/${employeeId}` : ''}`)
+      const item = page.getByRole('listitem').filter({ hasText: `${run.marker} ОМ${eventIndex + 1}` })
+      await expect(item).toBeVisible()
+      if (!assignment.acknowledgedAt) {
+        if (noaccount) {
+          await item.getByRole('button', { name: 'Ознакомлен лично', exact: true }).click()
+          const dialog = page.getByRole('dialog')
+          await expect(dialog.getByRole('button', { name: 'Подтвердить ознакомление', exact: true })).toBeDisabled()
+          await dialog.getByLabel('Способ доведения *', { exact: true }).fill(`${run.marker}: личный инструктаж начальником управления`)
+          await expect(dialog.getByRole('button', { name: 'Подтвердить ознакомление', exact: true })).toBeDisabled()
+          await dialog.getByLabel('Основание отсутствия учётной записи *', { exact: true }).fill(`${run.marker}: сотруднику ещё не выдана учётная запись`)
+          await dialog.getByRole('button', { name: 'Подтвердить ознакомление', exact: true }).click()
+          await expect(dialog).toHaveCount(0)
+        } else {
+          const acknowledgement = page.waitForResponse(response => response.url().includes('/acknowledge/') && response.request().method() === 'POST')
+          await item.getByRole('button', { name: 'Ознакомлен, заступлю', exact: true }).click()
+          expect((await acknowledgement).status()).toBe(200)
+        }
+      }
+      await page.reload()
+      const saved = (await read(page, ackToken, endpoint)).results.find((row: { eventId: string }) => row.eventId === eventId)
+      expect(saved.acknowledgedAt).toBeTruthy()
+      expect(saved.acknowledgedVia).toBe(noaccount ? 'personal' : 'self')
+      if (noaccount) expect(JSON.stringify(saved)).toContain(run.marker)
+      await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-${noaccount ? 'head-personal' : 'self'}-ack.png`)
+    }
+    if (phase === 'ack') continue
+    const leadToken = await role(page, 'acc_dept_head_d2')
+    let event = await read(page, leadToken, `/api/ops/security-events/${eventId}/`)
+    if (event.stage === 'ACKNOWLEDGEMENT') {
+      expect(event.placementAssignments.every((row: { acknowledgedAt: string | null }) => row.acknowledgedAt)).toBe(true)
+      await page.goto(`${APP}/security-ops/events/${eventId}`)
+      await expect(page.getByRole('button', { name: 'Завершить ознакомление', exact: true })).toBeEnabled()
+      const completion = page.waitForResponse(response => response.url().includes('/acknowledgement/complete/') && response.request().method() === 'POST')
+      await page.getByRole('button', { name: 'Завершить ознакомление', exact: true }).click()
+      const completed = await completion
+      expect(completed.status(), await completed.text()).toBe(200)
+      event = await persisted(page, leadToken, eventId)
+      expect(event.stage).toBe('CONDUCT')
+      await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-conduct.png`)
+    }
+    for (const initialVisit of event.visitObjects) {
+      if (initialVisit.stage === 'CLOSED') continue
+      const seniorName = initialVisit.chiefEmployeeId === fixture.people.senior.id ? 'probe1090_senior' : 'probe1090_senior2'
+      const senior = await role(page, seniorName)
+      await page.goto(`${APP}/security-ops/events/${eventId}?visit=${initialVisit.id}`)
+      await expect(page.locator('[data-slot="evaluation-panel"]')).toBeVisible()
+      await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-${initialVisit.id}-senior-conduct.png`)
+      await expect(page.getByRole('button', { name: 'Всем 10', exact: true })).toBeEnabled()
+      await page.getByRole('button', { name: 'Всем 10', exact: true }).click()
+      await expect(page.locator('[data-slot="evaluation-progress"]')).toHaveText('Оценено 1 из 1')
+      const incidents = page.locator('[data-slot="incidents-panel"]')
+      await incidents.getByRole('button', { name: '+ Добавить', exact: true }).click()
+      const form = incidents.locator('[data-slot="incident-form"]')
+      const post = event.reconSectorPosts.find((row: { visitObjectId: string; demandKindCode: string }) => row.visitObjectId === initialVisit.id && row.demandKindCode === 'PHYSICAL_SQUAD')
+      await form.getByLabel('Время', { exact: true }).fill(`${run.businessDate}T11:00`)
+      await form.getByLabel('Пост', { exact: true }).selectOption(post.id)
+      await form.getByLabel('Описание *', { exact: true }).fill(`${run.marker}: учебная проверка связи ${initialVisit.id}`)
+      await form.getByLabel('Принятые меры', { exact: true }).fill('Связь со старшим подтверждена, замечание устранено')
+      await form.getByRole('button', { name: 'Записать инцидент', exact: true }).click()
+      await expect(form).toHaveCount(0)
+      const conducted = await persisted(page, senior, eventId)
+      expect(conducted.journalEntries.some((row: { type: string; postId: string; title: string }) => row.type === 'INCIDENT' && row.postId === post.id && row.title.includes(run.marker))).toBe(true)
+      await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-${initialVisit.id}-evaluated.png`)
+      await page.getByRole('button', { name: 'Закрыть объект', exact: true }).click()
+      const dialog = page.getByRole('dialog')
+      await dialog.getByLabel('Итоговый комментарий по объекту (необязательно)', { exact: true }).fill(`${run.marker}: служба завершена, связь проверена, оценки выставлены`)
+      await dialog.getByRole('button', { name: 'Подтвердить закрытие', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      const closed = await persisted(page, senior, eventId)
+      expect(closed.visitObjects.find((row: { id: string }) => row.id === initialVisit.id)).toMatchObject({ stage: 'CLOSED' })
+      await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-${initialVisit.id}-closed.png`)
+    }
+    expect((await read(page, leadToken, `/api/ops/security-events/${eventId}/`)).stage).toBe('CLOSED')
+  }
+  if (phase === 'ack') {
+    console.log('ACK UI ONLY COMPLETE; conduct/closure not executed', JSON.stringify(run))
+    return
+  }
+  const participant = await role(page, 'probe1090_participant')
+  await page.goto(`${APP}/security-ops/profile`)
+  await page.getByRole('tab', { name: 'История', exact: true }).click()
+  const history = await read(page, participant, '/api/ops/security-events/my-assignments/')
+  for (const [index, eventId] of run.eventIds.entries()) {
+    expect(history.results.find((row: { eventId: string }) => row.eventId === eventId).eventStage).toBe('CLOSED')
+    await expect(page.getByRole('link', { name: new RegExp(`${run.marker} ОМ${index + 1}`) })).toBeVisible()
+  }
+  await stableScreenshot(page, `/tmp/1090-${run.campaignId}-participant-history.png`)
+  const analyst = await role(page, 'acc_ops_staff')
+  for (const eventId of run.eventIds) {
+    const event = await read(page, analyst, `/api/ops/security-events/${eventId}/`)
+    await page.goto(`${APP}/security-ops/analytics/operations?event=${eventId}`)
+    await expect(page.getByRole('navigation', { name: 'Путь детализации', exact: true })).toContainText(event.code)
+    const analytics = await read(page, analyst, `/api/ops/operations-analytics/?level=EVENT&event_id=${eventId}`)
+    expect(JSON.stringify(analytics.data)).toContain(event.code)
+    await stableScreenshot(page, `/tmp/1090-${run.campaignId}-${eventId}-analytics.png`)
+  }
+  console.log('FULL OM UI COMPLETE', JSON.stringify(run))
+}

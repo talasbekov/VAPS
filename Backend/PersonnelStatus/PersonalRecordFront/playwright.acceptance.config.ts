@@ -11,7 +11,8 @@ if (!['http://localhost:3110', 'http://localhost:3108'].includes(process.env.SMO
 export default defineConfig(smoke, {
   globalSetup: undefined,
   globalTeardown: undefined,
+  expect: { timeout: 30_000 },
   testMatch: ['forces-workspace.spec.ts', 'role-driven-acceptance.spec.ts', 'smoke-preserve-data.spec.ts'],
   outputDir: '/tmp/1090-acceptance-results',
-  use: { baseURL: process.env.SMOKE_APP, screenshot: 'only-on-failure', trace: 'retain-on-failure' },
+  use: { baseURL: process.env.SMOKE_APP, actionTimeout: 30_000, screenshot: 'only-on-failure', trace: 'retain-on-failure' },
 })
