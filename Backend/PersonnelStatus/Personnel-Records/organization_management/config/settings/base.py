@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
+from celery.schedules import crontab
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -254,6 +256,26 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    'statuses-apply-planned-daily': {
+        'task': 'statuses.apply_planned_statuses',
+        'schedule': crontab(hour=0, minute=1),
+    },
+    'statuses-complete-expired-daily': {
+        'task': 'statuses.complete_expired_statuses',
+        'schedule': crontab(hour=0, minute=15),
+    },
+    'statuses-notify-upcoming-daily': {
+        'task': 'statuses.send_upcoming_status_notifications',
+        'schedule': crontab(hour=0, minute=30),
+        'args': (7,),
+    },
+    'statuses-notify-ending-daily': {
+        'task': 'statuses.send_ending_status_notifications',
+        'schedule': crontab(hour=0, minute=45),
+        'args': (3,),
+    },
+}
 
 # Channels Configuration (WebSocket)
 ASGI_APPLICATION = 'organization_management.config.asgi.application'
