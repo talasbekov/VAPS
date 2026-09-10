@@ -64,7 +64,9 @@ CHANNEL_LAYERS = {
     },
 }
 
-# Полное логирование
+# Журнал стенда: ошибки и штатные события сохраняются, но SQL на DEBUG не
+# превращает файл в бесконечный дамп каждого запроса. `local_postgres.py`
+# наследует этот контур, поэтому ограничение защищает и живой backend :8100.
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -82,15 +84,22 @@ LOGGING = {
             'formatter': 'verbose',
         },
         'file': {
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.RotatingFileHandler',
             'filename': BASE_DIR / 'django.log',
             'formatter': 'verbose',
+            # 50 МиБ активного файла + пять архивов: максимум 300 МиБ вместо
+            # неограниченного роста. Старые записи вытесняются только после
+            # того, как их сменили пять новых полных файлов.
+            'maxBytes': 50 * 1024 * 1024,
+            'backupCount': 5,
+            'encoding': 'utf-8',
+            'level': 'INFO',
         },
     },
 
     'root': {
         'handlers': ['console', 'file'],
-        'level': 'DEBUG',
+        'level': 'INFO',
     },
 
     'loggers': {
@@ -100,7 +109,7 @@ LOGGING = {
         # 238 КБ лога на несколько запросов.
         'django': {
             'handlers': ['console', 'file'],
-            'level': 'DEBUG',
+            'level': 'INFO',
             'propagate': False,
         },
         'django.request': {
@@ -110,6 +119,4 @@ LOGGING = {
         },
     },
 }
-LOGGING['handlers']['console']['level'] = 'DEBUG'
-LOGGING['handlers']['file']['level'] = 'DEBUG'
-LOGGING['loggers']['django']['level'] = 'DEBUG'
+LOGGING['handlers']['console']['level'] = 'INFO'
