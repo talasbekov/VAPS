@@ -141,11 +141,13 @@ def _create_report_in_thread(user_id, body, results, index):
         connections.close_all()
 
 
-def _advance_report_in_thread(job_code, results, index):
+def _advance_report_in_thread(job_code, results, index, ready=None):
     """Собирает отдельную job отдельным PostgreSQL-соединением."""
     try:
         with transaction.atomic():
             job = OpsServiceReportJob.objects.get(job_code=job_code)
+            if ready is not None:
+                ready.wait()
             reports._advance(job)
         results[index] = "OK"
     except Exception as error:  # noqa: BLE001 — конкурентный сбой не скрывать
@@ -464,6 +466,57 @@ def test_scoped_csv_uses_employee_division_on_shift_business_date(
     assert "Переведённый после смены" not in foreign_content
 
 
+def test_scoped_csv_unwinds_nested_temporary_transfers(
+    scoped_report_actors,
+):
+    """После двух завершённых временных переводов смена снова относится к A."""
+    own_api, foreign_api = scoped_report_actors
+    first_unit = Division.objects.get(name="Первое управление отчёта")
+    second_unit = Division.objects.get(name="Второе управление отчёта")
+    third_unit = Division.objects.create(
+        name="Третье управление отчёта",
+        division_type=Division.DivisionType.DIRECTORATE,
+        parent=second_unit.parent,
+    )
+    employee = Employee.objects.get(personnel_number="SR-OWN")
+    _shift("Вернувшийся после вложенных переводов", 1, employee_id=employee.id)
+    today = Clock.today_local()
+    EmployeeTransferHistory.objects.create(
+        employee=employee,
+        from_division=first_unit,
+        to_division=second_unit,
+        transfer_date=today - dt.timedelta(days=7),
+        is_temporary=True,
+        end_date=today - dt.timedelta(days=3),
+    )
+    EmployeeTransferHistory.objects.create(
+        employee=employee,
+        from_division=second_unit,
+        to_division=third_unit,
+        transfer_date=today - dt.timedelta(days=6),
+        is_temporary=True,
+        end_date=today - dt.timedelta(days=4),
+    )
+
+    own_job = own_api.post(
+        JOBS, _create_body(idempotencyKey="nested-transfer-first"), format="json",
+    ).json()
+    own_content = own_api.post(download_path(
+        _run_to_completion(own_api, own_job["reportJobId"])["artifact"]["artifactId"]
+    )).json()["content"]
+    foreign_job = foreign_api.post(
+        JOBS, _create_body(idempotencyKey="nested-transfer-second"), format="json",
+    ).json()
+    foreign_content = foreign_api.post(download_path(
+        _run_to_completion(
+            foreign_api, foreign_job["reportJobId"]
+        )["artifact"]["artifactId"]
+    )).json()["content"]
+
+    assert "Вернувшийся после вложенных переводов" in own_content
+    assert "Вернувшийся после вложенных переводов" not in foreign_content
+
+
 def test_scoped_report_is_not_addressable_from_another_department(
     scoped_report_actors,
 ):
@@ -695,7 +748,7 @@ def test_retry_reuses_artifact_new_revision_rebuilds(generator, shifts):
 
 @pytest.mark.django_db(transaction=True)
 def test_concurrent_new_revisions_get_distinct_series_revisions(
-    generator, shifts, monkeypatch,
+    generator, shifts,
 ):
     """Две одновременно собранные редакции одной серии не получают r2 обе."""
     api, _ = generator
@@ -713,28 +766,12 @@ def test_concurrent_new_revisions_get_distinct_series_revisions(
     )
 
     assert connection.vendor == "postgresql"
-    barrier = threading.Barrier(2, timeout=20)
-    counter_lock = threading.Lock()
-    create_calls = 0
-    original_create = OpsServiceReportArtifact.objects.create
-
-    def create_simultaneously(*args, **kwargs):
-        nonlocal create_calls
-        with counter_lock:
-            create_calls += 1
-            should_wait = create_calls <= 2
-        if should_wait:
-            barrier.wait()
-        return original_create(*args, **kwargs)
-
-    monkeypatch.setattr(
-        OpsServiceReportArtifact.objects, "create", create_simultaneously
-    )
+    ready = threading.Barrier(2, timeout=20)
     results = [None, None]
     threads = [
         threading.Thread(
             target=_advance_report_in_thread,
-            args=(job_code, results, index),
+            args=(job_code, results, index, ready),
         )
         for index, job_code in enumerate(revision_codes)
     ]
@@ -748,6 +785,47 @@ def test_concurrent_new_revisions_get_distinct_series_revisions(
     assert set(OpsServiceReportArtifact.objects.filter(
         job_code__in=revision_codes
     ).values_list("revision", flat=True)) == {2, 3}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_four_concurrent_revisions_all_get_a_unique_series_revision(
+    generator, shifts,
+):
+    """Четвёртая конкурентная job не упирается в предел повторов."""
+    api, _ = generator
+    source = api.post(
+        JOBS, _create_body(idempotencyKey="four-revision-source"), format="json",
+    ).json()
+    _run_to_completion(api, source["reportJobId"])
+    revisions = [
+        api.post(job_path(source["reportJobId"]) + "new-revision/").json()
+        for _ in range(4)
+    ]
+    revision_codes = [row["reportJobId"] for row in revisions]
+    OpsServiceReportJob.objects.filter(job_code__in=revision_codes).update(
+        state="PROCESSING", progress_percent=50
+    )
+
+    assert connection.vendor == "postgresql"
+    ready = threading.Barrier(4, timeout=20)
+    results = [None] * 4
+    threads = [
+        threading.Thread(
+            target=_advance_report_in_thread,
+            args=(job_code, results, index, ready),
+        )
+        for index, job_code in enumerate(revision_codes)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert all(not thread.is_alive() for thread in threads), results
+    assert results == ["OK"] * 4
+    assert set(OpsServiceReportArtifact.objects.filter(
+        job_code__in=revision_codes
+    ).values_list("revision", flat=True)) == {2, 3, 4, 5}
 
 
 def test_new_revision_requires_completed_job(generator, shifts):
