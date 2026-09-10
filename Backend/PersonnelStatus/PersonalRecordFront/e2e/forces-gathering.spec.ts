@@ -159,6 +159,7 @@ function metric(page: Page, label: string) {
 /** ОМ на «Расстановке», прошедшее цепочку сбора сил: в составе один человек. */
 async function prepareEventOnPlacement(
   token: string,
+  options?: { firstPostShift?: string },
 ): Promise<{
   id: string
   roster: string[]
@@ -175,7 +176,7 @@ async function prepareEventOnPlacement(
     await assertStep(res, method, path)
     return res.json().catch(() => ({}))
   }
-  const { code, total } = await prepareDemandEvent(token, '2027-06-01')
+  const { code, total } = await prepareDemandEvent(token, '2027-06-01', options)
   const found = await call('GET', `/api/ops/security-events/?search=${encodeURIComponent(code)}`)
   const id = found.results[0].id as string
   const base = `/api/ops/security-events/${id}`
@@ -1185,31 +1186,38 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     // вместе с боксом потребности (Plane №110) — заводить смену стало негде.
     // Возвращена по Plane №123, но целится теперь в ПОСТ: смена — свойство
     // поста, как в эталоне («Сектор A · смена 07:00–15:00»).
+    //
+    // 🔴 СМЕНА ЗАДАЁТСЯ ДО РАССТАНОВКИ, А НЕ ПОСЛЕ (Plane №1058). Прежняя
+    // версия пробы доводила ОМ до «Расстановки» и ТОЛЬКО ТАМ слала
+    // PATCH .../recon/ сырым `send()`, который код ответа не проверяет.
+    // `can_manage_recon` намеренно замораживает объект, как только тот уходит
+    // с этапа RECON (Plane №424/№634, «закрытый или уже прошедший этап
+    // неизменяем»), — сервер честно отбивал правку 403, `send()` отказ
+    // проглатывал, и «прочитано пусто» было не потерей данных, а верно
+    // отбитой попыткой задним числом. Смена теперь задаётся ДО перехода —
+    // как это делает человек на экране рекогносцировки, — общей фикстурой
+    // (`firstPostShift`), которая ходит через `standCall` и падает на первом
+    // же отбитом шаге.
     const token = await apiToken()
-    const prepared = await prepareEventOnPlacement(token)
+    const shift = '07:00–15:00'
+    const prepared = await prepareEventOnPlacement(token, { firstPostShift: shift })
     const card = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
     const post = card.reconSectorPosts.find((row: any) => row.id === prepared.postId)
 
-    // Задаём смену там же, где её задаёт человек, — правкой расчёта постов.
-    const shift = '07:00–15:00'
-    await send(token, 'PATCH', `/api/ops/security-events/${prepared.id}/recon/`, {
-      checklist: card.reconChecklist,
-      sectorPosts: card.reconSectorPosts.map((row: any) =>
-        row.id === prepared.postId ? { ...row, shift } : row,
-      ),
-    })
+    expect(post.shift, 'смена не сохранилась на посту').toBe(shift)
 
-    // Сторож: смена пришла ИМЕННО с поста, а не из строки потребности —
-    // иначе проба не отличала бы новый источник от старого.
-    const saved = await get<any>(token, `/api/ops/security-events/${prepared.id}/`)
-    const savedPost = saved.reconSectorPosts.find(
-      (row: any) => row.id === prepared.postId,
+    // 🔴 `demandRows` — ПРОЕКЦИЯ расчёта постов (`_demand_rows_of`), а не
+    // отдельный источник (найдено при исправлении №1058). Старый бокс
+    // потребности, куда смену когда-то вводили независимо от поста (Plane
+    // №110/№123), снят вместе со своим полем ввода, и писать в `demandRows`
+    // эндпоинтов в API нет вовсе — прежняя версия сторожа ждала там ПУСТУЮ
+    // смену, но с исправленным (реальным) источником строка потребности
+    // ТОЖЕ несёт смену — ровно ту же, копией. Сторож здесь — что копия не
+    // разошлась с постом, а не что её не должно быть.
+    const demandRow = (card.demandRows ?? []).find(
+      (row: any) => row.sourcePostId === prepared.postId,
     )
-    expect(savedPost.shift, 'смена не сохранилась на посту').toBe(shift)
-    expect(
-      (saved.demandRows ?? []).every((row: any) => (row.shift ?? '') === ''),
-      'смена нашлась в строке потребности — проба не отличит источники',
-    ).toBe(true)
+    expect(demandRow?.shift, 'строка потребности разошлась со сменой поста').toBe(shift)
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${prepared.id}/`)
