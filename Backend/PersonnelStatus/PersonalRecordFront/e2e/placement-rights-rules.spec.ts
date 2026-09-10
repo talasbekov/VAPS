@@ -10,6 +10,7 @@ test('№1127: права редактирования расстановки о
   const deputy = placementRightsOf({
     editable: true,
     canEditPlacement: true,
+    identityResolved: true,
     myEmployeeId: '42',
     visit: {
       chiefEmployeeId: '17',
@@ -23,10 +24,24 @@ test('№1127: права редактирования расстановки о
   const chief = placementRightsOf({
     editable: true,
     canEditPlacement: true,
+    identityResolved: true,
     myEmployeeId: '17',
     visit: { chiefEmployeeId: '17', deputies: [] },
   })
   expect(chief.edit).toBe(true)
   expect(chief.setSectorSenior).toBe(true)
   expect(chief.complete).toBe(true)
+})
+
+test('№1127 P1: неразрешённая личность fail-closed для действий ведущего', () => {
+  const pendingIdentity = placementRightsOf({
+    editable: true,
+    canEditPlacement: true,
+    identityResolved: false,
+    myEmployeeId: null,
+    visit: { chiefEmployeeId: '17', deputies: [{ employeeId: '42', canEditPlacement: true }] },
+  })
+  expect(pendingIdentity.edit, 'разрешённая правка состава не зависит от загрузки identity').toBe(true)
+  expect(pendingIdentity.setSectorSenior).toBe(false)
+  expect(pendingIdentity.complete).toBe(false)
 })

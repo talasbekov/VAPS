@@ -120,14 +120,28 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       (url) => url.pathname.includes('/api/operations/my-permissions/'),
       (route) => route.fulfill({ json: { permissions: ['event.view', 'status.view', 'personnel.view'], roles: [] } }),
     )
+    let releaseIdentity!: () => void
+    const identityReleased = new Promise<void>((resolve) => { releaseIdentity = resolve })
+    let identityRequested!: () => void
+    const identityPending = new Promise<void>((resolve) => { identityRequested = resolve })
     await page.route(
       (url) => url.pathname.includes('/api/operations/my-employee/'),
-      (route) => route.fulfill({ json: { employee: { id: Number(deputyId), full_name: 'Заместитель №1127', rank_code: null, position_code: null, division: null, personnel_number: null, hire_date: null }, unlinked_reason: null } }),
+      async (route) => {
+        identityRequested()
+        await identityReleased
+        await route.fulfill({ json: { employee: { id: Number(deputyId), full_name: 'Заместитель №1127', rank_code: null, position_code: null, division: null, personnel_number: null, hire_date: null }, unlinked_reason: null } })
+      },
     )
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${eventId}?visit=${visit!.id}`)
     const card = page.getByRole('region', { name: 'Расстановка сил' })
     await expect(card).toBeVisible({ timeout: 20_000 })
+    await identityPending
+    // Пока «кто я» не ответил, нельзя кратко рекламировать действие, которое
+    // может быть отклонено сервером для заместителя.
+    await expect(card.getByRole('button', { name: 'Завершить расстановку', exact: true })).toHaveCount(0, { timeout: 1_000 })
+    await expect(card.getByRole('button', { name: /Старший поста:/ })).toHaveCount(0, { timeout: 1_000 })
+    releaseIdentity()
     await expect(card.getByRole('button', { name: 'Удалить с поста', exact: false })).toBeEnabled()
     await expect(card.getByRole('button', { name: 'Завершить расстановку', exact: true })).toHaveCount(0, { timeout: 1_000 })
     await expect(card.getByRole('button', { name: /Старший поста:/ })).toHaveCount(0, { timeout: 1_000 })

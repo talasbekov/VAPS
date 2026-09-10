@@ -126,13 +126,14 @@ type DragPayload = {
 export function placementRightsOf(input: {
   editable: boolean;
   canEditPlacement: boolean;
+  identityResolved: boolean;
   myEmployeeId: string | null;
   visit: {
     chiefEmployeeId: string | null;
     deputies?: readonly { employeeId: string; canEditPlacement?: boolean }[];
   } | null;
 }) {
-  const { editable, canEditPlacement, myEmployeeId, visit } = input;
+  const { editable, canEditPlacement, identityResolved, myEmployeeId, visit } = input;
   const isDeputy = myEmployeeId !== null && (visit?.deputies ?? []).some(
     deputy => deputy.employeeId === myEmployeeId && deputy.canEditPlacement !== false,
   );
@@ -140,7 +141,10 @@ export function placementRightsOf(input: {
   // Старший объекта, ведущий ОМ и глобальный исполнитель уже приходят с
   // `canEditPlacement`; единственный различимый в данных редактор без права
   // перехода — заместитель. Серверный контракт закреплён API-пробой ниже.
-  const lead = edit && !isDeputy;
+  // Пока «кто я» грузится или ответил без кадровой записи, нельзя выводить
+  // операции, которые могут принадлежать только ведущему: отсутствие id не
+  // доказывает, что пользователь не заместитель (P1 №1127).
+  const lead = identityResolved && edit && !isDeputy;
   return { edit, setSectorSenior: lead, complete: lead, isDeputy };
 }
 
@@ -437,12 +441,14 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * задача №390). */
   const allPosts = event.reconSectorPosts;
   const scope = useVisitObjectScope(event, allPosts);
+  const identityResolved = me.isSuccess && me.data?.employee !== null;
   const placementRights = placementRightsOf({
     editable: placementEditable(event, scope.visit),
     canEditPlacement: scope.visit === null
       ? access.can(PLACEMENT_MANAGE)
       : scope.visit.canManagePlacement === true,
-    myEmployeeId: me.data?.employee ? String(me.data.employee.id) : null,
+    identityResolved,
+    myEmployeeId: identityResolved ? String(me.data!.employee!.id) : null,
     visit: scope.visit,
   });
   const canManagePlacement = placementRights.edit;
@@ -1093,7 +1099,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 </Button>
               )}
             </RightGate>
-            {!placementRights.isDeputy && (
+            {canCompletePlacement && (
               <RightGate
                 reason={
                   placementAlreadyCompleted
@@ -1551,7 +1557,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         {/* Чип-переключатель «Старший поста» (`[РАС-03]`): старший
                             на пост ОДИН, сервер снимает прежнего сам. Состояние
                             — `aria-pressed`, а не второй текст кнопки. */}
-                        {!placementRights.isDeputy && (
+                        {canSetSectorSenior && (
                           <RightGate reason={placementManageReason}>
                             {(describedBy) => (
                               <button
