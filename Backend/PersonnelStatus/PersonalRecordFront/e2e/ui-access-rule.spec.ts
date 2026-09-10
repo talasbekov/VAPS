@@ -57,6 +57,18 @@ test.describe(LIVE ? 'правило доступа' : 'правило дост�
     await expect(page.getByText(/Недостаточно прав для просмотра/)).toBeVisible()
   })
 
+  test('простой сотрудник видит статус без кнопки и окна изменения', async ({ page }) => {
+    await signIn(page, 'acc_employee_d2', PASSWORD)
+    await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
+
+    await expect(
+      page.locator('button[title="Открыть статусы сотрудника"]'),
+      'read-only роль всё ещё получает кликабельный статус',
+    ).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: /Статусы сотрудника|Запланированные статусы/ })).toHaveCount(0)
+  })
+
   test('читатель раздела видит кнопку перехода этапа выключенной, с причиной', async ({ page }) => {
     const rows = await adminEvents()
     // На «Рекогносцировке» без старшего объекта формы нет вовсе — пустое
