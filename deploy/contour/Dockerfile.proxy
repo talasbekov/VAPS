@@ -4,4 +4,4 @@ COPY deploy/contour/nginx-error-filter.awk /usr/local/lib/nginx-error-filter.awk
 COPY deploy/contour/proxy-entrypoint.sh /usr/local/bin/contour-proxy-entrypoint
 RUN chmod 755 /usr/local/bin/contour-proxy-entrypoint
 ENTRYPOINT ["/usr/local/bin/contour-proxy-entrypoint"]
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["nginx", "-g", "daemon off; worker_shutdown_timeout 5s;"]
