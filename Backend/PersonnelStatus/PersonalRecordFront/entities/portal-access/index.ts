@@ -125,20 +125,12 @@ export function moduleOpenFor(href: string, hasPermission: (code: string) => boo
 }
 
 /** Выбрать первый доступный рабочий экран сразу после входа. */
-export function defaultPortalRoute(
-  hasPermission: (code: string) => boolean,
-  roleCodes: readonly string[],
-): ModuleHref {
+export function defaultPortalRoute(hasPermission: (code: string) => boolean): ModuleHref {
   if (hasPermission("*")) return "/dashboard";
-  // Штаб и ответственный начинают с единого рабочего экрана сбора сил.
-  // Его серверный гейт использует те же права и область роли, что выдаются
-  // именно этим двум ролям; случайное наличие `object.view` их не уводит в
-  // реестр вместо основной задачи.
-  if (
-    roleCodes.some(
-      (code) => code === "OPS_STAFF" || code === "FORCES_GATHERING_OFFICER",
-    )
-  ) {
+  // Старт «Сбора сил» задаёт та же карта `forces.*`, что открывает сам экран.
+  // Это покрывает дополнительные и составные роли, а снятое право сразу
+  // возвращает человека к следующему доступному рабочему маршруту.
+  if (moduleOpenFor("/employees", hasPermission)) {
     return "/employees";
   }
   return (

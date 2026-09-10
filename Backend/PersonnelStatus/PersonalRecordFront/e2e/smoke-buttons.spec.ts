@@ -34,6 +34,7 @@ import path from 'node:path'
 import { expect, request as apiRequest, test, type Page, type Request } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { ROUTES } from './portal-routes'
+import { defaultPortalRoute } from '../entities/portal-access'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const API_ORIGIN = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
@@ -852,6 +853,14 @@ test.describe('смоук-обход портала', () => {
   test.skip(!LIVE, 'нужен живой стек — SMOKE_LIVE=1 + Django :8100 + Next :3106')
   test.describe.configure({ mode: 'serial' })
 
+  test('стартовый маршрут следует grants forces, а не названию роли', () => {
+    const withForcesAndObject = (code: string) => ['forces.allocate', 'object.view'].includes(code)
+    expect(defaultPortalRoute(withForcesAndObject)).toBe('/employees')
+
+    const afterForcesRevoked = (code: string) => code === 'object.view'
+    expect(defaultPortalRoute(afterForcesRevoked)).toBe('/security-ops/objects')
+  })
+
   // Сверка «карта маршрутов покрыта обходом» ПЕРЕЕХАЛА в
   // `route-map-coverage.spec.ts` (Plane №319). Она стояла здесь, вне персон, и
   // потому не попадала ни в один блок `-g "persona ..."` — а обход гоняется
@@ -907,11 +916,11 @@ test.describe('смоук-обход портала', () => {
         })
       }
 
-      if (persona.key !== STAND_USERNAME) {
+      if (persona.key !== STAND_USERNAME && formDestination !== undefined) {
         test(`${persona.key} корень открывает доступный рабочий экран`, async ({ page }) => {
           await page.goto('/')
-          await expect(page).toHaveURL(/\/service-employees\/?$/, { timeout: 20_000 })
-          await expect(page.getByRole('heading', { name: 'Сотрудники Службы' })).toBeVisible({
+          await expect(page).toHaveURL(new RegExp(`${formDestination.path}/?$`), { timeout: 20_000 })
+          await expect(page.getByRole('heading', { name: formDestination.heading })).toBeVisible({
             timeout: 20_000,
           })
         })
