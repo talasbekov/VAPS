@@ -79,6 +79,8 @@ export function EmployeeAdminDialog({ employee, options, onClose }: Props) {
       let result: StaffingResponse;
       if (employee === null) {
         result = await opsApiClient.post<StaffingResponse>(STAFFING_PATH, {
+          employee_admin: true,
+          atomic: true,
           employees: [{
             last_name: value("last_name"), first_name: value("first_name"),
             middle_name: value("middle_name"), iin: value("iin"),
@@ -89,6 +91,8 @@ export function EmployeeAdminDialog({ employee, options, onClose }: Props) {
         });
       } else if (row && management) {
         result = await opsApiClient.patch<StaffingResponse>(STAFFING_PATH, {
+          employee_admin: true,
+          atomic: true,
           employees: [{
             id: employee.id, last_name: value("last_name"), first_name: value("first_name"),
             middle_name: value("middle_name"), callsign: value("callsign"),
@@ -119,6 +123,8 @@ export function EmployeeAdminDialog({ employee, options, onClose }: Props) {
     setError(null);
     try {
       const result = await opsApiClient.patch<StaffingResponse>(STAFFING_PATH, {
+        employee_admin: true,
+        atomic: true,
         employees: [{ id: employee.id, is_active: false }],
       });
       const apiError = responseError(result);

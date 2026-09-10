@@ -525,6 +525,22 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         """
         user = request.user
 
+        if request.method not in permissions.SAFE_METHODS:
+            employee_rows = request.data.get('employees') or []
+            protected_employee_write = (
+                (request.method == 'POST' and bool(employee_rows))
+                or any(
+                    'user' in row or 'is_active' in row
+                    for row in employee_rows if isinstance(row, dict)
+                )
+            )
+            if request.data.get('employee_admin') is True or protected_employee_write:
+                from organization_management.apps.operations.api.permissions import (
+                    require_permission,
+                )
+                require_permission(request, 'admin.roles')
+                request._directorate_manage_scope = True
+
         # ── Кто сюда допущен ───────────────────────────────────────────────
         #
         # ИСТОРИЯ, КОТОРУЮ НЕ НАДО ПОВТОРЯТЬ. Экран пускал только кадровые роли
@@ -755,6 +771,8 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # ШТАТНОЙ ЕДИНИЦЫ сотрудника, которое и без того точнее корня.
         scope_root = self._scope_single_root(user, all_divisions, request)
 
+        if errors and data.get('atomic') is True:
+            transaction.set_rollback(True)
         return Response({
             'division': {
                 'id': scope_root.id,
@@ -1490,6 +1508,8 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
             response_data['errors'] = errors
             response_data['success'] = len(errors) < sum(updated_items.values())
 
+        if errors and data.get('atomic') is True:
+            transaction.set_rollback(True)
         return Response(response_data, status=status.HTTP_200_OK)
 
     # 🔴 ЗДЕСЬ ЛЕЖАЛ МЁРТВЫЙ ДУБЛЬ `_get_user_division` (Plane №352, Ш-6).
@@ -1532,7 +1552,15 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         # наизусть три кода — ROLE_3/6/7 — и не знала ни одной из семи ролей
         # заказчика; учётка с его ролью получала либо свою комнату, либо
         # ничего. Дорога осталась одна.
-        divisions = _ops_scope_divisions(request) if request is not None else None
+        permission_codes = (
+            ('orgstructure.manage',)
+            if request is not None and getattr(request, '_directorate_manage_scope', False)
+            else (_OPS_READ_STATUS_PERMISSION,)
+        )
+        divisions = (
+            _ops_scope_divisions(request, permission_codes)
+            if request is not None else None
+        )
         if divisions is not None and divisions.exists():
             return divisions
 
