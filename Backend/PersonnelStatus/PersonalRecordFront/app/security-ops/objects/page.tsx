@@ -27,7 +27,7 @@
 //     своё число дней.
 // Все фильтры и поиск живут в URL — состояние экрана переживает перезагрузку
 // и делится ссылкой.
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -272,6 +272,14 @@ function countPosts(object: SecurityObject): number {
 }
 
 export default function SecurityObjectsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <SecurityObjectsScreen />
+    </Suspense>
+  );
+}
+
+function SecurityObjectsScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

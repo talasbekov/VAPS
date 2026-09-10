@@ -5,7 +5,7 @@
 // начальная оценка, перечень оснований, состав очереди и счётчики приходят
 // готовыми. Оценок, полученных смотрящим от других, здесь нет — их не отдаёт
 // сервер.
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -272,6 +272,14 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
 }
 
 export default function EvaluationWorkspacePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <EvaluationWorkspaceScreen />
+    </Suspense>
+  );
+}
+
+function EvaluationWorkspaceScreen() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const router = useRouter();
   const pathname = usePathname();

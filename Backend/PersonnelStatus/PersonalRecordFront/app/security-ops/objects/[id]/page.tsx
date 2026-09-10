@@ -19,7 +19,7 @@
 // Экран НИЧЕГО не считает сам. Состояние паспорта, срок проверки, политику
 // свежести и снимки версий присылает сервер; страница только раскладывает их
 // по вкладкам и печатает его же словами.
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -95,6 +95,14 @@ const MISSING_TABS: ReadonlyArray<{ title: string; reason: string }> = [
 ];
 
 export default function SecurityObjectPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <SecurityObjectScreen />
+    </Suspense>
+  );
+}
+
+function SecurityObjectScreen() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
   const query = useSecurityObject(id);

@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+
 // Реестр «Итоговые оценки участников» (§19.15-19.16). Состояние живёт в URL —
 // единственный источник, локальной копии фильтров нет. Закрытых величин на
 // экране нет, потому что их нет в ответе: колонка «Детали оценки» печатает
@@ -63,6 +65,14 @@ function aggregateLabel(value: number | null): string {
 }
 
 export default function EvaluationRegistryPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <EvaluationRegistryScreen />
+    </Suspense>
+  );
+}
+
+function EvaluationRegistryScreen() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const router = useRouter();
   const pathname = usePathname();

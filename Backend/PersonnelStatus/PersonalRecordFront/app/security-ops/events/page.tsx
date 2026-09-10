@@ -2,7 +2,7 @@
 
 // Реестр ОМ: поиск, фильтр по этапу, таблица, создание. Фильтры — в URL
 // (обновление страницы не сбрасывает фильтр, ссылкой можно поделиться).
-import { useId, useState } from "react";
+import { Suspense, useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
@@ -123,6 +123,14 @@ function remarksLabel(n: number): string {
 }
 
 export default function SecurityEventsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <SecurityEventsScreen />
+    </Suspense>
+  );
+}
+
+function SecurityEventsScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

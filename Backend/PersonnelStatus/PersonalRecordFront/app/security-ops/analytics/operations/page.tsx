@@ -15,7 +15,7 @@
 // инциденты в разрезе тяжести, «требует внимания», экспорт) названы вслух
 // внизу экрана — рисовать их пустыми ячейками значило бы выдать отсутствие
 // данных за нули.
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -101,6 +101,14 @@ const DONUT_COLORS: readonly string[] = [
 ];
 
 export default function OperationsAnalyticsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <OperationsAnalyticsScreen />
+    </Suspense>
+  );
+}
+
+function OperationsAnalyticsScreen() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   // §22.6: уровень детализации живёт в URL и переживает перезагрузку.
   const router = useRouter();

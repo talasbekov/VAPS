@@ -4,7 +4,7 @@
 // доступность каждого действия и причина отказа приходят с сервера — здесь
 // нет ни одной ветки «если работа упала, выключить кнопку».
 import { RightGate } from "@/shared/ui/right-gate";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -51,6 +51,14 @@ function isState(value: string | null): value is ReportJobState {
 }
 
 export default function ReportHistoryPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <ReportHistoryScreen />
+    </Suspense>
+  );
+}
+
+function ReportHistoryScreen() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   // Фильтры — в URL: ссылка на отфильтрованную историю переживает
   // перезагрузку и пересылается другому человеку.

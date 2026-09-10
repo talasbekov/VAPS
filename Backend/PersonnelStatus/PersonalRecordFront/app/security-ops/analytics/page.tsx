@@ -18,7 +18,7 @@
 // питает его собственный экран: свой счёт «сдали / не сдали» разошёлся бы с
 // ним, а сличают их как раз тогда, когда что-то пошло не так.
 import { AccessHints, RightGate } from "@/shared/ui/right-gate";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -154,6 +154,14 @@ function formatMoment(iso: string): string {
 }
 
 export default function ServiceAnalyticsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <ServiceAnalyticsScreen />
+    </Suspense>
+  );
+}
+
+function ServiceAnalyticsScreen() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   // §22.6 «Фильтры синхронизируй с URL»: период — единственный фильтр среза.
   const router = useRouter();

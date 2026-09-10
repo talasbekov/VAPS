@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+
 // Законы об ОМ: нормативная база раздела — поиск, фильтр по виду, карточки.
 // Справочник только для чтения; поиск и фильтр живут в URL, чтобы обновление
 // страницы не сбрасывало выборку и ссылкой можно было поделиться — как в
@@ -42,6 +44,14 @@ function matches(document: LegalDocument, query: string): boolean {
 }
 
 export default function LegalDocumentsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <LegalDocumentsScreen />
+    </Suspense>
+  );
+}
+
+function LegalDocumentsScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

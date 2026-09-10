@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+
 // Карточка сотрудника при праве только на агрегат (§19.17): агрегат,
 // количество учтённых, период, версия методики, дата расчёта и агрегированная
 // динамика — без отдельных оценок и оценщиков. Возврат ведёт на СОХРАНЁННЫЙ
@@ -24,6 +26,14 @@ import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import { DATA_STATE_LABEL } from "@/entities/operational-rating";
 
 export default function RatingEmployeeDetailPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <RatingEmployeeDetailScreen />
+    </Suspense>
+  );
+}
+
+function RatingEmployeeDetailScreen() {
   const params = useParams<{ employeeId: string }>();
   const searchParams = useSearchParams();
   const employeeId = params.employeeId ?? null;
