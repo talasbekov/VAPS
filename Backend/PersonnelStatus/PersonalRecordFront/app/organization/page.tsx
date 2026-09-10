@@ -18,8 +18,37 @@ import {
 import { Download } from "lucide-react";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { LoadFailure } from "@/components/load-failure";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { modulePermissionsOf } from "@/entities/portal-access";
 
 export default function OrganizationPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const allowed = modulePermissionsOf("/organization").some(hasPermission);
+
+  // Данные страницы живут во внутреннем компоненте: так их хуки не создаются
+  // до решения гейта. У EMPLOYEE нет orgstructure.view, и прежняя страница
+  // успевала запросить статистику по status.view и дерево штатки по
+  // orgstructure.view — получались правдоподобные числа рядом с 403 и пустой
+  // диаграммой вместо одного честного ответа о доступе (Plane №1152).
+  if (permissionsLoading) {
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground"
+        role="status"
+      >
+        Проверка доступа…
+      </div>
+    );
+  }
+  if (!allowed) {
+    return <OpsAccessDenied what="структуры организации" />;
+  }
+
+  return <OrganizationScreen />;
+}
+
+function OrganizationScreen() {
   const {
     data: statistics,
     isLoading,
