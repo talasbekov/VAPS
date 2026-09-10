@@ -404,6 +404,8 @@ def top_up(event_id, allocation_id, *, count, due_at, actor):
     from organization_management.apps.ops import forces_notify
 
     forces_notify.notify_department_officers(event, [row])
-    if row["directorates"]:
-        event = events.notify_directorates(event.pk, key, actor=actor)
+    # Добор сначала получает ответственный департамента. Нулевые строки его
+    # управлений не являются рассылкой: начальникам нечего поручать, а статус
+    # NOTIFIED ложно говорил бы, что запрос уже ушёл. После ответа департамент
+    # разложит добор и сам отправит его управлениям (Plane №887).
     return event

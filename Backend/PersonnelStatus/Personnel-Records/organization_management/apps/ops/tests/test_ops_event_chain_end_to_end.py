@@ -28,6 +28,7 @@ from .test_ops_forces_gathering import (  # noqa: F401
     make_department,
     make_directorate,
     make_employee,
+    notify_after_split,
 )
 from .test_ops_security_events_api import approver, manager  # noqa: F401
 
@@ -38,7 +39,7 @@ def test_an_event_walks_from_bulletin_to_closure(manager, approver):  # noqa: F8
     """Полный цикл ОМ одной пробой: девять шагов постановки заказчика."""
     make_assignment_status_type()
     department = make_department()
-    make_directorate(department, "Управление охраны")
+    directorate = make_directorate(department, "Управление охраны")
     person = make_employee("Сериков")
     person.user = get_user_model().objects.get(username="ev-manager")
     person.save(update_fields=["user"])
@@ -49,7 +50,7 @@ def test_an_event_walks_from_bulletin_to_closure(manager, approver):  # noqa: F8
     base, allocation_id = allocated_event(manager, department)
 
     # Шаг 4: штаб оповещает департамент.
-    notified = manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notified = notify_after_split(manager, base, allocation_id, directorate)
     assert notified.status_code == 200, notified.json()
 
     # Шаг 5: департамент называет людей и отправляет список штабу.

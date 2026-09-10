@@ -246,6 +246,30 @@ def make_directorate(department, name="Управление №1"):
     )
 
 
+def notify_after_split(manager, base, allocation_id, directorate=None, need=1):
+    """Состоявшаяся рассылка: сначала назвать работу хотя бы одному управлению."""
+    if directorate is None:
+        from organization_management.apps.divisions.models import Division
+        from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+        event_id = base.rstrip("/").rsplit("/", 1)[-1]
+        event = OpsSecurityEvent.objects.get(pk=event_id)
+        allocation = next(row for row in event.force_allocation if row["id"] == allocation_id)
+        directorate = Division.objects.filter(
+            parent_id=allocation["departmentId"],
+            division_type=Division.DivisionType.DIRECTORATE,
+            is_active=True,
+        ).order_by("lft", "id").first()
+        assert directorate is not None, "у департамента нет управления для раскладки"
+    split = manager.post(
+        f"{base}forces/allocation/{allocation_id}/split/",
+        {"rows": [{"divisionId": str(directorate.pk), "need": need}]},
+        format="json",
+    )
+    assert split.status_code == 200, split.content
+    return manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+
 def allocated_event(manager, department, business_date="2026-08-10"):  # noqa: F811
     """ОМ с сохранённой заявкой одному департаменту."""
     base, total = event_on_demand(manager, business_date)
@@ -268,9 +292,7 @@ def test_notify_reaches_every_directorate_of_the_department(manager):  # noqa: F
     foreign = make_directorate(other, "Управление связи")
     base, allocation_id = allocated_event(manager, department)
 
-    data = manager.post(
-        f"{base}forces/allocation/{allocation_id}/notify/"
-    ).json()
+    data = notify_after_split(manager, base, allocation_id, first).json()
 
     row = data["forceAllocation"][0]
     assert row["status"] == "NOTIFIED"
@@ -285,9 +307,46 @@ def test_notify_reaches_every_directorate_of_the_department(manager):  # noqa: F
     # «Запрошено ДД.ММ» тому, кому не отправляли ничего, и разбор «почему не
     # выделили» уходил по ложному следу. Теперь момент есть у того и только у
     # того, кому письмо ушло, — а без разбивки не уходит никому.
-    assert all(item["notifiedAt"] is None for item in row["directorates"]), (
-        "момент проставлен управлению без квоты — ему ничего не отправляли"
+    moments = {item["name"]: item["notifiedAt"] for item in row["directorates"]}
+    assert moments[first.name] is not None
+    assert moments[second.name] is None
+
+
+def test_empty_notify_is_refused_without_locking_the_allocation(manager):  # noqa: F811
+    """Пустой щелчок не должен навсегда отбирать редактирование квот."""
+    from organization_management.apps.operations.models_event import OpsSecurityEvent
+
+    department = make_department()
+    make_directorate(department, "Управление без раскладки")
+    base, allocation_id = allocated_event(manager, department)
+
+    response = manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "DIRECTORATE_QUOTA_EMPTY"
+    assert "Сначала разложите" in response.json()["message"]
+    event = OpsSecurityEvent.objects.get(pk=base.rstrip("/").rsplit("/", 1)[-1])
+    allocation = event.force_allocation[0]
+    assert allocation["status"] == "DRAFT"
+    assert allocation["notifiedAt"] is None
+
+
+def test_zero_answer_does_not_make_an_empty_notify_meaningful(manager):  # noqa: F811
+    """Ответ «выделяем 0» закрывает запрос без фиктивной рассылки управлениям."""
+    department = make_department()
+    make_directorate(department, "Управление без раскладки")
+    base, allocation_id = allocated_event(manager, department)
+    answered = manager.post(
+        f"{base}forces/allocation/{allocation_id}/respond/",
+        {"allocating": 0, "comment": "Людей нет"},
+        format="json",
     )
+    assert answered.status_code == 200, answered.content
+
+    response = manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "DIRECTORATE_QUOTA_EMPTY"
 
 
 def test_notify_keeps_the_moment_of_those_already_told(manager):  # noqa: F811
@@ -338,9 +397,9 @@ def test_notify_refuses_department_without_directorates(manager):  # noqa: F811
 def test_notified_department_cannot_be_dropped_from_the_split(manager):  # noqa: F811
     """Замок раскладки включается именно оповещением, а не руками теста."""
     department = make_department()
-    make_directorate(department)
+    directorate = make_directorate(department)
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id, directorate)
 
     resp = manager.post(f"{base}forces/allocation/", {"rows": []}, format="json")
 
@@ -353,19 +412,20 @@ def test_notify_is_recorded_in_the_audit_trail(manager):  # noqa: F811
     from organization_management.apps.operations.models_audit import OpsAuditLog
 
     department = make_department()
-    make_directorate(department, "Управление охраны")
+    requested = make_directorate(department, "Управление охраны")
+    silent = make_directorate(department, "Управление сопровождения")
     base, allocation_id = allocated_event(manager, department)
     before = OpsAuditLog.objects.filter(
         action="FORCE_ALLOCATION_NOTIFIED"
     ).count()
 
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id, requested)
 
     entries = OpsAuditLog.objects.filter(action="FORCE_ALLOCATION_NOTIFIED")
     assert entries.count() == before + 1
     recorded = entries.order_by("-id").first()
     assert recorded.new_value["departmentName"] == department.name
-    assert recorded.new_value["directorates"] == ["Управление охраны"]
+    assert recorded.new_value["directorates"] == [requested.name, silent.name]
     # 🔴 ГРАФЫ ЖУРНАЛА ЧИТАЮТСЯ ПРОБОЙ, А НЕ ТОЛЬКО ОТЧЁТ РАССЫЛКИ (Plane
     # №921). До этой строки закреплён был только `report["notified"]`, то есть
     # содержимое записи не стерёг никто: рассылка могла считать честно, а в
@@ -377,7 +437,7 @@ def test_notify_is_recorded_in_the_audit_trail(manager):  # noqa: F811
     # одинаково только до первого разбора.
     assert recorded.new_value["notifiedHeadsList"] == []
     assert recorded.new_value["notifiedHeads"] == 0
-    assert recorded.new_value["directoratesWithoutQuota"] == ["Управление охраны"]
+    assert recorded.new_value["directoratesWithoutQuota"] == [silent.name]
 
 
 def test_notify_unknown_allocation_is_404(manager):  # noqa: F811
@@ -578,10 +638,10 @@ def notified_event_with_member(manager):  # noqa: F811
     """Заявка, дошедшая до «оповещено», с одним выделенным человеком."""
     make_assignment_status_type()
     department = make_department()
-    make_directorate(department)
+    directorate = make_directorate(department)
     employee = make_employee("Сериков")
     base, allocation_id = allocated_event(manager, department, FUTURE_DATE)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id, directorate)
     manager.post(
         f"{base}forces/allocation/{allocation_id}/members/",
         {"employeeId": str(employee.pk)},
@@ -615,9 +675,9 @@ def test_submitting_the_list_hands_it_to_the_staff(manager):  # noqa: F811
 def test_empty_list_is_not_submitted(manager):  # noqa: F811
     """Никого не выделили — отправлять нечего."""
     department = make_department()
-    make_directorate(department)
+    directorate = make_directorate(department)
     base, allocation_id = allocated_event(manager, department, FUTURE_DATE)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id, directorate)
 
     resp = manager.post(f"{base}forces/allocation/{allocation_id}/submit/")
 
@@ -774,7 +834,7 @@ def event_on_placement_with_roster(manager):  # noqa: F811
 
     make_assignment_status_type()
     department = make_department()
-    make_directorate(department)
+    directorate = make_directorate(department)
     employee = make_employee("Сериков")
     base, _ = event_on_demand(manager, FUTURE_DATE)
     allocation_id = manager.post(
@@ -782,7 +842,7 @@ def event_on_placement_with_roster(manager):  # noqa: F811
         {"rows": [{"departmentId": str(department.pk), "need": 1}]},
         format="json",
     ).json()["forceAllocation"][0]["id"]
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id, directorate)
     manager.post(
         f"{base}forces/allocation/{allocation_id}/members/",
         {"employeeId": str(employee.pk)},
@@ -1242,7 +1302,7 @@ def test_quotas_are_locked_once_the_directorates_are_asked(manager):  # noqa: F8
     department = make_department()
     directorate = make_directorate(department)
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/", {}, format="json")
+    notify_after_split(manager, base, allocation_id, directorate)
 
     response = _split(
         manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": 1}]
@@ -1323,6 +1383,9 @@ def test_a_directorate_counts_its_own_assigned_people(manager):  # noqa: F811
     other = make_directorate(department, "Управление сопровождения")
     employee = _seat(make_employee("Сериков"), mine)
     base, allocation_id = allocated_event(manager, department)
+    _split(
+        manager, base, allocation_id, [{"divisionId": str(mine.pk), "need": 1}]
+    )
     manager.post(
         f"{base}forces/allocation/{allocation_id}/members/",
         {"employeeId": str(employee.pk)},
@@ -1359,6 +1422,9 @@ def test_a_person_from_a_department_of_the_directorate_counts_by_subtree(  # noq
     )
     employee = _seat(make_employee("Отделов"), unit)
     base, allocation_id = allocated_event(manager, department)
+    _split(
+        manager, base, allocation_id, [{"divisionId": str(directorate.pk), "need": 1}]
+    )
     manager.post(
         f"{base}forces/allocation/{allocation_id}/members/",
         {"employeeId": str(employee.pk)},
@@ -1388,6 +1454,9 @@ def test_the_count_follows_a_transfer_without_touching_the_event(manager):  # no
     second = make_directorate(department, "Управление сопровождения")
     employee = _seat(make_employee("Переводов"), first)
     base, allocation_id = allocated_event(manager, department)
+    _split(
+        manager, base, allocation_id, [{"divisionId": str(first.pk), "need": 1}]
+    )
     manager.post(
         f"{base}forces/allocation/{allocation_id}/members/",
         {"employeeId": str(employee.pk)},

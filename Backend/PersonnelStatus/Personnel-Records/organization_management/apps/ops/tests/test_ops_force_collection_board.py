@@ -24,6 +24,7 @@ from organization_management.apps.ops.tests.test_ops_forces_gathering import (  
     make_department,
     make_directorate,
     manager,
+    notify_after_split,
 )
 
 pytestmark = pytest.mark.django_db
@@ -82,7 +83,7 @@ def test_status_follows_the_spec(manager, hq):  # noqa: F811
     allocation_id = data["forceAllocation"][0]["id"]
     row = _row(hq, base)
     assert row["boardStatus"]["label"] == "Запросы отправлены"
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     row = _row(hq, base)
     assert row["boardStatus"]["label"] == "Запросы отправлены"
     service.respond_allocation(_event_id(base), allocation_id, allocating=3, comment="", actor="user:dep")
@@ -98,10 +99,10 @@ def test_urgent_and_new_go_first(manager, hq):  # noqa: F811
     department = make_department()
     make_directorate(department, "Управление охраны")
     early_base, early_id = allocated_event(manager, department, business_date="2026-10-01")
-    manager.post(f"{early_base}forces/allocation/{early_id}/notify/")
+    notify_after_split(manager, early_base, early_id)
     _free_object_code()
     late_base, late_id = allocated_event(manager, department, business_date="2026-11-01")
-    manager.post(f"{late_base}forces/allocation/{late_id}/notify/")
+    notify_after_split(manager, late_base, late_id)
     # Срок сдачи списка у позднего мероприятия просрочен — «Срочно».
     late = service.lock_event(_event_id(late_base))
     late.force_allocation[0]["dueAt"] = (Clock.now() - dt.timedelta(days=1)).isoformat()
@@ -119,7 +120,7 @@ def test_card_carries_objects_totals_and_history(manager, hq):  # noqa: F811
     department = make_department()
     make_directorate(department, "Управление охраны")
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     card = hq.get(f"{base}force-collection/").json()
     assert card["needByObject"], "потребность по объектам пуста"
     first = card["needByObject"][0]
@@ -143,7 +144,7 @@ def test_top_up_is_a_new_row_and_draft_is_refused(manager):  # noqa: F811
     refused = manager.post(f"{base}forces/allocation/{allocation_id}/top-up/", {"count": 2}, format="json")
     assert refused.status_code == 422 and refused.json()["error_code"] == "ALLOCATION_NOT_SENT"
     manager.post(f"{base}forces/allocation/", {"rows": rows}, format="json")
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     zero = manager.post(f"{base}forces/allocation/{allocation_id}/top-up/", {"count": 0}, format="json")
     assert zero.status_code == 400
     resp = manager.post(f"{base}forces/allocation/{allocation_id}/top-up/", {"count": 2}, format="json")
@@ -153,7 +154,7 @@ def test_top_up_is_a_new_row_and_draft_is_refused(manager):  # noqa: F811
     original = next(r for r in rows if r["id"] == allocation_id)
     extra = next(r for r in rows if r["id"] != allocation_id)
     assert original["need"] == rows[0]["need"] and extra["need"] == 2
-    assert extra["topUpOf"] == allocation_id and extra["status"] == "NOTIFIED"
+    assert extra["topUpOf"] == allocation_id and extra["status"] == "DRAFT"
     # Таблицы `[МД-06]`: у новой строки своя история, старая не тронута.
     assert OpsDepartmentRequest.objects.filter(event_id=_event_id(base), allocation_key=extra["id"]).exists()
     assert OpsDepartmentRequest.objects.filter(event_id=_event_id(base), allocation_key=allocation_id, requested_count=original["need"]).exists()
@@ -178,7 +179,7 @@ def test_two_top_ups_get_different_ids_under_a_frozen_clock(manager):  # noqa: F
     department = make_department()
     make_directorate(department, "Управление охраны")
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
 
     frozen = dt.datetime(2026, 9, 5, 12, 0, tzinfo=dt.timezone.utc)
     with mock.patch.object(Clock, "now", staticmethod(lambda: frozen)):
@@ -229,7 +230,7 @@ def test_editing_the_split_keeps_the_top_up_and_the_original(manager):  # noqa: 
     other = make_department("Департамент связи")
     make_directorate(other, "Управление связи")
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     # Ответ департамента — факт, который правка раскладки обязана сохранить.
     manager.post(
         f"{base}forces/allocation/{allocation_id}/respond/",
@@ -282,7 +283,7 @@ def test_headquarters_is_notified_on_every_answer(manager, hq):  # noqa: F811
     department = make_department()
     make_directorate(department, "Управление охраны")
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     service.respond_allocation(_event_id(base), allocation_id, allocating=2, comment="", actor="user:dep")
     note = OpsNotification.objects.filter(kind="FORCES_RESPONSE", recipient=str(hq_user.pk)).first()
     assert note is not None
@@ -361,7 +362,7 @@ def test_the_undelivered_headquarters_report_reaches_the_log(
     department = make_department()
     make_directorate(department, "Управление охраны")
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     monkeypatch.setattr(
         forces_notify.notify_service, "notify", lambda *a, **kw: None
     )
@@ -469,7 +470,7 @@ def test_a_database_failure_in_the_notification_does_not_lose_the_answer(
     make_directorate(department, "Управление охраны")
     base, allocation_id = allocated_event(manager, department)
     event_id = _event_id(base)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
 
     # 🔴 ОТКАЗ ДОЛЖЕН БЫТЬ НАСТОЯЩИМ ЗАПРОСОМ, А НЕ `raise DatabaseError`.
     # Проверено запуском: поднятое вручную исключение проходит и БЕЗ точки
@@ -518,7 +519,7 @@ def test_a_past_event_is_not_urgent_by_its_date_alone(manager, hq):  # noqa: F81
     stale_base, stale_id = allocated_event(
         manager, department, business_date=(today - dt.timedelta(days=40)).isoformat()
     )
-    manager.post(f"{stale_base}forces/allocation/{stale_id}/notify/")
+    notify_after_split(manager, stale_base, stale_id)
     stale = service.lock_event(_event_id(stale_base))
     stale.force_allocation[0]["status"] = "SUBMITTED"
     stale.save(update_fields=["force_allocation", "updated_at"])
@@ -526,7 +527,7 @@ def test_a_past_event_is_not_urgent_by_its_date_alone(manager, hq):  # noqa: F81
     soon_base, soon_id = allocated_event(
         manager, department, business_date=today.isoformat()
     )
-    manager.post(f"{soon_base}forces/allocation/{soon_id}/notify/")
+    notify_after_split(manager, soon_base, soon_id)
 
     rows = hq.get(LIST).json()["results"]
     stale_row = next(r for r in rows if r["eventId"] == _event_id(stale_base))
@@ -553,7 +554,7 @@ def test_a_past_event_with_an_overdue_request_is_still_urgent(manager, hq):  # n
     base, allocation_id = allocated_event(
         manager, department, business_date=(today - dt.timedelta(days=40)).isoformat()
     )
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     event = service.lock_event(_event_id(base))
     event.force_allocation[0]["dueAt"] = (Clock.now() - dt.timedelta(days=1)).isoformat()
     event.save(update_fields=["force_allocation", "updated_at"])
@@ -591,7 +592,7 @@ def test_responsible_is_the_account_that_can_answer_the_request(manager, hq):  #
     )
 
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     row = hq.get(f"{base}force-collection/").json()["allocations"][0]
 
     assert row["responsibleName"] == answering.get_username(), (
@@ -632,7 +633,7 @@ def test_a_wildcard_role_is_a_responsible_too(manager, hq):  # noqa: F811
     )
 
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     row = hq.get(f"{base}force-collection/").json()["allocations"][0]
 
     assert row["responsibleName"] == admin_like.get_username(), (
@@ -663,7 +664,7 @@ def test_the_responsible_name_does_not_change_between_identical_requests(manager
         )
 
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     names = {
         hq.get(f"{base}force-collection/").json()["allocations"][0]["responsibleName"]
         for _ in range(5)
@@ -713,7 +714,7 @@ def test_a_duty_officer_is_a_responsible_too(manager, hq):  # noqa: F811
     )
 
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     row = hq.get(f"{base}force-collection/").json()["allocations"][0]
 
     assert row["responsibleName"] == duty_officer.get_username(), (
@@ -819,10 +820,10 @@ def test_the_urgency_threshold_is_read_once_per_listing(manager, hq):  # noqa: F
     department = make_department()
     make_directorate(department, "Управление охраны")
     first_base, first_id = allocated_event(manager, department, business_date="2026-10-01")
-    manager.post(f"{first_base}forces/allocation/{first_id}/notify/")
+    notify_after_split(manager, first_base, first_id)
     _free_object_code()
     second_base, second_id = allocated_event(manager, department, business_date="2026-11-01")
-    manager.post(f"{second_base}forces/allocation/{second_id}/notify/")
+    notify_after_split(manager, second_base, second_id)
 
     with CaptureQueriesContext(connection) as queries:
         rows = hq.get(LIST).json()["results"]
@@ -877,13 +878,13 @@ def test_the_listing_reads_participations_and_divisions_once(manager, hq):  # no
     department = make_department()
     make_directorate(department, "Управление охраны")
     first_base, first_id = allocated_event(manager, department, business_date="2026-10-01")
-    manager.post(f"{first_base}forces/allocation/{first_id}/notify/")
+    notify_after_split(manager, first_base, first_id)
     _free_object_code()
     second_base, second_id = allocated_event(manager, department, business_date="2026-11-01")
-    manager.post(f"{second_base}forces/allocation/{second_id}/notify/")
+    notify_after_split(manager, second_base, second_id)
     _free_object_code()
     third_base, third_id = allocated_event(manager, department, business_date="2026-12-01")
-    manager.post(f"{third_base}forces/allocation/{third_id}/notify/")
+    notify_after_split(manager, third_base, third_id)
 
     with CaptureQueriesContext(connection) as queries:
         rows = hq.get(LIST).json()["results"]
@@ -947,7 +948,7 @@ def test_the_listing_reads_status_members_once(manager, hq):  # noqa: F811
     event_bases = []
     for index, business_date in enumerate(("2026-10-01", "2026-11-01", "2026-12-01"), start=1):
         base, allocation_id = allocated_event(manager, department, business_date=business_date)
-        manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+        notify_after_split(manager, base, allocation_id)
         employee = make_employee(f"Статусный-{index}")
         StaffUnit.objects.create(division=directorate, employee=employee, index=index)
         event_id = int(_event_id(base))
@@ -1025,7 +1026,7 @@ def test_the_listing_reads_stored_allocation_members_once(manager, hq):  # noqa:
     event_bases = []
     for index, business_date in enumerate(("2027-01-10", "2027-02-10", "2027-03-10"), start=1):
         base, allocation_id = allocated_event(manager, department, business_date=business_date)
-        notified = manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+        notified = notify_after_split(manager, base, allocation_id, directorate)
         assert notified.status_code == 200, notified.content
         employee = make_employee(f"Сохранённый-{index}")
         StaffUnit.objects.create(division=directorate, employee=employee, index=index)
@@ -1115,7 +1116,7 @@ def test_the_collection_card_reads_visit_objects_once(manager, hq):  # noqa: F81
     department = make_department()
     make_directorate(department, "Управление охраны")
     base, allocation_id = allocated_event(manager, department, business_date="2026-10-02")
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     event_id = base.rstrip("/").split("/")[-1]
     # ВТОРОЙ объект посещения — предмет пробы: при единственном объекте ветка
     # `single` истинна и без параметра, и дефект был бы недостижим.
@@ -1184,7 +1185,7 @@ def test_headquarters_notification_goes_by_permission_not_by_role_name(
     department = make_department()
     make_directorate(department, "Управление охраны")
     base, allocation_id = allocated_event(manager, department)
-    manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+    notify_after_split(manager, base, allocation_id)
     service.respond_allocation(
         _event_id(base), allocation_id, allocating=2, comment="", actor="user:dep"
     )
