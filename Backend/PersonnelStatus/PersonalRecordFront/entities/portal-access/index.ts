@@ -83,6 +83,21 @@ export const MODULE_PERMISSION = {
 export type ModuleHref = keyof typeof MODULE_PERMISSION;
 
 /**
+ * Стартовые рабочие экраны портала в понятном порядке. Личный кабинет не
+ * входит в список: после входа человеку нужна работа, а не карточка профиля.
+ * Администратор сохраняет привычный старт с «Обзора»; для остальных маршрут
+ * выбирается по той же карте прав, что и меню и гейты экранов.
+ */
+const DEFAULT_WORKSPACE_ROUTES: readonly ModuleHref[] = [
+  "/service-employees",
+  "/security-ops/command-center",
+  "/dashboard",
+  "/statuses",
+  "/employees",
+  "/security-ops/objects",
+];
+
+/**
  * Права пункта по его адресу — СПИСОК, потому что модуль может открываться
  * любым из нескольких прав. Пустой список = «права не требует».
  *
@@ -108,4 +123,13 @@ export function modulePermissionsOf(href: string): readonly string[] {
 export function moduleOpenFor(href: string, hasPermission: (code: string) => boolean): boolean {
   const codes = modulePermissionsOf(href);
   return codes.length === 0 || codes.some(hasPermission);
+}
+
+/** Выбрать первый доступный рабочий экран сразу после входа. */
+export function defaultPortalRoute(hasPermission: (code: string) => boolean): ModuleHref {
+  if (hasPermission("*")) return "/dashboard";
+  return (
+    DEFAULT_WORKSPACE_ROUTES.find((href) => moduleOpenFor(href, hasPermission)) ??
+    "/security-ops/profile"
+  );
 }

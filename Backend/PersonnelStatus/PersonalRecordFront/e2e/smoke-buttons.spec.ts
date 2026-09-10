@@ -31,7 +31,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { request as apiRequest, test, type Page, type Request } from '@playwright/test'
+import { expect, request as apiRequest, test, type Page, type Request } from '@playwright/test'
 import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 import { ROUTES } from './portal-routes'
 
@@ -863,6 +863,16 @@ test.describe('смоук-обход портала', () => {
         await signInPersona(persona)
         ids = await resolveIds(await apiToken(persona.username, persona.password))
       })
+
+      if (persona.key !== STAND_USERNAME) {
+        test(`${persona.key} корень открывает доступный рабочий экран`, async ({ page }) => {
+          await page.goto('/')
+          await expect(page).toHaveURL(/\/service-employees\/?$/, { timeout: 20_000 })
+          await expect(page.getByRole('heading', { name: 'Сотрудники Службы' })).toBeVisible({
+            timeout: 20_000,
+          })
+        })
+      }
 
       for (const route of ROUTES) {
         test(`${persona.key} ${route.template}`, async ({ page }) => {

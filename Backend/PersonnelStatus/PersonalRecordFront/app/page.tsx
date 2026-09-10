@@ -16,25 +16,27 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Building2, Users, Shield, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ParticleField } from "@/components/login/particle-field";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { defaultPortalRoute } from "@/entities/portal-access";
 
 /**
  * Куда вернуть после входа. Берём только ВНУТРЕННИЙ путь: `callbackUrl` живёт
  * в адресной строке, и абсолютный адрес оттуда увёл бы человека на чужой сайт
  * сразу после успешного логина.
  */
-function safeCallbackUrl(raw: string | null): string {
-  if (raw === null || raw === "") return "/dashboard";
+function safeCallbackUrl(raw: string | null): string | null {
+  if (raw === null || raw === "") return null;
   // Middleware NextAuth кладёт сюда АБСОЛЮТНЫЙ адрес
   // (`http://localhost:3106/employees/`), а не путь: наивная проверка
   // «начинается со слэша» отбрасывала его целиком, и возврат не работал.
   try {
     const target = new URL(raw, window.location.origin);
-    if (target.origin !== window.location.origin) return "/dashboard";
+    if (target.origin !== window.location.origin) return null;
     // Обратно на форму входа не возвращаем — получился бы круг.
-    if (target.pathname === "/") return "/dashboard";
+    if (target.pathname === "/") return null;
     return `${target.pathname}${target.search}${target.hash}`;
   } catch {
-    return "/dashboard";
+    return null;
   }
 }
 
@@ -56,6 +58,7 @@ function LoginScreen() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { login, user } = useAuth();
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const router = useRouter();
   const searchParams = useSearchParams();
   // ПРИЧИНА, ПО КОТОРОЙ ЧЕЛОВЕК ЗДЕСЬ (Plane №383). Провайдер сессии уводит
@@ -71,10 +74,17 @@ function LoginScreen() {
   // Вошедшему форма входа не нужна: он попадал на неё по прямой ссылке на «/»
   // и видел приглашение залогиниться поверх уже живой сессии.
   useEffect(() => {
-    if (user !== null && user !== undefined) {
-      router.replace(safeCallbackUrl(searchParams.get("callbackUrl")));
+    if (user === null || user === undefined) return;
+    const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
+    if (callbackUrl !== null) {
+      router.replace(callbackUrl);
+      return;
     }
-  }, [user, router, searchParams]);
+    // Права приходят отдельным запросом. До него маршрут не выбираем:
+    // «/dashboard» без `orgstructure.view` показывал человеку отказ сразу
+    // после успешного входа.
+    if (!permissionsLoading) router.replace(defaultPortalRoute(hasPermission));
+  }, [hasPermission, permissionsLoading, router, searchParams, user]);
 
   // Курсор и параллакс едут через CSS-переменные на контейнере, а не через
   // состояние: 120 setState в секунду перерисовывали и форму входа тоже.
@@ -130,9 +140,8 @@ function LoginScreen() {
       const success = await login(credentials.username, credentials.password);
 
       if (success) {
-        // Middleware передаёт адрес, с которого человека развернули; без этого
-        // после входа он всегда попадал на «Обзор» и искал свою страницу заново.
-        router.push(safeCallbackUrl(searchParams.get("callbackUrl")));
+        // Маршрут выбирает эффект выше, когда получены права раздела. Редирект
+        // здесь опережал этот запрос и всегда уводил на недоступный «Обзор».
       } else {
         setError("Неверное имя пользователя или пароль");
       }
