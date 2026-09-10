@@ -1417,6 +1417,23 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         read_context = registry_reads.RegistryReadContext()
         if page:
             read_context.prime_participations([event.pk for event in page])
+            # `_merge_status_members` и `_with_directorate_progress` читают
+            # живую штатную единицу, а первая ещё и денормализованное ФИО.
+            # Собираем оба источника людей до обхода строк: без этого каждый
+            # сбор запрашивает свои `divisions_of/denorm_for`.
+            member_ids = {
+                participant.status.employee_id
+                for event in page
+                for participant in read_context.participations(event.pk)
+            }
+            member_ids.update(
+                member.get("employeeId")
+                for event in page
+                for allocation in (event.force_allocation or [])
+                for member in (allocation.get("members") or [])
+                if member.get("employeeId") is not None
+            )
+            read_context.prime_allocation_members(member_ids)
         for event in page:
             rows.append(
                 board.board_row(

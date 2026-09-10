@@ -913,6 +913,88 @@ def test_the_listing_reads_participations_and_divisions_once(manager, hq):  # no
     )
 
 
+def test_the_listing_reads_status_members_once(manager, hq):  # noqa: F811
+    """Статусные люди листинга читаются ОДНОЙ пачкой (Plane №1021).
+
+    №933 убрала запрос на строку за самими участиям и деревом подразделений,
+    но не за данными людей, которые пришли ТОЛЬКО статусом. `_merge_status_members`
+    вызывала `divisions_of()` и `denorm_for()` для каждого мероприятия: список
+    был верен, но число чтений `staff_unit` и `employees` росло с его длиной.
+
+    Три мероприятия и три разных статусных человека нужны намеренно: одна
+    строка не отличает линейность от константы. Мутация — не пакетировать
+    статусных людей в `RegistryReadContext`: оба счётчика снова растут до
+    трёх (а `staff_unit` ещё встречается join-ом денормализации).
+    """
+    import datetime as dt
+    import re
+
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from organization_management.apps.operations import clock, status_service
+    from organization_management.apps.ops.tests.test_ops_forces_gathering import (
+        make_assignment_status_type,
+    )
+    from organization_management.apps.ops.tests.test_ops_security_events_api import (
+        make_employee,
+    )
+    from organization_management.apps.staff_unit.models import StaffUnit
+
+    make_assignment_status_type()
+    department = make_department()
+    directorate = make_directorate(department, "Управление статусного состава")
+    event_bases = []
+    for index, business_date in enumerate(("2026-10-01", "2026-11-01", "2026-12-01"), start=1):
+        base, allocation_id = allocated_event(manager, department, business_date=business_date)
+        manager.post(f"{base}forces/allocation/{allocation_id}/notify/")
+        employee = make_employee(f"Статусный-{index}")
+        StaffUnit.objects.create(division=directorate, employee=employee, index=index)
+        event_id = int(_event_id(base))
+        with clock.override(dt.date.fromisoformat(business_date)):
+            status_service.create_status(
+                employee_id=employee.pk,
+                status_type_code="IN_EVENT",
+                date_start=dt.date.fromisoformat(business_date),
+                date_end=dt.date.fromisoformat(business_date) + dt.timedelta(days=1),
+                actor="user:chief",
+                participations=[{"event_id": event_id, "kind_code": "PHYSICAL_SQUAD"}],
+                system_participations=True,
+            )
+        event_bases.append(base)
+        if index < 3:
+            _free_object_code()
+
+    with CaptureQueriesContext(connection) as queries:
+        response = hq.get(LIST)
+
+    assert response.status_code == 200, response.content
+    rows = response.json()["results"]
+    assert {str(_event_id(base)) for base in event_bases} <= {
+        row["eventId"] for row in rows
+    }
+
+    def touching(table):
+        return [
+            query
+            for query in queries.captured_queries
+            if re.search(rf'(?:FROM|JOIN)\s+"{table}"', query["sql"])
+        ]
+
+    staff_units = touching("staff_units")
+    employees = touching("employees")
+    assert len(staff_units) <= 2, (
+        f"штатные единицы прочитаны {len(staff_units)} раз(а) на "
+        f"{len(event_bases)} статусных человека — `divisions_of` вызван по строке: "
+        + "; ".join(query["sql"][:120] for query in staff_units)
+    )
+    assert len(employees) <= 1, (
+        f"сотрудники прочитаны {len(employees)} раз(а) на "
+        f"{len(event_bases)} статусных человека — `denorm_for` вызван по строке: "
+        + "; ".join(query["sql"][:120] for query in employees)
+    )
+
+
 def test_the_collection_card_reads_visit_objects_once(manager, hq):  # noqa: F811
     """Карточка сбора читает объекты посещения ОДИН раз, а не по разу на объект
     (Plane №908).

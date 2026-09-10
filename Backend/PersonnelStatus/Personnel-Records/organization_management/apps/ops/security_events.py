@@ -3976,6 +3976,10 @@ class RegistryReadContext:
         self._participations = {}
         #: Карта детей подразделений — одна на ответ (Plane №933).
         self._division_children = None
+        #: Данные людей раскладки, собранные ровно на один ответ (Plane №1021).
+        self._member_divisions = {}
+        self._member_denorm = {}
+        self._member_division_names = {}
 
     def status_names(self):
         """Справочник кодов статусов — ОДИН раз на страницу."""
@@ -4060,6 +4064,61 @@ class RegistryReadContext:
     def participations(self, event_id):
         self.prime_participations([event_id])
         return self._participations.get(str(event_id), [])
+
+    def prime_allocation_members(self, employee_ids):
+        """Данные участников раскладки ОДНОЙ пачкой на ответ (Plane №1021).
+
+        В отличие от `prime_employees`, здесь нужен ровно контракт двух
+        селекторов, которым пользуется слияние строк: живая штатная единица и
+        снимок ФИО. Карточка одного ОМ не передаёт контекст и продолжает
+        читать их по месту; кэш дольше HTTP-ответа не живёт.
+        """
+        from organization_management.apps.operations.selectors import (
+            EmployeeSelector,
+            StaffUnitSelector,
+        )
+        from organization_management.apps.divisions.models import Division
+
+        ids = {int(key) for key in employee_ids if str(key).isdigit()}
+        missing = ids - set(self._member_denorm) - set(self._member_divisions)
+        if not missing:
+            return
+        divisions = StaffUnitSelector.divisions_of(missing)
+        denorm = EmployeeSelector.denorm_for(missing)
+        self._member_divisions.update(divisions)
+        self._member_denorm.update(denorm)
+        # И отсутствие тоже кэшируется: иначе сотрудник без слота или записи
+        # стал бы «вечной дырой» и следующая строка спросила бы его снова.
+        for employee_id in missing:
+            self._member_divisions.setdefault(employee_id, None)
+            self._member_denorm.setdefault(employee_id, None)
+        division_ids = {division_id for division_id in divisions.values() if division_id}
+        self._member_division_names.update(
+            Division.objects.filter(pk__in=division_ids).in_bulk(field_name="pk")
+        )
+
+    def allocation_member_divisions(self, employee_ids):
+        self.prime_allocation_members(employee_ids)
+        return {
+            int(key): self._member_divisions.get(int(key))
+            for key in employee_ids
+            if str(key).isdigit() and self._member_divisions.get(int(key)) is not None
+        }
+
+    def allocation_member_denorm(self, employee_ids):
+        self.prime_allocation_members(employee_ids)
+        return {
+            int(key): self._member_denorm.get(int(key))
+            for key in employee_ids
+            if str(key).isdigit() and self._member_denorm.get(int(key)) is not None
+        }
+
+    def allocation_member_division_names(self, division_ids):
+        return {
+            division_id: self._member_division_names[division_id].name
+            for division_id in division_ids
+            if division_id in self._member_division_names
+        }
 
     def prime_employees(self, employee_ids):
         """Кадровые записи разом: подразделение и телефон берут их построчно."""
@@ -4212,22 +4271,35 @@ def _merge_status_members(event, rows, *, read_context=None):
         for row in rows
         if row.get("departmentId") is not None
     }
-    division_of = StaffUnitSelector.divisions_of(extra_ids)
+    division_of = (
+        read_context.allocation_member_divisions(extra_ids)
+        if read_context is not None
+        else StaffUnitSelector.divisions_of(extra_ids)
+    )
     # Имя подразделения — ОДНИМ запросом. Первая версия оставляла его пустым,
     # и в карточке заявки у всех, кто попал в список статусом, в колонке
     # «Подразделение» стоял прочерк: экран знал id и не знал названия.
     from organization_management.apps.divisions.models import Division
 
-    division_names = dict(
-        Division.objects.filter(pk__in=set(division_of.values())).values_list(
-            "pk", "name"
+    division_names = (
+        read_context.allocation_member_division_names(set(division_of.values()))
+        if read_context is not None
+        else dict(
+            Division.objects.filter(pk__in=set(division_of.values())).values_list(
+                "pk", "name"
+            )
         )
     )
     # ФИО одним запросом: перебор по `_find_personnel` дал бы число запросов,
     # зависящее от числа людей, — ровно того раздел избегает везде.
+    denorm = (
+        read_context.allocation_member_denorm(extra_ids)
+        if read_context is not None
+        else EmployeeSelector.denorm_for(extra_ids)
+    )
     names = {
         employee_id: row.get("full_name", "")
-        for employee_id, row in EmployeeSelector.denorm_for(extra_ids).items()
+        for employee_id, row in denorm.items()
     }
 
     # 🔴 ЧЕЛОВЕК ПОПАДАЕТ РОВНО В ОДНУ СТРОКУ ДЕПАРТАМЕНТА (Plane №676).
@@ -4370,7 +4442,11 @@ def _with_directorate_progress(rows, *, read_context=None):
         for member in (row.get("members") or [])
         if str(member.get("employeeId") or "").isdigit()
     ]
-    live_division = StaffUnitSelector.divisions_of(member_ids) if member_ids else {}
+    live_division = (
+        read_context.allocation_member_divisions(member_ids)
+        if read_context is not None and member_ids
+        else (StaffUnitSelector.divisions_of(member_ids) if member_ids else {})
+    )
 
     # Карта детей — общая на ответ, если вьюха собрала контекст (Plane №933);
     # без контекста строится по месту, как и раньше.
