@@ -38,15 +38,25 @@ async function signIn(page: Page): Promise<void> {
   })
 }
 
-/** ОМ с иностранным ОЛ: страница визита есть только у него (`[ГВО-01]`). */
+/** Самодостаточная фикстура: проба не зависит от старого FOREIGN-ОМ на стенде. */
 async function foreignEventId(token: string): Promise<string> {
-  const res = await fetch(`${API}/api/ops/security-events/?page_size=50`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await fetch(`${API}/api/ops/security-events/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      title: 'Проба блокировки утверждения (e2e)',
+      businessDate: '2026-09-27',
+      businessDateEnd: '2026-09-28',
+      kind: 'FOREIGN',
+    }),
   })
-  const body = (await res.json()) as { results: { id: string; kind: string }[] }
-  const target = body.results.find((row) => row.kind !== 'INTERNAL')
-  expect(target, 'на стенде нет ОМ с иностранным ОЛ').toBeDefined()
-  return (target as { id: string }).id
+  const body = (await res.json().catch(() => ({}))) as { id?: string }
+  expect(res.status, `не удалось завести FOREIGN-ОМ: ${JSON.stringify(body).slice(0, 300)}`).toBe(201)
+  expect(body.id, 'созданный FOREIGN-ОМ не вернул id').toBeTruthy()
+  return body.id as string
 }
 
 test.use({ serviceWorkers: 'block' })
@@ -61,48 +71,54 @@ test.describe(
     }) => {
       const token = await apiToken()
       const eventId = await foreignEventId(token)
+      try {
+        // Сводка отвечает МЕДЛЕННО: так проверяется состояние загрузки, в
+        // которое живой ручкой не попасть.
+        let slow = true
+        await page.route(
+          (url) => url.pathname.includes('/api/ops/gvo-summaries/'),
+          async (route) => {
+            if (slow) await new Promise((done) => setTimeout(done, 4000))
+            return route.fulfill({
+              status: 500,
+              contentType: 'application/json',
+              body: JSON.stringify({ detail: 'сводка не собралась' }),
+            })
+          },
+        )
 
-      // Сводка отвечает МЕДЛЕННО: так проверяется состояние загрузки, в
-      // которое живой ручкой не попасть.
-      let slow = true
-      await page.route(
-        (url) => url.pathname.includes('/api/ops/gvo-summaries/'),
-        async (route) => {
-          if (slow) await new Promise((done) => setTimeout(done, 4000))
-          return route.fulfill({
-            status: 500,
-            contentType: 'application/json',
-            body: JSON.stringify({ detail: 'сводка не собралась' }),
-          })
-        },
-      )
+        await signIn(page)
+        await page.goto(`${APP}/security-ops/visits/${eventId}/`)
 
-      await signIn(page)
-      await page.goto(`${APP}/security-ops/visits/${eventId}/`)
+        const approve = page.getByRole('button', { name: 'Утвердить', exact: true })
+        await expect(approve).toBeVisible({ timeout: 20_000 })
+        // Пока запрос идёт — выключена и говорит, что идёт загрузка.
+        await expect(
+          approve,
+          'кнопка утверждения кликабельна до загрузки сводки — сервер ответит 422',
+        ).toBeDisabled()
+        // 🔴 ПРИЧИНА ЧИТАЕТСЯ ВИДИМОЙ СТРОКОЙ, А НЕ `title` (правило №801,
+        // найдено ревью №825): на выключенной кнопке подсказка не показывается
+        // ни при каком поведении браузера, и прежний пин стерёг атрибут,
+        // которого человек не видит. Связь строки с кнопкой держит
+        // `aria-describedby` — её проверяем отдельно, иначе читалка произнесёт
+        // текст «неизвестно о чём».
+        const hint = page.locator('[data-slot="right-hint"]')
+        await expect(hint).toHaveText('Сводка ещё загружается')
+        await expect(approve).toHaveAttribute('aria-describedby', /.+/)
 
-      const approve = page.getByRole('button', { name: 'Утвердить', exact: true })
-      await expect(approve).toBeVisible({ timeout: 20_000 })
-      // Пока запрос идёт — выключена и говорит, что идёт загрузка.
-      await expect(
-        approve,
-        'кнопка утверждения кликабельна до загрузки сводки — сервер ответит 422',
-      ).toBeDisabled()
-      // 🔴 ПРИЧИНА ЧИТАЕТСЯ ВИДИМОЙ СТРОКОЙ, А НЕ `title` (правило №801,
-      // найдено ревью №825): на выключенной кнопке подсказка не показывается
-      // ни при каком поведении браузера, и прежний пин стерёг атрибут,
-      // которого человек не видит. Связь строки с кнопкой держит
-      // `aria-describedby` — её проверяем отдельно, иначе читалка произнесёт
-      // текст «неизвестно о чём».
-      const hint = page.locator('[data-slot="right-hint"]')
-      await expect(hint).toHaveText('Сводка ещё загружается')
-      await expect(approve).toHaveAttribute('aria-describedby', /.+/)
-
-      // Ответ пришёл ОТКАЗОМ — причина меняется: «подождите» тут уже неправда.
-      slow = false
-      await expect(hint).toHaveText('Сводка не загрузилась — обновите страницу', {
-        timeout: 20_000,
-      })
-      await expect(approve, 'после отказа сводки кнопка ожила').toBeDisabled()
+        // Ответ пришёл ОТКАЗОМ — причина меняется: «подождите» тут уже неправда.
+        slow = false
+        await expect(hint).toHaveText('Сводка не загрузилась — обновите страницу', {
+          timeout: 20_000,
+        })
+        await expect(approve, 'после отказа сводки кнопка ожила').toBeDisabled()
+      } finally {
+        await fetch(`${API}/api/ops/security-events/${encodeURIComponent(eventId)}/`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
     })
   },
 )

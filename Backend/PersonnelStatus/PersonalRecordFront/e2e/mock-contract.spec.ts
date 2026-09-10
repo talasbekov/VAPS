@@ -1079,6 +1079,7 @@ test.describe(
             await post('/api/ops/security-events/', {
               title: `Срочность (проба №504) ${businessDate}`,
               objectId: object.id,
+              chiefEmployeeId: roster.results![0].id,
               businessDate,
               businessDateEnd: businessDate,
               kind: 'INTERNAL',
@@ -1106,6 +1107,9 @@ test.describe(
           await post(`${base}/approval/route/${approver.id}/decide/`, {
             decision: 'RETURNED',
             comment: `Замечание на ${businessDate}`,
+            // Форма возврата отправляет список замечаний; одного comment
+            // недостаточно после обновления контракта (Plane №934).
+            remarks: [{ text: `Замечание на ${businessDate}`, postId: null, urgent: false }],
           })
           const after = await (await fetch(`${base}/`)).json()
           const last = after.approvalRemarks[after.approvalRemarks.length - 1]
