@@ -1093,30 +1093,32 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                 </Button>
               )}
             </RightGate>
-            <RightGate
-              reason={
-                placementAlreadyCompleted
-                  ? "Расстановка уже завершена — вернитесь к согласованию"
-                  : placementLeadReason
-              }
-            >
-              {(describedBy) => (
-                <Button
-                  type="button"
-                  size="sm"
-                  // На шаге, открытом назад с «Согласования» (№861), сервер
-                  // отобьёт повторное завершение (`_require_visit_stage`);
-                  // обещать кнопкой то, что отобьют, нельзя (ревью №825).
-                  disabled={complete.isPending || !canCompletePlacement || placementAlreadyCompleted}
-                  aria-describedby={describedBy}
-                  onClick={() =>
-                    complete.mutate({ visitObjectId: scope.visit?.id })
-                  }
-                >
-                  {complete.isPending ? "Завершение…" : "Завершить расстановку"}
-                </Button>
-              )}
-            </RightGate>
+            {!placementRights.isDeputy && (
+              <RightGate
+                reason={
+                  placementAlreadyCompleted
+                    ? "Расстановка уже завершена — вернитесь к согласованию"
+                    : placementLeadReason
+                }
+              >
+                {(describedBy) => (
+                  <Button
+                    type="button"
+                    size="sm"
+                    // На шаге, открытом назад с «Согласования» (№861), сервер
+                    // отобьёт повторное завершение (`_require_visit_stage`);
+                    // обещать кнопкой то, что отобьют, нельзя (ревью №825).
+                    disabled={complete.isPending || !canCompletePlacement || placementAlreadyCompleted}
+                    aria-describedby={describedBy}
+                    onClick={() =>
+                      complete.mutate({ visitObjectId: scope.visit?.id })
+                    }
+                  >
+                    {complete.isPending ? "Завершение…" : "Завершить расстановку"}
+                  </Button>
+                )}
+              </RightGate>
+            )}
           </div>
         </div>
 
@@ -1549,30 +1551,32 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         {/* Чип-переключатель «Старший поста» (`[РАС-03]`): старший
                             на пост ОДИН, сервер снимает прежнего сам. Состояние
                             — `aria-pressed`, а не второй текст кнопки. */}
-                        <RightGate reason={placementRights.isDeputy ? placementLeadReason : placementManageReason}>
-                          {(describedBy) => (
-                            <button
-                              type="button"
-                              aria-pressed={assignment.isSectorSenior}
-                              aria-label={`Старший поста: ${assignment.employeeName}`}
-                              disabled={setSenior.isPending || !canSetSectorSenior}
-                              aria-describedby={describedBy}
-                              onClick={() =>
-                                setSenior.mutate({
-                                  assignmentId: assignment.id,
-                                  senior: !assignment.isSectorSenior,
-                                })
-                              }
-                              className={`inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
-                                assignment.isSectorSenior
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-input bg-background text-foreground hover:bg-muted"
-                              }`}
-                            >
-                              {assignment.isSectorSenior ? "✓ " : ""}Старший поста
-                            </button>
-                          )}
-                        </RightGate>
+                        {!placementRights.isDeputy && (
+                          <RightGate reason={placementManageReason}>
+                            {(describedBy) => (
+                              <button
+                                type="button"
+                                aria-pressed={assignment.isSectorSenior}
+                                aria-label={`Старший поста: ${assignment.employeeName}`}
+                                disabled={setSenior.isPending || !canSetSectorSenior}
+                                aria-describedby={describedBy}
+                                onClick={() =>
+                                  setSenior.mutate({
+                                    assignmentId: assignment.id,
+                                    senior: !assignment.isSectorSenior,
+                                  })
+                                }
+                                className={`inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                                  assignment.isSectorSenior
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-input bg-background text-foreground hover:bg-muted"
+                                }`}
+                              >
+                                {assignment.isSectorSenior ? "✓ " : ""}Старший поста
+                              </button>
+                            )}
+                          </RightGate>
+                        )}
                         <span className="flex gap-1">
                           <RightGate reason={placementManageReason}>
                             {(describedBy) => (
