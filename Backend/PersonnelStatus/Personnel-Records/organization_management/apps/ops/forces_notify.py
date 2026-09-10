@@ -109,7 +109,6 @@ def _directorate_heads(division_ids):
         TemporaryDutyPermission,
         UserRole,
     )
-    from organization_management.apps.operations.selectors import DivisionTreeSelector
 
     heads = {str(pk): set() for pk in division_ids}
     if not division_ids:
@@ -126,46 +125,9 @@ def _directorate_heads(division_ids):
     for division_id, user_id in rows:
         heads.setdefault(str(division_id), set()).add(str(user_id))
 
-    # 🔴 ОБЛАСТЬ ДЕЖУРСТВА ЧИТАЕТСЯ ТАК ЖЕ, КАК ЕЁ ЧИТАЕТ ГЕЙТ (Plane №882,
-    # найдено ревью). Первая редакция брала `scope_division_id__in=ids` —
-    # ТОЧНОЕ совпадение с управлением, — а `PermissionService._scope_matches`
-    # трактует область шире в двух местах:
-    #   • грант БЕЗ области (`scope_division_id is None`) считается
-    #     ГЛОБАЛЬНЫМ и проходит куда угодно;
-    #   • грант на ПРЕДКА (департамент) накрывает все его управления через
-    #     `subtree_ids`.
-    # То есть дежурный без области или с областью на департамент выделить
-    # людей мог, а уведомления по-прежнему не получал — ровно то расхождение,
-    # которое карточка №800 объявляла закрытым. Фильтр строже гейта — это не
-    # «осторожнее», это другая беда с тем же симптомом.
-    #
-    # 🔴 ТОЧНАЯ ОБЛАСТЬ У ПОСТОЯННЫХ РОЛЕЙ — ОСОЗНАННОЕ СУЖЕНИЕ, И ДОВОД
-    # ПЕРЕПИСАН, ЧТОБЫ БЫТЬ ПРАВДОЙ (Plane №922).
-    #
-    # Здесь стояло: «запрос адресован управлению, и ответственный за
-    # департамент его и отправляет». Ревью показало, что довод говорит про
-    # одного человека, а исключает другого: отправляет запрос держатель
-    # `forces.allocate` (`DEPARTMENT_EXPENSE_OFFICER`, гейт ручки заявок), а
-    # отсекается здесь держатель `status.manage` на департаменте. Права
-    # разные, и совпадать их носители не обязаны.
-    #
-    # Настоящий довод — В АДРЕСАТЕ, а не в том, кто нажал кнопку. Рассылка
-    # спрашивает «кому ИСПОЛНЯТЬ запрос по ЭТОМУ управлению», а исполняет его
-    # тот, чья область — само управление. Держатель `status.manage` с
-    # областью на ДЕПАРТАМЕНТ письма по управлению не получает — ему идёт
-    # ОДНО сводное (`_department_heads_over`, №922); без области (глобальный
-    # грант — админ) не получает ничего. Требование «Выделите N сотрудников»
-    # по управлению им не адресовано.
-    #
-    # ПОВЕДЕНИЕ ЗАКРЕПЛЕНО ПРОБОЙ `test_the_department_head_gets_no_per_
-    # directorate_letter` — то есть это правило раздела, а не случайность
-    # фильтра, и менять его надо решением заказчика, а не правкой запроса.
-    # Проверено делом: расширение отбора на `scope_matches` краснит три пробы
-    # дежурств и саму эту — уведомлений становится 3 вместо 1.
-    #
-    # У ДЕЖУРСТВА такого довода нет, и потому оно читается шире (№882):
-    # дежурство даёт ПРАВО на время, заступивший дежурным по управлению
-    # исполняет запрос сам, и спрашивать его надо тем же вопросом, что и гейт.
+    # №1022 разводит форму уведомления по области дежурства: точная область
+    # получает письмо управления, область-предок — полную сводку, а область
+    # без ограничения сохраняет глобальное поведение, выбранное в №882.
     now = Clock.now()
     duties = TemporaryDutyPermission.objects.filter(
         is_active=True,
@@ -182,12 +144,9 @@ def _directorate_heads(division_ids):
     # уведомление не приходит. Довод за копию был честный (один скан дерева на
     # вызов вместо скана на каждое дежурство) — но он снимается тем, что
     # договор сам принимает `children_map`.
-    children_map = DivisionTreeSelector.children_map()
     for scope_division_id, user_id in duties:
         for division_id in wanted:
-            if PermissionService.scope_matches(
-                scope_division_id, division_id, children_map=children_map
-            ):
+            if scope_division_id is None or int(scope_division_id) == division_id:
                 heads.setdefault(str(division_id), set()).add(str(user_id))
     return heads
 
@@ -219,12 +178,17 @@ def _department_heads_over(division_ids):
     «Может всё» не означает «отвечает за этот департамент», а требование
     выделить людей адресуют тому, кто отвечает.
 
-    ⚠️ Ветка дежурств в `_directorate_heads` трактует область ШИРЕ: там грант
-    без области получателем ДЕЛАЕТ (проба `test_a_duty_without_a_scope_is_
-    notified_too`, решение заказчика по №882). Расхождение названо, а не
-    спрятано; свести оба места — отдельный его вопрос, карточка заведена.
+    Активное дежурство использует ту же форму: точная область остаётся в
+    письме управления, область-предок получает сводку. Область ORGANIZATION
+    не считается ответственностью за департамент, а точный грант той же
+    учётки вычитается из её сводки.
     """
-    from organization_management.apps.operations.models import UserRole
+    from organization_management.apps.operations.clock import Clock
+    from organization_management.apps.divisions.models import Division
+    from organization_management.apps.operations.models import (
+        TemporaryDutyPermission,
+        UserRole,
+    )
     from organization_management.apps.operations.selectors import DivisionTreeSelector
 
     if not division_ids:
@@ -234,16 +198,41 @@ def _department_heads_over(division_ids):
     if not roles:
         return {}
     children_map = DivisionTreeSelector.children_map()
+    now = Clock.now()
+    grants = list(
+        UserRole.objects.filter(
+            is_active=True,
+            role_code_id__in=roles,
+        ).values_list("scope_division_id", "user_id")
+    )
+    grants.extend(
+        TemporaryDutyPermission.objects.filter(
+            is_active=True,
+            duty_role_code__in=roles,
+            starts_at__lte=now,
+            ends_at__gte=now,
+        ).values_list("scope_division_id", "user_id")
+    )
+    scope_types = dict(
+        Division.objects.filter(
+            pk__in={
+                scope_id
+                for scope_id, _user_id in grants
+                if scope_id is not None
+            }
+        ).values_list("pk", "division_type")
+    )
     over = {}
-    for scope_division_id, user_id in UserRole.objects.filter(
-        is_active=True,
-        role_code_id__in=roles,
-        scope_division_id__isnull=False,
-    ).values_list("scope_division_id", "user_id"):
-        if int(scope_division_id) in wanted:
-            # Область РОВНО на управление — это адресат письма по управлению,
-            # он уже получает своё. Сводное ему не нужно и было бы вторым
-            # письмом об одном и том же.
+    exact = {}
+    for scope_division_id, user_id in grants:
+        user_id = str(user_id)
+        if scope_division_id is None:
+            continue
+        scope_division_id = int(scope_division_id)
+        if scope_types.get(scope_division_id) == Division.DivisionType.ORGANIZATION:
+            continue
+        if scope_division_id in wanted:
+            exact.setdefault(user_id, set()).add(scope_division_id)
             continue
         covered = {
             division_id
@@ -253,8 +242,12 @@ def _department_heads_over(division_ids):
             )
         }
         if covered:
-            over.setdefault(str(user_id), set()).update(covered)
-    return over
+            over.setdefault(user_id, set()).update(covered)
+    return {
+        user_id: covered - exact.get(user_id, set())
+        for user_id, covered in over.items()
+        if covered - exact.get(user_id, set())
+    }
 
 
 def notify_directorate_heads(event, allocation, directorates):
@@ -347,7 +340,11 @@ def notify_directorate_heads(event, allocation, directorates):
     for user_id, covered in _department_heads_over(
         [int(key) for key in asked if key.isdigit()]
     ).items():
-        mine = [asked[str(division_id)] for division_id in sorted(covered)]
+        mine = [
+            row
+            for division_id, row in asked.items()
+            if int(division_id) in covered
+        ]
         if not mine:
             continue
         tally.deliver(
@@ -377,6 +374,7 @@ def notify_directorate_heads(event, allocation, directorates):
                 ],
                 "dueAt": allocation.get("dueAt"),
             },
+            dedupe_key=None,
             label=allocation.get("departmentName") or "департамент",
         )
     return {

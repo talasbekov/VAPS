@@ -381,6 +381,78 @@ def test_the_department_officer_gets_one_letter_about_all_his_directorates(chain
     ).exists()
 
 
+def test_a_changed_allocation_is_delivered_again_the_same_day(chain):
+    event, allocation, directorates, _head, officer, _watcher = chain
+
+    notify_directorate_heads(event, allocation, directorates[:1])
+    notify_directorate_heads(event, allocation, directorates)
+
+    summaries = OpsNotification.objects.filter(
+        recipient=str(officer.pk), kind=DEPARTMENT_KIND
+    ).order_by("created_at")
+    assert [row.payload["directorateCount"] for row in summaries] == [1, 2]
+
+
+def test_the_summary_preserves_allocation_row_order(chain):
+    event, allocation, directorates, _head, officer, _watcher = chain
+
+    notify_directorate_heads(event, allocation, list(reversed(directorates)))
+
+    row = OpsNotification.objects.get(recipient=str(officer.pk), kind=DEPARTMENT_KIND)
+    assert [item["name"] for item in row.payload["directorates"]] == [
+        "Второе управление",
+        "Первое управление",
+    ]
+
+
+def test_an_exact_grant_is_removed_from_the_same_users_summary(chain):
+    event, allocation, directorates, _head, officer, _watcher = chain
+    role = Role.objects.get(code="FR_HEAD")
+    UserRole.objects.create(
+        user_id=str(officer.pk),
+        role_code=role,
+        scope_division_id=int(directorates[0]["divisionId"]),
+    )
+
+    notify_directorate_heads(event, allocation, directorates)
+
+    row = OpsNotification.objects.get(recipient=str(officer.pk), kind=DEPARTMENT_KIND)
+    assert row.payload["directorateCount"] == 1
+    assert [item["name"] for item in row.payload["directorates"]] == [
+        "Второе управление"
+    ]
+
+
+def test_an_organization_scope_gets_no_department_summary(
+    chain, django_user_model
+):
+    event, allocation, directorates, _head, officer, _watcher = chain
+    department = Division.objects.get(
+        pk=UserRole.objects.get(user_id=str(officer.pk)).scope_division_id
+    )
+    organization = Division.objects.create(
+        name="Служба",
+        code="ORG-FR",
+        division_type=Division.DivisionType.ORGANIZATION,
+    )
+    department.move_to(organization, "last-child")
+    role = Role.objects.get(code="FR_HEAD")
+    organization_user = django_user_model.objects.create_user(
+        username="fr-organization", password="x"
+    )
+    UserRole.objects.create(
+        user_id=str(organization_user.pk),
+        role_code=role,
+        scope_division_id=organization.pk,
+    )
+
+    notify_directorate_heads(event, allocation, directorates)
+
+    assert not OpsNotification.objects.filter(
+        recipient=str(organization_user.pk), kind=DEPARTMENT_KIND
+    ).exists()
+
+
 def test_a_directorate_without_a_quota_is_not_in_the_summary(chain):
     """Управление без квоты в сводку не входит — то же правило, что и у писем
     по управлениям (Plane №557).
@@ -576,22 +648,10 @@ def test_a_duty_without_the_select_permission_is_not_notified(
 def test_a_duty_scoped_to_the_department_is_notified_too(
     chain, duty_role, django_user_model
 ):
-    """Область дежурства читается так же, как её читает ГЕЙТ (Plane №882).
-
-    🔴 НАЙДЕНО РЕВЮ. Первая редакция №800 брала дежурства точным совпадением
-    области с управлением, а `PermissionService._scope_matches` накрывает
-    управления через ПРЕДКА: грант на департамент проходит на все его
-    управления (`subtree_ids`). Значит дежурный по департаменту выделить людей
-    мог, а «Выделите N сотрудников» не получал — то самое расхождение, которое
-    карточка объявляла закрытым. Фильтр строже гейта — не «осторожнее», а
-    другая беда с тем же симптомом.
-
-    Красная мутация: вернуть `scope_division_id__in=ids` — дежурный по
-    департаменту исчезнет из получателей, `notified` станет 1.
-    """
+    """Дежурный департамента получает полную сводку, а не первое управление."""
     from organization_management.apps.operations import clock
 
-    event, allocation, directorates, head, officer, _watcher = chain
+    event, allocation, directorates, _head, officer, _watcher = chain
     duty = django_user_model.objects.create_user(username="fr-duty-dep", password="x")
     moment = dt.datetime(2026, 9, 19, 10, 0, tzinfo=dt.timezone.utc)
     # Область — ДЕПАРТАМЕНТ, а запрос адресован его управлению.
@@ -601,20 +661,13 @@ def test_a_duty_scoped_to_the_department_is_notified_too(
     with clock.override(moment):
         report = notify_directorate_heads(event, allocation, directorates)
 
-    assert OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
-    # 🔴 СЛЕДСТВИЕ, КОТОРОЕ СТОИТ НАЗВАТЬ: область на департамент накрывает ОБА
-    # его управления, и второе — то, у которого постоянного начальника нет
-    # вовсе, — перестаёт быть «без адресата». Раньше оно уходило в
-    # `headlessDirectorates` и запрос по нему не получал НИКТО.
-    assert report["headlessDirectorates"] == []
-    # Трижды: начальник первого управления и дежурный по каждому из двух.
-    # Строка уведомления у дежурного при этом ОДНА — ключ «получатель, вид,
-    # деловая дата» схлопывает их; счётчик считает удачные доставки, а не
-    # людей, и это его давнее свойство (см. №561), а не следствие этой правки.
-        # +1 — СВОДНОЕ письмо ответственного за департамент (Plane №922):
-    # его область накрывает управления заявки, и с решения заказчика
-    # 06.09.2026 он получает одно письмо на департамент.
-    assert report["notified"] == 4
+    assert not OpsNotification.objects.filter(recipient=str(duty.pk), kind=KIND).exists()
+    summary = OpsNotification.objects.get(
+        recipient=str(duty.pk), kind=DEPARTMENT_KIND
+    )
+    assert summary.payload["directorateCount"] == 2
+    assert report["headlessDirectorates"] == ["Второе управление"]
+    assert report["notified"] == 3
 
 
 def test_a_duty_without_a_scope_is_notified_too(chain, duty_role, django_user_model):
