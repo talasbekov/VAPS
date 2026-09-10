@@ -1225,8 +1225,8 @@ function EmployeesScreen() {
                       >
                         <CardHeader className="pb-3">
                           <div className="flex items-center space-x-3">
-                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                              <span className="text-blue-600 font-semibold">
+                            <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950 rounded-full flex items-center justify-center">
+                              <span className="text-blue-600 dark:text-blue-400 font-semibold">
                                 {employee.name
                                   .split(" ")
                                   .map((n) => n[0])

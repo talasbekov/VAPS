@@ -500,7 +500,7 @@ export default function OrgBoard() {
                                 "/placeholder.svg";
                             }}
                           />
-                          <div className="text-blue-600 mt-2">
+                          <div className="text-blue-600 dark:text-blue-400 mt-2">
                             <b>
                               {managementHead.last_name}{" "}
                               {abbreviate(managementHead.first_name)}
@@ -590,7 +590,7 @@ export default function OrgBoard() {
                                     : "ВАКАНТ"}
                                 </b>
                                 <br />
-                                <span className="font-semibold text-blue-600">
+                                <span className="font-semibold text-blue-600 dark:text-blue-400">
                                   {employeeData.position.name ||
                                     "Должность не указана"}
                                 </span>
@@ -603,7 +603,7 @@ export default function OrgBoard() {
                                         «В строю» тому, у кого статуса нет
                                         вовсе, — а ветка сюда как раз и
                                         попадает при `undefined`. */}
-                                    <span className="font-semibold text-blue-600">
+                                    <span className="font-semibold text-blue-600 dark:text-blue-400">
                                       {naming.labelOf(
                                         employeeData.employee?.current_status
                                           ?.status_type,
@@ -613,7 +613,7 @@ export default function OrgBoard() {
                                     <br />
                                     {employeeData.employee?.current_status
                                       ?.end_date && (
-                                      <span className="font-semibold text-blue-600">
+                                      <span className="font-semibold text-blue-600 dark:text-blue-400">
                                         до{" "}
                                         {formatDate(
                                           employeeData.employee.current_status
@@ -671,7 +671,7 @@ export default function OrgBoard() {
                                       : "ВАКАНТ"}
                                   </b>
                                   <br />
-                                  <span className="font-semibold text-blue-600">
+                                  <span className="font-semibold text-blue-600 dark:text-blue-400">
                                     {employeeData.position.name ||
                                       "Должность не указана"}
                                   </span>
@@ -682,7 +682,7 @@ export default function OrgBoard() {
                                       {/* Второй такой же блок: отсутствие
                                           статуса называется вслух, а не
                                           подменяется «В строю». */}
-                                      <span className="font-semibold text-blue-600">
+                                      <span className="font-semibold text-blue-600 dark:text-blue-400">
                                         {naming.labelOf(
                                           employeeData.employee?.current_status
                                             ?.status_type,
@@ -692,7 +692,7 @@ export default function OrgBoard() {
                                       <br />
                                       {employeeData.employee?.current_status
                                         ?.end_date && (
-                                        <span className="font-semibold text-blue-600">
+                                        <span className="font-semibold text-blue-600 dark:text-blue-400">
                                           до{" "}
                                           {formatDate(
                                             employeeData.employee.current_status

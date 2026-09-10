@@ -284,7 +284,7 @@ function ReadinessRow({ event }: { event: SecurityEvent }) {
       href={`/security-ops/events/${event.id}`}
       className="flex items-center gap-3.5 border-b py-3 last:border-0 hover:bg-muted/30"
     >
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[10px] bg-primary/10 text-sm font-extrabold text-blue-800">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[10px] bg-primary/10 text-sm font-extrabold text-blue-800 dark:text-blue-300">
         {event.businessDate.slice(8, 10)}
       </span>
       <span className="min-w-0 flex-1">
