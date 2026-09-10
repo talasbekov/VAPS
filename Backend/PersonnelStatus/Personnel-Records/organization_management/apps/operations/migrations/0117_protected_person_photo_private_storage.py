@@ -18,7 +18,7 @@ def move_public_photos(apps, schema_editor):
     private = ProtectedPersonPhotoStorage()
     for person in Person.objects.exclude(photo="").iterator():
         name = person.photo.name
-        if not name.startswith(PHOTO_PREFIX) or not public.exists(name):
+        if not name or not name.startswith(PHOTO_PREFIX) or not public.exists(name):
             continue
         if private.exists(name):
             private_name = name
@@ -36,7 +36,7 @@ def restore_private_photos(apps, schema_editor):
     private = ProtectedPersonPhotoStorage()
     for person in Person.objects.exclude(photo="").iterator():
         name = person.photo.name
-        if not name.startswith(PHOTO_PREFIX) or not private.exists(name):
+        if not name or not name.startswith(PHOTO_PREFIX) or not private.exists(name):
             continue
         with private.open(name, "rb") as source:
             public_name = public.save(name, source)
