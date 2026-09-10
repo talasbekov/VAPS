@@ -18,7 +18,7 @@ import datetime as dt
 import hashlib
 import uuid
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Max
 
 from organization_management.apps.employees.models import EmployeeTransferHistory
@@ -331,19 +331,20 @@ def _shift_division_on_business_date(shift, transfers_by_employee, current_divis
         return None
     employee_id = int(shift.employee_id)
     transfers = transfers_by_employee.get(employee_id, [])
-    effective = [
+    active = [
         transfer for transfer in transfers
         if transfer.transfer_date <= shift.business_date
+        and (
+            not transfer.is_temporary
+            or transfer.end_date is None
+            or shift.business_date <= transfer.end_date
+        )
     ]
-    if effective:
-        transfer = effective[-1]
-        if (
-            transfer.is_temporary
-            and transfer.end_date is not None
-            and shift.business_date > transfer.end_date
-        ):
-            return transfer.from_division_id
-        return transfer.to_division_id
+    if active:
+        # Завершившийся временный слой пропускается целиком. Поэтому после
+        # B→C возвращаемся к всё ещё активному A→B, а после окончания обоих —
+        # к исходному A, а не к `from` последней записи (B).
+        return active[-1].to_division_id
     if transfers:
         # Смена раньше первого известного перевода относится к его `from`,
         # даже если текущая штатная единица уже перемещена.
@@ -445,6 +446,15 @@ def _next_revision(series_key):
     return (maximum or 0) + 1
 
 
+def _lock_revision_series(series_key):
+    """Одна PostgreSQL transaction за раз назначает revision этой серии."""
+    lock_id = int(series_key[:16], 16)
+    if lock_id >= 1 << 63:
+        lock_id -= 1 << 64
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [lock_id])
+
+
 def _find_reusable_artifact(series_key, now):
     """§22.25: пригодный — той же серии и ещё не истёкший; последняя
     редакция — повтор обязан отдавать самое свежее прочтение данных."""
@@ -515,46 +525,38 @@ def _advance(job):
         job.report_type_code, job.param_from.isoformat(), job.param_to.isoformat(),
         job.sensitive, job.scope_division_ids,
     )
-    # Unique(series_key, revision) — последний барьер, если две разные job
-    # одной серии дошли до генерации одновременно. Savepoint оставляет
-    # внешнюю transaction пригодной для нового MAX после IntegrityError.
-    artifact = None
-    for _ in range(3):
-        try:
-            with transaction.atomic():
-                artifact = OpsServiceReportArtifact.objects.create(
-                    artifact_code=f"artifact-{job.job_code}",
-                    job_code=job.job_code,
-                    report_type_code=job.report_type_code,
-                    safe_title=(
-                        report_type.safe_title
-                        if report_type is not None
-                        else job.report_type_code
-                    ),
-                    format=job.format,
-                    series_key=series_key,
-                    revision=_next_revision(series_key),
-                    generated_at=generated_at,
-                    generated_by=job.created_by_user_id,
-                    param_from=job.param_from,
-                    param_to=job.param_to,
-                    calculation_version=CALCULATION_VERSION,
-                    masking_policy_version=MASKING_POLICY_VERSION,
-                    retention_policy_version=limits["policyVersion"],
-                    sensitive=job.sensitive,
-                    file_size=content_size(content),
-                    hash=content_hash(content),
-                    expires_at=generated_at + dt.timedelta(
-                        days=limits["retentionDays"]
-                    ),
-                    content=content,
-                    scope_division_ids=job.scope_division_ids,
-                )
-            break
-        except IntegrityError:
-            artifact = None
-    if artifact is None:
-        raise IntegrityError("Could not allocate a unique report revision")
+    # Advisory transaction lock сериализует MAX+1 по серии ещё до чтения MAX.
+    # Лимита retry нет: каждая ожидающая job получает следующий номер после
+    # commit предыдущей. Unique(series_key, revision) остаётся страховкой БД.
+    _lock_revision_series(series_key)
+    artifact = OpsServiceReportArtifact.objects.create(
+        artifact_code=f"artifact-{job.job_code}",
+        job_code=job.job_code,
+        report_type_code=job.report_type_code,
+        safe_title=(
+            report_type.safe_title
+            if report_type is not None
+            else job.report_type_code
+        ),
+        format=job.format,
+        series_key=series_key,
+        revision=_next_revision(series_key),
+        generated_at=generated_at,
+        generated_by=job.created_by_user_id,
+        param_from=job.param_from,
+        param_to=job.param_to,
+        calculation_version=CALCULATION_VERSION,
+        masking_policy_version=MASKING_POLICY_VERSION,
+        retention_policy_version=limits["policyVersion"],
+        sensitive=job.sensitive,
+        file_size=content_size(content),
+        hash=content_hash(content),
+        expires_at=generated_at + dt.timedelta(
+            days=limits["retentionDays"]
+        ),
+        content=content,
+        scope_division_ids=job.scope_division_ids,
+    )
     job.state = "COMPLETED"
     job.progress_percent = 100
     job.completed_at = generated_at
