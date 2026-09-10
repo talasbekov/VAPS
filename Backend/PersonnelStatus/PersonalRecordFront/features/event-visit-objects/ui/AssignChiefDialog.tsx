@@ -29,6 +29,7 @@ import { PersonnelPicker } from "@/features/personnel-picker";
 import type { SecurityEvent, VisitObject } from "@/entities/security-event";
 import { assignVisitObjectChief } from "../api/visit-objects-api";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
+import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
 
 export function AssignChiefDialog({
   event,
@@ -66,16 +67,12 @@ export function AssignChiefDialog({
     // Отказ ОБЪЯСНЯЕТСЯ: сервер отбивает закрытое мероприятие и неизвестного
     // сотрудника, и человеку нужна причина, а не «не получилось».
     onError: (error: unknown) => {
-      const message =
-        typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "";
       toast({
         title: "Старший не назначен",
-        description:
-          message === ""
-            ? "Сервис временно недоступен. Попробуйте ещё раз."
-            : message,
+        description: friendlyOpsErrorMessage(
+          error,
+          "Нет права назначать старшего объекта.",
+        ),
         variant: "destructive",
       });
     },

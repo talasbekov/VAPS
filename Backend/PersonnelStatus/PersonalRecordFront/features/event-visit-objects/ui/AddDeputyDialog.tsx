@@ -29,6 +29,7 @@ import { PersonnelPicker } from "@/features/personnel-picker";
 import type { SecurityEvent, VisitObject } from "@/entities/security-event";
 import { addVisitObjectDeputy } from "../api/visit-objects-api";
 import { invalidateSecurityEvents } from "@/lib/ops-invalidate";
+import { friendlyOpsErrorMessage } from "@/lib/ops-errors";
 
 export function AddDeputyDialog({
   event,
@@ -71,16 +72,12 @@ export function AddDeputyDialog({
     // Отказ ОБЪЯСНЯЕТСЯ: сервер отбивает повтор и закрытое мероприятие, и
     // человеку нужна причина, а не «не получилось».
     onError: (error: unknown) => {
-      const message =
-        typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "";
       toast({
         title: "Замещающий не назначен",
-        description:
-          message === ""
-            ? "Сервис временно недоступен. Попробуйте ещё раз."
-            : message,
+        description: friendlyOpsErrorMessage(
+          error,
+          "Нет права назначать замещающего на этот объект.",
+        ),
         variant: "destructive",
       });
     },
