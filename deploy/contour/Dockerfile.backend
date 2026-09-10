@@ -1,0 +1,16 @@
+FROM smart-josparlau/contour-python-deps:1
+WORKDIR /app
+COPY backend/requirements.txt ./requirements.txt
+COPY backend/requirements/ ./requirements/
+RUN pip install --no-cache-dir --no-index --find-links=/wheelhouse \
+      -r requirements/base.txt -c requirements.txt \
+    && pip check
+COPY backend/ ./
+COPY deploy/contour/entrypoint.sh /entrypoint.sh
+RUN chmod 755 /entrypoint.sh \
+    && mkdir -p /var/log/django /data/static /data/media /data/private
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=UTC \
+    DJANGO_SETTINGS_MODULE=organization_management.config.settings.contour
+EXPOSE 8000
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["gunicorn", "organization_management.config.asgi:application", "-k", "uvicorn_worker.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "1", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-"]

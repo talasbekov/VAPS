@@ -1,0 +1,5 @@
+.env
+bundle*/
+*.tar
+*.tar.gz
+*.log

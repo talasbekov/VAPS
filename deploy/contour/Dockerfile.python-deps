@@ -1,0 +1,14 @@
+FROM python:3.12-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc postgresql-client fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /deps
+COPY requirements.txt ./requirements.txt
+COPY requirements/ ./requirements/
+# Download the complete pinned environment under the actual target Python/OS.
+# Convert source distributions to wheels while the preparation phase is online.
+RUN pip download --dest /downloads -r requirements.txt \
+    && pip wheel --find-links=/downloads --wheel-dir=/wheelhouse -r requirements.txt \
+    && pip wheel --find-links=/wheelhouse --wheel-dir=/wheelhouse \
+       -r requirements/base.txt -c requirements.txt \
+    && rm -rf /downloads /root/.cache/pip

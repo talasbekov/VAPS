@@ -1,0 +1,24 @@
+FROM smart-josparlau/contour-node-deps:1 AS builder
+WORKDIR /app
+COPY frontend/ ./
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
+    NODE_OPTIONS=--max-old-space-size=2048 \
+    BACKEND_URL=http://backend:8000 NEXT_PUBLIC_API_URL= \
+    NEXT_PUBLIC_MEDIA_URL= NEXT_PUBLIC_OPS_DATA_SOURCE=api \
+    NEXT_PUBLIC_OPS_MOCK_DOMAINS= NEXT_PUBLIC_SENTRY_DSN= SENTRY_DSN=
+RUN NEXTAUTH_SECRET=build-only-placeholder ./node_modules/.bin/next build
+
+FROM smart-josparlau/contour-node-prod-deps:1 AS prod-deps
+FROM smart-josparlau/contour-node-base:1
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
+    NODE_OPTIONS=--max-old-space-size=512 PORT=3000 HOSTNAME=0.0.0.0 TZ=UTC
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+RUN mkdir -p .next/cache && chown -R nextjs:nodejs .next/cache
+USER nextjs
+EXPOSE 3000
+CMD ["node", "server.js"]

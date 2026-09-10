@@ -1,0 +1,124 @@
+name: smart-josparlau-contour
+
+x-logging: &bounded-logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:15
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smart_josparlau}
+      POSTGRES_USER: ${POSTGRES_USER:-smart_josparlau}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      TZ: UTC
+    volumes:
+      - postgres15:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *bounded-logs
+
+  redis:
+    image: redis:7-alpine
+    pull_policy: never
+    restart: unless-stopped
+    command: [redis-server, --maxmemory, 256mb, --maxmemory-policy, noeviction, --save, "", --appendonly, "no"]
+    environment:
+      TZ: UTC
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *bounded-logs
+
+  backend:
+    image: smart-josparlau/contour-backend:1
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set a new DJANGO_SECRET_KEY}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Set ALLOWED_HOSTS}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?Set CSRF_TRUSTED_ORIGINS}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+      TIME_ZONE: ${TIME_ZONE:-Asia/Qyzylorda}
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-smart_josparlau}
+      POSTGRES_USER: ${POSTGRES_USER:-smart_josparlau}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      TZ: UTC
+    volumes:
+      - static:/data/static
+      - media:/data/media
+      - private:/data/private
+      - django-logs:/var/log/django
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, 'import socket; socket.create_connection(("127.0.0.1",8000),3).close()']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 180s
+    logging: *bounded-logs
+
+  frontend:
+    image: smart-josparlau/contour-frontend:1
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?Set the public LAN origin}
+      NEXTAUTH_URL_INTERNAL: http://frontend:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Generate a new NEXTAUTH_SECRET}
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SENTRY_DSN: ""
+      SENTRY_DSN: ""
+      TZ: UTC
+    mem_limit: 1g
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, 'fetch("http://127.0.0.1:3000/").then(r=>process.exit(r.status<400?0:1)).catch(()=>process.exit(1))']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    logging: *bounded-logs
+
+  proxy:
+    image: smart-josparlau/contour-proxy:1
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP:-0.0.0.0}:${CONTOUR_PORT:-3118}:80"
+    environment:
+      TZ: UTC
+    volumes:
+      - static:/data/static:ro
+      - media:/data/media:ro
+      - private:/data/private:ro
+    depends_on:
+      backend: {condition: service_healthy}
+      frontend: {condition: service_healthy}
+    logging: *bounded-logs
+
+networks:
+  default:
+    internal: true
+
+volumes:
+  postgres15:
+  static:
+  media:
+  private:
+  django-logs:
