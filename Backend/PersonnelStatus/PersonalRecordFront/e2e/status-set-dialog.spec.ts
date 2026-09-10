@@ -38,12 +38,17 @@ import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
+const MATRIX_PASSWORD = process.env.ACCESS_MATRIX_PASSWORD ?? ''
 
-async function signIn(page: Page): Promise<void> {
+async function signIn(
+  page: Page,
+  username = STAND_USERNAME,
+  password = STAND_PASSWORD,
+): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
   await api.post(`${APP}/api/auth/callback/credentials/`, {
-    form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
+    form: { csrfToken: csrf.csrfToken, username, password, json: 'true' },
   })
 }
 
@@ -140,5 +145,23 @@ test.describe('расход: постановка статуса с меропр
       options.some((o) => /В командировке|В отпуске|На больничном/i.test(o)),
       `из списка пропали обычные статусы: ${options.join(' | ')}`,
     ).toBe(true)
+  })
+
+  test('окно статусов не показывает отдельный учёт ОМ', async ({ page }) => {
+    test.skip(MATRIX_PASSWORD === '', 'нужен ACCESS_MATRIX_PASSWORD — учётки матрицы доступа')
+    await signIn(page, 'acc_dir_head_d2', MATRIX_PASSWORD)
+    await page.goto(`${APP}/statuses`, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 30_000 })
+
+    await clickRowMenuItem(page, staffedRow(page), 'Запланированные статусы')
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText('Запланированные статусы', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(
+      dialog.getByText('Учёт раздела ОМ', { exact: true }),
+      'окно статусов продолжает показывать отдельный учёт ОМ вместо единого списка',
+    ).toHaveCount(0)
   })
 })
