@@ -71,6 +71,7 @@ import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { usePlacementRoles } from "@/hooks/use-placement-roles";
 import { usePlacementSections } from "@/hooks/use-placement-sections";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useMyEmployee } from "@/hooks/use-my-employee";
 import { placementEditable, remarkIsOpen } from "@/entities/security-event";
 import type {
   ApprovalRemark,
@@ -115,6 +116,33 @@ type DragPayload = {
   roleCode?: string | null;
   sectionCode?: string | null;
 };
+
+/**
+ * Сервер различает три действия на расстановке: замещающий может править
+ * посты своего объекта, но не переводит этап и не назначает старшего поста.
+ * Нельзя сводить это к одному `canManagePlacement`: так экран обещал две
+ * операции, которые API справедливо отклонял 403 (Plane №1127).
+ */
+export function placementRightsOf(input: {
+  editable: boolean;
+  canEditPlacement: boolean;
+  myEmployeeId: string | null;
+  visit: {
+    chiefEmployeeId: string | null;
+    deputies?: readonly { employeeId: string; canEditPlacement?: boolean }[];
+  } | null;
+}) {
+  const { editable, canEditPlacement, myEmployeeId, visit } = input;
+  const isDeputy = myEmployeeId !== null && (visit?.deputies ?? []).some(
+    deputy => deputy.employeeId === myEmployeeId && deputy.canEditPlacement !== false,
+  );
+  const edit = editable && canEditPlacement;
+  // Старший объекта, ведущий ОМ и глобальный исполнитель уже приходят с
+  // `canEditPlacement`; единственный различимый в данных редактор без права
+  // перехода — заместитель. Серверный контракт закреплён API-пробой ниже.
+  const lead = edit && !isDeputy;
+  return { edit, setSectorSenior: lead, complete: lead, isDeputy };
+}
 
 type AutoPlacementPlanRow = {
   postId: string;
@@ -302,6 +330,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
   // Клиент гейтит по КОДУ права; «его ли это мероприятие» знает сервер — он же
   // и отвечает словами, если нет.
   const access = useChainAccess();
+  const me = useMyEmployee();
   // Ссылки в «Сбор сил» — по ключу модуля, как пункт меню (№939, ревью №825).
   const forcesOpen = moduleOpenFor("/employees", access.can);
   const assign = useAssignPlacement(event.id);
@@ -391,14 +420,25 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
    * задача №390). */
   const allPosts = event.reconSectorPosts;
   const scope = useVisitObjectScope(event, allPosts);
-  const canManagePlacement =
-    placementEditable(event, scope.visit) &&
-    (scope.visit === null
+  const placementRights = placementRightsOf({
+    editable: placementEditable(event, scope.visit),
+    canEditPlacement: scope.visit === null
       ? access.can(PLACEMENT_MANAGE)
-      : scope.visit.canManagePlacement === true);
+      : scope.visit.canManagePlacement === true,
+    myEmployeeId: me.data?.employee ? String(me.data.employee.id) : null,
+    visit: scope.visit,
+  });
+  const canManagePlacement = placementRights.edit;
+  const canSetSectorSenior = placementRights.setSectorSenior;
+  const canCompletePlacement = placementRights.complete;
   const placementManageReason = canManagePlacement
     ? ""
     : access.reason(PLACEMENT_MANAGE);
+  const placementLeadReason = canCompletePlacement
+    ? ""
+    : placementRights.isDeputy
+      ? "Завершает расстановку и назначает старшего поста старший объекта или ведущий ОМ"
+      : placementManageReason;
   /**
    * Кандидаты ПОКАЗАННОГО ОБЪЕКТА (Plane №579).
    *
@@ -1031,7 +1071,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
               reason={
                 placementAlreadyCompleted
                   ? "Расстановка уже завершена — вернитесь к согласованию"
-                  : placementManageReason
+                  : placementLeadReason
               }
             >
               {(describedBy) => (
@@ -1041,7 +1081,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   // На шаге, открытом назад с «Согласования» (№861), сервер
                   // отобьёт повторное завершение (`_require_visit_stage`);
                   // обещать кнопкой то, что отобьют, нельзя (ревью №825).
-                  disabled={complete.isPending || !canManagePlacement || placementAlreadyCompleted}
+                  disabled={complete.isPending || !canCompletePlacement || placementAlreadyCompleted}
                   aria-describedby={describedBy}
                   onClick={() =>
                     complete.mutate({ visitObjectId: scope.visit?.id })
@@ -1483,13 +1523,13 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                         {/* Чип-переключатель «Старший поста» (`[РАС-03]`): старший
                             на пост ОДИН, сервер снимает прежнего сам. Состояние
                             — `aria-pressed`, а не второй текст кнопки. */}
-                        <RightGate reason={placementManageReason}>
+                        <RightGate reason={placementRights.isDeputy ? placementLeadReason : placementManageReason}>
                           {(describedBy) => (
                             <button
                               type="button"
                               aria-pressed={assignment.isSectorSenior}
                               aria-label={`Старший поста: ${assignment.employeeName}`}
-                              disabled={setSenior.isPending || !canManagePlacement}
+                              disabled={setSenior.isPending || !canSetSectorSenior}
                               aria-describedby={describedBy}
                               onClick={() =>
                                 setSenior.mutate({
