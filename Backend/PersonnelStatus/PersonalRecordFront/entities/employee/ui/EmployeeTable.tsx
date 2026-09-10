@@ -27,6 +27,7 @@ import {
   Trash2,
   Eye,
 } from "lucide-react";
+import Link from "next/link";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   getEmployeeStatusColor,
@@ -56,7 +57,7 @@ export function EmployeeTable({
   // портальной роли (Plane №352, Ш-4): массовые действия правят статусы, и
   // ключ у них тот же, что у остальной правки статусов.
   const { hasPermission } = useOpsPermissions();
-  const canEditPersonnel = hasPermission("orgstructure.manage");
+  const canEditPersonnel = hasPermission("orgstructure.manage") && hasPermission("admin.roles");
   const queryClient = useQueryClient();
 
   const handleSelectAll = (checked: boolean) => {
@@ -233,20 +234,13 @@ export function EmployeeTable({
                           <Eye className="mr-2 h-4 w-4" />
                           Просмотр профиля
                         </DropdownMenuItem>
-                        {/* Правка и удаление кадровой записи — право раздела
-                            `orgstructure.manage`, то же, которым Ш-3 закрыл
-                            правку штатного расписания (Plane №352, Ш-4). */}
+                        {/* Кадровая форма требует право штатки и право системного
+                            администратора; физического удаления в ней нет. */}
                         {canEditPersonnel && (
                           <>
-                            <DropdownMenuItem>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Редактировать
-                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild><Link href={`/service-employees?edit=${encodeURIComponent(employee.id)}`}><Edit className="mr-2 h-4 w-4" />Редактировать</Link></DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-red-600">
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Удалить
-                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild className="text-red-600"><Link href={`/service-employees?edit=${encodeURIComponent(employee.id)}&action=deactivate`}><Trash2 className="mr-2 h-4 w-4" />Деактивировать…</Link></DropdownMenuItem>
                           </>
                         )}
                       </DropdownMenuContent>

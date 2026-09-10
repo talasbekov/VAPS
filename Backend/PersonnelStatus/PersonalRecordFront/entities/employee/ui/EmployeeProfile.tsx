@@ -41,7 +41,7 @@ export function EmployeeProfile({
   events = [],
 }: EmployeeProfileProps) {
   const { hasPermission } = useOpsPermissions();
-  const canEditPersonnel = hasPermission("orgstructure.manage");
+  const canEditPersonnel = hasPermission("orgstructure.manage") && hasPermission("admin.roles");
   // Цвет — ПО КОДУ строки, а не обратным поиском по русской подписи
   // (Plane №366). Поиск «подпись → код» работал ровно до первого типа из
   // справочника: у «Участие в ОМ» строки в таблице подписей нет, поиск отдавал
@@ -95,14 +95,14 @@ export function EmployeeProfile({
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              {/* Право РАЗДЕЛА вместо зашитого набора портальной роли
-                  (Plane №352, Ш-4). Выбрано `orgstructure.manage` — то же,
-                  которым Ш-3 закрыл правку штатного расписания: карточка
-                  сотрудника правит те же кадровые данные. */}
+              {/* Переход в кадровую форму доступен системному администратору
+                  с правом управления штаткой; сама карточка остаётся чтением. */}
               {canEditPersonnel && (
-                <Button variant="outline">
-                  <Edit className="h-4 w-4 mr-2" />
-                  Редактировать
+                <Button variant="outline" asChild>
+                  <Link href={`/service-employees?edit=${encodeURIComponent(employee.id)}`}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Редактировать
+                  </Link>
                 </Button>
               )}
               {/* Выход из карточки. `onClose` передавался сюда с самого

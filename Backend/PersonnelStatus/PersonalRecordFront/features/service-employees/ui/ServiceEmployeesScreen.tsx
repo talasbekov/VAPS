@@ -16,7 +16,7 @@ import { OpsAccessDenied } from '@/components/ops-access-denied';
 import { opsApiClient } from '@/lib/ops-api';
 import { OpsApiError } from '@/lib/ops-errors';
 import { formatIsoDate } from '@/shared/lib/date';
-import { SERVICE_EMPLOYEES_PATH, missingRatingLabel, serviceEmployeeHref, type ServiceEmployeePage, type ServiceEmployeeOptions } from '@/entities/service-employee';
+import { SERVICE_EMPLOYEES_PATH, missingRatingLabel, serviceEmployeeHref, type ServiceEmployeeDetail, type ServiceEmployeePage, type ServiceEmployeeOptions } from '@/entities/service-employee';
 import type { ServiceEmployee } from '@/entities/service-employee';
 import { useOpsPermissions } from '@/hooks/use-ops-permissions';
 import { EmployeeAdminDialog } from './EmployeeAdminDialog';
@@ -24,12 +24,13 @@ import { EmployeeAdminDialog } from './EmployeeAdminDialog';
 const selectClass = 'h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 export function ServiceEmployeesScreen() {
-  const { hasPermission } = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const canManageEmployees = hasPermission('orgstructure.manage') && hasPermission('admin.roles');
   const [editor, setEditor] = useState<ServiceEmployee | 'new' | null>(null);
   const router = useRouter();
   const params = useSearchParams();
   const query = params.toString();
+  const requestedEditorId = params.get('edit');
   const page = Math.max(1, Number(params.get('page')) || 1);
   const employees = useQuery({
     queryKey: ['service-employees', query],
@@ -40,6 +41,22 @@ export function ServiceEmployeesScreen() {
     queryKey: ['service-employees-options'],
     queryFn: () => opsApiClient.get<ServiceEmployeeOptions>(`${SERVICE_EMPLOYEES_PATH}options/`),
   });
+  const requestedEditor = useQuery({
+    queryKey: ['service-employee-editor', requestedEditorId],
+    queryFn: () => opsApiClient.get<ServiceEmployeeDetail>(`${SERVICE_EMPLOYEES_PATH}${encodeURIComponent(requestedEditorId!)}/`),
+    enabled: canManageEmployees && requestedEditorId !== null,
+    retry: false,
+  });
+  const closeEditor = () => {
+    setEditor(null);
+    if (requestedEditorId !== null) {
+      const next = new URLSearchParams(query);
+      next.delete('edit');
+      next.delete('action');
+      const nextQuery = next.toString();
+      router.replace(`/service-employees${nextQuery ? `?${nextQuery}` : ''}`, { scroll: false });
+    }
+  };
   const changePage = (value: number) => {
     const next = new URLSearchParams(query);
     next.set('page', String(value));
@@ -47,6 +64,9 @@ export function ServiceEmployeesScreen() {
   };
   if (employees.error instanceof OpsApiError && [401, 403].includes(employees.error.status)) {
     return <OpsAccessDenied what="сотрудников Службы" />;
+  }
+  if (requestedEditorId !== null && !permissionsLoading && !canManageEmployees) {
+    return <OpsAccessDenied what="кадровое редактирование" />;
   }
   return <DashboardLayout><div className="space-y-4">
     <PageHeader eyebrow="Личный состав" title="Сотрудники Службы" description="Сотрудники в вашей области доступа: текущий статус, рейтинг и назначения на ОМ" actions={canManageEmployees ? <Button className="min-h-11" onClick={() => setEditor('new')}><UserPlus className="mr-2 h-4 w-4" />Добавить сотрудника</Button> : undefined} />
@@ -91,6 +111,7 @@ export function ServiceEmployeesScreen() {
       </table></div>}
       <div className="flex items-center justify-between gap-2 border-t p-4"><Button variant="outline" className="min-h-11" disabled={!employees.data.previous || employees.isFetching} onClick={() => changePage(page - 1)}>Назад</Button><span className="text-sm">Страница {page}</span><Button variant="outline" className="min-h-11" disabled={!employees.data.next || employees.isFetching} onClick={() => changePage(page + 1)}>Далее</Button></div>
     </CardContent></Card>}
-    {editor !== null && options.data && <EmployeeAdminDialog employee={editor === 'new' ? null : editor} options={options.data} onClose={() => setEditor(null)} />}
+    {requestedEditor.isError && canManageEmployees && <p role="alert" className="text-sm text-destructive-ink">Не удалось открыть кадровую форму сотрудника.</p>}
+    {options.data && ((requestedEditorId && requestedEditor.data) || editor !== null) && <EmployeeAdminDialog employee={requestedEditor.data ?? (editor === 'new' ? null : editor)} options={options.data} onClose={closeEditor} />}
   </div></DashboardLayout>;
 }
