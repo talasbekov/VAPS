@@ -3,6 +3,13 @@ set -euo pipefail
 
 front_root="${FRONT_DEPS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 profile="${1:-all}"
+bootstrap=0
+if [[ "${2:-}" = "--bootstrap" ]]; then
+  bootstrap=1
+elif [[ -n "${2:-}" ]]; then
+  printf 'Unknown dependency option: %s (expected --bootstrap)\n' "$2" >&2
+  exit 64
+fi
 cd "$front_root"
 
 case "$profile" in
@@ -81,13 +88,26 @@ if dependencies_ready; then
   exit 0
 fi
 
+# A running Next/Playwright process can resolve new modules at any moment.
+# Replacing its directory underneath it produces intermittent ENOENT. Existing
+# trees therefore require an explicit bootstrap performed after consumers stop;
+# a genuinely new worktree (no node_modules yet) remains self-bootstrapping.
+if [[ -e node_modules || -L node_modules ]] && (( bootstrap == 0 )); then
+  printf 'Frontend dependencies do not match this worktree; existing node_modules will not be replaced automatically.\n' >&2
+  printf 'Stop frontend consumers, then run: npm run deps:bootstrap\n' >&2
+  exit 78
+fi
+
 lock="${DEPS_INSTALL_LOCK:-$front_root/.worktree-deps-install.lock}"
 wait_limit="${DEPS_LOCK_WAIT:-600}"
 poll_interval="${DEPS_LOCK_POLL:-1}"
-owner_token="${DEPS_LOCK_OWNER:-$$:$(date +%s)}"
+ownerless_grace="${DEPS_OWNERLESS_GRACE:-5}"
+owner_token="$$.$(date +%s).${RANDOM:-0}"
+owner_file="$lock/owner.$owner_token"
 lock_owned=0
 stage=""
 backup=""
+stale_claim=""
 
 cleanup() {
   if [[ -n "$backup" && -e "$backup" && ! -e "$front_root/node_modules" ]]; then
@@ -96,8 +116,12 @@ cleanup() {
   if [[ -n "$stage" && -d "$stage" ]]; then
     rm -rf -- "$stage"
   fi
-  if (( lock_owned == 1 )) && [[ "$(head -n 1 "$lock/owner" 2>/dev/null || true)" = "$owner_token" ]]; then
-    rm -rf -- "$lock"
+  if [[ -n "$stale_claim" && -f "$stale_claim" ]]; then
+    rm -f -- "$stale_claim"
+  fi
+  if (( lock_owned == 1 )) && [[ -f "$owner_file" ]]; then
+    rm -f -- "$owner_file"
+    rmdir "$lock" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
@@ -106,14 +130,48 @@ trap 'exit 143' TERM
 
 waited=0
 until mkdir "$lock" 2>/dev/null; do
-  stale_pid="$(sed -n 's/^pid=//p' "$lock/owner" 2>/dev/null | head -n 1)"
-  if [[ -n "$stale_pid" ]] && ! kill -0 "$stale_pid" 2>/dev/null; then
-    printf '[deps] abandoned install lock from pid %s removed\n' "$stale_pid" >&2
-    rm -rf -- "$lock"
-    continue
+  current_owner="$(find "$lock" -maxdepth 1 -type f -name 'owner.*' -print -quit 2>/dev/null || true)"
+  if [[ -n "$current_owner" ]]; then
+    stale_pid="$(sed -n 's/^pid=//p' "$current_owner" 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$stale_pid" ]] && ! kill -0 "$stale_pid" 2>/dev/null; then
+      # Claim the exact token file observed above. A contender that read the
+      # same dead owner cannot move a later owner's differently named token.
+      stale_claim="${lock}.stale-owner.${owner_token}"
+      if mv "$current_owner" "$stale_claim" 2>/dev/null; then
+        if rmdir "$lock" 2>/dev/null; then
+          printf '[deps] abandoned install lock from pid %s recovered\n' "$stale_pid" >&2
+          rm -f -- "$stale_claim"
+          stale_claim=""
+          continue
+        fi
+        rm -f -- "$stale_claim"
+        stale_claim=""
+      fi
+    fi
+  else
+    if lock_mtime="$(stat -c %Y "$lock" 2>/dev/null)"; then
+      :
+    elif lock_mtime="$(stat -f %m "$lock" 2>/dev/null)"; then
+      :
+    else
+      lock_mtime="$(date +%s)"
+    fi
+    lock_age=$(( $(date +%s) - lock_mtime ))
+    # rmdir is the compare-and-remove operation here: it succeeds only while
+    # the directory is still ownerless. If its creator publishes a token, the
+    # directory becomes non-empty and cannot be removed by this contender.
+    if (( lock_age >= ownerless_grace )) && rmdir "$lock" 2>/dev/null; then
+      printf '[deps] abandoned ownerless install lock recovered\n' >&2
+      continue
+    fi
   fi
   if (( waited >= wait_limit )); then
-    printf '[deps] dependency install is busy: %s\n' "$(tr '\n' ' ' < "$lock/owner" 2>/dev/null || printf 'owner unknown')" >&2
+    if [[ -n "$current_owner" ]]; then
+      owner_description="$(tr '\n' ' ' < "$current_owner" 2>/dev/null || printf 'owner unknown')"
+    else
+      owner_description="owner not published yet"
+    fi
+    printf '[deps] dependency install is busy: %s\n' "$owner_description" >&2
     exit 75
   fi
   if (( waited == 0 )); then
@@ -123,11 +181,17 @@ until mkdir "$lock" 2>/dev/null; do
   waited=$((waited + poll_interval))
 done
 lock_owned=1
-printf '%s\npid=%s\nstarted=%s\n' "$owner_token" "$$" "$(date '+%F %T')" > "$lock/owner"
+printf '%s\npid=%s\nstarted=%s\n' "$owner_token" "$$" "$(date '+%F %T')" > "$owner_file"
 
 # The process ahead of us may already have completed the same installation.
 if dependencies_ready; then
   exit 0
+fi
+
+if [[ -e node_modules || -L node_modules ]] && (( bootstrap == 0 )); then
+  printf 'Frontend dependencies changed while waiting; refusing to replace an existing node_modules.\n' >&2
+  printf 'Stop frontend consumers, then run: npm run deps:bootstrap\n' >&2
+  exit 78
 fi
 
 missing=()

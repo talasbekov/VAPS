@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "deps:ensure": "bash scripts/ensure-worktree-deps.sh all",
+    "deps:bootstrap": "bash scripts/ensure-worktree-deps.sh all --bootstrap",
     "playwright": "bash scripts/run-with-worktree-deps.sh playwright playwright test",
     "build": "bash scripts/run-with-worktree-deps.sh build next build",
     "dev": "bash scripts/run-with-worktree-deps.sh next next dev --turbo",

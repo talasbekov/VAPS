@@ -85,6 +85,7 @@ PYTEST_LOCK_WAIT=600 bash scripts/pytest-lock.sh .venv/bin/python -m pytest … 
 #    своём пути: PYTEST_LOCK=/tmp/Codex-1000/pytest-lock-test.
 
 # Фронт: из /Backend/PersonnelStatus/PersonalRecordFront
+npm run deps:bootstrap    # только при mismatch и после остановки frontend-consumer: живой node_modules автоматически не подменяется
 npm run gate:front        # tsc --noEmit && проверочная прод-сборка (~1,5 мин)
 npm run build:check       # только сборка: NEXT_DIST_DIR=.next-build next build
 #    ПРОД-СБОРКА ОБЯЗАТЕЛЬНА в гейте новых и правленых экранов: `next dev`

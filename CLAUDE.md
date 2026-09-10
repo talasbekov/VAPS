@@ -94,6 +94,7 @@ PYTEST_LOCK_WAIT=600 bash scripts/pytest-lock.sh .venv/bin/python -m pytest … 
 #    «прогон прошёл».
 
 # Фронт: из /Backend/PersonnelStatus/PersonalRecordFront
+npm run deps:bootstrap    # только при mismatch и после остановки frontend-consumer: живой node_modules автоматически не подменяется
 npm run gate:front        # tsc --noEmit && проверочная прод-сборка (~1,5 мин)
 npm run build:check       # только сборка: NEXT_DIST_DIR=.next-build под замком
 #    🔒 СБОРКА ПОД ЗАМКОМ (Plane №789, 05.09.2026). Каталог `.next-build` один на
@@ -123,9 +124,9 @@ npm run build:check       # только сборка: NEXT_DIST_DIR=.next-build
 #    Значит на этих разделах сборка ловит ДРУГИЕ ошибки (типы, импорты,
 #    обращение к `window` в модуле), а Suspense-границы держатся конвенцией:
 #    тело экрана в `*Screen`, `export default` только с границей.
-SMOKE_LIVE=1 npx playwright test -c playwright.smoke.config.ts <спека>.spec.ts   # целевые живые пробы по dev-стенду
+SMOKE_LIVE=1 npm run playwright -- -c playwright.smoke.config.ts <спека>.spec.ts   # целевые живые пробы по dev-стенду
 npm run stand:prod && npm run smoke:prod                                          # ВСЕ целевые пробы по ПРОД-СТЕНДУ — число СЧИТАТЬ `--list`, не сверять (замер 06.09.2026: 461 проба, 439 passed, 4 мигающих failed, 18 skipped)
-SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"  # обход портала — БЛОКАМИ по персонам (150 проб = 3 × 50)
+SMOKE_LIVE=1 npm run playwright -- -c playwright.walk.config.ts -g "persona admin"  # обход портала — БЛОКАМИ по персонам (150 проб = 3 × 50)
 #    🔴 ПОЛНЫЙ СМОУК ГОНЯЕТСЯ ПО ПРОД-СТЕНДУ, а не по `next dev` (Plane №173).
 #    `next dev` компилирует маршруты на лету и набирает 2 ГБ за минуту, под
 #    нагрузкой 2,8-3,2 ГБ; сторож перезапускает его каждые одну-две минуты, и
@@ -148,10 +149,10 @@ SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"
 #    вариант 1 из трёх («сузить обход» и «гонять против прод-сборки» им НЕ
 #    выбраны). Один блок — одна персона, отдельным прогоном, с замером RSS
 #    между блоками:
-#        SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"
+#        SMOKE_LIVE=1 npm run playwright -- -c playwright.walk.config.ts -g "persona admin"
 #    ЧИСЛА ПРАВИЛА — ПОСЧИТАНЫ, А НЕ ПОМНЯТСЯ (Plane №308, 29.08.2026; до этого
 #    здесь стояло «пять персон, 133 пробы, 44 маршрута», и таких персон в коде
-#    не было). Считать самому: `npx playwright test -c playwright.walk.config.ts
+#    не было). Считать самому: `npm run playwright -- -c playwright.walk.config.ts
 #    --list` печатает итог, `-g "persona <ключ>"` — итог блока.
 #        персон ТРИ (`ALL_PERSONAS` в `e2e/smoke-buttons.spec.ts`):
 #          admin    — ADMIN → `*`
@@ -192,9 +193,9 @@ SMOKE_LIVE=1 npx playwright test -c playwright.walk.config.ts -g "persona admin"
 #    целиком допустимо ТОЛЬКО как разовую проверку — например, когда надо
 #    убедиться, что обход вообще проходит.
 #    Без SMOKE_LIVE=1 живые спеки молча скипаются, и скип читается как зелень.
-SMOKE_MOCK_APP=http://localhost:3107 npx playwright test -c playwright.smoke.config.ts e2e/mock-contract.spec.ts
+SMOKE_MOCK_APP=http://localhost:3107 npm run playwright -- -c playwright.smoke.config.ts e2e/mock-contract.spec.ts
 #    Мок-проба требует ВТОРОГО dev-сервера на моке (основной стенд живой):
-NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,objects,access NEXT_DIST_DIR=.next-mock npx next dev -p 3107
+NEXT_PUBLIC_OPS_MOCK_DOMAINS=security-events,objects,access NEXT_DIST_DIR=.next-mock npm run dev:webpack -- -p 3107
 ```
 
 Прямой API Plane: `GET/PATCH http://localhost:8090/api/v1/workspaces/vaps/projects/<project-id>/issues/`, заголовок `X-API-Key`. Стек и доступы — `/home/erda/plane/README-vaps.md`, `/home/erda/plane/CREDENTIALS.txt`.
@@ -380,7 +381,7 @@ Plane — вход задач, vault — их разбор и исполнени
 
 - бэкенд: `cd Backend/PersonnelStatus/Personnel-Records`, всё через `.venv/bin/python`, тесты — только под замком `scripts/pytest-lock.sh`;
 - фронт: `cd Backend/PersonnelStatus/PersonalRecordFront`, гейт — `npm run gate:front` (`tsc` + прод-сборка под замком `scripts/build-lock.sh`);
-- живые пробы — `SMOKE_LIVE=1 npx playwright test -c playwright.smoke.config.ts <спека>`; без переменной они молча скипаются, и скип читается как зелень.
+- живые пробы — `SMOKE_LIVE=1 npm run playwright -- -c playwright.smoke.config.ts <спека>`; без переменной они молча скипаются, и скип читается как зелень.
 
 Отдельного линтера в гейте нет: `ruff` в проекте не настроен, и звать его «на всякий случай» значило бы обещать проверку, которой не существует.
 
