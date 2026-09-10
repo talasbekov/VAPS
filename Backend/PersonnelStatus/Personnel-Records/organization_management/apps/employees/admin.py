@@ -26,8 +26,8 @@ class HasUserFilter(admin.SimpleListFilter):
 class EmployeeAdmin(admin.ModelAdmin):
     list_display = ['personnel_number', 'last_name', 'first_name', 'middle_name',
                     'rank', 'callsign', 'employment_status', 'user_info_display',
-                    'hire_date']
-    list_filter = ['employment_status', 'gender', 'rank', HasUserFilter]
+                    'is_active', 'hire_date']
+    list_filter = ['is_active', 'employment_status', 'gender', 'rank', HasUserFilter]
     search_fields = ['personnel_number', 'last_name', 'first_name', 'middle_name',
                      'callsign',
                      'work_email', 'personal_email', 'user__username', 'user__email', 'iin']
@@ -48,7 +48,7 @@ class EmployeeAdmin(admin.ModelAdmin):
             # это единственное место, где его можно вписать: своего экрана у
             # кадровой записи в портале нет.
             'fields': ('rank', 'callsign', 'hire_date', 'dismissal_date',
-                       'employment_status')
+                       'employment_status', 'is_active')
         }),
         ('Контактные данные', {
             'fields': ('work_phone', 'work_email', 'personal_phone', 'personal_email')
